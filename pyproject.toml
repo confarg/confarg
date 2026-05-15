@@ -1,21 +1,17 @@
 [project]
-name = "confarg"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
 authors = [
-    { name = "confarg", email = "280620574+confarg@users.noreply.github.com" }
+    { name = "confarg", email = "280620574+confarg@users.noreply.github.com" },
 ]
-requires-python = ">=3.12"
 dependencies = []
+description = "Add your description here"
+name = "confarg"
+readme = "README.md"
+requires-python = ">=3.12"
+version = "0.0.0"
 
 [build-system]
-requires = ["uv_build>=0.11.13,<0.12.0"]
 build-backend = "uv_build"
+requires      = ["uv_build>=0.11.13,<0.12.0"]
 
 [dependency-groups]
-dev = [
-    "pre-commit>=4.6.0",
-    "pytest>=9.0.3",
-    "zensical>=0.0.41",
-]
+dev = ["pre-commit>=4.6.0", "pytest>=9.0.3", "zensical>=0.0.41"]
