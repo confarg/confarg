@@ -1,0 +1,24 @@
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+]
+
+[lint.per-file-ignores]
+"tests/**" = [
+    "UP007",  # non-pep604-annotation-union
+    "UP045",  # non-pep604-annotation-optional
+]
+
+
+[lint.isort]
+known-first-party = ["confarg"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
