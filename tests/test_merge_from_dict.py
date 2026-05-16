@@ -1,0 +1,183 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+"""Tests for the merge() / from_dict() two-step API and dump() / dump_file() with raw dicts."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import confarg
+from tests.conftest import AppConfig, DbConfig, WithDefaults
+
+# ---------------------------------------------------------------------------
+# merge()
+# ---------------------------------------------------------------------------
+
+
+class TestMerge:
+    """merge() returns the raw merged dict without resolving expressions or constructing."""
+
+    def test_returns_dict(self) -> None:
+        result = confarg.merge(WithDefaults, args=[], env={})
+        assert isinstance(result, dict)
+
+    def test_cli_values_present(self) -> None:
+        result = confarg.merge(WithDefaults, args=["--name", "hello"], env={})
+        assert result["name"] == "hello"
+
+    def test_env_values_present(self) -> None:
+        result = confarg.merge(WithDefaults, args=[], env={"NAME": "fromenv"}, env_prefix="")
+        assert result["name"] == "fromenv"
+
+    def test_file_values_present(self, tmp_yaml) -> None:
+        path = tmp_yaml("name: fromfile\n")
+        result = confarg.merge(WithDefaults, args=[], env={}, files=[path])
+        assert result["name"] == "fromfile"
+
+    def test_expressions_preserved(self, tmp_yaml) -> None:
+        # merge() must not evaluate ${...} — the raw expression string is kept
+        path = tmp_yaml("name: hello\ncount: 42\nrate: 1.0\nverbose: false\nother: '${name}'\n")
+        result = confarg.merge(WithDefaults, args=[], env={}, files=[path])
+        assert result["other"] == "${name}"
+
+    def test_merge_priority(self, tmp_yaml) -> None:
+        path = tmp_yaml("name: fromfile\n")
+        result = confarg.merge(
+            WithDefaults,
+            args=["--name", "fromcli"],
+            env={"NAME": "fromenv"},
+            files=[path],
+        )
+        assert result["name"] == "fromcli"
+
+    def test_merge_is_equivalent_to_load_merge_step(self, tmp_yaml) -> None:
+        path = tmp_yaml("name: fromfile\n")
+        merged = confarg.merge(WithDefaults, args=["--count", "7"], env={}, files=[path])
+        instance = confarg.load(WithDefaults, args=["--count", "7"], env={}, files=[path])
+        assert merged["name"] == instance.name
+        assert merged["count"] == instance.count  # CLI int now pre-coerced
+
+
+# ---------------------------------------------------------------------------
+# from_dict()
+# ---------------------------------------------------------------------------
+
+
+class TestFromDict:
+    """from_dict() constructs an instance from a plain dict."""
+
+    def test_constructs_instance(self) -> None:
+        data = {"name": "hi", "count": 3, "rate": 1.5, "verbose": False}
+        result = confarg.from_dict(WithDefaults, data)
+        assert isinstance(result, WithDefaults)
+        assert result.name == "hi"
+
+    def test_resolves_expressions_by_default(self) -> None:
+        @dataclass
+        class TwoStrings:
+            base: str
+            derived: str
+
+        data = {"base": "hello", "derived": "${base}_suffix"}
+        result = confarg.from_dict(TwoStrings, data)
+        assert result.derived == "hello_suffix"
+
+    def test_nested_dataclass(self) -> None:
+        data = {
+            "db": {"host": "localhost", "port": 5432, "name": "mydb"},
+            "cache": {"enabled": True, "ttl": 60},
+        }
+        result = confarg.from_dict(AppConfig, data)
+        assert isinstance(result.db, DbConfig)
+        assert result.db.host == "localhost"
+
+
+# ---------------------------------------------------------------------------
+# Two-step equivalence with load()
+# ---------------------------------------------------------------------------
+
+
+class TestTwoStepEquivalence:
+    """merge() + from_dict() must produce the same result as load()."""
+
+    def test_flat(self) -> None:
+        kwargs = dict(args=["--name", "x", "--count", "5", "--rate", "2.0", "--verbose", "true"], env={})
+        via_load = confarg.load(WithDefaults, **kwargs)
+        via_two_step = confarg.from_dict(WithDefaults, confarg.merge(WithDefaults, **kwargs))
+        assert via_load.name == via_two_step.name
+        assert via_load.count == via_two_step.count
+
+    def test_with_expression(self, tmp_yaml) -> None:
+        @dataclass
+        class TwoStrings:
+            base: str
+            derived: str
+
+        path = tmp_yaml("base: hello\nderived: '${base}_world'\n")
+        kwargs = dict(args=[], env={}, files=[path])
+        via_load = confarg.load(TwoStrings, **kwargs)
+        via_two_step = confarg.from_dict(TwoStrings, confarg.merge(TwoStrings, **kwargs))
+        assert via_load.derived == via_two_step.derived
+
+
+# ---------------------------------------------------------------------------
+# dump() and dump_file() with raw dicts
+# ---------------------------------------------------------------------------
+
+
+class TestDumpRaw:
+    def test_dump_strips_str_tokens(self) -> None:
+        from confarg._types import _StrToken
+
+        data = {"name": _StrToken("hello"), "count": 42}
+        result = confarg.dump(data)
+        assert result["name"] == "hello"
+        assert type(result["name"]) is str
+        assert result["count"] == 42
+
+    def test_dump_file_yaml(self, tmp_path) -> None:
+        data = {"name": "hello", "count": "${name}"}
+        path = tmp_path / "out.yaml"
+        confarg.dump_file(data, path)
+        assert path.exists()
+        import yaml
+
+        loaded = yaml.safe_load(path.read_text())
+        assert loaded["name"] == "hello"
+        assert loaded["count"] == "${name}"
+
+    def test_raw_expressions_survive_file_round_trip(self, tmp_path, tmp_yaml) -> None:
+        src = tmp_yaml("name: base\ncount: '${name}'\nrate: 1.0\nverbose: false\n")
+        raw = confarg.merge(WithDefaults, args=[], env={}, files=[src])
+        out = tmp_path / "snapshot.yaml"
+        confarg.dump_file(raw, out)
+
+        import yaml
+
+        saved = yaml.safe_load(out.read_text())
+        assert saved["count"] == "${name}"
+
+
+# ---------------------------------------------------------------------------
+# Post-init mutation: raw dict is unaffected
+# ---------------------------------------------------------------------------
+
+
+class TestPostInitIsolation:
+    """Demonstrates that merge() captures the input before __post_init__ can mutate."""
+
+    def test_postinit_does_not_affect_raw_dict(self) -> None:
+        @dataclass
+        class Uppercased:
+            name: str
+
+            def __post_init__(self):
+                self.name = self.name.upper()
+
+        raw = confarg.merge(Uppercased, args=["--name", "hello"], env={})
+        instance = confarg.from_dict(Uppercased, raw)
+
+        assert raw["name"] == "hello"
+        assert instance.name == "HELLO"

@@ -1,0 +1,532 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+"""Tests for argparse integration: populate_parser, from_namespace, FieldMeta."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Annotated, Literal
+
+import pytest
+
+import confarg
+from confarg import FieldMeta, from_namespace, populate_parser
+from confarg._argparse import _get_field_docstrings
+
+# ---------------------------------------------------------------------------
+# Dataclasses used across tests
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Simple:
+    host: str
+    """Database hostname."""
+
+    port: int = 5432
+    """Port to connect on."""
+
+    debug: bool = False
+    """Enable debug mode."""
+
+
+@dataclass
+class WithCollections:
+    tags: list[str] = field(default_factory=list)
+    """List of tags."""
+
+    coords: tuple[float, float] = (0.0, 0.0)
+    """Fixed two-element tuple."""
+
+    scores: tuple[int, ...] = ()
+    """Variable-length tuple of ints."""
+
+
+@dataclass
+class DbConfig:
+    """Database configuration."""
+
+    host: str
+    """Hostname."""
+
+    port: int = 5432
+    """Port."""
+
+
+@dataclass
+class AppConfig:
+    """Top-level application configuration."""
+
+    db: DbConfig
+    debug: bool = False
+    """Global debug flag."""
+
+
+@dataclass
+class WithOptional:
+    name: str = "default"
+    """Name field."""
+
+    label: str | None = None
+    """Optional label."""
+
+
+class Color(Enum):
+    RED = "red"
+    GREEN = "green"
+    BLUE = "blue"
+
+
+@dataclass
+class WithEnum:
+    color: Color = Color.RED
+    """Favourite color."""
+
+
+@dataclass
+class WithLiteral:
+    level: Literal["debug", "info", "warning"] = "info"
+    """Log level."""
+
+
+@dataclass
+class WithFieldMeta:
+    port: Annotated[int, FieldMeta(help="TCP port.", metavar="PORT")] = 8080
+    """Fallback docstring (should not appear — FieldMeta.help wins)."""
+
+
+@dataclass
+class WithMultiUnion:
+    value: int | str = 0
+
+
+@dataclass
+class _StructVariantA:
+    x: int = 0
+
+
+@dataclass
+class _StructVariantB:
+    y: str = ""
+
+
+@dataclass
+class _WithStructUnion:
+    item: _StructVariantA | _StructVariantB
+
+
+@dataclass
+class NoDocstrings:
+    name: str
+    count: int = 0
+
+
+# ---------------------------------------------------------------------------
+# _get_field_docstrings
+# ---------------------------------------------------------------------------
+
+
+class TestGetFieldDocstrings:
+    def test_extracts_docstrings(self) -> None:
+        docs = _get_field_docstrings(Simple)
+        assert docs["host"] == "Database hostname."
+        assert docs["port"] == "Port to connect on."
+        assert docs["debug"] == "Enable debug mode."
+
+    def test_no_docstrings(self) -> None:
+        docs = _get_field_docstrings(NoDocstrings)
+        assert docs == {}
+
+    def test_dynamic_class_returns_empty(self) -> None:
+        from dataclasses import make_dataclass
+
+        Dyn = make_dataclass("Dyn", [("x", int)])
+        assert _get_field_docstrings(Dyn) == {}
+
+
+# ---------------------------------------------------------------------------
+# populate_parser — flag registration
+# ---------------------------------------------------------------------------
+
+
+class TestPopulateParser:
+    def _flags(self, dc_type) -> set[str]:
+        parser = argparse.ArgumentParser()
+        populate_parser(dc_type, parser)
+        return {s for a in parser._actions for s in a.option_strings}
+
+    def test_simple_flags_registered(self) -> None:
+        flags = self._flags(Simple)
+        assert "--host" in flags
+        assert "--port" in flags
+        assert "--debug" in flags
+        assert "--no-debug" not in flags
+
+    def test_nested_flags_registered(self) -> None:
+        flags = self._flags(AppConfig)
+        assert "--db.host" in flags
+        assert "--db.port" in flags
+        assert "--debug" in flags
+
+    def test_collection_flags(self) -> None:
+        flags = self._flags(WithCollections)
+        assert "--tags" in flags
+        assert "--coords" in flags
+        assert "--scores" in flags
+
+    def test_enum_flag(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(WithEnum, parser)
+        color_action = next(a for a in parser._actions if "--color" in a.option_strings)
+        assert set(color_action.choices) == {"RED", "GREEN", "BLUE"}
+
+    def test_literal_flag(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(WithLiteral, parser)
+        level_action = next(a for a in parser._actions if "--level" in a.option_strings)
+        assert set(level_action.choices) == {"debug", "info", "warning"}
+
+    def test_dict_field_skipped(self) -> None:
+        @dataclass
+        class WithDict:
+            mapping: dict[str, int] = field(default_factory=dict)
+
+        parser = argparse.ArgumentParser()
+        populate_parser(WithDict, parser)
+        flags = {a.option_strings[0] for a in parser._actions if a.option_strings}
+        assert "--mapping" not in flags
+
+    def test_multi_union_field_skipped(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(WithMultiUnion, parser)
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--value" not in flags
+
+    def test_struct_union_registers_class_tag_flag(self) -> None:
+        """Multi-variant struct union gets --<field>.class registered."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithStructUnion, parser)
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--item.class" in flags
+        assert "--item" not in flags
+
+    def test_argument_groups_for_nested(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(AppConfig, parser)
+        group_titles = {g.title for g in parser._action_groups}
+        assert "db" in group_titles
+
+    def test_suppress_default_not_in_namespace(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args(["--host", "localhost"])
+        assert "port" not in vars(ns)  # not provided → SUPPRESS keeps it absent
+        assert "debug" not in vars(ns)
+
+
+# ---------------------------------------------------------------------------
+# populate_parser — help text
+# ---------------------------------------------------------------------------
+
+
+class TestHelpText:
+    def _help(self, dc_type, flag: str) -> str:
+        parser = argparse.ArgumentParser()
+        populate_parser(dc_type, parser)
+        for action in parser._actions:
+            if flag in action.option_strings:
+                return action.help or ""
+        return ""
+
+    def test_docstring_used_as_help(self) -> None:
+        h = self._help(Simple, "--host")
+        assert "Database hostname" in h
+
+    def test_default_appended_to_help(self) -> None:
+        h = self._help(Simple, "--port")
+        assert "5432" in h
+
+    def test_fieldmeta_help_overrides_docstring(self) -> None:
+        h = self._help(WithFieldMeta, "--port")
+        assert "TCP port." in h
+        assert "Fallback" not in h
+
+    def test_fieldmeta_metavar(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(WithFieldMeta, parser)
+        action = next(a for a in parser._actions if "--port" in a.option_strings)
+        assert action.metavar == "PORT"
+
+    def test_no_docstring_no_crash(self) -> None:
+        h = self._help(NoDocstrings, "--name")
+        assert isinstance(h, str)
+
+    def test_optional_field_help_includes_none_sentinel(self) -> None:
+        """Help text for Optional[X] fields mentions 'none' or 'null'."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class WithOpt:
+            value: int | None = None
+
+        h = self._help(WithOpt, "--value")
+        assert "none" in h.lower() or "null" in h.lower()
+
+
+# ---------------------------------------------------------------------------
+# from_namespace — round-trip
+# ---------------------------------------------------------------------------
+
+
+class TestFromNamespace:
+    def test_basic_parse(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args(["--host", "localhost", "--port", "9000"])
+        result = from_namespace(ns, Simple)
+        assert result.host == "localhost"
+        assert result.port == 9000
+        assert result.debug is False  # dataclass default
+
+    def test_bool_true(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args(["--host", "h", "--debug", "true"])
+        assert from_namespace(ns, Simple).debug is True
+
+    def test_bool_false_via_no_flag(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args(["--host", "h", "--debug", "false"])
+        assert from_namespace(ns, Simple).debug is False
+
+    def test_defaults_used_when_absent(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args(["--host", "localhost"])
+        result = from_namespace(ns, Simple)
+        assert result.port == 5432
+        assert result.debug is False
+
+    def test_missing_required_raises(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args([])  # host not provided
+        with pytest.raises(confarg.MissingFieldError):
+            from_namespace(ns, Simple)
+
+    def test_nested_dataclass(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(AppConfig, parser)
+        ns = parser.parse_args(["--db.host", "pg", "--db.port", "5433", "--debug", "true"])
+        result = from_namespace(ns, AppConfig)
+        assert result.db.host == "pg"
+        assert result.db.port == 5433
+        assert result.debug is True
+
+    def test_optional_field_absent(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(WithOptional, parser)
+        ns = parser.parse_args([])
+        result = from_namespace(ns, WithOptional)
+        assert result.name == "default"
+        assert result.label is None
+
+    def test_optional_field_provided(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(WithOptional, parser)
+        ns = parser.parse_args(["--label", "hello"])
+        result = from_namespace(ns, WithOptional)
+        assert result.label == "hello"
+
+    def test_list_field(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(WithCollections, parser)
+        ns = parser.parse_args(["--tags", "a", "b", "c"])
+        result = from_namespace(ns, WithCollections)
+        assert result.tags == ["a", "b", "c"]
+
+    def test_fixed_tuple_field(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(WithCollections, parser)
+        ns = parser.parse_args(["--coords", "1.5", "2.5"])
+        result = from_namespace(ns, WithCollections)
+        assert result.coords == (1.5, 2.5)
+
+    def test_enum_field(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(WithEnum, parser)
+        ns = parser.parse_args(["--color", "BLUE"])
+        result = from_namespace(ns, WithEnum)
+        assert result.color == Color.BLUE
+
+    def test_literal_field(self) -> None:
+        parser = argparse.ArgumentParser()
+        populate_parser(WithLiteral, parser)
+        ns = parser.parse_args(["--level", "warning"])
+        result = from_namespace(ns, WithLiteral)
+        assert result.level == "warning"
+
+    def test_coexists_with_user_flags(self) -> None:
+        """User can add their own flags; from_namespace ignores them."""
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        parser.add_argument("--verbose", action="store_true")
+        ns = parser.parse_args(["--host", "h", "--verbose"])
+        result = from_namespace(ns, Simple)
+        assert result.host == "h"
+        assert ns.verbose is True
+
+    def test_union_class_tag_collected_by_collect_ns_fields(self) -> None:
+        """--<field>.class in namespace is passed through to the merge pipeline."""
+        from confarg._argparse import _collect_ns_fields
+        from confarg._types import _StrToken
+
+        flat = {"item.class": "myapp._StructVariantA"}
+        result: dict = {}
+        _collect_ns_fields(flat, _WithStructUnion, prefix="", union_tag="class", result=result)
+        assert result == {"item": {"class": _StrToken("myapp._StructVariantA")}}
+
+
+# ---------------------------------------------------------------------------
+# Config file support in populate_parser / from_namespace
+# ---------------------------------------------------------------------------
+
+
+class TestConfigFileSupport:
+    """Config files can be passed via --config flag or the files= parameter."""
+
+    def test_config_flag_registered_by_default(self) -> None:
+        """populate_parser registers --config by default."""
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--config" in flags
+
+    def test_config_flag_absent_when_disabled(self) -> None:
+        """config_flag='' suppresses --config registration."""
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser, config_flag="")
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--config" not in flags
+
+    def test_custom_config_flag_name(self) -> None:
+        """config_flag='cfg' registers --cfg instead of --config."""
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser, config_flag="cfg")
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--cfg" in flags
+        assert "--config" not in flags
+
+    def test_config_file_via_namespace(self, tmp_path) -> None:
+        """Values from --config file are used when CLI doesn't provide them."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('host = "from_file"\nport = 1234\n')
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args(["--config", str(cfg)])
+        result = from_namespace(ns, Simple, env={})
+        assert result.host == "from_file"
+        assert result.port == 1234
+
+    def test_config_file_via_files_param(self, tmp_path) -> None:
+        """Values from files= parameter are loaded."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('host = "file_host"\nport = 9999\n')
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args([])
+        result = from_namespace(ns, Simple, files=[cfg], env={})
+        assert result.host == "file_host"
+        assert result.port == 9999
+
+    def test_cli_overrides_config_file(self, tmp_path) -> None:
+        """CLI argument takes priority over config file value."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('host = "from_file"\nport = 1111\n')
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args(["--config", str(cfg), "--port", "2222"])
+        result = from_namespace(ns, Simple, env={})
+        assert result.host == "from_file"
+        assert result.port == 2222
+
+    def test_env_overrides_config_file(self, tmp_path) -> None:
+        """Env var with explicit prefix takes priority over config file value."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('host = "from_file"\nport = 1111\n')
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args(["--config", str(cfg)])
+        result = from_namespace(ns, Simple, env={"CONFARG_PORT": "3333"}, env_prefix="CONFARG_")
+        assert result.host == "from_file"
+        assert result.port == 3333
+
+    def test_env_disabled_by_default(self, tmp_path) -> None:
+        """Env vars are ignored when env_prefix is None (the default)."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('host = "from_file"\nport = 1111\n')
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args(["--config", str(cfg)])
+        result = from_namespace(ns, Simple, env={"PORT": "9999"})
+        assert result.port == 1111
+
+    def test_multiple_config_files_merged(self, tmp_path) -> None:
+        """Later config files in the list override earlier ones."""
+        cfg1 = tmp_path / "base.toml"
+        cfg1.write_text('host = "base"\nport = 1000\n')
+        cfg2 = tmp_path / "override.toml"
+        cfg2.write_text("port = 2000\n")
+        parser = argparse.ArgumentParser()
+        populate_parser(Simple, parser)
+        ns = parser.parse_args(["--config", str(cfg1), str(cfg2)])
+        result = from_namespace(ns, Simple, env={})
+        assert result.host == "base"
+        assert result.port == 2000
+
+    def test_subkey_config_flag_registered(self) -> None:
+        """populate_parser registers --config.<nested> for each nested dataclass."""
+        parser = argparse.ArgumentParser()
+        populate_parser(AppConfig, parser)
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--config" in flags
+        assert "--config.db" in flags
+
+    def test_subkey_config_flag_loads_under_subkey(self, tmp_path) -> None:
+        """--config.db file.toml loads file contents under the 'db' key."""
+        db_cfg = tmp_path / "db.toml"
+        db_cfg.write_text('host = "db_host"\nport = 5555\n')
+        parser = argparse.ArgumentParser()
+        populate_parser(AppConfig, parser)
+        ns = parser.parse_args(["--config.db", str(db_cfg)])
+        result = from_namespace(ns, AppConfig, env={})
+        assert result.db.host == "db_host"
+        assert result.db.port == 5555
+
+    def test_subkey_config_and_root_config_combined(self, tmp_path) -> None:
+        """Root --config and --config.db can be combined; CLI still wins."""
+        root_cfg = tmp_path / "root.toml"
+        root_cfg.write_text("debug = true\n")
+        db_cfg = tmp_path / "db.toml"
+        db_cfg.write_text('host = "from_file"\nport = 1111\n')
+        parser = argparse.ArgumentParser()
+        populate_parser(AppConfig, parser)
+        ns = parser.parse_args(
+            [
+                "--config",
+                str(root_cfg),
+                "--config.db",
+                str(db_cfg),
+                "--db.port",
+                "9999",
+            ]
+        )
+        result = from_namespace(ns, AppConfig, env={})
+        assert result.debug is True
+        assert result.db.host == "from_file"
+        assert result.db.port == 9999  # CLI overrides file

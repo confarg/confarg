@@ -1,0 +1,523 @@
+# A tool to manage complex, dynamic configurations
+
+
+## What is `confarg`?
+
+`confarg` is a Python library that helps you manage your app configuration in a modular fashion from multiple sources: one or more configuration files, environment variables, and command line arguments.
+
+It strives to have minimal footprint on your data and app, to make it easy to switch to it, or switch from it.
+
+It can handle deeply nested configurations, type unions, derived classes, expressions and variable interpolation, configuration compositions, and can co-exist with your favorite argument parser library such as `argparse`, `click`, `typer` or `cyclopts`.
+
+If none of this makes sense to you, read along.
+
+
+## What is not `confarg`?
+
+`confarg` is deliberately not a framework, but just a tool.
+
+It does not own the interface with the command line, and it won't help your build a beautiful CLI. However it can coexist with the one you might be already using.
+
+It doesn't require you to use custom data classes, or to use custom annotations.
+
+The scope of `confarg` is limited to the deserialization and serialization of complex configurations. By limiting itself to those transient moments in the life of your application, the footprint of `confarg` in your app should be limited to a few lines of code, often just two `import confarg` and `confarg.load` lines.
+
+## Install
+
+```
+pip install confarg
+```
+
+`confarg` is a stand-alone library that comes with no required dependencies. Add `pyyaml` to your project to support configuration files in YAML format.
+
+
+## Getting started
+
+> All the examples presented in this section (and more) are available in the `examples/` folder.
+
+Imagine that you have an app that depends on some parameters that you have collected into a `dataclass` like so:
+
+```python
+@dataclass
+class DBConfig:
+    host: str
+    port: int
+    name: str
+```
+
+In your app, you use `confarg` to instantiate this configuration:
+
+```python
+db_config = confarg.load(DBConfig)
+```
+
+This allows you to construct a `DBConfig` object by collecting data from three possible sources.
+
+1. From a configuration file. By passing `--config <config_file>` to your app, `confarg` will load the content of the file and fill the `DBConfig` object. For example, a config file could look like so:
+
+   ```yaml
+   # config.yaml
+   host: example.com
+   port: 1234
+   name: mydb
+   ```
+
+   You would then call your application as
+
+   ```console
+   $ myapp.py --config config.yaml
+   DBConfig(host='example.com', port=1234, name='mydb')
+   ```
+
+   Configuration files in TOML and JSON formats are also supported.
+
+   > You can change the default `config` flag to something else using the `config_flag` parameter.
+
+2. From environment variables. You can declare
+
+   ```properties
+   MYAPP_HOST=example.com
+   MYAPP_PORT=1234
+   MYAPP_NAME=mydb
+   ```
+
+   for the same effect.
+
+   > Note that the environment variable prefix of your app should actually be passed to `confarg.load` like so:
+   >
+   > ```python
+   > db_config = confarg.load(DBConfig, env_prefix="MYAPP_")
+   > ```
+
+3. From command line arguments.
+
+   ```console
+   $ my_app --host example.com --port 1234 --name mydb
+   DBConfig(host='example.com', port=1234, name='mydb')
+   ```
+
+### Progressive build-up
+
+The examples above presented different sources to feed your configuration. They are not mutually exclusive — in fact, they are intended to be used simultaneously.
+
+Note that no one source needs to provide a complete configuration, as long as the configuration resulting from this progressive build-up is complete.
+
+For example, taking our previous example, you could have a partial configuration file containing only host information,
+
+```yaml
+# partial_config.yaml
+host: example.com
+port: 1234
+```
+
+and provide the schema name from the command line:
+
+```console
+$ myapp.py --config partial_config.yaml --name mydb
+DBConfig(host='example.com', port=1234, name='mydb')
+```
+
+### Source precedence
+
+Configuration data is read in the following order, later read overwriting existing data:
+
+1. configuration files are read first;
+2. then environment variables;
+3. finally, command line arguments.
+
+This allows for surgical modifications of configuration files. For example, one could overwrite the schema configuration from our existing `full_config` from the command line like so:
+
+```console
+$ # Overwrite the schema name defined in the config file from the command line
+$ myapp.py --config config.yaml --name otherdb
+DBConfig(host='example.com', port=1234, name='otherdb')
+```
+
+### Unions
+
+Let's say your app needs to support SQLite databases. You now have two different, incompatible DB configurations:
+
+```python
+@dataclass
+class DBServerConfig:
+    host: str
+    port: int
+    name: str
+
+@dataclass
+class SQLiteConfig:
+    dbpath: str
+```
+
+The DB configuration needs to be either one or the other, which we declare like so:
+
+```python
+type DBConfig = SQLiteConfig | DBServerConfig
+```
+
+`confarg` can handle this new union type and figure out which configuration is desired based on the arguments it got:
+
+```console
+$ # Pass DBServerConfig parameters, and you get a DBServerConfig
+$ myapp.py --host example.com --port 1234 --name mydb
+DBServerConfig(host='example.com', port=1234, name='mydb')
+$ # Pass SQLiteConfig parameters, and you get a SQLiteConfig
+$ myapp.py --dbpath db.sqlite
+SQLiteConfig(dbpath='db.sqlite')
+```
+
+### Disambiguation tags
+
+For simple configurations, the above automatic disambiguation is enough and convenient.
+
+In more complex configuration scenarios, this automatic disambiguation may not be not possible. For example, different configurations may share the exact same fields.
+
+Even when disambiguation is possible, it may not be obvious to the human eye which object class should be return from the provided parameters.
+
+Therefore, by necessity or for the sake of clarity, you can provide the class path of the required configuration by using the `class` tag, like so
+
+```console
+$ # Explicitly ask for a SQLiteConfig
+$ myapp.py --class myapp.SQLiteConfig --dbpath db.sqlite
+SQLiteConfig(dbpath='db.sqlite')
+```
+
+One example where it is necessary to provide the `class` path is to overwrite the configuration with a new class. Without it, command line arguments are added to the configuration, resulting in an invalid input.
+
+```console
+$ # Config file contains a DBServerConfig
+$ myapp.py --config db_server.yaml
+DBServerConfig(host='example.com', port=1234, name='mydb')
+$ # Fails:  dbpath is not a DBServerConfig key
+$ myapp.py --config db_server.yaml --dbpath db.sqlite
+...
+$ # OK: using class signals overwrite existing DB config
+$ myapp.py --config db_server.yaml --class myapp.SQLiteConfig --dbpath db.sqlite
+SQLiteConfig(dbpath='db.sqlite')
+```
+
+### Inheritance
+
+Another way to provide a flexible configuration is to derive akin configuration classes from a common base class.
+
+```python
+@dataclass
+class DBConfig:
+    pass
+
+@dataclass
+class DBServerConfig(DBConfig):
+    host: str
+    port: int
+    name: str
+
+@dataclass
+class SQLiteConfig(DBConfig):
+    dbpath: str
+```
+
+This allows configurations to be easily extensible. Contrast with unions, where a class must be explicitly listed to be supported.
+
+The downside is that the concrete class must be tagged, as `confarg` cannot discover classes derived from a given class.
+
+```console
+$ # Fails:  derived class not specified
+$ uv run myapp.py --dbpath db.sqlite
+...
+$ # OK: explicit class path provided
+$ uv run myapp.py --dbpath db.sqlite --class myapp.SQLiteConfig
+SQLiteConfig(dbpath='db.sqlite')
+```
+
+### Configuration hierarchies
+
+The configurations discussed so far has been rather simple, composed of values grouped together in a `dataclass`. However, it needs not be. Configurations are generally deeply nested hierarchies, which `confarg` supports.
+
+Let's say you want to add a log level to your application. You place it at the root level of a new `Config` object, along with the DB configuration, that is now one level down under the `db` key.
+
+```python
+@dataclass
+class Config:
+    db: DBConfig
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+```
+
+You now parse your new top-level `Config` instead of `DBConfig`.
+
+```python
+config = confarg.load(Config)
+```
+
+Our DB configuration, which used to be the root configuration, is now located under the `db` key. This has the following impact.
+
+For command line arguments, we follow the common convention of using dot-separated paths to address nested fields. Previous command line arguments for `DBConfig` are now prefixed by `db.`, like so:
+
+```console
+$ myapp.py --db.class myapp.SQLiteConfig --db.dbpath db.sqlite
+Config(db=SQLiteConfig(dbpath='db.sqlite'), log_level='INFO')
+```
+
+The configuration file is also modified accordingly,
+
+```yaml
+# config.yaml
+db:
+  class: myapp.DBServerConfig
+  host: example.com
+  name: mydb
+  port: 1234
+```
+
+and is used just like before:
+
+```console
+$ myapp.py --config config.yaml
+Config(db=DBServerConfig(host='example.com', port=1234, name='mydb'),
+       log_level='DEBUG')
+```
+
+### Leaf data type and type coercion
+
+You may have noticed that the previous section introduced a `log_level` parameter that has two interesting features: first, it is not of a simple type (`str`, `int`, `float`, `bool` or `None`); second, it comes with a default value.
+
+Default values are honored, and you may have noticed that we did not provide any value to `log_level`. You can of course override a default value.
+
+As for leaf node data type, `confarg` coerces `Enum` and `Path` types as special exceptions to simple types. Other types are treated as classes and must follow the same rules.
+
+### Expressions and variable interpolation
+
+Your application is becoming more complex by the day, and is now requiring a resources configuration.
+
+```python
+@dataclass
+class Resources:
+    cpu_count: int
+    memory_gb: int
+    max_heap_size_mb: int
+```
+
+It is added to the global configuration under the `resources` key:
+
+```python
+@dataclass
+class Config:
+    db: DBConfig
+    resources: Resources
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+```
+
+Your configuration file has become,
+
+```yaml
+# config.yaml
+db:
+  class: myapp.DBServerConfig
+  host: example.com
+  name: mydb
+  port: 1234
+
+resources:
+  cpu_count: 4
+  memory_gb: 16
+  max_heap_size_mb: 131072
+```
+
+This works fine. However, you want to better express the fact that `max_heap_size_mb` is chosen to be 80% of the host memory by default. To achieve this, you can write expressions relying on variable interpolation using the `${...}` syntax, like so:
+
+```yaml
+# expression_config.yaml
+db:
+  class: myapp.DBServerConfig
+  host: example.com
+  name: mydb
+  port: 1234
+
+resources:
+  cpu_count: 4
+  memory_gb: 16
+  max_heap_size_mb: ${int(resources.memory_gb * 1024 * 0.8)}
+```
+
+```console
+$ myapp.py --config expression_config.yaml
+Config(db=SQLiteConfig(dbpath='db.sqlite'),
+       resources=Resources(cpu_count=4, memory_gb=16, max_heap_size_mb=13107),
+       log_level='INFO')
+```
+
+Note that variable interpolation occurs after all configuration data is read. This means here that you can override `memory_gb` from the command line, and `max_heap_size_mb` will be adjusted accordingly, even though the expression is defined in the configuration file.
+
+```console
+$ # Max heap is recomputed according to the expression in the config file
+$ myapp.py --config expression_config.yaml --resources.memory_gb 8
+Config(db=SQLiteConfig(dbpath='db.sqlite'),
+       resources=Resources(cpu_count=4, memory_gb=8, max_heap_size_mb=6553),
+       log_level='INFO')
+```
+
+### Building large configurations from parts
+
+Large configurations are often made up of independent components, and as such, you may want to split them accordingly. It is easier to navigate, but it also makes it possible to reuse configuration parts and to build multiple complex configurations from the same set of atomic configuration components.
+
+Some configuration components may even be generated automatically, in which case being able to isolate those parts from the rest is a must.
+
+`confarg` lets you do this in different ways.
+
+From the command line, the `--config` flag can be suffixed with a key path to load configurations there. For example,
+
+```console
+# Load a config file specific to the `db` key
+$ myapp.py --config.db db_config.yaml
+Config(db=DBServerConfig(host='example.com', port=1234, name='mydb'), log_level='INFO')
+```
+
+A similar pattern applies to environment variables:
+
+```console
+$ MYAPP_CONFIG_DB=db_config.py myapp.py
+Config(db=DBServerConfig(host='example.com', port=1234, name='mydb'), log_level='INFO')
+```
+
+> Note that `db_config.yaml` does *not* contain the `db` key. It does not need to know the path it is loaded to.
+
+In config files, you can load a configuration by specifying the special `__include__` key, followed by the path to the sub-configuration to load, like so:
+
+```yaml
+# set everything under the `db` key from another file
+db:
+  __include__: ./db_config.yaml
+```
+
+The `__include__` keyword can also be used at the top-level, to create a new config that amends an existing config.
+
+```yaml
+# start from this base configuration
+__include__: base_config.yaml
+
+# set or overwrite everything under the `db` key
+db:
+  __include__: ./db_config.yaml
+```
+
+## Building a command-line interface
+
+Command line arguments are an essential part of `confarg`. We have seen how they are parsed and consumed implicitly by `confarg.load`.
+
+Although it is not needed for `confarg` to work, application generally provide a command line interface to offer some help and parse parameters. It is time we discuss how this could play with dynamic configurations such as those handled by `confarg`.
+
+To build a CLI, you can use a dedicated library owning your interface, or build the interface yourself with `argparse`.
+
+### Using a CLI library
+
+The python ecosystem offers many libraries to build powerful and beautiful CLI apps, such as `click`, `typer` or `cyclopts`. Those libraries parse and consume command line arguments, but they also offer a rich user experience by providing help on available commands, sometimes even auto-completion. Some like `cyclopts` also parse concrete nested dataclasses using the dot-separated field command line argument convention used by `confarg` and similar libraries.
+
+Should you use such a library, `confarg` can coexist with them by parsing unused arguments. However, no help for arguments handled by `confarg` is currently provided.
+
+### Building your interface with `argparse`
+
+If you manage your interface yourself with `argparse`, `confarg` can step in and provide (limited) help for command line arguments. (`confarg` can also provide tab-completion on some shells for a better and more complete user experience, as an experimental feature.)
+
+### A note about complex configurations and CLI
+
+We are used to the great user experience provided by CLI libraries such as `click`, `typer` or `cyclopts`. However, porting this great UX to complex configurations is no small feat because of their size and dynamic nature. Inline help is bound to be both very long and incomplete, which could be frustrating.
+
+At the same time, the command line is not the main configuration interface: configuration files are. Building a great CLI UX for complex configuration has a poor benefit/effort ratio.
+
+### Optional command line argument prefix
+
+When mixing `confarg` arguments with other application arguments, you may worry about name conflicts, or you may want to clearly identify which arguments belong to the configuration handled by `confarg`.
+
+For this purpose, you can specify to `confarg` a prefix for command line arguments it consumes, using the `cli_prefix` parameter:
+
+```python
+config = confarg.load(Config, args=rgs, cli_prefix="settings")
+```
+
+The command line now cleanly conveys which arguments are routed to the configuration.
+
+```python
+myapp.py --app_arg=hello --settings.config=config.yaml --settings.resources.cpu_count=2
+```
+
+### Integration with `click`
+
+You can use the `ignore_unknown_options` and `allow_extra_args` options of the library to pass extra arguments directly to `confarg`, like so:
+
+```python
+@click.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
+@click.argument("extra_param")
+@click.pass_context
+def run(
+    ctx: click.Context,
+    extra_param: str,
+) -> None:
+    config = confarg.load(Config, args=ctx.args)
+```
+
+In this example, `extra_param` is consumed by the `click` app; the other parameters are passed to `confarg`.
+
+### Integration with `typer`
+
+The situation is very similar to `click`, which is no surprise as `typer` relies on it.
+
+```python
+@app.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
+def run(
+    ctx: typer.Context,
+    extra_param: str,
+) -> None:
+    config = confarg.load(Config, args=ctx.args)
+```
+
+### Integration with `cyclopts`
+
+Integrating with `cyclopts` is a little bit more involved, as we want to get our hands on unparsed arguments, which needs to happen outside commands.
+
+Here is an example:
+
+```python
+_REMAINING: list[str] = []
+
+@app.command
+def run(extra_param: str) -> None:
+    config = confarg.load(Config, args=_REMAINING)
+
+if __name__ == "__main__":
+    fn, bound, remaining, _ = app.parse_known_args()
+    _REMAINING[:] = remaining
+    fn(*bound.args, **bound.kwargs)
+```
+
+`cyclopts` also allows the use of extra parameters in a very Pythonic fashion using `**kwargs`, but the parsing of those arguments then needs to be reverted, like so:
+
+```python
+@app.command
+def run(extra_param: str, **kwargs) -> None:
+    args = [item for key, value in kwargs.items() for item in (f"--{key}", value)]
+    config = confarg.load(Config, args=args)
+```
+
+### Integration with `argparse`
+
+When using `argparse` from the standard library, `confarg` can go the extra mile and provide help for some of the arguments it owns.
+
+To do so, we first populate the parser using `confarg.populate_parser`. Then, we replace the call to `confarg.load` with a specific function named `confarg.from_namespace`, which is designed to consume namespace objects produced by `argparse`.
+
+```python
+def main() -> None:
+    parser = ArgumentParser(allow_abbrev=False)
+    confarg.populate_parser(Config, parser)
+    parser.add_argument("--extra_param")
+    namespace = parser.parse_args()
+    config = confarg.from_namespace(namespace, Config)
+```
+
+This provides online help which can be, as noted earlier, both verbose and yet missing many options. (Consequently, one may argue that not populating the parser is also an option.)
+
+## Next steps
+
+We have more than scratched the surface, and you should have enough knownledge to cover most of your needs.
+
+Again, all of the examples above and more are in the `examples/` folder, which is a great way to discover and experiment with the library features.
+
+A documentation is also currently being written at https://confarg.github.io/confarg/.
