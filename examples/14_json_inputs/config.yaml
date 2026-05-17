@@ -1,0 +1,4 @@
+db:
+  class: configs.SQLiteConfig
+  dbpath: db.sqlite
+rate_limits: [100, 500]
