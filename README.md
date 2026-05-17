@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="confarg" />
+</p>
+
 # A tool to manage complex configurations
 
 > Load and resolve complex configurations from files, environment variables and command line arguments. Keep your data structures and favorite CLI library.
