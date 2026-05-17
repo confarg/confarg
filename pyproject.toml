@@ -2,9 +2,6 @@
 authors = [
     { name = "confarg", email = "280620574+confarg@users.noreply.github.com" },
 ]
-dependencies = [
-    "pytest-markdown-console>=0.0.1.dev1",
-]
 description = "Load and resolve complex configurations from files, environment variables and command line arguments. Keep your favorite CLI library."
 license = "MPL-2.0"
 name = "confarg"
@@ -30,6 +27,7 @@ dev = [
     "mkdocstrings>=1.0.4",
     "pre-commit>=4.5.1",
     "pytest-cov>=7.0.0",
+    "pytest-markdown-console>=0.0.1.dev2",
     "pytest>=8.0",
     "pyyaml>=6.0",
     "tomli-w>=1.0",

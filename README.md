@@ -1,3 +1,4 @@
+<!-- pytest-markdown-console-file: notest -->
 <p align="center">
   <img src="docs/assets/banner.svg" alt="confarg" />
 </p>
@@ -85,46 +86,46 @@ This allows you to construct a `DBConfig` object by collecting data from three p
 
 1. From a configuration file. By passing `--config <config_file>` to your app, `confarg` will load the content of the file and fill the `DBConfig` object. For example, a config file could look like so:
 
-   ```yaml
-   # config.yaml
-   host: example.com
-   port: 1234
-   name: mydb
-   ```
+    ```yaml
+    # config.yaml
+    host: example.com
+    port: 1234
+    name: mydb
+    ```
 
-   You would then call your application as
+    You would then call your application as
 
-   ```console notest
-   $ myapp.py --config config.yaml
-   DBConfig(host='example.com', port=1234, name='mydb')
-   ```
+    ```console
+    $ myapp.py --config config.yaml
+    DBConfig(host='example.com', port=1234, name='mydb')
+    ```
 
-   Configuration files in TOML and JSON formats are also supported.
+    Configuration files in TOML and JSON formats are also supported.
 
-   > You can change the default `config` flag to something else using the `config_flag` parameter.
+    > You can change the default `config` flag to something else using the `config_flag` parameter.
 
 2. From environment variables. You can declare
 
-   ```properties
-   MYAPP_HOST=example.com
-   MYAPP_PORT=1234
-   MYAPP_NAME=mydb
-   ```
+    ```properties
+    MYAPP_HOST=example.com
+    MYAPP_PORT=1234
+    MYAPP_NAME=mydb
+    ```
 
-   for the same effect.
+    for the same effect.
 
-   > Note that the environment variable prefix of your app should actually be passed to `confarg.load` like so:
-   >
-   > ```python
-   > db_config = confarg.load(DBConfig, env_prefix="MYAPP_")
-   > ```
+    > Note that the environment variable prefix of your app should actually be passed to `confarg.load` like so:
+    >
+    > ```python
+    > db_config = confarg.load(DBConfig, env_prefix="MYAPP_")
+    > ```
 
 3. From command line arguments.
 
-   ```console notest
-   $ my_app --host example.com --port 1234 --name mydb
-   DBConfig(host='example.com', port=1234, name='mydb')
-   ```
+    ```console
+    $ my_app --host example.com --port 1234 --name mydb
+    DBConfig(host='example.com', port=1234, name='mydb')
+    ```
 
 ### Progressive build-up
 
@@ -142,7 +143,7 @@ port: 1234
 
 and provide the schema name from the command line:
 
-```console notest
+```console
 $ myapp.py --config partial_config.yaml --name mydb
 DBConfig(host='example.com', port=1234, name='mydb')
 ```
@@ -157,7 +158,7 @@ Configuration data is read in the following order, later read overwriting existi
 
 This allows for surgical modifications of configuration files. For example, one could overwrite the schema configuration from our existing `full_config` from the command line like so:
 
-```console notest
+```console
 $ # Overwrite the schema name defined in the config file from the command line
 $ myapp.py --config config.yaml --name otherdb
 DBConfig(host='example.com', port=1234, name='otherdb')
@@ -187,7 +188,7 @@ type DBConfig = SQLiteConfig | DBServerConfig
 
 `confarg` can handle this new union type and figure out which configuration is desired based on the arguments it got:
 
-```console notest
+```console
 $ # Pass DBServerConfig parameters, and you get a DBServerConfig
 $ myapp.py --host example.com --port 1234 --name mydb
 DBServerConfig(host='example.com', port=1234, name='mydb')
@@ -206,7 +207,7 @@ Even when disambiguation is possible, it may not be obvious to the human eye whi
 
 Therefore, by necessity or for the sake of clarity, you can provide the class path of the required configuration by using the `class` tag, like so
 
-```console notest
+```console
 $ # Explicitly ask for a SQLiteConfig
 $ myapp.py --class myapp.SQLiteConfig --dbpath db.sqlite
 SQLiteConfig(dbpath='db.sqlite')
@@ -214,7 +215,7 @@ SQLiteConfig(dbpath='db.sqlite')
 
 One example where it is necessary to provide the `class` path is to overwrite the configuration with a new class. Without it, command line arguments are added to the configuration, resulting in an invalid input.
 
-```console notest
+```console
 $ # Config file contains a DBServerConfig
 $ myapp.py --config db_server.yaml
 DBServerConfig(host='example.com', port=1234, name='mydb')
@@ -250,7 +251,7 @@ This allows configurations to be easily extensible. Contrast with unions, where 
 
 The downside is that the concrete class must be tagged, as `confarg` cannot discover classes derived from a given class.
 
-```console notest
+```console
 $ # Fails:  derived class not specified
 $ uv run myapp.py --dbpath db.sqlite
 ...
@@ -282,7 +283,7 @@ Our DB configuration, which used to be the root configuration, is now located un
 
 For command line arguments, we follow the common convention of using dot-separated paths to address nested fields. Previous command line arguments for `DBConfig` are now prefixed by `db.`, like so:
 
-```console notest
+```console
 $ myapp.py --db.class myapp.SQLiteConfig --db.dbpath db.sqlite
 Config(db=SQLiteConfig(dbpath='db.sqlite'), log_level='INFO')
 ```
@@ -300,7 +301,7 @@ db:
 
 and is used just like before:
 
-```console notest
+```console
 $ myapp.py --config config.yaml
 Config(db=DBServerConfig(host='example.com', port=1234, name='mydb'),
        log_level='DEBUG')
@@ -368,7 +369,7 @@ resources:
   max_heap_size_mb: ${int(resources.memory_gb * 1024 * 0.8)}
 ```
 
-```console notest
+```console
 $ myapp.py --config expression_config.yaml
 Config(db=SQLiteConfig(dbpath='db.sqlite'),
        resources=Resources(cpu_count=4, memory_gb=16, max_heap_size_mb=13107),
@@ -377,7 +378,7 @@ Config(db=SQLiteConfig(dbpath='db.sqlite'),
 
 Note that variable interpolation occurs after all configuration data is read. This means here that you can override `memory_gb` from the command line, and `max_heap_size_mb` will be adjusted accordingly, even though the expression is defined in the configuration file.
 
-```console notest
+```console
 $ # Max heap is recomputed according to the expression in the config file
 $ myapp.py --config expression_config.yaml --resources.memory_gb 8
 Config(db=SQLiteConfig(dbpath='db.sqlite'),
@@ -395,7 +396,7 @@ Some configuration components may even be generated automatically, in which case
 
 From the command line, the `--config` flag can be suffixed with a key path to load configurations there. For example,
 
-```console notest
+```console
 # Load a config file specific to the `db` key
 $ myapp.py --config.db db_config.yaml
 Config(db=DBServerConfig(host='example.com', port=1234, name='mydb'), log_level='INFO')
@@ -403,7 +404,7 @@ Config(db=DBServerConfig(host='example.com', port=1234, name='mydb'), log_level=
 
 A similar pattern applies to environment variables:
 
-```console notest
+```console
 $ MYAPP_CONFIG_DB=db_config.py myapp.py
 Config(db=DBServerConfig(host='example.com', port=1234, name='mydb'), log_level='INFO')
 ```
