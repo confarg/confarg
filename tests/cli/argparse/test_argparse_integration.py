@@ -20,6 +20,7 @@ from confarg.cli.argparse import FieldMeta, from_namespace, make_parser, merge_n
 from confarg.cli.argparse._build import build_static_flags
 from confarg.cli.argparse._namespace import _collect_ns_fields
 from confarg.cli.argparse._spec import _get_field_docstrings
+from confarg.exceptions import TypeCoercionError
 from confarg.typedload._coerce import _LEAF_COERCIONS
 
 # ---------------------------------------------------------------------------
@@ -945,22 +946,13 @@ class TestInheritanceDispatch:
         assert result.host == "db.example.com"
         assert result.port == 5432
 
-    def test_from_namespace_sqlite_no_class_tag(self) -> None:
-        """from_namespace infers the correct subclass from field presence alone."""
+    def test_from_namespace_no_class_tag_raises(self) -> None:
+        """from_namespace raises TypeCoercionError when a base class has subclasses but no --class is given."""
         parser = argparse.ArgumentParser(allow_abbrev=False)
         populate_parser(_BaseDB, parser, config_flag="")
         ns = parser.parse_args(["--dbpath", "/var/db/app.sqlite"])
-        result = from_namespace(_BaseDB, ns, env={})
-        assert isinstance(result, _SQLiteDB)
-        assert result.dbpath == "/var/db/app.sqlite"
-
-    def test_from_namespace_base_fallback_no_class_tag(self) -> None:
-        """from_namespace falls back to the base class when no subclass fields are given."""
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(_BaseDB, parser, config_flag="")
-        ns = parser.parse_args([])
-        result = from_namespace(_BaseDB, ns, env={})
-        assert result == _BaseDB()
+        with pytest.raises(TypeCoercionError, match="discriminator"):
+            from_namespace(_BaseDB, ns, env={})
 
 
 class TestMakeParser:
