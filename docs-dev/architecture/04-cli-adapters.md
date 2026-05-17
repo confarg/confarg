@@ -332,10 +332,13 @@ vanilla-only until PR #72.
 `--<list>+` with nothing after it is a legal, meaningful command: it appends no items and
 leaves whatever the lower-priority sources put in the list
 (`_parse_cli._handle_append_token`, which consumes tokens until the next flag and is content
-with none). It is the *only* flag family that stands bare — every other `nargs="*"` spec
-(`--config`, `--config.<path>+`, a collection element `--f.N`) still reports `Missing value`
-when vanilla finds no token, so "zero or more" is the append's own shape, not what `"*"`
-means everywhere.
+with none). It is not quite the *only* flag family that stands bare: a varlen list's own
+`--<list>` takes zero tokens too, and clears the list. What the two share is the collection —
+every other `nargs="*"` spec (`--config`, `--config.<path>+`, a collection element `--f.N`)
+still reports `Missing value` when vanilla finds no token, so "zero or more" belongs to the
+varlen collection flags rather than to what `"*"` means everywhere. The rule below was applied
+to the append alone, so the clicklike front-ends now accept a bare `--input+` and still reject a
+bare `--input` (BUG-38).
 
 Neither clicklike framework can express a flag that takes zero *or* more tokens: click and
 typer fix an option's token count when the option is built, and the `multiple=True` the
@@ -490,3 +493,16 @@ and typer (`--tags a --tags b`), either for cyclopts. This is an approved diverg
 click and inherited by typer's fork of it; tests keep it visible
 ([12](12-testing.md#list-syntax-split)). The append/delete
 ordering on top is shared.
+
+What the approval covers is the **spelling** — which of the two forms a framework accepts — and
+not what a repeated flag *means*. The two came apart unnoticed: `--tags a --tags b` builds
+`['a', 'b']` under click, typer and cyclopts and `['b']` under vanilla and argparse, with no
+diagnostic either way, so the repeated line the click and typer tutorials teach loses every value
+but the last when it is pasted into a vanilla app. That is an unapproved gap rather than a second
+divergence (BUG-37), and it resolves towards accumulation: last-wins is unreachable for the
+clicklike front-ends — repetition being their only multi-token spelling, taking just the final
+occurrence would leave a click user no way to write `['a', 'b']` at all — so `--f x --f y` reads
+as `--f x y` everywhere.
+
+Neither axis is the `+` suffix, which names the merge axis instead and is shared by all three
+channels ([10](10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling)).

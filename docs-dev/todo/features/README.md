@@ -29,5 +29,6 @@ has no design yet, so deciding whether to do it at all is the next actionable st
 | [FEAT-15 — No way to inspect the flags of a class the tag has not named yet](FEAT-15-inspect-flags-of-unnamed-class.md) | M | low | behavior |
 | [FEAT-16 — Let `__cast__` name a leaf type by dotted path](FEAT-16-dotted-cast-names.md) | M | medium | behavior |
 | [FEAT-17 — An end-of-options separator (`--`)](FEAT-17-end-of-options-separator.md) | M | medium | behavior |
+| [FEAT-18 — The environment channel has no append spelling](FEAT-18-no-append-spelling-in-the-environment.md) | M | low | behavior |
 
 <!-- tickets:end -->
