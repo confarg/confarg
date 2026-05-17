@@ -37,6 +37,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-142 — A namedtuple built from a dict accepts index keys the CLI refuses](BUG-142-a-namedtuple-built-from-a-dict-accepts-index-keys-the-cli-refuses.md) | S | medium | config |
 | [BUG-144 — The refusal of a method on a non-string reads "a int"](BUG-144-a-method-on-a-non-string-reads-a-int.md) | S | low | behavior |
 | [BUG-145 — An expression that parses but nests past the recursion limit crashes the walkers](BUG-145-an-expression-that-parses-but-nests-past-the-recursion-limit-crashes-the-walkers.md) | M | high | behavior |
-| [BUG-146 — The alternative-directive notes in `19_bindings` exercise two of the five front-ends](BUG-146-alternative-directive-notes-cover-two-front-ends.md) | S | low | none |
+| [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | L | high | config |
 
 <!-- tickets:end -->
