@@ -2411,7 +2411,7 @@ class TestBuildCallableSpecs:
     def test_build_dynamic_flags_exception_returns_empty(self) -> None:
         """build_dynamic_flags returns [] on any internal exception."""
         # Passing a non-type target causes an internal error; result is []
-        result = build_dynamic_flags(None, [])  # ty: ignore[invalid-argument-type]  # deliberately passing None to exercise internal error-handling
+        result = build_dynamic_flags(None, [])  # deliberately passing None to exercise internal error-handling
         assert result == []
 
     def test_resolve_struct_struct_fields_raises(self) -> None:

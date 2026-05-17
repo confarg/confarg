@@ -327,7 +327,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type c
 
 
 def from_namespace(  # noqa: PLR0913
-    target: type,
+    target: object,
     ns: argparse.Namespace,
     *,
     union_tag: str = _defaults.UNION_TAG,

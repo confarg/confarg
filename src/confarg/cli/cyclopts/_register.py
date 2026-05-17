@@ -135,7 +135,7 @@ def load_flags_into_app(
 
 
 def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command signatures; all params are keyword-only with sensible defaults
-    target: type,
+    target: object,
     app: cyclopts.App,
     *,
     union_tag: str = _defaults.UNION_TAG,

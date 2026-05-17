@@ -44,7 +44,7 @@ def _flat_from_ctx(ctx: click.Context) -> dict[str, Any]:
 
 
 def from_context(  # noqa: PLR0913
-    target: type,
+    target: object,
     ctx: click.Context,
     *,
     union_tag: str = _defaults.UNION_TAG,
