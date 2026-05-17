@@ -23,6 +23,11 @@ Config(value1=True, value2=False)
 
 This should not be too surprising to anyone used to CLIs. Let's review in more detail some specific coercion rules for scalar types in confarg.
 
+Let's now review how scalar types are coerced from environment variables and command line arguments.
+
+> [!NOTE]
+> Coercion in configuration files is handled by the specification of the file format it is saved as.
+
 ## Coercion to `float`
 
 Floats can be declared in an array of standard representations.

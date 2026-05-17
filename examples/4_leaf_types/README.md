@@ -32,6 +32,50 @@ $ uv run path_value.py --value /foo/bar.txt
 Config(value=Path('/foo/bar.txt'))
 ```
 
+## Types
+
+Types can be specified as leaf types. Take this configuration:
+
+```python
+@dataclass
+class Config:
+    value: type
+```
+
+You can pass a builtin type, or any other type by its fully-qualified dotted path.
+
+```console
+$ uv run type.py --value int
+Config(value=<class 'int'>)
+$ uv run type.py --value __main__.Config
+Config(value=<class '__main__.Config'>)
+```
+
+When a class is specified, this class or any class that derives from it can be passed.
+
+Let modify our configuration:
+
+```python
+@dataclass
+class Config:
+    value: type[BaseClass]
+```
+
+```console
+$ # BaseClass can be passed
+$ uv run base_class.py --value __main__.BaseClass
+Config(value=<class '__main__.BaseClass'>)
+$ # A derived class can also be passed
+$ uv run base_class.py --value __main__.DerivedClass
+Config(value=<class '__main__.DerivedClass'>)
+$ # Error: a type that is not derived from BaseClass gets rejected
+$ uv run base_class.py --value __main__.UnrelatedClass
+...
+```
+
+## Callables
+
+Callables are also accepted as a special kind of leaf type. However, there are more involved than other leaf types, and we will spend three tutorials to go in depth into them in [Tutorial #18](https://confarg.github.io/confarg/examples/18_callables/), [Tutorial #19](https://confarg.github.io/confarg/examples/19_bindings/) and [Tutorial #20](https://confarg.github.io/confarg/examples/20_factories/).
 
 ## Custom leaf types
 

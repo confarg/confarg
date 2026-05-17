@@ -25,6 +25,9 @@ Config(input=inf)
 $ # "no" gets coerced into `False` for target type `str | bool`
 $ uv run str_or_bool.py --input no
 Config(input=False)
+$ # "int" gets coerced into type `int` for target type `str | type`
+$ uv run str_or_type.py --value int
+Config(value=<class 'int'>)
 ```
 
 > [!NOTE]
