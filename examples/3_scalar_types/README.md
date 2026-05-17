@@ -23,15 +23,15 @@ Config(value1=True, value2=False)
 
 This should not be too surprising to anyone used to CLIs. Let's review in more detail some specific coercion rules for scalar types in confarg.
 
-## Coercion of `float`
+## Coercion to `float`
 
-Floats are coerced in a standard fashion.
+Floats can be declared in an array of standard representations.
 
 ```console
-$ # Standard float representation
+$ # Decimal representation
 $ uv run float_value.py --value 1.5
 Config(value=1.5)
-$ # The leading 0 can be omitted
+$ # Note that the leading 0 can be omitted
 $ uv run float_value.py --value .5
 Config(value=0.5)
 $ # Scientific notation is also fine
@@ -55,7 +55,7 @@ $ uv run float_value.py --value -inf
 Config(value=-inf)
 ```
 
-## Coercion of `int`
+## Coercion to `int`
 
 Integers are also coerced in a standard fashion, handling a variety of non-decimal representations.
 
@@ -74,7 +74,7 @@ $ uv run int_value.py --value 0b110
 Config(value=6)
 ```
 
-## Coercion of `bool`
+## Coercion to `bool`
 
 The coercion of booleans is consistent between environment variables, command-line arguments, and configuration files.
 
@@ -108,7 +108,7 @@ confarg.exceptions.UnknownArgumentError: Unknown argument: --no-value1 (field 'n
 
 On top of being consistent with environment variables and configuration files, we will see later why this helps us in disambiguation scenarios.
 
-## Coercion of `None`
+## Coercion to `None`
 
 The value can be set to `None` using the string `none` or `null`. As for booleans, the value must be explicitly set.
 

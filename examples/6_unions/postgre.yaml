@@ -1,0 +1,3 @@
+host: example.com
+name: mydb
+port: 5432
