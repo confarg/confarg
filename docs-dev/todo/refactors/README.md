@@ -46,5 +46,8 @@ different board.
 | [REF-62 — Hidden backend blocks are replayed twice per section in the example READMEs](REF-62-duplicated-hidden-backend-blocks-in-examples.md) | S | low | none |
 | [REF-63 — `13_collection_items` carries an empty section and a misplaced tuple remark](REF-63-collection-items-readme-empty-section-and-misplaced-remark.md) | S | low | none |
 | [REF-64 — The clicklike completion tests assert that nothing was added](REF-64-completion-tests-assert-nothing-was-added.md) | S | medium | none |
+| [REF-65 — `cli/_collect.py` re-implements the token shaping `_parse_cli` now owns](REF-65-collect-reimplements-the-token-shaping.md) | S | medium | none |
+| [REF-66 — the pinned ruff and the project's own ruff disagree](REF-66-pinned-ruff-disagrees-with-the-project-ruff.md) | S | low | none |
+| [REF-67 — a console block is duplicated in the collections tutorial](REF-67-duplicated-console-block-in-the-collections-tutorial.md) | S | low | none |
 
 <!-- tickets:end -->

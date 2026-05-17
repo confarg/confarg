@@ -22,7 +22,10 @@ List-field CLI syntax differs between loaders:
 - ``CycloptsLoader``: accepts both forms
 
 This difference is intentional and must be visible in tests: write separate
-test functions for each convention rather than hiding the difference.
+test functions for each convention rather than hiding the difference. It is a
+difference of *spelling* only -- repeating such a flag accumulates its tokens on
+every loader, so that belongs to ``loader`` and not to ``REPEATED_FLAG_LOADERS``
+(docs-dev/architecture/12-testing.md#list-syntax-split).
 
 A second, independent divergence has the same membership today but is not the
 same rule: a fixed-arity flag (``tuple[X, Y]``, namedtuple) also accepts one

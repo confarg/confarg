@@ -175,9 +175,9 @@ and the list it builds then replaces the file at CLI priority. No front-end, cli
 express an append by repeating a flag — which is exactly why the operator is spelled separately.
 
 The spelling axis diverges per framework and always has
-([04](04-cli-adapters.md#list-syntax-divergence)). The merge axis must not, which is what makes
-`--f x --f y` reading as `--f x y` everywhere the target rather than last-wins in two front-ends
-(BUG-37).
+([04](04-cli-adapters.md#list-syntax-divergence)). The merge axis does not, which is why `--f x --f y`
+reads as `--f x y` in every front-end instead of last-wins in two of them (BUG-37): repetition is a
+spelling, and a spelling never decides whether the lower-priority value survives.
 
 The environment is the one channel the suffix does not reach — an append has no env spelling at
 all, though a delete does (FEAT-18).

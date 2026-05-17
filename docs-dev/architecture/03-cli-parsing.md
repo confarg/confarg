@@ -31,6 +31,12 @@ accepted as a dict key.
   fixed-length ones consume exactly their arity. A value-taking flag always needs its value,
   struct flags included: `--db` with nothing after it is `Missing value for '--db'`
   ([10](10-design-decisions.md#a-whole-value-flag-needs-its-value)).
+- **Repeating** a multi-token flag extends it rather than replacing it: `--f x --f y` is a second
+  spelling of `--f x y`, which is what the clicklike front-ends have no other way to write
+  ([04](04-cli-adapters.md#list-syntax-divergence)). The occurrences are joined as *tokens*
+  (`_ParseCtx.multi_tokens`, keyed by field path) and the accumulated list is shaped once, by
+  `_varlen_value` for a varlen collection and by `_union_seq_value` for a union with a sequence
+  variant. A fixed-arity flag takes one value and is not part of this: repeating it is last-wins.
 - **Fixed-length** means `tuple[X, Y]` *or* a namedtuple: both are sequences of a known
   arity, so one function answers "how many tokens, of which types?" for both,
   `_types._fixed_seq_types` — and `_is_seq_variant` counts a namedtuple as sequence-shaped
@@ -41,6 +47,11 @@ accepted as a dict key.
   and decode the same bare flags ([04](04-cli-adapters.md#whole-value-flags)). The `{`-prefix
   guard runs *before* the arity path, so a namedtuple takes a whole object without ever
   competing with its own positional form.
+- The `[` half is a **whole-value** spelling, so `_lone_json_array` grants it only to a flag
+  carrying exactly one token: `--tags '["a","b"]'` decodes, and `--tags '["a","b"]' z` or a second
+  occurrence makes every token an ordinary item. On a multi-token flag the question is therefore
+  asked of the *accumulated* tokens, which is what a framework's own collection already hands
+  `_collect._json_array_override` ([04](04-cli-adapters.md#list-syntax-divergence)).
 - Leaves are coerced eagerly with `_try_coerce` so the merged dict has the same types
   whichever channel supplied them (and so CLI numbers work inside expressions).
 - Bool fields take an explicit value: `--verbose true` ([10](10-design-decisions.md#explicit-boolean-values)).
@@ -114,7 +125,25 @@ their own new item.
 
 A varlen `--f` is absent from the table because it is not a patch: it replaces the whole list,
 and with no token at all it clears it — the one other flag family that stands bare
-([04](04-cli-adapters.md#a-bare-append)).
+([04](04-cli-adapters.md#a-bare-append)). Repeating it extends the list it is building rather than
+appending to the lower-priority sources, so it is still exactly one replacement however many
+occurrences spell it; a plain occurrence therefore discards the patch ops recorded before it, which
+is what makes `--f --f+ x` a reset followed by an append.
+
+Three spellings therefore clear a list, and they are not interchangeable:
+
+| Spelling | What it does |
+|---|---|
+| `--f a b` | replaces the lower-priority list outright — the ordinary "start over" |
+| `--f` | replaces it with `[]`; rejected by click and typer, which cannot express a value-less multi-token option (BUG-38) |
+| `--f-` | drops the key, so the field falls back to its **default** rather than to `[]` |
+
+`--f-` is the only one every front-end spells, because a delete registers value-less. It also ends
+the list being built, so it resets the token accumulation: `--f x --f- --f a` is `['a']`, not
+`['x', 'a']`. An *index* delete (`--f.1-`) is a patch inside the list and leaves the accumulation
+alone. The adapters re-assert a delete after the merge, so there `--f- --f a` is `[]` and not
+`['a']` ([04](04-cli-adapters.md#a-patch-op-joins-the-values-the-framework-collected)) — an open
+gap, not this rule.
 
 `_is_collection_patch_path` answers "does this path index a list/tuple/set or key a dict?".
 It is the dividing line between what a framework's flat parse result can represent and what

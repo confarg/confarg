@@ -292,17 +292,6 @@ class TestCliCornerCases:
         )
         assert result.debug is False
 
-    def test_repeated_varlen_collection_last_wins(self) -> None:
-        """Repeated --items overwrites previous values (last wins)."""
-        WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(
-            WithList,
-            argv=["--items", "1", "2", "--items", "3", "4"],
-            env={},
-        )
-        # Second --items replaces the first
-        assert result.items == [3, 4]
-
     def test_varlen_collection_stops_at_flag(self) -> None:
         """Variable-length collection stops consuming at the next --flag."""
         WithList = make_target("items", list[str], default_factory=list)
@@ -311,8 +300,8 @@ class TestCliCornerCases:
             argv=["--items", "a", "b", "--items", "c", "d"],
             env={},
         )
-        # Second --items overwrites the first (last wins)
-        assert result.items == ["c", "d"]
+        # Each occurrence stops at the next flag; the two then add up
+        assert result.items == ["a", "b", "c", "d"]
 
     def test_negative_number_as_value(self) -> None:
         """Negative numbers like -5 are not treated as flags."""

@@ -73,6 +73,12 @@ def _register_spec(
     # accepts both `--pair 13 42` and `--pair '[13, 42]'`.  The arity is then confarg's
     # to enforce, in build() (docs-dev/architecture/04-cli-adapters.md#whole-value-flags).
     nargs = "*" if spec.whole_value else spec.nargs
+    if spec.accumulates:
+        # A plain store keeps only the last occurrence, which would make `--tags x --tags y`
+        # mean something different here than everywhere else.  `default=SUPPRESS` survives
+        # it: the first occurrence extends nothing, so a bare flag still yields []
+        # (docs-dev/architecture/04-cli-adapters.md#list-syntax-divergence).
+        common["action"] = "extend"
     action = target.add_argument(f"--{spec.name}", type=str, nargs=nargs, **common)
 
     if spec.completer is not None:

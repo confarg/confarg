@@ -369,7 +369,8 @@ passes to `App.parse_args`. In click and typer the *host* calls the command, so 
 on the options (`_clicklike.StandsBareMixin`): `add_to_parser` arms a filter on the parser
 instance, which both frameworks build fresh per parse. A hook on the command would not survive
 the `params` copying that groups and decorators do routinely. argparse and vanilla are exempt:
-`nargs="*"` already takes zero tokens and repeats, so they parse the argv as typed.
+`nargs="*"` already takes zero tokens and accepts a second occurrence, so they parse the argv as
+typed.
 
 "Carries an item" is asked with `_parse_cli._looks_like_flag`, the same value/flag split vanilla
 consumes by, so the frameworks take exactly the tokens vanilla takes. That matters for
@@ -519,14 +520,37 @@ click and inherited by typer's fork of it; tests keep it visible
 ordering on top is shared.
 
 What the approval covers is the **spelling** — which of the two forms a framework accepts — and
-not what a repeated flag *means*. The two came apart unnoticed: `--tags a --tags b` builds
+not what a repeated flag *means*. The two once came apart unnoticed: `--tags a --tags b` built
 `['a', 'b']` under click, typer and cyclopts and `['b']` under vanilla and argparse, with no
-diagnostic either way, so the repeated line the click and typer tutorials teach loses every value
-but the last when it is pasted into a vanilla app. That is an unapproved gap rather than a second
-divergence (BUG-37), and it resolves towards accumulation: last-wins is unreachable for the
+diagnostic either way, so the repeated line the click and typer tutorials teach lost every value
+but the last when it was pasted into a vanilla app. That was an unapproved gap rather than a second
+divergence, and it resolved towards **accumulation** (BUG-37): last-wins is unreachable for the
 clicklike front-ends — repetition being their only multi-token spelling, taking just the final
-occurrence would leave a click user no way to write `['a', 'b']` at all — so `--f x --f y` reads
-as `--f x y` everywhere.
+occurrence would leave a click user no way to write `['a', 'b']` at all. So `--f x --f y` is a
+second spelling of `--f x y` in all five front-ends, and mixing the two spellings adds up
+(`--f x y --f z` → `['x', 'y', 'z']` wherever both are accepted).
+
+The rule holds for the multi-token **field** flags: a varlen collection, and a union with a
+sequence variant (`int | list[int]`, `str | tuple[str, str]` — the clicklike front-ends already
+accumulated on both). It stops at a fixed-arity flag (`tuple[X, Y]`, namedtuple), which takes one
+value and is last-wins on repetition everywhere
+([10](10-design-decisions.md#a-namedtuple-is-a-fixed-length-sequence)), and it is not the `+`
+suffix, which is a merge operator rather than a spelling (below).
+
+Two consequences follow from the accumulation being over **tokens**, not over shaped values:
+
+- vanilla joins the occurrences and shapes the result once, in `_parse_cli._varlen_value` /
+  `_union_seq_value`. A whole-value inline JSON array is therefore a *single-token* spelling
+  (`_lone_json_array`): `--tags '["a","b"]'` decodes, while `--tags '["a","b"]' --tags '["c"]'`
+  and `--tags '["a","b"]' z` are two ordinary items. The adapters were already answering it that
+  way, since `_collect._json_array_override` is handed everything a framework collected for the
+  flag and asks the same "is it alone?" question of that whole list.
+- argparse keeps only the last occurrence under a plain store, so a spec that accumulates asks for
+  `action="extend"` (`FlagSpec.accumulates`, set on those two field families alone —
+  `nargs="*"` is shared by seven flag families here and says nothing about repetition).
+  `default=argparse.SUPPRESS` survives it: a flag nobody typed stays off the Namespace, and a
+  first occurrence with no token still yields `[]`. click and typer accumulate already through
+  `multiple=True`, cyclopts through `consume_multiple`.
 
 Neither axis is the `+` suffix, which names the merge axis instead and is shared by all three
 channels ([10](10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling)).

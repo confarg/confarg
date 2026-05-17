@@ -49,7 +49,6 @@ from confarg._types import (
     _is_frozenset,
     _is_list,
     _is_namedtuple,
-    _is_seq_variant,
     _is_set,
     _is_struct,
     _is_struct_like,
@@ -609,6 +608,16 @@ class _ParseCtx:
     target: Any
     union_tag: str
     data: dict[str, Any] = field(default_factory=dict)
+    multi_tokens: dict[tuple[str, ...], list[str]] = field(default_factory=dict)
+    """Tokens every plain multi-token occurrence contributed, keyed by field path.
+
+    Repeating such a flag is a second spelling of listing its tokens in one go, so the
+    accumulated list — not the newest occurrence alone — is what gets shaped into the
+    stored value.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
 
 
 def _handle_delete_token(
@@ -636,6 +645,10 @@ def _handle_delete_token(
         if ft_check is None and not _is_dict_at_path(ctx.target, path, ctx.union_tag):
             msg = f"Unknown argument: {token!r} (field '{'.'.join(path)}' not found)"
             raise UnknownArgumentError(msg)
+        # A whole-field delete ends the value at this path, so a later multi-token occurrence
+        # starts a new list rather than extending the one the delete just discarded. An index
+        # delete is a patch *within* the list and leaves the accumulation alone.
+        ctx.multi_tokens.pop(tuple(path), None)
         _set_nested(ctx.data, path, DICT_DELETE)
 
 
@@ -716,8 +729,8 @@ def _consume_fixed_tuple_args(args: Sequence[str], i: int, tt: list[Any], path: 
     return i
 
 
-def _consume_union_seq_args(ctx: _ParseCtx, i: int, token: str, ft: Any, path: list[str]) -> int:
-    """Consume greedy space-separated args for a union with a sequence variant.
+def _union_seq_value(ft: Any, tokens: list[str], token: str) -> Any:
+    """Shape a union-with-sequence-variant field's accumulated tokens into its value.
 
     A single token is stored as a bare scalar when the union also has a scalar
     variant (so ``--input foo`` stays ``'foo'``); it is marked with
@@ -728,23 +741,21 @@ def _consume_union_seq_args(ctx: _ParseCtx, i: int, token: str, ft: Any, path: l
     deferred to ``construct``. No tokens builds the empty list when the union has
     a varlen variant (e.g. ``int | list[int]`` → ``[]``); otherwise it is a
     missing-value error.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#unions-with-sequence-variants
     """
-    args = ctx.argv
-    items: list[Any] = []
-    while i < len(args) and not _looks_like_flag(args[i]):
-        items.append(_StrToken(args[i]))
-        i += 1
-    if not items:
+    parsed = _lone_json_array(tokens)
+    if parsed is not None:
+        return parsed
+    if not tokens:
         if _union_has_varlen_variant(ft):
-            _set_nested(ctx.data, path, [])
-            return i
+            return []
         msg = f"Missing value for {token!r}. Usage: {token} <value>"
         raise ConfargError(msg)
-    if len(items) == 1 and _union_has_scalar_variant(ft):
-        _set_nested(ctx.data, path, _UnionSeqToken(items[0]))
-    else:
-        _set_nested(ctx.data, path, items)
-    return i
+    if len(tokens) == 1 and _union_has_scalar_variant(ft):
+        return _UnionSeqToken(_StrToken(tokens[0]))
+    return [_StrToken(t) for t in tokens]
 
 
 def _handle_scalar_root(args: list[str], i: int, token: str, target_r: Any, data: dict[str, Any]) -> int:
@@ -848,6 +859,58 @@ def _try_parse_json_list(arg: str) -> list[Any] | None:
     return parsed if isinstance(parsed, list) else None
 
 
+def _lone_json_array(tokens: list[str]) -> list[Any] | None:
+    """Return the decoded array when *tokens* is one inline JSON array, else None.
+
+    The inline array is a **whole-value** spelling, so it is only that when it stands
+    alone: a second token — from the same occurrence or a later one — makes every token
+    an ordinary item instead. Elements are returned raw (plain values, not
+    ``_StrToken``), which is what exempts them from the stealing rule and makes ``null``
+    expressible.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
+    if len(tokens) != 1 or not tokens[0].startswith("["):
+        return None
+    return _try_parse_json_list(tokens[0])
+
+
+def _varlen_value(ft: Any, tokens: list[str]) -> Any:
+    """Shape a varlen collection field's accumulated tokens into its stored value.
+
+    One inline JSON array standing alone is decoded as the whole value; otherwise every
+    token becomes an element, coerced eagerly to the element type so the merged dict
+    carries the same types whichever channel supplied them.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
+    parsed = _lone_json_array(tokens)
+    if parsed is not None:
+        return parsed
+    et = _elem_type(ft)
+    return [_try_coerce(et, _StrToken(t)) for t in tokens]
+
+
+def _consume_multi_tokens(ctx: _ParseCtx, i: int, path: list[str]) -> tuple[list[str], int]:
+    """Consume this occurrence's tokens and return every occurrence's, plus the new index.
+
+    Values run until the next flag. A repeated multi-token flag is a second spelling of
+    one carrying every token, so the occurrences are joined in argv order rather than the
+    newest replacing the rest.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
+    args = ctx.argv
+    tokens = ctx.multi_tokens.setdefault(tuple(path), [])
+    while i < len(args) and not _looks_like_flag(args[i]):
+        tokens.append(args[i])
+        i += 1
+    return tokens, i
+
+
 def _consume_collection_or_scalar(
     ctx: _ParseCtx,
     i: int,
@@ -857,36 +920,33 @@ def _consume_collection_or_scalar(
 ) -> int:
     """Consume collection (array/tuple/varlen) or scalar value; return new arg index."""
     args = ctx.argv
-    # JSON array → list / tuple / namedtuple / union-with-sequence-variant
-    is_collection = _is_seq_variant(ft) or _union_has_seq_variant(ft)
+    # Fixed-length sequence: one whole-value JSON array in place of its positional tokens.
+    # The multi-token families below decide the same thing on their accumulated tokens.
+    tt = _fixed_seq_types(ft)
     if (
-        is_collection
+        tt is not None
         and i < len(args)
         and not _looks_like_flag(args[i])
-        and args[i].startswith("[")
-        and (parsed := _try_parse_json_list(args[i])) is not None
+        and (parsed := _lone_json_array([args[i]])) is not None
     ):
         _set_nested(ctx.data, path, parsed)
         return i + 1
 
-    # Variable-length collection → consume until the next flag
+    # Variable-length collection → consume until the next flag, extending a prior occurrence
     if _is_varlen_collection(ft):
-        et = _elem_type(ft)
-        items: list[Any] = []
-        while i < len(args) and not _looks_like_flag(args[i]):
-            items.append(_try_coerce(et, _StrToken(args[i])))
-            i += 1
-        _set_nested(ctx.data, path, items)
+        tokens, i = _consume_multi_tokens(ctx, i, path)
+        _set_nested(ctx.data, path, _varlen_value(ft, tokens))
         return i
 
     # Fixed-length sequence (tuple[X, Y] or a namedtuple) → consume exact count
-    tt = _fixed_seq_types(ft)
     if tt is not None:
         return _consume_fixed_tuple_args(args, i, tt, path, ctx.data)
 
     # Union with a sequence variant → consume greedily (disambiguation deferred to construct)
     if _union_has_seq_variant(ft):
-        return _consume_union_seq_args(ctx, i, token, ft, path)
+        tokens, i = _consume_multi_tokens(ctx, i, path)
+        _set_nested(ctx.data, path, _union_seq_value(ft, tokens, token))
+        return i
 
     # Default: consume one scalar value
     if i >= len(args) or _looks_like_flag(args[i]):
