@@ -27,5 +27,6 @@ has no design yet, so deciding whether to do it at all is the next actionable st
 | [FEAT-13 — Struct types that are generic](FEAT-13-generic-struct-types.md) | L | high | behavior |
 | [FEAT-14 — Dataclass fields that are not `__init__` parameters](FEAT-14-dataclass-fields-outside-init.md) | L | high | behavior |
 | [FEAT-15 — No way to inspect the flags of a class the tag has not named yet](FEAT-15-inspect-flags-of-unnamed-class.md) | M | low | behavior |
+| [FEAT-16 — Let `__cast__` name a leaf type by dotted path](FEAT-16-dotted-cast-names.md) | M | medium | behavior |
 
 <!-- tickets:end -->

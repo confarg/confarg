@@ -11,8 +11,10 @@ Dev Notes:
 from __future__ import annotations
 
 import enum
+import warnings
 from typing import Any
 
+from confarg import _defaults
 from confarg._callable import _serialize_callable
 from confarg._cast import cast_name_for_type
 from confarg._types import (
@@ -36,9 +38,9 @@ from confarg._types import (
     _tuple_types,
     _union_args_no_none,
 )
-from confarg.exceptions import ConfargError
+from confarg.exceptions import ConfargError, ConfargWarning
 from confarg.typedload._coerce import _LEAF_SERIALIZERS, _is_struct_variant
-from confarg.typedload._construct import _disambiguate_struct
+from confarg.typedload._construct import _disambiguate_struct, construct
 
 
 def _serialize(
@@ -160,21 +162,81 @@ def _serialize_union(
     union_tag: str,
     tag_policy: TagPolicy,
 ) -> Any:
-    """Serialize a Union value, adding a class tag when needed."""
+    """Serialize a Union value, adding a class tag or a force-cast when needed.
+
+    A struct variant is disambiguated by the class tag; a leaf variant whose bare form another
+    variant would steal back is written as its ``{__cast__, __value__}`` spelling instead, and
+    warns when no cast can name it.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#casting-a-stolen-leaf
+    """
     variant_tp = _find_variant_type(tp, instance)
     if variant_tp is None:
         return instance
 
     serialized = _serialize(variant_tp, instance, path, union_tag, tag_policy)
 
-    if (
-        _is_struct_variant(variant_tp)
-        and isinstance(serialized, dict)
-        and (tag_policy == "always" or _needs_tag(tp, serialized, union_tag))
-    ):
-        serialized[union_tag] = f"{variant_tp.__module__}.{variant_tp.__name__}"
+    if _is_struct_variant(variant_tp):
+        if isinstance(serialized, dict) and (tag_policy == "always" or _needs_tag(tp, serialized, union_tag)):
+            serialized[union_tag] = f"{variant_tp.__module__}.{variant_tp.__name__}"
+        return serialized
 
+    if _reads_back(tp, instance, serialized, union_tag):
+        return serialized
+    cast = _cast_dict(variant_tp, serialized)
+    if _reads_back(tp, instance, cast, union_tag):
+        return cast
+    _warn_unpinnable_leaf(variant_tp, serialized, path)
     return serialized
+
+
+def _warn_unpinnable_leaf(variant_tp: Any, serialized: Any, path: str) -> None:
+    """Warn that a leaf no ``__cast__`` can name will read back as another union variant.
+
+    Args:
+        variant_tp: The variant the value was serialized as.
+        serialized: Its bare serialized form, written as-is.
+        path: Dot-separated field path for diagnostics.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#casting-a-stolen-leaf
+    """
+    warnings.warn(
+        f"Value at '{path or _defaults.ROOT_KEY}' will not read back as"
+        f" {getattr(variant_tp, '__name__', variant_tp)!r}: another union variant takes the"
+        f" dumped {type(serialized).__name__}, and no __cast__ names that type."
+        f" confarg.register_leaf_type makes it nameable.",
+        ConfargWarning,
+        stacklevel=2,
+    )
+
+
+def _reads_back(tp: Any, instance: Any, data: Any, union_tag: str) -> bool:
+    """Check that reading *data* back as *tp* produces *instance* again.
+
+    Runs the reader itself instead of modelling a second time what selects a variant, so the
+    answer follows whatever decides it — the stealing rule, declaration order or a tag.
+
+    Args:
+        tp: The declared type the value would be read back as.
+        instance: The value that produced *data*.
+        data: The serialized form to read back.
+        union_tag: The field name used as a discriminator tag in unions.
+
+    Returns:
+        True if construction yields a value of the same type that compares equal.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#casting-a-stolen-leaf
+    """
+    try:
+        back = construct(tp, data, union_tag=union_tag)
+        # `is` first: a value that passes through unchanged round-trips even when it does not
+        # compare equal to itself (float('nan')).
+        return type(back) is type(instance) and bool(back is instance or back == instance)
+    except (ConfargError, TypeError, ValueError):
+        return False
 
 
 def _serialize_tuple(
@@ -267,7 +329,23 @@ def _serialize_pinned(pin: _Pinned) -> dict[str, Any]:
     Dev Notes:
         docs-dev/architecture/05-types-and-construction.md#cast-pinning-in-files
     """
-    return {"__cast__": cast_name_for_type(pin.tp), "__value__": _serialize_untyped(pin.value)}
+    return _cast_dict(pin.tp, _serialize_untyped(pin.value))
+
+
+def _cast_dict(tp: Any, value: Any) -> dict[str, Any]:
+    """Spell *value* in the ``{__cast__, __value__}`` form ``_try_pinned_dict`` reads back.
+
+    Args:
+        tp: The type the value is pinned to.
+        value: The already-serialized value.
+
+    Returns:
+        The two-key cast dict.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#cast-pinning-in-files
+    """
+    return {"__cast__": cast_name_for_type(tp), "__value__": value}
 
 
 def _find_variant_type(tp: Any, instance: Any) -> Any | None:
