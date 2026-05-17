@@ -210,3 +210,21 @@ class TestMergeOpRoundTrip:
         confarg.dump_file(raw, out)
         assert confarg.merge(_WithOps, argv=[], env={}, files=[out]) == raw
         assert "__" in out.read_text()
+
+
+@dataclass
+class _WithData:
+    d: dict[str, int] = field(default_factory=dict)
+
+
+class TestAFileKeyIsData:
+    """A key ending in ``+`` or ``-`` is data in a file: a dict holding one survives dump and reload (FEAT-43)."""
+
+    @pytest.mark.parametrize("suffix", [".yaml", ".toml", ".json"])
+    def test_a_suffixed_key_survives_dump_file(self, tmp_path, suffix: str) -> None:
+        """``c++``, ``a-`` and ``0-`` are keys of the dict, written and read back as they are."""
+        raw = confarg.merge(_WithData, argv=["--d", '{"c++": 1, "a-": 2, "0-": 3}'], env={})
+        out = tmp_path / f"snap{suffix}"
+        confarg.dump_file(raw, out)
+        assert confarg.merge(_WithData, argv=[], env={}, files=[out]) == raw == {"d": {"c++": 1, "a-": 2, "0-": 3}}
+        assert confarg.load(_WithData, argv=[], env={}, files=[out]).d == {"c++": 1, "a-": 2, "0-": 3}

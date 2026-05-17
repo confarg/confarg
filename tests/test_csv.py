@@ -246,6 +246,35 @@ class TestLoadCsvBadOrient:
             load_csv(p, orient="diagonal")
 
 
+class TestLoadCsvReservedHeader:
+    """A header name that becomes a dict key may not be one confarg reserves, as in a decoded value (FEAT-43)."""
+
+    @pytest.mark.parametrize(
+        ("content", "orient"),
+        [
+            pytest.param("__unset__,b\ntrue,2\n", "rows", id="rows"),
+            pytest.param("__append__\n1\n", "columns", id="columns"),
+        ],
+    )
+    def test_a_reserved_name_used_as_a_key_is_refused(self, tmp_path: Path, content: str, orient: str) -> None:
+        """A data file is the file channel's data: its keys mean no op."""
+        p = write(tmp_path, "data.csv", content)
+        with pytest.raises(InvalidConfigFileError, match=r"spell a key confarg reserves.*'__"):
+            load_csv(p, orient=orient)
+
+    @pytest.mark.parametrize(
+        ("orient", "expected"),
+        [
+            pytest.param("rows", ["1", "2"], id="one-column"),
+            pytest.param("raw", [["__append__"], ["1"], ["2"]], id="raw"),
+        ],
+    )
+    def test_a_reserved_name_used_as_no_key_is_read(self, tmp_path: Path, orient: str, expected: Any) -> None:
+        """A one-column file builds a plain list, and a raw one reads no header: no name becomes a key."""
+        p = write(tmp_path, "data.csv", "__append__\n1\n2\n")
+        assert load_csv(p, orient=orient) == expected
+
+
 # ---------------------------------------------------------------------------
 # __include__ with dict form and orient option
 # ---------------------------------------------------------------------------

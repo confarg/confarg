@@ -293,55 +293,55 @@ class TestListAppendWithConfig:
 
 
 # ---------------------------------------------------------------------------
-# Config-file key+ append syntax
+# Config-file append: __append__
 # ---------------------------------------------------------------------------
 
 
 class TestConfigFileAppendSyntax:
-    """key+: in config files appends to a list instead of replacing it."""
+    """``__append__`` in a config file appends to a list instead of replacing it."""
 
     def test_yaml_append_to_base_list(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """users+: [...] in a YAML file appends to the list from another file."""
+        """``users: {__append__: [...]}`` in a YAML file appends to the list from another file."""
         WithList = make_target("users", list[str], default_factory=list)
         base = tmp_yaml("users: [alice, bob]\n", "base.yaml")
-        derived = tmp_yaml("users+: [frankenstein]\n", "derived.yaml")
+        derived = tmp_yaml("users: {__append__: [frankenstein]}\n", "derived.yaml")
         result = loader.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.users == ["alice", "bob", "frankenstein"]
 
     def test_yaml_append_no_base(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """users+: [...] with no prior list creates the list from scratch."""
+        """An append with no prior list creates the list from scratch."""
         WithList = make_target("users", list[str], default_factory=list)
-        path = tmp_yaml("users+: [alice, bob]\n")
+        path = tmp_yaml("users: {__append__: [alice, bob]}\n")
         result = loader.load(WithList, argv=[], env={}, files=[path])
         assert result.users == ["alice", "bob"]
 
     def test_yaml_append_then_cli_append(self, tmp_yaml) -> None:
-        """File key+ and CLI --users+ both append — CLI append is vanilla-only."""
+        """A file's ``__append__`` and CLI --users+ both append — CLI append is vanilla-only."""
         WithList = make_target("users", list[str], default_factory=list)
         base = tmp_yaml("users: [alice]\n", "base.yaml")
-        derived = tmp_yaml("users+: [bob]\n", "derived.yaml")
+        derived = tmp_yaml("users: {__append__: [bob]}\n", "derived.yaml")
         result = confarg.load(WithList, argv=["--users+", "carol"], env={}, files=[base, derived])
         assert result.users == ["alice", "bob", "carol"]
 
     def test_yaml_append_scalar(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """users+: single_value (scalar, not a list) appends it as one element."""
+        """``__append__: single_value`` (scalar, not a list) appends it as one element."""
         WithList = make_target("users", list[str], default_factory=list)
         base = tmp_yaml("users: [alice]\n", "base.yaml")
-        derived = tmp_yaml("users+: bob\n", "derived.yaml")
+        derived = tmp_yaml("users: {__append__: bob}\n", "derived.yaml")
         result = loader.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.users == ["alice", "bob"]
 
     def test_yaml_multiple_files_each_append(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """Three files each use key+: ; all items accumulate in order."""
+        """Three files each append; all items accumulate in order."""
         WithList = make_target("users", list[str], default_factory=list)
-        f1 = tmp_yaml("users+: [alice]\n", "f1.yaml")
-        f2 = tmp_yaml("users+: [bob]\n", "f2.yaml")
-        f3 = tmp_yaml("users+: [carol]\n", "f3.yaml")
+        f1 = tmp_yaml("users: {__append__: [alice]}\n", "f1.yaml")
+        f2 = tmp_yaml("users: {__append__: [bob]}\n", "f2.yaml")
+        f3 = tmp_yaml("users: {__append__: [carol]}\n", "f3.yaml")
         result = loader.load(WithList, argv=[], env={}, files=[f1, f2, f3])
         assert result.users == ["alice", "bob", "carol"]
 
     def test_yaml_nested_key_append(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """key+: works inside a nested dict (nested struct field)."""
+        """``__append__`` works inside a nested dict (nested struct field)."""
 
         @dataclass
         class Inner:
@@ -349,38 +349,38 @@ class TestConfigFileAppendSyntax:
 
         Target = make_target("inner", Inner)
         base = tmp_yaml("inner:\n  items: [1, 2]\n", "base.yaml")
-        derived = tmp_yaml("inner:\n  items+: [3]\n", "derived.yaml")
+        derived = tmp_yaml("inner:\n  items: {__append__: [3]}\n", "derived.yaml")
         result = loader.load(Target, argv=[], env={}, files=[base, derived])
         assert result.inner.items == [1, 2, 3]
 
     def test_yaml_include_chain_append(self, loader: ConfargLoader, tmp_path) -> None:
-        """users+: in derived file with __include__ appends after the included list."""
+        """An append in a derived file with __include__ appends after the included list."""
         base = tmp_path / "base.yaml"
         base.write_text("users: [alice, bob]\n")
         derived = tmp_path / "derived.yaml"
-        derived.write_text("__include__: ./base.yaml\nusers+: [frankenstein]\n")
+        derived.write_text("__include__: ./base.yaml\nusers: {__append__: [frankenstein]}\n")
         WithList = make_target("users", list[str], default_factory=list)
         result = loader.load(WithList, argv=[], env={}, files=[derived])
         assert result.users == ["alice", "bob", "frankenstein"]
 
     def test_json_append(self, loader: ConfargLoader, tmp_json) -> None:
-        """Append syntax works in JSON files via the "key+" notation."""
+        """An append is spelled ``{"__append__": [...]}`` in a JSON file."""
         WithList = make_target("items", list[int], default_factory=list)
         base = tmp_json('{"items": [1, 2]}', "base.json")
-        derived = tmp_json('{"items+": [3, 4]}', "derived.json")
+        derived = tmp_json('{"items": {"__append__": [3, 4]}}', "derived.json")
         result = loader.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == [1, 2, 3, 4]
 
     def test_toml_append_quoted_key(self, loader: ConfargLoader, tmp_toml) -> None:
-        """Append syntax works in TOML via quoted key ("key+" = [...]) since bare keys cannot contain +."""
+        """An append is spelled with an ``__append__`` key in a TOML table."""
         WithList = make_target("items", list[int], default_factory=list)
         base = tmp_toml("items = [1, 2]\n", "base.toml")
-        derived = tmp_toml('"items+" = [3, 4]\n', "derived.toml")
+        derived = tmp_toml("[items]\n__append__ = [3, 4]\n", "derived.toml")
         result = loader.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == [1, 2, 3, 4]
 
     def test_yaml_append_dict_item(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """key+: with a dict value appends that dict as a single list element."""
+        """``__append__`` with a dict value appends that dict as a single list element."""
 
         @dataclass
         class Server:
@@ -389,7 +389,7 @@ class TestConfigFileAppendSyntax:
 
         Target = make_target("servers", list[Server])
         base = tmp_yaml("servers:\n  - host: a\n    port: 1\n", "base.yaml")
-        derived = tmp_yaml("servers+:\n  host: b\n  port: 2\n", "derived.yaml")
+        derived = tmp_yaml("servers:\n  __append__:\n    host: b\n    port: 2\n", "derived.yaml")
         result = loader.load(Target, argv=[], env={}, files=[base, derived])
         assert len(result.servers) == 2
         assert result.servers[0].host == "a"
@@ -398,48 +398,32 @@ class TestConfigFileAppendSyntax:
 
 
 # ---------------------------------------------------------------------------
-# Config file deletion syntax: key- and list index N-
+# Config file deletion: __unset__ and __delete__
 # ---------------------------------------------------------------------------
 
 
 class TestConfigFileDeleteSyntax:
-    """Tests for key- and N- deletion syntax in YAML/TOML/JSON config files."""
+    """A node delete (``__unset__``) and an index delete (``__delete__``) in YAML/TOML/JSON config files."""
 
     def test_delete_field_resets_to_default(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """key-: ~ in a derived file removes the field set in the base file."""
+        """``name: {__unset__: true}`` in a derived file removes the field set in the base file."""
         base = tmp_yaml("name: from_base\n", "base.yaml")
-        derived = tmp_yaml("name-: ~\n", "derived.yaml")
+        derived = tmp_yaml("name: {__unset__: true}\n", "derived.yaml")
         result = loader.load(WithDefaults, argv=[], env={}, files=[base, derived])
         assert result.name == "default"
 
     def test_delete_required_field_raises(self, loader: ConfargLoader, tmp_yaml) -> None:
         """Deleting a required field via config file causes MissingFieldError."""
         base = tmp_yaml("name: cfg\ncount: 5\nrate: 1.0\nverbose: false\n", "base.yaml")
-        derived = tmp_yaml("name-: ~\n", "derived.yaml")
+        derived = tmp_yaml("name: {__unset__: true}\n", "derived.yaml")
         with pytest.raises(confarg.exceptions.MissingFieldError):
             loader.load(Flat, argv=[], env={}, files=[base, derived])
 
-    def test_delete_of_a_key_set_earlier_in_the_file_needs_nothing_below(self, tmp_yaml) -> None:
-        """A delete that met its key in its own document is done: with no file below it does not leak (BUG-98).
-
-        Found fixing BUG-227: the same delete beside an include met its key and was kept spent.
-        """
-        WithMap = make_target("data", dict[str, int], default_factory=dict)
-        path = tmp_yaml("data:\n  x: 1\n  y: 2\n  x-: ~\n")
-        assert confarg.load(WithMap, argv=[], env={}, files=[path]).data == {"y": 2}
-
-    def test_append_after_a_delete_of_a_key_set_earlier_ignores_the_file_below(self, tmp_yaml) -> None:
-        """``items``, then ``items-``, then ``items+`` in one file append to nothing, the lower file's list included."""
-        WithList = make_target("items", list[str], default_factory=list)
-        base = tmp_yaml("items: [a, b]\n", "base.yaml")
-        derived = tmp_yaml("items: [c]\nitems-: ~\nitems+: [d]\n", "derived.yaml")
-        assert confarg.load(WithList, argv=[], env={}, files=[base, derived]).items == ["d"]
-
     def test_delete_list_index_yaml(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """1-: ~ syntax removes the element at original index 1 from a list."""
+        """``__delete__: [1]`` removes the element at original index 1 from a list."""
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n  - c\n", "base.yaml")
-        derived = tmp_yaml("items:\n  1-: ~\n", "derived.yaml")
+        derived = tmp_yaml("items:\n  __delete__: [1]\n", "derived.yaml")
         result = loader.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "c"]
 
@@ -447,15 +431,15 @@ class TestConfigFileDeleteSyntax:
         """Multiple index deletions are applied to original positions simultaneously."""
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n  - c\n  - d\n", "base.yaml")
-        derived = tmp_yaml("items:\n  1-: ~\n  2-: ~\n", "derived.yaml")
+        derived = tmp_yaml("items:\n  __delete__: [1, 2]\n", "derived.yaml")
         result = loader.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "d"]
 
     def test_delete_list_index_toml(self, loader: ConfargLoader, tmp_toml) -> None:
-        r"""TOML requires quoting: "1-" = true syntax removes element at original index 1."""
+        """A TOML table spells the index delete with a ``__delete__`` key too."""
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_toml('items = ["a", "b", "c"]\n', "base.toml")
-        derived = tmp_toml('[items]\n"1-" = true\n', "derived.toml")
+        derived = tmp_toml("[items]\n__delete__ = [1]\n", "derived.toml")
         result = loader.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "c"]
 
@@ -463,7 +447,7 @@ class TestConfigFileDeleteSyntax:
         """Deleting an index and appending a value in a single file works."""
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n  - c\n", "base.yaml")
-        derived = tmp_yaml("items:\n  1-: ~\nitems+:\n  - d\n", "derived.yaml")
+        derived = tmp_yaml("items:\n  __delete__: [1]\n  __append__: [d]\n", "derived.yaml")
         result = loader.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "c", "d"]
 
@@ -471,7 +455,7 @@ class TestConfigFileDeleteSyntax:
         """Deleting an out-of-range index raises ConfargError."""
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n", "base.yaml")
-        derived = tmp_yaml("items:\n  5-: ~\n", "derived.yaml")
+        derived = tmp_yaml("items:\n  __delete__: [5]\n", "derived.yaml")
         with pytest.raises(confarg.exceptions.ConfargError):
             loader.load(WithList, argv=[], env={}, files=[base, derived])
 
@@ -479,8 +463,8 @@ class TestConfigFileDeleteSyntax:
         """Deletion in the middle of a multi-file include chain is applied correctly."""
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - x\n  - y\n  - z\n", "base.yaml")
-        mid = tmp_yaml("items:\n  1-: ~\n", "mid.yaml")
-        top = tmp_yaml("items+:\n  - w\n", "top.yaml")
+        mid = tmp_yaml("items:\n  __delete__: [1]\n", "mid.yaml")
+        top = tmp_yaml("items:\n  __append__: [w]\n", "top.yaml")
         result = loader.load(WithList, argv=[], env={}, files=[base, mid, top])
         assert result.items == ["x", "z", "w"]
 
@@ -493,43 +477,42 @@ class TestConfigFileDeleteSyntax:
         assert result.items == ["a", "b", "z"]
 
     def test_negative_index_delete_yaml(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """-1- key in YAML deletes the last element."""
+        """``__delete__: [-1]`` deletes the last element."""
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n  - c\n", "base.yaml")
-        derived = tmp_yaml("items:\n  -1-: ~\n", "derived.yaml")
+        derived = tmp_yaml("items:\n  __delete__: [-1]\n", "derived.yaml")
         result = loader.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "b"]
 
     @pytest.mark.parametrize(
         ("derived", "expected"),
         [
-            ("items-: ~\nitems+:\n  - x\n", ["x"]),
-            ("items-: ~\nitems:\n  '0': x\n", ["x"]),
-            ("items+:\n  - x\nitems-: ~\n", []),
+            pytest.param("items: {__unset__: true, __append__: [x]}\n", ["x"], id="append"),
+            pytest.param("items: {__unset__: true, '0': x}\n", ["x"], id="index-patch"),
         ],
     )
-    def test_op_after_a_whole_field_delete_in_one_file(
+    def test_op_beside_a_node_delete_applies_to_nothing_below(
         self,
         loader: ConfargLoader,
         tmp_yaml,
         derived: str,
         expected: list[str],
     ) -> None:
-        """A key written after ``items-`` in the same file applies to nothing below, as on the CLI (BUG-116)."""
+        """An op beside ``__unset__`` applies to nothing below, as one after ``--items-`` does (BUG-116)."""
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n", "base.yaml")
         top = tmp_yaml(derived, "derived.yaml")
         assert loader.load(WithList, argv=[], env={}, files=[base, top]).items == expected
 
-    def test_index_delete_after_a_whole_field_delete_in_one_file_has_no_base(
+    def test_index_delete_beside_a_node_delete_has_no_base(
         self,
         loader: ConfargLoader,
         tmp_yaml,
     ) -> None:
-        """``items-`` then ``items: {0-: ~}`` in one file fails as ``--items- --items.0-`` does (BUG-116)."""
+        """``__delete__`` beside ``__unset__`` fails as ``--items- --items.0-`` does (BUG-116)."""
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n", "base.yaml")
-        top = tmp_yaml("items-: ~\nitems:\n  0-: ~\n", "derived.yaml")
+        top = tmp_yaml("items: {__unset__: true, __delete__: [0]}\n", "derived.yaml")
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="requires a base list"):
             loader.load(WithList, argv=[], env={}, files=[base, top])
 
@@ -553,32 +536,32 @@ class _Items:
     grid: list[list[_Item]] = dataclasses.field(default_factory=list)
 
 
-class TestAListItemReadsTheShorthand:
-    """A dict standing in a file's list reads the merge shorthand as every other dict of the file does (BUG-237).
+class TestAListItemReadsTheOps:
+    """A dict standing in a file's list reads the merge ops as every other dict of the file does (BUG-237).
 
-    It has no layer below it, so it reads as a document merged over nothing. Only an item beside
-    an include read it, through the merge of the include's siblings.
+    It has no layer below it, so it reads as a document merged over nothing: a delete in it
+    deletes nothing and ends there. Only an item beside an include read them, through the merge
+    of the include's siblings.
     """
 
     @pytest.mark.parametrize(
         ("item", "expected"),
         [
-            pytest.param("{k: 4, j: 9, k-: null}", _Item(k=0, j=9), id="delete-met"),
-            pytest.param("{k: 4, j: 9, zz-: null}", _Item(k=4, j=9), id="delete-unmet"),
-            pytest.param("{tags: [a], tags+: [b]}", _Item(tags=["a", "b"]), id="append"),
-            pytest.param("{tags: {__append__: [b]}}", _Item(tags=["b"]), id="reserved-op-key"),
+            pytest.param("{j: 9, k: {__unset__: true}}", _Item(j=9), id="key-delete"),
+            pytest.param("{__unset__: true, k: 4}", _Item(k=4), id="node-delete-beside-keys"),
+            pytest.param("{tags: {__append__: [b]}}", _Item(tags=["b"]), id="append"),
         ],
     )
-    def test_item_reads_the_shorthand(self, tmp_yaml, item: str, expected: _Item) -> None:
-        """A key's suffix and a reserved op key in a list item are the ops they spell."""
+    def test_item_reads_the_ops(self, tmp_yaml, item: str, expected: _Item) -> None:
+        """A reserved op key in a list item is the op it spells."""
         path = tmp_yaml(f"rows:\n  - {item}\n")
         assert confarg.load(_Items, argv=[], env={}, files=[path]).rows == [expected]
 
     def test_item_reads_it_as_the_same_item_beside_an_include(self, tmp_yaml) -> None:
-        """Inline or beside an include, the item's delete removes ``k``."""
+        """Inline or beside an include, the item's delete leaves ``k`` out."""
         tmp_yaml("k: 4\nj: 9\n", "row.yaml")
-        flat = tmp_yaml("rows:\n  - {k: 4, j: 9, k-: null}\n", "flat.yaml")
-        inc = tmp_yaml("rows:\n  - {__include__: row.yaml, k-: null}\n", "inc.yaml")
+        flat = tmp_yaml("rows:\n  - {j: 9, k: {__unset__: true}}\n", "flat.yaml")
+        inc = tmp_yaml("rows:\n  - {__include__: row.yaml, k: {__unset__: true}}\n", "inc.yaml")
         assert (
             confarg.load(_Items, argv=[], env={}, files=[flat]).rows
             == confarg.load(_Items, argv=[], env={}, files=[inc]).rows
@@ -586,9 +569,160 @@ class TestAListItemReadsTheShorthand:
         )
 
     def test_item_of_a_nested_list_reads_it(self, tmp_yaml) -> None:
-        """An item two lists deep reads the shorthand too."""
-        path = tmp_yaml("grid:\n  - - {k: 4, k-: null, tags+: [x]}\n")
-        assert confarg.load(_Items, argv=[], env={}, files=[path]).grid == [[_Item(k=0, tags=["x"])]]
+        """An item two lists deep reads the ops too."""
+        path = tmp_yaml("grid:\n  - - {k: {__unset__: true}, tags: {__append__: [x]}}\n")
+        assert confarg.load(_Items, argv=[], env={}, files=[path]).grid == [[_Item(tags=["x"])]]
+
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            pytest.param("rows:\n  - {__unset__: true}\n", id="item"),
+            pytest.param("grid:\n  - - {__unset__: true}\n", id="nested-item"),
+            pytest.param("rows: {__append__: [{__unset__: true}]}\n", id="appended-item"),
+            pytest.param("rows: {__append__: {__unset__: true}}\n", id="single-appended-item"),
+        ],
+    )
+    def test_a_bare_delete_as_an_item_is_refused(self, tmp_yaml, spelling: str) -> None:
+        """An item that is a bare node delete would delete nothing, and dropping it would drop an item silently."""
+        path = tmp_yaml(spelling)
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="a list item has no layer below it"):
+            confarg.merge(_Items, argv=[], env={}, files=[path])
+
+    def test_a_single_appended_item_drops_its_deletes(self, tmp_yaml) -> None:
+        """An item appended alone is an item too: the delete beside its keys has nothing below it."""
+        path = tmp_yaml("rows: {__append__: {__unset__: true, k: 4, j: {__unset__: true}}}\n")
+        assert confarg.merge(_Items, argv=[], env={}, files=[path]) == {"rows": {ListOp.APPEND: {"k": 4}}}
+
+
+@dataclass
+class _Ops:
+    name: str = "dflt"
+    data: dict[str, Any] = dataclasses.field(default_factory=dict)
+    anything: Any = None
+    xs: list[int] = dataclasses.field(default_factory=list)
+    rows: list[_Item] = dataclasses.field(default_factory=list)
+    t: tuple[int, int] = (0, 0)
+
+
+def _load_ops(tmp_yaml, *texts: str, **kw: Any) -> _Ops:
+    """Load *texts* as files, lowest first, over no argv and no environment unless *kw* says otherwise."""
+    files = [tmp_yaml(text, f"f{i}.yaml") for i, text in enumerate(texts)]
+    kw.setdefault("argv", [])
+    kw.setdefault("env", {})
+    return confarg.load(_Ops, files=files, **kw)
+
+
+class TestAFileSpellsAnOpInItsValue:
+    """A file spells a merge op as a reserved key of the value at its path; every other key is data (FEAT-43)."""
+
+    @pytest.mark.parametrize("key", ["xs+", "name-", "0-", "c++", "a--"])
+    def test_a_suffixed_key_is_data(self, tmp_yaml, key: str) -> None:
+        """A key ending in ``+`` or ``-`` is a key of the dict or the ``Any`` holding it."""
+        cfg = _load_ops(tmp_yaml, f"data: {{'{key}': 1}}\nanything: {{'{key}': 1}}\n")
+        assert cfg.data == cfg.anything == {key: 1}
+
+    def test_the_old_shorthand_is_an_unknown_field_of_a_struct(self, tmp_yaml) -> None:
+        """A struct refuses ``xs+`` as the unknown field it is, as it would a misspelled one."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=re.escape("Unknown field(s) ['xs+']")):
+            _load_ops(tmp_yaml, "xs+: [1]\n")
+
+    def test_unset_deletes_the_node_below(self, tmp_yaml) -> None:
+        """``name: {__unset__: true}`` leaves the field to its default, whatever the file below said."""
+        assert _load_ops(tmp_yaml, "name: low\n", "name: {__unset__: true}\n").name == "dflt"
+
+    def test_unset_beside_keys_replaces_the_node(self, tmp_yaml) -> None:
+        """Nothing below, then the keys beside the delete: the lower dict's keys are gone."""
+        assert _load_ops(tmp_yaml, "data: {a: 1, b: 2}\n", "data: {__unset__: true, c: 3}\n").data == {"c": 3}
+
+    @pytest.mark.parametrize("value", ["false", "null", "1", "'true'", "[true]"])
+    def test_unset_holds_true_only(self, tmp_yaml, value: str) -> None:
+        """A delete has no meaning to guess from ``false`` or anything else but ``true``."""
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="it must be true"):
+            _load_ops(tmp_yaml, f"name: {{__unset__: {value}}}\n")
+
+    def test_unset_beside_a_base_is_refused(self, tmp_yaml) -> None:
+        """Both say what lies below the node: two bases."""
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="'__base__' beside it"):
+            _load_ops(tmp_yaml, "xs: {__unset__: true, __base__: [1]}\n")
+
+    def test_unset_as_a_base_is_refused(self, tmp_yaml) -> None:
+        """A base is a list: the delete below the ops is written beside them, which is its one spelling."""
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="'__base__' holds a list"):
+            _load_ops(tmp_yaml, "xs: {__base__: {__unset__: true}, __append__: [1]}\n")
+
+    @pytest.mark.parametrize(
+        "top",
+        [
+            pytest.param("__unset__: true\n", id="alone"),
+            pytest.param("__unset__: true\nname: x\n", id="beside-keys"),
+            pytest.param("__include__: unset.yaml\n", id="included"),
+        ],
+    )
+    def test_a_root_that_deletes_itself_is_refused(self, tmp_yaml, top: str) -> None:
+        """A configuration layer is merged over the layers below it and cannot cut them off."""
+        tmp_yaml("__unset__: true\n", "unset.yaml")
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="at the root of"):
+            _load_ops(tmp_yaml, top)
+
+    def test_a_mounted_fragment_may_delete_its_node(self, tmp_yaml) -> None:
+        """A fragment's root is the value of the node it is mounted at, which a delete may be."""
+        unset = tmp_yaml("__unset__: true\n", "unset.yaml")
+        assert _load_ops(tmp_yaml, "name: low\n", argv=["--config.name", str(unset)]).name == "dflt"
+
+    @pytest.mark.parametrize(
+        ("argv", "env"),
+        [
+            pytest.param(["--config.xs+", "unset.yaml"], {}, id="flag"),
+            pytest.param([], {"APP_CONFIG__XS+": "unset.yaml"}, id="variable"),
+        ],
+    )
+    def test_an_appended_fragment_that_deletes_is_refused(
+        self,
+        tmp_yaml,
+        tmp_path,
+        monkeypatch,
+        argv: list[str],
+        env: dict[str, str],
+    ) -> None:
+        """An appended fragment is a list item, which has no layer below it to delete."""
+        tmp_yaml("__unset__: true\n", "unset.yaml")
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="a list item has no layer below it"):
+            _load_ops(tmp_yaml, argv=argv, env=env, env_prefix="APP_")
+
+    def test_an_index_patch_beside_a_delete_replaces_the_item(self, tmp_yaml) -> None:
+        """The old item lies below the patch: the delete drops its keys, then the patch's are written."""
+        cfg = _load_ops(tmp_yaml, "rows: [{k: 1, j: 2}, {k: 3}]\n", "rows: {'0': {__unset__: true, k: 5}}\n")
+        assert cfg.rows == [_Item(k=5), _Item(k=3)]
+
+    @pytest.mark.parametrize(
+        "texts",
+        [
+            pytest.param(("rows: [{k: 1}]\n", "rows: {'0': {__unset__: true}}\n"), id="over-a-list"),
+            pytest.param(("rows: {'0': {__unset__: true}}\n",), id="with-nothing-below"),
+            pytest.param(("t: {'0': {__unset__: true}}\n",), id="over-a-tuple-default"),
+        ],
+    )
+    def test_a_bare_delete_at_an_index_is_refused(self, tmp_yaml, texts: tuple[str, ...]) -> None:
+        """It would leave nothing in the slot; a list deletes an index by ``__delete__``."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=re.escape("A list deletes an index with")):
+            _load_ops(tmp_yaml, *texts)
+
+    def test_a_bare_delete_at_a_dict_index_deletes_the_key(self, tmp_yaml) -> None:
+        """Under a dict, ``"1"`` is a key like ``a``, and its delete removes it (BUG-174's file side)."""
+        cfg = _load_ops(tmp_yaml, "data: {'1': 5, a: 6}\n", "data: {'1': {__unset__: true}}\n")
+        assert cfg.data == {"a": 6}
+
+    def test_root_value_beside_a_key_takes_a_delete(self, tmp_yaml) -> None:
+        """At a document root, ``__root__`` is a key like any other: its delete cuts off the root value below.
+
+        A key stands beside it because a lone ``__root__`` is unwrapped at a root file (BUG-242).
+        """
+        files = [
+            tmp_yaml("locals: {}\n__root__: {a: 1}\n", "low.yaml"),
+            tmp_yaml("locals: {}\n__root__: {__unset__: true, b: 2}\n", "top.yaml"),
+        ]
+        assert confarg.load(dict[str, int], files=files, argv=[], env={}) == {"b": 2}
 
 
 class TestNestedIndexMerge:

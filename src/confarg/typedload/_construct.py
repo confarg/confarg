@@ -652,6 +652,24 @@ def construct(tp: Any, data: Any, *, path: FieldPath = (), union_tag: str = _def
     return _construct_typed(tp, data, path, union_tag)
 
 
+def _refuse_an_index_delete(data: dict[Any, Any], path: FieldPath) -> None:
+    """Raise if an index of the index-keyed *data* holds a bare node delete.
+
+    A file's ``"N": {__unset__: true}`` would leave nothing in the slot; a list deletes an
+    index by ``__delete__``. Asked by both index readers of construction, which the merge's
+    ``_apply_list_ops`` mirrors.
+
+    Raises:
+        TypeCoercionError: If a value of *data* is a delete.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-file-spells-an-op-in-its-value.md#where-a-delete-has-no-meaning
+    """
+    for k, v in data.items():
+        if isinstance(v, _DeleteSentinel):
+            raise TypeCoercionError.index_unset(_defaults.UNSET_KEY, _defaults.DELETE_KEY, k, _spell_field_path(path))
+
+
 def _indexed_dict_to_positions(
     data: dict[Any, Any],
     length: int,
@@ -670,12 +688,14 @@ def _indexed_dict_to_positions(
 
     Raises:
         TypeCoercionError: on a key spelling one of the reserved list ops (``_merge.MERGE_OP_KEYS``
-            — a marker, never the plain string, is the op), on a non-integer key or an index
-            out of range for *length*.
+            — a marker, never the plain string, is the op), on a non-integer key, on an index
+            whose value is a bare node delete (a list deletes an index by ``__delete__``) or an
+            index out of range for *length*.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
     """
+    _refuse_an_index_delete(data, path)
     out: dict[int, Any] = {}
     for k, v in data.items():
         if isinstance(k, str) and k in MERGE_OP_KEYS:
@@ -835,6 +855,7 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
         except (TypeError, ValueError):
             msg = f"Cannot construct collection at '{_spell_field_path(path)}': dict keys must be integer indices"
             raise TypeCoercionError(msg) from None
+        _refuse_an_index_delete(positions, path)
         neg = [k for k in positions if k < 0]
         if neg:
             msg = (

@@ -4201,6 +4201,7 @@ _RESERVED_KEYS = [
     "__cast__",
     "__value__",
     "__root__",
+    "__unset__",
 ]
 _RESERVED_KEY_REASON = "is a key confarg reserves, which only a configuration file may write."
 
@@ -8008,9 +8009,9 @@ class TestMountParity:
         assert merged == {"items": {ListOp.APPEND: [{"host": "inner"}]}}
 
     def test_append_parity_between_cli_and_file(self, loader: ConfargLoader, tmp_path: Path) -> None:
-        """Test that --config.f+ FILE and f+: {__include__: FILE} mean the same thing.
+        """Test that --config.f+ FILE and f: {__append__: {__include__: FILE}} mean the same thing.
 
-        Both extend the list with the fragment's items: appending is the ``+`` operator's job
+        Both extend the list with the fragment's items: appending is the append op's job
         and the mount has no say in it
         (docs-dev/architecture/design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling).
         """
@@ -8019,7 +8020,7 @@ class TestMountParity:
         base = tmp_path / "base.yaml"
         base.write_text("tags:\n  - alpha\n", encoding="utf-8")
         via_file = tmp_path / "via_file.yaml"
-        via_file.write_text(f"tags+:\n  {INCLUDE_KEY}: ./rows.yaml\n", encoding="utf-8")
+        via_file.write_text(f"tags:\n  __append__:\n    {INCLUDE_KEY}: ./rows.yaml\n", encoding="utf-8")
         target = make_target("tags", list[str], default_factory=list)
 
         from_cli = loader.load(target, argv=["--config.tags+", str(rows)], env={}, files=[base])
@@ -8527,7 +8528,7 @@ class TestClassTagPointsToCall:
 class TestAnAppendThroughAUnion:
     """``--xs+`` appends wherever the walk takes ``--xs.<i>``, a union's sequence variant included (D4).
 
-    A file's ``xs+:`` already built on such a field, and the command line took ``--xs.0`` and
+    A file's ``__append__`` already built on such a field, and the command line took ``--xs.0`` and
     ``--xs.0-`` there; only the append asked the folded type whether it was a list, and a
     union is none.
     """
@@ -8548,7 +8549,7 @@ class TestAnAppendThroughAUnion:
         ids=["optional", "with-a-leaf"],
     )
     def test_an_append_over_a_files_list(self, loader: ConfargLoader, tmp_yaml, field_type: Any) -> None:
-        """Over a file's list, the append extends it, as a file's ``xs+:`` would."""
+        """Over a file's list, the append extends it, as a file's ``__append__`` would."""
         base = tmp_yaml("xs: [0]\n")
         target = make_target("xs", field_type, default=None)
         assert loader.load(target, argv=["--config", str(base), "--xs+", "1"], env={}).xs == [0, 1]
@@ -8688,13 +8689,13 @@ class TestAFieldDefaultIsTheBaseLayer:
 
     def test_a_files_append_to_a_fixed_tuple_is_refused(self, loader: ConfargLoader, tmp_yaml) -> None:
         """BUG-221: the append overruns the default as it would a file's ``t: [0, 0]``."""
-        cfg = tmp_yaml("t+: [1]\n")
+        cfg = tmp_yaml("t: {__append__: [1]}\n")
         with pytest.raises(ConfargError, match=re.escape("expected 2 elements, got 3")):
             loader.load(_DefaultedTuples, files=[cfg], argv=[], env={})
 
     def test_an_append_to_a_fixed_tuple_with_no_default_names_the_op(self, loader: ConfargLoader, tmp_yaml) -> None:
         """With nothing below it, the op itself is refused, as a dict field refuses it."""
-        cfg = tmp_yaml("t+: [1]\n")
+        cfg = tmp_yaml("t: {__append__: [1]}\n")
         msg = "Cannot apply '__append__' to the tuple[int, int] at 't': it is an operation on a list."
         with pytest.raises(ConfargError, match=re.escape(msg)):
             loader.load(_UndefaultedTuple, files=[cfg], argv=[], env={})
@@ -8854,3 +8855,78 @@ class TestSelfHoldingTypeContract:
         assert flags is not None
         assert "config.pair.leaf" in flags
         assert "config.pair.nxt.leaf" not in flags
+
+
+@dataclass
+class _OpSec:
+    a: int = 1
+    b: int = 2
+
+
+@dataclass
+class _OpTarget:
+    name: str = "dflt"
+    sec: _OpSec = dataclasses_field(default_factory=_OpSec)
+    xs: list[int] = dataclasses_field(default_factory=list)
+
+
+class TestAFileSpellsAnOpInItsValue:
+    """A file's op in the value means what argv's and the environment's op on the path means (FEAT-43).
+
+    Argv and the environment spell an op on a path, a flag's or a variable's name, which is never
+    data; a file's keys are its data, so it spells the op as a reserved key of the value instead.
+    """
+
+    @pytest.mark.parametrize(
+        ("file_op", "argv", "env"),
+        [
+            pytest.param("name: {__unset__: true}", ["--name-"], {"APP_NAME-": ""}, id="node-delete"),
+            pytest.param("xs: {__append__: [9]}", ["--xs+", "9"], {"APP_XS+": "9"}, id="append"),
+            pytest.param("xs: {__delete__: [0]}", ["--xs.0-"], {"APP_XS__0-": ""}, id="index-delete"),
+            pytest.param(
+                "sec: {__unset__: true, a: 7}",
+                ["--sec-", "--sec.a", "7"],
+                {"APP_SEC-": "", "APP_SEC__A": "7"},
+                id="node-delete-then-a-key",
+            ),
+            pytest.param(
+                "xs: {__unset__: true, __append__: [9]}",
+                ["--xs-", "--xs+", "9"],
+                {"APP_XS-": "", "APP_XS+": "9"},
+                id="node-delete-then-an-append",
+            ),
+        ],
+    )
+    def test_the_three_channels_agree(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        file_op: str,
+        argv: list[str],
+        env: dict[str, str],
+    ) -> None:
+        """Over the same lower file, the file's op, the flag and the variable build the same object."""
+        base = tmp_yaml("name: low\nsec: {a: 5, b: 6}\nxs: [1, 2, 3]\n", "base.yaml")
+        top = tmp_yaml(f"{file_op}\n", "top.yaml")
+        via_file = loader.load(_OpTarget, argv=[], env={}, files=[base, top])
+        via_argv = loader.load(_OpTarget, argv=argv, env={}, files=[base])
+        via_env = loader.load(_OpTarget, argv=[], env=env, env_prefix="APP_", files=[base])
+        assert via_file == via_argv == via_env
+
+    @pytest.mark.parametrize(
+        ("argv", "env"),
+        [
+            pytest.param([], {"APP_SEC.__unset__": "true"}, id="variable"),
+            pytest.param(["--sec", '{"__unset__": true}'], {}, id="decoded-value"),
+            pytest.param(["--config.sec.__unset__", "x.yaml"], {}, id="mount-point"),
+        ],
+    )
+    def test_unset_is_reserved_on_the_other_channels(
+        self,
+        loader: ConfargLoader,
+        argv: list[str],
+        env: dict[str, str],
+    ) -> None:
+        """``__unset__`` is refused off a file as every reserved key is; its flag is in ``_RESERVED_KEYS``."""
+        with pytest.raises(ConfargError, match="__unset__"):
+            loader.load(_OpTarget, argv=argv, env=env, env_prefix="APP_", env_separator=".")

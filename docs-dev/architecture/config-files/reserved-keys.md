@@ -3,15 +3,16 @@
 `__include__`, `__root__` (a non-struct target's value at a document root, and a fragment's
 whole content when mounted -- see [include semantics](include-semantics.md#include-semantics)),
 `__cast__`/`__value__`
-([types](../types/stealing-rule.md#cast-pinning-in-files)) and the four list ops `__append__`,
+([types](../types/stealing-rule.md#cast-pinning-in-files)), the four list ops `__append__`,
 `__delete__`, `__delete_after__` and `__base__`
-([deep merge](../pipeline/deep-merge.md#no-channel-types-an-op)) are dunder keys, and only a
+([deep merge](../pipeline/deep-merge.md#no-channel-types-an-op)) and the node delete `__unset__`
+([design decisions](../design-decisions/a-file-spells-an-op-in-its-value.md#a-file-spells-an-op-in-its-value)) are dunder keys, and only a
 configuration file writes one. `_defaults.RESERVED_KEYS` lists them, and
 `_parse_cli._reserved_segment` is the one test the other routes are put to: a flag
 (`--d.__cast__`), an environment variable and a mount point (`--config.d.__base__`,
 `<PREFIX>CONFIG__…`) whose path spells one is refused, and so is a JSON value that holds one
 at any depth, on argv or in the environment (`_cast.decode_json`, [a decoded value is
-data](../design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data)). The default env separator is also `__`,
+data](../design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data)), and a CSV/TSV header naming one where the name becomes a dict key (`_files._load_csv_with_header`). The default env separator is also `__`,
 so with it a variable cannot spell a dunder at all; a custom separator can, and is refused the
 same way.
 

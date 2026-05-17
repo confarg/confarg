@@ -7,9 +7,7 @@ Two independent questions hide behind a list flag, and only one of them is a fra
 | spelling | how many tokens does one value take, and how are they written? | the host framework |
 | merge | does the lower-priority value survive, or is it replaced? | confarg |
 
-`+` names the **merge** axis alone, and names it the same way in every channel that has one:
-`--input+ 42` on argv, `APP_INPUT+=42` in the environment, `input+: [42]` as a config-file key, `--config.dbs+ other.yaml` or `APP_CONFIG__DBS+=other.yaml` for a sub-configuration. Dropping it from argv to lean on a framework's own repetition instead would
-split one vocabulary across three channels to save one character.
+`+` names the **merge** axis alone, and every channel spells it on the path: `--input+ 42` on argv, `APP_INPUT+=42` in the environment, `--config.dbs+ other.yaml` or `APP_CONFIG__DBS+=other.yaml` for a sub-configuration. A configuration file, whose keys are its paths and its data at once, spells the same op in the value instead, `input: {__append__: [42]}`, so that `input+` stays a key it can hold ([a file spells an op in its value](a-file-spells-an-op-in-its-value.md#a-file-spells-an-op-in-its-value)). Until FEAT-43 it wrote `input+: [42]`, the suffix on a key. Dropping `+` from argv to lean on a framework's own repetition instead would split argv from the environment, and from what the file's op means, to save one character.
 
 The corollary is that **nothing else** spreads one value over several list elements. A mount
 does not: an `__include__` in a list item, and a `--config.<path>` without the suffix, each
@@ -38,4 +36,4 @@ spelling, and a spelling never decides whether the lower-priority value survives
 
 Rejected: a value-side marker, `APP_INPUT='@merge [42]'`, the shape dynaconf chose. It keeps a variable's name exportable from a POSIX shell, which `+` is not, but `-` is not either, and confarg reads a mapping it is handed, not shell syntax. It would have spelled the append unlike the delete and unlike every other channel, needed an escape for a value that starts with the marker, and put an op in a value rather than on the path.
 
-Until then the root variable was warned about as naming no field and dropped, while one below a dict reached the merge as the key `k+`, which the merge read as a file's `k+:` and appended (BUG-201).
+Until then the root variable was warned about as naming no field and dropped, while one below a dict reached the merge as the key `k+`, which the merge read as a file's `k+:` was then read, and appended (BUG-201).

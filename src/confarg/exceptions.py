@@ -310,6 +310,22 @@ class TypeCoercionError(ConfargError):
         return cls(f"Cannot patch the list at '{path}': {key!r} must hold {what}, got {src} {value!r}")
 
     @classmethod
+    def index_unset(cls, unset_key: str, delete_key: str, index: Any, path: str) -> TypeCoercionError:
+        """Return the error for an index of a list whose patch is a bare node delete.
+
+        A file's ``"N": {__unset__: true}`` would leave nothing in the slot; the list deletes an
+        index by *delete_key*. The keys are passed in, this module importing nothing from
+        ``confarg``.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-file-spells-an-op-in-its-value.md#where-a-delete-has-no-meaning
+        """
+        return cls(
+            f"Cannot patch the list at '{path}': index {index} holds {unset_key!r} alone, which would"
+            f" leave nothing in its place. A list deletes an index with {delete_key!r}: [{index}].",
+        )
+
+    @classmethod
     def list_op_on(cls, key: str, what: str, path: str) -> TypeCoercionError:
         """Return the error for a list op the merge recorded where the type has no list to apply it to.
 
@@ -392,6 +408,20 @@ class InvalidConfigFileError(ConfargError):
         )
 
     @classmethod
+    def misplaced_unset(cls, unset_key: str, loc: Any, path: Sequence[str], reason: str) -> InvalidConfigFileError:
+        """Return the error for a file's node delete written where it has no meaning.
+
+        *unset_key* is the reserved key the file wrote, passed in because this module imports
+        nothing from ``confarg``; *path* is the node's position in the document *loc*, one
+        segment per key or list index, and *reason* says why no delete stands there.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-file-spells-an-op-in-its-value.md#where-a-delete-has-no-meaning
+        """
+        where = f"'{'.'.join(path)}' in {loc}" if path else f"the root of {loc}"
+        return cls(f"Cannot read {unset_key!r} at {where}: {reason}.")
+
+    @classmethod
     def unreachable(cls, loc: Any, exc: Any) -> InvalidConfigFileError:
         """Return an error for a config location whose scheme handler could not read it."""
         return cls(f"Cannot read config source {loc}: {exc}")
@@ -448,6 +478,16 @@ class InvalidConfigFileError(ConfargError):
         """Return an error for a CSV header row that repeats a column name."""
         listed = ", ".join(repr(n) for n in names)
         return cls(f"Duplicate CSV column name(s) in {path}: {listed}")
+
+    @classmethod
+    def reserved_csv_columns(cls, path: Any, names: list[str]) -> InvalidConfigFileError:
+        """Return an error for a CSV header row naming a key confarg reserves, where the names become keys.
+
+        Dev Notes:
+            docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
+        """
+        listed = ", ".join(repr(n) for n in names)
+        return cls(f"CSV column name(s) in {path} spell a key confarg reserves, which a data file cannot use: {listed}")
 
 
 class UnknownArgumentError(ConfargError):

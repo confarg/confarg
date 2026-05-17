@@ -61,7 +61,8 @@ The same `+` suffix works on keys in config files. A derived config can append t
 
 <!-- snippet: more_ints.yaml -->
 ```yaml title="more_ints.yaml"
-input+: [42]
+input:
+  __append__: [42]
 ```
 
 It can be used to append ints to an existing configuration.
@@ -94,5 +95,6 @@ Config(dbs=[PostgreSQLConfigChild(host='example.com',
 >
 > ```toml
 > # more_ints.toml
-> "inputs+" = [42]
+> [input]
+> __append__ = [42]
 > ```

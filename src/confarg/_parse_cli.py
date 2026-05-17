@@ -1112,8 +1112,8 @@ def _append_element_type(ends: list[Any]) -> Any | None:
     Asked of each type the walk reaches at the path (:func:`_field_types`), each union spread
     into its variants, never of their fold: a ``+`` appends wherever a branch holds a list, a
     set or a variadic tuple, as ``--xs.<i>`` patches wherever a branch holds a sequence, so
-    ``list[int] | None`` and ``list[int] | str`` take ``--xs+`` as a file's ``xs+:`` already
-    did (D4). The items are coerced by the fold of those branches' element types.
+    ``list[int] | None`` and ``list[int] | str`` take ``--xs+`` as a file's ``__append__``
+    already did (D4). The items are coerced by the fold of those branches' element types.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/collection-patches.md#an-append-reaches-every-sequence-variant

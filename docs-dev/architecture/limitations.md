@@ -71,16 +71,14 @@ the boundary moves here.
   patches index 1. A file is not walked against the type
   ([CLI parsing](cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index)).
 - The [reserved keys](config-files/reserved-keys.md#reserved-file-only-keys) (`__include__`,
-  `__cast__`, `__value__`, `__root__`, and the list ops `__append__`, `__delete__`,
-  `__delete_after__`, `__base__`) are no data key anywhere: a file reads one as its own, and a
+  `__cast__`, `__value__`, `__root__`, the node delete `__unset__`, and the list ops `__append__`,
+  `__delete__`, `__delete_after__`, `__base__`) are no data key anywhere: a file reads one as its own, and a
   flag, a variable, a mount point or a JSON value naming one is refused. A field or a dict key spelled like
   one cannot be set.
-- A configuration file cannot give a dict a key ending in `+` or `-`: every key of a file reads
-  the merge shorthand. A JSON value on argv or in the environment is the way to give one
-  (`--d '{"c++": 1}'`), or `build()` from Python
-  ([design decisions](design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data)).
-- `build()` reads a merged dict, not a file's: the list ops a parsed file spells by name, like
-  its `key+:` shorthand, apply only once `merge()` has read the file. A merged dict saved with
+- A configuration file cannot order two ops on one key within one dict: it spells an op in the value, and YAML, TOML and JSON hold a key once, so `{xs: [1], xs+: [2]}` or a delete written after an append has no spelling. The ops of one value apply in a fixed order, the node delete first ([design decisions](design-decisions/a-file-spells-an-op-in-its-value.md#what-it-costs)); two files, or argv, order them.
+- A file deletes a list's index with `__delete__: [N]` only: a bare `"N": {__unset__: true}` under a list is refused, as a delete is wherever it would delete nothing, a list item and a document root included ([design decisions](design-decisions/a-file-spells-an-op-in-its-value.md#where-a-delete-has-no-meaning)).
+- `build()` reads a merged dict, not a file's: the list ops and the node delete a parsed file
+  spells by name apply only once `merge()` has read the file. A merged dict saved with
   `dump_file` is read back through `merge(files=[saved])`
   ([design decisions](design-decisions/merge-ops-are-markers-no-channel-types.md#merge-ops-are-markers-no-channel-types)).
 - A construction error names a dict key that is no plain name ambiguously: the key `a.b`

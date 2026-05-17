@@ -6,7 +6,6 @@ effort: S
 risk: low
 impact: behavior
 severity: major  # a raw writer exception, and no spelling of the dict that dumps
-blocked_by: [FEAT-43]  # the spelling the dump writes, `{__unset__: true}`
 introduced_by: [PR-5]  # dump_file took a raw merged dict, and the merge left its key delete in it
 ---
 # BUG-202 — `dump_file` of a merged key delete escapes as a raw writer error
@@ -14,7 +13,7 @@ introduced_by: [PR-5]  # dump_file took a raw merged dict, and the merge left it
 A dict-key delete with no base dict below it stays in the merged dict as `DICT_DELETE`
 ([BUG-98](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) is what
 `build()` makes of it). `dump_file(merge(...))` hands that sentinel to the writer, which raises
-its own exception: PyYAML's `RepresenterError`, `json`'s `TypeError`. A file spells the same delete as `key-:`, which a data key `key-` could mean too, so the dump has no faithful spelling to write until [FEAT-43](../features/FEAT-43-a-file-spells-a-merge-op-in-its-value.md) moves the delete into the value. Fix direction: `_serialize_untyped` writes a `DICT_DELETE` as `{__unset__: true}`, as it writes a list op the merged dict still holds by the reserved key a file writes it with ([deep merge](../../architecture/pipeline/deep-merge.md#no-channel-types-an-op)), so the dump reads back through `merge(files=[saved])` as the dict it was ([plan](../plans/feat-43-a-file-spells-a-merge-op-in-its-value.md#build-order)).
+its own exception: PyYAML's `RepresenterError`, `json`'s `TypeError`. A file spells the same delete as `key: {__unset__: true}` since FEAT-43 ([a file spells an op in its value](../../architecture/design-decisions/a-file-spells-an-op-in-its-value.md#a-file-spells-an-op-in-its-value)), a spelling no data key shares, but the dump does not write it yet. Fix direction: `_serialize_untyped` writes a `DICT_DELETE` as `{__unset__: true}`, as it writes a list op the merged dict still holds by the reserved key a file writes it with ([deep merge](../../architecture/pipeline/deep-merge.md#no-channel-types-an-op)), so the dump reads back through `merge(files=[saved])` as the dict it was ([plan](../plans/feat-43-a-file-spells-a-merge-op-in-its-value.md#build-order)).
 
 Origin: latent since the initial version (PR-5), whose `dump_file` accepted a raw merged dict and
 whose merge leaves a key delete with nothing to delete in it, the leak BUG-98 is about. BUG-10's

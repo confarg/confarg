@@ -15,7 +15,7 @@ introduced_by: [PR-5]  # both channels decide a list delete with int() on the la
 Both channels decide "is this delete a list-index delete?" with `int()` on the last segment
 alone, never asking the type. On a dict the key `1` is a key like `a`, but `--d.1-` and
 `APP_D__1-` record a list delete, `{__delete__: [1]}`, beside the dict's keys, and `build()`
-then refuses it as an operation on a list. `--d.a-` deletes its key as it should. Fix direction: a delete is
+then refuses it as an operation on a list. `--d.a-` deletes its key as it should, and so does a file's `d: {"1": {__unset__: true}}`, which spells the delete in the value, where the type decides it ([a file spells an op in its value](../../architecture/design-decisions/a-file-spells-an-op-in-its-value.md#where-a-delete-has-no-meaning)). Fix direction: a delete is
 a list-index delete only where the walk stands on a sequence, the rest are key deletes; this
 is the one decoder [REF-84](../refactors/REF-84-env-delete-suffix-decoded-twice.md) asks for,
 and the merge vocabulary it protects is in

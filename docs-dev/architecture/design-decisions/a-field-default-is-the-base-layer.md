@@ -4,7 +4,7 @@ A field default is the layer below every source. `build()`, `resolve()` and `fro
 
 - an expression reads a default nobody set: with `n: int = 42`, a file's `m: '${n}'` builds `m == 42`, where it was a `MissingReferenceError`;
 - a patch the merge left pending applies over the default: `--v+ 3` on `v: tuple[int, ...] = (0, 1)` builds `(0, 1, 3)`, `--v.0-` builds `(1,)`, and `--pt.y 5` on a namedtuple defaulting to `Pt(1, 2)` builds `Pt(1, 5)` (BUG-109);
-- a patch that does not fit the default is refused as it would be over the file: a file's `t+: [1]` on `t: tuple[int, int] = (0, 0)` overruns it, "expected 2 elements, got 3" (BUG-221), and a stray `t: {foo: 1}` is refused as with no default.
+- a patch that does not fit the default is refused as it would be over the file: a file's `t: {__append__: [1]}` on `t: tuple[int, int] = (0, 0)` overruns it, "expected 2 elements, got 3" (BUG-221), and a stray `t: {foo: 1}` is refused as with no default.
 
 `merge()` is untouched: it is still "save as written" ([api seams](../pipeline/api-seams.md#public-api-seams)), so `dump_file(merge(...))` never freezes a class default into a saved configuration, and a later change to the class still reaches it.
 
