@@ -367,6 +367,14 @@ class TestPopulateParser:
         assert "--item.class" in flags
         assert "--item" not in flags
 
+    def test_struct_union_registers_variant_field_flags(self) -> None:
+        """Multi-variant struct union also registers each variant's own field flags."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithStructUnion, parser)
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--item.x" in flags
+        assert "--item.y" in flags
+
     def test_registered_leaf_type_flag(self) -> None:
         """A field whose type is registered as a leaf gets a single flat flag, not sub-flags."""
         confarg.register_leaf_type(_Hex, lambda s: _Hex(int(s, 16)))
@@ -695,6 +703,15 @@ class TestFromNamespace:
         result: dict = {}
         _collect_ns_fields(flat, _WithStructUnion, prefix="", union_tag="class", result=result)
         assert result == {"item": {"class": _StrToken("myapp._StructVariantA")}}
+
+    def test_struct_union_field_inferred_without_class_tag(self) -> None:
+        """Struct union field is constructed from variant fields alone, no --item.class needed."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(_WithStructUnion, parser)
+        ns = parser.parse_args(["--item.x", "42"])
+        result = from_namespace(_WithStructUnion, ns, env={})
+        assert isinstance(result.item, _StructVariantA)
+        assert result.item.x == 42
 
 
 # ---------------------------------------------------------------------------
