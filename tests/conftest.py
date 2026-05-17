@@ -581,7 +581,7 @@ def leaf_registry():
 
 @pytest.fixture(params=ALL_LOADERS, ids=[ldr.id for ldr in ALL_LOADERS])
 def loader(request: pytest.FixtureRequest) -> ConfargLoader:
-    """Parametrised loader fixture — runs each test against all four CLI integrations."""
+    """Parametrised loader fixture — runs each test against all five CLI integrations."""
     return request.param
 
 

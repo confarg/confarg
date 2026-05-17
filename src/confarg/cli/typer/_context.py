@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Convert a Click Context into a nested dict for dataclass construction."""
+"""Convert a Typer Context into a nested dict for dataclass construction."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
 
-    import click
+    import typer
 
 from confarg import _defaults
 from confarg.cli import _clicklike
@@ -20,7 +20,7 @@ from confarg.cli import _clicklike
 
 def merge_context(  # noqa: PLR0913
     target: object,
-    ctx: click.Context,
+    ctx: typer.Context,
     *,
     argv: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
@@ -41,12 +41,11 @@ def merge_context(  # noqa: PLR0913
 
     Args:
         target: The dataclass type to construct.
-        ctx: The :class:`click.Context` returned by Click during command execution.
-            Obtain it inside a command with :func:`click.get_current_context`.
+        ctx: The :class:`typer.Context` Typer passes to the command function.
+            Declare it as a parameter of the command to receive it.
         argv: CLI argument list used to determine config-file loading order.
             Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
-            command was invoked with a custom argv (e.g. in tests via
-            :func:`click.testing.CliRunner`).
+            command was invoked with a custom argv (e.g. in tests).
         env: Environment variable mapping.  Defaults to ``os.environ``.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
@@ -89,7 +88,7 @@ def merge_context(  # noqa: PLR0913
 
 def from_context(  # noqa: PLR0913
     target: object,
-    ctx: click.Context,
+    ctx: typer.Context,
     *,
     argv: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
@@ -101,7 +100,7 @@ def from_context(  # noqa: PLR0913
     env_config: str | None = None,
     union_tag: str = _defaults.UNION_TAG,
 ) -> Any:
-    """Construct a dataclass instance from a Click :class:`~click.Context`.
+    """Construct a dataclass instance from a :class:`typer.Context`.
 
     Merges three sources in ascending priority order: config files, environment
     variables, then CLI arguments from the Context.  This mirrors the behaviour
@@ -114,12 +113,11 @@ def from_context(  # noqa: PLR0913
 
     Args:
         target: The dataclass type to construct.
-        ctx: The :class:`click.Context` returned by Click during command execution.
-            Obtain it inside a command with :func:`click.get_current_context`.
+        ctx: The :class:`typer.Context` Typer passes to the command function.
+            Declare it as a parameter of the command to receive it.
         argv: CLI argument list used to determine config-file loading order.
             Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
-            command was invoked with a custom argv (e.g. in tests via
-            :func:`click.testing.CliRunner`).
+            command was invoked with a custom argv (e.g. in tests).
         env: Environment variable mapping.  Defaults to ``os.environ``.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,

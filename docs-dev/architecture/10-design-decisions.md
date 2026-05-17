@@ -36,7 +36,7 @@ interface, so a rich CLI UX is a secondary goal.
 ## A divergence leans towards the affected backend's own idiom
 
 Parity is the rule ([09](09-invariants.md#cross-channel-parity)): a feature is spelled the same
-way in all four front-ends and all three channels. Some spellings cannot reach every front-end,
+way in all five front-ends and all three channels. Some spellings cannot reach every front-end,
 because a host framework fixes at registration what confarg decides from argv. This section says
 which way to lean when that happens; it does not lower the bar for *whether* it happens, which
 still needs a concrete reason and the maintainer's explicit approval, obtained before the
@@ -57,7 +57,7 @@ expects, and not a framework's own native convention. Files and the environment 
 whole object is spelled comfortably; the CLI is where it is tweaked.
 
 The corollary is that a divergence is **narrowed to the backend that imposes it**, never widened
-to keep the four front-ends symmetrical. A front-end that *can* express the spelling gets it.
+to keep the five front-ends symmetrical. A front-end that *can* express the spelling gets it.
 Symmetry is not the goal -- parity is, and where parity is unreachable the goal is the smallest
 number of surprised users.
 
@@ -162,7 +162,7 @@ disagreement detectable, so the mismatch became an error rather than a documenta
 
 ## The `=` form is the escape for a dashed value
 
-`--key=--value` sets `key` to `--value` in all four front-ends; `--key --value` is
+`--key=--value` sets `key` to `--value` in all five front-ends; `--key --value` is
 `Missing value for '--key'` in all four. A value that starts with `--` is indistinguishable
 from a flag by shape, so something other than shape has to decide, and the `=` is the only
 thing the user can write that already says "this is the value of that flag"
@@ -337,7 +337,7 @@ A namedtuple field takes every CLI spelling a same-arity `tuple` takes, and the 
 object its field names additionally make meaningful. Vanilla used to treat it as a scalar: it
 consumed one token, so `--pair 13 42` was `Unexpected positional argument: '42'`, `--pair
 '[13, 42]'` and `--pair '{"x": 13}'` were stored as raw text and died in `build()`, and the
-three adapters — which have registered the arity flag and the per-field flags all along —
+four adapters — which have registered the arity flag and the per-field flags all along —
 disagreed with vanilla on a field shape they all support.
 
 The fix is one classification, not three special cases. A namedtuple *is* a tuple subclass of
@@ -357,7 +357,7 @@ known arity, so:
 
 The rejected alternative was to teach the whole-`{...}` arm alone, as the ticket proposed. It
 closes the env/CLI gap the ticket names and leaves the larger one: vanilla would take a whole
-object for a namedtuple but still refuse the positional form all three adapters accept. A
+object for a namedtuple but still refuse the positional form all four adapters accept. A
 predicate that says "this field is sequence-shaped" cannot be right for `tuple[int, int]` and
 wrong for a two-field namedtuple; splitting them is what produced the gap.
 
@@ -475,7 +475,7 @@ class like another, and refusing to import it would be the special case.
 ## Shared reserved key names live in `_defaults.py`
 
 `__root__` — the key under which a non-struct target's value sits in the merged dict — is
-written by all three channels and read by `build()`, so the four front-ends must agree on
+written by all three channels and read by `build()`, so the five front-ends must agree on
 the spelling; every site that spelled it inline was a place they could drift apart.
 It is now `_defaults.ROOT_KEY`, next to
 `LOCALS_KEYS`, which is a reserved name rather than a keyword default too: `_defaults.py` is
@@ -556,7 +556,7 @@ once. The alternatives, and why not:
   case then fails with *must specify one of 'fn', 'class', or 'call'*: an error that says the
   user named no target when they named one two tokens earlier.
 - **One blanket rule, "raise a `ConfargError`."** Never silent. Rejected because vanilla would
-  then refuse a pair the three adapters and the file-then-CLI path keep accepting, which is a
+  then refuse a pair the four adapters and the file-then-CLI path keep accepting, which is a
   new unapproved parity gap, not a fix; making *those* raise instead is a much larger change
   reaching into `_deep_merge`, and pushes a type-shaped judgement into the layer whose
   contract is that it does not make them ([01](01-pipeline-and-contracts.md#merge-build-contract)).

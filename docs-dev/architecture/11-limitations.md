@@ -40,16 +40,20 @@ the boundary moves here.
 ## CLI front-ends
 
 - A multi-token flag is spelled per framework: space-separated for vanilla/argparse/cyclopts,
-  repeated for click/cyclopts ([04](04-cli-adapters.md#list-syntax-divergence)).
+  repeated for click/typer/cyclopts ([04](04-cli-adapters.md#list-syntax-divergence)).
 - There is no end-of-options separator: a bare `--` is an ordinary token everywhere. A value
   that starts with `--` is written `--key=--value`, the form every front-end honors
   ([10](10-design-decisions.md#the--form-is-the-escape-for-a-dashed-value)).
 - A fixed-arity flag (`tuple[X, Y]`, namedtuple) takes one whole-value token — `--pair
-  '[13, 42]'`, `--pair '{"x": 13}'` — everywhere except click, whose options cannot vary their
-  token count at parse time. click keeps `--pair 13 42`, which is the spelling a CLI user
-  reaches for, and declines the JSON one
+  '[13, 42]'`, `--pair '{"x": 13}'` — everywhere except click and typer, whose options cannot
+  vary their token count at parse time. They keep `--pair 13 42`, which is the spelling a CLI
+  user reaches for, and decline the JSON one
   ([04](04-cli-adapters.md#whole-value-flags)). Use a config file, an environment variable or
-  the per-field flags (`--pair.x 13`) to set it whole under click.
+  the per-field flags (`--pair.x 13`) to set it whole under those two.
+- The typer adapter needs `typer>=0.27` and reads two of its private modules
+  (`typer._types`, `typer._click`): the option, choice and context classes it must subclass
+  have no public spelling since typer forked click, so a typer release that moves them breaks
+  the adapter rather than degrading it ([04](04-cli-adapters.md#the-clicklike-seam)).
 
 ## Subclasses
 
