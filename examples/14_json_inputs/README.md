@@ -71,7 +71,9 @@ Config(db=SQLiteConfigChild(dbpath='env.sqlite'))
 
 ## On Windows
 
-Typing JSON arguments on Windows is particularly clunky. The command prompt (`cmd.exe`) does not treat single quotes as a quoting character; double quotes must be used. Consequently, all double quotes needed inside the JSON argument must be escaped:
+Typing JSON arguments on Windows is particularly complicated.
+
+The command prompt (`cmd.exe`) does not treat single quotes as a quoting character; double quotes must be used. Consequently, all double quotes needed inside the JSON argument must be escaped:
 
 <!-- pytest-markdown-console: notest -->
 ```
@@ -79,10 +81,20 @@ $ # In the command prompt
 $ uv run .\list_of_strs.py --input "[\"a\", \"b\"]"
 ```
 
-In PowerShell, single quotes can be used as a quoting character but double quotes still must be escaped.
+In PowerShell, the situation differs between version.
+
+In PowerShell 5, single quotes can be used as a quoting character but double quotes still must be escaped.
 
 <!-- pytest-markdown-console: notest -->
 ```
-$ # In PowerShell
+$ # In PowerShell 5
 $ uv run .\list_of_strs.py --input '[\"a\", \"b\"]'
+```
+
+In PowerShell 7, double quotes don't need to be escaped and inputs similar to other platforms can be used.
+
+<!-- pytest-markdown-console: notest -->
+```
+$ # In PowerShell 7
+$ uv run .\list_of_strs.py --input '["a", "b"]'
 ```
