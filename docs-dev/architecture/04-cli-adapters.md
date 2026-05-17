@@ -176,8 +176,10 @@ beside a `{`-prefixed blob and hands both to the same type-guided walk, which ha
 a config file's string spec that way. The collector then folds the string into the spec its
 sibling flags built, under the plain `fn` the bare form implies — an opener flag beside it
 still wins, being another spelling of the target rather than a refinement
-([03](03-cli-parsing.md#token-consumption)). A *delete* flag is the exception, since it
-travels with the patch ops rather than the flat collector ([BUG-24](../todo/bugs/BUG-24-delete-flag-drops-callable-shorthand.md)).
+([03](03-cli-parsing.md#token-consumption)). A *delete* flag refines it too, even though it
+travels with the patch ops rather than the flat collector: the patch scan is handed the
+collected dict and opens the shorthand there as well
+([below](#a-patch-op-joins-the-values-the-framework-collected), BUG-24).
 
 A **fixed-arity** flag — a namedtuple or a `tuple[X, Y]` — is registered with the framework's
 own exact token count, which is decided before argv is parsed and therefore cannot also admit
@@ -247,6 +249,34 @@ Argv (not the namespace) is also what preserves the left-to-right order of inter
 
 History: patches, dict subkeys, bind-on-`__call__` and expressions over CLI numbers were
 vanilla-only until PR #72.
+
+### A patch op joins the values the framework collected
+
+Splitting one channel across two dicts costs what vanilla gets for free by writing both into
+a single `ctx.data`: each half has to be told about the other, or the merge that rejoins them
+reads them as two priorities rather than one. Two things follow, both settled by BUG-24.
+
+**The patch scan is handed the collected dict** (`_parse_cli(..., patch_base=…)`). Vanilla
+opens a bare-string callable shorthand before it stores a flag below it, through the one
+`_open_callable_shorthand` every channel calls
+([06](06-callables.md#cli)); in `patch_only` mode the scan's own dict is empty, because
+`--fn pkg.func` belongs to the flat collector, so the opener saw nothing and the deep merge
+replaced the scalar instead of refining it. Passing the collected dict in puts the shorthand
+where the canonical opener can see it, at the same point in the same loop — rather than
+teaching `cli/_collect.py` a second answer to a question `_parse_cli` already answers.
+
+**A delete is re-asserted after the merge** (`_collect._restore_patch_deletes`). Inside one
+channel `--<field>.<key>-` is a *record*, not an operation: vanilla stores the sentinel and
+leaves `_merge_sources` to apply it against the lower-priority sources. `_deep_merge` applies
+it on sight, which is right for its usual job of joining two priorities and wrong here, so
+the sentinels the patch scan recorded are written back over the merged dict. Without that,
+`--fn.fn X --fn.bind-` silently kept a config file's `bind` that vanilla deletes. Only
+dict-key deletes carry a sentinel; a list index delete travels as an index list under
+`"-"`/`"~"` and *is* an operation the merge applies, exactly as vanilla applies it.
+
+Re-asserting means the delete wins wherever both spellings touch one key, which is the
+[argv-order convention](#whole-value-flags) the adapters already follow — whole value first,
+refinements after.
 
 ## Byte-identical merged dicts
 

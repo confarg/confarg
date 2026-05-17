@@ -37,6 +37,7 @@ import pytest
 import confarg
 import confarg.cli._build as build_mod
 from confarg._files import INCLUDE_KEY
+from confarg._merge import DICT_DELETE
 from confarg.cli._build import build_static_flags
 from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError
 from tests._loaders import ClickLoader
@@ -1686,6 +1687,20 @@ class _ScalarThenSubkey:
     d: dict[str, str] | None = None
 
 
+@dataclass
+class _CallableHolder:
+    """A callable field named so no path segment reads as a directive."""
+
+    hook: Callable[[str], str] | None = None
+
+
+@dataclass
+class _NestedCallable:
+    """A callable field one level down, so the shorthand sits below the root."""
+
+    inner: _CallableHolder = dataclasses_field(default_factory=_CallableHolder)
+
+
 class TestShorthandRefinementContract:
     """A whole value followed by a sibling subkey resolves, in every channel and front-end.
 
@@ -1740,6 +1755,25 @@ class TestShorthandRefinementContract:
         """A dict field has no shorthand, so the later subkey replaces the scalar."""
         merged = loader.merge(_ScalarThenSubkey, argv=["--d", "oops", "--d.c", "x"], env={})
         assert merged == {"d": {"c": "x"}}
+
+    def test_shorthand_survives_a_bind_delete(self, loader: ConfargLoader) -> None:
+        """A delete travels with the patch ops, and must still open the shorthand (BUG-24)."""
+        merged = loader.merge(_CallableConfig, argv=["--fn", f"{__name__}._shout", "--fn.bind-"], env={})
+        assert merged == {"fn": {"fn": f"{__name__}._shout", "bind": DICT_DELETE}}
+
+    def test_shorthand_survives_a_sibling_kwarg_delete(self, loader: ConfargLoader) -> None:
+        """Any delete below the shorthand refines it, not only the bind directive."""
+        merged = loader.merge(_CallableConfig, argv=["--fn", f"{__name__}._shout", "--fn.punct-"], env={})
+        assert merged == {"fn": {"fn": f"{__name__}._shout", "punct": DICT_DELETE}}
+
+    def test_nested_shorthand_survives_a_delete(self, loader: ConfargLoader) -> None:
+        """The shorthand is opened wherever it sits, not only at the root."""
+        merged = loader.merge(
+            _NestedCallable,
+            argv=["--inner.hook", f"{__name__}._shout", "--inner.hook.bind-"],
+            env={},
+        )
+        assert merged == {"inner": {"hook": {"fn": f"{__name__}._shout", "bind": DICT_DELETE}}}
 
 
 # ---------------------------------------------------------------------------

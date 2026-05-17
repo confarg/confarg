@@ -30,7 +30,7 @@ from confarg._api import build
 from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _Directives, active_directives, promote_bare_spec
 from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, resolve_forced_value
 from confarg._import import _import_dotted
-from confarg._merge import _deep_merge, _set_nested
+from confarg._merge import _deep_merge, _DeleteSentinel, _set_nested
 from confarg._parse_cli import (
     _accepts_object_value,
     _collect_cli_patch_ops,
@@ -617,6 +617,30 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
     _collect_ns_inheritance(flat, _tp, prefix, union_tag, result, tags)
 
 
+def _restore_patch_deletes(ops: dict[str, Any], result: dict[str, Any]) -> None:
+    """Put back every key delete *ops* recorded that the merge into *result* consumed.
+
+    Within one channel a ``--<field>.<key>-`` flag is a *record*, not an operation: the
+    vanilla loop stores the sentinel and leaves ``_merge_sources`` to apply it against the
+    lower-priority sources.  The adapters reach the same dict by deep-merging the patch
+    scan's ops over the flat collector's values, and :func:`~confarg._merge._deep_merge`
+    applies a delete instead of storing it, because its usual job is to join two different
+    priorities.  Re-asserting the sentinels afterwards is what makes the two halves add up
+    to one channel again.
+
+    Only dict-key deletes carry a sentinel; list index deletes travel as index lists under
+    ``"-"``/``"~"`` and are applied by the merge, exactly as vanilla applies them.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
+    """
+    for key, val in ops.items():
+        if isinstance(val, _DeleteSentinel):
+            result[key] = val
+        elif isinstance(val, dict) and isinstance(node := result.get(key), dict):
+            _restore_patch_deletes(val, node)
+
+
 def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only signature
     flat: dict[str, Any],
     target: object,
@@ -681,7 +705,12 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
     cli_data: dict[str, Any] = {}
     _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data, tags=tags)
 
-    cli_data = _deep_merge(cli_data, _collect_cli_patch_ops(argv_, target, config_flag, union_tag))
+    # cli_data goes in as the patch base: a bare callable shorthand collected above is the
+    # spec a delete flag refines, and the scan opens it before this merge lands on it
+    # (docs-dev/architecture/04-cli-adapters.md#whole-value-flags).
+    patch_ops = _collect_cli_patch_ops(argv_, target, config_flag, union_tag, cli_data)
+    cli_data = _deep_merge(cli_data, patch_ops)
+    _restore_patch_deletes(patch_ops, cli_data)
     apply_root_json(flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
     cli_configs = _collect_config_file_pairs(argv_, config_flag) if config_flag else []
 
