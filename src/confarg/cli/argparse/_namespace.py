@@ -25,6 +25,7 @@ from confarg._types import (
     _is_dict,
     _is_namedtuple,
     _is_struct,
+    _is_union,
     _namedtuple_fields,
     _Pinned,
     _resolve_type,
@@ -235,7 +236,23 @@ def _collect_ns_namedtuple(
         _set_nested(result, flag.split("."), v)
 
 
-def _collect_ns_fields(  # noqa: C901, PLR0912  # one branch per type case
+def _collect_ns_union_root(
+    flat: dict[str, Any],
+    variants: list[Any],
+    prefix: str,
+    union_tag: str,
+    result: dict[str, Any],
+) -> None:
+    """Collect CLI values for a root-level union target (variants are concrete struct types)."""
+    tag_key = f"{prefix}.{union_tag}" if prefix else union_tag
+    if tag_key in flat:
+        tag_path = ([*prefix.split(".")] if prefix else []) + [union_tag]
+        _set_nested(result, tag_path, _str_token(flat[tag_key]))
+    for variant in variants:
+        _collect_ns_fields(flat, variant, prefix, union_tag, result)
+
+
+def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type case
     flat: dict[str, Any],
     target: Any,
     prefix: str,
@@ -245,6 +262,12 @@ def _collect_ns_fields(  # noqa: C901, PLR0912  # one branch per type case
     """Walk target and copy matching flat-namespace entries into nested dict."""
     setup = _resolve_struct(target)
     if setup is None:
+        tp = _resolve_type(target)
+        if _is_union(tp):
+            non_none = _union_args_no_none(tp)
+            concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
+            if concrete:
+                _collect_ns_union_root(flat, concrete, prefix, union_tag, result)
         return
     _tp, flds, hints = setup
 

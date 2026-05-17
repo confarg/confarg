@@ -492,3 +492,62 @@ class TestInheritanceDispatch:
         assert isinstance(result, _ServerDB)
         assert result.host == "db.example.com"
         assert result.port == 5432
+
+
+# ---------------------------------------------------------------------------
+# Root-level union target (target IS a union, not a struct containing one)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _RootSQLite:
+    """SQLite config for union-root tests."""
+
+    dbpath: str
+
+
+@dataclass
+class _RootDBServer:
+    """DB server config for union-root tests."""
+
+    host: str
+    port: int
+    name: str
+
+
+_RootDBConfig: Any = _RootSQLite | _RootDBServer
+
+
+class TestUnionRootTarget:
+    """populate_app / from_app work when the target is itself a union of structs."""
+
+    def test_union_root_flags_registered(self) -> None:
+        """build_static_flags generates --class and all variant fields for a union root."""
+        flags = build_static_flags(_RootDBConfig, union_tag="class", config_flag="")
+        names = {f.name for f in flags}
+        assert "class" in names
+        assert "dbpath" in names
+        assert "host" in names
+        assert "port" in names
+        assert "name" in names
+
+    def test_union_root_round_trip_sqlite(self) -> None:
+        """--dbpath alone selects the SQLite variant without needing --class."""
+        result = _run(_RootDBConfig, ["--dbpath", "/tmp/x.db"])
+        assert isinstance(result, _RootSQLite)
+        assert result.dbpath == "/tmp/x.db"
+
+    def test_union_root_round_trip_db_server(self) -> None:
+        """DB server fields alone select the server variant without needing --class."""
+        result = _run(_RootDBConfig, ["--host", "db.example.com", "--port", "5432", "--name", "mydb"])
+        assert isinstance(result, _RootDBServer)
+        assert result.host == "db.example.com"
+        assert result.port == 5432
+        assert result.name == "mydb"
+
+    def test_union_root_explicit_class_tag(self) -> None:
+        """--class overrides structural disambiguation for the union root."""
+        cls_path = f"{__name__}._RootSQLite"
+        result = _run(_RootDBConfig, ["--class", cls_path, "--dbpath", "/tmp/x.db"])
+        assert isinstance(result, _RootSQLite)
+        assert result.dbpath == "/tmp/x.db"
