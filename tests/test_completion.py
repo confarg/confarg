@@ -14,9 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import confarg
-from confarg import from_namespace, populate_parser
-from confarg._completion import (
+from confarg.cli.argparse import from_namespace, populate_parser, setup_completion
+from confarg.cli.argparse._completion import (
     _collect_partial_cli_tags,
     _collect_partial_config,
     _extend_walk,
@@ -544,7 +543,7 @@ class TestSetupCompletionImportGuard:
         populate_parser(_AppConfig, parser)
 
         with patch("builtins.__import__", side_effect=mock_import), pytest.raises(ImportError, match="argcomplete"):
-            confarg.setup_completion(parser, _AppConfig)
+            setup_completion(parser, _AppConfig)
 
     def test_calls_argcomplete_autocomplete(self) -> None:
         """setup_completion calls argcomplete.autocomplete(parser)."""
@@ -554,7 +553,7 @@ class TestSetupCompletionImportGuard:
         mock_ac = MagicMock()
 
         with patch.dict("sys.modules", {"argcomplete": mock_ac}):
-            confarg.setup_completion(parser, _AppConfig, argv=[])
+            setup_completion(parser, _AppConfig, argv=[])
 
         mock_ac.autocomplete.assert_called_once_with(parser)
 

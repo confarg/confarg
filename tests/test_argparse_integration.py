@@ -14,8 +14,8 @@ from typing import Annotated, Literal
 import pytest
 
 import confarg
-from confarg import FieldMeta, from_namespace, populate_parser
-from confarg._argparse import _get_field_docstrings
+from confarg.cli.argparse import FieldMeta, from_namespace, populate_parser
+from confarg.cli.argparse._spec import _get_field_docstrings
 
 # ---------------------------------------------------------------------------
 # Dataclasses used across tests
@@ -68,6 +68,23 @@ class AppConfig:
     db: DbConfig
     debug: bool = False
     """Global debug flag."""
+
+
+@dataclass
+class _Inner:
+    value: int = 0
+
+
+@dataclass
+class _Middle:
+    inner: _Inner
+    field: str = ""
+
+
+@dataclass
+class _DeepConfig:
+    middle: _Middle
+    name: str = ""
 
 
 @dataclass
@@ -439,8 +456,8 @@ class TestFromNamespace:
 
     def test_union_class_tag_collected_by_collect_ns_fields(self) -> None:
         """--<field>.class in namespace is passed through to the merge pipeline."""
-        from confarg._argparse import _collect_ns_fields
         from confarg._types import _StrToken
+        from confarg.cli.argparse._namespace import _collect_ns_fields
 
         flat = {"item.class": "myapp._StructVariantA"}
         result: dict = {}
@@ -586,3 +603,19 @@ class TestConfigFileSupport:
         assert result.debug is True
         assert result.db.host == "from_file"
         assert result.db.port == 9999  # CLI overrides file
+
+    def test_subkey_config_no_deep_flags(self) -> None:
+        """--config.<field> flags are generated only for direct fields, not recursively."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_DeepConfig, parser)
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--config.middle" in flags
+        assert "--config.middle.inner" not in flags
+
+    def test_subkey_config_false_root_only(self) -> None:
+        """config_subkeys=False registers only the root --config flag."""
+        parser = argparse.ArgumentParser()
+        populate_parser(AppConfig, parser, config_subkeys=False)
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--config" in flags
+        assert "--config.db" not in flags
