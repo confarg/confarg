@@ -73,8 +73,7 @@ fixed ones); and the **scalar leaves**, whatever is left. Asking `_is_tuple` for
 bucket is the mistake it used to make: a namedtuple is a tuple subclass, not a `tuple[...]`
 generic alias, so `str | Point` landed among the scalars and refused the list
 `str | tuple[int, int]` accepts — in every channel, since this is below the parsers
-([BUG-21](../todo/bugs/README.md), closed;
-[10](10-design-decisions.md#a-namedtuple-is-a-fixed-length-sequence)).
+([10](10-design-decisions.md#a-namedtuple-is-a-fixed-length-sequence)).
 
 Coerce functions may raise `ValueError`, `TypeError` or `OSError`;
 `serialize` defaults to `str` and must return something a config writer accepts and `coerce`
