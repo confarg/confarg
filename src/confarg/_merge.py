@@ -200,11 +200,11 @@ def _apply_list_ops(
             )
             raise ConfargError(msg)
         working = list(working)  # ensure mutability
-        working[idx] = (
-            _deep_merge(working[idx], iv, union_tag=union_tag)
-            if isinstance(working[idx], dict) and isinstance(iv, dict)
-            else iv
-        )
+        # Delegate to the canonical "combine existing value with override" dispatcher so an
+        # index patch composes at any depth: a list/tuple element + index-keyed dict recurses
+        # through _apply_list_ops (instead of being replaced), a dict element + dict patch
+        # deep-merges, and anything else is replaced by iv.
+        working[idx] = _merge_existing_value(working[idx], iv, key, union_tag)
 
     return working
 
