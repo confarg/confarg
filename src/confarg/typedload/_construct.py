@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 from confarg import _defaults
-from confarg._callable import _resolve_callable_spec, resolve_typed_call
+from confarg._callable import _resolve_callable_spec, holds_an_opener, resolve_held_spec, resolve_typed_call
 from confarg._cast import cast_name_for_type, holds_the_cast, type_for_cast_name
 from confarg._import import _import_dotted, dotted_name
 from confarg._merge import (
@@ -471,7 +471,7 @@ def _construct_typed(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
     """Dispatch construction on the shape :func:`_type_kind` names, after a pin and None are handled."""
     match _type_kind(tp):
         case _TypeKind.ANY:
-            return _held_by_any(data)
+            return _construct_any(data, path, union_tag)
         case _TypeKind.UNION:
             return _construct_union(tp, data, path, union_tag)
         case _TypeKind.NAMEDTUPLE:
@@ -490,11 +490,37 @@ def _construct_typed(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
             return _construct_scalar(tp, data, path, union_tag)
 
 
+def _construct_any(data: Any, path: FieldPath, union_tag: str) -> Any:
+    """Construct what an ``Any`` node holds of *data*: a spec's value, a container of ``Any`` nodes, or a leaf.
+
+    A dict holding an opener is a spec, read with every opener (:func:`resolve_held_spec`);
+    any other dict is a ``dict[Any, Any]`` and a list a ``list[Any]``, so a spec at any depth
+    is read too. A leaf is held as it is, a token as its text (:func:`_held_by_any`). A
+    container in which nothing changed is returned as the very object given.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#an-any-node-reads-every-opener
+    """
+    if isinstance(data, dict):
+        if holds_an_opener(data):
+            return resolve_held_spec(data, path, union_tag, construct)
+        held = _construct_dict(dict[Any, Any], data, path, union_tag)
+        unchanged = all(
+            type(hk) is type(k) and hk == k and hv is v
+            for (hk, hv), (k, v) in zip(held.items(), data.items(), strict=True)
+        )
+        return data if unchanged else held
+    if isinstance(data, list):
+        items = [construct(Any, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(data)]
+        return data if all(h is v for h, v in zip(items, data, strict=True)) else items
+    return _held_by_any(data)
+
+
 def _is_typed_call(data: Any, tp: Any) -> bool:
     """True if *data* is a ``call:`` spec for a field of type *tp*, and that field is not a Callable.
 
     A ``call:`` key is a spec only where no member of the annotation could hold that key as data: a
-    dict type, ``Any`` and a Callable keep their own meaning, and a struct member named ``call``
+    dict type and a Callable keep their own meaning, and a struct member named ``call``
     keeps the field's data. ``class:`` is the union tag, which already selects a struct, its
     other keys the struct's fields; a ``bind:`` beside ``call:`` is a second opener, which the
     call refuses.
@@ -522,7 +548,7 @@ def _takes_typed_call(tp: Any, key: str = _defaults.CALL_KEY) -> bool:
     tp = _resolve_type(tp)
     members = [_resolve_type(arg) for arg in _union_args_no_none(tp)] if _is_union(tp) else [tp]
     for member in members:
-        if _type_kind(member) in (_TypeKind.ANY, _TypeKind.DICT, _TypeKind.CALLABLE):
+        if _type_kind(member) in (_TypeKind.DICT, _TypeKind.CALLABLE):
             return False
         if _is_struct(member) and not {_defaults.CALL_KEY, key}.isdisjoint(_struct_member_names(member)):
             return False
@@ -968,10 +994,13 @@ def _construct_union_by_tag(non_none: list[Any], data: MergeDict, path: FieldPat
     """Construct a union value using its class tag field.
 
     The candidates are every ``_is_struct`` variant, registered leaves included: a tag names a
-    class to build from fields, which is the one thing a leaf stays open to.
+    class to build from fields, which is the one thing a leaf stays open to. A class no
+    candidate holds is an ``Any`` variant's spec when the union has one; a tag that does not
+    import is refused either way.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in
+        docs-dev/architecture/callables.md#an-any-node-reads-every-opener
     """
     tag = data[union_tag]
     cls = _import_class_by_path(tag, path, union_tag)
@@ -984,6 +1013,10 @@ def _construct_union_by_tag(non_none: list[Any], data: MergeDict, path: FieldPat
     if matching:
         cleaned = {k: v2 for k, v2 in data.items() if k != union_tag}
         return _construct_named_struct(cls, cleaned, path, union_tag, _Naming(tag, "tag"))
+    any_var = next((v for v in non_none if _holds_anything(v)), None)
+    if any_var is not None:
+        # A class no variant holds is the Any variant's spec, which builds the class it names.
+        return construct(any_var, data, path=path, union_tag=union_tag)
     valid_variants = sorted(dotted_name(_resolve_type(v)) for v in non_none if _is_struct(_resolve_type(v)))
     msg = (
         f"Class {tag!r} at '{_spell_field_path(path)}' is not compatible with any union variant."

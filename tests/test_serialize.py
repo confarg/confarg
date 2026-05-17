@@ -476,6 +476,135 @@ class TestDumpUnionWithAny:
         assert result == {"x": {"a": 1}}
 
 
+@_dc
+class _AnyHeld:
+    a: int = 0
+
+
+@_dc
+class _AnyHeldAny:
+    p: Any = None
+
+
+class _AnyScaler:
+    """A plain callable class with no ``__eq__``: it reads back as an object holding the same state."""
+
+    def __init__(self, factor: int) -> None:
+        self.factor = factor
+
+    def __call__(self, x: int) -> int:
+        return x * self.factor
+
+
+class _AnyHidden:
+    """Keeps its argument under another name, so no spec can rebuild it."""
+
+    def __init__(self, factor: int) -> None:
+        self._factor = factor
+
+
+def _any_double(x: int) -> int:
+    return 2 * x
+
+
+_MOD = __name__
+
+
+class TestDumpAny:
+    """An object an ``Any`` field holds dumps by its runtime type, as the spec that rebuilds it (FEAT-42)."""
+
+    def test_the_ticket_reproduction(self) -> None:
+        """A struct default dumps as its class spec, a Path as its text with a warning."""
+        Target = make_target("y", Any, default_factory=lambda: _AnyHeld(1))
+        assert confarg.dump(Target()) == {"y": {"class": f"{_MOD}._AnyHeld", "a": 1}}
+        assert confarg.build(Target, confarg.dump(Target())) == Target()
+
+    def test_a_value_that_reads_back_as_another_type_warns(self) -> None:
+        """A Path reads back as a str under Any, so it is written as its text, with a warning naming the field."""
+        Target = make_target("x", Any, default_factory=lambda: [Path("p")])
+        with pytest.warns(ConfargWarning, match=r"'x\[0\]'"):
+            assert confarg.dump(Target()) == {"x": ["p"]}
+
+    def test_a_plain_value_dumps_without_a_warning(self, recwarn: pytest.WarningsRecorder) -> None:
+        """An int, a str, a list and a dict of them read back as themselves."""
+        Target = make_target("x", Any, default=None)
+        obj = Target(x={"a": [1, "b", 2.5, True, None]})
+        assert confarg.dump(obj) == {"x": {"a": [1, "b", 2.5, True, None]}}
+        assert not [w for w in recwarn if issubclass(w.category, ConfargWarning)]
+
+    def test_an_object_nested_in_containers_dumps_as_its_spec(self) -> None:
+        """Specs are written at every depth."""
+        Target = make_target("x", Any, default=None)
+        obj = Target(x={"k": [_AnyHeld(2)]})
+        assert confarg.dump(obj) == {"x": {"k": [{"class": f"{_MOD}._AnyHeld", "a": 2}]}}
+        assert confarg.build(Target, confarg.dump(obj)) == obj
+
+    def test_a_function_dumps_as_a_bind_spec(self) -> None:
+        """A bare path would read back as text, so a function is written under bind:."""
+        Target = make_target("x", Any, default=None)
+        dumped = confarg.dump(Target(x=_any_double))
+        assert dumped == {"x": {"bind": f"{_MOD}._any_double"}}
+        assert confarg.build(Target, dumped).x is _any_double
+
+    def test_a_partial_dumps_as_a_bind_spec_with_its_arguments(self) -> None:
+        """A partial is written as a Callable field writes it."""
+        import functools  # noqa: PLC0415  # used by this test only
+
+        Target = make_target("x", Any, default=None)
+        dumped = confarg.dump(Target(x=functools.partial(_any_double, x=3)))
+        assert dumped == {"x": {"bind": f"{_MOD}._any_double", "args": {"x": 3}}}
+        assert confarg.build(Target, dumped).x() == 6
+
+    def test_an_object_with_no_eq_reads_back_by_its_state(self) -> None:
+        """A plain class with no __eq__ is kept: it reads back as an object holding the same state."""
+        Target = make_target("x", Any, default=None)
+        dumped = confarg.dump(Target(x=_AnyScaler(3)))
+        assert dumped == {"x": {"class": f"{_MOD}._AnyScaler", "factor": 3}}
+        assert confarg.build(Target, dumped).x(2) == 6
+
+    def test_an_object_no_spec_rebuilds_is_written_untyped_with_a_warning(self) -> None:
+        """An object whose state cannot be read is written as it is, with a warning saying why."""
+        Target = make_target("x", Any, default=None)
+        held = _AnyHidden(3)
+        with pytest.warns(ConfargWarning, match="'x'"):
+            assert confarg.dump(Target(x=held)) == {"x": held}
+
+    def test_a_failed_spec_warns_once(self) -> None:
+        """A UUID is no spec: one warning names the value, none its would-be fields."""
+        Target = make_target("x", Any, default=None)
+        with pytest.warns(ConfargWarning) as record:
+            confarg.dump(Target(x=UUID(int=1)))
+        assert [str(w.message).split("'")[1] for w in record] == ["x"]
+
+    def test_a_kept_spec_still_says_what_its_fields_warn(self) -> None:
+        """A struct whose Any field holds a Path is kept, and the Path still warns."""
+        Target = make_target("x", Any, default=None)
+        with pytest.warns(ConfargWarning, match=r"'x\.p'"):
+            dumped = confarg.dump(Target(x=_AnyHeldAny(p=Path("q"))))
+        assert dumped == {"x": {"class": f"{_MOD}._AnyHeldAny", "p": "q"}}
+
+    def test_a_dict_holding_an_opener_warns(self) -> None:
+        """A dict holding a class key reads back as a spec, not as the dict, so it warns."""
+        Target = make_target("x", Any, default=None)
+        with pytest.warns(ConfargWarning, match="'x'"):
+            assert confarg.dump(Target(x={"class": "not.a.Class"})) == {"x": {"class": "not.a.Class"}}
+
+    @pytest.mark.parametrize("tp", [Union[int, Any], Union[_AnyPeer, Any]])
+    def test_an_object_beside_a_typed_variant_dumps_as_its_spec(self, tp: Any) -> None:
+        """Beside int or another struct, an object only Any holds is written as its class spec."""
+        Target = make_target("x", tp, default=None)
+        obj = Target(x=_AnyHeld(4))
+        assert confarg.dump(obj) == {"x": {"class": f"{_MOD}._AnyHeld", "a": 4}}
+        assert confarg.build(Target, confarg.dump(obj)) == obj
+
+    def test_a_list_of_any_dumps_each_element_as_its_spec(self) -> None:
+        """list[Any] elements are Any nodes."""
+        Target = make_target("x", list[Any], default_factory=list)
+        obj = Target(x=[_AnyHeld(1), 2])
+        assert confarg.dump(obj) == {"x": [{"class": f"{_MOD}._AnyHeld", "a": 1}, 2]}
+        assert confarg.build(Target, confarg.dump(obj)) == obj
+
+
 # ---------------------------------------------------------------------------
 # Subscripted and Literal union variants
 # ---------------------------------------------------------------------------

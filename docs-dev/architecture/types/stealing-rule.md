@@ -87,7 +87,7 @@ callable instance does not have: an `Optional[Callable]` warned on every such va
 it again inside `dump()`, which otherwise builds nothing
 ([callables](../callables.md#a-path-is-written-only-when-it-reads-back)).
 
-An `Any` variant holds what it is given, so what it must read back is the dump itself rather than the instance, and its cast names the dump's own type: `Path | Any` holding `"a"` dumps `{__cast__: str, __value__: "a"}`, since the bare `"a"` reads back as a `Path`. A value it holds that reads back as itself is written bare, as a bare `Any` field writes it ([construction](construction.md#an-any-variant-is-tried-last)).
+An `Any` variant writes what a bare `Any` field writes ([serialization](serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it)), so what the union must read back is what a bare `Any` reads that dump back as, and its cast names the dump's own type: `Path | Any` holding `"a"` dumps `{__cast__: str, __value__: "a"}`, since the bare `"a"` reads back as a `Path`. A value the union reads back as a bare `Any` does is written bare ([construction](construction.md#an-any-variant-is-tried-last)).
 
 A struct variant is unaffected: it is disambiguated by the class tag (`_needs_tag`) as before,
 and `tag_policy` stays a class-tag policy — `"always"` tags structs and never casts leaves

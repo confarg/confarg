@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import enum
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from confarg import _defaults
-from confarg._callable import _serialize_callable
+from confarg._callable import _serialize_callable, holds_an_opener, promote_bare_spec
 from confarg._cast import cast_name_for_type
 from confarg._import import dotted_name, imports_back
 from confarg._merge import ListOp, MergeDict
@@ -40,6 +40,9 @@ from confarg._types import (
 from confarg.exceptions import ConfargError, ConfargWarning, FieldPath, _spell_field_path
 from confarg.typedload._coerce import _LEAF_SERIALIZERS, _is_struct_variant, _type_kind, _TypeKind
 from confarg.typedload._construct import _disambiguate_struct, _holds_anything, construct
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _serialize(
@@ -96,8 +99,132 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
                 lambda owner: _serialize_struct(type(owner), owner, path, union_tag, tag_policy),
             )
             return _serialize_untyped(spec)
-        case _TypeKind.ANY | _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
+        case _TypeKind.ANY:
+            return _serialize_any(instance, path, union_tag, tag_policy)
+        case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
             return _serialize_leaf(tp, instance)
+
+
+def _serialize_any(
+    instance: Any,
+    path: FieldPath,
+    union_tag: str,
+    tag_policy: TagPolicy,
+    *,
+    checked: bool = True,
+) -> Any:
+    """Serialize what an ``Any`` node holds by its runtime type, as the spec that rebuilds it.
+
+    A dict and a list are walked, each item an ``Any`` node in turn; a tuple or a set is
+    written as the list a file holds. Any other value is written by :func:`_held_object_form`.
+
+    *checked*, each value is kept only when an ``Any`` node reads it back as the value it
+    came from (:func:`_reads_back`), an object compared by the state it holds; any other is
+    written untyped (:func:`_serialize_untyped`), with a :class:`ConfargWarning` saying why.
+    A dict holding an opener key, which reads back as a spec, and a tuple or a set, which
+    reads back as a list, warn too. Unchecked, the form is returned as it is, and a value no
+    spec can write raises.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
+    """
+
+    def item(value: Any, key: str | int) -> Any:
+        if value is None:
+            return None
+        return _serialize_any(value, (*path, key), union_tag, tag_policy, checked=checked)
+
+    if isinstance(instance, dict):
+        out = {_serialize_leaf(None, k): item(v, str(k)) for k, v in instance.items()}
+        if checked and holds_an_opener(out):
+            _warn_unread_any(instance, path, "it holds an opener key, so it reads back as the spec it spells")
+        return out
+    if isinstance(instance, list):
+        return [item(v, i) for i, v in enumerate(instance)]
+    if isinstance(instance, (tuple, set, frozenset)):
+        items = [item(v, i) for i, v in enumerate(instance)]
+        if not isinstance(instance, tuple):
+            items.sort(key=_sort_key)
+        if checked:
+            _warn_unread_any(instance, path, "an Any node reads a sequence back as a list")
+        return items
+    if checked:
+        return _serialize_held_object(instance, path, union_tag, tag_policy)
+    return _held_object_form(instance, path, union_tag, tag_policy)
+
+
+def _serialize_held_object(instance: Any, path: FieldPath, union_tag: str, tag_policy: TagPolicy) -> Any:
+    """Serialize a value an ``Any`` node holds, no container, as its spec when an ``Any`` node reads it back.
+
+    Any other is written untyped (:func:`_serialize_untyped`), with a :class:`ConfargWarning`
+    saying why (:func:`_serialize_any`).
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
+    """
+    # What the fields of a struct warn belongs to the spec, so it is said only if the spec is kept.
+    unwritable: ConfargError | None = None
+    with warnings.catch_warnings(record=True) as within:
+        warnings.simplefilter("always", ConfargWarning)
+        try:
+            written = _held_object_form(instance, path, union_tag, tag_policy)
+        except ConfargError as e:
+            unwritable = e
+    if unwritable is not None:
+        _warn_unread_any(instance, path, str(unwritable))
+        return _serialize_untyped(instance)
+
+    def dumps_as(back: Any) -> Any:
+        return _serialize_any(back, path, union_tag, tag_policy, checked=False)
+
+    if _reads_back(Any, instance, written, union_tag, dumps_as=dumps_as):
+        for w in within:
+            warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
+        return written
+    _warn_unread_any(instance, path, "an Any node does not read the spec it would be written as back as an equal value")
+    return _serialize_untyped(instance)
+
+
+def _held_object_form(instance: Any, path: FieldPath, union_tag: str, tag_policy: TagPolicy) -> Any:
+    """Return the spec an ``Any`` node reads *instance* back from: a callable's, a struct's, or a leaf.
+
+    A callable is written as a Callable field writes it, a bare path opened into its
+    ``bind:`` form, since an ``Any`` node reads a bare string as text; a struct as its
+    ``class:`` spec beside its fields; a leaf as :func:`_serialize_leaf` writes it.
+
+    Raises:
+        ConfargError: If no spec spells the callable or the struct (:func:`_serialize_callable`,
+            :func:`_class_path`).
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
+    """
+    if isinstance(instance, (str, int, float, enum.Enum)) or any(isinstance(instance, t) for t in _LEAF_SERIALIZERS):
+        return _serialize_leaf(None, instance)
+    if callable(instance):
+        spec = _serialize_callable(
+            instance,
+            lambda owner: _serialize_struct(type(owner), owner, path, union_tag, tag_policy),
+        )
+        return _serialize_untyped(promote_bare_spec(spec) if isinstance(spec, str) else spec)
+    cls = type(instance)
+    if _is_struct(cls):
+        return {_defaults.CLASS_KEY: _class_path(cls), **_serialize_struct(cls, instance, path, union_tag, tag_policy)}
+    return _serialize_leaf(None, instance)
+
+
+def _warn_unread_any(instance: Any, path: FieldPath, reason: str) -> None:
+    """Warn that what an ``Any`` node holds at *path* is written untyped, since no spec reads it back.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
+    """
+    warnings.warn(
+        f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as the"
+        f" {type(instance).__name__} it holds: {reason.rstrip('.')}. It is written untyped.",
+        ConfargWarning,
+        stacklevel=2,
+    )
 
 
 def _serialize_collection(
@@ -194,14 +321,19 @@ def _serialize_union(
     # None, and a dump holds none. Reading it back would only build the value again.
     if len(_union_args_no_none(tp)) == 1:
         return serialized
-    # Any holds what it is given: the value it reads back is the dump itself, its cast the
-    # dump's own type, as for a bare Any field.
+    # The Any variant already wrote what a bare Any field reads back, or warned that nothing
+    # does: the union must read the dump back as that Any reading, its cast the dump's own type.
     holds_anything = _holds_anything(variant_tp)
-    expected = serialized if holds_anything else instance
-    if _reads_back(tp, expected, serialized, union_tag):
+    expected = _any_reading(serialized, union_tag) if holds_anything else instance
+
+    def dumps_as(back: Any) -> Any:
+        return _serialize_any(back, path, union_tag, tag_policy, checked=False)
+
+    by_state = dumps_as if holds_anything else None
+    if _reads_back(tp, expected, serialized, union_tag, dumps_as=by_state):
         return serialized
     cast = _cast_dict(type(serialized) if holds_anything else variant_tp, serialized)
-    if _reads_back(tp, expected, cast, union_tag):
+    if _reads_back(tp, expected, cast, union_tag, dumps_as=by_state):
         return cast
     _warn_unpinnable_leaf(variant_tp, serialized, path)
     return serialized
@@ -228,7 +360,14 @@ def _warn_unpinnable_leaf(variant_tp: Any, serialized: Any, path: FieldPath) -> 
     )
 
 
-def _reads_back(tp: Any, expected: Any, data: Any, union_tag: str) -> bool:
+def _reads_back(
+    tp: Any,
+    expected: Any,
+    data: Any,
+    union_tag: str,
+    *,
+    dumps_as: Callable[[Any], Any] | None = None,
+) -> bool:
     """Check that reading *data* back as *tp* produces *expected*.
 
     Runs the reader itself instead of modelling a second time what selects a variant, so the
@@ -237,23 +376,54 @@ def _reads_back(tp: Any, expected: Any, data: Any, union_tag: str) -> bool:
     Args:
         tp: The declared type the value would be read back as.
         expected: What reading *data* back must produce: the value that produced it, or, for
-            an ``Any`` variant, which holds what it is given, *data* itself.
+            an ``Any`` variant, what a bare ``Any`` field reads *data* back as.
         data: The serialized form to read back.
         union_tag: The field name used as a discriminator tag in unions.
+        dumps_as: Serializes a value read back that does not compare equal: an object built
+            from a spec, a bound method or a partial is the same value when it holds the same
+            state, so dumps back as *data*.
 
     Returns:
-        True if construction yields a value of the same type that compares equal.
+        True if construction yields a value of the same type that compares equal, or that
+        *dumps_as* writes as *data*.
 
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#casting-a-stolen-leaf
+        docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
     """
     try:
         back = construct(tp, data, union_tag=union_tag)
-        # `is` first: a value that passes through unchanged round-trips even when it does not
-        # compare equal to itself (float('nan')).
-        return type(back) is type(expected) and bool(back is expected or back == expected)
     except (ConfargError, TypeError, ValueError):
         return False
+    return type(back) is type(expected) and _same_value(back, expected, data, dumps_as)
+
+
+def _same_value(back: Any, expected: Any, data: Any, dumps_as: Callable[[Any], Any] | None) -> bool:
+    """Return whether *back*, read back from *data*, is the value *expected* (:func:`_reads_back`)."""
+    try:
+        # `is` first: a value that passes through unchanged round-trips even when it does not
+        # compare equal to itself (float('nan')).
+        if back is expected or back == expected:
+            return True
+        if dumps_as is None:
+            return False
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ConfargWarning)
+            return bool(dumps_as(back) == data)
+    except (ConfargError, TypeError, ValueError):
+        return False
+
+
+def _any_reading(data: Any, union_tag: str) -> Any:
+    """Return what a bare ``Any`` field reads *data* back as, *data* itself when it reads none.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
+    """
+    try:
+        return construct(Any, data, union_tag=union_tag)
+    except (ConfargError, TypeError, ValueError):
+        return data
 
 
 def _serialize_tuple(

@@ -53,6 +53,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-194 — A `bind:` keyword built as a struct dumps as the instance, which no file format writes](BUG-194-a-bind-keyword-built-as-a-struct-dumps-as-the-instance.md) | minor |  | M | low | behavior | PR-93 |
 | [BUG-220 — A reference into a list with pending ops reads none of its items](BUG-220-a-reference-into-a-list-with-pending-ops-reads-none-of-its-items.md) | minor |  | M | high | behavior | PR-5 |
 | [BUG-225 — argparse completion offers nothing below a tagged class that holds itself](BUG-225-argparse-completion-offers-nothing-below-a-tagged-class-that-holds-itself.md) | minor |  | M | medium | behavior | PR-5 |
+| [BUG-236 — A list argument of a class named below a Callable or an `Any` takes one token](BUG-236-a-list-argument-of-a-class-named-below-a-callable-takes-one-token.md) | minor |  | M | high | behavior | PR-5 |
 | [BUG-201 — An environment variable below a dict appends, though the environment has no append](BUG-201-an-environment-variable-below-a-dict-appends-though-the-environment-has-no-append.md) | minor | FEAT-18 | S | medium | config | PR-5 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
 

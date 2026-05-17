@@ -1799,11 +1799,11 @@ class TestCallInTypedField:
         cfg = confarg.build(_TypedCallHolder, {"d": {"call": "not-a-spec"}})
         assert cfg.d == {"call": "not-a-spec"}
 
-    def test_any_field_keeps_the_call_key_as_data(self):
-        """An Any field keeps a call key as data."""
-        data = {"anything": {"call": f"{__name__}._double"}}
+    def test_any_field_takes_the_call(self):
+        """An Any field reads a call key as a spec, as a field of any other type does (FEAT-42)."""
+        data = {"anything": {"call": f"{__name__}._double", "args": {"x": 4}}}
         cfg = confarg.build(_TypedCallHolder, data)
-        assert cfg.anything == {"call": f"{__name__}._double"}
+        assert cfg.anything == 8
 
     def test_load_reaches_the_same_result(self, tmp_path):
         """load() takes the same route as build() for a file."""
@@ -1811,6 +1811,110 @@ class TestCallInTypedField:
         path.write_text(json.dumps({"n": {"call": f"{__name__}._double", "args": {"x": 5}}}))
         cfg = confarg.load(_TypedCallHolder, files=[path], env={}, argv=[])
         assert cfg.n == 10
+
+
+@dataclass
+class _AnyHolder:
+    anything: Any = None
+    items: list[Any] | None = None
+    bare: dict | None = None
+    int_or_any: int | Any = None
+    tagged_or_any: _TagBase | Any = None
+
+
+class TestAnyReadsSpecs:
+    """An ``Any`` field reads every opener, at every depth; a bare dotted string stays a string (FEAT-42)."""
+
+    def test_class_builds_the_named_class(self):
+        """class: names any importable class, its other keys the fields."""
+        cfg = confarg.build(_AnyHolder, {"anything": {"class": f"{__name__}._Inner", "a": 3}})
+        assert cfg.anything == _Inner(a=3)
+
+    def test_class_needs_no_call_method(self):
+        """Unlike under a Callable, the instance need not be callable."""
+        cfg = confarg.build(_AnyHolder, {"anything": {"class": f"{__name__}._TagUnrelated"}})
+        assert cfg.anything == _TagUnrelated()
+
+    def test_bind_yields_a_partial(self):
+        """bind: applies its arguments, as on a Callable field."""
+        cfg = confarg.build(_AnyHolder, {"anything": {"bind": f"{__name__}._add", "args": {"y": 1}}})
+        assert cfg.anything(x=2) == 3
+
+    def test_bind_without_arguments_is_the_target(self):
+        """{bind: T} is T itself, so a function can be named where a bare string stays text."""
+        cfg = confarg.build(_AnyHolder, {"anything": {"bind": f"{__name__}._double"}})
+        assert cfg.anything is _double
+
+    def test_classfn_yields_the_bound_method(self):
+        """classfn: builds the owner from the other keys and yields its method."""
+        cfg = confarg.build(_AnyHolder, {"anything": {"classfn": f"{__name__}._Processor.process", "offset": 2}})
+        assert cfg.anything(1) == 3
+
+    def test_a_bare_dotted_string_stays_a_string(self):
+        """The shorthand applies only where the type asks for a callable."""
+        cfg = confarg.build(_AnyHolder, {"anything": f"{__name__}._double"})
+        assert cfg.anything == f"{__name__}._double"
+
+    def test_a_dict_without_an_opener_stays_a_dict(self):
+        """A dict holding no opener is data."""
+        cfg = confarg.build(_AnyHolder, {"anything": {"a": 1, "b": [2]}})
+        assert cfg.anything == {"a": 1, "b": [2]}
+
+    def test_a_spec_nested_in_a_dict_and_a_list_is_read(self):
+        """A dict an Any holds is dict[Any, Any] and a list list[Any], so a spec at any depth is read."""
+        spec = {"class": f"{__name__}._Inner", "a": 2}
+        cfg = confarg.build(_AnyHolder, {"anything": {"k": [spec, {"deeper": spec}]}})
+        assert cfg.anything == {"k": [_Inner(a=2), {"deeper": _Inner(a=2)}]}
+
+    def test_a_list_of_any_reads_each_element(self):
+        """list[Any] elements are Any nodes."""
+        cfg = confarg.build(_AnyHolder, {"items": [{"call": f"{__name__}._double", "args": {"x": 1}}, "t"]})
+        assert cfg.items == [2, "t"]
+
+    def test_a_bare_dict_reads_its_values(self):
+        """A bare dict is dict[Any, Any], so its values read specs."""
+        cfg = confarg.build(_AnyHolder, {"bare": {"k": {"class": f"{__name__}._Inner"}}})
+        assert cfg.bare == {"k": _Inner()}
+
+    def test_a_class_that_does_not_import_is_refused(self):
+        """A tag naming no class is an error, not data."""
+        with pytest.raises(ConfargError, match=r"nope\.Nothing"):
+            confarg.build(_AnyHolder, {"anything": {"class": "nope.Nothing"}})
+
+    def test_a_class_naming_no_class_is_refused(self):
+        """class: names a class; a function is refused."""
+        with pytest.raises(TypeCoercionError, match="must reference a class"):
+            confarg.build(_AnyHolder, {"anything": {"class": f"{__name__}._double"}})
+
+    def test_two_openers_are_refused(self):
+        """Two computation openers are refused, as in a Callable spec."""
+        with pytest.raises(TypeCoercionError, match="more than one of"):
+            confarg.build(_AnyHolder, {"anything": {"bind": f"{__name__}._double", "call": f"{__name__}._double"}})
+
+    def test_a_tag_beside_a_scalar_variant_builds_the_class(self):
+        """In int | Any, a dict the int refuses is the Any variant's spec."""
+        cfg = confarg.build(_AnyHolder, {"int_or_any": {"class": f"{__name__}._Inner", "a": 5}})
+        assert cfg.int_or_any == _Inner(a=5)
+
+    def test_a_tag_naming_a_variant_still_selects_it(self):
+        """A tag naming a subclass of a struct variant selects that variant."""
+        cfg = confarg.build(_AnyHolder, {"tagged_or_any": {"class": f"{__name__}._TagSub", "b": 4}})
+        assert cfg.tagged_or_any == _TagSub(b=4)
+
+    def test_a_tag_naming_no_variant_is_the_any_variants_spec(self):
+        """In S | Any, a tag naming no variant builds the class it names."""
+        cfg = confarg.build(_AnyHolder, {"tagged_or_any": {"class": f"{__name__}._TagUnrelated", "z": 4}})
+        assert cfg.tagged_or_any == _TagUnrelated(z=4)
+
+    def test_a_tag_that_does_not_import_is_refused_beside_a_variant(self):
+        """In S | Any, a tag that does not import is refused."""
+        with pytest.raises(TypeCoercionError, match=r"nope\.Nothing"):
+            confarg.build(_AnyHolder, {"tagged_or_any": {"class": "nope.Nothing"}})
+
+    def test_a_call_beside_a_scalar_variant_takes_the_value(self):
+        """In int | Any, a call's value is taken as it is."""
+        cfg = confarg.build(_AnyHolder, {"int_or_any": {"call": f"{__name__}._text"}})
+        assert cfg.int_or_any == "hi"
 
 
 @dataclass
