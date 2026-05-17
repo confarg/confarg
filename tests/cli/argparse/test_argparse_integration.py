@@ -617,3 +617,79 @@ class TestConfigFileSupport:
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--config" in flags
         assert "--config.db" not in flags
+
+
+# ---------------------------------------------------------------------------
+# Inheritance-based dispatch (base class with subclasses)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _BaseDB:
+    """Abstract base database config."""
+
+
+@dataclass
+class _SQLiteDB(_BaseDB):
+    dbpath: str
+
+
+@dataclass
+class _ServerDB(_BaseDB):
+    host: str
+    port: int
+
+
+class TestInheritanceDispatch:
+    """populate_parser / from_namespace handle base-class + subclass inheritance."""
+
+    def test_class_flag_registered(self) -> None:
+        """populate_parser registers --class for a base dataclass with subclasses."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(_BaseDB, parser)
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--class" in flags
+
+    def test_subclass_fields_registered(self) -> None:
+        """populate_parser also registers subclass fields as top-level flags."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(_BaseDB, parser)
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--dbpath" in flags
+        assert "--host" in flags
+        assert "--port" in flags
+
+    def test_from_namespace_sqlite(self) -> None:
+        """from_namespace constructs the correct SQLite subclass instance."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(_BaseDB, parser, config_flag="")
+        ns = parser.parse_args(
+            [
+                "--class",
+                f"{__name__}._SQLiteDB",
+                "--dbpath",
+                "/var/db/app.sqlite",
+            ],
+        )
+        result = from_namespace(_BaseDB, ns, env={})
+        assert isinstance(result, _SQLiteDB)
+        assert result.dbpath == "/var/db/app.sqlite"
+
+    def test_from_namespace_server(self) -> None:
+        """from_namespace constructs the correct server subclass instance."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(_BaseDB, parser, config_flag="")
+        ns = parser.parse_args(
+            [
+                "--class",
+                f"{__name__}._ServerDB",
+                "--host",
+                "db.example.com",
+                "--port",
+                "5432",
+            ],
+        )
+        result = from_namespace(_BaseDB, ns, env={})
+        assert isinstance(result, _ServerDB)
+        assert result.host == "db.example.com"
+        assert result.port == 5432

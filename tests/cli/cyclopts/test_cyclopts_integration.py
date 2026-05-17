@@ -376,3 +376,69 @@ def test_public_api() -> None:
     assert hasattr(confargcyclopts, "populate_app")
     assert hasattr(confargcyclopts, "load_flags_into_app")
     assert hasattr(confargcyclopts, "from_app")
+
+
+# ---------------------------------------------------------------------------
+# Inheritance-based dispatch (base class with subclasses)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _BaseDB:
+    """Abstract base database config."""
+
+
+@dataclass
+class _SQLiteDB(_BaseDB):
+    dbpath: str
+
+
+@dataclass
+class _ServerDB(_BaseDB):
+    host: str
+    port: int
+
+
+class TestInheritanceDispatch:
+    """populate_app / from_app handle base-class + subclass inheritance."""
+
+    def test_class_flag_registered(self) -> None:
+        """populate_app registers --class for a base dataclass with subclasses."""
+        app = _make_app()
+        populate_app(_BaseDB, app, config_flag="")
+        meta = _app_meta.get(id(app))
+        assert meta is not None
+        names = set(meta["name_map"].values())
+        assert "class" in names
+
+    def test_subclass_fields_registered(self) -> None:
+        """populate_app also registers subclass fields as top-level options."""
+        app = _make_app()
+        populate_app(_BaseDB, app, config_flag="")
+        meta = _app_meta.get(id(app))
+        assert meta is not None
+        names = set(meta["name_map"].values())
+        assert "dbpath" in names
+        assert "host" in names
+        assert "port" in names
+
+    def test_from_app_sqlite(self) -> None:
+        """from_app constructs the correct SQLite subclass instance."""
+        module = __name__
+        result = _run(
+            _BaseDB,
+            ["--class", f"{module}._SQLiteDB", "--dbpath", "/var/db/app.sqlite"],
+        )
+        assert isinstance(result, _SQLiteDB)
+        assert result.dbpath == "/var/db/app.sqlite"
+
+    def test_from_app_server(self) -> None:
+        """from_app constructs the correct server subclass instance."""
+        module = __name__
+        result = _run(
+            _BaseDB,
+            ["--class", f"{module}._ServerDB", "--host", "db.example.com", "--port", "5432"],
+        )
+        assert isinstance(result, _ServerDB)
+        assert result.host == "db.example.com"
+        assert result.port == 5432

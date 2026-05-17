@@ -421,3 +421,69 @@ def test_public_api() -> None:
     assert hasattr(confargclick, "load_flags_into_command")
     assert hasattr(confargclick, "from_context")
     assert hasattr(confargclick, "setup_completion")
+
+
+# ---------------------------------------------------------------------------
+# Inheritance-based dispatch (base class with subclasses)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _BaseDB:
+    """Abstract base database config."""
+
+
+@dataclass
+class _SQLiteDB(_BaseDB):
+    dbpath: str
+
+
+@dataclass
+class _ServerDB(_BaseDB):
+    host: str
+    port: int
+
+
+class TestInheritanceDispatch:
+    """populate_command / from_context handle base-class + subclass inheritance."""
+
+    def test_class_flag_registered(self) -> None:
+        """populate_command registers --class for a base dataclass with subclasses."""
+        cmd = _make_command()
+        populate_command(_BaseDB, cmd, config_flag="")
+        names = {p.name for p in cmd.params}
+        assert "class" in names
+
+    def test_subclass_fields_registered(self) -> None:
+        """populate_command also registers subclass fields as top-level options."""
+        cmd = _make_command()
+        populate_command(_BaseDB, cmd, config_flag="")
+        names = {p.name for p in cmd.params}
+        assert "dbpath" in names
+        assert "host" in names
+        assert "port" in names
+
+    def test_from_context_sqlite(self) -> None:
+        """from_context constructs the correct SQLite subclass via CliRunner."""
+        result_holder: list[Any] = []
+
+        @click.command()
+        @click.pass_context
+        def cli(ctx: click.Context) -> None:
+            result_holder.append(confargclick.from_context(_BaseDB, ctx, env={}))
+
+        populate_command(_BaseDB, cli, config_flag="")
+        runner = CliRunner()
+        runner.invoke(
+            cli,
+            [
+                "--class",
+                f"{__name__}._SQLiteDB",
+                "--dbpath",
+                "/var/db/app.sqlite",
+            ],
+            catch_exceptions=False,
+        )
+        assert len(result_holder) == 1
+        assert isinstance(result_holder[0], _SQLiteDB)
+        assert result_holder[0].dbpath == "/var/db/app.sqlite"
