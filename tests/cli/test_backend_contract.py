@@ -107,6 +107,15 @@ class _WithStrBool:
     input: str | bool
 
 
+class _StealMarker:
+    """Module-level class used as a dotted-path target for str | type stealing tests."""
+
+
+@dataclass
+class _WithStrType:
+    value: str | type
+
+
 @dataclass
 class _WithStrTuple:
     input: str | tuple[str, str]
@@ -372,6 +381,23 @@ class TestStealingContract:
         cfg = loader.load(_WithStrBool, argv=["--input.str", "yes"], env={})
         assert cfg.input == "yes"
         assert type(cfg.input) is str
+
+    def test_str_type_stealing_builtin(self, loader: ConfargLoader) -> None:
+        """--value int resolves to the int class for str | type (type steals over str)."""
+        cfg = loader.load(_WithStrType, argv=["--value", "int"], env={})
+        assert cfg.value is int
+
+    def test_str_type_stealing_dotted_path(self, loader: ConfargLoader) -> None:
+        """--value <dotted> resolves to the class for str | type (type steals over str)."""
+        path = f"{_StealMarker.__module__}.{_StealMarker.__qualname__}"
+        cfg = loader.load(_WithStrType, argv=["--value", path], env={})
+        assert cfg.value is _StealMarker
+
+    def test_str_type_override(self, loader: ConfargLoader) -> None:
+        """--value.str int preserves 'int' as a string, bypassing type stealing."""
+        cfg = loader.load(_WithStrType, argv=["--value.str", "int"], env={})
+        assert cfg.value == "int"
+        assert type(cfg.value) is str
 
 
 # ---------------------------------------------------------------------------
@@ -941,6 +967,13 @@ class _WithMap:
 
 
 @dataclass
+class _WithStrBools:
+    """List-of-scalar-union field — elements are subject to the stealing rule."""
+
+    input: list[str | bool] = dataclasses.field(default_factory=list)
+
+
+@dataclass
 class _WithGrid:
     """List-of-list field — element is itself a sequence (nested index patch)."""
 
@@ -979,6 +1012,26 @@ class TestCollectionPatchContract:
         base = tmp_yaml("dbs:\n  - dbpath: a\n  - dbpath: b\n")
         cfg = loader.load(_WithDbs, argv=["--config", str(base), "--dbs.1.dbpath", "z"], env={})
         assert cfg.dbs == [_PatchSqlite("a"), _PatchSqlite("z")]
+
+    def test_index_force_cast_bypasses_stealing(self, loader: ConfargLoader) -> None:
+        """``--field.N.str`` force-casts a single list element, bypassing the stealing rule.
+
+        The cast path (``input.1``) is itself a collection-patch path, so it is applied by the
+        argv-order patch scan, not the flat collector — the whole reason both the patch-flag
+        registration and ``_parse_cli(patch_only=True)`` route the decision through
+        ``_is_collection_patch_path`` rather than assuming every cast is a plain-field cast.
+        """
+        cfg = loader.load(
+            _WithStrBools,
+            argv=["--input.0", "hello", "--input.1.str", "yes", "--input.2", "well"],
+            env={},
+        )
+        assert cfg.input == ["hello", "yes", "well"]
+
+    def test_index_force_cast_pins_first_element(self, loader: ConfargLoader) -> None:
+        """``--field.0.str yes`` pins element 0 to the string 'yes' rather than stealing to True."""
+        cfg = loader.load(_WithStrBools, argv=["--input.0.str", "yes"], env={})
+        assert cfg.input == ["yes"]
 
     def test_index_into_list_element_patches_not_replaces(self, loader: ConfargLoader, tmp_yaml) -> None:
         """``--grid.0.0`` patches the inner list element, not replaces the whole inner list."""

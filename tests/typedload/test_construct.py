@@ -81,3 +81,35 @@ class TestUnionSeqTokenFallback:
         """A plain _StrToken (env/config scalar) stays strict: no sequence fallback."""
         with pytest.raises(TypeCoercionError):
             construct(bool | list[str], _StrToken("hello"))
+
+
+class _TypeStealTarget:
+    """Module-level class used as a dotted-path target for str | type stealing tests."""
+
+
+class TestUnionTypeRefStealing:
+    """A type-ref variant participates in the stealing rule, taking priority over str.
+
+    Regression: _coerce_scalar_variants coerced each variant with _coerce_leaf, which
+    cannot build a type ref, so str always stole a str | type union. It now delegates
+    to the canonical scalar constructor, letting `type` win.
+    """
+
+    def test_bare_builtin_steals_over_str(self) -> None:
+        """'int' resolves to the int class for str | type, not the string 'int'."""
+        assert construct(str | type, _StrToken("int")) is int
+
+    def test_dotted_path_steals_over_str(self) -> None:
+        """A dotted class path resolves to the class for str | type, not the string."""
+        path = f"{_TypeStealTarget.__module__}.{_TypeStealTarget.__qualname__}"
+        assert construct(str | type, _StrToken(path)) is _TypeStealTarget
+
+    def test_unresolvable_value_falls_back_to_str(self) -> None:
+        """A value that is no importable type stays a str (str is the least-priority variant)."""
+        assert construct(str | type, _StrToken("not.a.real.class")) == "not.a.real.class"
+
+    def test_constrained_type_ref_steals_over_str(self) -> None:
+        """A type[Base] variant also steals: a subclass dotted path resolves to the class."""
+        assert construct(str | type[_TypeStealTarget], _StrToken("int")) == "int"  # int not a subclass → str wins
+        path = f"{_TypeStealTarget.__module__}.{_TypeStealTarget.__qualname__}"
+        assert construct(str | type[_TypeStealTarget], _StrToken(path)) is _TypeStealTarget

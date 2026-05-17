@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import builtins
 import importlib
 from typing import Any
 
@@ -16,7 +17,9 @@ def _import_dotted(path: str) -> Any:
     """Import an object by dotted path, trying decreasing module prefixes.
 
     Tries importing the longest valid module prefix first, then chains
-    getattr for the remaining parts.
+    getattr for the remaining parts.  As a final fallback, resolves the path
+    against the ``builtins`` module so bare builtin names (``int``, ``str``,
+    ``list``, ...) work without a ``builtins.`` prefix.
     """
     parts = path.split(".")
     for i in range(len(parts), 0, -1):
@@ -36,5 +39,16 @@ def _import_dotted(path: str) -> Any:
             raise SymbolImportError(msg) from e
         else:
             return obj
+    # No importable module prefix matched; fall back to builtins so a bare
+    # name like "int" resolves.  Real modules take priority (loop above), and
+    # no builtin name collides with an importable module name.
+    try:
+        obj = builtins
+        for attr in parts:
+            obj = getattr(obj, attr)
+    except AttributeError:
+        pass
+    else:
+        return obj
     msg = f"Cannot import {path!r}: no importable module found in path"
     raise SymbolImportError(msg)

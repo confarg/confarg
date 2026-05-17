@@ -221,6 +221,11 @@ class TestBuildRoundtrip:
         result = confarg.build(ConfigWithBareType, {"klass": _StrToken(_UNRELATED_PATH)})
         assert result.klass is Unrelated
 
+    def test_build_bare_type_field_bare_builtin(self) -> None:
+        """build() resolves a bare builtin name ('int') for a bare `type` field."""
+        result = confarg.build(ConfigWithBareType, {"klass": _StrToken("int")})
+        assert result.klass is int
+
     def test_build_type_ref_base_class(self) -> None:
         """build() accepts the exact bound class as the field value."""
         result = confarg.build(ConfigWithTypeRef, {"worker": _StrToken(_BASE_PATH)})
