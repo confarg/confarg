@@ -462,4 +462,4 @@ class TestConfigFileDeleteSyntax:
         """from_dict with a negative index key and no base list raises TypeCoercionError."""
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(confarg.TypeCoercionError, match="[Nn]egative"):
-            confarg.from_dict(WithList, {"items": {"-1": 99}})
+            confarg.build(WithList, {"items": {"-1": 99}})

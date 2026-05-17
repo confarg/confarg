@@ -1217,7 +1217,7 @@ class TestConstructEdgeCases:
         # Both _AmbigOptionalP and _AmbigOptionalQ match {"val": {"x": 1}} →
         # AmbiguousUnionError with "optional" in message (listing optional fields).
         with pytest.raises(confarg.AmbiguousUnionError, match="optional"):
-            confarg.from_dict(_AmbigContainer, {"val": {"x": 1}})
+            confarg.build(_AmbigContainer, {"val": {"x": 1}})
 
     def test_construct_struct_union_tuple_from_union(self) -> None:
         """tuple[int, str] | None union is constructed from positional CLI args."""
@@ -1662,13 +1662,13 @@ class TestExpressionsBranches:
             result: str = ""
 
         with pytest.raises(confarg.ExpressionEvalError):
-            confarg.from_dict(DC, {"a": [1, 2, 3], "b": "key", "result": "${a[b]}"})
+            confarg.build(DC, {"a": [1, 2, 3], "b": "key", "result": "${a[b]}"})
 
     def test_interpolation_missing_ref_reraises(self) -> None:
         """A missing field reference inside a string interpolation raises MissingReferenceError."""
         WithStr = make_target("msg", str, default="")
         with pytest.raises(confarg.MissingReferenceError):
-            confarg.from_dict(WithStr, {"msg": "hello ${missing_field} world"})
+            confarg.build(WithStr, {"msg": "hello ${missing_field} world"})
 
     def test_interpolation_unexpected_exception_wrapped(self) -> None:
         """An unexpected exception inside a string interpolation is wrapped as ExpressionEvalError."""
@@ -1680,7 +1680,7 @@ class TestExpressionsBranches:
             result: str = ""
 
         with pytest.raises(confarg.ExpressionEvalError):
-            confarg.from_dict(DC, {"a": [1, 2, 3], "b": "key", "result": "prefix_${a[b]}_suffix"})
+            confarg.build(DC, {"a": [1, 2, 3], "b": "key", "result": "prefix_${a[b]}_suffix"})
 
 
 # ---------------------------------------------------------------------------

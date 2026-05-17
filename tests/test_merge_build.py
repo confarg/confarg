@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Tests for the merge() / from_dict() two-step API and dump() / dump_file() with raw dicts."""
+"""Tests for the merge() / build() two-step API and dump() / dump_file() with raw dicts."""
 
 from __future__ import annotations
 
@@ -68,22 +68,22 @@ class TestMerge:
 
 
 # ---------------------------------------------------------------------------
-# from_dict()
+# build()
 # ---------------------------------------------------------------------------
 
 
-class TestFromDict:
-    """from_dict() constructs an instance from a plain dict."""
+class TestBuild:
+    """build() resolves expressions and constructs an instance from a plain dict."""
 
     def test_constructs_instance(self) -> None:
-        """Test that from_dict() constructs a dataclass instance from a dict."""
+        """Test that build() constructs a dataclass instance from a dict."""
         data = {"name": "hi", "count": 3, "rate": 1.5, "verbose": False}
-        result = confarg.from_dict(WithDefaults, data)
+        result = confarg.build(WithDefaults, data)
         assert isinstance(result, WithDefaults)
         assert result.name == "hi"
 
     def test_resolves_expressions_by_default(self) -> None:
-        """Test that from_dict() resolves ${...} expressions by default."""
+        """Test that build() resolves ${...} expressions."""
 
         @dataclass
         class TwoStrings:
@@ -91,16 +91,16 @@ class TestFromDict:
             derived: str
 
         data = {"base": "hello", "derived": "${base}_suffix"}
-        result = confarg.from_dict(TwoStrings, data)
+        result = confarg.build(TwoStrings, data)
         assert result.derived == "hello_suffix"
 
     def test_nested_dataclass(self) -> None:
-        """Test that from_dict() constructs nested dataclasses correctly."""
+        """Test that build() constructs nested dataclasses correctly."""
         data = {
             "db": {"host": "localhost", "port": 5432, "name": "mydb"},
             "cache": {"enabled": True, "ttl": 60},
         }
-        result = confarg.from_dict(AppConfig, data)
+        result = confarg.build(AppConfig, data)
         assert isinstance(result.db, DbConfig)
         assert result.db.host == "localhost"
 
@@ -111,18 +111,18 @@ class TestFromDict:
 
 
 class TestTwoStepEquivalence:
-    """merge() + from_dict() must produce the same result as load()."""
+    """merge() + build() must produce the same result as load()."""
 
     def test_flat(self) -> None:
-        """Test that merge() + from_dict() equals load() for flat dataclasses."""
+        """Test that merge() + build() equals load() for flat dataclasses."""
         kwargs = {"args": ["--name", "x", "--count", "5", "--rate", "2.0", "--verbose", "true"], "env": {}}
         via_load = confarg.load(WithDefaults, **kwargs)
-        via_two_step = confarg.from_dict(WithDefaults, confarg.merge(WithDefaults, **kwargs))
+        via_two_step = confarg.build(WithDefaults, confarg.merge(WithDefaults, **kwargs))
         assert via_load.name == via_two_step.name
         assert via_load.count == via_two_step.count
 
     def test_with_expression(self, tmp_yaml) -> None:
-        """Test that merge() + from_dict() equals load() when expressions are involved."""
+        """Test that merge() + build() equals load() when expressions are involved."""
 
         @dataclass
         class TwoStrings:
@@ -132,7 +132,7 @@ class TestTwoStepEquivalence:
         path = tmp_yaml("base: hello\nderived: '${base}_world'\n")
         kwargs = {"args": [], "env": {}, "files": [path]}
         via_load = confarg.load(TwoStrings, **kwargs)
-        via_two_step = confarg.from_dict(TwoStrings, confarg.merge(TwoStrings, **kwargs))
+        via_two_step = confarg.build(TwoStrings, confarg.merge(TwoStrings, **kwargs))
         assert via_load.derived == via_two_step.derived
 
 
@@ -198,7 +198,7 @@ class TestPostInitIsolation:
                 self.name = self.name.upper()
 
         raw = confarg.merge(Uppercased, args=["--name", "hello"], env={})
-        instance = confarg.from_dict(Uppercased, raw)
+        instance = confarg.build(Uppercased, raw)
 
         assert raw["name"] == "hello"
         assert instance.name == "HELLO"

@@ -168,7 +168,7 @@ class TestPlainClassConstruction:
 
     def test_construct_simple(self) -> None:
         """Test that a simple plain class is constructed correctly via from_dict."""
-        result = confarg.from_dict(
+        result = confarg.build(
             TrainingConfig,
             {"epochs": 5, "transform": {"height": 256, "width": 256, "class": "tests.test_plain_classes.RandomCrop"}},
         )
@@ -178,7 +178,7 @@ class TestPlainClassConstruction:
 
     def test_construct_uses_default(self) -> None:
         """Test that default parameter values are used when not provided."""
-        result = confarg.from_dict(
+        result = confarg.build(
             TrainingConfig, {"epochs": 5, "transform": {"class": "tests.test_plain_classes.HorizontalFlip"}}
         )
         assert isinstance(result.transform, HorizontalFlip)
@@ -196,7 +196,7 @@ class TestPlainClassConstruction:
                 ],
             },
         }
-        result = confarg.from_dict(TrainingConfig, data)
+        result = confarg.build(TrainingConfig, data)
         assert isinstance(result.transform, Compose)
         assert len(result.transform.transforms) == 2
         assert isinstance(result.transform.transforms[0], RandomCrop)
@@ -205,7 +205,7 @@ class TestPlainClassConstruction:
 
     def test_construct_union_disambiguation(self) -> None:
         """Test that a union type is disambiguated via the class tag in from_dict."""
-        result = confarg.from_dict(
+        result = confarg.build(
             UnionConfig, {"transform": {"class": "tests.test_plain_classes.HorizontalFlip", "p": 0.2}}
         )
         assert isinstance(result.transform, HorizontalFlip)
@@ -214,7 +214,7 @@ class TestPlainClassConstruction:
     def test_unknown_field_raises(self) -> None:
         """Test that an unknown field in the dict raises TypeCoercionError."""
         with pytest.raises(confarg.TypeCoercionError):
-            confarg.from_dict(
+            confarg.build(
                 TrainingConfig,
                 {"epochs": 1, "transform": {"class": "tests.test_plain_classes.HorizontalFlip", "unknown": 99}},
             )
@@ -222,7 +222,7 @@ class TestPlainClassConstruction:
     def test_missing_required_field_raises(self) -> None:
         """Test that a missing required field raises ConfargError."""
         with pytest.raises(confarg.ConfargError):
-            confarg.from_dict(
+            confarg.build(
                 TrainingConfig,
                 {"epochs": 1, "transform": {"class": "tests.test_plain_classes.RandomCrop", "height": 10}},
             )
@@ -254,7 +254,7 @@ class TestPlainClassSerialization:
         """Test that a plain class serializes and deserializes back to the same object."""
         cfg = TrainingConfig(epochs=7, transform=RandomCrop(height=64, width=64, p=0.9))
         serialized = confarg.dump(cfg)
-        restored = confarg.from_dict(TrainingConfig, serialized)
+        restored = confarg.build(TrainingConfig, serialized)
         assert restored.epochs == 7
         assert isinstance(restored.transform, RandomCrop)
         assert restored.transform.height == 64
@@ -275,7 +275,7 @@ class TestPlainClassSerialization:
         """The dict-centric workflow: merge → interpolate → construct; dump_dict_file the dict."""
         raw = {"epochs": 3, "transform": {"p": 0.8}}
         resolved = confarg.interpolate(raw)
-        cfg = confarg.construct(TrainingConfig, resolved)
+        cfg = confarg.from_dict(TrainingConfig, resolved)
         assert cfg.epochs == 3
         assert isinstance(cfg.transform, Transform)
         assert cfg.transform.p == pytest.approx(0.8)
@@ -385,32 +385,32 @@ class TestAbstractCollectionTypes:
 
     def test_sequence_param(self) -> None:
         """Test that Sequence[str] param is constructed from a list."""
-        result = confarg.construct(ItemHolder, {"items": ["a", "b", "c"]})
+        result = confarg.from_dict(ItemHolder, {"items": ["a", "b", "c"]})
         assert result.items == ["a", "b", "c"]
 
     def test_mutable_sequence_param(self) -> None:
         """Test that MutableSequence[int] param is constructed from a list."""
-        result = confarg.construct(MutableHolder, {"items": [1, 2, 3]})
+        result = confarg.from_dict(MutableHolder, {"items": [1, 2, 3]})
         assert result.items == [1, 2, 3]
 
     def test_iterable_param(self) -> None:
         """Test that Iterable[float] param is constructed from a list."""
-        result = confarg.construct(IterableHolder, {"items": [1.0, 2.5]})
+        result = confarg.from_dict(IterableHolder, {"items": [1.0, 2.5]})
         assert result.items == [1.0, 2.5]
 
     def test_mapping_param(self) -> None:
         """Test that Mapping[str, int] param is constructed from a dict."""
-        result = confarg.construct(MappingHolder, {"data": {"x": 1, "y": 2}})
+        result = confarg.from_dict(MappingHolder, {"data": {"x": 1, "y": 2}})
         assert result.data == {"x": 1, "y": 2}
 
     def test_mutable_mapping_param(self) -> None:
         """Test that MutableMapping[str, str] param is constructed from a dict."""
-        result = confarg.construct(MutableMappingHolder, {"data": {"k": "v"}})
+        result = confarg.from_dict(MutableMappingHolder, {"data": {"k": "v"}})
         assert result.data == {"k": "v"}
 
     def test_sequence_in_nested_plain_class(self) -> None:
         """Test that Sequence fields work in a plain class nested inside a dataclass."""
-        result = confarg.construct(
+        result = confarg.from_dict(
             AbstractCollectionConfig,
             {"holder": {"items": ["x", "y"]}},
         )

@@ -1228,7 +1228,7 @@ class TestNonUnionClassTagDispatch:
 
     def test_from_dict_dispatches_to_subclass(self) -> None:
         """Test that from_dict dispatches to the correct subclass via class tag."""
-        result = confarg.from_dict(
+        result = confarg.build(
             _AnimalBase,
             {"class": "tests.test_corner_cases._Dog", "name": "Rex", "breed": "Labrador"},
         )
@@ -1251,7 +1251,7 @@ class TestNonUnionClassTagDispatch:
     def test_wrong_subclass_raises(self) -> None:
         """A class that is not a subclass of the target raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="not a subclass"):
-            confarg.from_dict(
+            confarg.build(
                 _Dog,
                 {"class": "tests.test_corner_cases._Cat", "name": "Whiskers"},
             )
@@ -1449,7 +1449,7 @@ class TestVarParams:
             def __init__(self, **options: int) -> None:
                 self.options = options
 
-        result = confarg.from_dict(KwOnly, {"options": {"a": 1, "b": 2}})
+        result = confarg.build(KwOnly, {"options": {"a": 1, "b": 2}})
         assert result.options == {"a": 1, "b": 2}
 
     def test_var_keyword_respects_annotation(self) -> None:
@@ -1459,7 +1459,7 @@ class TestVarParams:
             def __init__(self, **opts: int) -> None:
                 self.opts = opts
 
-        result = confarg.from_dict(KwTyped, {"opts": {"x": _StrToken("42")}})
+        result = confarg.build(KwTyped, {"opts": {"x": _StrToken("42")}})
         assert result.opts == {"x": 42}
 
     def test_var_positional_only(self) -> None:
@@ -1469,7 +1469,7 @@ class TestVarParams:
             def __init__(self, *items: str) -> None:
                 self.items = items
 
-        result = confarg.from_dict(Positional, {"items": ["a", "b", "c"]})
+        result = confarg.build(Positional, {"items": ["a", "b", "c"]})
         assert result.items == ("a", "b", "c")
 
     def test_var_positional_respects_annotation(self) -> None:
@@ -1479,7 +1479,7 @@ class TestVarParams:
             def __init__(self, *values: int) -> None:
                 self.values = values
 
-        result = confarg.from_dict(Nums, {"values": [_StrToken("1"), _StrToken("2"), _StrToken("3")]})
+        result = confarg.build(Nums, {"values": [_StrToken("1"), _StrToken("2"), _StrToken("3")]})
         assert result.values == (1, 2, 3)
 
     def test_named_and_var_positional(self) -> None:
@@ -1490,7 +1490,7 @@ class TestVarParams:
                 self.host = host
                 self.tags = tags
 
-        result = confarg.from_dict(Tagged, {"host": "localhost", "tags": ["web", "db"]})
+        result = confarg.build(Tagged, {"host": "localhost", "tags": ["web", "db"]})
         assert result.host == "localhost"
         assert result.tags == ("web", "db")
 
@@ -1502,7 +1502,7 @@ class TestVarParams:
                 self.host = host
                 self.options = options
 
-        result = confarg.from_dict(Server, {"host": "localhost", "options": {"port": 8080}})
+        result = confarg.build(Server, {"host": "localhost", "options": {"port": 8080}})
         assert result.host == "localhost"
         assert result.options == {"port": 8080}
 
@@ -1515,7 +1515,7 @@ class TestVarParams:
                 self.args = args
                 self.kwargs = kwargs
 
-        result = confarg.from_dict(Mixed, {"name": "x", "args": [1, 2], "kwargs": {"a": "b"}})
+        result = confarg.build(Mixed, {"name": "x", "args": [1, 2], "kwargs": {"a": "b"}})
         assert result.name == "x"
         assert result.args == (1, 2)
         assert result.kwargs == {"a": "b"}
@@ -1528,7 +1528,7 @@ class TestVarParams:
                 self.tags = tags
                 self.extra = extra
 
-        result = confarg.from_dict(Custom, {"tags": ["x"], "extra": {"rate": math.pi}})
+        result = confarg.build(Custom, {"tags": ["x"], "extra": {"rate": math.pi}})
         assert result.tags == ("x",)
         assert result.extra == pytest.approx({"rate": math.pi})
 
@@ -1541,7 +1541,7 @@ class TestVarParams:
                 self.args = args
                 self.kwargs = kwargs
 
-        result = confarg.from_dict(WithDefaults, {})
+        result = confarg.build(WithDefaults, {})
         assert result.name == "anon"
         assert result.args == ()
         assert result.kwargs == {}
@@ -1554,7 +1554,7 @@ class TestVarParams:
                 self.opts = opts
 
         with pytest.raises(TypeCoercionError, match="Unknown field"):
-            confarg.from_dict(Simple, {"not_a_field": 1})
+            confarg.build(Simple, {"not_a_field": 1})
 
     def test_construction_from_dict(self) -> None:
         """Test that a plain class with mixed var params is constructed from a raw dict."""
@@ -1566,7 +1566,7 @@ class TestVarParams:
                 self.meta = meta
 
         raw = {"x": 5, "items": ["a", "b"], "meta": {"pi": math.pi}}
-        obj = confarg.from_dict(Stored, raw)
+        obj = confarg.build(Stored, raw)
         assert obj.x == 5
         assert list(obj.items) == ["a", "b"]
         # Plain classes: dump the raw dict, not the object
