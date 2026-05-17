@@ -27,15 +27,20 @@
   asks its path form `_types._base_declares_path` (`_build._collect_struct_specs` drops a
   subclass spec under a base-declared field), so an overriding subclass registers no flag below
   it and a sub-flag only the override's struct owns is refused at parse time, as vanilla
-  refuses it (BUG-86).
+  refuses it (BUG-86). That is the answer where nothing names the subclass: a tag naming it,
+  on argv or in a lower layer, types the flags below by its own annotations
+  ([design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#a-node-types-its-keys-by-the-class-it-names)).
 - What the flags write is vanilla's loop's answer
   ([argv is the only writer](model.md#argv-is-the-only-writer)): the tag kept as the raw string
   before its import resolves, so `construct()` raises the import error naming the bad path
-  (BUG-45); every flag at the path, whichever variant owns it, for `build()` to reject the ones
-  the named variant does not know (BUG-69, BUG-83); a flag several variants own coerced once,
-  by the common type when every owner resolves it alike and the raw token when they do not
-  (`_resolve_field_type` / `_subclass_field_type`, BUG-84); a base-declared field by the
-  base's annotation (BUG-86); each occurrence where argv puts it (BUG-85, BUG-87). Each of
+  (BUG-45); below a tag that names a subclass or a variant, its flags typed by that class and
+  the other ones refused, never dropped (BUG-69, BUG-83, BUG-84, BUG-86,
+  [design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#sides-earlier-fixes-chose-reversed)); where nothing names one,
+  every flag at the path, whichever variant owns it, for `build()` to judge, a flag several
+  variants own coerced once, by the common type when every owner resolves it alike and the
+  raw token when they do not (`_resolve_field_type` / `_subclass_field_type`), and a
+  base-declared field by the base's annotation; each occurrence where argv puts it (BUG-85,
+  BUG-87). Each of
   those was a bug while the adapters collected the CLI channel with a walk of their own over
   the framework's parse result, descending into each variant and subclass in turn
   (`_collect_named_variant`, `_collect_variant_fields`, `_disagreeing_owner_flags`): a walk per

@@ -18,7 +18,7 @@ from confarg._default_layer import drop_untouched, lay_defaults
 from confarg._defaults import MergeOptions, _Options, _resolve_options
 from confarg._files import _dump_file
 from confarg._merge import ListOp, MergeDict
-from confarg._parse_cli import _locals_keys_at, _parse_cli
+from confarg._parse_cli import _config_pairs_in, _locals_keys_at, _parse_cli
 from confarg._pipeline import _merge_sources
 from confarg._serialize import _serialize, _serialize_untyped, written_form
 from confarg._typed_read import TypedReading
@@ -77,14 +77,13 @@ def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]
 
 def _merge(target: type | TypeAliasType | UnionType, options: _Options) -> MergeDict:
     """Merge every source into a raw dict; :func:`merge` with its options resolved."""
-    cli_data, cli_configs = _parse_cli(
-        options.argv,
-        target,
-        _cli_prefix(options),
-        options.config_flag,
-        options.union_tag,
-    )
-    return _merge_sources(target, cli_data, cli_configs, options)
+    prefix = _cli_prefix(options)
+
+    def parse_cli(below: MergeDict) -> MergeDict:
+        return _parse_cli(options.argv, target, prefix, options.config_flag, options.union_tag, below=below)[0]
+
+    configs = _config_pairs_in(options.argv, target, prefix, options.config_flag, options.union_tag)
+    return _merge_sources(target, parse_cli, configs, options)
 
 
 def _cli_prefix(options: _Options) -> str:

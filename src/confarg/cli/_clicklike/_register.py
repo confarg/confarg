@@ -18,13 +18,13 @@ import functools
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping
 
     from confarg.cli._spec import FlagSpec
 
-from confarg import _defaults
-from confarg.cli._build import build_dynamic_flags, build_static_flags
+from confarg.cli._build import bound_runs, build_dynamic_flags, build_static_flags
 from confarg.cli._prefix import PREFIX_ATTR
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, registration_inputs
 
 
 def load_flags_into_command(
@@ -47,17 +47,15 @@ def load_flags_into_command(
         existing.add(spec.name)
 
 
-def populate_command(  # noqa: PLR0913  # mirrors the public populate_* signatures
+def populate_command(  # noqa: PLR0913, PLR0917  # mirrors the public populate_* signatures
     target: object,
     command: Any,
     option_factory: Callable[[FlagSpec], Any],
     option_cls: type,
+    caller: str,
+    opts: Mapping[str, Any],
     *,
-    cli_prefix: str = "",
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
-    argv: Sequence[str],
 ) -> None:
     """Register the static and dynamic flags of ``target`` as options on ``command``.
 
@@ -66,14 +64,15 @@ def populate_command(  # noqa: PLR0913  # mirrors the public populate_* signatur
         command: The framework command to populate.
         option_factory: Builds the framework's option object from one spec.
         option_cls: The framework's confarg option class, used to pick out the
-            options the prefix may be recorded on.
-        cli_prefix: Namespace every confarg option lives under.
-        union_tag: Name of the union discriminator field.
-        config_flag: Name of the config-file option; ``""`` suppresses it.
+            options the prefix and the registration are recorded on.
+        caller: The public function's name, which an unknown keyword is refused by.
+        opts: The sources and how to read them (:class:`~confarg.MergeOptions`).
         config_subkeys: Whether to register ``--<config_flag>.<path>`` options.
-        argv: CLI argument list scanned for argv-derived dynamic options.
     """
     before_names = {p.name for p in command.params}
+    options, below, sources = registration_inputs(target, caller, opts)
+    cli_prefix, argv = options.cli_prefix or "", options.argv
+    union_tag, config_flag = options.union_tag, options.config_flag
 
     static = build_static_flags(
         target,
@@ -82,17 +81,30 @@ def populate_command(  # noqa: PLR0913  # mirrors the public populate_* signatur
         union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,
+        below=below,
     )
     load_flags_into_command(static, command, option_factory)
-    dynamic = build_dynamic_flags(target, argv, cli_prefix=cli_prefix, union_tag=union_tag, config_flag=config_flag)
+    dynamic = build_dynamic_flags(
+        target,
+        argv,
+        cli_prefix=cli_prefix,
+        union_tag=union_tag,
+        config_flag=config_flag,
+        below=below,
+    )
     load_flags_into_command(dynamic, command, option_factory)
-    if cli_prefix:
-        # Recorded on the options, not on the command: both frameworks routinely copy
-        # ``params`` onto another command (groups, decorators), and the prefix must
-        # survive that so the merge step still finds it.
-        for param in command.params:
-            if isinstance(param, option_cls):
+    registration = Registration(sources, bound_runs(static + dynamic, cli_prefix))
+    # Recorded on the options, not on the command: both frameworks routinely copy
+    # ``params`` onto another command (groups, decorators), and what registration read
+    # must survive that so the merge step still finds it.
+    for param in command.params:
+        if isinstance(param, option_cls):
+            setattr(param, REGISTRATION_ATTR, registration)
+            if cli_prefix:
                 setattr(param, PREFIX_ATTR, cli_prefix)
+    # And on the command, for a target that registers no option at all (a scalar root
+    # with no prefix), whose sources the merge still reads.
+    setattr(command, REGISTRATION_ATTR, registration)
 
     confarg_names = {p.name for p in command.params} - before_names
     if command.callback is not None and confarg_names:

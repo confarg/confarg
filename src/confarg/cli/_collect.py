@@ -19,13 +19,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from confarg._defaults import _Options
     from confarg._merge import MergeDict
 
 from confarg._api import _build_for_cli
-from confarg._parse_cli import _parse_cli, _path_unknown
+from confarg._parse_cli import _config_pairs_in, _parse_cli, _path_unknown
 from confarg._pipeline import _merge_sources
 from confarg.cli._argv import spelled_flag_names
 from confarg.cli._build import _binds_a_run
@@ -62,13 +62,14 @@ def _require_argv_spells(
         raise ConfargError(msg)
 
 
-def _merge_from_flat(
+def _merge_from_flat(  # noqa: PLR0913  # the parse result, then how the framework bound it
     flat: dict[str, Any],
     target: object,
     options: _Options,
     *,
     cli_prefix: str,
     binds_runs: bool,
+    runs: frozenset[str] | None = None,
 ) -> MergeDict:
     """Merge every source into a raw dict, the CLI channel written from ``options.argv``.
 
@@ -87,6 +88,10 @@ def _merge_from_flat(
         binds_runs: The framework binds every token up to the next flag to a
             multi-token or fixed-arity flag (argparse, cyclopts), so a token after
             the run vanilla consumes is a stray rather than a positional of the host's.
+        runs: The flags registration registered to bind such a run
+            (:func:`~confarg.cli._build.bound_runs`), which the framework bound one to
+            whatever vanilla's loop types the flag as; ``None`` when confarg did not
+            register them, the type vanilla consumes for then answering.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact. A list
@@ -100,16 +105,28 @@ def _merge_from_flat(
         docs-dev/architecture/cli-adapters/model.md#argv-is-the-only-writer
     """
     _require_argv_spells(flat, options.argv, cli_prefix, target, options.union_tag)
-    cli_data, cli_configs = _parse_cli(
-        options.argv,
-        target,
-        cli_prefix,
-        options.config_flag,
-        options.union_tag,
-        host_parsed=True,
-        host_binds_run=_binds_a_run if binds_runs else None,
-    )
-    return _merge_sources(target, cli_data, cli_configs, options)
+
+    def parse_cli(below: MergeDict) -> MergeDict:
+        return _parse_cli(
+            options.argv,
+            target,
+            cli_prefix,
+            options.config_flag,
+            options.union_tag,
+            host_parsed=True,
+            host_binds_run=_host_binds_run(runs) if binds_runs else None,
+            below=below,
+        )[0]
+
+    configs = _config_pairs_in(options.argv, target, cli_prefix, options.config_flag, options.union_tag)
+    return _merge_sources(target, parse_cli, configs, options)
+
+
+def _host_binds_run(runs: frozenset[str] | None) -> Callable[[list[str], Any], bool]:
+    """Return whether the framework bound the token after a flag's run to it: registered so, or typed so."""
+    if runs is None:
+        return lambda _path, ft: _binds_a_run(ft)
+    return lambda path, ft: ".".join(path) in runs or _binds_a_run(ft)
 
 
 def _construct_from_merged(target: object, merged: MergeDict, union_tag: str, cli_prefix: str) -> Any:

@@ -12,7 +12,7 @@ command order exactly as vanilla does.
 Registration asks `_parse_cli._registered_when_typed`: a collection patch
 (`_is_collection_patch_path`, so `--input.1.str yes`, a cast on an element, is a patch), or a
 union tag the walk reaches by its fallback ([a tag is a replayed write](#a-tag-is-a-replayed-write)).
-A key below an `Any` is a patch too, since a keyed `Any` is a `dict[Any, Any]`: `--x.class pkg.S --x.a 1` registers both flags as argv types them, one token each ([callables](../callables.md#an-any-node-reads-every-opener)).
+A key below an `Any` naming no class is a patch too, since a keyed `Any` is a `dict[Any, Any]`, one token each; below one that names a class, the key is that class's, typed and registered as vanilla's loop types it ([callables](../callables.md#an-any-node-reads-every-opener)).
 
 A subkey or element flag registers the arity of the type it addresses, as a field flag of that
 type does: greedy (`nargs="*"`) exactly where `_build._binds_a_run` holds, one token elsewhere.

@@ -13,12 +13,18 @@ only to import the classes it names by `union_tag` before the walk starts; it ne
 from it, so `argv=[]` still describes exactly the declared type.
 
 **Dynamic flags** (`build_dynamic_flags`) are those whose existence depends on what the
-user typed, found by scanning argv (and config files named on argv):
+user typed, found by scanning argv, and the layers below it `populate_*` reads (`files=`, the
+environment, the config files named on argv: `_pipeline.below_argv`):
+
+- the flags argv spells below a node naming a class, typed as vanilla's loop types them:
+  registration runs that loop over argv, as the merge will, and registers each flag the naming
+  typed apart from the declared types in the shape of its widest occurrence
+  (`_collect_loop_typed_specs`, [design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters));
 
 - the target's parameters of callables, `--f.args.<p>` for a `bind` or `call` target and
   `--f.<p>` for a `class` target or a `classfn` target's owner, whether the target is named by
   `--f.bind/.class/.call/.classfn`, by a whole-value `--f '{"class": …}'` blob, or by a config
-  file. A nested target spec names two: its own parameters below the opener (`--f.call.<p>`),
+  file, `files=` or the environment. A nested target spec names two: its own parameters below the opener (`--f.call.<p>`),
   and the arguments of the callable it yields under the outer `args` (`--f.args.<p>`). One
   function, `_callable_argument_targets`, lists them for registration and for argparse's
   completion ([callables](../callables.md#cli));
@@ -67,8 +73,11 @@ that may not even be typed; a caller who wants it fatal has
 warning fires from the one shared `build_dynamic_flags`, so all four adapters report
 identically; vanilla `load()` registers nothing and has no analogue.
 
-Everything below a callable field, and below a typed call, is the one family registered
-from the **path** rather than from a signature (BUG-25, BUG-28). `_parse_cli._addresses_callable_key` is the shared
+Everything below a callable field, and below a typed call, that no named target types is the
+one family registered from the **path** rather than from a signature (BUG-25, BUG-28); below a
+spec whose opener argv or a lower layer names, the target types the flags, and one it does not
+declare is refused at parse in every front-end
+([design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#sides-earlier-fixes-chose-reversed)). `_parse_cli._addresses_callable_key` is the shared
 predicate, so whatever the vanilla parser accepts below the field the host framework accepts
 too. A signature cannot answer here at all: not for an argument the named target does not
 carry, and not for a field with no opener anywhere, which names no target to inspect. Letting the framework reject those first is what

@@ -2117,8 +2117,12 @@ class TestCastAdmissionContract:
             loader.load(_CastBranchCfg, argv=["--u.class", f"{__name__}._CastBranchA", "--u.x.bool", "true"], env={})
 
     def test_cast_the_tagged_variant_does_not_hold(self, loader: ConfargLoader) -> None:
-        """--u.x.int 5 with the tag picking B is refused by construction, as B's file pin is (BUG-214)."""
-        with pytest.raises(TypeCoercionError, match="does not hold it"):
+        """--u.x.int 5 with the tag picking B is refused: B's field holds no ``int`` cast, so ``int`` names no field.
+
+        A file's pin is refused by construction (BUG-214); the flag is typed by the variant
+        the tag names, so it is refused at parse in every front-end.
+        """
+        with pytest.raises((UnknownArgumentError, SystemExit)):
             loader.load(_CastBranchCfg, argv=["--u.class", f"{__name__}._CastBranchB", "--u.x.int", "5"], env={})
 
 
@@ -3131,28 +3135,28 @@ class TestInheritanceDispatchContract:
         merged = loader.merge(_NestedDB, argv=["--db.class", "no.such.module.Class"], env={}, config_flag="")
         assert merged == {"db": {"class": "no.such.module.Class"}}
 
-    def test_valid_tag_keeps_other_subclass_flags_in_merged_dict(self, loader: ConfargLoader) -> None:
-        """A valid tag keeps a sibling subclass's flags beside it, coerced by their own type.
+    def test_valid_tag_refuses_other_subclass_flags(self, loader: ConfargLoader) -> None:
+        """A valid tag types the flags below it by the subclass it names, so a sibling's flag is refused.
 
-        Vanilla coerces a flag by whichever subclass owns the name and lets ``build()``
-        refuse it as unknown for the tagged subclass; an adapter that descended only into
-        the named subclass dropped the flag silently instead (BUG-69).
+        An adapter that descended only into the named subclass dropped the flag silently
+        (BUG-69); the flag is an error in every front-end, now at parse, as a typo below a
+        struct is: the tag names the class that builds the node.
         """
-        merged = loader.merge(
-            _BaseDB,
-            argv=["--class", f"{__name__}._SQLiteDB", "--host", "db.example.com", "--port", "5432"],
-            env={},
-            config_flag="",
-        )
-        assert merged == {"class": f"{__name__}._SQLiteDB", "host": "db.example.com", "port": 5432}
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(
+                _BaseDB,
+                argv=["--class", f"{__name__}._SQLiteDB", "--host", "db.example.com", "--port", "5432"],
+                env={},
+                config_flag="",
+            )
 
     def test_valid_tag_other_subclass_flag_refused_by_build(self, loader: ConfargLoader) -> None:
         """A mistyped ``--<field>`` under a valid tag is an error, not a silent ignore.
 
-        The loud case of BUG-69: the wrong-subclass flag reaches ``build()``, which raises
-        ``Unknown field(s)`` naming it, exactly as the vanilla front-end does.
+        The loud case of BUG-69: the wrong-subclass flag is refused naming it, in every
+        front-end alike.
         """
-        with pytest.raises(TypeCoercionError, match="Unknown field"):
+        with pytest.raises((UnknownArgumentError, SystemExit)):
             loader.load(
                 _BaseDB,
                 argv=["--class", f"{__name__}._SQLiteDB", "--host", "db.example.com"],
@@ -3175,15 +3179,15 @@ class TestInheritanceDispatchContract:
         )
         assert merged == {"class": "no.such.module.Class", "dbpath": "/var/db/app.sqlite"}
 
-    def test_nested_valid_tag_keeps_other_subclass_flags(self, loader: ConfargLoader) -> None:
-        """The nested inheritance path keeps a sibling subclass's flag too (BUG-69)."""
-        merged = loader.merge(
-            _NestedDB,
-            argv=["--db.class", f"{__name__}._SQLiteDB", "--db.host", "db.example.com"],
-            env={},
-            config_flag="",
-        )
-        assert merged == {"db": {"class": f"{__name__}._SQLiteDB", "host": "db.example.com"}}
+    def test_nested_valid_tag_refuses_other_subclass_flags(self, loader: ConfargLoader) -> None:
+        """The nested inheritance path refuses a sibling subclass's flag too, never dropping it (BUG-69)."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(
+                _NestedDB,
+                argv=["--db.class", f"{__name__}._SQLiteDB", "--db.host", "db.example.com"],
+                env={},
+                config_flag="",
+            )
 
     def test_no_tag_keeps_subclass_flags_in_merged_dict(self, loader: ConfargLoader) -> None:
         """Without a tag anywhere, a subclass's flag still reaches the merged dict.
@@ -3442,23 +3446,23 @@ class _RefusingCallable:
 class TestUnionFieldTagContract:
     """A struct field whose type is a union dispatches on its tag identically everywhere."""
 
-    def test_tag_keeps_other_variants_flags_in_merged_dict(self, loader: ConfargLoader) -> None:
-        """A tag on a union field keeps the other variants' flags beside it (BUG-69).
+    def test_tag_refuses_other_variants_flags(self, loader: ConfargLoader) -> None:
+        """A tag on a union field types its flags by the variant it names, refusing the others' (BUG-69).
 
-        Vanilla coerces ``--u.<field>`` by whichever variant owns the name; descending
-        only into the named variant dropped the rest from the adapters' merged dict.
+        Descending only into the named variant dropped the rest from the adapters' merged
+        dict; the other variants' flags are refused at parse in every front-end.
         """
-        merged = loader.merge(
-            _FieldTagged,
-            argv=["--u.class", f"{__name__}._FieldSqlite", "--u.host", "db.example.com", "--u.port", "5432"],
-            env={},
-            config_flag="",
-        )
-        assert merged == {"u": {"class": f"{__name__}._FieldSqlite", "host": "db.example.com", "port": 5432}}
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(
+                _FieldTagged,
+                argv=["--u.class", f"{__name__}._FieldSqlite", "--u.host", "db.example.com", "--u.port", "5432"],
+                env={},
+                config_flag="",
+            )
 
     def test_tag_other_variants_flag_refused_by_build(self, loader: ConfargLoader) -> None:
         """A wrong-variant flag on a union field is an error, not a silent ignore (BUG-69)."""
-        with pytest.raises(TypeCoercionError, match="Unknown field"):
+        with pytest.raises((UnknownArgumentError, SystemExit)):
             loader.load(
                 _FieldTagged,
                 argv=["--u.class", f"{__name__}._FieldSqlite", "--u.host", "db.example.com"],
@@ -3682,12 +3686,12 @@ class TestVariantOwnerConflictContract:
         merged = loader.merge(_OwnersDisagree, argv=["--u.a", "7"], env={}, config_flag="")
         assert merged == {"u": {"a": "7"}}
 
-    def test_disagreeing_owners_raw_with_tag(self, loader: ConfargLoader) -> None:
-        """A tag does not change it: vanilla still coerces by all the variants' answer.
+    def test_disagreeing_owners_coerced_by_the_tagged_variant(self, loader: ConfargLoader) -> None:
+        """A tag names the variant that builds the field, so its type coerces the flag in every front-end.
 
-        With a tag the re-dispatch inside each sibling walk left the *named*
-        variant's coercion standing — ``7`` here — while vanilla returns the raw
-        token (BUG-84).
+        With a tag the re-dispatch inside each sibling walk left the *named* variant's
+        coercion standing while vanilla returned the raw token (BUG-84); vanilla now reads
+        the tag too, so all five coerce by the named variant.
         """
         merged = loader.merge(
             _OwnersDisagree,
@@ -3695,7 +3699,7 @@ class TestVariantOwnerConflictContract:
             env={},
             config_flag="",
         )
-        assert merged == {"u": {"class": f"{__name__}._OwnerInt", "a": "7"}}
+        assert merged == {"u": {"class": f"{__name__}._OwnerInt", "a": 7}}
 
     def test_disagreeing_owners_build_defers_to_tagged_variant(self, loader: ConfargLoader) -> None:
         """The raw token still builds: ``build()`` coerces it by the variant the tag names."""
@@ -3799,15 +3803,15 @@ class TestVariantOwnerConflictContract:
         merged = loader.merge(_ExtraHolder, argv=["--x.extra", "7"], env={}, config_flag="")
         assert merged == {"x": {"extra": "7"}}
 
-    def test_disagreeing_subclasses_raw_with_tag(self, loader: ConfargLoader) -> None:
-        """A tag on the base does not change the disagreeing-subclass answer."""
+    def test_disagreeing_subclasses_coerced_by_the_tagged_subclass(self, loader: ConfargLoader) -> None:
+        """A tag on the base names the subclass whose type coerces the flag the subclasses disagree on."""
         merged = loader.merge(
             _ExtraHolder,
             argv=["--x.class", f"{__name__}._ExtraInt", "--x.extra", "7"],
             env={},
             config_flag="",
         )
-        assert merged == {"x": {"class": f"{__name__}._ExtraInt", "extra": "7"}}
+        assert merged == {"x": {"class": f"{__name__}._ExtraInt", "extra": 7}}
 
     def test_disagreeing_owners_raw_at_union_root(self, loader: ConfargLoader) -> None:
         """A union root's variants own the flag together, the same rule included."""
@@ -3883,12 +3887,17 @@ class TestSubclassOverrideContract:
         assert merged == {"x": {"a": 7}}
         assert type(merged["x"]["a"]) is int
 
-    def test_overridden_field_coerced_by_base_with_tag(self, loader: ConfargLoader) -> None:
-        """A tag naming the overriding subclass does not change the answer either."""
+    def test_overridden_field_coerced_by_the_tagged_subclass(self, loader: ConfargLoader) -> None:
+        """A tag naming the overriding subclass names the class that builds the field: its ``float`` coerces it.
+
+        Without a tag the base answers (BUG-86); with one, the base's ``int`` built a value
+        the subclass's ``float`` field refuses, as a file's ``7`` is refused.
+        """
         tag = f"{__name__}._OverOverride"
         merged = loader.merge(_OverHolder, argv=["--x.class", tag, "--x.a", "7"], env={}, config_flag="")
-        assert merged == {"x": {"class": tag, "a": 7}}
-        assert type(merged["x"]["a"]) is int
+        assert merged == {"x": {"class": tag, "a": 7.0}}
+        assert type(merged["x"]["a"]) is float
+        assert loader.load(_OverHolder, argv=["--x.class", tag, "--x.a", "7"], env={}, config_flag="").x.a == 7.0
 
     def test_overridden_struct_subflag_coerced_by_base(self, loader: ConfargLoader) -> None:
         """A sub-flag under an overridden struct field is resolved through the base's struct."""
@@ -5877,7 +5886,7 @@ class TestCallOnTheCliContract:
         ]
         merged = loader.merge(_TypedCallConfig, argv=argv, env={})
         assert merged == {
-            "n": {"call": {"classfn": f"{__name__}._ClassfnOwner.scale", "k": "3"}, "args": {"k": "5"}},
+            "n": {"call": {"classfn": f"{__name__}._ClassfnOwner.scale", "k": 3}, "args": {"k": 5}},
         }
         assert loader.load(_TypedCallConfig, argv=argv, env={}).n == 15
 
@@ -5904,7 +5913,7 @@ class TestCallOnTheCliContract:
         """``--n.call`` opens the call, and ``--n.args.x`` is an argument of its target."""
         argv = ["--n.call", f"{__name__}._twice", "--n.args.x", "4"]
         merged = loader.merge(_TypedCallConfig, argv=argv, env={})
-        assert merged == {"n": {"call": f"{__name__}._twice", "args": {"x": "4"}}}
+        assert merged == {"n": {"call": f"{__name__}._twice", "args": {"x": 4}}}
         assert loader.load(_TypedCallConfig, argv=argv, env={}).n == 8
 
     def test_call_fills_a_struct(self, loader: ConfargLoader) -> None:
@@ -6249,7 +6258,7 @@ class TestARestatedOpenerStartsAfreshContract:
         """``--fn.bind.x`` refines the nested target the earlier flags named."""
         argv = ["--fn.bind.class", f"{__name__}._Multiplier", "--fn.bind.k", "2", "--fn.bind.k", "3"]
         merged = loader.merge(_Restated, argv=argv, env={})
-        assert merged == {"fn": {"bind": {"class": f"{__name__}._Multiplier", "k": "3"}}}
+        assert merged == {"fn": {"bind": {"class": f"{__name__}._Multiplier", "k": 3}}}
 
 
 @dataclass
@@ -6442,22 +6451,26 @@ class TestCallableSiblingKwargContract:
             loader.load(_CallableConfig, argv=["--fn.greeting", "Hi"], env={})
 
     def test_argument_beside_a_call_opener(self, loader: ConfargLoader) -> None:
-        """An argument the ``.call`` target's signature does not name still merges."""
-        merged = loader.merge(
-            _CallableConfig,
-            argv=["--fn.call", f"{__name__}._shout", "--fn.args.greeting", "Hi"],
-            env={},
-        )
-        assert merged == {"fn": {"call": f"{__name__}._shout", "args": {"greeting": "Hi"}}}
+        """An argument the ``.call`` target's signature does not name is refused at parse, in every front-end.
+
+        BUG-28 made the front-ends fail alike, in ``build()``; the target's signature now
+        types its arguments, so they fail alike at parse, as a typo below a struct does.
+        """
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(
+                _CallableConfig,
+                argv=["--fn.call", f"{__name__}._shout", "--fn.args.greeting", "Hi"],
+                env={},
+            )
 
     def test_argument_beside_the_bare_shorthand(self, loader: ConfargLoader) -> None:
-        """The shorthand is opened first, so the stray argument refines it instead of erasing it."""
-        merged = loader.merge(
-            _CallableConfig,
-            argv=["--fn", f"{__name__}._shout", "--fn.args.greeting", "Hi"],
-            env={},
-        )
-        assert merged == {"fn": {"bind": f"{__name__}._shout", "args": {"greeting": "Hi"}}}
+        """The shorthand is opened first, so its target types the stray argument, refused as the opener's is."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(
+                _CallableConfig,
+                argv=["--fn", f"{__name__}._shout", "--fn.args.greeting", "Hi"],
+                env={},
+            )
 
     def test_sibling_kwarg_below_a_nested_callable(self, loader: ConfargLoader) -> None:
         """The rule holds wherever the callable sits, not only at the root."""
@@ -9208,3 +9221,303 @@ class TestAFileSpellsAnOpInItsValue:
         """``__unset__`` is refused off a file as every reserved key is; its flag is in ``_RESERVED_KEYS``."""
         with pytest.raises(ConfargError, match="__unset__"):
             loader.load(_OpTarget, argv=argv, env=env, env_prefix="APP_", env_separator=".")
+
+
+# ---------------------------------------------------------------------------
+# A node types its keys by the class it names (BUG-233, BUG-236, BUG-110, BUG-113)
+# ---------------------------------------------------------------------------
+
+
+class _NamingJoiner:
+    """A callable class whose constructor takes a list, which a run of tokens fills."""
+
+    def __init__(self, parts: list[str], sep: str = "-") -> None:
+        self.parts = parts
+        self.sep = sep
+
+    def __call__(self) -> str:
+        return self.sep.join(self.parts)
+
+
+class _NamingSingle:
+    """A callable class whose ``parts`` is one string, which takes one token."""
+
+    def __init__(self, parts: str) -> None:
+        self.parts = parts
+
+    def __call__(self) -> str:
+        return self.parts
+
+
+class _NamingMul:
+    """A callable class built from an ``int``."""
+
+    def __init__(self, factor: int) -> None:
+        self.factor = factor
+
+    def __call__(self, x: int) -> int:
+        return x * self.factor
+
+
+class _NamingWrap:
+    """A callable class taking a Callable, which a nested spec builds."""
+
+    def __init__(self, inner: Callable[[int], int]) -> None:
+        self.inner = inner
+
+    def __call__(self, x: int) -> int:
+        return self.inner(x)
+
+
+def _naming_join(parts: list[str], sep: str = "-") -> str:
+    """A ``bind:`` / ``call:`` target taking a list."""
+    return sep.join(parts)
+
+
+def _naming_count(parts: list[str]) -> int:
+    """A ``call:`` target filling an ``int`` field from a list."""
+    return len(parts)
+
+
+@dataclass
+class _NamingCfg:
+    """A Callable, an ``Any``, an ``int`` a typed call fills, and an ``int`` leaf."""
+
+    f: Callable[..., Any] | None = None
+    w: Callable[[int], int] | None = None
+    x: Any = None
+    n: int = 0
+    leaf: int = 0
+
+
+@dataclass
+class _NamingA:
+    """A struct with an ``a``."""
+
+    a: int = 0
+
+
+@dataclass
+class _NamingB:
+    """A struct with a ``b``."""
+
+    b: int = 0
+
+
+@dataclass
+class _NamingBase:
+    """A base whose subclasses type ``inner`` apart."""
+
+
+@dataclass
+class _NamingS1(_NamingBase):
+    """``inner`` is an ``A``."""
+
+    inner: _NamingA = dataclasses_field(default_factory=_NamingA)
+
+
+@dataclass
+class _NamingS2(_NamingBase):
+    """``inner`` is a ``B``."""
+
+    inner: _NamingB = dataclasses_field(default_factory=_NamingB)
+
+
+@dataclass
+class _NamingOpts:
+    """``tags`` is a list."""
+
+    tags: list[str] = dataclasses_field(default_factory=list)
+
+
+@dataclass
+class _NamingOther:
+    """``tags`` is one string."""
+
+    tags: str = ""
+
+
+@dataclass
+class _NamingTask:
+    """A base the tag restates a subclass of."""
+
+    tags: list[str] = dataclasses_field(default_factory=list)
+
+
+@dataclass
+class _NamingTaskA(_NamingTask):
+    """The first class named."""
+
+
+@dataclass
+class _NamingTaskB(_NamingTask):
+    """The class named next."""
+
+
+@dataclass
+class _NamingStructs:
+    """A base-typed field whose subclasses type ``inner`` apart, a union of structs, a restated tag."""
+
+    item: _NamingBase = dataclasses_field(default_factory=_NamingBase)
+    o: _NamingOpts | _NamingOther = dataclasses_field(default_factory=_NamingOpts)
+    task: _NamingTask = dataclasses_field(default_factory=_NamingTask)
+
+
+_JOINER = f"{__name__}._NamingJoiner"
+
+
+class TestANodeTypesItsKeysByTheClassItNamesContract:
+    """A key below a node naming a class is typed by that class, in every channel and front-end.
+
+    The walk typed a path by the declared types alone: one ``str`` segment below a Callable
+    (BUG-233), one token below a class's list argument (BUG-236), every segment after a tag
+    (BUG-110), and every subclass's fields folded below a base-typed field (BUG-113).
+    """
+
+    def test_a_nested_spec_below_a_constructor_argument(self, loader: ConfargLoader) -> None:
+        """``inner`` is ``Wrap``'s Callable argument, so it opens a spec of its own (BUG-233)."""
+        argv = ["--w.class", f"{__name__}._NamingWrap", "--w.inner.class", f"{__name__}._NamingMul"]
+        cfg = loader.load(_NamingCfg, argv=[*argv, "--w.inner.factor", "4"], env={})
+        assert cfg.w is not None
+        assert cfg.w(1) == 4
+
+    def test_below_an_unnamed_callable_a_key_is_open_at_any_depth(self, loader: ConfargLoader) -> None:
+        """Before any opener, a path below a Callable is untyped at any depth, as before PR-11."""
+        argv = ["--w.inner.factor", "4", "--w.class", f"{__name__}._NamingWrap"]
+        cfg = loader.load(_NamingCfg, argv=[*argv, "--w.inner.class", f"{__name__}._NamingMul"], env={})
+        assert cfg.w is not None
+        assert cfg.w(1) == 4
+
+    def test_a_list_argument_takes_a_run(self, space_sep_loader: ConfargLoader) -> None:
+        """The class declares ``parts: list[str]``, so the flag takes the run (BUG-236)."""
+        cfg = space_sep_loader.load(_NamingCfg, argv=["--f.class", _JOINER, "--f.parts", "a", "b"], env={})
+        assert cfg.f() == "a-b"
+
+    def test_a_list_argument_takes_repeated_flags(self, repeated_loader: ConfargLoader) -> None:
+        """The clicklike spelling of the same list."""
+        argv = ["--f.class", _JOINER, "--f.parts", "a", "--f.parts", "b"]
+        assert repeated_loader.load(_NamingCfg, argv=argv, env={}).f() == "a-b"
+
+    def test_a_list_argument_takes_an_index(self, loader: ConfargLoader) -> None:
+        """``--f.parts.0`` indexes the list the class declares."""
+        argv = ["--f.class", _JOINER, "--f.parts.0", "a", "--f.parts.1", "b"]
+        assert loader.load(_NamingCfg, argv=argv, env={}).f() == "a-b"
+
+    def test_a_bind_target_types_its_arguments(self, space_sep_loader: ConfargLoader) -> None:
+        """``args`` holds the target's parameters, typed as it declares them."""
+        argv = ["--f.bind", f"{__name__}._naming_join", "--f.args.parts", "a", "b"]
+        assert space_sep_loader.load(_NamingCfg, argv=argv, env={}).f() == "a-b"
+
+    def test_a_typed_call_types_its_arguments(self, space_sep_loader: ConfargLoader) -> None:
+        """A ``call:`` filling an ``int`` reads its target's parameters too."""
+        argv = ["--n.call", f"{__name__}._naming_count", "--n.args.parts", "a", "b", "c"]
+        assert space_sep_loader.load(_NamingCfg, argv=argv, env={}).n == 3
+
+    def test_an_any_node_types_by_the_class_it_names(self, space_sep_loader: ConfargLoader) -> None:
+        """An ``Any`` reads every opener, so its keys are the named class's too."""
+        argv = ["--x.class", _JOINER, "--x.parts", "a", "b"]
+        assert space_sep_loader.load(_NamingCfg, argv=argv, env={}).x() == "a-b"
+
+    def test_the_environment_decodes_a_list_argument(self, loader: ConfargLoader) -> None:
+        """``APP_F__PARTS`` is a ``list[str]`` of the class, so its JSON array decodes."""
+        env = {"APP_F__CLASS": _JOINER, "APP_F__PARTS": '["a","b"]'}
+        assert loader.load(_NamingCfg, argv=[], env=env, env_prefix="APP_").f() == "a-b"
+
+    def test_the_environment_types_a_variable_whatever_its_order(self, loader: ConfargLoader) -> None:
+        """``APP_F__ARGS`` sorts before ``APP_F__BIND``: the environment has no order, so its opener types it."""
+        env = {"APP_F__BIND": f"{__name__}._naming_join", "APP_F__ARGS__PARTS": '["a","b"]'}
+        assert loader.load(_NamingCfg, argv=[], env=env, env_prefix="APP_").f() == "a-b"
+
+    def test_a_lower_layer_names_the_class(self, space_sep_loader: ConfargLoader, tmp_yaml) -> None:
+        """A file, the environment and a ``--config`` file each name the class a flag's keys are typed by."""
+        spec = tmp_yaml(f"f: {{class: {_JOINER}}}\n")
+        argv = ["--f.parts", "a", "b"]
+        assert space_sep_loader.load(_NamingCfg, argv=argv, env={}, files=[spec]).f() == "a-b"
+        env = {"APP_F__CLASS": _JOINER}
+        assert space_sep_loader.load(_NamingCfg, argv=argv, env=env, env_prefix="APP_").f() == "a-b"
+        assert space_sep_loader.load(_NamingCfg, argv=["--config", str(spec), *argv], env={}).f() == "a-b"
+
+    def test_a_lower_layer_names_the_class_of_a_variable(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The environment's keys are typed by a file's class too."""
+        spec = tmp_yaml(f"f: {{class: {_JOINER}}}\n")
+        env = {"APP_F__PARTS": '["a","b"]'}
+        assert loader.load(_NamingCfg, argv=[], env=env, env_prefix="APP_", files=[spec]).f() == "a-b"
+
+    def test_an_opener_after_its_keys_types_none_of_them(self, space_sep_loader: ConfargLoader) -> None:
+        """On argv the opener comes first: a run written before it is one untyped token."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            space_sep_loader.load(_NamingCfg, argv=["--f.parts", "a", "b", "--f.class", _JOINER], env={})
+
+    def test_an_argv_opener_after_a_key_hides_a_lower_layers_class(
+        self,
+        space_sep_loader: ConfargLoader,
+        tmp_yaml,
+    ) -> None:
+        """Argv names the node, so the file's class does not build the key and does not type it."""
+        spec = tmp_yaml(f"f: {{class: {_JOINER}}}\n")
+        argv = ["--f.parts", "a", "b", "--f.class", f"{__name__}._NamingSingle"]
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            space_sep_loader.load(_NamingCfg, argv=argv, env={}, files=[spec])
+
+    def test_an_argv_opener_before_a_key_types_it_over_a_lower_layers_class(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+    ) -> None:
+        """Argv's own class types the key it builds, whatever the file named."""
+        spec = tmp_yaml(f"f: {{class: {_JOINER}}}\n")
+        argv = ["--f.class", f"{__name__}._NamingSingle", "--f.parts", "a"]
+        assert loader.load(_NamingCfg, argv=argv, env={}, files=[spec]).f() == "a"
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["--f.class", _JOINER, "--f.prts", "a"], id="class-field"),
+            pytest.param(["--f.bind", f"{__name__}._naming_join", "--f.args.prts", "a"], id="bind-argument"),
+            pytest.param(["--x.class", _JOINER, "--x.prts", "a"], id="any-field"),
+        ],
+    )
+    def test_a_key_the_named_class_does_not_declare_is_refused(self, loader: ConfargLoader, argv: list[str]) -> None:
+        """The class's signature is its key set, as a struct's fields are: a typo is refused at parse."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_NamingCfg, argv=argv, env={})
+
+    def test_a_restated_opener_types_each_key_by_the_opener_in_force(self, space_sep_loader: ConfargLoader) -> None:
+        """Each occurrence is typed by the opener written before it; the restart then drops the first."""
+        argv = ["--f.class", _JOINER, "--f.parts", "a", "b", "--f.class", f"{__name__}._NamingSingle"]
+        assert space_sep_loader.load(_NamingCfg, argv=[*argv, "--f.parts", "c"], env={}).f() == "c"
+
+    def test_a_restated_tag_drops_the_tokens_of_the_first_class(self, space_sep_loader: ConfargLoader) -> None:
+        """The restart drops the run written for the first class, as two layers would (BUG-238)."""
+        argv = ["--task.class", f"{__name__}._NamingTaskA", "--task.tags", "a", "b"]
+        argv += ["--task.class", f"{__name__}._NamingTaskB", "--task.tags", "c"]
+        assert space_sep_loader.load(_NamingStructs, argv=argv, env={}).task == _NamingTaskB(tags=["c"])
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["--leaf.class.junk", "X"], id="tag"),
+            pytest.param(["--x.class.junk", "X"], id="any-opener"),
+            pytest.param(["--f.classfn.junk", "X"], id="callable-opener"),
+        ],
+    )
+    def test_nothing_lies_below_a_class_path(self, loader: ConfargLoader, argv: list[str]) -> None:
+        """A tag's or an object opener's value is a dotted-path leaf (BUG-110)."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_NamingCfg, argv=argv, env={})
+
+    def test_a_tag_types_the_subclass_it_names(self, loader: ConfargLoader) -> None:
+        """``S1`` and ``S2`` type ``inner`` apart; the tag says which one builds it (BUG-113)."""
+        argv = ["--item.class", f"{__name__}._NamingS1", "--item.inner.a", "1"]
+        assert loader.load(_NamingStructs, argv=argv, env={}).item == _NamingS1(inner=_NamingA(a=1))
+
+    def test_a_tag_types_the_variant_it_names(self, space_sep_loader: ConfargLoader) -> None:
+        """``Opts.tags`` is a list where ``Other.tags`` is a string; the tag picks the list."""
+        argv = ["--o.class", f"{__name__}._NamingOpts", "--o.tags", "x", "y"]
+        assert space_sep_loader.load(_NamingStructs, argv=argv, env={}).o == _NamingOpts(tags=["x", "y"])
+
+    def test_a_tag_refuses_a_field_only_another_subclass_declares(self, loader: ConfargLoader) -> None:
+        """Below ``S1``, ``inner.b`` is ``S2``'s field: refused, as a typo below a struct is."""
+        argv = ["--item.class", f"{__name__}._NamingS1", "--item.inner.b", "1"]
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_NamingStructs, argv=argv, env={})

@@ -157,7 +157,7 @@ method's own arguments belong under the `args` of a `bind:` or `call:` whose tar
 
 An `Any` field reads a dict holding an opener (`_callable.holds_an_opener`) as the spec it is, through the same `_spec_parts` a Callable field reads: `{class: pkg.S, a: 1}` builds `S(a=1)`, `{call: pkg.f, args: {x: 4}}` takes `f(x=4)` as it is, `{bind: pkg.f}` yields `f` and `{classfn: pkg.C.m, k: 1}` the bound method. `_callable.resolve_held_spec` is that reader: it checks nothing against a Callable, so `class:` builds any class, callable or not, through `construct_named_class` as a Callable's `class:` does ([class builds an instance](#class-builds-an-instance)). A dict holding no opener is a `dict[Any, Any]` and a list a `list[Any]`, so every value below is an `Any` node in turn and a spec at any depth is read (`typedload._construct._construct_any`); a bare `dict` or `list` annotation reads the same way, being `dict[Any, Any]` and `list[Any]` (BUG-187). A bare dotted string stays a string: the shorthand applies only where the type asks for a callable. A class that does not import, or a path that names no class, is refused, not kept as data. In a union, a tag naming a struct variant selects it as before, and one naming no variant is the `Any` variant's spec (`_construct_union_by_tag`), a Callable variant's when the union has one; a tag that does not import is refused there too. Any other opener is read before a struct or dict variant tries the dict ([a Callable beside another variant](#a-callable-beside-another-variant)).
 
-On the command line a keyed `Any` is a `dict[Any, Any]` as well: `_parse_cli._advance_field_type` answers `Any` for any segment below one, so `--x.class pkg.S --x.a 1`, `--x.call pkg.f --x.args.x 4`, and their environment spellings (`APP_X__CLASS`, `APP_X__A`) reach the same spec a file writes. Since `_takes_typed_call` no longer yields on `Any`, `call` and `args` open a subtree below it as below any typed field, and the adapters describe `--x.args.<p>` from the target's signature. Every other flag below an `Any` is registered when argv types it, as a dict's keys are (`_parse_cli._COLLECTION_KINDS`), so the fields of the class argv names are accepted in all five front-ends. No declaration types such a key until construction reads the opener, so each of those flags takes one token: a list field of the class named is set by index (`--x.tags.0 a`) or by a `.json` cast, not by `--x.tags a b`, as below a Callable's `class:`.
+On the command line a keyed `Any` is a `dict[Any, Any]` as well: `_parse_cli._advance_field_type` answers `Any` for any segment below one, so `--x.class pkg.S --x.a 1`, `--x.call pkg.f --x.args.x 4`, and their environment spellings (`APP_X__CLASS`, `APP_X__A`) reach the same spec a file writes. Since `_takes_typed_call` no longer yields on `Any`, `call` and `args` open a subtree below it as below any typed field, and the adapters describe `--x.args.<p>` from the target's signature. A key below an `Any` that names a class is typed by it, as below a Callable ([a node types its keys by the class it names](design-decisions/a-node-types-its-keys-by-the-class-it-names.md#a-node-types-its-keys-by-the-class-it-names)): `--x.class pkg.J --x.parts a b` takes the run `J`'s `list[str]` takes, `APP_X__PARTS='["a","b"]'` decodes, and a key `J` does not declare is refused. Below an `Any` that names nothing, every flag is an `Any` node, registered when argv types it, as a dict's keys are (`_parse_cli._COLLECTION_KINDS`), one token each.
 
 `dump()` writes what an `Any` holds back as the spec that rebuilds it ([serialization](types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it)). The decision and its rejected alternatives are in [an `Any` node reads every opener](design-decisions/an-any-node-reads-every-opener.md).
 
@@ -180,7 +180,7 @@ The rules are maintainer's choices; [a Callable beside another variant reads its
 
 `dump()` writes the Callable variant's value as a lone Callable's, and checks that it reads back by re-dumping what it reads, since an instance or a partial compares equal to nothing but itself ([casting a stolen leaf](types/stealing-rule.md#casting-a-stolen-leaf)). A string the Callable variant would read, `pkg.double` held as text in `Callable | str`, dumps as `{__cast__: str, __value__: pkg.double}`.
 
-The CLI and the environment merged every spelling already, the walk following the Callable member below the field; construction was what refused them.
+The CLI and the environment merged every spelling already, the walk following the Callable member below the field; construction was what refused them. Below a spec, the walk follows the variant the spec selects (`_naming.named_variant`), so a key is typed by the class its opener names.
 
 ## Auto-binding
 
@@ -213,7 +213,10 @@ named a mixed pair (BUG-25), and the dump's refusal of a keyword spelled like an
 `_parse_cli._opens_spec_subtree` accepts all three under a `Callable`, and `call` and `args`
 under a field that takes a typed call, and the adapters' CLI channel is the same loop, so the
 merged dict matches vanilla's key for key. A subtree is how a nested target spec is spelled
-(`--f.bind.class pkg.H --f.bind.x 1`), and how the arguments are (`--f.args.p 2`).
+(`--f.bind.class pkg.H --f.bind.x 1`), and how the arguments are (`--f.args.p 2`). `bind` and
+`call` hold a Callable target, typed by the opener the nested spec holds in turn, and `args` the
+target's parameters, typed by the target an opener names and untyped at any depth where none
+does ([a node types its keys by the class it names](design-decisions/a-node-types-its-keys-by-the-class-it-names.md#a-node-types-its-keys-by-the-class-it-names)).
 
 ## One coercion route
 
@@ -340,7 +343,13 @@ Precedent: `pickle` reduces an object to its class and the state it holds, and a
 
 A Callable field's openers are registered statically; the target's parameters are
 discovered from the named target at `populate_*` time
-([CLI adapters](cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags)).
+([CLI adapters](cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags)), whether
+argv, a file or the environment names it, and every flag below the spec is typed by the class
+its opener names, in vanilla's walk and in registration alike
+([a node types its keys by the class it names](design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key)):
+`--f.class pkg.Joiner --f.parts a b` takes the run a `list[str]` takes, and
+`--f.class pkg.Wrap --f.inner.class pkg.Mul --f.inner.factor 4` opens the nested spec of
+`Wrap`'s Callable argument. On argv the opener comes first: a key written before it is untyped.
 A `bind` or `call` target's parameters are `--f.args.<p>`, the parameters of the function or
 class it names; a `class` target's are `--f.<p>`, its constructor's, and so are a `classfn`
 target's owner's. A former implicit form, where a bare return type triggered collection of

@@ -23,7 +23,7 @@ the container for the full path and register nothing where it answers `None`. Se
 [cli-adapters/union-inheritance-and-cast-flags.md](../../architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags)
 and
 [invariants.md#delegate-to-the-canonical-function](../../architecture/invariants.md#delegate-to-the-canonical-function).
-Cyclopts cannot register this target at all (BUG-114).
+A tag naming the subclass, on argv or in a layer below it, types the path in all five front-ends ([a node types its keys by the class it names](../../architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#a-node-types-its-keys-by-the-class-it-names)): `--item.class S1 --item.inner.a 1` builds `S1(inner=A(a=1))`. What stays is the path nothing names, which vanilla cannot type and registration lists for every subclass.
 
 Origin: regression from PR-38, a bug fix that made the adapters register each subclass's fields so
 that a base-typed field can be dispatched from the CLI. Bisected with `parse_args`: before PR-38

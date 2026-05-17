@@ -35,6 +35,7 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 | [FEAT-22 — The process environment as an expression namespace](FEAT-22-environment-namespace-in-expressions.md) | minor |  | L | high | behavior |
 | [FEAT-35 — Let `${...}` read a `call:` result](FEAT-35-expressions-read-call-results.md) | minor |  | L | high | behavior |
 | [FEAT-45 — `TypedDict` fields](FEAT-45-typeddict-fields.md) | minor |  | L | high | behavior |
+| [FEAT-47 — A confarg object holding the target and its sources](FEAT-47-a-confarg-object-holding-the-target-and-its-sources.md) | minor |  | L | low | behavior |
 | [FEAT-23 — A post-resolve transform layer](FEAT-23-post-resolve-transform-layer.md) | minor |  | XL | high | config |
 | [FEAT-20 — Derived values that cannot be made inconsistent](FEAT-20-enforced-derived-values.md) | minor | FEAT-19 | M | medium | behavior |
 | [FEAT-39 — A struct instance default is no base layer](FEAT-39-a-struct-instance-default-is-no-base.md) | minor | FEAT-38 | M | medium | none |

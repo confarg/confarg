@@ -17,14 +17,22 @@ from __future__ import annotations
 import dataclasses
 import functools
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Iterator, Sequence
 
 from confarg import _defaults
-from confarg._callable import _competing_openers, names_an_opener, opens_a_subtree, promote_bare_spec
+from confarg._callable import (
+    _COMPUTATION_OPENERS,
+    _OBJECT_OPENERS,
+    _competing_openers,
+    names_an_opener,
+    opens_a_subtree,
+    promote_bare_spec,
+)
 from confarg._cast import (
     FORCE_CAST_NAMES,
     JSON_CAST_NAME,
@@ -45,6 +53,16 @@ from confarg._merge import (
     _open_for_ops,
     _peek_nested,
     _set_nested,
+)
+from confarg._naming import (
+    TARGET,
+    Named,
+    is_arguments,
+    named_child,
+    named_variant,
+    names_something,
+    opener_keys,
+    takes_untyped_argument,
 )
 from confarg._tags import import_tagged_classes
 from confarg._types import (
@@ -68,6 +86,7 @@ from confarg._types import (
     _tuple_types,
     _union_args,
     _union_args_no_none,
+    _union_branches,
     _union_has_scalar_variant,
     _union_has_seq_variant,
     _union_has_varlen_variant,
@@ -76,7 +95,11 @@ from confarg._types import (
 from confarg.dictexpr._expressions import _list_index
 from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce, _type_kind, _TypeKind
-from confarg.typedload._construct import _selects_none, _takes_typed_call
+from confarg.typedload._construct import _is_typed_call, _selects_none, _takes_typed_call
+
+#: What the data a path is typed against names at a node, by the node's path: the dict the
+#: node holds, or None where nothing names it (:func:`_walk_path`).
+NamingView = Callable[[tuple[str, ...]], Any]
 
 
 def _step_tuple_type(tp: Any, part: str) -> Any | None:
@@ -193,20 +216,8 @@ def _refuses_at_a_sequence(branch: _Branch) -> bool:
     return branch.end is None and _type_kind(branch.stones[-1].node) in _SEQUENCE_KINDS
 
 
-def _union_branches(tp: Any) -> list[Any]:
-    """Return the resolved, non-union types a node of type *tp* is walked as, in variant order.
-
-    *tp* itself when it is no union; otherwise each non-None variant, a variant that is a
-    union in turn spread into its own.
-    """
-    tp = _resolve_type(tp)
-    if not _is_union(tp):
-        return [tp]
-    return [node for v in _union_args_no_none(tp) for node in _union_branches(v)]
-
-
 def _opens_spec_subtree(stone: _Stone, part: str, depth: int) -> bool:
-    """Return True if *part*, met at *stone*, holds a subtree of a computation's spec: a str subtree.
+    """Return True if *part*, met at *stone*, holds a subtree of a computation's spec.
 
     A ``bind`` or ``call`` target is a dotted path (``--f.call pkg.g``) or a callable spec of
     its own, addressable key by key (``--f.call.classfn pkg.C.m``), and ``args`` holds the
@@ -215,22 +226,61 @@ def _opens_spec_subtree(stone: _Stone, part: str, depth: int) -> bool:
     ``call`` and ``args`` below a field that takes a typed call, unless a member holds the
     name (:func:`~confarg.typedload._construct._takes_typed_call`), so ``--n.args.x`` needs
     no opener on the command line. The root (*depth* 0) holds no typed call: its flags share
-    the namespace with a host framework's own.
+    the namespace with a host framework's own, and nor does the mapping under ``args``,
+    whose keys are a target's parameters.
 
     Dev Notes:
         docs-dev/architecture/callables.md#cli
     """
     if _is_callable(stone.node):
         return opens_a_subtree(part)
-    return depth > 0 and part in (_defaults.CALL_KEY, _defaults.ARGS_KEY) and _takes_typed_call(stone.reached, part)
+    return (
+        depth > 0
+        and part in (_defaults.CALL_KEY, _defaults.ARGS_KEY)
+        and not is_arguments(stone.node)
+        and _takes_typed_call(stone.reached, part)
+    )
 
 
-def _walk_path(
+def _unnamed_spec_step(stone: _Stone, part: str, depth: int) -> Any:
+    """Return the type of *part* below a spec node that names nothing yet, or :attr:`Named.NOTHING` for no spec node.
+
+    Below a Callable or an ``Any``, an object opener's value is a dotted-path leaf, a
+    computation opener's a target spec of its own, and ``args`` the arguments of a target no
+    opener names, untyped at any depth. Any other key below a Callable is a field of a class
+    no opener names yet, untyped at any depth too (BUG-233); below an ``Any`` it is an ``Any``
+    node. Below a field that takes a typed call (:func:`_opens_spec_subtree`), ``call`` is a
+    target and ``args`` untyped.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#no-naming-known
+    """
+    kind = _type_kind(stone.node)
+    if kind in (_TypeKind.CALLABLE, _TypeKind.ANY):
+        if part in _OBJECT_OPENERS:
+            return str
+        if part in _COMPUTATION_OPENERS:
+            return TARGET
+        return Named.UNTYPED if kind is _TypeKind.CALLABLE or part == _defaults.ARGS_KEY else Named.NOTHING
+    if _opens_spec_subtree(stone, part, depth):
+        return TARGET if part == _defaults.CALL_KEY else Named.UNTYPED
+    return Named.NOTHING
+
+
+def _opens_a_spec(node: Any, naming: Any) -> bool:
+    """Return whether a key below the node *node*, holding *naming*, is read by a spec: no namespace lies below it."""
+    if _type_kind(node) in (_TypeKind.CALLABLE, _TypeKind.ANY) or is_arguments(node):
+        return True
+    return naming is not None and _is_typed_call(naming, node)
+
+
+def _walk_path(  # noqa: C901  # the step and its answers, read inline
     target: Any,
     parts: list[str],
     union_tag: str,
     *,
     tag_fallback: bool = True,
+    named: NamingView | None = None,
 ) -> Iterator[_Branch]:
     """Walk the type tree along *parts*, yielding one branch per way the walk can take it.
 
@@ -242,8 +292,11 @@ def _walk_path(
     :func:`_addresses_callable_key`, :func:`_is_collection_patch_path`,
     :func:`_is_dict_at_path` -- read the stones each stood on.
 
-    A segment names the union tag only when no real member of that exact spelling exists
-    at its position; a field named like the tag is that field.
+    A node whose data names a class (*named*) types the segment below it by that class
+    (:func:`~confarg._naming.named_child`), and a union naming one of its variants walks
+    that variant alone (:func:`~confarg._naming.named_variant`). A segment names the union
+    tag only when no real member of that exact spelling exists at its position; a field
+    named like the tag is that field, and the tag's value is a leaf.
 
     Args:
         target: The root type to start resolution from.
@@ -252,32 +305,71 @@ def _walk_path(
         tag_fallback: Whether a segment no member reaches may still name the union tag.
             Off, the walk answers members only, which is how
             :func:`_names_tag_by_fallback` tells the two apart.
+        named: What the data the path is typed against names at each node; None types
+            the path by the declared types alone.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/type-guided-parsing.md#one-walk-many-questions
     """
 
-    def walk(reached: Any, stones: tuple[_Stone, ...], *, str_subtree: bool) -> Iterator[_Branch]:
-        if len(stones) == len(parts):
+    def naming_at(k: int) -> Any:
+        naming = None if named is None else named(tuple(parts[:k]))
+        if not isinstance(naming, dict):
+            return None
+        if k == 0:
+            # The root holds no typed call: its flags share the namespace with a host's own.
+            return {key: v for key, v in naming.items() if key not in (_defaults.CALL_KEY, _defaults.ARGS_KEY)}
+        return naming
+
+    def walk(  # noqa: C901  # one branch per answer of the step
+        reached: Any,
+        stones: tuple[_Stone, ...],
+        *,
+        str_subtree: bool,
+        in_spec: bool,
+    ) -> Iterator[_Branch]:
+        k = len(stones)
+        if k == len(parts):
             yield _Branch(stones, reached)
             return
-        part = parts[len(stones)]
-        for node in _union_branches(reached):
+        part = parts[k]
+        naming = None if str_subtree else naming_at(k)
+        variant = None if naming is None else named_variant(reached, naming, union_tag)
+        for node in [variant] if variant is not None else _union_branches(reached):
             here = (*stones, _Stone(reached, node))
-            if str_subtree or _opens_spec_subtree(here[-1], part, len(stones)):
-                yield from walk(str, here, str_subtree=True)
-            elif part in _locals_keys_nested(node, union_tag):
-                yield from walk(dict[str, Any], here, str_subtree=False)
+            if str_subtree:
+                yield from walk(str, here, str_subtree=True, in_spec=True)
+                continue
+            if not in_spec and part in _locals_keys_nested(node, union_tag):
+                yield from walk(dict[str, Any], here, str_subtree=False, in_spec=False)
+                continue
+            answer = Named.NOTHING if naming is None else named_child(node, part, naming, union_tag)
+            if answer is Named.NOTHING:
+                answer = _unnamed_spec_step(here[-1], part, k)
+            below_spec = in_spec or _opens_a_spec(node, naming)
+            if answer is Named.REFUSED:
+                yield _Branch(here, None)
+            elif answer is Named.UNTYPED:
+                yield from walk(str, here, str_subtree=True, in_spec=True)
+            elif answer is not Named.NOTHING:
+                yield from walk(answer, here, str_subtree=False, in_spec=below_spec)
             elif (advanced := _advance_field_type(node, part)) is not None:
-                yield from walk(advanced, here, str_subtree=False)
-            elif tag_fallback and part == union_tag and not getattr(node, _LOCALS_GRAFT, False):
-                # The tag is the fallback, so it resolves only at a position no member
-                # of its exact spelling reaches.
-                yield from walk(str, here, str_subtree=True)
+                yield from walk(advanced, here, str_subtree=False, in_spec=below_spec)
+            elif tag_fallback and part == union_tag and not _synthesized(node):
+                # The tag is the fallback, so it resolves only at a position no member of its
+                # exact spelling reaches; its value is a class path, below which nothing lies.
+                yield from walk(str, here, str_subtree=False, in_spec=below_spec)
+            elif takes_untyped_argument(node, part):
+                yield from walk(str, here, str_subtree=True, in_spec=True)
             else:
                 yield _Branch(here, None)
 
-    yield from walk(_resolve_type(target), (), str_subtree=False)
+    yield from walk(_resolve_type(target), (), str_subtree=False, in_spec=False)
+
+
+def _synthesized(node: Any) -> bool:
+    """Return whether *node* is a class confarg builds for the walk alone, which no tag dispatches on."""
+    return bool(getattr(node, _LOCALS_GRAFT, False)) or is_arguments(node)
 
 
 def _field_types(
@@ -286,6 +378,7 @@ def _field_types(
     union_tag: str,
     *,
     tag_fallback: bool = True,
+    named: NamingView | None = None,
 ) -> list[Any]:
     """Return the type each branch of the walk along *parts* reaches at its end.
 
@@ -299,8 +392,9 @@ def _field_types(
         parts: A list of path segments to follow.
         union_tag: The field name used as a discriminator tag in unions.
         tag_fallback: Whether a segment no member reaches may still name the union tag.
+        named: What the data the path is typed against names at each node (:func:`_walk_path`).
     """
-    branches = _walk_path(target, parts, union_tag, tag_fallback=tag_fallback)
+    branches = _walk_path(target, parts, union_tag, tag_fallback=tag_fallback, named=named)
     return [branch.end for branch in branches if branch.end is not None]
 
 
@@ -322,6 +416,7 @@ def _resolve_field_type(
     union_tag: str,
     *,
     tag_fallback: bool = True,
+    named: NamingView | None = None,
 ) -> Any | None:
     """Return the type a value at the dotted path *parts* is coerced by, None if no branch accepts it.
 
@@ -333,14 +428,15 @@ def _resolve_field_type(
         parts: A list of path segments to follow.
         union_tag: The field name used as a discriminator tag in unions.
         tag_fallback: Whether a segment no member reaches may still name the union tag.
+        named: What the data the path is typed against names at each node (:func:`_walk_path`).
 
     Returns:
         The resolved type at the end of the path, or None if the path is invalid.
     """
-    return _common_type(_field_types(target, parts, union_tag, tag_fallback=tag_fallback))
+    return _common_type(_field_types(target, parts, union_tag, tag_fallback=tag_fallback, named=named))
 
 
-def _names_tag_by_fallback(target: Any, parts: list[str], union_tag: str) -> bool:
+def _names_tag_by_fallback(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> bool:
     """Return True if the path's last segment is the union tag, reached by the walk's fallback.
 
     The walk's own answer: the path resolves with the tag rule and does not without it,
@@ -350,12 +446,12 @@ def _names_tag_by_fallback(target: Any, parts: list[str], union_tag: str) -> boo
     return (
         bool(parts)
         and parts[-1] == union_tag
-        and _resolve_field_type(target, parts, union_tag) is not None
-        and _resolve_field_type(target, parts, union_tag, tag_fallback=False) is None
+        and _resolve_field_type(target, parts, union_tag, named=named) is not None
+        and _resolve_field_type(target, parts, union_tag, tag_fallback=False, named=named) is None
     )
 
 
-def _addresses_callable_key(target: Any, parts: list[str], union_tag: str) -> bool:
+def _addresses_callable_key(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> bool:
     """Return True if the dotted path names a key *inside* a callable spec.
 
     Below a ``Callable`` field, everything is one answer, because everything below it is
@@ -374,12 +470,12 @@ def _addresses_callable_key(target: Any, parts: list[str], union_tag: str) -> bo
     """
     return any(
         _is_callable(stone.node) or _opens_spec_subtree(stone, part, k)
-        for branch in _walk_path(target, parts, union_tag)
+        for branch in _walk_path(target, parts, union_tag, named=named)
         for k, (stone, part) in enumerate(zip(branch.stones, parts, strict=False))
     )
 
 
-def _opener_at(target: Any, parts: list[str], union_tag: str) -> bool:
+def _opener_at(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> bool:
     """Return True if the last segment of *parts* is an opener of a spec at the path before it.
 
     Any opener opens a spec on a callable field; ``call`` does on a field that takes a
@@ -393,12 +489,12 @@ def _opener_at(target: Any, parts: list[str], union_tag: str) -> bool:
         and any(
             len(branch.stones) > k
             and (_is_callable(branch.stones[k].node) or _opens_spec_subtree(branch.stones[k], parts[k], k))
-            for branch in _walk_path(target, parts, union_tag)
+            for branch in _walk_path(target, parts, union_tag, named=named)
         )
     )
 
 
-def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> bool:
+def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> bool:
     """Return True if the dotted path indexes a list/tuple/set or keys a dict.
 
     Such paths (e.g. ``users.0``, ``dbs.1.port``, ``foo.bar``) are open-ended, so no
@@ -411,12 +507,12 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
     """
     return any(
         _type_kind(stone.node) in _COLLECTION_KINDS or part in _locals_keys_nested(stone.node, union_tag)
-        for branch in _walk_path(target, parts, union_tag)
+        for branch in _walk_path(target, parts, union_tag, named=named)
         for stone, part in zip(branch.stones, parts, strict=False)
     )
 
 
-def _registered_when_typed(target: Any, parts: list[str], union_tag: str) -> bool:
+def _registered_when_typed(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> bool:
     """Return True if the adapters register this path's flag only when argv types it.
 
     A collection patch (:func:`_is_collection_patch_path`), or a union tag the walk
@@ -428,24 +524,30 @@ def _registered_when_typed(target: Any, parts: list[str], union_tag: str) -> boo
     Dev Notes:
         docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
     """
-    return _is_collection_patch_path(target, parts, union_tag) or _names_tag_by_fallback(target, parts, union_tag)
+    return _is_collection_patch_path(target, parts, union_tag, named) or _names_tag_by_fallback(
+        target,
+        parts,
+        union_tag,
+        named,
+    )
 
 
-def _path_unknown(target: Any, parts: list[str], union_tag: str) -> bool:
+def _path_unknown(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> bool:
     """Return True when *parts* names no node a flag can write: vanilla refuses it as unknown.
 
     A path the walk resolves is a member; a path below a dict-typed node is a key the dict
     takes, whatever it spells.  The delete handler, the unknown-field handler and the
     adapters' skip of the host's own flags all ask this one question.
     """
-    return _resolve_field_type(target, parts, union_tag) is None and not _is_dict_at_path(
+    return _resolve_field_type(target, parts, union_tag, named=named) is None and not _is_dict_at_path(
         target,
         parts,
         union_tag,
+        named,
     )
 
 
-def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
+def _is_dict_at_path(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> bool:
     """Check if any branch of the walk stands on a dict at a non-empty proper prefix of the path.
 
     The node a branch stands on, not the type the prefix reaches: a field typed
@@ -459,6 +561,7 @@ def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
         target: The root type to start resolution from.
         parts: A list of path segments to check.
         union_tag: The field name used as a discriminator tag in unions.
+        named: What the data the path is typed against names at each node (:func:`_walk_path`).
 
     Returns:
         True if a branch stands on a dict type at any non-empty proper prefix of parts.
@@ -468,11 +571,11 @@ def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
     """
     return any(
         not _refuses_at_a_sequence(branch) and any(_is_dict(stone.node) for stone in branch.stones[1:])
-        for branch in _walk_path(target, parts, union_tag)
+        for branch in _walk_path(target, parts, union_tag, named=named)
     )
 
 
-def _sequence_refusal(target: Any, parts: list[str], union_tag: str) -> int | None:
+def _sequence_refusal(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> int | None:
     """Return the position in *parts* of the segment a sequence refuses, None if the path is no such refusal.
 
     A refusal only when vanilla's loop refuses the path (:func:`_path_unknown`), and a branch
@@ -483,9 +586,10 @@ def _sequence_refusal(target: Any, parts: list[str], union_tag: str) -> int | No
     Dev Notes:
         docs-dev/architecture/cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index
     """
-    if not _path_unknown(target, parts, union_tag):
+    if not _path_unknown(target, parts, union_tag, named):
         return None
-    refused = (len(b.stones) - 1 for b in _walk_path(target, parts, union_tag) if _refuses_at_a_sequence(b))
+    walk = _walk_path(target, parts, union_tag, named=named)
+    refused = (len(b.stones) - 1 for b in walk if _refuses_at_a_sequence(b))
     return next(refused, None)
 
 
@@ -493,7 +597,7 @@ def _sequence_refusal(target: Any, parts: list[str], union_tag: str) -> int | No
 _KEYED_KINDS = frozenset({_TypeKind.DICT, _TypeKind.STRUCT, _TypeKind.TAGGABLE_LEAF})
 
 
-def _delete_index(target: Any, parts: list[str], union_tag: str) -> int | None:
+def _delete_index(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> int | None:
     """Return the index a delete at *parts* removes, None when it removes the key its last segment names.
 
     The one decoder of a delete's last segment, for a flag (``--xs.1-``) and a variable
@@ -510,7 +614,7 @@ def _delete_index(target: Any, parts: list[str], union_tag: str) -> int | None:
     index = _list_index(parts[-1])
     if index is None:
         return None
-    stands_on = [b.stones[-1].node for b in _walk_path(target, parts, union_tag) if b.end is not None]
+    stands_on = [b.stones[-1].node for b in _walk_path(target, parts, union_tag, named=named) if b.end is not None]
     keyed = all(_type_kind(node) in _KEYED_KINDS or _fixed_seq_types(node) is not None for node in stands_on)
     return None if stands_on and keyed else index
 
@@ -611,7 +715,12 @@ def _locals_segment_index(target: Any, parts: list[str], union_tag: str) -> int 
     return None
 
 
-def detect_force_cast(path: list[str], target: Any, union_tag: str) -> tuple[list[str], str | None]:
+def detect_force_cast(
+    path: list[str],
+    target: Any,
+    union_tag: str,
+    named: NamingView | None = None,
+) -> tuple[list[str], str | None]:
     """Decide whether ``path``'s trailing segment is a force-cast suffix.
 
     Returns ``(path_without_cast, cast_name)`` when the last segment is one of
@@ -637,7 +746,7 @@ def detect_force_cast(path: list[str], target: Any, union_tag: str) -> tuple[lis
         if path[-1] == JSON_CAST_NAME and not _segment_names_real_field(target, path[-1], union_tag):
             return [], path[-1]
         return path, None
-    branch_types = _field_types(target, parent, union_tag)
+    branch_types = _field_types(target, parent, union_tag, named=named)
     parent_type = _common_type(branch_types)
     if parent_type is None or _segment_names_real_field(parent_type, path[-1], union_tag):
         return path, None
@@ -1053,15 +1162,40 @@ class _ParseCtx:
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
+    #: What the layers below argv hold: the config files, then the environment.
+    below: MergeDict = field(default_factory=dict)
+    #: The nodes argv names anywhere (:func:`_argv_named_nodes`): a lower layer's naming types none of them.
+    argv_named: frozenset[tuple[str, ...]] = frozenset()
+    #: The objects of a root ``--json``, which lie below the flags.
+    root_json: list[MergeDict] = field(default_factory=list)
+
+    def naming(self, prefix: tuple[str, ...]) -> Any:
+        """Return what the node at *prefix* names for the flag being typed (:data:`NamingView`).
+
+        argv's own naming written so far, else, where argv names the node nowhere, the
+        nearest lower layer's: a key written before argv's opener is typed by none.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key
+        """
+        path = list(prefix)
+        for source in (self.data, *reversed(self.root_json)):
+            node = _peek_nested(source, path)
+            if names_something(node, self.union_tag):
+                return node
+        if prefix in self.argv_named:
+            return None
+        node = _peek_nested(self.below, path)
+        return node if names_something(node, self.union_tag) else None
 
 
 def _handle_delete_token(ctx: _ParseCtx, token: str, path: list[str]) -> None:
     """Apply a delete-mode flag (--foo.1- or --foo.bar-) to data, an index or a key delete (:func:`_delete_index`)."""
-    if _path_unknown(ctx.target, path, ctx.union_tag):
+    if _path_unknown(ctx.target, path, ctx.union_tag, ctx.naming):
         if _list_index(path[-1]) is not None:
             raise UnknownArgumentError.not_indexable(token, path[:-1])
         raise UnknownArgumentError.no_such_field(token, path)
-    delete_idx = _delete_index(ctx.target, path, ctx.union_tag)
+    delete_idx = _delete_index(ctx.target, path, ctx.union_tag, ctx.naming)
     if delete_idx is not None:
         parent_path = path[:-1]
         node: Any = ctx.data
@@ -1132,7 +1266,15 @@ def _append_element_type(ends: list[Any]) -> Any | None:
     return _common_type(elements)
 
 
-def _appended_element_type(target: Any, path: list[str], union_tag: str, spelling: str, ft: Any) -> Any:
+def _appended_element_type(  # noqa: PLR0913  # the walk, then what the message names
+    target: Any,
+    path: list[str],
+    union_tag: str,
+    spelling: str,
+    ft: Any,
+    *,
+    named: NamingView | None = None,
+) -> Any:
     """Return the type an item appended at *path* is coerced by, or refuse the append.
 
     The one check of an append's path, for a flag and a variable alike (FEAT-18). *spelling*
@@ -1143,7 +1285,7 @@ def _appended_element_type(target: Any, path: list[str], union_tag: str, spellin
     Raises:
         ConfargError: If nothing at *path* holds a list, a set or a variadic tuple.
     """
-    et = _append_element_type(_field_types(target, path, union_tag))
+    et = _append_element_type(_field_types(target, path, union_tag, named=named))
     if et is None:
         msg = (
             f"Cannot use + (append) syntax on {spelling!r}:"
@@ -1167,7 +1309,7 @@ def _handle_append_token(
     path: list[str],
 ) -> int:
     """Process an append-mode flag (--foo+ items...) and return the new arg index."""
-    et = _appended_element_type(ctx.target, path, ctx.union_tag, token, ft)
+    et = _appended_element_type(ctx.target, path, ctx.union_tag, token, ft, named=ctx.naming)
     append_items, i = _collect_append_items(ctx.argv, i, et, token)
     _write_append(ctx.data, path, append_items, ctx.at)
     return i
@@ -1307,7 +1449,7 @@ def _handle_unknown_field(
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
-    if _is_dict_at_path(ctx.target, path, ctx.union_tag):
+    if _is_dict_at_path(ctx.target, path, ctx.union_tag, ctx.naming):
         if append_mode:
             return _handle_append_token(ctx, i + 1, token, Any, path)
         _require_value(ctx.argv, i + 1, token)
@@ -1481,7 +1623,13 @@ def _takes_callable_shorthand(ft: Any) -> bool:
     return is_callable_variant(ft) or (_is_union(ft) and any(is_callable_variant(v) for v in _union_args_no_none(ft)))
 
 
-def _open_callable_shorthand(data: MergeDict, path: list[str], target: Any, union_tag: str) -> None:
+def _open_callable_shorthand(
+    data: MergeDict,
+    path: list[str],
+    target: Any,
+    union_tag: str,
+    named: NamingView | None = None,
+) -> None:
     """Open a bare-string callable value into its dict form before *path* descends into it.
 
     ``--fn pkg.func`` is the shorthand for ``--fn.bind pkg.func``, so a later
@@ -1501,6 +1649,7 @@ def _open_callable_shorthand(data: MergeDict, path: list[str], target: Any, unio
         path: Path segments of the flag or variable about to be stored.
         target: The type paths resolve against (locals-grafted, where that applies).
         union_tag: The field name used as a union discriminator.
+        named: What the data the path is typed against names at each node (:func:`_walk_path`).
 
     Dev Notes:
         docs-dev/architecture/callables.md#cli
@@ -1511,12 +1660,12 @@ def _open_callable_shorthand(data: MergeDict, path: list[str], target: Any, unio
         existing = _peek_nested(data, path[:n])
         if not isinstance(existing, str):
             continue
-        ft = _resolve_field_type(target, path[:n], union_tag)
+        ft = _resolve_field_type(target, path[:n], union_tag, named=named)
         if ft is not None and _takes_callable_shorthand(_resolve_type(ft)):
             _set_nested(data, path[:n], promote_bare_spec(existing))
 
 
-def _restart_restated_node(data: MergeDict, path: list[str], target: Any, union_tag: str) -> None:
+def _restart_restated_node(data: MergeDict, path: list[str], target: Any, union_tag: str) -> bool:
     """Empty the node whose opener or tag the value about to be stored at *path* restates.
 
     A node that already names what it builds (an opener's target, the union tag's class:
@@ -1526,7 +1675,8 @@ def _restart_restated_node(data: MergeDict, path: list[str], target: Any, union_
     does an object opener (``class``, ``classfn``) written beside a computation word, which it
     reads as a field, as one dict holding both would. A whole-field delete the node carries
     stays, as it cuts the layers below off either way. The CLI and the environment loop both
-    ask it before they store a value.
+    ask it before they store a value. Returns whether it emptied the node, so the CLI loop
+    drops the tokens it accumulated below it too.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
@@ -1534,7 +1684,7 @@ def _restart_restated_node(data: MergeDict, path: list[str], target: Any, union_
     from confarg._typed_merge import merge_root  # noqa: PLC0415  # import cycle: it walks types with this module
 
     if not path:
-        return
+        return False
     at, node = merge_root(target, union_tag), data
     for part in path[:-1]:
         at = at.child(part, node, None)
@@ -1542,15 +1692,89 @@ def _restart_restated_node(data: MergeDict, path: list[str], target: Any, union_
     # A key naming a target ("" stands for whatever is written) restates a node naming one.
     key = path[-1]
     if not isinstance(node, dict) or not at.replaces({key: ""}) or not at.replaces(node):
-        return
+        return False
     # Among the openers, it restates one that still competes beside it: an object opener
     # takes a computation word as a field, whichever was written first.
     after = _competing_openers({**node, key: ""})
     if names_an_opener(key) and (key not in after or not set(_competing_openers(node)) & set(after)):
-        return
+        return False
     kept = {ListOp.BASE: DICT_DELETE} if node.get(ListOp.BASE) is DICT_DELETE else {}
     node.clear()
     node.update(kept)
+    return True
+
+
+def _forget_tokens_below(ctx: _ParseCtx, node: list[str]) -> None:
+    """Drop the tokens multi-token flags accumulated at or below *node*, which a restart emptied.
+
+    A later occurrence then starts afresh, as one in a higher layer would.
+    """
+    for key in [k for k in ctx.multi_tokens if list(k[: len(node)]) == node]:
+        del ctx.multi_tokens[key]
+
+
+def _argv_named_nodes(  # noqa: C901  # one lexical scan of argv, per spelling of a naming
+    argv: Sequence[str],
+    cli_prefix: str,
+    config_flag: str,
+    union_tag: str,
+    *,
+    host_parsed: bool,
+) -> frozenset[tuple[str, ...]]:
+    """Return the path of every node argv names anywhere, read as written.
+
+    A node is named by an opener or a tag flag (``--f.class X``), a whole ``{…}`` value
+    holding one at any depth, a bare value written at the node itself (the callable
+    shorthand), and a whole-field delete, which cuts the layers below off. A lower layer's
+    naming types none of them (:meth:`_ParseCtx.naming`). Lexical, so it may name more
+    nodes than construction reads as named; such a node's keys are only left untyped.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key
+    """
+    del host_parsed  # a flag outside the namespace is the host's, or refused by the loop: it names nothing
+    words = opener_keys(union_tag)
+    found: set[tuple[str, ...]] = set()
+
+    def nested(prefix: tuple[str, ...], value: Any) -> None:
+        if not isinstance(value, dict):
+            return
+        if names_something(value, union_tag):
+            found.add(prefix)
+        for k, v in value.items():
+            if isinstance(k, str):
+                nested((*prefix, k), v)
+
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        i += 1
+        if not _looks_like_flag(token) or not _in_cli_prefix(token[2:], cli_prefix):
+            continue
+        key = _strip_cli_prefix(token[2:], cli_prefix, token)
+        if _addresses_key(key, config_flag):
+            continue
+        path, append_mode, delete_mode = _parse_flag_mode(key)
+        value = argv[i] if i < len(argv) and not _looks_like_flag(argv[i]) else None
+        if delete_mode or append_mode:
+            if delete_mode:
+                found.add(tuple(path))
+            continue
+        if path and path[-1] in words:
+            found.add(tuple(path[:-1]))
+            continue
+        if value is None:
+            continue
+        cast = path[-1] if path and path[-1] in FORCE_CAST_NAMES else None
+        written = tuple(path[:-1] if cast else path)
+        if value.startswith("{") or cast == JSON_CAST_NAME:
+            try:
+                nested(written, json.loads(value))
+            except json.JSONDecodeError:
+                found.add(written)
+        else:
+            found.add(written)
+    return frozenset(found)
 
 
 def _consume_typed_arg(
@@ -1633,6 +1857,43 @@ def _collect_config_file_pairs(
     return pairs
 
 
+def _config_pairs_in(
+    argv: Sequence[str],
+    target: Any,
+    cli_prefix: str,
+    config_flag: str,
+    union_tag: str,
+) -> list[tuple[str, str]]:
+    """Return the (subpath, mount value) pairs argv's ``--config`` flags name, in argv order, before any value is typed.
+
+    The files they mount are part of the config level, which types the flags below a node it
+    names, so the pipeline loads them before vanilla's loop runs; the loop reads the same
+    pairs as it meets them. A flag outside *cli_prefix* is no confarg flag, and a token that
+    is no flag is a value or the host's: neither mounts anything. Each subpath is checked
+    against *target*, raising what the loop raises.
+
+    Raises:
+        ConfargError: A ``--config[.subpath]`` with no path after it, or a subpath that
+            names no node of *target*.
+    """
+    args = _normalize_eq_args(argv)
+    pairs: list[tuple[str, str]] = []
+    i = 0
+    while i < len(args):
+        token = args[i]
+        if not _looks_like_flag(token) or not _in_cli_prefix(token[2:], cli_prefix):
+            i += 1
+            continue
+        key = _strip_cli_prefix(token[2:], cli_prefix, token)
+        if not _addresses_key(key, config_flag):
+            i += 1
+            continue
+        _check_mount_subpath(target, _config_subpath(key, config_flag), union_tag, token)
+        i, found = _consume_config_paths(args, i, key, config_flag)
+        pairs.extend(found)
+    return pairs
+
+
 def _skip_flag_values(argv: Sequence[str], i: int) -> int:
     """Advance past a flag token at *i* and any following non-flag value tokens."""
     i += 1
@@ -1649,7 +1910,9 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     union_tag: str,
     *,
     host_parsed: bool = False,
-    host_binds_run: Callable[[Any], bool] | None = None,
+    host_binds_run: Callable[[list[str], Any], bool] | None = None,
+    below: MergeDict | None = None,
+    observe: Callable[[list[str], Any], None] | None = None,
 ) -> tuple[MergeDict, list[tuple[str, str]]]:
     """Parse CLI arguments into a nested dict and a list of config file paths.
 
@@ -1666,11 +1929,15 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             skipped with its values instead of refused.  Everything in confarg's
             namespace is parsed exactly as vanilla parses it, so the adapters' CLI
             channel is this loop's own output.
-        host_binds_run: Asked of the type a flag consumed for when the token after
-            its run is a value: True when the host bound that token to the flag (a
-            framework registering the flag greedily), so it is the stray vanilla
+        host_binds_run: Asked of a flag's path and the type it consumed for when the
+            token after its run is a value: True when the host bound that token to the
+            flag (a framework registering the flag greedily), so it is the stray vanilla
             refuses rather than a positional of the host's.  ``None`` for vanilla,
             whose own loop refuses every stray at the top.
+        below: What the layers below argv hold, merged: a node argv names nowhere is
+            typed by the class they name there (:meth:`_ParseCtx.naming`).
+        observe: Told the path and the type of every value flag as the loop types it,
+            in argv order: how registration learns what vanilla's loop consumes.
 
     Returns:
         A tuple of (data_dict, config_files) where data_dict is the parsed
@@ -1684,15 +1951,22 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     argv = _normalize_eq_args(argv)
     # Before any path resolves: a subclass named by the tag is invisible to
     # _struct_member_type until its module has run.
-    import_tagged_classes(argv, target, union_tag=union_tag, config_flag=config_flag)
+    import_tagged_classes(argv, target, union_tag=union_tag, config_flag=config_flag, below=below)
 
     # Paths resolve against the locals-grafted target; root classification keeps `target`.
     walk_target = _walk_target(target, _locals_keys(target, union_tag))
     from confarg._typed_merge import merge_root  # noqa: PLC0415  # import cycle: it walks types with this module
 
-    ctx = _ParseCtx(argv=argv, target=walk_target, union_tag=union_tag, at=merge_root(walk_target, union_tag))
+    ctx = _ParseCtx(
+        argv=argv,
+        target=walk_target,
+        union_tag=union_tag,
+        at=merge_root(walk_target, union_tag),
+        below=below or {},
+        argv_named=_argv_named_nodes(argv, cli_prefix, config_flag, union_tag, host_parsed=host_parsed),
+    )
     config_files: list[tuple[str, str]] = []
-    root_json: list[MergeDict] = []  # objects from root `--json`, folded in below fields
+    root_json = ctx.root_json  # objects from root `--json`, folded in below fields
     target_r = _resolve_type(target)
     is_struct = _is_struct_like(target_r)
     i = 0
@@ -1720,7 +1994,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
 
         force_cast: str | None = None
         if not append_mode and not delete_mode:
-            path, force_cast = detect_force_cast(path, walk_target, union_tag)
+            path, force_cast = detect_force_cast(path, walk_target, union_tag, ctx.naming)
 
         if host_parsed and not cli_prefix and path and _path_unknown(walk_target, path[:1], union_tag):
             i = _skip_flag_values(argv, i)  # a flag the host registered beside the confarg ones
@@ -1732,7 +2006,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         # A bare callable shorthand already stored at a prefix of this path is a spec, not
         # a stale scalar: open it so this flag refines it
         # (docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption).
-        _open_callable_shorthand(ctx.data, path, walk_target, union_tag)
+        _open_callable_shorthand(ctx.data, path, walk_target, union_tag, ctx.naming)
 
         if delete_mode:
             _handle_delete_token(ctx, token, path)
@@ -1741,7 +2015,8 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
 
         # A second opener or tag at a node names a new target, which the first one's keys
         # are not written for.
-        _restart_restated_node(ctx.data, path, walk_target, union_tag)
+        if _restart_restated_node(ctx.data, path, walk_target, union_tag):
+            _forget_tokens_below(ctx, path[:-1])
 
         if force_cast is not None and not path:  # root-level `--json`: inject the whole config
             i = _handle_root_cast(
@@ -1764,7 +2039,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             # struct-like root its value would be written at the empty path, a no-op.
             raise UnknownArgumentError.bare_prefix_on_struct_root(token, cli_prefix)
 
-        ft = _resolve_field_type(walk_target, path, union_tag)
+        ft = _resolve_field_type(walk_target, path, union_tag, named=ctx.naming)
         if ft is None:
             i = _handle_unknown_field(ctx, i, token, path, append_mode=append_mode)
             continue
@@ -1780,8 +2055,10 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             i = _handle_append_token(ctx, i, token, ft, path)
             continue
 
+        if observe is not None:
+            observe(path, ft)
         i = _consume_typed_arg(ctx, i, token, ft, path)
-        if host_binds_run is not None and i < len(argv) and not _looks_like_flag(argv[i]) and host_binds_run(ft):
+        if host_binds_run is not None and i < len(argv) and not _looks_like_flag(argv[i]) and host_binds_run(path, ft):
             # The host bound the token after the run to this flag, so it is no positional of
             # the host's: it is the stray vanilla refuses.
             raise UnknownArgumentError.unexpected_positional(argv[i])

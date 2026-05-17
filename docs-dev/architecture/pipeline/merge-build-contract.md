@@ -23,6 +23,7 @@ target. Convertibility is decided only in `build()`/`construct()`, which raise
     combiner, `_merge._merge_existing_value`, as the merge would have (BUG-164);
   - `_parse_cli._resolve_field_type` returns a field type only when all union variants agree,
     otherwise `str` (the raw token is stored, coerced in `construct`), on the CLI and env
-    channels alike.
+    channels alike, unless a tag or an opener names the variant that builds the node
+    ([design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key)).
 - Expressions are the extreme case: their value is unknown until `build()`. See
   [expressions](../expressions/deferral-rule.md#deferral-rule).

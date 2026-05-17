@@ -1,8 +1,11 @@
 # A named tag is imported before registration
 
-Whatever the configuration names by its `union_tag` — on argv, or in a `--config` file argv
-points at — is imported before anything walks the target type (`_tags.import_tagged_classes`,
-called from `_parse_cli` and `build_static_flags`). A subclass exists, as far as
+Whatever the configuration names by its `union_tag` — on argv, or in a layer below it: a
+`--config` file argv points at, a `files=` file, the environment — is imported before anything
+walks the target type (`_tags.import_tagged_classes`, called from `_parse_cli` and
+`build_static_flags`, each given the layers below argv). The scan walks the data, so it stops
+where the data does: descending into a key the data lacks recursed forever on a type that holds
+itself. A subclass exists, as far as
 `__subclasses__()` is concerned, only once its module has run, and five separate readers
 depend on that answer: the CLI selector spec, the subclass field specs, the completer paths,
 vanilla's `_subclass_field_type` path resolution, and completion's parser pre-extension. Each

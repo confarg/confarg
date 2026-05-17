@@ -135,7 +135,7 @@ def _union_field_tags(
             if isinstance(val, str):
                 tags[flag] = val
     elif len(non_none) == 1:
-        sub = merged.get(name, {})
+        sub = merged.get(name)
         if isinstance(sub, dict):
             tags.update(_tags_from_config(sub, _resolve_type(non_none[0]), flag, union_tag))
     return tags
@@ -167,7 +167,9 @@ def _tags_from_config(
         if _is_union(resolved):
             tags.update(_union_field_tags(merged, name, flag, resolved, union_tag))
         elif _is_struct(resolved):
-            sub = merged.get(name, {})
+            # The data says where to look: a key it does not hold holds no tag, and
+            # descending into one as {} never ends on a type that holds itself.
+            sub = merged.get(name)
             if isinstance(sub, dict):
                 tags.update(_tags_from_config(sub, resolved, flag, union_tag))
 
@@ -180,13 +182,17 @@ def collect_tags(
     *,
     union_tag: str,
     config_flag: str,
+    below: MergeDict | None = None,
 ) -> dict[str, str]:
     """Return ``{field_path: class_path}`` for every union tag argv names, directly or in a file.
 
-    argv wins over a config file for the same field path, as everywhere else.
+    argv wins over a config file for the same field path, as everywhere else. *below*, what
+    the layers below argv hold, stands for its ``--config`` files when given: it holds them.
     """
     config_tags: dict[str, str] = {}
-    if config_flag:
+    if below is not None:
+        config_tags = _tags_from_config(below, target, "", union_tag)
+    elif config_flag:
         config_dict = _partial_config_from_argv(argv, config_flag)
         if config_dict:
             config_tags = _tags_from_config(config_dict, target, "", union_tag)
@@ -219,6 +225,7 @@ def import_tagged_classes(
     *,
     union_tag: str,
     config_flag: str,
+    below: MergeDict | None = None,
 ) -> None:
     """Import every class the configuration names by its union tag, ignoring failures.
 
@@ -231,7 +238,7 @@ def import_tagged_classes(
     Dev Notes:
         docs-dev/architecture/design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration
     """
-    for class_path in collect_tags(argv, target, union_tag=union_tag, config_flag=config_flag).values():
+    for class_path in collect_tags(argv, target, union_tag=union_tag, config_flag=config_flag, below=below).values():
         # Importing an arbitrary module runs its top level, which can raise anything at all.
         with contextlib.suppress(Exception):
             _import_dotted(class_path)

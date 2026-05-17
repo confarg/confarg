@@ -53,15 +53,10 @@ class TestClickContextGaps:
         @click.command()
         def cmd2(**_kwargs):
             ctx = click.get_current_context()
-            result = from_context(
-                _CovDCResult,
-                ctx,
-                env={"CONFARG_CONFIG__": str(cfg)},
-                env_prefix="CONFARG_",
-            )
+            result = from_context(_CovDCResult, ctx)
             assert isinstance(result, _CovDCResult)
 
-        populate_command(_CovDCResult, cmd2)
+        populate_command(_CovDCResult, cmd2, env={"CONFARG_CONFIG__": str(cfg)}, env_prefix="CONFARG_")
         runner = CliRunner()
         r = runner.invoke(cmd2, [])
         assert r.exit_code == 0, r.output
@@ -74,15 +69,10 @@ class TestClickContextGaps:
         @click.command()
         def cmd3(**_kwargs):
             ctx = click.get_current_context()
-            result = from_context(
-                _CovOuter,
-                ctx,
-                env={"CONFARG_CONFIG__INNER": str(cfg)},
-                env_prefix="CONFARG_",
-            )
+            result = from_context(_CovOuter, ctx)
             assert result.inner.value == "from_env_subpath"
 
-        populate_command(_CovOuter, cmd3)
+        populate_command(_CovOuter, cmd3, env={"CONFARG_CONFIG__INNER": str(cfg)}, env_prefix="CONFARG_")
         runner = CliRunner()
         r = runner.invoke(cmd3, [])
         assert r.exit_code == 0, r.output

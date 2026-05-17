@@ -215,8 +215,55 @@ class TestLoadFlagsIntoApp:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _GroupA:
+    """One struct a subclass's ``inner`` holds."""
+
+    a: int = 0
+
+
+@dataclass
+class _GroupB:
+    """The struct another subclass's ``inner`` holds."""
+
+    b: int = 0
+
+
+@dataclass
+class _GroupBase:
+    """A base whose subclasses both declare a struct field ``inner``."""
+
+
+@dataclass
+class _GroupS1(_GroupBase):
+    """``inner`` is an ``A``."""
+
+    inner: _GroupA = dataclasses.field(default_factory=_GroupA)
+
+
+@dataclass
+class _GroupS2(_GroupBase):
+    """``inner`` is a ``B``."""
+
+    inner: _GroupB = dataclasses.field(default_factory=_GroupB)
+
+
+@dataclass
+class _GroupHolder:
+    """A field typed by the base, whose subclasses' ``inner`` flags share the group ``item.inner``."""
+
+    item: _GroupBase = dataclasses.field(default_factory=_GroupBase)
+
+
 class TestPopulateApp:
     """Unit tests for populate_app."""
+
+    def test_subclasses_sharing_a_struct_field_name_share_its_group(self) -> None:
+        """Two subclasses' ``inner`` flags are one cyclopts group, which cyclopts registers once (BUG-114)."""
+        app = _make_app()
+        populate_app(_GroupHolder, app, argv=[], config_flag="")
+        app.parse_args([])
+        assert {"--item.inner.a", "--item.inner.b"} <= _option_names(app.assemble_argument_collection())
 
     def test_simple_fields(self) -> None:
         """Flat dataclass fields plus config flag are registered."""

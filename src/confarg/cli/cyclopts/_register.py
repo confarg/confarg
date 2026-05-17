@@ -7,9 +7,8 @@
 from __future__ import annotations
 
 import inspect
-import sys
 from keyword import iskeyword
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Unpack
 
 from cyclopts import Group
 from cyclopts import Parameter as CycloptsParam
@@ -17,16 +16,17 @@ from cyclopts import convert as cyclopts_convert
 from cyclopts.core import DEFAULT_FORMAT
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable
 
     import cyclopts
 
+    from confarg._defaults import MergeOptions
     from confarg.cli._spec import FlagSpec
 
-from confarg import _defaults
-from confarg.cli._build import build_dynamic_flags, build_static_flags
+from confarg.cli._build import bound_runs, build_dynamic_flags, build_static_flags
 from confarg.cli._markup import help_escape
 from confarg.cli._prefix import PREFIX_ATTR
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, registration_inputs
 from confarg.dictexpr import contains_expression
 
 # Maps id(app) to confarg metadata {command, name_map, stands_bare}.
@@ -84,11 +84,15 @@ def _pyname(name: str) -> str:
 def _spec_to_inspect_param(  # noqa: C901, PLR0912  # one branch per nargs shape (flag / choices / multi / one token), plus the hidden flag
     spec: FlagSpec,
     help_escape: Callable[[str], str] | None = None,
+    groups: dict[str, Group] | None = None,
 ) -> inspect.Parameter:
     """Convert one FlagSpec to a keyword-only inspect.Parameter.
 
     *help_escape* turns plain text into the app's help format, for what confarg writes
-    into the help: the spec's note and the metavar standing in front of it.
+    into the help: the spec's note and the metavar standing in front of it. *groups* holds
+    the cyclopts group of each group name already met, so specs sharing a name share one
+    group: cyclopts refuses two distinct groups of one name (BUG-114), which two subclasses
+    declaring a struct field of the same name give, each describing it as its own struct.
     """
     escape = help_escape or str
     py_name = _pyname(spec.name)
@@ -158,10 +162,10 @@ def _spec_to_inspect_param(  # noqa: C901, PLR0912  # one branch per nargs shape
         # (docs-dev/architecture/cli-adapters/framework-specifics.md#cyclopts-repeated-one-token-flags).
         param_kwargs["allow_repeating"] = True
     if spec.group:
-        param_kwargs["group"] = Group(
-            name=spec.group,
-            help=spec.group_description,
-        )
+        groups = {} if groups is None else groups
+        if spec.group not in groups:
+            groups[spec.group] = Group(name=spec.group, help=spec.group_description)
+        param_kwargs["group"] = groups[spec.group]
 
     cyclopts_param = CycloptsParam(**param_kwargs)
     annotated = Annotated[annotation_type, cyclopts_param]
@@ -191,14 +195,33 @@ def load_flags_into_app(
         flags: The specs to register, typically from
             :func:`~confarg.cli.build_static_flags`.
         app: The cyclopts :class:`~cyclopts.App` to populate.
+        config_subkeys: Whether to register ``--<config_flag>.<path>`` options for
+            every mount point of the target, at any depth (default ``True``).
+            Set to ``False`` to expose only the root ``--<config_flag>`` option.
+        **opts: The sources the options are typed by and how to read them, as for
+            :func:`confarg.load`; see :class:`confarg.MergeOptions`. They are recorded,
+            so the merge reuses them, and refuses one passed to it that differs: the
+            framework splits the command line by the types they give the options. The
+            classes ``files``, the environment and the ``--config`` files name type the
+            options below the nodes they name. ``argv`` is scanned to register the
+            argv-derived dynamic options: ``--<field>.<param>`` for a callable spec,
+            ``--<config_flag>.<subpath>[+]`` mounts, list-index / append / delete /
+            dict-subkey patches; it defaults to ``sys.argv[1:]``, and ``[]`` registers
+            only the static, type-derived options. ``cli_prefix`` is the namespace every
+            confarg option lives under, so ``--<prefix>.<field>`` stays distinguishable
+            from the host application's own; a non-struct (scalar) target is
+            registered as the bare ``--<prefix>`` option, and has no CLI spelling
+            without a prefix. ``config_flag`` names the config-file option (``""``
+            registers none).
     """
     params: list[inspect.Parameter] = []
     name_map: dict[str, str] = {}
     # The format the app renders its help in; one set only on a parent app is not seen.
     escape = help_escape(app.help_format or DEFAULT_FORMAT)
+    groups: dict[str, Group] = {}
 
     for spec in flags:
-        param = _spec_to_inspect_param(spec, escape)
+        param = _spec_to_inspect_param(spec, escape, groups)
         if param.name in name_map:
             # Same flag spec'd twice (e.g. static + dynamic): first wins, like
             # load_flags_into_parser's silent skip of already-registered dests.
@@ -230,15 +253,12 @@ def load_flags_into_app(
     }
 
 
-def populate_app(  # noqa: PLR0913
+def populate_app(
     target: object,
     app: cyclopts.App,
     *,
-    cli_prefix: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
-    argv: Sequence[str] | None = None,
+    **opts: Unpack[MergeOptions],
 ) -> None:
     """Register fields of a dataclass type as options on a cyclopts :class:`~cyclopts.App`.
 
@@ -252,30 +272,28 @@ def populate_app(  # noqa: PLR0913
     Args:
         target: The dataclass type whose fields to register.
         app: The cyclopts :class:`~cyclopts.App` to populate.
-        cli_prefix: Namespace every confarg option lives under, so
-            ``--<prefix>.<field>`` stays distinguishable from the host
-            application's own options.  Defaults to ``""`` (no prefix).  The value
-            is recorded against the app, so :func:`merge_app` / :func:`from_app`
-            recover it and need not repeat it.  A non-struct (scalar) target is
-            registered as the bare ``--<prefix>`` option and has no CLI spelling
-            without a prefix.
-        union_tag: Name of the union discriminator field to skip.
-        config_flag: Name of the config-file option (default ``"config"``).
-            Set to ``""`` to disable config-file option registration.
         config_subkeys: Whether to register ``--<config_flag>.<path>`` options
             for every mount point of the target, at any depth (default
             ``True``).
-        argv: CLI argument list scanned to register argv-derived dynamic
-            parameters: ``--<field>.<param>`` for resolved ``--<field>.bind`` /
-            ``--<field>.class`` callables, ``--<config_flag>.<subpath>[+]``
-            scoped/append config files, and list-index / append / delete /
-            dict-subkey patch parameters.  Defaults to ``sys.argv[1:]`` (matching
-            :func:`from_app`); pass an explicit list, or ``[]`` to register only
-            the static, type-derived parameters.
+        **opts: The sources the options are typed by and how to read them, as for
+            :func:`confarg.load`; see :class:`confarg.MergeOptions`. They are recorded
+            against the app, so :func:`merge_app` / :func:`from_app` reuse them, and
+            refuse one passed to them that differs: cyclopts splits the command line by
+            the types they give the options. The classes ``files``, the environment and
+            the ``--config`` files name type the options below the nodes they name.
+            ``argv`` is scanned to register the argv-derived dynamic parameters --
+            ``--<field>.<param>`` for a callable spec, ``--<config_flag>.<subpath>[+]``
+            mounts, list-index / append / delete / dict-subkey patches; it defaults to
+            ``sys.argv[1:]``, and ``[]`` registers only the static, type-derived
+            parameters. ``cli_prefix`` is the namespace every confarg option lives
+            under, so ``--<prefix>.<field>`` stays distinguishable from the host
+            application's own; a non-struct (scalar) target is registered as the bare
+            ``--<prefix>`` option, and has no CLI spelling without a prefix.
+            ``config_flag`` names the config-file option (``""`` registers none).
     """
-    cli_prefix = cli_prefix or ""
-    if argv is None:
-        argv = sys.argv[1:]
+    options, below, sources = registration_inputs(target, "populate_app", opts)
+    cli_prefix, argv = options.cli_prefix or "", options.argv
+    union_tag, config_flag = options.union_tag, options.config_flag
     flags = build_static_flags(
         target,
         argv=argv,
@@ -283,6 +301,7 @@ def populate_app(  # noqa: PLR0913
         union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,
+        below=below,
     )
     flags = flags + build_dynamic_flags(
         target,
@@ -290,8 +309,10 @@ def populate_app(  # noqa: PLR0913
         cli_prefix=cli_prefix,
         union_tag=union_tag,
         config_flag=config_flag,
+        below=below,
     )
     load_flags_into_app(flags, app)
-    # load_flags_into_app has just (re)created this entry; merge_app reads the prefix
-    # back from it, since cyclopts hands the very same App to the merge step.
+    # load_flags_into_app has just (re)created this entry; merge_app reads the prefix and
+    # what registration read back from it, since cyclopts hands the very same App to the merge step.
     _app_meta[id(app)][PREFIX_ATTR] = cli_prefix
+    _app_meta[id(app)][REGISTRATION_ATTR] = Registration(sources, bound_runs(flags, cli_prefix))

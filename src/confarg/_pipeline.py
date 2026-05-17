@@ -18,11 +18,12 @@ Dev Notes:
 from __future__ import annotations
 
 import operator
+import warnings
 from itertools import chain
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
     from confarg._defaults import _Options
 
@@ -37,7 +38,7 @@ from confarg._merge import (
     _drop_deleted_bases,
 )
 from confarg._parse_cli import _locals_keys, _locals_keys_at
-from confarg._parse_env import _parse_env
+from confarg._parse_env import _env_config_pointers, _parse_env
 from confarg._typed_merge import merge_root
 from confarg._types import _StrToken
 from confarg.dictexpr import contains_expression
@@ -263,19 +264,27 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
 
 def _merge_sources(
     target: Any,
-    cli_data: MergeDict,
+    parse_cli: Callable[[MergeDict], MergeDict],
     cli_configs: Sequence[tuple[str, str]],
     options: _Options,
 ) -> MergeDict:
-    """Merge pre-collected CLI data with env vars and config files in priority order.
+    """Merge the CLI data with env vars and config files in priority order.
+
+    The layers are read lowest first, each typed over what lies below it: the config level,
+    then the environment over it, then argv over both, so a node a lower layer names types
+    the keys a higher one writes below it.
 
     Args:
         target: The target type, guiding env-var parsing.
-        cli_data: Nested dict of CLI-provided field values (highest priority).
+        parse_cli: Parses argv over what the layers below it hold, merged, into the nested
+            dict of CLI-provided field values (highest priority).
         cli_configs: (subpath, mount value) pairs from ``--config[.subpath][+]`` flags,
             in left-to-right CLI order.
         options: The caller's resolved options; ``argv`` and ``cli_prefix`` are not
-            read, the CLI having been parsed into *cli_data* and *cli_configs* already.
+            read, *parse_cli* reading argv and *cli_configs* naming its files.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact. A list
@@ -290,7 +299,6 @@ def _merge_sources(
            subpath depth (shallower paths first).
         4. ``cli_configs`` — in left-to-right CLI order.
     """
-    env, env_config = options.env, options.env_config
     config_flag, union_tag = options.config_flag, options.union_tag
     locals_keys = _locals_keys(target, union_tag)
     if config_flag in locals_keys:
@@ -302,32 +310,11 @@ def _merge_sources(
         )
         raise ConfargError(msg)
 
-    # 1. Parse env vars (done here so env-specified config files are loaded in order)
-    if options.env_prefix is None:
-        env_data: MergeDict = {}
-        env_configs: list[tuple[str, str]] = []
-    else:
-        # Exclude the env_config key so it is not mistakenly treated as a field.
-        env_for_fields = {k: v for k, v in env.items() if k != env_config} if env_config else env
-        env_data, env_configs = _parse_env(
-            env_for_fields,
-            options.env_prefix,
-            options.env_separator,
-            target,
-            config_flag,
-            union_tag,
-        )
-
-    # 2. Load config files in priority order (all become config-level, below inline env/CLI)
-    file_entries: list[tuple[str, Any]] = [("", f) for f in options.files]
-    if env_config and (env_config_path := env.get(env_config)):
-        file_entries.append(("", env_config_path))
-    env_configs.sort(key=operator.itemgetter(0))
+    # 1. The config level, then the environment over it
+    config_data, env_data = _lower_layers(target, cli_configs, options)
     root = merge_root(target, union_tag)
-    config_data = _load_subpath_files(file_entries + env_configs, root)
-    for subpath, value in cli_configs:
-        fdata = _load_cli_config(value, subpath, config_flag, root)
-        config_data = _deep_merge(config_data, fdata, at=root)
+    # 2. argv over both
+    cli_data = parse_cli(_deep_merge(config_data, env_data, at=root))
 
     _apply_locals_layer(
         target,
@@ -349,3 +336,67 @@ def _merge_sources(
     # would pin a list element to its current index.
     # See docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring.
     return canonicalize_references(merged)
+
+
+def _lower_layers(
+    target: Any,
+    cli_configs: Sequence[tuple[str, str]],
+    options: _Options,
+) -> tuple[MergeDict, MergeDict]:
+    """Return the config level and the environment, each typed over what lies below it.
+
+    The config files load in priority order (all config-level, below inline env/CLI), then
+    the environment is parsed over them, so a node a file names types the variables below it.
+    """
+    env, env_config = options.env, options.env_config
+    config_flag, union_tag = options.config_flag, options.union_tag
+    # Exclude the env_config key so it is not mistakenly treated as a field.
+    env_for_fields = {k: v for k, v in env.items() if k != env_config} if env_config else env
+    env_prefix = options.env_prefix
+
+    file_entries: list[tuple[str, Any]] = [("", f) for f in options.files]
+    if env_config and (env_config_path := env.get(env_config)):
+        file_entries.append(("", env_config_path))
+    env_configs = (
+        []
+        if env_prefix is None
+        else _env_config_pointers(env_for_fields, env_prefix, options.env_separator, target, config_flag, union_tag)
+    )
+    env_configs.sort(key=operator.itemgetter(0))
+    root = merge_root(target, union_tag)
+    config_data = _load_subpath_files(file_entries + env_configs, root)
+    for subpath, value in cli_configs:
+        fdata = _load_cli_config(value, subpath, config_flag, root)
+        config_data = _deep_merge(config_data, fdata, at=root)
+
+    env_data: MergeDict = {}
+    if env_prefix is not None:
+        env_data, _ = _parse_env(
+            env_for_fields,
+            env_prefix,
+            options.env_separator,
+            target,
+            config_flag,
+            union_tag,
+            below=config_data,
+        )
+    return config_data, env_data
+
+
+def below_argv(target: Any, cli_configs: Sequence[tuple[str, str]], options: _Options) -> MergeDict:
+    """Return what the layers below argv hold, merged, for registration, which types argv's flags by it.
+
+    Best effort, as the rest of registration: a layer that fails to load or to parse
+    raises its error at the merge, so here it holds nothing, and what it warns about the
+    merge warns about, once.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters
+    """
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            config_data, env_data = _lower_layers(target, cli_configs, options)
+        return _deep_merge(config_data, env_data, at=merge_root(target, options.union_tag))
+    except Exception:  # noqa: BLE001  # a failing layer is the merge's to report
+        return {}

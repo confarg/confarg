@@ -16,43 +16,32 @@ Dev Notes:
 
 from __future__ import annotations
 
+import dataclasses
 import enum
-from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from confarg import _defaults
-from confarg._callable import (
-    _COMPUTATION_OPENERS,
-    _instance_method_owner,
-    holds_an_opener,
-    promote_bare_spec,
-    spec_opener,
-    target_parameter_types,
-)
+from confarg._callable import promote_bare_spec
 from confarg._merge import ListOp, MergeAt, MergeDict, _key_spelling
-from confarg._parse_cli import _advance_field_type, _takes_callable_shorthand, _union_branches
-from confarg._tags import _tag_named_struct
+from confarg._naming import Named, is_arguments, named_child, named_variant
+from confarg._parse_cli import _advance_field_type, _takes_callable_shorthand
 from confarg._types import (
     _dict_kv,
     _fixed_position,
     _fixed_seq_types,
-    _is_struct,
     _is_struct_like,
     _resolve_type,
     _StrToken,
     _struct_member_type,
+    _union_branches,
     _union_tag_shadowed,
 )
-from confarg.dictexpr import contains_expression
 from confarg.exceptions import ConfargError
 from confarg.typedload._coerce import _coerce_leaf, _type_kind, _TypeKind
-from confarg.typedload._construct import _is_typed_call, reads_as_new_value
+from confarg.typedload._construct import reads_as_new_value
 
 #: What importing a target or a class, or reading its annotations, may raise; the node is then untyped.
 _UNREADABLE = (ConfargError, ImportError, ValueError, TypeError, NameError, AttributeError, KeyError)
-
-#: The type of a nested target spec, under ``bind:`` or ``call:``.
-_TARGET = Callable[..., Any]
 
 
 def merge_root(target: Any, union_tag: str) -> MergeAt:
@@ -225,89 +214,57 @@ def _node_view(below: Any, over: Any) -> MergeDict:
     return out
 
 
-def _child(tp: Any, key: str, node: MergeDict, union_tag: str) -> MergeAt:  # noqa: PLR0911  # one return per kind
-    """Return where the merge stands at *key* of a node of type *tp* holding *node*."""
-    if _is_typed_call(node, tp):
-        return _spec_child(key, node, _defaults.CALL_KEY, union_tag)
+def _child(tp: Any, key: str, node: MergeDict, union_tag: str) -> MergeAt:
+    """Return where the merge stands at *key* of a node of type *tp* holding *node*.
+
+    What the node names types the key (:func:`~confarg._naming.named_child`); a node naming
+    nothing is typed by *tp* alone.
+    """
+    answer = named_child(tp, key, node, union_tag)
+    if answer is Named.NOTHING:
+        return _unnamed_child(tp, key, node, union_tag)
+    if isinstance(answer, Named):
+        return MergeAt(union_tag)
+    if is_arguments(answer):
+        return _ArgsAt({f.name: f.type for f in dataclasses.fields(answer)}, union_tag)
+    return TypedAt(answer, union_tag)
+
+
+def _unnamed_child(tp: Any, key: str, node: MergeDict, union_tag: str) -> MergeAt:
+    """Return where the merge stands at *key* of a node of type *tp* whose *node* names nothing that types it."""
     match _type_kind(tp):
         case _TypeKind.CALLABLE:
-            opener = spec_opener(node)
-            return MergeAt(union_tag) if opener is None else _spec_child(key, node, opener, union_tag)
+            return MergeAt(union_tag)
         case _TypeKind.ANY:
-            if holds_an_opener(node) and (opener := spec_opener(node)) is not None:
-                return _spec_child(key, node, opener, union_tag)
             return TypedAt(Any, union_tag)
         case _TypeKind.UNION:
             return _union_child(tp, key, node, union_tag)
         case _TypeKind.STRUCT | _TypeKind.TAGGABLE_LEAF:
-            return _member(_tagged_struct(tp, node, union_tag), key, union_tag)
+            # A tag naming no subclass types nothing; no tag, the struct itself.
+            if union_tag in node and not _union_tag_shadowed(tp, union_tag):
+                return MergeAt(union_tag)
+            return _member(tp, key, union_tag)
         case _:
             return merge_at(_advance_field_type(tp, key), union_tag)
 
 
 def _member(cls: Any, key: str, union_tag: str) -> MergeAt:
-    """Return the node of the member *key* of the class *cls*, the shape rule when either names nothing."""
-    if cls is None:
-        return MergeAt(union_tag)
+    """Return the node of the member *key* of the class *cls*, the shape rule when it names nothing."""
     try:
         return merge_at(_struct_member_type(cls, key), union_tag)
     except _UNREADABLE:
         return MergeAt(union_tag)
 
 
-def _tagged_struct(tp: Any, node: MergeDict, union_tag: str) -> Any:
-    """Return the class a struct node of type *tp* builds: the subclass its tag names, else *tp*.
-
-    A tag a member owns is that member's value; one that names no subclass of *tp* types
-    nothing (None).
-    """
-    if union_tag not in node or _union_tag_shadowed(tp, union_tag):
-        return tp
-    cls = _class_named(node[union_tag])
-    return cls if cls is not None and issubclass(cls, tp) else None
-
-
-def _class_named(path: Any) -> Any:
-    """Return the struct a dotted *path* names, None for an expression or a path naming none."""
-    if not isinstance(path, str) or contains_expression(path):
-        return None
-    return _tag_named_struct(path)
-
-
 def _union_child(tp: Any, key: str, node: MergeDict, union_tag: str) -> MergeAt:
-    """Return the node at *key* of a union: the tagged member's, else what every member knowing *key* agrees on."""
+    """Return the node at *key* of a union: the named variant's, else what every member knowing *key* agrees on."""
     members = _union_branches(tp)
     if len(members) == 1:
         return _child(members[0], key, node, union_tag)
+    variant = named_variant(tp, node, union_tag)
+    if variant is not None:
+        return _child(variant, key, node, union_tag)
     if union_tag in node and not _union_tag_shadowed(tp, union_tag):
-        cls = _class_named(node[union_tag])
-        held = cls is not None and any(_is_struct(m) and issubclass(cls, m) for m in members)
-        return _member(cls if held else None, key, union_tag)
+        return MergeAt(union_tag)
     found = [at for m in members if isinstance(at := _child(m, key, node, union_tag), TypedAt)]
     return found[0] if found and all(at.tp == found[0].tp for at in found[1:]) else MergeAt(union_tag)
-
-
-def _spec_child(key: str, node: MergeDict, opener: str, union_tag: str) -> MergeAt:
-    """Return the node at *key* of a spec *opener* opens: a nested target, a target's arguments, or a field."""
-    target = node.get(opener)
-    if opener in _COMPUTATION_OPENERS:
-        return _computation_child(key, target, union_tag)
-    if key == opener or not isinstance(target, str) or contains_expression(target):
-        return MergeAt(union_tag)
-    try:
-        cls = _instance_method_owner(target) if opener == _defaults.CLASSFN_KEY else _class_named(target)
-    except _UNREADABLE:
-        return MergeAt(union_tag)
-    return _member(cls, key, union_tag)
-
-
-def _computation_child(key: str, target: Any, union_tag: str) -> MergeAt:
-    """Return the node at *key* of a ``bind:`` or ``call:`` spec over *target*: a nested target, or its arguments."""
-    if key in _COMPUTATION_OPENERS:
-        return TypedAt(_TARGET, union_tag)
-    if key != _defaults.ARGS_KEY or not isinstance(target, str) or contains_expression(target):
-        return MergeAt(union_tag)
-    try:
-        return _ArgsAt(target_parameter_types(target), union_tag)
-    except _UNREADABLE:
-        return MergeAt(union_tag)

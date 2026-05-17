@@ -18,8 +18,10 @@ cannot drift.
 The keywords that say which sources to read and how — `argv`, `env`, `env_prefix`,
 `env_separator`, `cli_prefix`, `config_flag`, `files`, `env_config`, `union_tag` — are declared
 once, as the public `MergeOptions(TypedDict, total=False)` in `_defaults.py`, and every function
-that takes them is spelled `**opts: Unpack[MergeOptions]`: `merge`, `load` and the adapters'
-`merge_*` / `from_*` (REF-40). Spelled out in each of those signatures, the set had been copied
+that takes them is spelled `**opts: Unpack[MergeOptions]`: `merge`, `load`, the adapters'
+`merge_*` / `from_*` (REF-40), and their `populate_*` and `make_parser`, which type the flags by
+the sources they name, record them, and hand them to the merge (`cli._sources.reconcile`,
+[design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters)). Spelled out in each of those signatures, the set had been copied
 fourteen times, and its documentation had drifted — `env_prefix` read five different ways.
 
 - **Defaults have one home.** A TypedDict holds no defaults, so `_defaults._resolve_options` is
@@ -34,8 +36,8 @@ fourteen times, and its documentation had drifted — `env_prefix` read five dif
   registered under": the one `populate_*` recorded for an adapter
   (`cli._prefix.resolve_prefix`), none for vanilla, which registers nothing. Vanilla used to
   type it `str = ""`; accepting `None` there is the only widening, and it buys one option set
-  instead of a base and two variants. The `populate_*` functions and `make_parser` default it
-  to `None` too (REF-9, [design decision](../design-decisions/adapter-argument-names-keep-the-framework-noun.md)):
+  instead of a base and two variants. The `populate_*` functions and `make_parser` take the same
+  set, so they default it to `None` too (REF-9, [design decision](../design-decisions/adapter-argument-names-keep-the-framework-noun.md)):
   `None` and `""` both register no prefix.
 - **The documentation moved.** The reference page renders `**opts` on each function and the
   per-key table once, on `MergeOptions`, from the attribute docstrings. A caller passes the
