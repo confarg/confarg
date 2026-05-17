@@ -16,7 +16,8 @@ class PostgreSQLConfig:
     schema_name: str
 ```
 
-Say our app now needs to also support an SQLite backend. We introduce a new configuration:
+Say our app now needs to also support an SQLite backend.
+We introduce a new configuration:
 
 <!-- snippet: /examples/configs/src/configs/sqlite.py#SQLiteConfig -->
 ```python
@@ -25,13 +26,16 @@ class SQLiteConfig:
     dbpath: str
 ```
 
-The two backends are mutually exclusive. In confarg, we translate this into our configuration in the most pythonic way, using a union type. We declare our configuration to be of type
+The two backends are mutually exclusive.
+In confarg, we translate this into our configuration in the most pythonic way, using a union type.
+We declare our configuration to be of type
 
 ```python
 type Config = PostgreSQLConfig | SQLiteConfig
 ```
 
-We can now dynamically select among union variants. To select an SQLite backend, we simply need to provide the elements required by its configuration:
+We can now dynamically select among union variants.
+To select an SQLite backend, we simply need to provide the elements required by its configuration:
 
 ```console
 $ uv run myapp.py --dbpath /path/to.db.sqlite
@@ -48,16 +52,20 @@ PostgreSQLConfig(host='example.com', port=5432, schema_name='schema')
 This works as well with configuration files, which could contain a configuration of either sort:
 
 - a PostgreSQLConfig configuration file:
+
     ```console
     $ uv run myapp.py --config postgres.yaml
     PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
     ```
 
 - or a SQLiteConfig configuration file:
+
     ```console
     $ uv run myapp.py --config sqlite.yaml
     SQLiteConfig(dbpath='/path/to/db.sqlite')
     ```
 
 > [!NOTE]
-> Confarg is smart enough to know which type in the union is targeted from the provided input types. However, such implicit disambiguation is not always possible, or even desirable. We will see in [Tutorial #8](https://confarg.github.io/confarg/examples/8_disambiguation/) how to set the target type explicitly.
+> Confarg is smart enough to know which type in the union is targeted from the provided input types.
+> However, such implicit disambiguation is not always possible, or even desirable.
+> We will see in [Tutorial #8](https://confarg.github.io/confarg/examples/8_disambiguation/) how to set the target type explicitly.

@@ -1,8 +1,7 @@
 # Command-line parsing (vanilla)
 
-`_parse_cli.py` is the vanilla argv parser used by `confarg.merge()`. The adapters reuse
-parts of it (the `--config` scan, the patch-only mode, the type walk); see
-[CLI adapters](../cli-adapters/README.md).
+`_parse_cli.py` is the vanilla argv parser used by `confarg.merge()`.
+The adapters reuse parts of it (the `--config` scan, the patch-only mode, the type walk); see [CLI adapters](../cli-adapters/README.md).
 
 | Note | What it holds |
 |---|---|

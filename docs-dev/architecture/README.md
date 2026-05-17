@@ -1,20 +1,15 @@
 # confarg architecture notes
 
 Internal notes for contributors and coding agents, part of [`docs-dev/`](../README.md).
-They are deliberately **not** published: they name private symbols, carry *(inferred)*
-rationale, open questions and known deviations from the intended behavior. Publishing them
-(for instance as an "Internals" section copied into the site at build time, the way
-`examples/` is) is to be reconsidered once the library ships.
+They are deliberately **not** published: they name private symbols, carry *(inferred)* rationale, open questions and known deviations from the intended behavior.
+Publishing them (for instance as an "Internals" section copied into the site at build time, the way `examples/` is) is to be reconsidered once the library ships.
 
-These documents are the **single source of truth for the "why"**: design choices,
-rationale, rejected alternatives, trade-offs and limitations. The code and its docstrings
-describe *what* things do; they must not repeat the reasoning kept here. When a rationale
-changes, change it here.
+These documents are the **single source of truth for the "why"**: design choices, rationale, rejected alternatives, trade-offs and limitations.
+The code and its docstrings describe *what* things do; they must not repeat the reasoning kept here.
+When a rationale changes, change it here.
 
-Work that is still *open* — bugs, missing features, refactors, questions for the
-maintainer — lives on the boards in [`../todo/`](../todo/README.md), not in these notes. A
-ticket describes work to do; closing it usually leaves a decision, and the decision comes
-back here.
+Work that is still *open* — bugs, missing features, refactors, questions for the maintainer — lives on the boards in [`../todo/`](../todo/README.md), not in these notes.
+A ticket describes work to do; closing it usually leaves a decision, and the decision comes back here.
 
 ## Conventions
 
@@ -32,43 +27,27 @@ def _try_coerce(ft, token):
     """
 ```
 
-The section is hidden on the documentation site by `docs/assets/stylesheets/extra.css`
-(mkdocstrings renders it as `<details class="dev-notes">`), so it is written for whoever works
-on confarg rather than for whoever uses it. A citation names one document and one heading
-anchor; headings in these files are kept stable for that reason, and renaming one means fixing
-the citations that name it — `uv run python docs-dev/todo/anchors.py` lists every citation
-whose anchor no longer resolves.
+The section is hidden on the documentation site by `docs/assets/stylesheets/extra.css` (mkdocstrings renders it as `<details class="dev-notes">`), so it is written for whoever works on confarg rather than for whoever uses it.
+A citation names one document and one heading anchor; headings in these files are kept stable for that reason, and renaming one means fixing the citations that name it — `uv run python docs-dev/todo/anchors.py` lists every citation whose anchor no longer resolves.
 
-A citation in `src/` or `tests/` is spelled from the repository root,
-`docs-dev/architecture/<note>.md#<anchor>`, whatever folder holds the file citing it. That one
-spelling is what lets a plain `grep -rn "<note>.md#<anchor>"` list everything that relies on a
-section before it is changed, and what lets the sweep check every citation: it reports a note's
-bare file name or a short-form `<name>.md#<anchor>` as an error rather than skipping it, since
-a numbered short form is how twelve citations went stale unseen when these notes lost their
-numbers. A citation without an anchor names the whole note.
+A citation in `src/` or `tests/` is spelled from the repository root, `docs-dev/architecture/<note>.md#<anchor>`, whatever folder holds the file citing it.
+That one spelling is what lets a plain `grep -rn "<note>.md#<anchor>"` list everything that relies on a section before it is changed, and what lets the sweep check every citation: it reports a note's bare file name or a short-form `<name>.md#<anchor>` as an error rather than skipping it, since a numbered short form is how twelve citations went stale unseen when these notes lost their numbers.
+A citation without an anchor names the whole note.
 
-Between the notes themselves, a citation is a relative Markdown link to a heading,
-`[merge order](../pipeline/merge-order.md#source-precedence)`, and the same sweep follows every
-link in `docs-dev/` and in the agent protocols to a file and a heading. A note is never cited by
-line number (`merge-order.md:<line>`): no edit of the note leaves the number pointing at the same
-text, so the sweep reports one as an error. Paths written as code (`src/confarg/_api.py`) are
-not checked: a plan names the modules it will create and a rejected alternative names the file
-that was deleted, so a code-span path legitimately names nothing, and the link checkers this
-copies (remark-validate-links, mkdocs' `validation.links`, lychee) all follow links only. The
-sweep also reports a link from `docs-dev/` into the protocols, which this folder never depends
-on ([docs-dev/README.md](../README.md#reference-here-protocol-elsewhere)).
+Between the notes themselves, a citation is a relative Markdown link to a heading, `[merge order](../pipeline/merge-order.md#source-precedence)`, and the same sweep follows every link in `docs-dev/` and in the agent protocols to a file and a heading.
+A note is never cited by line number (`merge-order.md:<line>`): no edit of the note leaves the number pointing at the same text, so the sweep reports one as an error.
+Paths written as code (`src/confarg/_api.py`) are not checked: a plan names the modules it will create and a rejected alternative names the file that was deleted, so a code-span path legitimately names nothing, and the link checkers this copies (remark-validate-links, mkdocs' `validation.links`, lychee) all follow links only.
+The sweep also reports a link from `docs-dev/` into the protocols, which this folder never depends on ([docs-dev/README.md](../README.md#reference-here-protocol-elsewhere)).
 
 ## Layout
 
-A topic is one file while it stays cohesive, and a folder of subtopic files once it does not:
-splitting is what keeps a note small enough to be read whole. A folder's `README.md` routes
-to its subtopics and holds nothing else, so the rationale always lives in exactly one place.
+A topic is one file while it stays cohesive, and a folder of subtopic files once it does not: splitting is what keeps a note small enough to be read whole.
+A folder's `README.md` routes to its subtopics and holds nothing else, so the rationale always lives in exactly one place.
 
-The notes are **not numbered**. Order is not part of what they say — a reader arrives from a
-`Dev Notes:` citation or from the reading guide below, never at "the first one".
+The notes are **not numbered**.
+Order is not part of what they say — a reader arrives from a `Dev Notes:` citation or from the reading guide below, never at "the first one".
 
-Open the topics that match the code you are touching; the reading guide maps source modules
-to notes.
+Open the topics that match the code you are touching; the reading guide maps source modules to notes.
 
 ## Reading guide
 
@@ -89,27 +68,21 @@ to notes.
 ## Vocabulary
 
 - **Channel** (or input type): config files, environment variables, command-line arguments.
-- **Front-end**: vanilla `confarg.load()`/`merge()`, and the argparse, click, typer and
-  cyclopts adapters. Five front-ends × three channels must behave identically.
-- **Merged dict / raw dict**: the plain nested `dict` produced by `merge()`, expressions
-  still literal.
-- **Token**: a string from a channel that carries no types (`_StrToken`), eligible for
-  coercion to the target type.
-- **Leaf**: a scalar-like value (bool, int, float, str, None, Literal, Enum, `type[X]`, or a
-  registered leaf type such as `Path`). **Struct**: a dataclass, or a plain class whose
-  `__init__` takes parameters.
-- **Mounting**: placing a configuration file's root at some path of the merged document
-  (`__include__`, `--config.<path>`, `CONFIG__<PATH>`).
+- **Front-end**: vanilla `confarg.load()`/`merge()`, and the argparse, click, typer and cyclopts adapters.
+  Five front-ends × three channels must behave identically.
+- **Merged dict / raw dict**: the plain nested `dict` produced by `merge()`, expressions still literal.
+- **Token**: a string from a channel that carries no types (`_StrToken`), eligible for coercion to the target type.
+- **Leaf**: a scalar-like value (bool, int, float, str, None, Literal, Enum, `type[X]`, or a registered leaf type such as `Path`).
+  **Struct**: a dataclass, or a plain class whose `__init__` takes parameters.
+- **Mounting**: placing a configuration file's root at some path of the merged document (`__include__`, `--config.<path>`, `CONFIG__<PATH>`).
 - **Value gate**: any code that inspects or converts a value before `build()` runs.
 
 ## Source map
 
-Dependencies flow downwards: the public API uses the pipeline, the pipeline uses the
-parsers and the merge core, and the two engines at the bottom (`typedload`, `dictexpr`)
-know nothing about channels. `dictexpr` imports only the standard library and
-`confarg.exceptions`.
+Dependencies flow downwards: the public API uses the pipeline, the pipeline uses the parsers and the merge core, and the two engines at the bottom (`typedload`, `dictexpr`) know nothing about channels.
+`dictexpr` imports only the standard library and `confarg.exceptions`.
 
-```
+```text
 confarg/
 ├── __init__.py        public surface; register_leaf_type
 ├── _api.py            load / merge / build / from_dict / resolve / dump / dump_file
@@ -150,11 +123,9 @@ confarg/
 
 ## Public surface
 
-What `src/confarg/__init__.py` exports: `load`, `merge`, `build`, `resolve`, `from_dict`,
-`dump`, `dump_file`, `TagPolicy`, `register_leaf_type`, `exceptions`.
+What `src/confarg/__init__.py` exports: `load`, `merge`, `build`, `resolve`, `from_dict`, `dump`, `dump_file`, `TagPolicy`, `register_leaf_type`, `exceptions`.
 
-The CLI adapters export a matching triple each — populate the framework's own object, merge
-from it, build from it:
+The CLI adapters export a matching triple each — populate the framework's own object, merge from it, build from it:
 
 | Module | Functions |
 |---|---|
@@ -164,6 +135,5 @@ from it, build from it:
 | `confarg.cli.typer` | `populate_command` / `merge_context` / `from_context` |
 | `confarg.cli.cyclopts` | `populate_app` / `merge_app` / `from_app` |
 
-Defaults for the keywords those functions share live in `_defaults.py`, together with the
-reserved key names every front-end must spell alike (`ROOT_KEY`, `LOCALS_KEYS`). Reference
-them; never repeat the literals ([invariants](invariants.md)).
+Defaults for the keywords those functions share live in `_defaults.py`, together with the reserved key names every front-end must spell alike (`ROOT_KEY`, `LOCALS_KEYS`).
+Reference them; never repeat the literals ([invariants](invariants.md)).

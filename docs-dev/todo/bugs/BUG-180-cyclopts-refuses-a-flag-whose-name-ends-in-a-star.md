@@ -10,26 +10,20 @@ severity: major
 needs_design: true
 introduced_by: [PR-72]  # fix: Close CLI-adapter parity gaps, which registered dict-key flags on cyclopts
 ---
+
 # BUG-180 — Cyclopts refuses a flag whose name ends in a star
 
-Cyclopts reads a trailing `*` in an option name as its own flattening syntax
-(`Parameter(name="*")`, `"foo.*"`) and strips it, with the dots before it, in
-`resolve_parameter_name_helper`. So the dict-key flag `--d.*` registers as `--d`, `--d.a*` as
-`--d.a`, and cyclopts refuses the flag the user typed as an unknown option. The other four
-front-ends build the key. BUG-173's invalid parameter name hid this until it was fixed. No
-`name` spelling survives the strip, so the fix needs a design: register such a flag under a
-name cyclopts keeps and rewrite its occurrences in the argv cyclopts parses, as `merge_app`
-already drops bare occurrences
-([a flag that stands bare](../../architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)),
-or refuse it with confarg's own error and record the limitation. The contract case
-`test_index_below_a_sequence_and_key_of_a_dict_variant_are_kept[cyclopts-key-of-a-dict-variant]`
-xfails strictly on cyclopts for this.
+Cyclopts reads a trailing `*` in an option name as its own flattening syntax (`Parameter(name="*")`, `"foo.*"`) and strips it, with the dots before it, in `resolve_parameter_name_helper`.
+So the dict-key flag `--d.*` registers as `--d`, `--d.a*` as `--d.a`, and cyclopts refuses the flag the user typed as an unknown option.
+The other four front-ends build the key.
+BUG-173's invalid parameter name hid this until it was fixed.
+No `name` spelling survives the strip, so the fix needs a design: register such a flag under a name cyclopts keeps and rewrite its occurrences in the argv cyclopts parses, as `merge_app` already drops bare occurrences ([a flag that stands bare](../../architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)), or refuse it with confarg's own error and record the limitation.
+The contract case `test_index_below_a_sequence_and_key_of_a_dict_variant_are_kept[cyclopts-key-of-a-dict-variant]` xfails strictly on cyclopts for this.
 
 Origin: latent since PR-72, a bug fix that first registered dict-subkey flags on the adapters.
-Before it no adapter accepted `--d.<key>` at all; PR-72 closed that gap and missed this spelling on
-cyclopts (bisected: cyclopts refuses `--d.*` before PR-72, crashes on it from PR-72). The crash was
-the invalid parameter name `d__*` (BUG-173), and BUG-173's fix uncovered cyclopts' own star syntax
-beneath it. BUG-198 shares this origin.
+Before it no adapter accepted `--d.<key>` at all; PR-72 closed that gap and missed this spelling on cyclopts (bisected: cyclopts refuses `--d.*` before PR-72, crashes on it from PR-72).
+The crash was the invalid parameter name `d__*` (BUG-173), and BUG-173's fix uncovered cyclopts' own star syntax beneath it.
+BUG-198 shares this origin.
 
 ```python
 from dataclasses import dataclass, field

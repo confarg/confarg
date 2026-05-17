@@ -1,8 +1,8 @@
 # CLI adapters (argparse, click, typer, cyclopts)
 
-A translation layer, never a second implementation: every adapter must produce exactly what
-`confarg.load()` would ([invariants](../invariants.md#cross-channel-parity)). Implementation:
-`cli/**`. What they translate *from* is [CLI parsing](../cli-parsing/README.md).
+A translation layer, never a second implementation: every adapter must produce exactly what `confarg.load()` would ([invariants](../invariants.md#cross-channel-parity)).
+Implementation: `cli/**`.
+What they translate *from* is [CLI parsing](../cli-parsing/README.md).
 
 | Note | What it holds |
 |---|---|

@@ -1,7 +1,7 @@
 # Local variables (the reserved `locals` namespace)
 
-`locals:` holds scratch values that expressions reference as `${locals.<name>}` but that
-are not fields of the target. They are stripped before construction.
+`locals:` holds scratch values that expressions reference as `${locals.<name>}` but that are not fields of the target.
+They are stripped before construction.
 
 ## Work at the edges
 
@@ -20,91 +20,61 @@ The work is spread over the edges:
 
 ## Derived name
 
-The name is not configurable. `_locals_keys(target)` returns whichever of
-`("locals", "_locals")` is **not** a real member of the target, using
-`_segment_names_real_field` — the same "real field wins" predicate as the `.json` cast
-([CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)). A target with a `locals` field keeps it and uses
-`_locals`; a target owning both has no namespace; declaring under both spellings raises
-`LocalsError.ambiguous`. A dict-typed root has no namespace (every name is a real key); a
-scalar (`__root__`) root keeps it.
+The name is not configurable.
+`_locals_keys(target)` returns whichever of `("locals", "_locals")` is **not** a real member of the target, using `_segment_names_real_field` — the same "real field wins" predicate as the `.json` cast ([CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)).
+A target with a `locals` field keeps it and uses `_locals`; a target owning both has no namespace; declaring under both spellings raises `LocalsError.ambiguous`.
+A dict-typed root has no namespace (every name is a real key); a scalar (`__root__`) root keeps it.
 
-It is a **pure function of the target** on purpose: `build()`/`from_dict()` see no
-`config_flag`, so any other input could make them strip different keys than `merge()`
-produced. A `config_flag` equal to a live locals name is rejected in `_merge_sources`,
-because the config flag is intercepted before field lookup and `--<flag>.<name>` could never
-reach a local.
+It is a **pure function of the target** on purpose: `build()`/`from_dict()` see no `config_flag`, so any other input could make them strip different keys than `merge()` produced.
+A `config_flag` equal to a live locals name is rejected in `_merge_sources`, because the config flag is intercepted before field lookup and `--<flag>.<name>` could never reach a local.
 
-`_locals`, not `__locals__`: the env separator is `__`, so `PFX___LOCALS____X` splits into
-`['LOCALS', '', 'X']` and a dunder name is inexpressible in the env channel. The namespace
-must work in every channel, unlike the file-only dunder keys.
+`_locals`, not `__locals__`: the env separator is `__`, so `PFX___LOCALS____X` splits into `['LOCALS', '', 'X']` and a dunder name is inexpressible in the env channel.
+The namespace must work in every channel, unlike the file-only dunder keys.
 
 ## Per-node namespaces
 
-A file's root — and its `locals:` block — lands wherever the file is mounted, so a
-namespace can sit at any struct-like node, not only the root. Every consumer asks
-`_locals_keys_at(target, path)` at each node. Only struct-like nodes can hold one (a dict
-treats every name as data; lists address children by index). With anchoring
-([expressions](expressions/reference-anchoring.md#reference-anchoring)), a mounted fragment reads its own variables
-with the same bare `${locals.x}` it would use standing alone.
+A file's root — and its `locals:` block — lands wherever the file is mounted, so a namespace can sit at any struct-like node, not only the root.
+Every consumer asks `_locals_keys_at(target, path)` at each node.
+Only struct-like nodes can hold one (a dict treats every name as data; lists address children by index).
+With anchoring ([expressions](expressions/reference-anchoring.md#reference-anchoring)), a mounted fragment reads its own variables with the same bare `${locals.x}` it would use standing alone.
 
 ## Declare in files, modify anywhere
 
-- **Declaring** a local (introducing a name) is a config-file privilege, because a local has
-  no annotation: its type is whatever its file format produced. Only self-describing formats
-  carry a type, so CSV/TSV cells (`_StrToken`) are rejected in a namespace; otherwise
-  `${locals.n + 1}` would concatenate. One walk (`_check_locals_are_typed`) covers every
-  route a data file can take into a namespace.
-- **Modifying** a declared local has full parity across env and CLI. The override is coerced
-  to the declared value's runtime type with `_coerce_leaf` (not `_try_coerce`, which would
-  swallow a failure), so `${locals.n * 2}` keeps multiplying and a type-changing override is a
-  `TypeCoercionError`. Containers may only be replaced by containers.
-- Writing an undeclared name is a `LocalsError` (typo detection). Adding or removing locals
-  (`+`, `-` markers, `DICT_DELETE`) from env/CLI is refused: which locals exist belongs to
-  the declaring files. Assigning the whole namespace from env/CLI is refused too.
+- **Declaring** a local (introducing a name) is a config-file privilege, because a local has no annotation: its type is whatever its file format produced.
+  Only self-describing formats carry a type, so CSV/TSV cells (`_StrToken`) are rejected in a namespace; otherwise `${locals.n + 1}` would concatenate.
+  One walk (`_check_locals_are_typed`) covers every route a data file can take into a namespace.
+- **Modifying** a declared local has full parity across env and CLI.
+  The override is coerced to the declared value's runtime type with `_coerce_leaf` (not `_try_coerce`, which would swallow a failure), so `${locals.n * 2}` keeps multiplying and a type-changing override is a `TypeCoercionError`.
+  Containers may only be replaced by containers.
+- Writing an undeclared name is a `LocalsError` (typo detection).
+  Adding or removing locals (`+`, `-` markers, `DICT_DELETE`) from env/CLI is refused: which locals exist belongs to the declaring files.
+  Assigning the whole namespace from env/CLI is refused too.
 - Expression tokens are exempt from override coercion ([expressions](expressions/deferral-rule.md#deferral-rule)).
 
-**Why these checks live in the pipeline, not in the parsers**: config files are loaded
-*after* argv and env are parsed, so at parse time neither "is it declared?" nor "what type?"
-is answerable; an undeclared local is not provable wrong at parse time
-([pipeline](pipeline/merge-build-contract.md#merge-build-contract)). The parsers accept `locals.*`
-permissively. `_iter_namespace_nodes` walks the union of the three sources' key structures
-(not the merged result), so a namespace written only on the CLI is still checked against
-the declarations.
+**Why these checks live in the pipeline, not in the parsers**: config files are loaded *after* argv and env are parsed, so at parse time neither "is it declared?" nor "what type?" is answerable; an undeclared local is not provable wrong at parse time ([pipeline](pipeline/merge-build-contract.md#merge-build-contract)).
+The parsers accept `locals.*` permissively.
+`_iter_namespace_nodes` walks the union of the three sources' key structures (not the merged result), so a namespace written only on the CLI is still checked against the declarations.
 
 ## Walk-target graft
 
-At the root, the parser resolves paths against `target | _LocalsRoot` (a synthetic
-dataclass with one `dict[str, Any]` field per locals name), so nested paths and indices ride
-the machinery real dict fields already use — including adapter patch-flag registration.
+At the root, the parser resolves paths against `target | _LocalsRoot` (a synthetic dataclass with one `dict[str, Any]` field per locals name), so nested paths and indices ride the machinery real dict fields already use — including adapter patch-flag registration.
 
-- The graft is used **only for path resolution**. The real target is kept to classify the
-  root (scalar vs struct) and for the config-flag conflict check: a union is struct-like, so
-  grafting would misclassify a scalar root.
-- **Only graft the names `_locals_keys` returns.** The graft is a union and the type walk
-  searches every variant, so grafting a name that is also a real field silently routes
-  `--<name>.x` to the synthetic dict instead of the field — the one mistake here that changes
-  parsing without any error.
-- **The graft answers its keys and nothing else.** No class is dispatched on it, so the walk
-  never answers the union tag at it by its fallback. It once did, and its `str` branch then
-  disagreed with a real field named like the tag, so the walk's fold typed `--kind 5` as a
-  string on a struct root with a `kind: int` field.
-- A **non-struct root** is set whole, from `__root__`, so its walk target is the graft alone:
-  the namespace beside its value is all a dotted path reaches there
-  ([CLI parsing](cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole)).
-- The **environment** spells its segments against the same graft (BUG-115), case-insensitively,
-  so a root field that differs from a namespace name only by case (`Locals`) is an ambiguous
-  segment there ([environment parsing](environment-parsing.md#environment-parsing)).
+- The graft is used **only for path resolution**.
+  The real target is kept to classify the root (scalar vs struct) and for the config-flag conflict check: a union is struct-like, so grafting would misclassify a scalar root.
+- **Only graft the names `_locals_keys` returns.**
+  The graft is a union and the type walk searches every variant, so grafting a name that is also a real field silently routes `--<name>.x` to the synthetic dict instead of the field — the one mistake here that changes parsing without any error.
+- **The graft answers its keys and nothing else.**
+  No class is dispatched on it, so the walk never answers the union tag at it by its fallback.
+  It once did, and its `str` branch then disagreed with a real field named like the tag, so the walk's fold typed `--kind 5` as a string on a struct root with a `kind: int` field.
+- A **non-struct root** is set whole, from `__root__`, so its walk target is the graft alone: the namespace beside its value is all a dotted path reaches there ([CLI parsing](cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole)).
+- The **environment** spells its segments against the same graft (BUG-115), case-insensitively, so a root field that differs from a namespace name only by case (`Locals`) is an ambiguous segment there ([environment parsing](environment-parsing.md#environment-parsing)).
 
 ## Stripping
 
-`_strip_locals` copies rather than pops, and only where something is dropped:
-`resolve_expressions` returns the caller's own dict when there are no expressions, so
-mutating would strip the namespace out of the caller's data.
+`_strip_locals` copies rather than pops, and only where something is dropped: `resolve_expressions` returns the caller's own dict when there are no expressions, so mutating would strip the namespace out of the caller's data.
 
 ## Assigning the whole namespace
 
 `--locals VALUE` is rejected in every front-end, by confarg rather than by a host framework.
-The graft makes `locals` a `dict[str, Any]` path, so `_is_collection_patch_path` accepts it
-and the adapters register the flag; the token then reaches `_apply_locals_overrides`, which
-raises `LocalsError.not_assignable`. Nothing here is locals-specific machinery — it is the
-same route a bare `--<dictfield>` takes ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)).
+The graft makes `locals` a `dict[str, Any]` path, so `_is_collection_patch_path` accepts it and the adapters register the flag; the token then reaches `_apply_locals_overrides`, which raises `LocalsError.not_assignable`.
+Nothing here is locals-specific machinery — it is the same route a bare `--<dictfield>` takes ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)).

@@ -8,25 +8,18 @@ impact: behavior
 severity: minor
 needs_design: true  # the effort sizes the design pass; the implementation is not sized
 ---
+
 # FEAT-17 — An end-of-options separator (`--`)
 
-A bare `--` is an ordinary token in every front-end: nothing marks "everything after this is a
-value". The `=` form is the escape for a dashed value and closes BUG-27
-([design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value](../../architecture/design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value)),
-but it can only shield one token, so a variable-length flag still cannot take a dashed element
-after the first (`--tags=--a --b` reads `--b` as a flag).
+A bare `--` is an ordinary token in every front-end: nothing marks "everything after this is a value".
+The `=` form is the escape for a dashed value and closes BUG-27 ([design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value](../../architecture/design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value)), but it can only shield one token, so a variable-length flag still cannot take a dashed element after the first (`--tags=--a --b` reads `--b` as a flag).
 
-The design pass has to answer three things before any code is written, which is why this is
-filed rather than folded into BUG-27:
+The design pass has to answer three things before any code is written, which is why this is filed rather than folded into BUG-27:
 
-- **Adapter parity.** The host framework tokenizes argv before confarg is called, so an
-  adapter cannot honor a separator confarg invented — the same wall that
-  [limitations.md#cli-front-ends](../../architecture/limitations.md#cli-front-ends)
-  records for whole-value flags under click. A vanilla-only `--` is a new parity gap
-  ([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity)).
-- **Scope of the separator.** argparse's `--` ends option parsing for the rest of the command
-  line, which confarg has no use for — it has no positionals. A per-flag "the next N tokens are
-  values" reading is closer to what is wanted and has no precedent to copy.
-- **The other channels.** Neither the environment nor a config file has an equivalent, so a
-  CLI-only spelling is a divergence, argued the way the approved ones listed under
-  [invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity) were.
+- **Adapter parity.**
+  The host framework tokenizes argv before confarg is called, so an adapter cannot honor a separator confarg invented — the same wall that [limitations.md#cli-front-ends](../../architecture/limitations.md#cli-front-ends) records for whole-value flags under click.
+  A vanilla-only `--` is a new parity gap ([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity)).
+- **Scope of the separator.** argparse's `--` ends option parsing for the rest of the command line, which confarg has no use for — it has no positionals.
+  A per-flag "the next N tokens are values" reading is closer to what is wanted and has no precedent to copy.
+- **The other channels.**
+  Neither the environment nor a config file has an equivalent, so a CLI-only spelling is a divergence, argued the way the approved ones listed under [invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity) were.

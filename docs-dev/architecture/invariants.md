@@ -1,41 +1,23 @@
 # Invariants
 
-Rules that must hold after every change. Each links to the document that argues it.
+Rules that must hold after every change.
+Each links to the document that argues it.
 
 ## Contracts
 
-* The configuration object that is returned must respect the field annotations provided as input.
+- The configuration object that is returned must respect the field annotations provided as input.
 
 ## Cross-channel parity
 
-Every feature behaves identically across the five front-ends (vanilla, argparse, click,
-typer, cyclopts) and the three channels (config files in every format, environment, CLI). A
-divergence needs a concrete reason **and** the maintainer's explicit approval before it is
-implemented, and it leans the way
-[design decisions](design-decisions/divergence-leans-to-the-backend.md#a-divergence-leans-towards-the-affected-backends-own-idiom) settles:
-towards the affected backend's own idiom, narrowed to the backend that imposes it. Approved
-divergences so far: list syntax per framework
-([CLI adapters](cli-adapters/list-syntax-divergence.md#list-syntax-divergence)); the whole-value token on a fixed-arity flag,
-which only the two clicklike front-ends decline
-([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)); the `=`-spelled run
-continued by bare tokens, which argparse alone declines — its `=` binds the one token after
-it and its parser exits on the rest
-([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)); the config flag's
-space-separated multi-file run, which only the two clicklike front-ends decline — their
-`multiple=True` registration binds one path per occurrence, so repetition is their only
-multi-file spelling
-([CLI parsing](cli-parsing/config-file-flags.md#config-file-flags)); file-only dunder keys
-([config files](config-files/reserved-keys.md#reserved-file-only-keys)); declaring locals only in files
-([locals](locals.md#declare-in-files-modify-anywhere)); the mount keyword and the form its path
-takes, spelled per channel
-([design decisions](design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel)); a `--help` ahead of a refused bare flag, which shows help on argparse and cyclopts and which only the two clicklike front-ends answer with their own usage error — their parser refuses a missing value before any eager flag runs
-([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)); a single-dash token after a value-taking flag, a value on vanilla, click and typer, which argparse and cyclopts read by their own option-like rule and refuse — `--key=-x` is the spelling all five take ([design decisions](design-decisions/equals-escapes-a-dashed-value.md#a-single-dash-value-is-the-backends-to-read)). Known unapproved gaps
-are listed in [../todo/bugs/](../todo/bugs/README.md).
+Every feature behaves identically across the five front-ends (vanilla, argparse, click, typer, cyclopts) and the three channels (config files in every format, environment, CLI).
+A divergence needs a concrete reason **and** the maintainer's explicit approval before it is implemented, and it leans the way [design decisions](design-decisions/divergence-leans-to-the-backend.md#a-divergence-leans-towards-the-affected-backends-own-idiom) settles: towards the affected backend's own idiom, narrowed to the backend that imposes it.
+Approved divergences so far: list syntax per framework ([CLI adapters](cli-adapters/list-syntax-divergence.md#list-syntax-divergence)); the whole-value token on a fixed-arity flag, which only the two clicklike front-ends decline ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)); the `=`-spelled run continued by bare tokens, which argparse alone declines — its `=` binds the one token after it and its parser exits on the rest ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)); the config flag's space-separated multi-file run, which only the two clicklike front-ends decline — their `multiple=True` registration binds one path per occurrence, so repetition is their only multi-file spelling ([CLI parsing](cli-parsing/config-file-flags.md#config-file-flags)); file-only dunder keys ([config files](config-files/reserved-keys.md#reserved-file-only-keys)); declaring locals only in files ([locals](locals.md#declare-in-files-modify-anywhere)); the mount keyword and the form its path takes, spelled per channel ([design decisions](design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel)); a `--help` ahead of a refused bare flag, which shows help on argparse and cyclopts and which only the two clicklike front-ends answer with their own usage error — their parser refuses a missing value before any eager flag runs ([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)); a single-dash token after a value-taking flag, a value on vanilla, click and typer, which argparse and cyclopts read by their own option-like rule and refuse — `--key=-x` is the spelling all five take ([design decisions](design-decisions/equals-escapes-a-dashed-value.md#a-single-dash-value-is-the-backends-to-read)).
+Known unapproved gaps are listed in [../todo/bugs/](../todo/bugs/README.md).
 
 ## Delegate to the canonical function
 
-When two paths need the same decision, route both through one function instead of adding a
-special case; apply a rule wherever its precondition holds. Canonical decision-makers:
+When two paths need the same decision, route both through one function instead of adding a special case; apply a rule wherever its precondition holds.
+Canonical decision-makers:
 
 | Decision | Function |
 |---|---|
@@ -201,76 +183,44 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 
 ## Merge stays unvalidated
 
-The merge layer never checks convertibility; parsers reject only what is provably wrong at
-parse time; ambiguity that depends on the type is deferred to `build()`
-([pipeline](pipeline/merge-build-contract.md#merge-build-contract)).
+The merge layer never checks convertibility; parsers reject only what is provably wrong at parse time; ambiguity that depends on the type is deferred to `build()` ([pipeline](pipeline/merge-build-contract.md#merge-build-contract)).
 
 ## Expressions are deferred by rule
 
-Every value gate before `build()` consults `contains_expression`
-([expressions](expressions/deferral-rule.md#deferral-rule)).
+Every value gate before `build()` consults `contains_expression` ([expressions](expressions/deferral-rule.md#deferral-rule)).
 
 ## Tokens mean untyped text
 
-Only `_StrToken` values are coerced from text; plain strings from files are never
-reinterpreted. Tokens never leak into dumps or error messages
-([types](types/token-model.md#token-model)).
+Only `_StrToken` values are coerced from text; plain strings from files are never reinterpreted.
+Tokens never leak into dumps or error messages ([types](types/token-model.md#token-model)).
 
 ## Adapter output equals vanilla output
 
-An adapter's merged dict is byte-identical to `confarg.merge()`'s for the same input, key order
-included. The adapters' CLI channel is vanilla's loop over argv and nothing else: a rule the CLI
-needs goes into that loop, never into a second writer over the framework's parse result
-([CLI adapters](cli-adapters/model.md#argv-is-the-only-writer),
-[parity](cli-adapters/parity.md#byte-identical-merged-dicts)).
+An adapter's merged dict is byte-identical to `confarg.merge()`'s for the same input, key order included.
+The adapters' CLI channel is vanilla's loop over argv and nothing else: a rule the CLI needs goes into that loop, never into a second writer over the framework's parse result ([CLI adapters](cli-adapters/model.md#argv-is-the-only-writer), [parity](cli-adapters/parity.md#byte-identical-merged-dicts)).
 
 ## Fragile couplings
 
-- Do not add lambdas, comprehensions or other binding constructs to `_ALLOWED_NODES`
-  without reworking `_Prefixer` ([expressions](expressions/reference-anchoring.md#reference-anchoring)).
+- Do not add lambdas, comprehensions or other binding constructs to `_ALLOWED_NODES` without reworking `_Prefixer` ([expressions](expressions/reference-anchoring.md#reference-anchoring)).
 - Anchor-marker handling stays lexical ([expressions](expressions/reference-anchoring.md#reference-anchoring)).
-- The node anchor is resolved on the AST, never by rewriting expression text: an absolute path
-  may hold a list index or a non-identifier key ([expressions](expressions/reference-anchoring.md#implementation-constraints)).
-- `canonicalize_references` must not resolve `${.x}` — preserving it through `merge()` is what
-  keeps a list element independent of its index
-  ([expressions](expressions/reference-anchoring.md#a-relative-reference-is-never-serialized-as-an-absolute-path)).
+- The node anchor is resolved on the AST, never by rewriting expression text: an absolute path may hold a list index or a non-identifier key ([expressions](expressions/reference-anchoring.md#implementation-constraints)).
+- `canonicalize_references` must not resolve `${.x}` — preserving it through `merge()` is what keeps a list element independent of its index ([expressions](expressions/reference-anchoring.md#a-relative-reference-is-never-serialized-as-an-absolute-path)).
 - Only graft the names `_locals_keys` returns ([locals](locals.md#walk-target-graft)).
 - `_strip_locals` must not mutate its input ([locals](locals.md#stripping)).
 - The default layer's untouched defaults are taken out after resolution and before construction (`_default_layer.drop_untouched`): construction alone applies them, as the class's own objects, so none is ever built through `construct()` ([design decisions](design-decisions/a-field-default-is-the-base-layer.md#untouched-defaults-are-taken-out-again)).
-- `_cast.type_for_cast_name` imports the leaf registry lazily: `typedload`'s package init
-  imports `_construct`, which imports `_cast`, so a module-level import of
-  `typedload._coerce` from `_cast` is a cycle
-  ([types](types/stealing-rule.md#cast-pinning-in-files)).
-- `cli/_build.py` imports `_parse_cli` lazily (import cycle) and never imports argparse
-  ([CLI adapters](cli-adapters/flag-model.md#framework-neutral-flag-model)).
-- `cli/_clicklike/` imports neither click nor typer, so importing one adapter does not drag
-  the other's dependency in ([CLI adapters](cli-adapters/clicklike-seam.md#the-clicklike-seam)).
-- Anything the click and typer adapters both need lives in `cli/_clicklike/`, parameterised by
-  the classes the two frameworks spell differently — never duplicated into both packages
-  ([CLI adapters](cli-adapters/clicklike-seam.md#the-clicklike-seam)).
-- Completion and dynamic flag registration never raise
-  ([CLI adapters](cli-adapters/completion.md#completion)).
-- `FlagSpec.stands_bare` is set on what `cli._build._takes_multi_tokens` names, plus the
-  append flag. A bare occurrence of such a flag never reaches the framework's parse result,
-  which is safe only because the CLI channel is read off the argv the user typed
-  ([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)).
-- `FlagSpec.refuses_bare` is set by the `_fixed_seq_types(resolved)` gate (`cli._build._refusing_bare`), asked without
-  unwrapping `Optional` — the type vanilla's loop dispatches on — so the pre-parse refusal and
-  the loop cannot disagree about which flags are fixed-arity
-  ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)).
-- `import_tagged_classes` runs before anything reads `__subclasses__()` — before the static
-  type walk in `build_static_flags`, before path resolution in `_parse_cli`, and at the start of
-  `build_dynamic_flags`, before any argv scan
-  ([design decisions](design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration)).
-- Defaults and shared reserved key names (`ROOT_KEY`, `LOCALS_KEYS`, `RESERVED_KEYS` and the
-  file-only keys it lists) live in `_defaults.py`; never repeat the literals
-  ([design decisions](design-decisions/shared-reserved-key-names.md#shared-reserved-key-names-live-in-_defaultspy)).
-- `exceptions.py` imports nothing from `confarg`. It is the whole of what `dictexpr` is allowed
-  to depend on, so an import there would drag the rest of the library into `dictexpr`'s closure.
-  A message factory that needs `_src_type` or `dotted_name` therefore cannot have them: either
-  the caller passes the text in, or the factory's own argument provably cannot be a token
-  ([design decisions](design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it)).
-- The per-class introspection caches hold only what is fixed once a class exists, and each answer lives as long as its class (`_types._per_class_cache`). A default (`_dc_defaults`, `_init_defaults`), anything that reads the leaf registry or `__subclasses__()`, and an annotation that did not resolve are never cached, and a cached mapping is read-only ([types](types/introspection.md#introspection-is-cached-per-class)).
-- A type in `_LEAF_COERCIONS` must also be in `_LEAF_SERIALIZERS`: registration makes a type
-  a leaf in both directions, and only `register_leaf_type` writes them
-  ([types](types/leaf-coercion.md#leaf-coercion)).
+- `_cast.type_for_cast_name` imports the leaf registry lazily: `typedload`'s package init imports `_construct`, which imports `_cast`, so a module-level import of `typedload._coerce` from `_cast` is a cycle ([types](types/stealing-rule.md#cast-pinning-in-files)).
+- `cli/_build.py` imports `_parse_cli` lazily (import cycle) and never imports argparse ([CLI adapters](cli-adapters/flag-model.md#framework-neutral-flag-model)).
+- `cli/_clicklike/` imports neither click nor typer, so importing one adapter does not drag the other's dependency in ([CLI adapters](cli-adapters/clicklike-seam.md#the-clicklike-seam)).
+- Anything the click and typer adapters both need lives in `cli/_clicklike/`, parameterised by the classes the two frameworks spell differently — never duplicated into both packages ([CLI adapters](cli-adapters/clicklike-seam.md#the-clicklike-seam)).
+- Completion and dynamic flag registration never raise ([CLI adapters](cli-adapters/completion.md#completion)).
+- `FlagSpec.stands_bare` is set on what `cli._build._takes_multi_tokens` names, plus the append flag.
+  A bare occurrence of such a flag never reaches the framework's parse result, which is safe only because the CLI channel is read off the argv the user typed ([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)).
+- `FlagSpec.refuses_bare` is set by the `_fixed_seq_types(resolved)` gate (`cli._build._refusing_bare`), asked without unwrapping `Optional` — the type vanilla's loop dispatches on — so the pre-parse refusal and the loop cannot disagree about which flags are fixed-arity ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)).
+- `import_tagged_classes` runs before anything reads `__subclasses__()` — before the static type walk in `build_static_flags`, before path resolution in `_parse_cli`, and at the start of `build_dynamic_flags`, before any argv scan ([design decisions](design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration)).
+- Defaults and shared reserved key names (`ROOT_KEY`, `LOCALS_KEYS`, `RESERVED_KEYS` and the file-only keys it lists) live in `_defaults.py`; never repeat the literals ([design decisions](design-decisions/shared-reserved-key-names.md#shared-reserved-key-names-live-in-_defaultspy)).
+- `exceptions.py` imports nothing from `confarg`.
+  It is the whole of what `dictexpr` is allowed to depend on, so an import there would drag the rest of the library into `dictexpr`'s closure.
+  A message factory that needs `_src_type` or `dotted_name` therefore cannot have them: either the caller passes the text in, or the factory's own argument provably cannot be a token ([design decisions](design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it)).
+- The per-class introspection caches hold only what is fixed once a class exists, and each answer lives as long as its class (`_types._per_class_cache`).
+  A default (`_dc_defaults`, `_init_defaults`), anything that reads the leaf registry or `__subclasses__()`, and an annotation that did not resolve are never cached, and a cached mapping is read-only ([types](types/introspection.md#introspection-is-cached-per-class)).
+- A type in `_LEAF_COERCIONS` must also be in `_LEAF_SERIALIZERS`: registration makes a type a leaf in both directions, and only `register_leaf_type` writes them ([types](types/leaf-coercion.md#leaf-coercion)).

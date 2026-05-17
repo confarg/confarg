@@ -10,29 +10,20 @@ severity: minor  # only a flag that should not exist fails; the class still buil
 needs_design: true
 introduced_by: [PR-5]  # _is_plain_class and _init_params read an inherited object.__init__ as parameters
 ---
+
 # BUG-153 — A class without its own `__init__` is a struct with `args` and `kwargs` fields
 
-A struct is "a plain class whose `__init__` takes parameters"
-([types/introspection.md](../../architecture/types/introspection.md#type-introspection)). A
-class that defines no `__init__` inherits `object.__init__`, whose signature reads
-`(self, /, *args, **kwargs)`, so it counts as a struct with an `args` list and a `kwargs` dict:
-`--marker.kwargs.x` merges, then `build()` fails with a raw `TypeError`, since
-`object.__init__` takes no arguments. A class declaring `def __init__(self)` is a leaf instead,
-so the two spellings of "takes nothing" disagree. The design pass decides what such a class
-is — a leaf, or a struct with no fields — which also decides whether a config omitting the
-field still builds: today the all-defaults shortcut builds `Marker()` from nothing.
+A struct is "a plain class whose `__init__` takes parameters" ([types/introspection.md](../../architecture/types/introspection.md#type-introspection)).
+A class that defines no `__init__` inherits `object.__init__`, whose signature reads `(self, /, *args, **kwargs)`, so it counts as a struct with an `args` list and a `kwargs` dict: `--marker.kwargs.x` merges, then `build()` fails with a raw `TypeError`, since `object.__init__` takes no arguments.
+A class declaring `def __init__(self)` is a leaf instead, so the two spellings of "takes nothing" disagree.
+The design pass decides what such a class is — a leaf, or a struct with no fields — which also decides whether a config omitting the field still builds: today the all-defaults shortcut builds `Marker()` from nothing.
 
-The leaf answer also reaches the callable specs, which build their class through the struct
-route: `{class: C}`, and `{classfn: C.m}` for the owner `C`, are refused with "Unsupported leaf
-type" when `C` declares `def __init__(self)`. The same spec works when `C` declares no
-`__init__` at all, or one with a defaulted parameter. A struct with no fields would build all
-three.
+The leaf answer also reaches the callable specs, which build their class through the struct route: `{class: C}`, and `{classfn: C.m}` for the owner `C`, are refused with "Unsupported leaf type" when `C` declares `def __init__(self)`.
+The same spec works when `C` declares no `__init__` at all, or one with a defaulted parameter.
+A struct with no fields would build all three.
 
-Origin: latent since the initial version (PR-5): a plain class is a struct when its `__init__`
-signature has parameters, and that read never told an inherited `object.__init__` from one the class
-declares. Before PR-39 (namedtuple support) `build()` refused the `kwargs` field with a
-`TypeCoercionError`; since PR-39 the call reaches `Marker()` and escapes as a raw `TypeError`
-(bisected).
+Origin: latent since the initial version (PR-5): a plain class is a struct when its `__init__` signature has parameters, and that read never told an inherited `object.__init__` from one the class declares.
+Before PR-39 (namedtuple support) `build()` refused the `kwargs` field with a `TypeCoercionError`; since PR-39 the call reaches `Marker()` and escapes as a raw `TypeError` (bisected).
 
 ```python
 from dataclasses import dataclass

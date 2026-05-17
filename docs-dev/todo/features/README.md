@@ -1,12 +1,10 @@
 # Features
 
-Missing behavior worth having, and ideas not yet vetted. One ticket per file; see
-[../README.md](../README.md) for the format. Anything accepted or rejected here leaves a
-decision in
-[../../architecture/design-decisions/README.md](../../architecture/design-decisions/README.md).
+Missing behavior worth having, and ideas not yet vetted.
+One ticket per file; see [../README.md](../README.md) for the format.
+Anything accepted or rejected here leaves a decision in [../../architecture/design-decisions/README.md](../../architecture/design-decisions/README.md).
 
-An entry carrying `needs_design: true` is an unvetted idea: it has no design yet, so deciding
-whether to do it at all is the next actionable step, and its effort sizes that decision.
+An entry carrying `needs_design: true` is an unvetted idea: it has no design yet, so deciding whether to do it at all is the next actionable step, and its effort sizes that decision.
 
 <!-- tickets:start -->
 
@@ -14,6 +12,7 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 |---|---|---|---|---|---|
 | [FEAT-14 — Dataclass fields that are not `__init__` parameters](FEAT-14-dataclass-fields-outside-init.md) | major |  | L | high | behavior |
 | [FEAT-5 — Optional structural validation right after `merge()`](FEAT-5-structural-validation-after-merge.md) | minor |  | S | low | behavior |
+| [FEAT-26 — The expression whitelist is not documented for users](FEAT-26-the-expression-whitelist-is-not-documented-for-users.md) | minor |  | S | low | none |
 | [FEAT-7 — Lazy resolution between `merge` and `build`](FEAT-7-lazy-resolution-merge-to-build.md) | minor |  | M | high | behavior |
 | [FEAT-8 — Value provenance](FEAT-8-value-provenance.md) | minor |  | M | high | behavior |
 | [FEAT-15 — No way to inspect the flags of a class the tag has not named yet](FEAT-15-inspect-flags-of-unnamed-class.md) | minor |  | M | low | behavior |

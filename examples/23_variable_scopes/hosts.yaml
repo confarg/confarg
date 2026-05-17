@@ -1,0 +1,7 @@
+hosts:
+  web:
+    name: ${key(.)}   # the key this entry is filed under
+    port: 80
+  db:
+    name: ${key(.)}
+    port: 5432

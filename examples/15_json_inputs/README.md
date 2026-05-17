@@ -3,7 +3,6 @@
 > [!TIP]
 > Code for examples on this page can be found in [`examples/15_json_inputs`](https://github.com/confarg/confarg/tree/master/examples/15_json_inputs).
 
-
 JSON strings can be used in environment variables and from the command line where either a sequence or a structured input is expected.
 
 <!-- pytest-markdown-console: platform:!win32 -->
@@ -16,7 +15,8 @@ $ uv run myapp.py --db '{"class": "configs.SQLiteConfigChild", "dbpath": "db.sql
 Config(db=SQLiteConfigChild(dbpath='db.sqlite'))
 ```
 
-The JSON syntax can feel clunky to type manually on the command line, and standard command-line arguments are generally preferred. However, JSON can be generated easily, so the ability to apply JSON patches can be handy.
+The JSON syntax can feel clunky to type manually on the command line, and standard command-line arguments are generally preferred.
+However, JSON can be generated easily, so the ability to apply JSON patches can be handy.
 
 Also, while more verbose, JSON has the merit of being unambiguous about its argument types, which lets us fill in values that cannot be filled in natively.
 
@@ -50,10 +50,10 @@ $ uv run list_of_str_or_bools.py --input '["hello", "yes", "well"]'
 Config(input=['hello', 'yes', 'well'])
 ```
 
-
 ## Forcing JSON coercion
 
-Whether a value is read as JSON is normally decided implicitly, from the field's type: a `{...}` or `[...]` value is only decoded when the target field can hold a structured or sequence value. To make the intent explicit, or to reach a field the implicit rule does not cover, such as an `Any`-typed one, append a `json` suffix to the key, mirroring the `.str`/`.int`/`.float`/`.bool` scalar casts from [Tutorial #7](https://confarg.github.io/confarg/examples/7_stealing_rule/).
+Whether a value is read as JSON is normally decided implicitly, from the field's type: a `{...}` or `[...]` value is only decoded when the target field can hold a structured or sequence value.
+To make the intent explicit, or to reach a field the implicit rule does not cover, such as an `Any`-typed one, append a `json` suffix to the key, mirroring the `.str`/`.int`/`.float`/`.bool` scalar casts from [Tutorial #7](https://confarg.github.io/confarg/examples/7_stealing_rule/).
 
 <!-- pytest-markdown-console: platform:!win32 -->
 ```console
@@ -74,10 +74,11 @@ Config(db=SQLiteConfigChild(dbpath='env.sqlite'))
 
 Typing JSON arguments on Windows is particularly complicated.
 
-The command prompt (`cmd.exe`) does not treat single quotes as a quoting character; double quotes must be used. Consequently, all double quotes needed inside the JSON argument must be escaped:
+The command prompt (`cmd.exe`) does not treat single quotes as a quoting character; double quotes must be used.
+Consequently, all double quotes needed inside the JSON argument must be escaped:
 
 <!-- pytest-markdown-console: notest -->
-```
+```text
 $ # In the command prompt
 $ uv run .\list_of_strs.py --input "[\"a\", \"b\"]"
 ```
@@ -87,7 +88,7 @@ In PowerShell, the situation differs between versions.
 In PowerShell 5, single quotes can be used as a quoting character but double quotes still must be escaped.
 
 <!-- pytest-markdown-console: notest -->
-```
+```text
 $ # In PowerShell 5
 $ uv run .\list_of_strs.py --input '[\"a\", \"b\"]'
 ```
@@ -95,7 +96,7 @@ $ uv run .\list_of_strs.py --input '[\"a\", \"b\"]'
 In PowerShell 7, double quotes don't need to be escaped and inputs similar to those on other platforms can be used.
 
 <!-- pytest-markdown-console: notest -->
-```
+```text
 $ # In PowerShell 7
 $ uv run .\list_of_strs.py --input '["a", "b"]'
 ```

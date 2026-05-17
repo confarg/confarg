@@ -7,47 +7,25 @@ risk: high
 impact: behavior
 severity: minor
 ---
+
 # FEAT-12 — Carefully scoped expression expansion
 
-The safety model forbids list/dict/set literals, slices, comprehensions, lambdas and
-f-strings
-([expressions/safety-model.md#safety-model](../../architecture/expressions/safety-model.md#safety-model)). That is a
-sound default, but it leaves expressions unable to say ordinary things —
-`${[host, backup_host]}`, `${list(hosts) + [fallback]}`, `${sorted(ports)}`. A conservative
-expansion — list and dict literals plus a fixed set of builtin conversions (`list`, `tuple`,
-`dict`, `set`, `sorted`, `sum`, `any`, `all`) added to the existing free-function whitelist —
-would meaningfully increase expression power **without touching `eval`**: the interpreter
-still walks a whitelisted AST, and each new node has a small, total evaluation rule.
+The safety model forbids list/dict/set literals, slices, comprehensions, lambdas and f-strings ([expressions/safety-model.md#safety-model](../../architecture/expressions/safety-model.md#safety-model)).
+That is a sound default, but it leaves expressions unable to say ordinary things — `${[host, backup_host]}`, `${list(hosts) + [fallback]}`, `${sorted(ports)}`.
+A conservative expansion — list and dict literals plus a fixed set of builtin conversions (`list`, `tuple`, `dict`, `set`, `sorted`, `sum`, `any`, `all`) added to the existing free-function whitelist — would meaningfully increase expression power **without touching `eval`**: the interpreter still walks a whitelisted AST, and each new node has a small, total evaluation rule.
 
-The coupling is explicit and decides the order of work. `_Prefixer` rewrites only `ast.Name`
-bases, and that is correct *only* because no binding construct is whitelisted, so every
-non-function `Name` is a reference base; **adding a binding construct — a comprehension or a
-lambda — breaks reference prefixing** and requires reworking `_Prefixer` to carry a scope
-([expressions/reference-anchoring.md#reference-anchoring](../../architecture/expressions/reference-anchoring.md#reference-anchoring),
-[invariants.md#fragile-couplings](../../architecture/invariants.md#fragile-couplings)). List
-literals bind nothing, so they are the safer first step and can land on their own. Dict and
-set literals need no delimiter work: an expression already ends at the first `}` that closes no
-brace of its own ([expressions/values-and-references.md#delimiting-an-expression](../../architecture/expressions/values-and-references.md#delimiting-an-expression)).
-A further constraint: `sorted(key=...)` is off the table for as long as lambdas are, so the
-added builtins take no callable arguments.
+The coupling is explicit and decides the order of work.
+`_Prefixer` rewrites only `ast.Name` bases, and that is correct *only* because no binding construct is whitelisted, so every non-function `Name` is a reference base; **adding a binding construct — a comprehension or a lambda — breaks reference prefixing** and requires reworking `_Prefixer` to carry a scope ([expressions/reference-anchoring.md#reference-anchoring](../../architecture/expressions/reference-anchoring.md#reference-anchoring), [invariants.md#fragile-couplings](../../architecture/invariants.md#fragile-couplings)).
+List literals bind nothing, so they are the safer first step and can land on their own.
+Dict and set literals need no delimiter work: an expression already ends at the first `}` that closes no brace of its own ([expressions/values-and-references.md#delimiting-an-expression](../../architecture/expressions/values-and-references.md#delimiting-an-expression)).
+A further constraint: `sorted(key=...)` is off the table for as long as lambdas are, so the added builtins take no callable arguments.
 
-**Slices are already spoken for in part.** `::` is the configuration-root marker, and the rule
-that keeps both readings available is that it is a marker only when the innermost enclosing
-bracket is not `[`; inside a subscript it is a slice step, and `items[(::step)]` is how a root
-lookup is spelled there ([expressions/reference-anchoring.md#implementation-constraints](../../architecture/expressions/reference-anchoring.md#implementation-constraints)).
-Adding `ast.Slice` to the whitelist therefore needs no lexer change, but it does need tests
-pinning `items[::2]`, `items[:3]` and `items[(::step)]` apart.
+**Slices are already spoken for in part.**
+`::` is the configuration-root marker, and the rule that keeps both readings available is that it is a marker only when the innermost enclosing bracket is not `[`; inside a subscript it is a slice step, and `items[(::step)]` is how a root lookup is spelled there ([expressions/reference-anchoring.md#implementation-constraints](../../architecture/expressions/reference-anchoring.md#implementation-constraints)).
+Adding `ast.Slice` to the whitelist therefore needs no lexer change, but it does need tests pinning `items[::2]`, `items[:3]` and `items[(::step)]` apart.
 
-Parity is not at risk — the engine is shared by all three channels and all five front-ends, so
-an expansion lands everywhere at once — but each new node must stay inside the deferral rule
-([expressions/deferral-rule.md#deferral-rule](../../architecture/expressions/deferral-rule.md#deferral-rule)): a value
-gate must still defer on `contains_expression`, and a literal that now resolves to a `list`
-must reach `build()` as a list rather than being coerced early. Shell quoting of `[`/`]` is a
-documentation matter, not a divergence.
+Parity is not at risk — the engine is shared by all three channels and all five front-ends, so an expansion lands everywhere at once — but each new node must stay inside the deferral rule ([expressions/deferral-rule.md#deferral-rule](../../architecture/expressions/deferral-rule.md#deferral-rule)): a value gate must still defer on `contains_expression`, and a literal that now resolves to a `list` must reach `build()` as a list rather than being coerced early.
+Shell quoting of `[`/`]` is a documentation matter, not a divergence.
 
-Precedents: Bicep and CUE allow literals and a curated standard library with no general
-evaluation; Jsonnet and Nix go all the way to a full functional language; Home Assistant and
-Ansible hand config templating to Jinja2 and accept arbitrary-expression risk; OmegaConf
-(Hydra) stays at interpolation plus registered resolver functions, closest to where confarg
-is now. The curated-literals-and-builtins point is the Bicep/CUE end, reachable without
-adopting a language.
+Precedents: Bicep and CUE allow literals and a curated standard library with no general evaluation; Jsonnet and Nix go all the way to a full functional language; Home Assistant and Ansible hand config templating to Jinja2 and accept arbitrary-expression risk; OmegaConf (Hydra) stays at interpolation plus registered resolver functions, closest to where confarg is now.
+The curated-literals-and-builtins point is the Bicep/CUE end, reachable without adopting a language.

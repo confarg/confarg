@@ -10,9 +10,14 @@ impact: behavior
 severity: minor  # refused with a clear error; a class: of a wrapper or a list parameter works around it
 introduced_by: [PR-5]  # the bind kwarg check left out *args from the first version
 ---
+
 # BUG-240 — A `*args` parameter cannot be set under the `args` of `bind:` or `call:`
 
-A struct reads its `__init__`'s `*items` as a list field, so `--bag.items '[1, 2]'` builds `Bag(1, 2)`, but the `args` of a `bind:` or `call:` spec refuses the same name as unknown, since `_fillable_params` leaves `*args` out of the names a spec may fill. The two routes into one signature disagree on what it accepts ([one coercion route](../../architecture/callables.md#one-coercion-route)). Fix direction: read a `*args` parameter under `args` as a list, passed after the positional prefix as the struct path does, and let `_serialize_callable` write a partial's spilled positional arguments under that name instead of refusing them. The CLI registration of `--f.args.<p>` and the arity check read the same `_fillable_params`, so they move with it. [FEAT-2](../features/FEAT-2-protocol-callables-and-kwargs.md) is the `**kwargs` side of the same question.
+A struct reads its `__init__`'s `*items` as a list field, so `--bag.items '[1, 2]'` builds `Bag(1, 2)`, but the `args` of a `bind:` or `call:` spec refuses the same name as unknown, since `_fillable_params` leaves `*args` out of the names a spec may fill.
+The two routes into one signature disagree on what it accepts ([one coercion route](../../architecture/callables.md#one-coercion-route)).
+Fix direction: read a `*args` parameter under `args` as a list, passed after the positional prefix as the struct path does, and let `_serialize_callable` write a partial's spilled positional arguments under that name instead of refusing them.
+The CLI registration of `--f.args.<p>` and the arity check read the same `_fillable_params`, so they move with it.
+[FEAT-2](../features/FEAT-2-protocol-callables-and-kwargs.md) is the `**kwargs` side of the same question.
 
 Origin: latent since the initial version (PR-5), whose bind and factory kwarg checks already left `VAR_POSITIONAL` out of the valid names while the struct path read it as a list.
 

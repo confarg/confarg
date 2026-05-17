@@ -1,17 +1,18 @@
 <!-- pytest-markdown-console-file: notest -->
-<p align="center">
-  <img src="https://raw.githubusercontent.com/confarg/confarg/master/docs/assets/banner.svg" alt="confarg" />
-</p>
 
 # A tool to manage complex configurations
 
-> Load and resolve complex configurations from files, environment variables and command line arguments. Keep your data structures and favorite CLI library.
+> Load and resolve complex configurations from files, environment variables and command line arguments.
+> Keep your data structures and favorite CLI library.
 
 `confarg` is a Python library that helps you load configurations in a modular fashion from multiple sources: files, environment variables, and command line arguments.
 
 It can handle deeply nested configurations, type unions, derived classes, expressions and variable interpolation, configuration compositions and more, and can integrate with your favorite argument parser library such as `argparse`, `click`, `typer` or `cyclopts`.
 
-`confarg` is not a framework. No decorator, base class or special annotation type required: none are provided. It is just a tool for the deserialization and serialization of complex configurations. It is designed to have a minimal footprint in your code.
+`confarg` is not a framework.
+No decorator, base class or special annotation type required: none are provided.
+It is just a tool for the deserialization and serialization of complex configurations.
+It is designed to have a minimal footprint in your code.
 
 ## Install
 
@@ -62,7 +63,8 @@ and command line arguments,
 myapp --subconfig.foo=33
 ```
 
-Still here? Read along, we are just getting started.
+Still here?
+Read along, we are just getting started.
 
 ## Getting started
 
@@ -86,7 +88,9 @@ config = confarg.load(DBConfig)
 
 This allows you to construct a `DBConfig` object by collecting data from three possible sources.
 
-1. From a configuration file. By passing `--config <config_file>` to your app, `confarg` will load the content of the file and fill the `DBConfig` object. For example, a config file could look like so:
+1. From a configuration file.
+   By passing `--config <config_file>` to your app, `confarg` will load the content of the file and fill the `DBConfig` object.
+   For example, a config file could look like so:
 
     ```yaml
     # config.yaml
@@ -95,18 +99,19 @@ This allows you to construct a `DBConfig` object by collecting data from three p
     name: mydb
     ```
 
-    You would then call your application as
+   You would then call your application as
 
     ```console
     $ myapp.py --config config.yaml
     DBConfig(host='example.com', port=1234, name='mydb')
     ```
 
-    Configuration files in TOML and JSON formats are also supported.
+   Configuration files in TOML and JSON formats are also supported.
 
-    > You can change the default `config` flag to something else using the `config_flag` parameter.
+   > You can change the default `config` flag to something else using the `config_flag` parameter.
 
-2. From environment variables. You can declare
+2. From environment variables.
+   You can declare
 
     ```properties
     MYAPP_HOST=example.com
@@ -114,10 +119,10 @@ This allows you to construct a `DBConfig` object by collecting data from three p
     MYAPP_NAME=mydb
     ```
 
-    for the same effect.
+   for the same effect.
 
-    > Note that the environment variable prefix of your app should actually be passed to `confarg.load` like so:
-    >
+   > Note that the environment variable prefix of your app should actually be passed to `confarg.load` like so:
+   >
     > ```python
     > config = confarg.load(DBConfig, env_prefix="MYAPP_")
     > ```
@@ -131,7 +136,8 @@ This allows you to construct a `DBConfig` object by collecting data from three p
 
 ### Progressive build-up
 
-The examples above presented different sources to feed your configuration. They are not mutually exclusive — in fact, they are intended to be used simultaneously.
+The examples above presented different sources to feed your configuration.
+They are not mutually exclusive — in fact, they are intended to be used simultaneously.
 
 Note that no one source needs to provide a complete configuration, as long as the configuration resulting from this progressive build-up is complete.
 
@@ -158,7 +164,8 @@ Configuration data is read in the following order, later read overwriting existi
 2. then environment variables;
 3. finally, command line arguments.
 
-This allows for surgical modifications of configuration files. For example, one could overwrite the schema configuration from our existing `full_config` from the command line like so:
+This allows for surgical modifications of configuration files.
+For example, one could overwrite the schema configuration from our existing `full_config` from the command line like so:
 
 ```console
 $ # Overwrite the schema name defined in the config file from the command line
@@ -168,7 +175,8 @@ DBConfig(host='example.com', port=1234, name='otherdb')
 
 ### Unions
 
-Let's say your app needs to support SQLite databases. You now have two different, incompatible DB configurations:
+Let's say your app needs to support SQLite databases.
+You now have two different, incompatible DB configurations:
 
 ```python
 @dataclass
@@ -204,7 +212,8 @@ SQLiteConfig(dbpath='db.sqlite')
 
 For simple configurations, the above automatic disambiguation is enough and convenient.
 
-In more complex configuration scenarios, this automatic disambiguation may not be not possible. For example, different configurations may share the exact same fields.
+In more complex configuration scenarios, this automatic disambiguation may not be not possible.
+For example, different configurations may share the exact same fields.
 
 Even when disambiguation is possible, it may not be obvious to the human eye which object class should be return from the provided parameters.
 
@@ -216,7 +225,8 @@ $ myapp.py --class myapp.SQLiteConfig --dbpath db.sqlite
 SQLiteConfig(dbpath='db.sqlite')
 ```
 
-One example where it is necessary to provide the `class` path is to overwrite the configuration with a new class. Without it, command line arguments are added to the configuration, resulting in an invalid input.
+One example where it is necessary to provide the `class` path is to overwrite the configuration with a new class.
+Without it, command line arguments are added to the configuration, resulting in an invalid input.
 
 ```console
 $ # Config file contains a DBServerConfig
@@ -252,7 +262,8 @@ class SQLiteConfig(DBConfig):
     dbpath: str
 ```
 
-This allows configurations to be easily extensible. Contrast with unions, where a class must be explicitly listed to be supported.
+This allows configurations to be easily extensible.
+Contrast with unions, where a class must be explicitly listed to be supported.
 
 The downside is that the concrete class must be tagged, as `confarg` cannot discover classes derived from a given class.
 
@@ -267,9 +278,12 @@ SQLiteConfig(dbpath='db.sqlite')
 
 ### Configuration hierarchies
 
-The configurations discussed so far has been rather simple, composed of values grouped together in a `dataclass`. However, it needs not be. Configurations are generally deeply nested hierarchies, which `confarg` supports.
+The configurations discussed so far has been rather simple, composed of values grouped together in a `dataclass`.
+However, it needs not be.
+Configurations are generally deeply nested hierarchies, which `confarg` supports.
 
-Let's say you want to add a log level to your application. You place it at the root level of a new `Config` object, along with the DB configuration, that is now one level down under the `db` key.
+Let's say you want to add a log level to your application.
+You place it at the root level of a new `Config` object, along with the DB configuration, that is now one level down under the `db` key.
 
 ```python
 @dataclass
@@ -284,9 +298,11 @@ You now parse your new top-level `Config` instead of `DBConfig`.
 config = confarg.load(Config)
 ```
 
-Our DB configuration, which used to be the root configuration, is now located under the `db` key. This has the following impact.
+Our DB configuration, which used to be the root configuration, is now located under the `db` key.
+This has the following impact.
 
-For command line arguments, we follow the common convention of using dot-separated paths to address nested fields. Previous command line arguments for `DBConfig` are now prefixed by `db.`, like so:
+For command line arguments, we follow the common convention of using dot-separated paths to address nested fields.
+Previous command line arguments for `DBConfig` are now prefixed by `db.`, like so:
 
 ```console
 $ myapp.py --db.class myapp.SQLiteConfig --db.dbpath db.sqlite
@@ -316,9 +332,11 @@ Config(db=DBServerConfig(host='example.com', port=1234, name='mydb'),
 
 You may have noticed that the previous section introduced a `log_level` parameter that has two interesting features: first, it is not of a simple type (`str`, `int`, `float`, `bool` or `None`); second, it comes with a default value.
 
-Default values are honored, and you may have noticed that we did not provide any value to `log_level`. You can of course override a default value.
+Default values are honored, and you may have noticed that we did not provide any value to `log_level`.
+You can of course override a default value.
 
-As for leaf node data type, `confarg` coerces `Enum` and `Path` types as special exceptions to simple types. Other types are treated as classes and must follow the same rules.
+As for leaf node data type, `confarg` coerces `Enum` and `Path` types as special exceptions to simple types.
+Other types are treated as classes and must follow the same rules.
 
 ### Expressions and variable interpolation
 
@@ -358,7 +376,9 @@ resources:
   max_heap_size_mb: 131072
 ```
 
-This works fine. However, you want to better express the fact that `max_heap_size_mb` is chosen to be 80% of the host memory by default. To achieve this, you can write expressions relying on variable interpolation using the `${...}` syntax, like so:
+This works fine.
+However, you want to better express the fact that `max_heap_size_mb` is chosen to be 80% of the host memory by default.
+To achieve this, you can write expressions relying on variable interpolation using the `${...}` syntax, like so:
 
 ```yaml
 # expression_config.yaml
@@ -381,9 +401,11 @@ Config(db=SQLiteConfig(dbpath='db.sqlite'),
        log_level='INFO')
 ```
 
-Note that variable interpolation occurs after all configuration data is read. This means here that you can override `memory_gb` from the command line, and `max_heap_size_mb` will be adjusted accordingly, even though the expression is defined in the configuration file.
+Note that variable interpolation occurs after all configuration data is read.
+This means here that you can override `memory_gb` from the command line, and `max_heap_size_mb` will be adjusted accordingly, even though the expression is defined in the configuration file.
 
-An expression reads default values too: had `Resources` declared `memory_gb: int = 16`, a configuration leaving `memory_gb` out would still compute the heap from it. A default is the base the sources build on, so a `+` append or an index patch on a defaulted tuple applies over the default, as it would over a value read from a lower configuration file.
+An expression reads default values too: had `Resources` declared `memory_gb: int = 16`, a configuration leaving `memory_gb` out would still compute the heap from it.
+A default is the base the sources build on, so a `+` append or an index patch on a defaulted tuple applies over the default, as it would over a value read from a lower configuration file.
 
 ```console
 $ # Max heap is recomputed according to the expression in the config file
@@ -395,12 +417,11 @@ Config(db=SQLiteConfig(dbpath='db.sqlite'),
 
 ### Local variables
 
-Sometimes the value several fields share is not itself part of the configuration — a base
-directory, a release tag, a deployment name. Adding it to the dataclass just so expressions can
-reach it pollutes the type with something the application never reads.
+Sometimes the value several fields share is not itself part of the configuration — a base directory, a release tag, a deployment name.
+Adding it to the dataclass just so expressions can reach it pollutes the type with something the application never reads.
 
-The reserved `locals:` block is where such intermediate values go. Expressions see them as
-`${locals.<name>}`, and the block is dropped before the dataclass is built.
+The reserved `locals:` block is where such intermediate values go.
+Expressions see them as `${locals.<name>}`, and the block is dropped before the dataclass is built.
 
 ```yaml
 # paths_config.yaml
@@ -412,50 +433,45 @@ log_dir: ${locals.base}/logs
 cache_dir: ${locals.base}/cache
 ```
 
-A local variable may itself be an expression, over another local variable or over a real field, and
-`__include__` works inside the block — so a variable library can be shared between configurations.
+A local variable may itself be an expression, over another local variable or over a real field, and `__include__` works inside the block — so a variable library can be shared between configurations.
 
-A local is also a configuration handle the dataclass never has to know about: once declared, it can
-be changed from the command line or the environment like any other value.
+A local is also a configuration handle the dataclass never has to know about: once declared, it can be changed from the command line or the environment like any other value.
 
 ```console
 $ myapp.py --config paths_config.yaml --locals.base /home/bob
 Config(data_dir='/home/bob/data', log_dir='/home/bob/logs', cache_dir='/home/bob/cache')
 ```
 
-One flag moved three fields. The namespace has two operations, and only one is restricted:
-*declaring* a local — introducing the name, and with it its type — happens in configuration files,
-while *modifying* a declared one works from every channel. Declaring is restricted because a local
-has no field annotation, so its type is whatever declared it, and only a format that carries types
-can. Once declared the type is fixed: an override is converted to it, so `${locals.cpus * 2}` keeps
-multiplying, and a value that will not convert is rejected. Setting a name no configuration file
-declared is an error rather than a new variable, so typos are caught.
+One flag moved three fields.
+The namespace has two operations, and only one is restricted: *declaring* a local — introducing the name, and with it its type — happens in configuration files, while *modifying* a declared one works from every channel.
+Declaring is restricted because a local has no field annotation, so its type is whatever declared it, and only a format that carries types can.
+Once declared the type is fixed: an override is converted to it, so `${locals.cpus * 2}` keeps multiplying, and a value that will not convert is rejected.
+Setting a name no configuration file declared is an error rather than a new variable, so typos are caught.
 
 To introduce a new local from outside, point at a file with `--config.locals FILE`.
 
-The namespace answers to two names, `locals` and `_locals`, and either may be used. The second
-exists so it never steals a name you wanted: if your configuration class declares a field called
-`locals`, that field keeps the name — a real field always wins, as it does over the `.json` cast —
-and local variables move to `_locals`. Nothing is configurable, so every front-end and channel
-agrees on the name without being told; declaring under both names at once is rejected as
-ambiguous.
+The namespace answers to two names, `locals` and `_locals`, and either may be used.
+The second exists so it never steals a name you wanted: if your configuration class declares a field called `locals`, that field keeps the name — a real field always wins, as it does over the `.json` cast — and local variables move to `_locals`.
+Nothing is configurable, so every front-end and channel agrees on the name without being told; declaring under both names at once is rejected as ambiguous.
 
-A `locals:` block is not restricted to the top level. Any configuration file may declare one, and
-it stays with that file wherever the file is loaded — so a reusable component can carry its own
-scratch values without the configuration including it knowing they exist. Such a variable is
-modified from the command line or environment by its full path, e.g. `--db.locals.base /home/bob`.
+A `locals:` block is not restricted to the top level.
+Any configuration file may declare one, and it stays with that file wherever the file is loaded — so a reusable component can carry its own scratch values without the configuration including it knowing they exist.
+Such a variable is modified from the command line or environment by its full path, e.g. `--db.locals.base /home/bob`.
 
 ### Building large configurations from parts
 
-Large configurations are often made up of independent components, and as such, you may want to split them accordingly. It is easier to navigate, but it also makes it possible to reuse configuration parts and to build multiple complex configurations from the same set of atomic configuration components.
+Large configurations are often made up of independent components, and as such, you may want to split them accordingly.
+It is easier to navigate, but it also makes it possible to reuse configuration parts and to build multiple complex configurations from the same set of atomic configuration components.
 
 Some configuration components may even be generated automatically, in which case being able to isolate those parts from the rest is a must.
 
 `confarg` lets you do this in different ways.
 
-Every place that takes a configuration file path also takes a URL, so a part can live somewhere else entirely: `--config https://cfg.example.com/app.yaml`, `--config.db s3://my-bucket/db.yaml`, or an `__include__` naming either. `file`, `http`, `https` and `s3` ship with the library, `confarg.register_scheme()` adds your own, and `confarg.unregister_scheme()` takes one away — removing `http` and `https` is how a program refuses to read its configuration off the network at all.
+Every place that takes a configuration file path also takes a URL, so a part can live somewhere else entirely: `--config https://cfg.example.com/app.yaml`, `--config.db s3://my-bucket/db.yaml`, or an `__include__` naming either.
+`file`, `http`, `https` and `s3` ship with the library, `confarg.register_scheme()` adds your own, and `confarg.unregister_scheme()` takes one away — removing `http` and `https` is how a program refuses to read its configuration off the network at all.
 
-From the command line, the `--config` flag can be suffixed with a key path to load configurations there. For example,
+From the command line, the `--config` flag can be suffixed with a key path to load configurations there.
+For example,
 
 ```console
 # Load a config file specific to the `db` key
@@ -470,7 +486,8 @@ $ MYAPP_CONFIG__DB=db_config.yaml myapp.py
 Config(db=DBServerConfig(host='example.com', port=1234, name='mydb'), log_level='INFO')
 ```
 
-> Note that `db_config.yaml` does *not* contain the `db` key. It does not need to know the path it is loaded to.
+> Note that `db_config.yaml` does *not* contain the `db` key.
+> It does not need to know the path it is loaded to.
 
 In config files, you can load a configuration by specifying the special `__include__` key, followed by the path to the sub-configuration to load, like so:
 
@@ -493,10 +510,8 @@ db:
 
 ### Expressions in a configuration part
 
-A configuration file does not know where it will be loaded, and its expressions do not have to
-either: **a path is relative to the file that wrote it.** So `db_config.yaml` refers to its own
-values directly, and keeps working whether it is loaded at the root, under `db`, or deeper inside
-some larger configuration.
+A configuration file does not know where it will be loaded, and its expressions do not have to either: **a path is relative to the file that wrote it.**
+So `db_config.yaml` refers to its own values directly, and keeps working whether it is loaded at the root, under `db`, or deeper inside some larger configuration.
 
 ```yaml
 # db_config.yaml — reusable, because it only ever talks about itself
@@ -505,20 +520,17 @@ port: 1234
 url: postgres://${host}:${port}/mydb
 ```
 
-When a part genuinely does depend on another part, prefix the path with `::` to anchor it at the
-root of the whole configuration instead:
+When a part genuinely does depend on another part, prefix the path with `::` to anchor it at the root of the whole configuration instead:
 
 ```yaml
 # only makes sense inside a configuration that has `deploy_env` at its root
 name: mydb-${::deploy_env}
 ```
 
-`::` is the visible difference between a file you can reuse anywhere and one that is a
-deliberate piece of a specific whole. In a configuration that is a single unnested file the two
-are the same thing, since that file's root *is* the configuration root.
+`::` is the visible difference between a file you can reuse anywhere and one that is a deliberate piece of a specific whole.
+In a configuration that is a single unnested file the two are the same thing, since that file's root *is* the configuration root.
 
-A leading dot is a third thing again: it counts *upwards from the value being written*, one
-level per dot, so `${.other}` is a key beside it and `${..other}` one in the block above.
+A leading dot is a third thing again: it counts *upwards from the value being written*, one level per dot, so `${.other}` is a key beside it and `${..other}` one in the block above.
 
 ```yaml
 servers:
@@ -527,10 +539,8 @@ servers:
     url: https://${.host}/          # this element's own host, whatever its index
 ```
 
-Because such a path never names an index, the element keeps working when the list is reordered,
-appended to, or lifted into a file of its own — and `confarg.merge()` writes it back out exactly
-as written rather than resolving it to `${servers.0.host}`. Dots may not climb out of the file
-that wrote them; that is what `::` is for.
+Because such a path never names an index, the element keeps working when the list is reordered, appended to, or lifted into a file of its own — and `confarg.merge()` writes it back out exactly as written rather than resolving it to `${servers.0.host}`.
+Dots may not climb out of the file that wrote them; that is what `::` is for.
 
 ## Next steps
 
@@ -538,4 +548,4 @@ We have more than scratched the surface, and you should have enough knowledge to
 
 Again, all of the examples above and more are in the `examples/` folder, which is a great way to discover and experiment with the library features.
 
-A documentation is also currently being written at https://confarg.github.io/confarg/.
+A documentation is also currently being written at <https://confarg.github.io/confarg/>.

@@ -1,8 +1,7 @@
 # Expressions and variable interpolation
 
 `${...}` in the string values of a plain nested dict, resolved after every source has merged.
-Implementation: `dictexpr/**`, which imports only the standard library and
-`confarg.exceptions`.
+Implementation: `dictexpr/**`, which imports only the standard library and `confarg.exceptions`.
 
 | Note | What it holds |
 |---|---|

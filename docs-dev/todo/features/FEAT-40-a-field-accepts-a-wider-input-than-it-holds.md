@@ -11,9 +11,12 @@ impact: behavior
 severity: minor  # workaround: widen the annotation and normalize in __post_init__
 needs_design: true  # the effort sizes the design pass; the implementation is not sized
 ---
+
 # FEAT-40 — A field accepts a wider input than the type it holds
 
-A recurring shape: `size: tuple[int, int]` should also take a bare `3`, meaning `(3, 3)`; `transform: Transform` should also take a handle into an application registry, `"resize"`. The only per-field way today is to widen the annotation to `tuple[int, int] | int` and `Transform | str` and normalize in `__post_init__`. The built object then claims a type it never holds, and every consumer pays in `isinstance` checks to satisfy the type checker.
+A recurring shape: `size: tuple[int, int]` should also take a bare `3`, meaning `(3, 3)`; `transform: Transform` should also take a handle into an application registry, `"resize"`.
+The only per-field way today is to widen the annotation to `tuple[int, int] | int` and `Transform | str` and normalize in `__post_init__`.
+The built object then claims a type it never holds, and every consumer pays in `isinstance` checks to satisfy the type checker.
 
 What exists falls short:
 
@@ -21,7 +24,9 @@ What exists falls short:
 - It cannot cover `size`: a `tuple[int, int]` key is ignored, since the fixed-arity shape dispatch claims the field first, and it would apply to every such field anyway.
 - A `call:` spec (`size: {call: pkg.square, args: {n: 3}}`) works on any field, but asks the user to spell the conversion at every use.
 
-Parsing is not the gap. `tuple[int, int] | int` already reads `--size 3` and `--size 3 4` alike. What is missing is a way to separate the type a field *accepts* from the type it *holds*.
+Parsing is not the gap.
+`tuple[int, int] | int` already reads `--size 3` and `--size 3 4` alike.
+What is missing is a way to separate the type a field *accepts* from the type it *holds*.
 
 ## Sketch
 
@@ -34,9 +39,11 @@ class Config:
     transform: Annotated[Transform, Accepts(str, TRANSFORMS.__getitem__)]
 ```
 
-- Every channel parses and constructs against `T | X` through the existing union machinery ([leaf coercion](../../architecture/types/leaf-coercion.md#leaf-coercion)). When an `X` variant wins, `f` turns it into the value.
+- Every channel parses and constructs against `T | X` through the existing union machinery ([leaf coercion](../../architecture/types/leaf-coercion.md#leaf-coercion)).
+  When an `X` variant wins, `f` turns it into the value.
 - `T` stays accepted, so `dump()` writes `T`'s own form and reads back without an inverse function, unlike `register_leaf_type`'s `serialize=`.
-- Type checkers see `T`. `Config(size=3)` in Python stays an error, which is right: only confarg's channels widen the input.
+- Type checkers see `T`.
+  `Config(size=3)` in Python stays an error, which is right: only confarg's channels widen the input.
 - Field-local: other `tuple[int, int]` fields are untouched, and `Transform` stays constructible from a tagged dict.
 - Help and metavar show `T | X`.
 

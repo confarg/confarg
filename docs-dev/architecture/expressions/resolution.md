@@ -2,10 +2,9 @@
 
 ## Engine independence
 
-`dictexpr` resolves `${...}` in string values of a plain nested dict. It knows nothing
-about channels, files or dataclasses (imports: stdlib and `confarg.exceptions`), so it can be
-used and tested on its own. Paths are resolved against the **whole** merged dict, which is
-why features such as locals need no engine support ([locals](../locals.md)).
+`dictexpr` resolves `${...}` in string values of a plain nested dict.
+It knows nothing about channels, files or dataclasses (imports: stdlib and `confarg.exceptions`), so it can be used and tested on its own.
+Paths are resolved against the **whole** merged dict, which is why features such as locals need no engine support ([locals](../locals.md)).
 
 ## Resolution algorithm
 
@@ -17,38 +16,37 @@ why features such as locals need no engine support ([locals](../locals.md)).
 4. validate every expression's AST;
 5. evaluate in dependency order, writing results back so later expressions see them.
 
-Only expressions are graph nodes; a reference that reaches nothing but plain values reads
-values already resolved, and is no edge. Which expressions a reference does reach is the next
-section.
+Only expressions are graph nodes; a reference that reaches nothing but plain values reads values already resolved, and is no edge.
+Which expressions a reference does reach is the next section.
 
-Steps 2, 4 and 5 each need a parsed AST, but a unique expression text is parsed once: every
-parse site goes through the module-level `_parse_expression` cache (keyed by the `${...}` body
-as written, whose anchor markers it names itself —
-[reference anchoring](reference-anchoring.md#implementation-constraints)). The sort is the standard library's `graphlib.TopologicalSorter` — Kahn's algorithm, linear in the graph size (`V + E`): releasing a node touches only its direct dependents. Both matter only for large configurations — a config with thousands of chained expressions is the only case that felt the old quadratic sort and triple parse.
+Steps 2, 4 and 5 each need a parsed AST, but a unique expression text is parsed once: every parse site goes through the module-level `_parse_expression` cache (keyed by the `${...}` body as written, whose anchor markers it names itself — [reference anchoring](reference-anchoring.md#implementation-constraints)).
+The sort is the standard library's `graphlib.TopologicalSorter` — Kahn's algorithm, linear in the graph size (`V + E`): releasing a node touches only its direct dependents.
+Both matter only for large configurations — a config with thousands of chained expressions is the only case that felt the old quadratic sort and triple parse.
 
-**A cycle error names the nodes the cycle leaves unresolved.** `TopologicalSorter.prepare` raises its own `CycleError`, which names nothing in its message; the engine lets `get_ready` release every node it still can, then reports the rest — the cycle's members and every expression that waits on them, spelled dotted and sorted. Not the whole graph, and not one cycle alone: a node that resolves is never named, and a node blocked by the cycle is.
+**A cycle error names the nodes the cycle leaves unresolved.**
+`TopologicalSorter.prepare` raises its own `CycleError`, which names nothing in its message; the engine lets `get_ready` release every node it still can, then reports the rest — the cycle's members and every expression that waits on them, spelled dotted and sorted.
+Not the whole graph, and not one cycle alone: a node that resolves is never named, and a node blocked by the cycle is.
 
-**A body too deep for the parser does not parse.** On a deeply nested body (`${------…a}`)
-Python's parser gives up without a `SyntaxError`: a `RecursionError` while it builds the tree, or
-a `MemoryError` when its own stack overflows, the depth and the Python version deciding which
-(3.14 raises only the second on a unary chain). `_parse_body` reports both as `_TooDeepError`, a
-`SyntaxError`, so every parse site treats the body as one that does not parse: reference
-extraction skips it, mounting leaves it as written, and validation refuses it as
-`Too deeply nested to parse`, quoting it (BUG-137). Before, it escaped `resolve()` and
-a mounting `merge()` as a raw interpreter error. Python itself only documents the crash, for
-`compile()` and `ast.literal_eval`; Go's `regexp/syntax` is the precedent for reporting it as the
-parser's own error (`ErrNestingDepth`, "expression nests too deeply").
+**A body too deep for the parser does not parse.**
+On a deeply nested body (`${------…a}`) Python's parser gives up without a `SyntaxError`: a `RecursionError` while it builds the tree, or a `MemoryError` when its own stack overflows, the depth and the Python version deciding which (3.14 raises only the second on a unary chain).
+`_parse_body` reports both as `_TooDeepError`, a `SyntaxError`, so every parse site treats the body as one that does not parse: reference extraction skips it, mounting leaves it as written, and validation refuses it as `Too deeply nested to parse`, quoting it (BUG-137).
+Before, it escaped `resolve()` and a mounting `merge()` as a raw interpreter error.
+Python itself only documents the crash, for `compile()` and `ast.literal_eval`; Go's `regexp/syntax` is the precedent for reporting it as the parser's own error (`ErrNestingDepth`, "expression nests too deeply").
 
-**Nor does a body nesting over 100 expression levels.** The parser accepts a few hundred, but every step after it walks the tree recursively in Python — reference collection, the transformers, `copy.deepcopy`, `ast.unparse`, the evaluator — so such a body reached `resolve()` and a mounting `merge()` as a raw `RecursionError`, the mount at about 250 levels from an empty stack and earlier from a deep one (BUG-145). `_parse_body` counts the levels without recursing (`_nests_deeper_than`: an operator, a context or a keyword is no level) and refuses a deeper body as the same `_TooDeepError`, so no walker meets a tree it cannot recurse through, and `resolve()` and `merge()` agree on which bodies parse. The bound is fixed, not derived from `sys.getrecursionlimit()`: whether a body parses is cached by its text and must depend on the text alone. 100 is half of where the cheapest walker gave up, which leaves the caller's own stack its room, and far beyond a written expression (a 100-term sum, 100 nested conditionals). Precedents: CPython's tokenizer caps nested brackets at 200, `serde_json` recursion at 128, Go's `regexp/syntax` nesting at 1000.
+**Nor does a body nesting over 100 expression levels.**
+The parser accepts a few hundred, but every step after it walks the tree recursively in Python — reference collection, the transformers, `copy.deepcopy`, `ast.unparse`, the evaluator — so such a body reached `resolve()` and a mounting `merge()` as a raw `RecursionError`, the mount at about 250 levels from an empty stack and earlier from a deep one (BUG-145).
+`_parse_body` counts the levels without recursing (`_nests_deeper_than`: an operator, a context or a keyword is no level) and refuses a deeper body as the same `_TooDeepError`, so no walker meets a tree it cannot recurse through, and `resolve()` and `merge()` agree on which bodies parse.
+The bound is fixed, not derived from `sys.getrecursionlimit()`: whether a body parses is cached by its text and must depend on the text alone.
+100 is half of where the cheapest walker gave up, which leaves the caller's own stack its room, and far beyond a written expression (a 100-term sum, 100 nested conditionals).
+Precedents: CPython's tokenizer caps nested brackets at 200, `serde_json` recursion at 128, Go's `regexp/syntax` nesting at 1000.
 
-Resolution happens **after** all sources are merged. That is the point of the design:
-overriding `resources.memory_gb` on the CLI recomputes a `${resources.memory_gb * 0.8}`
-written in a file.
+Resolution happens **after** all sources are merged.
+That is the point of the design: overriding `resources.memory_gb` on the CLI recomputes a `${resources.memory_gb * 0.8}` written in a file.
 
 ## A reference reads everything its path reaches
 
-`_dependency_graph` answers "which expressions must resolve before this one?". A reference
-depends on every expression its path reaches, not only on one sitting at exactly that path:
+`_dependency_graph` answers "which expressions must resolve before this one?".
+A reference depends on every expression its path reaches, not only on one sitting at exactly that path:
 
 | Reached | Example | Why it is read |
 |---|---|---|
@@ -56,137 +54,94 @@ depends on every expression its path reaches, not only on one sitting at exactly
 | below it | `s=${svc}`, `svc.h` is `${base}` | the whole subtree is stringified, passed to a function or substituted |
 | above it | `${a.b.c}`, `a.b` is `${d}` | the path reads into what `a.b` resolves to |
 
-The first was the only edge before BUG-123, so the other two read the raw `${...}` text when the
-referencing expression happened to sort first. A pure `${svc}` only hid it because it substitutes
-the live sub-dict ([values and references](values-and-references.md#referencing-a-whole-subtree)),
-which the later resolution of `svc.h` filled in after the fact.
+The first was the only edge before BUG-123, so the other two read the raw `${...}` text when the referencing expression happened to sort first.
+A pure `${svc}` only hid it because it substitutes the live sub-dict ([values and references](values-and-references.md#referencing-a-whole-subtree)), which the later resolution of `svc.h` filled in after the fact.
 
-**A path is named as the scan names it.** The scan names a list element by its position
-(`xs.1`), while a reference spells what it likes: `${xs[-1]}`, `${xs['1']}`. `_scan_path` walks
-the reference down the data with `_step`, the same step `_get_nested` reads a value with, so the
-graph depends on exactly the node evaluation will reach: `xs[-1]` of a two-item list is `xs.1`.
-The data's shape is fixed by then, because resolution only ever replaces a string leaf. The walk
-stops where the data stops answering — a missing key, or the inside of an expression not yet
-resolved — and keeps the rest as written, which the "above it" rule covers: `${xs[-1]}` with
-`xs: ${ys}` depends on `xs`, whose length is not known yet.
+**A path is named as the scan names it.**
+The scan names a list element by its position (`xs.1`), while a reference spells what it likes: `${xs[-1]}`, `${xs['1']}`.
+`_scan_path` walks the reference down the data with `_step`, the same step `_get_nested` reads a value with, so the graph depends on exactly the node evaluation will reach: `xs[-1]` of a two-item list is `xs.1`.
+The data's shape is fixed by then, because resolution only ever replaces a string leaf.
+The walk stops where the data stops answering — a missing key, or the inside of an expression not yet resolved — and keeps the rest as written, which the "above it" rule covers: `${xs[-1]}` with `xs: ${ys}` depends on `xs`, whose length is not known yet.
 
-**A reference to an ancestor from inside it is a cycle.** `svc.a: ${svc}` reads `svc`, which holds
-`svc.a` itself, so `svc.a` depends on itself and `CircularReferenceError` names it. Before, it
-substituted a dict that contained itself. This holds whatever reads the ancestor, `${len(svc)}` and
-`${svc[k]}` included: the graph is built from syntax, and cannot tell that `len` only counts keys
-or which key `k` will name ([limitations](../limitations.md#expressions)). The configuration root
-is the ancestor of every expression, so an anchor that names it whole — `${::}`, `${::[k]}` —
-is a cycle too; its path is the empty one, and the index below answers it with every expression
-([reference anchoring](reference-anchoring.md#implementation-constraints)). CUE draws the same line
-— a struct that references itself from inside is a structural cycle — while engines that resolve
-lazily on access (OmegaConf, Jsonnet, Nix) need no ordering at all, and so detect such a cycle,
-if at all, only once something walks the value.
+**A reference to an ancestor from inside it is a cycle.**
+`svc.a: ${svc}` reads `svc`, which holds `svc.a` itself, so `svc.a` depends on itself and `CircularReferenceError` names it.
+Before, it substituted a dict that contained itself.
+This holds whatever reads the ancestor, `${len(svc)}` and `${svc[k]}` included: the graph is built from syntax, and cannot tell that `len` only counts keys or which key `k` will name ([limitations](../limitations.md#expressions)).
+The configuration root is the ancestor of every expression, so an anchor that names it whole — `${::}`, `${::[k]}` — is a cycle too; its path is the empty one, and the index below answers it with every expression ([reference anchoring](reference-anchoring.md#implementation-constraints)).
+CUE draws the same line — a struct that references itself from inside is a structural cycle — while engines that resolve lazily on access (OmegaConf, Jsonnet, Nix) need no ordering at all, and so detect such a cycle, if at all, only once something walks the value.
 
-Graph nodes stay expression paths. An index from each path holding an expression to the
-expressions at or below it answers the "below" rule with one lookup per reference, and the "above"
-rule checks the reference's own prefixes, so a cycle message names expressions only, never an
-intermediate dict.
+Graph nodes stay expression paths.
+An index from each path holding an expression to the expressions at or below it answers the "below" rule with one lookup per reference, and the "above" rule checks the reference's own prefixes, so a cycle message names expressions only, never an intermediate dict.
 
 Rejected:
 
-- **Lazy, resolve-on-access evaluation**, as OmegaConf does. It needs no graph, but the engine
-  evaluates in order and writes each result back, and a static graph is what reports a cycle,
-  naming its members, before anything is evaluated.
-- **Subtree nodes in the graph** (`svc` depending on everything below it). Fewer edges when many
-  references read one large subtree — the index adds one edge per expression in it, per
-  reference — but a cycle message would then list dicts that are no expression.
+- **Lazy, resolve-on-access evaluation**, as OmegaConf does.
+  It needs no graph, but the engine evaluates in order and writes each result back, and a static graph is what reports a cycle, naming its members, before anything is evaluated.
+- **Subtree nodes in the graph** (`svc` depending on everything below it).
+  Fewer edges when many references read one large subtree — the index adds one edge per expression in it, per reference — but a cycle message would then list dicts that are no expression.
 
 ## An evaluation failure names its expression
 
-A configuration may hold hundreds of expressions, so a runtime failure that says only
-`division by zero` leaves the user to find which one divided. Every failure step 5 meets, other
-than the two typed refusals, is therefore an `ExpressionEvalError` that quotes the expression as
-written, followed by Python's own text: `Error in expression '${b / 0}': division by zero`. The
-quote is the whole value for a pure expression and the `${...}` fragment alone for one inside an
-interpolation, so `<${b / 0}>` reports `'${b / 0}'`. A refusal reads the same way
-([below](#a-refusal-names-its-expression)), and `exceptions._in_expression` is the one spelling
-of both.
+A configuration may hold hundreds of expressions, so a runtime failure that says only `division by zero` leaves the user to find which one divided.
+Every failure step 5 meets, other than the two typed refusals, is therefore an `ExpressionEvalError` that quotes the expression as written, followed by Python's own text: `Error in expression '${b / 0}': division by zero`.
+The quote is the whole value for a pure expression and the `${...}` fragment alone for one inside an interpolation, so `<${b / 0}>` reports `'${b / 0}'`.
+A refusal reads the same way ([below](#a-refusal-names-its-expression)), and `exceptions._in_expression` is the one spelling of both.
 
-One function words it, `_eval_expr`, the wrapper around the evaluation of one `${...}`. The
-evaluators raise Python's exception as it comes — an operator's `TypeError`, a whitelisted
-function's or a string method's `ValueError`, a miss off a value no path names
-([values and references](values-and-references.md#spelling-a-path)) — and none of them builds an
-`ExpressionEvalError` of its own from it. Before BUG-135, `_eval_binop` and `_eval_call` did, with
-no context, and `_eval_expr` let an `ExpressionEvalError` through unchanged, so `${b / 0}` and
-`${s.strip(1)}` named no expression while `${-s}` and `${s < 1}`, which nobody wrapped early, did.
-`MissingReferenceError` passes through as it is, worded where it is raised, and so does the
-field it names; an `UnsafeExpressionError` is quoted here too
-([below](#a-refusal-names-its-expression)). The original exception stays the `__cause__`.
+One function words it, `_eval_expr`, the wrapper around the evaluation of one `${...}`.
+The evaluators raise Python's exception as it comes — an operator's `TypeError`, a whitelisted function's or a string method's `ValueError`, a miss off a value no path names ([values and references](values-and-references.md#spelling-a-path)) — and none of them builds an `ExpressionEvalError` of its own from it.
+Before BUG-135, `_eval_binop` and `_eval_call` did, with no context, and `_eval_expr` let an `ExpressionEvalError` through unchanged, so `${b / 0}` and `${s.strip(1)}` named no expression while `${-s}` and `${s < 1}`, which nobody wrapped early, did.
+`MissingReferenceError` passes through as it is, worded where it is raised, and so does the field it names; an `UnsafeExpressionError` is quoted here too ([below](#a-refusal-names-its-expression)).
+The original exception stays the `__cause__`.
 
-OmegaConf draws the same line: a resolver's failure is re-raised once, by the interpolation
-machinery, as an `InterpolationResolutionError` that names the key, never by the resolver.
+OmegaConf draws the same line: a resolver's failure is re-raised once, by the interpolation machinery, as an `InterpolationResolutionError` that names the key, never by the resolver.
 
-Rejected: **`_eval_expr` rewording an `ExpressionEvalError` that has no context.** It keeps the
-early wraps but needs a way to tell a worded error from a bare one — a flag on the exception, or
-a match on its text — so two sites still decide the wording and a third evaluator that wraps
-early would silently opt out.
+Rejected: **`_eval_expr` rewording an `ExpressionEvalError` that has no context.**
+It keeps the early wraps but needs a way to tell a worded error from a bare one — a flag on the exception, or a match on its text — so two sites still decide the wording and a third evaluator that wraps early would silently opt out.
 
 ## A refusal names its expression
 
-What the safety model refuses is quoted as a runtime failure is, with the same lead, and the
-exception's type says which it was: `UnsafeExpressionError: Error in expression
-'${s.upper() + eval('1')}': Function 'eval' is not allowed`. That holds for every refusal: a body
-that does not parse, nests too deeply or writes a name Python normalizes, a disallowed construct,
-function, method or dunder, an indirect call, and a method called off a value that is no string.
-Before BUG-143 only the three that do not parse quoted anything, and then the bare body
-(`Invalid expression syntax: 's.upper('`); the rest named the construct alone, which says nothing
-about where it is in a configuration holding many expressions.
+What the safety model refuses is quoted as a runtime failure is, with the same lead, and the exception's type says which it was: `UnsafeExpressionError: Error in expression '${s.upper() + eval('1')}': Function 'eval' is not allowed`.
+That holds for every refusal: a body that does not parse, nests too deeply or writes a name Python normalizes, a disallowed construct, function, method or dunder, an indirect call, and a method called off a value that is no string.
+Before BUG-143 only the three that do not parse quoted anything, and then the bare body (`Invalid expression syntax: 's.upper('`); the rest named the construct alone, which says nothing about where it is in a configuration holding many expressions.
 
-The refusal is raised bare, as a private `_RefusedError` holding the reason alone, and two sites
-quote it, the two that know which `${...}` was refused: the validation loop in
-`resolve_expressions` (step 4) for what the syntax shows, and `_eval_expr` for the receiver, whose
-type is known only at evaluation ([safety model](safety-model.md#a-method-is-a-string-method)).
-`UnsafeExpressionError.refused` and `ExpressionEvalError.failed` both word their message with
-`exceptions._in_expression`. Being private, the bare refusal cannot reach a user unquoted: no
-caller outside those two sites catches it. The quote is the `${...}` as written, as for a runtime
-failure, so a syntax refusal quotes `'${.x +}'` where it used to quote the body `'.x +'`; a
-refusal that does not parse keeps the parser's `SyntaxError` as its `__cause__`.
+The refusal is raised bare, as a private `_RefusedError` holding the reason alone, and two sites quote it, the two that know which `${...}` was refused: the validation loop in `resolve_expressions` (step 4) for what the syntax shows, and `_eval_expr` for the receiver, whose type is known only at evaluation ([safety model](safety-model.md#a-method-is-a-string-method)).
+`UnsafeExpressionError.refused` and `ExpressionEvalError.failed` both word their message with `exceptions._in_expression`.
+Being private, the bare refusal cannot reach a user unquoted: no caller outside those two sites catches it.
+The quote is the `${...}` as written, as for a runtime failure, so a syntax refusal quotes `'${.x +}'` where it used to quote the body `'.x +'`; a refusal that does not parse keeps the parser's `SyntaxError` as its `__cause__`.
 
-Precedents name the expression too: simpleeval appends it (`Function 'x' not defined, for
-expression 'x(1)'`), OmegaConf's `GrammarParseError` reports the key and its text, and Jinja2's
-`TemplateSyntaxError` the template and line. The lead is confarg's own runtime one, so every error
-an expression raises reads the same way.
+Precedents name the expression too: simpleeval appends it (`Function 'x' not defined, for expression 'x(1)'`), OmegaConf's `GrammarParseError` reports the key and its text, and Jinja2's `TemplateSyntaxError` the template and line.
+The lead is confarg's own runtime one, so every error an expression raises reads the same way.
 
 Rejected:
 
-- **Each refusal site quoting its expression.** The receiver check sits deep in evaluation and
-  would need the quote threaded through every evaluator, and five sites would spell the quote.
-- **Rewording a public `UnsafeExpressionError` at the two sites.** The same opt-out the runtime
-  section rejects: nothing would tell a worded refusal from a bare one, so one raised anywhere else
-  would pass through unquoted.
-- **The reason first, the quote after it** (simpleeval). It reads the reason first, but a refusal
-  and a runtime failure would then read in two shapes (maintainer-chosen).
+- **Each refusal site quoting its expression.**
+  The receiver check sits deep in evaluation and would need the quote threaded through every evaluator, and five sites would spell the quote.
+- **Rewording a public `UnsafeExpressionError` at the two sites.**
+  The same opt-out the runtime section rejects: nothing would tell a worded refusal from a bare one, so one raised anywhere else would pass through unquoted.
+- **The reason first, the quote after it** (simpleeval).
+  It reads the reason first, but a refusal and a runtime failure would then read in two shapes (maintainer-chosen).
 
 ## Calls and expressions share one graph
 
-Today every expression resolves before any construction, so a `call:` argument can read an
-expression's value, but an expression cannot read a `call:` result. Resolution sees only merged
-values, and construction runs afterwards.
+Today every expression resolves before any construction, so a `call:` argument can read an expression's value, but an expression cannot read a `call:` result.
+Resolution sees only merged values, and construction runs afterwards.
 
-The planned order (FEAT-35) puts `call:` specs in the same graph as expressions: a `call:` node
-depends on what its arguments reach, and an expression depends on what its references reach, as
-in the section above. The topological sort then yields one order, and a cycle through a call is a
-`CircularReferenceError` naming its members, the same as a cycle between expressions. An
-expression reading a call result waits for that call. A call reading an expression waits for
-that expression. Nothing that works today is lost.
+The planned order (FEAT-35) puts `call:` specs in the same graph as expressions: a `call:` node depends on what its arguments reach, and an expression depends on what its references reach, as in the section above.
+The topological sort then yields one order, and a cycle through a call is a `CircularReferenceError` naming its members, the same as a cycle between expressions.
+An expression reading a call result waits for that call.
+A call reading an expression waits for that expression.
+Nothing that works today is lost.
 
 Rejected:
 
-- **Keep the merged, unresolved tree as the only input to expressions.** Simplest, and no
-  dispatch order is needed. It forbids `${...}` over a call result, the value a `call:` on a
-  typed field computes.
-- **Two passes: plain expressions, then calls, then expressions that read calls.** It keeps
-  both directions for one level only. A call whose argument reads an expression that reads
-  another call fails, so it needs a graph anyway, plus a second rule to explain.
-- **Expressions after construction, per field.** It needs a separate ordering and cycle rule
-  beside the expression graph, which already exists, and it moves expression evaluation onto the
-  typed object, which this note's algorithm does not assume.
+- **Keep the merged, unresolved tree as the only input to expressions.**
+  Simplest, and no dispatch order is needed.
+  It forbids `${...}` over a call result, the value a `call:` on a typed field computes.
+- **Two passes: plain expressions, then calls, then expressions that read calls.**
+  It keeps both directions for one level only.
+  A call whose argument reads an expression that reads another call fails, so it needs a graph anyway, plus a second rule to explain.
+- **Expressions after construction, per field.**
+  It needs a separate ordering and cycle rule beside the expression graph, which already exists, and it moves expression evaluation onto the typed object, which this note's algorithm does not assume.
 
-Open cost (to check when FEAT-35 is built): an expression that reads a call result reads it
-after the call has been checked against its annotation. Whether that value is typed or raw in
-the expression namespace is not decided here.
+Open cost (to check when FEAT-35 is built): an expression that reads a call result reads it after the call has been checked against its annotation.
+Whether that value is typed or raw in the expression namespace is not decided here.

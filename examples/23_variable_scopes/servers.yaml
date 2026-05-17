@@ -1,0 +1,4 @@
+servers:
+- name: web
+  host: web.example.com
+  url: https://${.host}/   # this element's own host, wherever it ends up

@@ -1,11 +1,10 @@
 # Design decisions
 
-One decision per file. Each entry: the decision, why, and what it costs. Precedents are cited
-where known.
+One decision per file.
+Each entry: the decision, why, and what it costs.
+Precedents are cited where known.
 
-A decision lands here when a ticket closes and the answer turns out to be "we will not do
-that"; when it changes what the library *cannot* do, the boundary goes to
-[limitations](../limitations.md) instead.
+A decision lands here when a ticket closes and the answer turns out to be "we will not do that"; when it changes what the library *cannot* do, the boundary goes to [limitations](../limitations.md) instead.
 
 ## Shape of the library
 

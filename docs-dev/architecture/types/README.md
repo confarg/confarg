@@ -1,8 +1,7 @@
 # Types, coercion and construction
 
-Everything below the channels: what the annotations say, how untyped text becomes a typed
-value, and how the typed value gets back out. Implementation: `_types.py`, `typedload/**`,
-`_serialize.py`, `_import.py`.
+Everything below the channels: what the annotations say, how untyped text becomes a typed value, and how the typed value gets back out.
+Implementation: `_types.py`, `typedload/**`, `_serialize.py`, `_import.py`.
 
 | Note | What it holds |
 |---|---|

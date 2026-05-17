@@ -1,24 +1,39 @@
 # The `=` form is the escape for a dashed value
 
-`--key=--value` sets `key` to `--value` in all five front-ends; `--key --value` is refused in all five as well — vanilla, click and typer with `Missing value for '--key'`, argparse and cyclopts with the host framework's own error. A value that starts with `--` is indistinguishable from a flag by shape, so something other than shape has to decide, and the `=` is the only thing the user can write that already says "this is the value of that flag" ([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)). Vanilla used to lose that information by splitting `--key=--value` into two bare tokens before any flag-check ran (BUG-27, closed); the dict-subkey and append spellings (`--d.x=--v`, `--tags+=--a`) go through the same scan and so were broken in every front-end, adapters included.
+`--key=--value` sets `key` to `--value` in all five front-ends; `--key --value` is refused in all five as well — vanilla, click and typer with `Missing value for '--key'`, argparse and cyclopts with the host framework's own error.
+A value that starts with `--` is indistinguishable from a flag by shape, so something other than shape has to decide, and the `=` is the only thing the user can write that already says "this is the value of that flag" ([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)).
+Vanilla used to lose that information by splitting `--key=--value` into two bare tokens before any flag-check ran (BUG-27, closed); the dict-subkey and append spellings (`--d.x=--v`, `--tags+=--a`) go through the same scan and so were broken in every front-end, adapters included.
 
-Rejected: **binding a dashed token in the space form** when exactly one value is expected. click does this, as does `getopt_long` for a required argument, which takes the next argv element whatever it starts with. Among the parsers confarg's front-ends sit on, click is the outlier: argparse, cyclopts, jsonargparse and clap all refuse. Adopting it would have replaced a gap where vanilla stood alone against three adapters with a gap where vanilla and click stood against two, and it makes a mistyped `--key --verbose true` swallow `--verbose` as a value instead of erroring.
+Rejected: **binding a dashed token in the space form** when exactly one value is expected. click does this, as does `getopt_long` for a required argument, which takes the next argv element whatever it starts with.
+Among the parsers confarg's front-ends sit on, click is the outlier: argparse, cyclopts, jsonargparse and clap all refuse.
+Adopting it would have replaced a gap where vanilla stood alone against three adapters with a gap where vanilla and click stood against two, and it makes a mistyped `--key --verbose true` swallow `--verbose` as a value instead of erroring.
 
-Rejected: **a bare `--` end-of-options separator**. No adapter can offer one — the host framework tokenizes argv before confarg is called — so it would be a vanilla-only spelling, and the environment has no equivalent at all. Filed as [FEAT-17](../../todo/features/FEAT-17-end-of-options-separator.md) rather than decided here ([limitations](../limitations.md#cli-front-ends)).
+Rejected: **a bare `--` end-of-options separator**.
+No adapter can offer one — the host framework tokenizes argv before confarg is called — so it would be a vanilla-only spelling, and the environment has no equivalent at all.
+Filed as [FEAT-17](../../todo/features/FEAT-17-end-of-options-separator.md) rather than decided here ([limitations](../limitations.md#cli-front-ends)).
 
 ## A single-dash value is the backend's to read
 
-A token that starts with a single dash, written after a value-taking flag (`--host -x`), is a value on vanilla, click and typer, and argparse and cyclopts each read it by their own option-like rule — an approved divergence ([invariants](../invariants.md#cross-channel-parity)). `--host=-x` works on all five, so the `=` form is the escape here too. Vanilla has no single-dash flags at all: a flag is `--` followed by a letter or `_` ([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)), so a `-x` token can never be one and there is nothing for vanilla to tell apart. click takes the next token for a one-value option whatever it starts with, and typer is click.
+A token that starts with a single dash, written after a value-taking flag (`--host -x`), is a value on vanilla, click and typer, and argparse and cyclopts each read it by their own option-like rule — an approved divergence ([invariants](../invariants.md#cross-channel-parity)).
+`--host=-x` works on all five, so the `=` form is the escape here too.
+Vanilla has no single-dash flags at all: a flag is `--` followed by a letter or `_` ([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)), so a `-x` token can never be one and there is nothing for vanilla to tell apart. click takes the next token for a one-value option whatever it starts with, and typer is click.
 
 The two backends that decline do so in their own words, the way they treat their own options, which is the lean [divergence-leans-to-the-backend.md](divergence-leans-to-the-backend.md#a-divergence-leans-towards-the-affected-backends-own-idiom) settles:
 
-- **argparse** calls a token an option when it starts with `-`, is longer than one character and does not match its negative-number pattern; `--host -x` exits 2 with `expected one argument`. A lone `-` is a value. The pattern depends on the Python version: `^-\d+$|^-\d*\.\d+$` up to 3.13, so `-5` and `-.5` are values but `-1e3` is refused, and `-\.?\d` matched as a prefix from 3.14, which also takes `-1e3`.
-- **cyclopts** calls a token an option when it starts with `-` and does not parse as a number — `complex()`, `int(token, 0)` or a slice — so `-5`, `-1e3`, `-inf` and `-0xFF` are values while a lone `-` is not; `--host -x` exits 1 with `requires an argument`. `-h` is one of its help flags, so `--host -h` shows help.
+- **argparse** calls a token an option when it starts with `-`, is longer than one character and does not match its negative-number pattern; `--host -x` exits 2 with `expected one argument`.
+  A lone `-` is a value.
+  The pattern depends on the Python version: `^-\d+$|^-\d*\.\d+$` up to 3.13, so `-5` and `-.5` are values but `-1e3` is refused, and `-\.?\d` matched as a prefix from 3.14, which also takes `-1e3`.
+- **cyclopts** calls a token an option when it starts with `-` and does not parse as a number — `complex()`, `int(token, 0)` or a slice — so `-5`, `-1e3`, `-inf` and `-0xFF` are values while a lone `-` is not; `--host -x` exits 1 with `requires an argument`.
+  `-h` is one of its help flags, so `--host -h` shows help.
 
-The same rule ends a space-separated list run on both: `--tags a -b` is `['a', '-b']` on vanilla and an unknown option on argparse and cyclopts. A config-file flag answers on argparse with confarg's `Missing file path after --config` (its refusing action sees the occurrence handed no value) and on cyclopts with `Unknown option`. The shared ground is the number: `--port -5` and `--ratio -1.5` set the value on all five.
+The same rule ends a space-separated list run on both: `--tags a -b` is `['a', '-b']` on vanilla and an unknown option on argparse and cyclopts.
+A config-file flag answers on argparse with confarg's `Missing file path after --config` (its refusing action sees the occurrence handed no value) and on cyclopts with `Unknown option`.
+The shared ground is the number: `--port -5` and `--ratio -1.5` set the value on all five.
 
 Precedents are split, which is why this stays per backend: `getopt_long`, click and Go's `flag` take the next token, argparse, cyclopts and clap (unless `allow_hyphen_values`) refuse it.
 
-Rejected: **vanilla refuses a single-dash token as well**. It would refuse a token that cannot be a flag, only to imitate two adapters, and it would still not reach parity: the set argparse refuses changes with the Python version and differs from cyclopts' (`-` alone, `-1e3`), so every edge would need its own approval anyway. `--opt -O2` would also cost an `=` on the three front-ends that read it fine today.
+Rejected: **vanilla refuses a single-dash token as well**.
+It would refuse a token that cannot be a flag, only to imitate two adapters, and it would still not reach parity: the set argparse refuses changes with the Python version and differs from cyclopts' (`-` alone, `-1e3`), so every edge would need its own approval anyway.
+`--opt -O2` would also cost an `=` on the three front-ends that read it fine today.
 
 Rejected: **the adapters bind it**. cyclopts' `Parameter(allow_leading_hyphen=True)` binds any dashed token, `--flags` included, so a list run would swallow the next flag. argparse decides through its private `_negative_number_matcher`, and confarg cannot reach a parser the application built and handed to `populate_parser`.

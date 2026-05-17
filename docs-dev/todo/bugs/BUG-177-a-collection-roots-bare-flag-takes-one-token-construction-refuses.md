@@ -11,28 +11,21 @@ impact: behavior
 severity: minor  # workaround: the root's json cast
 introduced_by: [PR-5]  # the bare-prefix root handler consumes exactly one token
 ---
+
 # BUG-177 — A collection root's bare flag takes one token, which construction refuses
 
-On a list, set, tuple, namedtuple or dict root, `_handle_scalar_root` consumes exactly one
-token after the bare `--<prefix>` and stores it as a string. Construction then refuses that
-string whatever it holds, and a second token is refused as a stray positional. So the flag that
-the missing-root remedy offers (`--app <value>`) never sets such a root; only `--app.json`
-does. A field of the same type takes its run (`--xs 1 2`). The fix direction is to consume the
-root's value as a field flag of its type does, writing at `__root__`, or else to make the remedy
-name the root `json` cast for a collection root
-([cli_prefix](../../architecture/cli-parsing/cli-prefix.md#cli_prefix),
-[construction](../../architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
+On a list, set, tuple, namedtuple or dict root, `_handle_scalar_root` consumes exactly one token after the bare `--<prefix>` and stores it as a string.
+Construction then refuses that string whatever it holds, and a second token is refused as a stray positional.
+So the flag that the missing-root remedy offers (`--app <value>`) never sets such a root; only `--app.json` does.
+A field of the same type takes its run (`--xs 1 2`).
+The fix direction is to consume the root's value as a field flag of its type does, writing at `__root__`, or else to make the remedy name the root `json` cast for a collection root ([cli_prefix](../../architecture/cli-parsing/cli-prefix.md#cli_prefix), [construction](../../architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
 
-The environment has the same gap: the bare `<PREFIX>` variable stores its value as a token,
-never decoded, so `APP_='[1, 2]'` is refused on a `list[int]` root where `APP_XS='[1, 2]'`
-sets a field of that type ([environment parsing](../../architecture/environment-parsing.md#environment-parsing)).
-Its fix direction is to store the root as a field variable is stored (`_store_env_value` at
-`__root__`). Only `<PREFIX>JSON` sets such a root from the environment today.
+The environment has the same gap: the bare `<PREFIX>` variable stores its value as a token, never decoded, so `APP_='[1, 2]'` is refused on a `list[int]` root where `APP_XS='[1, 2]'` sets a field of that type ([environment parsing](../../architecture/environment-parsing.md#environment-parsing)).
+Its fix direction is to store the root as a field variable is stored (`_store_env_value` at `__root__`).
+Only `<PREFIX>JSON` sets such a root from the environment today.
 
-Origin: latent since the initial version (PR-5), whose bare-prefix root handler consumes exactly one
-token for any non-struct root, as a scalar takes it; a collection root was never given its field's
-token rule. It reproduces at PR-28, and BUG-172's fix, which settled that a non-struct root is set
-whole, kept the one-token consumption.
+Origin: latent since the initial version (PR-5), whose bare-prefix root handler consumes exactly one token for any non-struct root, as a scalar takes it; a collection root was never given its field's token rule.
+It reproduces at PR-28, and BUG-172's fix, which settled that a non-struct root is set whole, kept the one-token consumption.
 
 ```python
 from dataclasses import dataclass
