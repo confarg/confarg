@@ -1,0 +1,4 @@
+greetings_fn:
+  fn: configs.binding.print_greetings
+  bind:
+    greetings: hello

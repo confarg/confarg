@@ -1,0 +1,5 @@
+greetings_fn:
+  class: configs.binding.Print_greetings
+  greetings: hi
+  bind:
+    adjective: unknown

@@ -1,0 +1,5 @@
+greetings_fn:
+  fn: configs.binding.Print_complex_greetings.print
+  greetings: Howdy
+  bind:
+    adjective: beautiful
