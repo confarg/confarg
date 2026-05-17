@@ -5,7 +5,7 @@
 """Module-level helper types importable by dotted path from gap-coverage tests.
 
 The callable-spec machinery resolves functions and classes via their
-fully-qualified path, so these helpers must live at module level in an
+fully-qualified name, so these helpers must live at module level in an
 importable module; ``_COV_MOD`` is that path.  Shared by
 ``tests/test_coverage_gaps.py`` and the relocated per-backend gap suites.
 """

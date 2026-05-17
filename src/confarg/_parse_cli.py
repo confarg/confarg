@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES
 from confarg._cast import FORCE_CAST_NAMES, JSON_CAST_NAME, resolve_forced_value
 from confarg._merge import (
     DICT_DELETE,
@@ -144,9 +145,11 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
         tp = _resolve_type(tp)
         if _is_union(tp):
             return _resolve_union_field_type(tp, parts[idx:], union_tag)
-        if _is_callable(tp) and part == "bind":
-            # --field.bind alone is not addressable; --field.bind.key → str leaf
-            return None if len(parts) - idx - 1 == 0 else str
+        if _is_callable(tp) and part in (_PLAIN_DIRECTIVES.bind, _ESCAPED_DIRECTIVES.bind):
+            # A callable's bind key is addressable as a str-leaf subtree (--field.bind.key)
+            # and, in escaped mode, as a plain scalar init-kwarg (--field.bind 5). Whether the
+            # active-mode bind must be a dict is validated in construct, not here (lenient parse).
+            return str
         tp = _advance_field_type(tp, part)
         if tp is None:
             return None

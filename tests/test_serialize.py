@@ -547,3 +547,24 @@ class TestDumpErrors:
         """Test that passing a dataclass class (not instance) to dump raises TypeError."""
         with pytest.raises(TypeError, match="instance"):
             confarg.dump(Flat)
+
+
+# ---------------------------------------------------------------------------
+# Line endings
+# ---------------------------------------------------------------------------
+
+
+class TestDumpLineEndings:
+    """dump_file writes LF-only files on every platform."""
+
+    @pytest.mark.parametrize("suffix", [".toml", ".yaml", ".json"])
+    def test_no_carriage_returns(self, tmp_path: Path, suffix: str) -> None:
+        """Dumped config files never contain CR, so output is byte-identical across platforms."""
+        obj = AppConfig(
+            db=DbConfig(host="localhost", port=5432, name="mydb"),
+            cache=CacheConfig(enabled=True, ttl=600),
+            debug=True,
+        )
+        path = tmp_path / f"out{suffix}"
+        confarg.dump_file(obj, path)
+        assert b"\r" not in path.read_bytes()

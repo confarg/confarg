@@ -14,12 +14,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from confarg._callable import _Directives, active_directives
 from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, resolve_forced_value
 from confarg._import import _import_dotted
 from confarg._merge import _deep_merge, _set_nested
 from confarg._parse_cli import _segment_names_real_field, _try_parse_json_list
 from confarg._types import (
-    _callable_return_type,
     _elem_type,
     _is_callable,
     _is_dict,
@@ -175,28 +175,33 @@ def _str_token(v: Any) -> Any:
     return _StrToken(v) if isinstance(v, str) else v
 
 
-def _merge_blob_into_spec(blob: dict[str, Any], spec: dict[str, Any], bind: dict[str, Any]) -> dict[str, Any]:
+def _merge_blob_into_spec(
+    blob: dict[str, Any],
+    spec: dict[str, Any],
+    bind: dict[str, Any],
+    bind_key: str,
+) -> dict[str, Any]:
     """Merge a pre-existing blob dict with the newly assembled spec, combining bind entries."""
-    merged = {**blob, **{k: v for k, v in spec.items() if k != "bind"}}
-    blob_bind = blob.get("bind", {})
+    merged = {**blob, **{k: v for k, v in spec.items() if k != bind_key}}
+    blob_bind = blob.get(bind_key, {})
     if isinstance(blob_bind, dict) and bind:
-        merged["bind"] = {**blob_bind, **bind}
+        merged[bind_key] = {**blob_bind, **bind}
     elif bind:
-        merged["bind"] = bind
+        merged[bind_key] = bind
     return merged
 
 
-def _collect_fn_identity(
-    flat: dict[str, Any],
-    fn_key: str,
-    cls_key: str,
-    call_key: str,
-) -> dict[str, Any]:
-    """Extract fn/class/call identity entries from flat into a spec dict."""
+def _collect_fn_identity(flat: dict[str, Any], flag: str, d: _Directives) -> dict[str, Any]:
+    """Extract fn/class/call identity entries from flat into a spec dict.
+
+    Keyed by the *active* (plain or escaped) directive names so the produced spec is
+    byte-identical to a config file and re-detected by ``_select_directives`` downstream.
+    """
     spec: dict[str, Any] = {}
-    for src_key, dest_name in ((fn_key, "fn"), (cls_key, "class"), (call_key, "call")):
+    for name in d.openers:
+        src_key = f"{flag}.{name}"
         if src_key in flat:
-            spec[dest_name] = _str_token(flat[src_key])
+            spec[name] = _str_token(flat[src_key])
     return spec
 
 
@@ -219,25 +224,32 @@ def _collect_factory_kwargs(
 def _collect_callable_spec(
     flat: dict[str, Any],
     flag: str,
-    core: Any,
     result: dict[str, Any],
 ) -> None:
-    """Build and store the callable spec dict from flat namespace entries for flag."""
-    fn_key = f"{flag}.fn"
-    cls_key = f"{flag}.class"
-    call_key = f"{flag}.call"
-    bind_prefix = f"{flag}.bind."
-    flag_prefix = f"{flag}."
-    reserved = {fn_key, cls_key, call_key}
+    """Build and store the callable spec dict from flat namespace entries for flag.
 
-    spec = _collect_fn_identity(flat, fn_key, cls_key, call_key)
+    Directive flags come in a plain and an escaped (single-underscore) form; the opener
+    present in the flat namespace selects the mode via the canonical
+    :func:`~confarg._callable.active_directives`, so every produced key uses the active
+    names and stays byte-identical to the config-file / vanilla paths.
+    """
+    d = active_directives(lambda name: f"{flag}.{name}" in flat)
+    bind_prefix = f"{flag}.{d.bind}."
+    flag_prefix = f"{flag}."
+    reserved = {f"{flag}.{name}" for name in d.openers}
+
+    spec = _collect_fn_identity(flat, flag, d)
 
     bind: dict[str, Any] = {k[len(bind_prefix) :]: _str_token(v) for k, v in flat.items() if k.startswith(bind_prefix)}
     if bind:
-        spec["bind"] = bind
+        spec[d.bind] = bind
 
-    ret = _callable_return_type_for(core)
-    if (ret is not None and isinstance(ret, type) and ret is not type(None)) or cls_key in flat or fn_key in flat:
+    # Sibling --<field>.<param> flags are init kwargs when a class/fn identity is given:
+    # 'class:' instantiates with them; 'fn: Class.method' constructs the method's owning
+    # class with them. (Plain 'fn: Class' factories carry their args under bind instead.)
+    # The old return-type-derived implicit form is gone, so a bare return type no longer
+    # triggers collection.
+    if f"{flag}.{d.cls}" in flat or f"{flag}.{d.fn}" in flat:
         spec.update(_collect_factory_kwargs(flat, flag_prefix, bind_prefix, reserved))
 
     if flag in flat:
@@ -246,15 +258,10 @@ def _collect_callable_spec(
             _set_nested(result, flag.split("."), _StrToken(blob))
             return
         if isinstance(blob, dict):
-            spec = _merge_blob_into_spec(blob, spec, bind)
+            spec = _merge_blob_into_spec(blob, spec, bind, d.bind)
 
     if spec:
         _set_nested(result, flag.split("."), spec)
-
-
-def _callable_return_type_for(core: Any) -> Any | None:
-    """Return the return type of a Callable type hint, or None."""
-    return _callable_return_type(core)
 
 
 def _collect_ns_union_field(
@@ -445,7 +452,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912  # one branch per type case
             continue
 
         if _is_callable(core):
-            _collect_callable_spec(flat, flag, core, result)
+            _collect_callable_spec(flat, flag, result)
             continue
 
         cast_val = _find_scalar_cast_override(flat, flag)

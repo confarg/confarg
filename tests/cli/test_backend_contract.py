@@ -1237,6 +1237,78 @@ class TestCallableBindContract:
 
 
 # ---------------------------------------------------------------------------
+# Escaped directive mode (_fn/_class/_call/_bind) — collision escape, parity across channels
+# ---------------------------------------------------------------------------
+
+
+class _EscBinder:
+    """__init__ takes a parameter literally named ``bind``; __call__ takes ``lr``.
+
+    Escaped mode lets the ``__init__`` ``bind`` arg be set (plain ``bind``) while ``_bind``
+    partial-applies ``__call__`` — the collision the plain directive names cannot express.
+    """
+
+    def __init__(self, bind: int) -> None:
+        self.bind = bind
+
+    def __call__(self, lr: int) -> int:
+        return self.bind + lr
+
+
+class _EscOwner:
+    """__init__ takes a parameter named ``fn`` (the opener residual), with an instance method."""
+
+    def __init__(self, fn: int) -> None:
+        self.fn = fn
+
+    def method(self, x: int) -> int:
+        return x + self.fn
+
+
+@dataclass
+class _EscCallableConfig:
+    """Config with a bare Callable field (skips arity checks after binding)."""
+
+    fn: Callable
+
+
+class TestEscapedCallableContract:
+    """Escaped directive mode reaches parity across config, env, and CLI (all four front-ends)."""
+
+    def test_compound_init_bind_and_call_bind_via_cli(self, loader: ConfargLoader) -> None:
+        """`_class` opener: plain `bind` sets __init__, `_bind.lr` partial-applies __call__."""
+        cfg = loader.load(
+            _EscCallableConfig,
+            argv=["--fn._class", f"{__name__}._EscBinder", "--fn.bind", "5", "--fn._bind.lr", "10"],
+            env={},
+        )
+        assert cfg.fn() == 15  # _EscBinder(bind=5), partial(lr=10) -> 5 + 10
+
+    def test_opener_residual_via_cli(self, loader: ConfargLoader) -> None:
+        """`_fn` opener frees a plain `fn` key to be the owning class's constructor kwarg."""
+        cfg = loader.load(
+            _EscCallableConfig,
+            argv=["--fn._fn", f"{__name__}._EscOwner.method", "--fn.fn", "100"],
+            env={},
+        )
+        assert cfg.fn(1) == 101  # _EscOwner(fn=100).method(1) -> 1 + 100
+
+    def test_compound_via_env(self, loader: ConfargLoader) -> None:
+        """Env expresses escaped keys via the triple-underscore form (no env code change)."""
+        cfg = loader.load(
+            _EscCallableConfig,
+            argv=[],
+            env={
+                "APP_FN___CLASS": f"{__name__}._EscBinder",
+                "APP_FN__BIND": "5",
+                "APP_FN___BIND__LR": "10",
+            },
+            env_prefix="APP_",
+        )
+        assert cfg.fn() == 15
+
+
+# ---------------------------------------------------------------------------
 # Explicit .json / __json force-cast
 # ---------------------------------------------------------------------------
 

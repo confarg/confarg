@@ -299,9 +299,9 @@ def _pre_extend_parser_for_completion(
 
         config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
         argv_fns = _collect_fn_paths_from_argv(argv)
-        for field_flag, (fn_path, _mode) in {**config_fns, **argv_fns}.items():
+        for field_flag, (fn_path, _mode, bind_key) in {**config_fns, **argv_fns}.items():
             try:
-                _add_callable_bind_flags(parser, field_flag, fn_path, walk_ctx.existing_dests)
+                _add_callable_bind_flags(parser, field_flag, fn_path, walk_ctx.existing_dests, bind_key)
             except Exception:  # noqa: BLE001 — completion must never crash
                 _log.debug("callable bind flags: skipping %r", fn_path, exc_info=True)
                 continue

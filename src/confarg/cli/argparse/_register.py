@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from confarg.cli.argparse._spec import FlagSpec
 
 from confarg import _defaults
+from confarg._callable import _PLAIN_DIRECTIVES
 from confarg.cli.argparse._build import (
     _build_callable_fn_specs,
     _build_leaf_spec,
@@ -242,11 +243,15 @@ def _add_callable_bind_flags(
     field_flag: str,
     fn_path: str,
     existing_dests: set[str] | None = None,
+    bind_key: str = _PLAIN_DIRECTIVES.bind,
 ) -> None:
-    """Register --<field_flag>.bind.<param> flags by inspecting the target's signature."""
+    """Register --<field_flag>.<bind_key>.<param> flags by inspecting the target's signature.
+
+    ``bind_key`` is ``bind`` (plain) or ``_bind`` (escaped mode).
+    """
     if existing_dests is None:
         existing_dests = {a.dest for a in parser._actions}
-    specs = _collect_callable_bind_specs(field_flag, fn_path, existing_dests)
+    specs = _collect_callable_bind_specs(field_flag, fn_path, bind_key, existing_dests)
     load_flags_into_parser(specs, parser)
 
 
