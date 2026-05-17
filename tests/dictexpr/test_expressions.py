@@ -2276,3 +2276,91 @@ class TestEscapeExpressions:
     def test_an_escaped_string_reads_no_reference(self) -> None:
         """An escaped expression names no field, so nothing is missing from the data."""
         assert resolve_expressions({"s": escape_expressions("${missing.path}")}) == {"s": "${missing.path}"}
+
+
+class TestKeyReadsAPosition:
+    """``key(p)`` is the key the path ``p`` is filed under, never the value it holds."""
+
+    @pytest.mark.parametrize(
+        ("data", "path", "expected"),
+        [
+            pytest.param({"foo": {"web": {"name": "${key(.)}"}}}, ("foo", "web", "name"), "web", id="dict-entry"),
+            pytest.param({"foo": {"web": {"name": "${key(..)}"}}}, ("foo", "web", "name"), "foo", id="two-dots"),
+            pytest.param({"xs": [{"i": "a"}, {"i": "${key(.)}"}]}, ("xs", 1, "i"), 1, id="list-position-is-an-int"),
+            pytest.param({"xs": [1, 2], "n": "${key(xs[-1])}"}, ("n",), 1, id="negative-index-normalized"),
+            pytest.param({"a": {"v": "${key(::a)}"}}, ("a", "v"), "a", id="root-path"),
+            pytest.param({"svc": {"web-1": {"n": "${key(.)}"}}}, ("svc", "web-1", "n"), "web-1", id="no-identifier"),
+            pytest.param({"h.com": {"n": "${key(.)}"}}, ("h.com", "n"), "h.com", id="key-holding-a-dot"),
+            pytest.param({"m": {0: {"n": "${key(.)}"}}}, ("m", 0, "n"), 0, id="yaml-integer-key"),
+            pytest.param({"a": {"v": "https://${key(.)}/"}}, ("a", "v"), "https://a/", id="interpolation"),
+        ],
+    )
+    def test_key(self, data: MergeDict, path: tuple[Any, ...], expected: object) -> None:
+        """A dict key is itself, a list element's key its position."""
+        node: Any = resolve_expressions(data)
+        for segment in path:
+            node = node[segment]
+        assert node == expected
+
+    def test_the_value_is_no_dependency(self) -> None:
+        """Reading ``.`` would be the cycle it holds; reading where it is is none."""
+        assert _extract_references("${key(.)}", ("foo", "web", "name")) == set()
+        data = {"a": {"x": "${key(.)}", "y": "${.x}"}}
+        assert resolve_expressions(data) == {"a": {"x": "a", "y": "a"}}
+
+    def test_a_key_named_key_is_still_read(self) -> None:
+        """``key`` is a function only as a callee."""
+        assert resolve_expressions({"key": 3, "v": "${str(key) + key(key)}"}) == {"key": 3, "v": "3key"}
+
+    def test_an_absent_key_named_key_hints_at_the_call(self) -> None:
+        """``${key}`` with no key ``key`` says how the function is spelled."""
+        with pytest.raises(MissingReferenceError, match=r"'key' is a function only when called, as in key\(\.\.\.\)"):
+            resolve_expressions({"v": "${key}"})
+
+    @pytest.mark.parametrize(
+        ("body", "reason"),
+        [
+            pytest.param("key()", "takes exactly one argument", id="no-argument"),
+            pytest.param("key(a, b)", "takes exactly one argument", id="two-arguments"),
+            pytest.param("key(p=a)", "takes exactly one argument", id="keyword"),
+            pytest.param("key(a + 1)", "takes a path", id="operand"),
+            pytest.param("key(svc[k])", "takes a path", id="computed-subscript"),
+            pytest.param("key('a')", "takes a path", id="constant"),
+        ],
+    )
+    def test_an_argument_spelling_no_path_is_refused(self, body: str, reason: str) -> None:
+        """The argument is never evaluated, so it must spell a path."""
+        with pytest.raises(_RefusedError, match=reason):
+            _validate_ast(body)
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            pytest.param({"v": "${key(::)}"}, id="root-marker"),
+            pytest.param({"v": "${key(.)}"}, id="dot-run-up-to-the-root"),
+        ],
+    )
+    def test_the_root_has_no_key(self, data: MergeDict) -> None:
+        """The configuration root is filed under nothing."""
+        with pytest.raises(ExpressionEvalError, match=r"the configuration root has no key"):
+            resolve_expressions(data)
+
+    def test_an_item_a_pending_op_holds_has_no_key(self) -> None:
+        """An appended item's position is only known once construction applies the op."""
+        with pytest.raises(ExpressionEvalError, match=r"held by a pending list op, and has no key"):
+            resolve_expressions({"xs": {ListOp.APPEND: [{"i": "${key(.)}"}]}})
+
+    def test_a_pending_op_has_no_key(self) -> None:
+        """The op is no key of the data, so the dots climbing to it name none."""
+        with pytest.raises(ExpressionEvalError, match=r"held by a pending list op, and has no key"):
+            resolve_expressions({"xs": {ListOp.APPEND: [{"i": "${key(..)}"}]}})
+
+    def test_a_path_reaching_nothing_is_a_missing_field(self) -> None:
+        """The miss names the whole path, as a read of it would."""
+        with pytest.raises(MissingReferenceError, match=r"Field 'foo\.nope' not found"):
+            resolve_expressions({"foo": {}, "v": "${key(foo.nope)}"})
+
+    def test_prefixing_keeps_the_key(self) -> None:
+        """A mounted fragment's bare path is prefixed, its last segment kept; a dot run is left alone."""
+        assert _prefix_content("key(foo)", ("sub",)) == "key(sub.foo)"
+        assert _prefix_content("key(.)", ("sub",)) == "key(.)"

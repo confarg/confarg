@@ -4813,6 +4813,40 @@ class TestExpressionOverCliContract:
         assert result.block.derived == 30
 
 
+@dataclass
+class _KeyNamed:
+    """An entry that names itself after the key it is filed under."""
+
+    name: str
+
+
+@dataclass
+class _KeyNamedRegistry:
+    """A dict of entries, each one's ``name`` free to read its key with ``${key(.)}``."""
+
+    foo: dict[str, _KeyNamed] = dataclasses_field(default_factory=dict)
+
+
+class TestKeyOfAPositionContract:
+    """``${key(.)}`` reads the key a value is filed under, from every channel and front-end."""
+
+    def test_from_a_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Each entry is named after its key; an entry writing its name keeps it."""
+        cfg = tmp_yaml("foo:\n  web:\n    name: ${key(.)}\n  db:\n    name: ${key(.)}\n  x:\n    name: api\n")
+        result = loader.load(_KeyNamedRegistry, argv=["--config", str(cfg)], env={})
+        assert result.foo == {"web": _KeyNamed("web"), "db": _KeyNamed("db"), "x": _KeyNamed("api")}
+
+    def test_from_the_cli(self, loader: ConfargLoader) -> None:
+        """A flag's dot counts from the path it is set at."""
+        result = loader.load(_KeyNamedRegistry, argv=["--foo.api.name", "${key(.)}"], env={})
+        assert result.foo == {"api": _KeyNamed("api")}
+
+    def test_from_the_env(self, loader: ConfargLoader) -> None:
+        """A variable's dot counts from the path it spells."""
+        result = loader.load(_KeyNamedRegistry, argv=[], env={"APP_FOO__API__NAME": "${key(.)}"}, env_prefix="APP_")
+        assert result.foo == {"api": _KeyNamed("api")}
+
+
 # ---------------------------------------------------------------------------
 # Expressions into value-restricted and registered-leaf fields
 # ---------------------------------------------------------------------------

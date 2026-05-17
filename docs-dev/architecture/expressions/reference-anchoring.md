@@ -13,6 +13,8 @@ questions:
 A single unnested file is the degenerate case where the first two coincide, so its text is
 never rewritten and survives `merge()` → `dump_file()` verbatim.
 
+An anchor names a position, so it can also be asked for the key that position is filed under rather than the value it holds: `${key(.)}` is the key of the node that wrote it ([safety model](safety-model.md#a-path-function-reads-a-position-not-a-value)).
+
 ## Why the node anchor resolves late
 
 The file anchor is a *rewrite*, applied while files are loaded, because `build()` takes a plain
