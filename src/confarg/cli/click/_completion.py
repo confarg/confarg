@@ -45,7 +45,7 @@ def setup_completion(
     target: type,
     *,
     union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
+    config_flag: str = _defaults.CONFIG_FLAG,
 ) -> None:
     """Extend *command* with dynamic flags before Click's completion lifecycle runs.
 

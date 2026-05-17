@@ -315,7 +315,7 @@ def setup_completion(
     target: Any,
     *,
     union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
+    config_flag: str = _defaults.CONFIG_FLAG,
     argv: list[str] | None = None,
 ) -> None:
     """Enable tab-completion for the parser.

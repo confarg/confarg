@@ -33,14 +33,14 @@ def merge_app(  # noqa: PLR0913
     target: object,
     app: cyclopts.App,
     *,
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
     argv: Sequence[str] | None = None,
-    files: Sequence[str | Path] = (),
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = "__",
+    env_separator: str = _defaults.ENV_SEPARATOR,
+    config_flag: str = _defaults.CONFIG_FLAG,
+    files: Sequence[str | Path] = (),
     env_config: str | None = None,
+    union_tag: str = _defaults.UNION_TAG,
 ) -> dict[str, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
@@ -59,22 +59,30 @@ def merge_app(  # noqa: PLR0913
         target: The dataclass type to construct.
         app: The cyclopts :class:`~cyclopts.App` populated by
             :func:`populate_app`.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
-        config_flag: Name of the config-file option (must match
-            :func:`populate_app`).
         argv: CLI token list.  ``None`` (default) reads ``sys.argv[1:]``.
-        files: Additional root-level config file paths (lowest priority).
         env: Environment variable mapping.  Defaults to :data:`os.environ`.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix for env vars.  ``None`` (default) disables env
             parsing entirely.
         env_separator: Separator used to split env var names into nested
             keys.
+        config_flag: Name of the config-file option (must match
+            :func:`populate_app`).  Set to ``""`` to ignore all config-file
+            options.
+        files: Additional root-level config file paths (lowest priority).
         env_config: Name of an env var whose value is a config file path to
             load.  Loaded after ``files`` but before CLI ``--config`` files.
+        union_tag: Discriminator field name (same as :func:`confarg.load`).
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
+
+    Config file loading order:
+        All config files share the same priority level (below inline env vars and
+        CLI args).  Within that level they are loaded left-to-right so that later
+        sources win on conflict: ``files`` first, then ``env_config``, then
+        ``<config_flag>`` env vars (shallower subpaths first), then CLI
+        ``--config`` / ``--config.subpath`` flags in left-to-right order.
     """
     if env is None:
         env = os.environ
@@ -121,14 +129,14 @@ def from_app(  # noqa: PLR0913
     target: object,
     app: cyclopts.App,
     *,
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
     argv: Sequence[str] | None = None,
-    files: Sequence[str | Path] = (),
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = "__",
+    env_separator: str = _defaults.ENV_SEPARATOR,
+    config_flag: str = _defaults.CONFIG_FLAG,
+    files: Sequence[str | Path] = (),
     env_config: str | None = None,
+    union_tag: str = _defaults.UNION_TAG,
 ) -> Any:
     """Parse CLI arguments and construct a dataclass from all sources.
 
@@ -148,19 +156,20 @@ def from_app(  # noqa: PLR0913
         target: The dataclass type to construct.
         app: The cyclopts :class:`~cyclopts.App` populated by
             :func:`populate_app`.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
-        config_flag: Name of the config-file option (must match
-            :func:`populate_app`).
         argv: CLI token list.  ``None`` (default) reads ``sys.argv[1:]``.
-        files: Additional root-level config file paths (lowest priority).
         env: Environment variable mapping.  Defaults to :data:`os.environ`.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix for env vars.  ``None`` (default) disables env
             parsing entirely.
         env_separator: Separator used to split env var names into nested
             keys.
+        config_flag: Name of the config-file option (must match
+            :func:`populate_app`).  Set to ``""`` to ignore all config-file
+            options.
+        files: Additional root-level config file paths (lowest priority).
         env_config: Name of an env var whose value is a config file path to
             load.  Loaded after ``files`` but before CLI ``--config`` files.
+        union_tag: Discriminator field name (same as :func:`confarg.load`).
 
     Returns:
         An instance of *target* populated from all sources.
@@ -168,14 +177,14 @@ def from_app(  # noqa: PLR0913
     merged = merge_app(
         target,
         app,
-        union_tag=union_tag,
-        config_flag=config_flag,
         argv=argv,
-        files=files,
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
+        config_flag=config_flag,
+        files=files,
         env_config=env_config,
+        union_tag=union_tag,
     )
     return build(target, merged, union_tag=union_tag)
 

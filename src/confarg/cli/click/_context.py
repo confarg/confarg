@@ -45,14 +45,14 @@ def merge_context(  # noqa: PLR0913
     target: object,
     ctx: click.Context,
     *,
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
-    files: Sequence[str | Path] = (),
+    argv: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = "__",
+    env_separator: str = _defaults.ENV_SEPARATOR,
+    config_flag: str = _defaults.CONFIG_FLAG,
+    files: Sequence[str | Path] = (),
     env_config: str | None = None,
-    argv: Sequence[str] | None = None,
+    union_tag: str = _defaults.UNION_TAG,
 ) -> dict[str, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
@@ -65,26 +65,33 @@ def merge_context(  # noqa: PLR0913
         target: The dataclass type to construct.
         ctx: The :class:`click.Context` returned by Click during command execution.
             Obtain it inside a command with :func:`click.get_current_context`.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
-        config_flag: Name of the config-file option on ``ctx`` (default
-            ``"config"``).  Must match the ``config_flag`` passed to
-            :func:`populate_command`.  Set to ``""`` to ignore all config-file
-            options.
-        files: Additional root-level config file paths to load (lowest priority).
+        argv: CLI argument list used to determine config-file loading order.
+            Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
+            command was invoked with a custom argv (e.g. in tests via
+            :func:`click.testing.CliRunner`).
         env: Environment variable mapping.  Defaults to ``os.environ``.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
             which disables environment variable parsing entirely.
         env_separator: Separator used to split env var names into nested keys.
+        config_flag: Name of the config-file option on ``ctx`` (default
+            ``"config"``).  Must match the ``config_flag`` passed to
+            :func:`populate_command`.  Set to ``""`` to ignore all config-file
+            options.
+        files: Additional root-level config file paths to load (lowest priority).
         env_config: Name of an env var whose value is a config file path to load.
             Loaded after ``files`` but before CLI ``--config`` files.
-        argv: CLI argument list used to determine config-file loading order.
-            Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
-            command was invoked with a custom argv (e.g. in tests via
-            :func:`click.testing.CliRunner`).
+        union_tag: Discriminator field name (same as :func:`confarg.load`).
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
+
+    Config file loading order:
+        All config files share the same priority level (below inline env vars and
+        CLI args).  Within that level they are loaded left-to-right so that later
+        sources win on conflict: ``files`` first, then ``env_config``, then
+        ``<config_flag>`` env vars (shallower subpaths first), then CLI
+        ``--config`` / ``--config.subpath`` flags in left-to-right order.
     """
     if env is None:
         env = os.environ
@@ -115,14 +122,14 @@ def from_context(  # noqa: PLR0913
     target: object,
     ctx: click.Context,
     *,
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
-    files: Sequence[str | Path] = (),
+    argv: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = "__",
+    env_separator: str = _defaults.ENV_SEPARATOR,
+    config_flag: str = _defaults.CONFIG_FLAG,
+    files: Sequence[str | Path] = (),
     env_config: str | None = None,
-    argv: Sequence[str] | None = None,
+    union_tag: str = _defaults.UNION_TAG,
 ) -> Any:
     """Construct a dataclass instance from a Click :class:`~click.Context`.
 
@@ -139,23 +146,23 @@ def from_context(  # noqa: PLR0913
         target: The dataclass type to construct.
         ctx: The :class:`click.Context` returned by Click during command execution.
             Obtain it inside a command with :func:`click.get_current_context`.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
-        config_flag: Name of the config-file option on ``ctx`` (default
-            ``"config"``).  Must match the ``config_flag`` passed to
-            :func:`populate_command`.  Set to ``""`` to ignore all config-file
-            options.
-        files: Additional root-level config file paths to load (lowest priority).
+        argv: CLI argument list used to determine config-file loading order.
+            Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
+            command was invoked with a custom argv (e.g. in tests via
+            :func:`click.testing.CliRunner`).
         env: Environment variable mapping.  Defaults to ``os.environ``.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
             which disables environment variable parsing entirely.
         env_separator: Separator used to split env var names into nested keys.
+        config_flag: Name of the config-file option on ``ctx`` (default
+            ``"config"``).  Must match the ``config_flag`` passed to
+            :func:`populate_command`.  Set to ``""`` to ignore all config-file
+            options.
+        files: Additional root-level config file paths to load (lowest priority).
         env_config: Name of an env var whose value is a config file path to load.
             Loaded after ``files`` but before CLI ``--config`` files.
-        argv: CLI argument list used to determine config-file loading order.
-            Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
-            command was invoked with a custom argv (e.g. in tests via
-            :func:`click.testing.CliRunner`).
+        union_tag: Discriminator field name (same as :func:`confarg.load`).
 
     Returns:
         An instance of ``target`` populated from all sources.
@@ -163,14 +170,14 @@ def from_context(  # noqa: PLR0913
     merged = merge_context(
         target,
         ctx,
-        union_tag=union_tag,
-        config_flag=config_flag,
-        files=files,
+        argv=argv,
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
+        config_flag=config_flag,
+        files=files,
         env_config=env_config,
-        argv=argv,
+        union_tag=union_tag,
     )
     return build(target, merged, union_tag=union_tag)
 

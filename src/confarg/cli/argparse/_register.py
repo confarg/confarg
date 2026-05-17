@@ -94,7 +94,7 @@ def populate_parser(  # noqa: PLR0913
     parser: argparse.ArgumentParser,
     *,
     union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
+    config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
     argv: Sequence[str] | None = None,
 ) -> None:
@@ -151,7 +151,7 @@ def make_parser(
     target: object,
     *,
     union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
+    config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
     argv: Sequence[str] | None = None,
     **kwargs: Any,
