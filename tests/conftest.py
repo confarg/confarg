@@ -15,8 +15,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from tests._loaders import ConfargLoader
+
 import pytest
 from hypothesis import strategies as st
+
+from tests._loaders import ALL_LOADERS, REPEATED_FLAG_LOADERS, SPACE_SEP_LOADERS
 
 # ---------------------------------------------------------------------------
 # Dynamic single-field dataclass factory
@@ -529,6 +533,25 @@ def tmp_json(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # Hypothesis strategies
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(params=ALL_LOADERS, ids=[ldr.id for ldr in ALL_LOADERS])
+def loader(request: pytest.FixtureRequest) -> ConfargLoader:
+    """Parametrised loader fixture — runs each test against all four CLI integrations."""
+    return request.param
+
+
+@pytest.fixture(params=SPACE_SEP_LOADERS, ids=[ldr.id for ldr in SPACE_SEP_LOADERS])
+def space_sep_loader(request: pytest.FixtureRequest) -> ConfargLoader:
+    """Loaders that accept space-separated list args: vanilla, argparse, cyclopts."""
+    return request.param
+
+
+@pytest.fixture(params=REPEATED_FLAG_LOADERS, ids=[ldr.id for ldr in REPEATED_FLAG_LOADERS])
+def repeated_loader(request: pytest.FixtureRequest) -> ConfargLoader:
+    """Loaders that accept repeated flags for lists: click, cyclopts."""
+    return request.param
+
 
 valid_identifiers: st.SearchStrategy[str] = st.from_regex(r"[a-z][a-z0-9_]{0,19}", fullmatch=True)
 

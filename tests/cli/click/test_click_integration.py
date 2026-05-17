@@ -361,6 +361,53 @@ class TestFromContext:
 
 
 # ---------------------------------------------------------------------------
+# Bool convention
+# ---------------------------------------------------------------------------
+
+
+class TestBoolConvention:
+    """Verify the explicit --flag true/false convention for bool fields in Click."""
+
+    def _run(self, dc_type: type, args: list[str]) -> Any:
+        result_holder: list[Any] = []
+        cmd = click.command()(lambda **kwargs: None)
+        populate_command(dc_type, cmd, config_flag="")
+
+        @click.command()
+        def inner(**kwargs: Any) -> None:
+            ctx = click.get_current_context()
+            result_holder.append(confargclick.from_context(dc_type, ctx, config_flag=""))
+
+        real_cmd = click.Command(name="cli", callback=inner.callback, params=cmd.params)
+        CliRunner().invoke(real_cmd, args, catch_exceptions=False)
+        return result_holder[0]
+
+    def test_bool_explicit_true(self) -> None:
+        """--debug true sets a bool field to True."""
+        assert self._run(Nested, ["--debug", "true"]).debug is True
+
+    def test_bool_explicit_false(self) -> None:
+        """--debug false sets a bool field to False."""
+        assert self._run(Nested, ["--debug", "false"]).debug is False
+
+    def test_no_negative_flag_registered(self) -> None:
+        """Click does not generate a --no-debug flag for bool fields."""
+        cmd = _make_command()
+        populate_command(Nested, cmd, config_flag="")
+        names = {p.name for p in cmd.params}
+        assert "no-debug" not in names
+        assert "no_debug" not in names
+
+    def test_bool_requires_value(self) -> None:
+        """--debug without a value fails — the convention requires --debug true/false."""
+        cmd = _make_command()
+        populate_command(Nested, cmd, config_flag="")
+        real_cmd = click.Command(name="cli", callback=(lambda **kwargs: None), params=cmd.params)
+        result = CliRunner().invoke(real_cmd, ["--debug"])
+        assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
 # setup_completion / _partial_argv_from_env
 # ---------------------------------------------------------------------------
 

@@ -7,6 +7,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tests._loaders import ConfargLoader
 
 import pytest
 
@@ -29,16 +33,16 @@ from tests.conftest import (
 class TestJsonLoading:
     """JSON config file loading."""
 
-    def test_flat_json(self, tmp_json) -> None:
+    def test_flat_json(self, loader: ConfargLoader, tmp_json) -> None:
         """Load all flat fields from JSON."""
         path = tmp_json('{"name": "json_name", "count": 42, "rate": 3.14, "verbose": true}')
-        result = confarg.load(Flat, argv=[], env={}, files=[path])
+        result = loader.load(Flat, argv=[], env={}, files=[path])
         assert result.name == "json_name"
         assert result.count == 42
         assert result.rate == pytest.approx(3.14)
         assert result.verbose is True
 
-    def test_nested_json(self, tmp_json) -> None:
+    def test_nested_json(self, loader: ConfargLoader, tmp_json) -> None:
         """Load nested dataclass fields from JSON."""
         path = tmp_json("""\
             {
@@ -47,32 +51,32 @@ class TestJsonLoading:
               "cache": {"enabled": false, "ttl": 120}
             }
         """)
-        result = confarg.load(AppConfig, argv=[], env={}, files=[path])
+        result = loader.load(AppConfig, argv=[], env={}, files=[path])
         assert result.db.host == "jhost"
         assert result.db.port == 5432
         assert result.cache.enabled is False
         assert result.debug is True
 
-    def test_json_list(self, tmp_json) -> None:
+    def test_json_list(self, loader: ConfargLoader, tmp_json) -> None:
         """List field from JSON array."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_json('{"items": [1, 2, 3]}')
-        result = confarg.load(WithList, argv=[], env={}, files=[path])
+        result = loader.load(WithList, argv=[], env={}, files=[path])
         assert result.items == [1, 2, 3]
 
-    def test_json_dict(self, tmp_json) -> None:
+    def test_json_dict(self, loader: ConfargLoader, tmp_json) -> None:
         """Dict field from JSON object."""
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         path = tmp_json('{"metadata": {"a": 1, "b": 2}}')
-        result = confarg.load(WithDict, argv=[], env={}, files=[path])
+        result = loader.load(WithDict, argv=[], env={}, files=[path])
         assert result.metadata == {"a": 1, "b": 2}
 
-    def test_json_non_object_raises(self, tmp_path) -> None:
+    def test_json_non_object_raises(self, loader: ConfargLoader, tmp_path) -> None:
         """JSON file whose top-level value is not an object raises an error."""
         p = tmp_path / "bad.json"
         p.write_text("[1, 2, 3]")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, argv=[], env={}, files=[p])
+            loader.load(Flat, argv=[], env={}, files=[p])
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +87,7 @@ class TestJsonLoading:
 class TestTomlLoading:
     """TOML config file loading."""
 
-    def test_flat_toml(self, tmp_toml) -> None:
+    def test_flat_toml(self, loader: ConfargLoader, tmp_toml) -> None:
         """Load all flat fields from TOML."""
         path = tmp_toml("""\
             name = "toml_name"
@@ -91,13 +95,13 @@ class TestTomlLoading:
             rate = 3.14
             verbose = true
         """)
-        result = confarg.load(Flat, argv=[], env={}, files=[path])
+        result = loader.load(Flat, argv=[], env={}, files=[path])
         assert result.name == "toml_name"
         assert result.count == 42
         assert result.rate == pytest.approx(3.14)
         assert result.verbose is True
 
-    def test_nested_toml(self, tmp_toml) -> None:
+    def test_nested_toml(self, loader: ConfargLoader, tmp_toml) -> None:
         """Load nested dataclass fields from TOML."""
         path = tmp_toml("""\
             debug = true
@@ -111,14 +115,14 @@ class TestTomlLoading:
             enabled = false
             ttl = 120
         """)
-        result = confarg.load(AppConfig, argv=[], env={}, files=[path])
+        result = loader.load(AppConfig, argv=[], env={}, files=[path])
         assert result.db.host == "dbhost"
         assert result.db.port == 5432
         assert result.cache.enabled is False
         assert result.cache.ttl == 120
         assert result.debug is True
 
-    def test_deep_nested_toml(self, tmp_toml) -> None:
+    def test_deep_nested_toml(self, loader: ConfargLoader, tmp_toml) -> None:
         """Load three levels of nesting from TOML."""
         path = tmp_toml("""\
             version = "2.0"
@@ -135,25 +139,25 @@ class TestTomlLoading:
             enabled = true
             ttl = 10
         """)
-        result = confarg.load(DeepNested, argv=[], env={}, files=[path])
+        result = loader.load(DeepNested, argv=[], env={}, files=[path])
         assert result.app.db.host == "deep"
         assert result.version == "2.0"
 
-    def test_toml_partial(self, tmp_toml) -> None:
+    def test_toml_partial(self, loader: ConfargLoader, tmp_toml) -> None:
         """TOML provides only some fields; defaults fill the rest."""
         path = tmp_toml('name = "partial"\n')
-        result = confarg.load(WithDefaults, argv=[], env={}, files=[path])
+        result = loader.load(WithDefaults, argv=[], env={}, files=[path])
         assert result.name == "partial"
         assert result.count == 0
 
-    def test_toml_list(self, tmp_toml) -> None:
+    def test_toml_list(self, loader: ConfargLoader, tmp_toml) -> None:
         """List field from TOML array."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2, 3]\n")
-        result = confarg.load(WithList, argv=[], env={}, files=[path])
+        result = loader.load(WithList, argv=[], env={}, files=[path])
         assert result.items == [1, 2, 3]
 
-    def test_toml_dict(self, tmp_toml) -> None:
+    def test_toml_dict(self, loader: ConfargLoader, tmp_toml) -> None:
         """Dict field from TOML inline table."""
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         path = tmp_toml("""\
@@ -161,14 +165,14 @@ class TestTomlLoading:
             a = 1
             b = 2
         """)
-        result = confarg.load(WithDict, argv=[], env={}, files=[path])
+        result = loader.load(WithDict, argv=[], env={}, files=[path])
         assert result.metadata == {"a": 1, "b": 2}
 
-    def test_toml_enum(self, tmp_toml) -> None:
+    def test_toml_enum(self, loader: ConfargLoader, tmp_toml) -> None:
         """Enum field from TOML string value."""
         WithEnum = make_target("color", Color, default=Color.RED)
         path = tmp_toml('color = "green"\n')
-        result = confarg.load(WithEnum, argv=[], env={}, files=[path])
+        result = loader.load(WithEnum, argv=[], env={}, files=[path])
         assert result.color is Color.GREEN
 
 
@@ -180,7 +184,7 @@ class TestTomlLoading:
 class TestYamlLoading:
     """YAML config file loading."""
 
-    def test_flat_yaml(self, tmp_yaml) -> None:
+    def test_flat_yaml(self, loader: ConfargLoader, tmp_yaml) -> None:
         """Load all flat fields from YAML."""
         path = tmp_yaml("""\
             name: yaml_name
@@ -188,13 +192,13 @@ class TestYamlLoading:
             rate: 2.718
             verbose: false
         """)
-        result = confarg.load(Flat, argv=[], env={}, files=[path])
+        result = loader.load(Flat, argv=[], env={}, files=[path])
         assert result.name == "yaml_name"
         assert result.count == 99
         assert result.rate == pytest.approx(2.718)
         assert result.verbose is False
 
-    def test_nested_yaml(self, tmp_yaml) -> None:
+    def test_nested_yaml(self, loader: ConfargLoader, tmp_yaml) -> None:
         """Load nested dataclass fields from YAML."""
         path = tmp_yaml("""\
             debug: true
@@ -206,11 +210,11 @@ class TestYamlLoading:
               enabled: true
               ttl: 600
         """)
-        result = confarg.load(AppConfig, argv=[], env={}, files=[path])
+        result = loader.load(AppConfig, argv=[], env={}, files=[path])
         assert result.db.host == "yhost"
         assert result.cache.ttl == 600
 
-    def test_yaml_list(self, tmp_yaml) -> None:
+    def test_yaml_list(self, loader: ConfargLoader, tmp_yaml) -> None:
         """List field from YAML sequence."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_yaml("""\
@@ -219,10 +223,10 @@ class TestYamlLoading:
               - 20
               - 30
         """)
-        result = confarg.load(WithList, argv=[], env={}, files=[path])
+        result = loader.load(WithList, argv=[], env={}, files=[path])
         assert result.items == [10, 20, 30]
 
-    def test_yaml_dict(self, tmp_yaml) -> None:
+    def test_yaml_dict(self, loader: ConfargLoader, tmp_yaml) -> None:
         """Dict field from YAML mapping."""
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         path = tmp_yaml("""\
@@ -230,7 +234,7 @@ class TestYamlLoading:
               x: 1
               y: 2
         """)
-        result = confarg.load(WithDict, argv=[], env={}, files=[path])
+        result = loader.load(WithDict, argv=[], env={}, files=[path])
         assert result.metadata == {"x": 1, "y": 2}
 
 
@@ -242,28 +246,28 @@ class TestYamlLoading:
 class TestMultipleFiles:
     """Multiple config files with override semantics."""
 
-    def test_later_file_overrides(self, tmp_toml) -> None:
+    def test_later_file_overrides(self, loader: ConfargLoader, tmp_toml) -> None:
         """Second file overrides values from the first."""
         p1 = tmp_toml("name = 'first'\ncount = 1\nrate = 0.0\nverbose = false\n", "a.toml")
         p2 = tmp_toml("name = 'second'\n", "b.toml")
-        result = confarg.load(Flat, argv=[], env={}, files=[p1, p2])
+        result = loader.load(Flat, argv=[], env={}, files=[p1, p2])
         assert result.name == "second"
         assert result.count == 1  # from first file
 
-    def test_three_files_layered(self, tmp_toml) -> None:
+    def test_three_files_layered(self, loader: ConfargLoader, tmp_toml) -> None:
         """Three files layered: each overrides the previous."""
         p1 = tmp_toml("name = 'a'\ncount = 1\nrate = 0.0\nverbose = false\n", "1.toml")
         p2 = tmp_toml("name = 'b'\ncount = 2\n", "2.toml")
         p3 = tmp_toml("count = 3\n", "3.toml")
-        result = confarg.load(Flat, argv=[], env={}, files=[p1, p2, p3])
+        result = loader.load(Flat, argv=[], env={}, files=[p1, p2, p3])
         assert result.name == "b"
         assert result.count == 3
 
-    def test_toml_and_yaml_mixed(self, tmp_toml, tmp_yaml) -> None:
+    def test_toml_and_yaml_mixed(self, loader: ConfargLoader, tmp_toml, tmp_yaml) -> None:
         """TOML and YAML files can be mixed."""
         p1 = tmp_toml("name = 'toml'\ncount = 1\nrate = 0.0\nverbose = false\n", "base.toml")
         p2 = tmp_yaml("name: yaml\n", "override.yaml")
-        result = confarg.load(Flat, argv=[], env={}, files=[p1, p2])
+        result = loader.load(Flat, argv=[], env={}, files=[p1, p2])
         assert result.name == "yaml"
         assert result.count == 1
 
@@ -338,40 +342,40 @@ class TestCliMultipleConfigFiles:
 class TestFileFormat:
     """Config file format is detected from extension."""
 
-    def test_toml_extension(self, tmp_path: Path) -> None:
+    def test_toml_extension(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """File with .toml extension is parsed as TOML."""
         p = tmp_path / "test.toml"
         p.write_text('name = "ext"\ncount = 1\nrate = 0.0\nverbose = false\n')
-        result = confarg.load(Flat, argv=[], env={}, files=[p])
+        result = loader.load(Flat, argv=[], env={}, files=[p])
         assert result.name == "ext"
 
-    def test_yaml_extension(self, tmp_path: Path) -> None:
+    def test_yaml_extension(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """File with .yaml extension is parsed as YAML."""
         p = tmp_path / "test.yaml"
         p.write_text("name: yamlext\ncount: 1\nrate: 0.0\nverbose: false\n")
-        result = confarg.load(Flat, argv=[], env={}, files=[p])
+        result = loader.load(Flat, argv=[], env={}, files=[p])
         assert result.name == "yamlext"
 
-    def test_yml_extension(self, tmp_path: Path) -> None:
+    def test_yml_extension(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """File with .yml extension is parsed as YAML."""
         p = tmp_path / "test.yml"
         p.write_text("name: ymlext\ncount: 1\nrate: 0.0\nverbose: false\n")
-        result = confarg.load(Flat, argv=[], env={}, files=[p])
+        result = loader.load(Flat, argv=[], env={}, files=[p])
         assert result.name == "ymlext"
 
-    def test_json_extension(self, tmp_path: Path) -> None:
+    def test_json_extension(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """File with .json extension is parsed as JSON."""
         p = tmp_path / "test.json"
         p.write_text('{"name": "jsonext", "count": 1, "rate": 0.0, "verbose": false}')
-        result = confarg.load(Flat, argv=[], env={}, files=[p])
+        result = loader.load(Flat, argv=[], env={}, files=[p])
         assert result.name == "jsonext"
 
-    def test_unknown_extension_raises(self, tmp_path: Path) -> None:
+    def test_unknown_extension_raises(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """Unknown file extension raises an error."""
         p = tmp_path / "test.ini"
         p.write_text("[section]\nkey=val\n")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, argv=[], env={}, files=[p])
+            loader.load(Flat, argv=[], env={}, files=[p])
 
 
 # ---------------------------------------------------------------------------
@@ -382,31 +386,31 @@ class TestFileFormat:
 class TestInvalidConfigFiles:
     """Error handling for invalid config files."""
 
-    def test_nonexistent_file(self) -> None:
+    def test_nonexistent_file(self, loader: ConfargLoader) -> None:
         """Non-existent file raises an error."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, argv=[], env={}, files=[Path("/nonexistent.toml")])
+            loader.load(Flat, argv=[], env={}, files=[Path("/nonexistent.toml")])
 
-    def test_malformed_toml(self, tmp_path: Path) -> None:
+    def test_malformed_toml(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """Malformed TOML raises an error."""
         p = tmp_path / "bad.toml"
         p.write_text("this is not valid toml [[[")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, argv=[], env={}, files=[p])
+            loader.load(Flat, argv=[], env={}, files=[p])
 
-    def test_malformed_yaml(self, tmp_path: Path) -> None:
+    def test_malformed_yaml(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """Malformed YAML raises an error."""
         p = tmp_path / "bad.yaml"
         p.write_text(":\n  - :\n    - : :\n  [invalid")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, argv=[], env={}, files=[p])
+            loader.load(Flat, argv=[], env={}, files=[p])
 
-    def test_malformed_json(self, tmp_path: Path) -> None:
+    def test_malformed_json(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """Malformed JSON raises an error."""
         p = tmp_path / "bad.json"
         p.write_text("{name: no quotes}")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, argv=[], env={}, files=[p])
+            loader.load(Flat, argv=[], env={}, files=[p])
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +421,7 @@ class TestInvalidConfigFiles:
 class TestConfigFileCollections:
     """Collections loaded from config files."""
 
-    def test_collections_from_toml(self, tmp_toml) -> None:
+    def test_collections_from_toml(self, loader: ConfargLoader, tmp_toml) -> None:
         """Multiple collection types from TOML."""
         path = tmp_toml("""\
             names = ["a", "b"]
@@ -427,12 +431,12 @@ class TestConfigFileCollections:
             [mapping]
             k = 10
         """)
-        result = confarg.load(WithCollections, argv=[], env={}, files=[path])
+        result = loader.load(WithCollections, argv=[], env={}, files=[path])
         assert result.names == ["a", "b"]
         assert result.tags == {"t1", "t2"}
         assert result.mapping == {"k": 10}
 
-    def test_collections_from_yaml(self, tmp_yaml) -> None:
+    def test_collections_from_yaml(self, loader: ConfargLoader, tmp_yaml) -> None:
         """Multiple collection types from YAML."""
         path = tmp_yaml("""\
             names:
@@ -446,7 +450,7 @@ class TestConfigFileCollections:
             mapping:
               k: 10
         """)
-        result = confarg.load(WithCollections, argv=[], env={}, files=[path])
+        result = loader.load(WithCollections, argv=[], env={}, files=[path])
         assert result.names == ["a", "b"]
         assert result.tags == {"t1"}
         assert result.mapping == {"k": 10}

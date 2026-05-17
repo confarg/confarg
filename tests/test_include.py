@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 
 import pytest
 
-import confarg
 from confarg._files import INCLUDE_KEY, _load_file
 from confarg.exceptions import ConfargError, InvalidConfigFileError
 
@@ -376,12 +375,12 @@ class TestRecursiveThroughLists:
 class TestIntegrationPriorityOrdering:
     """Integration tests that merge() respects priority ordering with __include__."""
 
-    def test_cli_overrides_included_file(self, tmp_path: Path) -> None:
+    def test_cli_overrides_included_file(self, loader, tmp_path: Path) -> None:
         """Test that CLI arguments override values from an included file."""
         write(tmp_path, "db.yaml", "host: file_host\nport: 5432\n")
         write(tmp_path, "config.yaml", f"db:\n  {INCLUDE_KEY}: ./db.yaml\nname: myapp\n")
 
-        result = confarg.load(
+        result = loader.load(
             AppConfig,
             argv=["--db.host", "cli_host"],
             files=[tmp_path / "config.yaml"],
@@ -390,12 +389,12 @@ class TestIntegrationPriorityOrdering:
         assert result.db.port == 5432
         assert result.name == "myapp"
 
-    def test_env_overrides_included_file(self, tmp_path: Path) -> None:
+    def test_env_overrides_included_file(self, loader, tmp_path: Path) -> None:
         """Test that env vars override values from an included file."""
         write(tmp_path, "db.yaml", "host: file_host\nport: 5432\n")
         write(tmp_path, "config.yaml", f"db:\n  {INCLUDE_KEY}: ./db.yaml\n")
 
-        result = confarg.load(
+        result = loader.load(
             AppConfig,
             argv=[],
             env={"CONFARG_DB__HOST": "env_host"},
