@@ -23,7 +23,7 @@ from typing import Any
 
 from confarg._merge import _deep_merge
 from confarg._types import _StrToken
-from confarg.dictexpr._expressions import prefix_references
+from confarg.dictexpr._expressions import check_anchor_depth, contains_expression, prefix_references
 from confarg.exceptions import ConfargError, InvalidConfigFileError
 
 INCLUDE_KEY = "__include__"
@@ -281,12 +281,19 @@ def _resolve_node(data: Any, base_dir: Path, seen: frozenset[Path], path_in_file
 
     *path_in_file* is the position of *data* relative to the root of the file
     currently being resolved; it is what an included document gets prefixed by,
-    and it resets to ``""`` on entry to each file (see :func:`_load_any`).
+    and it resets to ``""`` on entry to each file (see :func:`_load_any`).  It is
+    also the depth a node-relative reference is clamped to, which is why the
+    check below sits on this walk rather than on the mounting pass.
+
+    Dev Notes:
+        docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     if isinstance(data, dict):
         return _resolve_dict(data, base_dir, seen, path_in_file)
     if isinstance(data, list):
         return _resolve_list(data, base_dir, seen, path_in_file)
+    if contains_expression(data):
+        check_anchor_depth(data, path_in_file)
     return data
 
 

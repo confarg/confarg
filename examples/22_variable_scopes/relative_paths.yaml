@@ -1,0 +1,4 @@
+value: 5.0
+values:
+  value1: ${..value}
+  value2: ${.value1 * 1.5}

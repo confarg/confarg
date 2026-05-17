@@ -26,6 +26,13 @@ forbids, so they additionally require brace-balanced or lexical delimiter scanni
 reason lists come first; and `sorted(key=...)` is off the table for as long as lambdas are,
 so the added builtins take no callable arguments.
 
+**Slices are already spoken for in part.** `::` is the configuration-root marker, and the rule
+that keeps both readings available is that it is a marker only when the innermost enclosing
+bracket is not `[`; inside a subscript it is a slice step, and `items[(::step)]` is how a root
+lookup is spelled there ([07-expressions.md#implementation-constraints](../../architecture/07-expressions.md#implementation-constraints)).
+Adding `ast.Slice` to the whitelist therefore needs no lexer change, but it does need tests
+pinning `items[::2]`, `items[:3]` and `items[(::step)]` apart.
+
 Parity is not at risk — the engine is shared by all three channels and all four front-ends, so
 an expansion lands everywhere at once — but each new node must stay inside the deferral rule
 ([07-expressions.md#deferral-rule](../../architecture/07-expressions.md#deferral-rule)): a value

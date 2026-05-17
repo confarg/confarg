@@ -144,10 +144,15 @@ _CMPOP_MAP: dict[type, Any] = {
 def _parse_expression(content: str) -> ast.Expression:
     """Parse one ``${...}`` body into a cached AST.
 
-    The anchor marker is stripped before parsing, so the cache is keyed by the
-    raw expression text. Every parse site in resolution — reference extraction,
+    The root marker is stripped before parsing, so the cache is keyed by the raw
+    expression text. Every parse site in resolution — reference extraction,
     validation and evaluation — goes through here, so a unique expression is
     parsed however many times it appears but at most once.
+
+    A node-relative reference reaches here as a stand-in name, which parses and so
+    caches like anything else; what it *denotes* differs per node, which is why
+    :func:`_parse_anchored` rewrites the tree on the way out rather than the text
+    on the way in.
 
     Dev Notes:
         docs-dev/architecture/07-expressions.md#resolution-algorithm
@@ -178,21 +183,25 @@ def resolve_expressions(
     if not expr_fields:
         return data
 
+    # 2. Swap anchor markers for stand-in names so every body parses; what each one
+    #    denotes is settled per node by _parse_anchored, below.
+    expr_fields = {path: name_anchors(raw_str) for path, raw_str in expr_fields.items()}
+
     data = copy.deepcopy(data)
 
-    # 2. Extract references and build dependency graph
+    # 3. Extract references and build dependency graph
     expr_paths = set(expr_fields.keys())
     deps: dict[str, set[str]] = {}
     for path, raw_str in expr_fields.items():
-        refs = _extract_references(raw_str)
+        refs = _extract_references(raw_str, path)
         # Filter refs to only those that are themselves expressions
         # Non-expression refs are "free" (already resolved)
         deps[path] = refs & expr_paths
 
-    # 3. Topological sort
+    # 4. Topological sort
     order = _topological_sort(deps)
 
-    # 4. Validate AST for all expressions
+    # 5. Validate AST for all expressions
     for path in order:
         raw_str = expr_fields[path]
         for m in _EXPR_RE.finditer(raw_str):
@@ -200,10 +209,10 @@ def resolve_expressions(
             if expr_content is not None:  # not escaped
                 _validate_ast(expr_content)
 
-    # 5. Resolve in order, building namespace incrementally
+    # 6. Resolve in order, building namespace incrementally
     for path in order:
         raw_str = expr_fields[path]
-        result = _resolve_single(raw_str, data)
+        result = _resolve_single(raw_str, data, path)
         _set_nested_by_path(data, path, result)
 
     return data
@@ -237,8 +246,11 @@ def _collect_expressions(value: Any, path: str, out: dict[str, str]) -> None:
         out[path] = value
 
 
-def _extract_references(expr_str: str) -> set[str]:
+def _extract_references(expr_str: str, node_path: str = "") -> set[str]:
     """Extract dotted field paths referenced in expression string.
+
+    *node_path* is where the expression sits, which is what an anchor stand-in is
+    resolved against, so the paths returned are absolute either way.
 
     Returns:
         Set of dotted paths (e.g. {"db.host", "db.port"}).
@@ -249,7 +261,7 @@ def _extract_references(expr_str: str) -> set[str]:
         if expr_content is None:
             continue  # escaped $${...}
         try:
-            tree = _parse_expression(expr_content)
+            tree = _parse_anchored(expr_content, node_path)
         except SyntaxError:
             continue
         _collect_names(tree, refs)
@@ -573,20 +585,23 @@ def _eval_expr(tree: ast.Expression, namespace: dict[str, Any], context: str) ->
         raise ExpressionEvalError(msg) from exc
 
 
-def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
+def _resolve_single(expr_str: str, namespace: dict[str, Any], node_path: str = "") -> Any:
     """Resolve a single expression string.
 
     Handles three cases:
     1. Pure ${expr} — typed result
     2. Interpolation (text around ${...}) — string result
     3. Escaped $${...} — literal ${...}
+
+    *node_path* is where the expression sits, which is what an anchor stand-in
+    (``__UP1__``, ``__ROOT__``) is resolved against.
     """
     # Check if the entire string is a single ${expr}
     stripped = expr_str.strip()
     m = re.fullmatch(r"\$\{([^}]+)\}", stripped)
     if m and stripped == expr_str:
         # Pure expression — return typed result
-        tree = _parse_expression(m.group(1))
+        tree = _parse_anchored(m.group(1), node_path)
         return _eval_expr(tree, namespace, expr_str)
 
     # Interpolation or escape mode: build string from parts
@@ -603,7 +618,7 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
             result_parts.append(escaped_text[1:])  # strip one $, producing "${foo}"
         else:
             # Real expression — evaluate and stringify
-            tree = _parse_expression(m.group(1))
+            tree = _parse_anchored(m.group(1), node_path)
             value = _eval_expr(tree, namespace, m.group(0))
             result_parts.append(str(value))
 
@@ -663,19 +678,55 @@ def _set_nested_by_path(data: dict[str, Any], path: str, value: Any) -> None:
 # Reference anchoring
 # ---------------------------------------------------------------------------
 
-#: Transient stand-in for a document-root anchor while an expression is parsed.
-#: A leading ``.`` is not valid Python, so it is swapped for this name before
+#: Transient stand-in for a configuration-root anchor while an expression is parsed.
+#: ``::`` is not valid Python, so it is swapped for this name before
 #: :func:`ast.parse` and swapped back on the way out.
 _ROOT_ANCHOR = "__ROOT__"
+
+#: Transient stand-in for a node-relative anchor: a run of *n* dots becomes ``__UP<n>__``.
+_UP_ANCHOR_RE = re.compile(r"^__UP(\d+)__$")
+
+#: Cheap test for a stand-in anywhere in an expression body, to skip the rewrite.
+_ANCHOR_NAME_RE = re.compile(r"__(?:ROOT|UP\d+)__")
+
+#: Adjacent colons that spell the configuration root.
+_ROOT_MARKER_COLONS = 2
 
 #: Layout tokens that carry no operand meaning when scanning for anchors.
 _IGNORED_TOKENS = frozenset(
     {tokenize.NEWLINE, tokenize.NL, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER, tokenize.COMMENT},
 )
 
-#: Token kinds a ``.`` may follow while still being ordinary attribute access.
+#: Token kinds a marker may follow while still being ordinary attribute access.
 _ANCHOR_BLOCKING_TYPES = frozenset({tokenize.NUMBER, tokenize.STRING})
 _ANCHOR_BLOCKING_OPS = frozenset({")", "]", "}", "."})
+
+#: Bracket pairs, tracked so a ``::`` inside a subscript stays a slice step.
+_OPEN_BRACKETS = frozenset({"(", "[", "{"})
+_CLOSE_BRACKETS = frozenset({")", "]", "}"})
+
+
+def _up_anchor(dots: int) -> str:
+    """Return the transient stand-in name for a run of *dots* dots."""
+    return f"__UP{dots}__"
+
+
+def _anchor_dot_count(name: str) -> int | None:
+    """Return the level count *name* anchors to, or ``None`` when it is not an anchor name."""
+    if name == _ROOT_ANCHOR:
+        return 0
+    match = _UP_ANCHOR_RE.match(name)
+    return int(match.group(1)) if match else None
+
+
+def _is_dot_run(text: str) -> bool:
+    """Return ``True`` for a token made only of dots (``.``, or the ``...`` ellipsis)."""
+    return set(text) == {"."}
+
+
+def _is_colon(text: str) -> bool:
+    """Return ``True`` for a single colon token."""
+    return text == ":"
 
 
 def _line_starts(text: str) -> list[int]:
@@ -693,73 +744,250 @@ def _replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
     return text
 
 
-def _anchor_dots(expr_content: str) -> list[int]:
-    """Offsets of each ``.`` that begins an operand — the document-root marker.
+def _significant_tokens(expr_content: str) -> list[tuple[int, str, int, int]]:
+    """``(type, string, start, end)`` per token that carries operand meaning.
 
-    Token-based: the dots of ``1.5`` or ``','.join(x)`` are not markers, while the one
-    in ``a if .b else c`` is.
+    Offsets are absolute within *expr_content*, which is what :func:`_replace_spans` edits.
+    """
+    starts = _line_starts(expr_content)
+    return [
+        (tok.type, tok.string, starts[tok.start[0] - 1] + tok.start[1], starts[tok.end[0] - 1] + tok.end[1])
+        for tok in tokenize.generate_tokens(io.StringIO(expr_content).readline)
+        if tok.type not in _IGNORED_TOKENS
+    ]
+
+
+def _run_end(toks: list[tuple[int, str, int, int]], start: int, matches: Callable[[str], bool]) -> tuple[int, int]:
+    """Index just past, and end offset of, a run of adjacent *matches* tokens from *start*."""
+    end = toks[start][3]
+    index = start + 1
+    while index < len(toks) and matches(toks[index][1]) and toks[index][2] == end:
+        end = toks[index][3]
+        index += 1
+    return index, end
+
+
+def _anchor_markers(expr_content: str) -> list[tuple[int, int, int]]:
+    """``(offset, length, levels)`` of each anchor marker that begins an operand.
+
+    *levels* is how far a dot run climbs — one per dot — and ``0`` marks ``::``, the
+    configuration root. Token-based: the dots of ``1.5`` or ``','.join(x)`` are not
+    markers, while the one in ``a if .b else c`` is. A ``::`` inside brackets is a
+    slice step and not a marker, which keeps ``items[::2]`` spellable; reach the root
+    there with ``items[(::step)]``.
 
     Dev Notes:
         docs-dev/architecture/07-expressions.md#reference-anchoring
     """
-    starts = _line_starts(expr_content)
-    found: list[int] = []
-    prev_type: int | None = None
-    prev_str = ""
     try:
-        for tok in tokenize.generate_tokens(io.StringIO(expr_content).readline):
-            if tok.type in _IGNORED_TOKENS:
-                continue
-            # A keyword tokenizes as NAME but cannot own an attribute, so a dot
-            # after `if`/`else`/`and`/... starts a new operand and is a marker.
-            blocked = (
-                prev_type in _ANCHOR_BLOCKING_TYPES
-                or (prev_type == tokenize.NAME and not keyword.iskeyword(prev_str))
-                or (prev_type == tokenize.OP and prev_str in _ANCHOR_BLOCKING_OPS)
-            )
-            if tok.type == tokenize.OP and tok.string == "." and not blocked:
-                found.append(starts[tok.start[0] - 1] + tok.start[1])
-            prev_type, prev_str = tok.type, tok.string
+        toks = _significant_tokens(expr_content)
     except (tokenize.TokenError, IndentationError, SyntaxError):
         return []  # malformed: let ast.parse report it with its own message
+    found: list[tuple[int, int, int]] = []
+    brackets: list[str] = []
+    prev_type: int | None = None
+    prev_str = ""
+    index = 0
+    while index < len(toks):
+        ttype, tstr, begin, _ = toks[index]
+        # A keyword tokenizes as NAME but cannot own an attribute, so a marker
+        # after `if`/`else`/`and`/... still starts a new operand.
+        blocked = (
+            prev_type in _ANCHOR_BLOCKING_TYPES
+            or (prev_type == tokenize.NAME and not keyword.iskeyword(prev_str))
+            or (prev_type == tokenize.OP and prev_str in _ANCHOR_BLOCKING_OPS)
+        )
+        if ttype == tokenize.OP and tstr in _OPEN_BRACKETS:
+            brackets.append(tstr)
+        elif ttype == tokenize.OP and tstr in _CLOSE_BRACKETS and brackets:
+            brackets.pop()
+        dots = ttype == tokenize.OP and _is_dot_run(tstr)
+        # Only a subscript can hold a slice, and parentheses inside one open a fresh
+        # operand context — which is what makes `items[(::step)]` reach the root.
+        colons = ttype == tokenize.OP and _is_colon(tstr) and (not brackets or brackets[-1] != "[")
+        if blocked or not (dots or colons):
+            prev_type, prev_str = ttype, tstr
+            index += 1
+            continue
+        index, end = _run_end(toks, index, _is_dot_run if dots else _is_colon)
+        run = expr_content[begin:end]
+        if dots:
+            found.append((begin, end - begin, len(run)))
+        elif len(run) == _ROOT_MARKER_COLONS:
+            found.append((begin, end - begin, 0))
+        prev_type, prev_str = tokenize.OP, run[-1]
     return found
 
 
-def _strip_anchor(expr_content: str) -> str:
-    """Rewrite document-root references as plain paths (``.foo.bar`` -> ``foo.bar``).
+def _path_to_ast(parts: list[str]) -> ast.expr:
+    """Build the ``Name``/``Attribute`` chain that reads the dotted path *parts*."""
+    built: ast.expr = ast.Name(id=parts[0], ctx=ast.Load())
+    for part in parts[1:]:
+        built = ast.Attribute(value=built, attr=part, ctx=ast.Load())
+    return built
 
-    In a standalone dict the document root *is* the dict root, so dropping the
-    marker is exactly what a document-root reference means there.  Every parse
-    site goes through this, so ``build()`` and ``resolve()`` accept the marker
-    even though :func:`confarg.merge` normally canonicalizes it away first.
+
+def _marker_text(levels: int) -> str:
+    """Spell the marker *levels* stands for: ``::`` at the root, else that many dots."""
+    return "::" if levels == 0 else "." * levels
+
+
+def _strip_anchor(expr_content: str) -> str:
+    """Rewrite configuration-root references as plain paths (``::foo.bar`` -> ``foo.bar``).
+
+    In a standalone dict the configuration root *is* the dict root, so dropping the
+    marker is exactly what a root reference means there.  Every parse site goes
+    through this, so ``build()`` and ``resolve()`` accept the marker even though
+    :func:`confarg.merge` normally canonicalizes it away first.
+
+    Node-relative markers are left alone: they mean nothing without the path of the
+    node that wrote them, and :func:`resolve_expressions` has already replaced them
+    by the time any parse site runs.
     """
-    return _replace_spans(expr_content, [(o, o + 1, "") for o in _anchor_dots(expr_content)])
+    return _replace_spans(
+        expr_content,
+        [(o, o + n, "") for o, n, levels in _anchor_markers(expr_content) if levels == 0],
+    )
 
 
 def _name_anchor(expr_content: str) -> str:
-    """Swap the document-root marker for a parseable name (``.foo`` -> ``__ROOT__.foo``)."""
+    """Swap each anchor marker for a parseable name (``..foo`` -> ``__UP2__.foo``)."""
     return _replace_spans(
         expr_content,
-        [(o, o + 1, _ROOT_ANCHOR + ".") for o in _anchor_dots(expr_content)],
+        [
+            (o, o + n, (_ROOT_ANCHOR if levels == 0 else _up_anchor(levels)) + ".")
+            for o, n, levels in _anchor_markers(expr_content)
+        ],
     )
 
 
 def _unname_anchor(expr_content: str) -> str:
-    """Turn ``__ROOT__.foo`` back into ``.foo`` after unparsing.
+    """Turn ``__UP2__.foo`` back into ``..foo`` after unparsing.
 
-    Token-based, so a string literal containing the name is left intact.
+    Token-based, so a string literal containing the name is left intact.  The dot the
+    stand-in owns is consumed with it, because the marker it restores carries its own.
     """
-    starts = _line_starts(expr_content)
-    edits: list[tuple[int, int, str]] = []
     try:
-        edits = [
-            (starts[tok.start[0] - 1] + tok.start[1], starts[tok.end[0] - 1] + tok.end[1], "")
-            for tok in tokenize.generate_tokens(io.StringIO(expr_content).readline)
-            if tok.type == tokenize.NAME and tok.string == _ROOT_ANCHOR
-        ]
+        toks = _significant_tokens(expr_content)
     except (tokenize.TokenError, IndentationError, SyntaxError):
         return expr_content
+    edits: list[tuple[int, int, str]] = []
+    for index, (ttype, tstr, begin, finish) in enumerate(toks):
+        levels = _anchor_dot_count(tstr) if ttype == tokenize.NAME else None
+        if levels is None:
+            continue
+        nxt = toks[index + 1] if index + 1 < len(toks) else None
+        end = nxt[3] if nxt is not None and nxt[1] == "." and nxt[2] == finish else finish
+        edits.append((begin, end, _marker_text(levels)))
     return _replace_spans(expr_content, edits)
+
+
+def _anchor_prefix(node_path: str, levels: int) -> str:
+    """Dotted prefix a run of *levels* dots stands for at *node_path*.
+
+    One dot is the container holding the expression, so *levels* segments are dropped
+    from the node's own path and the result is ``""`` at the root of the document.  A
+    list index is an ordinary segment, the same path model :func:`_get_nested` uses.
+
+    Raises:
+        MissingReferenceError: If the run climbs above the root of the document.
+
+    Dev Notes:
+        docs-dev/architecture/07-expressions.md#reference-anchoring
+    """
+    segments = node_path.split(".") if node_path else []
+    if levels > len(segments):
+        raise MissingReferenceError.anchor_above_root(node_path, levels)
+    kept = segments[: len(segments) - levels]
+    return ".".join(kept) + "." if kept else ""
+
+
+def check_anchor_depth(value: str, node_path: str, scope: str = "file") -> None:
+    """Raise if a relative reference in *value* climbs above the root of its scope.
+
+    Called while a file is loaded, where *node_path* is the position within *that
+    file*: a fragment may look at itself with dots, but reaching outside takes
+    ``::``, so what the fragment means cannot depend on how deep it is mounted.
+    Checking here needs no mount prefix, which is why it also holds for a fragment
+    appended by ``--config.<path>+``, whose index is not knowable yet.
+
+    Raises:
+        MissingReferenceError: If a dot run climbs past the root of *scope*.
+
+    Dev Notes:
+        docs-dev/architecture/07-expressions.md#reference-anchoring
+    """
+    depth = len(node_path.split(".")) if node_path else 0
+    for match in _EXPR_RE.finditer(value):
+        content = match.group(1)
+        if content is None:
+            continue  # escaped $${...}
+        for _, _, levels in _anchor_markers(content):
+            if levels > depth:
+                raise MissingReferenceError.anchor_above_root(node_path, levels, scope)
+
+
+def name_anchors(value: str) -> str:
+    """Return *value* with each expression's anchor markers swapped for stand-in names.
+
+    ``${.x}`` becomes ``${__UP1__.x}`` and ``${::x}`` becomes ``${__ROOT__.x}``, which
+    parse.  What each stand-in denotes depends on where the expression sits, so it is
+    :class:`_AnchorResolver` that turns it into a path, once the node is known.
+
+    Dev Notes:
+        docs-dev/architecture/07-expressions.md#reference-anchoring
+    """
+    return _map_expressions(value, _name_anchor)
+
+
+class _AnchorResolver(ast.NodeTransformer):
+    """Replace each anchor stand-in by the absolute path it denotes at *node_path*.
+
+    Works on the tree and never on source, because an absolute path may hold a list
+    index or a key that is no identifier (``dbs.0.host``): expressible as an
+    ``ast.Attribute`` chain, which :func:`_attribute_chain` reads straight back, but
+    not as Python anyone could parse.
+
+    Dev Notes:
+        docs-dev/architecture/07-expressions.md#reference-anchoring
+    """
+
+    def __init__(self, node_path: str) -> None:
+        self._node_path = node_path
+
+    def _absolute(self, parts: list[str]) -> list[str] | None:
+        """Return *parts* with a leading stand-in expanded, or ``None`` if it has none."""
+        levels = _anchor_dot_count(parts[0])
+        if levels is None:
+            return None
+        prefix = "" if levels == 0 else _anchor_prefix(self._node_path, levels)
+        return [segment for segment in prefix.split(".") if segment] + parts[1:]
+
+    def visit_Attribute(self, node: ast.Attribute) -> ast.AST:  # NodeTransformer dispatches on the class name
+        """Rewrite a dotted chain rooted at a stand-in, else recurse."""
+        parts = _attribute_chain(node)
+        absolute = self._absolute(parts) if parts is not None else None
+        if absolute:
+            return ast.copy_location(_path_to_ast(absolute), node)
+        return self.generic_visit(node)
+
+    def visit_Name(self, node: ast.Name) -> ast.AST:  # NodeTransformer dispatches on the class name
+        """Rewrite a bare stand-in, which names the anchored node itself."""
+        absolute = self._absolute([node.id])
+        return ast.copy_location(_path_to_ast(absolute), node) if absolute else node
+
+
+def _parse_anchored(expr_content: str, node_path: str) -> ast.Expression:
+    """Parse one ``${...}`` body, resolving any anchor stand-in against *node_path*.
+
+    The parse cache is shared, so the tree is copied before it is rewritten.
+    """
+    tree = _parse_expression(expr_content)
+    if not _ANCHOR_NAME_RE.search(expr_content):
+        return tree
+    rewritten = _AnchorResolver(node_path).visit(copy.deepcopy(tree))
+    ast.fix_missing_locations(rewritten)
+    return cast("ast.Expression", rewritten)
 
 
 class _Prefixer(ast.NodeTransformer):
@@ -779,12 +1007,9 @@ class _Prefixer(ast.NodeTransformer):
 
     def visit_Name(self, node: ast.Name) -> ast.AST:  # NodeTransformer dispatches on the AST class name
         """Return *node* unchanged for a function or anchor, else prefixed."""
-        if node.id in _SAFE_FUNCTIONS or node.id == _ROOT_ANCHOR:
+        if node.id in _SAFE_FUNCTIONS or _anchor_dot_count(node.id) is not None:
             return node
-        built: ast.expr = ast.Name(id=self._parts[0], ctx=ast.Load())
-        for part in [*self._parts[1:], node.id]:
-            built = ast.Attribute(value=built, attr=part, ctx=ast.Load())
-        return ast.copy_location(built, node)
+        return ast.copy_location(_path_to_ast([*self._parts, node.id]), node)
 
 
 def _prefix_content(expr_content: str, prefix: str) -> str:
@@ -825,9 +1050,11 @@ def prefix_references(data: Any, prefix: str) -> Any:
     """Return *data* with every file-anchored reference prefixed by *prefix*.
 
     Called when one configuration file's content is mounted at *prefix* inside a
-    larger document; every bare reference of the file gets the same prefix.
-    Document-root references (``${.foo}``) are left untouched.  An empty *prefix*
-    returns *data* itself, unchanged.
+    larger document; every bare reference of the file gets the same prefix.  Anchored
+    references — the configuration root (``${::foo}``) and node-relative ones
+    (``${.foo}``, ``${..foo}``) — are left untouched, the first because it does not
+    depend on the mount and the second because it moves with the node.  An empty
+    *prefix* returns *data* itself, unchanged.
 
     Dev Notes:
         docs-dev/architecture/07-expressions.md#reference-anchoring
@@ -838,11 +1065,17 @@ def prefix_references(data: Any, prefix: str) -> Any:
 
 
 def canonicalize_references(data: Any) -> Any:
-    """Return *data* with document-root references rewritten as plain paths.
+    """Return *data* with configuration-root references rewritten as plain paths.
 
-    Run once every file has been mounted.
+    Run once every file has been mounted, by which point ``${::x}`` and a bare
+    ``${x}`` mean the same thing.
+
+    Node-relative references are deliberately left as they are: resolving one here
+    would write the index an element currently holds into the merged dict, so
+    reordering the list, or lifting the element into a file of its own, would break
+    it silently.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/07-expressions.md#a-relative-reference-is-never-serialized-as-an-absolute-path
     """
     return _map_strings(data, _strip_anchor)

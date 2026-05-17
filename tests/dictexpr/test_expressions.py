@@ -15,9 +15,14 @@ import confarg
 from confarg._types import _StrToken
 from confarg.dictexpr._expressions import (
     _SAFE_FUNCTIONS,
+    _anchor_markers,
+    _anchor_prefix,
     _extract_references,
+    _name_anchor,
+    _prefix_content,
     _scan_expressions,
     _topological_sort,
+    _unname_anchor,
     _validate_ast,
     contains_expression,
     resolve_expressions,
@@ -1081,3 +1086,101 @@ class TestReservedNamesInExpressions:
         """${locals.k} reads the reserved namespace rather than Python's locals()."""
         result = resolve_expressions({"locals": {"k": 3}, "n": "${locals.k * 2}"})
         assert result["n"] == 6
+
+
+# ---------------------------------------------------------------------------
+# Anchor marker lexing
+# ---------------------------------------------------------------------------
+
+
+class TestAnchorMarkerLexing:
+    """``(offset, length, levels)`` for each marker that begins an operand.
+
+    The scan is lexical rather than a regex because a dot belongs to whatever token
+    the tokenizer put it in.  Two details bite: Python tokenizes ``...`` as one
+    ellipsis token while ``..`` arrives as two dots, and a ``::`` is a slice step
+    inside a subscript but a root marker anywhere else.
+    """
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            pytest.param(".host", [(0, 1, 1)], id="one-dot"),
+            pytest.param("..host", [(0, 2, 2)], id="two-dots"),
+            pytest.param("...host", [(0, 3, 3)], id="three-dots-is-one-ellipsis-token"),
+            pytest.param("....host", [(0, 4, 4)], id="four-dots-spans-both"),
+            pytest.param("::name", [(0, 2, 0)], id="root"),
+            pytest.param("a.b", [], id="ordinary-attribute"),
+            pytest.param("1.5 + n", [], id="inside-float"),
+            pytest.param("'a.b'.upper()", [], id="after-string-literal"),
+            pytest.param("str(n)[0].upper()", [], id="after-closing-bracket"),
+            pytest.param("n if .name else 0", [(5, 1, 1)], id="after-keyword"),
+            pytest.param("min(.a, ::b)", [(4, 1, 1), (8, 2, 0)], id="both-inside-a-call"),
+        ],
+    )
+    def test_markers(self, expr: str, expected: list[tuple[int, int, int]]) -> None:
+        """Each case pins one way a marker is or is not spelled."""
+        assert _anchor_markers(expr) == expected
+
+    def test_double_colon_in_a_subscript_is_a_slice(self) -> None:
+        """``items[::2]`` keeps its slice reading, so widening the grammar stays possible."""
+        assert _anchor_markers("items[::2]") == []
+
+    def test_parentheses_reopen_the_root_marker_inside_a_subscript(self) -> None:
+        """The documented escape hatch: parenthesise to reach the root within brackets."""
+        assert _anchor_markers("items[(::step)]") == [(7, 2, 0)]
+
+    def test_a_slice_is_still_refused(self) -> None:
+        """Nothing here makes slices legal; they remain outside the whitelist."""
+        with pytest.raises(UnsafeExpressionError):
+            resolve_expressions({"items": [1, 2, 3], "n": "${items[::2]}"})
+
+
+class TestAnchorNameRoundTrip:
+    """Markers become stand-in names to parse, and must come back out unchanged.
+
+    ``prefix_references`` unparses a rewritten tree, so a dumped configuration that
+    still carries ``${.host}`` only survives being re-included if this round-trips.
+    """
+
+    @pytest.mark.parametrize(
+        "expr",
+        [".host", "..host", "...host", "::name", "min(.a, ::b) + n", "x.upper()"],
+    )
+    def test_round_trip(self, expr: str) -> None:
+        """Naming the markers and unnaming them is the identity."""
+        assert _unname_anchor(_name_anchor(expr)) == expr
+
+    def test_mounting_leaves_anchored_references_alone(self) -> None:
+        """Only a bare name is file-anchored, so only a bare name takes the prefix."""
+        assert _prefix_content("host", "db") == "db.host"
+        assert _prefix_content(".host", "db") == ".host"
+        assert _prefix_content("..host", "db") == "..host"
+        assert _prefix_content("::name", "db") == "::name"
+
+
+class TestAnchorDepthArithmetic:
+    """One dot drops the value's own key; each further dot drops one more segment."""
+
+    @pytest.mark.parametrize(
+        ("node_path", "levels", "expected"),
+        [
+            pytest.param("dbs.0.url", 1, "dbs.0.", id="sibling-in-a-list-element"),
+            pytest.param("dbs.0.url", 2, "dbs.", id="the-list-itself"),
+            pytest.param("dbs.0.url", 3, "", id="document-root"),
+            pytest.param("a", 1, "", id="already-at-the-root"),
+        ],
+    )
+    def test_prefix(self, node_path: str, levels: int, expected: str) -> None:
+        """A list index is an ordinary segment, as it is everywhere else."""
+        assert _anchor_prefix(node_path, levels) == expected
+
+    def test_climbing_past_the_root_is_an_error(self) -> None:
+        """The message names the run, the depth it had, and the way out."""
+        with pytest.raises(MissingReferenceError, match=r"above the document root"):
+            _anchor_prefix("a", 2)
+
+    def test_a_non_identifier_key_is_still_addressable(self) -> None:
+        """The absolute path is built as a tree, so ``web-1`` never has to parse."""
+        data = {"svc": {"web-1": {"host": "h", "url": "x://${.host}"}}}
+        assert resolve_expressions(data)["svc"]["web-1"]["url"] == "x://h"

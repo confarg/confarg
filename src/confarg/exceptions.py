@@ -164,6 +164,16 @@ class MissingReferenceError(ConfargError):
         base = f"Field '{path}' not found"
         return cls(f"{base}: {detail}") if detail is not None else cls(f"{base} in configuration")
 
+    @classmethod
+    def anchor_above_root(cls, path: str, dots: int, scope: str = "document") -> MissingReferenceError:
+        """Return an error for a relative reference that climbs past the root of its scope."""
+        depth = len(path.split(".")) if path else 0
+        where = f"'{path}'" if path else "the root"
+        return cls(
+            f"Relative reference '{'.' * dots}' at {where} climbs {dots} level(s) from a depth"
+            f" of {depth}, above the {scope} root; use '::' for the configuration root",
+        )
+
 
 class UnsafeExpressionError(ConfargError):
     """Raised when an expression contains disallowed AST nodes or function calls."""

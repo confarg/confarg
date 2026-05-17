@@ -356,6 +356,8 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
     merged = _deep_merge(config_data, env_data, union_tag=union_tag)
     merged = _deep_merge(merged, cli_data, union_tag=union_tag)
 
-    # Every file is mounted now: rewrite document-root references (${.x}) as plain paths.
+    # Every file is mounted now: rewrite configuration-root references (${::x}) as plain
+    # paths. Node-relative ones (${.x}) are deliberately left alone -- resolving them here
+    # would pin a list element to its current index.
     # See docs-dev/architecture/07-expressions.md#reference-anchoring.
     return canonicalize_references(merged)
