@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from confarg._import import _import_dotted
+from confarg._import import _import_dotted, dotted_name
 from confarg._types import (
     _final_inner,
     _is_enum,
@@ -66,10 +66,7 @@ def _coerce_type_ref(tp: Any, value: Any, path: str = "") -> type:
     if isinstance(value, type):
         constraint = _type_ref_constraint(tp)
         if constraint is not object and not issubclass(value, constraint):
-            msg = (
-                f"Class {value.__module__}.{value.__qualname__!r} at '{path}'"
-                f" is not a subclass of {constraint.__module__}.{constraint.__name__}."
-            )
+            msg = f"Class {dotted_name(value)!r} at '{path}' is not a subclass of {dotted_name(constraint)}."
             raise TypeCoercionError(msg)
         return value
     if not isinstance(value, _StrToken):
@@ -87,7 +84,7 @@ def _coerce_type_ref(tp: Any, value: Any, path: str = "") -> type:
         raise TypeCoercionError(msg)
     constraint = _type_ref_constraint(tp)
     if constraint is not object and not issubclass(obj, constraint):
-        msg = f"Class {str(value)!r} at '{path}' is not a subclass of {constraint.__module__}.{constraint.__name__}."
+        msg = f"Class {str(value)!r} at '{path}' is not a subclass of {dotted_name(constraint)}."
         raise TypeCoercionError(msg)
     return obj
 

@@ -12,8 +12,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
-| [BUG-40 — `_StrToken` leaks into user-facing error messages](BUG-40-strtoken-leaks-into-error-messages.md) | S | low | behavior |
-| [BUG-41 — A class nested inside a class does not round-trip its union tag](BUG-41-nested-class-tag-dumps-name-not-qualname.md) | S | medium | config |
 | [BUG-43 — A fixed-arity tuple flag under-fills instead of reporting a missing value](BUG-43-fixed-tuple-flag-skips-the-missing-value-check.md) | S | medium | behavior |
 | [BUG-44 — `_dataclass_subclasses` returns a diamond subclass twice, and is not BFS](BUG-44-dataclass-subclasses-duplicates-and-is-not-bfs.md) | S | medium | behavior |
 | [BUG-45 — An unimportable class tag silently vanishes from the adapters' merged dict](BUG-45-inheritance-tag-dropped-on-unimportable-class.md) | S | medium | behavior |
@@ -28,5 +26,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-54 — A plain collection flag does not discard the patch ops before it in the adapters](BUG-54-plain-occurrence-does-not-discard-earlier-patch-ops-in-the-adapters.md) | M | medium | config |
 | [BUG-55 — Two ticket reproductions run as tests and fail on every full suite](BUG-55-two-ticket-reproductions-run-as-tests-and-fail.md) | S | low | none |
 | [BUG-56 — The flat spelling of the tagged-leaf hatch reaches no adapter](BUG-56-flat-tagged-leaf-flags-unregistered-by-the-adapters.md) | M | medium | behavior |
+| [BUG-57 — `_StrToken` leaks into the Callable `bind` error message](BUG-57-strtoken-leaks-from-the-callable-bind-message.md) | S | low | behavior |
 
 <!-- tickets:end -->

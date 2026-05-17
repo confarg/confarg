@@ -16,7 +16,7 @@ from typing import Any
 from confarg import _defaults
 from confarg._callable import _resolve_callable_spec
 from confarg._cast import SCALAR_CAST_TYPES
-from confarg._import import _import_dotted
+from confarg._import import _import_dotted, dotted_name
 from confarg._merge import LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, _apply_list_ops
 from confarg._types import (
     _all_have_defaults,
@@ -170,9 +170,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
 
         return tp(**kwargs)
 
-    msg = (
-        f"Cannot construct {tp.__name__} at '{path}': expected list, tuple, or dict, got {type(data).__name__} {data!r}"
-    )
+    msg = f"Cannot construct {tp.__name__} at '{path}': expected list, tuple, or dict, got {_src_type(data)} {data!r}"
     raise TypeCoercionError(msg)
 
 
@@ -185,7 +183,7 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) ->
         return _construct_by_class_path(tp, data, path, union_tag)
     direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
     if direct_subs:
-        sub_names = ", ".join(f"{s.__module__}.{s.__qualname__}" for s in direct_subs)
+        sub_names = ", ".join(dotted_name(s) for s in direct_subs)
         msg = (
             f"Cannot construct '{tp.__name__}' at '{path}': it has subclasses ({sub_names})"
             f" but no {union_tag!r} discriminator was provided."
@@ -209,7 +207,7 @@ def _construct_taggable_leaf(tp: Any, data: dict[str, Any], path: str, union_tag
     msg = (
         f"Cannot coerce dict {data!r} to {tp.__name__} at '{path}'."
         f" {tp.__name__} is a registered leaf type: pass a value it coerces from, or add a"
-        f" {union_tag!r} field naming {tp.__module__}.{tp.__qualname__} to build it from its fields."
+        f" {union_tag!r} field naming {dotted_name(tp)} to build it from its fields."
     )
     raise TypeCoercionError(msg)
 
@@ -227,7 +225,7 @@ def _construct_collection(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     if _is_list(tp) and not isinstance(data, list | dict):
         msg = (
             f"Cannot construct list at '{path}': expected list or dict with integer keys,"
-            f" got {type(data).__name__} {data!r}"
+            f" got {_src_type(data)} {data!r}"
         )
         raise TypeCoercionError(msg)
     items = _build_items(_elem_type(tp), data, path, union_tag)
@@ -484,7 +482,7 @@ def _build_items(et: Any, data: Any, path: str, union_tag: str) -> list[Any]:
         ]
     msg = (
         f"Cannot construct collection at '{path}': expected sequence or dict with integer keys,"
-        f" got {type(data).__name__} {data!r}"
+        f" got {_src_type(data)} {data!r}"
     )
     raise TypeCoercionError(msg)
 
@@ -515,7 +513,7 @@ def _construct_tuple(tp: Any, data: Any, path: str, union_tag: str) -> tuple[Any
     if not isinstance(data, list | tuple | dict):
         msg = (
             f"Cannot construct tuple at '{path}': expected list, tuple, or dict with integer keys,"
-            f" got {type(data).__name__} {data!r}"
+            f" got {_src_type(data)} {data!r}"
         )
         raise TypeCoercionError(msg)
     if isinstance(data, list | tuple):
@@ -617,14 +615,12 @@ def _construct_union_by_tag(non_none: list[Any], data: dict[str, Any], path: str
     if len(matching) > 1:
         raise AmbiguousUnionError(
             f"Class {tag!r} at '{path}' matches multiple union variants: "
-            + ", ".join(f"{_resolve_type(v).__module__}.{_resolve_type(v).__name__}" for v in matching),
+            + ", ".join(dotted_name(_resolve_type(v)) for v in matching),
         )
     if matching:
         cleaned = {k: v2 for k, v2 in data.items() if k != union_tag}
         return _construct_struct(cls, cleaned, path, union_tag)
-    valid_variants = sorted(
-        f"{_resolve_type(v).__module__}.{_resolve_type(v).__name__}" for v in non_none if _is_struct(_resolve_type(v))
-    )
+    valid_variants = sorted(dotted_name(_resolve_type(v)) for v in non_none if _is_struct(_resolve_type(v)))
     msg = (
         f"Class {tag!r} at '{path}' is not compatible with any union variant."
         f" Expected a subclass of one of: {valid_variants}"
@@ -978,7 +974,7 @@ def _construct_by_class_path(tp: type, data: dict[str, Any], path: str, union_ta
     tag = data[union_tag]
     cls = _import_class_by_path(tag, path, union_tag)
     if not issubclass(cls, tp):
-        msg = f"Class {tag!r} at '{path}' is not a subclass of {tp.__module__}.{tp.__name__}."
+        msg = f"Class {tag!r} at '{path}' is not a subclass of {dotted_name(tp)}."
         raise TypeCoercionError(msg)
     cleaned = {k: v for k, v in data.items() if k != union_tag}
     return _construct_struct(cls, cleaned, path, union_tag)

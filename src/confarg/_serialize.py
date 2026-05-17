@@ -17,6 +17,7 @@ from typing import Any
 from confarg import _defaults
 from confarg._callable import _serialize_callable
 from confarg._cast import cast_name_for_type
+from confarg._import import dotted_name
 from confarg._types import (
     TagPolicy,
     _dict_kv,
@@ -140,7 +141,7 @@ def _serialize_struct(
     actual_tp = type(instance)
     if actual_tp is not tp and _is_struct(actual_tp) and issubclass(actual_tp, tp):
         out = _serialize_struct(actual_tp, instance, path, union_tag, tag_policy)
-        out[union_tag] = f"{actual_tp.__module__}.{actual_tp.__name__}"
+        out[union_tag] = dotted_name(actual_tp)
         return out
     flds = _struct_fields(tp)
     out: dict[str, Any] = {}
@@ -183,7 +184,7 @@ def _serialize_union(
 
     if _is_struct_variant(variant_tp):
         if isinstance(serialized, dict) and (tag_policy == "always" or _needs_tag(tp, serialized, union_tag)):
-            serialized[union_tag] = f"{variant_tp.__module__}.{variant_tp.__name__}"
+            serialized[union_tag] = dotted_name(variant_tp)
         return serialized
 
     if _reads_back(tp, instance, serialized, union_tag):
@@ -296,7 +297,7 @@ def _serialize_leaf(tp: Any, value: Any) -> Any:
     if tp is float and isinstance(value, int) and not isinstance(value, bool):
         return float(value)
     if isinstance(value, type):
-        return f"{value.__module__}.{value.__qualname__}"
+        return dotted_name(value)
     return value
 
 

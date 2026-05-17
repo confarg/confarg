@@ -196,7 +196,8 @@ __transforms__:
    `transforms=` reaches `load()` and `merge()` and therefore the five front-ends, so size it against
    REF-40 before spelling it.
 4. **Errors and documentation.** A `TransformError` family on `LocalsError`'s classmethod-factory
-   shape, messages built in the factories (REF-51). A how-to and an `examples/` entry whose example
+   shape, messages built in the factories
+   ([10-design-decisions.md#a-user-facing-message-lives-on-the-exception-that-raises-it](../architecture/10-design-decisions.md#a-user-facing-message-lives-on-the-exception-that-raises-it)). A how-to and an `examples/` entry whose example
    is one an expression cannot say.
 
 **Deferred**: `split` and `merge` ops; the grouped match form; and the approved divergences —

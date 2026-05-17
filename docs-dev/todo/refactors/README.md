@@ -32,7 +32,6 @@ different board.
 | [REF-48 — `inspect.signature` is walked four or five times per struct](REF-48-init-signature-walked-five-times.md) | M | high | none |
 | [REF-49 — `graphlib.TopologicalSorter` replaces the hand-written Kahn loop](REF-49-graphlib-replaces-hand-written-kahn.md) | S | low | behavior |
 | [REF-50 — Adapter registration and completion boilerplate](REF-50-adapter-registration-boilerplate.md) | M | low | none |
-| [REF-51 — Hot error messages and the dotted-name format live outside their owners](REF-51-error-messages-outside-the-factories.md) | M | low | none |
 | [REF-52 — Mechanical collapses in the type machinery](REF-52-mechanical-collapses-in-the-type-machinery.md) | S | low | none |
 | [REF-53 — Nine `try`/`except`/`pass` blocks that `contextlib.suppress` already spells](REF-53-contextlib-suppress-for-hand-rolled-try-except.md) | S | low | none |
 | [REF-54 — Three hand-written scan loops in `dictexpr` the stdlib writes in one line](REF-54-dictexpr-scan-loops-are-re-sub-and-accumulate.md) | S | low | none |
@@ -49,5 +48,6 @@ different board.
 | [REF-65 — `cli/_collect.py` re-implements the token shaping `_parse_cli` now owns](REF-65-collect-reimplements-the-token-shaping.md) | S | medium | none |
 | [REF-66 — the pinned ruff and the project's own ruff disagree](REF-66-pinned-ruff-disagrees-with-the-project-ruff.md) | S | low | none |
 | [REF-68 — the scalar root spec undoes the multi-token shape one attribute at a time](REF-68-scalar-root-undoes-the-multi-token-shape-one-field-at-a-time.md) | S | low | none |
+| [REF-69 — Two construction-error sentences are still spelled at every call site in `typedload/`](REF-69-typedload-construction-messages-still-at-their-call-sites.md) | S | low | none |
 
 <!-- tickets:end -->

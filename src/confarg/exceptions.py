@@ -6,11 +6,41 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+
+def _locals_file_flag(config_flag: str, locals_key: str) -> str | None:
+    """Return the ``--<config_flag>.<locals_key> FILE`` flag, or None when there is no flag.
+
+    ``config_flag=""`` suppresses the config-file flag, and then no message may offer it.
+    """
+    return f"--{config_flag}.{locals_key} FILE" if config_flag else None
 
 
 class ConfargError(Exception):
     """Base exception for all confarg errors."""
+
+    @classmethod
+    def root_cast_not_object(cls, flag: str, value: Any) -> ConfargError:
+        """Return an error for a whole-configuration JSON cast that decoded to a non-mapping.
+
+        Spelled once for the three channels that accept one -- ``--json``, ``<PREFIX>_JSON``
+        and the adapters' flat ``json`` entry -- which differ only in how *flag* is written.
+        *value* is always JSON the cast just decoded, so it is never a channel token and
+        ``type()`` names it correctly on its own.
+        """
+        return cls(f"{flag} for a structured target must be a JSON object, got {type(value).__name__}.")
+
+    @classmethod
+    def include_siblings_need_a_dict(cls, include_key: str, included: Any) -> ConfargError:
+        """Return an error for sibling keys beside an include that produced a non-mapping."""
+        return cls(
+            f"{include_key} produced {type(included).__name__} but sibling keys are"
+            f" also present; can only merge sibling keys into a dict include",
+        )
 
 
 class MissingFieldError(ConfargError):
@@ -125,6 +155,21 @@ class InvalidConfigFileError(ConfargError):
 class UnknownArgumentError(ConfargError):
     """Raised when an unrecognized CLI argument is encountered."""
 
+    @classmethod
+    def no_such_field(cls, token: str, path: Sequence[str]) -> UnknownArgumentError:
+        """Return an error for a flag whose dotted path names no field of the target."""
+        return cls(f"Unknown argument: {token!r} (field '{'.'.join(path)}' not found)")
+
+    @classmethod
+    def not_indexable(cls, token: str, path: Sequence[str]) -> UnknownArgumentError:
+        """Return an error for an index patch on a path that is not a list or dict."""
+        return cls(f"Unknown argument: {token!r} (field '{'.'.join(path)}' not found or not indexable)")
+
+    @classmethod
+    def wrong_prefix(cls, token: str, cli_prefix: str) -> UnknownArgumentError:
+        """Return an error for a flag that does not carry the required ``cli_prefix``."""
+        return cls(f"Unknown argument: {token!r}. Expected arguments to start with --{cli_prefix}.")
+
 
 class LocalsError(ConfargError):
     """Raised for misuse of the reserved local-variables namespace.
@@ -153,7 +198,8 @@ class LocalsError(ConfargError):
     @classmethod
     def not_assignable(cls, locals_key: str, config_flag: str, source: str) -> LocalsError:
         """Return an error for an attempt to replace the whole namespace from env or CLI."""
-        hint = f" or declare a new set with --{config_flag}.{locals_key} FILE." if config_flag else "."
+        flag = _locals_file_flag(config_flag, locals_key)
+        hint = f" or declare a new set with {flag}." if flag else "."
         return cls(
             f"The {locals_key!r} namespace cannot be assigned as a whole from the {source}."
             f" Modify one variable at a time ({locals_key}.<name>){hint}",
@@ -171,9 +217,10 @@ class LocalsError(ConfargError):
     @classmethod
     def not_declared(cls, path: str, locals_key: str, config_flag: str, source: str) -> LocalsError:
         """Return an error for an override of a local variable no config file declared."""
+        flag = _locals_file_flag(config_flag, locals_key)
         hint = (
-            f" Declare it in a configuration file, or add one with --{config_flag}.{locals_key} FILE."
-            if config_flag
+            f" Declare it in a configuration file, or add one with {flag}."
+            if flag
             else " Declare it in a configuration file first."
         )
         return cls(

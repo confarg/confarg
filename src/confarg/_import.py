@@ -15,6 +15,19 @@ from confarg.exceptions import SymbolImportError
 _NOT_FOUND = object()
 
 
+def dotted_name(obj: Any) -> str:
+    """Return the dotted path that :func:`_import_dotted` resolves back to *obj*.
+
+    The one writer of a dotted name, so it cannot disagree with the reader beside it.
+    ``__qualname__``, not ``__name__``: a class nested inside another class is reached
+    as ``Outer.Inner``, and the tag confarg writes has to be one it can import.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#dotted-imports
+    """
+    return f"{obj.__module__}.{obj.__qualname__}"
+
+
 def _prefix_not_importable(e: ModuleNotFoundError, module_path: str) -> bool:
     """True when ``module_path`` itself (or an ancestor) is the module not found.
 

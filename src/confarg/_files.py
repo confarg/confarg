@@ -343,11 +343,7 @@ def _include_with_siblings(included: Any, siblings: dict[str, Any], union_tag: s
     for them to merge into.
     """
     if not isinstance(included, dict):
-        msg = (
-            f"{INCLUDE_KEY} produced {type(included).__name__} but sibling keys are"
-            f" also present; can only merge sibling keys into a dict include"
-        )
-        raise ConfargError(msg)
+        raise ConfargError.include_siblings_need_a_dict(INCLUDE_KEY, included)
     return _deep_merge(included, siblings, union_tag=union_tag)
 
 

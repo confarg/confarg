@@ -796,3 +796,31 @@ Making this reach the adapters is what kept it from being a vanilla-only fix: th
 that discovers bind parameters already reads a callable named by an opener flag, a `{…}` blob
 or a config file, so the bare string became a fourth source feeding the same type-guided walk
 rather than a new mechanism ([04](04-cli-adapters.md#static-and-dynamic-flags)).
+
+## A user-facing message lives on the exception that raises it
+
+An error message raised from **more than one site** is built by a classmethod factory on its
+exception class, not by an f-string at each of them. `InvalidConfigFileError` and `LocalsError`
+were written that way from the start; `ConfargError.root_cast_not_object`,
+`ConfargError.include_siblings_need_a_dict` and the three `UnknownArgumentError` factories
+followed once the duplication had cost something (REF-51, closed). The threshold is duplication,
+not user-facing-ness: a message with one call site is fine where it is raised, and most of them
+still are. The point is not tidiness either — a message spelled at four call sites drifts, and
+the drift is invisible because no test reads more than one of them. Two of the four "Unknown
+argument" spellings had already lost the quotes around the flag, so the same failure printed
+`'--foo'` or `--foo` depending on which branch of `_parse_cli` noticed it.
+
+Where such a message reaches a user, the flag is **quoted** — `Unknown argument: '--no-value1'`.
+That matches the messages beside it (`Missing value for '--value1'`) and cyclopts; argparse and
+click leave it bare, and the divergence from them is deliberate, since confarg's flag paths are
+dotted and a bare `--db.hosts.0-` at the end of a sentence is hard to see the end of
+(maintainer-chosen).
+
+The constraint on the factories is that **`exceptions.py` imports nothing from `confarg`**.
+`dictexpr` is allowed to depend on the standard library and this one module, and no more
+([README § Source map](README.md)), so an import here would pull the type machinery into
+`dictexpr`'s closure. A factory therefore cannot reach `_src_type` or `dotted_name`: either the
+caller formats the piece and passes it in, or — as for `root_cast_not_object`, whose value is
+always JSON the cast has just decoded — the argument provably cannot be a token and `type()`
+names it correctly unaided. Holding that line is why `_locals_file_flag` is a module-level
+helper in `exceptions.py` rather than a call into `cli`.
