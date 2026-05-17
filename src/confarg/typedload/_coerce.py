@@ -132,27 +132,40 @@ def _coerce_str_value(value: Any, path: str) -> str:
     raise TypeCoercionError.cannot_coerce(_src_type(value), value, "str", path)
 
 
-def _steal_order(variants: list[Any], *, key: Any) -> list[Any]:
-    """Sort variants into stealing priority: enum > non-str non-enum > str.
+_RANKED_LEAF_TYPES: tuple[type, ...] = (float, int, bool, type(None), str)
+
+
+def _steal_rank(tp: Any) -> int:
+    """Return the stealing priority of a leaf type — lower steals first.
+
+    A registered leaf ranks first, then ``Enum``, then every kind the rule does not name
+    (type references, ``Literal``, a ``bytes`` Literal member), then float, int, bool, None
+    and str. Types sharing a rank keep their declaration order, ``_steal_order`` being stable.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#stealing-rule (this order deviates
-        from the intended rule)
+        docs-dev/architecture/05-types-and-construction.md#stealing-rule
+    """
+    if _is_registered_leaf(tp):
+        return 0
+    if _is_enum(tp):
+        return 1
+    for i, ranked in enumerate(_RANKED_LEAF_TYPES):
+        if tp is ranked:  # identity: bool is a subclass of int and ranks on its own
+            return 3 + i
+    return 2
+
+
+def _steal_order(variants: list[Any], *, key: Any) -> list[Any]:
+    """Sort variants into stealing priority, declaration order breaking ties.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#stealing-rule
 
     Args:
         variants: The list to order.
         key: Callable returning the type to classify each variant by.
     """
-    enums, scalars, strs = [], [], []
-    for v in variants:
-        tp = _resolve_type(key(v))
-        if _is_enum(tp):
-            enums.append(v)
-        elif tp is str:
-            strs.append(v)
-        else:
-            scalars.append(v)
-    return enums + scalars + strs
+    return sorted(variants, key=lambda v: _steal_rank(_resolve_type(key(v))))
 
 
 def _match_literal_member(v: Any, value: _StrToken, s: str, path: str) -> bool:

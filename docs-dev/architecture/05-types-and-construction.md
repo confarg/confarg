@@ -88,27 +88,33 @@ skipped by rule ([07](07-expressions.md#deferral-rule)).
 
 ## Stealing rule
 
-When a token meets a union of leaf types, the first variant that accepts it "steals" it.
-
-**Intended precedence** (maintainer-confirmed, documented in
-`examples/7_stealing_rule/README.md`):
+When a token meets a union of leaf types, the **highest-ranked** variant that accepts it
+"steals" it. The rank is fixed; the order the union happens to be declared in decides nothing
+(maintainer-confirmed, and what `examples/7_stealing_rule/README.md` teaches):
 
 ```
-custom (registered) leaf type > Enum > [float, int, bool, None] > str
+custom (registered) leaf type > Enum > every other leaf kind > float > int > bool > None > str
 ```
 
-**Implementation** (`_coerce._steal_order`): `Enum > every other non-str type, in union
-declaration order > str`, with `None` words and the bool-vs-int case handled first in
-`_construct._coerce_scalar_variants`. Registered leaf types are not ahead of `Enum`, and the
-middle bucket has no fixed order. This deviation is recorded in
-[BUG-4](../todo/bugs/BUG-4-stealing-order-mismatch.md); do not "fix" the
-documentation to match the code.
+`_coerce._steal_rank` is the one place that order is written down and `_steal_order` sorts by
+it, stably — so declaration order still breaks ties *within* a rank, and nowhere else
+([09](09-invariants.md#delegate-to-the-canonical-function)). Two callers ask: the scalar-variant
+loop of a union (`_construct._coerce_scalar_variants`) and the members of a `Literal`
+(`_coerce._match_literal_str_token`, ranking each member by the type of its value).
+
+The kinds the rule does not name — type references (`type`, `type[X]`), `Literal`, a `bytes`
+Literal member — share the one rank below `Enum`, ahead of the numbers
+([10](10-design-decisions.md#stealing-rule-for-text-in-unions)).
 
 Details that are intended:
 
 - the order applies only to tokens; native file values keep declaration order;
-- when both `bool` and `int` are variants, bool words go to `bool` and numbers never do
-  (`1` is an int, not `True`);
+- `bool` ranks below `int`, so a numeric token is a number and a bool word is a bool: `1` is
+  `1` and `yes` is `True` for `bool | int`. No case handles this: the rank does;
+- `None` is ranked like the rest rather than taken first, so an `Enum` member or a registered
+  leaf that accepts `none` outranks it. Only the none *words* select the `None` variant, never
+  the empty token `_coerce_leaf` would also accept for a bare `None` target — `str | None` must
+  keep `""` a string;
 - scalar variants are tried through `_construct_scalar`, the canonical single-value
   constructor, **not** `_coerce_leaf`: `_coerce_leaf` cannot build `type`/`type[X]`, and calling
   it let `str` always steal a type-ref variant;

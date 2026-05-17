@@ -4,7 +4,10 @@
 
 """Unit tests for _construct: struct dispatch, union fallbacks and the all-default shortcut."""
 
+import enum
 from dataclasses import dataclass
+from decimal import Decimal
+from typing import Any, Literal
 from uuid import UUID
 
 import pytest
@@ -163,3 +166,120 @@ class TestAllDefaultShortcut:
     def test_buildable_struct_is_still_auto_created(self) -> None:
         """The shortcut itself is intact: a struct that accepts {} is still built from it."""
         assert confarg.build(_NeedsAllDefaults, {}) == _NeedsAllDefaults(nested=_AllDefaults())
+
+
+# ---------------------------------------------------------------------------
+# Stealing order
+# ---------------------------------------------------------------------------
+
+
+class _Word:
+    """Registered leaf type accepting any text — a leaf that outranks every other kind."""
+
+    def __init__(self, text: str) -> None:
+        self.text = str(text)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Word) and other.text == self.text
+
+    def __hash__(self) -> int:
+        return hash(self.text)
+
+
+class _Grade(enum.Enum):
+    """Enum whose member names and values collide with other leaf kinds."""
+
+    FOO = 1
+    BAR = 2
+
+
+@pytest.fixture
+def _registered(leaf_registry: None) -> None:
+    """Register the leaf types the ordering tests rank, undone after the test."""
+    confarg.register_leaf_type(Decimal, Decimal)
+    confarg.register_leaf_type(_Word, _Word)
+
+
+class TestStealOrder:
+    """A token meeting a union of leaves is taken by rank, never by declaration order.
+
+    The rank is ``registered leaf > Enum > everything else > float > int > bool > None > str``;
+    each pair below is written in both declaration orders, since the point of the rule is that
+    the order a union is spelled in does not decide.
+    """
+
+    @pytest.mark.usefixtures("_registered")
+    @pytest.mark.parametrize("tp", [int | Decimal, Decimal | int])
+    def test_registered_leaf_steals_over_int(self, tp: Any) -> None:
+        """A registered leaf outranks int whichever side of the union it is written on."""
+        result = construct(tp, _StrToken("5"))
+        assert result == Decimal(5)
+        assert type(result) is Decimal
+
+    @pytest.mark.usefixtures("_registered")
+    @pytest.mark.parametrize("tp", [_Grade | _Word, _Word | _Grade])
+    def test_registered_leaf_steals_over_enum(self, tp: Any) -> None:
+        """A registered leaf outranks an Enum, even on a token naming a member."""
+        assert construct(tp, _StrToken("FOO")) == _Word("FOO")
+
+    @pytest.mark.parametrize("tp", [float | _Grade, _Grade | float])
+    def test_enum_steals_over_float(self, tp: Any) -> None:
+        """An Enum outranks float: '1' is the member with value 1, not 1.0."""
+        assert construct(tp, _StrToken("1")) is _Grade.FOO
+
+    @pytest.mark.parametrize("tp", [int | Literal["5"], Literal["5"] | int])
+    def test_literal_steals_over_int(self, tp: Any) -> None:
+        """A Literal member outranks int: the kinds the rule does not name rank above it."""
+        result = construct(tp, _StrToken("5"))
+        assert result == "5"
+        assert type(result) is str
+
+    @pytest.mark.parametrize("tp", [int | float, float | int])
+    def test_float_steals_over_int(self, tp: Any) -> None:
+        """Float outranks int: an integral token still lands on the float variant."""
+        result = construct(tp, _StrToken("5"))
+        assert result == 5.0
+        assert type(result) is float
+
+    @pytest.mark.parametrize("tp", [bool | int, int | bool])
+    def test_int_steals_over_bool_for_a_number(self, tp: Any) -> None:
+        """Int outranks bool: '1' is the number one, not True."""
+        result = construct(tp, _StrToken("1"))
+        assert result == 1
+        assert type(result) is int
+
+    @pytest.mark.parametrize("tp", [bool | int, int | bool])
+    def test_bool_takes_a_word_no_number_type_accepts(self, tp: Any) -> None:
+        """Bool still takes a bool word: it is last of the numbers, not excluded."""
+        assert construct(tp, _StrToken("yes")) is True
+
+    @pytest.mark.parametrize("tp", [bool | float, float | bool])
+    def test_float_steals_over_bool(self, tp: Any) -> None:
+        """Float outranks bool the same way int does."""
+        result = construct(tp, _StrToken("1"))
+        assert result == 1.0
+        assert type(result) is float
+
+    @pytest.mark.parametrize("tp", [bool | None, None | bool])
+    def test_bool_steals_over_none(self, tp: Any) -> None:
+        """Bool outranks None, and None still takes a none word no other variant accepts."""
+        assert construct(tp, _StrToken("off")) is False
+        assert construct(tp, _StrToken("none")) is None
+
+    @pytest.mark.parametrize("tp", [str | None, None | str])
+    def test_none_steals_over_str(self, tp: Any) -> None:
+        """None outranks str for a none word, and an empty token is still the empty string."""
+        assert construct(tp, _StrToken("null")) is None
+        assert construct(tp, _StrToken("")) == ""
+
+    @pytest.mark.parametrize("tp", [int | str, str | int])
+    def test_str_is_last(self, tp: Any) -> None:
+        """Str takes only what no other variant accepts."""
+        assert construct(tp, _StrToken("5")) == 5
+        assert construct(tp, _StrToken("abc")) == "abc"
+
+    @pytest.mark.parametrize("tp", [int | float, float | int])
+    def test_native_values_keep_their_own_type(self, tp: Any) -> None:
+        """The rank orders tokens only: a native value from a file is never re-interpreted."""
+        assert type(construct(tp, 5)) is int
+        assert type(construct(tp, 5.0)) is float

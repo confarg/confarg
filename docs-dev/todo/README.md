@@ -20,7 +20,7 @@ the revision that closed it.
 ## One ticket, one file
 
 Every ticket is its own file inside its board's folder, named `<ID>-<slug>.md`:
-`bugs/BUG-4-stealing-order-mismatch.md`. The ID leads, because that is what code comments and
+`bugs/BUG-3-root-json-cast-refused-in-env.md`. The ID leads, because that is what code comments and
 revision descriptions cite; the slug only makes a directory listing readable and may be
 reworded freely. The file opens with `# <ID> — <headline>` and holds nothing else.
 
@@ -176,10 +176,10 @@ the rungs run in order of how late the user finds out:
 
 Where a change is both, take the higher rung. `config` outranks `api` deliberately: an API
 break is caught by the tools a user already runs, while a config break passes every one of
-them and surfaces in deployment, sometimes silently. BUG-4 is the case to keep in mind —
-`int | Decimal` resolves to `5` today and to `Decimal('5')` once the documented stealing rule
-is honored, so every deployed configuration relying on the current answer changes meaning with
-no error anywhere.
+them and surfaces in deployment, sometimes silently. BUG-4 (closed) is the case to keep in
+mind — `int | Decimal` resolved to `5` until the documented stealing rule was honored and to
+`Decimal('5')` after it, so every deployed configuration relying on the old answer changed
+meaning with no error anywhere.
 
 Impact doubles as a smell test on a refactor: anything above `none` on `refactors/` is not
 really a refactor. REF-9 is `api`, which is what says it needs a deprecation story rather than

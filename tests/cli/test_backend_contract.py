@@ -26,6 +26,7 @@ from collections.abc import (
 )
 from dataclasses import dataclass
 from dataclasses import field as dataclasses_field
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
@@ -128,6 +129,16 @@ class _StealMarker:
 @dataclass
 class _WithStrType:
     value: str | type
+
+
+@dataclass
+class _WithIntFloat:
+    value: int | float = 0
+
+
+@dataclass
+class _WithIntDecimal:
+    value: int | Decimal = 0
 
 
 class _Point(NamedTuple):
@@ -528,6 +539,18 @@ class TestStealingContract:
         cfg = loader.load(_WithStrType, argv=["--value.str", "int"], env={})
         assert cfg.value == "int"
         assert type(cfg.value) is str
+
+    def test_float_steals_over_int(self, loader: ConfargLoader) -> None:
+        """--value 5 lands on float for int | float: rank decides, not declaration order."""
+        cfg = loader.load(_WithIntFloat, argv=["--value", "5"], env={})
+        assert type(cfg.value) is float
+
+    def test_registered_leaf_steals_over_int(self, loader: ConfargLoader, leaf_registry: None) -> None:
+        """--value 5 lands on the registered leaf for int | Decimal, in every integration."""
+        confarg.register_leaf_type(Decimal, Decimal)
+        cfg = loader.load(_WithIntDecimal, argv=["--value", "5"], env={})
+        assert cfg.value == Decimal(5)
+        assert type(cfg.value) is Decimal
 
 
 # ---------------------------------------------------------------------------

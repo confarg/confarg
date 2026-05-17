@@ -321,20 +321,24 @@ class TestUnion:
 
 
 class TestUnionLeafDisambiguation:
-    """Leaf union disambiguation: int vs float, bool vs int, three-way."""
+    """Leaf union disambiguation: int vs float, bool vs int, three-way.
+
+    The rank is ``float > int > bool``, so ``Union[int, float]`` takes an integral token as a
+    float and ``Union[bool, int]`` takes a numeric one as an int.
+    """
 
     @pytest.mark.parametrize(
         ("target_cls", "source", "expected", "expected_type"),
         [
-            # int vs float
-            (make_target("value", Union[int, float], default=0), {"args": ["--value", "42"]}, 42, int),
+            # int vs float — float outranks int, so an integral token still lands on float
+            (make_target("value", Union[int, float], default=0), {"args": ["--value", "42"]}, 42, float),
             (make_target("value", Union[int, float], default=0), {"args": ["--value", "3.14"]}, 3.14, float),
             # bool vs int
             (make_target("value", Union[bool, int], default=0), {"env": {"MYAPP_VALUE": "true"}}, True, bool),
             (make_target("value", Union[bool, int], default=0), {"env": {"MYAPP_VALUE": "false"}}, False, bool),
             (make_target("value", Union[bool, int], default=0), {"args": ["--value", "42"]}, 42, int),
             # three-way
-            (make_target("value", Union[int, float, str], default=0), {"args": ["--value", "7"]}, 7, int),
+            (make_target("value", Union[int, float, str], default=0), {"args": ["--value", "7"]}, 7, float),
             (make_target("value", Union[int, float, str], default=0), {"args": ["--value", "1.5"]}, 1.5, float),
             (make_target("value", Union[int, float, str], default=0), {"args": ["--value", "hello"]}, "hello", str),
         ],
@@ -350,7 +354,7 @@ class TestUnionLeafDisambiguation:
         ],
     )
     def test_leaf_disambiguation(self, target_cls, source, expected, expected_type) -> None:
-        """Leaf union types disambiguate correctly."""
+        """Leaf union types disambiguate by the stealing rule, not by declaration order."""
         args = source.get("args", [])
         env = source.get("env", {})
         result = confarg.load(target_cls, argv=args, env=env, env_prefix="MYAPP_")
