@@ -690,3 +690,29 @@ class TestEnvVarSubConfig:
                 env={"CONFARG_CONFIG__DB": "/nonexistent/db.toml"},
                 env_prefix="CONFARG_",
             )
+
+    def test_env_config_load_order_shallow_before_deep(self, tmp_toml) -> None:
+        """Env-var config files are loaded shallower-path-first so deeper paths win.
+
+        Without the sort, dict insertion order would determine the winner.  This
+        test constructs the env dict so that the deeper var (CONFIG__DB) is
+        inserted first; if no sort were applied the global file (CONFIG) would
+        load second and its db.host value would incorrectly win.
+        """
+        global_file = tmp_toml(
+            "[db]\nhost = 'global_host'\nport = 5432\nname = 'db'\n",
+            "global.toml",
+        )
+        db_file = tmp_toml("host = 'db_host'\nport = 5432\nname = 'db'\n", "db.toml")
+        # CONFIG__DB inserted first — without sorting it would load first and be
+        # overridden by CONFIG (global), giving the wrong winner.
+        result = confarg.load(
+            AppConfig,
+            args=[],
+            env={
+                "CONFARG_CONFIG__DB": str(db_file),
+                "CONFARG_CONFIG": str(global_file),
+            },
+            env_prefix="CONFARG_",
+        )
+        assert result.db.host == "db_host"  # deeper path wins
