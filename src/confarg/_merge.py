@@ -16,8 +16,20 @@ from confarg._errors import ConfargError
 LIST_APPEND_KEY = "+"
 
 # Special key used in the intermediate dict to signal "delete these indices from the list".
-# The value is a sorted list of non-negative integers (original indices before deletion).
+# The value is a sorted list of integers (original indices before deletion).
 LIST_DELETE_KEY = "-"
+
+# Special key used in the intermediate dict to signal "replace the base list with this
+# value before applying other operations".  Produced by the CLI parser when a full-replace
+# (--field or --field val…) is followed by a patch/append so that the replace is not lost
+# during merge.  The value is the replacement list.
+LIST_REPLACE_BASE_KEY = "*"
+
+# Special key used in the intermediate dict to signal "delete these indices from the list
+# AFTER appends have been applied".  Produced by the CLI parser when --field.N- appears
+# after --field+ in the argument list, so the index refers to the post-append list.
+# The value is a sorted list of integers (original post-append indices).
+LIST_POST_APPEND_DELETE_KEY = "~"
 
 
 class _DeleteSentinel:
@@ -121,6 +133,78 @@ def _normalize_merge_ops(d: Any) -> Any:
     return result if has_change else d
 
 
+def _apply_list_ops(
+    working: list[Any],
+    ops: dict[str, Any],
+    key: str,
+    union_tag: str | None,
+) -> list[Any]:
+    """Apply list mutation operations from *ops* onto *working* in order.
+
+    Operations are applied in a fixed semantic order regardless of dict iteration:
+    1. Pre-append deletions (LIST_DELETE_KEY ``"-"``): remove indices from *working*.
+    2. Appends (LIST_APPEND_KEY ``"+"``): extend *working*.
+    3. Post-append deletions (LIST_POST_APPEND_DELETE_KEY ``"~"``): remove indices
+       from the post-append *working* (used when a CLI delete follows an append).
+    4. Index patches (integer string keys, including negative): replace elements.
+
+    LIST_REPLACE_BASE_KEY (``"*"``) is ignored here; the caller already used it
+    to set *working*.
+    """
+
+    def _check_del(orig_idx: int, lst: list[Any]) -> int:
+        idx = orig_idx + len(lst) if orig_idx < 0 else orig_idx
+        if idx < 0 or idx >= len(lst):
+            _rng = "(the list is empty)" if not lst else f"(valid indices {-len(lst)} to {len(lst) - 1})"
+            raise ConfargError(
+                f"Cannot delete index {orig_idx} from '{key}': the list has {len(lst)} element(s) {_rng}."
+            )
+        return idx
+
+    # 1. Pre-append deletions
+    if LIST_DELETE_KEY in ops:
+        del_set = {_check_del(i, working) for i in ops[LIST_DELETE_KEY]}
+        working = [item for i, item in enumerate(working) if i not in del_set]
+
+    # 2. Appends
+    if LIST_APPEND_KEY in ops:
+        working = working + _to_append_list(ops[LIST_APPEND_KEY])
+
+    # 3. Post-append deletions
+    if LIST_POST_APPEND_DELETE_KEY in ops:
+        del_set = {_check_del(i, working) for i in ops[LIST_POST_APPEND_DELETE_KEY]}
+        working = [item for i, item in enumerate(working) if i not in del_set]
+
+    # 4. Index patches
+    _SKIP = {LIST_REPLACE_BASE_KEY, LIST_DELETE_KEY, LIST_APPEND_KEY, LIST_POST_APPEND_DELETE_KEY}
+    for ik, iv in ops.items():
+        if ik in _SKIP:
+            continue
+        try:
+            orig_idx = int(ik)
+        except ValueError:
+            raise ConfargError(
+                f"Cannot patch list '{key}' with non-integer key {ik!r}."
+                " List patches must use integer string keys (e.g. {'0': ..., '1': ...})."
+            ) from None
+        idx = orig_idx + len(working) if orig_idx < 0 else orig_idx
+        if idx < 0 or idx >= len(working):
+            _rng = "(the list is empty)" if not working else f"(valid indices {-len(working)} to {len(working) - 1})"
+            raise ConfargError(
+                f"Cannot patch list '{key}' at index {orig_idx}:"
+                f" the list has {len(working)} element(s) {_rng}."
+                " Use the + append syntax (e.g. --field+ for CLI) to add new elements."
+            )
+        working = list(working)  # ensure mutability
+        working[idx] = (
+            _deep_merge(working[idx], iv, union_tag=union_tag)
+            if isinstance(working[idx], dict) and isinstance(iv, dict)
+            else iv
+        )
+
+    return working
+
+
 def _deep_merge(
     base: dict[str, Any],
     override: dict[str, Any],
@@ -132,6 +216,8 @@ def _deep_merge(
     Dict values are merged recursively.  Special override values:
 
     - ``DICT_DELETE`` as a value → removes that key from the result.
+    - ``{"*": list}`` as a value for a list base → replaces the base list, then
+      applies any additional ``"+"``, ``"-"``, or integer-key operations.
     - ``{"+": items}`` as a value for a list base → appends items.
     - ``{"-": [i, j]}`` as a value for a list base → deletes original indices i, j.
     - ``{"N": v}`` (integer string keys) as a value for a list base → patches by index.
@@ -191,54 +277,11 @@ def _deep_merge(
                     result[key] = _deep_merge(bv, val, union_tag=union_tag)
 
             elif isinstance(bv, list) and isinstance(val, dict):
-                if LIST_DELETE_KEY in val:
-                    del_indices = val[LIST_DELETE_KEY]
-                    normalized_del: list[int] = []
-                    for orig_idx in del_indices:
-                        idx = orig_idx
-                        if idx < 0:
-                            idx = len(bv) + idx
-                        if idx < 0 or idx >= len(bv):
-                            raise ConfargError(
-                                f"Cannot delete index {orig_idx} from '{key}':"
-                                f" the list has {len(bv)} element(s)"
-                                f" (valid indices {-len(bv)} to {len(bv) - 1})."
-                            )
-                        normalized_del.append(idx)
-                    del_set = set(normalized_del)
-                    current = [item for i, item in enumerate(bv) if i not in del_set]
-                    if LIST_APPEND_KEY in val:
-                        result[key] = current + _to_append_list(val[LIST_APPEND_KEY])
-                    else:
-                        result[key] = current
-                elif LIST_APPEND_KEY in val:
-                    result[key] = list(bv) + _to_append_list(val[LIST_APPEND_KEY])
+                if LIST_REPLACE_BASE_KEY in val:
+                    # CLI override carries its own base list; ignore bv entirely.
+                    result[key] = _apply_list_ops(list(val[LIST_REPLACE_BASE_KEY]), val, key, union_tag)
                 else:
-                    patched = list(bv)
-                    for ik, iv in val.items():
-                        try:
-                            orig_idx = int(ik)
-                        except ValueError:
-                            raise ConfargError(
-                                f"Cannot patch list '{key}' with non-integer key {ik!r}."
-                                " List patches must use integer string keys (e.g. {'0': ..., '1': ...})."
-                            ) from None
-                        idx = orig_idx
-                        if idx < 0:
-                            idx = len(patched) + idx
-                        if idx < 0 or idx >= len(patched):
-                            raise ConfargError(
-                                f"Cannot patch list '{key}' at index {orig_idx}:"
-                                f" the list has {len(patched)} element(s)"
-                                f" (valid indices {-len(patched)} to {len(patched) - 1})."
-                                " Use the + append syntax (e.g. --field+ for CLI) to add new elements."
-                            )
-                        patched[idx] = (
-                            _deep_merge(patched[idx], iv, union_tag=union_tag)
-                            if isinstance(patched[idx], dict) and isinstance(iv, dict)
-                            else iv
-                        )
-                    result[key] = patched
+                    result[key] = _apply_list_ops(list(bv), val, key, union_tag)
             else:
                 result[key] = val
         else:
@@ -249,7 +292,10 @@ def _deep_merge(
 def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
     """Set a value in a nested dict by following a list of keys.
 
-    Intermediate dicts are created as needed.
+    Intermediate dicts are created as needed.  If an intermediate value is a
+    plain list (from a prior full-replace CLI operation), it is converted to
+    ``{LIST_REPLACE_BASE_KEY: list}`` so that subsequent index patches can be
+    accumulated alongside it.
 
     Args:
         d: The root dict to modify in place.
@@ -259,12 +305,20 @@ def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
     for part in path[:-1]:
         if part not in d:
             d[part] = {}
+        elif isinstance(d[part], list):
+            d[part] = {LIST_REPLACE_BASE_KEY: d[part]}
         d = d[part]
     if path:
         d[path[-1]] = value
 
 
-def _accumulate_list_delete(d: dict[str, Any], path: list[str], idx: int, source: str) -> None:
+def _accumulate_list_delete(
+    d: dict[str, Any],
+    path: list[str],
+    idx: int,
+    source: str,
+    delete_key: str = LIST_DELETE_KEY,
+) -> None:
     """Add a list-deletion index at ``path`` inside ``d``, raising on duplicates.
 
     Args:
@@ -272,6 +326,8 @@ def _accumulate_list_delete(d: dict[str, Any], path: list[str], idx: int, source
         path: Path segments leading to the list field.
         idx: The (original) list index to delete.
         source: Human-readable description of the source (for error messages).
+        delete_key: Which key to accumulate under — LIST_DELETE_KEY for pre-append
+            deletions, LIST_POST_APPEND_DELETE_KEY for deletions that follow an append.
 
     Raises:
         ConfargError: If ``idx`` has already been scheduled for deletion.
@@ -280,11 +336,13 @@ def _accumulate_list_delete(d: dict[str, Any], path: list[str], idx: int, source
     for key in path:
         if key not in node:
             node[key] = {}
+        elif isinstance(node[key], list):
+            node[key] = {LIST_REPLACE_BASE_KEY: node[key]}
         node = node[key]
-    existing = node.get(LIST_DELETE_KEY)
+    existing = node.get(delete_key)
     if isinstance(existing, list):
         if idx in existing:
             raise ConfargError(f"Duplicate list-deletion index {idx} for {source!r}.")
-        node[LIST_DELETE_KEY] = sorted(existing + [idx])
+        node[delete_key] = sorted(existing + [idx])
     else:
-        node[LIST_DELETE_KEY] = [idx]
+        node[delete_key] = [idx]

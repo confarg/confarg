@@ -16,6 +16,8 @@ from confarg._merge import (
     DICT_DELETE,
     LIST_APPEND_KEY,
     LIST_DELETE_KEY,
+    LIST_POST_APPEND_DELETE_KEY,
+    LIST_REPLACE_BASE_KEY,
     _accumulate_list_delete,
     _set_nested,
 )
@@ -343,7 +345,19 @@ def _parse_cli(
                     raise UnknownArgumentError(
                         f"Unknown argument: {token!r} (field '{'.'.join(parent_path)}' not found or not indexable)"
                     )
-                _accumulate_list_delete(data, parent_path, delete_idx, token)
+                # If there's already an append op at this path, this delete applies to the
+                # post-append list; use LIST_POST_APPEND_DELETE_KEY so _apply_list_ops
+                # executes it after the appends rather than before.
+                node: Any = data
+                for _p in parent_path:
+                    if isinstance(node, dict) and _p in node:
+                        node = node[_p]
+                    else:
+                        node = {}
+                        break
+                has_append = isinstance(node, dict) and LIST_APPEND_KEY in node
+                del_key = LIST_POST_APPEND_DELETE_KEY if has_append else LIST_DELETE_KEY
+                _accumulate_list_delete(data, parent_path, delete_idx, token, delete_key=del_key)
             else:
                 # Dict-key (or struct-field) deletion.
                 ft_check = _resolve_field_type(target, path, union_tag)
@@ -421,14 +435,29 @@ def _parse_cli(
                     else:
                         append_items.append(_try_coerce(et, _StrToken(tok)))
                     i += 1
-            # Preserve any existing delete spec at this path (e.g. --items.1- before --items+)
+            # Combine with any prior operation on this path, preserving ordering semantics.
             node = data
             for p in path[:-1]:
                 node = node.get(p, {}) if isinstance(node, dict) else {}
             existing = node.get(path[-1]) if path and isinstance(node, dict) else None
-            new_val: dict[str, Any] = {LIST_APPEND_KEY: append_items}
-            if isinstance(existing, dict) and LIST_DELETE_KEY in existing:
-                new_val[LIST_DELETE_KEY] = existing[LIST_DELETE_KEY]
+
+            if isinstance(existing, list):
+                # Prior full-replace at this path; keep it as the new base so the
+                # reset is not lost when _deep_merge applies the config list.
+                new_val: dict[str, Any] = {LIST_REPLACE_BASE_KEY: existing, LIST_APPEND_KEY: append_items}
+            elif isinstance(existing, dict):
+                if LIST_REPLACE_BASE_KEY in existing:
+                    # Already has an explicit base; accumulate appends.
+                    prior = existing.get(LIST_APPEND_KEY, [])
+                    new_val = {**existing, LIST_APPEND_KEY: prior + append_items}
+                elif LIST_APPEND_KEY in existing:
+                    # Prior append without an explicit base; accumulate.
+                    new_val = {**existing, LIST_APPEND_KEY: existing[LIST_APPEND_KEY] + append_items}
+                else:
+                    # Has delete spec and/or index patches; add append alongside.
+                    new_val = {**existing, LIST_APPEND_KEY: append_items}
+            else:
+                new_val = {LIST_APPEND_KEY: append_items}
             _set_nested(data, path, new_val)
             continue
 
