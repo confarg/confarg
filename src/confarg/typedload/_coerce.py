@@ -168,22 +168,40 @@ def _steal_order(variants: list[Any], *, key: Any) -> list[Any]:
     return sorted(variants, key=lambda v: _steal_rank(_resolve_type(key(v))))
 
 
-def _match_literal_member(v: Any, value: _StrToken, s: str, path: str) -> bool:
-    """Return True if _StrToken value matches Literal member v."""
+def _match_literal_member(v: Any, value: Any, path: str) -> bool:  # noqa: PLR0911  # one branch per member kind
+    """Return True if value matches Literal member v.
+
+    One rule for both channels: a ``_StrToken`` from the CLI and a native value
+    from a config file. For an ``Enum`` member, the value may be the member
+    itself, its name, or its value — the last is what ``dump()`` writes, so a
+    ``Literal`` over ``Enum`` round-trips. The repr match (``"Color.RED"``)
+    is a CLI affordance: a plain file string is never re-read as a repr.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#stealing-rule
+    """
     tp_v = type(v)
     if _is_enum(tp_v):
-        if str(v) == s:  # repr match: "Color.RED" == "Color.RED"
-            return True
+        if type(value) is tp_v:
+            return value == v
+        if isinstance(value, _StrToken) and str(v) == str(value):
+            return True  # repr match: "Color.RED" == "Color.RED" (CLI only)
         try:  # name/value match: "RED" or "red" → Color.RED
             return _coerce_leaf(tp_v, value, path) == v
         except (TypeCoercionError, ValueError, TypeError):
             return False
     if isinstance(v, bytes):
-        return str(v) == s
-    try:
-        return _coerce_leaf(tp_v, value, path) == v
-    except (TypeCoercionError, ValueError, TypeError):
-        return False
+        if isinstance(value, _StrToken):
+            return str(v) == str(value)
+        return type(value) is tp_v and value == v
+    if type(value) is tp_v:
+        return value == v
+    if isinstance(value, _StrToken):
+        try:
+            return _coerce_leaf(tp_v, value, path) == v
+        except (TypeCoercionError, ValueError, TypeError):
+            return False
+    return False
 
 
 def _match_literal_str_token(vals: tuple[Any, ...], value: _StrToken, path: str) -> Any:
@@ -196,21 +214,29 @@ def _match_literal_str_token(vals: tuple[Any, ...], value: _StrToken, path: str)
                 return v
 
     for v in _steal_order([v for v in vals if v is not None], key=type):
-        if _match_literal_member(v, value, s, path):
+        if _match_literal_member(v, value, path):
             return v
 
     raise TypeCoercionError.cannot_coerce(_src_type(value), value, f"Literal{vals}", path)
 
 
 def _coerce_literal_value(tp: Any, value: Any, path: str) -> Any:
-    """Coerce a raw value to a Literal type."""
+    """Coerce a raw value to a Literal type.
+
+    Tokens are matched through the stealing rule; native file values keep
+    declaration order. Both use ``_match_literal_member`` — one rule — so a
+    ``Literal`` over ``Enum`` accepts the same text in both channels.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#stealing-rule
+    """
     vals = _literal_values(tp)
-    if not isinstance(value, _StrToken):
-        for v in vals:
-            if type(v) is type(value) and v == value:
-                return v
-        raise TypeCoercionError.cannot_coerce(_src_type(value), value, f"Literal{vals}", path)
-    return _match_literal_str_token(vals, value, path)
+    if isinstance(value, _StrToken):
+        return _match_literal_str_token(vals, value, path)
+    for v in vals:
+        if _match_literal_member(v, value, path):
+            return v
+    raise TypeCoercionError.cannot_coerce(_src_type(value), value, f"Literal{vals}", path)
 
 
 def _coerce_enum_value(tp: Any, value: Any, path: str) -> Any:

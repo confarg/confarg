@@ -13,6 +13,5 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
 | [BUG-7 — Typer integration is claimed, never tested, and currently broken](BUG-7-typer-claimed-untested-broken.md) | L | medium | behavior |
-| [BUG-32 — A `Literal` over `Enum` members refuses the value `dump()` writes](BUG-32-literal-over-enum-refuses-a-native-value.md) | M | high | behavior |
 
 <!-- tickets:end -->
