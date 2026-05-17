@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Annotated, Any, Literal
@@ -78,6 +79,16 @@ class WithEnum:
     """Dataclass with an Enum field."""
 
     color: Color = Color.RED
+
+
+@dataclass
+class _WithStrFloat:
+    input: str | float
+
+
+@dataclass
+class _WithStrBool:
+    input: str | bool
 
 
 def _make_app() -> cyclopts.App:
@@ -353,6 +364,23 @@ class TestFromApp:
         )
         assert cfg.host == "clihost"
         assert cfg.port == 5432
+
+    def test_str_float_stealing_cyclopts(self) -> None:
+        """--input inf coerces to float for str | float (stealing rule)."""
+        cfg = _run(_WithStrFloat, ["--input", "inf"])
+        assert math.isinf(cfg.input)
+        assert type(cfg.input) is float
+
+    def test_str_bool_stealing_cyclopts(self) -> None:
+        """--input yes coerces to True for str | bool (stealing rule)."""
+        cfg = _run(_WithStrBool, ["--input", "yes"])
+        assert cfg.input is True
+
+    def test_str_bool_str_override_cyclopts(self) -> None:
+        """--input.str yes preserves 'yes' as str, bypassing bool stealing."""
+        cfg = _run(_WithStrBool, ["--input.str", "yes"])
+        assert cfg.input == "yes"
+        assert type(cfg.input) is str
 
 
 # ---------------------------------------------------------------------------

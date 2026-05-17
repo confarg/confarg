@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from dataclasses import dataclass, field, make_dataclass
 from enum import Enum
 from typing import Annotated, Any, Literal
@@ -59,6 +60,16 @@ class _EsStatus(Enum):
 @dataclass
 class _WithEnumInt:
     value: _EsStatus | int = _EsStatus.OK
+
+
+@dataclass
+class _WithStrFloat:
+    input: str | float
+
+
+@dataclass
+class _WithStrBool:
+    input: str | bool
 
 
 @dataclass
@@ -171,7 +182,7 @@ class WithFieldMeta:
 
 @dataclass
 class WithMultiUnion:
-    """Dataclass with a multi-type union field (should be skipped by populate_parser)."""
+    """Dataclass with a str | int union field (stealing rule registers cast flags)."""
 
     value: int | str = 0
 
@@ -339,12 +350,14 @@ class TestPopulateParser:
         flags = {a.option_strings[0] for a in parser._actions if a.option_strings}
         assert "--mapping" not in flags
 
-    def test_multi_union_field_skipped(self) -> None:
-        """Test that multi-type union fields are not registered as flags."""
+    def test_str_int_union_flag_registered(self) -> None:
+        """Int | str registers --value and cast override flags (stealing rule applies)."""
         parser = argparse.ArgumentParser()
         populate_parser(WithMultiUnion, parser)
-        flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--value" not in flags
+        dests = {a.dest for a in parser._actions}
+        assert "value" in dests
+        assert "value.str" in dests
+        assert "value.int" in dests
 
     def test_struct_union_registers_class_tag_flag(self) -> None:
         """Multi-variant struct union gets --<field>.class registered."""
@@ -637,6 +650,44 @@ class TestFromNamespace:
         result = from_namespace(_WithEnumInt, ns)
         assert result.value == 1
         assert type(result.value) is int
+
+    def test_str_float_main_flag_registered(self) -> None:
+        """Str | float registers --input (no enum required)."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithStrFloat, parser)
+        assert "input" in {a.dest for a in parser._actions}
+
+    def test_str_bool_main_flag_registered(self) -> None:
+        """Str | bool registers --input (no enum required)."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithStrBool, parser)
+        assert "input" in {a.dest for a in parser._actions}
+
+    def test_str_float_stealing_argparse(self) -> None:
+        """--input inf coerces to float for str | float (stealing rule)."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithStrFloat, parser)
+        ns = parser.parse_args(["--input", "inf"])
+        result = from_namespace(_WithStrFloat, ns)
+        assert math.isinf(result.input)
+        assert type(result.input) is float
+
+    def test_str_bool_stealing_argparse(self) -> None:
+        """--input yes coerces to True for str | bool (stealing rule)."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithStrBool, parser)
+        ns = parser.parse_args(["--input", "yes"])
+        result = from_namespace(_WithStrBool, ns)
+        assert result.input is True
+
+    def test_str_bool_str_override_argparse(self) -> None:
+        """--input.str yes preserves 'yes' as str, bypassing bool stealing."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithStrBool, parser)
+        ns = parser.parse_args(["--input.str", "yes"])
+        result = from_namespace(_WithStrBool, ns)
+        assert result.input == "yes"
+        assert type(result.input) is str
 
     def test_union_class_tag_collected_by_collect_ns_fields(self) -> None:
         """--<field>.class in namespace is passed through to the merge pipeline."""
