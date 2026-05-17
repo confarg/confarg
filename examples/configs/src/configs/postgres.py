@@ -21,7 +21,7 @@ class PostgreSQLConfig:
 class PostgreSQLConfigTyped:
     """PostgreSQL config disambiguated by an explicit ``type`` field."""
 
-    type: Literal["postgre"]
+    type: Literal["postgres"]
     host: str
     port: int = 5432
     schema_name: str

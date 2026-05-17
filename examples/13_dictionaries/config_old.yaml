@@ -1,0 +1,13 @@
+foo:
+  hello: 42
+  bar: 32
+  baz: '1'
+  qux:
+    quxx: -1
+fruits:
+  apple:
+    name: apple
+    taste: good
+  banana:
+    name: banana
+    taste: good

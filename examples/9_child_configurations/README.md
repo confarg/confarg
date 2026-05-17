@@ -43,7 +43,7 @@ SQLiteConfigChild(dbpath='/path/to/db.sqlite')
 This works similarly in configuration files. Our previous configuration,
 
 ```yaml
-# postgre.yaml
+# postgres.yaml
 host: example.com
 schema_name: mydb
 ```
@@ -51,21 +51,21 @@ schema_name: mydb
 doesn't work anymore:
 
 ```console
-$ uv run myapp.py --config postgre.yaml  # Error
+$ uv run myapp.py --config postgres.yaml  # Error
 ...
 ```
 
 We fix the issue by adding the FQN of the desired configuration under the `class` key.
 
 ```yaml
-# postgre_fqn.yaml
+# postgres_fqn.yaml
 class: configs.PostgreSQLConfigChild
 host: example.com
 schema_name: mydb
 ```
 
 ```console
-$ uv run myapp.py --config postgre_fqn.yaml  # OK
+$ uv run myapp.py --config postgres_fqn.yaml  # OK
 PostgreSQLConfigChild(host='example.com', port=5432, schema_name='mydb')
 ```
 

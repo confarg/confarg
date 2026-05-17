@@ -24,6 +24,7 @@ nav = [
     { "10. Nested configurations" = "examples/10_nested_configurations/README.md" },
     { "11. Collections" = "examples/11_collections/README.md" },
     { "12. Collection items" = "examples/12_collection_items/README.md" },
+    { "13. Dictionaries" = "examples/13_dictionaries/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]

@@ -22,8 +22,8 @@ It is actually a bit more subtle than that, but this is the correct mental model
 Taking the same example as before, we can change values defined in the configuration file from the command line:
 
 ```console
-$ # change the schema name defined in `postgre.yaml` to `otherdb`
-$ uv run myapp.py --config postgre.yaml --schema_name otherdb
+$ # change the schema name defined in `postgres.yaml` to `otherdb`
+$ uv run myapp.py --config postgres.yaml --schema_name otherdb
 PostgreSQLConfig(host='example.com', port=5432, schema_name='otherdb')
 ```
 
@@ -34,8 +34,8 @@ We could use environment variables for the same effect:
 
 <!-- pytest-markdown-console: platform:linux -->
 ```console
-$ # change the schema name defined in `postgre.yaml` to `otherdb`
-$ MYAPP_SCHEMA_NAME=otherdb uv run myapp.py --config postgre.yaml
+$ # change the schema name defined in `postgres.yaml` to `otherdb`
+$ MYAPP_SCHEMA_NAME=otherdb uv run myapp.py --config postgres.yaml
 PostgreSQLConfig(host='example.com', port=5432, schema_name='otherdb')
 ```
 
@@ -43,8 +43,8 @@ As mentioned above, command line arguments have the final word:
 
 <!-- pytest-markdown-console: platform:linux -->
 ```console
-$ # change the schema name defined in `postgre.yaml` to `otherdb`
-$ MYAPP_SCHEMA_NAME=otherdb uv run myapp.py --config postgre.yaml --schema_name=finaldb
+$ # change the schema name defined in `postgres.yaml` to `otherdb`
+$ MYAPP_SCHEMA_NAME=otherdb uv run myapp.py --config postgres.yaml --schema_name=finaldb
 PostgreSQLConfig(host='example.com', port=5432, schema_name='finaldb')
 ```
 
@@ -56,7 +56,7 @@ The configuration is progressively built up from the various input sources. At n
 For example, you could have a partial configuration purposely omitting the schema name,
 
 ```yaml
-# postgre_no_schema.yaml
+# postgres_no_schema.yaml
 host: dev.example.com
 port: 5555
 ```
@@ -64,7 +64,7 @@ port: 5555
 and specify the schema name from the command line like so:
 
 ```console
-$ uv run myapp.py --config postgre_no_schema.yaml --schema_name mydb
+$ uv run myapp.py --config postgres_no_schema.yaml --schema_name mydb
 PostgreSQLConfig(host='dev.example.com', port=5555, schema_name='mydb')
 ```
 
@@ -72,17 +72,17 @@ PostgreSQLConfig(host='dev.example.com', port=5555, schema_name='mydb')
 
 The `--config` option can take multiple arguments. The provided configuration files are read from left to right. This can be used to either amend part of an existing configuration, or build a full configuration from various parts.
 
-In the example below, the data from `postgre_no_schema.yaml` overwrites the data in `postgre.yaml` — note the port number. The `schema_name` from `postgre.yaml` is kept as it is missing from `postgre_no_schema.yaml`.
+In the example below, the data from `postgres_no_schema.yaml` overwrites the data in `postgres.yaml` — note the port number. The `schema_name` from `postgres.yaml` is kept as it is missing from `postgres_no_schema.yaml`.
 
 ```console
-$ uv run myapp.py --config postgre.yaml postgre_no_schema.yaml
+$ uv run myapp.py --config postgres.yaml postgres_no_schema.yaml
 PostgreSQLConfig(host='dev.example.com', port=5555, schema_name='mydb')
 ```
 
 The order matters since the resolution is from left to right.
 
 ```console
-$ uv run myapp.py --config postgre_no_schema.yaml postgre.yaml
+$ uv run myapp.py --config postgres_no_schema.yaml postgres.yaml
 PostgreSQLConfig(host='example.com', port=5555, schema_name='mydb')
 ```
 
@@ -91,7 +91,7 @@ Note that command line arguments always have priority over configuration files, 
 ```console
 $ # The port specified on the command line overwrites that of the config even if
 $ # the config is specified after
-$ uv run myapp.py --port 6006 --config postgre.yaml
+$ uv run myapp.py --port 6006 --config postgres.yaml
 PostgreSQLConfig(host='example.com', port=6006, schema_name='mydb')
 ```
 
@@ -99,7 +99,7 @@ The configuration file specified by the environment has a lower priority than co
 
 <!-- pytest-markdown-console: platform:linux -->
 ```console
-$ MYAPP_CONFIG=postgre.yaml uv run myapp.py --config postgre_no_schema.yaml
+$ MYAPP_CONFIG=postgres.yaml uv run myapp.py --config postgres_no_schema.yaml
 PostgreSQLConfig(host='dev.example.com', port=5555, schema_name='mydb')
 ```
 

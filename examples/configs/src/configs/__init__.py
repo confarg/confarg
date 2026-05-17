@@ -12,7 +12,7 @@ module-dependent ``__main__.SQLiteConfig``.
 from .api import APIConfig
 from .dbbaseconfig import DBBaseConfig
 from .mariadb import MariaDBConfig, MariaDBConfigTyped
-from .postgre import PostgreSQLConfig, PostgreSQLConfigChild, PostgreSQLConfigTyped
+from .postgres import PostgreSQLConfig, PostgreSQLConfigChild, PostgreSQLConfigTyped
 from .sqlite import SQLiteConfig, SQLiteConfigChild
 
 __all__ = [

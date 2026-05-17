@@ -8,9 +8,9 @@ import confarg.cli.argparse as confparse
 
 @dataclass(kw_only=True)
 class PostgreConfig:
-    """PostgreSQL connection configuration with a 'postgre' tag."""
+    """PostgreSQL connection configuration with a 'postgres' tag."""
 
-    tag: Literal["postgre"] = "postgre"
+    tag: Literal["postgres"] = "postgres"
     host: str
     port: int
     name: str

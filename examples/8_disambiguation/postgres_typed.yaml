@@ -1,3 +1,3 @@
-type: postgre
+type: postgres
 host: example.com
 schema_name: mydb
