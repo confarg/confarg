@@ -33,5 +33,6 @@ has no design yet, so deciding whether to do it at all is the next actionable st
 | [FEAT-19 — App-declared defaults, mounted at the type that declares them](FEAT-19-app-declared-defaults.md) | L | medium | behavior |
 | [FEAT-20 — Derived values that cannot be made inconsistent](FEAT-20-enforced-derived-values.md) | M | medium | behavior |
 | [FEAT-21 — Expression functions supplied by the application](FEAT-21-app-supplied-expression-functions.md) | L | high | behavior |
+| [FEAT-22 — The process environment as an expression namespace](FEAT-22-environment-namespace-in-expressions.md) | L | high | behavior |
 
 <!-- tickets:end -->
