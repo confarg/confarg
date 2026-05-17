@@ -149,12 +149,12 @@ def _coerce_enum_value(tp: Any, value: Any, path: str) -> Any:
     if isinstance(value, tp):
         return value
     s = str(value)
-    for member in tp:
-        if str(member.value) == s:
-            return member
     try:
         return tp[s]
     except KeyError:
+        for member in tp:
+            if str(member.value) == s:
+                return member
         members = []
         for m in tp:
             sv = str(m.value)
@@ -164,6 +164,11 @@ def _coerce_enum_value(tp: Any, value: Any, path: str) -> Any:
             f" Valid members: {', '.join(members)}"
         )
         raise TypeCoercionError(msg) from None
+
+
+def _enum_choices(tp: Any) -> list[str]:
+    """Return accepted string representations for an enum type: names first, then distinct values."""
+    return list(dict.fromkeys([e.name for e in tp] + [str(e.value) for e in tp]))
 
 
 _SCALAR_COERCIONS: dict[type, Any] = {

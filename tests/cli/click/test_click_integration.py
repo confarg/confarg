@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING, Annotated, Any
 
 import click
@@ -57,6 +58,21 @@ class WithList:
     """Dataclass with a list field."""
 
     tags: list[str] = dataclasses.field(default_factory=list)
+
+
+class Color(Enum):
+    """Color enumeration for enum tests."""
+
+    RED = "red"
+    GREEN = "green"
+    BLUE = "blue"
+
+
+@dataclass
+class WithEnum:
+    """Dataclass with an Enum field."""
+
+    color: Color = Color.RED
 
 
 def _make_command() -> click.Command:
@@ -358,6 +374,11 @@ class TestFromContext:
         runner.invoke(cmd_with_fields, ["--config", str(cfg_file), "--host", "clihost"], catch_exceptions=False)
         assert result_holder[0].host == "clihost"
         assert result_holder[0].port == 5432
+
+    def test_enum_option_by_value(self) -> None:
+        """Enum fields accept enum values (not just names) via Click CLI."""
+        cfg = self._run(WithEnum, ["--color", "blue"])
+        assert cfg.color is Color.BLUE
 
 
 # ---------------------------------------------------------------------------

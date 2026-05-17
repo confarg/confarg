@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 import cyclopts
@@ -62,6 +63,21 @@ class WithChoices:
     """Dataclass with a Literal field."""
 
     level: Literal["debug", "info", "warning"] = "info"
+
+
+class Color(Enum):
+    """Color enumeration for enum tests."""
+
+    RED = "red"
+    GREEN = "green"
+    BLUE = "blue"
+
+
+@dataclass
+class WithEnum:
+    """Dataclass with an Enum field."""
+
+    color: Color = Color.RED
 
 
 def _make_app() -> cyclopts.App:
@@ -286,6 +302,11 @@ class TestFromApp:
         """Literal/choices field is accepted and coerced correctly."""
         cfg = _run(WithChoices, ["--level", "warning"])
         assert cfg.level == "warning"
+
+    def test_enum_param_by_value(self) -> None:
+        """Enum fields accept enum values (not just names) via cyclopts CLI."""
+        cfg = _run(WithEnum, ["--color", "blue"])
+        assert cfg.color is Color.BLUE
 
     def test_only_cli_values_override_defaults(self) -> None:
         """Omitted options fall back to defaults; provided options override them."""

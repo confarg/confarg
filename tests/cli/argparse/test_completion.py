@@ -623,12 +623,12 @@ class TestLiteralEnumCompletion:
         assert set(action.choices) == {"DEBUG", "INFO", "WARNING"}
 
     def test_enum_field_choices(self) -> None:
-        """Enum field registers choices= using member names."""
+        """Enum field registers choices= using member names and values."""
         parser = argparse.ArgumentParser()
         populate_parser(_WithEnum, parser)
         action = self._action_for(parser, "log_level")
         assert action.choices is not None
-        assert set(action.choices) == {"DEBUG", "INFO", "WARNING", "ERROR"}
+        assert set(action.choices) == {"DEBUG", "INFO", "WARNING", "ERROR", "debug", "info", "warning", "error"}
 
     def test_nested_literal_field_choices(self) -> None:
         """Nested struct with Literal field: --logging.level gets choices=."""

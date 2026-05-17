@@ -229,7 +229,7 @@ class TestPopulateParser:
         populate_parser(WithEnum, parser)
         color_action = next(a for a in parser._actions if "--color" in a.option_strings)
         assert color_action.choices is not None
-        assert set(color_action.choices) == {"RED", "GREEN", "BLUE"}
+        assert set(color_action.choices) == {"RED", "GREEN", "BLUE", "red", "green", "blue"}
 
     def test_literal_flag(self) -> None:
         """Test that Literal fields register choices from literal values."""
@@ -434,6 +434,14 @@ class TestFromNamespace:
         parser = argparse.ArgumentParser()
         populate_parser(WithEnum, parser)
         ns = parser.parse_args(["--color", "BLUE"])
+        result = from_namespace(WithEnum, ns)
+        assert result.color == Color.BLUE
+
+    def test_enum_field_by_value(self) -> None:
+        """Test that Enum fields accept enum values (not just names) via CLI."""
+        parser = argparse.ArgumentParser()
+        populate_parser(WithEnum, parser)
+        ns = parser.parse_args(["--color", "blue"])
         result = from_namespace(WithEnum, ns)
         assert result.color == Color.BLUE
 
