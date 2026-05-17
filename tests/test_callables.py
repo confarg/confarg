@@ -348,6 +348,15 @@ class TestFnDictForm:
         result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
         assert result.fn(5) == 15
 
+    def test_fn_with_bind_via_cli(self) -> None:
+        """--fn.fn + --fn.bind.key via CLI pre-applies the argument."""
+        result = confarg.load(
+            WithBareCallable,
+            args=[f"--fn.fn={_MOD}._add", "--fn.bind.y=10"],
+            env={},
+        )
+        assert result.fn(5) == 15
+
     def test_fn_class_as_factory(self, tmp_json: Any) -> None:
         """Test fn: dict with a class path returns the class itself."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._Multiplier"}}))

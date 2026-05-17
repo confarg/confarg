@@ -9,10 +9,11 @@ from __future__ import annotations
 import functools
 from typing import TYPE_CHECKING, Any
 
+import click
+from click.shell_completion import CompletionItem
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-    import click
 
     from confarg.cli.argparse._spec import FlagSpec
 
@@ -20,40 +21,25 @@ from confarg import _defaults
 from confarg.cli.argparse._build import build_dynamic_flags, build_static_flags
 
 
-def _make_option_cls() -> type:
-    """Return a click.Option subclass that allows dotted names (not valid Python identifiers)."""
-    try:
-        import click as _click  # noqa: PLC0415
-    except ImportError as exc:
-        msg = "click is required for confarg.cli.click"
-        raise ImportError(msg) from exc
+class _ConfargOption(click.Option):
+    """click.Option subclass that allows dotted names (not valid Python identifiers)."""
 
-    class _ConfargOption(_click.Option):
-        def __init__(self, confarg_name: str, **kwargs: Any) -> None:
-            self._confarg_name = confarg_name
-            super().__init__(**kwargs)
+    def __init__(self, confarg_name: str, **kwargs: Any) -> None:
+        self._confarg_name = confarg_name
+        super().__init__(**kwargs)
 
-        def _parse_decls(self, decls: Any, expose_value: bool) -> tuple[str, list[str], list[str]]:  # noqa: ARG002, FBT001  # name/type must match parent for keyword-safe override
-            opts = [d for d in decls if d.startswith("-")]
-            return self._confarg_name, opts, []
-
-    return _ConfargOption
+    def _parse_decls(self, decls: Any, expose_value: bool) -> tuple[str, list[str], list[str]]:  # noqa: ARG002, FBT001  # name/type must match parent for keyword-safe override
+        opts = [d for d in decls if d.startswith("-")]
+        return self._confarg_name, opts, []
 
 
 def _spec_to_option(spec: FlagSpec) -> click.Option:
     """Convert one FlagSpec to a click.Option."""
-    try:
-        import click as _click  # noqa: PLC0415
-        from click.shell_completion import CompletionItem  # noqa: PLC0415
-    except ImportError as exc:
-        msg = "click is required for confarg.cli.click"
-        raise ImportError(msg) from exc
-
     # Click does not support nargs=-1 for options; use multiple=True instead.
     multiple = spec.nargs == "*"
     nargs: int = 1 if (spec.nargs is None or spec.nargs == "*") else int(spec.nargs)
 
-    type_: Any = _click.Choice(spec.choices) if spec.choices else str
+    type_: Any = click.Choice(spec.choices) if spec.choices else str
 
     default: Any = () if multiple else None
 
@@ -75,16 +61,15 @@ def _spec_to_option(spec: FlagSpec) -> click.Option:
         _fn = spec.completer
 
         def _shell_complete(
-            _ctx: _click.Context,
-            _param: _click.Parameter,
+            _ctx: click.Context,
+            _param: click.Parameter,
             incomplete: str,
         ) -> list[CompletionItem]:
             return [CompletionItem(v) for v in _fn(incomplete)]
 
         kwargs["shell_complete"] = _shell_complete
 
-    option_cls = _make_option_cls()
-    return option_cls(confarg_name=spec.name, **kwargs)
+    return _ConfargOption(confarg_name=spec.name, **kwargs)
 
 
 def load_flags_into_command(
@@ -111,7 +96,7 @@ def load_flags_into_command(
         existing.add(spec.name)
 
 
-def populate_command(  # noqa: PLR0913
+def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app signatures; all params are keyword-only with sensible defaults
     dc_type: type,
     command: click.Command,
     *,
