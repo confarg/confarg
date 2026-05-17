@@ -15,7 +15,7 @@ divergences so far: list syntax per framework
 which click alone declines ([04](04-cli-adapters.md#whole-value-flags)); file-only dunder keys
 ([02](02-files-and-env.md#reserved-file-only-keys)); declaring locals only in files
 ([08](08-locals.md#declare-in-files-modify-anywhere)). Known unapproved gaps are listed in
-[../todo/bugs.md](../todo/bugs.md).
+[../todo/bugs/](../todo/bugs/README.md).
 
 ## Delegate to the canonical function
 

@@ -27,7 +27,7 @@ maps source modules to documents, so you can open only what your change touches.
 | A pointer from a function to the rationale behind it | A `Dev Notes:` section in its docstring |
 | A reason, a trade-off, a rejected alternative, an invariant | `architecture/` |
 | Something broken, missing, or ugly that you are not fixing right now | `todo/` |
-| A question only the maintainer can answer | `todo/questions.md` |
+| A question only the maintainer can answer | `todo/questions/` |
 | Anything a *user* of confarg needs | `README.md`, `docs/`, `examples/` |
 | A standing instruction to coding agents | `AGENTS.md`, or the protocol folder it names |
 

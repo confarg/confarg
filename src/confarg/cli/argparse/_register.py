@@ -258,7 +258,7 @@ def make_parser(  # noqa: PLR0913  # thin pass-through: every parameter goes to 
 
 # ---------------------------------------------------------------------------
 # Thin wrappers used by _completion.py; they delegate to the spec builders and
-# _register_spec.  See REF-3 in docs-dev/todo/refactors.md.
+# _register_spec.  See REF-3 in docs-dev/todo/refactors/.
 # ---------------------------------------------------------------------------
 
 
