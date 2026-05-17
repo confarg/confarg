@@ -52,7 +52,7 @@ registers exactly as a field's does. The root's `__init__` parameters were stati
 the root is walked structurally, exactly as a union holding the same leaf is — so the tag is
 the one flag the scan adds.
 
-A decoded callable blob buys the factory and `bind` flags its class implies, exactly as a
+A decoded callable blob buys the argument flags its target implies, exactly as a
 `--<field>.class` opener does. Neither half of that is a
 second decision: `_blob_document_from_argv` nests argv's `{`-prefixed tokens into one
 config-file-shaped document and hands it to the *same* target walk that reads a `--config`
@@ -60,12 +60,12 @@ file's openers, so a blob's `class` selects the directive form and registers the
 `--<field>.<param>` init kwargs the opener flag registers. Feeding the walk rather than
 pattern-matching argv is what keeps a mapping field whose value happens to carry a `class` key
 from being read as a callable spec — the walk is type-guided. The opener scan
-(`_collect_fn_paths_from_argv`) pattern-matches the `.fn`/`.class`/`.call` suffix too,
+(`_collect_fn_paths_from_argv`) pattern-matches the `.bind`/`.class`/`.call` suffix too,
 so a struct field literally named like an opener would be misread as an opener for its
 parent; it now asks the same type-guided question — does the path resolve to a
-callable-typed field? — before accepting the match, so a plain struct field named `fn`
+callable-typed field? — before accepting the match, so a plain struct field named `bind`
 (or `class`/`call`) is a value, not an opener (BUG-30). The string shorthand
-`--<field> some.module.fn` buys them too: it is the spelling `{fn: …}` abbreviates, so the argv
+`--<field> some.module.fn` buys them too: it is the spelling `{bind: …}` abbreviates, so the argv
 scan collects a bare string as a whole value beside a `{`-prefixed blob and hands both to the
 same type-guided walk, which has always read a config file's string spec that way. What the
 flags then write — the shorthand opened into the spec its sibling flags refine, a delete flag

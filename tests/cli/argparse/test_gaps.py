@@ -22,12 +22,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import confarg.cli._build as build_mod
+from confarg._callable import _PLAIN_DIRECTIVES
 from confarg._tags import _tags_from_config
 from confarg._types import _resolve_struct
 from confarg.cli._build import (
-    _collect_callable_bind_specs,
     _collect_callable_factory_specs,
     _collect_callable_field_specs,
+    _collect_callable_sibling_specs,
     _collect_fn_paths_from_argv,
     _collect_fn_paths_from_config,
     _collect_struct_specs,
@@ -204,25 +205,25 @@ class TestBuildCallableSpecs:
     class _WithCallableOptimizer:
         optimizer: Callable[..., int]
 
-    def test_collect_callable_bind_specs_valid_fn(self) -> None:
-        """_collect_callable_bind_specs returns FlagSpecs for a valid function's parameters."""
-        specs = _collect_callable_bind_specs("myfn", f"{_COV_MOD}._cov_call_fn", "bind", set())
+    def test_collect_callable_sibling_specs_valid_fn(self) -> None:
+        """_collect_callable_sibling_specs returns FlagSpecs for a valid function's parameters."""
+        specs = _collect_callable_sibling_specs("myfn", f"{_COV_MOD}._cov_call_fn", set())
         names = [s.name for s in specs]
-        assert "myfn.bind.x" in names
-        assert "myfn.bind.y" in names
+        assert "myfn.x" in names
+        assert "myfn.y" in names
 
-    def test_collect_callable_bind_specs_import_error(self) -> None:
-        """_collect_callable_bind_specs returns [] for an unimportable fn_path."""
-        result = _collect_callable_bind_specs("myfn", "nonexistent.module.fn", "bind", set())
+    def test_collect_callable_sibling_specs_import_error(self) -> None:
+        """_collect_callable_sibling_specs returns [] for an unimportable fn_path."""
+        result = _collect_callable_sibling_specs("myfn", "nonexistent.module.fn", set())
         assert result == []
 
-    def test_collect_callable_bind_specs_dedup(self) -> None:
-        """_collect_callable_bind_specs skips specs already in existing_names."""
-        existing = {"myfn.bind.x"}
-        specs = _collect_callable_bind_specs("myfn", f"{_COV_MOD}._cov_call_fn", "bind", existing)
+    def test_collect_callable_sibling_specs_dedup(self) -> None:
+        """_collect_callable_sibling_specs skips specs already in existing_names."""
+        existing = {"myfn.x"}
+        specs = _collect_callable_sibling_specs("myfn", f"{_COV_MOD}._cov_call_fn", existing)
         names = [s.name for s in specs]
-        assert "myfn.bind.x" not in names
-        assert "myfn.bind.y" in names
+        assert "myfn.x" not in names
+        assert "myfn.y" in names
 
     def test_collect_callable_factory_specs_valid_class(self) -> None:
         """_collect_callable_factory_specs returns FlagSpecs for factory constructor params."""
@@ -232,41 +233,40 @@ class TestBuildCallableSpecs:
 
     def test_collect_callable_field_specs_class_mode(self) -> None:
         """_collect_callable_field_specs in 'class' mode returns factory specs."""
-        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "class", "bind", set())
+        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "class", set())
         names = [s.name for s in specs]
         assert "opt.lr" in names
 
-    def test_collect_callable_field_specs_fn_mode(self) -> None:
-        """_collect_callable_field_specs in 'fn' mode returns bind specs."""
-        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "fn", "bind", set())
+    def test_collect_callable_field_specs_bind_mode(self) -> None:
+        """_collect_callable_field_specs in 'bind' mode returns the target's parameters."""
+        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "bind", set())
         names = [s.name for s in specs]
-        assert "myfn.bind.x" in names
+        assert "myfn.x" in names
 
     def test_collect_callable_field_specs_call_mode(self) -> None:
-        """_collect_callable_field_specs in 'call' mode returns bind specs."""
-        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "call", "bind", set())
+        """_collect_callable_field_specs in 'call' mode returns the target's parameters."""
+        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "call", set())
         names = [s.name for s in specs]
-        assert "myfn.bind.x" in names
+        assert "myfn.x" in names
 
-    def test_collect_callable_field_specs_fn_mode_method(self) -> None:
-        """_collect_callable_field_specs in 'fn' mode for a method uses owning class specs."""
-        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._CovOptMethod.method", "fn", "bind", set())
-        # Owning class is _CovOptMethod; returns factory specs for its constructor
-        names = [s.name for s in specs]
-        assert any("myfn" in n for n in names)
+    def test_collect_callable_field_specs_bind_mode_method(self) -> None:
+        """'bind' mode for a method registers the method's own parameters, never its owner's."""
+        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._CovOptMethod.method", "bind", set())
+        # _CovOptMethod.method takes nothing but self; the owner's 'required' is no sibling of bind:
+        assert [s.name for s in specs] == []
 
-    def test_collect_callable_bind_specs_signature_fails(self) -> None:
-        """_collect_callable_bind_specs returns [] when signature inspection raises."""
+    def test_collect_callable_sibling_specs_signature_fails(self) -> None:
+        """_collect_callable_sibling_specs returns [] when signature inspection raises."""
         # _CovUninspectable.__init__.__signature__ is broken → TypeError
-        result = _collect_callable_bind_specs("myopt", f"{_COV_MOD}._CovUninspectable", "bind", set())
+        result = _collect_callable_sibling_specs("myopt", f"{_COV_MOD}._CovUninspectable", set())
         assert result == []
 
-    def test_collect_callable_bind_specs_varargs_skipped(self) -> None:
-        """_collect_callable_bind_specs skips *args/**kwargs parameters."""
-        specs = _collect_callable_bind_specs("myfn", f"{_COV_MOD}._cov_fn_with_varargs", "bind", set())
+    def test_collect_callable_sibling_specs_varargs_skipped(self) -> None:
+        """_collect_callable_sibling_specs skips *args/**kwargs parameters."""
+        specs = _collect_callable_sibling_specs("myfn", f"{_COV_MOD}._cov_fn_with_varargs", set())
         names = [s.name for s in specs]
-        assert "myfn.bind.key" in names
-        assert not any("myfn.bind.args" in n for n in names)
+        assert "myfn.key" in names
+        assert not any("myfn.args" in n for n in names)
 
     def test_collect_callable_factory_specs_fields_raises(self) -> None:
         """_collect_callable_factory_specs returns [] when _init_fields raises."""
@@ -282,19 +282,19 @@ class TestBuildCallableSpecs:
 
     def test_collect_callable_field_specs_class_mode_import_error(self) -> None:
         """_collect_callable_field_specs in 'class' mode falls through on import error."""
-        # Bad path → SymbolImportError → falls through to bind specs → returns []
-        result = _collect_callable_field_specs("opt", "nonexistent.Bad", "class", "bind", set())
+        # Bad path → SymbolImportError → falls through to signature specs → returns []
+        result = _collect_callable_field_specs("opt", "nonexistent.Bad", "class", set())
         assert result == []
 
-    def test_collect_callable_field_specs_fn_mode_class_path(self) -> None:
-        """'fn' mode with a class path registers the constructor params as bind flags."""
-        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "fn", "bind", set())
+    def test_collect_callable_field_specs_bind_mode_class_path(self) -> None:
+        """'bind' mode with a class path registers the constructor params as sibling flags."""
+        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "bind", set())
         names = [s.name for s in specs]
-        assert "opt.bind.lr" in names
+        assert "opt.lr" in names
 
-    def test_collect_callable_field_specs_fn_mode_import_error(self) -> None:
-        """_collect_callable_field_specs in 'fn' mode falls through on import error."""
-        result = _collect_callable_field_specs("myfn", "nonexistent.fn", "fn", "bind", set())
+    def test_collect_callable_field_specs_bind_mode_import_error(self) -> None:
+        """_collect_callable_field_specs in 'bind' mode falls through on import error."""
+        result = _collect_callable_field_specs("myfn", "nonexistent.fn", "bind", set())
         assert result == []
 
     def test_collect_fn_paths_from_config_fields_raises(self) -> None:
@@ -312,13 +312,13 @@ class TestBuildCallableSpecs:
     def test_build_dynamic_flags_config_equals_form(self, tmp_path: Path) -> None:
         """build_dynamic_flags reads fn paths from config file in --config=FILE argv form."""
         cfg = tmp_path / "cfg.json"
-        cfg.write_text(json.dumps({"fn": {"fn": f"{_COV_MOD}._cov_call_fn"}}))
+        cfg.write_text(json.dumps({"fn": {"bind": f"{_COV_MOD}._cov_call_fn"}}))
         specs = build_dynamic_flags(
             _WithCovCallable,
             [f"--config={cfg}"],
         )
         names = [s.name for s in specs]
-        assert "fn.bind.x" in names
+        assert "fn.x" in names
 
     def test_build_dynamic_flags_warns_on_internal_error(self, monkeypatch) -> None:
         """An unexpected exception returns [] and is announced as a ConfargWarning (BUG-5).
@@ -345,14 +345,14 @@ class TestBuildCallableSpecs:
         assert "no dynamic flags" in message
 
     def test_collect_fn_paths_from_argv_equals_form(self) -> None:
-        """_collect_fn_paths_from_argv handles --field.fn=path (= form)."""
-        result = _collect_fn_paths_from_argv(["--optimizer.fn=my.module.fn"], self._WithCallableOptimizer, "class")
-        assert result == {"optimizer": ("my.module.fn", "fn", "bind")}
+        """_collect_fn_paths_from_argv handles --field.bind=path (= form)."""
+        result = _collect_fn_paths_from_argv(["--optimizer.bind=my.module.fn"], self._WithCallableOptimizer, "class")
+        assert result == {"optimizer": ("my.module.fn", "bind", _PLAIN_DIRECTIVES)}
 
     def test_collect_fn_paths_from_argv_space_form(self) -> None:
-        """_collect_fn_paths_from_argv handles --field.fn path (space form)."""
-        result = _collect_fn_paths_from_argv(["--optimizer.fn", "my.module.fn"], self._WithCallableOptimizer, "class")
-        assert result == {"optimizer": ("my.module.fn", "fn", "bind")}
+        """_collect_fn_paths_from_argv handles --field.bind path (space form)."""
+        result = _collect_fn_paths_from_argv(["--optimizer.bind", "my.module.fn"], self._WithCallableOptimizer, "class")
+        assert result == {"optimizer": ("my.module.fn", "bind", _PLAIN_DIRECTIVES)}
 
     def test_collect_fn_paths_from_argv_non_flag_token(self) -> None:
         """_collect_fn_paths_from_argv skips non-flag tokens."""
@@ -364,34 +364,34 @@ class TestBuildCallableSpecs:
         assert "optimizer" in result
 
     def test_collect_fn_paths_from_argv_space_form_no_value(self) -> None:
-        """_collect_fn_paths_from_argv skips --field.fn with no following value."""
-        result = _collect_fn_paths_from_argv(["--optimizer.fn"], self._WithCallableOptimizer, "class")
+        """_collect_fn_paths_from_argv skips --field.bind with no following value."""
+        result = _collect_fn_paths_from_argv(["--optimizer.bind"], self._WithCallableOptimizer, "class")
         assert result == {}
 
     def test_collect_fn_paths_from_config_callable_fn(self) -> None:
-        """_collect_fn_paths_from_config finds fn: entries for Callable fields."""
-        config = {"fn": {"fn": "my.module.fn"}}
+        """_collect_fn_paths_from_config finds bind: entries for Callable fields."""
+        config = {"fn": {"bind": "my.module.fn"}}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
         assert "fn" in result
-        assert result["fn"] == ("my.module.fn", "fn", "bind")
+        assert result["fn"] == ("my.module.fn", "bind", _PLAIN_DIRECTIVES)
 
     def test_collect_fn_paths_from_config_callable_class(self) -> None:
         """_collect_fn_paths_from_config finds class: entries for Callable fields."""
         config = {"fn": {"class": "my.module.Cls"}}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
-        assert result.get("fn") == ("my.module.Cls", "class", "bind")
+        assert result.get("fn") == ("my.module.Cls", "class", _PLAIN_DIRECTIVES)
 
     def test_collect_fn_paths_from_config_callable_call(self) -> None:
         """_collect_fn_paths_from_config finds call: entries for Callable fields."""
         config = {"fn": {"call": "my.module.factory"}}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
-        assert result.get("fn") == ("my.module.factory", "call", "bind")
+        assert result.get("fn") == ("my.module.factory", "call", _PLAIN_DIRECTIVES)
 
     def test_collect_fn_paths_from_config_callable_bare_string(self) -> None:
         """_collect_fn_paths_from_config handles bare string value for Callable field."""
         config = {"fn": "my.module.fn"}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
-        assert result.get("fn") == ("my.module.fn", "fn", "bind")
+        assert result.get("fn") == ("my.module.fn", "bind", _PLAIN_DIRECTIVES)
 
     def test_collect_fn_paths_from_config_non_struct(self) -> None:
         """_collect_fn_paths_from_config returns {} for non-struct types."""
@@ -402,33 +402,33 @@ class TestBuildCallableSpecs:
         """A Callable field registers only its identity flags; no return-type-derived factory flags.
 
         The implicit return-type factory form was removed: factory kwargs are supplied via
-        'fn:'+bind (registered dynamically once --field.fn is in argv), not statically from
+        'bind:' siblings (registered dynamically once --field.bind is in argv), not statically from
         the return type's fields.
         """
         specs = _collect_struct_specs(_WithCovCallable, "", "class")
         names = [s.name for s in specs]
         assert "fn.result_val" not in names
-        assert {"fn", "fn.fn", "fn.class", "fn.call"} <= set(names)
+        assert {"fn", "fn.bind", "fn.class", "fn.call"} <= set(names)
 
     def test_build_dynamic_flags_with_argv(self) -> None:
-        """build_dynamic_flags generates bind specs when --field.fn=path is in argv."""
+        """build_dynamic_flags generates sibling specs when --field.bind=path is in argv."""
         specs = build_dynamic_flags(
             _WithCovCallable,
-            [f"--fn.fn={_COV_MOD}._cov_call_fn"],
+            [f"--fn.bind={_COV_MOD}._cov_call_fn"],
         )
         names = [s.name for s in specs]
-        assert "fn.bind.x" in names
+        assert "fn.x" in names
 
     def test_build_dynamic_flags_with_config_file(self, tmp_path: Path) -> None:
         """build_dynamic_flags reads fn paths from a config file referenced in argv."""
         cfg = tmp_path / "cfg.json"
-        cfg.write_text(json.dumps({"fn": {"fn": f"{_COV_MOD}._cov_call_fn"}}))
+        cfg.write_text(json.dumps({"fn": {"bind": f"{_COV_MOD}._cov_call_fn"}}))
         specs = build_dynamic_flags(
             _WithCovCallable,
             ["--config", str(cfg)],
         )
         names = [s.name for s in specs]
-        assert "fn.bind.x" in names
+        assert "fn.x" in names
 
     def test_resolve_struct_struct_fields_raises(self) -> None:
         """_resolve_struct returns None when _struct_fields raises for a struct-like type."""
@@ -496,15 +496,15 @@ class TestRegisterGaps:
         assert len([a for a in parser._actions if a.dest == "myfield"]) == 1
 
     def test_populate_parser_with_argv(self) -> None:
-        """populate_parser with argv registers dynamic bind specs."""
+        """populate_parser with argv registers dynamic argument specs."""
         parser = argparse.ArgumentParser()
         populate_parser(
             _WithCovCallable,
             parser,
-            argv=[f"--fn.fn={_COV_MOD}._cov_call_fn"],
+            argv=[f"--fn.bind={_COV_MOD}._cov_call_fn"],
         )
         dests = {a.dest for a in parser._actions}
-        assert "fn.bind.x" in dests
+        assert "fn.x" in dests
 
 
 class TestCompletionGaps:
@@ -554,12 +554,12 @@ class TestCompletionGaps:
         assert "value" in dests  # non-singleton fields are added
 
     def test_extend_walk_callable_field(self) -> None:
-        """_extend_walk registers callable fn/class/call flags for Callable fields."""
+        """_extend_walk registers callable bind/class/call flags for Callable fields."""
         parser = argparse.ArgumentParser()
         ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
         _extend_walk(_WithCovCallable, ctx, parser, "")
         dests = {a.dest for a in parser._actions}
-        assert "fn.fn" in dests
+        assert "fn.bind" in dests
 
     def test_pre_extend_parser_outer_except(self, monkeypatch) -> None:
         """_pre_extend_parser_for_completion swallows any outer exception."""
@@ -588,7 +588,7 @@ class TestCompletionGaps:
         assert "val.x" in dests
 
     def test_pre_extend_parser_with_callable_bind(self) -> None:
-        """_pre_extend_parser_for_completion registers bind flags for --fn.fn in argv."""
+        """_pre_extend_parser_for_completion registers argument flags for --fn.bind in argv."""
         parser = argparse.ArgumentParser()
         populate_parser(_WithCovCallable, parser)
         _pre_extend_parser_for_completion(
@@ -596,10 +596,10 @@ class TestCompletionGaps:
             _WithCovCallable,
             "class",
             "config",
-            [f"--fn.fn={_COV_MOD}._cov_call_fn"],
+            [f"--fn.bind={_COV_MOD}._cov_call_fn"],
         )
         dests = {a.dest for a in parser._actions}
-        assert "fn.bind.x" in dests
+        assert "fn.x" in dests
 
     def test_extend_walk_var_params_skipped(self) -> None:
         """_extend_walk skips var_params fields like **kwargs in plain classes."""
@@ -650,22 +650,22 @@ class TestCompletionGaps:
         assert "val.class" in dests
 
     def test_pre_extend_parser_bind_flags_exception(self, monkeypatch) -> None:
-        """_pre_extend_parser_for_completion swallows exception from _collect_callable_bind_specs."""
+        """_pre_extend_parser_for_completion swallows exception from _collect_callable_field_specs."""
 
         def _boom(*args, **kwargs):
             msg = "deliberate bind boom"
             raise RuntimeError(msg)
 
-        monkeypatch.setattr("confarg.cli.argparse._completion._collect_callable_bind_specs", _boom)
+        monkeypatch.setattr("confarg.cli.argparse._completion._collect_callable_field_specs", _boom)
         parser = argparse.ArgumentParser()
         populate_parser(_WithCovCallable, parser)
-        # Must not raise even though _collect_callable_bind_specs raises
+        # Must not raise even though _collect_callable_field_specs raises
         _pre_extend_parser_for_completion(
             parser,
             _WithCovCallable,
             "class",
             "config",
-            [f"--fn.fn={_COV_MOD}._cov_call_fn"],
+            [f"--fn.bind={_COV_MOD}._cov_call_fn"],
         )
 
     def test_setup_completion_argv_defaults_to_sys_argv(self, monkeypatch) -> None:

@@ -435,8 +435,9 @@ def _is_typed_call(data: Any, tp: Any) -> bool:
 
     A ``call:`` key is a spec only where no member of the annotation could hold that key as data: a
     dict type, ``Any`` and a Callable keep their own meaning, and a struct member named ``call``
-    (``_call`` in the escaped form) keeps the field's data. ``fn:`` is not dispatched here, and
-    ``class:`` is the union tag, which already selects a struct.
+    (``_call`` in the escaped form) keeps the field's data. ``class:`` is the union tag, which
+    already selects a struct; a ``bind:`` beside ``call:`` is a second opener, which the call
+    refuses.
 
     Dev Notes:
         docs-dev/architecture/callables.md#call-in-a-typed-field
@@ -444,7 +445,7 @@ def _is_typed_call(data: Any, tp: Any) -> bool:
     if not isinstance(data, dict):
         return False
     d = _select_directives(data)
-    if d.call not in data or d.fn in data or d.cls in data:
+    if d.call not in data or d.cls in data:
         return False
     members = [_resolve_type(arg) for arg in _union_args_no_none(tp)] if _is_union(tp) else [tp]
     for member in members:

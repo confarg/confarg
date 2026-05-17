@@ -364,13 +364,13 @@ class TestTokensStayOutOfMessages:
             confarg.load(Target, argv=[], env={"MYAPP_VALUE": "abc"}, env_prefix="MYAPP_")
         assert str(excinfo.value) == expected
 
-    def test_callable_bind_rejecting_a_token_names_it_str(self) -> None:
-        """A scalar token at ``bind:`` prints as ``str``, not ``_StrToken`` (BUG-57)."""
+    def test_callable_bind_rejecting_a_token_quotes_it_as_text(self) -> None:
+        """A scalar token at ``bind:`` is a target path, and its refusal quotes it as text (BUG-57)."""
         Target = make_target("fn", Callable[..., Any], default=shout)
-        env = {"MYAPP_FN__FN": f"{__name__}.shout", "MYAPP_FN__BIND": "notadict"}
-        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+        env = {"MYAPP_FN__BIND": "notadict"}
+        with pytest.raises(confarg.exceptions.SymbolImportError) as excinfo:
             confarg.load(Target, argv=[], env=env, env_prefix="MYAPP_")
-        assert str(excinfo.value) == "'bind' in Callable dict at 'fn' must be a dict, got str"
+        assert str(excinfo.value) == "Cannot import 'notadict': no importable module found in path"
 
 
 # ---------------------------------------------------------------------------

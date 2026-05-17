@@ -92,7 +92,7 @@ class TestClickRegisterGaps:
     """Uncovered branches in click/_register.py."""
 
     def test_populate_command_with_argv(self) -> None:
-        """populate_command with argv registers dynamic bind specs."""
+        """populate_command with argv registers dynamic argument specs."""
 
         @click.command()
         def cmd(**_kwargs):
@@ -101,10 +101,10 @@ class TestClickRegisterGaps:
         populate_command(
             _WithCovCallable,
             cmd,
-            argv=[f"--fn.fn={_COV_MOD}._cov_call_fn"],
+            argv=[f"--fn.bind={_COV_MOD}._cov_call_fn"],
         )
         names = {p.name for p in cmd.params}
-        assert "fn.bind.x" in names
+        assert "fn.x" in names
 
 
 class TestClickCompletionGaps:

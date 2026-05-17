@@ -9,21 +9,28 @@ Implementation: `_callable.py`, called from `typedload.construct`.
 |---|---|
 | `"pkg.func"` | the function (an instance method auto-instantiates its class with no args) |
 | `"pkg.Class"` | the class used as a **factory**: `functools.partial(Class)`; calling it builds an instance |
-| `{fn: pkg.func, bind: {…}}` | the function, partially applied |
-| `{fn: pkg.Class.method, <ctor kwargs>}` | the owning class is built with the sibling kwargs; the bound method is the callable |
-| `{fn: pkg.Class, bind: {…}}` | a factory with pre-applied constructor args |
-| `{class: pkg.Class, <ctor kwargs>, bind: {…}}` | an **instance** (must define `__call__`) is the callable; `bind` applies to `__call__` |
+| `{bind: pkg.func, <args>}` | `functools.partial(func, **args)`; with no sibling, the bare `"pkg.func"` |
+| `{bind: pkg.Class, <args>}` | a factory with pre-applied constructor args |
+| `{bind: {<spec>}, <args>}` | the nested spec's callable, partially applied: `{bind: {class: H, x: 1}, p: 2}` is `partial(H(x=1), p=2)` |
+| `{class: pkg.Class, <ctor kwargs>}` | an **instance** (must define `__call__`) is the callable |
 | `{call: pkg.factory, <kwargs>}` | the factory is called; its return value is the callable |
 
-Exactly one opener (`fn`/`class`/`call`) is allowed.
+Exactly one opener (`bind`/`class`/`call`) is allowed, and every other key of the spec is an
+argument of the target the opener names. `bind:` takes a target, never a kwargs dict: a dict
+under it is a spec of its own, resolved one key below, so the removed `bind: {a: 1}` reads as
+a nested spec with no opener and is refused there. `{bind: T}` and the bare `"T"` resolve
+through the same `_import_target`, which is what keeps them one spec: the factory check of
+[class as factory](#class-as-factory-versus-class-as-instance) and the auto-binding of an
+instance method apply to both
+([bind yields a partial](design-decisions/bind-yields-a-partial-of-its-target.md)).
 
 ## Call in a typed field
 
 A `call:` spec also fills a field whose annotation is not a Callable: an `int`, a dataclass, an
 `Optional`, any other type. The function is called with the sibling keys as its arguments, and
 its value is the field. A value the annotation already accepts is taken as it is; any other is
-built as the annotation, so a wrong type fails the way a wrong literal does. `bind:` is refused
-there, since only a Callable takes it.
+built as the annotation, so a wrong type fails the way a wrong literal does. A `bind:` beside
+it is a second opener, refused as in a Callable spec.
 
 The key stops being a spec where the annotation could hold it as data: a `dict` type, `Any`, a
 Callable (which has its own rules), and a struct with a member named `call` (`_call` in the
@@ -31,32 +38,35 @@ escaped form). Those keep the value as written. The check is per construction in
 `typedload._construct._is_typed_call`, so a `call` key means a call on one field and data on
 another ([design decision](design-decisions/call-yields-to-the-data-a-type-holds.md)).
 
-`fn:` is not dispatched on a typed field. `class:` on one is the union tag, which already
+`bind:` is not dispatched on a typed field. `class:` on one is the union tag, which already
 selects a struct and builds it from its sibling keys ([union tag](design-decisions/union-tag-defaults-to-class.md)).
 It must name a subclass of the annotation: any other class is refused, and the message points to
 `call:` ([class names a subclass](design-decisions/class-names-a-subclass-call-computes.md)).
 
 ## Plain and escaped directives
 
-Directive words sit next to the target's own kwargs, so a parameter named `fn`, `call` or
-`bind` would collide. The escaped mode swaps every directive for its underscore form
-(`_fn`, `_class`, `_call`, `_bind`) and frees all plain words to be kwargs.
+Directive words sit next to the target's own kwargs, so a parameter named `bind`, `class` or
+`call` would collide. The escaped mode swaps every directive for its underscore form
+(`_bind`, `_class`, `_call`) and frees all plain words to be kwargs.
 
 **The opener alone selects the mode for the whole spec**; a directive word in the other form
-is ordinary data. Do not mix forms. `active_directives(has_key)` is the one canonical mode
-selector, shared by construction (`spec.__contains__`), the CLI parser and flag
-registration (probes over the flat `{flag}.{name}` namespace), so every channel agrees
-without duplicating tables. On the CLI a field's escaped opener likewise beats a plain
-`--f.fn`, which is then a kwarg named `fn`.
+is ordinary data. Every directive is an opener, so any escaped one selects the escaped mode,
+and the only word that can be left as data is a plain one beside an escaped opener. Each spec
+selects its own mode, so a nested `bind:` target spec may be escaped while the spec around it
+is not. `active_directives(has_key)` is the one canonical mode selector, shared by
+construction (`spec.__contains__`), the CLI parser and flag registration (probes over the
+flat `{flag}.{name}` namespace), so every channel agrees without duplicating tables. On the
+CLI a field's escaped opener likewise beats a plain `--f.bind`, which is then a kwarg named
+`bind`.
 
 **A mixed pair is data everywhere, in all five front-ends** (BUG-25). Rejecting
-`--f.fn X --f._bind.p V` outright was considered and declined: `_bind` beside a plain opener
-is an ordinary key in a config file and in an env var, so a CLI-only rejection would trade a
-front-end parity gap for a channel one — and the target whose own parameter is named `bind`
-is exactly what the escaped form exists to reach, so no general rule can call the other
+`--f._bind X --f.bind.p V` outright was considered and declined: `bind` beside an escaped
+opener is an ordinary key in a config file and in an env var, so a CLI-only rejection would
+trade a front-end parity gap for a channel one — and the target whose own parameter is named
+`bind` is exactly what the escaped form exists to reach, so no general rule can call the other
 spelling a mistake. What is true is that the pair is almost always a typo, so the rejection
-construction already produces is made to say so: `_mixed_form_hint` appends *"`_bind` is the
-escaped spelling of the `bind` directive, but this spec's opener is plain"* wherever a kwarg
+construction already produces is made to say so: `_mixed_form_hint` appends *"`bind` is the
+plain spelling of the `_bind` opener, but this spec's opener is escaped"* wherever a kwarg
 name is turned down. The hint is derived from the name alone, which is sound because a
 directive in the **active** form never reaches a kwarg rejection — it was consumed as a
 directive — so a directive word that does is necessarily the other form. It fires only where
@@ -66,7 +76,8 @@ report through the shared struct construction say the same thing as the rest.
 
 Both bind spellings are **subtrees** on the CLI, whichever is active: `_resolve_field_type`
 accepts either under a `Callable` and leaves the mode question to construction, and the
-adapters' CLI channel is the same loop, so the merged dict matches vanilla's key for key.
+adapters' CLI channel is the same loop, so the merged dict matches vanilla's key for key. A
+subtree is how a nested target spec is spelled (`--f.bind.class pkg.H --f.bind.x 1`).
 
 ## Class as factory versus class as instance
 
@@ -75,7 +86,8 @@ the class cannot produce (including `None`), that is almost certainly a user who
 instance, so it raises and points to `class:` instead of silently building a wrong factory. A
 bare `Callable`, `Callable[..., TypeVar]` or special form has nothing to check, so the user is
 trusted. `get_args(Callable[..., None])` reports the return as the object `None` (not
-`NoneType`), which is why `_unproducible_return` reads the raw args.
+`NoneType`), which is why `_unproducible_return` reads the raw args. A class named by `bind:`
+is the same factory with arguments applied, so the same check holds for it.
 
 ## One coercion route
 
@@ -84,50 +96,53 @@ unknown names raise, and every value is built with `construct`, the same route a
 configuration element (enums, dataclasses, unions work in bound arguments). Signature and
 annotations are taken from different objects when needed: `inspect.signature(cls)` gives
 constructor parameters, but annotations live on `cls.__init__`; for a callable instance they
-live on `type(obj).__call__`. On the CLI, registration finds `__call__` in the class's own MRO,
-not via `getattr`, which would return the metaclass `type.__call__` for non-callable
-instances.
+live on `type(obj).__call__`.
 
 Validation is skipped where it cannot work: uninspectable callables (C extensions) and
 signature arity checks for `*args` callables or `Callable[..., R]`.
 
-The kwarg check, the arity check and the constructor example a failed auto-instantiation
+The kwarg check, the arity check and the constructor listing a failed auto-instantiation
 prints all count parameters the same way, through `_fillable_params`: every parameter a
 signature lists except `*args` and `**kwargs`. None of them drops a parameter named `self`. A
 signature already leaves out the receiver of a class or of a bound method, so a `self` still in
 one is a parameter the function really declares: `def handler(self, event)` takes two
-arguments, and `bind: {self: …}` fills one of them. The constructor example reads
+arguments, and `{bind: handler, self: …}` fills one of them. The constructor listing reads
 `inspect.signature(cls)` for that reason, rather than `cls.__init__`, whose signature still
 lists the receiver.
 
 ## Auto-binding
 
-`fn: Class.method` without kwargs instantiates `Class()`; if that needs arguments, the error
-prints a ready-to-paste dict example with the constructor parameters. Owning-class detection
+An instance method named bare or by `bind:` instantiates its class with no arguments. If that
+needs arguments, the error lists the constructor parameters and points to `call:`, a factory
+that returns the bound method being the one spelling that builds the owner with arguments. A
+sibling of `bind:` is an argument of the method, never of its owner. Owning-class detection
 uses `__qualname__`, so it cannot work for lambdas or nested scopes.
 
 ## Round-trip
 
 `class:` and `call:` results get the original spec stamped as `__confarg_spec__` (best effort:
 some objects refuse attributes), which is how `dump()` reproduces them. Partials dump as
-`{fn, bind}` or a bare path; functions as their dotted path. A callable not built by confarg
-and without `__module__`/`__qualname__` cannot be serialized.
+`{bind: <target>, <keywords>}` — in the escaped form when a keyword is spelled like a plain
+opener — or as a bare path when nothing is bound; the target is serialized the same way, so a
+partial over a `class:` instance dumps its stamped spec as the nested target. Functions dump
+as their dotted path. A callable not built by confarg and without `__module__`/`__qualname__`
+cannot be serialized.
 
 ## CLI
 
-Plain openers are registered statically; bind and factory parameters are discovered from
-the named target at `populate_*` time ([CLI adapters](cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags)).
-In `class` mode constructor params are `--f.<p>` and `__call__` params are `--f.bind.<p>`;
-in `fn: Class` mode constructor params are bind targets. A former implicit form, where a
-bare return type triggered collection of sibling flags, was removed.
+Plain openers are registered statically; the target's parameters are discovered from the
+named target at `populate_*` time ([CLI adapters](cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags)).
+They are `--f.<p>` in every mode, since a sibling of any opener is an argument of its target:
+a `class` target's constructor parameters, the parameters of the function or class a `bind`
+or `call` target names. A former implicit form, where a bare return type triggered collection
+of sibling flags, was removed.
 
-The bare-string shorthand takes sibling flags too: `--f pkg.func --f.bind.sep -` is
-`--f.fn pkg.func --f.bind.sep -`, because `"pkg.func"` and `{fn: "pkg.func"}` are two
+The bare-string shorthand takes sibling flags too: `--f pkg.func --f.sep -` is
+`--f.bind pkg.func --f.sep -`, because `"pkg.func"` and `{bind: "pkg.func"}` are two
 spellings of one spec. `promote_bare_spec` is the single place that writes the equivalence
 down, and `_parse_cli._open_callable_shorthand` the single place that decides when to apply
 it — before a deeper key descends through the string, in both the CLI and the env loop
-([CLI parsing](cli-parsing/token-consumption.md#token-consumption)). The promoted form is always the *plain* `fn`:
-the bare string has no escaped spelling, so it is a plain opener, and an escaped key beside
-it is ordinary data exactly as beside a written-out `fn:`. An opener flag is not a
-refinement but a rival spelling of the target, so it replaces the shorthand rather than
-joining it, matching how an opener beats the `{…}` blob it sits next to.
+([CLI parsing](cli-parsing/token-consumption.md#token-consumption)). The promoted form is always the *plain* `bind`:
+the bare string has no escaped spelling, so it is a plain opener. An opener flag, in either
+form, is not a refinement but a rival spelling of the target, so it replaces the shorthand
+rather than joining it, matching how an opener beats the `{…}` blob it sits next to.

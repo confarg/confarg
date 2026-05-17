@@ -110,7 +110,7 @@ def populate_command(  # noqa: PLR0913
             each direct struct field of the root dataclass (default ``True``).
             Set to ``False`` to expose only the root ``--<config_flag>`` option.
         argv: CLI argument list scanned to register argv-derived dynamic
-            options: ``--<field>.bind.*`` for resolved ``--<field>.fn`` /
+            options: ``--<field>.<param>`` for resolved ``--<field>.bind`` /
             ``--<field>.class`` callables, ``--<config_flag>.<subpath>[+]``
             scoped/append config files, and list-index / append / delete /
             dict-subkey patch options.  Defaults to ``sys.argv[1:]`` (matching

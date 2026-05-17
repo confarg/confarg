@@ -30,7 +30,7 @@ def setup_completion(
     to call unconditionally.
 
     Dynamic flags are those whose existence depends on values already typed on the
-    command line — for example, ``--db.bind.*`` flags that appear only after
+    command line — for example, ``--db.<param>`` flags that appear only after
     ``--db.class myapp.MyDB`` has been typed.  :func:`setup_completion` scans the
     partial command line (via ``COMP_WORDS`` / ``COMP_CWORD``) and registers the
     appropriate extra options on *command* so that Click can suggest them.

@@ -160,7 +160,7 @@ def populate_parser(  # noqa: PLR0913
             each direct struct field of the root dataclass (default ``True``).
             Set to ``False`` to expose only the root ``--<config_flag>`` flag.
         argv: CLI argument list scanned to register argv-derived dynamic flags:
-            ``--<field>.bind.*`` for resolved ``--<field>.fn`` / ``--<field>.class``
+            ``--<field>.<param>`` for resolved ``--<field>.bind`` / ``--<field>.class``
             callables, ``--<config_flag>.<subpath>[+]`` scoped/append config files,
             and list-index / append / delete / dict-subkey patch flags — so the
             host parser accepts every flag ``from_namespace`` will later consume.

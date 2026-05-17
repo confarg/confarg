@@ -17,4 +17,18 @@ arguments of the method, so the two namespaces never meet.
 `bind: C.sm`), and `classfn:` is not needed for them. The bare-path case for an instance method
 (auto-instantiation versus error) is open in FEAT-27 and decided here, with the default kept.
 
-Replaces today's `fn: C.m` with siblings, which currently builds the owner the same way.
+Replaces the removed `fn: C.m` with siblings, which built the owner the same way. FEAT-30
+removed it ahead of this ticket, so until `classfn:` lands an owner that needs arguments has no
+spelling but a `call:` of a factory. What that left to restore:
+
+- The strict `xfail` tests marked `FEAT-31` in `tests/test_callables.py` and
+  `tests/cli/test_backend_contract.py` (the escaped `_classfn` residual, owner arguments from a
+  file and from the CLI, an unknown sibling under `bind: {classfn: …}`). They are written in the
+  `classfn` spelling this ticket describes; drop the marker as each passes.
+- The failed auto-instantiation message (`_callable._maybe_bind_method`) lists the owner's
+  constructor and points to `call:`; it should point to `classfn:` with a ready-to-paste spec,
+  as the removed `fn:` example did.
+- `examples/18_callables` and `examples/19_bindings` lost their "method of an object that needs
+  initialization parameters" sections (`--greet_fn.fn greetings.Greetings_printer.print
+  --greet_fn.greetings Hi`, and `greet_fn_method_init_bound.yaml` with `greetings: Hi` beside
+  `adjective: beautiful`). Restore them in the `classfn` spelling.

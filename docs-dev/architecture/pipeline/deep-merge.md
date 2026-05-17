@@ -63,7 +63,7 @@ leaves and recorded `--items+ … --items.-1.tags.0-` under a stray `'-1'` key (
 sentinel is *not* a scalar to replace: see the next section.
 
 Replacing is right only because the scalar meant nothing to its field. Where it *does* mean
-something — a bare string at a `Callable` field is the shorthand for `{fn: <string>}` — the
+something — a bare string at a `Callable` field is the shorthand for `{bind: <string>}` — the
 parsers open it into that meaning before `_set_nested` ever sees it, so the later key refines
 it instead ([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)). `_set_nested` stays type-blind: it is
 merge-layer code, and asking it which scalars are meaningful would put type knowledge behind
