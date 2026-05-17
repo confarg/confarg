@@ -78,6 +78,19 @@ def merge(
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
 
+    Config file loading order:
+        All config files share the same priority level (below inline env vars and
+        CLI args).  Within that level they are loaded left-to-right so that later
+        sources win on conflict.  The full sequence is:
+
+        1. ``files`` — in the order given.
+        2. ``env_config`` — the single global path named by that env var (if set).
+        3. ``CONFIG__*`` env vars — sorted lexicographically by their env var name,
+           which is equivalent to sorting by subpath depth (shallower paths first).
+           A global ``CONFIG=file`` therefore loads before ``CONFIG__DB=db.yaml``,
+           which loads before ``CONFIG__DB__HOST=host.yaml``.
+        4. CLI ``--config`` / ``--config.subpath`` flags — in left-to-right order.
+
     Raises:
         InvalidConfigFileError: If a config file cannot be loaded.
         UnknownArgumentError: If an unrecognized CLI argument is encountered.
@@ -107,6 +120,7 @@ def merge(
         env_config_path = env.get(env_config)
         if env_config_path:
             config_data = _deep_merge(config_data, _load_file(Path(env_config_path)), union_tag=union_tag)
+    env_configs.sort(key=lambda ec: ec[0])
     for subpath, fpath in env_configs:
         fdata: dict[str, Any] = _load_file(fpath)
         if subpath:
@@ -296,6 +310,9 @@ def load[T](
 
     Returns:
         An instance of the target type populated with the merged configuration.
+
+    Config file loading order:
+        See ``merge()`` for the full description of config file loading order.
 
     Raises:
         MissingFieldError: If a required field is not provided by any source.
