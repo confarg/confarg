@@ -174,31 +174,59 @@ class TestFinalFlagChoices:
 
 
 # ---------------------------------------------------------------------------
-# Completion: Final field skipped when concrete=True, registered when False
+# Completion: singleton Literal skipped when concrete=True, regardless of wrapper
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class _WithFinalAndValue:
+class _WithFinalSingleton:
     kind: Final[Literal["a"]] = "a"
     value: int = 0
 
 
-class TestFinalCompletion:
-    """_extend_walk skips Final fields when concrete=True (class already selected)."""
+@dataclass
+class _WithPlainSingleton:
+    kind: Literal["a"] = "a"
+    value: int = 0
 
-    def test_final_registered_when_not_concrete(self) -> None:
-        """Final fields ARE registered for completion before the class is selected."""
+
+@dataclass
+class _WithMultiLiteral:
+    kind: Literal["a", "b"] = "a"
+    value: int = 0
+
+
+class TestSingletonLiteralCompletion:
+    """_extend_walk skips singleton Literal fields when concrete=True, regardless of wrapper."""
+
+    def test_final_singleton_skipped_when_concrete(self) -> None:
+        """Final[Literal['a']] is skipped when the class is concretely selected."""
         parser = argparse.ArgumentParser()
         ctx = _WalkCtx(parser=parser, union_tag="class")
-        _extend_walk(_WithFinalAndValue, ctx, parser, "", concrete=False)
+        _extend_walk(_WithFinalSingleton, ctx, parser, "", concrete=True)
+        assert "kind" not in ctx.existing_dests
+        assert "value" in ctx.existing_dests
+
+    def test_plain_singleton_skipped_when_concrete(self) -> None:
+        """Literal['a'] (no Final) is also skipped when the class is concretely selected."""
+        parser = argparse.ArgumentParser()
+        ctx = _WalkCtx(parser=parser, union_tag="class")
+        _extend_walk(_WithPlainSingleton, ctx, parser, "", concrete=True)
+        assert "kind" not in ctx.existing_dests
+        assert "value" in ctx.existing_dests
+
+    def test_multi_value_literal_not_skipped_when_concrete(self) -> None:
+        """Literal['a', 'b'] is NOT skipped — the user still has a meaningful choice."""
+        parser = argparse.ArgumentParser()
+        ctx = _WalkCtx(parser=parser, union_tag="class")
+        _extend_walk(_WithMultiLiteral, ctx, parser, "", concrete=True)
         assert "kind" in ctx.existing_dests
         assert "value" in ctx.existing_dests
 
-    def test_final_skipped_when_concrete(self) -> None:
-        """Final fields are NOT registered once the class is concretely selected."""
+    def test_singleton_registered_when_not_concrete(self) -> None:
+        """Singleton Literal fields ARE registered before the class is selected."""
         parser = argparse.ArgumentParser()
         ctx = _WalkCtx(parser=parser, union_tag="class")
-        _extend_walk(_WithFinalAndValue, ctx, parser, "", concrete=True)
-        assert "kind" not in ctx.existing_dests
+        _extend_walk(_WithPlainSingleton, ctx, parser, "", concrete=False)
+        assert "kind" in ctx.existing_dests
         assert "value" in ctx.existing_dests
