@@ -262,6 +262,7 @@ dev = [
     { name = "ipython" },
     { name = "jsonargparse" },
     { name = "just" },
+    { name = "markdown-code-snippet" },
     { name = "mkdocstrings" },
     { name = "mkdocstrings-python" },
     { name = "pre-commit" },
@@ -288,6 +289,7 @@ dev = [
     { name = "ipython", specifier = ">=9.12.0" },
     { name = "jsonargparse", specifier = ">=4.48.0" },
     { name = "just", specifier = ">=0.8.165" },
+    { name = "markdown-code-snippet", specifier = "==0.0.1.dev1" },
     { name = "mkdocstrings", specifier = ">=1.0.4" },
     { name = "mkdocstrings-python", specifier = ">=2.0.3" },
     { name = "pre-commit", specifier = ">=4.5.1" },
@@ -795,6 +797,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/29/6f/da4c6aea59b3001f2e8c0ec7497475aadaf3b021c10cab5b2858f0f32b26/markdown-3.10.3.tar.gz", hash = "sha256:3589362618f743188b4d955b874402bc814f4f83f544dc207719f4baa7d9c45f", size = 372596, upload-time = "2026-07-30T19:05:29.005Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/64/69/4a5af2bc115a9a33fefe51709749de8262be3f9ba063d1753a837cdbc49c/markdown-3.10.3-py3-none-any.whl", hash = "sha256:fa6c92a00a4a3c98b22728c64a935ae1928250ae65058a6ded814d2cc29a4cea", size = 110757, upload-time = "2026-07-30T19:05:27.883Z" },
+]
+
+[[package]]
+name = "markdown-code-snippet"
+version = "0.0.1.dev1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/48/0f/ceafb03ea1c9f52433ee466f13d7486718143d5893df19ef323736c1174c/markdown_code_snippet-0.0.1.dev1.tar.gz", hash = "sha256:d6add361982d1dd48652d84dcdc2a3ddd6aedc641c5598f01940e717e46fd37c", size = 19729, upload-time = "2026-09-27T10:08:44.831Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/14/fb/2a5005cccb4c189d16364766a14859508b5430d6da8be1bb92030466a52b/markdown_code_snippet-0.0.1.dev1-py3-none-any.whl", hash = "sha256:fd4ec9df69a83eb06bf50284f777f97da0ad5fd626ff0f7395b44c189be1641f", size = 28509, upload-time = "2026-09-27T10:08:43.474Z" },
 ]
 
 [[package]]

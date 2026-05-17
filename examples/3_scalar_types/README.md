@@ -1,14 +1,13 @@
 # Scalar types
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/3_scalar_types`](https://github.com/confarg/confarg/tree/master/examples/3_scalar_types).
+> Code for examples on this page can be found in [`examples/3_scalar_types`](https://github.com/confarg/confarg/tree/master/examples/3_scalar_types).
 
+Scalar types are the well-known quintuplet of types (`int`, `float`, `bool`, `str`, `None`), which are the building blocks of any configuration. However, arguments in configuration files, environment variables, or on the command line are all strings by nature.
 
-Scalar types are the well-known type quintuplet (`int`, `float`, `bool`, `str`, `None`) that are the building blocks of any configuration. However, arguments in configuration files, environment variables, or command-line arguments are all strings by nature.
+In configuration files, the coercion into scalar types is handled by the file format. Typically, strings are quoted, while other scalar types are not, which makes it easy to distinguish the string `"1"` from the number `1`. Refer to the specification of your favorite configuration file format for more details.
 
-In configuration files, the coercion into scalar types is handled by the file format. Typically, strings are quoted, while other scalar types are not, which enables to distinguish easily the string `"1"` from the number `1`. Refer to the specification of your favorite configuration file format for more details.
-
-For environment variables and command-line arguments however, for practical reasons and out of habit, the convention is to rely on knowledge of the target type. Look at how the same string argument `"1"` is interpreted depending on the target type.
+For environment variables and command-line arguments, however, for practical reasons and out of habit, the convention is to rely on knowledge of the target type. Look at how the same string argument `"1"` is interpreted depending on the target type.
 
 ```console
 $ uv run str_value.py --value 1
@@ -23,14 +22,14 @@ Config(value1=True, value2=False)
 
 This should not be too surprising to anyone used to CLIs. Let's review in more detail some specific coercion rules for scalar types in confarg.
 
-Let's now review how scalar types are coerced from environment variables and command line arguments.
+Let's now review how scalar types are coerced from environment variables and command-line arguments.
 
 > [!NOTE]
 > Coercion in configuration files is handled by the specification of the file format it is saved as.
 
 ## Coercion to `float`
 
-Floats can be declared in an array of standard representations.
+Floats can be declared in a variety of standard representations.
 
 ```console
 $ # Decimal representation
@@ -69,7 +68,6 @@ Config(value=-inf)
 > $ uv run float_value_argparse.py --value=-1.5e-2  # OK
 > Config(value=-0.015)
 > ```
-
 
 ## Coercion to `int`
 
@@ -121,7 +119,7 @@ confarg.exceptions.UnknownArgumentError: Unknown argument: --no-value1 (field 'n
 > [!IMPORTANT]
 > Boolean flags on the command line are explicitly set to a boolean value as in the examples above, for example by using `--flag true` or `--flag false`. Using `--flag` or `--no-flag`, as seen in other libraries, will raise an error.
 
-On top of being consistent with environment variables and configuration files, we will see later why this helps us in disambiguation scenarios.
+On top of being consistent with environment variables and configuration files, this helps us in disambiguation scenarios, as we will see later.
 
 ## Coercion to `None`
 

@@ -1,14 +1,13 @@
 # Deleting items
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/17_removing_items`](https://github.com/confarg/confarg/tree/master/examples/17_removing_items).
-
+> Code for examples on this page can be found in [`examples/17_removing_items`](https://github.com/confarg/confarg/tree/master/examples/17_removing_items).
 
 An element of a collection can be removed by adding a `-` at the end of its key path.
 
 ## From the CLI
 
-An element is removed by adding `-` at the end of its command line argument.
+An element is removed by adding `-` at the end of its command-line argument.
 
 ```console
 $ uv run users.py --config users.yaml

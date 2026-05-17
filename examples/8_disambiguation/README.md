@@ -1,7 +1,7 @@
 # Disambiguation
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/8_disambiguation`](https://github.com/confarg/confarg/tree/master/examples/8_disambiguation).
+> Code for examples on this page can be found in [`examples/8_disambiguation`](https://github.com/confarg/confarg/tree/master/examples/8_disambiguation).
 
 As we have seen in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/), confarg can handle union types, and can even guess which type variant is targeted based on the provided arguments. However, this is not always possible, or indeed desirable. You could have different variants sharing the same arguments. You could also want the variant to be explicit in the configuration file, rather than having to guess from the present arguments. All are valid concerns, but for the simplest choices, being explicit about the selected variant is usually the better option.
 
@@ -9,26 +9,19 @@ Let's see how to achieve that in confarg.
 
 ## The discriminator pattern
 
-Our first option is to still rely on automatic disambiguation, and making sure it always succeeds by adding a discriminator field that can furthermore explicitly convey the variant that is chosen.
+Our first option is to still rely on automatic disambiguation, and make sure it always succeeds by adding a discriminator field that can furthermore explicitly convey the variant that is chosen.
 
 Let's go back again to our database example. Say we have two configurations to connect to either a PostgreSQL or a MariaDB backend. Both configurations are identical in our example, and therefore cannot be discriminated. Even if they were, we would still like it to be obvious which backend is chosen in our configuration file, rather than having to guess.
 
 We apply the discriminator pattern by introducing a `Literal` field that identifies the configurations with a clear, explicit label.
 
+<!-- snippet: /examples/configs/src/configs/postgres.py#PostgreSQLConfigTyped -->
 ```python
 @dataclass(kw_only=True)
 class PostgreSQLConfigTyped:
-    type: Literal["postgres"] = "postgres"  # discriminator field
+    type: Literal["postgres"] = "postgres"
     host: str
     port: int = 5432
-    schema_name: str
-
-
-@dataclass(kw_only=True)
-class MariaDBConfigTyped:
-    type: Literal["mariadb"] = "mariadb"   # discriminator field
-    host: str
-    port: int = 3306
     schema_name: str
 ```
 
@@ -41,8 +34,8 @@ PostgreSQLConfigTyped(type='postgres', host='example.com', port=5432, schema_nam
 
 This works similarly with configuration files. We modify our configuration file to introduce the discriminator field.
 
-```yaml
-# postgres_typed.yaml
+<!-- snippet: postgres_typed.yaml -->
+```yaml title="postgres_typed.yaml"
 type: postgres
 host: example.com
 schema_name: mydb
@@ -64,7 +57,7 @@ The alternative is to provide the fully qualified name (FQN) of the target type.
 In confarg, the FQN of the type of an input is provided under the `class` key.
 
 > [!NOTE]
-> The `class` key cannot collide with a valid field name or initializer argument, as it is a reserved keyword in python.
+> The `class` key cannot collide with a valid field name or initializer argument, as it is a reserved keyword in Python.
 
 Going back to our database example, the configurations don't need a discriminator field anymore.
 
@@ -73,14 +66,14 @@ Going back to our database example, the configurations don't need a discriminato
 @dataclass(kw_only=True)
 class PostgreSQLConfig:
     host: str
-    port: int
+    port: int = 5432
     schema_name: str
 
 
 @dataclass(kw_only=True)
 class MariaDBConfig:
     host: str
-    port: int
+    port: int = 3306
     schema_name: str
 ```
 

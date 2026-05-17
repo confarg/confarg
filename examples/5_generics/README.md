@@ -1,8 +1,7 @@
 # Generics
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/5_generics`](https://github.com/confarg/confarg/tree/master/examples/5_generics).
-
+> Code for examples on this page can be found in [`examples/5_generics`](https://github.com/confarg/confarg/tree/master/examples/5_generics).
 
 Confarg handles the following built-in generics.
 
@@ -10,6 +9,7 @@ Confarg handles the following built-in generics.
 
 The `Literal` generic type allows you to limit inputs to a fixed set of options. For example, this configuration
 
+<!-- snippet: literal.py#Config -->
 ```python
 @dataclass
 class Config:
@@ -27,7 +27,7 @@ $ uv run literal.py --input bye  # Error: not in the set of allowed values
 
 ## `Annotated`
 
-The `Annotated` generic type allows you to attach various metadata to a type. Confarg can handle `Annotated` types but ignores any metadata attached to it.
+The `Annotated` generic type allows you to attach various metadata to a type. Confarg can handle `Annotated` types but ignores any metadata attached to them.
 
 ```console
 $ uv run annotated.py --input hello
@@ -40,6 +40,7 @@ The `Final` generic type signals that the annotated value should not be changed.
 
 Take this configuration:
 
+<!-- snippet: final.py#Config -->
 ```python
 @dataclass
 class Config:

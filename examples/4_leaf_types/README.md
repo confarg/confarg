@@ -1,15 +1,13 @@
 # Leaf types
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/4_leaf_types`](https://github.com/confarg/confarg/tree/master/examples/4_leaf_types).
-
+> Code for examples on this page can be found in [`examples/4_leaf_types`](https://github.com/confarg/confarg/tree/master/examples/4_leaf_types).
 
 Leaf types are concrete types that can be defined by a single dictionary or collection entry of the configuration. They include scalar types, but they are not limited to them.
 
-
 ## `Enum`
 
-You can either pass the key or the value of the desired entry to define an enum argument.
+You can pass either the key or the value of the desired entry to define an enum argument.
 
 ```console
 $ uv run enum_value.py --value FOO
@@ -36,13 +34,14 @@ Config(value=Path('/foo/bar.txt'))
 
 Types can be specified as leaf types. Take this configuration:
 
+<!-- snippet: type.py#Config -->
 ```python
 @dataclass
 class Config:
     value: type
 ```
 
-You can pass a builtin type, or any other type by its fully-qualified dotted path.
+You can pass a built-in type, or any other type by its fully-qualified dotted path.
 
 ```console
 $ uv run type.py --value int
@@ -53,8 +52,9 @@ Config(value=<class '__main__.Config'>)
 
 When a class is specified, this class or any class that derives from it can be passed.
 
-Let modify our configuration:
+Let's modify our configuration:
 
+<!-- snippet: base_class.py#Config -->
 ```python
 @dataclass
 class Config:
@@ -75,7 +75,7 @@ $ uv run base_class.py --value __main__.UnrelatedClass
 
 ## Callables
 
-Callables are also accepted as a special kind of leaf type. However, there are more involved than other leaf types, and we will spend three tutorials to go in depth into them in [Tutorial #18](https://confarg.github.io/confarg/examples/18_callables/), [Tutorial #19](https://confarg.github.io/confarg/examples/19_bindings/) and [Tutorial #20](https://confarg.github.io/confarg/examples/20_factories/).
+Callables are also accepted as a special kind of leaf type. However, they are more involved than other leaf types, and we will spend three tutorials to go in depth into them in [Tutorial #18](https://confarg.github.io/confarg/examples/18_callables/), [Tutorial #19](https://confarg.github.io/confarg/examples/19_bindings/), and [Tutorial #20](https://confarg.github.io/confarg/examples/20_factories/).
 
 ## Custom leaf types
 
@@ -83,6 +83,7 @@ Confarg allows you to register custom leaf types via the [`confarg.register_leaf
 
 Say we have a custom `Int` class that supports `NaN` values and that we want to treat as a leaf type. We write a custom coercion function:
 
+<!-- snippet: custom_leaf_type.py#coerce_int -->
 ```python
 def coerce_int(value: str) -> Int:
     return Int(None if value == "NaN" else int(value))
@@ -107,7 +108,7 @@ Without leaf type registration, initializing a custom `Int` would require an ini
 
 ### Writing the value back
 
-Registration makes `Int` a leaf in both directions: [`confarg.dump`](https://confarg.github.io/confarg/reference/#confarg.dump) and [`confarg.dump_file`](https://confarg.github.io/confarg/reference/#confarg.dump_file) write it as a single scalar rather than as an init dict. How that scalar is spelled is the `serialize` argument, the inverse of `coerce`:
+Registration makes `Int` a leaf in both directions: [`confarg.dump`](https://confarg.github.io/confarg/reference/#confarg.dump) and [`confarg.dump_file`](https://confarg.github.io/confarg/reference/#confarg.dump_file) write it as a single scalar rather than as an init dict. How that scalar is spelled is decided by the `serialize` argument, the inverse of `coerce`:
 
 ```python
 def serialize_int(value: Int) -> str | int:
@@ -117,4 +118,4 @@ def serialize_int(value: Int) -> str | int:
 confarg.register_leaf_type(Int, coerce_int, serialize=serialize_int)
 ```
 
-`serialize` defaults to `str`, which is the wire form of types like `UUID`, `Decimal` or `Path`. Our `Int` is not one of them — `str(Int(42))` is the debugging form `Int(value=42)`, which `coerce_int` would refuse on the way back in — so it passes an explicit serializer, and a dumped configuration loads again unchanged.
+`serialize` defaults to `str`, which is the wire form of types like `UUID`, `Decimal`, or `Path`. Our `Int` is not one of them — `str(Int(42))` is the debugging form `Int(value=42)`, which `coerce_int` would refuse on the way back in — so we pass an explicit serializer, and a dumped configuration loads again unchanged.

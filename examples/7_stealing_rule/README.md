@@ -1,11 +1,10 @@
 # Leaf type unions and the stealing rule
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/7_stealing_rule`](https://github.com/confarg/confarg/tree/master/examples/7_stealing_rule).
 
-Now that we learn in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/) how confarg can handle unions, we need to go back to leaf types and talk about the stealing rule, that is, the precedence of leaf type in unions for inputs provided as CLI arguments or environment variables.
+Now that we have learned in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/) how confarg can handle unions, we need to go back to leaf types and talk about the stealing rule, that is, the precedence of leaf types in unions for inputs provided as CLI arguments or environment variables.
 
-For plain leaf types, we saw how confarg relies on the target type to understand how to coerce input strings provided from the command line or the environment. However, type unions make the whole process ambiguous, in particular when one of the union variant is `str`.
+For plain leaf types, we saw how confarg relies on the target type to understand how to coerce input strings provided from the command line or the environment. However, type unions make the whole process ambiguous, in particular when one of the union variants is `str`.
 
 Confarg relies on the following priority order to resolve leaf type arguments, called the stealing rule:
 

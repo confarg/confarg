@@ -1,7 +1,7 @@
 # Appending items to lists
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/16_appending_items`](https://github.com/confarg/confarg/tree/master/examples/16_appending_items).
+> Code for examples on this page can be found in [`examples/16_appending_items`](https://github.com/confarg/confarg/tree/master/examples/16_appending_items).
 
 New elements can be appended to lists by postfixing the list key with a `+`.
 
@@ -57,10 +57,10 @@ Config(dbs=[SQLiteConfig(dbpath='db1.sqlite'),
 
 ## In configuration files
 
-The same `+` suffix works on keys config files. A derived config can append to a list from a base config without touching the rest of the structure. For example, take this configuration file:
+The same `+` suffix works on keys in config files. A derived config can append to a list from a base config without touching the rest of the structure. For example, take this configuration file:
 
-```yaml
-# more_ints.yaml
+<!-- snippet: more_ints.yaml -->
+```yaml title="more_ints.yaml"
 input+: [42]
 ```
 
@@ -77,16 +77,17 @@ Config(input=[1, 2, 42])
 Sub-configuration files can also be appended:
 
 ```console
-$ uv run myapp.py --config config.yaml
+$ uv run myapp.py --config db_list.yaml
 Config(dbs=[PostgreSQLConfigChild(host='example.com',
                                   port=5432,
                                   schema_name='mydb')])
-$ uv run myapp.py --config config.yaml --config.dbs+ other_sqlite.yaml
+$ uv run myapp.py --config db_list.yaml --config.dbs+ other_sqlite.yaml
 Config(dbs=[PostgreSQLConfigChild(host='example.com',
                                   port=5432,
                                   schema_name='mydb'),
             SQLiteConfigChild(dbpath='db.sqlite')])
 ```
+
 
 > [!NOTE]
 > TOML bare keys are restricted to `A-Za-z0-9_-`, so the `+` suffix requires a quoted key:

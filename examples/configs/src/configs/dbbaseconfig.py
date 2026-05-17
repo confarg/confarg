@@ -8,4 +8,4 @@ from dataclasses import dataclass
 
 @dataclass
 class DBBaseConfig:
-    pass
+    """Base database configuration."""
