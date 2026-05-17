@@ -104,7 +104,7 @@ def _coerce_int_value(value: Any, path: str) -> int:
         return value
     if isinstance(value, _StrToken):
         try:
-            return int(str(value))
+            return int(str(value), 0)
         except (ValueError, TypeError):
             raise TypeCoercionError.cannot_coerce(_src_type(value), value, "int", path) from None
     raise TypeCoercionError.cannot_coerce(_src_type(value), value, "int", path)

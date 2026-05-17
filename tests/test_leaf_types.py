@@ -38,11 +38,18 @@ class TestInt:
 
     @pytest.mark.parametrize(
         ("cli_val", "expected"),
-        [("42", 42), ("-7", -7), ("0", 0)],
-        ids=["positive", "negative", "zero"],
+        [
+            ("42", 42),
+            ("-7", -7),
+            ("0", 0),
+            ("0x1F", 31),
+            ("0o37", 31),
+            ("0b11111", 31),
+        ],
+        ids=["positive", "negative", "zero", "hex", "octal", "binary"],
     )
     def test_int_from_cli(self, cli_val: str, expected: int) -> None:
-        """Parse integers from CLI args."""
+        """Parse integers from CLI args, including hex, octal, and binary literals."""
         result = confarg.load(
             Flat,
             argv=["--name", "x", "--count", cli_val, "--rate", "1.0", "--verbose", "true"],
@@ -50,15 +57,34 @@ class TestInt:
         )
         assert result.count == expected
 
-    def test_int_from_env(self) -> None:
-        """Parse an integer from an env var."""
+    @pytest.mark.parametrize(
+        "cli_val",
+        ["042", "-042"],
+        ids=["leading-zero-positive", "leading-zero-negative"],
+    )
+    def test_int_leading_zero_raises_cli(self, cli_val: str) -> None:
+        """Non-zero decimal integers with a leading zero raise an error from CLI."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
+            confarg.load(
+                Flat,
+                argv=["--name", "x", "--count", cli_val, "--rate", "1.0", "--verbose", "true"],
+                env={},
+            )
+
+    @pytest.mark.parametrize(
+        ("env_val", "expected"),
+        [("99", 99), ("0x1F", 31), ("0o37", 31)],
+        ids=["decimal", "hex", "octal"],
+    )
+    def test_int_from_env(self, env_val: str, expected: int) -> None:
+        """Parse integers from env vars, including hex and octal."""
         result = confarg.load(
             Flat,
             argv=["--name", "x", "--rate", "1.0", "--verbose", "true"],
-            env={"COUNT": "99"},
+            env={"COUNT": env_val},
             env_prefix="",
         )
-        assert result.count == 99
+        assert result.count == expected
 
 
 # ---------------------------------------------------------------------------

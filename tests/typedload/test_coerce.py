@@ -195,6 +195,56 @@ class TestBuildEndToEnd:
 
 
 # ---------------------------------------------------------------------------
+# TestIntCoercion — _coerce_leaf for int with alternate bases
+# ---------------------------------------------------------------------------
+
+
+class TestIntCoercion:
+    """Tests for int coercion: hex, octal, binary, and leading-zero rejection."""
+
+    @pytest.mark.parametrize(
+        ("token", "expected"),
+        [
+            ("42", 42),
+            ("-7", -7),
+            ("0", 0),
+            ("0x1F", 31),
+            ("0X1F", 31),
+            ("-0x1F", -31),
+            ("0o17", 15),
+            ("0O17", 15),
+            ("0b1010", 10),
+            ("0B1010", 10),
+        ],
+        ids=[
+            "decimal",
+            "negative",
+            "zero",
+            "hex-lower",
+            "hex-upper",
+            "hex-negative",
+            "octal-lower",
+            "octal-upper",
+            "binary-lower",
+            "binary-upper",
+        ],
+    )
+    def test_valid(self, token: str, expected: int) -> None:
+        """Valid integer tokens (decimal, hex, octal, binary) are coerced correctly."""
+        assert _coerce_leaf(int, _StrToken(token)) == expected
+
+    @pytest.mark.parametrize(
+        "token",
+        ["042", "-042"],
+        ids=["leading-zero-positive", "leading-zero-negative"],
+    )
+    def test_leading_zero_raises(self, token: str) -> None:
+        """Non-zero decimal integers with a leading zero raise TypeCoercionError."""
+        with pytest.raises(TypeCoercionError):
+            _coerce_leaf(int, _StrToken(token))
+
+
+# ---------------------------------------------------------------------------
 # TestNoneTypeCoercion — _coerce_leaf and _try_coerce for NoneType
 # ---------------------------------------------------------------------------
 
