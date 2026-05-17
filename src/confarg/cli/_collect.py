@@ -336,11 +336,12 @@ def _collect_callable_spec(
     spec.update(_collect_bind_sections(flat, flag, d))
     bind: dict[str, Any] = spec.get(d.bind, {})
 
-    # Sibling --<field>.<param> flags are init kwargs when a class/fn identity is given:
-    # 'class:' instantiates with them; 'fn: Class.method' constructs the method's owning
-    # class with them. (Plain 'fn: Class' factories carry their args under bind instead.)
-    if _has(d.cls) or _has(d.fn):
-        spec.update(_collect_factory_kwargs(flat, flag_prefix, bind_prefix, reserved))
+    # Every sibling --<field>.<param> flag is collected, opener or no opener: the vanilla
+    # parser writes the whole subtree below the field verbatim and leaves construction to
+    # read it -- as an init kwarg under 'class:'/'fn: Class.method', as the ordinary data a
+    # directive word in the inactive spelling is, or as the error a stray name earns.
+    # Collecting only under an opener dropped the rest silently instead (BUG-28).
+    spec.update(_collect_factory_kwargs(flat, flag_prefix, bind_prefix, reserved))
 
     if blob is not _NO_CAST:
         if isinstance(blob, str):

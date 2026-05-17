@@ -134,14 +134,27 @@ identically; vanilla `load()` registers nothing and has no analogue.
 Escaped opener specs carry no group: sharing a group name with a different description
 trips cyclopts' "2 distinct Group objects with same name" check.
 
-Bind subkeys are the one family registered from the **path** rather than from a signature
-(BUG-25). `_parse_cli._addresses_callable_bind` is the shared predicate, so whatever the
-vanilla parser accepts below a bind key the host framework accepts too — a signature cannot
-answer for the inactive spelling, whose keys are data, nor for a key the target does not
-have, and letting the framework reject those first is what made the four front-ends disagree.
-It deliberately stops at the bind key itself: a bare `--f.bind` is a scalar, and the flat
-collector reads a scalar there only as a sibling kwarg, which it collects only when an opener
-is present.
+Everything below a callable field is the one family registered from the **path** rather than
+from a signature (BUG-25, BUG-28). `_parse_cli._addresses_callable_key` is the shared
+predicate, so whatever the vanilla parser accepts below the field the host framework accepts
+too. A signature cannot answer here at all: not for a bind subkey in the spelling the opener
+left inactive, whose keys are data ([06](06-callables.md#plain-and-escaped-directives)); not
+for a sibling kwarg the named target does not carry; and not for a field with no opener
+anywhere, which names no target to inspect. Letting the framework reject those first is what
+made the four front-ends disagree — the flag is the adapter's to accept and the kwarg is
+construction's to judge, so the user hears the real complaint (`Unknown kwargs [...]`,
+`must specify one of 'fn', 'class', or 'call'`) instead of `unrecognized arguments`.
+
+One predicate for the whole subtree needs the *collector* to read the whole subtree, which is
+the other half of BUG-28: `_collect_callable_spec` used to gather sibling `--<field>.<param>`
+flags only when an opener was present, so registering them alone would have dropped their
+values silently instead. It now gathers them unconditionally, as the vanilla parser has always
+written them — the opener decides what a key *means*, never whether it is stored.
+
+The predicate answers about a *path*, so the caller strips an append/delete suffix before
+asking. Those flags belong to the patch scan, which registers each in the shape its mode
+demands; claiming `--f.bind.<key>-` here registered a value-less delete as if it took an
+argument (BUG-29).
 
 ## Whole-value flags
 

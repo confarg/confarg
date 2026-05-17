@@ -1914,6 +1914,96 @@ class TestMixedDirectiveFormContract:
 
 
 # ---------------------------------------------------------------------------
+# Sibling kwargs of a callable that no signature describes
+# ---------------------------------------------------------------------------
+
+
+class TestCallableSiblingKwargContract:
+    """A ``--<field>.<name>`` below a ``Callable`` is registered from the path, not a signature.
+
+    The adapters used to register sibling kwargs only from the named target's
+    signature, so a name that signature did not carry — or a field with no opener at
+    all, which names no target to inspect — was rejected by the framework while
+    vanilla merged it and let construction judge it (BUG-28).  Both front-ends must
+    fail the same way: not at the parser, but in ``build()``.
+    """
+
+    def test_inactive_bind_word_as_a_scalar_merges_as_data(self, loader: ConfargLoader) -> None:
+        """``--fn._bind 5`` beside a plain opener is an ordinary kwarg, not a bind subtree."""
+        merged = loader.merge(
+            _CallableConfig,
+            argv=["--fn.fn", f"{__name__}._shout", "--fn._bind", "5"],
+            env={},
+        )
+        assert merged == {"fn": {"fn": f"{__name__}._shout", "_bind": "5"}}
+
+    def test_inactive_bind_word_as_a_scalar_is_rejected_by_construction(self, loader: ConfargLoader) -> None:
+        """The error comes from ``build()``, and names the mixed spelling."""
+        with pytest.raises(TypeCoercionError, match="_bind"):
+            loader.load(_CallableConfig, argv=["--fn.fn", f"{__name__}._shout", "--fn._bind", "5"], env={})
+
+    def test_active_bind_word_as_a_scalar_merges_as_data(self, loader: ConfargLoader) -> None:
+        """The mirror: the *active* bind word spelled as a scalar is data the parser stores."""
+        merged = loader.merge(
+            _CallableConfig,
+            argv=["--fn.fn", f"{__name__}._shout", "--fn.bind", "5"],
+            env={},
+        )
+        assert merged == {"fn": {"fn": f"{__name__}._shout", "bind": "5"}}
+
+    def test_active_bind_word_as_a_scalar_is_rejected_by_construction(self, loader: ConfargLoader) -> None:
+        """``bind`` must be a dict — construction says so, in every front-end."""
+        with pytest.raises(TypeCoercionError, match="must be a dict"):
+            loader.load(_CallableConfig, argv=["--fn.fn", f"{__name__}._shout", "--fn.bind", "5"], env={})
+
+    def test_sibling_kwarg_without_an_opener_merges(self, loader: ConfargLoader) -> None:
+        """No opener names no target, so only the path can say the flag is addressable."""
+        merged = loader.merge(_CallableConfig, argv=["--fn.greeting", "Hi"], env={})
+        assert merged == {"fn": {"greeting": "Hi"}}
+
+    def test_sibling_kwarg_without_an_opener_is_rejected_by_construction(self, loader: ConfargLoader) -> None:
+        """The missing opener is what the user hears about, not an unrecognized flag."""
+        with pytest.raises(TypeCoercionError, match="must specify one of"):
+            loader.load(_CallableConfig, argv=["--fn.greeting", "Hi"], env={})
+
+    def test_sibling_kwarg_beside_a_call_opener(self, loader: ConfargLoader) -> None:
+        """A kwarg the ``.call`` target's signature does not name still merges."""
+        merged = loader.merge(
+            _CallableConfig,
+            argv=["--fn.call", f"{__name__}._shout", "--fn.greeting", "Hi"],
+            env={},
+        )
+        assert merged == {"fn": {"call": f"{__name__}._shout", "greeting": "Hi"}}
+
+    def test_sibling_kwarg_beside_the_bare_shorthand(self, loader: ConfargLoader) -> None:
+        """The shorthand is opened first, so the stray kwarg refines it instead of erasing it."""
+        merged = loader.merge(
+            _CallableConfig,
+            argv=["--fn", f"{__name__}._shout", "--fn.greeting", "Hi"],
+            env={},
+        )
+        assert merged == {"fn": {"fn": f"{__name__}._shout", "greeting": "Hi"}}
+
+    def test_sibling_kwarg_below_a_nested_callable(self, loader: ConfargLoader) -> None:
+        """The rule holds wherever the callable sits, not only at the root."""
+        merged = loader.merge(_NestedCallable, argv=["--inner.hook.greeting", "Hi"], env={})
+        assert merged == {"inner": {"hook": {"greeting": "Hi"}}}
+
+    def test_bind_subkey_delete_stays_value_less(self, loader: ConfargLoader) -> None:
+        """Registering from the path must not claim a *delete* flag as a value flag (BUG-29).
+
+        ``--fn.bind.<key>-`` addresses the bind subtree, so the path predicate matches it,
+        but it is the patch scan's flag and takes no argument.
+        """
+        merged = loader.merge(
+            _CallableConfig,
+            argv=["--fn.fn", f"{__name__}._shout", "--fn.bind.punct-"],
+            env={},
+        )
+        assert merged == {"fn": {"fn": f"{__name__}._shout", "bind": {"punct": DICT_DELETE}}}
+
+
+# ---------------------------------------------------------------------------
 # Explicit .json / __json force-cast
 # ---------------------------------------------------------------------------
 
