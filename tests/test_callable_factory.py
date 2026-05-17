@@ -7,14 +7,14 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable
+from collections.abc import Callable  # noqa: TC003
 from dataclasses import dataclass
 
 import pytest
 
 import confarg
 from confarg._callable import _serialize_callable
-from confarg._errors import TypeCoercionError
+from confarg.exceptions import TypeCoercionError
 
 # ---------------------------------------------------------------------------
 # Module-level helpers — importable by dotted path
@@ -154,7 +154,7 @@ class TestFactoryFromDict:
 
     def test_bind_in_factory_mode_raises(self):
         """Test that using bind: in factory mode raises TypeCoercionError."""
-        with pytest.raises(TypeCoercionError, match="bind.*not valid in factory mode"):
+        with pytest.raises(TypeCoercionError, match=r"bind.*not valid in factory mode"):
             confarg.build(
                 _WithConcreteOpt,
                 {"optimizer": {"class": f"{_MOD}._SGD", "lr": 0.01, "bind": {"x": 1}}},

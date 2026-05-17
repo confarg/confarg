@@ -15,9 +15,8 @@ if TYPE_CHECKING:
 import pytest
 
 import confarg
-from confarg import INCLUDE_KEY, InvalidConfigFileError
-from confarg._errors import ConfargError
-from confarg._files import _load_file
+from confarg._files import INCLUDE_KEY, _load_file
+from confarg.exceptions import ConfargError, InvalidConfigFileError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -168,14 +167,14 @@ class TestCycleDetection:
     def test_direct_self_include(self, tmp_path: Path) -> None:
         """Test that a file including itself raises ConfargError."""
         p = write(tmp_path, "self.yaml", f"{INCLUDE_KEY}: ./self.yaml\n")
-        with pytest.raises(ConfargError, match="[Cc]ircular"):
+        with pytest.raises(ConfargError, match=r"[Cc]ircular"):
             _load_file(p)
 
     def test_indirect_cycle(self, tmp_path: Path) -> None:
         """Test that an indirect cycle (a→b→a) raises ConfargError."""
         write(tmp_path, "a.yaml", f"{INCLUDE_KEY}: ./b.yaml\n")
         write(tmp_path, "b.yaml", f"{INCLUDE_KEY}: ./a.yaml\n")
-        with pytest.raises(ConfargError, match="[Cc]ircular"):
+        with pytest.raises(ConfargError, match=r"[Cc]ircular"):
             _load_file(tmp_path / "a.yaml")
 
 

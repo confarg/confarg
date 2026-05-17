@@ -15,9 +15,8 @@ if TYPE_CHECKING:
 import pytest
 
 import confarg
-from confarg import INCLUDE_KEY, InvalidConfigFileError
-from confarg._errors import ConfargError
-from confarg._files import _load_csv, _load_file
+from confarg._files import INCLUDE_KEY, _load_csv, _load_file
+from confarg.exceptions import ConfargError, InvalidConfigFileError
 
 
 def write(tmp_path: Path, name: str, content: str) -> Path:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,6 +48,8 @@ from confarg.cli.argparse._register import (
     _add_union_tag_argument,
 )
 from confarg.cli.argparse._spec import _build_help, _get_field_docstrings
+
+_log = logging.getLogger(__name__)
 
 
 def _collect_partial_config(argv: list[str], config_flag: str) -> dict[str, Any]:
@@ -110,6 +113,29 @@ def _collect_partial_cli_tags(argv: list[str], union_tag: str) -> dict[str, str]
     return tags
 
 
+def _union_field_tags(
+    merged: dict[str, Any],
+    name: str,
+    flag: str,
+    resolved: Any,
+    union_tag: str,
+) -> dict[str, str]:
+    """Return resolved class-tag entries for one union field in the merged config."""
+    tags: dict[str, str] = {}
+    non_none = _union_args_no_none(resolved)
+    if len(non_none) > 1:
+        sub = merged.get(name)
+        if isinstance(sub, dict) and union_tag in sub:
+            val = sub[union_tag]
+            if isinstance(val, str):
+                tags[flag] = val
+    elif len(non_none) == 1:
+        sub = merged.get(name, {})
+        if isinstance(sub, dict):
+            tags.update(_resolve_tags_from_config(sub, _resolve_type(non_none[0]), flag, union_tag))
+    return tags
+
+
 def _resolve_tags_from_config(
     merged: dict[str, Any],
     dc_type: Any,
@@ -130,19 +156,8 @@ def _resolve_tags_from_config(
     for name, ft in flds.items():
         flag = f"{prefix}.{name}" if prefix else name
         resolved = _resolve_type(ft)
-
         if _is_union(resolved):
-            non_none = _union_args_no_none(resolved)
-            if len(non_none) > 1:
-                sub = merged.get(name)
-                if isinstance(sub, dict) and union_tag in sub:
-                    val = sub[union_tag]
-                    if isinstance(val, str):
-                        tags[flag] = val
-            elif len(non_none) == 1:
-                sub = merged.get(name, {})
-                if isinstance(sub, dict):
-                    tags.update(_resolve_tags_from_config(sub, _resolve_type(non_none[0]), flag, union_tag))
+            tags.update(_union_field_tags(merged, name, flag, resolved, union_tag))
         elif _is_struct(resolved):
             sub = merged.get(name, {})
             if isinstance(sub, dict):
@@ -160,7 +175,69 @@ class _WalkCtx:
     existing_dests: set[str] = field(default_factory=set)
 
 
-def _extend_walk(  # noqa: PLR0912
+def _get_or_create_arg_group(
+    ctx: _WalkCtx,
+    flag: str,
+    core: Any,
+) -> argparse._ArgumentGroup:
+    """Return the existing argument group named flag, or create one."""
+    for g in ctx.parser._action_groups:
+        if g.title == flag:
+            return g
+    return ctx.parser.add_argument_group(flag, inspect.getdoc(core) or "")
+
+
+def _extend_walk_field(  # noqa: PLR0913
+    name: str,
+    raw_type: Any,
+    flag: str,
+    core: Any,
+    ctx: _WalkCtx,
+    group_target: argparse.ArgumentParser | argparse._ArgumentGroup,
+    docstrings: dict[str, str],
+    defaults: dict[str, Any],
+    *,
+    concrete: bool,
+) -> None:
+    """Register one field of a struct type into the argparse parser during completion walk."""
+    if core is None:
+        non_none = _union_args_no_none(_resolve_type(raw_type))
+        dest = f"{flag}.{ctx.union_tag}"
+        if dest not in ctx.existing_dests:
+            concrete_variants = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
+            _add_union_tag_argument(group_target, flag, ctx.union_tag, concrete_variants)
+            ctx.existing_dests.add(dest)
+        return
+
+    if _is_final(core):
+        core = _final_inner(core)
+
+    if concrete and _is_singleton_literal(core):
+        return  # class already selected — singleton value is determined by the class
+
+    if _is_callable(core):
+        if flag not in ctx.existing_dests:
+            help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
+            _add_leaf_argument(group_target, flag, raw_type, core, help_text)
+            ctx.existing_dests.add(flag)
+        _add_callable_fn_flags(group_target, flag)
+        ctx.existing_dests.update({f"{flag}.fn", f"{flag}.class"})
+        return
+
+    if _is_struct(core):
+        _extend_walk(core, ctx, _get_or_create_arg_group(ctx, flag, core), flag, concrete=concrete)
+        return
+
+    if _is_dict(core):
+        return
+
+    if flag not in ctx.existing_dests:
+        help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
+        _add_leaf_argument(group_target, flag, raw_type, core, help_text)
+        ctx.existing_dests.add(flag)
+
+
+def _extend_walk(
     dc_type: Any,
     ctx: _WalkCtx,
     group_target: argparse.ArgumentParser | argparse._ArgumentGroup,
@@ -181,54 +258,10 @@ def _extend_walk(  # noqa: PLR0912
     for name in flds:
         if name == ctx.union_tag or name in var_params:
             continue
-
         raw_type = hints.get(name, Any)
-        resolved = _resolve_type(raw_type)
         flag = f"{prefix}.{name}" if prefix else name
-
-        core = _unwrap_optional(resolved)
-        if core is None:
-            # Multi-variant union: register its class-tag flag if not already present
-            non_none = _union_args_no_none(resolved)
-            dest = f"{flag}.{ctx.union_tag}"
-            if dest not in ctx.existing_dests:
-                concrete_variants = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
-                _add_union_tag_argument(group_target, flag, ctx.union_tag, concrete_variants)
-                ctx.existing_dests.add(dest)
-            continue
-
-        if _is_final(core):
-            core = _final_inner(core)
-
-        if concrete and _is_singleton_literal(core):
-            continue  # class already selected — singleton value is determined by the class
-
-        if _is_callable(core):
-            if flag not in ctx.existing_dests:
-                help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
-                _add_leaf_argument(group_target, flag, raw_type, core, help_text)
-                ctx.existing_dests.add(flag)
-            _add_callable_fn_flags(group_target, flag)
-            ctx.existing_dests.update({f"{flag}.fn", f"{flag}.class"})
-            continue
-
-        if _is_struct(core):
-            # Find or create argument group
-            existing_titles = {g.title for g in ctx.parser._action_groups}
-            if flag not in existing_titles:
-                new_group = ctx.parser.add_argument_group(flag, inspect.getdoc(core) or "")
-            else:
-                new_group = next(g for g in ctx.parser._action_groups if g.title == flag)
-            _extend_walk(core, ctx, new_group, flag, concrete=concrete)
-            continue
-
-        if _is_dict(core):
-            continue
-
-        if flag not in ctx.existing_dests:
-            help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
-            _add_leaf_argument(group_target, flag, raw_type, core, help_text)
-            ctx.existing_dests.add(flag)
+        core = _unwrap_optional(_resolve_type(raw_type))
+        _extend_walk_field(name, raw_type, flag, core, ctx, group_target, docstrings, defaults, concrete=concrete)
 
 
 def _pre_extend_parser_for_completion(
@@ -261,6 +294,7 @@ def _pre_extend_parser_for_completion(
                     continue
                 _extend_walk(cls, walk_ctx, parser, field_prefix, concrete=True)
             except Exception:  # noqa: BLE001 — completion must never crash; any import/argparse failure is non-fatal
+                _log.debug("dynamic union flags: skipping %r", class_path, exc_info=True)
                 continue
 
         config_fns = _collect_fn_paths_from_config(config_dict, dc_type, "", union_tag)
@@ -269,10 +303,11 @@ def _pre_extend_parser_for_completion(
             try:
                 _add_callable_bind_flags(parser, field_flag, fn_path, walk_ctx.existing_dests)
             except Exception:  # noqa: BLE001 — completion must never crash
+                _log.debug("callable bind flags: skipping %r", fn_path, exc_info=True)
                 continue
 
     except Exception:  # noqa: BLE001 — completion must never crash; failure here silently degrades suggestions
-        pass
+        _log.debug("extend_completion_parser failed", exc_info=True)
 
 
 def setup_completion(

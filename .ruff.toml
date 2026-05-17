@@ -2,37 +2,53 @@ line-length    = 120
 target-version = "py312"
 
 [lint]
+ignore = [
+    'ANN401', # any-type
+]
 select = [
     "A",    # flake8-builtins
+    "ANN",  # flake8-annotations
+    "ARG",  # flake8-unused-arguments
     "B",    # flake8-bugbear
     "BLE",  # flake8-blind-except
     "C4",   # flake8-comprehensions
+    "C90",  # mccabe
+    "COM",  # flake8-commas
     "D",    # pydocstyle
     "E",    # pycodestyle errors
     "EM",   # flake8-errmsg
     "F",    # pyflakes
+    "FBT",  # flake8-boolean-trap
     "FURB", # refurb
+    "G",    # flake8-logging-format
     "I",    # isort
+    "ICN",  # flake8-import-conventions
+    "ISC",  # flake8-implicit-str-concat
+    "LOG",  # flake8-logging
     "PERF", # Perflint
     "PIE",  # flake8-pie
-    "PLR",  # Refactor
+    "PL",   # Pylint
     "PT",   # flake8-pytest-style
     "RET",  # flake8-return
     "SIM",  # flake8-simplify
+    "SLOT", # flake8-slots
     "TC",   # flake8-type-checking
+    "TID",  # flake8-tidy-imports
     "TRY",  # tryceratops
+    "PL",   # Pylint
+    "RUF",  # Ruff-specific rules
+    "S",    # flake8-bandit
     "UP",   # pyupgrade
 ]
 [lint.per-file-ignores]
 "tests/**" = [
+    "ANN",
+    "ARG",     # flake8-unused-arguments
     "PLR2004", # magic-value-comparison
     "UP007",   # non-pep604-annotation-union
     "UP045",   # non-pep604-annotation-optional
+    "S",       # flake8-bandit
 ]
-# These test files use runtime-introspected types in plain-class __init__ signatures;
-# moving them to TYPE_CHECKING would break get_type_hints() resolution.
-"tests/test_callable_factory.py" = ["TC003"]
-"tests/test_plain_classes.py"    = ["TC003"]
 
 [lint.pydocstyle]
 convention = "google"

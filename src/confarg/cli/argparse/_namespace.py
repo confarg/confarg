@@ -15,8 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 from confarg import _defaults
-from confarg._errors import SymbolImportError
-from confarg._files import _load_file
+from confarg._files import _load_subpath_files
 from confarg._import import _import_dotted
 from confarg._merge import _deep_merge, _set_nested
 from confarg._parse_env import _parse_env
@@ -32,6 +31,7 @@ from confarg._types import (
 )
 from confarg.cli.argparse._build import _resolve_struct
 from confarg.dictexpr import resolve_expressions
+from confarg.exceptions import SymbolImportError
 from confarg.typedload import construct
 
 
@@ -51,6 +51,36 @@ def _merge_blob_into_spec(blob: dict[str, Any], spec: dict[str, Any], bind: dict
     return merged
 
 
+def _collect_fn_identity(
+    flat: dict[str, Any],
+    fn_key: str,
+    cls_key: str,
+    call_key: str,
+) -> dict[str, Any]:
+    """Extract fn/class/call identity entries from flat into a spec dict."""
+    spec: dict[str, Any] = {}
+    for src_key, dest_name in ((fn_key, "fn"), (cls_key, "class"), (call_key, "call")):
+        if src_key in flat:
+            spec[dest_name] = _str_token(flat[src_key])
+    return spec
+
+
+def _collect_factory_kwargs(
+    flat: dict[str, Any],
+    flag_prefix: str,
+    bind_prefix: str,
+    reserved: set[str],
+) -> dict[str, Any]:
+    """Collect top-level factory kwargs (positional result fields) from flat namespace."""
+    kwargs: dict[str, Any] = {}
+    for k, v in flat.items():
+        if k.startswith(flag_prefix) and k not in reserved and not k.startswith(bind_prefix):
+            tail = k[len(flag_prefix) :]
+            if "." not in tail:
+                kwargs[tail] = _str_token(v)
+    return kwargs
+
+
 def _collect_callable_spec(
     flat: dict[str, Any],
     flag: str,
@@ -65,10 +95,7 @@ def _collect_callable_spec(
     flag_prefix = f"{flag}."
     reserved = {fn_key, cls_key, call_key}
 
-    spec: dict[str, Any] = {}
-    for src_key, dest_name in ((fn_key, "fn"), (cls_key, "class"), (call_key, "call")):
-        if src_key in flat:
-            spec[dest_name] = _str_token(flat[src_key])
+    spec = _collect_fn_identity(flat, fn_key, cls_key, call_key)
 
     bind: dict[str, Any] = {k[len(bind_prefix) :]: _str_token(v) for k, v in flat.items() if k.startswith(bind_prefix)}
     if bind:
@@ -76,11 +103,7 @@ def _collect_callable_spec(
 
     ret = _callable_return_type_for(core)
     if (ret is not None and isinstance(ret, type) and ret is not type(None)) or cls_key in flat or fn_key in flat:
-        for k, v in flat.items():
-            if k.startswith(flag_prefix) and k not in reserved and not k.startswith(bind_prefix):
-                tail = k[len(flag_prefix) :]
-                if "." not in tail:
-                    spec[tail] = _str_token(v)
+        spec.update(_collect_factory_kwargs(flat, flag_prefix, bind_prefix, reserved))
 
     if flag in flat:
         blob = flat[flag]
@@ -186,7 +209,7 @@ def from_namespace(  # noqa: PLR0913
     Only fields registered by :func:`populate_parser` are consumed from ``ns``.
     Fields absent from the Namespace fall back to env vars, config files, or
     dataclass defaults; missing required fields raise
-    :class:`~confarg.MissingFieldError`.
+    :class:`~confarg.exceptions.MissingFieldError`.
 
     Args:
         ns: The Namespace returned by ``ArgumentParser.parse_args()``.
@@ -226,14 +249,8 @@ def from_namespace(  # noqa: PLR0913
                 subpath = key[len(cfg_prefix) :]
                 file_pairs.extend((subpath, Path(f)) for f in val or [])
 
-    # 3. Load config files, nesting subpath files under their key
-    config_data: dict[str, Any] = {}
-    for subpath, fpath in file_pairs:
-        fdata = _load_file(fpath)
-        if subpath:
-            for part in reversed(subpath.split(".")):
-                fdata = {part: fdata}
-        config_data = _deep_merge(config_data, fdata, union_tag=union_tag)
+    # 3. Load config files
+    config_data = _load_subpath_files(file_pairs, union_tag)
 
     # 4. Parse env vars
     if env_prefix is None:
@@ -241,12 +258,7 @@ def from_namespace(  # noqa: PLR0913
         env_configs: list[tuple[str, Path]] = []
     else:
         env_data, env_configs = _parse_env(env, env_prefix, env_separator, dc_type)
-    for subpath, fpath in env_configs:
-        fdata = _load_file(fpath)
-        if subpath:
-            for part in reversed(subpath.split(".")):
-                fdata = {part: fdata}
-        config_data = _deep_merge(config_data, fdata, union_tag=union_tag)
+    config_data = _deep_merge(config_data, _load_subpath_files(env_configs, union_tag), union_tag=union_tag)
 
     # 5. Merge: config < env < CLI
     merged = _deep_merge(config_data, env_data, union_tag=union_tag)

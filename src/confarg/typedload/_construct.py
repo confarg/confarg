@@ -11,13 +11,6 @@ from typing import Any
 
 from confarg import _defaults
 from confarg._callable import _resolve_callable_spec
-from confarg._errors import (
-    AmbiguousUnionError,
-    ConfargError,
-    MissingFieldError,
-    SymbolImportError,
-    TypeCoercionError,
-)
 from confarg._import import _import_dotted
 from confarg._merge import LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, _apply_list_ops
 from confarg._types import (
@@ -45,6 +38,13 @@ from confarg._types import (
     _union_args_no_none,
     _var_keyword_name,
     _var_positional_name,
+)
+from confarg.exceptions import (
+    AmbiguousUnionError,
+    ConfargError,
+    MissingFieldError,
+    SymbolImportError,
+    TypeCoercionError,
 )
 from confarg.typedload._coerce import _FALSY, _TRUTHY, _coerce_bool, _coerce_leaf, _coerce_type_ref, _src_type
 
@@ -389,7 +389,10 @@ def _construct_dict(tp: Any, data: Any, path: str, union_tag: str) -> dict[Any, 
         raise TypeCoercionError(msg)
     return {
         _coerce_leaf(kt, _StrToken(k) if isinstance(k, str) else k, path): construct(
-            vt, v, path=f"{path}.{k}", union_tag=union_tag
+            vt,
+            v,
+            path=f"{path}.{k}",
+            union_tag=union_tag,
         )
         for k, v in data.items()
     }
@@ -399,7 +402,11 @@ _UNION_NO_MATCH: object = object()
 
 
 def _construct_single_variant_union(
-    all_args: list[Any], non_none: list[Any], data: Any, path: str, union_tag: str
+    all_args: list[Any],
+    non_none: list[Any],
+    data: Any,
+    path: str,
+    union_tag: str,
 ) -> Any:
     """Construct a union that has exactly one non-None variant."""
     if type(None) in all_args and isinstance(data, _StrToken) and data.lower() in ("none", "null"):
@@ -425,7 +432,7 @@ def _construct_union_by_tag(non_none: list[Any], data: dict[str, Any], path: str
     if len(matching) > 1:
         raise AmbiguousUnionError(
             f"Class {tag!r} at '{path}' matches multiple union variants: "
-            + ", ".join(f"{_resolve_type(v).__module__}.{_resolve_type(v).__name__}" for v in matching)
+            + ", ".join(f"{_resolve_type(v).__module__}.{_resolve_type(v).__name__}" for v in matching),
         )
     if matching:
         cleaned = {k: v2 for k, v2 in data.items() if k != union_tag}
@@ -710,49 +717,37 @@ def _ambiguous_union_msg(matches: list[Any], data: dict[str, Any], path: str, un
     lines.append(f"Provided fields: {sorted(provided) if provided else '(none)'}")
     lines.append(
         f"To select a variant add a {union_tag!r} field, e.g. {union_tag!r}: {matches[0].__name__!r}."
-        f" The field name can be changed via the union_tag= parameter."
+        f" The field name can be changed via the union_tag= parameter.",
     )
     return "\n".join(lines)
+
+
+def _structurally_matches(var: Any, keys: set[str]) -> bool:
+    """Return True if var's fields cover keys and all required fields are present."""
+    flds = _struct_fields(var)
+    defs = _struct_defaults(var)
+    required = {n for n in flds if n not in defs}
+    return required.issubset(keys) and keys.issubset(set(flds))
+
+
+def _type_compatible(var: Any, data: dict[str, Any], keys: set[str], union_tag: str) -> bool:
+    """Return True if data values are compatible with var's field types."""
+    flds = _struct_fields(var)
+    return all(k not in flds or _value_matches_type(data[k], flds[k], union_tag) for k in keys)
 
 
 def _disambiguate_struct(variants: list[Any], data: dict[str, Any], union_tag: str) -> list[Any]:
     """Filter struct union variants to those matching data structurally."""
     keys = {k for k in data if k != union_tag}
-    candidates = []
-
-    for var in variants:
-        resolved_var = _resolve_type(var)
-        flds = _struct_fields(resolved_var)
-        defs = _struct_defaults(resolved_var)
-        required = {n for n in flds if n not in defs}
-        all_names = set(flds)
-
-        if not required.issubset(keys):
-            continue
-        if not keys.issubset(all_names):
-            continue
-        candidates.append(resolved_var)
+    candidates = [_resolve_type(var) for var in variants if _structurally_matches(_resolve_type(var), keys)]
 
     if len(candidates) <= 1:
         return candidates
 
-    # Refine by value-type compatibility
-    refined = []
-    for var in candidates:
-        flds = _struct_fields(var)
-        ok = True
-        for k in keys:
-            if k in flds and not _value_matches_type(data[k], flds[k], union_tag):
-                ok = False
-                break
-        if ok:
-            refined.append(var)
+    refined = [var for var in candidates if _type_compatible(var, data, keys, union_tag)]
 
     if not refined:
         return candidates
-    if len(refined) <= 1:
-        return refined
-
     return refined
 
 

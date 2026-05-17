@@ -13,7 +13,6 @@ import sys
 from dataclasses import dataclass
 from typing import Any, get_type_hints
 
-from confarg._errors import ConfargError, TypeCoercionError
 from confarg._import import _import_dotted
 from confarg._types import (
     _callable_param_types,
@@ -22,6 +21,7 @@ from confarg._types import (
     _resolve_type,
     _unwrap_optional,
 )
+from confarg.exceptions import ConfargError, TypeCoercionError
 from confarg.typedload._coerce import _coerce_leaf
 
 
@@ -204,7 +204,12 @@ def _resolve_call_kwargs(func: Any, kwargs: dict, path: str, union_tag: str, con
 
 
 def _resolve_call_spec(  # noqa: PLR0913
-    fn_path: str, call_kwargs: dict, original_spec: dict, path: str, union_tag: str, construct_fn: Any
+    fn_path: str,
+    call_kwargs: dict,
+    original_spec: dict,
+    path: str,
+    union_tag: str,
+    construct_fn: Any,
 ) -> Any:
     """Resolve a 'call:' spec: import the function, call it with call_kwargs, use the return value."""
     func = _import_dotted(fn_path)
@@ -260,7 +265,11 @@ def _resolve_dict_spec(spec: dict, callable_tp: Any, path: str, union_tag: str, 
     if has_fn:
         return _resolve_fn_spec(spec["fn"], init_kwargs, bind_raw, path, union_tag, construct_fn)
     return _resolve_class_spec(
-        _ClassSpec(spec["class"], init_kwargs, bind_raw, spec), path, union_tag, callable_tp, construct_fn
+        _ClassSpec(spec["class"], init_kwargs, bind_raw, spec),
+        path,
+        union_tag,
+        callable_tp,
+        construct_fn,
     )
 
 

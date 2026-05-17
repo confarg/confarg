@@ -255,14 +255,14 @@ class TestListAppendWithConfig:
         """--items.N with N >= len(config list) raises ConfargError (use + instead)."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
-        with pytest.raises(confarg.ConfargError, match="append syntax"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="append syntax"):
             confarg.load(WithList, args=["--items.2", "3"], env={}, files=[path])
 
     def test_env_index_out_of_range_raises(self, tmp_toml) -> None:
         """Env index beyond config list length raises ConfargError."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
-        with pytest.raises(confarg.ConfargError, match="append syntax"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="append syntax"):
             confarg.load(WithList, args=[], env={"ITEMS__2": "3"}, env_prefix="", files=[path])
 
 
@@ -390,7 +390,7 @@ class TestConfigFileDeleteSyntax:
         """Deleting a required field via config file causes MissingFieldError."""
         base = tmp_yaml("name: cfg\ncount: 5\nrate: 1.0\nverbose: false\n", "base.yaml")
         derived = tmp_yaml("name-: ~\n", "derived.yaml")
-        with pytest.raises(confarg.MissingFieldError):
+        with pytest.raises(confarg.exceptions.MissingFieldError):
             confarg.load(Flat, args=[], env={}, files=[base, derived])
 
     def test_delete_list_index_yaml(self, tmp_yaml) -> None:
@@ -430,7 +430,7 @@ class TestConfigFileDeleteSyntax:
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n", "base.yaml")
         derived = tmp_yaml("items:\n  5-: ~\n", "derived.yaml")
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(WithList, args=[], env={}, files=[base, derived])
 
     def test_delete_field_in_include_chain(self, tmp_yaml) -> None:
@@ -461,5 +461,5 @@ class TestConfigFileDeleteSyntax:
     def test_negative_index_without_base_raises(self) -> None:
         """from_dict with a negative index key and no base list raises TypeCoercionError."""
         WithList = make_target("items", list[int], default_factory=list)
-        with pytest.raises(confarg.TypeCoercionError, match="[Nn]egative"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"[Nn]egative"):
             confarg.build(WithList, {"items": {"-1": 99}})

@@ -15,11 +15,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, get_type_hints
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 from confarg import _defaults
 from confarg._callable import _detect_owning_class
-from confarg._errors import SymbolImportError
 from confarg._files import _load_file
 from confarg._import import _import_dotted
 from confarg._merge import _deep_merge
@@ -49,6 +48,7 @@ from confarg._types import (
     _var_param_names,
 )
 from confarg.cli.argparse._spec import FlagSpec, _build_help, _get_field_docstrings, _get_field_meta
+from confarg.exceptions import SymbolImportError
 
 
 def _resolve_struct(
@@ -184,7 +184,7 @@ def _build_callable_fn_specs(
     ]
 
 
-def _make_path_completer(paths: list[str]):
+def _make_path_completer(paths: list[str]) -> Callable[[str], list[str]]:
     return lambda prefix: [p for p in paths if p.startswith(prefix)]
 
 
@@ -255,7 +255,7 @@ def _collect_callable_bind_specs(
                     help=", ".join(help_parts),
                     group=field_flag,
                     group_description=bind_group_desc,
-                )
+                ),
             )
         existing_names.add(dest)
 
@@ -380,6 +380,20 @@ def _collect_fn_paths_from_argv(argv: Sequence[str]) -> dict[str, tuple[str, str
     return result
 
 
+def _callable_fn_path(sub: Any) -> tuple[str, str] | None:
+    """Return (path, mode) from a callable's config sub-value, or None if not present.
+
+    Checks string shorthand (implicit "fn") and dict keys "fn", "class", "call".
+    """
+    if isinstance(sub, str):
+        return (sub, "fn")
+    if isinstance(sub, dict):
+        for key, mode in (("fn", "fn"), ("class", "class"), ("call", "call")):
+            if isinstance(sub.get(key), str):
+                return (sub[key], mode)
+    return None
+
+
 def _collect_fn_paths_from_config(
     config_dict: dict[str, Any],
     dc_type: Any,
@@ -405,24 +419,57 @@ def _collect_fn_paths_from_config(
         if resolved is None:
             continue
         if _is_callable(resolved):
-            sub = config_dict.get(name)
-            if isinstance(sub, dict):
-                fn_val = sub.get("fn")
-                cls_val = sub.get("class")
-                call_val = sub.get("call")
-                if isinstance(fn_val, str):
-                    result[flag] = (fn_val, "fn")
-                elif isinstance(cls_val, str):
-                    result[flag] = (cls_val, "class")
-                elif isinstance(call_val, str):
-                    result[flag] = (call_val, "call")
-            elif isinstance(sub, str):
-                result[flag] = (sub, "fn")
+            fn_path = _callable_fn_path(config_dict.get(name))
+            if fn_path is not None:
+                result[flag] = fn_path
         elif _is_struct(resolved):
             sub = config_dict.get(name, {})
             if isinstance(sub, dict):
                 result.update(_collect_fn_paths_from_config(sub, resolved, flag, union_tag))
     return result
+
+
+def _specs_for_field(  # noqa: PLR0913
+    flag: str,
+    name: str,
+    raw_type: Any,
+    resolved: Any,
+    union_tag: str,
+    group: str | None,
+    group_description: str,
+    docstrings: dict[str, str],
+    defaults: dict[str, Any],
+) -> list[FlagSpec]:
+    """Return FlagSpecs for one field of a struct type."""
+    core = _unwrap_optional(resolved)
+    if core is None:
+        non_none = _union_args_no_none(resolved)
+        concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
+        if concrete:
+            return [_build_union_tag_spec(flag, union_tag, concrete, group, group_description)]
+        return []
+
+    if _is_final(core):
+        core = _final_inner(core)
+
+    if _is_callable(core):
+        help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
+        specs: list[FlagSpec] = [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
+        specs.extend(_build_callable_fn_specs(flag, group, group_description))
+        ret = _callable_return_type(core)
+        if ret is not None and isinstance(ret, type) and _is_struct(ret):
+            existing: set[str] = {s.name for s in specs}
+            specs.extend(_collect_callable_factory_specs(flag, ret, existing, group, group_description))
+        return specs
+
+    if _is_struct(core):
+        return _collect_struct_specs(core, flag, union_tag, flag, inspect.getdoc(core) or "")
+
+    if _is_dict(core):
+        return []
+
+    help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
+    return [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
 
 
 def _collect_struct_specs(
@@ -445,43 +492,12 @@ def _collect_struct_specs(
     for name in flds:
         if name == union_tag or name in var_params:
             continue
-
         raw_type = hints.get(name, Any)
         resolved = _resolve_type(raw_type)
         flag = f"{prefix}.{name}" if prefix else name
-
-        core = _unwrap_optional(resolved)
-        if core is None:
-            # Multi-variant union: register class-tag flag only when struct variants exist
-            non_none = _union_args_no_none(resolved)
-            concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
-            if concrete:
-                result.append(_build_union_tag_spec(flag, union_tag, concrete, group, group_description))
-            continue
-
-        if _is_final(core):
-            core = _final_inner(core)
-
-        if _is_callable(core):
-            help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
-            result.append(_build_leaf_spec(flag, raw_type, core, help_text, group, group_description))
-            result.extend(_build_callable_fn_specs(flag, group, group_description))
-            ret = _callable_return_type(core)
-            if ret is not None and isinstance(ret, type) and _is_struct(ret):
-                existing: set[str] = {s.name for s in result}
-                result.extend(_collect_callable_factory_specs(flag, ret, existing, group, group_description))
-            continue
-
-        if _is_struct(core):
-            new_group_desc = inspect.getdoc(core) or ""
-            result.extend(_collect_struct_specs(core, flag, union_tag, flag, new_group_desc))
-            continue
-
-        if _is_dict(core):
-            continue
-
-        help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
-        result.append(_build_leaf_spec(flag, raw_type, core, help_text, group, group_description))
+        result.extend(
+            _specs_for_field(flag, name, raw_type, resolved, union_tag, group, group_description, docstrings, defaults),
+        )
 
     return result
 
@@ -523,7 +539,7 @@ def _collect_subconfig_specs(
                     f"Equivalent to a root config file with a top-level '{subpath}' key. "
                     "Supports TOML, YAML, and JSON."
                 ),
-            )
+            ),
         )
 
     return result
@@ -569,7 +585,7 @@ def build_static_flags(
                     f"Use --{config_flag}.<field> FILE to scope a file's contents under a specific field "
                     f"(e.g. --{config_flag}.db db.toml merges db.toml as if its keys were nested under 'db')."
                 ),
-            )
+            ),
         )
         if config_subkeys:
             flags.extend(_collect_subconfig_specs(dc_type, config_flag, prefix="", union_tag=union_tag))

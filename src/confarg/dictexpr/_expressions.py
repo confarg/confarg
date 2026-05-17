@@ -14,7 +14,7 @@ import re
 from collections import deque
 from typing import Any
 
-from confarg._errors import (
+from confarg.exceptions import (
     CircularReferenceError,
     ExpressionEvalError,
     MissingReferenceError,
@@ -316,27 +316,28 @@ def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
     return None
 
 
-def _topological_sort(deps: dict[str, set[str]]) -> list[str]:
-    """Kahn's algorithm. Raises CircularReferenceError on cycles."""
-    if not deps:
-        return []
-
+def _compute_in_degrees(deps: dict[str, set[str]]) -> dict[str, int]:
+    """Count how many deps-graph neighbours each node depends on (Kahn's algorithm setup)."""
     in_degree: dict[str, int] = dict.fromkeys(deps, 0)
     for node, node_deps in deps.items():
         for dep in node_deps:
             if dep in deps:
                 in_degree[node] += 1
+    return in_degree
 
-    queue: deque[str] = deque()
-    for node, degree in in_degree.items():
-        if degree == 0:
-            queue.append(node)
+
+def _topological_sort(deps: dict[str, set[str]]) -> list[str]:
+    """Kahn's algorithm. Raises CircularReferenceError on cycles."""
+    if not deps:
+        return []
+
+    in_degree = _compute_in_degrees(deps)
+    queue: deque[str] = deque(node for node, degree in in_degree.items() if degree == 0)
 
     order: list[str] = []
     while queue:
         node = queue.popleft()
         order.append(node)
-        # Find nodes that depend on this one
         for other, other_deps in deps.items():
             if node in other_deps and other not in order:
                 in_degree[other] -= 1
@@ -481,7 +482,7 @@ def _eval_call(node: ast.Call, namespace: dict[str, Any]) -> Any:
 
 _AST_EVALUATORS: dict[type, Any] = {
     ast.Expression: lambda n, ns: _evaluate_ast(n.body, ns),
-    ast.Constant: lambda n, ns: n.value,
+    ast.Constant: lambda n, _ns: n.value,
     ast.Name: _eval_name,
     ast.Attribute: _eval_attribute,
     ast.Subscript: _eval_subscript,

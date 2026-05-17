@@ -185,7 +185,7 @@ class TestEnvCoercion:
     )
     def test_optional_int_empty_env_raises(self, target_cls) -> None:
         """Empty env VALUE= for int|None raises — use VALUE__NONE= to set None."""
-        with pytest.raises(confarg.TypeCoercionError, match="To set this field to None"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="To set this field to None"):
             confarg.load(target_cls, args=[], env={"VALUE": ""}, env_prefix="")
 
     def test_optional_str_empty_env_is_empty_string(self) -> None:
@@ -323,7 +323,7 @@ class TestEnvUnrecognized:
             result = confarg.load(WithDefaults, args=[], env={"UNKNOWN": "val", "NAME": "ok"}, env_prefix="")
         assert result.name == "ok"
         assert len(caught) == 1
-        assert issubclass(caught[0].category, confarg.ConfargWarning)
+        assert issubclass(caught[0].category, confarg.exceptions.ConfargWarning)
         assert "UNKNOWN" in str(caught[0].message)
         assert "unknown" in str(caught[0].message)
 
@@ -333,7 +333,9 @@ class TestEnvUnrecognized:
             warnings.simplefilter("always")
             result = confarg.load(WithDefaults, args=[], env={"X__NAME": "ok", "X__BOGUS": "no"}, env_prefix="X")
         assert result.name == "ok"
-        assert any("BOGUS" in str(w.message) for w in caught if issubclass(w.category, confarg.ConfargWarning))
+        assert any(
+            "BOGUS" in str(w.message) for w in caught if issubclass(w.category, confarg.exceptions.ConfargWarning)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +415,7 @@ class TestEnvJsonValues:
     def test_json_array_wrong_length_raises(self) -> None:
         """A JSON array with wrong length raises a TypeCoercionError."""
         WithTuple = make_target("point", tuple[int, int, int])
-        with pytest.raises(confarg.TypeCoercionError, match="expected 3 elements, got 2"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="expected 3 elements, got 2"):
             confarg.load(WithTuple, args=[], env={"POINT": "[1, 2]"}, env_prefix="")
 
     def test_json_array_invalid_json_falls_back_to_string(self) -> None:
@@ -500,7 +502,7 @@ class TestEnvPrefixNone:
                 env={"TOTALLY_UNKNOWN": "x"},
                 env_prefix=None,
             )
-        assert not any(issubclass(w.category, confarg.ConfargWarning) for w in caught)
+        assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
 
 
 # ---------------------------------------------------------------------------
@@ -522,7 +524,7 @@ class TestConfargWarning:
                 env_prefix="APP_",
             )
         assert result.name == "default"
-        warns = [w for w in caught if issubclass(w.category, confarg.ConfargWarning)]
+        warns = [w for w in caught if issubclass(w.category, confarg.exceptions.ConfargWarning)]
         assert len(warns) == 1
         msg = str(warns[0].message)
         assert "APP_NAEM" in msg
@@ -540,11 +542,11 @@ class TestConfargWarning:
                 env_prefix="APP_",
             )
         assert result.name == "hello"
-        assert not any(issubclass(w.category, confarg.ConfargWarning) for w in caught)
+        assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
 
     def test_warning_is_a_user_warning_subclass(self) -> None:
         """ConfargWarning is a UserWarning so standard warning filters apply."""
-        assert issubclass(confarg.ConfargWarning, UserWarning)
+        assert issubclass(confarg.exceptions.ConfargWarning, UserWarning)
 
 
 # ---------------------------------------------------------------------------
@@ -578,7 +580,7 @@ class TestConfargWarningPlainClass:
                 env={"APP_HOTS": "oops"},  # typo: HOTS instead of HOST
                 env_prefix="APP_",
             )
-        warns = [w for w in caught if issubclass(w.category, confarg.ConfargWarning)]
+        warns = [w for w in caught if issubclass(w.category, confarg.exceptions.ConfargWarning)]
         assert len(warns) == 1
         msg = str(warns[0].message)
         assert "APP_HOTS" in msg
@@ -596,7 +598,7 @@ class TestConfargWarningPlainClass:
                 env_prefix="APP_",
             )
         assert result.host == "db.local"
-        assert not any(issubclass(w.category, confarg.ConfargWarning) for w in caught)
+        assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
 
 
 @_dc
@@ -626,7 +628,7 @@ class TestConfargWarningUnionWithPlainVariant:
                 env={"APP_Y": "hello"},  # 'y' only exists on _PlainVariant
                 env_prefix="APP_",
             )
-        assert not any(issubclass(w.category, confarg.ConfargWarning) for w in caught)
+        assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
 
     def test_unknown_field_in_union_warns(self) -> None:
         """An env var matching no variant in the union still warns."""
@@ -638,7 +640,7 @@ class TestConfargWarningUnionWithPlainVariant:
                 env={"APP_Z": "oops"},  # 'z' exists in neither variant
                 env_prefix="APP_",
             )
-        warns = [w for w in caught if issubclass(w.category, confarg.ConfargWarning)]
+        warns = [w for w in caught if issubclass(w.category, confarg.exceptions.ConfargWarning)]
         assert len(warns) == 1
         msg = str(warns[0].message)
         assert "APP_Z" in msg
@@ -667,7 +669,7 @@ class TestEnvDelete:
     def test_delete_required_field_raises(self, tmp_toml) -> None:
         """Deleting a required (no-default) field via env var causes MissingFieldError."""
         path = tmp_toml("name = 'from_config'\ncount = 5\nrate = 1.0\nverbose = false\n")
-        with pytest.raises(confarg.MissingFieldError):
+        with pytest.raises(confarg.exceptions.MissingFieldError):
             confarg.load(
                 Flat,
                 args=[],
@@ -679,7 +681,7 @@ class TestEnvDelete:
     def test_delete_nested_field(self, tmp_toml) -> None:
         """DB__HOST-=anything removes a nested field; raises MissingFieldError if required."""
         path = tmp_toml("[db]\nhost = 'myhost'\nport = 5432\nname = 'mydb'\n")
-        with pytest.raises(confarg.MissingFieldError):
+        with pytest.raises(confarg.exceptions.MissingFieldError):
             confarg.load(
                 AppConfig,
                 args=[],
@@ -718,7 +720,7 @@ class TestEnvDelete:
         """Two env vars deleting the same list index raises ConfargError."""
         WithList = make_target("items", list[str], default_factory=list)
         path = tmp_toml('items = ["a", "b", "c"]\n')
-        with pytest.raises(confarg.ConfargError, match="[Dd]uplicate"):
+        with pytest.raises(confarg.exceptions.ConfargError, match=r"[Dd]uplicate"):
             confarg.load(
                 WithList,
                 args=[],
@@ -731,7 +733,7 @@ class TestEnvDelete:
         """Deleting an out-of-range list index raises ConfargError."""
         WithList = make_target("items", list[str], default_factory=list)
         path = tmp_toml('items = ["a", "b", "c"]\n')
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(
                 WithList,
                 args=[],

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from hypothesis import HealthCheck, given, settings
 
 import confarg
-from tests.conftest import WithDefaults, leaf_bools, leaf_floats, leaf_ints, leaf_strs
+from tests.conftest import WithDefaults, cli_safe_strs, leaf_bools, leaf_floats, leaf_ints, leaf_strs
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -32,7 +32,7 @@ class TestCliRoundTrip:
     """Round-trip tests for CLI-sourced values."""
 
     @given(
-        name=leaf_strs,
+        name=cli_safe_strs,
         count=leaf_ints,
         rate=leaf_floats.filter(_is_finite),
         verbose=leaf_bools,
@@ -112,7 +112,7 @@ class TestMixedRoundTrip:
     """Round-trip tests for mixed CLI/env/file sources."""
 
     @given(
-        name=leaf_strs,
+        name=cli_safe_strs,
         count=leaf_ints,
         rate=leaf_floats.filter(_is_finite),
         verbose=leaf_bools,
@@ -158,7 +158,7 @@ class Outer:
 class TestNestedRoundTrip:
     """Round-trip tests for nested dataclasses."""
 
-    @given(x=leaf_ints, y=leaf_floats.filter(_is_finite), label=leaf_strs)
+    @given(x=leaf_ints, y=leaf_floats.filter(_is_finite), label=cli_safe_strs)
     @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_nested_cli_roundtrip(self, tmp_path, x, y, label):
         """Test that nested CLI values round-trip through merge → dump_file → merge."""

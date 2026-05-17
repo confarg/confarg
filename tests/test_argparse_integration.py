@@ -381,7 +381,7 @@ class TestFromNamespace:
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         ns = parser.parse_args([])  # host not provided
-        with pytest.raises(confarg.MissingFieldError):
+        with pytest.raises(confarg.exceptions.MissingFieldError):
             from_namespace(ns, Simple)
 
     def test_nested_dataclass(self) -> None:
@@ -593,7 +593,7 @@ class TestConfigFileSupport:
                 str(db_cfg),
                 "--db.port",
                 "9999",
-            ]
+            ],
         )
         result = from_namespace(ns, AppConfig, env={})
         assert result.debug is True

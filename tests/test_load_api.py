@@ -54,7 +54,8 @@ class TestArgsParameter:
     def test_args_none_uses_sys_argv(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """args=None reads from sys.argv[1:]."""
         monkeypatch.setattr(
-            "sys.argv", ["prog", "--name", "argv_val", "--count", "1", "--rate", "0", "--verbose", "true"]
+            "sys.argv",
+            ["prog", "--name", "argv_val", "--count", "1", "--rate", "0", "--verbose", "true"],
         )
         result = confarg.load(Flat, env={})
         assert result.name == "argv_val"

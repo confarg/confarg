@@ -24,8 +24,8 @@ from confarg._callable import (
     _import_dotted,
     _serialize_callable,
 )
-from confarg._errors import SymbolImportError, TypeCoercionError
 from confarg._types import _callable_param_types, _callable_return_type, _is_callable
+from confarg.exceptions import SymbolImportError, TypeCoercionError
 
 # ---------------------------------------------------------------------------
 # Helpers defined at module level so they are importable by dotted path
@@ -388,7 +388,7 @@ class TestFnDictForm:
     def test_fn_no_key_raises(self, tmp_json: Any) -> None:
         """A dict without fn: or class: raises TypeCoercionError."""
         cfg = tmp_json(json.dumps({"fn": {"bind": {"x": 1}}}))
-        with pytest.raises(TypeCoercionError, match="fn.*class"):
+        with pytest.raises(TypeCoercionError, match=r"fn.*class"):
             confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
 
     def test_fn_init_kwargs_for_non_method_raises(self, tmp_json: Any) -> None:
@@ -799,7 +799,7 @@ class TestCallDictForm:
     def test_call_and_fn_together_raises(self, tmp_json: Any) -> None:
         """Specifying both call: and fn: raises TypeCoercionError."""
         cfg = tmp_json(
-            json.dumps({"fn": {"call": f"{_MOD}._make_adder", "fn": f"{_MOD}._double", "bind": {"offset": 1}}})
+            json.dumps({"fn": {"call": f"{_MOD}._make_adder", "fn": f"{_MOD}._double", "bind": {"offset": 1}}}),
         )
         with pytest.raises(TypeCoercionError, match="more than one of"):
             confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
@@ -807,7 +807,7 @@ class TestCallDictForm:
     def test_call_and_class_together_raises(self, tmp_json: Any) -> None:
         """Specifying both call: and class: raises TypeCoercionError."""
         cfg = tmp_json(
-            json.dumps({"fn": {"call": f"{_MOD}._make_adder", "class": f"{_MOD}._Multiplier", "bind": {"offset": 1}}})
+            json.dumps({"fn": {"call": f"{_MOD}._make_adder", "class": f"{_MOD}._Multiplier", "bind": {"offset": 1}}}),
         )
         with pytest.raises(TypeCoercionError, match="more than one of"):
             confarg.load(WithBareCallable, args=[], env={}, files=[cfg])

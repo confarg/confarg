@@ -200,7 +200,7 @@ class TestDumpCollections:
             servers=[
                 DbConfig(host="a", port=1, name="db1"),
                 DbConfig(host="b", port=2, name="db2"),
-            ]
+            ],
         )
         result = confarg.dump(obj)
         assert result["servers"] == [
@@ -425,7 +425,7 @@ class TestDumpToml:
         path = tmp_path / "out.toml"
         with (
             mock.patch.dict(sys.modules, {"tomli_w": None}),
-            pytest.raises(confarg.InvalidConfigFileError, match="tomli_w"),
+            pytest.raises(confarg.exceptions.InvalidConfigFileError, match="tomli_w"),
         ):
             confarg.dump_file(obj, path)
 
@@ -467,7 +467,7 @@ class TestDumpYaml:
         path = tmp_path / "out.yaml"
         with (
             mock.patch.dict(sys.modules, {"yaml": None}),
-            pytest.raises(confarg.InvalidConfigFileError, match="PyYAML"),
+            pytest.raises(confarg.exceptions.InvalidConfigFileError, match="PyYAML"),
         ):
             confarg.dump_file(obj, path)
 

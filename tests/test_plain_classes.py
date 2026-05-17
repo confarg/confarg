@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import enum
-from collections.abc import Iterable, Mapping, MutableMapping, MutableSequence, Sequence
+from collections.abc import Iterable, Mapping, MutableMapping, MutableSequence, Sequence  # noqa: TC003
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -178,7 +178,8 @@ class TestPlainClassConstruction:
     def test_construct_uses_default(self) -> None:
         """Test that default parameter values are used when not provided."""
         result = confarg.build(
-            TrainingConfig, {"epochs": 5, "transform": {"class": "tests.test_plain_classes.HorizontalFlip"}}
+            TrainingConfig,
+            {"epochs": 5, "transform": {"class": "tests.test_plain_classes.HorizontalFlip"}},
         )
         assert isinstance(result.transform, HorizontalFlip)
         assert result.transform.p == pytest.approx(0.5)
@@ -205,14 +206,15 @@ class TestPlainClassConstruction:
     def test_construct_union_disambiguation(self) -> None:
         """Test that a union type is disambiguated via the class tag in from_dict."""
         result = confarg.build(
-            UnionConfig, {"transform": {"class": "tests.test_plain_classes.HorizontalFlip", "p": 0.2}}
+            UnionConfig,
+            {"transform": {"class": "tests.test_plain_classes.HorizontalFlip", "p": 0.2}},
         )
         assert isinstance(result.transform, HorizontalFlip)
         assert result.transform.p == pytest.approx(0.2)
 
     def test_unknown_field_raises(self) -> None:
         """Test that an unknown field in the dict raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.build(
                 TrainingConfig,
                 {"epochs": 1, "transform": {"class": "tests.test_plain_classes.HorizontalFlip", "unknown": 99}},
@@ -220,7 +222,7 @@ class TestPlainClassConstruction:
 
     def test_missing_required_field_raises(self) -> None:
         """Test that a missing required field raises ConfargError."""
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.build(
                 TrainingConfig,
                 {"epochs": 1, "transform": {"class": "tests.test_plain_classes.RandomCrop", "height": 10}},
@@ -267,7 +269,7 @@ class TestPlainClassSerialization:
     def test_dump_plain_class_missing_attribute_raises(self) -> None:
         """_serialize_struct must raise ConfargError when an __init__ param is not stored."""
         w = _MissingAttrWrapper(inner=_MissingAttrClass(x=1, y=2))
-        with pytest.raises(confarg.ConfargError, match="y"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="y"):
             confarg.dump(w)
 
     def test_dict_centric_roundtrip(self) -> None:

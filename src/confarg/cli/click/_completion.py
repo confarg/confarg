@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shlex
 from typing import TYPE_CHECKING, Any
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg.cli.argparse._build import build_dynamic_flags
 from confarg.cli.click._register import load_flags_into_command
+
+_log = logging.getLogger(__name__)
 
 
 def _partial_argv_from_env() -> list[str]:
@@ -76,4 +79,4 @@ def setup_completion(
         load_flags_into_command(dynamic, command)
     except Exception:  # noqa: BLE001
         # Completion must never crash; silently degrade.
-        pass
+        _log.debug("setup_completion failed", exc_info=True)

@@ -55,7 +55,7 @@ def _register_spec(
 
     if spec.completer is not None:
         _fn = spec.completer
-        action.completer = lambda prefix, parsed_args, **kw: _fn(prefix)  # type: ignore[attr-defined]
+        action.completer = lambda prefix, *_args, **_kw: _fn(prefix)  # type: ignore[attr-defined]
 
     existing_dests.add(spec.name)
 

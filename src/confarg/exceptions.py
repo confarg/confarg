@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Exception classes for confarg."""
+"""Exception and warning classes for confarg."""
 
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ class TypeCoercionError(ConfargError):
 
     @classmethod
     def cannot_coerce(cls, src: str, value: Any, tp: str, path: str) -> TypeCoercionError:
+        """Return an error for a value that cannot be coerced to the target type."""
         return cls(f"Cannot coerce {src} {value!r} to {tp} at '{path}'")
 
 
@@ -39,18 +40,22 @@ class InvalidConfigFileError(ConfargError):
 
     @classmethod
     def not_found(cls, path: Any) -> InvalidConfigFileError:
+        """Return an error for a config file that does not exist."""
         return cls(f"Config file not found: {path}")
 
     @classmethod
     def malformed(cls, fmt: str, path: Any, exc: Any) -> InvalidConfigFileError:
+        """Return an error for a config file that failed to parse."""
         return cls(f"Malformed {fmt}: {path}: {exc}")
 
     @classmethod
     def missing_library(cls, lib: str, pkg: str, action: str) -> InvalidConfigFileError:
+        """Return an error when an optional parser library is not installed."""
         return cls(f"{lib} is required for {action}. Install it with: pip install {pkg}")
 
     @classmethod
     def unsupported_format(cls, ext: str) -> InvalidConfigFileError:
+        """Return an error for a config file extension that confarg cannot load."""
         return cls(f"Unsupported config file format: {ext!r}. Supported formats: .yaml/.yml, .toml, .json")
 
 
@@ -71,6 +76,7 @@ class MissingReferenceError(ConfargError):
 
     @classmethod
     def field_not_found(cls, path: str, detail: str | None = None) -> MissingReferenceError:
+        """Return an error for an expression reference to a missing field path."""
         base = f"Field '{path}' not found"
         return cls(f"{base}: {detail}") if detail is not None else cls(f"{base} in configuration")
 
@@ -90,5 +96,5 @@ class ConfargWarning(UserWarning):
     but does not correspond to any known field on the target type.  Convert to
     errors in your test-suite via::
 
-        warnings.filterwarnings("error", category=confarg.ConfargWarning)
+        warnings.filterwarnings("error", category=confarg.exceptions.ConfargWarning)
     """
