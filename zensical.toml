@@ -20,6 +20,7 @@ nav = [
     { "6. Unions" = "examples/6_unions/README.md" },
     { "7. Stealing rule" = "examples/7_stealing_rule/README.md" },
     { "8. Disambiguation" = "examples/8_disambiguation/README.md" },
+    { "8. Child configurations" = "examples/9_child_configurations/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]

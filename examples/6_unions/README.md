@@ -36,12 +36,6 @@ We can now dynamically select among union variants. To select an SQLite backend,
 $ uv run myapp.py --dbpath /path/to.db.sqlite
 SQLiteConfig(dbpath='/path/to.db.sqlite')
 ```
-<!--
-```console
-$ uv run myapp_argparse.py --dbpath /path/to.db.sqlite
-SQLiteConfig(dbpath='/path/to.db.sqlite')
-```
--->
 
 Choosing a DB server backend instead works similarly:
 
@@ -49,12 +43,6 @@ Choosing a DB server backend instead works similarly:
 $ uv run myapp.py --host example.com --schema_name schema
 PostgreSQLConfig(host='example.com', port=5432, schema_name='schema')
 ```
-<!--
-```console
-$ uv run myapp_argparse.py --host example.com --schema_name schema
-PostgreSQLConfig(host='example.com', port=5432, schema_name='schema')
-```
--->
 
 This works as well with configuration files, which could contain a configuration of either sort:
 
@@ -63,25 +51,12 @@ This works as well with configuration files, which could contain a configuration
     $ uv run myapp.py --config postgre.yaml
     PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
     ```
-<!--  
-    ```console
-    $ uv run myapp_argparse.py --config postgre.yaml
-    PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
-    ```
--->
 
 * or, a SQLiteConfig configuration file:
     ```console
     $ uv run myapp.py --config sqlite.yaml
     SQLiteConfig(dbpath='/path/to/db.sqlite')
     ```
-<!--
-    ```console
-    $ uv run myapp_argparse.py --config sqlite.yaml
-    SQLiteConfig(dbpath='/path/to/db.sqlite')
-    ```
--->
-
 
 > [!NOTE]
 > Confarg is smart enough to know which type in the union is targeted from the provided input types. However, such implicit disambiguation is not always possible, or even desirable. We will see in [Tutorial #8](https://confarg.github.io/confarg/examples/8_disambiguation/) how to set the target type explicitly.
