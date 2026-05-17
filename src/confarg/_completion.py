@@ -6,10 +6,14 @@
 
 from __future__ import annotations
 
-import argparse
+import contextlib
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import argparse
 
 from confarg import _defaults
 
@@ -33,19 +37,15 @@ def _collect_partial_config(argv: list[str], config_flag: str) -> dict[str, Any]
             # Space-separated form: --config file1 file2 ...
             i += 1
             while i < len(argv) and not argv[i].startswith("--"):
-                try:
+                with contextlib.suppress(Exception):
                     merged = _deep_merge(merged, _load_file(Path(argv[i])))
-                except Exception:
-                    pass
                 i += 1
         elif tok.startswith(f"{flag_prefix}="):
             # Equals form: --config=file
             path_str = tok[len(flag_prefix) + 1 :]
             if path_str:
-                try:
+                with contextlib.suppress(Exception):
                     merged = _deep_merge(merged, _load_file(Path(path_str)))
-                except Exception:
-                    pass
             i += 1
         else:
             i += 1
@@ -98,7 +98,7 @@ def _resolve_tags_from_config(
 
     try:
         flds = _struct_fields(tp)
-    except Exception:
+    except (ValueError, TypeError, NameError, AttributeError):
         return tags
 
     for name, ft in flds.items():
@@ -125,13 +125,20 @@ def _resolve_tags_from_config(
     return tags
 
 
+@dataclass
+class _WalkCtx:
+    """Shared state threaded through recursive completion-walk calls."""
+
+    parser: argparse.ArgumentParser
+    union_tag: str
+    existing_dests: set[str] = field(default_factory=set)
+
+
 def _extend_walk(
     dc_type: Any,
-    parser: argparse.ArgumentParser,
+    ctx: _WalkCtx,
     group_target: argparse.ArgumentParser | argparse._ArgumentGroup,
     prefix: str,
-    union_tag: str,
-    existing_dests: set[str],
 ) -> None:
     """Register fields of dc_type under prefix, skipping already-registered dests."""
     from confarg._argparse import (
@@ -162,7 +169,7 @@ def _extend_walk(
     defaults = _struct_defaults(tp)
 
     for name in flds:
-        if name == union_tag or name in var_params:
+        if name == ctx.union_tag or name in var_params:
             continue
 
         raw_type = hints.get(name, Any)
@@ -173,43 +180,43 @@ def _extend_walk(
         if core is None:
             # Multi-variant union: register its class-tag flag if not already present
             non_none = _union_args_no_none(resolved)
-            dest = f"{flag}.{union_tag}"
-            if dest not in existing_dests:
+            dest = f"{flag}.{ctx.union_tag}"
+            if dest not in ctx.existing_dests:
                 concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
-                _add_union_tag_argument(group_target, flag, union_tag, concrete)
-                existing_dests.add(dest)
+                _add_union_tag_argument(group_target, flag, ctx.union_tag, concrete)
+                ctx.existing_dests.add(dest)
             continue
 
         if _is_callable(core):
-            if flag not in existing_dests:
+            if flag not in ctx.existing_dests:
                 help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
                 _add_leaf_argument(group_target, flag, raw_type, core, help_text)
-                existing_dests.add(flag)
+                ctx.existing_dests.add(flag)
             from confarg._argparse import _add_callable_fn_flags
 
             _add_callable_fn_flags(group_target, flag)
-            existing_dests.update({f"{flag}.fn", f"{flag}.class"})
+            ctx.existing_dests.update({f"{flag}.fn", f"{flag}.class"})
             continue
 
         if _is_struct(core):
             # Find or create argument group
-            existing_titles = {g.title for g in parser._action_groups}
+            existing_titles = {g.title for g in ctx.parser._action_groups}
             if flag not in existing_titles:
                 import inspect as _inspect
 
-                new_group = parser.add_argument_group(flag, _inspect.getdoc(core) or "")
+                new_group = ctx.parser.add_argument_group(flag, _inspect.getdoc(core) or "")
             else:
-                new_group = next(g for g in parser._action_groups if g.title == flag)
-            _extend_walk(core, parser, new_group, flag, union_tag, existing_dests)
+                new_group = next(g for g in ctx.parser._action_groups if g.title == flag)
+            _extend_walk(core, ctx, new_group, flag)
             continue
 
         if _is_dict(core):
             continue
 
-        if flag not in existing_dests:
+        if flag not in ctx.existing_dests:
             help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
             _add_leaf_argument(group_target, flag, raw_type, core, help_text)
-            existing_dests.add(flag)
+            ctx.existing_dests.add(flag)
 
 
 def _pre_extend_parser_for_completion(
@@ -236,15 +243,15 @@ def _pre_extend_parser_for_completion(
         # CLI wins over config
         all_tags = {**config_tags, **cli_tags}
 
-        existing_dests = {a.dest for a in parser._actions}
+        walk_ctx = _WalkCtx(parser=parser, union_tag=union_tag, existing_dests={a.dest for a in parser._actions})
 
         for field_prefix, class_path in all_tags.items():
             try:
                 cls = _import_dotted(class_path)
                 if not isinstance(cls, type) or not _is_struct(_resolve_type(cls)):
                     continue
-                _extend_walk(cls, parser, parser, field_prefix, union_tag, existing_dests)
-            except Exception:
+                _extend_walk(cls, walk_ctx, parser, field_prefix)
+            except Exception:  # noqa: BLE001 — completion must never crash; any import/argparse failure is non-fatal
                 continue
 
         from confarg._argparse import (
@@ -257,11 +264,11 @@ def _pre_extend_parser_for_completion(
         argv_fns = _collect_fn_paths_from_argv(argv)
         for field_flag, fn_path in {**config_fns, **argv_fns}.items():
             try:
-                _add_callable_bind_flags(parser, field_flag, fn_path, existing_dests)
-            except Exception:
+                _add_callable_bind_flags(parser, field_flag, fn_path, walk_ctx.existing_dests)
+            except Exception:  # noqa: BLE001 — completion must never crash
                 continue
 
-    except Exception:
+    except Exception:  # noqa: BLE001 — completion must never crash; failure here silently degrades suggestions
         pass
 
 
@@ -307,9 +314,8 @@ def setup_completion(
     try:
         import argcomplete
     except ImportError:
-        raise ImportError(
-            "Tab-completion requires 'argcomplete'. Install with: pip install confarg[completion]"
-        ) from None
+        msg = "Tab-completion requires 'argcomplete'. Install with: pip install confarg[completion]"
+        raise ImportError(msg) from None
 
     if argv is None:
         argv = sys.argv[1:]

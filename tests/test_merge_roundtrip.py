@@ -29,6 +29,8 @@ def _is_finite(f: float) -> bool:
 
 
 class TestCliRoundTrip:
+    """Round-trip tests for CLI-sourced values."""
+
     @given(
         name=leaf_strs,
         count=leaf_ints,
@@ -37,6 +39,7 @@ class TestCliRoundTrip:
     )
     @settings(max_examples=200, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_cli_flat_roundtrip(self, tmp_path, name, count, rate, verbose):
+        """Test that CLI values round-trip through merge → dump_file → merge."""
         args = ["--name", name, "--count", str(count), "--rate", str(rate)]
         if verbose:
             args.extend(["--verbose", "true"])
@@ -67,6 +70,8 @@ class TestCliRoundTrip:
 
 
 class TestEnvRoundTrip:
+    """Round-trip tests for env var-sourced values."""
+
     @given(
         name=leaf_strs,
         count=leaf_ints,
@@ -75,6 +80,7 @@ class TestEnvRoundTrip:
     )
     @settings(max_examples=200, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_env_flat_roundtrip(self, tmp_path, name, count, rate, verbose):
+        """Test that env var values round-trip through merge → dump_file → merge."""
         env = {
             "NAME": name,
             "COUNT": str(count),
@@ -103,6 +109,8 @@ class TestEnvRoundTrip:
 
 
 class TestMixedRoundTrip:
+    """Round-trip tests for mixed CLI/env/file sources."""
+
     @given(
         name=leaf_strs,
         count=leaf_ints,
@@ -133,20 +141,27 @@ class TestMixedRoundTrip:
 
 @dataclass
 class Inner:
+    """Inner dataclass for nested round-trip tests."""
+
     x: int
     y: float
 
 
 @dataclass
 class Outer:
+    """Outer dataclass wrapping an Inner for nested round-trip tests."""
+
     inner: Inner
     label: str = "default"
 
 
 class TestNestedRoundTrip:
+    """Round-trip tests for nested dataclasses."""
+
     @given(x=leaf_ints, y=leaf_floats.filter(_is_finite), label=leaf_strs)
     @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_nested_cli_roundtrip(self, tmp_path, x, y, label):
+        """Test that nested CLI values round-trip through merge → dump_file → merge."""
         args = ["--inner.x", str(x), "--inner.y", str(y), "--label", label]
         raw = confarg.merge(Outer, args=args, env={})
         out = tmp_path / "snap.yaml"

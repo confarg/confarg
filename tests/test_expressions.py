@@ -38,26 +38,31 @@ class TestScanExpressions:
     """Detection of ${...} in merged dicts."""
 
     def test_simple_reference(self) -> None:
+        """A simple ${b} reference is detected."""
         data = {"a": "${b}", "b": "hello"}
         result = _scan_expressions(data)
         assert result == {"a": "${b}"}
 
     def test_nested_dict(self) -> None:
+        """Expressions in nested dicts are detected with dotted paths."""
         data = {"db": {"url": "jdbc://${db.host}:${db.port}/mydb", "host": "localhost", "port": 5432}}
         result = _scan_expressions(data)
         assert result == {"db.url": "jdbc://${db.host}:${db.port}/mydb"}
 
     def test_non_string_ignored(self) -> None:
+        """Non-string values are ignored in expression scanning."""
         data = {"count": 42, "rate": math.pi, "flag": True, "nothing": None}
         result = _scan_expressions(data)
         assert result == {}
 
     def test_no_expressions(self) -> None:
+        """A dict with no expressions returns an empty scan result."""
         data = {"name": "hello", "nested": {"value": "world"}}
         result = _scan_expressions(data)
         assert result == {}
 
     def test_escaped_not_detected(self) -> None:
+        """Escaped $${...} is detected for processing (to unescape) but not as a real reference."""
         data = {"a": "$${not_a_ref}"}
         result = _scan_expressions(data)
         # Escaped expressions ARE detected for processing (to unescape them)
@@ -70,11 +75,13 @@ class TestScanExpressions:
         assert result == {"items.0": "${a}"}
 
     def test_deeply_nested(self) -> None:
+        """Deeply nested expressions are detected with their full dotted path."""
         data = {"a": {"b": {"c": {"d": "${x}"}}}}
         result = _scan_expressions(data)
         assert result == {"a.b.c.d": "${x}"}
 
     def test_multiple_expressions(self) -> None:
+        """Multiple expression fields are all detected."""
         data = {"a": "${x}", "b": "${y}", "c": "plain"}
         result = _scan_expressions(data)
         assert result == {"a": "${x}", "b": "${y}"}
@@ -89,38 +96,47 @@ class TestExtractReferences:
     """Extracting dotted field paths from expression strings."""
 
     def test_simple_name(self) -> None:
+        """A simple field name reference is extracted correctly."""
         refs = _extract_references("${name}")
         assert refs == {"name"}
 
     def test_dotted_path(self) -> None:
+        """A dotted-path reference is extracted correctly."""
         refs = _extract_references("${db.host}")
         assert refs == {"db.host"}
 
     def test_multiple_refs(self) -> None:
+        """Multiple references in one string are all extracted."""
         refs = _extract_references("jdbc://${db.host}:${db.port}/mydb")
         assert refs == {"db.host", "db.port"}
 
     def test_arithmetic_expr(self) -> None:
+        """An arithmetic expression yields the variable references."""
         refs = _extract_references("${db.port + 1000}")
         assert refs == {"db.port"}
 
     def test_function_call(self) -> None:
+        """Function call arguments are extracted as references."""
         refs = _extract_references("${max(a, b)}")
         assert refs == {"a", "b"}
 
     def test_no_refs_in_escaped(self) -> None:
+        """An escaped expression yields no references."""
         refs = _extract_references("$${not_a_ref}")
         assert refs == set()
 
     def test_mixed_escaped_and_real(self) -> None:
+        """Only the real reference is extracted when mixed with an escaped one."""
         refs = _extract_references("$${escape}${real}")
         assert refs == {"real"}
 
     def test_string_literal_not_a_ref(self) -> None:
+        """A string literal inside an expression is not extracted as a reference."""
         refs = _extract_references('${db.host + ":"}')
         assert refs == {"db.host"}
 
     def test_list_index_ref(self) -> None:
+        """A list index reference is normalized to a dotted path."""
         refs = _extract_references("${servers[0].host}")
         assert refs == {"servers.0.host"}
 
@@ -134,17 +150,20 @@ class TestTopologicalSort:
     """Dependency ordering and circular detection."""
 
     def test_simple_chain(self) -> None:
+        """A simple dependency chain is sorted topologically."""
         deps = {"c": {"b"}, "b": {"a"}, "a": set()}
         order = _topological_sort(deps)
         assert order.index("a") < order.index("b")
         assert order.index("b") < order.index("c")
 
     def test_independent(self) -> None:
+        """Independent nodes all appear in the sorted result."""
         deps = {"a": set(), "b": set()}
         order = _topological_sort(deps)
         assert set(order) == {"a", "b"}
 
     def test_diamond(self) -> None:
+        """A diamond dependency graph is sorted correctly."""
         deps = {"d": {"b", "c"}, "b": {"a"}, "c": {"a"}, "a": set()}
         order = _topological_sort(deps)
         assert order.index("a") < order.index("b")
@@ -153,21 +172,25 @@ class TestTopologicalSort:
         assert order.index("c") < order.index("d")
 
     def test_circular_raises(self) -> None:
+        """A two-node cycle raises CircularReferenceError."""
         deps = {"a": {"b"}, "b": {"a"}}
         with pytest.raises(CircularReferenceError):
             _topological_sort(deps)
 
     def test_self_reference_raises(self) -> None:
+        """A self-referencing node raises CircularReferenceError."""
         deps = {"a": {"a"}}
         with pytest.raises(CircularReferenceError):
             _topological_sort(deps)
 
     def test_circular_three(self) -> None:
+        """A three-node cycle raises CircularReferenceError."""
         deps = {"a": {"c"}, "b": {"a"}, "c": {"b"}}
         with pytest.raises(CircularReferenceError):
             _topological_sort(deps)
 
     def test_empty(self) -> None:
+        """An empty dependency dict returns an empty list."""
         assert _topological_sort({}) == []
 
 
@@ -180,12 +203,15 @@ class TestAstValidation:
     """Safety: allowed ops pass, disallowed constructs rejected."""
 
     def test_simple_name(self) -> None:
+        """A simple variable name passes AST validation."""
         _validate_ast("x")
 
     def test_dotted_name(self) -> None:
+        """A dotted attribute name passes AST validation."""
         _validate_ast("x.y")
 
     def test_arithmetic(self) -> None:
+        """Arithmetic expressions pass AST validation."""
         _validate_ast("x + 1")
         _validate_ast("x * 2 - 3")
         _validate_ast("x / y")
@@ -194,29 +220,36 @@ class TestAstValidation:
         _validate_ast("x ** 2")
 
     def test_comparison(self) -> None:
+        """Comparison expressions pass AST validation."""
         _validate_ast("x > 0")
         _validate_ast("x == y")
 
     def test_boolean(self) -> None:
+        """Boolean expressions pass AST validation."""
         _validate_ast("x and y")
         _validate_ast("not x")
 
     def test_ternary(self) -> None:
+        """Ternary expressions pass AST validation."""
         _validate_ast("x if x > 0 else y")
 
     def test_function_call(self) -> None:
+        """Allowed function calls pass AST validation."""
         _validate_ast("max(x, y)")
         _validate_ast("abs(x)")
         _validate_ast("len(name)")
 
     def test_string_method(self) -> None:
+        """String method calls pass AST validation."""
         _validate_ast("name.upper()")
         _validate_ast("name.replace('a', 'b')")
 
     def test_subscript(self) -> None:
+        """Subscript expressions pass AST validation."""
         _validate_ast("x[0]")
 
     def test_constant(self) -> None:
+        """Constant expressions pass AST validation."""
         _validate_ast("42")
         _validate_ast('"hello"')
 
@@ -248,6 +281,7 @@ class TestAstValidation:
         ],
     )
     def test_unsafe_rejected(self, expr: str) -> None:
+        """Unsafe expression constructs raise UnsafeExpressionError."""
         with pytest.raises(UnsafeExpressionError):
             _validate_ast(expr)
 
@@ -344,11 +378,13 @@ class TestEvaluateExpressions:
         ],
     )
     def test_expression_eval(self, expr: str, ctx: dict, expected) -> None:
+        """Expressions evaluate to their expected values."""
         data = {"a": expr, **ctx}
         resolved = resolve_expressions(data)
         assert resolved["a"] == expected
 
     def test_division_by_zero(self) -> None:
+        """Division by zero raises ExpressionEvalError."""
         data = {"a": "${b / 0}", "b": 10}
         with pytest.raises(ExpressionEvalError, match="division"):
             resolve_expressions(data)
@@ -390,6 +426,7 @@ class TestResolveExpressions:
         assert resolved["a"] == "${not_a_ref}"
 
     def test_nested_dict_refs(self) -> None:
+        """An expression can reference nested dict fields."""
         data = {
             "db": {"host": "localhost", "port": 5432},
             "url": "jdbc://${db.host}:${db.port}/mydb",
@@ -398,6 +435,7 @@ class TestResolveExpressions:
         assert resolved["url"] == "jdbc://localhost:5432/mydb"
 
     def test_cross_nested_ref(self) -> None:
+        """An expression inside a nested dict can reference sibling fields."""
         data = {
             "db": {"host": "localhost", "port": 5432, "url": "jdbc://${db.host}:${db.port}/mydb"},
         }
@@ -405,17 +443,20 @@ class TestResolveExpressions:
         assert resolved["db"]["url"] == "jdbc://localhost:5432/mydb"
 
     def test_non_expression_strings_unchanged(self) -> None:
+        """Plain strings without expressions are left unchanged."""
         data = {"a": "hello", "b": "world"}
         resolved = resolve_expressions(data)
         assert resolved == {"a": "hello", "b": "world"}
 
     def test_mixed_expressions_and_plain(self) -> None:
+        """A mix of expression and plain fields resolves correctly."""
         data = {"a": "${b}", "b": 42, "c": "plain"}
         resolved = resolve_expressions(data)
         assert resolved["a"] == 42
         assert resolved["c"] == "plain"
 
     def test_list_index_reference(self) -> None:
+        """A list index reference resolves correctly."""
         data = {
             "servers": [{"host": "s1"}, {"host": "s2"}],
             "primary": "${servers[0].host}",
@@ -424,6 +465,7 @@ class TestResolveExpressions:
         assert resolved["primary"] == "s1"
 
     def test_negative_list_index_reference(self) -> None:
+        """A negative list index reference resolves correctly."""
         data = {
             "servers": [{"host": "s1"}, {"host": "s2"}],
             "last": "${servers[-1].host}",
@@ -432,6 +474,7 @@ class TestResolveExpressions:
         assert resolved["last"] == "s2"
 
     def test_deeply_nested_path(self) -> None:
+        """A deeply nested path reference resolves correctly."""
         data = {
             "a": {"b": {"c": {"d": 42}}},
             "result": "${a.b.c.d}",
@@ -447,6 +490,8 @@ class TestResolveExpressions:
 
 @dataclass
 class ExprDb:
+    """Database config with an expression-based URL field."""
+
     host: str
     port: int
     url: str = ""
@@ -454,6 +499,8 @@ class ExprDb:
 
 @dataclass
 class ExprAppConfig:
+    """Application config wrapping an ExprDb for expression tests."""
+
     db: ExprDb
     debug: bool = False
 
@@ -462,6 +509,7 @@ class TestLoadWithExpressions:
     """End-to-end via load() from TOML, YAML, env, CLI."""
 
     def test_toml_expression(self, tmp_toml) -> None:
+        """Test that ${...} expressions in a TOML file are resolved end-to-end."""
         path = tmp_toml("""\
             [db]
             host = "localhost"
@@ -472,6 +520,7 @@ class TestLoadWithExpressions:
         assert result.db.url == "jdbc://localhost:5432/mydb"
 
     def test_yaml_expression(self, tmp_yaml) -> None:
+        """Test that ${...} expressions in a YAML file are resolved end-to-end."""
         path = tmp_yaml("""\
             db:
               host: localhost
@@ -532,6 +581,7 @@ class TestLoadWithExpressions:
         assert result.db.url == "jdbc://prod-server:5432/mydb"
 
     def test_merge_output_preserves_raw_expressions(self, tmp_toml) -> None:
+        """Merge() preserves raw ${...} expressions without evaluating them."""
         path = tmp_toml("""\
             [db]
             host = "localhost"
@@ -565,6 +615,8 @@ class TestLoadWithExpressions:
 
 @dataclass
 class CrossCfg:
+    """Configuration for cross-source interpolation tests."""
+
     host: str = "localhost"
     port: int = 5432
     url: str = ""
@@ -653,6 +705,7 @@ class TestDump:
     """dump() always outputs resolved values."""
 
     def test_dump_resolved_values(self, tmp_toml) -> None:
+        """Dump() outputs the resolved value, not the raw expression string."""
         path = tmp_toml("""\
             [db]
             host = "localhost"
@@ -664,11 +717,13 @@ class TestDump:
         assert dumped["db"]["url"] == "jdbc://localhost:5432/mydb"
 
     def test_dump_no_expressions_unchanged(self) -> None:
+        """Dump() leaves values without expressions unchanged."""
         obj = WithDefaults(name="alice", count=1, rate=2.0, verbose=True)
         dumped = confarg.dump(obj)
         assert dumped == {"name": "alice", "count": 1, "rate": 2.0, "verbose": True}
 
     def test_dump_file_toml_resolved(self, tmp_toml, tmp_path) -> None:
+        """Dump_file() writes resolved values without ${...} expressions."""
         path = tmp_toml("""\
             [db]
             host = "localhost"
@@ -692,26 +747,31 @@ class TestExpressionErrors:
     """Circular, missing, unsafe, eval errors."""
 
     def test_circular_reference(self) -> None:
+        """A two-field circular reference raises CircularReferenceError."""
         data = {"a": "${b}", "b": "${a}"}
         with pytest.raises(CircularReferenceError):
             resolve_expressions(data)
 
     def test_circular_three_way(self) -> None:
+        """A three-field circular reference raises CircularReferenceError."""
         data = {"a": "${b}", "b": "${c}", "c": "${a}"}
         with pytest.raises(CircularReferenceError):
             resolve_expressions(data)
 
     def test_self_reference(self) -> None:
+        """A self-referencing field raises CircularReferenceError."""
         data = {"a": "${a}"}
         with pytest.raises(CircularReferenceError):
             resolve_expressions(data)
 
     def test_missing_reference(self) -> None:
+        """A reference to an undefined field raises MissingReferenceError."""
         data = {"a": "${nonexistent}"}
         with pytest.raises(MissingReferenceError):
             resolve_expressions(data)
 
     def test_missing_nested_reference(self) -> None:
+        """A reference to a missing nested path raises MissingReferenceError."""
         data = {"a": "${x.y.z}"}
         with pytest.raises(MissingReferenceError):
             resolve_expressions(data)
@@ -728,26 +788,31 @@ class TestExpressionErrors:
         ids=["import", "eval", "exec", "lambda", "comprehension"],
     )
     def test_unsafe_expression(self, expr: str) -> None:
+        """Unsafe expression constructs raise UnsafeExpressionError during resolution."""
         data = {"a": expr}
         with pytest.raises(UnsafeExpressionError):
             resolve_expressions(data)
 
     def test_dunder_access(self) -> None:
+        """Accessing dunder attributes raises UnsafeExpressionError."""
         data = {"a": "${b.__class__}", "b": "hello"}
         with pytest.raises(UnsafeExpressionError):
             resolve_expressions(data)
 
     def test_division_by_zero_error(self) -> None:
+        """Division by zero raises ExpressionEvalError."""
         data = {"a": "${b / 0}", "b": 10}
         with pytest.raises(ExpressionEvalError):
             resolve_expressions(data)
 
     def test_type_error_in_expression(self) -> None:
+        """A type error in an expression raises ExpressionEvalError."""
         data = {"a": "${b + c}", "b": "hello", "c": 42}
         with pytest.raises(ExpressionEvalError):
             resolve_expressions(data)
 
     def test_unknown_function(self) -> None:
+        """Calling a non-whitelisted function raises UnsafeExpressionError."""
         data = {"a": "${open('foo')}"}
         with pytest.raises(UnsafeExpressionError):
             resolve_expressions(data)
@@ -762,6 +827,7 @@ class TestExpressionEdgeCases:
     """Empty strings, $foo without braces, multiple ${...}, None, lists, deeply nested."""
 
     def test_empty_string(self) -> None:
+        """An empty string is left unchanged."""
         data = {"a": ""}
         resolved = resolve_expressions(data)
         assert resolved["a"] == ""
@@ -773,21 +839,22 @@ class TestExpressionEdgeCases:
         assert resolved["a"] == "$foo"
 
     def test_multiple_expressions_in_one_string(self) -> None:
+        """Multiple expressions in one string are all resolved."""
         data = {"a": "${x}-${y}", "x": "hello", "y": "world"}
         resolved = resolve_expressions(data)
         assert resolved["a"] == "hello-world"
 
     def test_none_value_unchanged(self) -> None:
+        """A None value is left unchanged while expressions are resolved."""
         data = {"a": None, "b": "${c}", "c": 42}
         resolved = resolve_expressions(data)
         assert resolved["a"] is None
         assert resolved["b"] == 42
 
     def test_no_expressions_returns_same_object(self) -> None:
-        """Invariant: resolve_expressions returns the *same* dict object (not a copy)
-        when there are no ${...} expressions present.
+        """Invariant: resolve_expressions returns the *same* dict object (not a copy).
 
-        The early-exit path at line 139 (``if not expr_fields: return data``) returns
+        When there are no ${...} expressions present, the early-exit path returns
         data unchanged — callers must not rely on always receiving a fresh copy.
         """
         data = {"host": "localhost", "port": 5432, "enabled": True}
@@ -801,8 +868,10 @@ class TestExpressionEdgeCases:
         assert result is data
 
     def test_with_expressions_returns_new_object(self) -> None:
-        """When expressions are present, resolve_expressions returns a deep copy
-        (a different object), not the original dict."""
+        """When expressions are present, resolve_expressions returns a deep copy.
+
+        The returned dict is a different object, not the original dict.
+        """
         data = {"a": "${b}", "b": "hello"}
         result = resolve_expressions(data)
         assert result is not data
@@ -822,12 +891,14 @@ class TestExpressionEdgeCases:
         assert data["db"] == original_inner
 
     def test_bool_value_unchanged(self) -> None:
+        """Boolean values are left unchanged during expression resolution."""
         data = {"a": True, "b": False}
         resolved = resolve_expressions(data)
         assert resolved["a"] is True
         assert resolved["b"] is False
 
     def test_integer_value_unchanged(self) -> None:
+        """Integer values are left unchanged during expression resolution."""
         data = {"a": 42}
         resolved = resolve_expressions(data)
         assert resolved["a"] == 42
@@ -839,6 +910,7 @@ class TestExpressionEdgeCases:
         assert resolved["count"] == 3
 
     def test_deeply_nested_expression_path(self) -> None:
+        """An expression referencing a deeply nested path resolves correctly."""
         data = {
             "level1": {"level2": {"level3": {"value": 42}}},
             "result": "${level1.level2.level3.value}",
@@ -847,21 +919,25 @@ class TestExpressionEdgeCases:
         assert resolved["result"] == 42
 
     def test_string_concat_via_interpolation(self) -> None:
+        """String concatenation via interpolation works correctly."""
         data = {"first": "John", "last": "Doe", "full": "${first} ${last}"}
         resolved = resolve_expressions(data)
         assert resolved["full"] == "John Doe"
 
     def test_escaped_in_middle(self) -> None:
+        """An escaped expression in the middle of a string is unescaped."""
         data = {"a": "before$${escaped}after"}
         resolved = resolve_expressions(data)
         assert resolved["a"] == "before${escaped}after"
 
     def test_mixed_escaped_and_real_in_string(self) -> None:
+        """A mix of escaped and real expressions in one string works correctly."""
         data = {"a": "$${esc}${b}", "b": "real"}
         resolved = resolve_expressions(data)
         assert resolved["a"] == "${esc}real"
 
     def test_expression_with_string_literal(self) -> None:
+        """Expressions with string literals concatenate correctly."""
         data = {"a": '${b + " world"}', "b": "hello"}
         resolved = resolve_expressions(data)
         assert resolved["a"] == "hello world"

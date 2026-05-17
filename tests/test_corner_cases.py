@@ -56,27 +56,37 @@ from tests.conftest import (
 
 @dataclass
 class CamelCaseConfig:
+    """Dataclass with camelCase field names."""
+
     dbHost: str = "localhost"
     dbPort: int = 5432
 
 
 @dataclass
 class MixedCaseConfig:
+    """Dataclass with mixed-case field names."""
+
     MyField: str = "default"
 
 
 @dataclass
 class InnerCamel:
+    """Inner dataclass with camelCase field names."""
+
     serverName: str = "default"
 
 
 @dataclass
 class OuterCamel:
+    """Outer dataclass containing an InnerCamel."""
+
     inner: InnerCamel
 
 
 @dataclass
 class AmbiguousFields:
+    """Dataclass with two fields that differ only in case."""
+
     name: str = "a"
     Name: str = "b"
 
@@ -995,6 +1005,7 @@ class TestDefaultFactory:
         ids=["list", "dict", "set"],
     )
     def test_empty_default_factory(self, tp, factory, field_name, expected) -> None:
+        """Test that an empty default_factory produces the correct empty collection."""
         target = make_target(field_name, tp, default_factory=factory)
         result = confarg.load(target, args=[], env={})
         assert getattr(result, field_name) == expected
@@ -1216,6 +1227,7 @@ class TestNonUnionClassTagDispatch:
     """
 
     def test_from_dict_dispatches_to_subclass(self) -> None:
+        """Test that from_dict dispatches to the correct subclass via class tag."""
         result = confarg.from_dict(
             _AnimalBase,
             {"class": "tests.test_corner_cases._Dog", "name": "Rex", "breed": "Labrador"},
@@ -1225,6 +1237,7 @@ class TestNonUnionClassTagDispatch:
         assert result.breed == "Labrador"
 
     def test_load_from_yaml_dispatches_to_subclass(self, tmp_yaml) -> None:
+        """Test that load from YAML dispatches to the correct subclass via class tag."""
         path = tmp_yaml("""\
             class: tests.test_corner_cases._Cat
             name: Whiskers
@@ -1315,6 +1328,7 @@ class TestIsSetFrozensetConsistency:
         ids=["set-set", "set-frozenset", "frozenset-frozenset", "frozenset-set"],
     )
     def test_type_predicate(self, fn, tp, expected) -> None:
+        """Test that type predicate functions return correct results."""
         assert fn(tp) is expected
 
     def test_frozenset_still_works_end_to_end(self) -> None:
@@ -1351,6 +1365,7 @@ class TestSilentFailureFixes:
         ids=["int-float-none-uncoercible", "int-float-none-path", "bool-int-none"],
     )
     def test_union_exhausted_raises(self, type_ann, env_val, match) -> None:
+        """Test that an uncoercible union value raises TypeCoercionError."""
         WithUnion = make_target("value", type_ann, default=None)
         with pytest.raises(TypeCoercionError, match=match):
             confarg.load(WithUnion, args=[], env={"VALUE": env_val}, env_prefix="")
@@ -1362,6 +1377,7 @@ class TestSilentFailureFixes:
             confarg.load(WithUnion, args=[], env={"VALUE": ""}, env_prefix="")
 
     def test_union_int_float_none_valid_int_still_works(self) -> None:
+        """Test that a valid int still works in a Union[int, float, None]."""
         WithUnion = make_target("value", int | float | None, default=None)
         result = confarg.load(WithUnion, args=[], env={"VALUE": "42"}, env_prefix="")
         assert result.value == 42
@@ -1399,6 +1415,7 @@ class TestSilentFailureFixes:
         ],
     )
     def test_wrong_type_raises(self, tp, bad_value, match) -> None:
+        """Test that constructing with a wrong type raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match=match):
             construct(tp, bad_value, path="field")
 
@@ -1412,6 +1429,7 @@ class TestSilentFailureFixes:
         ids=["list-path", "dict-path", "dc-path"],
     )
     def test_error_contains_path(self, tp, bad_value, path, match) -> None:
+        """Test that TypeCoercionError message contains the field path."""
         with pytest.raises(TypeCoercionError, match=match):
             construct(tp, bad_value, path=path)
 
@@ -1425,6 +1443,8 @@ class TestVarParams:
     """Plain classes with *args and/or **kwargs in __init__."""
 
     def test_var_keyword_only(self) -> None:
+        """Test that a class with only **kwargs is constructed correctly."""
+
         class KwOnly:
             def __init__(self, **options: int) -> None:
                 self.options = options
@@ -1433,6 +1453,8 @@ class TestVarParams:
         assert result.options == {"a": 1, "b": 2}
 
     def test_var_keyword_respects_annotation(self) -> None:
+        """Test that **kwargs with type annotation coerces values correctly."""
+
         class KwTyped:
             def __init__(self, **opts: int) -> None:
                 self.opts = opts
@@ -1441,6 +1463,8 @@ class TestVarParams:
         assert result.opts == {"x": 42}
 
     def test_var_positional_only(self) -> None:
+        """Test that a class with only *args is constructed correctly."""
+
         class Positional:
             def __init__(self, *items: str) -> None:
                 self.items = items
@@ -1449,6 +1473,8 @@ class TestVarParams:
         assert result.items == ("a", "b", "c")
 
     def test_var_positional_respects_annotation(self) -> None:
+        """Test that *args with type annotation coerces values correctly."""
+
         class Nums:
             def __init__(self, *values: int) -> None:
                 self.values = values
@@ -1457,6 +1483,8 @@ class TestVarParams:
         assert result.values == (1, 2, 3)
 
     def test_named_and_var_positional(self) -> None:
+        """Test that named params and *args are both handled correctly."""
+
         class Tagged:
             def __init__(self, host: str, *tags: str) -> None:
                 self.host = host
@@ -1467,6 +1495,8 @@ class TestVarParams:
         assert result.tags == ("web", "db")
 
     def test_named_and_var_keyword(self) -> None:
+        """Test that named params and **kwargs are both handled correctly."""
+
         class Server:
             def __init__(self, host: str, **options: int) -> None:
                 self.host = host
@@ -1477,6 +1507,8 @@ class TestVarParams:
         assert result.options == {"port": 8080}
 
     def test_all_three(self) -> None:
+        """Test that named, *args, and **kwargs are all handled together."""
+
         class Mixed:
             def __init__(self, name: str, *args: int, **kwargs: str) -> None:
                 self.name = name
@@ -1489,6 +1521,8 @@ class TestVarParams:
         assert result.kwargs == {"a": "b"}
 
     def test_non_standard_names(self) -> None:
+        """Test that non-standard *args/**kwargs names work correctly."""
+
         class Custom:
             def __init__(self, *tags: str, **extra: float) -> None:
                 self.tags = tags
@@ -1499,6 +1533,8 @@ class TestVarParams:
         assert result.extra == pytest.approx({"rate": math.pi})
 
     def test_defaults_when_omitted(self) -> None:
+        """Test that default values are used when var params are omitted from dict."""
+
         class WithDefaults:
             def __init__(self, name: str = "anon", *args: int, **kwargs: str) -> None:
                 self.name = name
@@ -1511,6 +1547,8 @@ class TestVarParams:
         assert result.kwargs == {}
 
     def test_unknown_field_still_raises(self) -> None:
+        """Test that an unknown top-level field still raises TypeCoercionError."""
+
         class Simple:
             def __init__(self, **opts: int) -> None:
                 self.opts = opts
@@ -1519,6 +1557,8 @@ class TestVarParams:
             confarg.from_dict(Simple, {"not_a_field": 1})
 
     def test_construction_from_dict(self) -> None:
+        """Test that a plain class with mixed var params is constructed from a raw dict."""
+
         class Stored:
             def __init__(self, x: int, *items: str, **meta: float) -> None:
                 self.x = x
@@ -1547,24 +1587,28 @@ class TestUnionTypeSwitchViaClassTag:
     """
 
     def test_deep_merge_discards_base_when_override_has_union_tag(self) -> None:
+        """Test that _deep_merge discards the base when the override has a union_tag."""
         base = {"host": "prod", "port": 5432, "name": "mydb"}
         override = {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "db.sqlite"}
         result = _deep_merge(base, override, union_tag="class")
         assert result == override
 
     def test_deep_merge_normal_merge_when_no_union_tag(self) -> None:
+        """Test that _deep_merge performs a normal merge when no union_tag is present."""
         base = {"host": "prod", "port": 5432, "name": "mydb"}
         override = {"port": 9999}
         result = _deep_merge(base, override, union_tag="class")
         assert result == {"host": "prod", "port": 9999, "name": "mydb"}
 
     def test_deep_merge_nested_discard(self) -> None:
+        """Test that _deep_merge discards a nested base when a nested override has a union_tag."""
         base = {"db": {"host": "prod", "port": 5432, "name": "mydb"}}
         override = {"db": {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "x.sqlite"}}
         result = _deep_merge(base, override, union_tag="class")
         assert result == {"db": {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "x.sqlite"}}
 
     def test_load_cross_type_switch_via_config_file_and_cli(self, tmp_yaml) -> None:
+        """Test that switching union type via CLI class tag overrides a config file variant."""
         path = tmp_yaml("host: example.com\nname: mydb\nport: 1234\n")
         result = confarg.load(
             _SqliteVariant | _ServerVariant,
@@ -1582,6 +1626,7 @@ class TestUnionTypeSwitchViaClassTag:
         assert result.dbpath == "db.sqlite"
 
     def test_load_partial_override_same_type_without_repeating_class(self, tmp_yaml) -> None:
+        """Test that partial override of same union type works without repeating class tag."""
         path = tmp_yaml(
             "class: tests.test_corner_cases._ServerVariant\nhost: prod.example.com\nport: 5432\nname: mydb\n"
         )
@@ -1596,6 +1641,7 @@ class TestUnionTypeSwitchViaClassTag:
         assert result.name == "mydb"
 
     def test_deep_merge_three_way_priority_with_type_switch(self) -> None:
+        """Test three-way deep_merge priority where a higher-priority override switches union type."""
         # Simulate: file provides ServerVariant fields, env provides nothing,
         # then a second override (e.g., from a higher-priority config) introduces
         # a class tag and SqliteVariant fields.

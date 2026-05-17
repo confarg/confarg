@@ -207,20 +207,25 @@ class TestToAppendList:
     """Unit tests for _merge._to_append_list."""
 
     def test_empty_dict(self) -> None:
+        """Empty dict produces an empty list."""
         assert _to_append_list({}) == []
 
     def test_dict_with_int_keys(self) -> None:
+        """Dict with integer string keys produces a sparse list padded with None."""
         result = _to_append_list({"0": "a", "2": "c"})
         assert result == ["a", None, "c"]
 
     def test_dict_with_non_int_keys_raises(self) -> None:
+        """Dict with non-integer keys raises ConfargError."""
         with pytest.raises(confarg.ConfargError, match="integer indices"):
             _to_append_list({"bad": "value"})
 
     def test_scalar_wrapped_in_list(self) -> None:
+        """A scalar value is wrapped in a single-element list."""
         assert _to_append_list(42) == [42]
 
     def test_scalar_string(self) -> None:
+        """A string scalar is wrapped in a single-element list."""
         assert _to_append_list("hello") == ["hello"]
 
 
@@ -230,13 +235,17 @@ class TestToAppendList:
 
 
 class TestDumpDictList:
+    """dump() strips _StrToken markers from lists and raw merge dicts."""
+
     def test_strip_str_tokens_in_list(self) -> None:
+        """_StrToken values in a list are demoted to plain str by dump()."""
         data = {"items": [_StrToken("a"), _StrToken("b")]}
         result = confarg.dump(data)
         assert result == {"items": ["a", "b"]}
         assert all(type(v) is str for v in result["items"])
 
     def test_dump_from_merge(self) -> None:
+        """dump() applied to a raw merge() dict produces plain str values."""
         WithList = make_target("items", list[str], default_factory=list)
         raw = confarg.merge(WithList, args=["--items", "x", "y"], env={})
         d = confarg.dump(raw)
@@ -250,7 +259,10 @@ class TestDumpDictList:
 
 
 class TestConfigAppendWithoutField:
+    """--config.+ without a field path is rejected."""
+
     def test_config_append_no_field_path_raises(self) -> None:
+        """--config.+ without a field path raises ConfargError."""
         with pytest.raises(confarg.ConfargError, match="requires a field path"):
             confarg.load(WithDefaults, args=["--config.+", "dummy.toml"], env={})
 
@@ -261,25 +273,31 @@ class TestConfigAppendWithoutField:
 
 
 class TestFileErrors:
+    """File-loading and file-dumping error paths."""
+
     def test_load_toml_file_not_found(self, tmp_path: Path) -> None:
+        """Missing TOML file raises InvalidConfigFileError."""
         from confarg._files import _load_toml
 
         with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
             _load_toml(tmp_path / "missing.toml")
 
     def test_load_yaml_file_not_found(self, tmp_path: Path) -> None:
+        """Missing YAML file raises InvalidConfigFileError."""
         from confarg._files import _load_yaml
 
         with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
             _load_yaml(tmp_path / "missing.yaml")
 
     def test_load_json_file_not_found(self, tmp_path: Path) -> None:
+        """Missing JSON file raises InvalidConfigFileError."""
         from confarg._files import _load_json
 
         with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
             _load_json(tmp_path / "missing.json")
 
     def test_load_yaml_item_missing_library(self, tmp_path: Path, monkeypatch) -> None:
+        """Missing PyYAML library raises InvalidConfigFileError."""
         from confarg._files import _load_yaml_item
 
         p = tmp_path / "test.yaml"
@@ -289,12 +307,14 @@ class TestFileErrors:
             _load_yaml_item(p)
 
     def test_load_yaml_item_file_not_found(self, tmp_path: Path) -> None:
+        """Missing YAML item file raises InvalidConfigFileError."""
         from confarg._files import _load_yaml_item
 
         with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
             _load_yaml_item(tmp_path / "missing.yaml")
 
     def test_load_yaml_item_malformed(self, tmp_path: Path) -> None:
+        """Malformed YAML content raises InvalidConfigFileError."""
         from confarg._files import _load_yaml_item
 
         p = tmp_path / "bad.yaml"
@@ -303,12 +323,14 @@ class TestFileErrors:
             _load_yaml_item(p)
 
     def test_load_json_item_file_not_found(self, tmp_path: Path) -> None:
+        """Missing JSON item file raises InvalidConfigFileError."""
         from confarg._files import _load_json_item
 
         with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
             _load_json_item(tmp_path / "missing.json")
 
     def test_load_json_item_malformed(self, tmp_path: Path) -> None:
+        """Malformed JSON content raises InvalidConfigFileError."""
         from confarg._files import _load_json_item
 
         p = tmp_path / "bad.json"
@@ -317,12 +339,14 @@ class TestFileErrors:
             _load_json_item(p)
 
     def test_load_file_item_unsupported_format(self, tmp_path: Path) -> None:
+        """Unsupported file extension raises InvalidConfigFileError."""
         from confarg._files import _load_file_item
 
         with pytest.raises(confarg.InvalidConfigFileError, match="Unsupported"):
             _load_file_item(tmp_path / "file.xyz")
 
     def test_dump_json_writes_file(self, tmp_path: Path) -> None:
+        """JSON dump writes a valid JSON file to disk."""
         from confarg._files import _dump_json
 
         p = tmp_path / "out.json"
@@ -333,6 +357,7 @@ class TestFileErrors:
         assert data == {"key": "value", "num": 42}
 
     def test_dump_file_unsupported_format(self, tmp_path: Path) -> None:
+        """Unsupported file extension in dump raises InvalidConfigFileError."""
         from confarg._files import _dump_file
 
         with pytest.raises(confarg.InvalidConfigFileError, match="Unsupported"):
@@ -345,7 +370,11 @@ class TestFileErrors:
 
 
 class TestCallableEdgeCases:
+    """Edge cases in callable resolution and serialization."""
+
     def test_detect_owning_class_module_not_in_sys_modules(self) -> None:
+        """_detect_owning_class returns None when the function's module is not in sys.modules."""
+
         def fake_method():
             pass
 
@@ -355,6 +384,8 @@ class TestCallableEdgeCases:
         assert result is None
 
     def test_detect_owning_class_attr_not_found(self) -> None:
+        """_detect_owning_class returns None when the class attribute is missing from the module."""
+
         def fake_method():
             pass
 
@@ -364,6 +395,7 @@ class TestCallableEdgeCases:
         assert result is None
 
     def test_resolve_spec_already_callable(self) -> None:
+        """A callable value passed directly to _resolve_callable_spec is returned unchanged."""
         from confarg._callable import _resolve_callable_spec
 
         def my_func(x: int) -> str:
@@ -373,6 +405,7 @@ class TestCallableEdgeCases:
         assert result is my_func
 
     def test_resolve_dict_spec_non_dict_bind_raises(self) -> None:
+        """A non-dict bind: value in the fn: dict form raises TypeCoercionError."""
         from confarg._callable import _resolve_callable_spec
 
         spec = {"fn": "os.path.join", "bind": "not_a_dict"}
@@ -380,6 +413,7 @@ class TestCallableEdgeCases:
             _resolve_callable_spec(spec, Callable, path="test")
 
     def test_resolve_class_spec_not_a_class_raises(self) -> None:
+        """A non-class path in the class: dict form raises TypeCoercionError."""
         from confarg._callable import _resolve_callable_spec
 
         spec = {"class": "os.path.join"}
@@ -387,12 +421,14 @@ class TestCallableEdgeCases:
             _resolve_callable_spec(spec, Callable, path="test")
 
     def test_resolve_spec_invalid_type_raises(self) -> None:
+        """A non-str, non-dict callable spec raises TypeCoercionError."""
         from confarg._callable import _resolve_callable_spec
 
         with pytest.raises(confarg.TypeCoercionError, match="expected str or dict"):
             _resolve_callable_spec(12345, Callable, path="test")
 
     def test_check_signature_var_positional_skipped(self) -> None:
+        """*args functions skip parameter count checking."""
         from confarg._callable import _check_callable_signature
 
         def varargs_func(*args: int) -> None:
@@ -401,6 +437,7 @@ class TestCallableEdgeCases:
         _check_callable_signature(varargs_func, Callable[[int, int], None], path="test")
 
     def test_check_signature_uninspectable(self) -> None:
+        """Uninspectable callables skip signature checking."""
         from confarg._callable import _check_callable_signature
 
         class Uninspectable:
@@ -408,12 +445,15 @@ class TestCallableEdgeCases:
                 pass
 
             def __signature__(self):
-                raise ValueError("cannot inspect")
+                msg = "cannot inspect"
+                raise ValueError(msg)
 
         obj = Uninspectable()
         _check_callable_signature(obj, Callable[[int], None], path="test")
 
     def test_serialize_callable_no_module_qualname_raises(self) -> None:
+        """An object without __module__ or __qualname__ raises ConfargError on serialization."""
+
         class Proxy:
             pass
 
@@ -430,21 +470,28 @@ class TestCallableEdgeCases:
 
 
 class TestTypesEdgeCases:
+    """Edge cases in type-inspection helpers."""
+
     def test_is_collection_true(self) -> None:
+        """list, tuple, set, and frozenset are recognized as collection types."""
         assert _is_collection(list[int]) is True
         assert _is_collection(tuple[str, int]) is True
         assert _is_collection(set[str]) is True
         assert _is_collection(frozenset[int]) is True
 
     def test_is_collection_false(self) -> None:
+        """Int and str are not collection types."""
         assert _is_collection(int) is False
         assert _is_collection(str) is False
 
     def test_all_have_defaults_non_struct(self) -> None:
+        """Non-struct types return False from _all_have_defaults."""
         assert _all_have_defaults(int) is False
         assert _all_have_defaults(str) is False
 
     def test_var_param_names_plain_class(self) -> None:
+        """_var_param_names returns *args and **kwargs names for plain classes."""
+
         class PlainWithVars:
             def __init__(self, x: int, *args: str, **kwargs: float):
                 pass
@@ -454,6 +501,8 @@ class TestTypesEdgeCases:
         assert "kwargs" in names
 
     def test_var_positional_name_plain_class(self) -> None:
+        """_var_positional_name returns the *args parameter name for plain classes."""
+
         class PlainWithArgs:
             def __init__(self, *items: int):
                 pass
@@ -461,6 +510,8 @@ class TestTypesEdgeCases:
         assert _var_positional_name(PlainWithArgs) == "items"
 
     def test_var_keyword_name_plain_class(self) -> None:
+        """_var_keyword_name returns the **kwargs parameter name for plain classes."""
+
         class PlainWithKwargs:
             def __init__(self, **opts: str):
                 pass
@@ -468,6 +519,8 @@ class TestTypesEdgeCases:
         assert _var_keyword_name(PlainWithKwargs) == "opts"
 
     def test_var_param_names_uninspectable(self) -> None:
+        """_var_param_names returns an empty frozenset when __init__ is not inspectable."""
+
         class Broken:
             pass
 
@@ -476,6 +529,8 @@ class TestTypesEdgeCases:
         assert result == frozenset()
 
     def test_var_positional_name_uninspectable(self) -> None:
+        """_var_positional_name returns None when __init__ is not inspectable."""
+
         class Broken:
             pass
 
@@ -483,6 +538,8 @@ class TestTypesEdgeCases:
         assert _var_positional_name(Broken) is None
 
     def test_var_keyword_name_uninspectable(self) -> None:
+        """_var_keyword_name returns None when __init__ is not inspectable."""
+
         class Broken:
             pass
 
@@ -490,6 +547,7 @@ class TestTypesEdgeCases:
         assert _var_keyword_name(Broken) is None
 
     def test_is_plain_class_uninspectable_init(self) -> None:
+        """_is_plain_class returns False when __init__ is not inspectable."""
         from confarg._types import _is_plain_class
 
         class Broken:
@@ -499,6 +557,7 @@ class TestTypesEdgeCases:
         assert _is_plain_class(Broken) is False
 
     def test_init_fields_broken_init_annotation_fallback(self) -> None:
+        """_init_fields falls back gracefully when get_type_hints raises a NameError."""
         from confarg._types import _init_fields
 
         # With `from __future__ import annotations`, `value: UndefinedTypeABC999` is
@@ -518,12 +577,16 @@ class TestTypesEdgeCases:
 
 
 class TestTypeHelpers:
+    """Unit tests for type-inspection helpers: _unwrap_optional and _try_coerce."""
+
     def test_unwrap_optional_non_union(self) -> None:
+        """_unwrap_optional returns the type unchanged for non-union types."""
         from confarg._types import _unwrap_optional
 
         assert _unwrap_optional(int) is int
 
     def test_unwrap_optional_single_variant(self) -> None:
+        """_unwrap_optional strips None from Optional[X] and returns X."""
         from typing import Optional
 
         from confarg._types import _unwrap_optional
@@ -532,6 +595,7 @@ class TestTypeHelpers:
         assert result is int
 
     def test_unwrap_optional_multi_variant(self) -> None:
+        """_unwrap_optional returns None for multi-variant unions (not Optional)."""
         from typing import Union
 
         from confarg._types import _unwrap_optional
@@ -540,6 +604,7 @@ class TestTypeHelpers:
         assert result is None
 
     def test_try_coerce_none_ft_returns_token(self) -> None:
+        """_try_coerce with ft=None returns the token unchanged."""
         from confarg._types import _try_coerce
 
         token = _StrToken("hello")
@@ -667,8 +732,10 @@ class TestTypeHelpers:
         assert result == 99
 
     def test_try_coerce_multi_union_returns_token(self) -> None:
-        """Multi-variant union (int | str) — _try_coerce returns the token unchanged;
-        construct() is responsible for handling union disambiguation."""
+        """Multi-variant union (int | str) — _try_coerce returns the token unchanged.
+
+        construct() is responsible for handling union disambiguation.
+        """
         from confarg._types import _try_coerce
 
         token = _StrToken("42")
@@ -686,25 +753,31 @@ class TestTypeHelpers:
 
 
 class TestParseCliBranches:
+    """Uncovered branches in the CLI parsing logic."""
+
     def test_subclass_field_type_non_struct_subclass(self) -> None:
+        """_subclass_field_type falls back to str for non-struct subclasses."""
         from confarg._parse_cli import _subclass_field_type
 
         result = _subclass_field_type(_SubClassBase, "extra")
         assert result is str
 
     def test_subclass_field_type_disagreeing_types(self) -> None:
+        """_subclass_field_type falls back to str when subclass field types disagree."""
         from confarg._parse_cli import _subclass_field_type
 
         result = _subclass_field_type(_SubClassFieldBase, "val")
         assert result is str
 
     def test_resolve_field_type_tuple_variable_length(self) -> None:
+        """_resolve_field_type handles variable-length tuple[int, ...] fields."""
         from confarg._parse_cli import _resolve_field_type
 
         result = _resolve_field_type(_WithVarTupleField, ["nums", "0"], "class")
         assert result is not None
 
     def test_resolve_field_type_tuple_invalid_index(self) -> None:
+        """_resolve_field_type returns None for out-of-range fixed tuple indices."""
         from confarg._parse_cli import _resolve_field_type
 
         WithFixedTuple = make_target("coords", tuple[int, str])
@@ -712,6 +785,7 @@ class TestParseCliBranches:
         assert result is None
 
     def test_resolve_field_type_tuple_non_int_key(self) -> None:
+        """_resolve_field_type returns None for non-integer tuple path segments."""
         from confarg._parse_cli import _resolve_field_type
 
         WithFixedTuple = make_target("coords", tuple[int, str])
@@ -719,38 +793,46 @@ class TestParseCliBranches:
         assert result is None
 
     def test_resolve_field_type_subclass_fallback(self) -> None:
+        """_resolve_field_type falls back to str for unknown fields via subclass scanning."""
         from confarg._parse_cli import _resolve_field_type
 
         result = _resolve_field_type(_SubClassBase, ["extra"], "class")
         assert result is str
 
     def test_non_struct_bool_target(self) -> None:
+        """Non-struct bool target with cli_prefix parses correctly from CLI."""
         result = confarg.load(bool, args=["--confarg", "true"], env={}, cli_prefix="confarg")
         assert result is True
 
     def test_non_struct_value_target(self) -> None:
+        """Non-struct str target with cli_prefix parses correctly from CLI."""
         result = confarg.load(str, args=["--confarg", "hello"], env={}, cli_prefix="confarg")
         assert result == "hello"
 
     def test_unknown_arg_at_dict_path(self) -> None:
+        """Unknown sub-key for a dict-typed field is accepted as a dict key."""
         WithDict = make_target("mapping", dict[str, int], default_factory=dict)
         result = confarg.load(WithDict, args=["--mapping.foo", "42"], env={})
         assert result.mapping["foo"] in (42, "42")
 
     def test_list_json_array_from_cli(self) -> None:
+        """A JSON array string from CLI is parsed into a list."""
         WithList = make_target("items", list[int], default_factory=list)
         result = confarg.load(WithList, args=["--items", "[1,2,3]"], env={})
         assert result.items == [1, 2, 3]
 
     def test_none_sentinel_non_struct_parent(self) -> None:
+        """'none' token for a non-struct optional target resolves to None."""
         result = confarg.load(int | None, args=["--confarg", "none"], env={}, cli_prefix="confarg")
         assert result is None
 
     def test_dataclass_field_with_no_value(self) -> None:
+        """A bare --inner flag without a value triggers default construction."""
         result = confarg.load(_WithNestedDefaultInner, args=["--inner"], env={})
         assert result.inner.name == "default"
 
     def test_append_unknown_field_raises(self) -> None:
+        """--unknown+ for a non-existent field raises ConfargError."""
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(confarg.ConfargError):
             confarg.load(WithList, args=["--nonexistent+", "1"], env={})
@@ -762,7 +844,10 @@ class TestParseCliBranches:
 
 
 class TestParseEnvBranches:
+    """Uncovered branches in the env-var parsing logic."""
+
     def test_ambiguous_env_var_in_union_raises(self) -> None:
+        """An env var that matches fields in multiple union variants raises ConfargError."""
         with pytest.raises(confarg.ConfargError, match="Ambiguous env var"):
             confarg.load(
                 _AmbigUnion,
@@ -772,6 +857,7 @@ class TestParseEnvBranches:
             )
 
     def test_tuple_variable_length_from_env(self) -> None:
+        """Variable-length tuple fields are populated from indexed env vars."""
         WithVarTuple = make_target("items", tuple[int, ...], default=(1, 2))
         result = confarg.load(
             WithVarTuple,
@@ -782,6 +868,7 @@ class TestParseEnvBranches:
         assert result.items[0] == 99
 
     def test_tuple_non_int_segment_from_env(self) -> None:
+        """Non-integer env var path segment for a tuple field is silently ignored."""
         WithFixedTuple = make_target("coords", tuple[int, str], default=(0, ""))
         result = confarg.load(
             WithFixedTuple,
@@ -792,6 +879,7 @@ class TestParseEnvBranches:
         assert result.coords == (0, "")
 
     def test_none_sentinel_for_non_struct(self) -> None:
+        """'none' value in env var resolves a non-struct optional to None."""
         # "none"/"null" value → construct-time steal → __root__ = None
         result = confarg.load(
             str | None,
@@ -802,6 +890,7 @@ class TestParseEnvBranches:
         assert result is None
 
     def test_union_root_unknown_field_warns(self) -> None:
+        """Env var matching no variant field emits a ConfargWarning and is skipped."""
         # "Z" doesn't match any field in either variant → warns and is skipped.
         # "A" matches _UnionRootVariantA.a → selects VariantA unambiguously.
         import warnings
@@ -825,12 +914,17 @@ class TestParseEnvBranches:
 
 
 class TestSerializeBranches:
+    """Uncovered branches in the serialization logic."""
+
     def test_serialize_union_variant_not_found(self) -> None:
+        """None value in a union field serializes to None without error."""
         instance = _WithNoneValField(val=None)
         result = confarg.dump(instance)
         assert result["val"] is None
 
     def test_serialize_leaf_str_token(self) -> None:
+        """A _StrToken field value is serialized as a plain str."""
+
         @dataclass
         class Simple:
             name: str = "hello"
@@ -841,11 +935,13 @@ class TestSerializeBranches:
         assert type(result["name"]) is str
 
     def test_serialize_needs_tag_single_struct_variant(self) -> None:
+        """Single struct union variant serializes without a class tag by default."""
         instance = _WithIntOrDC(val=_StructUnionVariantA(x=5))
         result = confarg.dump(instance)
         assert result["val"]["x"] == 5
 
     def test_serialize_union_tag_always_policy(self) -> None:
+        """tag_policy='always' includes the class tag even for unambiguous union variants."""
         instance = _WithIntOrDC(val=_StructUnionVariantA(x=5))
         result = confarg.dump(instance, tag_policy="always")
         assert "class" in result["val"]
@@ -857,7 +953,10 @@ class TestSerializeBranches:
 
 
 class TestExpressionBranches:
+    """Uncovered branches in the expression engine."""
+
     def test_extract_refs_syntax_error_skipped(self) -> None:
+        """Syntactically invalid expression content yields an empty reference set."""
         from confarg.dictexpr._expressions import _extract_references
 
         # Expression with invalid syntax → SyntaxError caught → silently skipped
@@ -865,6 +964,7 @@ class TestExpressionBranches:
         assert isinstance(refs, set)
 
     def test_collect_names_keyword_args(self) -> None:
+        """Keyword argument names in function calls are collected as references."""
         from confarg.dictexpr._expressions import _extract_references
 
         # keyword arg 'y' should be collected as a reference
@@ -872,6 +972,7 @@ class TestExpressionBranches:
         assert "x" in refs or "y" in refs
 
     def test_attribute_chain_subscript_at_top(self) -> None:
+        """_attribute_chain handles a subscript at the top level gracefully."""
         import ast
 
         from confarg.dictexpr._expressions import _attribute_chain
@@ -881,6 +982,7 @@ class TestExpressionBranches:
         assert result is None or isinstance(result, list)
 
     def test_attribute_chain_non_int_subscript(self) -> None:
+        """_attribute_chain returns None for non-integer subscript indices."""
         import ast
 
         from confarg.dictexpr._expressions import _attribute_chain
@@ -890,6 +992,7 @@ class TestExpressionBranches:
         assert result is None
 
     def test_bool_op_and_all_truthy(self) -> None:
+        """BoolOp 'and' with all truthy operands evaluates to True."""
         from confarg.dictexpr._expressions import resolve_expressions
 
         data = {"val": "${True and True and True}", "True": True}
@@ -897,6 +1000,7 @@ class TestExpressionBranches:
         assert result["val"] is True
 
     def test_bool_op_or_all_falsy(self) -> None:
+        """BoolOp 'or' with all falsy operands evaluates to False."""
         from confarg.dictexpr._expressions import resolve_expressions
 
         data = {"val": "${False or False}", "False": False}
@@ -904,6 +1008,7 @@ class TestExpressionBranches:
         assert result["val"] is False
 
     def test_call_evaluation_error(self) -> None:
+        """A function call that raises inside an expression wraps the error as ExpressionEvalError."""
         from confarg.dictexpr._expressions import resolve_expressions
 
         data = {"x": 0, "val": "${int('abc')}"}
@@ -911,6 +1016,7 @@ class TestExpressionBranches:
             resolve_expressions(data)
 
     def test_expression_eval_error_reraise_pure(self) -> None:
+        """A runtime error in a pure ${expr} expression raises ExpressionEvalError."""
         from confarg.dictexpr._expressions import resolve_expressions
 
         data = {"x": 0, "val": "${1 / x}"}
@@ -918,6 +1024,7 @@ class TestExpressionBranches:
             resolve_expressions(data)
 
     def test_expression_eval_error_reraise_interpolation(self) -> None:
+        """A runtime error inside a string interpolation expression raises ExpressionEvalError."""
         from confarg.dictexpr._expressions import resolve_expressions
 
         data = {"x": 0, "val": "prefix_${1 / x}"}
@@ -925,24 +1032,28 @@ class TestExpressionBranches:
             resolve_expressions(data)
 
     def test_get_nested_list_invalid_index_type(self) -> None:
+        """Non-integer path segment into a list raises MissingReferenceError."""
         from confarg.dictexpr._expressions import _get_nested
 
         with pytest.raises(confarg.MissingReferenceError):
             _get_nested({"items": [1, 2, 3]}, "items.notanint")
 
     def test_get_nested_list_out_of_range(self) -> None:
+        """Out-of-range index into a list raises MissingReferenceError."""
         from confarg.dictexpr._expressions import _get_nested
 
         with pytest.raises(confarg.MissingReferenceError):
             _get_nested({"items": [1, 2]}, "items.99")
 
     def test_set_nested_traverse_error(self) -> None:
+        """_set_nested_by_path raises MissingReferenceError when traversal encounters a non-container."""
         from confarg.dictexpr._expressions import _set_nested_by_path
 
         with pytest.raises(confarg.MissingReferenceError):
             _set_nested_by_path({"a": 42}, "a.b.c", "value")
 
     def test_set_nested_set_non_container_raises(self) -> None:
+        """_set_nested_by_path raises MissingReferenceError when the target node is not a container."""
         from confarg.dictexpr._expressions import _set_nested_by_path
 
         # Traverse into list index 1 (yields int 2), then set "x" on int → else branch
@@ -950,6 +1061,7 @@ class TestExpressionBranches:
             _set_nested_by_path({"a": [1, 2, 3]}, "a.1.x", "value")
 
     def test_unsupported_binary_op_raises(self) -> None:
+        """An unsupported binary operator (@ matrix multiply) raises ExpressionEvalError."""
         import ast
 
         from confarg.dictexpr._expressions import _evaluate_ast
@@ -959,6 +1071,7 @@ class TestExpressionBranches:
             _evaluate_ast(node, {"a": 1, "b": 2})
 
     def test_unsupported_unary_op_raises(self) -> None:
+        """An unsupported unary operator (~ bitwise invert) raises ExpressionEvalError."""
         import ast
 
         from confarg.dictexpr._expressions import _evaluate_ast
@@ -968,6 +1081,7 @@ class TestExpressionBranches:
             _evaluate_ast(node, {"a": 1})
 
     def test_unsupported_comparison_raises(self) -> None:
+        """An unsupported comparison operator ('is') raises ExpressionEvalError."""
         import ast
 
         from confarg.dictexpr._expressions import _evaluate_ast
@@ -983,13 +1097,17 @@ class TestExpressionBranches:
 
 
 class TestCoerceEdgeCases:
+    """Edge cases in the leaf-type coercion logic."""
+
     def test_coerce_leaf_path_failure(self) -> None:
+        """_coerce_leaf raises TypeCoercionError when a None value cannot become a Path."""
         from confarg.typedload._coerce import _coerce_leaf
 
         with pytest.raises(confarg.TypeCoercionError):
             _coerce_leaf(Path, None)
 
     def test_coerce_leaf_unsupported_type(self) -> None:
+        """_coerce_leaf raises TypeCoercionError for unrecognized leaf types."""
         from confarg.typedload._coerce import _coerce_leaf
 
         class WeirdType:
@@ -1005,37 +1123,45 @@ class TestCoerceEdgeCases:
 
 
 class TestConstructEdgeCases:
+    """Edge cases in the typed construction logic."""
+
     def test_construct_list_from_empty_dict(self) -> None:
+        """An empty dict constructs as an empty list."""
         from confarg.typedload._construct import construct
 
         result = construct(list[int], {})
         assert result == []
 
     def test_construct_list_from_dict_with_non_int_keys_raises(self) -> None:
+        """Dict with non-integer keys raises TypeCoercionError when constructing a list."""
         from confarg.typedload._construct import construct
 
         with pytest.raises(confarg.TypeCoercionError, match="integer"):
             construct(list[int], {"bad": 1})
 
     def test_construct_tuple_from_dict_non_int_keys_raises(self) -> None:
+        """Dict with non-integer keys raises TypeCoercionError when constructing a tuple."""
         from confarg.typedload._construct import construct
 
         with pytest.raises(confarg.TypeCoercionError, match="integer"):
             construct(tuple[int, str], {"bad": "value"})
 
     def test_construct_union_none_with_none_type(self) -> None:
+        """None value for an int | None union constructs to None."""
         from confarg.typedload._construct import construct
 
         result = construct(int | None, None)
         assert result is None
 
     def test_construct_optional_coercion_failure_hint(self) -> None:
+        """An uncoercible value for int | None hints about 'none'/'null' in the error message."""
         from confarg.typedload._construct import construct
 
         with pytest.raises(confarg.TypeCoercionError, match="None"):
             construct(int | None, _StrToken("notanint"))
 
     def test_ambiguous_class_tag_multiple_matches_raises(self) -> None:
+        """Class tag matching multiple union variants (subclass relationship) raises AmbiguousUnionError."""
         from confarg.typedload._construct import construct
 
         # _StructUnionVariantB is a subclass of _StructUnionVariantA, so the
@@ -1045,6 +1171,7 @@ class TestConstructEdgeCases:
             construct(_StructUnionVariantA | _StructUnionVariantB, data)
 
     def test_class_tag_no_matching_variant_raises(self) -> None:
+        """Class tag that matches no union variant raises TypeCoercionError."""
         from confarg.typedload._construct import construct
 
         # _StructUnionVariantA is not a subclass of either _ConstructAVariant or
@@ -1054,39 +1181,47 @@ class TestConstructEdgeCases:
             construct(_ConstructAVariant | _ConstructBVariant, data)
 
     def test_construct_bool_in_bool_int_union(self) -> None:
+        """Bool | int union: True value is constructed as bool."""
         from confarg.typedload._construct import construct
 
         result = construct(bool | int, True)
         assert result is True
 
     def test_construct_union_none_type_in_scalar_loop(self) -> None:
+        """Str | None union: a string value constructs as str."""
         from confarg.typedload._construct import construct
 
         result = construct(str | None, "hello")
         assert result == "hello"
 
     def test_value_matches_type_none(self) -> None:
+        """None value matches int | None."""
         from confarg.typedload._construct import _value_matches_type
 
         assert _value_matches_type(None, int | None, "class") is True
 
     def test_value_matches_type_non_dict_for_struct(self) -> None:
+        """A non-dict value does not match a struct type."""
         from confarg.typedload._construct import _value_matches_type
 
         assert _value_matches_type("not_a_dict", _StructUnionVariantA, "class") is False
 
     def test_value_matches_type_float_from_invalid_str(self) -> None:
+        """A non-numeric string token does not match float."""
         from confarg.typedload._construct import _value_matches_type
 
         assert _value_matches_type(_StrToken("notfloat"), float, "class") is False
 
     def test_ambiguous_union_msg_includes_optional_fields(self) -> None:
+        """AmbiguousUnionError message lists optional fields to help the user disambiguate."""
         # Both _AmbigOptionalP and _AmbigOptionalQ match {"val": {"x": 1}} →
         # AmbiguousUnionError with "optional" in message (listing optional fields).
         with pytest.raises(confarg.AmbiguousUnionError, match="optional"):
             confarg.from_dict(_AmbigContainer, {"val": {"x": 1}})
 
     def test_construct_struct_union_tuple_from_union(self) -> None:
+        """tuple[int, str] | None union is constructed from positional CLI args."""
+
         @dataclass
         class WithUnionTuple:
             coord: tuple[int, str] | None = None
@@ -1095,6 +1230,8 @@ class TestConstructEdgeCases:
         assert result.coord == (5, "hello")
 
     def test_partial_tuple_index_extends_with_none(self) -> None:
+        """Partial indexed env var update for a fixed-length tuple merges with the default."""
+
         @dataclass
         class WithTuple:
             items: tuple[int, str] = (1, "x")
@@ -1103,6 +1240,8 @@ class TestConstructEdgeCases:
         assert result.items == (1, "y")
 
     def test_class_tag_import_error_raises(self) -> None:
+        """Class tag pointing to a non-importable module raises TypeCoercionError."""
+
         @dataclass
         class A:
             x: int = 0
@@ -1120,7 +1259,10 @@ class TestConstructEdgeCases:
 
 
 class TestArgparseBranches:
+    """Uncovered branches in the argparse integration layer."""
+
     def test_get_field_docstrings_no_class_found(self) -> None:
+        """_get_field_docstrings returns an empty dict when the class cannot be located by name."""
         from confarg._argparse import _get_field_docstrings
 
         @dataclass
@@ -1136,10 +1278,12 @@ class TestArgparseBranches:
             Dummy.__name__ = original_name
 
     def test_walk_struct_non_struct_returns_early(self) -> None:
+        """_walk_struct returns early without registering flags for non-struct types."""
         parser = argparse.ArgumentParser()
         _walk_struct(int, parser, parser, "", "class")
 
     def test_walk_struct_get_type_hints_exception(self) -> None:
+        """_walk_struct falls back gracefully when get_type_hints raises for broken annotations."""
         parser = argparse.ArgumentParser()
 
         # This class has a CLASS-LEVEL annotation with an undefined forward ref.
@@ -1155,6 +1299,8 @@ class TestArgparseBranches:
         _walk_struct(BrokenClassAnnot, parser, parser, "", "class")
 
     def test_walk_struct_union_tag_field_skipped(self) -> None:
+        """The union_tag field is not registered as a CLI flag by populate_parser."""
+
         @dataclass
         class WithTypeField:
             type: str = "a"
@@ -1167,6 +1313,8 @@ class TestArgparseBranches:
         assert "--value" in flags
 
     def test_walk_struct_callable_field_registered(self) -> None:
+        """A Callable-typed field is registered as a CLI flag by populate_parser."""
+
         @dataclass
         class WithCallable:
             fn: Callable[[int], str] = lambda x: str(x)
@@ -1177,6 +1325,8 @@ class TestArgparseBranches:
         assert "--fn" in flags
 
     def test_walk_struct_variable_length_tuple_field(self) -> None:
+        """A variable-length tuple[int, ...] field is registered as a CLI flag."""
+
         @dataclass
         class WithVarTuple:
             nums: tuple[int, ...] = ()
@@ -1187,6 +1337,8 @@ class TestArgparseBranches:
         assert "--nums" in flags
 
     def test_walk_struct_var_param_field_skipped(self) -> None:
+        """*args fields are not registered as CLI flags."""
+
         class PlainWithArgs:
             def __init__(self, x: int, *extras: str):
                 pass
@@ -1197,12 +1349,14 @@ class TestArgparseBranches:
         assert "--extras" not in flags
 
     def test_register_subconfig_flags_non_struct(self) -> None:
+        """_register_subconfig_flags is a no-op for non-struct types."""
         from confarg._argparse import _register_subconfig_flags
 
         parser = argparse.ArgumentParser()
         _register_subconfig_flags(int, parser, "config", "", "class")
 
     def test_register_subconfig_flags_get_type_hints_exception(self) -> None:
+        """_register_subconfig_flags falls back gracefully when get_type_hints raises."""
         from confarg._argparse import _register_subconfig_flags
 
         # A class with a broken CLASS-LEVEL annotation (not __init__) causes
@@ -1218,6 +1372,7 @@ class TestArgparseBranches:
         _register_subconfig_flags(BrokenClassAnnot, parser, "config", "", "class")
 
     def test_register_subconfig_flags_union_tag_skipped(self) -> None:
+        """_register_subconfig_flags skips the union_tag field."""
         from confarg._argparse import _register_subconfig_flags
 
         @dataclass
@@ -1229,6 +1384,7 @@ class TestArgparseBranches:
         _register_subconfig_flags(WithTypeField, parser, "config", "", union_tag="type")
 
     def test_collect_ns_fields_non_struct(self) -> None:
+        """_collect_ns_fields is a no-op for non-struct types."""
         from confarg._argparse import _collect_ns_fields
 
         result: dict[str, Any] = {}
@@ -1236,6 +1392,7 @@ class TestArgparseBranches:
         assert result == {}
 
     def test_collect_ns_fields_get_type_hints_exception(self) -> None:
+        """_collect_ns_fields falls back gracefully when get_type_hints raises."""
         from confarg._argparse import _collect_ns_fields
 
         class BrokenClassAnnot2:
@@ -1250,6 +1407,7 @@ class TestArgparseBranches:
         assert "x" in result or result == {}
 
     def test_collect_ns_fields_union_tag_skipped(self) -> None:
+        """_collect_ns_fields excludes the union_tag field from the result."""
         from confarg._argparse import _collect_ns_fields
 
         @dataclass
@@ -1262,6 +1420,7 @@ class TestArgparseBranches:
         assert "type" not in result
 
     def test_collect_ns_fields_multi_union_skipped(self) -> None:
+        """_collect_ns_fields skips fields with multi-variant union types."""
         from confarg._argparse import _collect_ns_fields
 
         @dataclass
@@ -1272,6 +1431,7 @@ class TestArgparseBranches:
         _collect_ns_fields({"val": "99"}, WithMultiUnion, "", "class", result)
 
     def test_collect_ns_fields_dict_skipped(self) -> None:
+        """_collect_ns_fields skips dict-typed fields."""
         from confarg._argparse import _collect_ns_fields
 
         @dataclass
@@ -1283,6 +1443,8 @@ class TestArgparseBranches:
         assert "mapping" not in result
 
     def test_from_namespace_with_expressions(self) -> None:
+        """from_namespace resolves ${...} expressions supplied via the env parameter."""
+
         @dataclass
         class WithExpr:
             host: str = "localhost"
@@ -1302,7 +1464,10 @@ class TestArgparseBranches:
 
 
 class TestParseEnvDictAndFallthrough:
+    """Env-var parsing for dict fields and out-of-range tuple indices."""
+
     def test_dict_field_from_env(self) -> None:
+        """Dict-typed field is populated from env vars using double-underscore key separation."""
         WithDict = make_target("mapping", dict[str, int], default_factory=dict)
         result = confarg.load(
             WithDict,
@@ -1313,6 +1478,7 @@ class TestParseEnvDictAndFallthrough:
         assert result.mapping.get("key") == 42 or "key" in result.mapping
 
     def test_tuple_out_of_range_from_env(self) -> None:
+        """Out-of-range env var index for a fixed-length tuple raises TypeCoercionError."""
         # Index 5 is out of range for a 2-element tuple; the partial-index
         # merge extends the base list to 6 elements, then _construct_tuple rejects it.
         WithTuple = make_target("coords", tuple[int, str], default=(0, ""))
@@ -1325,6 +1491,7 @@ class TestParseEnvDictAndFallthrough:
             )
 
     def test_scalar_field_with_deep_env_path(self) -> None:
+        """A deeper-than-expected env var path for a scalar field raises TypeCoercionError."""
         WithInt = make_target("count", int, default=0)
         with pytest.raises(confarg.TypeCoercionError):
             confarg.load(WithInt, args=[], env={"COUNT__EXTRA": "5"}, env_prefix="")
@@ -1336,40 +1503,41 @@ class TestParseEnvDictAndFallthrough:
 
 
 class TestCallableBranches:
-    def test_non_callable_instance_raises(self) -> None:
-        from confarg._callable import _resolve_class_spec
+    """Uncovered branches in callable resolution."""
 
+    def test_non_callable_instance_raises(self) -> None:
+        """An instance of a non-callable class raises TypeCoercionError in _resolve_class_spec."""
+        from confarg._callable import _ClassSpec, _resolve_class_spec
+
+        cls_path = f"{_NotCallableClass.__module__}.{_NotCallableClass.__qualname__}"
         with pytest.raises(confarg.TypeCoercionError, match="is not callable"):
             _resolve_class_spec(
-                f"{_NotCallableClass.__module__}.{_NotCallableClass.__qualname__}",
-                {},
-                {},
-                {"class": f"{_NotCallableClass.__module__}.{_NotCallableClass.__qualname__}"},
+                _ClassSpec(cls_path, {}, {}, {"class": cls_path}),
                 "test_path",
                 "class",
             )
 
     def test_slotted_callable_confarg_spec_except_branch(self) -> None:
-        from confarg._callable import _resolve_class_spec
+        """A slotted callable class resolves successfully in _resolve_class_spec."""
+        from confarg._callable import _ClassSpec, _resolve_class_spec
 
         cls_path = f"{_SlottedCallableClass.__module__}.{_SlottedCallableClass.__qualname__}"
         result = _resolve_class_spec(
-            cls_path,
-            {"value": 5},
-            {},
-            {"class": cls_path, "value": 5},
+            _ClassSpec(cls_path, {"value": 5}, {}, {"class": cls_path, "value": 5}),
             "test_path",
             "class",
         )
         assert callable(result)
 
     def test_check_callable_signature_non_callable_type_returns_early(self) -> None:
+        """_check_callable_signature is a no-op when the target type is not Callable."""
         from confarg._callable import _check_callable_signature
 
         # Line 222-223: `if not _is_callable(tp): return` — tp=int is not a Callable type
         _check_callable_signature(lambda: None, int, path="test")
 
     def test_check_callable_signature_bare_callable_returns_early(self) -> None:
+        """_check_callable_signature is a no-op for bare Callable (no parameter types)."""
         from collections.abc import Callable
 
         from confarg._callable import _check_callable_signature
@@ -1384,16 +1552,21 @@ class TestCallableBranches:
 
 
 class TestFilesMissingLibrary:
+    """File loading fails gracefully when optional libraries are absent."""
+
     def test_yaml_missing_library(self, tmp_yaml) -> None:
+        """Missing PyYAML library raises InvalidConfigFileError when loading a YAML file."""
         import sys
         import unittest.mock
 
         from confarg._files import _load_yaml
 
         path = tmp_yaml("host: myserver")
-        with unittest.mock.patch.dict(sys.modules, {"yaml": None}):
-            with pytest.raises(confarg.InvalidConfigFileError, match="PyYAML"):
-                _load_yaml(path)
+        with (
+            unittest.mock.patch.dict(sys.modules, {"yaml": None}),
+            pytest.raises(confarg.InvalidConfigFileError, match="PyYAML"),
+        ):
+            _load_yaml(path)
 
 
 # ---------------------------------------------------------------------------
@@ -1403,7 +1576,10 @@ class TestFilesMissingLibrary:
 
 
 class TestParseCLIBranches:
+    """Additional uncovered CLI parsing branches."""
+
     def test_non_struct_subclass_skipped(self) -> None:
+        """Unknown CLI field for a non-struct subclass raises UnknownArgumentError."""
         # _NonStructSubChild overrides __init__ with no params → not a struct.
         # _subclass_field_type(_NonStructSubBase, "unknown") → scans subclasses,
         # hits `if not _is_struct(sub): continue` (line 80), returns None.
@@ -1411,28 +1587,33 @@ class TestParseCLIBranches:
             confarg.load(_NonStructSubBase, args=["--unknown_field", "5"])
 
     def test_union_variants_no_matching_field_returns_none(self) -> None:
+        """_resolve_field_type returns None when the path matches no union variant field."""
         from confarg._parse_cli import _resolve_field_type
 
         result = _resolve_field_type(_AmbigVariantX | _AmbigVariantY, ["z"], "class")
         assert result is None
 
     def test_dict_at_path_triggers_line_164_and_360(self) -> None:
+        """A deep CLI sub-key path into a dict-typed field raises TypeCoercionError."""
         DCWithDict = make_target("mapping", dict[str, int], default_factory=dict)
         # --mapping.subkey.deeper triggers ft=None, then _is_dict_at_path returns True
         with pytest.raises(confarg.TypeCoercionError):
             confarg.load(DCWithDict, args=["--mapping.subkey.deeper", "hello"])
 
     def test_dict_at_path_bare_flag(self) -> None:
+        """A bare CLI flag (no value) at a dict sub-path is skipped without error."""
         DCWithDict = make_target("mapping", dict[str, int], default_factory=dict)
         # Bare flag (no value) after dict-at-path: i+1 is end or flag, skip value
         confarg.load(DCWithDict, args=["--mapping.subkey.deeper", "--mapping.key", "42"])
 
     def test_non_bool_optional_bare_flag_sets_none(self) -> None:
+        """'none' token for a str | None non-struct target resolves to None."""
         # Non-struct optional target with cli_prefix + "none" token → __root__ = None
         result = confarg.load(str | None, args=["--myapp", "none"], cli_prefix="myapp")
         assert result is None
 
     def test_non_bool_non_optional_bare_flag_sets_true(self) -> None:
+        """'true' token for a bool | str non-struct target is stolen as bool True."""
         # Non-struct bool|str union: "true" steals to bool True
         result = confarg.load(bool | str, args=["--myapp", "true"], cli_prefix="myapp")
         assert result is True
@@ -1444,7 +1625,10 @@ class TestParseCLIBranches:
 
 
 class TestSerializeUnionVariantNotFound:
+    """Serialization when the value does not match any union variant."""
+
     def test_serialize_no_matching_union_variant(self) -> None:
+        """A float value in an int | DC union field is serialized as-is."""
         instance = _WithIntOrDC.__new__(_WithIntOrDC)
         object.__setattr__(instance, "val", math.pi)
         result = confarg.dump(instance)
@@ -1458,7 +1642,10 @@ class TestSerializeUnionVariantNotFound:
 
 
 class TestExpressionsBranches:
+    """Additional uncovered branches in the expression engine."""
+
     def test_collect_names_keyword_arg_in_safe_method_call(self) -> None:
+        """Keyword arg names in a safe method call are collected as references."""
         from confarg.dictexpr._expressions import _extract_references
 
         refs = _extract_references("${x.replace(a, old=b)}")
@@ -1466,12 +1653,15 @@ class TestExpressionsBranches:
         assert "b" in refs
 
     def test_attribute_chain_noninteger_subscript_returns_none(self) -> None:
+        """_attribute_chain returns None for string subscripts (non-integer indices)."""
         from confarg.dictexpr._expressions import _extract_references
 
         refs = _extract_references("${servers['primary'].host}")
         assert isinstance(refs, set)
 
     def test_pure_expression_unexpected_exception_wrapped(self) -> None:
+        """An unexpected exception inside a pure expression is wrapped as ExpressionEvalError."""
+
         @dataclass
         class DC:
             a: list = field(default_factory=list)
@@ -1482,11 +1672,14 @@ class TestExpressionsBranches:
             confarg.from_dict(DC, {"a": [1, 2, 3], "b": "key", "result": "${a[b]}"})
 
     def test_interpolation_missing_ref_reraises(self) -> None:
+        """A missing field reference inside a string interpolation raises MissingReferenceError."""
         WithStr = make_target("msg", str, default="")
         with pytest.raises(confarg.MissingReferenceError):
             confarg.from_dict(WithStr, {"msg": "hello ${missing_field} world"})
 
     def test_interpolation_unexpected_exception_wrapped(self) -> None:
+        """An unexpected exception inside a string interpolation is wrapped as ExpressionEvalError."""
+
         @dataclass
         class DC:
             a: list = field(default_factory=list)
@@ -1503,13 +1696,17 @@ class TestExpressionsBranches:
 
 
 class TestCoerceBranches:
+    """Additional uncovered coercion branches."""
+
     def test_float_from_dict_raises(self) -> None:
+        """A dict value cannot be coerced to float; raises TypeCoercionError."""
         from confarg.typedload._coerce import _coerce_leaf
 
         with pytest.raises(confarg.TypeCoercionError):
             _coerce_leaf(float, {"nested": "val"}, "field")
 
     def test_str_from_int_raises(self) -> None:
+        """A bare int value cannot be coerced to str; raises TypeCoercionError."""
         from confarg.typedload._coerce import _coerce_leaf
 
         with pytest.raises(confarg.TypeCoercionError):
@@ -1523,7 +1720,10 @@ class TestCoerceBranches:
 
 
 class TestConstructBranches:
+    """Additional uncovered construction branches for tuples and unions."""
+
     def test_union_single_tuple_variant_dict_data(self) -> None:
+        """Union with a single tuple variant constructs correctly from indexed env vars."""
         # Line 128: tup_tp = tup_vars[0] for union with single tuple variant + dict data
         result = confarg.load(
             _WithUnionTupleOrNone,
@@ -1534,42 +1734,49 @@ class TestConstructBranches:
         assert result.coord == (1, "hello")
 
     def test_construct_tuple_from_dict_non_integer_keys(self) -> None:
+        """Dict with non-integer string keys raises TypeCoercionError for a tuple."""
         from confarg.typedload._construct import construct
 
         with pytest.raises(confarg.TypeCoercionError, match="integer indices"):
             construct(tuple[int, str], {"a": 1, "b": "hello"})
 
     def test_construct_tuple_from_dict_out_of_range_index(self) -> None:
+        """Out-of-range integer index for a fixed-length tuple raises TypeCoercionError."""
         from confarg.typedload._construct import construct
 
         with pytest.raises(confarg.TypeCoercionError, match="out of range"):
             construct(tuple[int, str], {"0": 1, "5": "hello"})
 
     def test_tuple_variants_in_union_list_data(self) -> None:
+        """tuple[int, str] | int union: a list value constructs as the tuple variant."""
         from confarg.typedload._construct import construct
 
         result = construct(tuple[int, str] | int, [1, "hello"])
         assert result == (1, "hello")
 
     def test_tuple_variants_dict_noninteger_keys(self) -> None:
+        """Dict with non-integer keys raises TypeCoercionError for a tuple | int union."""
         from confarg.typedload._construct import construct
 
         with pytest.raises(confarg.TypeCoercionError):
             construct(tuple[int, str] | int, {"a": 1, "b": "hello"})
 
     def test_bool_int_union_bool_value_returns_bool(self) -> None:
+        """Bool | int union: a True value is constructed as bool, not int."""
         from confarg.typedload._construct import construct
 
         result = construct(bool | int, True)
         assert result is True
 
     def test_value_matches_type_bool_with_non_token_non_bool_value(self) -> None:
+        """An int (non-bool, non-token) value does not match bool."""
         from confarg.typedload._construct import _value_matches_type
 
         # Line 512: bool type, value is int (not bool, not _StrToken) → return False
         assert _value_matches_type(42, bool, "class") is False
 
     def test_union_class_tag_resolves_to_non_class(self) -> None:
+        """A class tag that resolves to a non-class object raises TypeCoercionError."""
         from confarg.typedload._construct import construct
 
         with pytest.raises(confarg.TypeCoercionError, match="must be a class path"):

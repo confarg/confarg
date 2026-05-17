@@ -91,7 +91,10 @@ class _WithDefault:
 
 
 class TestFactoryFromDict:
+    """Tests for factory-mode callable construction from config dicts."""
+
     def test_class_subclass_returns_partial(self):
+        """Test that class: subclass of return type returns a partial constructor."""
         result = confarg.from_dict(
             _WithConcreteOpt,
             {"optimizer": {"class": f"{_MOD}._SGD", "lr": 0.05}},
@@ -101,6 +104,7 @@ class TestFactoryFromDict:
         assert result.optimizer.keywords == {"lr": 0.05}
 
     def test_calling_partial_produces_instance(self):
+        """Test that calling the returned partial produces a correctly configured instance."""
         result = confarg.from_dict(
             _WithConcreteOpt,
             {"optimizer": {"class": f"{_MOD}._SGD", "lr": 0.05, "momentum": 0.9}},
@@ -130,6 +134,7 @@ class TestFactoryFromDict:
         assert result.optimizer.keywords["dampening"] == pytest.approx(0.1)
 
     def test_abstract_base_with_class(self):
+        """Test that class: with abstract base type creates a partial of the given class."""
         result = confarg.from_dict(
             _WithAbstractOpt,
             {"optimizer": {"class": f"{_MOD}._Adam", "lr": 0.003}},
@@ -148,6 +153,7 @@ class TestFactoryFromDict:
         assert result.optimizer.strategy == "sgd"
 
     def test_bind_in_factory_mode_raises(self):
+        """Test that using bind: in factory mode raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="bind.*not valid in factory mode"):
             confarg.from_dict(
                 _WithConcreteOpt,
@@ -155,6 +161,7 @@ class TestFactoryFromDict:
             )
 
     def test_unknown_kwarg_raises(self):
+        """Test that an unknown constructor kwarg raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="Unknown constructor kwargs"):
             confarg.from_dict(
                 _WithConcreteOpt,
@@ -186,7 +193,10 @@ class TestFactoryFromDict:
 
 
 class TestFactoryFromCLI:
+    """Tests for factory-mode callable construction from CLI arguments."""
+
     def test_class_and_kwarg_flags(self):
+        """Test that --optimizer.class + --optimizer.kwarg flags construct a partial."""
         result = confarg.load(
             _WithConcreteOpt,
             args=[f"--optimizer.class={_MOD}._SGD", "--optimizer.lr=0.05"],
@@ -207,6 +217,7 @@ class TestFactoryFromCLI:
         assert result.optimizer.keywords["lr"] == pytest.approx(0.02)
 
     def test_abstract_base_cli(self):
+        """Test that abstract base class: + kwarg flags construct a partial via CLI."""
         result = confarg.load(
             _WithAbstractOpt,
             args=[f"--optimizer.class={_MOD}._Adam", "--optimizer.lr=0.003"],
@@ -222,7 +233,10 @@ class TestFactoryFromCLI:
 
 
 class TestFactoryFromEnv:
+    """Tests for factory-mode callable construction from environment variables."""
+
     def test_env_class_and_kwarg(self):
+        """Test that env vars with class and kwarg construct a partial via env."""
         result = confarg.load(
             _WithConcreteOpt,
             args=[],
@@ -243,17 +257,23 @@ class TestFactoryFromEnv:
 
 
 class TestFactorySerialization:
+    """Tests for factory-mode callable serialization."""
+
     def test_factory_partial_serializes_as_class_dict(self):
+        """Test that a factory partial serializes as a class: dict with constructor kwargs."""
         p = functools.partial(_SGD, lr=0.05, momentum=0.9)
         out = _serialize_callable(p)
         assert out == {"class": f"{_MOD}._SGD", "lr": 0.05, "momentum": 0.9}
 
     def test_factory_partial_no_kwargs(self):
+        """Test that a factory partial with no kwargs serializes without extra keys."""
         p = functools.partial(_SGD)
         out = _serialize_callable(p)
         assert out == {"class": f"{_MOD}._SGD"}
 
     def test_function_partial_serializes_as_fn_dict(self):
+        """Test that a function partial serializes as a fn: dict with bind:."""
+
         def _fn(x: int) -> int:
             return x
 

@@ -1,24 +1,38 @@
-line-length = 120
+line-length    = 120
 target-version = "py312"
 
 [lint]
 select = [
-    "E",   # pycodestyle errors
-    "F",   # pyflakes
-    "I",   # isort
-    "UP",  # pyupgrade
+    "A",    # flake8-builtins
+    "B",    # flake8-bugbear
+    "BLE",  # flake8-blind-except
+    "C4",   # flake8-comprehensions
+    "D",    # pydocstyle
+    "E",    # pycodestyle errors
+    "EM",   # flake8-errmsg
+    "F",    # pyflakes
+    "FURB", # refurb
+    "I",    # isort
+    "PERF", # Perflint
+    "PIE",  # flake8-pie
+    "PLR",  # Refactor
+    "PT",   # flake8-pytest-style
+    "RET",  # flake8-return
+    "SIM",  # flake8-simplify
+    "TC",   # flake8-type-checking
+    "TRY",  # tryceratops
+    "UP",   # pyupgrade
 ]
-
 [lint.per-file-ignores]
 "tests/**" = [
-    "UP007",  # non-pep604-annotation-union
-    "UP045",  # non-pep604-annotation-optional
+    "PLR2004", # magic-value-comparison
+    "UP007",   # non-pep604-annotation-union
+    "UP045",   # non-pep604-annotation-optional
 ]
+# These test files use runtime-introspected types in plain-class __init__ signatures;
+# moving them to TYPE_CHECKING would break get_type_hints() resolution.
+"tests/test_callable_factory.py" = ["TC003"]
+"tests/test_plain_classes.py"    = ["TC003"]
 
-
-[lint.isort]
-known-first-party = ["confarg"]
-
-[format]
-quote-style = "double"
-indent-style = "space"
+[lint.pydocstyle]
+convention = "google"

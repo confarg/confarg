@@ -215,6 +215,32 @@ def _extract_references(expr_str: str) -> set[str]:
     return refs
 
 
+def _collect_names_from_call(node: ast.Call, refs: set[str]) -> None:
+    """Collect field references from a Call node, distinguishing methods from free functions."""
+    _min_attribute_parts = 2
+    if isinstance(node.func, ast.Attribute):
+        parts = _attribute_chain(node.func)
+        if parts is not None and len(parts) >= _min_attribute_parts and parts[-1] in _SAFE_METHODS:
+            # Method call like x.upper(): add the receiver path, not the method name.
+            obj_path = ".".join(parts[:-1])
+            if obj_path not in _SAFE_FUNCTIONS:
+                refs.add(obj_path)
+            for arg in node.args:
+                _collect_names(arg, refs)
+            for kw in node.keywords:
+                _collect_names(kw.value, refs)
+            return
+        _collect_names(node.func, refs)
+    elif not isinstance(node.func, ast.Name):
+        # Indirect call — descend into the func expression.
+        _collect_names(node.func, refs)
+    # Free function call: skip the function name itself, collect args.
+    for arg in node.args:
+        _collect_names(arg, refs)
+    for kw in node.keywords:
+        _collect_names(kw.value, refs)
+
+
 def _collect_names(node: ast.AST, refs: set[str]) -> None:
     """Collect Name nodes and dotted Attribute chains from AST as field references."""
     if isinstance(node, ast.Name):
@@ -224,47 +250,15 @@ def _collect_names(node: ast.AST, refs: set[str]) -> None:
     if isinstance(node, ast.Attribute):
         parts = _attribute_chain(node)
         if parts is not None:
-            # Check if the first part is a safe function (not a ref)
             if parts[0] not in _SAFE_FUNCTIONS:
-                # Check if this is a method call — the attribute itself might be a method
-                # We add the full dotted path as a potential reference
                 refs.add(".".join(parts))
         else:
-            # Non-name base, recurse into children
             for child in ast.iter_child_nodes(node):
                 _collect_names(child, refs)
         return
     if isinstance(node, ast.Call):
-        # For method calls like name.upper(), don't add "name.upper" as ref
-        # Instead, check if it's a method call and only add the object
-        if isinstance(node.func, ast.Attribute):
-            parts = _attribute_chain(node.func)
-            if parts is not None and len(parts) >= 2:
-                method_name = parts[-1]
-                if method_name in _SAFE_METHODS:
-                    # The object part is the reference
-                    obj_path = ".".join(parts[:-1])
-                    if obj_path not in _SAFE_FUNCTIONS:
-                        refs.add(obj_path)
-                    # Also collect refs from arguments
-                    for arg in node.args:
-                        _collect_names(arg, refs)
-                    for kw in node.keywords:
-                        _collect_names(kw.value, refs)
-                    return
-            # Fall through to collect from func base
-            _collect_names(node.func, refs)
-        elif isinstance(node.func, ast.Name):
-            # Free function call — don't add function name, but add args
-            pass
-        else:
-            _collect_names(node.func, refs)
-        for arg in node.args:
-            _collect_names(arg, refs)
-        for kw in node.keywords:
-            _collect_names(kw.value, refs)
+        _collect_names_from_call(node, refs)
         return
-    # Recurse into all child nodes
     for child in ast.iter_child_nodes(node):
         _collect_names(child, refs)
 
@@ -273,9 +267,13 @@ def _ast_int_value(node: ast.AST) -> int | None:
     """Return the integer value of an AST node if it is an int literal or -int literal."""
     if isinstance(node, ast.Constant) and isinstance(node.value, int):
         return node.value
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-        if isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, int):
-            return -node.operand.value
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and isinstance(node.operand.value, int)
+    ):
+        return -node.operand.value
     return None
 
 
@@ -347,7 +345,8 @@ def _topological_sort(deps: dict[str, set[str]]) -> list[str]:
 
     if len(order) != len(deps):
         remaining = set(deps.keys()) - set(order)
-        raise CircularReferenceError(f"Circular reference detected among: {', '.join(sorted(remaining))}")
+        msg = f"Circular reference detected among: {', '.join(sorted(remaining))}"
+        raise CircularReferenceError(msg)
 
     return order
 
@@ -360,14 +359,17 @@ def _validate_ast(expr_str: str) -> None:
     try:
         tree = ast.parse(expr_str, mode="eval")
     except SyntaxError as exc:
-        raise UnsafeExpressionError(f"Invalid expression syntax: {expr_str!r}") from exc
+        msg = f"Invalid expression syntax: {expr_str!r}"
+        raise UnsafeExpressionError(msg) from exc
 
     for node in ast.walk(tree):
         if type(node) not in _ALLOWED_NODES:
-            raise UnsafeExpressionError(f"Disallowed construct in expression: {type(node).__name__}")
+            msg = f"Disallowed construct in expression: {type(node).__name__}"
+            raise UnsafeExpressionError(msg)
         # Check for dunder attribute access
         if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
-            raise UnsafeExpressionError(f"Access to dunder attribute '{node.attr}' is not allowed")
+            msg = f"Access to dunder attribute '{node.attr}' is not allowed"
+            raise UnsafeExpressionError(msg)
         # Check function calls are whitelisted
         if isinstance(node, ast.Call):
             _validate_call(node)
@@ -377,108 +379,128 @@ def _validate_call(node: ast.Call) -> None:
     """Validate that a Call node targets a whitelisted function/method."""
     if isinstance(node.func, ast.Name):
         if node.func.id not in _SAFE_FUNCTIONS:
-            raise UnsafeExpressionError(f"Function '{node.func.id}' is not allowed")
+            msg = f"Function '{node.func.id}' is not allowed"
+            raise UnsafeExpressionError(msg)
     elif isinstance(node.func, ast.Attribute):
         if node.func.attr not in _SAFE_METHODS and node.func.attr not in _SAFE_FUNCTIONS:
-            raise UnsafeExpressionError(f"Method '{node.func.attr}' is not allowed")
+            msg = f"Method '{node.func.attr}' is not allowed"
+            raise UnsafeExpressionError(msg)
     else:
-        raise UnsafeExpressionError("Indirect function calls are not allowed")
+        msg = "Indirect function calls are not allowed"
+        raise UnsafeExpressionError(msg)
+
+
+def _eval_name(node: ast.Name, namespace: dict[str, Any]) -> Any:
+    if node.id in _SAFE_FUNCTIONS:
+        return _SAFE_FUNCTIONS[node.id]
+    return _get_nested(namespace, node.id)
+
+
+def _eval_attribute(node: ast.Attribute, namespace: dict[str, Any]) -> Any:
+    parts = _attribute_chain(node)
+    if parts is not None:
+        try:
+            return _get_nested(namespace, ".".join(parts))
+        except MissingReferenceError:
+            pass
+    return getattr(_evaluate_ast(node.value, namespace), node.attr)
+
+
+def _eval_subscript(node: ast.Subscript, namespace: dict[str, Any]) -> Any:
+    return _evaluate_ast(node.value, namespace)[_evaluate_ast(node.slice, namespace)]
+
+
+def _eval_binop(node: ast.BinOp, namespace: dict[str, Any]) -> Any:
+    left = _evaluate_ast(node.left, namespace)
+    right = _evaluate_ast(node.right, namespace)
+    op_func = _BINOP_MAP.get(type(node.op))
+    if op_func is None:
+        msg = f"Unsupported binary operator: {type(node.op).__name__}"
+        raise ExpressionEvalError(msg)
+    try:
+        return op_func(left, right)
+    except Exception as exc:
+        raise ExpressionEvalError(str(exc)) from exc
+
+
+def _eval_unaryop(node: ast.UnaryOp, namespace: dict[str, Any]) -> Any:
+    operand = _evaluate_ast(node.operand, namespace)
+    op_func = _UNARYOP_MAP.get(type(node.op))
+    if op_func is None:
+        msg = f"Unsupported unary operator: {type(node.op).__name__}"
+        raise ExpressionEvalError(msg)
+    return op_func(operand)
+
+
+def _eval_compare(node: ast.Compare, namespace: dict[str, Any]) -> Any:
+    left = _evaluate_ast(node.left, namespace)
+    for op, comparator in zip(node.ops, node.comparators, strict=False):
+        right = _evaluate_ast(comparator, namespace)
+        op_func = _CMPOP_MAP.get(type(op))
+        if op_func is None:
+            msg = f"Unsupported comparison: {type(op).__name__}"
+            raise ExpressionEvalError(msg)
+        if not op_func(left, right):
+            return False
+        left = right
+    return True
+
+
+def _eval_boolop(node: ast.BoolOp, namespace: dict[str, Any]) -> Any:
+    if isinstance(node.op, ast.And):
+        result: Any = True
+        for value in node.values:
+            result = _evaluate_ast(value, namespace)
+            if not result:
+                return result
+        return result
+    # ast.Or
+    result = False
+    for value in node.values:
+        result = _evaluate_ast(value, namespace)
+        if result:
+            return result
+    return result
+
+
+def _eval_ifexp(node: ast.IfExp, namespace: dict[str, Any]) -> Any:
+    if _evaluate_ast(node.test, namespace):
+        return _evaluate_ast(node.body, namespace)
+    return _evaluate_ast(node.orelse, namespace)
+
+
+def _eval_call(node: ast.Call, namespace: dict[str, Any]) -> Any:
+    func = _evaluate_ast(node.func, namespace)
+    args = [_evaluate_ast(a, namespace) for a in node.args]
+    kwargs = {kw.arg: _evaluate_ast(kw.value, namespace) for kw in node.keywords}
+    try:
+        return func(*args, **kwargs)
+    except Exception as exc:
+        raise ExpressionEvalError(str(exc)) from exc
+
+
+_AST_EVALUATORS: dict[type, Any] = {
+    ast.Expression: lambda n, ns: _evaluate_ast(n.body, ns),
+    ast.Constant: lambda n, ns: n.value,
+    ast.Name: _eval_name,
+    ast.Attribute: _eval_attribute,
+    ast.Subscript: _eval_subscript,
+    ast.BinOp: _eval_binop,
+    ast.UnaryOp: _eval_unaryop,
+    ast.Compare: _eval_compare,
+    ast.BoolOp: _eval_boolop,
+    ast.IfExp: _eval_ifexp,
+    ast.Call: _eval_call,
+}
 
 
 def _evaluate_ast(node: ast.AST, namespace: dict[str, Any]) -> Any:
     """Recursively evaluate AST node against namespace."""
-    if isinstance(node, ast.Expression):
-        return _evaluate_ast(node.body, namespace)
-
-    if isinstance(node, ast.Constant):
-        return node.value
-
-    if isinstance(node, ast.Name):
-        if node.id in _SAFE_FUNCTIONS:
-            return _SAFE_FUNCTIONS[node.id]
-        return _get_nested(namespace, node.id)
-
-    if isinstance(node, ast.Attribute):
-        parts = _attribute_chain(node)
-        if parts is not None:
-            # Try as dotted path first
-            full_path = ".".join(parts)
-            try:
-                return _get_nested(namespace, full_path)
-            except MissingReferenceError:
-                # Fall back to attribute access on evaluated value
-                pass
-        # Evaluate value then access attribute
-        value = _evaluate_ast(node.value, namespace)
-        return getattr(value, node.attr)
-
-    if isinstance(node, ast.Subscript):
-        value = _evaluate_ast(node.value, namespace)
-        index = _evaluate_ast(node.slice, namespace)
-        return value[index]
-
-    if isinstance(node, ast.BinOp):
-        left = _evaluate_ast(node.left, namespace)
-        right = _evaluate_ast(node.right, namespace)
-        op_func = _BINOP_MAP.get(type(node.op))
-        if op_func is None:
-            raise ExpressionEvalError(f"Unsupported binary operator: {type(node.op).__name__}")
-        try:
-            return op_func(left, right)
-        except Exception as exc:
-            raise ExpressionEvalError(str(exc)) from exc
-
-    if isinstance(node, ast.UnaryOp):
-        operand = _evaluate_ast(node.operand, namespace)
-        op_func = _UNARYOP_MAP.get(type(node.op))
-        if op_func is None:
-            raise ExpressionEvalError(f"Unsupported unary operator: {type(node.op).__name__}")
-        return op_func(operand)
-
-    if isinstance(node, ast.Compare):
-        left = _evaluate_ast(node.left, namespace)
-        for op, comparator in zip(node.ops, node.comparators, strict=False):
-            right = _evaluate_ast(comparator, namespace)
-            op_func = _CMPOP_MAP.get(type(op))
-            if op_func is None:
-                raise ExpressionEvalError(f"Unsupported comparison: {type(op).__name__}")
-            if not op_func(left, right):
-                return False
-            left = right
-        return True
-
-    if isinstance(node, ast.BoolOp):
-        if isinstance(node.op, ast.And):
-            result: Any = True
-            for value in node.values:
-                result = _evaluate_ast(value, namespace)
-                if not result:
-                    return result
-            return result
-        else:  # ast.Or
-            result = False
-            for value in node.values:
-                result = _evaluate_ast(value, namespace)
-                if result:
-                    return result
-            return result
-
-    if isinstance(node, ast.IfExp):
-        test = _evaluate_ast(node.test, namespace)
-        if test:
-            return _evaluate_ast(node.body, namespace)
-        return _evaluate_ast(node.orelse, namespace)
-
-    if isinstance(node, ast.Call):
-        func = _evaluate_ast(node.func, namespace)
-        args = [_evaluate_ast(a, namespace) for a in node.args]
-        kwargs = {kw.arg: _evaluate_ast(kw.value, namespace) for kw in node.keywords}
-        try:
-            return func(*args, **kwargs)
-        except Exception as exc:
-            raise ExpressionEvalError(str(exc)) from exc
-
-    raise ExpressionEvalError(f"Cannot evaluate node type: {type(node).__name__}")  # pragma: no cover
+    evaluator = _AST_EVALUATORS.get(type(node))
+    if evaluator is None:
+        msg = f"Cannot evaluate node type: {type(node).__name__}"
+        raise ExpressionEvalError(msg)  # pragma: no cover
+    return evaluator(node, namespace)
 
 
 def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
@@ -502,7 +524,8 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
         except ExpressionEvalError:
             raise
         except Exception as exc:
-            raise ExpressionEvalError(f"Error in expression {expr_str!r}: {exc}") from exc
+            msg = f"Error in expression {expr_str!r}: {exc}"
+            raise ExpressionEvalError(msg) from exc
 
     # Interpolation or escape mode: build string from parts
     result_parts: list[str] = []
@@ -526,7 +549,8 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
             except ExpressionEvalError:
                 raise
             except Exception as exc:
-                raise ExpressionEvalError(f"Error in expression {m.group(0)!r}: {exc}") from exc
+                msg = f"Error in expression {m.group(0)!r}: {exc}"
+                raise ExpressionEvalError(msg) from exc
             result_parts.append(str(value))
 
         last_end = m.end()
@@ -569,11 +593,13 @@ def _set_nested_by_path(data: dict[str, Any], path: str, value: Any) -> None:
         elif isinstance(current, list | tuple):
             current = current[int(part)]
         else:
-            raise MissingReferenceError(f"Cannot set path '{path}': cannot traverse into {type(current).__name__}")
+            msg = f"Cannot set path '{path}': cannot traverse into {type(current).__name__}"
+            raise MissingReferenceError(msg)
     last = parts[-1]
     if isinstance(current, dict):
         current[last] = value
     elif isinstance(current, list):
         current[int(last)] = value
     else:
-        raise MissingReferenceError(f"Cannot set path '{path}'")
+        msg = f"Cannot set path '{path}'"
+        raise MissingReferenceError(msg)

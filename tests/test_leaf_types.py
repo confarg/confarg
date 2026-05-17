@@ -74,6 +74,7 @@ class TestFloat:
         ids=["positive", "negative", "scientific"],
     )
     def test_float_from_cli(self, cli_val: str, expected) -> None:
+        """Parse float values from CLI args."""
         result = confarg.load(
             Flat, args=["--name", "x", "--count", "1", "--rate", cli_val, "--verbose", "true"], env={}
         )

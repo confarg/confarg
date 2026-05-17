@@ -7,7 +7,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import pytest
 
@@ -22,6 +25,7 @@ from confarg._files import _load_file
 
 
 def write(tmp_path: Path, name: str, content: str) -> Path:
+    """Write content to a named file inside tmp_path and return the path."""
     p = tmp_path / name
     p.write_text(content)
     return p
@@ -33,7 +37,10 @@ def write(tmp_path: Path, name: str, content: str) -> Path:
 
 
 class TestBasicInclude:
+    """Tests for basic __include__ functionality."""
+
     def test_yaml_include_basic(self, tmp_path: Path) -> None:
+        """Test that a YAML file includes another YAML file."""
         write(tmp_path, "base.yaml", "port: 5432\nuser: admin\n")
         write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: ./base.yaml\n")
 
@@ -41,6 +48,7 @@ class TestBasicInclude:
         assert result == {"port": 5432, "user": "admin"}
 
     def test_json_include_basic(self, tmp_path: Path) -> None:
+        """Test that a JSON file includes another JSON file."""
         write(tmp_path, "base.json", '{"port": 5432, "user": "admin"}')
         write(tmp_path, "config.json", f'{{"{INCLUDE_KEY}": "./base.json"}}')
 
@@ -48,6 +56,7 @@ class TestBasicInclude:
         assert result == {"port": 5432, "user": "admin"}
 
     def test_toml_include_basic(self, tmp_path: Path) -> None:
+        """Test that a TOML file includes another TOML file."""
         write(tmp_path, "base.toml", 'port = 5432\nuser = "admin"\n')
         write(tmp_path, "config.toml", f'{INCLUDE_KEY} = "./base.toml"\n')
 
@@ -55,6 +64,7 @@ class TestBasicInclude:
         assert result == {"port": 5432, "user": "admin"}
 
     def test_include_nested_under_key(self, tmp_path: Path) -> None:
+        """Test that an included file can be nested under a specific key."""
         write(tmp_path, "db.yaml", "host: localhost\nport: 5432\n")
         write(tmp_path, "config.yaml", f"database:\n  {INCLUDE_KEY}: ./db.yaml\nname: myapp\n")
 
@@ -68,7 +78,10 @@ class TestBasicInclude:
 
 
 class TestSiblingOverride:
+    """Tests that sibling keys override included file content."""
+
     def test_sibling_wins_over_included(self, tmp_path: Path) -> None:
+        """Test that a sibling key overrides the same key from an included file."""
         write(tmp_path, "base.yaml", "host: base_host\nport: 5432\n")
         write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: ./base.yaml\nhost: override_host\n")
 
@@ -77,6 +90,7 @@ class TestSiblingOverride:
         assert result["port"] == 5432
 
     def test_included_keys_not_in_siblings_are_present(self, tmp_path: Path) -> None:
+        """Test that included keys not in siblings are still present in the result."""
         write(tmp_path, "base.yaml", "host: base_host\nport: 5432\nuser: admin\n")
         write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: ./base.yaml\nport: 9999\n")
 
@@ -92,7 +106,10 @@ class TestSiblingOverride:
 
 
 class TestRelativePaths:
+    """Tests for relative path resolution in __include__."""
+
     def test_include_resolves_relative_to_including_file(self, tmp_path: Path) -> None:
+        """Test that include paths are resolved relative to the including file."""
         subdir = tmp_path / "sub"
         subdir.mkdir()
         write(subdir, "db.yaml", "host: subhost\n")
@@ -102,6 +119,7 @@ class TestRelativePaths:
         assert result == {"database": {"host": "subhost"}}
 
     def test_include_in_subdir_resolves_relative_to_subdir(self, tmp_path: Path) -> None:
+        """Test that include paths in a subdirectory are resolved relative to that subdirectory."""
         subdir = tmp_path / "sub"
         subdir.mkdir()
         write(subdir, "db.yaml", "host: subhost\n")
@@ -118,7 +136,10 @@ class TestRelativePaths:
 
 
 class TestRecursiveIncludes:
+    """Tests for chained/recursive __include__ directives."""
+
     def test_recursive_include(self, tmp_path: Path) -> None:
+        """Test that chained includes (a→b→c) merge all content correctly."""
         write(tmp_path, "c.yaml", "z: 3\n")
         write(tmp_path, "b.yaml", f"{INCLUDE_KEY}: ./c.yaml\ny: 2\n")
         write(tmp_path, "a.yaml", f"{INCLUDE_KEY}: ./b.yaml\nx: 1\n")
@@ -127,6 +148,7 @@ class TestRecursiveIncludes:
         assert result == {"x": 1, "y": 2, "z": 3}
 
     def test_recursive_include_nested_under_key(self, tmp_path: Path) -> None:
+        """Test that recursive includes nested under keys work correctly."""
         write(tmp_path, "leaf.yaml", "value: 42\n")
         write(tmp_path, "middle.yaml", f"item:\n  {INCLUDE_KEY}: ./leaf.yaml\n")
         write(tmp_path, "top.yaml", f"section:\n  {INCLUDE_KEY}: ./middle.yaml\n")
@@ -141,12 +163,16 @@ class TestRecursiveIncludes:
 
 
 class TestCycleDetection:
+    """Tests for circular include detection."""
+
     def test_direct_self_include(self, tmp_path: Path) -> None:
+        """Test that a file including itself raises ConfargError."""
         p = write(tmp_path, "self.yaml", f"{INCLUDE_KEY}: ./self.yaml\n")
         with pytest.raises(ConfargError, match="[Cc]ircular"):
             _load_file(p)
 
     def test_indirect_cycle(self, tmp_path: Path) -> None:
+        """Test that an indirect cycle (a→b→a) raises ConfargError."""
         write(tmp_path, "a.yaml", f"{INCLUDE_KEY}: ./b.yaml\n")
         write(tmp_path, "b.yaml", f"{INCLUDE_KEY}: ./a.yaml\n")
         with pytest.raises(ConfargError, match="[Cc]ircular"):
@@ -159,12 +185,16 @@ class TestCycleDetection:
 
 
 class TestErrorCases:
+    """Tests for error cases in __include__ processing."""
+
     def test_non_string_include_value(self, tmp_path: Path) -> None:
+        """Test that a non-string __include__ value raises ConfargError."""
         write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: 42\n")
         with pytest.raises(ConfargError, match="path"):
             _load_file(tmp_path / "config.yaml")
 
     def test_included_file_not_found(self, tmp_path: Path) -> None:
+        """Test that a missing included file raises InvalidConfigFileError."""
         write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: ./missing.yaml\n")
         with pytest.raises(InvalidConfigFileError, match="not found"):
             _load_file(tmp_path / "config.yaml")
@@ -177,12 +207,16 @@ class TestErrorCases:
 
 @dataclass
 class DbConfig:
+    """Database connection configuration."""
+
     host: str
     port: int = 5432
 
 
 @dataclass
 class AppConfig:
+    """Application configuration with a nested database config."""
+
     db: DbConfig
     name: str = "default"
 
@@ -193,7 +227,10 @@ class AppConfig:
 
 
 class TestPureIncludeNonDict:
+    """Tests for __include__ when the included file is not a dict."""
+
     def test_pure_include_list_file(self, tmp_path: Path) -> None:
+        """Test that a list YAML file can be included under a key."""
         write(tmp_path, "hosts.yaml", "- a.com\n- b.com\n")
         write(tmp_path, "config.yaml", "allowed_hosts:\n  __include__: ./hosts.yaml\n")
 
@@ -201,6 +238,7 @@ class TestPureIncludeNonDict:
         assert result == {"allowed_hosts": ["a.com", "b.com"]}
 
     def test_pure_include_scalar_yaml(self, tmp_path: Path) -> None:
+        """Test that a scalar YAML file can be included under a key."""
         write(tmp_path, "val.yaml", "42\n")
         write(tmp_path, "config.yaml", "timeout:\n  __include__: ./val.yaml\n")
 
@@ -208,6 +246,7 @@ class TestPureIncludeNonDict:
         assert result == {"timeout": 42}
 
     def test_pure_include_scalar_json(self, tmp_path: Path) -> None:
+        """Test that a top-level scalar JSON include raises ConfargError."""
         write(tmp_path, "val.json", "99")
         write(tmp_path, "config.json", f'{{"{INCLUDE_KEY}": "./val.json"}}')
         # top-level pure include of a scalar must error (root must be dict)
@@ -221,7 +260,10 @@ class TestPureIncludeNonDict:
 
 
 class TestListItemInclude:
+    """Tests for list-item __include__ with splicing and substitution."""
+
     def test_list_splice_yaml(self, tmp_path: Path) -> None:
+        """Test that a YAML list file is spliced into the parent list."""
         write(tmp_path, "extra.yaml", "- auth\n- audit\n")
         write(
             tmp_path,
@@ -233,6 +275,7 @@ class TestListItemInclude:
         assert result == {"plugins": ["core", "auth", "audit", "debug"]}
 
     def test_list_splice_json(self, tmp_path: Path) -> None:
+        """Test that a JSON list file is spliced into the parent list."""
         write(tmp_path, "extra.json", '["auth", "audit"]')
         write(
             tmp_path,
@@ -244,6 +287,7 @@ class TestListItemInclude:
         assert result == {"plugins": ["core", "auth", "audit", "debug"]}
 
     def test_list_item_substitution_dict(self, tmp_path: Path) -> None:
+        """Test that a dict file include in a list becomes a single dict element."""
         write(tmp_path, "item.yaml", "name: myitem\nvalue: 1\n")
         write(tmp_path, "config.yaml", "items:\n  - __include__: ./item.yaml\n")
 
@@ -251,6 +295,7 @@ class TestListItemInclude:
         assert result == {"items": [{"name": "myitem", "value": 1}]}
 
     def test_list_item_substitution_scalar(self, tmp_path: Path) -> None:
+        """Test that a scalar file include in a list becomes a single scalar element."""
         write(tmp_path, "val.yaml", "hello\n")
         write(tmp_path, "config.yaml", "tags:\n  - first\n  - __include__: ./val.yaml\n")
 
@@ -258,6 +303,7 @@ class TestListItemInclude:
         assert result == {"tags": ["first", "hello"]}
 
     def test_list_item_with_siblings_and_dict_include(self, tmp_path: Path) -> None:
+        """Test that siblings override included dict fields in a list item."""
         write(tmp_path, "base.yaml", "x: 1\ny: 2\n")
         write(
             tmp_path,
@@ -275,13 +321,17 @@ class TestListItemInclude:
 
 
 class TestSiblingNonDictError:
+    """Tests for errors when siblings accompany a non-dict include."""
+
     def test_dict_context_sibling_with_list_include(self, tmp_path: Path) -> None:
+        """Test that sibling keys alongside a list include raise ConfargError."""
         write(tmp_path, "list.yaml", "- a\n- b\n")
         write(tmp_path, "config.yaml", f"section:\n  {INCLUDE_KEY}: ./list.yaml\n  extra: key\n")
         with pytest.raises(ConfargError, match="sibling"):
             _load_file(tmp_path / "config.yaml")
 
     def test_list_item_sibling_with_list_include(self, tmp_path: Path) -> None:
+        """Test that a list item with sibling keys alongside a list include raises ConfargError."""
         write(tmp_path, "list.yaml", "- a\n- b\n")
         write(
             tmp_path,
@@ -298,7 +348,10 @@ class TestSiblingNonDictError:
 
 
 class TestRecursiveThroughLists:
+    """Tests for recursive includes that pass through lists."""
+
     def test_recursive_include_via_list(self, tmp_path: Path) -> None:
+        """Test that recursive includes through list files splice correctly."""
         write(tmp_path, "leaf.yaml", "- c\n- d\n")
         write(tmp_path, "middle.yaml", "- a\n- b\n- __include__: ./leaf.yaml\n")
         write(tmp_path, "config.yaml", "items:\n  __include__: ./middle.yaml\n")
@@ -307,6 +360,7 @@ class TestRecursiveThroughLists:
         assert result == {"items": ["a", "b", "c", "d"]}
 
     def test_splice_items_that_contain_includes(self, tmp_path: Path) -> None:
+        """Test that spliced list items that themselves contain includes are resolved."""
         write(tmp_path, "extra.yaml", "value: 42\n")
         write(tmp_path, "items.yaml", "- name: first\n- __include__: ./extra.yaml\n")
         write(tmp_path, "config.yaml", "things:\n  __include__: ./items.yaml\n")
@@ -321,7 +375,10 @@ class TestRecursiveThroughLists:
 
 
 class TestIntegrationPriorityOrdering:
+    """Integration tests that merge() respects priority ordering with __include__."""
+
     def test_cli_overrides_included_file(self, tmp_path: Path) -> None:
+        """Test that CLI arguments override values from an included file."""
         write(tmp_path, "db.yaml", "host: file_host\nport: 5432\n")
         write(tmp_path, "config.yaml", f"db:\n  {INCLUDE_KEY}: ./db.yaml\nname: myapp\n")
 
@@ -335,6 +392,7 @@ class TestIntegrationPriorityOrdering:
         assert result.name == "myapp"
 
     def test_env_overrides_included_file(self, tmp_path: Path) -> None:
+        """Test that env vars override values from an included file."""
         write(tmp_path, "db.yaml", "host: file_host\nport: 5432\n")
         write(tmp_path, "config.yaml", f"db:\n  {INCLUDE_KEY}: ./db.yaml\n")
 

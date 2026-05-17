@@ -2,15 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Shared dataclass definitions, fixtures, and hypothesis strategies for confargX tests."""
+"""Shared dataclass definitions, fixtures, and hypothesis strategies for confarg tests."""
 
 from __future__ import annotations
 
 import enum
 import textwrap
 from dataclasses import dataclass, field, make_dataclass
-from pathlib import Path
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import pytest
 from hypothesis import strategies as st
@@ -133,8 +135,6 @@ class WithDefaults:
 @dataclass
 class Empty:
     """Dataclass with no fields."""
-
-    pass
 
 
 # ---------------------------------------------------------------------------
@@ -294,8 +294,9 @@ class TokenBackend:
 
 @dataclass
 class WithUnionDeepDisambiguation:
-    """Union of two dataclasses whose same-named field is itself a dataclass,
-    requiring recursive disambiguation on the nested fields.
+    """Union of two dataclasses whose same-named field is itself a dataclass.
+
+    Requires recursive disambiguation on the nested fields.
     """
 
     backend: SqlBackend | TokenBackend
@@ -476,7 +477,7 @@ class WithUnionFloatStr:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_toml(tmp_path: Path):
     """Create a temporary TOML config file.
 
@@ -492,7 +493,7 @@ def tmp_toml(tmp_path: Path):
     return _write
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_yaml(tmp_path: Path):
     """Create a temporary YAML config file.
 
@@ -508,7 +509,7 @@ def tmp_yaml(tmp_path: Path):
     return _write
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_json(tmp_path: Path):
     """Create a temporary JSON config file.
 

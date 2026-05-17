@@ -35,7 +35,8 @@ def _load_toml(path: Path) -> dict[str, Any]:
     except FileNotFoundError:
         raise InvalidConfigFileError.not_found(path) from None
     except tomllib.TOMLDecodeError as e:
-        raise InvalidConfigFileError.malformed("TOML", path, e) from e
+        msg = "TOML"
+        raise InvalidConfigFileError.malformed(msg, path, e) from e
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -55,7 +56,8 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     try:
         import yaml
     except ImportError:
-        raise InvalidConfigFileError.missing_library("PyYAML", "pyyaml", "YAML support") from None
+        msg = "PyYAML"
+        raise InvalidConfigFileError.missing_library(msg, "pyyaml", "YAML support") from None
     try:
         with Path(path).open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
@@ -63,7 +65,8 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     except FileNotFoundError:
         raise InvalidConfigFileError.not_found(path) from None
     except yaml.YAMLError as e:
-        raise InvalidConfigFileError.malformed("YAML", path, e) from e
+        msg = "YAML"
+        raise InvalidConfigFileError.malformed(msg, path, e) from e
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -85,9 +88,11 @@ def _load_json(path: Path) -> dict[str, Any]:
     except FileNotFoundError:
         raise InvalidConfigFileError.not_found(path) from None
     except json.JSONDecodeError as e:
-        raise InvalidConfigFileError.malformed("JSON", path, e) from e
+        msg = "JSON"
+        raise InvalidConfigFileError.malformed(msg, path, e) from e
     if not isinstance(data, dict):
-        raise InvalidConfigFileError(f"JSON config must be an object, got {type(data).__name__}: {path}")
+        msg = f"JSON config must be an object, got {type(data).__name__}: {path}"
+        raise InvalidConfigFileError(msg)
     return data
 
 
@@ -99,14 +104,16 @@ def _load_yaml_item(path: Path) -> Any:
     try:
         import yaml
     except ImportError:
-        raise InvalidConfigFileError.missing_library("PyYAML", "pyyaml", "YAML support") from None
+        msg = "PyYAML"
+        raise InvalidConfigFileError.missing_library(msg, "pyyaml", "YAML support") from None
     try:
         with Path(path).open(encoding="utf-8") as f:
             return yaml.safe_load(f)
     except FileNotFoundError:
         raise InvalidConfigFileError.not_found(path) from None
     except yaml.YAMLError as e:
-        raise InvalidConfigFileError.malformed("YAML", path, e) from e
+        msg = "YAML"
+        raise InvalidConfigFileError.malformed(msg, path, e) from e
 
 
 def _load_json_item(path: Path) -> Any:
@@ -117,7 +124,41 @@ def _load_json_item(path: Path) -> Any:
     except FileNotFoundError:
         raise InvalidConfigFileError.not_found(path) from None
     except json.JSONDecodeError as e:
-        raise InvalidConfigFileError.malformed("JSON", path, e) from e
+        msg = "JSON"
+        raise InvalidConfigFileError.malformed(msg, path, e) from e
+
+
+def _load_csv_no_header(all_rows: list[list[str]], orient: str) -> Any:
+    """Build the result for CSV loaded without a header row."""
+    if orient == "rows":
+        if not all_rows:
+            return []
+        return [row[0] for row in all_rows] if all(len(row) == 1 for row in all_rows) else all_rows
+    # orient == "columns": positional index keys "0", "1", …
+    if not all_rows:
+        return {}
+    ncols = len(all_rows[0])
+    col_data: dict[str, list[str]] = {str(i): [] for i in range(ncols)}
+    for row in all_rows:
+        for i, v in enumerate(row):
+            col_data[str(i)].append(v)
+    return col_data
+
+
+def _load_csv_with_header(f: Any, orient: str, delimiter: str) -> Any:
+    """Build the result for CSV loaded with a header row."""
+    reader = csv.DictReader(f, delimiter=delimiter)
+    fieldnames = list(reader.fieldnames or [])
+    if orient == "columns":
+        result: dict[str, list[str]] = {name: [] for name in fieldnames}
+        for row in reader:
+            for k, v in row.items():
+                result[k].append(v)
+        return result
+    rows = [dict(row) for row in reader]
+    if len(fieldnames) == 1:
+        return [row[fieldnames[0]] for row in rows]
+    return rows
 
 
 def _load_csv(path: Path, *, orient: str = "rows", delimiter: str = ",", header: bool = True) -> Any:
@@ -133,41 +174,15 @@ def _load_csv(path: Path, *, orient: str = "rows", delimiter: str = ",", header:
         list[list[str]] — every row returned as-is; header option is ignored.
     """
     if orient not in ("rows", "columns", "raw"):
-        raise ConfargError(f"Invalid CSV orient {orient!r}. Must be 'rows', 'columns', or 'raw'.")
+        msg = f"Invalid CSV orient {orient!r}. Must be 'rows', 'columns', or 'raw'."
+        raise ConfargError(msg)
     try:
         with path.open(newline="", encoding="utf-8-sig") as f:
-            if orient == "raw" or not header:
-                all_rows = [list(row) for row in csv.reader(f, delimiter=delimiter)]
-                if orient == "raw":
-                    return all_rows
-                # header=False, orient rows or columns
-                if orient == "rows":
-                    if not all_rows:
-                        return []
-                    return [row[0] for row in all_rows] if all(len(row) == 1 for row in all_rows) else all_rows
-                # orient == "columns", header=False: positional keys
-                if not all_rows:
-                    return {}
-                ncols = len(all_rows[0])
-                col_data: dict[str, list[str]] = {str(i): [] for i in range(ncols)}
-                for row in all_rows:
-                    for i, v in enumerate(row):
-                        col_data[str(i)].append(v)
-                return col_data
-            # header=True, orient rows or columns
-            reader = csv.DictReader(f, delimiter=delimiter)
-            fieldnames = list(reader.fieldnames or [])
-            if orient == "columns":
-                result: dict[str, list[str]] = {name: [] for name in fieldnames}
-                for row in reader:
-                    for k, v in row.items():
-                        result[k].append(v)
-                return result
-            # orient == "rows"
-            rows = [dict(row) for row in reader]
-            if len(fieldnames) == 1:
-                return [row[fieldnames[0]] for row in rows]
-            return rows
+            if orient == "raw":
+                return [list(row) for row in csv.reader(f, delimiter=delimiter)]
+            if not header:
+                return _load_csv_no_header([list(row) for row in csv.reader(f, delimiter=delimiter)], orient)
+            return _load_csv_with_header(f, orient, delimiter)
     except FileNotFoundError:
         raise InvalidConfigFileError.not_found(path) from None
 
@@ -216,7 +231,8 @@ def _parse_include_val(val: Any) -> tuple[str, dict[str, Any]]:
     if isinstance(val, dict) and isinstance(val.get("path"), str):
         options = {k: v for k, v in val.items() if k != "path"}
         return val["path"], options
-    raise ConfargError(f"{INCLUDE_KEY} must be a path string or a dict with a string 'path' key, got {val!r}")
+    msg = f"{INCLUDE_KEY} must be a path string or a dict with a string 'path' key, got {val!r}"
+    raise ConfargError(msg)
 
 
 def _resolve_node(data: Any, base_dir: Path, seen: frozenset[Path]) -> Any:
@@ -241,16 +257,18 @@ def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path]) -
         path_str, options = _parse_include_val(include_val)
         inc_path = (base_dir / path_str).resolve()
         if inc_path in seen:
-            raise ConfargError(f"Circular include detected: {inc_path}")
+            msg = f"Circular include detected: {inc_path}"
+            raise ConfargError(msg)
         included = _load_any(inc_path, seen | {inc_path}, options=options)
         siblings = {k: v for k, v in data.items() if k != INCLUDE_KEY}
         if not siblings:
             return included
         if not isinstance(included, dict):
-            raise ConfargError(
+            msg = (
                 f"{INCLUDE_KEY} produced {type(included).__name__} but sibling keys are"
                 f" also present; can only merge sibling keys into a dict include"
             )
+            raise ConfargError(msg)
         result: dict[str, Any] = _deep_merge(included, siblings)
     else:
         result = dict(data)
@@ -277,7 +295,8 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path]) -> lis
             path_str, options = _parse_include_val(item[INCLUDE_KEY])
             inc_path = (base_dir / path_str).resolve()
             if inc_path in seen:
-                raise ConfargError(f"Circular include detected: {inc_path}")
+                msg = f"Circular include detected: {inc_path}"
+                raise ConfargError(msg)
             included = _load_any(inc_path, seen | {inc_path}, options=options)
             siblings = {k: v for k, v in item.items() if k != INCLUDE_KEY}
             if not siblings:
@@ -289,10 +308,11 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path]) -> lis
                 merged = _deep_merge(included, siblings)
                 result.append(_resolve_node(merged, base_dir, seen))
             else:
-                raise ConfargError(
+                msg = (
                     f"{INCLUDE_KEY} produced {type(included).__name__} but sibling keys are"
                     f" also present; can only merge sibling keys into a dict include"
                 )
+                raise ConfargError(msg)
         else:
             result.append(_resolve_node(item, base_dir, seen))
     return result
@@ -309,7 +329,8 @@ def _load_any(path: Path, seen: frozenset[Path], *, options: dict[str, Any] | No
         delimiter = "\t" if ext == ".tsv" else ","
         header_opt = opts.get("header", True)
         if not isinstance(header_opt, bool):
-            raise ConfargError(f"'header' option must be a boolean (true/false), got {header_opt!r}")
+            msg = f"'header' option must be a boolean (true/false), got {header_opt!r}"
+            raise ConfargError(msg)
         data = _load_csv(
             path,
             orient=opts.get("orient", "rows"),
@@ -332,7 +353,8 @@ def _load_raw(path: Path, seen: frozenset[Path]) -> dict[str, Any]:
     data = loader(path)
     result = _resolve_node(data, path.parent, seen)
     if not isinstance(result, dict):
-        raise ConfargError(f"Top-level config file must resolve to a dict, got {type(result).__name__}: {path}")
+        msg = f"Top-level config file must resolve to a dict, got {type(result).__name__}: {path}"
+        raise ConfargError(msg)
     return result
 
 
@@ -371,7 +393,8 @@ def _dump_toml(data: dict[str, Any], path: Path) -> None:
     try:
         import tomli_w
     except ImportError:
-        raise InvalidConfigFileError.missing_library("tomli_w", "tomli_w", "writing TOML files") from None
+        msg = "tomli_w"
+        raise InvalidConfigFileError.missing_library(msg, "tomli_w", "writing TOML files") from None
     with Path(path).open("wb") as f:
         tomli_w.dump(data, f)
 
@@ -389,7 +412,8 @@ def _dump_yaml(data: dict[str, Any], path: Path) -> None:
     try:
         import yaml
     except ImportError:
-        raise InvalidConfigFileError.missing_library("PyYAML", "pyyaml", "writing YAML files") from None
+        msg = "PyYAML"
+        raise InvalidConfigFileError.missing_library(msg, "pyyaml", "writing YAML files") from None
     with Path(path).open("w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper)
 

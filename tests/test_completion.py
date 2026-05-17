@@ -22,6 +22,7 @@ from confarg._completion import (
     _extend_walk,
     _pre_extend_parser_for_completion,
     _resolve_tags_from_config,
+    _WalkCtx,
 )
 
 # ---------------------------------------------------------------------------
@@ -97,6 +98,8 @@ class _ExtendWalkOuter:
 
 
 class TestUnionClassTagRegistration:
+    """Tests for class-tag flag registration in union types."""
+
     def test_struct_union_registers_class_flag(self) -> None:
         """Multi-variant struct union registers --db.class."""
         parser = argparse.ArgumentParser()
@@ -164,13 +167,17 @@ class TestUnionClassTagRegistration:
 
 
 class TestCollectPartialConfig:
+    """Tests for _collect_partial_config helper."""
+
     def test_reads_toml_from_argv(self, tmp_path) -> None:
+        """Test that TOML config file is read from argv."""
         cfg = tmp_path / "cfg.toml"
         cfg.write_text('[db]\nclass = "myapp.ServerDB"\n')
         result = _collect_partial_config([f"--config={cfg}"], "config")
         assert result == {"db": {"class": "myapp.ServerDB"}}
 
     def test_reads_multiple_config_files(self, tmp_path) -> None:
+        """Test that multiple config files are merged together."""
         cfg1 = tmp_path / "a.toml"
         cfg1.write_text("x = 1\n")
         cfg2 = tmp_path / "b.toml"
@@ -179,6 +186,7 @@ class TestCollectPartialConfig:
         assert result == {"x": 1, "y": 2}
 
     def test_missing_file_silently_ignored(self) -> None:
+        """Test that a missing config file is silently ignored."""
         result = _collect_partial_config(["--config", "/nonexistent/file.toml"], "config")
         assert result == {}
 
@@ -190,6 +198,7 @@ class TestCollectPartialConfig:
         assert result == {}
 
     def test_yaml_file_read(self, tmp_path) -> None:
+        """Test that YAML config files are also read correctly."""
         pytest.importorskip("yaml")
         cfg = tmp_path / "cfg.yaml"
         cfg.write_text("db:\n  class: myapp.ServerDB\n")
@@ -197,6 +206,7 @@ class TestCollectPartialConfig:
         assert result == {"db": {"class": "myapp.ServerDB"}}
 
     def test_empty_argv(self) -> None:
+        """Test that empty argv returns an empty dict."""
         result = _collect_partial_config([], "config")
         assert result == {}
 
@@ -207,15 +217,20 @@ class TestCollectPartialConfig:
 
 
 class TestCollectPartialCliTags:
+    """Tests for _collect_partial_cli_tags helper."""
+
     def test_space_separated(self) -> None:
+        """Test that space-separated --field.class value is parsed."""
         tags = _collect_partial_cli_tags(["--db.class", "myapp.ServerDB"], "class")
         assert tags == {"db": "myapp.ServerDB"}
 
     def test_equals_form(self) -> None:
+        """Test that --field.class=value form is parsed."""
         tags = _collect_partial_cli_tags(["--db.class=myapp.ServerDB"], "class")
         assert tags == {"db": "myapp.ServerDB"}
 
     def test_multiple_tags(self) -> None:
+        """Test that multiple class tag flags are all collected."""
         tags = _collect_partial_cli_tags(
             ["--db.class", "myapp.ServerDB", "--cache.class", "myapp.Redis"],
             "class",
@@ -223,19 +238,23 @@ class TestCollectPartialCliTags:
         assert tags == {"db": "myapp.ServerDB", "cache": "myapp.Redis"}
 
     def test_nested_prefix(self) -> None:
+        """Test that a deeply nested class tag is keyed by full prefix."""
         tags = _collect_partial_cli_tags(["--db.backend.class", "myapp.Redis"], "class")
         assert tags == {"db.backend": "myapp.Redis"}
 
     def test_no_match(self) -> None:
+        """Test that argv with no class tags returns an empty dict."""
         tags = _collect_partial_cli_tags(["--host", "localhost", "--port", "5432"], "class")
         assert tags == {}
 
     def test_ignores_flag_without_value(self) -> None:
+        """Test that a class tag flag with no following value is ignored."""
         # --db.class at end of argv with no following value
         tags = _collect_partial_cli_tags(["--db.class"], "class")
         assert tags == {}
 
     def test_ignores_flag_followed_by_another_flag(self) -> None:
+        """Test that a class tag flag followed by another flag is ignored."""
         tags = _collect_partial_cli_tags(["--db.class", "--other"], "class")
         assert tags == {}
 
@@ -246,21 +265,27 @@ class TestCollectPartialCliTags:
 
 
 class TestResolveTagsFromConfig:
+    """Tests for _resolve_tags_from_config helper."""
+
     def test_finds_struct_union_tag(self) -> None:
+        """Test that a union tag is found in the merged config dict."""
         merged = {"db": {"class": "myapp.ServerDB", "host": "localhost"}}
         tags = _resolve_tags_from_config(merged, _AppConfig, prefix="", union_tag="class")
         assert tags == {"db": "myapp.ServerDB"}
 
     def test_empty_when_no_union_tag(self) -> None:
+        """Test that no union tag in config yields an empty dict."""
         merged = {"db": {"host": "localhost"}}
         tags = _resolve_tags_from_config(merged, _AppConfig, prefix="", union_tag="class")
         assert tags == {}
 
     def test_empty_when_merged_empty(self) -> None:
+        """Test that an empty merged config yields an empty tags dict."""
         tags = _resolve_tags_from_config({}, _AppConfig, prefix="", union_tag="class")
         assert tags == {}
 
     def test_uses_given_prefix(self) -> None:
+        """Test that a non-empty prefix is applied when resolving tags."""
         merged = {"class": "myapp.ServerDB"}
         tags = _resolve_tags_from_config(merged, _DBBase, prefix="db", union_tag="class")
         # _DBBase is not a union field itself; struct walk yields nothing here
@@ -273,12 +298,15 @@ class TestResolveTagsFromConfig:
 
 
 class TestPreExtendParser:
+    """Tests for _pre_extend_parser_for_completion helper."""
+
     def _make_parser(self) -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser()
         populate_parser(_AppConfig, parser)
         return parser
 
     def test_extends_with_variant_fields_from_cli_argv(self) -> None:
+        """Test that variant fields are added to parser when class tag is in argv."""
         parser = self._make_parser()
         module = _ServerDB.__module__
         _pre_extend_parser_for_completion(
@@ -293,6 +321,7 @@ class TestPreExtendParser:
         assert "--db.port" in flags
 
     def test_extends_with_variant_fields_from_config_file(self, tmp_path) -> None:
+        """Test that variant fields are added to parser when class tag is in a config file."""
         module = _ServerDB.__module__
         cfg = tmp_path / "cfg.toml"
         cfg.write_text(f'[db]\nclass = "{module}._ServerDB"\n')
@@ -309,6 +338,7 @@ class TestPreExtendParser:
         assert "--db.port" in flags
 
     def test_cli_class_tag_wins_over_config_file(self, tmp_path) -> None:
+        """Test that CLI class tag takes priority over config file class tag."""
         module = _SQLiteDB.__module__
         cfg = tmp_path / "cfg.toml"
         cfg.write_text(f'[db]\nclass = "{module}._ServerDB"\n')
@@ -325,6 +355,7 @@ class TestPreExtendParser:
         assert "--db.host" not in flags
 
     def test_bad_class_path_silently_ignored(self) -> None:
+        """Test that a non-importable class path is silently ignored."""
         parser = self._make_parser()
         _pre_extend_parser_for_completion(
             parser,
@@ -338,6 +369,7 @@ class TestPreExtendParser:
         assert "--db.host" not in flags
 
     def test_no_argv_no_extension(self) -> None:
+        """Test that empty argv leaves the parser unchanged."""
         parser = self._make_parser()
         flags_before = {s for a in parser._actions for s in a.option_strings}
         _pre_extend_parser_for_completion(parser, _AppConfig, union_tag="class", config_flag="config", argv=[])
@@ -345,6 +377,7 @@ class TestPreExtendParser:
         assert flags_before == flags_after
 
     def test_does_not_duplicate_already_registered_flags(self) -> None:
+        """Test that calling pre-extend twice does not duplicate flags."""
         module = _ServerDB.__module__
         parser = self._make_parser()
         # Pre-extend twice; second call should not raise DuplicateError
@@ -393,27 +426,32 @@ class TestPreExtendParser:
 
 
 class TestExtendWalk:
+    """Tests for _extend_walk helper function."""
+
     def test_registers_leaf_fields(self) -> None:
+        """Test that leaf fields are registered as parser arguments."""
         parser = argparse.ArgumentParser()
         existing = {a.dest for a in parser._actions}
-        _extend_walk(_ServerDB, parser, parser, "db", "class", existing)
+        _extend_walk(_ServerDB, _WalkCtx(parser=parser, union_tag="class", existing_dests=existing), parser, "db")
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--db.host" in flags
         assert "--db.port" in flags
 
     def test_skips_already_registered(self) -> None:
+        """Test that already-registered flags are not duplicated."""
         parser = argparse.ArgumentParser()
         parser.add_argument("--db.host", dest="db.host", default=argparse.SUPPRESS)
         existing = {a.dest for a in parser._actions}
-        _extend_walk(_ServerDB, parser, parser, "db", "class", existing)
+        _extend_walk(_ServerDB, _WalkCtx(parser=parser, union_tag="class", existing_dests=existing), parser, "db")
         # Should not raise, host registered once
         host_actions = [a for a in parser._actions if "--db.host" in a.option_strings]
         assert len(host_actions) == 1
 
     def test_creates_argument_group_for_nested_struct(self) -> None:
+        """Test that a nested struct creates an argument group."""
         parser = argparse.ArgumentParser()
         existing = {a.dest for a in parser._actions}
-        _extend_walk(_ExtendWalkOuter, parser, parser, "", "class", existing)
+        _extend_walk(_ExtendWalkOuter, _WalkCtx(parser=parser, union_tag="class", existing_dests=existing), parser, "")
         group_titles = {g.title for g in parser._action_groups}
         assert "inner" in group_titles
 
@@ -424,6 +462,8 @@ class TestExtendWalk:
 
 
 class TestFromNamespaceUnionDispatch:
+    """Tests for from_namespace union dispatch via --field.class flag."""
+
     def test_dispatch_via_class_tag_flag(self) -> None:
         """Passing --db.class from CLI causes from_namespace to construct the right variant."""
         module = _ServerDB.__module__
@@ -444,6 +484,7 @@ class TestFromNamespaceUnionDispatch:
         assert result.db.port == 9999
 
     def test_dispatch_sqlite_variant(self) -> None:
+        """Test that the SQLite variant is correctly dispatched via class tag."""
         module = _SQLiteDB.__module__
         parser = argparse.ArgumentParser()
         populate_parser(_AppConfig, parser)
@@ -485,22 +526,25 @@ class TestFromNamespaceUnionDispatch:
 
 
 class TestSetupCompletionImportGuard:
+    """Tests for setup_completion import guard behavior."""
+
     def test_raises_import_error_when_argcomplete_absent(self) -> None:
+        """Test that ImportError is raised when argcomplete is not installed."""
         import builtins
 
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
             if name == "argcomplete":
-                raise ImportError("No module named 'argcomplete'")
+                msg = "No module named 'argcomplete'"
+                raise ImportError(msg)
             return real_import(name, *args, **kwargs)
 
         parser = argparse.ArgumentParser()
         populate_parser(_AppConfig, parser)
 
-        with patch("builtins.__import__", side_effect=mock_import):
-            with pytest.raises(ImportError, match="argcomplete"):
-                confarg.setup_completion(parser, _AppConfig)
+        with patch("builtins.__import__", side_effect=mock_import), pytest.raises(ImportError, match="argcomplete"):
+            confarg.setup_completion(parser, _AppConfig)
 
     def test_calls_argcomplete_autocomplete(self) -> None:
         """setup_completion calls argcomplete.autocomplete(parser)."""
@@ -559,6 +603,8 @@ class _VariantWithLiteral:
 
 
 class TestLiteralEnumCompletion:
+    """Tests that Literal and Enum fields register choices= for argcomplete."""
+
     def _action_for(self, parser: argparse.ArgumentParser, flag: str) -> argparse.Action:
         return next(a for a in parser._actions if f"--{flag}" in a.option_strings)
 
@@ -593,7 +639,7 @@ class TestLiteralEnumCompletion:
     def test_extend_walk_literal_field_choices(self) -> None:
         """_extend_walk (dynamic variant extension) also sets choices= for Literal fields."""
         parser = argparse.ArgumentParser()
-        existing = {a.dest for a in parser._actions}
-        _extend_walk(_VariantWithLiteral, parser, parser, "backend", "class", existing)
+        ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
+        _extend_walk(_VariantWithLiteral, ctx, parser, "backend")
         action = self._action_for(parser, "backend.mode")
         assert set(action.choices) == {"fast", "safe", "debug"}

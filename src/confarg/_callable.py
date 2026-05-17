@@ -6,13 +6,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import importlib
 import inspect
 import sys
+from dataclasses import dataclass
 from typing import Any
 
-from confarg._errors import ConfargError, TypeCoercionError
+from confarg._errors import ConfargError, SymbolImportError, TypeCoercionError
 from confarg._types import (
     _callable_param_types,
     _callable_return_type,
@@ -34,13 +36,19 @@ def _import_dotted(path: str) -> Any:
             obj = importlib.import_module(module_path)
         except ImportError:
             continue
+        except Exception as e:
+            msg = f"Cannot import {path!r}: error loading module '{module_path}': {e}"
+            raise SymbolImportError(msg) from e
         try:
             for attr in parts[i:]:
                 obj = getattr(obj, attr)
-            return obj
         except AttributeError as e:
-            raise TypeCoercionError(f"Cannot import {path!r}: {e}") from e
-    raise TypeCoercionError(f"Cannot import {path!r}: no importable module found in path")
+            msg = f"Cannot import {path!r}: {e}"
+            raise SymbolImportError(msg) from e
+        else:
+            return obj
+    msg = f"Cannot import {path!r}: no importable module found in path"
+    raise SymbolImportError(msg)
 
 
 def _detect_owning_class(func: Any) -> type | None:
@@ -80,11 +88,12 @@ def _maybe_bind_method(func: Any, path: str) -> Any:
         instance = cls()
     except TypeError as e:
         fn_path = f"{func.__module__}.{func.__qualname__}"
-        raise TypeCoercionError(
+        msg = (
             f"Cannot instantiate {cls.__qualname__!r} with no arguments at '{path}': {e}.\n"
             f"Use the dict form and supply {cls.__qualname__}'s constructor arguments as sibling keys:\n"
             f"{_format_fn_dict_example(fn_path, cls)}"
-        ) from e
+        )
+        raise TypeCoercionError(msg) from e
     return getattr(instance, func.__name__)
 
 
@@ -154,9 +163,8 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: str, union_tag: str = "clas
     elif callable(spec):
         result = spec
     else:
-        raise TypeCoercionError(
-            f"Cannot construct Callable at '{path}': expected str or dict, got {type(spec).__name__} {spec!r}"
-        )
+        msg = f"Cannot construct Callable at '{path}': expected str or dict, got {type(spec).__name__} {spec!r}"
+        raise TypeCoercionError(msg)
     _check_callable_signature(result, tp, path)
     return result
 
@@ -175,11 +183,12 @@ def _resolve_bare_string(path_str: str, path: str, callable_tp: Any = None) -> A
         try:
             return obj()
         except TypeError as e:
-            raise TypeCoercionError(
+            msg = (
                 f"Cannot instantiate {path_str!r} with no arguments at '{path}': {e}."
                 f" Use the dict form with 'class: {path_str}' to provide"
                 " constructor arguments."
-            ) from e
+            )
+            raise TypeCoercionError(msg) from e
     return _maybe_bind_method(obj, path)
 
 
@@ -196,7 +205,7 @@ def _resolve_call_kwargs(func: Any, kwargs: dict, path: str, union_tag: str) -> 
         from typing import get_type_hints
 
         hints = get_type_hints(func)
-    except Exception:
+    except (NameError, AttributeError, TypeError):
         hints = {}
 
     params = sig.parameters
@@ -210,9 +219,8 @@ def _resolve_call_kwargs(func: Any, kwargs: dict, path: str, union_tag: str) -> 
         invalid = sorted(set(kwargs) - valid)
         if invalid:
             fn_name = getattr(func, "__qualname__", repr(func))
-            raise TypeCoercionError(
-                f"Unknown kwargs {invalid} for {fn_name!r} at '{path}'. Valid parameters: {sorted(valid)}"
-            )
+            msg = f"Unknown kwargs {invalid} for {fn_name!r} at '{path}'. Valid parameters: {sorted(valid)}"
+            raise TypeCoercionError(msg)
 
     coerced: dict = {}
     for k, v in kwargs.items():
@@ -234,16 +242,16 @@ def _resolve_call_spec(fn_path: str, call_kwargs: dict, original_spec: dict, pat
     try:
         result = func(**coerced)
     except Exception as e:
-        raise TypeCoercionError(f"Failed to call {fn_path!r} at '{path}': {e}") from e
+        msg = f"Failed to call {fn_path!r} at '{path}': {e}"
+        raise TypeCoercionError(msg) from e
     if not callable(result):
-        raise TypeCoercionError(
+        msg = (
             f"'call:' at '{path}': {fn_path!r}(**{call_kwargs!r}) returned {type(result).__name__!r},"
             " which is not callable."
         )
-    try:
+        raise TypeCoercionError(msg)
+    with contextlib.suppress(AttributeError, TypeError):
         result.__confarg_spec__ = original_spec
-    except (AttributeError, TypeError):
-        pass
     return result
 
 
@@ -254,27 +262,25 @@ def _resolve_dict_spec(spec: dict, callable_tp: Any, path: str, union_tag: str) 
     has_call = "call" in spec
     exclusive = [k for k in ("fn", "class", "call") if k in spec]
     if len(exclusive) > 1:
-        raise TypeCoercionError(
-            f"Callable dict at '{path}' must not specify more than one of 'fn', 'class', 'call' (got: {exclusive})"
-        )
+        msg = f"Callable dict at '{path}' must not specify more than one of 'fn', 'class', 'call' (got: {exclusive})"
+        raise TypeCoercionError(msg)
     if not has_fn and not has_class and not has_call:
         # No fn/class key: factory mode if the return type is a concrete class.
         ret = _callable_return_type(callable_tp)
         if ret is not None and isinstance(ret, type) and not getattr(ret, "__abstractmethods__", frozenset()):
             init_kwargs = dict(spec)
             return _resolve_class_spec(
-                f"{ret.__module__}.{ret.__qualname__}",
-                init_kwargs,
-                {},
-                spec,
+                _ClassSpec(f"{ret.__module__}.{ret.__qualname__}", init_kwargs, {}, spec),
                 path,
                 union_tag,
                 callable_tp,
             )
-        raise TypeCoercionError(f"Callable dict at '{path}' must have either a 'fn' or 'class' key")
+        msg = f"Callable dict at '{path}' must have either a 'fn' or 'class' key"
+        raise TypeCoercionError(msg)
     bind_raw = spec.get("bind", {})
     if not isinstance(bind_raw, dict):
-        raise TypeCoercionError(f"'bind' in Callable dict at '{path}' must be a dict, got {type(bind_raw).__name__}")
+        msg = f"'bind' in Callable dict at '{path}' must be a dict, got {type(bind_raw).__name__}"
+        raise TypeCoercionError(msg)
     init_kwargs = {k: v for k, v in spec.items() if k not in ("fn", "class", "call", "bind")}
 
     if has_call:
@@ -282,7 +288,7 @@ def _resolve_dict_spec(spec: dict, callable_tp: Any, path: str, union_tag: str) 
         return _resolve_call_spec(spec["call"], call_kwargs, spec, path, union_tag)
     if has_fn:
         return _resolve_fn_spec(spec["fn"], init_kwargs, bind_raw, path, union_tag)
-    return _resolve_class_spec(spec["class"], init_kwargs, bind_raw, spec, path, union_tag, callable_tp)
+    return _resolve_class_spec(_ClassSpec(spec["class"], init_kwargs, bind_raw, spec), path, union_tag, callable_tp)
 
 
 def _coerce_bind_kwargs(callable_obj: Any, bind: dict) -> dict:
@@ -305,7 +311,7 @@ def _coerce_bind_kwargs(callable_obj: Any, bind: dict) -> dict:
 
     try:
         hints = get_type_hints(callable_obj)
-    except Exception:
+    except (NameError, AttributeError, TypeError):
         hints = {}
 
     result = {}
@@ -322,7 +328,7 @@ def _coerce_bind_kwargs(callable_obj: Any, bind: dict) -> dict:
         if tp in (bool, int, float):
             try:
                 result[k] = _coerce_leaf(tp, v)
-            except Exception:
+            except TypeCoercionError:
                 result[k] = v
         else:
             result[k] = v
@@ -351,9 +357,8 @@ def _check_bind_params(callable_obj: Any, bind: dict, path: str) -> None:
     }
     invalid = sorted(set(bind) - valid)
     if invalid:
-        raise TypeCoercionError(
-            f"'bind' at '{path}' contains unknown parameter(s): {invalid}. Valid parameters: {sorted(valid)}"
-        )
+        msg = f"'bind' at '{path}' contains unknown parameter(s): {invalid}. Valid parameters: {sorted(valid)}"
+        raise TypeCoercionError(msg)
 
 
 def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, path: str, union_tag: str) -> Any:
@@ -365,18 +370,20 @@ def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, path: str, uni
     """
     func = _import_dotted(fn_path)
     if init_kwargs and getattr(func, "__name__", None) == "__init__":
-        raise TypeCoercionError(
+        msg = (
             f"Constructor kwargs {sorted(init_kwargs)} are not valid for '__init__' at '{path}':"
             " '__init__' is treated as a plain function. Use 'bind:' to partially apply arguments."
         )
+        raise TypeCoercionError(msg)
     if init_kwargs:
         cls = _detect_owning_class(func)
         if cls is None:
-            raise TypeCoercionError(
+            msg = (
                 f"Constructor kwargs {sorted(init_kwargs)} provided for {fn_path!r} at '{path}',"
                 " but it does not appear to be an instance method."
                 " Use 'bind' to partially apply arguments to a plain function or class."
             )
+            raise TypeCoercionError(msg)
         instance = _construct_class(cls, init_kwargs, path, union_tag)
         result: Any = getattr(instance, func.__name__)
     else:
@@ -417,7 +424,7 @@ def _resolve_factory_kwargs(cls: type, kwargs: dict, path: str, union_tag: str) 
         from typing import get_type_hints
 
         hints = get_type_hints(cls.__init__)
-    except Exception:
+    except (NameError, AttributeError, TypeError):
         hints = {}
 
     params = sig.parameters
@@ -431,10 +438,11 @@ def _resolve_factory_kwargs(cls: type, kwargs: dict, path: str, union_tag: str) 
         }
         invalid = sorted(set(kwargs) - valid)
         if invalid:
-            raise TypeCoercionError(
+            msg = (
                 f"Unknown constructor kwargs {invalid} for {cls.__qualname__} at '{path}'."
                 f" Valid parameters: {sorted(valid)}"
             )
+            raise TypeCoercionError(msg)
 
     coerced: dict = {}
     for k, v in kwargs.items():
@@ -450,11 +458,18 @@ def _resolve_factory_kwargs(cls: type, kwargs: dict, path: str, union_tag: str) 
     return coerced
 
 
+@dataclass
+class _ClassSpec:
+    """Parsed 'class:' section of a callable dict spec."""
+
+    cls_path: str
+    init_kwargs: dict
+    bind: dict
+    original: dict
+
+
 def _resolve_class_spec(
-    cls_path: str,
-    init_kwargs: dict,
-    bind: dict,
-    original_spec: dict,
+    spec: _ClassSpec,
     path: str,
     union_tag: str,
     callable_tp: Any = None,
@@ -468,44 +483,41 @@ def _resolve_class_spec(
       instantiate cls with init_kwargs; the instance must be callable.
       'bind' is then partially applied to the instance.
     """
-    cls = _import_dotted(cls_path)
+    cls = _import_dotted(spec.cls_path)
     if not isinstance(cls, type):
-        raise TypeCoercionError(
-            f"'class' key at '{path}' must reference a class, got {type(cls).__name__} {cls_path!r}"
-        )
+        msg = f"'class' key at '{path}' must reference a class, got {type(cls).__name__} {spec.cls_path!r}"
+        raise TypeCoercionError(msg)
 
     if _is_factory_class(cls, callable_tp):
-        if bind:
-            raise TypeCoercionError(
+        if spec.bind:
+            msg = (
                 f"'bind' is not valid in factory mode at '{path}'."
                 f" Pass constructor kwargs as sibling keys alongside 'class:'."
             )
-        coerced = _resolve_factory_kwargs(cls, init_kwargs, path, union_tag)
+            raise TypeCoercionError(msg)
+        coerced = _resolve_factory_kwargs(cls, spec.init_kwargs, path, union_tag)
         p = functools.partial(cls, **coerced)
-        try:
-            p.__confarg_spec__ = original_spec
-        except (AttributeError, TypeError):
-            pass
+        with contextlib.suppress(AttributeError, TypeError):
+            p.__confarg_spec__ = spec.original
         return p
 
     # Callable-object mode
-    instance = _construct_class(cls, init_kwargs, path, union_tag)
+    instance = _construct_class(cls, spec.init_kwargs, path, union_tag)
     if not callable(instance):
-        raise TypeCoercionError(
-            f"Instance of {cls_path!r} at '{path}' is not callable."
+        msg = (
+            f"Instance of {spec.cls_path!r} at '{path}' is not callable."
             " The class must define __call__ to be used as a Callable."
         )
+        raise TypeCoercionError(msg)
     result: Any
-    if bind:
-        bind = _coerce_bind_kwargs(instance, bind)
+    if spec.bind:
+        bind = _coerce_bind_kwargs(instance, spec.bind)
         _check_bind_params(instance, bind, path)
         result = functools.partial(instance, **bind)
     else:
         result = instance
-    try:
-        result.__confarg_spec__ = original_spec
-    except (AttributeError, TypeError):
-        pass
+    with contextlib.suppress(AttributeError, TypeError):
+        result.__confarg_spec__ = spec.original
     return result
 
 
@@ -547,11 +559,12 @@ def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
     ]
     if len(required) != len(param_types):
         type_names = [getattr(_resolve_type(t), "__name__", repr(t)) for t in param_types]
-        raise TypeCoercionError(
+        msg = (
             f"Callable at '{path}': annotation expects {len(param_types)} parameter(s)"
             f" {type_names}, but {obj!r} has {len(required)} required"
             f" parameter(s) {[p.name for p in required]}"
         )
+        raise TypeCoercionError(msg)
 
 
 def _serialize_callable(value: Any) -> str | dict:
@@ -586,8 +599,9 @@ def _serialize_callable(value: Any) -> str | dict:
     if module and qualname:
         return f"{module}.{qualname}"
 
-    raise ConfargError(
+    msg = (
         f"Cannot serialize callable {value!r}: no __module__/__qualname__ available."
         " For class instances, ensure the instance was constructed via confarg"
         " (which stores the spec for round-trip serialization)."
     )
+    raise ConfargError(msg)

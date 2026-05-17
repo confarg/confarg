@@ -134,6 +134,7 @@ class TestDumpLeafTypes:
         ids=["int", "float", "bool", "str", "enum", "int-enum", "path", "literal", "none"],
     )
     def test_leaf_passthrough(self, obj, field, expected) -> None:
+        """Test that leaf fields are serialized to their native Python values."""
         assert confarg.dump(obj)[field] == expected
 
     @pytest.mark.parametrize(
@@ -145,6 +146,7 @@ class TestDumpLeafTypes:
         ids=["inf", "nan"],
     )
     def test_float_special(self, rate: float, check) -> None:
+        """Test that special float values (inf, nan) are preserved during serialization."""
         result = confarg.dump(Flat(name="x", count=0, rate=rate, verbose=False))
         assert check(result["rate"])
 
@@ -158,6 +160,7 @@ class TestDumpCollections:
     """Collection serialization."""
 
     def test_list(self) -> None:
+        """Test that a list field serializes to a list."""
         WithList = make_target("items", list[int], default_factory=list)
         obj = WithList(items=[1, 2, 3])
         result = confarg.dump(obj)
@@ -185,6 +188,7 @@ class TestDumpCollections:
         assert result["pair"] == ["hello", 42]
 
     def test_dict(self) -> None:
+        """Test that a dict field serializes to a dict."""
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         obj = WithDict(metadata={"a": 1, "b": 2})
         result = confarg.dump(obj)
@@ -205,6 +209,7 @@ class TestDumpCollections:
         ]
 
     def test_empty_collections(self) -> None:
+        """Test that empty collection fields serialize to empty containers."""
         obj = WithCollections()
         result = confarg.dump(obj)
         assert result == {"names": [], "counts": [], "tags": [], "mapping": {}}
@@ -219,24 +224,28 @@ class TestDumpOptional:
     """Optional field serialization."""
 
     def test_none_included(self) -> None:
+        """Test that an Optional field with None value serializes as None."""
         WithOptional = make_target("value", int | None, default=None)
         obj = WithOptional(value=None)
         result = confarg.dump(obj)
         assert result["value"] is None
 
     def test_present_value(self) -> None:
+        """Test that an Optional field with a value serializes correctly."""
         WithOptional = make_target("value", int | None, default=None)
         obj = WithOptional(value=42)
         result = confarg.dump(obj)
         assert result["value"] == 42
 
     def test_optional_str_none(self) -> None:
+        """Test that an Optional[str] field with None value serializes as None."""
         WithOptionalStr = make_target("value", str | None, default=None)
         obj = WithOptionalStr(value=None)
         result = confarg.dump(obj)
         assert result["value"] is None
 
     def test_optional_str_present(self) -> None:
+        """Test that an Optional[str] field with a present value serializes correctly."""
         WithOptionalStr = make_target("value", str | None, default=None)
         obj = WithOptionalStr(value="hello")
         result = confarg.dump(obj)
@@ -258,6 +267,7 @@ class TestDumpUnionTagAlways:
         assert result["shape"]["class"] == "tests.conftest.CircleShape"
 
     def test_tag_always_square(self) -> None:
+        """Test that a SquareShape value always gets a class tag."""
         obj = WithUnionAmbiguous(shape=SquareShape(x=0, y=0, radius=3))
         result = confarg.dump(obj, tag_policy="always")
         assert result["shape"]["class"] == "tests.conftest.SquareShape"
@@ -293,6 +303,7 @@ class TestDumpUnionTagAuto:
         assert result["shape"]["class"] == "tests.conftest.CircleShape"
 
     def test_ambiguous_square_gets_tag(self) -> None:
+        """Test that an ambiguous SquareShape gets a class tag under auto policy."""
         obj = WithUnionAmbiguous(shape=SquareShape(x=0, y=0, radius=3))
         result = confarg.dump(obj)
         assert result["shape"]["class"] == "tests.conftest.SquareShape"
@@ -305,6 +316,7 @@ class TestDumpUnionTagAuto:
         assert result["backend"]["sslmode"] == "require"
 
     def test_unambiguous_redis_no_tag(self) -> None:
+        """Test that an unambiguous RedisConfig value gets no class tag."""
         obj = WithUnionDisjointDefaults(backend=RedisConfig(host="h", port=6379, db=1))
         result = confarg.dump(obj)
         assert "class" not in result["backend"]
@@ -411,9 +423,11 @@ class TestDumpToml:
         """Raises InvalidConfigFileError when tomli_w is not installed."""
         obj = Empty()
         path = tmp_path / "out.toml"
-        with mock.patch.dict(sys.modules, {"tomli_w": None}):
-            with pytest.raises(confarg.InvalidConfigFileError, match="tomli_w"):
-                confarg.dump_file(obj, path)
+        with (
+            mock.patch.dict(sys.modules, {"tomli_w": None}),
+            pytest.raises(confarg.InvalidConfigFileError, match="tomli_w"),
+        ):
+            confarg.dump_file(obj, path)
 
 
 # ---------------------------------------------------------------------------
@@ -451,9 +465,11 @@ class TestDumpYaml:
         """Raises InvalidConfigFileError when PyYAML is not installed."""
         obj = Empty()
         path = tmp_path / "out.yaml"
-        with mock.patch.dict(sys.modules, {"yaml": None}):
-            with pytest.raises(confarg.InvalidConfigFileError, match="PyYAML"):
-                confarg.dump_file(obj, path)
+        with (
+            mock.patch.dict(sys.modules, {"yaml": None}),
+            pytest.raises(confarg.InvalidConfigFileError, match="PyYAML"),
+        ):
+            confarg.dump_file(obj, path)
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +481,7 @@ class TestDumpRoundTrip:
     """Load -> dump -> load produces the same result."""
 
     def test_flat_roundtrip(self, tmp_path: Path) -> None:
+        """Test that a flat dataclass round-trips through load → dump → load."""
         path_in = tmp_path / "in.toml"
         path_in.write_text('name = "alice"\ncount = 3\nrate = 1.5\nverbose = true\n')
         obj = confarg.load(Flat, args=[], env={}, files=[path_in])
@@ -474,6 +491,7 @@ class TestDumpRoundTrip:
         assert obj == obj2
 
     def test_nested_roundtrip(self, tmp_path: Path) -> None:
+        """Test that a nested dataclass round-trips through load → dump → load."""
         obj = AppConfig(
             db=DbConfig(host="h", port=1, name="n"),
             cache=CacheConfig(enabled=False, ttl=0),
@@ -485,6 +503,7 @@ class TestDumpRoundTrip:
         assert obj == obj2
 
     def test_collections_roundtrip(self, tmp_path: Path) -> None:
+        """Test that a dict field round-trips through load → dump → load."""
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         obj = WithDict(metadata={"a": 1, "b": 2})
         path = tmp_path / "out.toml"
@@ -493,6 +512,7 @@ class TestDumpRoundTrip:
         assert obj == obj2
 
     def test_enum_roundtrip(self, tmp_path: Path) -> None:
+        """Test that an Enum field round-trips through load → dump → load."""
         WithEnum = make_target("color", Color, default=Color.RED)
         obj = WithEnum(color=Color.BLUE)
         path = tmp_path / "out.toml"
@@ -519,9 +539,11 @@ class TestDumpErrors:
     """Error handling for dump()."""
 
     def test_not_a_dataclass(self) -> None:
+        """Test that passing a non-dataclass to dump raises TypeError."""
         with pytest.raises(TypeError, match="instance"):
             confarg.dump("not a dataclass")
 
     def test_dataclass_class_not_instance(self) -> None:
+        """Test that passing a dataclass class (not instance) to dump raises TypeError."""
         with pytest.raises(TypeError, match="instance"):
             confarg.dump(Flat)

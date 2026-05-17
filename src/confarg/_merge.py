@@ -55,9 +55,33 @@ def _to_append_list(val: Any) -> list[Any]:
         try:
             max_idx = max(int(k) for k in val)
         except ValueError:
-            raise ConfargError(f"Append dict keys must be integer indices, got: {sorted(val.keys())!r}") from None
+            msg = f"Append dict keys must be integer indices, got: {sorted(val.keys())!r}"
+            raise ConfargError(msg) from None
         return [val.get(str(i)) for i in range(max_idx + 1)]
     return [val]  # scalar single-value append
+
+
+def _merge_regular_key(key: str, new_val: Any, result: dict[str, Any]) -> None:
+    """Store new_val under key, preserving any existing append spec when new_val is a delete-spec."""
+    prev = result.get(key)
+    if isinstance(new_val, dict) and LIST_DELETE_KEY in new_val and isinstance(prev, dict) and LIST_APPEND_KEY in prev:
+        result[key] = {**new_val, LIST_APPEND_KEY: prev[LIST_APPEND_KEY]}
+    else:
+        result[key] = new_val
+
+
+def _apply_append_key(plain_key: str, new_val: Any, result: dict[str, Any]) -> None:
+    """Apply a ``key+`` shorthand entry, accumulating appends under ``plain_key``."""
+    items = list(new_val) if isinstance(new_val, list) else [new_val]
+    existing = result.get(plain_key)
+    if isinstance(existing, list):
+        result[plain_key] = existing + items
+    elif isinstance(existing, dict) and LIST_APPEND_KEY in existing:
+        result[plain_key] = {LIST_APPEND_KEY: existing[LIST_APPEND_KEY] + items}
+    elif isinstance(existing, dict) and LIST_DELETE_KEY in existing:
+        result[plain_key] = {**existing, LIST_APPEND_KEY: items}
+    else:
+        result[plain_key] = {LIST_APPEND_KEY: items}
 
 
 def _normalize_merge_ops(d: Any) -> Any:
@@ -88,18 +112,7 @@ def _normalize_merge_ops(d: Any) -> Any:
 
         if key.endswith("+"):
             has_change = True
-            plain_key = key[:-1]
-            items = list(new_val) if isinstance(new_val, list) else [new_val]
-            existing = result.get(plain_key)
-            if isinstance(existing, list):
-                result[plain_key] = existing + items
-            elif isinstance(existing, dict) and LIST_APPEND_KEY in existing:
-                result[plain_key] = {LIST_APPEND_KEY: existing[LIST_APPEND_KEY] + items}
-            elif isinstance(existing, dict) and LIST_DELETE_KEY in existing:
-                # key already produced a delete spec; add the append spec alongside it
-                result[plain_key] = {**existing, LIST_APPEND_KEY: items}
-            else:
-                result[plain_key] = {LIST_APPEND_KEY: items}
+            _apply_append_key(key[:-1], new_val, result)
 
         elif key.endswith("-"):
             has_change = True
@@ -110,18 +123,8 @@ def _normalize_merge_ops(d: Any) -> Any:
                 result[plain_key] = DICT_DELETE
 
         else:
-            # Regular key: if new_val is a delete-spec dict and a prior key+ already set an
-            # append spec here, preserve the append spec rather than overwriting it.
-            prev = result.get(key)
-            if (
-                isinstance(new_val, dict)
-                and LIST_DELETE_KEY in new_val
-                and isinstance(prev, dict)
-                and LIST_APPEND_KEY in prev
-            ):
-                result[key] = {**new_val, LIST_APPEND_KEY: prev[LIST_APPEND_KEY]}
-            else:
-                result[key] = new_val
+            # Regular key: preserve any append spec when overwriting with a delete-spec.
+            _merge_regular_key(key, new_val, result)
 
     if delete_indices:
         existing_del = result.get(LIST_DELETE_KEY)
@@ -156,9 +159,8 @@ def _apply_list_ops(
         idx = orig_idx + len(lst) if orig_idx < 0 else orig_idx
         if idx < 0 or idx >= len(lst):
             _rng = "(the list is empty)" if not lst else f"(valid indices {-len(lst)} to {len(lst) - 1})"
-            raise ConfargError(
-                f"Cannot delete index {orig_idx} from '{key}': the list has {len(lst)} element(s) {_rng}."
-            )
+            msg = f"Cannot delete index {orig_idx} from '{key}': the list has {len(lst)} element(s) {_rng}."
+            raise ConfargError(msg)
         return idx
 
     # 1. Pre-append deletions
@@ -183,18 +185,20 @@ def _apply_list_ops(
         try:
             orig_idx = int(ik)
         except ValueError:
-            raise ConfargError(
+            msg = (
                 f"Cannot patch list '{key}' with non-integer key {ik!r}."
                 " List patches must use integer string keys (e.g. {'0': ..., '1': ...})."
-            ) from None
+            )
+            raise ConfargError(msg) from None
         idx = orig_idx + len(working) if orig_idx < 0 else orig_idx
         if idx < 0 or idx >= len(working):
             _rng = "(the list is empty)" if not working else f"(valid indices {-len(working)} to {len(working) - 1})"
-            raise ConfargError(
+            msg = (
                 f"Cannot patch list '{key}' at index {orig_idx}:"
                 f" the list has {len(working)} element(s) {_rng}."
                 " Use the + append syntax (e.g. --field+ for CLI) to add new elements."
             )
+            raise ConfargError(msg)
         working = list(working)  # ensure mutability
         working[idx] = (
             _deep_merge(working[idx], iv, union_tag=union_tag)
@@ -203,6 +207,33 @@ def _apply_list_ops(
         )
 
     return working
+
+
+def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) -> Any:
+    """Compute the merged value when *key* exists in both base and override."""
+    if isinstance(bv, dict) and isinstance(val, dict):
+        if LIST_APPEND_KEY in bv and LIST_APPEND_KEY in val:
+            combined = _to_append_list(bv[LIST_APPEND_KEY]) + _to_append_list(val[LIST_APPEND_KEY])
+            rest = _deep_merge(
+                {k: v for k, v in bv.items() if k != LIST_APPEND_KEY},
+                {k: v for k, v in val.items() if k != LIST_APPEND_KEY},
+                union_tag=union_tag,
+            )
+            return {**rest, LIST_APPEND_KEY: combined}
+        if LIST_DELETE_KEY in bv and LIST_DELETE_KEY in val:
+            combined_del = sorted(set(bv[LIST_DELETE_KEY]) | set(val[LIST_DELETE_KEY]))
+            rest = _deep_merge(
+                {k: v for k, v in bv.items() if k != LIST_DELETE_KEY},
+                {k: v for k, v in val.items() if k != LIST_DELETE_KEY},
+                union_tag=union_tag,
+            )
+            return {**rest, LIST_DELETE_KEY: combined_del}
+        return _deep_merge(bv, val, union_tag=union_tag)
+    if isinstance(bv, list) and isinstance(val, dict):
+        if LIST_REPLACE_BASE_KEY in val:
+            return _apply_list_ops(list(val[LIST_REPLACE_BASE_KEY]), val, key, union_tag)
+        return _apply_list_ops(list(bv), val, key, union_tag)
+    return val
 
 
 def _deep_merge(
@@ -247,43 +278,10 @@ def _deep_merge(
     result = {k: v for k, v in base.items() if not isinstance(v, _DeleteSentinel)}
 
     for key, val in override.items():
-        # Dict-key deletion: remove from result regardless of base value.
         if isinstance(val, _DeleteSentinel):
             result.pop(key, None)
-            continue
-
-        if key in result:
-            bv = result[key]
-            if isinstance(bv, dict) and isinstance(val, dict):
-                # Both sides carry append entries → concatenate.
-                if LIST_APPEND_KEY in bv and LIST_APPEND_KEY in val:
-                    combined = _to_append_list(bv[LIST_APPEND_KEY]) + _to_append_list(val[LIST_APPEND_KEY])
-                    rest = _deep_merge(
-                        {k: v for k, v in bv.items() if k != LIST_APPEND_KEY},
-                        {k: v for k, v in val.items() if k != LIST_APPEND_KEY},
-                        union_tag=union_tag,
-                    )
-                    result[key] = {**rest, LIST_APPEND_KEY: combined}
-                # Both sides carry delete entries → union the index sets.
-                elif LIST_DELETE_KEY in bv and LIST_DELETE_KEY in val:
-                    combined_del = sorted(set(bv[LIST_DELETE_KEY]) | set(val[LIST_DELETE_KEY]))
-                    rest = _deep_merge(
-                        {k: v for k, v in bv.items() if k != LIST_DELETE_KEY},
-                        {k: v for k, v in val.items() if k != LIST_DELETE_KEY},
-                        union_tag=union_tag,
-                    )
-                    result[key] = {**rest, LIST_DELETE_KEY: combined_del}
-                else:
-                    result[key] = _deep_merge(bv, val, union_tag=union_tag)
-
-            elif isinstance(bv, list) and isinstance(val, dict):
-                if LIST_REPLACE_BASE_KEY in val:
-                    # CLI override carries its own base list; ignore bv entirely.
-                    result[key] = _apply_list_ops(list(val[LIST_REPLACE_BASE_KEY]), val, key, union_tag)
-                else:
-                    result[key] = _apply_list_ops(list(bv), val, key, union_tag)
-            else:
-                result[key] = val
+        elif key in result:
+            result[key] = _merge_existing_value(result[key], val, key, union_tag)
         else:
             result[key] = val
     return result
@@ -342,7 +340,8 @@ def _accumulate_list_delete(
     existing = node.get(delete_key)
     if isinstance(existing, list):
         if idx in existing:
-            raise ConfargError(f"Duplicate list-deletion index {idx} for {source!r}.")
+            msg = f"Duplicate list-deletion index {idx} for {source!r}."
+            raise ConfargError(msg)
         node[delete_key] = sorted(existing + [idx])
     else:
         node[delete_key] = [idx]
