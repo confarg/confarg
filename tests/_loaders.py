@@ -5,8 +5,8 @@
 """Loader wrappers that give each CLI integration a confarg.load()-compatible interface.
 
 Each loader provides a ``load()`` method with the same signature as
-``confarg.load()`` (minus vanilla-only parameters ``cli_prefix`` and
-``env_config``), forwarding arguments unchanged to the underlying integration.
+``confarg.load()`` (minus the vanilla-only parameter ``cli_prefix``),
+forwarding arguments unchanged to the underlying integration.
 
 List-field CLI syntax differs between loaders:
 - ``VanillaLoader``, ``ArgparseLoader``, ``CycloptsLoader``: space-separated
@@ -46,7 +46,7 @@ class ConfargLoader(ABC):
     id: str
 
     @abstractmethod
-    def load(  # noqa: PLR0913 — mirrors confarg.load's 5-param keyword-only signature
+    def load(  # noqa: PLR0913 — mirrors confarg.load's keyword-only signature
         self,
         target: type,
         *,
@@ -55,6 +55,8 @@ class ConfargLoader(ABC):
         env_prefix: str | None = _defaults.ENV_PREFIX,
         env_separator: str = "__",
         files: Sequence[Path] = (),
+        config_flag: str = "",
+        env_config: str | None = None,
     ) -> Any:
         """Load *target* using this integration's CLI parser."""
 
@@ -67,7 +69,7 @@ class VanillaLoader(ConfargLoader):
 
     id = "vanilla"
 
-    def load(  # noqa: PLR0913 — mirrors confarg.load's 5-param keyword-only signature
+    def load(  # noqa: PLR0913 — mirrors confarg.load's keyword-only signature
         self,
         target: type,
         *,
@@ -76,6 +78,8 @@ class VanillaLoader(ConfargLoader):
         env_prefix: str | None = _defaults.ENV_PREFIX,
         env_separator: str = "__",
         files: Sequence[Path] = (),
+        config_flag: str = "",
+        env_config: str | None = None,
     ) -> Any:
         return confarg.load(
             target,
@@ -84,6 +88,8 @@ class VanillaLoader(ConfargLoader):
             env_prefix=env_prefix,
             env_separator=env_separator,
             files=files,
+            config_flag=config_flag,
+            env_config=env_config,
         )
 
 
@@ -92,7 +98,7 @@ class ArgparseLoader(ConfargLoader):
 
     id = "argparse"
 
-    def load(  # noqa: PLR0913 — mirrors confarg.load's 5-param keyword-only signature
+    def load(  # noqa: PLR0913 — mirrors confarg.load's keyword-only signature
         self,
         target: type,
         *,
@@ -101,17 +107,22 @@ class ArgparseLoader(ConfargLoader):
         env_prefix: str | None = _defaults.ENV_PREFIX,
         env_separator: str = "__",
         files: Sequence[Path] = (),
+        config_flag: str = "",
+        env_config: str | None = None,
     ) -> Any:
-        parser = make_parser(target, config_flag="")
-        ns = parser.parse_args(list(argv) if argv is not None else [])
+        argv_ = list(argv) if argv is not None else []
+        parser = make_parser(target, config_flag=config_flag, argv=argv_)
+        ns = parser.parse_args(argv_)
         return from_namespace(
             target,
             ns,
-            config_flag="",
+            config_flag=config_flag,
             env=env,
             env_prefix=env_prefix,
             env_separator=env_separator,
             files=files,
+            env_config=env_config,
+            argv=argv_,
         )
 
 
@@ -125,7 +136,7 @@ class ClickLoader(ConfargLoader):
 
     id = "click"
 
-    def load(  # noqa: PLR0913 — mirrors confarg.load's 5-param keyword-only signature
+    def load(  # noqa: PLR0913 — mirrors confarg.load's keyword-only signature
         self,
         target: type,
         *,
@@ -134,17 +145,22 @@ class ClickLoader(ConfargLoader):
         env_prefix: str | None = _defaults.ENV_PREFIX,
         env_separator: str = "__",
         files: Sequence[Path] = (),
+        config_flag: str = "",
+        env_config: str | None = None,
     ) -> Any:
+        argv_ = list(argv) if argv is not None else []
         result_holder: list[Any] = []
 
         base_cmd = click.command()(lambda **kwargs: None)
-        populate_command(target, base_cmd, config_flag="")
+        populate_command(target, base_cmd, config_flag=config_flag, argv=argv_)
 
-        # Capture env/prefix/files in the inner closure.
+        # Capture loader kwargs in the inner closure.
         _env = env
         _env_prefix = env_prefix
         _env_separator = env_separator
         _files = files
+        _config_flag = config_flag
+        _env_config = env_config
 
         @click.command()
         def _inner(**kwargs: Any) -> None:
@@ -153,16 +169,18 @@ class ClickLoader(ConfargLoader):
                 confargclick.from_context(
                     target,
                     ctx,
-                    config_flag="",
+                    config_flag=_config_flag,
                     env=_env,
                     env_prefix=_env_prefix,
                     env_separator=_env_separator,
                     files=_files,
+                    env_config=_env_config,
+                    argv=argv_,
                 ),
             )
 
         real_cmd = click.Command(name="cli", callback=_inner.callback, params=base_cmd.params)
-        CliRunner().invoke(real_cmd, list(argv) if argv is not None else [], catch_exceptions=False)
+        CliRunner().invoke(real_cmd, argv_, catch_exceptions=False)
         return result_holder[0]
 
 
@@ -175,7 +193,7 @@ class CycloptsLoader(ConfargLoader):
 
     id = "cyclopts"
 
-    def load(  # noqa: PLR0913 — mirrors confarg.load's 5-param keyword-only signature
+    def load(  # noqa: PLR0913 — mirrors confarg.load's keyword-only signature
         self,
         target: type,
         *,
@@ -184,18 +202,22 @@ class CycloptsLoader(ConfargLoader):
         env_prefix: str | None = _defaults.ENV_PREFIX,
         env_separator: str = "__",
         files: Sequence[Path] = (),
+        config_flag: str = "",
+        env_config: str | None = None,
     ) -> Any:
+        argv_ = list(argv) if argv is not None else []
         app = cyclopts.App()
-        populate_app(target, app, config_flag="")
+        populate_app(target, app, config_flag=config_flag, argv=argv_)
         return confargcyclopts.from_app(
             target,
             app,
-            argv=list(argv) if argv is not None else [],
-            config_flag="",
+            argv=argv_,
+            config_flag=config_flag,
             env=env,
             env_prefix=env_prefix,
             env_separator=env_separator,
             files=files,
+            env_config=env_config,
         )
 
 

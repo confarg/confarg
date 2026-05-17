@@ -76,11 +76,18 @@ from confarg._types import (
     _init_fields,
     _is_collection,
     _is_plain_class,
+    _resolve_struct,
     _StrToken,
     _unwrap_optional,
     _var_keyword_name,
     _var_param_names,
     _var_positional_name,
+)
+from confarg.cli._collect import (
+    _callable_return_type_for,
+    _collect_callable_spec,
+    _collect_ns_fields,
+    _merge_blob_into_spec,
 )
 from confarg.cli.argparse import from_namespace, populate_parser
 from confarg.cli.argparse._build import (
@@ -92,7 +99,6 @@ from confarg.cli.argparse._build import (
     _collect_struct_specs,
     _collect_subconfig_specs,
     _get_callable_field_return_type,
-    _resolve_struct,
     build_dynamic_flags,
 )
 from confarg.cli.argparse._completion import (
@@ -103,12 +109,6 @@ from confarg.cli.argparse._completion import (
 )
 from confarg.cli.argparse._completion import (
     setup_completion as _argparse_setup_completion,
-)
-from confarg.cli.argparse._namespace import (
-    _callable_return_type_for,
-    _collect_callable_spec,
-    _collect_ns_fields,
-    _merge_blob_into_spec,
 )
 from confarg.cli.argparse._register import _add_callable_bind_flags, _add_callable_fn_flags, _register_spec
 from confarg.cli.argparse._spec import FlagSpec, _get_field_docstrings

@@ -16,9 +16,9 @@ import pytest
 
 import confarg
 from confarg._types import _StrToken
+from confarg.cli._collect import _collect_ns_fields
 from confarg.cli.argparse import FieldMeta, from_namespace, make_parser, merge_namespace, populate_parser
 from confarg.cli.argparse._build import build_static_flags
-from confarg.cli.argparse._namespace import _collect_ns_fields
 from confarg.cli.argparse._spec import _get_field_docstrings
 from confarg.exceptions import TypeCoercionError
 from confarg.typedload._coerce import _LEAF_COERCIONS

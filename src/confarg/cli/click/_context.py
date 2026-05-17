@@ -8,25 +8,21 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+    from pathlib import Path
 
     import click
 
 from click import ParameterSource
 
 from confarg import _defaults
-from confarg._files import _load_subpath_files
-from confarg._merge import _deep_merge
+from confarg._api import build
 from confarg._parse_cli import _collect_config_file_pairs
-from confarg._parse_env import _parse_env
-from confarg._types import _resolve_type
-from confarg.cli.argparse._namespace import _collect_ns_fields
-from confarg.dictexpr import resolve_expressions
-from confarg.typedload import construct
+from confarg._pipeline import _merge_sources
+from confarg.cli._collect import _collect_ns_fields
 
 
 def _flat_from_ctx(ctx: click.Context) -> dict[str, Any]:
@@ -55,6 +51,7 @@ def merge_context(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = "__",
+    env_config: str | None = None,
     argv: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Collect and merge configuration from all sources into a raw dict.
@@ -79,6 +76,8 @@ def merge_context(  # noqa: PLR0913
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
             which disables environment variable parsing entirely.
         env_separator: Separator used to split env var names into nested keys.
+        env_config: Name of an env var whose value is a config file path to load.
+            Loaded after ``files`` but before CLI ``--config`` files.
         argv: CLI argument list used to determine config-file loading order.
             Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
             command was invoked with a custom argv (e.g. in tests via
@@ -90,32 +89,26 @@ def merge_context(  # noqa: PLR0913
     if env is None:
         env = os.environ
 
-    flat = _flat_from_ctx(ctx)
-
-    # 1. Collect CLI field values from the context
     cli_data: dict[str, Any] = {}
-    _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data)
+    _collect_ns_fields(_flat_from_ctx(ctx), target, prefix="", union_tag=union_tag, result=cli_data)
 
-    # 2. Collect (subpath, path) pairs for all config files in left-to-right CLI order.
-    _argv = sys.argv[1:] if argv is None else list(argv)
-    file_pairs: list[tuple[str, Path]] = [("", Path(f)) for f in files]
-    if config_flag:
-        file_pairs.extend(_collect_config_file_pairs(_argv, config_flag))
+    # Scanning argv (not the context) preserves interleaved --config[.subpath]
+    # ordering, so later CLI config files win on conflict.
+    argv_ = sys.argv[1:] if argv is None else list(argv)
+    cli_configs = _collect_config_file_pairs(argv_, config_flag) if config_flag else []
 
-    # 3. Load config files
-    config_data = _load_subpath_files(file_pairs, union_tag)
-
-    # 4. Parse env vars
-    if env_prefix is None:
-        env_data: dict[str, Any] = {}
-        env_configs: list[tuple[str, Path]] = []
-    else:
-        env_data, env_configs = _parse_env(env, env_prefix, env_separator, target)
-    config_data = _deep_merge(config_data, _load_subpath_files(env_configs, union_tag), union_tag=union_tag)
-
-    # 5. Merge: config < env < CLI
-    merged = _deep_merge(config_data, env_data, union_tag=union_tag)
-    return _deep_merge(merged, cli_data, union_tag=union_tag)
+    return _merge_sources(
+        target,
+        cli_data,
+        cli_configs,
+        env=env,
+        env_prefix=env_prefix,
+        env_separator=env_separator,
+        config_flag=config_flag,
+        files=files,
+        env_config=env_config,
+        union_tag=union_tag,
+    )
 
 
 def from_context(  # noqa: PLR0913
@@ -128,6 +121,7 @@ def from_context(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = "__",
+    env_config: str | None = None,
     argv: Sequence[str] | None = None,
 ) -> Any:
     """Construct a dataclass instance from a Click :class:`~click.Context`.
@@ -156,6 +150,8 @@ def from_context(  # noqa: PLR0913
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
             which disables environment variable parsing entirely.
         env_separator: Separator used to split env var names into nested keys.
+        env_config: Name of an env var whose value is a config file path to load.
+            Loaded after ``files`` but before CLI ``--config`` files.
         argv: CLI argument list used to determine config-file loading order.
             Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
             command was invoked with a custom argv (e.g. in tests via
@@ -173,10 +169,10 @@ def from_context(  # noqa: PLR0913
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
+        env_config=env_config,
         argv=argv,
     )
-    merged = resolve_expressions(merged)
-    return construct(_resolve_type(target), merged, union_tag=union_tag)
+    return build(target, merged, union_tag=union_tag)
 
 
 __all__ = ["from_context", "merge_context"]
