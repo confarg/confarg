@@ -35,6 +35,7 @@ from confarg.cli.argparse._build import _resolve_struct
 from confarg.dictexpr import resolve_expressions
 from confarg.exceptions import SymbolImportError
 from confarg.typedload import construct
+from confarg.typedload._coerce import _is_registered_leaf
 
 
 def _str_token(v: Any) -> Any:
@@ -222,7 +223,7 @@ def _collect_ns_namedtuple(
         _set_nested(result, flag.split("."), v)
 
 
-def _collect_ns_fields(
+def _collect_ns_fields(  # noqa: C901  # one branch per type case
     flat: dict[str, Any],
     target: Any,
     prefix: str,
@@ -250,6 +251,13 @@ def _collect_ns_fields(
 
         if _is_namedtuple(core):
             _collect_ns_namedtuple(flat, core, flag, result)
+            continue
+
+        if _is_registered_leaf(core):
+            if flag in flat:
+                v = flat[flag]
+                v = [_str_token(item) for item in v] if isinstance(v, list) else _str_token(v)
+                _set_nested(result, flag.split("."), v)
             continue
 
         if _is_struct(core):
