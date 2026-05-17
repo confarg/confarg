@@ -52,6 +52,7 @@ from confarg.exceptions import (
 from confarg.typedload._coerce import (
     _FALSY,
     _LEAF_COERCIONS,
+    _NONE_TOKENS,
     _TRUTHY,
     _coerce_bool,
     _coerce_leaf,
@@ -497,7 +498,7 @@ def _construct_single_variant_union(
     union_tag: str,
 ) -> Any:
     """Construct a union that has exactly one non-None variant."""
-    if type(None) in all_args and isinstance(data, _StrToken) and data.lower() in ("none", "null"):
+    if type(None) in all_args and isinstance(data, _StrToken) and data.lower() in _NONE_TOKENS:
         return None
     try:
         return construct(non_none[0], data, path=path, union_tag=union_tag)
@@ -591,7 +592,7 @@ def _try_coll_variants(coll_vars: list[Any], data: Any, path: str, union_tag: st
 
 def _coerce_scalar_variants(all_args: list[Any], scalar_leaf_vars: list[Any], data: Any, path: str) -> Any:
     """Coerce data to one of the scalar leaf variants; returns _UNION_NO_MATCH on failure."""
-    if type(None) in all_args and isinstance(data, _StrToken) and data.lower() in ("none", "null"):
+    if type(None) in all_args and isinstance(data, _StrToken) and data.lower() in _NONE_TOKENS:
         return None
     if bool in scalar_leaf_vars and int in scalar_leaf_vars:
         if isinstance(data, bool):
