@@ -301,6 +301,22 @@ def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
         value: The value to set at the target path.
     """
     for part in path[:-1]:
+        # Negative index into an active append-spec: navigate directly into the
+        # appended item so multiple --field+ / --field.-1.sub sequences each
+        # patch their own newly-added item rather than colliding on the "-N" key.
+        if isinstance(d, dict) and LIST_APPEND_KEY in d:
+            try:
+                idx = int(part)
+            except ValueError:
+                pass
+            else:
+                if idx < 0:
+                    items = d[LIST_APPEND_KEY]
+                    if isinstance(items, list):
+                        resolved = idx + len(items)
+                        if 0 <= resolved < len(items) and isinstance(items[resolved], dict):
+                            d = items[resolved]
+                            continue
         if part not in d:
             d[part] = {}
         elif isinstance(d[part], list):

@@ -271,15 +271,11 @@ def _build_items(et: Any, data: Any, path: str, union_tag: str) -> list[Any]:
             working = _apply_list_ops(list(data[LIST_REPLACE_BASE_KEY]), data, path, None)
             return [construct(et, v, path=f"{path}[{i}]", union_tag=union_tag) for i, v in enumerate(working)]
         if LIST_APPEND_KEY in data:
-            # Append-only dict produced when there is no base list (e.g. --foo+ with no config).
-            # If a post-append delete is also present, apply all ops against an empty base.
-            from confarg._merge import LIST_POST_APPEND_DELETE_KEY, _apply_list_ops, _to_append_list
+            # Append-only dict: apply all list ops (appends, deletions, index patches) against an empty base.
+            from confarg._merge import _apply_list_ops
 
-            if LIST_POST_APPEND_DELETE_KEY in data:
-                working = _apply_list_ops([], data, path, None)
-                return [construct(et, v, path=f"{path}[{i}]", union_tag=union_tag) for i, v in enumerate(working)]
-            items_data = _to_append_list(data[LIST_APPEND_KEY])
-            return [construct(et, v, path=f"{path}[{i}]", union_tag=union_tag) for i, v in enumerate(items_data)]
+            working = _apply_list_ops([], data, path, None)
+            return [construct(et, v, path=f"{path}[{i}]", union_tag=union_tag) for i, v in enumerate(working)]
         if LIST_DELETE_KEY in data:
             msg = (
                 f"List deletion (the '-' operator) at '{path}' requires a base list to delete from,"
