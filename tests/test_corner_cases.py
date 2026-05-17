@@ -723,13 +723,6 @@ class TestConfigFileCornerCases:
         result = confarg.load(WithDefaults, argv=[], env={}, files=[p])
         assert result.name == "default"
 
-    def test_yaml_non_dict_content(self, tmp_path: Path) -> None:
-        """YAML file with non-dict content (e.g. a list) is treated as empty."""
-        p = tmp_path / "list.yaml"
-        p.write_text("- item1\n- item2\n")
-        result = confarg.load(WithDefaults, argv=[], env={}, files=[p])
-        assert result.name == "default"
-
     def test_yml_extension(self, tmp_path: Path) -> None:
         """File with .yml extension is parsed as YAML."""
         p = tmp_path / "test.yml"

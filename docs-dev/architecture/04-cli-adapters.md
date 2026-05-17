@@ -327,6 +327,46 @@ Argv (not the namespace) is also what preserves the left-to-right order of inter
 History: patches, dict subkeys, bind-on-`__call__` and expressions over CLI numbers were
 vanilla-only until PR #72.
 
+### A bare append
+
+`--<list>+` with nothing after it is a legal, meaningful command: it appends no items and
+leaves whatever the lower-priority sources put in the list
+(`_parse_cli._handle_append_token`, which consumes tokens until the next flag and is content
+with none). It is the *only* flag family that stands bare — every other `nargs="*"` spec
+(`--config`, `--config.<path>+`, a collection element `--f.N`) still reports `Missing value`
+when vanilla finds no token, so "zero or more" is the append's own shape, not what `"*"`
+means everywhere.
+
+Neither clicklike framework can express a flag that takes zero *or* more tokens: click and
+typer fix an option's token count when the option is built, and the `multiple=True` the
+adapters map `"*"` to always demands one. So a bare `--input+` was rejected with `Option
+'--input+' requires an argument.` on both, while vanilla, argparse and cyclopts accepted it
+(BUG-33).
+
+The shape therefore follows **argv**, which is where an append spec comes from in the first
+place: `_build._append_carries_items` asks whether any occurrence of the flag in argv is
+followed by an item, and the spec registers `nargs="*"` if one is and value-less (`nargs=0`,
+the shape a delete already uses) if none is. Every front-end gets the same neutral spec, so
+this is one rule rather than a clicklike special case, and nothing framework-specific is
+relied on.
+
+The question is asked with `_parse_cli._looks_like_flag`, the same value/flag split vanilla
+consumes by, so the frameworks take exactly the tokens vanilla takes. That matters for
+dash-prefixed items in particular: `--input+ -8` and `--input+=--a` carry items by vanilla's
+reckoning, so they keep the `nargs="*"` registration that lets click consume them.
+
+Rejected: click's own optional-value spelling (`is_flag=False` plus a `flag_value`). It fits
+click alone — typer's vendored parser dropped the feature, so typer would have stayed red —
+and it changes how click reads the token *after* the flag, treating anything beginning with
+`-` as an omitted value. That breaks `--tags+=--a` and `--input+ -8`, which the dashed-value
+escape requires
+([10](10-design-decisions.md#the--form-is-the-escape-for-a-dashed-value),
+`TestDashPrefixedValueContract`).
+
+One argv can still spell the same append both ways (`--users+ billy --users+`), and a single
+spec cannot be both shapes: the valued form wins and the bare occurrence is rejected by click,
+typer and cyclopts (BUG-35, open).
+
 ### A patch op joins the values the framework collected
 
 Splitting one channel across two dicts costs what vanilla gets for free by writing both into

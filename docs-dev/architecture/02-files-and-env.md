@@ -10,7 +10,20 @@ below). Parser libraries are imported lazily and a missing one becomes
 
 Two loader tables exist: `_LOADERS` (a root configuration layer, must be a dict) and
 `_ITEM_LOADERS` (any top-level value, used by `__include__` and `--config.<path>+`, where a
-list or scalar root is meaningful).
+list or scalar root is meaningful). `_LOADERS` is the smaller table — no `.csv`/`.tsv`, since
+data is a value and not a layer.
+
+Both tables return the file's **raw** top-level value; neither format knows the root rule.
+`_load_raw` is the single place that requires a root to be a mapping, so all three formats and
+anything `__include__` rewrites the root to produce one error
+([09](09-invariants.md#delegate-to-the-canonical-function)). Enforcing it after include
+resolution rather than at parse time is what lets a root file be nothing but `__include__`.
+
+An **empty** document is the one non-dict root that passes: YAML parses an empty file (and an
+explicit `null`) as `None`, which `_load_raw` reads as "contributes nothing" so that an empty
+YAML file behaves like an empty TOML one. Every other non-dict root — a list or a scalar —
+raises `InvalidConfigFileError.non_dict_root`, because silently loading it as `{}` discards a
+file the user asked for and the failure only surfaces much later as a missing field.
 
 ## Data files versus configuration layers
 

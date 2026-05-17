@@ -54,6 +54,15 @@ class InvalidConfigFileError(ConfargError):
         return cls(f"{lib} is required for {action}. Install it with: pip install {pkg}")
 
     @classmethod
+    def non_dict_root(cls, path: Any, value: Any) -> InvalidConfigFileError:
+        """Return an error for a root config file whose top-level value is not a mapping."""
+        return cls(
+            f"Root config file must be a mapping, got {type(value).__name__}: {path}."
+            f" A list or scalar top level is only meaningful under __include__ or an appending"
+            f" --config.<path>+, where it is one value rather than a configuration layer.",
+        )
+
+    @classmethod
     def unsupported_format(cls, ext: str) -> InvalidConfigFileError:
         """Return an error for a config file extension that confarg cannot load."""
         return cls(f"Unsupported config file format: {ext!r}. Supported formats: .yaml/.yml, .toml, .json")
