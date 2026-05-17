@@ -10,11 +10,12 @@ except ImportError as exc:
     msg = "confarg.cli.cyclopts requires cyclopts: pip install cyclopts"
     raise ImportError(msg) from exc
 
-from confarg.cli.cyclopts._context import from_app
+from confarg.cli.cyclopts._context import from_app, merge_app
 from confarg.cli.cyclopts._register import load_flags_into_app, populate_app
 
 __all__ = [
     "from_app",
     "load_flags_into_app",
+    "merge_app",
     "populate_app",
 ]

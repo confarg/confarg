@@ -16,7 +16,7 @@ import pytest
 
 import confarg
 from confarg._types import _StrToken
-from confarg.cli.argparse import FieldMeta, from_namespace, make_parser, populate_parser
+from confarg.cli.argparse import FieldMeta, from_namespace, make_parser, merge_namespace, populate_parser
 from confarg.cli.argparse._build import build_static_flags
 from confarg.cli.argparse._namespace import _collect_ns_fields
 from confarg.cli.argparse._spec import _get_field_docstrings
@@ -1043,3 +1043,72 @@ class TestUnionRootTarget:
         result = from_namespace(_RootDBConfig, ns, env={})
         assert isinstance(result, _RootSQLite)
         assert result.dbpath == "/tmp/x.db"
+
+
+# ---------------------------------------------------------------------------
+# merge_namespace
+# ---------------------------------------------------------------------------
+
+
+class TestMergeNamespace:
+    """merge_namespace returns the raw merged dict instead of a constructed instance."""
+
+    def test_returns_dict(self) -> None:
+        """merge_namespace returns a dict, not a dataclass instance."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(Simple, parser, config_flag="")
+        ns = parser.parse_args(["--host", "myhost", "--port", "9090"])
+        result = merge_namespace(Simple, ns, env={})
+        assert isinstance(result, dict)
+
+    def test_cli_values_in_dict(self) -> None:
+        """CLI-provided values appear in the returned dict as _StrToken entries."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(Simple, parser, config_flag="")
+        ns = parser.parse_args(["--host", "myhost", "--port", "9090"])
+        result = merge_namespace(Simple, ns, env={})
+        assert result["host"] == "myhost"
+        assert result["port"] == "9090"
+
+    def test_expressions_preserved(self, tmp_path: Any) -> None:
+        """Expression strings from config files are kept intact (not resolved)."""
+        cfg = tmp_path / "cfg.yaml"
+        cfg.write_text("host: myhost\nport: '${host}'\n")
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(Simple, parser)
+        ns = parser.parse_args(["--config", str(cfg)])
+        result = merge_namespace(Simple, ns, env={})
+        assert result["port"] == "${host}"
+
+    def test_round_trip_equivalence(self) -> None:
+        """build(target, merge_namespace(...)) produces the same instance as from_namespace(...)."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(Simple, parser, config_flag="")
+        ns = parser.parse_args(["--host", "myhost", "--port", "9090"])
+        raw = merge_namespace(Simple, ns, env={})
+        from_raw = confarg.build(Simple, raw)
+        direct = from_namespace(Simple, ns, env={})
+        assert from_raw == direct
+
+    def test_dump_file_from_raw_dict(self, tmp_path: Any) -> None:
+        """dump_file accepts the raw dict returned by merge_namespace without raising."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(Simple, parser, config_flag="")
+        ns = parser.parse_args(["--host", "myhost", "--port", "9090"])
+        raw = merge_namespace(Simple, ns, env={})
+        out = tmp_path / "out.yaml"
+        confarg.dump_file(raw, out)
+        assert out.exists()
+
+    def test_dump_file_round_trip_via_instance(self, tmp_path: Any) -> None:
+        """Round-tripping through a built instance gives back the same config."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(Simple, parser, config_flag="")
+        ns = parser.parse_args(["--host", "myhost", "--port", "9090"])
+        raw = merge_namespace(Simple, ns, env={})
+        instance = confarg.build(Simple, raw)
+        out = tmp_path / "out.yaml"
+        confarg.dump_file(instance, out)
+        reloaded = confarg.load(Simple, argv=[], files=[out], env={})
+        assert reloaded.host == "myhost"
+        assert reloaded.port == 9090
