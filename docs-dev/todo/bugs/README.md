@@ -17,7 +17,8 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-7 — Typer integration is claimed, never tested, and currently broken](BUG-7-typer-claimed-untested-broken.md) | L | medium | behavior |
 | [BUG-15 — `dump()` drops a leaf a union variant will steal back](BUG-15-dump-drops-stolen-leaf.md) | L | medium | config |
 | [BUG-24 — A delete flag drops the callable shorthand it refines in the adapters](BUG-24-delete-flag-drops-callable-shorthand.md) | M | high | behavior |
-| [BUG-25 — An escaped `_bind` beside a plain opener is vanilla-only](BUG-25-escaped-bind-beside-plain-opener.md) | S | high | config |
 | [BUG-26 — Architecture notes link closed tickets to a board that cannot hold them](BUG-26-architecture-links-closed-tickets.md) | S | low | none |
+| [BUG-27 — A value starting with `--` is refused by the vanilla parser](BUG-27-dash-prefixed-value-rejected.md) | M | high | config |
+| [BUG-28 — A callable's sibling kwarg the signature does not name is vanilla-only](BUG-28-callable-sibling-kwarg-unregistered.md) | S | medium | config |
 
 <!-- tickets:end -->

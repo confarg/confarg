@@ -981,8 +981,16 @@ class TestEscapedDirectiveMode:
         result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         assert result.fn(1) == 101  # _OwnerWithFn(fn=100).method(1) -> 1 + 100
 
-    def test_lenient_stray_escaped_key_is_data(self, tmp_json: Any) -> None:
-        """No guard rail: a stray '_bind' under a plain opener is passed as data (errors if rejected)."""
+    def test_stray_escaped_key_is_data_and_the_error_says_so(self, tmp_json: Any) -> None:
+        """A stray '_bind' under a plain opener stays data; the rejection names both spellings."""
         cfg = tmp_json(json.dumps({"fn": {"class": f"{_MOD}._Multiplier", "factor": 3, "_bind": 1}}))
-        with pytest.raises(TypeCoercionError, match="Unknown field"):
+        with pytest.raises(TypeCoercionError, match="escaped spelling") as exc_info:
             confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
+        assert "'_bind'" in str(exc_info.value)
+        assert "use 'bind'" in str(exc_info.value)
+
+    def test_stray_plain_key_the_target_accepts_stays_data(self, tmp_json: Any) -> None:
+        """The mirror guard rail: a plain 'bind' the constructor *does* take is left alone."""
+        cfg = tmp_json(json.dumps({"fn": {"_class": f"{_MOD}._InitBind", "bind": 5, "_bind": {"lr": 10}}}))
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
+        assert result.fn() == 15

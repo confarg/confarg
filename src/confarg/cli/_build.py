@@ -1077,6 +1077,43 @@ def _collect_config_argv_specs(argv: Sequence[str], config_flag: str) -> list[Fl
     return specs
 
 
+def _collect_callable_bind_argv_specs(
+    target: object,
+    argv: Sequence[str],
+    union_tag: str,
+    existing_names: set[str],
+) -> list[FlagSpec]:
+    """Build FlagSpecs for ``--<callable>.<bind>.<key>`` flags found in argv but not in a signature.
+
+    The signature-driven specs run first and win, so this pass only catches what no
+    signature describes: the bind spelling the opener left inactive, whose keys are
+    ordinary data (BUG-25).  The vanilla parser accepts any key below a bind directive
+    (:func:`~confarg._parse_cli._addresses_callable_bind`), so registration follows the
+    same rule and hands the token to the collector as a plain string; whether the kwarg
+    is acceptable is construction's answer to give, identically in all four front-ends.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
+    """
+    # Imported here: a module-level import would create an import cycle with _parse_cli.
+    from confarg._parse_cli import (  # noqa: PLC0415
+        _addresses_callable_bind,
+        _looks_like_flag,
+        _normalize_eq_args,
+    )
+
+    specs: list[FlagSpec] = []
+    for tok in _normalize_eq_args(list(argv)):
+        if not _looks_like_flag(tok):
+            continue
+        key = tok[2:]
+        if key in existing_names or not _addresses_callable_bind(target, key.split("."), union_tag):
+            continue
+        existing_names.add(key)
+        specs.append(FlagSpec(name=key, metavar="VALUE", help=f"Value for '{key}' in the callable spec."))
+    return specs
+
+
 def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind (delete/append/collection/json cast)
     target: object,
     argv: Sequence[str],
@@ -1216,6 +1253,7 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         # Opener flags beat the blob they refine, as the collector's deep merge does.
         for field_flag, (fn_path, mode, bind_key) in {**config_fns, **blob_fns, **argv_fns}.items():
             result.extend(_collect_callable_field_specs(field_flag, fn_path, mode, bind_key, existing_names))
+        result.extend(_collect_callable_bind_argv_specs(target, argv_list, union_tag, existing_names))
         if config_flag:
             result.extend(_collect_config_argv_specs(argv_list, config_flag))
         result.extend(_collect_patch_argv_specs(target, argv_list, union_tag, config_flag))

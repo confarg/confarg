@@ -30,6 +30,26 @@ registration (probes over the flat `{flag}.{name}` namespace), so every channel 
 without duplicating tables. On the CLI a field's escaped opener likewise beats a plain
 `--f.fn`, which is then a kwarg named `fn`.
 
+**A mixed pair is data everywhere, in all four front-ends** (BUG-25). Rejecting
+`--f.fn X --f._bind.p V` outright was considered and declined: `_bind` beside a plain opener
+is an ordinary key in a config file and in an env var, so a CLI-only rejection would trade a
+front-end parity gap for a channel one — and the target whose own parameter is named `bind`
+is exactly what the escaped form exists to reach, so no general rule can call the other
+spelling a mistake. What is true is that the pair is almost always a typo, so the rejection
+construction already produces is made to say so: `_mixed_form_hint` appends *"`_bind` is the
+escaped spelling of the `bind` directive, but this spec's opener is plain"* wherever a kwarg
+name is turned down. The hint is derived from the name alone, which is sound because a
+directive in the **active** form never reaches a kwarg rejection — it was consumed as a
+directive — so a directive word that does is necessarily the other form. It fires only where
+the name is rejected: a target that really does take a `bind` parameter still gets it, and
+`_reject_mixed_form_kwargs` asks the signature before speaking, so the constructor paths that
+report through the shared struct construction say the same thing as the rest.
+
+Both bind spellings are **subtrees** on the CLI, whichever is active: `_resolve_field_type`
+accepts either under a `Callable` and leaves the mode question to construction, and the
+adapters' `_collect_bind_sections` nests both out of the flat namespace, so the merged dict
+matches vanilla's key for key.
+
 ## Class as factory versus class as instance
 
 A bare class name means "factory". When the `Callable` declares a concrete return type that

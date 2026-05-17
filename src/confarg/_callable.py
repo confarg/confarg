@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast, get_args, get_type_hints
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable, Mapping
 
 from confarg._import import _import_dotted
 from confarg._types import (
@@ -224,6 +224,18 @@ def _unproducible_return(cls: type, callable_tp: Any) -> str | None:
     return ret.__qualname__
 
 
+def _acceptable_kwarg_names(params: Mapping[str, inspect.Parameter]) -> set[str] | None:
+    """Return the names *params* can be filled by keyword, or None when anything goes.
+
+    None means "unanswerable": a ``**kwargs`` parameter accepts every name, so no name
+    can be called invalid. The one canonical answer, shared by kwarg validation
+    (:func:`_coerce_kwargs`) and the mixed-form check (:func:`_reject_mixed_form_kwargs`).
+    """
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return None
+    return {n for n, p in params.items() if n != "self" and p.kind is not inspect.Parameter.VAR_POSITIONAL}
+
+
 def _coerce_kwargs(  # noqa: PLR0913
     sig_obj: Any,
     hints_obj: Any,
@@ -257,17 +269,14 @@ def _coerce_kwargs(  # noqa: PLR0913
     except (NameError, AttributeError, TypeError):
         hints = {}
 
-    params = sig.parameters
-    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
-    if not has_var_keyword:
-        valid = {
-            n
-            for n, p in params.items()
-            if n != "self" and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-        }
+    valid = _acceptable_kwarg_names(sig.parameters)
+    if valid is not None:
         invalid = sorted(set(kwargs) - valid)
         if invalid:
-            msg = f"Unknown {kind} {invalid} for {subject} at '{base_path}'. Valid parameters: {sorted(valid)}"
+            msg = (
+                f"Unknown {kind} {invalid} for {subject} at '{base_path}'."
+                f" Valid parameters: {sorted(valid)}.{_mixed_form_hint(invalid)}"
+            )
             raise TypeCoercionError(msg)
 
     coerced: dict = {}
@@ -371,6 +380,78 @@ def names_an_opener(name: str) -> bool:
     therefore a replacement for a spec already in hand, not a refinement of it.
     """
     return name in _PLAIN_DIRECTIVES.openers or name in _ESCAPED_DIRECTIVES.openers
+
+
+def names_a_bind(name: str) -> bool:
+    """Return whether *name* is the bind key, in either the plain or the escaped form.
+
+    Both forms answer yes wherever a *path* is judged rather than a spec: a path does
+    not see the opener, and which form is the directive and which is ordinary data is
+    the opener's to decide, at construction.
+
+    Dev Notes:
+        docs-dev/architecture/06-callables.md#plain-and-escaped-directives
+    """
+    return name in (_PLAIN_DIRECTIVES.bind, _ESCAPED_DIRECTIVES.bind)
+
+
+_DIRECTIVE_COUNTERPARTS: dict[str, str] = dict(
+    zip(
+        (*_PLAIN_DIRECTIVES.openers, _PLAIN_DIRECTIVES.bind),
+        (*_ESCAPED_DIRECTIVES.openers, _ESCAPED_DIRECTIVES.bind),
+        strict=True,
+    ),
+)
+_DIRECTIVE_COUNTERPARTS.update({escaped: plain for plain, escaped in list(_DIRECTIVE_COUNTERPARTS.items())})
+
+
+def _mixed_form_hint(names: Iterable[str]) -> str:
+    """Explain rejected kwargs that are directive words in the form the opener did not select.
+
+    A directive in the *active* form never reaches a kwarg rejection — it was consumed as
+    a directive — so a directive word that does is the other form, left as ordinary data
+    by :func:`active_directives`. The rejection is correct either way; the hint says why
+    the word ended up a kwarg, which is what the likely typo needs to hear. Returns ``""``
+    when no name is a directive word.
+
+    Dev Notes:
+        docs-dev/architecture/06-callables.md#plain-and-escaped-directives
+    """
+    clauses = []
+    for name in sorted(set(names) & set(_DIRECTIVE_COUNTERPARTS)):
+        escaped = name in _ESCAPED_DIRECTIVES.reserved
+        form, mode = ("escaped", "plain") if escaped else ("plain", "escaped")
+        openers = "/".join(repr(o) for o in (_ESCAPED_DIRECTIVES if escaped else _PLAIN_DIRECTIVES).openers)
+        clauses.append(
+            f" {name!r} is the {form} spelling of the {_DIRECTIVE_COUNTERPARTS[name]!r} directive,"
+            f" but this spec's opener is {mode}, so {name!r} is ordinary data here:"
+            f" use {_DIRECTIVE_COUNTERPARTS[name]!r}, or spell the opener {openers}.",
+        )
+    return "".join(clauses)
+
+
+def _reject_mixed_form_kwargs(target: Any, kwargs: dict, path: str) -> None:
+    """Raise if a kwarg is a directive word in the inactive form that *target* cannot accept.
+
+    The constructor rejects it anyway, through the shared struct construction that knows
+    nothing of directives; catching it here is what lets the message name the mixed form.
+    A name the target *does* accept is left alone — reaching a parameter that collides
+    with a directive word is exactly what the escaped form exists for.
+    """
+    stray = set(kwargs) & set(_DIRECTIVE_COUNTERPARTS)
+    if not stray:
+        return
+    try:
+        sig = inspect.signature(target)
+    except (ValueError, TypeError):
+        return  # uninspectable (C extension etc.): construction has the last word
+    valid = _acceptable_kwarg_names(sig.parameters)
+    if valid is None:
+        return
+    invalid = sorted(stray - valid)
+    if invalid:
+        msg = f"Unknown constructor kwarg(s) {invalid} for the Callable spec at {path!r}.{_mixed_form_hint(invalid)}"
+        raise TypeCoercionError(msg)
 
 
 def promote_bare_spec(spec: str) -> dict[str, Any]:
@@ -477,9 +558,12 @@ def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, path: str, uni
     """
     func = _import_dotted(fn_path)
     if init_kwargs and getattr(func, "__name__", None) == "__init__":
+        # The hint replaces the generic advice rather than following it: when the kwarg is
+        # a directive in the other form, "use bind" without saying why is the confusing half.
         msg = (
             f"Constructor kwargs {sorted(init_kwargs)} are not valid for '__init__' at '{path}':"
-            " '__init__' is treated as a plain function. Use 'bind:' to partially apply arguments."
+            " '__init__' is treated as a plain function."
+            + (_mixed_form_hint(init_kwargs) or " Use 'bind:' to partially apply arguments.")
         )
         raise TypeCoercionError(msg)
     if init_kwargs:
@@ -488,9 +572,13 @@ def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, path: str, uni
             msg = (
                 f"Constructor kwargs {sorted(init_kwargs)} provided for {fn_path!r} at '{path}',"
                 " but it does not appear to be an instance method."
-                " Use 'bind' to partially apply arguments to a plain function or class."
+                + (
+                    _mixed_form_hint(init_kwargs)
+                    or " Use 'bind' to partially apply arguments to a plain function or class."
+                )
             )
             raise TypeCoercionError(msg)
+        _reject_mixed_form_kwargs(cls, init_kwargs, path)
         instance = _construct_class(cls, init_kwargs, path, union_tag, construct_fn)
         result: Any = getattr(instance, func.__name__)
     else:
@@ -530,6 +618,7 @@ def _resolve_class_spec(
         msg = f"'class' key at '{path}' must reference a class, got {type(cls).__name__} {spec.cls_path!r}"
         raise TypeCoercionError(msg)
 
+    _reject_mixed_form_kwargs(cls, spec.init_kwargs, path)
     instance = _construct_class(cls, spec.init_kwargs, path, union_tag, construct_fn)
     if not callable(instance):
         msg = (

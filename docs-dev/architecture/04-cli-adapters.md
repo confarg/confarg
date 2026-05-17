@@ -109,6 +109,9 @@ user typed, found by scanning argv (and config files named on argv):
 - bind/factory parameters of callables, whether the class is named by `--f.fn/.class/.call`,
   by a whole-value `--f '{"class": …}'` blob, or by a config file;
 - escaped openers (`--f._class`) actually typed;
+- bind subkeys typed in argv in either spelling (`--f.bind.p`, `--f._bind.p`), including the
+  one the opener left inactive, whose keys are ordinary data and so describe no signature
+  ([06](06-callables.md#plain-and-escaped-directives));
 - `--config.<any.depth>[+]`;
 - collection patches (`--f.N`, `--f+`, `--f.N-`, `--f.key`) and `.json` casts.
 
@@ -130,6 +133,15 @@ identically; vanilla `load()` registers nothing and has no analogue.
 
 Escaped opener specs carry no group: sharing a group name with a different description
 trips cyclopts' "2 distinct Group objects with same name" check.
+
+Bind subkeys are the one family registered from the **path** rather than from a signature
+(BUG-25). `_parse_cli._addresses_callable_bind` is the shared predicate, so whatever the
+vanilla parser accepts below a bind key the host framework accepts too — a signature cannot
+answer for the inactive spelling, whose keys are data, nor for a key the target does not
+have, and letting the framework reject those first is what made the four front-ends disagree.
+It deliberately stops at the bind key itself: a bare `--f.bind` is a scalar, and the flat
+collector reads a scalar there only as a sibling kwarg, which it collects only when an opener
+is present.
 
 ## Whole-value flags
 

@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from confarg import _defaults
-from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, names_an_opener, promote_bare_spec
+from confarg._callable import names_a_bind, names_an_opener, promote_bare_spec
 from confarg._cast import FORCE_CAST_NAMES, JSON_CAST_NAME, resolve_forced_value
 from confarg._merge import (
     DICT_DELETE,
@@ -160,7 +160,7 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
         tp = _resolve_type(tp)
         if _is_union(tp):
             return _resolve_union_field_type(tp, parts[idx:], union_tag)
-        if _is_callable(tp) and part in (_PLAIN_DIRECTIVES.bind, _ESCAPED_DIRECTIVES.bind):
+        if _is_callable(tp) and names_a_bind(part):
             # A callable's bind key is addressable as a str-leaf subtree (--field.bind.key)
             # and, in escaped mode, as a plain scalar init-kwarg (--field.bind 5). Whether the
             # active-mode bind must be a dict is validated in construct, not here (lenient parse).
@@ -172,6 +172,35 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
         if tp is None:
             return None
     return tp
+
+
+def _addresses_callable_bind(target: Any, parts: list[str], union_tag: str) -> bool:
+    """Return True if the dotted path names something *inside* a ``Callable`` field's bind subtree.
+
+    The companion of :func:`_resolve_field_type`'s bind branch, for callers that need the
+    question answered about a path rather than a type.  Both spellings count: which one
+    is the directive and which is ordinary data is the opener's to decide, at
+    construction, and a path does not see the opener.  The bind key alone is excluded —
+    the subtree has to be entered, not merely named — because the adapters register a
+    flag on this answer alone, and a bare ``--<field>.bind`` is a scalar their flat
+    collector reads only as a sibling kwarg.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
+    """
+    tp = _resolve_type(target)
+    for idx, part in enumerate(parts):
+        if part == union_tag:
+            return False
+        tp = _resolve_type(tp)
+        if _is_union(tp):
+            return any(_addresses_callable_bind(v, parts[idx:], union_tag) for v in _union_args_no_none(tp))
+        if _is_callable(tp):
+            return names_a_bind(part) and idx < len(parts) - 1
+        tp = _advance_field_type(tp, part)
+        if tp is None:
+            return False
+    return False
 
 
 def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> bool:  # noqa: PLR0911  # one early return per type case, mirroring _advance_field_type
