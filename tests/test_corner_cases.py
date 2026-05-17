@@ -153,15 +153,38 @@ class TestDeepMergeListPatchErrors:
         """Patching a list with an index beyond its length raises ConfargError."""
         base = {"items": [1, 2]}
         override = {"items": {"4": 99}}
-        with pytest.raises(ConfargError, match="extend"):
+        with pytest.raises(ConfargError, match="append syntax"):
             _deep_merge(base, override)
 
-    def test_negative_integer_key_raises(self) -> None:
-        """Patching a list with a negative index raises ConfargError."""
+    def test_negative_index_patches_from_end(self) -> None:
+        """Negative indices count from the end of the list, like Python."""
         base = {"items": [1, 2, 3]}
-        override = {"items": {"-1": 99}}
-        with pytest.raises(ConfargError, match="negative index"):
-            _deep_merge(base, override)
+        result = _deep_merge(base, {"items": {"-1": 99}})
+        assert result["items"] == [1, 2, 99]
+        result = _deep_merge(base, {"items": {"-3": 99}})
+        assert result["items"] == [99, 2, 3]
+
+    def test_negative_index_oob_raises(self) -> None:
+        """Index -4 on a 3-element list is out of range and raises ConfargError."""
+        base = {"items": [1, 2, 3]}
+        with pytest.raises(ConfargError, match="-4"):
+            _deep_merge(base, {"items": {"-4": 99}})
+
+    def test_negative_delete_index(self) -> None:
+        """{"-": [-1]} deletes the last element."""
+        from confarg._merge import LIST_DELETE_KEY
+
+        base = {"items": [1, 2, 3]}
+        result = _deep_merge(base, {"items": {LIST_DELETE_KEY: [-1]}})
+        assert result["items"] == [1, 2]
+
+    def test_negative_delete_oob_raises(self) -> None:
+        """Deleting index -4 from a 3-element list raises ConfargError."""
+        from confarg._merge import LIST_DELETE_KEY
+
+        base = {"items": [1, 2, 3]}
+        with pytest.raises(ConfargError, match="-4"):
+            _deep_merge(base, {"items": {LIST_DELETE_KEY: [-4]}})
 
     def test_negative_minus_zero_key_raises(self) -> None:
         """Index -0 is numerically 0 but the string '-0' parses as 0, not negative."""
@@ -393,14 +416,14 @@ class TestSparseLists:
         """Env index beyond the config list length raises ConfargError (replacement-only policy)."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
-        with pytest.raises(ConfargError, match="extend"):
+        with pytest.raises(ConfargError, match="append syntax"):
             confarg.load(WithList, args=[], env={"ITEMS__4": "99"}, env_prefix="", files=[path])
 
     def test_index_beyond_optional_list_also_raises(self, tmp_toml) -> None:
         """Index beyond list length raises even for list[int | None] — use + syntax instead."""
         WithList = make_target("items", list[int | None], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
-        with pytest.raises(ConfargError, match="extend"):
+        with pytest.raises(ConfargError, match="append syntax"):
             confarg.load(WithList, args=[], env={"ITEMS__4": "99"}, env_prefix="", files=[path])
 
 

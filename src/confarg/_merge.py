@@ -193,14 +193,19 @@ def _deep_merge(
             elif isinstance(bv, list) and isinstance(val, dict):
                 if LIST_DELETE_KEY in val:
                     del_indices = val[LIST_DELETE_KEY]
-                    for idx in del_indices:
+                    normalized_del: list[int] = []
+                    for orig_idx in del_indices:
+                        idx = orig_idx
+                        if idx < 0:
+                            idx = len(bv) + idx
                         if idx < 0 or idx >= len(bv):
                             raise ConfargError(
-                                f"Cannot delete index {idx} from '{key}':"
+                                f"Cannot delete index {orig_idx} from '{key}':"
                                 f" the list has {len(bv)} element(s)"
-                                f" (valid indices 0-{len(bv) - 1})."
+                                f" (valid indices {-len(bv)} to {len(bv) - 1})."
                             )
-                    del_set = set(del_indices)
+                        normalized_del.append(idx)
+                    del_set = set(normalized_del)
                     current = [item for i, item in enumerate(bv) if i not in del_set]
                     if LIST_APPEND_KEY in val:
                         result[key] = current + _to_append_list(val[LIST_APPEND_KEY])
@@ -212,19 +217,20 @@ def _deep_merge(
                     patched = list(bv)
                     for ik, iv in val.items():
                         try:
-                            idx = int(ik)
+                            orig_idx = int(ik)
                         except ValueError:
                             raise ConfargError(
                                 f"Cannot patch list '{key}' with non-integer key {ik!r}."
                                 " List patches must use integer string keys (e.g. {'0': ..., '1': ...})."
                             ) from None
+                        idx = orig_idx
                         if idx < 0:
-                            raise ConfargError(f"Cannot patch list '{key}' with negative index {idx}")
-                        if idx >= len(patched):
+                            idx = len(patched) + idx
+                        if idx < 0 or idx >= len(patched):
                             raise ConfargError(
-                                f"Cannot extend list '{key}' at index {idx}:"
+                                f"Cannot patch list '{key}' at index {orig_idx}:"
                                 f" the list has {len(patched)} element(s)"
-                                f" (valid indices 0-{len(patched) - 1})."
+                                f" (valid indices {-len(patched)} to {len(patched) - 1})."
                                 " Use the + append syntax (e.g. --field+ for CLI) to add new elements."
                             )
                         patched[idx] = (

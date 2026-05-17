@@ -755,6 +755,32 @@ class TestEnvDelete:
                 files=[path],
             )
 
+    def test_negative_index_update(self, tmp_toml) -> None:
+        """ITEMS__-1=value updates the last element."""
+        WithList = make_target("items", list[int], default_factory=list)
+        path = tmp_toml("items = [1, 2, 3]\n")
+        result = confarg.load(
+            WithList,
+            args=[],
+            env={"ITEMS__-1": "99"},
+            env_prefix="",
+            files=[path],
+        )
+        assert result.items == [1, 2, 99]
+
+    def test_negative_index_delete(self, tmp_toml) -> None:
+        """ITEMS__-1-=anything deletes the last element."""
+        WithList = make_target("items", list[str], default_factory=list)
+        path = tmp_toml('items = ["a", "b", "c"]\n')
+        result = confarg.load(
+            WithList,
+            args=[],
+            env={"ITEMS__-1-": "x"},
+            env_prefix="",
+            files=[path],
+        )
+        assert result.items == ["a", "b"]
+
     def test_env_delete_overrides_config(self, tmp_toml) -> None:
         """Env deletion (higher priority) wins over a config-file value."""
         path = tmp_toml("name = 'from_config'\n")

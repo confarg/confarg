@@ -269,11 +269,22 @@ def _collect_names(node: ast.AST, refs: set[str]) -> None:
         _collect_names(child, refs)
 
 
+def _ast_int_value(node: ast.AST) -> int | None:
+    """Return the integer value of an AST node if it is an int literal or -int literal."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        return node.value
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        if isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, int):
+            return -node.operand.value
+    return None
+
+
 def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
     """Extract dotted name chain from nested Attribute/Subscript nodes.
 
     Returns e.g. ["db", "host"] for ``db.host``, ["servers", "0", "host"] for
-    ``servers[0].host``, or None if base is not a Name.
+    ``servers[0].host``, ["servers", "-1", "host"] for ``servers[-1].host``,
+    or None if base is not a Name.
     """
     parts: list[str] = []
     if isinstance(node, ast.Attribute):
@@ -281,8 +292,9 @@ def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
         current: ast.AST = node.value
     else:
         # Subscript at top (shouldn't be called directly, but handle it)
-        if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, int):
-            parts.append(str(node.slice.value))
+        idx = _ast_int_value(node.slice)
+        if idx is not None:
+            parts.append(str(idx))
         else:
             return None
         current = node.value
@@ -291,8 +303,9 @@ def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
             parts.append(current.attr)
             current = current.value
         elif isinstance(current, ast.Subscript):
-            if isinstance(current.slice, ast.Constant) and isinstance(current.slice.value, int):
-                parts.append(str(current.slice.value))
+            idx = _ast_int_value(current.slice)
+            if idx is not None:
+                parts.append(str(idx))
                 current = current.value
             else:
                 return None

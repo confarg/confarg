@@ -249,11 +249,19 @@ def _build_items(et: Any, data: Any, path: str, union_tag: str) -> list[Any]:
         if not data:
             return []
         try:
-            max_idx = max(int(k) for k in data)
+            int_keys = [int(k) for k in data]
         except ValueError:
             raise TypeCoercionError(
                 f"Cannot construct collection at '{path}': dict keys must be integer indices"
             ) from None
+        neg = [k for k in int_keys if k < 0]
+        if neg:
+            raise TypeCoercionError(
+                f"Negative index/indices {sorted(neg)} at '{path}' require a base list to"
+                " resolve against, but no base list was provided. Supply the full list via"
+                " a config file or other source."
+            )
+        max_idx = max(int_keys)
         gaps = [i for i in range(max_idx + 1) if str(i) not in data]
         if gaps and not _allows_none(et):
             raise TypeCoercionError(

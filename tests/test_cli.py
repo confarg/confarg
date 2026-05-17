@@ -770,8 +770,24 @@ class TestCliListAppend:
         cfg = tmp_path / "cfg.toml"
         cfg.write_text("items = [1, 2, 3]\n")
         WithList = make_target("items", list[int], default_factory=list)
-        with pytest.raises(confarg.ConfargError, match="extend"):
+        with pytest.raises(confarg.ConfargError, match="append syntax"):
             confarg.load(WithList, args=["--items.5", "99"], env={}, files=[cfg])
+
+    def test_negative_index_update(self, tmp_path) -> None:
+        """--items.-1 updates the last element."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text("items = [1, 2, 3]\n")
+        WithList = make_target("items", list[int], default_factory=list)
+        result = confarg.load(WithList, args=["--items.-1", "99"], env={}, files=[cfg])
+        assert result.items == [1, 2, 99]
+
+    def test_negative_index_delete(self, tmp_path) -> None:
+        """--items.-1- deletes the last element."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text("items = [1, 2, 3]\n")
+        WithList = make_target("items", list[int], default_factory=list)
+        result = confarg.load(WithList, args=["--items.-1-"], env={}, files=[cfg])
+        assert result.items == [1, 2]
 
     def test_dotted_field_append(self) -> None:
         """--parent.items+ appends to a nested list field."""
