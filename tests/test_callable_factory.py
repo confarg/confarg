@@ -82,7 +82,7 @@ class _WithAbstractOpt:
 
 @dataclass
 class _WithDefault:
-    optimizer: Callable[..., _SGD] = None  # type: ignore[assignment]
+    optimizer: Callable[..., _SGD] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +130,7 @@ class TestFactoryFromDict:
             _WithConcreteOpt,
             {"optimizer": {"class": f"{_MOD}._SGDVariant", "lr": 0.01, "dampening": 0.1}},
         )
+        assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _SGDVariant
         assert result.optimizer.keywords["dampening"] == pytest.approx(0.1)
 
@@ -213,6 +214,7 @@ class TestFactoryFromCLI:
             args=["--optimizer.lr=0.02"],
             env={},
         )
+        assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _SGD
         assert result.optimizer.keywords["lr"] == pytest.approx(0.02)
 
@@ -223,6 +225,7 @@ class TestFactoryFromCLI:
             args=[f"--optimizer.class={_MOD}._Adam", "--optimizer.lr=0.003"],
             env={},
         )
+        assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _Adam
         assert result.optimizer.keywords["lr"] == pytest.approx(0.003)
 
@@ -279,6 +282,7 @@ class TestFactorySerialization:
 
         p = functools.partial(_fn, x=1)
         out = _serialize_callable(p)
+        assert isinstance(out, dict)
         assert "fn" in out
         assert out.get("bind") == {"x": 1}
 
@@ -297,5 +301,6 @@ class TestFactorySerialization:
         assert dumped["optimizer"] == {"class": f"{_MOD}._SGD", "lr": 0.05}
 
         cfg2 = confarg.build(Cfg, dumped)
+        assert isinstance(cfg2.optimizer, functools.partial)
         assert cfg2.optimizer.func is _SGD
         assert cfg2.optimizer.keywords["lr"] == pytest.approx(0.05)

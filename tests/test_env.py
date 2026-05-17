@@ -10,7 +10,7 @@ import warnings
 from dataclasses import dataclass as _dc
 from dataclasses import field, make_dataclass
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import pytest
 
@@ -240,7 +240,7 @@ class TestEnvNoneSentinel:
         """Test that none sentinel works for a nested optional dataclass field."""
         Inner = make_dataclass("Inner", [("x", int, field(default=1))])
         Outer = make_dataclass("Outer", [("inner", Inner | None, field(default=None))])
-        result = confarg.load(Outer, args=[], env={"INNER": "none"}, env_prefix="")
+        result: Any = confarg.load(Outer, args=[], env={"INNER": "none"}, env_prefix="")
         assert result.inner is None
 
 

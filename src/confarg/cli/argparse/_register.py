@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import argparse
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -28,8 +28,8 @@ from confarg.cli.argparse._build import (
 def _get_actions(target: argparse.ArgumentParser | argparse._ArgumentGroup) -> list[argparse.Action]:
     """Return the action list from a parser or argument group."""
     if hasattr(target, "_group_actions"):
-        return target._group_actions  # type: ignore[return-value]
-    return target._actions  # type: ignore[return-value]
+        return cast("list[argparse.Action]", target._group_actions)
+    return cast("list[argparse.Action]", target._actions)  # ty:ignore[redundant-cast]
 
 
 def _register_spec(
@@ -55,7 +55,7 @@ def _register_spec(
 
     if spec.completer is not None:
         _fn = spec.completer
-        action.completer = lambda prefix, *_args, **_kw: _fn(prefix)  # type: ignore[attr-defined]
+        action.completer = lambda prefix, *_args, **_kw: _fn(prefix)  # ty: ignore[unresolved-attribute]  # argcomplete monkey-patches .completer onto actions at runtime
 
     existing_dests.add(spec.name)
 

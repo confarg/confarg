@@ -25,7 +25,7 @@ def _make_option_cls() -> type:
     try:
         import click as _click  # noqa: PLC0415
     except ImportError as exc:
-        msg = "click is required for confarg.cli.click: pip install confarg[click]"
+        msg = "click is required for confarg.cli.click"
         raise ImportError(msg) from exc
 
     class _ConfargOption(_click.Option):
@@ -33,7 +33,7 @@ def _make_option_cls() -> type:
             self._confarg_name = confarg_name
             super().__init__(**kwargs)
 
-        def _parse_decls(self, decls: Any, _expose_value: Any) -> tuple[str | None, list[str], list[str]]:
+        def _parse_decls(self, decls: Any, expose_value: bool) -> tuple[str, list[str], list[str]]:  # noqa: ARG002, FBT001  # name/type must match parent for keyword-safe override
             opts = [d for d in decls if d.startswith("-")]
             return self._confarg_name, opts, []
 
@@ -46,7 +46,7 @@ def _spec_to_option(spec: FlagSpec) -> click.Option:
         import click as _click  # noqa: PLC0415
         from click.shell_completion import CompletionItem  # noqa: PLC0415
     except ImportError as exc:
-        msg = "click is required for confarg.cli.click: pip install confarg[click]"
+        msg = "click is required for confarg.cli.click"
         raise ImportError(msg) from exc
 
     # Click does not support nargs=-1 for options; use multiple=True instead.
@@ -89,7 +89,7 @@ def _spec_to_option(spec: FlagSpec) -> click.Option:
 
 def load_flags_into_command(
     flags: list[FlagSpec],
-    command: click.BaseCommand,
+    command: click.Command,
 ) -> None:
     """Load a list of :class:`~confarg.cli.argparse.FlagSpec` objects into a Click command.
 
@@ -101,7 +101,7 @@ def load_flags_into_command(
     Args:
         flags: The specs to register, typically from :func:`~confarg.cli.argparse.build_static_flags`
             or :func:`~confarg.cli.argparse.build_dynamic_flags`.
-        command: The :class:`click.BaseCommand` to populate.
+        command: The :class:`click.Command` to populate.
     """
     existing = {p.name for p in command.params}
     for spec in flags:
@@ -113,7 +113,7 @@ def load_flags_into_command(
 
 def populate_command(  # noqa: PLR0913
     dc_type: type,
-    command: click.BaseCommand,
+    command: click.Command,
     *,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = "config",
@@ -131,7 +131,7 @@ def populate_command(  # noqa: PLR0913
 
     Args:
         dc_type: The dataclass type whose fields to register.
-        command: The :class:`click.BaseCommand` to populate.
+        command: The :class:`click.Command` to populate.
         union_tag: Name of the union discriminator field to skip.
         config_flag: Name of the config-file option (default ``"config"``).
             Set to ``""`` to disable config-file option registration.

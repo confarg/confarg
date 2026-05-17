@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Callable resolution and serialization for confarg."""
+"""Callable resolution and serialization."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import functools
 import inspect
 import sys
 from dataclasses import dataclass
-from typing import Any, get_type_hints
+from typing import Any, cast, get_type_hints
 
 from confarg._import import _import_dotted
 from confarg._types import (
@@ -467,7 +467,7 @@ def _resolve_class_spec(
         coerced = _resolve_factory_kwargs(cls, spec.init_kwargs, path, union_tag, construct_fn)
         p = functools.partial(cls, **coerced)
         with contextlib.suppress(AttributeError, TypeError):
-            p.__confarg_spec__ = spec.original
+            cast("Any", p).__confarg_spec__ = spec.original
         return p
 
     # Callable-object mode
@@ -486,7 +486,7 @@ def _resolve_class_spec(
     else:
         result = instance
     with contextlib.suppress(AttributeError, TypeError):
-        result.__confarg_spec__ = spec.original
+        cast("Any", result).__confarg_spec__ = spec.original
     return result
 
 
@@ -556,7 +556,7 @@ def _serialize_callable(value: Any) -> str | dict:
             result.update(value.keywords)
             return result
         fn_path = f"{func.__module__}.{func.__qualname__}"
-        result = {"fn": fn_path}
+        result: dict[str, Any] = {"fn": fn_path}
         if value.keywords:
             result["bind"] = dict(value.keywords)
         return result

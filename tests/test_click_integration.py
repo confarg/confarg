@@ -133,6 +133,7 @@ class TestLoadFlagsIntoCommand:
         flags = [FlagSpec(name="port", help="TCP port.", metavar="PORT")]
         load_flags_into_command(flags, cmd)
         opt = next(p for p in cmd.params if p.name == "port")
+        assert isinstance(opt, click.Option)
         assert opt.help == "TCP port."
         assert opt.metavar == "PORT"
 

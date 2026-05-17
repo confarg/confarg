@@ -42,12 +42,12 @@ select = [
 ]
 [lint.per-file-ignores]
 "tests/**" = [
-    "ANN",
+    "ANN",     # flake8-annotations
     "ARG",     # flake8-unused-arguments
     "PLR2004", # magic-value-comparison
+    "S",       # flake8-bandit
     "UP007",   # non-pep604-annotation-union
     "UP045",   # non-pep604-annotation-optional
-    "S",       # flake8-bandit
 ]
 
 [lint.pydocstyle]

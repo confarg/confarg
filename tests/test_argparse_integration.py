@@ -228,6 +228,7 @@ class TestPopulateParser:
         parser = argparse.ArgumentParser()
         populate_parser(WithEnum, parser)
         color_action = next(a for a in parser._actions if "--color" in a.option_strings)
+        assert color_action.choices is not None
         assert set(color_action.choices) == {"RED", "GREEN", "BLUE"}
 
     def test_literal_flag(self) -> None:
@@ -235,6 +236,7 @@ class TestPopulateParser:
         parser = argparse.ArgumentParser()
         populate_parser(WithLiteral, parser)
         level_action = next(a for a in parser._actions if "--level" in a.option_strings)
+        assert level_action.choices is not None
         assert set(level_action.choices) == {"debug", "info", "warning"}
 
     def test_dict_field_skipped(self) -> None:

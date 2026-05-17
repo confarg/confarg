@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""confarg.typedload — type-aware construction of Python dataclasses from raw dicts.
+"""Type-aware construction of Python dataclasses from raw dicts.
 
 Builds typed instances from plain dicts, with union disambiguation (tag-based,
 structural, or leaf-coercion), nested dataclass support, and collection handling.

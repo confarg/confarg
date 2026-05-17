@@ -2,7 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""confarg — read configuration from CLI args, env vars, and config files into dataclasses."""
+"""A tool to manage complex configurations.
+
+> Load and resolve complex configurations from files, environment variables and command line arguments. Keep your data
+> structures and favorite CLI library.
+"""
 
 from __future__ import annotations
 

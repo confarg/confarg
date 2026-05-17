@@ -31,6 +31,7 @@ dev = [
     "pytest>=8.0",
     "pyyaml>=6.0",
     "tomli-w>=1.0",
+    "ty>=0.0.39",
     "typer>=0.25.1",
     "zensical>=0.0.41",
 ]
