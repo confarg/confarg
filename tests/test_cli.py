@@ -789,6 +789,74 @@ class TestCliListAppend:
         result = confarg.load(WithList, args=["--items.-1-"], env={}, files=[cfg])
         assert result.items == [1, 2]
 
+    def test_reset_then_append(self, tmp_path) -> None:
+        """--items resets the list; --items+ foo then appends only to the reset list."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('items = ["alice", "bob"]\n')
+        WithList = make_target("items", list[str], default_factory=list)
+        result = confarg.load(WithList, args=["--items", "--items+", "foo"], env={}, files=[cfg])
+        assert result.items == ["foo"]
+
+    def test_append_reset_append(self, tmp_path) -> None:
+        """--items+ foo --items --items+ bar: the reset discards the first append."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('items = ["alice", "bob"]\n')
+        WithList = make_target("items", list[str], default_factory=list)
+        result = confarg.load(WithList, args=["--items+", "foo", "--items", "--items+", "bar"], env={}, files=[cfg])
+        assert result.items == ["bar"]
+
+    def test_patch_reset_append(self, tmp_path) -> None:
+        """--items.0 bob --items --items+ bar: the reset discards the index patch."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('items = ["alice", "bob"]\n')
+        WithList = make_target("items", list[str], default_factory=list)
+        result = confarg.load(WithList, args=["--items.0", "bob", "--items", "--items+", "bar"], env={}, files=[cfg])
+        assert result.items == ["bar"]
+
+    def test_patch_reset_append_patch(self, tmp_path) -> None:
+        """--items.0 bob --items --items+ foo bar --items.-1 baz → [foo, baz]."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('items = ["alice", "bob"]\n')
+        WithList = make_target("items", list[str], default_factory=list)
+        result = confarg.load(
+            WithList,
+            args=["--items.0", "bob", "--items", "--items+", "foo", "bar", "--items.-1", "baz"],
+            env={},
+            files=[cfg],
+        )
+        assert result.items == ["foo", "baz"]
+
+    def test_double_append_accumulates(self, tmp_path) -> None:
+        """--items+ foo --items+ bar appends both to the config list."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('items = ["alice"]\n')
+        WithList = make_target("items", list[str], default_factory=list)
+        result = confarg.load(WithList, args=["--items+", "foo", "--items+", "bar"], env={}, files=[cfg])
+        assert result.items == ["alice", "foo", "bar"]
+
+    def test_reset_append_then_delete(self, tmp_path) -> None:
+        """--items --items+ a b c --items.1- deletes from the post-append list."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('items = ["alice", "bob"]\n')
+        WithList = make_target("items", list[str], default_factory=list)
+        result = confarg.load(
+            WithList,
+            args=["--items", "--items+", "dylan", "eliot", "fritz", "--items.1-"],
+            env={},
+            files=[cfg],
+        )
+        assert result.items == ["dylan", "fritz"]
+
+    def test_append_then_delete_no_config(self) -> None:
+        """--items+ a b c --items.1- with no config base deletes from post-append list."""
+        WithList = make_target("items", list[str], default_factory=list)
+        result = confarg.load(
+            WithList,
+            args=["--items+", "dylan", "eliot", "fritz", "--items.1-"],
+            env={},
+        )
+        assert result.items == ["dylan", "fritz"]
+
     def test_dotted_field_append(self) -> None:
         """--parent.items+ appends to a nested list field."""
         from dataclasses import dataclass
