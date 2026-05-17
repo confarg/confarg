@@ -52,7 +52,18 @@ from confarg._types import (
 )
 from confarg.cli.argparse._spec import FlagSpec, _build_help, _get_field_docstrings, _get_field_meta
 from confarg.exceptions import SymbolImportError
-from confarg.typedload._coerce import _enum_choices, _is_registered_leaf
+from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_registered_leaf
+
+
+def _literal_cli_choices(vals: tuple[Any, ...]) -> list[str]:
+    """Map Literal members to their accepted CLI strings."""
+    choices: list[str] = []
+    for v in vals:
+        if v is None:
+            choices.extend(sorted(_NONE_TOKENS))
+        else:
+            choices.append(str(v))
+    return choices
 
 
 def _resolve_struct(
@@ -130,7 +141,7 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
     if _is_literal(core):
         return FlagSpec(
             name=flag,
-            choices=[str(v) for v in _literal_values(core)],
+            choices=_literal_cli_choices(_literal_values(core)),
             help=help_text,
             group=group,
             group_description=group_description,

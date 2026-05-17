@@ -129,19 +129,44 @@ def _coerce_str_value(value: Any, path: str) -> str:
     raise TypeCoercionError.cannot_coerce(_src_type(value), value, "str", path)
 
 
+def _match_literal_str_token(vals: tuple[Any, ...], value: _StrToken, path: str) -> Any:
+    """Try to match a _StrToken against Literal members; return the matched member or raise."""
+    s = str(value)
+
+    if s.lower() in _NONE_TOKENS:
+        for v in vals:
+            if v is None:
+                return v
+
+    # Enum members and bytes: exact string-representation match
+    for v in vals:
+        if v is not None and _is_enum(type(v)) and str(v) == s:
+            return v
+        if isinstance(v, bytes) and str(v) == s:
+            return v
+
+    # Scalar types: stealing rule — try non-str before str
+    scalar_non_str = [v for v in vals if v is not None and not isinstance(v, (str, bytes)) and not _is_enum(type(v))]
+    str_members = [v for v in vals if isinstance(v, str)]
+    for v in scalar_non_str + str_members:
+        try:
+            if _coerce_leaf(type(v), value, path) == v:
+                return v
+        except (TypeCoercionError, ValueError, TypeError):
+            continue
+
+    raise TypeCoercionError.cannot_coerce(_src_type(value), value, f"Literal{vals}", path)
+
+
 def _coerce_literal_value(tp: Any, value: Any, path: str) -> Any:
     """Coerce a raw value to a Literal type."""
     vals = _literal_values(tp)
-    if isinstance(value, _StrToken):
-        s = str(value)
-        for v in vals:
-            if str(v) == s:
-                return v
-    else:
+    if not isinstance(value, _StrToken):
         for v in vals:
             if type(v) is type(value) and v == value:
                 return v
-    raise TypeCoercionError.cannot_coerce(_src_type(value), value, f"Literal{vals}", path)
+        raise TypeCoercionError.cannot_coerce(_src_type(value), value, f"Literal{vals}", path)
+    return _match_literal_str_token(vals, value, path)
 
 
 def _coerce_enum_value(tp: Any, value: Any, path: str) -> Any:

@@ -72,19 +72,25 @@ class TestFinalIntLiteral:
 
 
 class TestFinalBoolLiteral:
-    """Final[Literal[bool]] coercion — case-sensitive (str(True)=='True')."""
+    """Final[Literal[bool]] coercion — uses bool coercion rules (case-insensitive)."""
 
-    def test_valid(self) -> None:
+    def test_valid_capital(self) -> None:
         """CLI token 'True' (capital T) is accepted for Literal[True]."""
         Target = make_target("flag", Final[Literal[True]], default=True)
         result = confarg.load(Target, argv=["--flag", "True"], env={})
         assert result.flag is True
 
-    def test_invalid_case_raises(self) -> None:
-        """CLI token 'true' (lowercase) is rejected — same behaviour as bare Literal[True]."""
+    def test_valid_lowercase(self) -> None:
+        """CLI token 'true' (lowercase) is also accepted for Literal[True] via bool coercion."""
+        Target = make_target("flag", Final[Literal[True]], default=True)
+        result = confarg.load(Target, argv=["--flag", "true"], env={})
+        assert result.flag is True
+
+    def test_false_value_raises(self) -> None:
+        """CLI token 'false' raises for Literal[True] since False ∉ {True}."""
         Target = make_target("flag", Final[Literal[True]], default=True)
         with pytest.raises(confarg.exceptions.ConfargError):
-            confarg.load(Target, argv=["--flag", "true"], env={})
+            confarg.load(Target, argv=["--flag", "false"], env={})
 
 
 # ---------------------------------------------------------------------------
