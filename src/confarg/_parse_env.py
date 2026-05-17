@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._cast import JSON_CAST_NAME
 from confarg._merge import DICT_DELETE, _accumulate_list_delete, _set_nested
-from confarg._parse_cli import _segment_names_real_field
+from confarg._parse_cli import _locals_segment_index, _segment_names_real_field
 from confarg._types import (
     _dict_kv,
     _elem_type,
@@ -322,12 +322,13 @@ def _store_env_value(parts: list[str], ft: Any, value: str, data: dict[str, Any]
     _set_nested(data, parts, _try_coerce(ft, _StrToken(value)))
 
 
-def _parse_env(
+def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env channel must intercept
     env: Mapping[str, str],
     prefix: str,
     separator: str,
     target: Any,
     config_flag: str = _defaults.CONFIG_FLAG,
+    union_tag: str = _defaults.UNION_TAG,
 ) -> tuple[dict[str, Any], list[tuple[str, Path]]]:
     """Parse environment variables into a nested dict matching the target type.
 
@@ -347,6 +348,13 @@ def _parse_env(
         separator: Separator used to split variable names into nested keys.
         target: The target type, used to determine dataclass vs scalar handling.
         config_flag: The magic segment name that marks a sub-config file pointer.
+        union_tag: The field name used as a discriminator tag in union types;
+            needed here to derive which names address the reserved
+            local-variables namespace at each node of the path.  A variable
+            addressing one is stored without the usual unknown-field warning;
+            whether the local is declared, and what type it has, is checked in
+            ``_pipeline._apply_locals_overrides`` once the config files are
+            loaded.
 
     Returns:
         A tuple of (data_dict, env_configs) where data_dict contains inline values
@@ -384,8 +392,17 @@ def _parse_env(
             continue
 
         parts, ft = _resolve_env_parts(target, parts)
-        if _warn_unknown_env_field(orig_key, parts, _resolve_type(target)):
+        # A local-variables namespace is not a field of the target, so the
+        # unknown-field warning would drop it -- and it can sit at any depth,
+        # because an included file's root lands where it is mounted.  Whether the
+        # local is declared, and what its type is, is checked once the config
+        # files are loaded, in ``_pipeline._apply_locals_overrides``.
+        is_locals = _locals_segment_index(target, parts, union_tag) is not None
+        if not is_locals and _warn_unknown_env_field(orig_key, parts, _resolve_type(target)):
             continue
+        if is_locals:
+            # No declared type is known yet, so store the raw token uncoerced.
+            ft = None
 
         _store_env_value(parts, ft, value, data)
 

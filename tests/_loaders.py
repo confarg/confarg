@@ -141,10 +141,22 @@ class ArgparseLoader(ConfargLoader):
         argv = list(kw.pop("argv") or [])
         config_flag = kw.pop("config_flag")
         union_tag = kw.pop("union_tag")
-        parser = make_parser(target, config_flag=config_flag, union_tag=union_tag, argv=argv)
+        parser = make_parser(
+            target,
+            config_flag=config_flag,
+            union_tag=union_tag,
+            argv=argv,
+        )
         ns = parser.parse_args(argv)
         fn = from_namespace if construct else merge_namespace
-        return fn(target, ns, argv=argv, config_flag=config_flag, union_tag=union_tag, **kw)
+        return fn(
+            target,
+            ns,
+            argv=argv,
+            config_flag=config_flag,
+            union_tag=union_tag,
+            **kw,
+        )
 
     def registered_flags(
         self,
@@ -180,7 +192,13 @@ class ClickLoader(ConfargLoader):
         result_holder: list[Any] = []
 
         base_cmd = click.command()(lambda **kwargs: None)
-        populate_command(target, base_cmd, config_flag=config_flag, union_tag=kw["union_tag"], argv=argv)
+        populate_command(
+            target,
+            base_cmd,
+            config_flag=config_flag,
+            union_tag=kw["union_tag"],
+            argv=argv,
+        )
 
         @click.command()
         def _inner(**kwargs: Any) -> None:
@@ -225,7 +243,13 @@ class CycloptsLoader(ConfargLoader):
         argv = list(kw.pop("argv") or [])
         config_flag = kw.pop("config_flag")
         app = cyclopts.App()
-        populate_app(target, app, config_flag=config_flag, union_tag=kw["union_tag"], argv=argv)
+        populate_app(
+            target,
+            app,
+            config_flag=config_flag,
+            union_tag=kw["union_tag"],
+            argv=argv,
+        )
         fn = confargcyclopts.from_app if construct else confargcyclopts.merge_app
         return fn(target, app, argv=argv, config_flag=config_flag, **kw)
 
@@ -238,7 +262,14 @@ class CycloptsLoader(ConfargLoader):
         union_tag: str = _defaults.UNION_TAG,
     ) -> set[str] | None:
         app = cyclopts.App()
-        populate_app(target, app, config_flag=config_flag, config_subkeys=config_subkeys, union_tag=union_tag, argv=[])
+        populate_app(
+            target,
+            app,
+            config_flag=config_flag,
+            config_subkeys=config_subkeys,
+            union_tag=union_tag,
+            argv=[],
+        )
         meta = _app_meta[id(app)]
         return set(meta["name_map"].values())
 

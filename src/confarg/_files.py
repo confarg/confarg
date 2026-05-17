@@ -15,6 +15,7 @@ from typing import Any
 
 from confarg._merge import _deep_merge
 from confarg._types import _StrToken
+from confarg.dictexpr._expressions import prefix_references
 from confarg.exceptions import ConfargError, InvalidConfigFileError
 
 INCLUDE_KEY = "__include__"
@@ -313,26 +314,43 @@ def _load_includes(entries: list[tuple[str, dict[str, Any]]], base_dir: Path, se
     return result
 
 
-def _resolve_node(data: Any, base_dir: Path, seen: frozenset[Path]) -> Any:
-    """Dispatch include resolution by node type."""
+def _join_path(prefix: str, seg: str) -> str:
+    """Join a within-file path with one more segment."""
+    return f"{prefix}.{seg}" if prefix else seg
+
+
+def _resolve_node(data: Any, base_dir: Path, seen: frozenset[Path], path_in_file: str = "") -> Any:
+    """Dispatch include resolution by node type.
+
+    *path_in_file* is the position of *data* relative to the root of the file
+    currently being resolved; it is what an included document gets prefixed by,
+    and it resets to ``""`` on entry to each file (see :func:`_load_any`).
+    """
     if isinstance(data, dict):
-        return _resolve_dict(data, base_dir, seen)
+        return _resolve_dict(data, base_dir, seen, path_in_file)
     if isinstance(data, list):
-        return _resolve_list(data, base_dir, seen)
+        return _resolve_list(data, base_dir, seen, path_in_file)
     return data
 
 
-def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path]) -> Any:
+def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path], path_in_file: str = "") -> Any:
     """Resolve INCLUDE_KEY in a dict node.
 
     INCLUDE_KEY may name one file or a list of them; a list is layered left to
     right by _load_includes before anything else happens. A pure include (no
     siblings) may return any type. An include with sibling keys requires the
     layered result to be a dict (for deep-merge).
+
+    The included document's own root lands here, so its file-anchored references
+    are prefixed by *path_in_file* before it merges with any sibling keys —
+    siblings were written in *this* file and keep this file's anchoring.
     """
     include_val = data.get(INCLUDE_KEY)
     if include_val is not None:
-        included = _load_includes(_parse_include_val(include_val), base_dir, seen)
+        included = prefix_references(
+            _load_includes(_parse_include_val(include_val), base_dir, seen),
+            path_in_file,
+        )
         siblings = {k: v for k, v in data.items() if k != INCLUDE_KEY}
         if not siblings:
             return included
@@ -347,12 +365,12 @@ def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path]) -
         result = dict(data)
 
     for k, v in result.items():
-        result[k] = _resolve_node(v, base_dir, seen)
+        result[k] = _resolve_node(v, base_dir, seen, _join_path(path_in_file, k))
 
     return result
 
 
-def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path]) -> list[Any]:
+def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path], path_in_file: str = "") -> list[Any]:
     """Resolve INCLUDE_KEY in list items.
 
     A list item that is a pure {INCLUDE_KEY: path} dict is replaced by the
@@ -360,6 +378,9 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path]) -> lis
     into the parent list. A list of paths is layered into a single value first,
     so the list form means the same thing here as in a dict node. Items with
     sibling keys follow the same rules as dict nodes.
+
+    Splicing shifts indices, so each item is anchored at the index it actually
+    lands on rather than its position in *data*.
     """
     result: list[Any] = []
     for item in data:
@@ -367,13 +388,13 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path]) -> lis
             included = _load_includes(_parse_include_val(item[INCLUDE_KEY]), base_dir, seen)
             siblings = {k: v for k, v in item.items() if k != INCLUDE_KEY}
             if not siblings:
-                if isinstance(included, list):
-                    result.extend(included)
-                else:
-                    result.append(included)
+                parts = included if isinstance(included, list) else [included]
+                for sub in parts:
+                    result.append(prefix_references(sub, _join_path(path_in_file, str(len(result)))))
             elif isinstance(included, dict):
-                merged = _deep_merge(included, siblings)
-                result.append(_resolve_node(merged, base_dir, seen))
+                here = _join_path(path_in_file, str(len(result)))
+                merged = _deep_merge(prefix_references(included, here), siblings)
+                result.append(_resolve_node(merged, base_dir, seen, here))
             else:
                 msg = (
                     f"{INCLUDE_KEY} produced {type(included).__name__} but sibling keys are"
@@ -381,7 +402,7 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path]) -> lis
                 )
                 raise ConfargError(msg)
         else:
-            result.append(_resolve_node(item, base_dir, seen))
+            result.append(_resolve_node(item, base_dir, seen, _join_path(path_in_file, str(len(result)))))
     return result
 
 
@@ -458,6 +479,9 @@ def _load_subpath_files(entries: list[tuple[str, Path]], union_tag: str) -> dict
     for subpath, fpath in entries:
         fdata = _load_file(fpath)
         if subpath:
+            # The file's root lands at `subpath`, so its file-anchored references
+            # move with it, exactly as they would through __include__.
+            fdata = prefix_references(fdata, subpath)
             for part in reversed(subpath.split(".")):
                 fdata = {part: fdata}
         result = _deep_merge(result, fdata, union_tag=union_tag)

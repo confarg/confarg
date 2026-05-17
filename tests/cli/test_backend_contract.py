@@ -24,6 +24,7 @@ from collections.abc import (
     Callable,  # noqa: TC003  # used in a runtime dataclass annotation confarg resolves via get_type_hints
 )
 from dataclasses import dataclass
+from dataclasses import field as dataclasses_field
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -31,6 +32,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pytest
 
 import confarg
+from confarg._files import INCLUDE_KEY
 from confarg.cli.argparse._build import build_static_flags
 from confarg.exceptions import ConfargError, MissingFieldError, TypeCoercionError
 from tests.conftest import AppConfig, CacheConfig, DbConfig, make_target
@@ -1570,3 +1572,226 @@ class TestEnvJsonCastContract:
         """MYAPP_INNER__json sets the real ``json`` sub-field, not a cast on ``inner``."""
         cfg = loader.load(_OuterInner, argv=[], env={"MYAPP_INNER__json": "9"}, env_prefix="MYAPP_")
         assert cfg.inner.json == 9
+
+
+# ---------------------------------------------------------------------------
+# Local variables (the reserved ``locals:`` namespace)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _LocalsConfig:
+    """Config whose fields are all derived from local variables."""
+
+    root: str = ""
+    logs: str = ""
+    n: int = 0
+
+
+@dataclass
+class _LocalsNode:
+    """Block a mounted fragment describes, including its own scratch values."""
+
+    host: str = ""
+
+
+@dataclass
+class _LocalsNested:
+    """Target whose nested block carries a namespace of its own."""
+
+    db: _LocalsNode = dataclasses_field(default_factory=_LocalsNode)
+
+
+@dataclass
+class _LocalsShadow:
+    """Config that claims ``locals``, pushing the namespace to ``_locals``."""
+
+    locals: str = ""
+    root: str = ""
+
+
+@dataclass
+class _LocalsFromField:
+    """Config whose ``env`` field feeds a local variable, the documented override path."""
+
+    deploy_env: str = "dev"
+    path: str = ""
+
+
+class TestLocalsContract:
+    """The reserved ``locals:`` namespace behaves identically in every front-end.
+
+    A local is *declared* in a configuration file, which is what gives it a type,
+    and *modified* from any channel.  Modification therefore has full
+    cross-channel parity; only declaration is file-only, because declaring means
+    fixing a type and env and CLI have none to fix.  An override is coerced to
+    the declared type, so ``${locals.n * 2}`` keeps adding rather than repeating
+    a string, and a write to an undeclared name is an error rather than a new
+    variable.  These tests pin all of that across the four front-ends.
+
+    Every *per-name* form (``--locals.<name>``) has full parity here.  The bare
+    whole-namespace form (``--locals VALUE``) is rejected everywhere, but only
+    vanilla reports it as a ``LocalsError``: the adapters register no flag for
+    it, exactly as they register none for a bare ``--<dictfield>``, so their own
+    framework rejects the token first.  That pre-existing whole-dict gap is
+    covered vanilla-side in ``tests/test_locals.py``.
+    """
+
+    def test_locals_feed_expressions(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Config-file locals resolve into fields and never reach the target type."""
+        cfg = tmp_yaml("""
+locals:
+  base: /srv/app
+  k: 3
+root: ${locals.base}
+logs: ${locals.base}/logs
+n: ${locals.k * 2}
+""")
+        result = loader.load(_LocalsConfig, argv=["--config", str(cfg)], env={})
+        assert result == _LocalsConfig(root="/srv/app", logs="/srv/app/logs", n=6)
+
+    def test_locals_keep_their_file_type(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A numeric local stays numeric, so arithmetic adds rather than concatenates."""
+        cfg = tmp_yaml("locals:\n  k: 3\nn: ${locals.k * 2}\n")
+        assert loader.load(_LocalsConfig, argv=["--config", str(cfg)], env={}).n == 6
+
+    def test_locals_may_reference_locals(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """One local may be an expression over another; resolution order is topological."""
+        cfg = tmp_yaml("locals:\n  a: 2\n  b: ${locals.a * 3}\nn: ${locals.b}\n")
+        assert loader.load(_LocalsConfig, argv=["--config", str(cfg)], env={}).n == 6
+
+    def test_cli_modifies_a_declared_local(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """--locals.<name> retargets a declared local, identically in every front-end."""
+        cfg = tmp_yaml("locals:\n  base: /srv\nroot: ${locals.base}\nlogs: ${locals.base}/logs\n")
+        result = loader.load(_LocalsConfig, argv=["--config", str(cfg), "--locals.base", "/home/bob"], env={})
+        assert result.root == "/home/bob"
+        assert result.logs == "/home/bob/logs"
+
+    def test_env_modifies_a_declared_local(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The env channel modifies a local exactly as the CLI does."""
+        cfg = tmp_yaml("locals:\n  base: /srv\nroot: ${locals.base}\n")
+        result = loader.load(
+            _LocalsConfig,
+            argv=["--config", str(cfg)],
+            env={"MYAPP_LOCALS__BASE": "/home/bob"},
+            env_prefix="MYAPP_",
+        )
+        assert result.root == "/home/bob"
+
+    def test_override_keeps_the_declared_type(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """An overridden int local stays an int, so the expression adds, not repeats.
+
+        This is the property the earlier config-file-only rule existed to protect;
+        coercing against the declaration preserves it while allowing the override.
+        """
+        cfg = tmp_yaml("locals:\n  k: 3\nn: ${locals.k * 2}\n")
+        assert loader.load(_LocalsConfig, argv=["--config", str(cfg), "--locals.k", "5"], env={}).n == 10
+        from_env = loader.load(
+            _LocalsConfig,
+            argv=["--config", str(cfg)],
+            env={"MYAPP_LOCALS__K": "5"},
+            env_prefix="MYAPP_",
+        )
+        assert from_env.n == 10
+
+    def test_undeclared_local_raises(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A local no config file declared cannot be introduced from CLI or env."""
+        cfg = tmp_yaml("locals:\n  base: /srv\nroot: ${locals.base}\n")
+        with pytest.raises(ConfargError, match="declared by no configuration file"):
+            loader.load(_LocalsConfig, argv=["--config", str(cfg), "--locals.nope", "x"], env={})
+        with pytest.raises(ConfargError, match="declared by no configuration file"):
+            loader.load(
+                _LocalsConfig,
+                argv=["--config", str(cfg)],
+                env={"MYAPP_LOCALS__NOPE": "x"},
+                env_prefix="MYAPP_",
+            )
+
+    def test_type_changing_override_raises(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A local's scalar type comes from its declaration and cannot change."""
+        cfg = tmp_yaml("locals:\n  k: 3\nn: ${locals.k}\n")
+        with pytest.raises(TypeCoercionError):
+            loader.load(_LocalsConfig, argv=["--config", str(cfg), "--locals.k", "abc"], env={})
+
+    def test_config_flag_override_path(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """--config.locals FILE is the supported way to override a local from the CLI."""
+        base = tmp_yaml("locals:\n  base: /srv\nroot: ${locals.base}\n")
+        over = tmp_yaml("base: /opt\n", "override.yaml")
+        result = loader.load(
+            _LocalsConfig,
+            argv=["--config", str(base), "--config.locals", str(over)],
+            env={},
+        )
+        assert result.root == "/opt"
+
+    def test_local_derived_from_a_real_field(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A local may be an expression over a real field, which stays CLI/env settable."""
+        cfg = tmp_yaml("locals:\n  e: ${deploy_env}\npath: /srv/${locals.e}\n")
+        result = loader.load(_LocalsFromField, argv=["--config", str(cfg), "--deploy_env", "prod"], env={})
+        assert result.path == "/srv/prod"
+
+    def test_merge_preserves_locals(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """merge() keeps the namespace, so a merged dict round-trips through dump_file()."""
+        cfg = tmp_yaml("locals:\n  base: /srv\nroot: ${locals.base}\n")
+        data = loader.merge(_LocalsConfig, argv=["--config", str(cfg)], env={})
+        assert data["locals"] == {"base": "/srv"}
+        assert data["root"] == "${locals.base}"
+
+    def test_either_spelling_works(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """With ``locals`` free, ``_locals`` addresses the namespace just as well."""
+        cfg = tmp_yaml("_locals:\n  base: /srv\nroot: ${_locals.base}\n")
+        result = loader.load(_LocalsConfig, argv=["--config", str(cfg), "--_locals.base", "/home/bob"], env={})
+        assert result.root == "/home/bob"
+
+    def test_declaring_under_both_spellings_is_ambiguous(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Two declaration blocks are refused rather than one silently winning."""
+        cfg = tmp_yaml("locals:\n  a: 1\n_locals:\n  b: 2\nroot: x\n")
+        with pytest.raises(ConfargError, match="ambiguous"):
+            loader.load(_LocalsConfig, argv=["--config", str(cfg)], env={})
+
+    def test_a_locals_field_keeps_its_name(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A real ``locals`` field wins the name; the namespace moves to ``_locals``.
+
+        The field stays settable from the CLI, which is what the derived name is
+        for — the earlier design rejected such a target outright.
+        """
+        cfg = tmp_yaml("locals: iamafield\n_locals:\n  base: /srv\nroot: ${_locals.base}\n")
+        result = loader.load(
+            _LocalsShadow,
+            argv=["--config", str(cfg), "--locals", "other", "--_locals.base", "/opt"],
+            env={},
+        )
+        assert result.locals == "other"
+        assert result.root == "/opt"
+
+    def test_a_nested_namespace_works_in_every_front_end(self, loader: ConfargLoader, tmp_path, tmp_yaml) -> None:
+        """A mounted fragment declares, uses and exposes its own namespace.
+
+        An included file's root lands where it is mounted, so the namespace is
+        derived per node.  Declaring stays file-only; modifying keeps full
+        cross-channel parity at depth, just as it has at the root.
+        """
+        (tmp_path / "db.yaml").write_text("locals:\n  h: db.internal\nhost: ${locals.h}\n")
+        cfg = tmp_yaml(f"db:\n  {INCLUDE_KEY}: ./db.yaml\n")
+        assert loader.load(_LocalsNested, argv=["--config", str(cfg)], env={}).db.host == "db.internal"
+        cli = loader.load(_LocalsNested, argv=["--config", str(cfg), "--db.locals.h", "from-cli"], env={})
+        assert cli.db.host == "from-cli"
+        env = loader.load(
+            _LocalsNested,
+            argv=["--config", str(cfg)],
+            env={"MYAPP_DB__LOCALS__H": "from-env"},
+            env_prefix="MYAPP_",
+        )
+        assert env.db.host == "from-env"
+
+    def test_an_undeclared_nested_local_is_rejected_everywhere(
+        self,
+        loader: ConfargLoader,
+        tmp_path,
+        tmp_yaml,
+    ) -> None:
+        """The declared-ness check follows the namespace down, in all four front-ends."""
+        (tmp_path / "db.yaml").write_text("locals:\n  h: db.internal\nhost: ${locals.h}\n")
+        cfg = tmp_yaml(f"db:\n  {INCLUDE_KEY}: ./db.yaml\n")
+        with pytest.raises(ConfargError, match=r"db\.locals\.nope"):
+            loader.load(_LocalsNested, argv=["--config", str(cfg), "--db.locals.nope", "x"], env={})

@@ -59,6 +59,15 @@ class InvalidConfigFileError(ConfargError):
         return cls(f"Unsupported config file format: {ext!r}. Supported formats: .yaml/.yml, .toml, .json")
 
     @classmethod
+    def locals_not_self_describing(cls, locals_key: str, path: str) -> InvalidConfigFileError:
+        """Return an error for a local variable loaded from a format that carries no types."""
+        return cls(
+            f"Local variable {path!r} came from a data file (.csv/.tsv), whose cells are untyped strings."
+            f" The {locals_key!r} namespace has no type annotations to coerce against, so it accepts only"
+            f" self-describing formats: .yaml/.yml, .toml, .json.",
+        )
+
+    @classmethod
     def ragged_csv_row(cls, path: Any, row_num: int, expected: int, got: int) -> InvalidConfigFileError:
         """Return an error for a CSV row whose cell count does not match the header/first row."""
         return cls(f"Ragged CSV row {row_num} in {path}: expected {expected} cells, got {got}")
@@ -72,6 +81,57 @@ class InvalidConfigFileError(ConfargError):
 
 class UnknownArgumentError(ConfargError):
     """Raised when an unrecognized CLI argument is encountered."""
+
+
+class LocalsError(ConfargError):
+    """Raised for misuse of the reserved local-variables namespace.
+
+    Local variables carry no type annotation, so their type comes from the file
+    format that declares them.  That is why they may only be *declared* in a
+    self-describing configuration file, though they may be *modified* from any
+    channel — see :data:`confarg._defaults.LOCALS_KEYS`.
+    """
+
+    @classmethod
+    def ambiguous(cls, keys: list[str], where: str = "") -> LocalsError:
+        """Return an error for local variables declared under more than one spelling."""
+        listed = " and ".join(repr(k) for k in keys)
+        at = f" under {where!r}" if where else ""
+        return cls(
+            f"Local variables are declared{at} under both {listed}, so which block holds them"
+            f" is ambiguous. Use one spelling: {keys[0]!r} normally, or {keys[-1]!r} when the"
+            f" configuration class has a field of the other name.",
+        )
+
+    @classmethod
+    def not_assignable(cls, locals_key: str, config_flag: str, source: str) -> LocalsError:
+        """Return an error for an attempt to replace the whole namespace from env or CLI."""
+        hint = f" or declare a new set with --{config_flag}.{locals_key} FILE." if config_flag else "."
+        return cls(
+            f"The {locals_key!r} namespace cannot be assigned as a whole from the {source}."
+            f" Modify one variable at a time ({locals_key}.<name>){hint}",
+        )
+
+    @classmethod
+    def not_restructurable(cls, path: str, locals_key: str, source: str) -> LocalsError:
+        """Return an error for an attempt to add or remove a local from env or CLI."""
+        return cls(
+            f"Local variable '{locals_key}.{path}' cannot be added or removed from the {source}:"
+            f" which locals exist is owned by the configuration files that declare them."
+            f" Change its value instead, or edit the declaring file.",
+        )
+
+    @classmethod
+    def not_declared(cls, path: str, locals_key: str, config_flag: str, source: str) -> LocalsError:
+        """Return an error for an override of a local variable no config file declared."""
+        hint = (
+            f" Declare it in a configuration file, or add one with --{config_flag}.{locals_key} FILE."
+            if config_flag
+            else " Declare it in a configuration file first."
+        )
+        return cls(
+            f"Local variable '{locals_key}.{path}' is set on the {source} but declared by no configuration file.{hint}",
+        )
 
 
 class AmbiguousUnionError(ConfargError):

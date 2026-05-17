@@ -234,5 +234,10 @@ def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command s
         config_flag=config_flag,
         config_subkeys=config_subkeys,
     )
-    flags = flags + build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
+    flags = flags + build_dynamic_flags(
+        target,
+        argv,
+        union_tag=union_tag,
+        config_flag=config_flag,
+    )
     load_flags_into_app(flags, app)

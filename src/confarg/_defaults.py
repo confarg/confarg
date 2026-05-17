@@ -36,3 +36,37 @@ CONFIG_FLAG: Final[str] = "config"
 
 ``""`` disables config-file handling entirely.
 """
+
+LOCALS_KEYS: Final[tuple[str, str]] = ("locals", "_locals")
+"""Names that may address the reserved namespace holding local variables.
+
+Local variables are scratch values that expressions can reference as
+``${locals.<name>}`` but that are not fields of the target type; the namespace
+is stripped before construction.
+
+The name is not configurable — it is derived from the target, the way a real
+field named ``json`` wins over the ``.json`` force cast.  Either spelling
+addresses the namespace, *unless* the target already has a field of that name:
+a target with a ``locals`` field keeps it, and its local variables live under
+``_locals``.  A target owning both names has no namespace at all.  Declaring
+under both spellings at once is ambiguous and raises.
+
+The question is asked at every node, not only at the root: a configuration
+file's root -- and with it its ``locals:`` block -- lands wherever the file is
+mounted, so a fragment included under ``db`` declares its own variables at
+``db.locals`` and modifies them with ``--db.locals.<name>``.  See
+``confarg._parse_cli._locals_keys_at``.
+
+``_locals`` rather than a dunder such as ``__locals__``: the env separator is
+also ``__``, so a dunder name cannot be expressed as an environment variable at
+all (``PFX___LOCALS____X`` splits into ``['LOCALS', '', 'X']``).  That is why
+the other reserved dunder keys — ``__root__``, ``__include__``, ``__cast__`` —
+are all file-only, whereas this namespace must work in every channel.
+
+Local variables are *declared* in configuration files and *modified* from any
+channel.  Declaring is restricted because a local carries no type annotation, so
+its type is the one its file format gave it — and only a self-describing format
+carries one.  Once declared, an override from the env or CLI is coerced to that
+type, and a name no configuration file declared is an error rather than a new
+variable.
+"""

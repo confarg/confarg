@@ -14,6 +14,7 @@ import pytest
 import confarg
 from confarg._types import _StrToken
 from confarg.dictexpr._expressions import (
+    _SAFE_FUNCTIONS,
     _extract_references,
     _scan_expressions,
     _topological_sort,
@@ -444,7 +445,7 @@ class TestEvaluateExpressions:
 
 
 class TestResolveExpressions:
-    """Full resolution: field refs, interpolation, chaining, escaping, resolve=False."""
+    """Full resolution: field refs, interpolation, chaining, and escaping."""
 
     def test_field_ref_typed(self) -> None:
         """Pure ${expr} retains native type."""
@@ -1038,3 +1039,16 @@ class TestExpressionBugFixes:
         )
         assert result.endpoints[0] == "prod:8080"
         assert result.endpoints[1] == "other"
+
+
+class TestReservedNamesInExpressions:
+    """Names the expression engine must resolve from the config, not from Python."""
+
+    def test_locals_is_not_a_safe_function(self) -> None:
+        """``locals`` is a Python builtin but not whitelisted, so it stays a config path."""
+        assert "locals" not in _SAFE_FUNCTIONS
+
+    def test_locals_path_resolves_from_the_namespace(self) -> None:
+        """${locals.k} reads the reserved namespace rather than Python's locals()."""
+        result = resolve_expressions({"locals": {"k": 3}, "n": "${locals.k * 2}"})
+        assert result["n"] == 6

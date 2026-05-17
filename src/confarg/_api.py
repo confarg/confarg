@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any, cast, overload
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._files import _dump_file
-from confarg._parse_cli import _parse_cli
+from confarg._parse_cli import _locals_keys_at, _parse_cli
 from confarg._pipeline import _merge_sources
 from confarg._serialize import _serialize
 from confarg._types import _MISSING, TagPolicy, _is_dc, _is_struct, _is_struct_like, _resolve_type
@@ -119,6 +119,36 @@ def merge(  # noqa: PLR0913
     )
 
 
+def _strip_locals(data: dict[str, Any], target: Any, union_tag: str) -> dict[str, Any]:
+    """Return *data* without the reserved local-variables namespaces.
+
+    Which names address a namespace is a property of *target*, not of the call
+    site, so it is derived here with the same canonical rule the parsers use --
+    and asked at every node, because a configuration file's root (and with it its
+    ``locals:`` block) lands wherever the file was mounted.
+
+    Copies rather than pops, and only where something is actually dropped:
+    ``resolve_expressions`` hands back the caller's own dict when the config
+    holds no expressions, so mutating in place would strip the namespace out of
+    the caller's data as a side effect.
+    """
+    return cast("dict[str, Any]", _strip_locals_node(data, target, union_tag, []))
+
+
+def _strip_locals_node(node: Any, target: Any, union_tag: str, path: list[str]) -> Any:
+    """Strip every namespace at or below *node*, returning *node* itself if none."""
+    if isinstance(node, list):
+        stripped = [_strip_locals_node(v, target, union_tag, [*path, str(i)]) for i, v in enumerate(node)]
+        return node if all(a is b for a, b in zip(stripped, node, strict=True)) else stripped
+    if not isinstance(node, dict):
+        return node
+    drop = {key for key in _locals_keys_at(target, path, union_tag) if key in node}
+    kept = {k: _strip_locals_node(v, target, union_tag, [*path, k]) for k, v in node.items() if k not in drop}
+    if not drop and all(kept[k] is v for k, v in node.items()):
+        return node
+    return kept
+
+
 @overload
 def build[T](target: type[T], data: dict[str, Any], *, union_tag: str = ...) -> T: ...
 @overload
@@ -154,7 +184,7 @@ def build[T](
     target_r = _resolve_type(target)
     is_dataclass = _is_struct_like(target_r)
 
-    resolved = resolve_expressions(data)
+    resolved = _strip_locals(resolve_expressions(data), target_r, union_tag)
 
     if not is_dataclass:
         raw = resolved.get("__root__", _MISSING)
@@ -223,7 +253,7 @@ def from_dict[T](
         AmbiguousUnionError: If a Union cannot be disambiguated.
     """
     target_r = _resolve_type(target)
-    return _tc(target_r, data, union_tag=union_tag)
+    return _tc(target_r, _strip_locals(data, target_r, union_tag), union_tag=union_tag)
 
 
 @overload

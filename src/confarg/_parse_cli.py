@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+import functools
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+from confarg import _defaults
 from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES
 from confarg._cast import FORCE_CAST_NAMES, JSON_CAST_NAME, resolve_forced_value
 from confarg._merge import (
@@ -150,6 +153,9 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
             # and, in escaped mode, as a plain scalar init-kwarg (--field.bind 5). Whether the
             # active-mode bind must be a dict is validated in construct, not here (lenient parse).
             return str
+        if part in _locals_keys_nested(tp, union_tag):
+            tp = dict[str, Any]
+            continue
         tp = _advance_field_type(tp, part)
         if tp is None:
             return None
@@ -182,6 +188,10 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
         if _is_list(tp) or _is_set(tp) or _is_frozenset(tp) or _is_tuple(tp):
             return True
         if _is_dict(tp):
+            return True
+        if part in _locals_keys_nested(tp, union_tag):
+            # A nested namespace behaves exactly like a dict[str, Any] field, so
+            # keying into it is a collection patch like any other.
             return True
         tp = _advance_field_type(tp, part)
         if tp is None:
@@ -228,6 +238,71 @@ def _segment_names_real_field(pt: Any, seg: str, union_tag: str) -> bool:
         return seg in _namedtuple_fields(pt)
     # dicts accept any key (real member); lists/sets/tuples/callables/scalars do not.
     return bool(_is_dict(pt))
+
+
+def _locals_keys(target: Any, union_tag: str) -> tuple[str, ...]:
+    """Return the names that address the local-variables namespace for *target*.
+
+    The namespace is not configurable; its name is derived, the way a real field
+    named ``json`` wins over the ``.json`` force cast.  A candidate from
+    :data:`~confarg._defaults.LOCALS_KEYS` survives unless it names a real member
+    of *target*, which always wins.  An empty result means the target owns both
+    names and has no namespace at all.
+
+    The membership test is :func:`_segment_names_real_field`, the same predicate
+    :func:`detect_force_cast` uses for the identical "field or reserved meaning?"
+    decision — so dataclasses, plain classes, namedtuples, unions, aliases, dicts
+    and scalars are all answered consistently.  Two consequences are deliberate:
+    a dict-typed root reports every name as a real key, so it has no namespace,
+    while a scalar (``__root__``) root reports none and keeps both.
+
+    **A pure function of the target**, deliberately: ``build()`` and
+    ``from_dict()`` see no ``config_flag``, so anything else here could make them
+    disagree with ``merge()`` about which keys to strip.  A ``config_flag`` that
+    collides with a live name is rejected in
+    :func:`confarg._pipeline._merge_sources` instead.
+    """
+    return tuple(key for key in _defaults.LOCALS_KEYS if not _segment_names_real_field(target, key, union_tag))
+
+
+def _locals_keys_nested(tp: Any, union_tag: str) -> tuple[str, ...]:
+    """Names addressing a local-variables namespace nested *inside* the target.
+
+    Only a struct-like node can hold one.  A dict already treats every name as a
+    real key, so :func:`_locals_keys` reports none there; a list, tuple or set
+    addresses its children by index, and a scalar has no children at all.  The
+    root is asked with :func:`_locals_keys` directly instead, because a scalar
+    (``__root__``) root does keep the namespace.
+    """
+    tp = _resolve_type(tp)
+    if _is_union(tp):
+        found = (k for v in _union_args_no_none(tp) for k in _locals_keys_nested(v, union_tag))
+        return tuple(dict.fromkeys(found))
+    if not (_is_struct(tp) or _is_namedtuple(tp)):
+        return ()
+    return _locals_keys(tp, union_tag)
+
+
+def _locals_keys_at(target: Any, path: list[str], union_tag: str) -> tuple[str, ...]:
+    """Names addressing a namespace at *path* within *target*, the root included.
+
+    A configuration file's root lands wherever the file is mounted, so a
+    namespace is not a root-only affair: every consumer -- stripping, the
+    declaration scan, the CLI type walk and the env parser -- asks this one
+    question at each node rather than testing the top level alone.
+    """
+    if not path:
+        return _locals_keys(target, union_tag)
+    tp = _resolve_field_type(target, path, union_tag)
+    return () if tp is None else _locals_keys_nested(tp, union_tag)
+
+
+def _locals_segment_index(target: Any, parts: list[str], union_tag: str) -> int | None:
+    """Index of the segment at which *parts* enters a namespace, or None."""
+    for i in range(len(parts)):
+        if parts[i] in _locals_keys_at(target, parts[:i], union_tag):
+            return i
+    return None
 
 
 def detect_force_cast(path: list[str], target: Any, union_tag: str) -> tuple[list[str], str | None]:
@@ -308,24 +383,22 @@ def _next_is_flag_or_end(args: Sequence[str], i: int) -> bool:
     return i >= len(args) or _looks_like_flag(args[i])
 
 
-def _check_config_flag_conflict(target: Any, config_flag: str, cli_prefix: str) -> None:
-    """Raise ConfargError if config_flag matches a top-level field name of target.
+def _check_reserved_key_conflict(target: Any, name: str, detail: str) -> None:
+    """Raise ConfargError if the reserved name *name* is also a top-level field of *target*.
 
-    When config_flag shadows a field name the user can never set that field via
-    --{config_flag}, because the parser intercepts it as a file-path argument.
+    The one canonical shadow check for every reserved top-level name — the
+    config-file flag and the local-variables namespace alike — so a shadowed
+    field is reported identically whichever reserved name is at fault.  *detail*
+    supplies the name-specific explanation and remedy.  A falsy *name* means the
+    feature is disabled and nothing is reserved.
     """
-    flag_display = f"--{cli_prefix}.{config_flag}" if cli_prefix else f"--{config_flag}"
+    if not name:
+        return
 
     def _check_struct(tp: Any) -> None:
-        flds = _struct_fields(tp)
-        if config_flag in flds:
+        if name in _struct_fields(tp):
             tp_name = getattr(tp, "__name__", repr(tp))
-            msg = (
-                f"{flag_display!r} is reserved as the config-file flag but {tp_name} has a field"
-                f" named {config_flag!r}. The field cannot be set via CLI because the flag is"
-                f" intercepted before field lookup."
-                f" Pass a different config_flag to merge()/load(), e.g. config_flag='conf'."
-            )
+            msg = f"{name!r} is a reserved name but {tp_name} has a field named {name!r}. {detail}"
             raise ConfargError(msg)
 
     tp = _resolve_type(target)
@@ -336,6 +409,22 @@ def _check_config_flag_conflict(target: Any, config_flag: str, cli_prefix: str) 
             v = _resolve_type(variant)
             if _is_struct(v):
                 _check_struct(v)
+
+
+def _check_config_flag_conflict(target: Any, config_flag: str, cli_prefix: str) -> None:
+    """Raise ConfargError if config_flag matches a top-level field name of target.
+
+    When config_flag shadows a field name the user can never set that field via
+    --{config_flag}, because the parser intercepts it as a file-path argument.
+    """
+    flag_display = f"--{cli_prefix}.{config_flag}" if cli_prefix else f"--{config_flag}"
+    _check_reserved_key_conflict(
+        target,
+        config_flag,
+        f"It names the config-file flag ({flag_display}), so the field cannot be set via CLI:"
+        f" the flag is intercepted before field lookup."
+        f" Pass a different config_flag to merge()/load(), e.g. config_flag='conf'.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +456,61 @@ def _strip_cli_prefix(raw_key: str, cli_prefix: str, token: str) -> str:
         return ""
     msg = f"Unknown argument: {token!r}. Expected arguments to start with --{cli_prefix}."
     raise UnknownArgumentError(msg)
+
+
+@functools.cache
+def _locals_walk_root(locals_keys: tuple[str, ...]) -> Any:
+    """Return a dataclass with one ``dict[str, Any]`` field per local-variables key.
+
+    The local-variables namespace is not a field of the target, so the type walk
+    would reject every ``--<key>.<name>`` flag as an unknown argument.
+    Grafting this synthetic root onto the walk target (see :func:`_walk_target`)
+    makes the namespace resolve exactly like a real ``dict[str, Any]`` field, so
+    nested paths and list indices work through the machinery real dict fields
+    already exercise, with no changes to the walk functions themselves.
+
+    Nothing is *validated* here — deliberately.  Which locals exist, and what
+    type each one has, is knowable only once the config files are loaded, so
+    every check lives in :func:`confarg._pipeline._apply_locals_overrides`:
+    that a local is declared, that an override matches its declared type, and
+    that add/remove operations are refused.
+    """
+    name = "_LocalsRoot_" + "_".join(locals_keys)
+    return dataclasses.make_dataclass(name, [(key, dict[str, Any]) for key in locals_keys])
+
+
+def _walk_target(target: Any, locals_keys: tuple[str, ...]) -> Any:
+    """Return the target to resolve dotted paths against, with the locals namespace grafted on.
+
+    Used *only* for path resolution.  The real ``target`` must be kept for scalar
+    (``__root__``) roots and the config-flag conflict check: a union is
+    struct-like, so grafting there would misclassify them.
+
+    *locals_keys* must come from :func:`_locals_keys`.  The graft is a union and
+    :func:`_resolve_field_type` searches every variant, so grafting a name that
+    is also a real field of *target* would silently route ``--<name>.x`` to the
+    synthetic dict instead of the field.
+
+    Only the **root** needs this.  A namespace nested inside the target is
+    stepped through by :func:`_resolve_field_type` itself, via
+    :func:`_locals_keys_nested`; the graft remains because that predicate
+    requires a struct-like node, while a scalar (``__root__``) root has no
+    fields to graft onto yet still keeps the namespace.
+    """
+    if not locals_keys:
+        return target
+    return target | _locals_walk_root(locals_keys)
+
+
+def _addresses_key(key: str, reserved: str) -> bool:
+    """Return True when a dotted flag/env path addresses the reserved name *reserved*.
+
+    The one canonical test for "this token belongs to a reserved top-level
+    namespace": the bare name, or any dotted path beneath it.  Shared by the
+    config-file flag and the local-variables namespace, across the CLI and env
+    channels, so all four front-ends recognize the same token set.
+    """
+    return bool(reserved) and (key == reserved or key.startswith(reserved + "."))
 
 
 def _consume_config_paths(args: list[str], i: int, key: str, config_flag: str) -> tuple[int, list[tuple[str, Path]]]:
@@ -778,7 +922,7 @@ def _collect_config_file_pairs(
             else:
                 i += 1
                 continue
-        if config_flag and (raw_key == config_flag or raw_key.startswith(config_flag + ".")):
+        if _addresses_key(raw_key, config_flag):
             subpath = raw_key[len(config_flag) + 1 :] if raw_key.startswith(config_flag + ".") else ""
             i += 1
             while i < len(normalized) and not _looks_like_flag(normalized[i]):
@@ -837,7 +981,14 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         _check_config_flag_conflict(target, config_flag, cli_prefix)
     argv = _normalize_eq_args(argv)
 
-    ctx = _ParseCtx(argv=argv, target=target, union_tag=union_tag)
+    # Path resolution runs against the locals-grafted target, so `--<locals>.x` paths
+    # resolve as if the target had a `dict[str, Any]` field of that name.  Nothing is
+    # validated here: whether a local is *declared*, and what type it has, is knowable
+    # only after the config files load, so both checks belong to
+    # `_pipeline._apply_locals_overrides`.  Everything that classifies the *root*
+    # (scalar vs struct, config-flag shadowing) keeps the real target.
+    walk_target = _walk_target(target, _locals_keys(target, union_tag))
+    ctx = _ParseCtx(argv=argv, target=walk_target, union_tag=union_tag)
     config_files: list[tuple[str, Path]] = []
     root_json: list[dict[str, Any]] = []  # objects from root `--json`, folded in below fields
     target_r = _resolve_type(target)
@@ -858,7 +1009,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
 
         key = _strip_cli_prefix(token[2:], cli_prefix, token)
 
-        if config_flag and (key == config_flag or key.startswith(config_flag + ".")):
+        if _addresses_key(key, config_flag):
             if patch_only:
                 i = _skip_flag_values(argv, i)  # config files handled by the pipeline, not the patch scan
                 continue
@@ -870,9 +1021,9 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
 
         force_cast: str | None = None
         if not append_mode and not delete_mode:
-            path, force_cast = detect_force_cast(path, target, union_tag)
+            path, force_cast = detect_force_cast(path, walk_target, union_tag)
 
-        if patch_only and force_cast is not None and not _is_collection_patch_path(target, path, union_tag):
+        if patch_only and force_cast is not None and not _is_collection_patch_path(walk_target, path, union_tag):
             i += 1  # cast on a plain field: owned by the flat collector; its value is a stray token
             continue
 
@@ -880,7 +1031,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             patch_only
             and not delete_mode
             and not append_mode
-            and not _is_collection_patch_path(target, path, union_tag)
+            and not _is_collection_patch_path(walk_target, path, union_tag)
         ):
             i += 1  # normal field / scalar root: owned by the flat collector
             continue
@@ -906,7 +1057,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             i = _handle_scalar_root(argv, i, token, target_r, ctx.data)
             continue
 
-        ft = _resolve_field_type(target, path, union_tag)
+        ft = _resolve_field_type(walk_target, path, union_tag)
         if ft is None:
             i = _handle_unknown_field(ctx, i, token, path, append_mode=append_mode)
             continue
