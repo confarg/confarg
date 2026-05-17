@@ -474,6 +474,22 @@ class TestFixedTupleEdgeCases:
         result = confarg.load(WithVarTuple, argv=["--items", "1", "2", "3"], env={})
         assert result.items == (1, 2, 3)
 
+    def test_index_keyed_dict_negative_resolves_against_length(self) -> None:
+        """A fixed tuple built from an index-keyed dict resolves negative keys via its length."""
+        assert construct(tuple[int, int], {"0": 0, "-1": 1}) == (0, 1)
+        assert construct(tuple[int, int], {"1": 42, "-2": 171}) == (171, 42)
+
+    def test_index_keyed_dict_negative_out_of_range_raises(self) -> None:
+        """A negative index beyond the tuple length raises (length is known)."""
+        with pytest.raises(TypeCoercionError, match="out of range"):
+            construct(tuple[int, int], {"-3": 1})
+
+    def test_default_tuple_negative_index_patch(self) -> None:
+        """A negative index patches a tuple field's default in place (not silently dropped)."""
+        WithTuple = make_target("pair", tuple[str, str], default=("en", "EN"))
+        result = confarg.load(WithTuple, argv=["--pair.-1", "FR"], env={})
+        assert result.pair == ("en", "FR")
+
 
 # ===========================================================================
 # Dict construction edge cases

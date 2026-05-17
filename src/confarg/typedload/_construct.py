@@ -241,6 +241,49 @@ def construct(tp: Any, data: Any, *, path: str = "", union_tag: str = _defaults.
     return _construct_typed(tp, data, path, union_tag)
 
 
+def _indexed_dict_to_positions(
+    data: dict[Any, Any],
+    length: int,
+    path: str,
+    what: str,
+    *,
+    tolerate_non_int: bool = False,
+) -> dict[int, Any]:
+    """Map an index-keyed dict to ``{abs_index: value}`` for a sequence of known *length*.
+
+    Negative keys count from the end (``-1`` → ``length - 1``), the canonical rule applied
+    wherever a sequence's length is known (mirroring list patches against a runtime base).
+
+    Args:
+        data: The index-keyed dict to normalise.
+        length: The known length of the target sequence.
+        path: Dot-separated field path for error messages.
+        what: Human-readable description of the target type for error messages.
+        tolerate_non_int: when True, silently skip non-integer keys instead of raising — used
+            when patching a default in place, where stray segments (e.g. an arbitrary env var
+            path like ``COORDS__BAD``) are ignored rather than treated as an error.
+
+    Raises:
+        TypeCoercionError: on a non-integer key (unless *tolerate_non_int*) or an index out of
+            range for *length*.
+    """
+    out: dict[int, Any] = {}
+    for k, v in data.items():
+        try:
+            ik = int(k)
+        except (TypeError, ValueError):
+            if tolerate_non_int:
+                continue
+            msg = f"Cannot construct {what} at '{path}': dict keys must be integer indices"
+            raise TypeCoercionError(msg) from None
+        idx = ik + length if ik < 0 else ik
+        if not 0 <= idx < length:
+            msg = f"Cannot construct {what} at '{path}': index {ik} out of range for length {length}"
+            raise TypeCoercionError(msg)
+        out[idx] = v
+    return out
+
+
 def _resolve_tuple_partial(field_data: dict[str, Any], ft: Any, defs: dict[str, Any], name: str) -> Any:
     """If field_data is an index-keyed dict for a tuple field, patch the default tuple in-place.
 
@@ -254,15 +297,8 @@ def _resolve_tuple_partial(field_data: dict[str, Any], ft: Any, defs: dict[str, 
     if tup_tp is None or defs.get(name) is None:
         return field_data
     base = list(defs[name])
-    for ik, iv in field_data.items():
-        try:
-            idx = int(ik)
-            if idx >= 0:
-                while len(base) <= idx:
-                    base.append(None)
-                base[idx] = iv
-        except ValueError:
-            pass
+    for idx, iv in _indexed_dict_to_positions(field_data, len(base), name, "tuple", tolerate_non_int=True).items():
+        base[idx] = iv
     return base
 
 
@@ -480,15 +516,8 @@ def _construct_tuple(tp: Any, data: Any, path: str, union_tag: str) -> tuple[Any
                 raise TypeCoercionError(msg)
         seq = list(data)
     else:
-        try:
-            mx = max(int(k) for k in data) if data else -1
-        except ValueError:
-            msg = f"Cannot construct tuple at '{path}': dict keys must be integer indices"
-            raise TypeCoercionError(msg) from None
-        if mx >= len(tt):
-            msg = f"Cannot construct {tp} at '{path}': index {mx} out of range for tuple of length {len(tt)}"
-            raise TypeCoercionError(msg)
-        seq = [data.get(str(i)) for i in range(len(tt))]
+        pos = _indexed_dict_to_positions(data, len(tt), path, f"{tp}")
+        seq = [pos.get(i) for i in range(len(tt))]
     return tuple(
         construct(et, seq[i] if i < len(seq) else None, path=f"{path}[{i}]", union_tag=union_tag)
         for i, et in enumerate(tt)
