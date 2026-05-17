@@ -108,7 +108,7 @@ As mentioned in [Tutorial #2](https://confarg.github.io/confarg/examples/2_input
 In confarg, to discard any existing input for a given entry, you can provide the `.class` key — the same one that is used for disambiguation. By using this key, you signal to confarg that you are creating a new object of this type, and that any existing input under that entry is to be discarded.
 
 ```console
-$ # OK: explicitely discard previous keys and start fresh
+$ # OK: explicitly discard previous keys and start fresh
 $ uv run myapp.py --config postgre.yaml --class __main__.SQLiteConfig --dbpath /path/to/db.sqlite
 SQLiteConfig(dbpath='/path/to/db.sqlite')
 ```

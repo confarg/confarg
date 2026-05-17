@@ -59,4 +59,4 @@ This works as well with configuration files, which could contain a configuration
     ```
 
 > [!NOTE]
-> Confarg is smart enough to know which type in the union is targeted from the provided input types. However, such implicit disambiguation is not always possible, or even desirable. We will see in [Tutorial #8](https://confarg.github.io/confarg/examples/8_disambiguation/) how to set the target type explicitely.
+> Confarg is smart enough to know which type in the union is targeted from the provided input types. However, such implicit disambiguation is not always possible, or even desirable. We will see in [Tutorial #8](https://confarg.github.io/confarg/examples/8_disambiguation/) how to set the target type explicitly.
