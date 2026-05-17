@@ -19,7 +19,7 @@ Public API
 from confarg.cli.argparse._build import build_dynamic_flags, build_static_flags
 from confarg.cli.argparse._completion import setup_completion
 from confarg.cli.argparse._namespace import from_namespace
-from confarg.cli.argparse._register import load_flags_into_parser, populate_parser
+from confarg.cli.argparse._register import load_flags_into_parser, make_parser, populate_parser
 from confarg.cli.argparse._spec import FieldMeta, FlagSpec
 
 __all__ = [
@@ -29,6 +29,7 @@ __all__ = [
     "build_static_flags",
     "from_namespace",
     "load_flags_into_parser",
+    "make_parser",
     "populate_parser",
     "setup_completion",
 ]

@@ -15,7 +15,7 @@ import pytest
 
 import confarg
 from confarg._types import _StrToken
-from confarg.cli.argparse import FieldMeta, from_namespace, populate_parser
+from confarg.cli.argparse import FieldMeta, from_namespace, make_parser, populate_parser
 from confarg.cli.argparse._namespace import _collect_ns_fields
 from confarg.cli.argparse._spec import _get_field_docstrings
 
@@ -693,3 +693,39 @@ class TestInheritanceDispatch:
         assert isinstance(result, _ServerDB)
         assert result.host == "db.example.com"
         assert result.port == 5432
+
+
+class TestMakeParser:
+    """make_parser creates a pre-populated ArgumentParser with safe defaults."""
+
+    def test_allow_abbrev_false_by_default(self) -> None:
+        """make_parser disables abbreviation matching by default."""
+        parser = make_parser(Simple)
+        assert parser.allow_abbrev is False
+
+    def test_allow_abbrev_override(self) -> None:
+        """make_parser forwards allow_abbrev=True when explicitly requested."""
+        parser = make_parser(Simple, allow_abbrev=True)
+        assert parser.allow_abbrev is True
+
+    def test_fields_populated(self) -> None:
+        """make_parser registers the target's fields as arguments."""
+        parser = make_parser(Simple)
+        dests = {a.dest for a in parser._actions}
+        assert "host" in dests
+        assert "port" in dests
+        assert "debug" in dests
+
+    def test_kwargs_forwarded(self) -> None:
+        """Extra kwargs (description, prog) are forwarded to ArgumentParser."""
+        parser = make_parser(Simple, description="My app", prog="myapp")
+        assert parser.description == "My app"
+        assert parser.prog == "myapp"
+
+    def test_parse_and_construct(self) -> None:
+        """make_parser produces a parser that round-trips through from_namespace."""
+        parser = make_parser(Simple, config_flag="")
+        ns = parser.parse_args(["--host", "localhost", "--port", "9999"])
+        result = from_namespace(Simple, ns, env={})
+        assert result.host == "localhost"
+        assert result.port == 9999
