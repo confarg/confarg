@@ -28,7 +28,7 @@ class Config:
 def main() -> None:
     """Load and print the configuration."""
     confarg.register_leaf_type(Int, coerce_int)
-    config = confarg.load(Config)
+    config = confarg.load(Config, env_prefix="MYAPP_")
     print(config)
 
 
