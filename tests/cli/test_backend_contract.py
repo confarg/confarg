@@ -639,9 +639,41 @@ class TestFixedSequenceContract:
         assert cfg.pair == _Point(x=13, y=7)
 
     def test_tuple_too_many_tokens_raises(self, whole_value_arity_loader: ConfargLoader) -> None:
-        """Arity is confarg's to enforce once the flag is registered nargs="*"."""
-        with pytest.raises(ConfargError):
-            whole_value_arity_loader.load(_WithIntPair, argv=["--pair", "1", "2", "3"], env={})
+        """A token past the arity is the surplus positional vanilla names, not a longer tuple.
+
+        The upper bound of the token run, mirroring
+        ``test_tuple_short_token_run_is_a_missing_value`` at the other end: it is a
+        parse-time refusal naming the first token past the arity, so ``merge()`` already
+        raises and ``build()`` never sees the over-long list (BUG-60).
+        """
+        with pytest.raises(ConfargError, match=re.escape("Unexpected positional argument: '3'")):
+            whole_value_arity_loader.merge(_WithIntPair, argv=["--pair", "1", "2", "3"], env={})
+
+    def test_namedtuple_too_many_tokens_raises(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """A namedtuple is a fixed-length sequence, so it refuses the surplus token too (BUG-60)."""
+        with pytest.raises(ConfargError, match=re.escape("Unexpected positional argument: '3'")):
+            whole_value_arity_loader.merge(_WithPoint, argv=["--pair", "1", "2", "3"], env={})
+
+    def test_tuple_whole_value_beside_a_surplus_token_raises(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """A whole value consumes one token, so the second one is already surplus (BUG-60).
+
+        ``--pair '[13]' 9`` is the whole-value spelling of the same over-fill: the lone
+        array is the value, short arity and all, and ``9`` is the stray positional --
+        never the token that completes it.
+        """
+        with pytest.raises(ConfargError, match=re.escape("Unexpected positional argument: '9'")):
+            whole_value_arity_loader.merge(_WithIntPair, argv=["--pair", "[13]", "9"], env={})
+
+    def test_namedtuple_whole_value_beside_a_surplus_token_raises(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """The object spelling of a whole value is one token too (BUG-60)."""
+        with pytest.raises(ConfargError, match=re.escape("Unexpected positional argument: '9'")):
+            whole_value_arity_loader.merge(_WithPoint, argv=["--pair", '{"x": 1, "y": 2}', "9"], env={})
 
     def test_tuple_too_few_tokens_raises(self, whole_value_arity_loader: ConfargLoader) -> None:
         """A short whole value is rejected by build(), not by the framework.

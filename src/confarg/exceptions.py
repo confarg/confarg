@@ -184,6 +184,18 @@ class UnknownArgumentError(ConfargError):
         """Return an error for a flag that does not carry the required ``cli_prefix``."""
         return cls(f"Unknown argument: {token!r}. Expected arguments to start with --{cli_prefix}.")
 
+    @classmethod
+    def unexpected_positional(cls, token: str) -> UnknownArgumentError:
+        """Return an error for an argv token no flag consumed.
+
+        Raised wherever a token run ends before argv does: by the vanilla scan when it
+        meets a bare word, and by the adapters when a fixed-arity flag was handed more
+        tokens than its arity takes -- the same surplus, named the same way.
+        """
+        return cls(
+            f"Unexpected positional argument: {token!r}. All arguments must be named flags (e.g. --fieldname value).",
+        )
+
 
 class LocalsError(ConfargError):
     """Raised for misuse of the reserved local-variables namespace.

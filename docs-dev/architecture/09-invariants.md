@@ -45,7 +45,8 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "does this token address a reserved name?" | `_parse_cli._addresses_key` |
 | "is this argv token a flag, or a value?" | `_parse_cli._looks_like_flag` |
 | "does this flag have its value here?" | `_parse_cli._require_value` |
-| "does this fixed-arity flag's token run fill it?" | `cli/_collect._require_fixed_arity` (the adapters' peer of the `_require_value` loop, which counts argv one token at a time) |
+| "is this fixed-arity flag's token run exactly its run?" | `cli/_collect._require_fixed_arity` (the adapters' peer of the `_require_value` loop, which counts argv one token at a time; answers both bounds) |
+| "how long is a fixed-arity flag's token run?" | `cli/_collect._fixed_arity_whole_value` on its first token — one for a whole value, the arity otherwise |
 | reserved-name shadowing | `_parse_cli._check_reserved_key_conflict` |
 | locals namespace names | `_parse_cli._locals_keys_at` |
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |
