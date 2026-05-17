@@ -21,7 +21,7 @@ from typing import Literal, Optional, Union
 import pytest
 
 import confarg
-from confarg._merge import LIST_DELETE_KEY, _deep_merge
+from confarg._merge import LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, _deep_merge
 from confarg._types import _is_frozenset, _is_set, _StrToken
 from confarg.dictexpr import resolve_expressions
 from confarg.exceptions import ConfargError, TypeCoercionError
@@ -160,12 +160,22 @@ class TestDeepMergeListPatchErrors:
         result = _deep_merge(base, override)
         assert result["items"] == [1, 99, 3]
 
-    def test_out_of_range_index_raises(self) -> None:
-        """Patching a list with an index beyond its length raises ConfargError."""
-        base = {"items": [1, 2]}
-        override = {"items": {"4": 99}}
+    def test_out_of_range_index_defers_to_build(self) -> None:
+        """An index beyond the base is type-ambiguous (list error vs. tuple fill), so it defers.
+
+        The merge layer can't tell a list from a fixed tuple, so instead of raising it
+        carries the base forward under LIST_REPLACE_BASE_KEY; build() applies the type's
+        own rule (list → error, fixed tuple → fill).
+        """
+        result = _deep_merge({"items": [1, 2, 3, 4]}, {"items": {"4": 99}})
+        assert result == {"items": {LIST_REPLACE_BASE_KEY: [1, 2, 3, 4], "4": 99}}
+        # list target: build() raises the replacement-only error (relocated, not removed).
+        WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(ConfargError, match="append syntax"):
-            _deep_merge(base, override)
+            construct(WithList, result)
+        # tuple target long enough: build() fills the declared slot, base covers the rest.
+        WithTuple = make_target("items", tuple[int, int, int, int, int], default=(0, 0, 0, 0, 0))
+        assert construct(WithTuple, result).items == (1, 2, 3, 4, 99)
 
     def test_negative_index_patches_from_end(self) -> None:
         """Negative indices count from the end of the list, like Python."""
@@ -175,11 +185,13 @@ class TestDeepMergeListPatchErrors:
         result = _deep_merge(base, {"items": {"-3": 99}})
         assert result["items"] == [99, 2, 3]
 
-    def test_negative_index_oob_raises(self) -> None:
-        """Index -4 on a 3-element list is out of range and raises ConfargError."""
-        base = {"items": [1, 2, 3]}
+    def test_negative_index_oob_defers_to_build(self) -> None:
+        """A negative index beyond the base defers too; build() raises for a list target."""
+        result = _deep_merge({"items": [1, 2, 3]}, {"items": {"-4": 99}})
+        assert result == {"items": {LIST_REPLACE_BASE_KEY: [1, 2, 3], "-4": 99}}
+        WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(ConfargError, match="-4"):
-            _deep_merge(base, {"items": {"-4": 99}})
+            construct(WithList, result)
 
     def test_negative_delete_index(self) -> None:
         """{"-": [-1]} deletes the last element."""
@@ -489,6 +501,15 @@ class TestFixedTupleEdgeCases:
         WithTuple = make_target("pair", tuple[str, str], default=("en", "EN"))
         result = confarg.load(WithTuple, argv=["--pair.-1", "FR"], env={})
         assert result.pair == ("en", "FR")
+
+    def test_base_carrying_dict_completes_tuple(self) -> None:
+        """A deferred index patch carrying a shorter base fills the remaining declared slots."""
+        assert construct(tuple[int, int, int], {LIST_REPLACE_BASE_KEY: [1, 2], "2": _StrToken("3")}) == (1, 2, 3)
+
+    def test_base_carrying_dict_longer_than_tuple_raises(self) -> None:
+        """A carried base longer than the declared tuple length is an error."""
+        with pytest.raises(TypeCoercionError, match="expected 3 elements"):
+            construct(tuple[int, int, int], {LIST_REPLACE_BASE_KEY: [1, 2, 3, 4]})
 
 
 # ===========================================================================

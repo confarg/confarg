@@ -209,6 +209,33 @@ def _apply_list_ops(
     return working
 
 
+def _index_patch_escapes_base(base: list[Any], ops: dict[str, Any]) -> bool:
+    """Whether *ops* is a pure index patch with an index outside *base*.
+
+    Such a patch is ambiguous: list semantics make it an out-of-range error, while
+    fixed-tuple semantics fill the declared slot.  Only the type-aware ``build()`` layer
+    can decide, so the merge layer defers it (carrying the base) rather than picking a
+    rule.  Append/delete keys are list-only operations a tuple cannot reinterpret, so a
+    patch containing them is handled eagerly (and may raise) as before.
+
+    Returns False for a non-integer key so ``_apply_list_ops`` still raises its specific
+    non-integer-key error.
+    """
+    if any(k in ops for k in (LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_POST_APPEND_DELETE_KEY)):
+        return False
+    n = len(base)
+    for k in ops:
+        if k == LIST_REPLACE_BASE_KEY:
+            continue
+        try:
+            i = int(k)
+        except (TypeError, ValueError):
+            return False
+        if not -n <= i < n:
+            return True
+    return False
+
+
 def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) -> Any:
     """Compute the merged value when *key* exists in both base and override."""
     if isinstance(bv, dict) and isinstance(val, dict):
@@ -230,10 +257,18 @@ def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) ->
             return {**rest, LIST_DELETE_KEY: combined_del}
         return _deep_merge(bv, val, union_tag=union_tag)
     if isinstance(bv, list) and isinstance(val, dict):
-        if LIST_REPLACE_BASE_KEY in val:
-            return _apply_list_ops(list(val[LIST_REPLACE_BASE_KEY]), val, key, union_tag)
-        return _apply_list_ops(list(bv), val, key, union_tag)
+        return _merge_list_base(bv, val, key, union_tag)
     return val
+
+
+def _merge_list_base(bv: list[Any], val: dict[str, Any], key: str, union_tag: str | None) -> Any:
+    """Combine a list base *bv* with an override patch dict *val*."""
+    if LIST_REPLACE_BASE_KEY in val:
+        return _apply_list_ops(list(val[LIST_REPLACE_BASE_KEY]), val, key, union_tag)
+    if _index_patch_escapes_base(bv, val):
+        # Defer: list vs. fixed-tuple diverge here, and only build() knows the type.
+        return {LIST_REPLACE_BASE_KEY: list(bv), **val}
+    return _apply_list_ops(list(bv), val, key, union_tag)
 
 
 def _deep_merge(

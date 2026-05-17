@@ -340,7 +340,9 @@ def _construct_struct(tp: Any, data: dict[str, Any], path: str, union_tag: str) 
         fp = f"{path}.{name}" if path else name
         if name in data:
             field_data = data[name]
-            if isinstance(field_data, dict) and name in defs:
+            if isinstance(field_data, dict) and name in defs and LIST_REPLACE_BASE_KEY not in field_data:
+                # A carried base (deferred from merge) wins over the default — let
+                # _construct_tuple resolve it rather than patching the default in place.
                 field_data = _resolve_tuple_partial(field_data, ft, defs, name)
             kwargs[name] = construct(ft, field_data, path=fp, union_tag=union_tag)
         elif name in defs:
@@ -516,8 +518,17 @@ def _construct_tuple(tp: Any, data: Any, path: str, union_tag: str) -> tuple[Any
                 raise TypeCoercionError(msg)
         seq = list(data)
     else:
-        pos = _indexed_dict_to_positions(data, len(tt), path, f"{tp}")
-        seq = [pos.get(i) for i in range(len(tt))]
+        base_seq: list[Any] = []
+        patches = data
+        if LIST_REPLACE_BASE_KEY in data:
+            # A deferred index patch carrying a base (e.g. a config list completed by --field.N).
+            base_seq = list(data[LIST_REPLACE_BASE_KEY])
+            if len(base_seq) > len(tt):
+                msg = f"Cannot construct {tp} at '{path}': expected {len(tt)} elements, got {len(base_seq)}"
+                raise TypeCoercionError(msg)
+            patches = {k: v for k, v in data.items() if k != LIST_REPLACE_BASE_KEY}
+        pos = _indexed_dict_to_positions(patches, len(tt), path, f"{tp}")
+        seq = [pos.get(i, base_seq[i] if i < len(base_seq) else None) for i in range(len(tt))]
     return tuple(
         construct(et, seq[i] if i < len(seq) else None, path=f"{path}[{i}]", union_tag=union_tag)
         for i, et in enumerate(tt)
