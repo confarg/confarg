@@ -6,7 +6,7 @@
 
 It can handle deeply nested configurations, type unions, derived classes, expressions and variable interpolation, configuration compositions and more, and can integrate with your favorite argument parser library such as `argparse`, `click` or `typer`.
 
-`confarg` is not a framework. No decorator, base class or special annotation type required: none are provided. It is just a tool for the deserialization and serialization of complex configurations. Its footprint in your code is typically a few lines of code, making it easy to switch to it, or away from it.
+`confarg` is not a framework. No decorator, base class or special annotation type required: none are provided. It is just a tool for the deserialization and serialization of complex configurations. Its footprint in your code is typically a few lines of code.
 
 ## Install
 

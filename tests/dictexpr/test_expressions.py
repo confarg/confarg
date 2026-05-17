@@ -516,7 +516,7 @@ class TestLoadWithExpressions:
             port = 5432
             url = "jdbc://${db.host}:${db.port}/mydb"
         """)
-        result = confarg.load(ExprAppConfig, args=[], env={}, files=[path])
+        result = confarg.load(ExprAppConfig, argv=[], env={}, files=[path])
         assert result.db.url == "jdbc://localhost:5432/mydb"
 
     def test_yaml_expression(self, tmp_yaml) -> None:
@@ -527,7 +527,7 @@ class TestLoadWithExpressions:
               port: 5432
               url: "jdbc://${db.host}:${db.port}/mydb"
         """)
-        result = confarg.load(ExprAppConfig, args=[], env={}, files=[path])
+        result = confarg.load(ExprAppConfig, argv=[], env={}, files=[path])
         assert result.db.url == "jdbc://localhost:5432/mydb"
 
     def test_env_expression(self) -> None:
@@ -540,7 +540,7 @@ class TestLoadWithExpressions:
 
         result = confarg.load(
             Cfg,
-            args=[],
+            argv=[],
             env={"GREETING": "hello", "NAME": "${greeting}"},
             env_prefix="",
         )
@@ -556,7 +556,7 @@ class TestLoadWithExpressions:
 
         result = confarg.load(
             Cfg,
-            args=["--name", "${greeting}", "--greeting", "hello"],
+            argv=["--name", "${greeting}", "--greeting", "hello"],
             env={},
         )
         assert result.name == "hello"
@@ -572,7 +572,7 @@ class TestLoadWithExpressions:
         # Override host via CLI
         result = confarg.load(
             ExprAppConfig,
-            args=["--db.host", "prod-server"],
+            argv=["--db.host", "prod-server"],
             env={},
             files=[path],
         )
@@ -588,7 +588,7 @@ class TestLoadWithExpressions:
             port = 5432
             url = "${db.host}"
         """)
-        raw = confarg.merge(ExprAppConfig, args=[], env={}, files=[path])
+        raw = confarg.merge(ExprAppConfig, argv=[], env={}, files=[path])
         assert raw["db"]["url"] == "${db.host}"
 
     def test_pure_expression_retains_type(self, tmp_toml) -> None:
@@ -603,7 +603,7 @@ class TestLoadWithExpressions:
             a = 42
             b = "${a}"
         """)
-        result = confarg.load(Cfg, args=[], env={}, files=[path])
+        result = confarg.load(Cfg, argv=[], env={}, files=[path])
         assert result.b == 42
         assert isinstance(result.b, int)
 
@@ -631,14 +631,14 @@ class TestCrossSourceInterpolation:
         """Expression in left file resolves a value defined only in right file."""
         left = tmp_toml('url = "jdbc://${host}"\n', "left.toml")
         right = tmp_toml('host = "prod"\nport = 5432\n', "right.toml")
-        result = confarg.load(CrossCfg, args=[], env={}, files=[left, right])
+        result = confarg.load(CrossCfg, argv=[], env={}, files=[left, right])
         assert result.url == "jdbc://prod"
 
     def test_right_config_overrides_then_referenced(self, tmp_toml) -> None:
         """Expression uses the right-config value when both files define the field."""
         left = tmp_toml('host = "dev"\nurl = "jdbc://${host}"\nport = 5432\n', "left.toml")
         right = tmp_toml('host = "prod"\n', "right.toml")
-        result = confarg.load(CrossCfg, args=[], env={}, files=[left, right])
+        result = confarg.load(CrossCfg, argv=[], env={}, files=[left, right])
         assert result.url == "jdbc://prod"  # right file's host wins
 
     # --- env var → config ---
@@ -646,13 +646,13 @@ class TestCrossSourceInterpolation:
     def test_env_value_interpolated_in_config(self, tmp_toml) -> None:
         """Config expression resolves a value supplied by an env var."""
         path = tmp_toml('url = "jdbc://${host}"\nport = 5432\n')
-        result = confarg.load(CrossCfg, args=[], env={"HOST": "env-host"}, env_prefix="", files=[path])
+        result = confarg.load(CrossCfg, argv=[], env={"HOST": "env-host"}, env_prefix="", files=[path])
         assert result.url == "jdbc://env-host"
 
     def test_env_overrides_config_value_used_in_expression(self, tmp_toml) -> None:
         """Env var overrides a config-file value; expression uses the env var version."""
         path = tmp_toml('host = "file-host"\nurl = "jdbc://${host}"\nport = 5432\n')
-        result = confarg.load(CrossCfg, args=[], env={"HOST": "env-host"}, env_prefix="", files=[path])
+        result = confarg.load(CrossCfg, argv=[], env={"HOST": "env-host"}, env_prefix="", files=[path])
         assert result.url == "jdbc://env-host"
 
     # --- CLI → config ---
@@ -660,13 +660,13 @@ class TestCrossSourceInterpolation:
     def test_cli_value_interpolated_in_config(self, tmp_toml) -> None:
         """Config expression resolves a value supplied via CLI."""
         path = tmp_toml('url = "jdbc://${host}"\nport = 5432\n')
-        result = confarg.load(CrossCfg, args=["--host", "cli-host"], env={}, files=[path])
+        result = confarg.load(CrossCfg, argv=["--host", "cli-host"], env={}, files=[path])
         assert result.url == "jdbc://cli-host"
 
     def test_cli_overrides_config_value_used_in_expression(self, tmp_toml) -> None:
         """CLI overrides a config-file value; expression uses the CLI version."""
         path = tmp_toml('host = "file-host"\nurl = "jdbc://${host}"\nport = 5432\n')
-        result = confarg.load(CrossCfg, args=["--host", "cli-host"], env={}, files=[path])
+        result = confarg.load(CrossCfg, argv=["--host", "cli-host"], env={}, files=[path])
         assert result.url == "jdbc://cli-host"
 
     # --- CLI → env var ---
@@ -675,7 +675,7 @@ class TestCrossSourceInterpolation:
         """Env var containing an expression resolves a value supplied via CLI."""
         result = confarg.load(
             CrossCfg,
-            args=["--host", "cli-host"],
+            argv=["--host", "cli-host"],
             env={"URL": "jdbc://${host}", "PORT": "5432"},
             env_prefix="",
         )
@@ -688,7 +688,7 @@ class TestCrossSourceInterpolation:
         path = tmp_toml('url = "jdbc://${host}:${port}/db"\n')
         result = confarg.load(
             CrossCfg,
-            args=["--host", "cli-host"],
+            argv=["--host", "cli-host"],
             env={"PORT": "9999"},
             env_prefix="",
             files=[path],
@@ -712,7 +712,7 @@ class TestDump:
             port = 5432
             url = "jdbc://${db.host}:${db.port}/mydb"
         """)
-        result = confarg.load(ExprAppConfig, args=[], env={}, files=[path])
+        result = confarg.load(ExprAppConfig, argv=[], env={}, files=[path])
         dumped = confarg.dump(result)
         assert dumped["db"]["url"] == "jdbc://localhost:5432/mydb"
 
@@ -730,7 +730,7 @@ class TestDump:
             port = 5432
             url = "jdbc://${db.host}:${db.port}/mydb"
         """)
-        result = confarg.load(ExprAppConfig, args=[], env={}, files=[path])
+        result = confarg.load(ExprAppConfig, argv=[], env={}, files=[path])
         out_path = tmp_path / "out.toml"
         confarg.dump_file(result, out_path)
         content = out_path.read_text()
@@ -985,7 +985,7 @@ class TestExpressionBugFixes:
 
         result = confarg.load(
             Cfg,
-            args=["--host", "prod", "--endpoints", "${host}:8080", "other"],
+            argv=["--host", "prod", "--endpoints", "${host}:8080", "other"],
             env={},
         )
         assert result.endpoints[0] == "prod:8080"

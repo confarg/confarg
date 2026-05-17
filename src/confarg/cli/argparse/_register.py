@@ -90,7 +90,7 @@ def load_flags_into_parser(
 
 
 def populate_parser(  # noqa: PLR0913
-    dc_type: type,
+    target: type,
     parser: argparse.ArgumentParser,
     *,
     union_tag: str = _defaults.UNION_TAG,
@@ -120,7 +120,7 @@ def populate_parser(  # noqa: PLR0913
     - Multi-variant union fields (ambiguous argparse type mapping).
 
     Args:
-        dc_type: The dataclass type whose fields to register.
+        target: The dataclass type whose fields to register.
         parser: The :class:`argparse.ArgumentParser` to populate.
         union_tag: Name of the union discriminator field to skip (matches
             the ``union_tag`` parameter of :func:`from_namespace`).
@@ -134,10 +134,10 @@ def populate_parser(  # noqa: PLR0913
             before :meth:`~argparse.ArgumentParser.parse_args` is called.
             Has no effect on which config-source flags are registered.
     """
-    static = build_static_flags(dc_type, union_tag=union_tag, config_flag=config_flag, config_subkeys=config_subkeys)
+    static = build_static_flags(target, union_tag=union_tag, config_flag=config_flag, config_subkeys=config_subkeys)
     load_flags_into_parser(static, parser)
     if argv is not None:
-        dynamic = build_dynamic_flags(dc_type, argv, union_tag=union_tag, config_flag=config_flag)
+        dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
         load_flags_into_parser(dynamic, parser)
 
 

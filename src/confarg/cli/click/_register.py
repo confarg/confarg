@@ -97,7 +97,7 @@ def load_flags_into_command(
 
 
 def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app signatures; all params are keyword-only with sensible defaults
-    dc_type: type,
+    target: type,
     command: click.Command,
     *,
     union_tag: str = _defaults.UNION_TAG,
@@ -115,7 +115,7 @@ def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app s
     paths is also registered.  Pass ``config_flag=""`` to suppress it.
 
     Args:
-        dc_type: The dataclass type whose fields to register.
+        target: The dataclass type whose fields to register.
         command: The :class:`click.Command` to populate.
         union_tag: Name of the union discriminator field to skip.
         config_flag: Name of the config-file option (default ``"config"``).
@@ -129,10 +129,10 @@ def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app s
     """
     before_names = {p.name for p in command.params}
 
-    static = build_static_flags(dc_type, union_tag=union_tag, config_flag=config_flag, config_subkeys=config_subkeys)
+    static = build_static_flags(target, union_tag=union_tag, config_flag=config_flag, config_subkeys=config_subkeys)
     load_flags_into_command(static, command)
     if argv is not None:
-        dynamic = build_dynamic_flags(dc_type, argv, union_tag=union_tag, config_flag=config_flag)
+        dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
         load_flags_into_command(dynamic, command)
 
     confarg_names = {p.name for p in command.params} - before_names

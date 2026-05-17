@@ -200,7 +200,7 @@ class TestFactoryFromCLI:
         """Test that --optimizer.class + --optimizer.kwarg flags construct a partial."""
         result = confarg.load(
             _WithConcreteOpt,
-            args=[f"--optimizer.class={_MOD}._SGD", "--optimizer.lr=0.05"],
+            argv=[f"--optimizer.class={_MOD}._SGD", "--optimizer.lr=0.05"],
             env={},
         )
         assert isinstance(result.optimizer, functools.partial)
@@ -211,7 +211,7 @@ class TestFactoryFromCLI:
         """No --class flag: implicit _SGD from return type annotation."""
         result = confarg.load(
             _WithConcreteOpt,
-            args=["--optimizer.lr=0.02"],
+            argv=["--optimizer.lr=0.02"],
             env={},
         )
         assert isinstance(result.optimizer, functools.partial)
@@ -222,7 +222,7 @@ class TestFactoryFromCLI:
         """Test that abstract base class: + kwarg flags construct a partial via CLI."""
         result = confarg.load(
             _WithAbstractOpt,
-            args=[f"--optimizer.class={_MOD}._Adam", "--optimizer.lr=0.003"],
+            argv=[f"--optimizer.class={_MOD}._Adam", "--optimizer.lr=0.003"],
             env={},
         )
         assert isinstance(result.optimizer, functools.partial)
@@ -242,7 +242,7 @@ class TestFactoryFromEnv:
         """Test that env vars with class and kwarg construct a partial via env."""
         result = confarg.load(
             _WithConcreteOpt,
-            args=[],
+            argv=[],
             env={
                 "CONFARG_OPTIMIZER__CLASS": f"{_MOD}._SGD",
                 "CONFARG_OPTIMIZER__LR": "0.07",

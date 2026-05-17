@@ -41,7 +41,7 @@ class TestCliBasic:
         """All flat fields from CLI."""
         result = confarg.load(
             Flat,
-            args=["--name", "hi", "--count", "5", "--rate", "1.5", "--verbose", "true"],
+            argv=["--name", "hi", "--count", "5", "--rate", "1.5", "--verbose", "true"],
             env={},
         )
         assert result.name == "hi"
@@ -50,14 +50,14 @@ class TestCliBasic:
         assert result.verbose is True
 
     def test_defaults_no_args(self) -> None:
-        """All defaults used when args=[] and env={}."""
-        result = confarg.load(WithDefaults, args=[], env={})
+        """All defaults used when argv=[] and env={}."""
+        result = confarg.load(WithDefaults, argv=[], env={})
         assert result.name == "default"
         assert result.count == 0
 
     def test_partial_override(self) -> None:
         """Only some fields overridden, rest use defaults."""
-        result = confarg.load(WithDefaults, args=["--name", "custom"], env={})
+        result = confarg.load(WithDefaults, argv=["--name", "custom"], env={})
         assert result.name == "custom"
         assert result.count == 0
 
@@ -74,7 +74,7 @@ class TestCliDotSeparated:
         """Parse nested fields via dot-separated CLI args."""
         result = confarg.load(
             AppConfig,
-            args=["--db.host", "h", "--db.port", "1", "--db.name", "n"],
+            argv=["--db.host", "h", "--db.port", "1", "--db.name", "n"],
             env={},
         )
         assert result.db.host == "h"
@@ -84,7 +84,7 @@ class TestCliDotSeparated:
         """Three levels of nesting with dots."""
         result = confarg.load(
             DeepNested,
-            args=["--app.db.host", "h", "--app.db.port", "1", "--app.db.name", "n"],
+            argv=["--app.db.host", "h", "--app.db.port", "1", "--app.db.name", "n"],
             env={},
         )
         assert result.app.db.host == "h"
@@ -93,7 +93,7 @@ class TestCliDotSeparated:
         """Override a default on a nested dataclass."""
         result = confarg.load(
             AppConfig,
-            args=[
+            argv=[
                 "--db.host",
                 "h",
                 "--db.port",
@@ -119,14 +119,14 @@ class TestCliPrefix:
 
     def test_prefix_flat(self) -> None:
         """Flat field with CLI prefix."""
-        result = confarg.load(WithDefaults, args=["--app.name", "val"], env={}, cli_prefix="app")
+        result = confarg.load(WithDefaults, argv=["--app.name", "val"], env={}, cli_prefix="app")
         assert result.name == "val"
 
     def test_prefix_nested(self) -> None:
         """Nested field with CLI prefix."""
         result = confarg.load(
             AppConfig,
-            args=["--cfg.db.host", "h", "--cfg.db.port", "1", "--cfg.db.name", "n"],
+            argv=["--cfg.db.host", "h", "--cfg.db.port", "1", "--cfg.db.name", "n"],
             env={},
             cli_prefix="cfg",
         )
@@ -137,7 +137,7 @@ class TestCliPrefix:
         with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(
                 Flat,
-                args=["--name", "x", "--count", "1", "--rate", "0", "--verbose", "true"],
+                argv=["--name", "x", "--count", "1", "--rate", "0", "--verbose", "true"],
                 env={},
                 cli_prefix="app",
             )
@@ -154,20 +154,20 @@ class TestCliBoolValueToken:
     @pytest.mark.parametrize("token", ["true", "True", "TRUE", "1", "yes", "on"])
     def test_truthy_tokens(self, token: str) -> None:
         """Test that truthy string tokens set bool field to True."""
-        result = confarg.load(WithDefaults, args=["--verbose", token], env={})
+        result = confarg.load(WithDefaults, argv=["--verbose", token], env={})
         assert result.verbose is True
 
     @pytest.mark.parametrize("token", ["false", "False", "FALSE", "0", "no", "off"])
     def test_falsy_tokens(self, token: str) -> None:
         """Test that falsy string tokens set bool field to False."""
-        result = confarg.load(WithDefaults, args=["--verbose", token], env={})
+        result = confarg.load(WithDefaults, argv=["--verbose", token], env={})
         assert result.verbose is False
 
     def test_nested_bool_true(self) -> None:
         """Test that bool value token sets nested bool field to True."""
         result = confarg.load(
             AppConfig,
-            args=["--db.host", "h", "--db.port", "1", "--db.name", "n", "--debug", "true"],
+            argv=["--db.host", "h", "--db.port", "1", "--db.name", "n", "--debug", "true"],
             env={},
         )
         assert result.debug is True
@@ -176,7 +176,7 @@ class TestCliBoolValueToken:
         """Test that bool value token sets nested bool field to False."""
         result = confarg.load(
             AppConfig,
-            args=["--db.host", "h", "--db.port", "1", "--db.name", "n", "--cache.enabled", "false"],
+            argv=["--db.host", "h", "--db.port", "1", "--db.name", "n", "--cache.enabled", "false"],
             env={},
         )
         assert result.cache.enabled is False
@@ -184,23 +184,23 @@ class TestCliBoolValueToken:
     def test_optional_bool_none(self) -> None:
         """Test that 'none' token sets optional bool field to None."""
         WithOptBool = make_target("flag", bool | None, default=None)
-        result = confarg.load(WithOptBool, args=["--flag", "none"], env={})
+        result = confarg.load(WithOptBool, argv=["--flag", "none"], env={})
         assert result.flag is None
 
     def test_bool_missing_value_raises(self) -> None:
         """Test that a bool flag without a value raises ConfargError."""
         with pytest.raises(confarg.exceptions.ConfargError, match="Missing value"):
-            confarg.load(WithDefaults, args=["--verbose"], env={})
+            confarg.load(WithDefaults, argv=["--verbose"], env={})
 
     def test_trailing_dot_raises_missing_field_name(self) -> None:
         """--foo. (trailing dot) should say 'Missing field name after' not 'not found'."""
         with pytest.raises(confarg.exceptions.UnknownArgumentError, match=r"Missing field name after '--name.'"):
-            confarg.load(WithDefaults, args=["--name."], env={})
+            confarg.load(WithDefaults, argv=["--name."], env={})
 
     def test_misplaced_append_plus_raises_missing_field_name(self) -> None:
         """--foo.+ (dot before +) should give the same error as --foo. (trailing dot)."""
         with pytest.raises(confarg.exceptions.UnknownArgumentError, match=r"Missing field name after '--name.'"):
-            confarg.load(WithDefaults, args=["--name.+"], env={})
+            confarg.load(WithDefaults, argv=["--name.+"], env={})
 
 
 # ---------------------------------------------------------------------------
@@ -231,32 +231,32 @@ class TestCliCollections:
     )
     def test_single_collection(self, target_cls, args, field, expected) -> None:
         """Parse a single collection from space-separated CLI values."""
-        result = confarg.load(target_cls, args=args, env={})
+        result = confarg.load(target_cls, argv=args, env={})
         assert getattr(result, field) == expected
 
     def test_list_indexed(self) -> None:
         """List from indexed args."""
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, args=["--items.0", "10", "--items.1", "20"], env={})
+        result = confarg.load(WithList, argv=["--items.0", "10", "--items.1", "20"], env={})
         assert result.items == [10, 20]
 
     def test_tuple_positional(self) -> None:
         """Tuple from positional values."""
         WithTuple = make_target("pair", tuple[str, int], default=("", 0))
-        result = confarg.load(WithTuple, args=["--pair", "x", "7"], env={})
+        result = confarg.load(WithTuple, argv=["--pair", "x", "7"], env={})
         assert result.pair == ("x", 7)
 
     def test_dict_keyed(self) -> None:
         """Dict from keyed args."""
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
-        result = confarg.load(WithDict, args=["--metadata.k1", "1", "--metadata.k2", "2"], env={})
+        result = confarg.load(WithDict, argv=["--metadata.k1", "1", "--metadata.k2", "2"], env={})
         assert result.metadata == {"k1": 1, "k2": 2}
 
     def test_multiple_collections(self) -> None:
         """Multiple collection fields in one call."""
         result = confarg.load(
             WithCollections,
-            args=[
+            argv=[
                 "--names",
                 "a",
                 "b",
@@ -288,7 +288,7 @@ class TestCliConfigFlag:
             rate = 2.5
             verbose = true
         """)
-        result = confarg.load(Flat, args=["--config", str(path)], env={})
+        result = confarg.load(Flat, argv=["--config", str(path)], env={})
         assert result.name == "from_file"
         assert result.count == 10
 
@@ -300,7 +300,7 @@ class TestCliConfigFlag:
             rate: 0.5
             verbose: false
         """)
-        result = confarg.load(Flat, args=["--config", str(path)], env={})
+        result = confarg.load(Flat, argv=["--config", str(path)], env={})
         assert result.name == "from_yaml"
 
     def test_config_flag_subpath(self, tmp_toml) -> None:
@@ -312,7 +312,7 @@ class TestCliConfigFlag:
         """)
         result = confarg.load(
             AppConfig,
-            args=["--config.db", str(path)],
+            argv=["--config.db", str(path)],
             env={},
         )
         assert result.db.host == "confighost"
@@ -326,7 +326,7 @@ class TestCliConfigFlag:
             rate = 0.0
             verbose = false
         """)
-        result = confarg.load(Flat, args=["--cfg", str(path)], env={}, config_flag="cfg")
+        result = confarg.load(Flat, argv=["--cfg", str(path)], env={}, config_flag="cfg")
         assert result.name == "custom"
 
     def test_multiple_config_files(self, tmp_toml) -> None:
@@ -335,7 +335,7 @@ class TestCliConfigFlag:
         path2 = tmp_toml("name = 'second'\ncount = 2\nrate = 0.0\nverbose = false\n", "b.toml")
         result = confarg.load(
             Flat,
-            args=["--config", str(path1), "--config", str(path2)],
+            argv=["--config", str(path1), "--config", str(path2)],
             env={},
         )
         assert result.name == "second"
@@ -352,7 +352,7 @@ class TestCliEqualsSign:
 
     def test_flat_field_equals(self) -> None:
         """--name=hello sets name."""
-        result = confarg.load(Flat, args=["--name=hi", "--count=3", "--rate=1.5", "--verbose=true"], env={})
+        result = confarg.load(Flat, argv=["--name=hi", "--count=3", "--rate=1.5", "--verbose=true"], env={})
         assert result.name == "hi"
         assert result.count == 3
         assert result.rate == pytest.approx(1.5)
@@ -362,7 +362,7 @@ class TestCliEqualsSign:
         """--db.host=h sets nested field."""
         result = confarg.load(
             AppConfig,
-            args=["--db.host=myhost", "--db.port=5432", "--db.name=mydb"],
+            argv=["--db.host=myhost", "--db.port=5432", "--db.name=mydb"],
             env={},
         )
         assert result.db.host == "myhost"
@@ -371,20 +371,20 @@ class TestCliEqualsSign:
     def test_config_flag_equals(self, tmp_toml) -> None:
         """--config=path.toml loads the config file."""
         path = tmp_toml("name = 'from_eq'\ncount = 7\nrate = 0.0\nverbose = false\n")
-        result = confarg.load(Flat, args=[f"--config={path}"], env={})
+        result = confarg.load(Flat, argv=[f"--config={path}"], env={})
         assert result.name == "from_eq"
         assert result.count == 7
 
     def test_mixed_equals_and_space(self) -> None:
         """Mix of --key=value and --key value in the same args list."""
-        result = confarg.load(Flat, args=["--name=mixed", "--count", "9", "--rate=0.1", "--verbose=true"], env={})
+        result = confarg.load(Flat, argv=["--name=mixed", "--count", "9", "--rate=0.1", "--verbose=true"], env={})
         assert result.name == "mixed"
         assert result.count == 9
         assert result.rate == pytest.approx(0.1)
 
     def test_value_containing_equals(self) -> None:
         """Value itself contains an equals sign (only the first = is the separator)."""
-        result = confarg.load(Flat, args=["--name=a=b", "--count=0", "--rate=0.0", "--verbose=true"], env={})
+        result = confarg.load(Flat, argv=["--name=a=b", "--count=0", "--rate=0.0", "--verbose=true"], env={})
         assert result.name == "a=b"
 
 
@@ -397,8 +397,8 @@ class TestCliDisabled:
     """CLI parsing disabled via empty list."""
 
     def test_empty_args_list(self) -> None:
-        """args=[] means no CLI parsing."""
-        result = confarg.load(WithDefaults, args=[], env={})
+        """argv=[] means no CLI parsing."""
+        result = confarg.load(WithDefaults, argv=[], env={})
         assert result.name == "default"
 
 
@@ -414,7 +414,7 @@ class TestCliEdgeCases:
         """A value starting with a dash (negative number) is not treated as a flag."""
         result = confarg.load(
             Flat,
-            args=["--name", "x", "--count", "-5", "--rate", "-1.5", "--verbose", "true"],
+            argv=["--name", "x", "--count", "-5", "--rate", "-1.5", "--verbose", "true"],
             env={},
         )
         assert result.count == -5
@@ -423,13 +423,13 @@ class TestCliEdgeCases:
     def test_enum_from_cli(self) -> None:
         """Enum value from CLI."""
         WithEnum = make_target("color", Color, default=Color.RED)
-        result = confarg.load(WithEnum, args=["--color", "blue"], env={})
+        result = confarg.load(WithEnum, argv=["--color", "blue"], env={})
         assert result.color is Color.BLUE
 
     def test_path_from_cli(self) -> None:
         """Path from CLI."""
         WithPath = make_target("location", Path, default=Path())
-        result = confarg.load(WithPath, args=["--location", "/a/b"], env={})
+        result = confarg.load(WithPath, argv=["--location", "/a/b"], env={})
         assert result.location == Path("/a/b")
 
     @pytest.mark.parametrize(
@@ -442,32 +442,32 @@ class TestCliEdgeCases:
     )
     def test_optional_from_cli(self, target_cls) -> None:
         """Optional/pipe-none value from CLI."""
-        result = confarg.load(target_cls, args=["--value", "42"], env={})
+        result = confarg.load(target_cls, argv=["--value", "42"], env={})
         assert result.value == 42
 
     def test_optional_str_none_token_gives_python_none(self) -> None:
         """--value none for str | None gives Python None (steal rule)."""
         WithOptionalStr = make_target("value", str | None, default="hello")
-        result = confarg.load(WithOptionalStr, args=["--value", "none"], env={})
+        result = confarg.load(WithOptionalStr, argv=["--value", "none"], env={})
         assert result.value is None
 
     def test_missing_value_for_str_field_raises(self) -> None:
         """--field with no following value raises ConfargError instead of silently skipping."""
         WithStr = make_target("name", str)
         with pytest.raises(ConfargError, match="Missing value for '--name'"):
-            confarg.load(WithStr, args=["--name"], env={})
+            confarg.load(WithStr, argv=["--name"], env={})
 
     def test_missing_value_when_next_is_flag_raises(self) -> None:
         """--field followed immediately by another flag raises ConfargError."""
         Both = make_dataclass("Both", [("name", str), ("verbose", bool, field(default=False))])
         with pytest.raises(ConfargError, match="Missing value for '--name'"):
-            confarg.load(Both, args=["--name", "--verbose"], env={})
+            confarg.load(Both, argv=["--name", "--verbose"], env={})
 
     def test_missing_value_for_int_field_raises(self) -> None:
         """--field with no following value raises for int fields too."""
         WithInt = make_target("count", int)
         with pytest.raises(ConfargError, match="Missing value for '--count'"):
-            confarg.load(WithInt, args=["--count"], env={})
+            confarg.load(WithInt, argv=["--count"], env={})
 
 
 # ---------------------------------------------------------------------------
@@ -490,20 +490,20 @@ class TestCliNoneToken:
     @pytest.mark.parametrize("token", ["none", "None", "NONE", "null", "Null", "NULL"])
     def test_none_token_sets_optional_to_none(self, target_cls, token: str) -> None:
         """Test that none/null tokens set optional fields to None."""
-        result = confarg.load(target_cls, args=["--value", token], env={})
+        result = confarg.load(target_cls, argv=["--value", token], env={})
         assert result.value is None
 
     def test_optional_str_none_token(self) -> None:
         """'none' in str | None yields Python None (steal rule)."""
         WithOpt = make_target("value", str | None, default="hello")
-        result = confarg.load(WithOpt, args=["--value", "none"], env={})
+        result = confarg.load(WithOpt, argv=["--value", "none"], env={})
         assert result.value is None
 
     def test_nested_optional_field(self) -> None:
         """Test that 'none' token sets optional nested dataclass field to None."""
         Inner = make_dataclass("Inner", [("x", int, field(default=1))])
         Outer = make_dataclass("Outer", [("inner", Inner | None, field(default=None))])
-        result: Any = confarg.load(Outer, args=["--inner", "none"], env={})
+        result: Any = confarg.load(Outer, argv=["--inner", "none"], env={})
         assert result.inner is None
 
     def test_none_followed_by_next_flag(self) -> None:
@@ -515,7 +515,7 @@ class TestCliNoneToken:
                 ("other", str, field(default="x")),
             ],
         )
-        result: Any = confarg.load(Both, args=["--value", "none", "--other", "hello"], env={})
+        result: Any = confarg.load(Both, argv=["--value", "none", "--other", "hello"], env={})
         assert result.value is None
         assert result.other == "hello"
 
@@ -531,82 +531,82 @@ class TestCliStealRule:
     def test_str_none_none_token(self) -> None:
         """Test that 'none' token in str | None resolves to Python None."""
         T = make_target("v", str | None, default="x")
-        assert confarg.load(T, args=["--v", "none"], env={}).v is None
+        assert confarg.load(T, argv=["--v", "none"], env={}).v is None
 
     def test_str_none_null_token(self) -> None:
         """Test that 'null' token in str | None resolves to Python None."""
         T = make_target("v", str | None, default="x")
-        assert confarg.load(T, args=["--v", "null"], env={}).v is None
+        assert confarg.load(T, argv=["--v", "null"], env={}).v is None
 
     def test_str_float_inf(self) -> None:
         """Test that 'inf' token in str | float resolves to float infinity."""
         T = make_target("v", str | float, default=0.0)
-        assert confarg.load(T, args=["--v", "inf"], env={}).v == float("inf")
+        assert confarg.load(T, argv=["--v", "inf"], env={}).v == float("inf")
 
     def test_str_float_plus_inf(self) -> None:
         """Test that '+inf' token in str | float resolves to positive float infinity."""
         T = make_target("v", str | float, default=0.0)
-        assert confarg.load(T, args=["--v", "+inf"], env={}).v == float("inf")
+        assert confarg.load(T, argv=["--v", "+inf"], env={}).v == float("inf")
 
     def test_str_float_minus_inf(self) -> None:
         """Test that '-inf' token in str | float resolves to negative float infinity."""
         T = make_target("v", str | float, default=0.0)
-        assert math.isinf(confarg.load(T, args=["--v", "-inf"], env={}).v)
+        assert math.isinf(confarg.load(T, argv=["--v", "-inf"], env={}).v)
 
     def test_str_float_nan(self) -> None:
         """Test that 'nan' token in str | float resolves to float NaN."""
         T = make_target("v", str | float, default=0.0)
-        assert math.isnan(confarg.load(T, args=["--v", "nan"], env={}).v)
+        assert math.isnan(confarg.load(T, argv=["--v", "nan"], env={}).v)
 
     def test_str_bool_true(self) -> None:
         """Test that 'true' token in str | bool resolves to True."""
         T = make_target("v", str | bool, default=False)
-        assert confarg.load(T, args=["--v", "true"], env={}).v is True
+        assert confarg.load(T, argv=["--v", "true"], env={}).v is True
 
     def test_str_bool_false(self) -> None:
         """Test that 'false' token in str | bool resolves to False."""
         T = make_target("v", str | bool, default=True)
-        assert confarg.load(T, args=["--v", "false"], env={}).v is False
+        assert confarg.load(T, argv=["--v", "false"], env={}).v is False
 
     def test_str_float_decimal(self) -> None:
         """Test that a decimal string in str | float resolves to float."""
         T = make_target("v", str | float, default=0.0)
-        assert confarg.load(T, args=["--v", "0.1"], env={}).v == pytest.approx(0.1)
+        assert confarg.load(T, argv=["--v", "0.1"], env={}).v == pytest.approx(0.1)
 
     def test_str_float_negative_decimal(self) -> None:
         """Test that a negative decimal string in str | float resolves to float."""
         T = make_target("v", str | float, default=0.0)
-        assert confarg.load(T, args=["--v", "-0.1"], env={}).v == pytest.approx(-0.1)
+        assert confarg.load(T, argv=["--v", "-0.1"], env={}).v == pytest.approx(-0.1)
 
     def test_str_float_positive_decimal(self) -> None:
         """Test that a positive-signed decimal string in str | float resolves to float."""
         T = make_target("v", str | float, default=0.0)
-        assert confarg.load(T, args=["--v", "+0.1"], env={}).v == pytest.approx(0.1)
+        assert confarg.load(T, argv=["--v", "+0.1"], env={}).v == pytest.approx(0.1)
 
     def test_int_str_positive(self) -> None:
         """Test that '+N' string in int | str resolves to int."""
         T = make_target("v", int | str, default="")
-        assert confarg.load(T, args=["--v", "+1"], env={}).v == 1
+        assert confarg.load(T, argv=["--v", "+1"], env={}).v == 1
 
     def test_int_str_negative(self) -> None:
         """Test that '-N' string in int | str resolves to int."""
         T = make_target("v", int | str, default="")
-        assert confarg.load(T, args=["--v", "-1"], env={}).v == -1
+        assert confarg.load(T, argv=["--v", "-1"], env={}).v == -1
 
     def test_str_float_scientific(self) -> None:
         """Test that scientific notation string in str | float resolves to float."""
         T = make_target("v", str | float, default=0.0)
-        assert confarg.load(T, args=["--v", "1e-1"], env={}).v == pytest.approx(0.1)
+        assert confarg.load(T, argv=["--v", "1e-1"], env={}).v == pytest.approx(0.1)
 
     def test_plain_str_none_stays_string(self) -> None:
         """Plain str field (not Optional): 'none' is just the string 'none'."""
         T = make_target("v", str, default="")
-        assert confarg.load(T, args=["--v", "none"], env={}).v == "none"
+        assert confarg.load(T, argv=["--v", "none"], env={}).v == "none"
 
     def test_str_fallback_for_unrecognized(self) -> None:
         """In str | float, a non-numeric string falls back to str."""
         T = make_target("v", str | float, default=0.0)
-        assert confarg.load(T, args=["--v", "hello"], env={}).v == "hello"
+        assert confarg.load(T, argv=["--v", "hello"], env={}).v == "hello"
 
 
 # ---------------------------------------------------------------------------
@@ -620,38 +620,38 @@ class TestCliStrSentinel:
     def test_str_escape_none_in_optional_str(self) -> None:
         """--value.str none → string 'none', not Python None."""
         T = make_target("value", str | None, default=None)
-        result = confarg.load(T, args=["--value.str", "none"], env={})
+        result = confarg.load(T, argv=["--value.str", "none"], env={})
         assert result.value == "none"
 
     def test_str_escape_null_in_optional_str(self) -> None:
         """--value.str null → string 'null', not Python None."""
         T = make_target("value", str | None, default=None)
-        result = confarg.load(T, args=["--value.str", "null"], env={})
+        result = confarg.load(T, argv=["--value.str", "null"], env={})
         assert result.value == "null"
 
     def test_str_escape_true_in_str_bool(self) -> None:
         """--value.str true → string 'true', not bool True."""
         T = make_target("value", str | bool, default=False)
-        result = confarg.load(T, args=["--value.str", "true"], env={})
+        result = confarg.load(T, argv=["--value.str", "true"], env={})
         assert result.value == "true"
 
     def test_str_escape_nan_in_str_float(self) -> None:
         """--value.str nan → string 'nan', not float NaN."""
         T = make_target("value", str | float, default=0.0)
-        result = confarg.load(T, args=["--value.str", "nan"], env={})
+        result = confarg.load(T, argv=["--value.str", "nan"], env={})
         assert result.value == "nan"
 
     def test_str_escape_inf_in_str_float(self) -> None:
         """--value.str inf → string 'inf', not float infinity."""
         T = make_target("value", str | float, default=0.0)
-        result = confarg.load(T, args=["--value.str", "inf"], env={})
+        result = confarg.load(T, argv=["--value.str", "inf"], env={})
         assert result.value == "inf"
 
     def test_str_escape_missing_value_raises(self) -> None:
         """--value.str with no following argument raises ConfargError."""
         T = make_target("value", str | None, default=None)
         with pytest.raises(confarg.exceptions.ConfargError, match="Missing value"):
-            confarg.load(T, args=["--value.str"], env={})
+            confarg.load(T, argv=["--value.str"], env={})
 
 
 # ---------------------------------------------------------------------------
@@ -666,7 +666,7 @@ class TestCliJsonComposite:
         """--db '{"host":...}' constructs the nested dataclass."""
         result = confarg.load(
             AppConfig,
-            args=["--db", '{"host":"h","port":1,"name":"n"}'],
+            argv=["--db", '{"host":"h","port":1,"name":"n"}'],
             env={},
         )
         assert result.db == DbConfig(host="h", port=1, name="n")
@@ -675,7 +675,7 @@ class TestCliJsonComposite:
         """JSON spanning multiple levels of nesting."""
         result = confarg.load(
             DeepNested,
-            args=["--app", '{"db":{"host":"h","port":1,"name":"n"},"cache":{"enabled":true,"ttl":60}}'],
+            argv=["--app", '{"db":{"host":"h","port":1,"name":"n"},"cache":{"enabled":true,"ttl":60}}'],
             env={},
         )
         assert result.app.db.host == "h"
@@ -686,7 +686,7 @@ class TestCliJsonComposite:
         """JSON for an Optional[Dataclass] field."""
         result = confarg.load(
             WithOptionalNested,
-            args=["--db", '{"host":"h","port":5432,"name":"mydb"}'],
+            argv=["--db", '{"host":"h","port":5432,"name":"mydb"}'],
             env={},
         )
         assert result.db is not None
@@ -698,7 +698,7 @@ class TestCliJsonComposite:
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         result = confarg.load(
             WithDict,
-            args=["--metadata", '{"k1":1,"k2":2}'],
+            argv=["--metadata", '{"k1":1,"k2":2}'],
             env={},
         )
         assert result.metadata == {"k1": 1, "k2": 2}
@@ -707,7 +707,7 @@ class TestCliJsonComposite:
         """JSON sets the bulk of a nested dataclass; a subsequent flat arg overrides one field."""
         result = confarg.load(
             AppConfig,
-            args=["--db", '{"host":"h","port":1,"name":"n"}', "--db.port", "5432"],
+            argv=["--db", '{"host":"h","port":1,"name":"n"}', "--db.port", "5432"],
             env={},
         )
         assert result.db.host == "h"
@@ -719,7 +719,7 @@ class TestCliJsonComposite:
         with pytest.raises(confarg.exceptions.ConfargError, match="Invalid JSON"):
             confarg.load(
                 AppConfig,
-                args=["--db", "{not valid json}"],
+                argv=["--db", "{not valid json}"],
                 env={},
             )
 
@@ -735,43 +735,43 @@ class TestCliListAppend:
     def test_append_creates_list_without_config(self) -> None:
         """--items+ creates a new list when no config file is present."""
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, args=["--items+", "3", "4"], env={})
+        result = confarg.load(WithList, argv=["--items+", "3", "4"], env={})
         assert result.items == [3, 4]
 
     def test_append_single_value(self) -> None:
         """--items+ with a single value creates a one-element list."""
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, args=["--items+", "7"], env={})
+        result = confarg.load(WithList, argv=["--items+", "7"], env={})
         assert result.items == [7]
 
     def test_append_no_values_creates_empty_list(self) -> None:
         """--items+ with no trailing values creates an empty list."""
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, args=["--items+"], env={})
+        result = confarg.load(WithList, argv=["--items+"], env={})
         assert result.items == []
 
     def test_append_json_array(self) -> None:
         """--items+ '[1,2]' accepts a JSON array."""
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, args=["--items+", "[1,2,3]"], env={})
+        result = confarg.load(WithList, argv=["--items+", "[1,2,3]"], env={})
         assert result.items == [1, 2, 3]
 
     def test_append_string_elements(self) -> None:
         """--tags+ appends string elements."""
         WithList = make_target("tags", list[str], default_factory=list)
-        result = confarg.load(WithList, args=["--tags+", "a", "b", "c"], env={})
+        result = confarg.load(WithList, argv=["--tags+", "a", "b", "c"], env={})
         assert result.tags == ["a", "b", "c"]
 
     def test_append_on_non_list_field_raises(self) -> None:
         """+ syntax on a non-list field raises ConfargError."""
         WithInt = make_target("count", int, default=0)
         with pytest.raises(confarg.exceptions.ConfargError, match=r"\+.*append"):
-            confarg.load(WithInt, args=["--count+", "1"], env={})
+            confarg.load(WithInt, argv=["--count+", "1"], env={})
 
     def test_index_replacement_still_works(self) -> None:
         """--items.N still works for replacing an element within the existing list."""
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, args=["--items.0", "10", "--items.1", "20"], env={})
+        result = confarg.load(WithList, argv=["--items.0", "10", "--items.1", "20"], env={})
         assert result.items == [10, 20]
 
     def test_index_out_of_range_with_config_raises(self, tmp_path) -> None:
@@ -780,14 +780,14 @@ class TestCliListAppend:
         cfg.write_text("items = [1, 2, 3]\n")
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(confarg.exceptions.ConfargError, match="append syntax"):
-            confarg.load(WithList, args=["--items.5", "99"], env={}, files=[cfg])
+            confarg.load(WithList, argv=["--items.5", "99"], env={}, files=[cfg])
 
     def test_negative_index_update(self, tmp_path) -> None:
         """--items.-1 updates the last element."""
         cfg = tmp_path / "cfg.toml"
         cfg.write_text("items = [1, 2, 3]\n")
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, args=["--items.-1", "99"], env={}, files=[cfg])
+        result = confarg.load(WithList, argv=["--items.-1", "99"], env={}, files=[cfg])
         assert result.items == [1, 2, 99]
 
     def test_negative_index_delete(self, tmp_path) -> None:
@@ -795,7 +795,7 @@ class TestCliListAppend:
         cfg = tmp_path / "cfg.toml"
         cfg.write_text("items = [1, 2, 3]\n")
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, args=["--items.-1-"], env={}, files=[cfg])
+        result = confarg.load(WithList, argv=["--items.-1-"], env={}, files=[cfg])
         assert result.items == [1, 2]
 
     def test_reset_then_append(self, tmp_path) -> None:
@@ -803,7 +803,7 @@ class TestCliListAppend:
         cfg = tmp_path / "cfg.toml"
         cfg.write_text('items = ["alice", "bob"]\n')
         WithList = make_target("items", list[str], default_factory=list)
-        result = confarg.load(WithList, args=["--items", "--items+", "foo"], env={}, files=[cfg])
+        result = confarg.load(WithList, argv=["--items", "--items+", "foo"], env={}, files=[cfg])
         assert result.items == ["foo"]
 
     def test_append_reset_append(self, tmp_path) -> None:
@@ -811,7 +811,7 @@ class TestCliListAppend:
         cfg = tmp_path / "cfg.toml"
         cfg.write_text('items = ["alice", "bob"]\n')
         WithList = make_target("items", list[str], default_factory=list)
-        result = confarg.load(WithList, args=["--items+", "foo", "--items", "--items+", "bar"], env={}, files=[cfg])
+        result = confarg.load(WithList, argv=["--items+", "foo", "--items", "--items+", "bar"], env={}, files=[cfg])
         assert result.items == ["bar"]
 
     def test_patch_reset_append(self, tmp_path) -> None:
@@ -819,7 +819,7 @@ class TestCliListAppend:
         cfg = tmp_path / "cfg.toml"
         cfg.write_text('items = ["alice", "bob"]\n')
         WithList = make_target("items", list[str], default_factory=list)
-        result = confarg.load(WithList, args=["--items.0", "bob", "--items", "--items+", "bar"], env={}, files=[cfg])
+        result = confarg.load(WithList, argv=["--items.0", "bob", "--items", "--items+", "bar"], env={}, files=[cfg])
         assert result.items == ["bar"]
 
     def test_patch_reset_append_patch(self, tmp_path) -> None:
@@ -829,7 +829,7 @@ class TestCliListAppend:
         WithList = make_target("items", list[str], default_factory=list)
         result = confarg.load(
             WithList,
-            args=["--items.0", "bob", "--items", "--items+", "foo", "bar", "--items.-1", "baz"],
+            argv=["--items.0", "bob", "--items", "--items+", "foo", "bar", "--items.-1", "baz"],
             env={},
             files=[cfg],
         )
@@ -840,7 +840,7 @@ class TestCliListAppend:
         cfg = tmp_path / "cfg.toml"
         cfg.write_text('items = ["alice"]\n')
         WithList = make_target("items", list[str], default_factory=list)
-        result = confarg.load(WithList, args=["--items+", "foo", "--items+", "bar"], env={}, files=[cfg])
+        result = confarg.load(WithList, argv=["--items+", "foo", "--items+", "bar"], env={}, files=[cfg])
         assert result.items == ["alice", "foo", "bar"]
 
     def test_reset_append_then_delete(self, tmp_path) -> None:
@@ -850,7 +850,7 @@ class TestCliListAppend:
         WithList = make_target("items", list[str], default_factory=list)
         result = confarg.load(
             WithList,
-            args=["--items", "--items+", "dylan", "eliot", "fritz", "--items.1-"],
+            argv=["--items", "--items+", "dylan", "eliot", "fritz", "--items.1-"],
             env={},
             files=[cfg],
         )
@@ -861,7 +861,7 @@ class TestCliListAppend:
         WithList = make_target("items", list[str], default_factory=list)
         result = confarg.load(
             WithList,
-            args=["--items+", "dylan", "eliot", "fritz", "--items.1-"],
+            argv=["--items+", "dylan", "eliot", "fritz", "--items.1-"],
             env={},
         )
         assert result.items == ["dylan", "fritz"]
@@ -873,32 +873,32 @@ class TestCliListAppend:
         class Parent:
             values: list[int] = field(default_factory=list)
 
-        result = confarg.load(Parent, args=["--values+", "10", "20"], env={})
+        result = confarg.load(Parent, argv=["--values+", "10", "20"], env={})
         assert result.values == [10, 20]
 
     def test_bracket_string_treated_as_literal_not_json(self) -> None:
         """A value starting with '[' that is not valid JSON is treated as a plain string."""
         WithList = make_target("tags", list[str], default_factory=list)
-        result = confarg.load(WithList, args=["--tags", "["], env={})
+        result = confarg.load(WithList, argv=["--tags", "["], env={})
         assert result.tags == ["["]
 
     def test_bracket_string_in_append_mode_treated_as_literal(self) -> None:
         """In append mode, a value starting with '[' that is not valid JSON is treated as a string."""
         WithList = make_target("tags", list[str], default_factory=list)
-        result = confarg.load(WithList, args=["--tags+", "[", "a"], env={})
+        result = confarg.load(WithList, argv=["--tags+", "[", "a"], env={})
         assert result.tags == ["[", "a"]
 
     def test_brace_string_in_append_mode_treated_as_literal(self) -> None:
         """In append mode, a value starting with '{' that is not valid JSON is treated as a string."""
         WithList = make_target("tags", list[str], default_factory=list)
-        result = confarg.load(WithList, args=["--tags+", "{not json"], env={})
+        result = confarg.load(WithList, argv=["--tags+", "{not json"], env={})
         assert result.tags == ["{not json"]
 
     def test_append_multiple_json_dicts_without_config(self) -> None:
         """--servers+ DICT1 DICT2 appends structured items without a base config."""
         result = confarg.load(
             WithNestedList,
-            args=["--servers+", '{"host":"a","port":1,"name":"db1"}', '{"host":"b","port":2,"name":"db2"}'],
+            argv=["--servers+", '{"host":"a","port":1,"name":"db1"}', '{"host":"b","port":2,"name":"db2"}'],
             env={},
         )
         assert len(result.servers) == 2
@@ -909,7 +909,7 @@ class TestCliListAppend:
         """--servers+ '[DICT1, DICT2]' appends structured items from a JSON array."""
         result = confarg.load(
             WithNestedList,
-            args=["--servers+", '[{"host":"a","port":1,"name":"db1"},{"host":"b","port":2,"name":"db2"}]'],
+            argv=["--servers+", '[{"host":"a","port":1,"name":"db1"},{"host":"b","port":2,"name":"db2"}]'],
             env={},
         )
         assert len(result.servers) == 2
@@ -920,7 +920,7 @@ class TestCliListAppend:
         """--servers+ DICT --servers.0.host new patches the newly-appended item."""
         result = confarg.load(
             WithNestedList,
-            args=["--servers+", '{"host":"original","port":1,"name":"db1"}', "--servers.0.host", "patched"],
+            argv=["--servers+", '{"host":"original","port":1,"name":"db1"}', "--servers.0.host", "patched"],
             env={},
         )
         assert len(result.servers) == 1
@@ -930,13 +930,13 @@ class TestCliListAppend:
     def test_append_no_items_then_patch_raises(self) -> None:
         """--servers+ with no items followed by --servers.0.host raises ConfargError."""
         with pytest.raises(confarg.exceptions.ConfargError, match="index 0"):
-            confarg.load(WithNestedList, args=["--servers+", "--servers.0.host", "toto"], env={})
+            confarg.load(WithNestedList, argv=["--servers+", "--servers.0.host", "toto"], env={})
 
     def test_two_appends_with_neg1_patch_each(self) -> None:
         """--servers+ {} --servers.-1.* a --servers+ {} --servers.-1.* b produces two items."""
         result = confarg.load(
             WithNestedList,
-            args=[
+            argv=[
                 "--servers+",
                 "{}",
                 "--servers.-1.host",
@@ -975,7 +975,7 @@ class TestConfigFileAppend:
         extra = tmp_yaml("host: b\nport: 2\nname: db2\n", "extra.yaml")
         result = confarg.load(
             WithNestedList,
-            args=["--config", str(base), "--config.servers+", str(extra)],
+            argv=["--config", str(base), "--config.servers+", str(extra)],
             env={},
         )
         assert len(result.servers) == 2
@@ -992,7 +992,7 @@ class TestConfigFileAppend:
         )
         result = confarg.load(
             WithNestedList,
-            args=["--config", str(base), "--config.servers+", str(extra)],
+            argv=["--config", str(base), "--config.servers+", str(extra)],
             env={},
         )
         assert len(result.servers) == 3
@@ -1006,7 +1006,7 @@ class TestConfigFileAppend:
         extra = tmp_yaml("- 5\n- 6\n", "extra.yaml")
         result = confarg.load(
             WithListOfLists,
-            args=["--config", str(base), "--config.matrix+", str(extra)],
+            argv=["--config", str(base), "--config.matrix+", str(extra)],
             env={},
         )
         assert result.matrix == [[1, 2], [3, 4], [5, 6]]
@@ -1016,7 +1016,7 @@ class TestConfigFileAppend:
         extra = tmp_yaml("host: a\nport: 1\nname: db1\n", "extra.yaml")
         result = confarg.load(
             WithNestedList,
-            args=["--config.servers+", str(extra)],
+            argv=["--config.servers+", str(extra)],
             env={},
         )
         assert len(result.servers) == 1
@@ -1028,7 +1028,7 @@ class TestConfigFileAppend:
         f2 = tmp_yaml("host: b\nport: 2\nname: db2\n", "f2.yaml")
         result = confarg.load(
             WithNestedList,
-            args=["--config.servers+", str(f1), "--config.servers+", str(f2)],
+            argv=["--config.servers+", str(f1), "--config.servers+", str(f2)],
             env={},
         )
         assert len(result.servers) == 2
@@ -1041,7 +1041,7 @@ class TestConfigFileAppend:
         f2 = tmp_yaml("host: b\nport: 2\nname: db2\n", "f2.yaml")
         result = confarg.load(
             WithNestedList,
-            args=["--config.servers+", str(f1), str(f2)],
+            argv=["--config.servers+", str(f1), str(f2)],
             env={},
         )
         assert len(result.servers) == 2
@@ -1054,7 +1054,7 @@ class TestConfigFileAppend:
         extra = tmp_yaml("host: b\nport: 2\nname: db2\n", "extra.yaml")
         result = confarg.load(
             WithNestedList,
-            args=[
+            argv=[
                 "--config",
                 str(base),
                 "--config.servers+",
@@ -1076,7 +1076,7 @@ class TestConfigFileAppend:
         extra = tmp_yaml("tags:\n  - gamma\n  - delta\n", "extra.yaml")
         result = confarg.load(
             WithTags,
-            args=["--config", str(base), "--config.tags+", str(extra)],
+            argv=["--config", str(base), "--config.tags+", str(extra)],
             env={},
         )
         assert result.tags == ["alpha", "beta", "gamma", "delta"]
@@ -1087,7 +1087,7 @@ class TestConfigFileAppend:
         extra = tmp_json(json.dumps({"host": "b", "port": 2, "name": "db2"}), "extra.json")
         result = confarg.load(
             WithNestedList,
-            args=["--config", str(base), "--config.servers+", str(extra)],
+            argv=["--config", str(base), "--config.servers+", str(extra)],
             env={},
         )
         assert len(result.servers) == 2
@@ -1099,7 +1099,7 @@ class TestConfigFileAppend:
         # so it raises UnknownArgumentError rather than the config-specific error.
         extra = tmp_yaml("host: a\nport: 1\nname: db1\n", "extra.yaml")
         with pytest.raises((confarg.exceptions.ConfargError, confarg.exceptions.UnknownArgumentError)):
-            confarg.load(WithNestedList, args=["--config+", str(extra)], env={})
+            confarg.load(WithNestedList, argv=["--config+", str(extra)], env={})
 
 
 # ---------------------------------------------------------------------------
@@ -1119,7 +1119,7 @@ class TestConfigFlagFieldConflict:
             name: str = "x"
 
         with pytest.raises(confarg.exceptions.ConfargError, match=r"config_flag|reserved|config"):
-            confarg.load(HasConfigField, args=[], env={})
+            confarg.load(HasConfigField, argv=[], env={})
 
     def test_custom_config_flag_conflicts_with_field(self) -> None:
         """A custom config_flag that matches a field name raises ConfargError."""
@@ -1129,7 +1129,7 @@ class TestConfigFlagFieldConflict:
             conf: str = ""
 
         with pytest.raises(confarg.exceptions.ConfargError, match="conf"):
-            confarg.load(HasConfField, args=[], env={}, config_flag="conf")
+            confarg.load(HasConfField, argv=[], env={}, config_flag="conf")
 
     def test_no_conflict_when_field_name_differs(self) -> None:
         """No error when config_flag does not match any field name."""
@@ -1138,7 +1138,7 @@ class TestConfigFlagFieldConflict:
         class NoConflict:
             name: str = "ok"
 
-        result = confarg.load(NoConflict, args=[], env={})
+        result = confarg.load(NoConflict, argv=[], env={})
         assert result.name == "ok"
 
     def test_custom_config_flag_avoids_conflict(self) -> None:
@@ -1148,7 +1148,7 @@ class TestConfigFlagFieldConflict:
         class HasConfigField:
             config: str = "default"
 
-        result = confarg.load(HasConfigField, args=["--config", "myvalue"], env={}, config_flag="conf")
+        result = confarg.load(HasConfigField, argv=["--config", "myvalue"], env={}, config_flag="conf")
         assert result.config == "myvalue"
 
     def test_conflict_in_union_root_target(self) -> None:
@@ -1164,7 +1164,7 @@ class TestConfigFlagFieldConflict:
             name: str = ""
 
         with pytest.raises(confarg.exceptions.ConfargError, match="config"):
-            confarg.load(VariantA | VariantB, args=[], env={})
+            confarg.load(VariantA | VariantB, argv=[], env={})
 
 
 # ---------------------------------------------------------------------------
@@ -1179,14 +1179,14 @@ class TestCliDelete:
         """--field- on a required field (no default) causes MissingFieldError."""
         path = tmp_toml("name = 'from_config'\ncount = 5\nrate = 1.0\nverbose = false\n")
         with pytest.raises(confarg.exceptions.MissingFieldError):
-            confarg.load(Flat, args=["--name-"], env={}, files=[path])
+            confarg.load(Flat, argv=["--name-"], env={}, files=[path])
 
     def test_delete_field_resets_to_default(self, tmp_toml) -> None:
         """--field- on a field with a default value causes the default to be used."""
         path = tmp_toml("name = 'cfg_name'\n")
         result = confarg.load(
             WithDefaults,
-            args=["--name-"],
+            argv=["--name-"],
             env={},
             files=[path],
         )
@@ -1196,27 +1196,27 @@ class TestCliDelete:
         """--parent.field- removes a nested field; raises MissingFieldError if required."""
         path = tmp_toml("[db]\nhost = 'myhost'\nport = 5432\nname = 'mydb'\n")
         with pytest.raises(confarg.exceptions.MissingFieldError):
-            confarg.load(AppConfig, args=["--db.host-"], env={}, files=[path])
+            confarg.load(AppConfig, argv=["--db.host-"], env={}, files=[path])
 
     def test_delete_list_index(self, tmp_toml) -> None:
         """--list.1- removes element at original index 1."""
         WithList = make_target("items", list[str], default_factory=list)
         path = tmp_toml('items = ["a", "b", "c"]\n')
-        result = confarg.load(WithList, args=["--items.1-"], env={}, files=[path])
+        result = confarg.load(WithList, argv=["--items.1-"], env={}, files=[path])
         assert result.items == ["a", "c"]
 
     def test_delete_first_and_last(self, tmp_toml) -> None:
         """Deleting first and last elements leaves only the middle ones."""
         WithList = make_target("items", list[str], default_factory=list)
         path = tmp_toml('items = ["a", "b", "c", "d"]\n')
-        result = confarg.load(WithList, args=["--items.0-", "--items.3-"], env={}, files=[path])
+        result = confarg.load(WithList, argv=["--items.0-", "--items.3-"], env={}, files=[path])
         assert result.items == ["b", "c"]
 
     def test_delete_indices_use_original_positions(self, tmp_toml) -> None:
         """--items.1- --items.2- removes original indices 1 and 2, not 1 then (new) 2."""
         WithList = make_target("items", list[str], default_factory=list)
         path = tmp_toml('items = ["a", "b", "c", "d"]\n')
-        result = confarg.load(WithList, args=["--items.1-", "--items.2-"], env={}, files=[path])
+        result = confarg.load(WithList, argv=["--items.1-", "--items.2-"], env={}, files=[path])
         assert result.items == ["a", "d"]
 
     def test_delete_duplicate_index_raises(self, tmp_toml) -> None:
@@ -1224,24 +1224,24 @@ class TestCliDelete:
         WithList = make_target("items", list[str], default_factory=list)
         path = tmp_toml('items = ["a", "b", "c"]\n')
         with pytest.raises(confarg.exceptions.ConfargError, match=r"[Dd]uplicate"):
-            confarg.load(WithList, args=["--items.1-", "--items.1-"], env={}, files=[path])
+            confarg.load(WithList, argv=["--items.1-", "--items.1-"], env={}, files=[path])
 
     def test_delete_out_of_range_raises(self, tmp_toml) -> None:
         """--items.5- on a 3-element list raises ConfargError."""
         WithList = make_target("items", list[str], default_factory=list)
         path = tmp_toml('items = ["a", "b", "c"]\n')
         with pytest.raises(confarg.exceptions.ConfargError):
-            confarg.load(WithList, args=["--items.5-"], env={}, files=[path])
+            confarg.load(WithList, argv=["--items.5-"], env={}, files=[path])
 
     def test_delete_unknown_field_raises(self) -> None:
         """--nonexistent- raises UnknownArgumentError."""
         result_type = make_target("name", str, default="x")
         with pytest.raises(confarg.exceptions.UnknownArgumentError):
-            confarg.load(result_type, args=["--nonexistent-"], env={})
+            confarg.load(result_type, argv=["--nonexistent-"], env={})
 
     def test_delete_then_append(self, tmp_toml) -> None:
         """Deleting an index and appending a value in the same CLI invocation works."""
         WithList = make_target("items", list[str], default_factory=list)
         path = tmp_toml('items = ["a", "b", "c"]\n')
-        result = confarg.load(WithList, args=["--items.1-", "--items+", "d"], env={}, files=[path])
+        result = confarg.load(WithList, argv=["--items.1-", "--items+", "d"], env={}, files=[path])
         assert result.items == ["a", "c", "d"]

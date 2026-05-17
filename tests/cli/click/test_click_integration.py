@@ -258,7 +258,7 @@ class TestFromContext:
         @click.command()
         def inner(**kwargs: Any) -> None:
             ctx = click.get_current_context()
-            result_holder.append(confargclick.from_context(ctx, dc_type, config_flag="", **kw))
+            result_holder.append(confargclick.from_context(dc_type, ctx, config_flag="", **kw))
 
         real_cmd = click.Command(name="cli", callback=inner.callback, params=cmd.params)
         runner = CliRunner()
@@ -293,7 +293,7 @@ class TestFromContext:
         @click.command()
         def inner(**kwargs: Any) -> None:
             ctx = click.get_current_context()
-            result_holder.append(confargclick.from_context(ctx, WithList, config_flag=""))
+            result_holder.append(confargclick.from_context(WithList, ctx, config_flag=""))
 
         real_cmd = click.Command(name="cli", callback=inner.callback, params=cmd.params)
         runner = CliRunner()
@@ -327,7 +327,7 @@ class TestFromContext:
         @click.option("--config", multiple=True)
         def cmd(**kwargs: Any) -> None:
             ctx = click.get_current_context()
-            result_holder.append(confargclick.from_context(ctx, Simple))
+            result_holder.append(confargclick.from_context(Simple, ctx))
 
         runner = CliRunner()
         runner.invoke(cmd, ["--config", str(cfg_file)], catch_exceptions=False)
@@ -345,7 +345,7 @@ class TestFromContext:
         @click.option("--config", multiple=True)
         def cmd(**kwargs: Any) -> None:
             ctx = click.get_current_context()
-            result_holder.append(confargclick.from_context(ctx, Simple, config_flag="config"))
+            result_holder.append(confargclick.from_context(Simple, ctx, config_flag="config"))
 
         cmd_with_fields = click.Command(
             name="cli",

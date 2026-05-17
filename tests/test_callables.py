@@ -261,7 +261,7 @@ class TestBareString:
         """A dotted function path from CLI resolves to the function."""
         result = confarg.load(
             WithCallable,
-            args=["--fn", f"{_MOD}._double"],
+            argv=["--fn", f"{_MOD}._double"],
             env={},
         )
         assert result.fn(3) == 6
@@ -270,7 +270,7 @@ class TestBareString:
         """A no-arg class is auto-instantiated when given as a bare string."""
         result = confarg.load(
             WithBareCallable,
-            args=["--fn", f"{_MOD}._NoArgCallable"],
+            argv=["--fn", f"{_MOD}._NoArgCallable"],
             env={},
         )
         assert isinstance(result.fn, _NoArgCallable)
@@ -281,7 +281,7 @@ class TestBareString:
         with pytest.raises(TypeCoercionError, match="no arguments"):
             confarg.load(
                 WithBareCallable,
-                args=["--fn", f"{_MOD}._Multiplier"],
+                argv=["--fn", f"{_MOD}._Multiplier"],
                 env={},
             )
 
@@ -292,7 +292,7 @@ class TestBareString:
         with pytest.raises(TypeCoercionError) as exc_info:
             confarg.load(
                 WithCallable,
-                args=["--fn", f"{_MOD}._Processor.process"],
+                argv=["--fn", f"{_MOD}._Processor.process"],
                 env={},
             )
         msg = str(exc_info.value)
@@ -304,14 +304,14 @@ class TestBareString:
     def test_from_toml(self, tmp_toml: Any) -> None:
         """A dotted function path from TOML resolves correctly."""
         cfg = tmp_toml(f'fn = "{_MOD}._double"\n')
-        result = confarg.load(WithCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithCallable, argv=[], env={}, files=[cfg])
         assert result.fn(5) == 10
 
     def test_from_env(self) -> None:
         """A dotted function path from env vars resolves correctly."""
         result = confarg.load(
             WithCallable,
-            args=[],
+            argv=[],
             env={"CONFARG_FN": f"{_MOD}._double"},
             env_prefix="CONFARG_",
         )
@@ -319,12 +319,12 @@ class TestBareString:
 
     def test_default_preserved(self) -> None:
         """Default callable fields are preserved when not overridden."""
-        result = confarg.load(WithCallableDefault, args=[], env={})
+        result = confarg.load(WithCallableDefault, argv=[], env={})
         assert result.fn(3) == 6
 
     def test_optional_none(self) -> None:
         """Optional callable fields default to None."""
-        result = confarg.load(WithOptionalCallable, args=[], env={})
+        result = confarg.load(WithOptionalCallable, argv=[], env={})
         assert result.fn is None
 
 
@@ -339,20 +339,20 @@ class TestFnDictForm:
     def test_fn_no_bind(self, tmp_json: Any) -> None:
         """Test fn: dict with no bind key resolves to the function."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._double"}}))
-        result = confarg.load(WithCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithCallable, argv=[], env={}, files=[cfg])
         assert result.fn(4) == 8
 
     def test_fn_with_bind(self, tmp_json: Any) -> None:
         """Test fn: dict with bind: key pre-applies the arguments."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._add", "bind": {"y": 10}}}))
-        result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         assert result.fn(5) == 15
 
     def test_fn_with_bind_via_cli(self) -> None:
         """--fn.fn + --fn.bind.key via CLI pre-applies the argument."""
         result = confarg.load(
             WithBareCallable,
-            args=[f"--fn.fn={_MOD}._add", "--fn.bind.y=10"],
+            argv=[f"--fn.fn={_MOD}._add", "--fn.bind.y=10"],
             env={},
         )
         assert result.fn(5) == 15
@@ -360,13 +360,13 @@ class TestFnDictForm:
     def test_fn_class_as_factory(self, tmp_json: Any) -> None:
         """Test fn: dict with a class path returns the class itself."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._Multiplier"}}))
-        result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         assert result.fn is _Multiplier
 
     def test_fn_class_as_factory_with_bind(self, tmp_json: Any) -> None:
         """Test fn: dict with a class and bind returns a partial constructor."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._Multiplier", "bind": {"factor": 3}}}))
-        result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         assert isinstance(result.fn, functools.partial)
         instance = result.fn()
         assert instance(4) == 12
@@ -374,7 +374,7 @@ class TestFnDictForm:
     def test_fn_instance_method_with_init(self, tmp_json: Any) -> None:
         """Test fn: dict with an instance method and constructor kwargs."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._Processor.process", "offset": 7}}))
-        result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         assert result.fn(3) == 10
 
     def test_fn_fully_bound_via_bind(self, tmp_json: Any) -> None:
@@ -385,31 +385,31 @@ class TestFnDictForm:
             fn: Callable[[], int]
 
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._add", "bind": {"x": 1, "y": 2}}}))
-        result = confarg.load(Target, args=[], env={}, files=[cfg])
+        result = confarg.load(Target, argv=[], env={}, files=[cfg])
         assert result.fn() == 3
 
     def test_fn_both_fn_and_class_raises(self, tmp_json: Any) -> None:
         """Specifying both fn: and class: raises TypeCoercionError."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._double", "class": f"{_MOD}._Multiplier"}}))
         with pytest.raises(TypeCoercionError, match="more than one of"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_fn_no_key_raises(self, tmp_json: Any) -> None:
         """A dict without fn: or class: raises TypeCoercionError."""
         cfg = tmp_json(json.dumps({"fn": {"bind": {"x": 1}}}))
         with pytest.raises(TypeCoercionError, match=r"fn.*class"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_fn_init_kwargs_for_non_method_raises(self, tmp_json: Any) -> None:
         """Sibling init kwargs for a plain function raises TypeCoercionError."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._double", "offset": 5}}))
         with pytest.raises(TypeCoercionError, match="instance method"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_fn_env_json(self) -> None:
         """Test fn: dict form specified as JSON in an env var."""
         spec = json.dumps({"fn": f"{_MOD}._add", "bind": {"y": 3}})
-        result = confarg.load(WithBareCallable, args=[], env={"CONFARG_FN": spec}, env_prefix="CONFARG_")
+        result = confarg.load(WithBareCallable, argv=[], env={"CONFARG_FN": spec}, env_prefix="CONFARG_")
         assert result.fn(2) == 5
 
 
@@ -432,14 +432,14 @@ class TestFnDictAutoInstantiation:
     def test_fn_instance_method_no_sibling_kwargs_auto_instantiates(self, tmp_json: Any) -> None:
         """fn: dict with no sibling kwargs auto-instantiates the owning class (no-arg ctor)."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._NoArgProcessor.transform"}}))
-        result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         # _NoArgProcessor() is created automatically; transform(x) returns x * 3
         assert result.fn(4) == 12
 
     def test_fn_instance_method_no_sibling_kwargs_returns_bound_method(self, tmp_json: Any) -> None:
         """fn: auto-instantiation without kwargs produces a bound method (not a partial)."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._NoArgProcessor.transform"}}))
-        result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         assert not isinstance(result.fn, functools.partial)
         assert callable(result.fn)
 
@@ -450,7 +450,7 @@ class TestFnDictAutoInstantiation:
         then retrieves the bound method.
         """
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._Processor.process", "offset": 5}}))
-        result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         # _Processor(offset=5) is constructed; process(x) returns x + 5
         assert result.fn(10) == 15
 
@@ -458,13 +458,13 @@ class TestFnDictAutoInstantiation:
         """fn: without sibling kwargs raises when the owning class needs constructor args."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._Processor.process"}}))
         with pytest.raises(TypeCoercionError, match="Cannot instantiate"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_fn_instance_method_no_arg_ctor_error_suggests_dict_form(self, tmp_json: Any) -> None:
         """Error message when auto-instantiation fails references the fn: dict form."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._Processor.process"}}))
         with pytest.raises(TypeCoercionError) as exc_info:
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         msg = str(exc_info.value)
         assert f"fn: {_MOD}._Processor.process" in msg
         assert "offset" in msg  # required ctor kwarg listed in the hint
@@ -481,14 +481,14 @@ class TestClassDictForm:
     def test_class_no_args(self, tmp_json: Any) -> None:
         """Test class: dict with a no-arg class instantiates correctly."""
         cfg = tmp_json(json.dumps({"fn": {"class": f"{_MOD}._NoArgCallable"}}))
-        result = confarg.load(WithCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithCallable, argv=[], env={}, files=[cfg])
         assert isinstance(result.fn, _NoArgCallable)
         assert result.fn(9) == 10
 
     def test_class_with_init_args(self, tmp_json: Any) -> None:
         """Test class: dict with constructor args instantiates correctly."""
         cfg = tmp_json(json.dumps({"fn": {"class": f"{_MOD}._Multiplier", "factor": 5}}))
-        result = confarg.load(WithCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithCallable, argv=[], env={}, files=[cfg])
         assert isinstance(result.fn, _Multiplier)
         assert result.fn(3) == 15
 
@@ -500,7 +500,7 @@ class TestClassDictForm:
             fn: Callable[[], int]
 
         cfg = tmp_json(json.dumps({"fn": {"class": f"{_MOD}._Multiplier", "factor": 4, "bind": {"x": 2}}}))
-        result = confarg.load(Target, args=[], env={}, files=[cfg])
+        result = confarg.load(Target, argv=[], env={}, files=[cfg])
         assert isinstance(result.fn, functools.partial)
         assert result.fn() == 8
 
@@ -508,12 +508,12 @@ class TestClassDictForm:
         """Class: dict with a function path raises TypeCoercionError."""
         cfg = tmp_json(json.dumps({"fn": {"class": f"{_MOD}._double"}}))
         with pytest.raises(TypeCoercionError, match="must reference a class"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_class_init_coercion(self, tmp_json: Any) -> None:
         """Constructor args from config are type-coerced by _construct_struct."""
         cfg = tmp_json(json.dumps({"fn": {"class": f"{_MOD}._Multiplier", "factor": 6}}))
-        result = confarg.load(WithCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithCallable, argv=[], env={}, files=[cfg])
         assert result.fn(2) == 12
 
 
@@ -563,19 +563,19 @@ class TestBindParamChecking:
         """Unknown bind key in fn: dict raises via confarg.load."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._add", "bind": {"z": 1}}}))
         with pytest.raises(TypeCoercionError, match="unknown parameter"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_class_bind_unknown_key_raises_via_load(self, tmp_json: Any) -> None:
         """Unknown bind key in class: dict raises via confarg.load."""
         cfg = tmp_json(json.dumps({"fn": {"class": f"{_MOD}._Multiplier", "factor": 2, "bind": {"bad": 1}}}))
         with pytest.raises(TypeCoercionError, match="unknown parameter"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_method_bind_unknown_key_raises_via_load(self, tmp_json: Any) -> None:
         """Unknown bind key for a method raises via confarg.load."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._Processor.process", "offset": 1, "bind": {"bad": 9}}}))
         with pytest.raises(TypeCoercionError, match="unknown parameter"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
 
 # ---------------------------------------------------------------------------
@@ -628,7 +628,7 @@ class TestSignatureChecking:
         with pytest.raises(TypeCoercionError, match="parameter"):
             confarg.load(
                 WithCallable,
-                args=["--fn", f"{_MOD}._add"],
+                argv=["--fn", f"{_MOD}._add"],
                 env={},
             )
 
@@ -660,7 +660,7 @@ class TestSerialization:
     def test_class_instance_with_spec(self, tmp_json: Any) -> None:
         """A class instance loaded via class: dict round-trips correctly."""
         cfg = tmp_json(json.dumps({"fn": {"class": f"{_MOD}._Multiplier", "factor": 3}}))
-        result = confarg.load(WithCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithCallable, argv=[], env={}, files=[cfg])
         dumped = confarg.dump(result)
         assert dumped["fn"] == {"class": f"{_MOD}._Multiplier", "factor": 3}
 
@@ -668,7 +668,7 @@ class TestSerialization:
         """A plain function round-trips through load and dump."""
         result = confarg.load(
             WithBareCallable,
-            args=["--fn", f"{_MOD}._double"],
+            argv=["--fn", f"{_MOD}._double"],
             env={},
         )
         dumped = confarg.dump(result)
@@ -677,7 +677,7 @@ class TestSerialization:
     def test_round_trip_partial(self, tmp_json: Any) -> None:
         """A partial round-trips through load and dump."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._add", "bind": {"y": 7}}}))
-        result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         dumped = confarg.dump(result)
         assert dumped["fn"] == {"fn": f"{_MOD}._add", "bind": {"y": 7}}
 
@@ -704,7 +704,7 @@ class TestCallableObjectModeCLI:
         """--<flag>.class + --<flag>.<kwarg> works for Callable[[X], None]."""
         result = confarg.load(
             _WithNoneReturn,
-            args=[f"--fn.class={_MOD}._Multiplier", "--fn.factor=3"],
+            argv=[f"--fn.class={_MOD}._Multiplier", "--fn.factor=3"],
             env={},
         )
         assert isinstance(result.fn, _Multiplier)
@@ -714,7 +714,7 @@ class TestCallableObjectModeCLI:
         """--<flag>.class + --<flag>.<kwarg> works when class is not a subclass of return type."""
         result = confarg.load(
             WithCallable,
-            args=[f"--fn.class={_MOD}._Multiplier", "--fn.factor=4"],
+            argv=[f"--fn.class={_MOD}._Multiplier", "--fn.factor=4"],
             env={},
         )
         assert isinstance(result.fn, _Multiplier)
@@ -724,7 +724,7 @@ class TestCallableObjectModeCLI:
         """--<flag>.fn with a method path + --<flag>.<kwarg> for owning class constructor."""
         result = confarg.load(
             _WithNoneReturn,
-            args=[f"--fn.fn={_MOD}._Processor.process", "--fn.offset=10"],
+            argv=[f"--fn.fn={_MOD}._Processor.process", "--fn.offset=10"],
             env={},
         )
         assert result.fn(5) == 15
@@ -741,7 +741,7 @@ class TestFnInitMethod:
         """Test that __init__ as bare string resolves to the plain __init__ function."""
         result = confarg.load(
             WithBareCallable,
-            args=["--fn", f"{_MOD}._Processor.__init__"],
+            argv=["--fn", f"{_MOD}._Processor.__init__"],
             env={},
         )
         assert result.fn is _Processor.__init__
@@ -749,13 +749,13 @@ class TestFnInitMethod:
     def test_dict_form_init_no_bind(self, tmp_json: Any) -> None:
         """Test that __init__ in fn: dict form resolves to the plain __init__ function."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._Processor.__init__"}}))
-        result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         assert result.fn is _Processor.__init__
 
     def test_dict_form_init_with_bind(self, tmp_json: Any) -> None:
         """Test that __init__ in fn: dict form with bind: produces a partial."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._Processor.__init__", "bind": {"offset": 5}}}))
-        result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         assert isinstance(result.fn, functools.partial)
         assert result.fn.keywords == {"offset": 5}
 
@@ -763,7 +763,7 @@ class TestFnInitMethod:
         """Sibling kwargs for __init__ in fn: dict raises TypeCoercionError."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._Processor.__init__", "offset": 5}}))
         with pytest.raises(TypeCoercionError, match="bind"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
 
 class TestCallDictForm:
@@ -772,20 +772,20 @@ class TestCallDictForm:
     def test_call_with_bind_from_file(self, tmp_json: Any) -> None:
         """call: + bind: in a config file calls the factory and uses the result."""
         cfg = tmp_json(json.dumps({"fn": {"call": f"{_MOD}._make_adder", "bind": {"offset": 5}}}))
-        result = confarg.load(WithCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithCallable, argv=[], env={}, files=[cfg])
         assert result.fn(10) == 15
 
     def test_call_with_sibling_kwargs_from_file(self, tmp_json: Any) -> None:
         """call: with sibling kwargs (no bind:) calls the factory correctly."""
         cfg = tmp_json(json.dumps({"fn": {"call": f"{_MOD}._make_adder", "offset": 3}}))
-        result = confarg.load(WithCallable, args=[], env={}, files=[cfg])
+        result = confarg.load(WithCallable, argv=[], env={}, files=[cfg])
         assert result.fn(7) == 10
 
     def test_call_from_cli(self) -> None:
         """--fn.call + --fn.bind.<kwarg> via CLI calls the factory."""
         result = confarg.load(
             WithCallable,
-            args=[f"--fn.call={_MOD}._make_multiplier", "--fn.bind.factor=4"],
+            argv=[f"--fn.call={_MOD}._make_multiplier", "--fn.bind.factor=4"],
             env={},
         )
         assert result.fn(3) == 12
@@ -794,7 +794,7 @@ class TestCallDictForm:
         """call: via CLI coerces string tokens to parameter types."""
         result = confarg.load(
             WithCallable,
-            args=[f"--fn.call={_MOD}._make_adder", "--fn.bind.offset=7"],
+            argv=[f"--fn.call={_MOD}._make_adder", "--fn.bind.offset=7"],
             env={},
         )
         assert result.fn(0) == 7
@@ -803,7 +803,7 @@ class TestCallDictForm:
         """call: raises TypeCoercionError when the factory returns a non-callable."""
         cfg = tmp_json(json.dumps({"fn": {"call": f"{_MOD}._bad_factory", "bind": {"x": 1}}}))
         with pytest.raises(TypeCoercionError, match="not callable"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_call_and_fn_together_raises(self, tmp_json: Any) -> None:
         """Specifying both call: and fn: raises TypeCoercionError."""
@@ -811,7 +811,7 @@ class TestCallDictForm:
             json.dumps({"fn": {"call": f"{_MOD}._make_adder", "fn": f"{_MOD}._double", "bind": {"offset": 1}}}),
         )
         with pytest.raises(TypeCoercionError, match="more than one of"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_call_and_class_together_raises(self, tmp_json: Any) -> None:
         """Specifying both call: and class: raises TypeCoercionError."""
@@ -819,10 +819,10 @@ class TestCallDictForm:
             json.dumps({"fn": {"call": f"{_MOD}._make_adder", "class": f"{_MOD}._Multiplier", "bind": {"offset": 1}}}),
         )
         with pytest.raises(TypeCoercionError, match="more than one of"):
-            confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_call_unknown_kwarg_raises(self, tmp_json: Any) -> None:
         """call: raises TypeCoercionError for unknown kwargs."""
         cfg = tmp_json(json.dumps({"fn": {"call": f"{_MOD}._make_adder", "bind": {"bad_param": 1}}}))
         with pytest.raises(TypeCoercionError, match="Unknown kwargs"):
-            confarg.load(WithCallable, args=[], env={}, files=[cfg])
+            confarg.load(WithCallable, argv=[], env={}, files=[cfg])

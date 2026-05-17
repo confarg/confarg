@@ -52,10 +52,10 @@ from confarg.exceptions import SymbolImportError
 
 
 def _resolve_struct(
-    dc_type: Any,
+    target: Any,
 ) -> tuple[Any, dict[str, Any], dict[str, Any]] | None:
     """Resolve a struct type to (tp, fields, hints), or None if not a struct."""
-    tp = _resolve_type(dc_type)
+    tp = _resolve_type(target)
     if not _is_struct(tp):
         return None
     try:
@@ -324,10 +324,10 @@ def _collect_callable_field_specs(
     return _collect_callable_bind_specs(field_flag, fn_path, existing_names)
 
 
-def _get_callable_field_return_type(dc_type: Any, flag: str) -> Any | None:
+def _get_callable_field_return_type(target: Any, flag: str) -> Any | None:
     """Return the Callable return type for the field at the given dot-separated flag path."""
     parts = flag.split(".")
-    tp = _resolve_type(dc_type)
+    tp = _resolve_type(target)
     for part in parts:
         if not _is_struct(tp):
             return None
@@ -396,16 +396,16 @@ def _callable_fn_path(sub: Any) -> tuple[str, str] | None:
 
 def _collect_fn_paths_from_config(
     config_dict: dict[str, Any],
-    dc_type: Any,
+    target: Any,
     prefix: str,
     union_tag: str,
 ) -> dict[str, tuple[str, str]]:
-    """Walk dc_type + config_dict to find fn/class values for Callable fields.
+    """Walk target + config_dict to find fn/class values for Callable fields.
 
     Returns {field_flag: (fn_path, mode)} where mode is "fn", "class", or "call".
     """
     result: dict[str, tuple[str, str]] = {}
-    tp = _resolve_type(dc_type)
+    tp = _resolve_type(target)
     if not _is_struct(tp):
         return result
     try:
@@ -473,14 +473,14 @@ def _specs_for_field(  # noqa: PLR0913
 
 
 def _collect_struct_specs(
-    dc_type: Any,
+    target: Any,
     prefix: str,
     union_tag: str,
     group: str | None = None,
     group_description: str = "",
 ) -> list[FlagSpec]:
     """Recursively build FlagSpecs for all fields of a struct type."""
-    setup = _resolve_struct(dc_type)
+    setup = _resolve_struct(target)
     if setup is None:
         return []
     tp, flds, hints = setup
@@ -503,13 +503,13 @@ def _collect_struct_specs(
 
 
 def _collect_subconfig_specs(
-    dc_type: Any,
+    target: Any,
     config_flag: str,
     prefix: str,
     union_tag: str,
 ) -> list[FlagSpec]:
     """Build FlagSpecs for ``--<config_flag>.<subpath>`` scoped config-file flags."""
-    setup = _resolve_struct(dc_type)
+    setup = _resolve_struct(target)
     if setup is None:
         return []
     _tp, flds, hints = setup
@@ -546,7 +546,7 @@ def _collect_subconfig_specs(
 
 
 def build_static_flags(
-    dc_type: type,
+    target: type,
     *,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = "config",
@@ -559,7 +559,7 @@ def build_static_flags(
     framework-agnostic and can be loaded into any CLI adapter.
 
     Args:
-        dc_type: The dataclass type whose fields to describe.
+        target: The dataclass type whose fields to describe.
         union_tag: Discriminator field name (default ``"class"``).
         config_flag: Name of the config-file flag (default ``"config"``).
             Pass ``""`` to omit config-file flag specs.
@@ -570,7 +570,7 @@ def build_static_flags(
     Returns:
         A list of :class:`~confarg.cli.argparse.FlagSpec` objects, one per CLI flag.
     """
-    flags = _collect_struct_specs(dc_type, prefix="", union_tag=union_tag)
+    flags = _collect_struct_specs(target, prefix="", union_tag=union_tag)
 
     if config_flag:
         flags.append(
@@ -588,21 +588,21 @@ def build_static_flags(
             ),
         )
         if config_subkeys:
-            flags.extend(_collect_subconfig_specs(dc_type, config_flag, prefix="", union_tag=union_tag))
+            flags.extend(_collect_subconfig_specs(target, config_flag, prefix="", union_tag=union_tag))
 
     return flags
 
 
 def build_dynamic_flags(
-    dc_type: type,
-    partial_argv: Sequence[str],
+    target: type,
+    argv: Sequence[str],
     *,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = "config",
 ) -> list[FlagSpec]:
-    """Build CLI flags discoverable only from partial argv (callable bind/factory args).
+    """Build CLI flags discoverable only from argv (callable bind/factory args).
 
-    Scans ``partial_argv`` and any config files it references for ``--<field>.fn``,
+    Scans ``argv`` and any config files it references for ``--<field>.fn``,
     ``--<field>.class``, and ``--<field>.call`` tokens.  For each found path, imports
     the target and generates :class:`~confarg.cli.argparse.FlagSpec` objects for its
     parameters (bind kwargs or factory constructor args).
@@ -610,8 +610,8 @@ def build_dynamic_flags(
     Errors are silently ignored — this is a best-effort enhancement.
 
     Args:
-        dc_type: The top-level dataclass type.
-        partial_argv: The CLI argument list seen so far (e.g. ``sys.argv[1:]`` at
+        target: The top-level dataclass type.
+        argv: The CLI argument list seen so far (e.g. ``sys.argv[1:]`` at
             completion time, or the full argv at parse time).
         union_tag: Discriminator field name.
         config_flag: Name of the config-file flag.
@@ -621,7 +621,7 @@ def build_dynamic_flags(
     """
     try:
         config_dict: dict[str, Any] = {}
-        argv_list = list(partial_argv)
+        argv_list = list(argv)
         flag_prefix = f"--{config_flag}"
         i = 0
         while i < len(argv_list):
@@ -641,7 +641,7 @@ def build_dynamic_flags(
             else:
                 i += 1
 
-        config_fns = _collect_fn_paths_from_config(config_dict, dc_type, "", union_tag)
+        config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
         argv_fns = _collect_fn_paths_from_argv(argv_list)
         existing_names: set[str] = set()
         result: list[FlagSpec] = []

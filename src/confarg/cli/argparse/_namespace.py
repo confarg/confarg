@@ -148,13 +148,13 @@ def _collect_ns_union_field(
 
 def _collect_ns_fields(
     flat: dict[str, Any],
-    dc_type: Any,
+    target: Any,
     prefix: str,
     union_tag: str,
     result: dict[str, Any],
 ) -> None:
-    """Walk dc_type and copy matching flat-namespace entries into nested dict."""
-    setup = _resolve_struct(dc_type)
+    """Walk target and copy matching flat-namespace entries into nested dict."""
+    setup = _resolve_struct(target)
     if setup is None:
         return
     _tp, flds, hints = setup
@@ -190,8 +190,8 @@ def _collect_ns_fields(
 
 
 def from_namespace(  # noqa: PLR0913
+    target: type,
     ns: argparse.Namespace,
-    dc_type: type,
     *,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = "config",
@@ -212,8 +212,8 @@ def from_namespace(  # noqa: PLR0913
     :class:`~confarg.exceptions.MissingFieldError`.
 
     Args:
+        target: The dataclass type to construct.
         ns: The Namespace returned by ``ArgumentParser.parse_args()``.
-        dc_type: The dataclass type to construct.
         union_tag: Discriminator field name (same as :func:`confarg.load`).
         config_flag: Name of the config-file attribute on ``ns`` (default
             ``"config"``).  Must match the ``config_flag`` passed to
@@ -230,14 +230,14 @@ def from_namespace(  # noqa: PLR0913
         env_separator: Separator used to split env var names into nested keys.
 
     Returns:
-        An instance of ``dc_type`` populated from all sources.
+        An instance of ``target`` populated from all sources.
     """
     if env is None:
         env = os.environ
 
     # 1. Collect CLI field values from the namespace
     cli_data: dict[str, Any] = {}
-    _collect_ns_fields(vars(ns), dc_type, prefix="", union_tag=union_tag, result=cli_data)
+    _collect_ns_fields(vars(ns), target, prefix="", union_tag=union_tag, result=cli_data)
 
     # 2. Collect (subpath, path) pairs for all config files
     file_pairs: list[tuple[str, Path]] = [("", Path(f)) for f in files]
@@ -257,7 +257,7 @@ def from_namespace(  # noqa: PLR0913
         env_data: dict[str, Any] = {}
         env_configs: list[tuple[str, Path]] = []
     else:
-        env_data, env_configs = _parse_env(env, env_prefix, env_separator, dc_type)
+        env_data, env_configs = _parse_env(env, env_prefix, env_separator, target)
     config_data = _deep_merge(config_data, _load_subpath_files(env_configs, union_tag), union_tag=union_tag)
 
     # 5. Merge: config < env < CLI
@@ -268,4 +268,4 @@ def from_namespace(  # noqa: PLR0913
     merged = resolve_expressions(merged)
 
     # 7. Construct
-    return construct(_resolve_type(dc_type), merged, union_tag=union_tag)
+    return construct(_resolve_type(target), merged, union_tag=union_tag)

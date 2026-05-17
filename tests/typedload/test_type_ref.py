@@ -279,5 +279,5 @@ class TestArgparseIntegration:
         confarg_ap.populate_parser(ConfigWithTypeRef, parser)
         ns = parser.parse_args(["--worker", _DERIVED_PATH])
         # Simulate what confarg.load does: namespace → nested dict → build()
-        result = confarg_ap.from_namespace(ns, ConfigWithTypeRef, env_prefix=None)
+        result = confarg_ap.from_namespace(ConfigWithTypeRef, ns, env_prefix=None)
         assert result.worker is Derived

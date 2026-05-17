@@ -383,7 +383,7 @@ class TestIntegrationPriorityOrdering:
 
         result = confarg.load(
             AppConfig,
-            args=["--db.host", "cli_host"],
+            argv=["--db.host", "cli_host"],
             files=[tmp_path / "config.yaml"],
         )
         assert result.db.host == "cli_host"
@@ -397,7 +397,7 @@ class TestIntegrationPriorityOrdering:
 
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={"CONFARG_DB__HOST": "env_host"},
             env_prefix="CONFARG_",
             files=[tmp_path / "config.yaml"],

@@ -333,7 +333,7 @@ class TestIntegrationCsvLoad:
             "config.yaml",
             f"allowed_hosts:\n  {INCLUDE_KEY}: ./hosts.csv\nname: myapp\n",
         )
-        result = confarg.load(AppConfig, args=[], files=[tmp_path / "config.yaml"])
+        result = confarg.load(AppConfig, argv=[], files=[tmp_path / "config.yaml"])
         assert result.allowed_hosts == ["a.com", "b.com"]
         assert result.name == "myapp"
 
@@ -347,7 +347,7 @@ class TestIntegrationCsvLoad:
         )
         result = confarg.load(
             AppConfig,
-            args=["--name", "from_cli"],
+            argv=["--name", "from_cli"],
             files=[tmp_path / "config.yaml"],
         )
         assert result.name == "from_cli"
@@ -376,7 +376,7 @@ class TestAppendMode:
         p = write(tmp_path, "data.csv", "val\nalpha\nbeta\n")
         result = confarg.load(
             WithListOfLists,
-            args=["--config.rows+", str(p)],
+            argv=["--config.rows+", str(p)],
         )
         # CSV single-column → ["alpha", "beta"]; append mode wraps it as one element
         assert result.rows == [["alpha", "beta"]]

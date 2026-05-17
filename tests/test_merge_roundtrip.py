@@ -44,10 +44,10 @@ class TestCliRoundTrip:
         if verbose:
             args.extend(["--verbose", "true"])
 
-        raw = confarg.merge(WithDefaults, args=args, env={})
+        raw = confarg.merge(WithDefaults, argv=args, env={})
         out = tmp_path / "snap.yaml"
         confarg.dump_file(raw, out)
-        reloaded = confarg.merge(WithDefaults, args=[], env={}, files=[out])
+        reloaded = confarg.merge(WithDefaults, argv=[], env={}, files=[out])
 
         assert raw == reloaded
 
@@ -57,7 +57,7 @@ class TestCliRoundTrip:
         """Pre-coerced CLI values must be native Python types, not strings."""
         raw = confarg.merge(
             WithDefaults,
-            args=["--count", str(count), "--rate", str(rate)],
+            argv=["--count", str(count), "--rate", str(rate)],
             env={},
         )
         assert type(raw["count"]) is int
@@ -88,10 +88,10 @@ class TestEnvRoundTrip:
             "VERBOSE": "true" if verbose else "false",
         }
 
-        raw = confarg.merge(WithDefaults, args=[], env=env)
+        raw = confarg.merge(WithDefaults, argv=[], env=env)
         out = tmp_path / "snap.yaml"
         confarg.dump_file(raw, out)
-        reloaded = confarg.merge(WithDefaults, args=[], env={}, files=[out])
+        reloaded = confarg.merge(WithDefaults, argv=[], env={}, files=[out])
 
         assert raw == reloaded
 
@@ -99,7 +99,7 @@ class TestEnvRoundTrip:
     @settings(max_examples=100)
     def test_env_numeric_type_is_native(self, count):
         """Pre-coerced env var values must be native Python types, not strings."""
-        raw = confarg.merge(WithDefaults, args=[], env={"COUNT": str(count)}, env_prefix="")
+        raw = confarg.merge(WithDefaults, argv=[], env={"COUNT": str(count)}, env_prefix="")
         assert type(raw["count"]) is int
 
 
@@ -124,13 +124,13 @@ class TestMixedRoundTrip:
         file_path = tmp_path / "base.yaml"
         base = confarg.merge(
             WithDefaults,
-            args=["--name", name, "--count", str(count), "--rate", str(rate)],
+            argv=["--name", name, "--count", str(count), "--rate", str(rate)],
             env={"VERBOSE": "true" if verbose else "false"},
         )
         confarg.dump_file(base, file_path)
 
         # Reload from the saved file only
-        reloaded = confarg.merge(WithDefaults, args=[], env={}, files=[file_path])
+        reloaded = confarg.merge(WithDefaults, argv=[], env={}, files=[file_path])
         assert base == reloaded
 
 
@@ -163,8 +163,8 @@ class TestNestedRoundTrip:
     def test_nested_cli_roundtrip(self, tmp_path, x, y, label):
         """Test that nested CLI values round-trip through merge → dump_file → merge."""
         args = ["--inner.x", str(x), "--inner.y", str(y), "--label", label]
-        raw = confarg.merge(Outer, args=args, env={})
+        raw = confarg.merge(Outer, argv=args, env={})
         out = tmp_path / "snap.yaml"
         confarg.dump_file(raw, out)
-        reloaded = confarg.merge(Outer, args=[], env={}, files=[out])
+        reloaded = confarg.merge(Outer, argv=[], env={}, files=[out])
         assert raw == reloaded

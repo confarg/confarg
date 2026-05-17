@@ -33,16 +33,16 @@ def _run_command(command: Any, bound: Any) -> Any:
 
 
 def from_app(  # noqa: PLR0913
+    target: type,
     app: cyclopts.App,
-    dc_type: type,
     *,
+    union_tag: str = _defaults.UNION_TAG,
+    config_flag: str = "config",
     argv: Sequence[str] | None = None,
     files: Sequence[str | Path] = (),
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = "__",
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
 ) -> Any:
     """Parse CLI arguments and construct a dataclass from all sources.
 
@@ -59,9 +59,12 @@ def from_app(  # noqa: PLR0913
     function.
 
     Args:
+        target: The dataclass type to construct.
         app: The cyclopts :class:`~cyclopts.App` populated by
             :func:`populate_app`.
-        dc_type: The dataclass type to construct.
+        union_tag: Discriminator field name (same as :func:`confarg.load`).
+        config_flag: Name of the config-file option (must match
+            :func:`populate_app`).
         argv: CLI token list.  ``None`` (default) reads ``sys.argv[1:]``.
         files: Additional root-level config file paths (lowest priority).
         env: Environment variable mapping.  Defaults to :data:`os.environ`.
@@ -70,12 +73,9 @@ def from_app(  # noqa: PLR0913
             parsing entirely.
         env_separator: Separator used to split env var names into nested
             keys.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
-        config_flag: Name of the config-file option (must match
-            :func:`populate_app`).
 
     Returns:
-        An instance of *dc_type* populated from all sources.
+        An instance of *target* populated from all sources.
     """
     if env is None:
         env = os.environ
@@ -100,7 +100,7 @@ def from_app(  # noqa: PLR0913
 
     # 1. Collect CLI field values
     cli_data: dict[str, Any] = {}
-    _collect_ns_fields(flat, dc_type, prefix="", union_tag=union_tag, result=cli_data)
+    _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data)
 
     # 2. Collect (subpath, path) pairs for all config files
     file_pairs: list[tuple[str, Path]] = [("", Path(f)) for f in files]
@@ -120,7 +120,7 @@ def from_app(  # noqa: PLR0913
         env_data: dict[str, Any] = {}
         env_configs: list[tuple[str, Path]] = []
     else:
-        env_data, env_configs = _parse_env(env, env_prefix, env_separator, dc_type)
+        env_data, env_configs = _parse_env(env, env_prefix, env_separator, target)
     config_data = _deep_merge(config_data, _load_subpath_files(env_configs, union_tag), union_tag=union_tag)
 
     # 5. Merge: config < env < CLI
@@ -131,7 +131,7 @@ def from_app(  # noqa: PLR0913
     merged = resolve_expressions(merged)
 
     # 7. Construct
-    return construct(_resolve_type(dc_type), merged, union_tag=union_tag)
+    return construct(_resolve_type(target), merged, union_tag=union_tag)
 
 
 __all__ = ["from_app"]

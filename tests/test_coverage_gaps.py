@@ -444,7 +444,7 @@ class TestDumpDictList:
     def test_dump_from_merge(self, tmp_path: Path) -> None:
         """dump_file() applied to a raw merge() dict produces plain values."""
         WithList = make_target("items", list[str], default_factory=list)
-        raw = confarg.merge(WithList, args=["--items", "x", "y"], env={})
+        raw = confarg.merge(WithList, argv=["--items", "x", "y"], env={})
         out = tmp_path / "out.json"
         confarg.dump_file(raw, out)
 
@@ -463,7 +463,7 @@ class TestConfigAppendWithoutField:
     def test_config_append_no_field_path_raises(self) -> None:
         """--config.+ without a field path raises ConfargError."""
         with pytest.raises(confarg.exceptions.ConfargError, match="requires a field path"):
-            confarg.load(WithDefaults, args=["--config.+", "dummy.toml"], env={})
+            confarg.load(WithDefaults, argv=["--config.+", "dummy.toml"], env={})
 
 
 # ---------------------------------------------------------------------------
@@ -919,41 +919,41 @@ class TestParseCliBranches:
 
     def test_non_struct_bool_target(self) -> None:
         """Non-struct bool target with cli_prefix parses correctly from CLI."""
-        result = confarg.load(bool, args=["--confarg", "true"], env={}, cli_prefix="confarg")
+        result = confarg.load(bool, argv=["--confarg", "true"], env={}, cli_prefix="confarg")
         assert result is True
 
     def test_non_struct_value_target(self) -> None:
         """Non-struct str target with cli_prefix parses correctly from CLI."""
-        result = confarg.load(str, args=["--confarg", "hello"], env={}, cli_prefix="confarg")
+        result = confarg.load(str, argv=["--confarg", "hello"], env={}, cli_prefix="confarg")
         assert result == "hello"
 
     def test_unknown_arg_at_dict_path(self) -> None:
         """Unknown sub-key for a dict-typed field is accepted as a dict key."""
         WithDict = make_target("mapping", dict[str, int], default_factory=dict)
-        result = confarg.load(WithDict, args=["--mapping.foo", "42"], env={})
+        result = confarg.load(WithDict, argv=["--mapping.foo", "42"], env={})
         assert result.mapping["foo"] in (42, "42")
 
     def test_list_json_array_from_cli(self) -> None:
         """A JSON array string from CLI is parsed into a list."""
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, args=["--items", "[1,2,3]"], env={})
+        result = confarg.load(WithList, argv=["--items", "[1,2,3]"], env={})
         assert result.items == [1, 2, 3]
 
     def test_none_sentinel_non_struct_parent(self) -> None:
         """'none' token for a non-struct optional target resolves to None."""
-        result = confarg.load(int | None, args=["--confarg", "none"], env={}, cli_prefix="confarg")
+        result = confarg.load(int | None, argv=["--confarg", "none"], env={}, cli_prefix="confarg")
         assert result is None
 
     def test_dataclass_field_with_no_value(self) -> None:
         """A bare --inner flag without a value triggers default construction."""
-        result = confarg.load(_WithNestedDefaultInner, args=["--inner"], env={})
+        result = confarg.load(_WithNestedDefaultInner, argv=["--inner"], env={})
         assert result.inner.name == "default"
 
     def test_append_unknown_field_raises(self) -> None:
         """--unknown+ for a non-existent field raises ConfargError."""
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(confarg.exceptions.ConfargError):
-            confarg.load(WithList, args=["--nonexistent+", "1"], env={})
+            confarg.load(WithList, argv=["--nonexistent+", "1"], env={})
 
 
 # ---------------------------------------------------------------------------
@@ -969,7 +969,7 @@ class TestParseEnvBranches:
         with pytest.raises(confarg.exceptions.ConfargError, match="Ambiguous env var"):
             confarg.load(
                 _AmbigUnion,
-                args=[],
+                argv=[],
                 env={"SERVICE__NAME": "hello"},
                 env_prefix="",
             )
@@ -979,7 +979,7 @@ class TestParseEnvBranches:
         WithVarTuple = make_target("items", tuple[int, ...], default=(1, 2))
         result = confarg.load(
             WithVarTuple,
-            args=[],
+            argv=[],
             env={"ITEMS__0": "99"},
             env_prefix="",
         )
@@ -990,7 +990,7 @@ class TestParseEnvBranches:
         WithFixedTuple = make_target("coords", tuple[int, str], default=(0, ""))
         result = confarg.load(
             WithFixedTuple,
-            args=[],
+            argv=[],
             env={"COORDS__BAD": "hello"},
             env_prefix="",
         )
@@ -1001,7 +1001,7 @@ class TestParseEnvBranches:
         # "none"/"null" value → construct-time steal → __root__ = None
         result = confarg.load(
             str | None,
-            args=[],
+            argv=[],
             env={"VALUE": "none"},
             env_prefix="",
         )
@@ -1016,7 +1016,7 @@ class TestParseEnvBranches:
             warnings.simplefilter("always")
             result = confarg.load(
                 _UnionRootVariantA | _UnionRootVariantB,
-                args=[],
+                argv=[],
                 env={"A": "hello", "Z": "skipped"},
                 env_prefix="",
             )
@@ -1274,7 +1274,7 @@ class TestConstructEdgeCases:
         class WithUnionTuple:
             coord: tuple[int, str] | None = None
 
-        result = confarg.load(WithUnionTuple, args=["--coord", "5", "hello"], env={})
+        result = confarg.load(WithUnionTuple, argv=["--coord", "5", "hello"], env={})
         assert result.coord == (5, "hello")
 
     def test_partial_tuple_index_extends_with_none(self) -> None:
@@ -1284,7 +1284,7 @@ class TestConstructEdgeCases:
         class WithTuple:
             items: tuple[int, str] = (1, "x")
 
-        result = confarg.load(WithTuple, args=[], env={"ITEMS__1": "y"}, env_prefix="")
+        result = confarg.load(WithTuple, argv=[], env={"ITEMS__1": "y"}, env_prefix="")
         assert result.items == (1, "y")
 
     def test_class_tag_import_error_raises(self) -> None:
@@ -1483,7 +1483,7 @@ class TestArgparseBranches:
         populate_parser(WithExpr, parser)
         ns = parser.parse_args([])
         # Pass env vars with an expression — the resolved value triggers expr_map storage
-        result = from_namespace(ns, WithExpr, env={"HOST": "${db_host}", "DB_HOST": "realserver"}, env_prefix="")
+        result = from_namespace(WithExpr, ns, env={"HOST": "${db_host}", "DB_HOST": "realserver"}, env_prefix="")
         assert result.host == "realserver"
 
 
@@ -1500,7 +1500,7 @@ class TestParseEnvDictAndFallthrough:
         WithDict = make_target("mapping", dict[str, int], default_factory=dict)
         result = confarg.load(
             WithDict,
-            args=[],
+            argv=[],
             env={"MAPPING__KEY": "42"},
             env_prefix="",
         )
@@ -1514,7 +1514,7 @@ class TestParseEnvDictAndFallthrough:
         with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(
                 WithTuple,
-                args=[],
+                argv=[],
                 env={"COORDS__5": "hello"},
                 env_prefix="",
             )
@@ -1523,7 +1523,7 @@ class TestParseEnvDictAndFallthrough:
         """A deeper-than-expected env var path for a scalar field raises TypeCoercionError."""
         WithInt = make_target("count", int, default=0)
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithInt, args=[], env={"COUNT__EXTRA": "5"}, env_prefix="")
+            confarg.load(WithInt, argv=[], env={"COUNT__EXTRA": "5"}, env_prefix="")
 
 
 # ---------------------------------------------------------------------------
@@ -1602,7 +1602,7 @@ class TestParseCLIBranches:
         # _subclass_field_type(_NonStructSubBase, "unknown") → scans subclasses,
         # hits `if not _is_struct(sub): continue` (line 80), returns None.
         with pytest.raises(confarg.exceptions.UnknownArgumentError):
-            confarg.load(_NonStructSubBase, args=["--unknown_field", "5"])
+            confarg.load(_NonStructSubBase, argv=["--unknown_field", "5"])
 
     def test_union_variants_no_matching_field_returns_none(self) -> None:
         """_resolve_field_type returns None when the path matches no union variant field."""
@@ -1614,24 +1614,24 @@ class TestParseCLIBranches:
         DCWithDict = make_target("mapping", dict[str, int], default_factory=dict)
         # --mapping.subkey.deeper triggers ft=None, then _is_dict_at_path returns True
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(DCWithDict, args=["--mapping.subkey.deeper", "hello"])
+            confarg.load(DCWithDict, argv=["--mapping.subkey.deeper", "hello"])
 
     def test_dict_at_path_bare_flag(self) -> None:
         """A bare CLI flag (no value) at a dict sub-path is skipped without error."""
         DCWithDict = make_target("mapping", dict[str, int], default_factory=dict)
         # Bare flag (no value) after dict-at-path: i+1 is end or flag, skip value
-        confarg.load(DCWithDict, args=["--mapping.subkey.deeper", "--mapping.key", "42"])
+        confarg.load(DCWithDict, argv=["--mapping.subkey.deeper", "--mapping.key", "42"])
 
     def test_non_bool_optional_bare_flag_sets_none(self) -> None:
         """'none' token for a str | None non-struct target resolves to None."""
         # Non-struct optional target with cli_prefix + "none" token → __root__ = None
-        result = confarg.load(str | None, args=["--myapp", "none"], cli_prefix="myapp")
+        result = confarg.load(str | None, argv=["--myapp", "none"], cli_prefix="myapp")
         assert result is None
 
     def test_non_bool_non_optional_bare_flag_sets_true(self) -> None:
         """'true' token for a bool | str non-struct target is stolen as bool True."""
         # Non-struct bool|str union: "true" steals to bool True
-        result = confarg.load(bool | str, args=["--myapp", "true"], cli_prefix="myapp")
+        result = confarg.load(bool | str, argv=["--myapp", "true"], cli_prefix="myapp")
         assert result is True
 
 
@@ -1735,7 +1735,7 @@ class TestConstructBranches:
         # Line 128: tup_tp = tup_vars[0] for union with single tuple variant + dict data
         result = confarg.load(
             _WithUnionTupleOrNone,
-            args=[],
+            argv=[],
             env={"COORD__0": "1", "COORD__1": "hello"},
             env_prefix="",
         )
@@ -1881,12 +1881,12 @@ class TestParseCliGaps2:
         """--nonexistent.0- on a dataclass without that field raises UnknownArgumentError."""
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(confarg.exceptions.UnknownArgumentError):
-            confarg.load(WithList, args=["--nonexistent.0-"])
+            confarg.load(WithList, argv=["--nonexistent.0-"])
 
     def test_double_append_after_replace_base(self) -> None:
         """Two --items+ after --items a b accumulates all items (hits LIST_REPLACE_BASE_KEY branch)."""
         WithList = make_target("items", list[str], default_factory=list)
-        result = confarg.load(WithList, args=["--items", "a", "b", "--items+", "c", "--items+", "d"])
+        result = confarg.load(WithList, argv=["--items", "a", "b", "--items+", "c", "--items+", "d"])
         assert result.items == ["a", "b", "c", "d"]
 
     def test_append_token_non_dict_node_traversal(self) -> None:
@@ -1900,7 +1900,7 @@ class TestParseCliGaps2:
         class _Outer:
             inner: _Inner = field(default_factory=_Inner)
 
-        ctx = _ParseCtx(args=["--inner.nums+", "1"], target=_Outer, union_tag="class")
+        ctx = _ParseCtx(argv=["--inner.nums+", "1"], target=_Outer, union_tag="class")
         # Set data["inner"] to a list (not a dict) to trigger the else branch at line 421
         ctx.data["inner"] = [99]
         _handle_append_token(ctx, 1, "--inner.nums+", list[int], ["inner", "nums"])
@@ -1908,7 +1908,7 @@ class TestParseCliGaps2:
     def test_scalar_root_missing_value_raises(self) -> None:
         """Non-struct target with no value after the flag raises ConfargError."""
         with pytest.raises(confarg.exceptions.ConfargError, match="Missing value"):
-            confarg.load(str, args=["--confarg"], cli_prefix="confarg")
+            confarg.load(str, argv=["--confarg"], cli_prefix="confarg")
 
 
 # ---------------------------------------------------------------------------
@@ -1926,7 +1926,7 @@ class TestParseEnvJsonFailure:
         # Result is unpredictable but must not crash
 
         with contextlib.suppress(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithList, args=[], env={"ITEMS": "[1,2,3"}, env_prefix="")
+            confarg.load(WithList, argv=[], env={"ITEMS": "[1,2,3"}, env_prefix="")
 
 
 # ---------------------------------------------------------------------------
@@ -2491,8 +2491,8 @@ class TestNamespaceGaps:
         populate_parser(_CovDCResult, parser)
         ns = parser.parse_args([])
         result = from_namespace(
-            ns,
             _CovDCResult,
+            ns,
             env={"CONFARG_CONFIG__": str(cfg)},
             env_prefix="CONFARG_",
         )
@@ -2526,8 +2526,8 @@ class TestNamespaceGaps:
         populate_parser(_CovOuter, parser)
         ns = parser.parse_args([])
         result = from_namespace(
-            ns,
             _CovOuter,
+            ns,
             env={"CONFARG_CONFIG__INNER": str(cfg)},
             env_prefix="CONFARG_",
         )
@@ -2776,7 +2776,7 @@ class TestClickContextGaps:
         @click.command()
         def cmd(**_kwargs):
             ctx = click.get_current_context()
-            result = from_context(ctx, _CovOuter, env={}, env_prefix=None)
+            result = from_context(_CovOuter, ctx, env={}, env_prefix=None)
             assert result.inner.value == "from_subpath"
 
         populate_command(_CovOuter, cmd)
@@ -2793,8 +2793,8 @@ class TestClickContextGaps:
         def cmd2(**_kwargs):
             ctx = click.get_current_context()
             result = from_context(
-                ctx,
                 _CovDCResult,
+                ctx,
                 env={"CONFARG_CONFIG__": str(cfg)},
                 env_prefix="CONFARG_",
             )
@@ -2814,8 +2814,8 @@ class TestClickContextGaps:
         def cmd3(**_kwargs):
             ctx = click.get_current_context()
             result = from_context(
-                ctx,
                 _CovOuter,
+                ctx,
                 env={"CONFARG_CONFIG__INNER": str(cfg)},
                 env_prefix="CONFARG_",
             )

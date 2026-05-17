@@ -132,7 +132,7 @@ def load_flags_into_app(
 
 
 def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command signatures; all params are keyword-only with sensible defaults
-    dc_type: type,
+    target: type,
     app: cyclopts.App,
     *,
     union_tag: str = _defaults.UNION_TAG,
@@ -150,7 +150,7 @@ def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command s
     instance.
 
     Args:
-        dc_type: The dataclass type whose fields to register.
+        target: The dataclass type whose fields to register.
         app: The cyclopts :class:`~cyclopts.App` to populate.
         union_tag: Name of the union discriminator field to skip.
         config_flag: Name of the config-file option (default ``"config"``).
@@ -163,11 +163,11 @@ def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command s
             options can be registered before parsing.
     """
     flags = build_static_flags(
-        dc_type,
+        target,
         union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,
     )
     if argv is not None:
-        flags = flags + build_dynamic_flags(dc_type, argv, union_tag=union_tag, config_flag=config_flag)
+        flags = flags + build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
     load_flags_into_app(flags, app)

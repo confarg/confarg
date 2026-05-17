@@ -42,7 +42,7 @@ def _partial_argv_from_env() -> list[str]:
 
 def setup_completion(
     command: click.Command,
-    dc_type: type,
+    target: type,
     *,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = "config",
@@ -64,7 +64,7 @@ def setup_completion(
 
     Args:
         command: The :class:`click.Command` to extend.
-        dc_type: The dataclass type whose fields define the available flags.
+        target: The dataclass type whose fields define the available flags.
         union_tag: Discriminator field name (same as :func:`confarg.load`).
         config_flag: Name of the config-file option (must match :func:`populate_command`).
     """
@@ -74,8 +74,8 @@ def setup_completion(
         if not os.environ.get(complete_var):
             return
 
-        partial_argv = _partial_argv_from_env()
-        dynamic = build_dynamic_flags(dc_type, partial_argv, union_tag=union_tag, config_flag=config_flag)
+        argv = _partial_argv_from_env()
+        dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
         load_flags_into_command(dynamic, command)
     except Exception:  # noqa: BLE001
         # Completion must never crash; silently degrade.
