@@ -287,6 +287,18 @@ class _WithOptionalStructFieldPoint:
     pt: _PtOptionalStructField = dataclasses_field(default_factory=_PtOptionalStructField)
 
 
+class _DefPoint(NamedTuple):
+    """A namedtuple whose fields all default, so one sub-flag can fill the rest (BUG-80)."""
+
+    x: int = 0
+    y: int = 0
+
+
+@dataclass
+class _WithDefPoint:
+    pair: _DefPoint = dataclasses_field(default_factory=_DefPoint)
+
+
 @dataclass
 class _WithOptionalIntList:
     input: list[int] | None = None
@@ -764,6 +776,46 @@ class TestFixedSequenceContract:
         """--pair.0 / --pair.1 address the fields by position."""
         cfg = loader.load(_WithPoint, argv=["--pair.0", "13", "--pair.1", "42"], env={})
         assert cfg.pair == _Point(x=13, y=42)
+
+    def test_namedtuple_negative_index_flag(self, loader: ConfargLoader) -> None:
+        """--pair.-1 addresses the last field, as --lang.-1 does on a fixed tuple (BUG-80)."""
+        cfg = loader.load(_WithDefPoint, argv=["--pair.-1", "42"], env={})
+        assert cfg.pair == _DefPoint(x=0, y=42)
+
+    def test_namedtuple_negative_index_beside_positive(self, loader: ConfargLoader) -> None:
+        """--pair.0 beside --pair.-1 is the all-index form ``build()`` already takes (BUG-80)."""
+        cfg = loader.load(_WithDefPoint, argv=["--pair.0", "1", "--pair.-1", "42"], env={})
+        assert cfg.pair == _DefPoint(x=1, y=42)
+
+    def test_namedtuple_negative_index_merge_is_stored_as_spelled(self, loader: ConfargLoader) -> None:
+        """The negative spelling reaches the merged dict as spelled, exactly as vanilla's (BUG-80).
+
+        Vanilla's type walk takes the segment and stores it as spelled; the merged dicts must
+        stay byte-identical, with ``build()`` owning the index resolution against the arity.
+        """
+        assert loader.merge(_WithDefPoint, argv=["--pair.-1", "42"], env={}) == {"pair": {"-1": 42}}
+
+    def test_namedtuple_negative_index_out_of_range(self, loader: ConfargLoader) -> None:
+        """An index past the arity is refused at parse, in each front-end's own voice (BUG-80).
+
+        The type walk only passes in-range segments, positive and negative alike, so no
+        registration ever carries ``--pair.-3``: vanilla names it an unknown argument and
+        the adapters answer with their own usage error.
+        """
+        with pytest.raises((ConfargError, SystemExit)):
+            loader.load(_WithDefPoint, argv=["--pair.-3", "1"], env={})
+
+    def test_namedtuple_deep_field_negative_index(self, loader: ConfargLoader) -> None:
+        """A negative index below a struct-shaped field spells under the name and index alike (BUG-80).
+
+        The same two spellings a deep field's own flags take
+        (``--pt.inner.*``, ``--pt.0.*``), plus the negative index of the field itself:
+        ``--pt.inner.-1`` and ``--pt.0.-1`` both reach ``_Inner``'s last field.
+        """
+        cfg = loader.load(_WithNestedPoint, argv=["--pt.inner.-1", "hi"], env={})
+        assert cfg.pt.inner == _Inner(a=0, b="hi")
+        cfg = loader.load(_WithNestedPoint, argv=["--pt.0.-1", "hi"], env={})
+        assert cfg.pt.inner == _Inner(a=0, b="hi")
 
     def test_tuple_whole_value(self, whole_value_arity_loader: ConfargLoader) -> None:
         """--pair '[13, 42]' fills a tuple[int, int] in one token (click declines it)."""

@@ -804,18 +804,20 @@ def _namedtuple_deep_fields(fields: Mapping[str, Any]) -> list[tuple[Any, list[s
 
     A struct-shaped field — a struct, or another namedtuple, however wrapped — is
     collected by the per-field dispatch rather than as a scalar sub-flag, at each of
-    its own spellings, the name and the index alike (BUG-68).  One helper answers the
-    question for every caller: the scalar sub-flag collector (which skips them), the
-    presence scan and the deep dispatch itself.
+    its own spellings, the name and the two indices alike (BUG-68).  The negative
+    index counts from the end, as on any fixed-length sequence (BUG-80).  One helper
+    answers the question for every caller: the scalar sub-flag collector (which skips
+    them), the presence scan and the deep dispatch itself.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
+    n = len(fields)
     result: list[tuple[Any, list[str]]] = []
     for i, (fname, ftype) in enumerate(fields.items()):
         fcore = _unwrap_optional(ftype)
         if _is_struct(fcore) or _is_namedtuple(fcore):
-            result.append((ftype, [fname, str(i)]))
+            result.append((ftype, [fname, str(i), str(i - n)]))
     return result
 
 
@@ -859,8 +861,9 @@ def _namedtuple_sub_flags(flat: dict[str, Any], flag: str, fields: Mapping[str, 
     Both spellings of one field are stored, name and index alike: vanilla writes
     each flag at the key the user spelled and leaves construction to reconcile
     them, so a ``--pt.0`` beside ``--pt.x`` reaches the merged dict as
-    ``{'x': 13, '0': 9}`` and ``build()`` owns the refusal (BUG-65).  Each value
-    is coerced to its field's type, as the vanilla parser's own dispatch
+    ``{'x': 13, '0': 9}`` and ``build()`` owns the refusal (BUG-65).  The index
+    counts from the end when negative, as on any fixed-length sequence (BUG-80).
+    Each value is coerced to its field's type, as the vanilla parser's own dispatch
     coerces the same flag: a raw token here would put a str in the merged dict where
     vanilla puts the number, and an expression over the field would read the token
     (BUG-66).  A struct-shaped field is not a scalar and is skipped: its spellings
@@ -868,8 +871,9 @@ def _namedtuple_sub_flags(flat: dict[str, Any], flag: str, fields: Mapping[str, 
     """
     deep = {spelled for _ftype, spellings in _namedtuple_deep_fields(fields) for spelled in spellings}
     sub: dict[str, Any] = {}
+    n = len(fields)
     for i, (fname, ftype) in enumerate(fields.items()):
-        for key, spelled in ((f"{flag}.{fname}", fname), (f"{flag}.{i}", str(i))):
+        for key, spelled in ((f"{flag}.{fname}", fname), (f"{flag}.{i}", str(i)), (f"{flag}.{i - n}", str(i - n))):
             if spelled in deep:
                 continue
             if flat.get(key) is not None:

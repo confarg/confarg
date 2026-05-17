@@ -108,8 +108,26 @@ def _try_pinned_dict(data: Any) -> _Pinned | None:
     return _Pinned(tp, value)
 
 
+def _is_index_key(k: Any) -> bool:
+    """Return True if *k* is an integer, or a string spelling of one.
+
+    A YAML file parses a bare ``-1:`` key as the integer, while an index patch
+    arrives as its string; both are the same index to a namedtuple.
+    """
+    if isinstance(k, int):  # bool is an int subclass, but spells no position
+        return not isinstance(k, bool)
+    return isinstance(k, str) and (k.isdigit() or (k.startswith("-") and k[1:].isdigit()))
+
+
 def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:  # noqa: C901 PLR0912
-    """Construct a namedtuple from a list (positional) or dict (by name or index)."""
+    """Construct a namedtuple from a list (positional) or dict (by name or index).
+
+    An index key counts from the end when negative, exactly as a fixed tuple's
+    index patches do.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence
+    """
     flds = _namedtuple_fields(tp)
     defs = _namedtuple_defaults(tp)
     field_names = list(flds.keys())
@@ -132,21 +150,14 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
         return tp._make(values)
 
     if isinstance(data, dict):
-        # Determine if keys are field names or integer-string indices.
-        # A key is an index key if it is a string representation of an integer.
-        all_int_keys = all(k.isdigit() or (k.startswith("-") and k[1:].isdigit()) for k in data) if data else False
+        # Determine if keys are field names or integer indices.
+        # A key is an index key if it is an integer, or a string spelling of one.
+        all_int_keys = all(_is_index_key(k) for k in data) if data else False
         kwargs: dict[str, Any] = {}
         if all_int_keys and data:
-            # Index-keyed form: {"0": val0, "1": val1, ...}
-            for k, v in data.items():
-                try:
-                    idx = int(k)
-                except ValueError:
-                    msg = f"Cannot construct {tp.__name__} at '{path}': invalid index key {k!r}"
-                    raise TypeCoercionError(msg) from None
-                if idx < 0 or idx >= n:
-                    msg = f"Cannot construct {tp.__name__} at '{path}': index {idx} out of range for {n} fields"
-                    raise TypeCoercionError(msg)
+            # Index-keyed form: {"0": val0, "-1": val_last, ...} — one resolver for
+            # "a negative key counts from the end", the fixed tuple's own.
+            for idx, v in _indexed_dict_to_positions(data, n, path, f"{tp.__name__}").items():
                 fname = field_names[idx]
                 kwargs[fname] = construct(field_types[idx], v, path=f"{path}.{fname}", union_tag=union_tag)
         else:

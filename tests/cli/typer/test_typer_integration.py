@@ -20,10 +20,12 @@ import subprocess
 import sys
 import warnings
 from dataclasses import dataclass, field
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NamedTuple
+from unittest import mock
 
 import pytest
 import typer
+import typer.rich_utils
 from typer._types import TyperChoice
 from typer.core import TyperOption
 from typer.main import get_command
@@ -90,9 +92,18 @@ def _make_command(target: type | None = None, **kwargs: Any) -> Any:
 
 
 def _invoke(command: Any, argv: list[str]) -> str:
-    """Run a typer command, returning everything it wrote to stdout/stderr."""
+    """Run a typer command, returning everything it wrote to stdout/stderr, without ANSI styling."""
     sink = io.StringIO()
-    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink), contextlib.suppress(SystemExit):
+    # typer forces a styled terminal under GITHUB_ACTIONS / FORCE_COLOR / PY_COLORS, and its
+    # highlighter splits ``--pt.x`` into ``-``, ``-pt`` and ``.x`` with escape codes between
+    # them; patch the flag its own ``_TYPER_FORCE_DISABLE_TERMINAL`` sets, which is read too
+    # early at import time to be set from a test.
+    with (
+        mock.patch.object(typer.rich_utils, "FORCE_TERMINAL", new=False),
+        contextlib.redirect_stdout(sink),
+        contextlib.redirect_stderr(sink),
+        contextlib.suppress(SystemExit),
+    ):
         command.main(args=argv, prog_name="cli", standalone_mode=True)
     return sink.getvalue()
 
@@ -280,6 +291,47 @@ class TestHelp:
         out = _invoke(command, ["--help"])
         assert "debug" in out
         assert "info" in out
+
+
+class _HelpPoint(NamedTuple):
+    """Namedtuple whose index spellings stay out of --help (BUG-80)."""
+
+    x: int = 0
+    y: int = 0
+
+
+@dataclass
+class _WithHelpPoint:
+    pt: _HelpPoint = field(default_factory=_HelpPoint)
+
+
+@dataclass
+class _WithHelpPair:
+    pair: tuple[str, str] = ("left", "right")
+
+
+class TestHelpHidesIndexSpellings:
+    """Index spellings patch a position; --help advertises the name spellings (BUG-80)."""
+
+    def test_namedtuple_index_flags_hidden(self) -> None:
+        """A namedtuple's per-index flags are accepted but absent from --help."""
+        command = _make_command(_WithHelpPoint, argv=[], config_flag="")
+        names = {opt for p in command.params for opt in p.opts}
+        assert "--pt.x" in names
+        assert "--pt.0" in names
+        assert "--pt.-1" in names
+        out = _invoke(command, ["--help"])
+        assert "--pt.x" in out
+        assert "--pt.0" not in out
+        assert "--pt.-1" not in out
+
+    def test_tuple_element_flag_hidden_when_typed(self) -> None:
+        """A fixed tuple's element flag, registered from argv, is kept out of --help."""
+        command = _make_command(_WithHelpPair, argv=["--pair.0", "a"], config_flag="")
+        names = {opt for p in command.params for opt in p.opts}
+        assert "--pair.0" in names
+        out = _invoke(command, ["--help"])
+        assert "--pair.0" not in out
 
 
 # ---------------------------------------------------------------------------

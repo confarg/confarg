@@ -240,10 +240,10 @@ reverse order joins the two halves by field name. Latest arguments overwrite ear
 ones ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#a-namedtuples-arity-flag-and-its-sub-flags-merge-in-argv-order)).
 
 A sub-flag one level below a struct-shaped field — a struct, or another namedtuple,
-however wrapped — is not a scalar, and the two spellings of such a field take what that
+however wrapped — is not a scalar, and the spellings of such a field take what that
 field type takes at any other depth (BUG-68): the static walk recurses into them as it
 recurses into a struct's fields, so `--pt.inner.a` registers next to `--pt.inner`, under
-the index spelling too. The collector routes both spellings through the one per-field
+the index spellings too. The collector routes the spellings through the one per-field
 dispatch a struct's own fields go through (`cli/_collect._collect_field`), with
 `_namedtuple_deep_fields` naming which fields count as deep, and the writes land on the
 paths the flags spell — so a deep sub-flag refines a whole value's decoded object key by
@@ -254,8 +254,10 @@ descends into whatever the arity flag left — the by-field-name promotion first
 deep write.
 
 Everything else about a namedtuple is shared — the arity flag, the per-field and per-index
-flags, and the vanilla positional form
-([design decisions](../design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence)).
+flags (the negative index included, BUG-80), and the vanilla positional form
+([design decisions](../design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence));
+the index spellings are hidden from `--help`
+([design decisions](../design-decisions/index-spellings-are-hidden-from-help.md#index-spellings-are-hidden-from-help)).
 
 A dict field's bare flag is its *only* static flag (its keys are unknown until argv is read);
 subkeys arrive as patch flags and are deep-merged over the whole value, so

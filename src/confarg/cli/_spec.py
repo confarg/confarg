@@ -120,6 +120,17 @@ class FlagSpec:
     (e.g. argcomplete wraps it as ``action.completer``).
     """
 
+    hidden: bool = False
+    """Keep the flag out of the framework's own help listing, while still accepting it.
+
+    Set on the index spellings of a fixed-length sequence — a namedtuple's per-index
+    sub-flags and a tuple's element patches — which patch a position rather than name
+    a field, so ``--help`` advertises the name spellings and the usage stays readable.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/index-spellings-are-hidden-from-help.md#index-spellings-are-hidden-from-help
+    """
+
 
 @dataclasses.dataclass
 class FieldMeta:

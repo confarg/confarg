@@ -101,7 +101,7 @@ def _pyname(name: str) -> str:
     return out
 
 
-def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901  # one branch per nargs shape (flag / choices / multi / scalar)
+def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901, PLR0912  # one branch per nargs shape (flag / choices / multi / scalar), the hidden flag adding one
     """Convert one FlagSpec to a keyword-only inspect.Parameter."""
     py_name = _pyname(spec.name)
 
@@ -114,6 +114,9 @@ def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901  
         # All our fields are Optional[str/list]; confarg handles coercion.
         "negative": (),
     }
+    if spec.hidden:
+        # A hidden flag is accepted but kept out of --help (BUG-80).
+        param_kwargs["show"] = False
 
     if spec.nargs == 0:
         # Value-less flag (e.g. a list/dict delete --field.N-): a boolean switch.

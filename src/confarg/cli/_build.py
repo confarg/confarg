@@ -18,6 +18,7 @@ import contextlib
 import dataclasses
 import inspect
 import json
+import re
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -221,6 +222,9 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
     type_name = getattr(core, "__name__", "VALUE").upper()
     return dataclasses.replace(base, metavar=metavar or type_name)
 
+
+# An index spelling's own segment: ``0``, ``-1`` — either sign, digits only.
+_INDEX_SEGMENT = re.compile(r"-?\d+")
 
 # (opener_suffix, mode, bind_key) for both the plain and escaped directive forms.
 # Escaped forms come first so the longer suffix (``._class``) is matched before the
@@ -669,6 +673,37 @@ def _collect_fn_paths_from_config(
     return result
 
 
+def _index_spelled(flag: str) -> bool:
+    """Return whether the flag's own segment is an index spelling (``pt.0``, ``pt.-1``)."""
+    return _INDEX_SEGMENT.fullmatch(flag.rsplit(".", 1)[-1]) is not None
+
+
+def _addresses_fixed_seq_element(target: Any, path: list[str], union_tag: str) -> bool:
+    """Return whether *path*'s own segment indexes a fixed-length sequence element.
+
+    The patch-scan twin of the namedtuple walk's hiding: an element flag whose
+    parent node is a fixed-length sequence — a ``tuple[X, Y]`` or a namedtuple —
+    is an index spelling, hidden from ``--help`` while still accepted, exactly as
+    a namedtuple's own per-index flags are (BUG-80).  A varlen collection's
+    element flag and a dict key spelled as digits keep their place in help.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/index-spellings-are-hidden-from-help.md#index-spellings-are-hidden-from-help
+    """
+    if len(path) <= 1 or _INDEX_SEGMENT.fullmatch(path[-1]) is None:
+        return False
+    # Imported here: a module-level import would create an import cycle with _parse_cli.
+    from confarg._parse_cli import _resolve_field_type  # noqa: PLC0415
+
+    parent = _resolve_field_type(target, path[:-1], union_tag)
+    if parent is None:
+        return False
+    core = _unwrap_optional(_resolve_type(parent))
+    if core is None:
+        return False
+    return _is_namedtuple(core) or (_is_tuple(core) and _tuple_types(core) is not None)
+
+
 def _collect_namedtuple_specs(
     core: Any,
     flag: str,
@@ -680,11 +715,14 @@ def _collect_namedtuple_specs(
 
     A struct-shaped field (a struct, or another namedtuple, each however wrapped)
     takes the flags that field type takes at any other nesting depth, spelled under
-    both of its own keys — the name and the index — because vanilla resolves a path
-    through a namedtuple's fields as through a struct's (BUG-68).
+    all three of its own keys — the name, the index, and the negative index that
+    counts from the end — because vanilla resolves a path through a namedtuple's
+    fields as through a struct's (BUG-68) and takes a fixed-length sequence's
+    negative indices as a tuple's (BUG-80).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
+        docs-dev/architecture/design-decisions/index-spellings-are-hidden-from-help.md#index-spellings-are-hidden-from-help
     """
     flds = _namedtuple_fields(core)
     n = len(flds)
@@ -703,14 +741,13 @@ def _collect_namedtuple_specs(
             group_description=group_description,
         ),
     )
-    # Individual flags by field name and by index
+    # Individual flags by field name and by index, positive and negative alike
     for i, (fname, ft) in enumerate(flds.items()):
-        field_help = f"Field {fname!r} of {core.__name__} (index {i})"
         fcore = _unwrap_optional(_resolve_type(ft))
         if _is_struct(fcore) or _is_namedtuple(fcore):
-            # The field is itself structured, so its two spellings take what that
+            # The field is itself structured, so its spellings take what that
             # field type takes — the whole-value/arity flag and the flags below it.
-            for sub_flag in (f"{flag}.{fname}", f"{flag}.{i}"):
+            for sub_flag in (f"{flag}.{fname}", f"{flag}.{i}", f"{flag}.{i - n}"):
                 result.extend(
                     _specs_for_field(
                         sub_flag,
@@ -725,16 +762,26 @@ def _collect_namedtuple_specs(
                     ),
                 )
             continue
-        result.extend(
-            FlagSpec(
-                name=sub_flag,
-                metavar=getattr(ft, "__name__", "VALUE").upper(),
-                help=field_help,
-                group=group,
-                group_description=group_description,
+        for sub_flag, spelled_index in (
+            (f"{flag}.{fname}", str(i)),
+            (f"{flag}.{i}", str(i)),
+            (f"{flag}.{i - n}", str(i - n)),
+        ):
+            result.append(
+                FlagSpec(
+                    name=sub_flag,
+                    metavar=getattr(ft, "__name__", "VALUE").upper(),
+                    help=f"Field {fname!r} of {core.__name__} (index {spelled_index})",
+                    group=group,
+                    group_description=group_description,
+                ),
             )
-            for sub_flag in (f"{flag}.{fname}", f"{flag}.{i}")
-        )
+    # The deep spellings and the arity flag of an index-spelled deep field carry
+    # a numeric last segment of their own; the recursion below already marked the
+    # flags it generated, so one pass over the result covers what this level added.
+    for spec in result:
+        if _index_spelled(spec.name):
+            spec.hidden = True
     return result
 
 
@@ -1411,7 +1458,14 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
         seen.add(key)
         target_path = ".".join(path)
         if delete_mode:
-            specs.append(FlagSpec(name=key, nargs=0, help=f"Delete the element or key at '{target_path}'."))
+            specs.append(
+                FlagSpec(
+                    name=key,
+                    nargs=0,
+                    help=f"Delete the element or key at '{target_path}'.",
+                    hidden=_addresses_fixed_seq_element(target, path, union_tag),
+                ),
+            )
         elif append_mode:
             # nargs="*" and yet legal with no item at all: the shape no clicklike option
             # can express, so `stands_bare` tells the adapters to drop the bare
@@ -1440,6 +1494,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
                     stands_bare=at is not None and _takes_multi_tokens(at),
                     refuses_bare=at is not None and _fixed_seq_types(at) is not None,
                     help=f"Set the collection element at '{target_path}'.",
+                    hidden=_addresses_fixed_seq_element(target, path, union_tag),
                 ),
             )
     return specs

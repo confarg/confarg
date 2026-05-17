@@ -54,7 +54,8 @@ def _register_spec(
     common: dict[str, Any] = {
         "dest": spec.name,
         "default": argparse.SUPPRESS,
-        "help": spec.help,
+        # A hidden flag is accepted but kept out of --help (BUG-80).
+        "help": argparse.SUPPRESS if spec.hidden else spec.help,
     }
     if spec.nargs == 0:
         # Value-less flag (e.g. a list/dict delete --field.N-): argparse forbids

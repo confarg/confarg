@@ -81,6 +81,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [A whole-value flag needs its value](a-whole-value-flag-needs-its-value.md) | `--db` with nothing after it is an error, like `--port` with nothing after it |
 | [A namedtuple's arity flag and its sub-flags merge in argv order](namedtuple-arity-flag-argv-order.md) | latest arguments overwrite earlier ones, per path |
 | [A whole value followed by a subkey opens rather than collides](whole-value-then-subkey.md) | the scalar is opened into whatever it means to its field, then refined |
+| [Index spellings are hidden from help](index-spellings-are-hidden-from-help.md) | patch syntax is accepted, not advertised |
 
 ## Internals
 

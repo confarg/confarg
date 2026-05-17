@@ -157,6 +157,26 @@ class TestConstruct:
         with pytest.raises(TypeCoercionError, match="index 5 out of range"):
             construct(Point, {"5": 1})
 
+    def test_negative_index_counts_from_the_end(self) -> None:
+        """A negative index key resolves against the arity, as a fixed tuple's does (BUG-80)."""
+        assert construct(Point, {"0": 5, "-1": 6}) == Point(x=5, y=6)
+        assert construct(Color, {"0": 0, "1": 0, "2": 0, "-1": 42}) == Color(r=0, g=0, b=0, a=42)
+
+    def test_negative_index_out_of_range_raises(self) -> None:
+        """A negative index past the length raises, as a positive one past it does."""
+        with pytest.raises(TypeCoercionError, match="index -3 out of range"):
+            construct(Point, {"-3": 1})
+
+    def test_negative_index_beside_a_field_name_is_refused(self) -> None:
+        """A negative key beside a field-name key stays the mixed form build() refuses (BUG-65)."""
+        with pytest.raises(TypeCoercionError, match="Unknown field"):
+            construct(Point, {"x": 1, "-1": 2})
+
+    def test_from_dict_integer_keys(self) -> None:
+        """Integer keys (a YAML file's own int parsing) index like their string spellings."""
+        assert construct(Point, {0: 5, 1: 6}) == Point(x=5, y=6)
+        assert construct(Color, {0: 0, 1: 0, 2: 0, -1: 42}) == Color(r=0, g=0, b=0, a=42)
+
     def test_untyped_namedtuple(self) -> None:
         """Untyped namedtuple constructed from dict passes values through as-is."""
         result = construct(Coord, {"lat": "51.5", "lon": "-0.1"})
@@ -434,6 +454,16 @@ class TestEnvVars:
             WithPoint,
             argv=[],
             env={"MYAPP_PAIR__0": "13", "MYAPP_PAIR__1": "42"},
+            env_prefix="MYAPP_",
+        )
+        assert result.pair == Point(x=13, y=42)
+
+    def test_negative_index_segments(self) -> None:
+        """A negative index segment in an env var counts from the end (BUG-80)."""
+        result = confarg.load(
+            WithPoint,
+            argv=[],
+            env={"MYAPP_PAIR__0": "13", "MYAPP_PAIR__-1": "42"},
             env_prefix="MYAPP_",
         )
         assert result.pair == Point(x=13, y=42)

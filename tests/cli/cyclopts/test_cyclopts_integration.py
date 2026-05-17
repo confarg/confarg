@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 import types
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, Union, get_args, get_origin
+from typing import Annotated, Any, Literal, NamedTuple, Union, get_args, get_origin
 
 import cyclopts
 import pytest
@@ -320,6 +320,58 @@ class TestHelp:
         output = buf.getvalue()
         assert "--host" in output
         assert "--port" in output
+
+
+# ---------------------------------------------------------------------------
+# Index spellings are accepted but hidden from --help
+# ---------------------------------------------------------------------------
+
+
+class _HelpPoint(NamedTuple):
+    """Namedtuple whose index spellings stay out of --help (BUG-80)."""
+
+    x: int = 0
+    y: int = 0
+
+
+@dataclass
+class _WithHelpPoint:
+    pt: _HelpPoint = dataclasses.field(default_factory=_HelpPoint)
+
+
+@dataclass
+class _WithHelpPair:
+    pair: tuple[str, str] = ("left", "right")
+
+
+class TestHelpHidesIndexSpellings:
+    """Index spellings patch a position; --help advertises the name spellings (BUG-80)."""
+
+    @staticmethod
+    def _help_output(target: type, argv: list[str]) -> str:
+        from io import StringIO  # noqa: PLC0415
+
+        from rich.console import Console  # noqa: PLC0415
+
+        app = _make_app()
+        populate_app(target, app, config_flag="", argv=argv)
+        buf = StringIO()
+        console = Console(file=buf, highlight=False)
+        with pytest.raises(SystemExit):
+            app(["--help"], console=console)
+        return buf.getvalue()
+
+    def test_namedtuple_index_flags_hidden(self) -> None:
+        """A namedtuple's per-index flags are accepted but absent from --help."""
+        output = self._help_output(_WithHelpPoint, [])
+        assert "--pt.x" in output
+        assert "--pt.0" not in output
+        assert "--pt.-1" not in output
+
+    def test_tuple_element_flag_hidden_when_typed(self) -> None:
+        """A fixed tuple's element flag, registered from argv, is kept out of --help."""
+        output = self._help_output(_WithHelpPair, ["--pair.0", "a"])
+        assert "--pair.0" not in output
 
 
 # ---------------------------------------------------------------------------
