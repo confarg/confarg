@@ -39,7 +39,7 @@ and their CLI channel is the walk's own loop
 static, unlike the whole-value flag, is the maintainer's call: a registered leaf's
 ordinary spelling is its scalar, and one `--help` line per `__init__` parameter would
 advertise the escape hatch at the expense of the syntax actually used — the same ground
-the escaped openers are registered on. A flag naming no tag and no parameter stays
+a typed call's opener is registered on. A flag naming no tag and no parameter stays
 unregistered, so the framework's rejection stands in for vanilla's `no_such_field`.
 
 An untagged dict stays an error, and the message says how to ask for fields. The rejected

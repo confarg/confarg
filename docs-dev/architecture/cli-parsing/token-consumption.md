@@ -58,9 +58,9 @@
 - Bool fields take an explicit value: `--verbose true` ([design decisions](../design-decisions/explicit-boolean-values.md#explicit-boolean-values)).
 - A whole value already stored at a field is **opened, not overwritten**, when a later
   `--<field>.<sub>` has to descend through it. `--fn pkg.func` is the shorthand for
-  `--fn.bind pkg.func`, so `--fn pkg.func --fn.sep -` refines the target the shorthand
+  `--fn.bind pkg.func`, so `--fn pkg.func --fn.args.sep -` refines the target the shorthand
   named; `_open_callable_shorthand` is the one place that decides it, called by this loop and
-  by the env loop, so `FN=pkg.func` plus `FN__SEP=-` reads the same. A segment naming an
+  by the env loop, so `FN=pkg.func` plus `FN__ARGS__SEP=-` reads the same. A segment naming an
   *opener* is a second spelling of the target rather than a refinement, so it still replaces
   the shorthand outright — the rule that already makes an opener beat the blob beside it. A
   field with no shorthand has nothing to open and the deeper key replaces its scalar
@@ -93,8 +93,7 @@ choice to `construct`. Two refinements:
 
 ## Callable paths
 
-`--f.bind`, `--f.class`, `--f.call`, a nested target's `--f.bind.<key>` or `--f.call.<key>`,
-the target's `--f.<p>`, a typed call's `--n.call` and its opened siblings, and their escaped
-`_bind`/… forms are parsed
-leniently as string leaves; whether a spec is well-formed is decided in `construct`
+`--f.bind`, `--f.class`, `--f.call`, `--f.classfn`, a nested target's `--f.bind.<key>` or
+`--f.call.<key>`, the arguments `--f.args.<p>`, a class's fields `--f.<p>`, and a typed call's
+`--n.call` and `--n.args.<p>` are parsed leniently as string leaves; whether a spec is well-formed is decided in `construct`
 ([callables](../callables.md)).

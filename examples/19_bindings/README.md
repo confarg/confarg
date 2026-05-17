@@ -7,10 +7,10 @@ When specifying a callable, we may want to bind some of its parameters to fixed 
 
 ## To functions
 
-To bind a value to a function argument, we use the expanded dict definition, where the FQN of the function is given under the `bind` key and the arguments alongside it.
+To bind a value to a function argument, we use the expanded dict definition, where the FQN of the function is given under the `bind` key and the arguments under `args`.
 
 ```console
-$ uv run print_greetings.py --greet_fn.bind greetings.print_greetings --greet_fn.greetings Hi
+$ uv run print_greetings.py --greet_fn.bind greetings.print_greetings --greet_fn.args.greetings Hi
 Hi, world!
 ```
 
@@ -34,17 +34,17 @@ greet_fn: greetings.print_greetings
 
 ## To callable classes
 
-To bind arguments to a callable class, `bind` names the instance to bind them to: a nested spec, where the FQN of the class is given under the usual `class` key. The arguments of the call sit beside `bind`, as for a function.
+To bind arguments to a callable class, `bind` names the instance to bind them to: a nested spec, where the FQN of the class is given under the usual `class` key. The arguments of the call sit under `args`, as for a function.
 
 ```console
-$ uv run print_greetings.py --greet_fn.bind.class greetings.Print_greetings --greet_fn.adjective beautiful
+$ uv run print_greetings.py --greet_fn.bind.class greetings.Print_greetings --greet_fn.args.adjective beautiful
 Hello, beautiful world!
 ```
 
 If the class needs initialization parameters, simply add them alongside the `class` key, inside the nested spec.
 
 ```console
-$ uv run print_greetings.py --greet_fn.bind.class greetings.Print_greetings --greet_fn.bind.greetings Hi --greet_fn.adjective beautiful
+$ uv run print_greetings.py --greet_fn.bind.class greetings.Print_greetings --greet_fn.bind.greetings Hi --greet_fn.args.adjective beautiful
 Hi, beautiful world!
 ```
 
@@ -67,17 +67,17 @@ greet_fn:
 > Each spec picks its own set: here only the nested `class` spec, whose keys are the constructor's, is spelled with `_`.
 ## To class methods
 
-When binding arguments to a class method, the FQN of the method is given under the `bind` key. The object is created without arguments, and the arguments beside `bind` are bound to the method.
+When binding arguments to a class method, the FQN of the method is given under the `bind` key. The object is created without arguments, and the arguments under `args` are bound to the method.
 
 ```console
-$ uv run print_greetings.py --greet_fn.bind greetings.Greetings_printer.print --greet_fn.adjective beautiful
+$ uv run print_greetings.py --greet_fn.bind greetings.Greetings_printer.print --greet_fn.args.adjective beautiful
 Hello, beautiful world!
 ```
 
-If the object needs initialization parameters, `bind` names a nested spec instead, where the FQN of the method is given under the `classfn` key and the initialization parameters alongside it. The arguments beside `bind` are still bound to the method.
+If the object needs initialization parameters, `bind` names a nested spec instead, where the FQN of the method is given under the `classfn` key and the initialization parameters alongside it. The arguments under `args` are still bound to the method.
 
 ```console
-$ uv run print_greetings.py --greet_fn.bind.classfn greetings.Greetings_printer.print --greet_fn.bind.greetings Hi --greet_fn.adjective beautiful
+$ uv run print_greetings.py --greet_fn.bind.classfn greetings.Greetings_printer.print --greet_fn.bind.greetings Hi --greet_fn.args.adjective beautiful
 Hi, beautiful world!
 ```
 

@@ -104,7 +104,7 @@ class TestClickRegisterGaps:
             argv=[f"--fn.bind={_COV_MOD}._cov_call_fn"],
         )
         names = {p.name for p in cmd.params}
-        assert "fn.x" in names
+        assert "fn.args.x" in names
 
 
 class TestClickCompletionGaps:

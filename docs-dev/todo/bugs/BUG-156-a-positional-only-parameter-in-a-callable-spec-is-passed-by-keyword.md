@@ -19,7 +19,8 @@ result, with a stdlib `TypeError`. A `call:` fails at load, but as "Failed to ca
 same `TypeError`. Fix direction: decide as [BUG-152](BUG-152-a-positional-only-init-parameter-fails-build-with-a-raw-typeerror.md)
 does for `__init__`. Either fill positional-only parameters by position, or refuse them at load
 by leaving them out of `_acceptable_kwarg_names`. `_fillable_params` is where the rule belongs
-([callables](../../architecture/callables.md#one-coercion-route)).
+([callables](../../architecture/callables.md#one-coercion-route)). The arguments sit under `args`,
+a mapping by name, so filling by position could also take a list there, as Hydra's `_args_` does.
 
 Origin: latent since the initial version (PR-5), which already counted a positional-only parameter
 among the names a spec may fill and passed every kwarg by keyword; the `bind:` half reproduces

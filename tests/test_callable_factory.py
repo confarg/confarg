@@ -4,7 +4,7 @@
 
 """Tests for factory-style Callable[..., T] construction.
 
-Factories are a bare class FQN (no args) or 'bind: <class>' with sibling keys (with args);
+Factories are a bare class FQN (no args) or 'bind: <class>' with arguments under args;
 calling them constructs a T. 'class:' always instantiates the class (the instance is the callable).
 """
 
@@ -134,10 +134,10 @@ class TestFactoryFromDict:
     """Tests for factory-style callable construction from config dicts."""
 
     def test_bind_class_returns_partial(self):
-        """'bind: <class>' with siblings returns a partial constructor (factory with pre-applied args)."""
+        """'bind: <class>' with arguments returns a partial constructor (factory with pre-applied args)."""
         result = confarg.build(
             _WithConcreteOpt,
-            {"optimizer": {"bind": f"{_MOD}._SGD", "lr": 0.05}},
+            {"optimizer": {"bind": f"{_MOD}._SGD", "args": {"lr": 0.05}}},
         )
         assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _SGD
@@ -147,7 +147,7 @@ class TestFactoryFromDict:
         """Calling the returned partial produces a correctly configured instance."""
         result = confarg.build(
             _WithConcreteOpt,
-            {"optimizer": {"bind": f"{_MOD}._SGD", "lr": 0.05, "momentum": 0.9}},
+            {"optimizer": {"bind": f"{_MOD}._SGD", "args": {"lr": 0.05, "momentum": 0.9}}},
         )
         opt = result.optimizer()
         assert isinstance(opt, _SGD)
@@ -166,17 +166,17 @@ class TestFactoryFromDict:
         """'bind:' can name a subclass of the Callable return type."""
         result = confarg.build(
             _WithConcreteOpt,
-            {"optimizer": {"bind": f"{_MOD}._SGDVariant", "lr": 0.01, "dampening": 0.1}},
+            {"optimizer": {"bind": f"{_MOD}._SGDVariant", "args": {"lr": 0.01, "dampening": 0.1}}},
         )
         assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _SGDVariant
         assert result.optimizer.keywords["dampening"] == pytest.approx(0.1)
 
     def test_bind_abstract_base(self):
-        """'bind: <class>' with siblings on a Callable[..., Base] field builds a partial of the class."""
+        """'bind: <class>' with arguments on a Callable[..., Base] field builds a partial of the class."""
         result = confarg.build(
             _WithAbstractOpt,
-            {"optimizer": {"bind": f"{_MOD}._Adam", "lr": 0.003}},
+            {"optimizer": {"bind": f"{_MOD}._Adam", "args": {"lr": 0.003}}},
         )
         assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _Adam
@@ -200,11 +200,11 @@ class TestFactoryFromDict:
             )
 
     def test_unknown_bind_kwarg_raises(self):
-        """An unknown sibling of a 'bind:' factory raises TypeCoercionError."""
+        """An unknown argument of a 'bind:' factory raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="Unknown bind parameter"):
             confarg.build(
                 _WithConcreteOpt,
-                {"optimizer": {"bind": f"{_MOD}._SGD", "bad_kwarg": 99}},
+                {"optimizer": {"bind": f"{_MOD}._SGD", "args": {"bad_kwarg": 99}}},
             )
 
     def test_bare_string_factory(self):
@@ -242,11 +242,11 @@ class TestFactoryFromDict:
 class TestFactoryFromCLI:
     """Tests for factory-style callable construction from CLI arguments (vanilla load)."""
 
-    def test_bind_and_sibling_flags(self):
-        """--optimizer.bind + --optimizer.<kwarg> flags construct a factory partial."""
+    def test_bind_and_argument_flags(self):
+        """--optimizer.bind + --optimizer.args.<kwarg> flags construct a factory partial."""
         result = confarg.load(
             _WithConcreteOpt,
-            argv=[f"--optimizer.bind={_MOD}._SGD", "--optimizer.lr=0.05"],
+            argv=[f"--optimizer.bind={_MOD}._SGD", "--optimizer.args.lr=0.05"],
             env={},
         )
         assert isinstance(result.optimizer, functools.partial)
@@ -263,10 +263,10 @@ class TestFactoryFromCLI:
             )
 
     def test_abstract_base_cli(self):
-        """--optimizer.bind + a sibling on a Callable[..., Base] field constructs a partial via CLI."""
+        """--optimizer.bind + an argument on a Callable[..., Base] field constructs a partial via CLI."""
         result = confarg.load(
             _WithAbstractOpt,
-            argv=[f"--optimizer.bind={_MOD}._Adam", "--optimizer.lr=0.003"],
+            argv=[f"--optimizer.bind={_MOD}._Adam", "--optimizer.args.lr=0.003"],
             env={},
         )
         assert isinstance(result.optimizer, functools.partial)
@@ -282,14 +282,14 @@ class TestFactoryFromCLI:
 class TestFactoryFromEnv:
     """Tests for factory-mode callable construction from environment variables."""
 
-    def test_env_bind_and_sibling(self):
-        """Env vars with bind and a sibling construct a factory partial via env."""
+    def test_env_bind_and_argument(self):
+        """Env vars with bind and an argument construct a factory partial via env."""
         result = confarg.load(
             _WithConcreteOpt,
             argv=[],
             env={
                 "CONFARG_OPTIMIZER__BIND": f"{_MOD}._SGD",
-                "CONFARG_OPTIMIZER__LR": "0.07",
+                "CONFARG_OPTIMIZER__ARGS__LR": "0.07",
             },
             env_prefix="CONFARG_",
         )
@@ -307,10 +307,10 @@ class TestFactorySerialization:
     """Tests for factory-mode callable serialization."""
 
     def test_factory_partial_serializes_as_bind_dict(self):
-        """A factory partial with kwargs serializes as a bind: dict with sibling keys (not class:)."""
+        """A factory partial with kwargs serializes as a bind: dict with its keywords under args (not class:)."""
         p = functools.partial(_SGD, lr=0.05, momentum=0.9)
         out = _serialize_callable(p)
-        assert out == {"bind": f"{_MOD}._SGD", "lr": 0.05, "momentum": 0.9}
+        assert out == {"bind": f"{_MOD}._SGD", "args": {"lr": 0.05, "momentum": 0.9}}
 
     def test_factory_partial_no_kwargs_serializes_as_bare_string(self):
         """A factory partial with no kwargs serializes as a bare class FQN string."""
@@ -321,10 +321,10 @@ class TestFactorySerialization:
     def test_function_partial_serializes_as_bind_dict(self):
         """Test that a function partial serializes as a bind: dict with its keywords beside it."""
         p = functools.partial(_identity, x=1)
-        assert _serialize_callable(p) == {"bind": f"{_MOD}._identity", "x": 1}
+        assert _serialize_callable(p) == {"bind": f"{_MOD}._identity", "args": {"x": 1}}
 
     def test_round_trip_factory(self):
-        """Load → dump → reload preserves the factory (as bind: with siblings)."""
+        """Load → dump → reload preserves the factory (as bind: with args)."""
 
         @dataclass
         class Cfg:
@@ -332,10 +332,10 @@ class TestFactorySerialization:
 
         cfg = confarg.build(
             Cfg,
-            {"optimizer": {"bind": f"{_MOD}._SGD", "lr": 0.05}},
+            {"optimizer": {"bind": f"{_MOD}._SGD", "args": {"lr": 0.05}}},
         )
         dumped = confarg.dump(cfg)
-        assert dumped["optimizer"] == {"bind": f"{_MOD}._SGD", "lr": 0.05}
+        assert dumped["optimizer"] == {"bind": f"{_MOD}._SGD", "args": {"lr": 0.05}}
 
         cfg2 = confarg.build(Cfg, dumped)
         assert isinstance(cfg2.optimizer, functools.partial)
@@ -347,15 +347,13 @@ class TestBindTypedConstruction:
     """bind: values go through the same typed-construction route as any other config element."""
 
     def test_bind_class_constructs_complex_types_from_dict(self):
-        """bind: ClassName with siblings builds enum/dataclass/list params (config-file / native path)."""
+        """bind: ClassName with arguments builds enum/dataclass/list params (config-file / native path)."""
         result = confarg.build(
             _WithAbstractOpt,
             {
                 "optimizer": {
                     "bind": f"{_MOD}._ModedOpt",
-                    "mode": "fast",
-                    "schedule": {"warmup": 10},
-                    "tags": [1, 2],
+                    "args": {"mode": "fast", "schedule": {"warmup": 10}, "tags": [1, 2]},
                 },
             },
         )
@@ -369,7 +367,7 @@ class TestBindTypedConstruction:
         """An enum bind value arriving as a CLI string is coerced (all-input-types parity)."""
         result = confarg.load(
             _WithAbstractOpt,
-            argv=["--optimizer.bind", f"{_MOD}._ModedOpt", "--optimizer.mode", "slow"],
+            argv=["--optimizer.bind", f"{_MOD}._ModedOpt", "--optimizer.args.mode", "slow"],
             env={},
         )
         # Previously this stayed the raw string "slow"; now it is the enum member.
@@ -377,13 +375,13 @@ class TestBindTypedConstruction:
         assert result.optimizer.keywords["mode"] is _Mode.SLOW
 
     def test_callable_object_bind_constructs_complex_types(self):
-        """bind: over a class: callable object also coerces its siblings via the canonical route."""
+        """bind: over a class: callable object also coerces its arguments via the canonical route."""
         result = confarg.build(
             _WithAbstractOpt,
             {
                 "optimizer": {
                     "bind": {"class": f"{_MOD}._BindConsumer"},
-                    "mode": "fast",
+                    "args": {"mode": "fast"},
                 },
             },
         )
@@ -395,14 +393,14 @@ class TestBindTypedConstruction:
         with pytest.raises(TypeCoercionError):
             confarg.build(
                 _WithConcreteOpt,
-                {"optimizer": {"bind": f"{_MOD}._SGD", "lr": "not_a_float"}},
+                {"optimizer": {"bind": f"{_MOD}._SGD", "args": {"lr": "not_a_float"}}},
             )
 
     def test_scalar_bind_from_cli_still_coerces(self):
-        """Regression: a scalar sibling from the CLI still coerces (--field.lr 0.1 → 0.1)."""
+        """Regression: a scalar argument from the CLI still coerces (--field.args.lr 0.1 → 0.1)."""
         result = confarg.load(
             _WithConcreteOpt,
-            argv=["--optimizer.bind", f"{_MOD}._SGD", "--optimizer.lr", "0.1"],
+            argv=["--optimizer.bind", f"{_MOD}._SGD", "--optimizer.args.lr", "0.1"],
             env={},
         )
         assert isinstance(result.optimizer, functools.partial)

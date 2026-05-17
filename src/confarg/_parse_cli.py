@@ -22,10 +22,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterator, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
 from confarg import _defaults
-from confarg._callable import names_a_call, names_a_target_opener, names_an_opener, promote_bare_spec
+from confarg._callable import names_an_opener, opens_a_subtree, promote_bare_spec
 from confarg._cast import (
     FORCE_CAST_NAMES,
     JSON_CAST_NAME,
@@ -45,7 +45,7 @@ from confarg._merge import (
     _peek_nested,
     _set_nested,
 )
-from confarg._tags import _partial_config_from_argv, import_tagged_classes
+from confarg._tags import import_tagged_classes
 from confarg._types import (
     _dict_kv,
     _elem_type,
@@ -202,23 +202,24 @@ def _union_branches(tp: Any) -> list[Any]:
     return [node for v in _union_args_no_none(tp) for node in _union_branches(v)]
 
 
-def _opens_target(stone: _Stone, part: str, depth: int) -> bool:
-    """Return True if *part*, met at *stone*, is an opener whose value is a target: a str subtree.
+def _opens_spec_subtree(stone: _Stone, part: str, depth: int) -> bool:
+    """Return True if *part*, met at *stone*, holds a subtree of a computation's spec: a str subtree.
 
-    A ``bind`` or ``call`` key of a callable field, in either form, and a ``call`` key of a
-    field that takes a typed call (:func:`~confarg.typedload._construct._takes_typed_call`)
-    hold a target: a dotted path (``--f.call pkg.g``) or a callable spec of its own,
-    addressable key by key (``--f.call.classfn pkg.C.m``). In escaped mode a plain ``bind``
-    is a scalar kwarg (``--f.bind 5``); which it is, construction decides from the opener,
-    not here (lenient parse). The root (*depth* 0) holds no typed call: its flags share the
-    namespace with a host framework's own.
+    A ``bind`` or ``call`` target is a dotted path (``--f.call pkg.g``) or a callable spec of
+    its own, addressable key by key (``--f.call.classfn pkg.C.m``), and ``args`` holds the
+    target's arguments by name (``--f.args.sep -``), whatever their names
+    (:func:`~confarg._callable.opens_a_subtree`). All three open one below a callable field;
+    ``call`` and ``args`` below a field that takes a typed call, unless a member holds the
+    name (:func:`~confarg.typedload._construct._takes_typed_call`), so ``--n.args.x`` needs
+    no opener on the command line. The root (*depth* 0) holds no typed call: its flags share
+    the namespace with a host framework's own.
 
     Dev Notes:
         docs-dev/architecture/callables.md#cli
     """
     if _is_callable(stone.node):
-        return names_a_target_opener(part)
-    return depth > 0 and names_a_call(part) and _takes_typed_call(stone.reached, part)
+        return opens_a_subtree(part)
+    return depth > 0 and part in (_defaults.CALL_KEY, _defaults.ARGS_KEY) and _takes_typed_call(stone.reached, part)
 
 
 def _walk_path(
@@ -227,7 +228,6 @@ def _walk_path(
     union_tag: str,
     *,
     tag_fallback: bool = True,
-    calls: Collection[tuple[str, ...]] = (),
 ) -> Iterator[_Branch]:
     """Walk the type tree along *parts*, yielding one branch per way the walk can take it.
 
@@ -249,9 +249,6 @@ def _walk_path(
         tag_fallback: Whether a segment no member reaches may still name the union tag.
             Off, the walk answers members only, which is how
             :func:`_names_tag_by_fallback` tells the two apart.
-        calls: The paths at which the command line opens a typed call
-            (:func:`_typed_call_openings`). A segment no member reaches below one of them
-            is an argument of the call's target, a ``str`` leaf.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/type-guided-parsing.md#one-walk-many-questions
@@ -264,7 +261,7 @@ def _walk_path(
         part = parts[len(stones)]
         for node in _union_branches(reached):
             here = (*stones, _Stone(reached, node))
-            if str_subtree or _opens_target(here[-1], part, len(stones)):
+            if str_subtree or _opens_spec_subtree(here[-1], part, len(stones)):
                 yield from walk(str, here, str_subtree=True)
             elif part in _locals_keys_nested(node, union_tag):
                 yield from walk(dict[str, Any], here, str_subtree=False)
@@ -274,9 +271,6 @@ def _walk_path(
                 # The tag is the fallback, so it resolves only at a position no member
                 # of its exact spelling reaches.
                 yield from walk(str, here, str_subtree=True)
-            elif tuple(parts[: len(stones)]) in calls:
-                # A sibling of an opened call is an argument of its target, as below a callable.
-                yield from walk(str, here, str_subtree=False)
             else:
                 yield _Branch(here, None)
 
@@ -289,7 +283,6 @@ def _field_types(
     union_tag: str,
     *,
     tag_fallback: bool = True,
-    calls: Collection[tuple[str, ...]] = (),
 ) -> list[Any]:
     """Return the type each branch of the walk along *parts* reaches at its end.
 
@@ -303,9 +296,8 @@ def _field_types(
         parts: A list of path segments to follow.
         union_tag: The field name used as a discriminator tag in unions.
         tag_fallback: Whether a segment no member reaches may still name the union tag.
-        calls: The paths at which the command line opens a typed call.
     """
-    branches = _walk_path(target, parts, union_tag, tag_fallback=tag_fallback, calls=calls)
+    branches = _walk_path(target, parts, union_tag, tag_fallback=tag_fallback)
     return [branch.end for branch in branches if branch.end is not None]
 
 
@@ -327,7 +319,6 @@ def _resolve_field_type(
     union_tag: str,
     *,
     tag_fallback: bool = True,
-    calls: Collection[tuple[str, ...]] = (),
 ) -> Any | None:
     """Return the type a value at the dotted path *parts* is coerced by, None if no branch accepts it.
 
@@ -339,12 +330,11 @@ def _resolve_field_type(
         parts: A list of path segments to follow.
         union_tag: The field name used as a discriminator tag in unions.
         tag_fallback: Whether a segment no member reaches may still name the union tag.
-        calls: The paths at which the command line opens a typed call.
 
     Returns:
         The resolved type at the end of the path, or None if the path is invalid.
     """
-    return _common_type(_field_types(target, parts, union_tag, tag_fallback=tag_fallback, calls=calls))
+    return _common_type(_field_types(target, parts, union_tag, tag_fallback=tag_fallback))
 
 
 def _names_tag_by_fallback(target: Any, parts: list[str], union_tag: str) -> bool:
@@ -362,21 +352,15 @@ def _names_tag_by_fallback(target: Any, parts: list[str], union_tag: str) -> boo
     )
 
 
-def _addresses_callable_key(
-    target: Any,
-    parts: list[str],
-    union_tag: str,
-    *,
-    calls: Collection[tuple[str, ...]] = (),
-) -> bool:
+def _addresses_callable_key(target: Any, parts: list[str], union_tag: str) -> bool:
     """Return True if the dotted path names a key *inside* a callable spec.
 
     Below a ``Callable`` field, everything is one answer, because everything below it is
-    one dict the parser writes verbatim: a directive, a bind or call subkey in either
-    spelling, or a sibling kwarg no signature names.  Which of those a key *is* — and
-    whether it is acceptable — the opener decides at construction, and a path does not see
-    the opener.  Below a field of any other type, the spec is a typed call: its ``call``
-    key and what is below it, and a sibling of a call the command line opens (*calls*).
+    one dict the parser writes verbatim: an opener, a key of a nested target spec, an
+    argument under ``args``, or a field of a ``class`` no signature names.  Which of those a
+    key *is* — and whether it is acceptable — the opener decides at construction, and a path
+    does not see the opener.  Below a field of any other type, the spec is a typed call: its
+    ``call`` and ``args`` keys and what is below them (:func:`_opens_spec_subtree`).
 
     The adapters register a flag on this answer alone, so the caller must strip an
     append/delete suffix first: those flags are registered when typed, in the shape
@@ -386,8 +370,8 @@ def _addresses_callable_key(
         docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
     return any(
-        _is_callable(stone.node) or _opens_target(stone, part, k) or tuple(parts[:k]) in calls
-        for branch in _walk_path(target, parts, union_tag, calls=calls)
+        _is_callable(stone.node) or _opens_spec_subtree(stone, part, k)
+        for branch in _walk_path(target, parts, union_tag)
         for k, (stone, part) in enumerate(zip(branch.stones, parts, strict=False))
     )
 
@@ -395,9 +379,9 @@ def _addresses_callable_key(
 def _opener_at(target: Any, parts: list[str], union_tag: str) -> bool:
     """Return True if the last segment of *parts* is an opener of a spec at the path before it.
 
-    Any opener, in either form, opens a spec on a callable field; ``call`` does on a field
-    that takes a typed call (:func:`_opens_target`). A field named like an opener is no
-    opener of its parent (BUG-30).
+    Any opener opens a spec on a callable field; ``call`` does on a field that takes a
+    typed call (:func:`_opens_spec_subtree`). A field named like an opener is no opener of
+    its parent (BUG-30).
     """
     k = len(parts) - 1
     return (
@@ -405,7 +389,7 @@ def _opener_at(target: Any, parts: list[str], union_tag: str) -> bool:
         and names_an_opener(parts[k])
         and any(
             len(branch.stones) > k
-            and (_is_callable(branch.stones[k].node) or _opens_target(branch.stones[k], parts[k], k))
+            and (_is_callable(branch.stones[k].node) or _opens_spec_subtree(branch.stones[k], parts[k], k))
             for branch in _walk_path(target, parts, union_tag)
         )
     )
@@ -444,76 +428,18 @@ def _registered_when_typed(target: Any, parts: list[str], union_tag: str) -> boo
     return _is_collection_patch_path(target, parts, union_tag) or _names_tag_by_fallback(target, parts, union_tag)
 
 
-def _path_unknown(target: Any, parts: list[str], union_tag: str, *, calls: Collection[tuple[str, ...]] = ()) -> bool:
+def _path_unknown(target: Any, parts: list[str], union_tag: str) -> bool:
     """Return True when *parts* names no node a flag can write: vanilla refuses it as unknown.
 
     A path the walk resolves is a member; a path below a dict-typed node is a key the dict
     takes, whatever it spells.  The delete handler, the unknown-field handler and the
     adapters' skip of the host's own flags all ask this one question.
     """
-    return _resolve_field_type(target, parts, union_tag, calls=calls) is None and not _is_dict_at_path(
+    return _resolve_field_type(target, parts, union_tag) is None and not _is_dict_at_path(
         target,
         parts,
         union_tag,
     )
-
-
-def _typed_call_openings(
-    target: Any,
-    argv: Sequence[str],
-    union_tag: str,
-    config_flag: str,
-) -> frozenset[tuple[str, ...]]:
-    """Return the paths at which *argv* opens a ``call:`` on a field that is no ``Callable``.
-
-    A field opens one where a ``call`` key, in either form, is a typed call there
-    (:func:`_opens_target`), spelled by a flag (``--n.call pkg.f``, ``--n.call.classfn
-    pkg.C.m``), by a key of a whole ``{…}`` value, or by a key of a root ``--<config_flag>``
-    file argv names.  Below such a path, a segment no member reaches is an argument of the
-    call's target (:func:`_walk_path`). *argv* has no CLI prefix left. Vanilla's loop and
-    the adapters' registration both ask it, so a flag one accepts the other registers.
-
-    Dev Notes:
-        docs-dev/architecture/callables.md#cli
-    """
-    found: set[tuple[str, ...]] = set()
-    for parts in _paths_argv_spells(target, argv, union_tag, config_flag):
-        for branch in _walk_path(target, parts, union_tag):
-            for k, (stone, part) in enumerate(zip(branch.stones, parts, strict=False)):
-                if not _is_callable(stone.node) and _opens_target(stone, part, k):
-                    found.add(tuple(parts[:k]))
-    return frozenset(found)
-
-
-def _paths_argv_spells(target: Any, argv: Sequence[str], union_tag: str, config_flag: str) -> list[list[str]]:
-    """Return every path *argv* writes: its flags', each key of a whole ``{…}`` value, each key of a root config file.
-
-    A value is read whole only where the loop decodes it (:func:`_takes_whole_value`).
-    A best-effort scan, as the tag scan's: a value that does not parse, or a file that does
-    not load, spells nothing here, and the real error belongs to the parse.
-    """
-    paths: list[list[str]] = []
-
-    def add_leaves(prefix: list[str], value: Any) -> None:
-        if isinstance(value, dict) and value:
-            for key, sub in value.items():
-                add_leaves([*prefix, str(key)], sub)
-        else:
-            paths.append(prefix)
-
-    args = _normalize_eq_args(argv)
-    for i, token in enumerate(args):
-        if not _looks_like_flag(token) or _addresses_key(token[2:], config_flag):
-            continue
-        path = _parse_flag_mode(token[2:])[0]
-        paths.append(path)
-        value = args[i + 1] if i + 1 < len(args) else ""
-        if _takes_whole_value(_resolve_field_type(target, path, union_tag), value):
-            with contextlib.suppress(ValueError):
-                add_leaves(path, json.loads(value))
-    if config_flag:
-        add_leaves([], _partial_config_from_argv(args, config_flag))
-    return paths
 
 
 def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
@@ -1095,8 +1021,6 @@ class _ParseCtx:
     argv: Sequence[str]
     target: Any
     union_tag: str
-    #: The paths at which argv opens a typed call (:func:`_typed_call_openings`).
-    calls: frozenset[tuple[str, ...]] = frozenset()
     data: MergeDict = field(default_factory=dict)
     multi_tokens: dict[tuple[str, ...], list[str]] = field(default_factory=dict)
     """Tokens every plain multi-token occurrence contributed, keyed by field path.
@@ -1121,7 +1045,7 @@ def _handle_delete_token(
     """Apply a delete-mode flag (--foo.1- or --foo.bar-) to data."""
     if is_list_delete:
         parent_path = path[:-1]
-        if _path_unknown(ctx.target, path, ctx.union_tag, calls=ctx.calls):
+        if _path_unknown(ctx.target, path, ctx.union_tag):
             raise UnknownArgumentError.not_indexable(token, parent_path)
         node: Any = ctx.data
         for _p in parent_path:
@@ -1129,7 +1053,7 @@ def _handle_delete_token(
         del_key = ListOp.DELETE_AFTER if isinstance(node, dict) and ListOp.APPEND in node else ListOp.DELETE
         _accumulate_list_delete(ctx.data, parent_path, delete_idx, token, delete_key=del_key)
     else:
-        if _path_unknown(ctx.target, path, ctx.union_tag, calls=ctx.calls):
+        if _path_unknown(ctx.target, path, ctx.union_tag):
             raise UnknownArgumentError.no_such_field(token, path)
         # A whole-field delete ends the value at this path, so a later multi-token occurrence
         # starts a new list rather than extending the one the delete just discarded. An index
@@ -1204,7 +1128,7 @@ def _handle_append_token(
     *ft* is the field's type as the message names it; what the append reaches is asked of the
     walk (:func:`_append_element_type`).
     """
-    et = _append_element_type(_field_types(ctx.target, path, ctx.union_tag, calls=ctx.calls))
+    et = _append_element_type(_field_types(ctx.target, path, ctx.union_tag))
     if et is None:
         msg = (
             f"Cannot use + (append) syntax on {token!r}:"
@@ -1499,11 +1423,10 @@ def _accepts_object_value(ft: Any) -> bool:
 def _takes_whole_value(ft: Any | None, value: str) -> bool:
     """Return whether the token *value*, typed after a flag whose field is *ft*, is decoded as a whole ``{...}`` value.
 
-    The one answer for the loop that decodes it and for the scans that read argv ahead of
-    it: the typed-call openings (:func:`_typed_call_openings`) and the adapters' argument
-    flags (``cli._build._blob_document_from_argv``). A ``{``-led value at a field
-    :func:`_accepts_object_value` refuses is text, as the loop stores it, so it opens
-    nothing (BUG-216). *ft* is None at a path no branch accepts.
+    The one answer for the loop that decodes it and for the scan that reads argv ahead of
+    it, the adapters' argument flags (``cli._build._blob_document_from_argv``). A
+    ``{``-led value at a field :func:`_accepts_object_value` refuses is text, as the loop
+    stores it, so it opens nothing (BUG-216). *ft* is None at a path no branch accepts.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
@@ -1695,8 +1618,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
 
     # Paths resolve against the locals-grafted target; root classification keeps `target`.
     walk_target = _walk_target(target, _locals_keys(target, union_tag))
-    calls = _typed_call_openings(walk_target, _strip_argv_prefix(argv, cli_prefix), union_tag, config_flag)
-    ctx = _ParseCtx(argv=argv, target=walk_target, union_tag=union_tag, calls=calls)
+    ctx = _ParseCtx(argv=argv, target=walk_target, union_tag=union_tag)
     config_files: list[tuple[str, str]] = []
     root_json: list[MergeDict] = []  # objects from root `--json`, folded in below fields
     target_r = _resolve_type(target)
@@ -1766,7 +1688,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             # struct-like root its value would be written at the empty path, a no-op.
             raise UnknownArgumentError.bare_prefix_on_struct_root(token, cli_prefix)
 
-        ft = _resolve_field_type(walk_target, path, union_tag, calls=ctx.calls)
+        ft = _resolve_field_type(walk_target, path, union_tag)
         if ft is None:
             i = _handle_unknown_field(ctx, i, token, path, append_mode=append_mode)
             continue

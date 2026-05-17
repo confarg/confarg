@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 from confarg import _defaults
-from confarg._callable import _resolve_callable_spec, _select_directives, resolve_typed_call
+from confarg._callable import _resolve_callable_spec, resolve_typed_call
 from confarg._cast import cast_name_for_type, holds_the_cast, type_for_cast_name
 from confarg._import import _import_dotted, dotted_name
 from confarg._merge import (
@@ -454,7 +454,7 @@ def _construct_scalar(tp: Any, data: Any, path: FieldPath, union_tag: str) -> An
     if _is_taggable_leaf(resolved) and isinstance(data, dict):
         return _construct_taggable_leaf(resolved, data, path, union_tag)
     if isinstance(data, dict) and union_tag in data:
-        call = _select_directives(data).call
+        call = _defaults.CALL_KEY
         tp_name = getattr(resolved, "__name__", repr(resolved))
         msg = (
             f"Cannot coerce dict {data!r} to {tp_name} at '{_spell_field_path(path)}'."
@@ -494,26 +494,26 @@ def _is_typed_call(data: Any, tp: Any) -> bool:
 
     A ``call:`` key is a spec only where no member of the annotation could hold that key as data: a
     dict type, ``Any`` and a Callable keep their own meaning, and a struct member named ``call``
-    (``_call`` in the escaped form) keeps the field's data. ``class:`` is the union tag, which
-    already selects a struct; a ``bind:`` beside ``call:`` is a second opener, which the call
-    refuses.
+    keeps the field's data. ``class:`` is the union tag, which already selects a struct, its
+    other keys the struct's fields; a ``bind:`` beside ``call:`` is a second opener, which the
+    call refuses.
 
     Dev Notes:
         docs-dev/architecture/callables.md#call-in-a-typed-field
     """
     if not isinstance(data, dict):
         return False
-    d = _select_directives(data)
-    if d.call not in data or d.cls in data:
+    if _defaults.CALL_KEY not in data or _defaults.CLASS_KEY in data:
         return False
-    return _takes_typed_call(tp, d.call)
+    return _takes_typed_call(tp)
 
 
-def _takes_typed_call(tp: Any, call_key: str) -> bool:
-    """True if a ``call:`` spec opened by *call_key* (``call`` or ``_call``) fills a field of type *tp*.
+def _takes_typed_call(tp: Any, key: str = _defaults.CALL_KEY) -> bool:
+    """True if a ``call:`` spec fills a field of type *tp*, its *key* (``call`` or ``args``) no member's.
 
     The type half of :func:`_is_typed_call`, which the CLI walk asks of a path, where there
-    is no spec to read yet: no member of the annotation may hold the key as data.
+    is no spec to read yet: no member of the annotation may hold ``call`` as data, nor *key*,
+    which a member reached by that name keeps.
 
     Dev Notes:
         docs-dev/architecture/callables.md#call-in-a-typed-field
@@ -523,7 +523,7 @@ def _takes_typed_call(tp: Any, call_key: str) -> bool:
     for member in members:
         if _type_kind(member) in (_TypeKind.ANY, _TypeKind.DICT, _TypeKind.CALLABLE):
             return False
-        if _is_struct(member) and call_key in _struct_member_names(member):
+        if _is_struct(member) and not {_defaults.CALL_KEY, key}.isdisjoint(_struct_member_names(member)):
             return False
     return True
 
@@ -1320,7 +1320,7 @@ def _construct_by_class_path(tp: type, data: MergeDict, path: FieldPath, union_t
     tag = data[union_tag]
     cls = _import_class_by_path(tag, path, union_tag)
     if not issubclass(cls, tp):
-        call = _select_directives(data).call
+        call = _defaults.CALL_KEY
         raise TypeCoercionError.tag_not_a_subclass(tag, dotted_name(tp), _spell_field_path(path), call)
     cleaned = {k: v for k, v in data.items() if k != union_tag}
     return _construct_named_struct(cls, cleaned, path, union_tag, _Naming(tag, "tag"))

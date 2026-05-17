@@ -19,7 +19,7 @@ What exists falls short:
 
 - `register_leaf_type(Transform, lookup)` covers the registry case, but globally, and it makes `Transform` opaque: an untagged dict is refused ([a registered leaf is never a struct variant](../../architecture/design-decisions/registered-leaf-is-never-a-struct-variant.md#a-registered-leaf-is-never-a-struct-variant)).
 - It cannot cover `size`: a `tuple[int, int]` key is ignored, since the fixed-arity shape dispatch claims the field first, and it would apply to every such field anyway.
-- A `call:` spec (`size: {call: pkg.square, n: 3}`) works on any field, but asks the user to spell the conversion at every use.
+- A `call:` spec (`size: {call: pkg.square, args: {n: 3}}`) works on any field, but asks the user to spell the conversion at every use.
 
 Parsing is not the gap. `tuple[int, int] | int` already reads `--size 3` and `--size 3 4` alike. What is missing is a way to separate the type a field *accepts* from the type it *holds*.
 

@@ -327,7 +327,7 @@ class TestPreExtendNestedTargetSpec:
     """A nested target spec typed on argv buys its flags for completion too (FEAT-32)."""
 
     def test_classfn_below_call_registers_owner_and_method(self) -> None:
-        """``--fn.call.classfn`` buys the owner's ``--fn.call.k`` and the method's ``--fn.k``."""
+        """``--fn.call.classfn`` buys the owner's ``--fn.call.k`` and the method's ``--fn.args.k``."""
         parser = argparse.ArgumentParser()
         populate_parser(_CallableApp, parser)
         _pre_extend_parser_for_completion(
@@ -338,7 +338,7 @@ class TestPreExtendNestedTargetSpec:
             argv=["--fn.call.classfn", f"{__name__}._Scaler.by"],
         )
         flags = {s for a in parser._actions for s in a.option_strings}
-        assert {"--fn.call.k", "--fn.k"} <= flags
+        assert {"--fn.call.k", "--fn.args.k"} <= flags
 
 
 # ---------------------------------------------------------------------------

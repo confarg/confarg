@@ -103,6 +103,46 @@ Dev Notes:
 """
 
 
+BIND_KEY: Final[str] = "bind"
+"""Opener of a callable spec yielding a partial of its target, ``{bind: T, args: {…}}``.
+
+Dev Notes:
+    docs-dev/architecture/callables.md#spec-grammar
+"""
+
+CALL_KEY: Final[str] = "call"
+"""Opener of a callable spec yielding what its target returns, ``{call: T, args: {…}}``.
+
+The merge reads it too: a dict holding it replaces what lies below.
+
+Dev Notes:
+    docs-dev/architecture/callables.md#spec-grammar
+"""
+
+CLASS_KEY: Final[str] = "class"
+"""Opener of a Callable field's spec building an instance, its other keys the class's fields.
+
+The same word as the default :data:`UNION_TAG`, which selects a struct the same way.
+
+Dev Notes:
+    docs-dev/architecture/callables.md#spec-grammar
+"""
+
+CLASSFN_KEY: Final[str] = "classfn"
+"""Opener of a callable spec yielding an instance method, its other keys the owner's fields.
+
+Dev Notes:
+    docs-dev/architecture/callables.md#spec-grammar
+"""
+
+ARGS_KEY: Final[str] = "args"
+"""Key beside a ``bind`` or ``call`` opener holding the target's arguments by name.
+
+Dev Notes:
+    docs-dev/architecture/callables.md#spec-grammar
+"""
+
+
 class MergeOptions(TypedDict, total=False):
     """The sources :func:`confarg.merge` and :func:`confarg.load` read, and how they read them.
 

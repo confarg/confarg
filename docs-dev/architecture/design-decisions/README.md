@@ -43,7 +43,6 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [A cast names a type the field holds](a-cast-names-a-type-the-field-holds.md) | no channel's cast places a value the field's annotation does not accept, so an unheld cast is refused everywhere alike |
 | [A shadowed tag warns on use](a-shadowed-tag-warns-on-use.md) | the structural selection is named where the tag could have dispatched, and nowhere else |
 | [Strict CLI, lenient environment](strict-cli-lenient-environment.md) | an unknown flag is an error, an unknown variable a warning |
-| [A typed call's sibling needs its opener on the command line](a-typed-call-sibling-needs-its-opener-on-the-command-line.md) | `--n.x` below an `int` is an argument only where argv opens `--n.call`; a typo below an unopened field stays an error |
 | [The broader environment variable applies first](the-broader-environment-variable-applies-first.md) | nested variables merge as their flags typed broader first, whatever the mapping's order |
 
 ## Where a document comes from
@@ -69,8 +68,9 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [No implicit subclass inference](no-implicit-subclass-inference.md) | a subclass exists only once imported, so confarg never scans for one |
 | [A call spec yields to data the annotation can hold](call-yields-to-the-data-a-type-holds.md) | `call:` fills any typed field, except where a dict type, `Any` or a member named `call` holds the key as data |
 | [Class names a subclass; call computes](class-names-a-subclass-call-computes.md) | `class:` on a typed field names a subclass of it, and an unrelated class is refused; `call:` computes a value the annotation accepts, so it is no way around the refusal |
-| [Bind yields a partial of its target](bind-yields-a-partial-of-its-target.md) | `bind:` is an opener whose siblings are its target's arguments; `fn:` and the `bind:` kwargs dict are removed outright, with no migration table |
-| [Classfn names an instance method](classfn-names-an-instance-method.md) | `classfn:` siblings build the owner the path names; static and class methods need no owner; `call:` takes any callable spec as `bind:` does |
+| [Bind yields a partial of its target](bind-yields-a-partial-of-its-target.md) | `bind:` is an opener whose `args` are its target's arguments; `fn:` and the `bind:` kwargs dict are removed outright, with no migration table |
+| [A computation's arguments nest under args](a-computations-arguments-nest-under-args.md) | `bind:` and `call:` hold their arguments under `args`, `class:` and `classfn:` their fields beside them; the escaped openers and the CLI's opener scan are gone |
+| [Classfn names an instance method](classfn-names-an-instance-method.md) | `classfn:` fields build the owner the path names; static and class methods need no owner; `call:` takes any callable spec as `bind:` does |
 | [Class names the type it builds](class-names-the-type-it-builds.md) | `class:` and a `classfn:` owner are built exactly as named, never through subclass dispatch |
 | [Stealing rule for text in unions](stealing-rule-for-text-in-unions.md) | a total, fixed rank; declaration order is only a tie-break |
 | [A registered leaf is never a struct variant](registered-leaf-is-never-a-struct-variant.md) | registration is a promise that the type is opaque to every implicit decision |

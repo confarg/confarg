@@ -15,11 +15,12 @@ import functools
 import inspect
 import types
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, cast, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, NoReturn, cast, get_args, get_origin, get_type_hints
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Mapping
 
+from confarg import _defaults
 from confarg._import import _import_dotted, dotted_name, imports_back
 from confarg._types import (
     _callable_param_types,
@@ -155,8 +156,8 @@ def _maybe_bind_method(func: Any, path_str: str, where: str) -> Any:
             f"{path_str} is an instance method, so its owner is built with no arguments. To build"
             f" {owner.__qualname__} with arguments, name the method with 'classfn:', its other keys"
             f" the constructor's arguments:\n{spec}\n"
-            "Under 'bind:' or 'call:', that spec is the target, and the keys beside it are the"
-            " method's own arguments."
+            "Under 'bind:' or 'call:', that spec is the target, and the mapping under 'args' holds"
+            " the method's own arguments."
         )
         raise TypeCoercionError(msg) from e
     return getattr(instance, path_str.rpartition(".")[2])
@@ -211,26 +212,20 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, union_tag: str, 
 
     Dict with 'bind' key:
       - The target, resolved as a bare string is (or, when it is a dict, as a callable spec
-        of its own), with the sibling kwargs partially applied: functools.partial(target,
-        **siblings). With no sibling, the target itself, so '{bind: T}' and 'T' are one spec.
+        of its own), with the kwargs under 'args' partially applied: functools.partial(target,
+        **args). With no argument, the target itself, so '{bind: T}' and 'T' are one spec.
 
     Dict with 'class' key:
-      - Instantiate the class with the sibling kwargs; the instance is the callable
-        (it must define __call__).
+      - Instantiate the class with the other keys as its fields; the instance is the
+        callable (it must define __call__).
 
     Dict with 'call' key:
-      - Call the target (a dotted path, or a callable spec of its own) with the sibling
-        kwargs; its return value is the callable.
+      - Call the target (a dotted path, or a callable spec of its own) with the kwargs
+        under 'args'; its return value is the callable.
 
     Dict with 'classfn' key:
-      - Build the owner of the instance method it names from the sibling kwargs; the
-        bound method is the callable.
-
-    Escaped mode (collision escape):
-      - Each opener also has a single-underscore form ('_bind', '_class', '_call',
-        '_classfn'). Using an escaped opener switches the whole spec to escaped mode, where
-        every plain word — including 'bind', 'class', 'call', 'classfn' — is an ordinary
-        kwarg of the target.
+      - Build the owner of the instance method it names from the other keys; the bound
+        method is the callable.
     """
     where = _spell_field_path(path)
     if isinstance(spec, str):
@@ -295,7 +290,7 @@ def _resolve_target(target: Any, tp: Any, ctx: _SpecContext, opener: str) -> Any
         return obj
     msg = (
         f"{opener!r} at '{ctx.where}' takes a dotted path or a callable spec, got {_src_type(target)}."
-        f" The target's arguments are the spec's other keys: {{{opener}: <target>, <arg>: <value>}}."
+        f" The target's arguments go under 'args': {{{opener}: <target>, args: {{<name>: <value>}}}}."
     )
     raise TypeCoercionError(msg)
 
@@ -357,8 +352,7 @@ def _acceptable_kwarg_names(params: Mapping[str, inspect.Parameter]) -> set[str]
     """Return the names *params* can be filled by keyword, or None when anything goes.
 
     None means "unanswerable": a ``**kwargs`` parameter accepts every name, so no name
-    can be called invalid. The one canonical answer, shared by kwarg validation
-    (:func:`_coerce_kwargs`) and the mixed-form check (:func:`_reject_mixed_form_kwargs`).
+    can be called invalid.
     """
     if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
         return None
@@ -400,10 +394,7 @@ def _coerce_kwargs(  # noqa: PLR0913  # kind and subject only word the refusal
     if valid is not None:
         invalid = sorted(set(kwargs) - valid)
         if invalid:
-            msg = (
-                f"Unknown {kind} {invalid} for {subject} at '{ctx.where}'."
-                f" Valid parameters: {sorted(valid)}.{_mixed_form_hint(invalid)}"
-            )
+            msg = f"Unknown {kind} {invalid} for {subject} at '{ctx.where}'. Valid parameters: {sorted(valid)}."
             raise TypeCoercionError(msg)
 
     coerced: dict = {}
@@ -422,14 +413,15 @@ def _resolve_call_kwargs(func: Any, kwargs: dict, ctx: _SpecContext) -> dict:
     return _coerce_kwargs(func, _hints_source(func), kwargs, ctx, kind="kwargs", subject=subject)
 
 
-def _call_factory(target: Any, call_kwargs: dict, ctx: _SpecContext, opener: str) -> Any:
-    """Call the target a ``call:`` *opener* names with ``call_kwargs`` and return its value, unchecked.
+def _call_factory(target: Any, call_kwargs: dict, ctx: _SpecContext) -> Any:
+    """Call the target a ``call:`` spec at *ctx* names with ``call_kwargs`` and return its value, unchecked.
 
     The target resolves as a ``bind:`` target does (:func:`_resolve_target`), with no
-    Callable to check a class against: calling a class builds the instance.
+    Callable to check a class against: calling a class builds the instance. The arguments
+    are built below ``args``, where the spec holds them.
     """
-    func = _resolve_target(target, None, ctx, opener)
-    coerced = _resolve_call_kwargs(func, call_kwargs, ctx)
+    func = _resolve_target(target, None, ctx, _defaults.CALL_KEY)
+    coerced = _resolve_call_kwargs(func, call_kwargs, ctx.at(_defaults.ARGS_KEY))
     try:
         return func(**coerced)
     except Exception as e:
@@ -437,7 +429,7 @@ def _call_factory(target: Any, call_kwargs: dict, ctx: _SpecContext, opener: str
         raise TypeCoercionError(msg) from e
 
 
-def _resolve_call_spec(target: Any, call_kwargs: dict, ctx: _SpecContext, opener: str) -> Any:
+def _resolve_call_spec(target: Any, call_kwargs: dict, ctx: _SpecContext) -> Any:
     """Resolve a 'call:' spec: call its target with call_kwargs, and use the return value as the callable.
 
     The result keeps no trace of the spec: it dumps as what it is, never as the call.
@@ -445,7 +437,7 @@ def _resolve_call_spec(target: Any, call_kwargs: dict, ctx: _SpecContext, opener
     Dev Notes:
         docs-dev/architecture/design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state
     """
-    result = _call_factory(target, call_kwargs, ctx, opener)
+    result = _call_factory(target, call_kwargs, ctx)
     if not callable(result):
         msg = (
             f"'call:' at '{ctx.where}': {target!r}(**{call_kwargs!r}) returned {type(result).__name__!r},"
@@ -455,188 +447,140 @@ def _resolve_call_spec(target: Any, call_kwargs: dict, ctx: _SpecContext, opener
     return result
 
 
-@dataclass(frozen=True)
-class _Directives:
-    """The directive key names active for a spec, in either plain or escaped mode.
-
-    A callable dict names its target with exactly one *opener*: ``bind`` (a partial of
-    the target), ``class`` (an instance), ``call`` (a return value) or ``classfn`` (an
-    instance method, bound to an owner built from the other keys). Every other key is an
-    argument of the target. The escaped mode uses the single-underscore forms
-    (``_bind``/``_class``/``_call``/``_classfn``) and treats every plain word as an
-    ordinary kwarg. The opener's form selects the mode for the whole spec.
-
-    Dev Notes:
-        docs-dev/architecture/callables.md#plain-and-escaped-directives
-    """
-
-    bind: str
-    cls: str
-    call: str
-    classfn: str
-
-    @property
-    def openers(self) -> tuple[str, str, str, str]:
-        return (self.bind, self.cls, self.call, self.classfn)
-
-    @property
-    def reserved(self) -> frozenset[str]:
-        return frozenset(self.openers)
-
-    @property
-    def by_mode(self) -> dict[str, str]:
-        """Return each opener's name in this form, keyed by its plain spelling (the mode)."""
-        return dict(zip(_PLAIN_DIRECTIVES.openers, self.openers, strict=True))
-
-
-_PLAIN_DIRECTIVES = _Directives(bind="bind", cls="class", call="call", classfn="classfn")
-_ESCAPED_DIRECTIVES = _Directives(bind="_bind", cls="_class", call="_call", classfn="_classfn")
-
-
-def active_directives(has_key: Callable[[str], bool]) -> _Directives:
-    """Pick the active directive names by the opener's form, via a key-presence predicate.
-
-    ``has_key(name)`` answers "is this directive key present?" — a spec dict passes
-    ``spec.__contains__``; the CLI passes a probe over its flat ``{flag}.{name}``
-    namespace. Use this everywhere plain-vs-escaped must be decided.
-
-    Escaped mode is selected when an escaped opener (``_bind``/``_class``/``_call``/
-    ``_classfn``) is present; otherwise plain mode. A directive word in the *other* form is ordinary
-    data: beside an escaped opener, a plain ``bind`` is a kwarg.
-
-    Dev Notes:
-        docs-dev/architecture/callables.md#plain-and-escaped-directives
-    """
-    if any(has_key(opener) for opener in _ESCAPED_DIRECTIVES.openers):
-        return _ESCAPED_DIRECTIVES
-    return _PLAIN_DIRECTIVES
+_OPENERS = (_defaults.BIND_KEY, _defaults.CLASS_KEY, _defaults.CALL_KEY, _defaults.CLASSFN_KEY)
+#: The openers that build an object: every other key of their spec is one of its fields.
+_OBJECT_OPENERS = (_defaults.CLASS_KEY, _defaults.CLASSFN_KEY)
+#: The openers that compute over a target: its arguments are the mapping under ``args``.
+_COMPUTATION_OPENERS = (_defaults.BIND_KEY, _defaults.CALL_KEY)
 
 
 def names_an_opener(name: str) -> bool:
-    """Return whether *name* is an opener key, in either the plain or the escaped form.
+    """Return whether *name* is an opener key: ``bind``, ``class``, ``call`` or ``classfn``.
 
     An opener names the target; every other key refines it. A flag addressing one is
     therefore a replacement for a spec already in hand, not a refinement of it.
     """
-    return name in _PLAIN_DIRECTIVES.openers or name in _ESCAPED_DIRECTIVES.openers
+    return name in _OPENERS
 
 
-def names_a_call(name: str) -> bool:
-    """Return whether *name* is the call key, in either the plain or the escaped form."""
-    return name in (_PLAIN_DIRECTIVES.call, _ESCAPED_DIRECTIVES.call)
+def opens_a_subtree(name: str) -> bool:
+    """Return whether the key *name* of a computation's spec holds a subtree rather than a value.
 
-
-def names_a_target_opener(name: str) -> bool:
-    """Return whether *name* is an opener whose value is a target, ``bind`` or ``call``, in either form.
-
-    Such a value is a dotted path or a callable spec of its own (:func:`_resolve_target`).
-    Both forms answer yes wherever a *path* is judged rather than a spec: a path does
-    not see the opener, and which form is the directive and which is ordinary data is
-    the opener's to decide, at construction.
+    A ``bind`` or ``call`` target is a dotted path or a callable spec of its own, and
+    ``args`` holds the target's arguments by name, so a path reaches below all three.
 
     Dev Notes:
-        docs-dev/architecture/callables.md#plain-and-escaped-directives
+        docs-dev/architecture/callables.md#spec-grammar
     """
-    return names_a_call(name) or name in (_PLAIN_DIRECTIVES.bind, _ESCAPED_DIRECTIVES.bind)
-
-
-def _mixed_form_hint(names: Iterable[str]) -> str:
-    """Explain rejected kwargs that are plain opener words beside an escaped opener.
-
-    Every directive is an opener, and any escaped opener selects the escaped mode
-    (:func:`active_directives`), so only a *plain* word can be left as ordinary data: an
-    escaped word always selects its own mode. The rejection is correct either way; the hint
-    says why the word ended up a kwarg, which is what the likely typo needs to hear. Returns
-    ``""`` when no name is a plain opener.
-
-    Dev Notes:
-        docs-dev/architecture/callables.md#plain-and-escaped-directives
-    """
-    return "".join(
-        f" {name!r} is the plain spelling of the {escaped!r} opener, but this spec's opener is"
-        f" escaped, so {name!r} is ordinary data here. A spec has one opener, and its form"
-        f" selects how every other key reads."
-        for name, escaped in zip(_PLAIN_DIRECTIVES.openers, _ESCAPED_DIRECTIVES.openers, strict=True)
-        if name in set(names)
-    )
-
-
-def _reject_mixed_form_kwargs(target: Any, kwargs: dict, path: str) -> None:
-    """Raise if a kwarg is a directive word in the inactive form that *target* cannot accept.
-
-    The constructor rejects it anyway, through the shared struct construction that knows
-    nothing of directives; catching it here is what lets the message name the mixed form.
-    A name the target *does* accept is left alone — reaching a parameter that collides
-    with a directive word is exactly what the escaped form exists for.
-    """
-    stray = set(kwargs) & _PLAIN_DIRECTIVES.reserved
-    if not stray:
-        return
-    try:
-        sig = inspect.signature(target)
-    except (ValueError, TypeError):
-        return  # uninspectable (C extension etc.): construction has the last word
-    valid = _acceptable_kwarg_names(sig.parameters)
-    if valid is None:
-        return
-    invalid = sorted(stray - valid)
-    if invalid:
-        msg = f"Unknown constructor kwarg(s) {invalid} for the Callable spec at {path!r}.{_mixed_form_hint(invalid)}"
-        raise TypeCoercionError(msg)
+    return name in (*_COMPUTATION_OPENERS, _defaults.ARGS_KEY)
 
 
 def promote_bare_spec(spec: str) -> dict[str, Any]:
     """Return the dict spec that the bare-string shorthand *spec* is the shorthand for.
 
     ``"pkg.func"`` and ``{bind: "pkg.func"}`` are two spellings of one spec and resolve to
-    the same object, so a bare string that a sibling key refines is opened into its dict
-    form rather than discarded. The bare string is itself a *plain* opener — it has no
-    escaped spelling — so the plain directive names are the active ones, and an escaped
-    key sitting beside it is ordinary data, exactly as it is beside a plain ``bind:``.
+    the same object, so a bare string that a deeper key refines is opened into its dict
+    form rather than discarded.
 
     Dev Notes:
         docs-dev/architecture/callables.md#spec-grammar
     """
-    return {_PLAIN_DIRECTIVES.bind: spec}
+    return {_defaults.BIND_KEY: spec}
 
 
-def _select_directives(spec: dict) -> _Directives:
-    """Pick the active directives for a spec dict (see :func:`active_directives`)."""
-    return active_directives(spec.__contains__)
+def _refuse_openers(present: list[str], where: str) -> NoReturn:
+    """Refuse a spec holding *present*, which is not exactly one opener."""
+    if present:
+        msg = f"Callable dict at '{where}' must not specify more than one of {list(_OPENERS)} (got: {present})"
+    else:
+        *head, last = (repr(o) for o in _OPENERS)
+        msg = f"Callable dict at '{where}' must specify one of {', '.join(head)} or {last}"
+    raise TypeCoercionError(msg)
 
 
-def _single_opener(spec: dict, d: _Directives, where: str) -> str:
-    """Return the one opener *spec* holds in the form *d* names, raising unless there is exactly one."""
-    present = [k for k in d.openers if k in spec]
-    if len(present) > 1:
-        msg = f"Callable dict at '{where}' must not specify more than one of {list(d.openers)} (got: {present})"
+def _spec_parts(spec: dict, where: str) -> tuple[str, dict]:
+    """Return the one opener of *spec* and the arguments of what it builds.
+
+    ``class`` and ``classfn`` build an object, so every other key is one of its fields, a
+    field named like another opener included. ``bind`` and ``call`` compute over a target
+    (:func:`_computation_parts`).
+
+    Raises:
+        TypeCoercionError: on two openers of one kind, on none, and as
+            :func:`_computation_parts` does.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#spec-grammar
+    """
+    present = _competing_openers(spec)
+    if len(present) != 1:
+        _refuse_openers(present, where)
+    opener = present[0]
+    if opener in _OBJECT_OPENERS:
+        return opener, {k: v for k, v in spec.items() if k != opener}
+    return _computation_parts(spec, where)
+
+
+def _competing_openers(spec: dict) -> list[str]:
+    """Return the openers *spec* holds that compete to open it: its object openers, else its computation ones.
+
+    An object opener takes every other key as a field, so beside one, a ``bind`` or ``call``
+    word is a field and competes for nothing.
+    """
+    objects = [k for k in _OBJECT_OPENERS if k in spec]
+    return objects or [k for k in _COMPUTATION_OPENERS if k in spec]
+
+
+def spec_opener(spec: dict) -> str | None:
+    """Return the opener construction reads *spec* by (:func:`_spec_parts`), None when it holds no single one."""
+    present = _competing_openers(spec)
+    return present[0] if len(present) == 1 else None
+
+
+def _computation_parts(spec: dict, where: str) -> tuple[str, dict]:
+    """Return the ``bind`` or ``call`` opener of *spec* and the target's arguments, the mapping under ``args``.
+
+    Raises:
+        TypeCoercionError: on both openers or neither, on a key beside them other than
+            ``args``, and on an ``args`` that is no mapping.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#spec-grammar
+    """
+    present = [k for k in _COMPUTATION_OPENERS if k in spec]
+    if len(present) != 1:
+        _refuse_openers(present, where)
+    opener = present[0]
+    stray = sorted(str(k) for k in spec if k not in (opener, _defaults.ARGS_KEY))
+    if stray:
+        msg = (
+            f"Callable dict at '{where}' holds {stray} beside {opener!r}: the target's arguments"
+            f" go under 'args', {{{opener}: <target>, args: {{<name>: <value>}}}}."
+        )
         raise TypeCoercionError(msg)
-    if not present:
-        *head, last = (repr(o) for o in _PLAIN_DIRECTIVES.openers)
-        msg = f"Callable dict at '{where}' must specify one of {', '.join(head)} or {last} (or their _-prefixed forms)"
+    args = spec.get(_defaults.ARGS_KEY, {})
+    if not isinstance(args, dict):
+        msg = f"'args' at '{where}' takes the target's arguments by name, got {_src_type(args)}."
         raise TypeCoercionError(msg)
-    return present[0]
+    return opener, args
 
 
 def _resolve_dict_spec(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
-    """Resolve a dict callable spec: one opener (bind/class/call/classfn) and its sibling keys.
+    """Resolve a dict callable spec: one opener (bind/class/call/classfn) and the arguments of what it builds.
 
-    The siblings are the arguments of the target the opener names, and under ``classfn``
-    those of the method's owner. Directive keys come in a plain and a
-    single-underscore-escaped form; the opener selects which (see
-    :func:`_select_directives`). *tp* is the Callable annotation, which a ``bind:`` target
-    that is a class is checked against.
+    The arguments are the mapping under ``args`` for ``bind`` and ``call``, and the other
+    keys for ``class`` and for ``classfn``, whose owner they build (:func:`_spec_parts`).
+    *tp* is the Callable annotation, which a ``bind:`` target that is a class is checked
+    against.
     """
-    d = _select_directives(spec)
-    opener = _single_opener(spec, d, ctx.where)
-    kwargs = {k: v for k, v in spec.items() if k not in d.reserved}
-    if opener == d.call:
-        return _resolve_call_spec(spec[d.call], kwargs, ctx, d.call)
-    if opener == d.bind:
-        return _resolve_bind_spec(spec[d.bind], kwargs, tp, ctx, d.bind)
-    if opener == d.classfn:
-        return _resolve_classfn_spec(spec[d.classfn], kwargs, spec, ctx, d.classfn)
-    return _resolve_class_spec(_ClassSpec(spec[d.cls], kwargs, spec, d.cls), ctx)
+    opener, args = _spec_parts(spec, ctx.where)
+    if opener == _defaults.CALL_KEY:
+        return _resolve_call_spec(spec[opener], args, ctx)
+    if opener == _defaults.BIND_KEY:
+        return _resolve_bind_spec(spec[opener], args, tp, ctx)
+    if opener == _defaults.CLASSFN_KEY:
+        return _resolve_classfn_spec(spec[opener], args, spec, ctx)
+    return _resolve_class_spec(_ClassSpec(spec[opener], args, spec), ctx)
 
 
 def _accepts(tp: Any, value: Any) -> bool:
@@ -657,18 +601,17 @@ def _accepts(tp: Any, value: Any) -> bool:
 def resolve_typed_call(spec: dict, tp: Any, path: FieldPath, union_tag: str, construct_fn: Any) -> Any:
     """Build a non-Callable value from a ``call:`` spec: call the function and take its value as the field's.
 
-    The sibling keys are the function's arguments. A value the annotation already accepts is
-    returned as it is; any other is built as ``tp`` from the raw value, so a wrong type fails the
-    way a wrong literal does. A second opener beside ``call`` is refused, as in a Callable spec.
+    The mapping under ``args`` holds the function's arguments. A value the annotation already
+    accepts is returned as it is; any other is built as ``tp`` from the raw value, so a wrong
+    type fails the way a wrong literal does. A ``bind`` beside ``call`` is a second opener,
+    and any other key beside it is refused, as in a Callable spec (:func:`_computation_parts`).
 
     Dev Notes:
         docs-dev/architecture/callables.md#call-in-a-typed-field
     """
     ctx = _SpecContext(path, union_tag, construct_fn)
-    d = _select_directives(spec)
-    _single_opener(spec, d, ctx.where)
-    kwargs = {k: v for k, v in spec.items() if k not in d.reserved}
-    value = _call_factory(spec[d.call], kwargs, ctx, d.call)
+    _opener, kwargs = _computation_parts(spec, ctx.where)
+    value = _call_factory(spec[_defaults.CALL_KEY], kwargs, ctx)
     if _accepts(tp, value):
         return value
     return ctx.construct(tp, value)
@@ -691,7 +634,7 @@ def _hints_source(callable_obj: Any) -> Any:
 
 
 def _resolve_bind_kwargs(callable_obj: Any, bind: dict, ctx: _SpecContext) -> dict:
-    """Validate and typed-construct a ``bind:`` spec's sibling kwargs against callable_obj's signature.
+    """Validate and typed-construct a ``bind:`` spec's arguments against callable_obj's signature.
 
     Values go through :func:`_coerce_kwargs`, so bound arguments get full typed
     construction (enums, dataclasses, lists, unions) and bad values raise.
@@ -711,34 +654,35 @@ def _resolve_bind_kwargs(callable_obj: Any, bind: dict, ctx: _SpecContext) -> di
     )
 
 
-def _resolve_bind_spec(target: Any, kwargs: dict, tp: Any, ctx: _SpecContext, opener: str) -> Any:
+def _resolve_bind_spec(target: Any, kwargs: dict, tp: Any, ctx: _SpecContext) -> Any:
     """Resolve a ``bind:`` spec: ``functools.partial(target, **kwargs)``.
 
-    *target* is what the *opener* key holds, resolved by :func:`_resolve_target`. The
-    sibling *kwargs* are built at *ctx*, the spec's own path, against the target's
-    signature. With no sibling the target is the result, so ``{bind: T}`` and the bare
+    *target* is what the ``bind`` key holds, resolved by :func:`_resolve_target`. The
+    *kwargs*, the mapping under ``args``, are built below it against the target's
+    signature. With no argument the target is the result, so ``{bind: T}`` and the bare
     ``"T"`` are one spec.
 
     Dev Notes:
         docs-dev/architecture/callables.md#spec-grammar
     """
-    obj = _resolve_target(target, tp, ctx, opener)
+    obj = _resolve_target(target, tp, ctx, _defaults.BIND_KEY)
     if not kwargs:
         return _as_callable(obj)
-    return functools.partial(obj, **_resolve_bind_kwargs(obj, kwargs, ctx))
+    return functools.partial(obj, **_resolve_bind_kwargs(obj, kwargs, ctx.at(_defaults.ARGS_KEY)))
 
 
-def _resolve_classfn_spec(method_path: Any, init_kwargs: dict, original: dict, ctx: _SpecContext, opener: str) -> Any:
+def _resolve_classfn_spec(method_path: Any, init_kwargs: dict, original: dict, ctx: _SpecContext) -> Any:
     """Resolve a ``classfn:`` spec: build the method's owner from *init_kwargs*, and return the bound method.
 
     *method_path* must name an instance method (:func:`_instance_method_owner`). The
-    sibling keys are the owner's constructor arguments, built as a ``class:`` spec's are;
-    the method's own arguments sit beside a ``bind:`` or ``call:`` whose target this spec
+    other keys are the owner's fields, built as a ``class:`` spec's are; the method's own
+    arguments sit under the ``args`` of a ``bind:`` or ``call:`` whose target this spec
     is. The owner is stamped with *original*, which is how the bound method dumps back.
 
     Dev Notes:
         docs-dev/architecture/callables.md#classfn-builds-the-owner
     """
+    opener = _defaults.CLASSFN_KEY
     if not isinstance(method_path, str):
         msg = f"{opener!r} at '{ctx.where}' takes the dotted path of an instance method, got {_src_type(method_path)}."
         raise TypeCoercionError(msg)
@@ -748,10 +692,9 @@ def _resolve_classfn_spec(method_path: Any, init_kwargs: dict, original: dict, c
         msg = (
             f"{opener!r} at '{ctx.where}' names an instance method, and {method_path!r} is not one:"
             " a function, a class, a static or a class method needs no owner to be built."
-            f" Name it with 'bind: {method_path}', its other keys its own arguments."
+            f" Name it with 'bind: {method_path}', its own arguments under 'args'."
         )
         raise TypeCoercionError(msg)
-    _reject_mixed_form_kwargs(owner, init_kwargs, ctx.where)
     instance = ctx.instantiate(owner, init_kwargs, method_path.rpartition(".")[0], opener)
     with contextlib.suppress(AttributeError, TypeError):
         instance.__confarg_spec__ = original
@@ -765,32 +708,30 @@ class _ClassSpec:
     cls_path: str
     init_kwargs: dict
     original: dict
-    opener: str
 
 
 def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
     """Resolve a 'class:' callable spec: instantiate the class; the instance is the callable.
 
-    ``init_kwargs`` (sibling keys) are the constructor arguments; the instance must be
+    ``init_kwargs`` (the other keys) are the constructor arguments; the instance must be
     callable (define ``__call__``). A partial over the instance is a ``bind:`` spec whose
     target is this one.
 
     To use a class as a *factory* (calling it constructs an instance), give its bare
-    fully-qualified name, or ``bind: <class>`` with sibling keys for pre-applied constructor args.
+    fully-qualified name, or ``bind: <class>`` with pre-applied constructor args under ``args``.
     """
     cls = _import_dotted(spec.cls_path)
     if not isinstance(cls, type):
         msg = f"'class' key at '{ctx.where}' must reference a class, got {type(cls).__name__} {spec.cls_path!r}"
         raise TypeCoercionError(msg)
 
-    _reject_mixed_form_kwargs(cls, spec.init_kwargs, ctx.where)
-    instance = ctx.instantiate(cls, spec.init_kwargs, spec.cls_path, spec.opener)
+    instance = ctx.instantiate(cls, spec.init_kwargs, spec.cls_path, _defaults.CLASS_KEY)
     if not callable(instance):
         msg = (
             f"Instance of {spec.cls_path!r} at '{ctx.where}' is not callable: the class must define"
             f" __call__ to be used as a Callable via 'class:'. To use {spec.cls_path} as a"
             f" factory (calling it constructs an instance), give its bare name"
-            f" '{spec.cls_path}', or 'bind: {spec.cls_path}' with its constructor args as sibling keys."
+            f" '{spec.cls_path}', or 'bind: {spec.cls_path}' with its constructor args under 'args'."
         )
         raise TypeCoercionError(msg)
     with contextlib.suppress(AttributeError, TypeError):
@@ -832,31 +773,12 @@ def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
         raise TypeCoercionError(msg)
 
 
-def _form_holding(names: Iterable[str]) -> _Directives | None:
-    """Return the directive form whose ``bind:`` spec reads *names* back as its arguments, or None.
-
-    The form is the one :func:`active_directives` selects for the spec written in it, and
-    none of *names* may be an opener of that form. A plain opener word is held by the escaped
-    form; an escaped one opens a spec in either form, so no spec holds it.
-
-    Dev Notes:
-        docs-dev/architecture/callables.md#round-trip
-    """
-    names = set(names)
-    for d in (_PLAIN_DIRECTIVES, _ESCAPED_DIRECTIVES):
-        if not names & d.reserved and active_directives({d.bind, *names}.__contains__) is d:
-            return d
-    return None
-
-
 def _serialize_callable(value: Any) -> str | dict:
     """Serialize a callable value back to its config representation.
 
     Class instance with __confarg_spec__ → stored spec dict (e.g. {class: ...}).
     Method bound to an owner a classfn: spec built → that spec, stamped on the owner.
-    Partial with pre-bound kwargs → {bind: <its target, serialized>, k: v}, in the escaped
-    form when a kwarg is spelled like a plain opener (:func:`_form_holding`); one spelled like
-    an escaped opener is refused, as no spec holds it.
+    Partial with pre-bound kwargs → {bind: <its target, serialized>, args: {k: v}}.
     Bare partial (a class used factory-like, no kwargs) → "module.qualname" string.
     Plain callable → "module.qualname" string, when that path reads back as it
     (:func:`_reads_back_from`); a closure, a lambda or a shadowed name is refused.
@@ -868,22 +790,13 @@ def _serialize_callable(value: Any) -> str | dict:
 
     if inspect.ismethod(value):
         owner_spec = getattr(value.__self__, "__confarg_spec__", None)
-        if isinstance(owner_spec, dict) and _select_directives(owner_spec).classfn in owner_spec:
+        if isinstance(owner_spec, dict) and _defaults.CLASSFN_KEY in owner_spec:
             return owner_spec
 
     if isinstance(value, functools.partial):
         target = _serialize_callable(value.func)
         if value.keywords:
-            d = _form_holding(value.keywords)
-            if d is None:
-                stuck = sorted(set(value.keywords) & _ESCAPED_DIRECTIVES.reserved)
-                msg = (
-                    f"Cannot serialize callable {value!r}: its keyword(s) {stuck} are spelled like an"
-                    " escaped opener, which opens a spec in either form, so no 'bind:' spec can hold them"
-                    " as arguments."
-                )
-                raise ConfargError(msg)
-            return {d.bind: target, **value.keywords}
+            return {_defaults.BIND_KEY: target, _defaults.ARGS_KEY: dict(value.keywords)}
         return target
 
     if getattr(value, "__module__", None) and getattr(value, "__qualname__", None):

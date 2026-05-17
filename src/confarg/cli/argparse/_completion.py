@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     import argparse
 
 from confarg import _defaults
-from confarg._callable import _PLAIN_DIRECTIVES
+from confarg._callable import _OPENERS
 from confarg._tags import _partial_config_from_argv, _tag_named_struct, _tags_from_argv, _tags_from_config
 from confarg._types import (
     _is_callable,
@@ -105,7 +105,7 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
             specs.append(_build_leaf_spec(flag, raw_type, core, help_text, group, group_description))
             ctx.existing_dests.add(flag)
         specs.extend(_build_callable_fn_specs(flag, group, group_description))
-        ctx.existing_dests.update(f"{flag}.{opener}" for opener in _PLAIN_DIRECTIVES.openers)
+        ctx.existing_dests.update(f"{flag}.{opener}" for opener in _OPENERS)
         return specs
 
     if _is_struct(core):
@@ -257,14 +257,14 @@ def _pre_extend_parser_for_completion(
 
         for field_flag, target_path, mode, grouped in _callable_argument_targets(target, argv, config_dict, union_tag):
             try:
-                sibling_specs = _collect_callable_field_specs(
+                argument_specs = _collect_callable_field_specs(
                     in_prefix(field_flag, cli_prefix),
                     target_path,
                     mode,
                     walk_ctx.existing_dests,
                     grouped=grouped,
                 )
-                load_flags_into_parser(sibling_specs, parser)
+                load_flags_into_parser(argument_specs, parser)
             except Exception:  # noqa: BLE001 — completion must never crash
                 _log.debug("callable argument flags: skipping %r", target_path, exc_info=True)
                 continue
