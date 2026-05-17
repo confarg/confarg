@@ -7,7 +7,7 @@ In the [previous tutorial](../1_three_input_sources/README.md), we saw that a co
 
 ## Input precedence
 
-It is not an error to have the same configuration element defined several times across the different inputs. When confarg reads a new value for an existing entry, the value is overwritten. This enables to update a configuration in a variety of ways.
+It is not an error to have the same configuration element defined several times across the different inputs. When confarg reads a new value for an existing entry, the new value overwrites the old one. This enables to update a configuration in a variety of ways.
 
 Therefore, it is important to know the order in which inputs are read, knowing that later reads overwrite existing values:
 
@@ -71,14 +71,14 @@ DBConfig(host='example.com', port=5678, schema_name='mydb')
 
 The `--config` option can take multiple arguments. The provided configuration files are read from left to right. This can be used to either amend part of an existing configuration, or build a full configuration from various parts.
 
-In the example below, the data from `config_no_schema` overwrites `config` — note the port number. The `schema_name` from `config` is kept as it is missing from `config_no_schema`.
+In the example below, the data from `config_no_schema.yaml` overwrites the data in `config.yaml` — note the port number. The `schema_name` from `config.yaml` is kept as it is missing from `config_no_schema.yaml`.
 
 ```console
 $ uv run myapp.py --config config.yaml config_no_schema.yaml
 DBConfig(host='example.com', port=5678, schema_name='mydb')
 ```
 
-The order matters since the resolution is from left to right. If we invert the order of the arguments, `config_no_schema` gets entirely overwritten by the complete `config`.
+The order matters since the resolution is from left to right. If we invert the order of the arguments, `config_no_schema.yaml` gets entirely overwritten by the complete `config.yaml`.
 
 ```console
 $ uv run myapp.py --config config_no_schema.yaml config.yaml

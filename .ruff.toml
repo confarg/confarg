@@ -43,6 +43,8 @@ select = [
 [lint.per-file-ignores]
 "examples/**" = [
     "D100", # undocumented-public-module
+    "D105", # undocumented-magic-method
+    "D107", # undocumented-public-init
 ]
 "tests/**" = [
     "ANN",     # flake8-annotations

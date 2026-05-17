@@ -82,4 +82,4 @@ DBConfig(host='example.com', port=1234, schema_name='mydb')
 ```
 
 > [!NOTE] Integration with CLIs
-> `confarg.load` consumes command-line arguments without advertisement. It is suited for simple tools and, as is the case here, for demonstrating the functionality of the library. The subject of integration with CLIs is an entire topic of its own and we cover it in a later tutorial.
+> `confarg.load` consumes command-line arguments without generating inline help to expose them to the user. It is suited for simple tools and, as is the case here, for demonstrating the functionality of the library. The subject of integration with CLIs is an entire topic of its own and we cover it in a later tutorial.

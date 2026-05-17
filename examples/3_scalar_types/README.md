@@ -1,5 +1,9 @@
 # Scalar types
 
+> [!TIP]
+> Code for examples in this page can be found in [`examples/3_scalar_types`](https://github.com/confarg/confarg/tree/master/examples/3_scalar_types).
+
+
 Scalar types are the well-known type quintuplet (`int`, `float`, `bool`, `str`, `None`) that are the building blocks of any configurations. However, arguments in configuration files, environment variables, or command-line arguments are all strings by nature.
 
 In configuration files, the coercion into scalar types is handled by the file format. Typically, strings are quoted, while other scalar types are not, which enables to distinguish easily the string `"1"` from the number `1`. Refer to the specification of your favorite configuration file format for more details.
@@ -16,8 +20,6 @@ Config(value=1.0)
 $ uv run bool_value.py --value1 1 --value2 0
 Config(value1=True, value2=False)
 ```
-
-<!-- However, as we was this knowledge can be thin in complex or dynamic configuration types, the rules to specify scalar types is a bit more involved than one might be used to. -->
 
 This should not be too surprising to anyone used to CLIs. Let's review in more detail some specific coercion rules for scalar types in confarg.
 
@@ -87,7 +89,7 @@ $ uv run bool_value.py --value1 1 --value2 0
 Config(value1=True, value2=False)
 ```
 
-So in some sense, there is nothing special about them, yet the way they are specified on the command line in confarg departs from the convention used by `argparse` and most CLI libraries.
+So in some sense, there is nothing special about them, yet the way confarg specifies them on the command line departs from the convention used by `argparse` and most CLI libraries.
 
 ```console
 $ # Error: The `--flag` syntax does not work, confarg is expecting a value
@@ -106,7 +108,7 @@ confarg.exceptions.UnknownArgumentError: Unknown argument: --no-value1 (field 'n
 
 On top of being consistent with environment variables and configuration files, we will see later why this helps us in disambiguation scenarios.
 
-## Coercion of `none`
+## Coercion of `None`
 
 None values can be assigned to using the `none` or `null` string. As for booleans, the value must be explicitly set.
 
