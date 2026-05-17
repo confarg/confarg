@@ -1,0 +1,4 @@
+tag: postgre
+host: example.com
+name: mydb
+port: 1234

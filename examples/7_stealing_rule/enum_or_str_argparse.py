@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from enum import Enum
 from pprint import pprint
 
-import confarg
 import confarg.cli.argparse as confparse
 
 

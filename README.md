@@ -79,7 +79,7 @@ class DBConfig:
 In your app, you use `confarg` to instantiate this configuration:
 
 ```python
-db_config = confarg.load(DBConfig)
+config = confarg.load(DBConfig)
 ```
 
 This allows you to construct a `DBConfig` object by collecting data from three possible sources.
@@ -117,7 +117,7 @@ This allows you to construct a `DBConfig` object by collecting data from three p
     > Note that the environment variable prefix of your app should actually be passed to `confarg.load` like so:
     >
     > ```python
-    > db_config = confarg.load(DBConfig, env_prefix="MYAPP_")
+    > config = confarg.load(DBConfig, env_prefix="MYAPP_")
     > ```
 
 3. From command line arguments.
