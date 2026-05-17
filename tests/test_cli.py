@@ -428,6 +428,19 @@ class TestCliEqualsSign:
         result = confarg.load(Flat, argv=["--name=a=b", "--count=0", "--rate=0.0", "--verbose=true"], env={})
         assert result.name == "a=b"
 
+    def test_dashed_value_containing_equals(self) -> None:
+        """A dashed value keeps its own equals sign: the split happens once, not again."""
+        result = confarg.load(Flat, argv=["--name=--a=b", "--count=0", "--rate=0.0", "--verbose=true"], env={})
+        assert result.name == "--a=b"
+
+    def test_dashed_value_needs_the_equals_form(self) -> None:
+        """The space form does not bind a dashed value -- ``=`` is the only escape.
+
+        Matches argparse and cyclopts, which both refuse ``--key --value`` too.
+        """
+        with pytest.raises(confarg.exceptions.ConfargError, match=r"Missing value for '--name'"):
+            confarg.load(Flat, argv=["--name", "--dashed"], env={})
+
 
 # ---------------------------------------------------------------------------
 # CLI args disabled

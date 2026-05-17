@@ -2805,3 +2805,51 @@ class TestUnimportedSubclassContract:
         result = loader.load(base.Handler, argv=["--class", f"{plug}.FileHandler", "--path", "/x"], env={})
         assert type(result).__name__ == "FileHandler"
         assert result.path == "/x"
+
+
+@dataclass
+class _DashValued:
+    """One field per shape a ``--``-prefixed value has to reach."""
+
+    key: str = ""
+    tags: list[str] = dataclasses.field(default_factory=list)
+    d: dict[str, str] = dataclasses.field(default_factory=dict)
+
+
+class TestDashPrefixedValueContract:
+    """``--key=--value`` delivers a ``--``-prefixed value on every front-end.
+
+    The ``=`` form is the escape argparse, click and cyclopts all honor natively;
+    vanilla split it back into two tokens before any flag-check ran, so the value
+    was re-read as a flag.  The dict-subkey and append spellings go through the
+    shared argv scan, so they were broken in all four front-ends.
+    """
+
+    def test_scalar(self, loader: ConfargLoader) -> None:
+        """``--key=--value`` stores the dashed token as the field's value."""
+        assert loader.load(_DashValued, argv=["--key=--value"], env={}).key == "--value"
+
+    def test_scalar_single_dash(self, loader: ConfargLoader) -> None:
+        """A single-dash value needs no escape but must keep working through the ``=`` form."""
+        assert loader.load(_DashValued, argv=["--key=-v"], env={}).key == "-v"
+
+    def test_dict_subkey(self, loader: ConfargLoader) -> None:
+        """``--d.x=--v`` keys a dict with a dashed value."""
+        assert loader.load(_DashValued, argv=["--d.x=--v"], env={}).d == {"x": "--v"}
+
+    def test_list_element(self, loader: ConfargLoader) -> None:
+        """``--tags=--a`` gives a one-element list, and stops before the next real flag."""
+        cfg = loader.load(_DashValued, argv=["--tags=--a", "--key", "k"], env={})
+        assert cfg.tags == ["--a"]
+        assert cfg.key == "k"
+
+    def test_list_append(self, loader: ConfargLoader) -> None:
+        """``--tags+=--a`` appends a dashed element."""
+        cfg = loader.load(_DashValued, argv=["--tags", "x", "--tags+=--a"], env={})
+        assert cfg.tags == ["x", "--a"]
+
+    def test_only_the_eq_value_is_shielded(self, loader: ConfargLoader) -> None:
+        """The shield covers the ``=`` value alone: a following ``--`` token is still a flag."""
+        cfg = loader.load(_DashValued, argv=["--tags=--a", "--d.x=v"], env={})
+        assert cfg.tags == ["--a"]
+        assert cfg.d == {"x": "v"}

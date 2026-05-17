@@ -17,8 +17,16 @@ accepted as a dict key.
 
 ## Token consumption
 
-- `--key=value` is normalized to `--key value`.
-- A flag is `--` followed by a letter or `_`, so `-5` and `--3` are values.
+- `--key=value` is normalized to `--key value`. The value half comes back wrapped in
+  `_EqValue`, which is what makes `--key=--value` work: position already proved the token is
+  a value, so no later shape test may take it back
+  ([10](10-design-decisions.md#the--form-is-the-escape-for-a-dashed-value)). The wrapper also
+  makes the normalization idempotent, which the adapters need — `strip_argv_prefix` and the
+  dynamic-flag scans normalize before `_parse_cli` normalizes again.
+- A flag is `--` followed by a letter or `_`, so `-5` and `--3` are values. `_looks_like_flag`
+  is the sole discriminator and the sole reader of `_EqValue`; every value-consumption site
+  rewraps the token (`_StrToken`, `json.loads`, `Path`), so the marker never reaches a merged
+  dict.
 - Values run until the next flag: variable-length collections consume greedily and
   fixed-length ones consume exactly their arity. A value-taking flag always needs its value,
   struct flags included: `--db` with nothing after it is `Missing value for '--db'`

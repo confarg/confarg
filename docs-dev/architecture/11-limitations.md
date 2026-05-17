@@ -41,6 +41,9 @@ the boundary moves here.
 
 - A multi-token flag is spelled per framework: space-separated for vanilla/argparse/cyclopts,
   repeated for click/cyclopts ([04](04-cli-adapters.md#list-syntax-divergence)).
+- There is no end-of-options separator: a bare `--` is an ordinary token everywhere. A value
+  that starts with `--` is written `--key=--value`, the form every front-end honors
+  ([10](10-design-decisions.md#the--form-is-the-escape-for-a-dashed-value)).
 - A fixed-arity flag (`tuple[X, Y]`, namedtuple) takes one whole-value token — `--pair
   '[13, 42]'`, `--pair '{"x": 13}'` — everywhere except click, whose options cannot vary their
   token count at parse time. click keeps `--pair 13 42`, which is the spelling a CLI user
