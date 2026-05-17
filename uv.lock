@@ -326,7 +326,7 @@ dev = [
     { name = "ipython", specifier = ">=9.12.0" },
     { name = "jsonargparse", specifier = ">=4.48.0" },
     { name = "just", specifier = ">=0.8.165" },
-    { name = "markdown-code-snippet", specifier = "==0.0.1.dev1" },
+    { name = "markdown-code-snippet", specifier = "==0.0.1.dev2" },
     { name = "mkdocstrings", specifier = ">=1.0.4" },
     { name = "mkdocstrings-python", specifier = ">=2.0.3" },
     { name = "pre-commit", specifier = ">=4.5.1" },
@@ -857,11 +857,11 @@ wheels = [
 
 [[package]]
 name = "markdown-code-snippet"
-version = "0.0.1.dev1"
+version = "0.0.1.dev2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/48/0f/ceafb03ea1c9f52433ee466f13d7486718143d5893df19ef323736c1174c/markdown_code_snippet-0.0.1.dev1.tar.gz", hash = "sha256:d6add361982d1dd48652d84dcdc2a3ddd6aedc641c5598f01940e717e46fd37c", size = 19729, upload-time = "2026-09-27T10:08:44.831Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/cc/ace1b16d724fc84fee751b79afa9e3bb25ebaf6cd89b852552188bdfba5f/markdown_code_snippet-0.0.1.dev2.tar.gz", hash = "sha256:7117e6ee8b71695a7d24ad63624d6eaae65e0f82b093c2bc479ed9fcc5089f92", size = 21782, upload-time = "2026-10-04T10:01:24.599Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/14/fb/2a5005cccb4c189d16364766a14859508b5430d6da8be1bb92030466a52b/markdown_code_snippet-0.0.1.dev1-py3-none-any.whl", hash = "sha256:fd4ec9df69a83eb06bf50284f777f97da0ad5fd626ff0f7395b44c189be1641f", size = 28509, upload-time = "2026-09-27T10:08:43.474Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/66/6d2fb685aac786e5a3a5eedb90985656f7f0999f89697f20d329dae50bdd/markdown_code_snippet-0.0.1.dev2-py3-none-any.whl", hash = "sha256:0b749597e32f99d81528a09857e54ccf8c373549bcfb0fa3f5b8f602a042c4f9", size = 31430, upload-time = "2026-10-04T10:01:23.299Z" },
 ]
 
 [[package]]
