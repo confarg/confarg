@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-from confarg._cast import FORCE_CAST_NAMES, resolve_forced_value
+from confarg._cast import FORCE_CAST_NAMES, JSON_CAST_NAME, resolve_forced_value
 from confarg._merge import (
     DICT_DELETE,
     LIST_APPEND_KEY,
@@ -22,6 +22,7 @@ from confarg._merge import (
     LIST_POST_APPEND_DELETE_KEY,
     LIST_REPLACE_BASE_KEY,
     _accumulate_list_delete,
+    _deep_merge,
     _set_nested,
 )
 from confarg._types import (
@@ -232,12 +233,18 @@ def detect_force_cast(path: list[str], target: Any, union_tag: str) -> tuple[lis
     Returns ``(path_without_cast, cast_name)`` when the last segment is one of
     :data:`~confarg._cast.FORCE_CAST_NAMES` *and* it does not name a real field/key of
     the parent (real field wins); otherwise ``(path, None)``.  A root-level cast (no
-    parent to attach to) is never treated as a cast.
+    parent to attach to) is a cast only for ``--json`` (whole-config injection, empty
+    returned path); root-level scalar casts have no struct to attach to and are ignored.
     """
     if not path or path[-1] not in FORCE_CAST_NAMES:
         return path, None
     parent = path[:-1]
     if not parent:
+        # Root-level cast: only `--json` is meaningful (inject the whole config as a
+        # JSON object); scalar casts have no struct to attach to. A real root field
+        # named `json` still wins, mirroring the nested rule below.
+        if path[-1] == JSON_CAST_NAME and not _segment_names_real_field(target, path[-1], union_tag):
+            return [], path[-1]
         return path, None
     parent_type = _resolve_field_type(target, parent, union_tag)
     if parent_type is None or _segment_names_real_field(parent_type, path[-1], union_tag):
@@ -563,6 +570,38 @@ def _handle_scalar_root(args: list[str], i: int, token: str, target_r: Any, data
     return i + 1
 
 
+def _handle_root_cast(  # noqa: PLR0913  # each arg carries distinct root-placement context
+    args: list[str],
+    i: int,
+    token: str,
+    *,
+    is_struct: bool,
+    cast_name: str,
+    data: dict[str, Any],
+    root_json: list[dict[str, Any]],
+) -> int:
+    """Consume the value for a root-level ``--json`` cast. Returns new arg index.
+
+    For a struct/union root the decoded object must be a JSON object; it is collected
+    into ``root_json`` and folded in as a base (so per-field CLI flags win) once the
+    whole argv is parsed.  For a scalar root the decoded value is stored under
+    ``__root__``.  Invalid JSON raises via :func:`resolve_forced_value`.
+    """
+    i += 1
+    if i >= len(args) or _looks_like_flag(args[i]):
+        msg = f"Missing value for {token!r}. Usage: {token} '<json>'"
+        raise ConfargError(msg)
+    value = resolve_forced_value(cast_name, args[i], flag=token)
+    if is_struct:
+        if not isinstance(value, dict):
+            msg = f"{token} for a structured target must be a JSON object, got {type(value).__name__}."
+            raise ConfargError(msg)
+        root_json.append(value)
+    else:
+        data["__root__"] = value
+    return i + 1
+
+
 def _handle_force_cast(  # noqa: PLR0913  # cast_name is a necessary discriminator, not incidental
     args: list[str],
     i: int,
@@ -797,6 +836,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
 
     ctx = _ParseCtx(argv=argv, target=target, union_tag=union_tag)
     config_files: list[tuple[str, Path]] = []
+    root_json: list[dict[str, Any]] = []  # objects from root `--json`, folded in below fields
     target_r = _resolve_type(target)
     is_struct = _is_struct_like(target_r)
     i = 0
@@ -847,6 +887,18 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             i += 1
             continue
 
+        if force_cast is not None and not path:  # root-level `--json`: inject the whole config
+            i = _handle_root_cast(
+                argv,
+                i,
+                token,
+                is_struct=is_struct,
+                cast_name=force_cast,
+                data=ctx.data,
+                root_json=root_json,
+            )
+            continue
+
         if not is_struct and not path:
             i = _handle_scalar_root(argv, i, token, target_r, ctx.data)
             continue
@@ -868,6 +920,12 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             continue
 
         i = _consume_typed_arg(ctx, i, token, ft, path)
+
+    if root_json:
+        base: dict[str, Any] = {}
+        for obj in root_json:
+            base = _deep_merge(base, obj, union_tag=union_tag)  # a later `--json` wins over an earlier one
+        ctx.data = _deep_merge(base, ctx.data, union_tag=union_tag)  # per-field CLI flags win over `--json`
 
     return ctx.data, config_files
 

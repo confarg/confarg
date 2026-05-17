@@ -21,7 +21,7 @@ from confarg._api import build
 from confarg._merge import _deep_merge
 from confarg._parse_cli import _collect_cli_patch_ops, _collect_config_file_pairs
 from confarg._pipeline import _merge_sources
-from confarg.cli._collect import _collect_ns_fields
+from confarg.cli._collect import _collect_ns_fields, apply_root_json
 from confarg.cli.cyclopts._register import _app_meta
 
 
@@ -113,6 +113,7 @@ def merge_app(  # noqa: PLR0913
     # command order.
     argv_ = sys.argv[1:] if argv is None else list(argv)
     cli_data = _deep_merge(cli_data, _collect_cli_patch_ops(argv_, target, config_flag, union_tag))
+    apply_root_json(flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
     cli_configs = _collect_config_file_pairs(argv_, config_flag) if config_flag else []
 
     return _merge_sources(

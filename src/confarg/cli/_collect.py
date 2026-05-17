@@ -16,7 +16,7 @@ from typing import Any
 
 from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, resolve_forced_value
 from confarg._import import _import_dotted
-from confarg._merge import _set_nested
+from confarg._merge import _deep_merge, _set_nested
 from confarg._parse_cli import _segment_names_real_field, _try_parse_json_list
 from confarg._types import (
     _callable_return_type,
@@ -146,6 +146,28 @@ def _find_json_cast(flat: dict[str, Any], flag: str, field_type: Any, union_tag:
     if raw is None or _segment_names_real_field(field_type, JSON_CAST_NAME, union_tag):
         return _NO_CAST
     return resolve_forced_value(JSON_CAST_NAME, raw, flag=f"--{flag}.{JSON_CAST_NAME}")
+
+
+def apply_root_json(flat: dict[str, Any], target: Any, union_tag: str, result: dict[str, Any]) -> None:
+    """Fold a root-level ``--json`` object into ``result`` as a base, in place.
+
+    The mirror of the vanilla ``_handle_root_cast`` root fold: a bare ``--json`` injects
+    the whole config, but per-field CLI flags (already collected into ``result``) win, so
+    the decoded object is deep-merged *underneath* ``result``.  A real root field named
+    ``json`` wins over the cast (same rule as :func:`_find_json_cast`).  The decoded value
+    must be a JSON object for a structured target.  Called once at the top level by each
+    adapter's context builder.
+    """
+    raw = flat.get(JSON_CAST_NAME)
+    if raw is None or _segment_names_real_field(target, JSON_CAST_NAME, union_tag):
+        return
+    decoded = resolve_forced_value(JSON_CAST_NAME, raw, flag=f"--{JSON_CAST_NAME}")
+    if not isinstance(decoded, dict):
+        msg = f"--{JSON_CAST_NAME} for a structured target must be a JSON object, got {type(decoded).__name__}."
+        raise ConfargError(msg)
+    merged = _deep_merge(decoded, result, union_tag=union_tag)
+    result.clear()
+    result.update(merged)
 
 
 def _str_token(v: Any) -> Any:
