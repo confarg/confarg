@@ -15,7 +15,9 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 from confarg import _defaults
+from confarg._cast import JSON_CAST_NAME
 from confarg._merge import DICT_DELETE, _accumulate_list_delete, _set_nested
+from confarg._parse_cli import _segment_names_real_field
 from confarg._types import (
     _dict_kv,
     _elem_type,
@@ -208,6 +210,30 @@ def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[
         _set_nested(data, del_parts, DICT_DELETE)
 
 
+def _apply_env_json_cast(orig_key: str, parts: list[str], target: Any, value: str, data: dict[str, Any]) -> bool:
+    """Apply a ``__json`` force-cast (e.g. ``FOO__DB__json``): parse ``value`` as JSON.
+
+    Mirrors the CLI ``.json`` suffix.  Returns True when handled — i.e. when ``json`` is
+    the trailing segment and does not name a real field/key of the parent (real field
+    wins).  Hard-errors on invalid JSON, matching the CLI's explicit-intent semantics.
+    """
+    if parts[-1].lower() != JSON_CAST_NAME:
+        return False
+    parent_raw = parts[:-1]
+    if not parent_raw:
+        return False  # root-level cast has no field to attach to
+    parent_parts, parent_type = _resolve_env_parts(target, parent_raw)
+    if parent_type is not None and _segment_names_real_field(parent_type, JSON_CAST_NAME, _defaults.UNION_TAG):
+        return False
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as e:
+        msg = f"Invalid JSON for {orig_key!r}: {e}"
+        raise ConfargError(msg) from e
+    _set_nested(data, parent_parts, parsed)
+    return True
+
+
 def _warn_unknown_env_field(orig_key: str, parts: list[str], root_tp: Any) -> bool:
     """Warn and return True if the env var's first segment has no matching field."""
     if _is_namedtuple(root_tp):
@@ -348,6 +374,9 @@ def _parse_env(
 
         if parts[-1].endswith("-") and len(parts[-1]) > 1:
             _handle_env_delete(orig_key, parts, target, data)
+            continue
+
+        if is_struct and _apply_env_json_cast(orig_key, parts, target, value, data):
             continue
 
         if not is_struct:

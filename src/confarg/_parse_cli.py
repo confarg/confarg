@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+from confarg._cast import FORCE_CAST_NAMES, resolve_forced_value
 from confarg._merge import (
     DICT_DELETE,
     LIST_APPEND_KEY,
@@ -40,7 +41,6 @@ from confarg._types import (
     _is_union,
     _is_varlen_collection,
     _namedtuple_fields,
-    _Pinned,
     _resolve_type,
     _StrToken,
     _struct_fields,
@@ -53,9 +53,6 @@ from confarg._types import (
 )
 from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce
-
-_SCALAR_CAST_NAMES: frozenset[str] = frozenset({"str", "int", "float", "bool"})
-_CAST_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
 
 
 def _subclass_field_type(tp: type, field: str) -> Any | None:
@@ -206,6 +203,48 @@ def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
     return False
 
 
+def _segment_names_real_field(pt: Any, seg: str, union_tag: str) -> bool:
+    """Return True if ``seg`` names a real member of container type ``pt``.
+
+    Used to decide whether a trailing ``.str``/``.json``/... segment is a field
+    access or a force-cast suffix: a real field of that name always wins.  Structs,
+    namedtuples, and (recursively) union variants are checked for a matching field;
+    dicts accept any key, so the segment is always a real key there.  Lists, sets,
+    tuples, callables, and scalars have no member named by a cast word (they are
+    indexed numerically or not at all), so the segment is treated as a cast.
+    """
+    if seg == union_tag:
+        return True
+    pt = _resolve_type(pt)
+    if _is_union(pt):
+        return any(_segment_names_real_field(_resolve_type(v), seg, union_tag) for v in _union_args_no_none(pt))
+    if _is_struct(pt):
+        return seg in _struct_fields(pt) or _subclass_field_type(pt, seg) is not None
+    if _is_namedtuple(pt):
+        return seg in _namedtuple_fields(pt)
+    # dicts accept any key (real member); lists/sets/tuples/callables/scalars do not.
+    return bool(_is_dict(pt))
+
+
+def detect_force_cast(path: list[str], target: Any, union_tag: str) -> tuple[list[str], str | None]:
+    """Decide whether ``path``'s trailing segment is a force-cast suffix.
+
+    Returns ``(path_without_cast, cast_name)`` when the last segment is one of
+    :data:`~confarg._cast.FORCE_CAST_NAMES` *and* it does not name a real field/key of
+    the parent (real field wins); otherwise ``(path, None)``.  A root-level cast (no
+    parent to attach to) is never treated as a cast.
+    """
+    if not path or path[-1] not in FORCE_CAST_NAMES:
+        return path, None
+    parent = path[:-1]
+    if not parent:
+        return path, None
+    parent_type = _resolve_field_type(target, parent, union_tag)
+    if parent_type is None or _segment_names_real_field(parent_type, path[-1], union_tag):
+        return path, None
+    return parent, path[-1]
+
+
 def _parse_json_arg(token: str, flag: str) -> Any:
     """Parse token as JSON, raising ConfargError on invalid JSON.
 
@@ -339,11 +378,13 @@ def _consume_config_paths(args: list[str], i: int, key: str, config_flag: str) -
 
 def _parse_flag_mode(
     key: str,
-) -> tuple[list[str], bool, bool, str | None, int, bool]:
-    """Decode mode flags from a flag key.
+) -> tuple[list[str], bool, bool, int, bool]:
+    """Decode append/delete mode flags from a flag key.
 
-    Returns ``(path, append_mode, delete_mode, force_cast, delete_idx, is_list_delete)``.
-    ``force_cast`` is one of ``"str"``, ``"int"``, ``"float"``, ``"bool"``, or ``None``.
+    Returns ``(path, append_mode, delete_mode, delete_idx, is_list_delete)``.  Force-cast
+    suffixes (``.str``/``.int``/``.float``/``.bool``/``.json``) are *not* decoded here:
+    telling a cast apart from a real field of the same name needs the target type, so
+    that decision lives in :func:`detect_force_cast`.
     """
     path = key.split(".") if key else []
 
@@ -363,11 +404,7 @@ def _parse_flag_mode(
         except ValueError:
             pass
 
-    force_cast: str | None = None
-    if not delete_mode and bool(path) and path[-1] in _SCALAR_CAST_NAMES:
-        force_cast = path.pop()
-
-    return path, append_mode, delete_mode, force_cast, delete_idx, is_list_delete
+    return path, append_mode, delete_mode, delete_idx, is_list_delete
 
 
 @dataclass
@@ -534,11 +571,15 @@ def _handle_force_cast(  # noqa: PLR0913  # cast_name is a necessary discriminat
     path: list[str],
     cast_name: str,
 ) -> int:
-    """Consume the value for a .<type>-cast flag, storing it as _Pinned. Returns new arg index."""
+    """Consume the value for a ``.<cast>`` flag and store the forced value. Returns new arg index.
+
+    Scalar casts store a ``_Pinned`` token; ``.json`` stores the decoded structure and
+    raises ``ConfargError`` on invalid JSON (via :func:`resolve_forced_value`).
+    """
     if i >= len(args) or _looks_like_flag(args[i]):
         msg = f"Missing value for {token!r}. Usage: {token} <value>"
         raise ConfargError(msg)
-    _set_nested(data, path, _Pinned(_CAST_TYPES[cast_name], _StrToken(args[i])))
+    _set_nested(data, path, resolve_forced_value(cast_name, args[i], flag=token))
     return i + 1
 
 
@@ -714,7 +755,7 @@ def _skip_flag_values(argv: Sequence[str], i: int) -> int:
     return i
 
 
-def _parse_cli(  # noqa: C901, PLR0913  # single argv parse loop; patch_only adds skip branches over the same dispatch
+def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse loop; force-cast + patch skip share one dispatch
     argv: Sequence[str],
     target: Any,
     cli_prefix: str,
@@ -782,7 +823,15 @@ def _parse_cli(  # noqa: C901, PLR0913  # single argv parse loop; patch_only add
             config_files.extend(new_cfgs)
             continue
 
-        path, append_mode, delete_mode, force_cast, delete_idx, is_list_delete = _parse_flag_mode(key)
+        path, append_mode, delete_mode, delete_idx, is_list_delete = _parse_flag_mode(key)
+
+        force_cast: str | None = None
+        if not append_mode and not delete_mode:
+            path, force_cast = detect_force_cast(path, target, union_tag)
+
+        if patch_only and force_cast is not None:
+            i += 1  # force-cast owned by the flat collector; its value is skipped as a stray token
+            continue
 
         if (
             patch_only
@@ -790,7 +839,7 @@ def _parse_cli(  # noqa: C901, PLR0913  # single argv parse loop; patch_only add
             and not append_mode
             and not _is_collection_patch_path(target, path, union_tag)
         ):
-            i += 1  # normal field / scalar root / force-cast: owned by the flat collector
+            i += 1  # normal field / scalar root: owned by the flat collector
             continue
 
         if delete_mode:

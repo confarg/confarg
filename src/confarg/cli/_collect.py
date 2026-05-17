@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, resolve_forced_value
 from confarg._import import _import_dotted
 from confarg._merge import _set_nested
+from confarg._parse_cli import _segment_names_real_field, _try_parse_json_list
 from confarg._types import (
     _callable_return_type,
     _elem_type,
@@ -26,7 +28,6 @@ from confarg._types import (
     _is_union,
     _is_varlen_collection,
     _namedtuple_fields,
-    _Pinned,
     _resolve_struct,
     _resolve_type,
     _StrToken,
@@ -39,7 +40,9 @@ from confarg._types import (
 from confarg.exceptions import ConfargError, SymbolImportError
 from confarg.typedload._coerce import _is_registered_leaf, _try_coerce
 
-_CAST_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
+#: Sentinel distinguishing "no cast flag present" from a cast that legitimately
+#: resolves to ``None`` (e.g. ``--foo.json null``).
+_NO_CAST: Any = object()
 
 
 def _coerce_scalar(tp: Any, v: Any) -> Any:
@@ -55,6 +58,22 @@ def _coerce_scalar(tp: Any, v: Any) -> Any:
     return _try_coerce(tp, token) if tp is not None else token
 
 
+def _json_array_override(v: Any) -> list[Any] | None:
+    """Return a parsed list when a collection field's value is a lone JSON-array token.
+
+    A ``nargs="*"`` flag delivers a single inline JSON array (``['[1, 2]']``) as a
+    one-element list holding the raw string. Routes through the same
+    ``_try_parse_json_list`` the vanilla ``_consume_collection_or_scalar`` path uses,
+    so the backends interpret it exactly as ``confarg.load`` does. The parsed list is
+    returned raw (plain values, not ``_StrToken``) to match vanilla, which stores
+    ``json.loads`` output verbatim — keeping JSON elements exempt from the stealing
+    rule (e.g. ``"yes"`` stays a string rather than becoming ``True``).
+    """
+    if isinstance(v, list) and len(v) == 1 and isinstance(v[0], str) and v[0].startswith("["):
+        return _try_parse_json_list(v[0])
+    return None
+
+
 def _coerce_leaf_value(core: Any, v: Any) -> Any:
     """Eagerly coerce a CLI leaf value (scalar or list) to its field type.
 
@@ -62,6 +81,9 @@ def _coerce_leaf_value(core: Any, v: Any) -> Any:
     ``confarg.load`` path, so expressions over CLI-provided numbers resolve and
     the four integrations produce byte-for-byte identical merged dicts.
     """
+    parsed = _json_array_override(v)
+    if parsed is not None:
+        return parsed
     if isinstance(v, list):
         et = _elem_type(core) if _is_varlen_collection(core) else None
         return [_coerce_scalar(et, item) for item in v]
@@ -84,6 +106,9 @@ def _collect_union_seq_value(resolved: Any, v: Any, flag: str) -> Any:
     fixed-tuple-only union, so the front-end rejects it instead of synthesizing a
     doomed value for ``construct`` to fail on later.
     """
+    parsed = _json_array_override(v)
+    if parsed is not None:
+        return parsed
     if isinstance(v, list):
         if not v and not _union_has_varlen_variant(resolved):
             token = f"--{flag}"
@@ -95,13 +120,32 @@ def _collect_union_seq_value(resolved: Any, v: Any, flag: str) -> Any:
     return _str_token(v)
 
 
-def _find_cast_override(flat: dict[str, Any], flag: str) -> _Pinned | None:
-    """Check for explicit cast flags (e.g. ``flag.str``, ``flag.int``) in flat namespace."""
-    for cast_name, tp in _CAST_TYPES.items():
-        val = flat.get(f"{flag}.{cast_name}")
-        if val is not None:
-            return _Pinned(tp, _StrToken(val))
-    return None
+def _find_scalar_cast_override(flat: dict[str, Any], flag: str) -> Any:
+    """Return the pinned value for an explicit scalar cast flag, or ``_NO_CAST`` if absent.
+
+    Recognizes ``flag.str``/``flag.int``/``flag.float``/``flag.bool`` via the shared
+    :func:`resolve_forced_value`, so the adapter result is byte-identical to the vanilla
+    ``_handle_force_cast`` path.  ``.json`` is handled uniformly for every field type in
+    :func:`_collect_ns_fields`, not here.
+    """
+    for cast_name in SCALAR_CAST_TYPES:
+        raw = flat.get(f"{flag}.{cast_name}")
+        if raw is not None:
+            return resolve_forced_value(cast_name, raw, flag=f"--{flag}.{cast_name}")
+    return _NO_CAST
+
+
+def _find_json_cast(flat: dict[str, Any], flag: str, field_type: Any, union_tag: str) -> Any:
+    """Return the decoded value for a ``flag.json`` cast, or ``_NO_CAST`` if it does not apply.
+
+    ``.json`` applies to any field type *unless* ``json`` names a real member of
+    ``field_type`` (a struct/namedtuple field, or a dict key), in which case the real
+    field wins and ``flag.json`` is an ordinary sub-path handled by the type walk.
+    """
+    raw = flat.get(f"{flag}.{JSON_CAST_NAME}")
+    if raw is None or _segment_names_real_field(field_type, JSON_CAST_NAME, union_tag):
+        return _NO_CAST
+    return resolve_forced_value(JSON_CAST_NAME, raw, flag=f"--{flag}.{JSON_CAST_NAME}")
 
 
 def _str_token(v: Any) -> Any:
@@ -342,12 +386,21 @@ def _collect_ns_fields(  # noqa: C901, PLR0912  # one branch per type case
         flag = f"{prefix}.{name}" if prefix else name
 
         core = _unwrap_optional(resolved)
+
+        # `--flag.json` forces a raw-JSON value for any field type, unless `json` names a
+        # real member of the field (real field wins). Handled before the type dispatch so
+        # struct/namedtuple/callable/collection fields honour it too.
+        json_val = _find_json_cast(flat, flag, core if core is not None else resolved, union_tag)
+        if json_val is not _NO_CAST:
+            _set_nested(result, flag.split("."), json_val)
+            continue
+
         if core is None:
             # Struct unions: collect via class-tag
             _collect_ns_union_field(flat, flag, resolved, union_tag, result)
-            # Scalar unions: collect plain value or explicit cast
-            cast_val = _find_cast_override(flat, flag)
-            if cast_val is not None:
+            # Scalar unions: collect plain value or explicit scalar cast
+            cast_val = _find_scalar_cast_override(flat, flag)
+            if cast_val is not _NO_CAST:
                 _set_nested(result, flag.split("."), cast_val)
             elif flag in flat:
                 _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, flat[flag], flag))
@@ -373,8 +426,8 @@ def _collect_ns_fields(  # noqa: C901, PLR0912  # one branch per type case
             _collect_callable_spec(flat, flag, core, result)
             continue
 
-        cast_val = _find_cast_override(flat, flag)
-        if cast_val is not None:
+        cast_val = _find_scalar_cast_override(flat, flag)
+        if cast_val is not _NO_CAST:
             _set_nested(result, flag.split("."), cast_val)
         elif flag in flat:
             _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))

@@ -417,3 +417,26 @@ class TestAbstractCollectionTypes:
         )
         assert isinstance(result.holder, ItemHolder)
         assert result.holder.items == ["x", "y"]
+
+
+class TestAnyIsNotAPlainClass:
+    """``typing.Any`` must never be mistaken for a plain class / struct.
+
+    Since Python 3.11 ``typing.Any`` is a subclassable class, so it otherwise slips
+    through ``_is_plain_class``. That made env treat an ``Any`` field as a struct and
+    JSON-parse brace values while the CLI kept them as strings.
+    """
+
+    def test_any_is_not_a_plain_class(self) -> None:
+        """The predicate rejects typing.Any outright."""
+        from typing import Any  # noqa: PLC0415
+
+        from confarg._types import _is_struct, _resolve_struct  # noqa: PLC0415
+
+        assert _is_plain_class(Any) is False
+        assert _is_struct(Any) is False
+        assert _resolve_struct(Any) is None
+
+    def test_real_plain_class_still_detected(self) -> None:
+        """The Any guard is narrow: genuine plain classes remain plain classes."""
+        assert _is_plain_class(Transform) is True
