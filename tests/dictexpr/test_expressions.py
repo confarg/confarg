@@ -12,11 +12,13 @@ from dataclasses import dataclass, field
 import pytest
 
 import confarg
+from confarg._types import _StrToken
 from confarg.dictexpr._expressions import (
     _extract_references,
     _scan_expressions,
     _topological_sort,
     _validate_ast,
+    contains_expression,
     resolve_expressions,
 )
 from confarg.exceptions import (
@@ -28,6 +30,52 @@ from confarg.exceptions import (
 from tests.conftest import (
     WithDefaults,
 )
+
+# ---------------------------------------------------------------------------
+# contains_expression: the canonical "would resolution rewrite this?" predicate
+# ---------------------------------------------------------------------------
+
+
+class TestContainsExpression:
+    """The single predicate every pre-resolution value gate must consult.
+
+    Eager leaf coercion and the three CLI adapters' parse-time domain checks all
+    defer on it, so it must agree exactly with what ``resolve_expressions``
+    rewrites — no narrower (a gate would eat an expression) and no wider (a gate
+    would wave through a value it could have rejected).
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "${a}",
+            "${a.b.c}",
+            "${a * 1.5}",
+            "pre-${a}-post",
+            "${a}:${b}",
+            "$${a}",
+            _StrToken("${a}"),
+        ],
+    )
+    def test_true_for_rewritten_values(self, value: object) -> None:
+        """Real and escaped expressions, bare or embedded, are all deferred."""
+        assert contains_expression(value) is True
+
+    @pytest.mark.parametrize(
+        "value",
+        ["", "plain", "$a", "${", "}", "${}", "$", "100%", 42, 4.5, None, True, ["${a}"], {"k": "${a}"}],
+    )
+    def test_false_for_untouched_values(self, value: object) -> None:
+        """Non-strings and strings resolution leaves alone are not deferred."""
+        assert contains_expression(value) is False
+
+    def test_agrees_with_the_resolver_scan(self) -> None:
+        """Every leaf the predicate accepts is a leaf ``_scan_expressions`` collects."""
+        data = {"real": "${a}", "escaped": "$${a}", "embedded": "x${a}y", "plain": "a", "open": "${"}
+        scanned = set(_scan_expressions(data))
+        predicted = {k for k, v in data.items() if contains_expression(v)}
+        assert scanned == predicted == {"real", "escaped", "embedded"}
+
 
 # ---------------------------------------------------------------------------
 # Scan expressions

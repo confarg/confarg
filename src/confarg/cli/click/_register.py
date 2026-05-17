@@ -20,6 +20,30 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg.cli.argparse._build import build_dynamic_flags, build_static_flags
+from confarg.dictexpr import contains_expression
+
+
+class _ExpressionTolerantChoice(click.Choice):
+    """A ``click.Choice`` that also admits unresolved ``${...}`` tokens.
+
+    ``Choice.convert`` resolves the value through a normalized mapping, so the
+    bypass has to sit in ``convert`` rather than in the choices container.
+    Everything else is inherited: ``--help`` still renders ``[a|b]``, shell
+    completion still offers the declared values, and a real out-of-domain value
+    still fails with click's own ``'zz' is not one of 'a', 'b'.``
+
+    An expression's value is unknown until ``resolve_expressions`` runs, so the
+    front-end cannot prove it wrong at parse time; ``build()`` validates the
+    resolved result instead.  Deferral goes through the canonical
+    :func:`~confarg.dictexpr.contains_expression`, the same predicate the
+    argparse and cyclopts adapters use.
+    """
+
+    def convert(self, value: Any, param: click.Parameter | None, ctx: click.Context | None) -> Any:
+        """Pass an expression token through untouched; validate anything else normally."""
+        if contains_expression(value):
+            return value
+        return super().convert(value, param, ctx)
 
 
 class _ConfargOption(click.Option):
@@ -52,7 +76,7 @@ def _spec_to_option(spec: FlagSpec) -> click.Option:
     multiple = spec.nargs == "*"
     nargs: int = 1 if (spec.nargs is None or spec.nargs == "*") else int(spec.nargs)
 
-    type_: Any = click.Choice(spec.choices) if spec.choices else str
+    type_: Any = _ExpressionTolerantChoice(spec.choices) if spec.choices else str
 
     default: Any = () if multiple else None
 

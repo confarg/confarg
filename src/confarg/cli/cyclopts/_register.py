@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from cyclopts import Group
 from cyclopts import Parameter as CycloptsParam
+from cyclopts import convert as cyclopts_convert
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg.cli.argparse._build import build_dynamic_flags, build_static_flags
+from confarg.dictexpr import contains_expression
 
 # Maps id(app) to confarg metadata {command, name_map}.
 # Keyed by id rather than the App object because App is unhashable (attrs frozen).
@@ -37,6 +39,27 @@ def _make_literal(choices: list[str]) -> Any:
     Python's multi-item subscript syntax also passes a tuple to ``__getitem__``.
     """
     return Literal[tuple(choices)]  # ty: ignore[invalid-type-form]  # dynamic Literal construction at runtime; equivalent to Literal[c1, c2, ...]
+
+
+def _expression_tolerant_convert(type_: Any, tokens: Any) -> Any:
+    """Convert choice tokens, passing unresolved ``${...}`` expressions through untouched.
+
+    cyclopts enforces a ``Literal`` by converting the token, so a ``converter``
+    is the bypass point: it replaces that conversion, while the ``Literal``
+    annotation stays in place and keeps rendering ``[choices: a, b]`` in help.
+    Non-expression tokens are handed straight back to :func:`cyclopts.convert`,
+    so a real out-of-domain value still fails with cyclopts' own
+    ``unable to convert "zz" into one of {'a', 'b'}``.
+
+    An expression's value is unknown until ``resolve_expressions`` runs, so the
+    front-end cannot prove it wrong at parse time; ``build()`` validates the
+    resolved result instead.  Deferral goes through the canonical
+    :func:`~confarg.dictexpr.contains_expression`, the same predicate the
+    argparse and click adapters use.
+    """
+    if any(contains_expression(t.value) for t in tokens):
+        return tokens[0].value if len(tokens) == 1 else [t.value for t in tokens]
+    return cyclopts_convert(type_, tokens)
 
 
 def _pyname(name: str) -> str:
@@ -83,6 +106,9 @@ def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901  
     # Determine the Python type annotation (confarg handles actual coercion)
     if spec.choices:
         inner: Any = _make_literal(spec.choices)
+        # Bypass cyclopts' own Literal enforcement for expression tokens; the
+        # annotation is kept so help still renders "[choices: a, b]".
+        param_kwargs["converter"] = _expression_tolerant_convert
     elif spec.nargs == "*" or isinstance(spec.nargs, int):
         inner = list[str]
     else:

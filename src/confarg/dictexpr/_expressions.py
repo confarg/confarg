@@ -24,6 +24,23 @@ from confarg.exceptions import (
 # Regex: matches escaped $${...} (no capture) and real ${...} (content in group 1)
 _EXPR_RE = re.compile(r"\$\$\{[^}]*\}|\$\{([^}]+)\}")
 
+
+def contains_expression(value: object) -> bool:
+    """Return ``True`` when expression resolution would rewrite *value*.
+
+    The single canonical answer to "is this token deferred to ``build()``?".
+    Every value gate in confarg — eager leaf coercion and the CLI adapters'
+    parse-time domain checks alike — must consult this predicate rather than
+    inspect the raw string itself, so all four front-ends and all three input
+    channels defer on exactly the same set of tokens.
+
+    Matches both a real ``${...}`` and an escaped ``$${...}`` (which resolution
+    unescapes to a literal ``${...}``): both are rewritten by
+    :func:`resolve_expressions`, so both must survive any earlier gate intact.
+    """
+    return isinstance(value, str) and _EXPR_RE.search(value) is not None
+
+
 # Whitelisted free functions
 _SAFE_FUNCTIONS: dict[str, Any] = {
     "abs": abs,
@@ -192,7 +209,7 @@ def _collect_expressions(value: Any, path: str, out: dict[str, str]) -> None:
     elif isinstance(value, list):
         for i, item in enumerate(value):
             _collect_expressions(item, f"{path}.{i}", out)
-    elif isinstance(value, str) and _EXPR_RE.search(value):
+    elif contains_expression(value):
         out[path] = value
 
 

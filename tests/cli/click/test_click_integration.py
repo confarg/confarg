@@ -8,13 +8,11 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
 
 import click
+import pytest
 from click.testing import CliRunner
-
-if TYPE_CHECKING:
-    import pytest
 
 import confarg.cli.click as confargclick
 from confarg.cli import FieldMeta, FlagSpec
@@ -117,6 +115,27 @@ class TestLoadFlagsIntoCommand:
         opt = next(p for p in cmd.params if p.name == "level")
         assert isinstance(opt.type, click.Choice)
         assert list(opt.type.choices) == ["low", "high"]
+
+    def test_choices_still_reject_a_plain_out_of_domain_value(self) -> None:
+        """Widening Choice for ``${...}`` must not disable the check for ordinary values."""
+        cmd = _make_command()
+        load_flags_into_command([FlagSpec(name="level", choices=["low", "high"])], cmd)
+        opt = next(p for p in cmd.params if p.name == "level")
+        with pytest.raises(click.BadParameter):
+            opt.type.convert("nope", opt, None)
+
+    def test_choices_admit_an_unresolved_expression(self) -> None:
+        """A ``${...}`` token converts to itself; its domain is checked in build()."""
+        cmd = _make_command()
+        load_flags_into_command([FlagSpec(name="level", choices=["low", "high"])], cmd)
+        opt = next(p for p in cmd.params if p.name == "level")
+        assert opt.type.convert("${other}", opt, None) == "${other}"
+
+    def test_choices_still_render_natively_in_help(self) -> None:
+        """The Choice subclass keeps click's own ``[low|high]`` rendering."""
+        cmd = _make_command()
+        load_flags_into_command([FlagSpec(name="level", choices=["low", "high"])], cmd)
+        assert "[low|high]" in CliRunner().invoke(cmd, ["--help"]).output
 
     def test_help_and_metavar(self) -> None:
         """FlagSpec.help and metavar are forwarded to the Click option."""
