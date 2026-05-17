@@ -72,6 +72,9 @@ wheels = [
 name = "confarg"
 version = "0.0.1.dev5"
 source = { editable = "." }
+dependencies = [
+    { name = "pytest-markdown-console" },
+]
 
 [package.optional-dependencies]
 completion = [
@@ -90,7 +93,6 @@ dev = [
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "pytest-markdown-docs" },
     { name = "pyyaml" },
     { name = "tomli-w" },
     { name = "ty" },
@@ -99,7 +101,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "argcomplete", marker = "extra == 'completion'", specifier = ">=3.0" }]
+requires-dist = [
+    { name = "argcomplete", marker = "extra == 'completion'", specifier = ">=3.0" },
+    { name = "pytest-markdown-console", specifier = ">=0.0.1.dev1" },
+]
 provides-extras = ["completion"]
 
 [package.metadata.requires-dev]
@@ -114,7 +119,6 @@ dev = [
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-markdown-docs", specifier = ">=0.9.2" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "tomli-w", specifier = ">=1.0" },
     { name = "ty", specifier = ">=0.0.39" },
@@ -795,16 +799,15 @@ wheels = [
 ]
 
 [[package]]
-name = "pytest-markdown-docs"
-version = "0.9.2"
+name = "pytest-markdown-console"
+version = "0.0.1.dev1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "markdown-it-py" },
     { name = "pytest" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/59/c7/6953e9e25d90d038600e65b05265693aef7ae2a2b67e0f170d65f4f16c24/pytest_markdown_docs-0.9.2.tar.gz", hash = "sha256:bf7510fdeec90d3e98ac924561c01de8dbaf4c3ad34f2418ed2b0b12e5a3f4f5", size = 10929, upload-time = "2026-03-23T12:35:04.804Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/83/83/2fc192fea2f2b7fe83d6d427beccf7c43cbbef69cbe129cc99314545368d/pytest_markdown_console-0.0.1.dev1.tar.gz", hash = "sha256:a665d91e05a5f142739b8faf8434bb75442d937e1f8764df2bd6bed09e1bbdb3", size = 6558, upload-time = "2026-05-27T20:34:05.225Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/b9/c3df11997d29e69b3f8edae1e903bf44eaf4774ccf4c5b6ddcebde88931c/pytest_markdown_docs-0.9.2-py3-none-any.whl", hash = "sha256:9c05a5bee48214cb36583d4a5131d3a23b327a8d82c92ae860106053fd7d1f9e", size = 13536, upload-time = "2026-03-23T12:35:03.862Z" },
+    { url = "https://files.pythonhosted.org/packages/70/0a/512d09bb7eaa321fae8b0dfd04ce14ccf59019b446e1b91f726f8a1c5057/pytest_markdown_console-0.0.1.dev1-py3-none-any.whl", hash = "sha256:dec1decaabcee3092b13c33a942ac54b503ccde8b556c1708c227290b7c83be4", size = 9226, upload-time = "2026-05-27T20:34:04.098Z" },
 ]
 
 [[package]]
