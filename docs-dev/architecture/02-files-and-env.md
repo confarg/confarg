@@ -77,19 +77,24 @@ below). Parser libraries are imported lazily and a missing one becomes
 
 One loader table exists: `_LOADERS`, holding a parser per configuration-layer format. Data
 formats (`.csv`/`.tsv`) are not in it — data is a value, not a layer — and `_load_document`
-routes them to `_load_csv` with their `orient`/`header` options instead. `_load_document` is
-the single owner of "read this location and parse it", so `__include__`, `--config.<path>+`
-and a root file all reach one function; a root additionally answers `_loader_for(loc,
-_LOADERS)` first, which is what makes a `.csv` root `unsupported_format` rather than data.
+routes them to `_load_csv` with their `orient`/`header` options instead. `_load_document` is the
+single owner of "read this location and parse it"; `_load_any` is that plus include resolution,
+so it is the one function that reads a document. Every mount route goes through it, which is
+what keeps the accepted fragment shapes and the per-format options from differing by channel
+([#mounting](#mounting)). A document root additionally answers `_loader_for(loc, _LOADERS)`
+first, which is what makes a `.csv` root `unsupported_format` rather than data.
 
-The table returns the file's **raw** top-level value; no format knows the root rule.
-`_load_raw` is the single place that requires a root to be a mapping, so all three formats and
-anything `__include__` rewrites the root to produce one error
-([09](09-invariants.md#delegate-to-the-canonical-function)). Enforcing it after include
+The loaders return the document's **raw** top-level value; no format knows the root rule.
+`_require_layer` is the single place that requires a root to be a mapping, so every format,
+every `__include__` that rewrites a root and every mount route answer to one check and one
+error ([09](09-invariants.md#delegate-to-the-canonical-function)). Enforcing it after include
 resolution rather than at parse time is what lets a root file be nothing but `__include__`.
+`_load_raw` is `_load_any` plus that check, plus the one format restriction a *document* root
+carries: a data file is a value and not a layer, so `.csv`/`.tsv` is rejected there while
+`_load_any` reads it happily at a mounted node.
 
 An **empty** document is the one non-dict root that passes: YAML parses an empty file (and an
-explicit `null`) as `None`, which `_load_raw` reads as "contributes nothing" so that an empty
+explicit `null`) as `None`, which `_require_layer` reads as "contributes nothing" so that an empty
 YAML file behaves like an empty TOML one. Every other non-dict root — a list or a scalar —
 raises `InvalidConfigFileError.non_dict_root`, because silently loading it as `{}` discards a
 file the user asked for and the failure only surfaces much later as a missing field.
@@ -110,33 +115,80 @@ and it deep-merges. A CSV/TSV file is **data**: it contributes one value.
   `rows` allow them. Blank lines are dropped so they never count as ragged rows.
 - Local variables cannot be declared from CSV/TSV: a local has no annotation to coerce
   against ([08-locals.md](08-locals.md#declare-in-files-modify-anywhere)).
+- A data file is reachable from every channel, not only from `__include__`: it contributes a
+  value, so any mount route may put it at a node ([#mounting](#mounting)). Only a *document*
+  root refuses it, which is the same rule stated once.
 
 ## Include semantics
 
-`__include__` accepts a path, a `{path: …, <format options>}` dict, or a list of either.
+`__include__` accepts a path, a `{path: …, <format options>}` dict, or a list of either. So do
+the other two mount routes, which read their value with the same parser ([#mounting](#mounting)).
 
 - Paths are relative to the including document's own location, local or remote
   ([above](#relative-includes-resolve-within-one-origin)).
 - A list is layered left to right into one value first, so the list form means the same in a
-  dict node and in a list item. Dict entries deep-merge, mirroring repeated `--config`.
+  dict node and in a list item. Dict entries deep-merge, mirroring repeated `--config`, and
+  they deep-merge under `union_tag`, so a class tag in a later entry discards the earlier node
+  exactly as it does across `--config` files
+  ([10](10-design-decisions.md#a-class-tag-replaces-not-merges)).
 - A pure include (no sibling keys) may yield any type; with siblings the include must yield a
   dict, and siblings merge on top (they were written by the including file).
-- In a list, an include yielding a list is spliced in.
+- In a list, an include lands as **one** element, whatever type it yields. Spreading a value
+  over several elements is the `+` operator's job and nothing else's
+  ([10](10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling)), so
+  `items+: {__include__: rows.yaml}` extends the list with the fragment's items while
+  `items: [{__include__: rows.yaml}]` adds the fragment itself. `--config.items+ rows.yaml` is
+  the first of those, in the CLI channel.
+- A fragment whose whole content is one value names it under `__root__`. TOML has no list or
+  scalar root, so that is the only way a TOML fragment carries one; only a lone `__root__`
+  unwraps, and a *document* root never does, because there `__root__` is a non-struct target's
+  value and `build()` is what reads it.
+- `__include__` with a value it cannot use (`null`) raises in a dict node and in a list item
+  alike: one key, one rule.
 - Cycle detection: `seen` grows **per entry**, not across a list. Sibling entries are
   sequential layers, not nesting, so naming the same file twice is legal while a genuine
   cycle still raises.
 
 ## Mounting
 
-Three routes put a file's root at an arbitrary path of the merged document:
-`__include__` under a key, `--config.<subpath>`, and `<PREFIX>CONFIG__<SUBPATH>`. A file
+Three routes put a document's root at an arbitrary path of the merged document:
+`__include__` under a key, `--config.<subpath>`, and `<PREFIX>CONFIG__<SUBPATH>`. A document
 never needs to know where it will be mounted. Consequences handled at mount time:
 expression references are prefixed ([07](07-expressions.md#reference-anchoring)) and a
 `locals:` block lands wherever the root lands ([08](08-locals.md#per-node-namespaces)).
 
+The three spell the keyword and carry the path differently — a dotted flag suffix against
+structural nesting — and that divergence is argued in
+[10](10-design-decisions.md#the-mount-keyword-is-spelled-per-channel). What they *mount* does
+not diverge. `_load_mount_value` reads a `--config[.<path>]` token or a `CONFIG[__PATH]`
+variable as an `__include__` value, so all three accept the same locations, the same
+`{path: …, orient: …}` object (spelled as JSON on argv and in the environment) and the same
+list form, and `_load_mount` then places the result with `_mount`, the one implementation of
+"put this value at that subpath". `_load_any` is the one loader underneath all of it.
+
+Two things do differ, both on purpose:
+
+- **Where a relative location starts.** `__include__` resolves against the including
+  document — its own directory locally, its own origin and path remotely
+  ([#relative-includes-resolve-within-one-origin](#relative-includes-resolve-within-one-origin))
+  — because the document naming it is the thing that knows where it sits; the CLI and the
+  environment have no including document and resolve against the process working directory,
+  because that is what the person typing the flag means. `_sources._join` carries both: the
+  base is the including document, or `None` for these routes.
+- **What the root may be.** An empty subpath is a document root and must be a configuration
+  layer, so `_require_layer` applies and a data file is refused there. A non-empty subpath is a
+  node, where — exactly as for a pure `__include__` — the value may be a list, a scalar or a
+  CSV.
+
+One consequence is not yet handled: an appended fragment (`--config.<path>+`) keeps its bare
+references anchored at the merged root rather than at the element it lands on, because that
+element has no index until the merge is over ([11-limitations.md](11-limitations.md)).
+
 ## Reserved file-only keys
 
-`__include__`, `__root__` (value of a non-struct target) and `__cast__`/`__value__`
+`__include__`, `__root__` (a non-struct target's value at a document root, and a fragment's
+whole content when mounted -- see [#include-semantics](#include-semantics)) and
+`__cast__`/`__value__`
 ([05](05-types-and-construction.md#cast-pinning-in-files)) are dunder keys and are file-only
 by construction: the default env separator is also `__`, so a dunder name cannot be written
 as an environment variable. Anything that must work in every channel (such as the locals
@@ -160,8 +212,10 @@ namespace) therefore avoids the dunder form.
   ([03](03-cli-parsing.md#force-casts)). Whether a trailing `json` is a cast at all is
   decided by the canonical `detect_force_cast`, not by a second rule in `_parse_env`.
 - `FOO__BAR-` / `FOO__ITEMS__1-` are deletes, mirroring `--bar-` / `--items.1-`.
-- `<PREFIX>CONFIG[__SUBPATH]` are file pointers, collected and loaded by the pipeline. The
-  variable named by `env_config` is removed from field parsing.
+- `<PREFIX>CONFIG[__SUBPATH]` are file pointers, collected and loaded by the pipeline. Their
+  value is read as an `__include__` value, so `<PREFIX>CONFIG__USERS={"path": "users.csv",
+  "orient": "columns"}` says in the environment what a file says with a mapping
+  ([#mounting](#mounting)). The variable named by `env_config` is removed from field parsing.
 - An unknown first segment emits `ConfargWarning` and the variable is ignored, whereas an
   unknown CLI flag is an error. *(inferred)* The environment is ambient and shared with
   other software, while argv is an explicit request; a stray variable should not stop the

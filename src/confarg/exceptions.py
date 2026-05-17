@@ -58,8 +58,9 @@ class InvalidConfigFileError(ConfargError):
         """Return an error for a root config file whose top-level value is not a mapping."""
         return cls(
             f"Root config file must be a mapping, got {type(value).__name__}: {path}."
-            f" A list or scalar top level is only meaningful under __include__ or an appending"
-            f" --config.<path>+, where it is one value rather than a configuration layer.",
+            f" A list or scalar top level is one value rather than a configuration layer, so it"
+            f" is meaningful at a mounted node -- __include__, --config.<subpath> or"
+            f" CONFIG__<SUBPATH> -- but not at the root of a configuration.",
         )
 
     @classmethod

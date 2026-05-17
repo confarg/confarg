@@ -842,7 +842,7 @@ class TestPipelineParity:
         ignoring the trailing ``+``.
         """
         base = tmp_yaml("users:\n  - alice\n  - bob\n", filename="base.yaml")
-        extra = tmp_yaml("users:\n  - carol\n", filename="extra.yaml")
+        extra = tmp_yaml("- carol\n", filename="extra.yaml")
         target = make_target("users", list[str])
         result = loader.load(
             target,
@@ -3097,3 +3097,171 @@ class TestRemoteConfigSourceContract:
         confarg.register_scheme("mem", lambda loc: b"host: from-mem\nport: 8080\n")
         cfg = loader.load(Simple, argv=["--config", "mem://anywhere/app.yaml"], env={})
         assert cfg == Simple(host="from-mem", port=8080)
+
+
+# ---------------------------------------------------------------------------
+# Mount parity: --config.<path>, CONFIG__<PATH> and __include__ are one operation
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _MountHost:
+    """Target whose one field is a free-form node, so any fragment shape can land there."""
+
+    node: Any = None
+
+
+@dataclass
+class _MountTagHost:
+    """Target with a union-typed node, so a fragment can name its variant with a class tag."""
+
+    db: _RootSQLite | _RootDBServer | None = None
+
+
+class TestMountParity:
+    """The three mount routes accept the same fragment and produce the same merged dict.
+
+    They are spelled differently on purpose
+    (docs-dev/architecture/10-design-decisions.md#the-mount-keyword-is-spelled-per-channel), but
+    what they mount does not differ: each reads its value as an ``__include__`` value through
+    one resolver (docs-dev/architecture/02-files-and-env.md#mounting). Every route used to have
+    its own loader, and they diverged -- the CLI and env routes refused non-dict roots and data
+    files that ``__include__`` accepted at the same node, and had no spelling for the CSV
+    options at all.
+    """
+
+    @pytest.mark.parametrize(
+        ("fragment_name", "fragment", "expected"),
+        [
+            ("frag.yaml", "a: 1\nb: two\n", {"a": 1, "b": "two"}),
+            ("frag.yaml", "- 1\n- 2\n", [1, 2]),
+            ("frag.yaml", "42\n", 42),
+            ("frag.json", '["x", "y"]', ["x", "y"]),
+        ],
+        ids=["dict-root", "list-root", "scalar-root", "json-list-root"],
+    )
+    def test_every_route_mounts_every_fragment_shape(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        fragment_name: str,
+        fragment: str,
+        expected: Any,
+    ) -> None:
+        """Test that all three routes mount a fragment of any root type identically."""
+        frag = tmp_path / fragment_name
+        frag.write_text(fragment, encoding="utf-8")
+        via_include = tmp_path / "via_include.yaml"
+        via_include.write_text(f"node:\n  {INCLUDE_KEY}: ./{fragment_name}\n", encoding="utf-8")
+
+        from_cli = loader.merge(_MountHost, argv=["--config.node", str(frag)], env={})
+        from_env = loader.merge(
+            _MountHost,
+            argv=[],
+            env={"MYAPP_CONFIG__NODE": str(frag)},
+            env_prefix="MYAPP_",
+        )
+        from_file = loader.merge(_MountHost, argv=[], env={}, files=[via_include])
+
+        assert from_cli == {"node": expected}
+        assert from_env == from_cli
+        assert from_file == from_cli
+
+    def test_every_route_takes_the_options_object(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """Test that the {path, orient, header} include form is spelled in every channel."""
+        csv = tmp_path / "users.csv"
+        csv.write_text("name,age\nalice,30\n", encoding="utf-8")
+        spec = {"path": csv.as_posix(), "orient": "columns"}
+        via_include = tmp_path / "via_include.yaml"
+        via_include.write_text(
+            f"node:\n  {INCLUDE_KEY}:\n    path: ./users.csv\n    orient: columns\n",
+            encoding="utf-8",
+        )
+        expected = {"node": {"name": ["alice"], "age": ["30"]}}
+
+        from_cli = loader.merge(_MountHost, argv=["--config.node", json.dumps(spec)], env={})
+        from_env = loader.merge(
+            _MountHost,
+            argv=[],
+            env={"MYAPP_CONFIG__NODE": json.dumps(spec)},
+            env_prefix="MYAPP_",
+        )
+        from_file = loader.merge(_MountHost, argv=[], env={}, files=[via_include])
+
+        assert from_cli == expected
+        assert from_env == expected
+        assert from_file == expected
+
+    def test_a_data_file_mounts_at_a_node_from_the_cli(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """Test that a CSV lands at a subpath without the append suffix.
+
+        It used to be refused there: ``_LOADERS`` held no data format, so only
+        ``--config.<path>+`` could reach one.
+        """
+        csv = tmp_path / "rows.csv"
+        csv.write_text("val\nalpha\nbeta\n", encoding="utf-8")
+        target = make_target("vals", list[str], default_factory=list)
+        result = loader.load(target, argv=["--config.vals", str(csv)], env={})
+        assert result.vals == ["alpha", "beta"]
+
+    def test_include_inside_an_appended_fragment_is_resolved(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+    ) -> None:
+        """Test that an __include__ in a file reached by --config.<path>+ is resolved.
+
+        The append route had its own loader, which skipped include resolution, so the dunder
+        key survived into the merged dict as ordinary user data (BUG-42).
+        """
+        (tmp_path / "part.yaml").write_text("host: inner\n", encoding="utf-8")
+        item = tmp_path / "item.yaml"
+        item.write_text(f"{INCLUDE_KEY}: part.yaml\n", encoding="utf-8")
+        target = make_target("items", list[dict[str, str]], default_factory=list)
+
+        merged = loader.merge(target, argv=["--config.items+", str(item)], env={})
+        assert merged == {"items": {"+": [{"host": "inner"}]}}
+
+    def test_append_parity_between_cli_and_file(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """Test that --config.f+ FILE and f+: {__include__: FILE} mean the same thing.
+
+        Both extend the list with the fragment's items: appending is the ``+`` operator's job
+        and the mount has no say in it
+        (docs-dev/architecture/10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling).
+        """
+        rows = tmp_path / "rows.yaml"
+        rows.write_text("- gamma\n- delta\n", encoding="utf-8")
+        base = tmp_path / "base.yaml"
+        base.write_text("tags:\n  - alpha\n", encoding="utf-8")
+        via_file = tmp_path / "via_file.yaml"
+        via_file.write_text(f"tags+:\n  {INCLUDE_KEY}: ./rows.yaml\n", encoding="utf-8")
+        target = make_target("tags", list[str], default_factory=list)
+
+        from_cli = loader.load(target, argv=["--config.tags+", str(rows)], env={}, files=[base])
+        from_file = loader.load(target, argv=[], env={}, files=[base, via_file])
+
+        assert from_cli.tags == ["alpha", "gamma", "delta"]
+        assert from_file.tags == from_cli.tags
+
+    def test_class_tag_in_an_include_replaces_the_node(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """Test that a class tag inside an include discards the base node, as --config does.
+
+        The include merges did not thread ``union_tag``, so the rule in
+        docs-dev/architecture/10-design-decisions.md#a-class-tag-replaces-not-merges held for
+        ``--config.db`` and not for ``db: {__include__: …}``.
+        """
+        sqlite = tmp_path / "sqlite.yaml"
+        sqlite.write_text(
+            f"class: {__name__}._RootSQLite\ndbpath: /tmp/db.sqlite\n",
+            encoding="utf-8",
+        )
+        base = tmp_path / "base.yaml"
+        base.write_text("db:\n  host: example.com\n  port: 5432\n  name: mydb\n", encoding="utf-8")
+        via_include = tmp_path / "via_include.yaml"
+        via_include.write_text(f"db:\n  {INCLUDE_KEY}: ./sqlite.yaml\n", encoding="utf-8")
+
+        from_cli = loader.merge(_MountTagHost, argv=["--config.db", str(sqlite)], env={}, files=[base])
+        from_file = loader.merge(_MountTagHost, argv=[], env={}, files=[base, via_include])
+
+        assert "host" not in from_cli["db"]  # the tag replaced the server config outright
+        assert from_file == from_cli

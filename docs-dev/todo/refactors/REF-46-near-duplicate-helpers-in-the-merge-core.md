@@ -4,14 +4,8 @@
 **Filed:** 2026-09-24
 **Effort:** S · **Risk:** low · **Impact:** none
 
-Four verified pairs, all the same shape — two functions that answer one question — and all
-mechanical enough for one revision. Roughly 30 lines.
-
-Two further pairs were here and are gone: `_LOADERS`/`_ITEM_LOADERS`, and `_load_file_item`
-against the else-branch of `_load_any`. Both collapsed into `_files._load_document` when config
-locations became URLs. The behavioral difference the second pair hid did not go with it — that
-is [BUG-42](../bugs/BUG-42-include-not-resolved-in-append-mode.md), now a one-line difference
-between two callers of one function.
+Four verified pairs remain, all the same shape — two functions that answer one question — and
+all mechanical enough for one revision. Roughly 30 lines.
 
 - `_pipeline._lookup_declared` and `_pipeline._lookup_path` are the same dict-key / list-index
   path walk, differing **only** in the sentinel returned when the path is absent (`_UNSET` versus
@@ -27,8 +21,7 @@ between two callers of one function.
   written for, and whose docstring asks the caller to "keep the two in step". Bypassing it also
   skips its append-spec navigation.
 
-Also here: nesting a dict under a dotted subpath (`for part in reversed(subpath.split(".")): d =
-{part: d}`) is written once in `_files.py` and twice in `_pipeline.py`. Mounting a file's root at
-a path of the document is supposed to be one rule across `__include__`, `--config.<path>` and
-`CONFIG__<PATH>` ([02-files-and-env.md](../../architecture/02-files-and-env.md)); this small loop
-is the part of it with no owner.
+Three of the original six are closed: the `_LOADERS`/`_ITEM_LOADERS` pair, the
+`_load_file_item`/`_load_any` pair (with BUG-42), and the dotted-subpath nesting loop, which now
+has an owner in `_files._nest`/`_mount`
+([02-files-and-env.md#mounting](../../architecture/02-files-and-env.md#mounting)).

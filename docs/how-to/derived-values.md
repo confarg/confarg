@@ -50,10 +50,11 @@ Two caveats that are easy to trip over:
 
 * **An include path cannot be an expression.** Includes are resolved while files are being loaded,
   before anything is merged, so `__include__: ${labels_file}` can never work. To keep the file
-  selectable per run, mount it from outside instead — `--config.data.labels+ labels.json` on the
-  command line, or `MYAPP_CONFIG__DATA__LABELS` in the environment. Note the trailing `+`: the
-  plain `--config.<path>` form loads a configuration layer and requires a mapping at the root,
-  while the `+` form contributes an item and accepts a list.
+  selectable per run, mount it from outside instead — `--config.data.labels labels.json` on the
+  command line, or `MYAPP_CONFIG__DATA__LABELS=labels.json` in the environment. Either spelling
+  reads its value exactly as `__include__` does, so a JSON list or a CSV is as welcome there as in
+  the file, and `{ "path": "labels.csv", "orient": "columns" }` works too. Use the `+` form
+  (`--config.data.labels+`) when you mean to *add* to labels the configuration already has.
 * **A CSV must land on a real field**, never in the `locals:` namespace. CSV carries no types, so
   its cells would have nothing to be coerced against.
 

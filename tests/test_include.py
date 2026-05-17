@@ -253,15 +253,15 @@ class TestPureIncludeNonDict:
 
 
 # ---------------------------------------------------------------------------
-# List-item includes: splicing and substitution
+# List-item includes: an include contributes one element
 # ---------------------------------------------------------------------------
 
 
 class TestListItemInclude:
-    """Tests for list-item __include__ with splicing and substitution."""
+    """Tests for list-item __include__: the included content is always one element."""
 
-    def test_list_splice_yaml(self, tmp_path: Path) -> None:
-        """Test that a YAML list file is spliced into the parent list."""
+    def test_list_file_is_one_element_yaml(self, tmp_path: Path) -> None:
+        """Test that a YAML list file lands as one element, not spliced (only + splices)."""
         write(tmp_path, "extra.yaml", "- auth\n- audit\n")
         write(
             tmp_path,
@@ -270,10 +270,10 @@ class TestListItemInclude:
         )
 
         result = _load_file(tmp_path / "config.yaml")
-        assert result == {"plugins": ["core", "auth", "audit", "debug"]}
+        assert result == {"plugins": ["core", ["auth", "audit"], "debug"]}
 
-    def test_list_splice_json(self, tmp_path: Path) -> None:
-        """Test that a JSON list file is spliced into the parent list."""
+    def test_list_file_is_one_element_json(self, tmp_path: Path) -> None:
+        """Test that a JSON list file lands as one element, not spliced (only + splices)."""
         write(tmp_path, "extra.json", '["auth", "audit"]')
         write(
             tmp_path,
@@ -282,7 +282,7 @@ class TestListItemInclude:
         )
 
         result = _load_file(tmp_path / "config.json")
-        assert result == {"plugins": ["core", "auth", "audit", "debug"]}
+        assert result == {"plugins": ["core", ["auth", "audit"], "debug"]}
 
     def test_list_item_substitution_dict(self, tmp_path: Path) -> None:
         """Test that a dict file include in a list becomes a single dict element."""
@@ -349,13 +349,13 @@ class TestRecursiveThroughLists:
     """Tests for recursive includes that pass through lists."""
 
     def test_recursive_include_via_list(self, tmp_path: Path) -> None:
-        """Test that recursive includes through list files splice correctly."""
+        """Test that a list file included inside a list file is resolved, as one element."""
         write(tmp_path, "leaf.yaml", "- c\n- d\n")
         write(tmp_path, "middle.yaml", "- a\n- b\n- __include__: ./leaf.yaml\n")
         write(tmp_path, "config.yaml", "items:\n  __include__: ./middle.yaml\n")
 
         result = _load_file(tmp_path / "config.yaml")
-        assert result == {"items": ["a", "b", "c", "d"]}
+        assert result == {"items": ["a", "b", ["c", "d"]]}
 
     def test_splice_items_that_contain_includes(self, tmp_path: Path) -> None:
         """Test that spliced list items that themselves contain includes are resolved."""
@@ -598,10 +598,10 @@ class TestIncludeListCsvReplaces:
 
 
 class TestIncludeListInListItem:
-    """In a list item the entries fold to one value first, then splice or append."""
+    """In a list item the entries fold to one value, which is then the one element."""
 
-    def test_entries_fold_before_splicing(self, tmp_path: Path) -> None:
-        """Test that list files layer into one list, which is then spliced."""
+    def test_entries_fold_to_one_element(self, tmp_path: Path) -> None:
+        """Test that list files layer into one list, which becomes one element."""
         write(tmp_path, "l1.yaml", "- auth\n- audit\n")
         write(tmp_path, "l2.yaml", "- debug\n")
         write(
@@ -610,7 +610,7 @@ class TestIncludeListInListItem:
             f"plugins:\n  - core\n  - {INCLUDE_KEY}: [./l1.yaml, ./l2.yaml]\n",
         )
 
-        assert _load_file(tmp_path / "config.yaml") == {"plugins": ["core", "debug"]}
+        assert _load_file(tmp_path / "config.yaml") == {"plugins": ["core", ["debug"]]}
 
     def test_dict_entries_fold_to_one_element(self, tmp_path: Path) -> None:
         """Test that mapping entries merge into a single appended element."""

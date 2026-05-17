@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import enum
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -363,9 +364,9 @@ class TestIntegrationCsvLoad:
 
 # ---------------------------------------------------------------------------
 # Append mode: --config.field+ ./data.csv
-# Append mode wraps a list file as a single element (consistent with YAML/JSON
-# list files). A single-column CSV ["a", "b"] appended to list[list[str]]
-# gives [["a", "b"]].
+# Appending is the one thing that spreads a fragment over several elements, and it is the
+# `+` operator doing it, not the mount: a CSV loads as a list, so its rows extend the target
+# list one element each. A single value lands as one element.
 # ---------------------------------------------------------------------------
 
 
@@ -379,15 +380,20 @@ class WithListOfLists:
 class TestAppendMode:
     """Tests for CSV append mode via --config.field+ flag."""
 
-    def test_csv_append_wraps_as_single_list_element(self, tmp_path: Path) -> None:
-        """Test that appending a CSV wraps it as a single list element."""
-        p = write(tmp_path, "data.csv", "val\nalpha\nbeta\n")
+    def test_csv_append_splices_its_rows(self, tmp_path: Path) -> None:
+        """Test that appending a multi-column CSV extends the list with one element per row."""
+        p = write(tmp_path, "data.csv", "alpha,beta\ngamma,delta\n")
         result = confarg.load(
             WithListOfLists,
-            argv=["--config.rows+", str(p)],
+            argv=["--config.rows+", json.dumps({"path": p.as_posix(), "orient": "raw"})],
         )
-        # CSV single-column → ["alpha", "beta"]; append mode wraps it as one element
-        assert result.rows == [["alpha", "beta"]]
+        assert result.rows == [["alpha", "beta"], ["gamma", "delta"]]
+
+    def test_csv_append_splices_single_column_values(self, tmp_path: Path) -> None:
+        """Test that a single-column CSV appended to a list of scalars extends it."""
+        p = write(tmp_path, "data.csv", "val\nalpha\nbeta\n")
+        result = confarg.load(WithStrs, argv=["--config.vals+", str(p)])
+        assert result.vals == ["alpha", "beta"]
 
 
 # ---------------------------------------------------------------------------
@@ -534,8 +540,11 @@ class TestCsvLeafCoercion:
 
     def test_append_mode_coerces_numeric_csv(self, tmp_path: Path) -> None:
         """Test that a CSV appended via --config.field+ coerces its cells."""
-        p = write(tmp_path, "row.csv", "n\n1\n2\n")
-        result = confarg.load(WithMatrix, argv=["--config.grid+", str(p)])
+        p = write(tmp_path, "row.csv", "1,2\n")
+        result = confarg.load(
+            WithMatrix,
+            argv=["--config.grid+", json.dumps({"path": p.as_posix(), "orient": "raw"})],
+        )
         assert result.grid == [[1, 2]]
 
     def test_cells_are_str_tokens(self, tmp_path: Path) -> None:
