@@ -1119,6 +1119,31 @@ def _collect_callable_key_argv_specs(
     return specs
 
 
+def _append_carries_items(args: Sequence[str], token: str) -> bool:
+    """Return whether any ``token`` occurrence in *args* is followed by an item.
+
+    An append is the one flag family vanilla lets stand bare: ``--<list>+`` with
+    nothing after it appends nothing and leaves the lower-priority sources alone
+    (:func:`~confarg._parse_cli._handle_append_token`).  Only the clicklike
+    frameworks cannot express a flag that takes zero *or* more tokens, so the spec
+    says which of the two argv actually asked for, using vanilla's own
+    value/flag split so the frameworks consume exactly the tokens vanilla does.
+
+    *args* must already be normalized by ``_normalize_eq_args``, so a ``--<list>+=x``
+    value arrives as the ``_EqValue`` that shields it from the flag check.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#a-bare-append
+    """
+    # Imported here: a module-level import would create an import cycle with _parse_cli.
+    from confarg._parse_cli import _looks_like_flag  # noqa: PLC0415
+
+    return any(
+        tok == token and _looks_like_flag(tok) and i + 1 < len(args) and not _looks_like_flag(args[i + 1])
+        for i, tok in enumerate(args)
+    )
+
+
 def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind (delete/append/collection/json cast)
     target: object,
     argv: Sequence[str],
@@ -1131,7 +1156,8 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
     (``--field.N``, ``--field+``, ``--field.N-``, ``--field.key``) whose dotted
     path the *target* type confirms reaches a list, tuple, set, or dict, plus ``.json``
     casts.  Their values are read later from argv by ``_parse_cli`` in ``patch_only``
-    mode.  Delete flags register value-less (``nargs=0``).
+    mode.  Delete flags register value-less (``nargs=0``), and so does an append that
+    argv never gives an item to (:func:`_append_carries_items`).
 
     Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
@@ -1185,12 +1211,17 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
         if delete_mode:
             specs.append(FlagSpec(name=key, nargs=0, help=f"Delete the element or key at '{target_path}'."))
         elif append_mode:
+            carries = _append_carries_items(args, tok)
             specs.append(
                 FlagSpec(
                     name=key,
-                    nargs="*",
-                    metavar="ITEM",
-                    help=f"Append element(s) to the list at '{target_path}'.",
+                    nargs="*" if carries else 0,
+                    metavar="ITEM" if carries else None,
+                    help=(
+                        f"Append element(s) to the list at '{target_path}'."
+                        if carries
+                        else f"Append nothing to the list at '{target_path}'."
+                    ),
                 ),
             )
         else:

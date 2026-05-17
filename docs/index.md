@@ -38,9 +38,9 @@ This library lets you read configurations stored in classes like this
 ```python
 @dataclass
 class Config:
-  value: float
-  flag: bool
-  subconfig: SubConfig1 | SubConfig2
+    value: float
+    flag: bool
+    subconfig: SubConfig1 | SubConfig2
 ```
 
 with this kind of code
@@ -80,6 +80,7 @@ myapp --subconfig.foo=33
 * unions,
 * derived classes,
 * expressions and variable interpolation,
+* local variables,
 * building from parts,
 * and much more.
 

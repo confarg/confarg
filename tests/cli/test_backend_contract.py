@@ -1436,6 +1436,18 @@ class TestCollectionPatchContract:
         cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users+", "david"], env={})
         assert cfg.users == ["alice", "bob", "david"]
 
+    def test_append_no_items(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A bare ``--field+`` appends nothing and leaves the lower-priority list alone."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users+"], env={})
+        assert cfg.users == ["alice", "bob"]
+
+    def test_append_no_items_before_another_flag(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """An empty append does not swallow the flag that follows it."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users+", "--users.0", "allan"], env={})
+        assert cfg.users == ["allan", "bob"]
+
     def test_delete_index(self, loader: ConfargLoader, tmp_yaml) -> None:
         """``--field.N-`` removes the element at N."""
         base = tmp_yaml("users: [alice, bob, claire]\n")
