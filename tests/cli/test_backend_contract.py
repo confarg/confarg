@@ -2010,6 +2010,51 @@ class TestEnvJsonCastContract:
         cfg = loader.load(_OuterInner, argv=[], env={"MYAPP_INNER__json": "9"}, env_prefix="MYAPP_")
         assert cfg.inner.json == 9
 
+    def test_env_root_json_injects_whole_config(self, loader: ConfargLoader) -> None:
+        """MYAPP_JSON='{...}' injects the whole configuration, mirroring a bare ``--json``."""
+        cfg = loader.load(
+            Nested,
+            argv=[],
+            env={"MYAPP_JSON": '{"db": {"host": "eh", "port": 1}, "debug": true}'},
+            env_prefix="MYAPP_",
+        )
+        assert cfg == Nested(db=Simple(host="eh", port=1), debug=True)
+
+    def test_env_root_json_loses_to_field_env_var(self, loader: ConfargLoader) -> None:
+        """A per-field env var refines the injected object, as a CLI flag refines ``--json``."""
+        cfg = loader.load(
+            Nested,
+            argv=[],
+            env={"MYAPP_JSON": '{"db": {"host": "eh", "port": 1}}', "MYAPP_DB__PORT": "2"},
+            env_prefix="MYAPP_",
+        )
+        assert cfg.db == Simple(host="eh", port=2)
+
+    def test_env_root_json_loses_to_cli(self, loader: ConfargLoader) -> None:
+        """Root env JSON lands at env priority: the CLI still wins."""
+        cfg = loader.load(
+            Nested,
+            argv=["--db.host", "cli"],
+            env={"MYAPP_JSON": '{"db": {"host": "eh", "port": 1}}'},
+            env_prefix="MYAPP_",
+        )
+        assert cfg.db == Simple(host="cli", port=1)
+
+    def test_env_root_real_json_field_wins(self, loader: ConfargLoader) -> None:
+        """A real root field named ``json`` is addressed as a field, not a cast."""
+        cfg = loader.load(_WithJsonNamedField, argv=[], env={"MYAPP_JSON": "7"}, env_prefix="MYAPP_")
+        assert cfg.json == 7
+
+    def test_env_root_non_object_for_struct_root_raises(self, loader: ConfargLoader) -> None:
+        """A non-object root JSON for a structured target is rejected, as on the CLI."""
+        with pytest.raises(ConfargError):
+            loader.load(Nested, argv=[], env={"MYAPP_JSON": "[1, 2]"}, env_prefix="MYAPP_")
+
+    def test_env_root_invalid_json_raises(self, loader: ConfargLoader) -> None:
+        """A malformed root JSON env value hard-errors (explicit -> loud)."""
+        with pytest.raises(ConfargError):
+            loader.load(Nested, argv=[], env={"MYAPP_JSON": "{bad"}, env_prefix="MYAPP_")
+
 
 # ---------------------------------------------------------------------------
 # Whole-value flags (a bare ``--<field> '{...}'`` assigning an object in one token)

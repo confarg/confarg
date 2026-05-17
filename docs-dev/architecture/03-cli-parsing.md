@@ -75,7 +75,8 @@ bypassing the type-directed coercion (notably the stealing rule,
   stealing rule (`"yes"` stays a string) and `null` becomes expressible inside a list.
 - Root `--json` injects a whole config. It is folded in **under** the per-field flags (field
   flags refine it); with several `--json`, the later wins. At the root only `--json` is a
-  cast; scalar casts have nothing to attach to.
+  cast; scalar casts have nothing to attach to. The environment has the same root form,
+  `<PREFIX>JSON` ([02](02-files-and-env.md#environment-parsing)).
 
 ## Real field wins
 
