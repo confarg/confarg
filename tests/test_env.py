@@ -787,3 +787,36 @@ class TestEnvDelete:
             files=[path],
         )
         assert result.name == "default"
+
+
+class TestEnvUnionSequenceStrict:
+    """A bare env scalar does not auto-wrap into a sequence variant.
+
+    Env (unlike the CLI) expresses lists explicitly via indexed segments or JSON,
+    so a lone scalar that no scalar variant accepts is an error, not ``[scalar]``.
+    This is the deliberate counterpart to the CLI single-token fallback.
+    """
+
+    def test_bare_scalar_no_list_fallback_raises(self, loader: ConfargLoader) -> None:
+        """INPUT=hello for bool | list[str]: bool rejects it and env does not wrap to ['hello']."""
+        WithUnion = make_target("input", bool | list[str], default=True)
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
+            loader.load(WithUnion, argv=[], env={"INPUT": "hello"}, env_prefix="")
+
+    def test_indexed_builds_singleton_list(self, loader: ConfargLoader) -> None:
+        """INPUT__0=hello is the explicit way to get ['hello'] from env."""
+        WithUnion = make_target("input", bool | list[str], default=True)
+        result = loader.load(WithUnion, argv=[], env={"INPUT__0": "hello"}, env_prefix="")
+        assert result.input == ["hello"]
+
+    def test_json_builds_list(self, loader: ConfargLoader) -> None:
+        """A JSON-array env value builds ['hello'] from env."""
+        WithUnion = make_target("input", bool | list[str], default=True)
+        result = loader.load(WithUnion, argv=[], env={"INPUT": '["hello"]'}, env_prefix="")
+        assert result.input == ["hello"]
+
+    def test_bare_scalar_still_matches_scalar_variant(self, loader: ConfargLoader) -> None:
+        """INPUT=true still coerces to the bool variant."""
+        WithUnion = make_target("input", bool | list[str], default=False)
+        result = loader.load(WithUnion, argv=[], env={"INPUT": "true"}, env_prefix="")
+        assert result.input is True

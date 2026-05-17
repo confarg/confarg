@@ -33,6 +33,7 @@ from confarg._types import (
     _union_args_no_none,
     _union_has_scalar_variant,
     _union_has_varlen_variant,
+    _UnionSeqToken,
     _unwrap_optional,
 )
 from confarg.exceptions import ConfargError, SymbolImportError
@@ -71,9 +72,11 @@ def _collect_union_seq_value(resolved: Any, v: Any, flag: str) -> Any:
     """Shape a multi-variant union's CLI value, mirroring the vanilla parse path.
 
     A framework-provided single-element list collapses to a bare scalar when the
-    union has a scalar variant (so ``--input foo`` stays ``'foo'``); otherwise the
-    str-tokenized list (or scalar) is returned unchanged. Keeps adapter merged
-    dicts byte-identical to ``confarg.load``.
+    union has a scalar variant (so ``--input foo`` stays ``'foo'``), marked with
+    ``_UnionSeqToken`` so ``construct`` can fall back to a one-element list if no
+    scalar variant accepts it (e.g. ``--input hello`` for ``bool | list[str]`` →
+    ``['hello']``); otherwise the str-tokenized list (or scalar) is returned
+    unchanged. Keeps adapter merged dicts byte-identical to ``confarg.load``.
 
     An empty list raises ``ConfargError`` when the union has no varlen variant
     (e.g. ``str | tuple[str, str]``), matching vanilla's parse-time
@@ -87,7 +90,7 @@ def _collect_union_seq_value(resolved: Any, v: Any, flag: str) -> Any:
             msg = f"Missing value for {token!r}. Usage: {token} <value>"
             raise ConfargError(msg)
         if len(v) == 1 and _union_has_scalar_variant(resolved):
-            return _str_token(v[0])
+            return _UnionSeqToken(v[0]) if isinstance(v[0], str) else v[0]
         return [_str_token(item) for item in v]
     return _str_token(v)
 

@@ -49,6 +49,7 @@ from confarg._types import (
     _union_has_scalar_variant,
     _union_has_seq_variant,
     _union_has_varlen_variant,
+    _UnionSeqToken,
 )
 from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce
@@ -488,10 +489,14 @@ def _consume_union_seq_args(ctx: _ParseCtx, i: int, token: str, ft: Any, path: l
     """Consume greedy space-separated args for a union with a sequence variant.
 
     A single token is stored as a bare scalar when the union also has a scalar
-    variant (so ``--input foo`` stays ``'foo'``); otherwise the tokens form a
-    list and tuple/list/set disambiguation is deferred to ``construct``. No
-    tokens builds the empty list when the union has a varlen variant (e.g.
-    ``int | list[int]`` → ``[]``); otherwise it is a missing-value error.
+    variant (so ``--input foo`` stays ``'foo'``); it is marked with
+    ``_UnionSeqToken`` so that, if every scalar variant rejects it, ``construct``
+    can still fall back to filling the sequence variant as a one-element list
+    (so ``--input hello`` for ``bool | list[str]`` becomes ``['hello']``).
+    Otherwise the tokens form a list and tuple/list/set disambiguation is
+    deferred to ``construct``. No tokens builds the empty list when the union has
+    a varlen variant (e.g. ``int | list[int]`` → ``[]``); otherwise it is a
+    missing-value error.
     """
     args = ctx.argv
     items: list[Any] = []
@@ -505,7 +510,7 @@ def _consume_union_seq_args(ctx: _ParseCtx, i: int, token: str, ft: Any, path: l
         msg = f"Missing value for {token!r}. Usage: {token} <value>"
         raise ConfargError(msg)
     if len(items) == 1 and _union_has_scalar_variant(ft):
-        _set_nested(ctx.data, path, items[0])
+        _set_nested(ctx.data, path, _UnionSeqToken(items[0]))
     else:
         _set_nested(ctx.data, path, items)
     return i

@@ -51,6 +51,19 @@ class _StrToken(str):
     __slots__ = ()
 
 
+class _UnionSeqToken(_StrToken):
+    """A lone CLI token for a union that has both scalar and sequence variants.
+
+    Marks the CLI single-token case (e.g. ``--input hello`` for ``bool | list[str]``)
+    so union construction can try the scalar variants first and, only if they all
+    fail, fall back to filling the sequence variant as a one-element list. A plain
+    ``_StrToken`` (e.g. an env scalar) gets no such fallback, keeping env/config
+    strict — they express lists explicitly.
+    """
+
+    __slots__ = ()
+
+
 @dataclasses.dataclass(frozen=True)
 class _Pinned:
     """Carries an explicitly-typed value through the merge dict, bypassing union stealing."""
