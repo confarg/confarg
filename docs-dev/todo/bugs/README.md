@@ -22,5 +22,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-42 — `__include__` is not resolved for a file loaded in append mode](BUG-42-include-not-resolved-in-append-mode.md) | S | medium | config |
 | [BUG-43 — A fixed-arity tuple flag under-fills instead of reporting a missing value](BUG-43-fixed-tuple-flag-skips-the-missing-value-check.md) | S | medium | behavior |
 | [BUG-44 — `_dataclass_subclasses` returns a diamond subclass twice, and is not BFS](BUG-44-dataclass-subclasses-duplicates-and-is-not-bfs.md) | S | medium | behavior |
+| [BUG-45 — An unimportable class tag silently vanishes from the adapters' merged dict](BUG-45-inheritance-tag-dropped-on-unimportable-class.md) | S | medium | behavior |
 
 <!-- tickets:end -->
