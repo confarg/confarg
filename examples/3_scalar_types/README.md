@@ -4,7 +4,7 @@
 > Code for examples in this page can be found in [`examples/3_scalar_types`](https://github.com/confarg/confarg/tree/master/examples/3_scalar_types).
 
 
-Scalar types are the well-known type quintuplet (`int`, `float`, `bool`, `str`, `None`) that are the building blocks of any configurations. However, arguments in configuration files, environment variables, or command-line arguments are all strings by nature.
+Scalar types are the well-known type quintuplet (`int`, `float`, `bool`, `str`, `None`) that are the building blocks of any configuration. However, arguments in configuration files, environment variables, or command-line arguments are all strings by nature.
 
 In configuration files, the coercion into scalar types is handled by the file format. Typically, strings are quoted, while other scalar types are not, which enables to distinguish easily the string `"1"` from the number `1`. Refer to the specification of your favorite configuration file format for more details.
 
@@ -110,7 +110,7 @@ On top of being consistent with environment variables and configuration files, w
 
 ## Coercion of `None`
 
-None values can be assigned to using the `none` or `null` string. As for booleans, the value must be explicitly set.
+The value can be set to `None` using the string `none` or `null`. As for booleans, the value must be explicitly set.
 
 ```console
 $ uv run none_value.py --value none
