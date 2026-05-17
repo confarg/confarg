@@ -23,12 +23,15 @@ from confarg._types import (
     _is_frozenset,
     _is_list,
     _is_literal,
+    _is_namedtuple,
     _is_set,
     _is_struct,
     _is_tuple,
     _is_type_ref,
     _is_union,
     _literal_values,
+    _namedtuple_defaults,
+    _namedtuple_fields,
     _resolve_type,
     _StrToken,
     _struct_defaults,
@@ -57,6 +60,78 @@ from confarg.typedload._coerce import (
 )
 
 
+def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:  # noqa: C901 PLR0912
+    """Construct a namedtuple from a list (positional) or dict (by name or index)."""
+    flds = _namedtuple_fields(tp)
+    defs = _namedtuple_defaults(tp)
+    field_names = list(flds.keys())
+    field_types = list(flds.values())
+    n = len(field_names)
+
+    if isinstance(data, list | tuple):
+        if len(data) > n:
+            msg = f"Cannot construct {tp.__name__} at '{path}': expected {n} elements, got {len(data)}"
+            raise TypeCoercionError(msg)
+        values = [
+            construct(
+                field_types[i],
+                data[i] if i < len(data) else defs.get(field_names[i]),
+                path=f"{path}.{field_names[i]}",
+                union_tag=union_tag,
+            )
+            for i in range(n)
+        ]
+        return tp._make(values)
+
+    if isinstance(data, dict):
+        # Determine if keys are field names or integer-string indices.
+        # A key is an index key if it is a string representation of an integer.
+        all_int_keys = all(k.isdigit() or (k.startswith("-") and k[1:].isdigit()) for k in data) if data else False
+        kwargs: dict[str, Any] = {}
+        if all_int_keys and data:
+            # Index-keyed form: {"0": val0, "1": val1, ...}
+            for k, v in data.items():
+                try:
+                    idx = int(k)
+                except ValueError:
+                    msg = f"Cannot construct {tp.__name__} at '{path}': invalid index key {k!r}"
+                    raise TypeCoercionError(msg) from None
+                if idx < 0 or idx >= n:
+                    msg = f"Cannot construct {tp.__name__} at '{path}': index {idx} out of range for {n} fields"
+                    raise TypeCoercionError(msg)
+                fname = field_names[idx]
+                kwargs[fname] = construct(field_types[idx], v, path=f"{path}.{fname}", union_tag=union_tag)
+        else:
+            # Field-name-keyed form (possibly mixed): {"x": val_x, "y": val_y}
+            extra = {k for k in data if k not in flds}
+            if extra:
+                msg = f"Unknown field(s) {sorted(extra)} for {tp.__name__} at '{path}'. Valid fields: {field_names}"
+                raise TypeCoercionError(msg)
+            for fname, ft in flds.items():
+                if fname in data:
+                    kwargs[fname] = construct(ft, data[fname], path=f"{path}.{fname}", union_tag=union_tag)
+
+        # Fill in missing fields from defaults or raise MissingFieldError
+        for fname, ft in flds.items():
+            if fname not in kwargs:
+                if fname in defs:
+                    kwargs[fname] = defs[fname]
+                else:
+                    fp = f"{path}.{fname}" if path else fname
+                    msg = (
+                        f"Missing required field '{fp}' of type {ft!r}."
+                        f" Set it via CLI (--{fp}), environment variable, or config file."
+                    )
+                    raise MissingFieldError(msg)
+
+        return tp(**kwargs)
+
+    msg = (
+        f"Cannot construct {tp.__name__} at '{path}': expected list, tuple, or dict, got {type(data).__name__} {data!r}"
+    )
+    raise TypeCoercionError(msg)
+
+
 def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     """Dispatch struct construction, handling the union_tag class-path variant."""
     if not isinstance(data, dict):
@@ -81,10 +156,15 @@ def _construct_scalar(tp: Any, data: Any, path: str) -> Any:
     return _coerce_leaf(tp, data, path)
 
 
-def _construct_typed(tp: Any, data: Any, path: str, union_tag: str) -> Any:
+def _construct_typed(tp: Any, data: Any, path: str, union_tag: str) -> Any:  # noqa: PLR0911
     """Dispatch construction by type after None and callable are handled."""
+    if tp is Any:
+        # typing.Any became a real type in Python 3.12; pass data through unchanged.
+        return data
     if _is_union(tp):
         return _construct_union(tp, data, path, union_tag)
+    if _is_namedtuple(tp):
+        return _construct_namedtuple(tp, data, path, union_tag)
     if _is_struct(tp) and tp not in _LEAF_COERCIONS:
         return _construct_struct_dispatch(tp, data, path, union_tag)
     if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):

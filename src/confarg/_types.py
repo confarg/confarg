@@ -283,6 +283,25 @@ def _is_tuple(tp: Any) -> bool:
     return _origin(tp) is tuple
 
 
+def _is_namedtuple(tp: Any) -> bool:
+    """True if tp is a namedtuple class (collections.namedtuple or typing.NamedTuple)."""
+    return isinstance(tp, type) and issubclass(tp, tuple) and hasattr(tp, "_fields") and hasattr(tp, "_make")
+
+
+def _namedtuple_fields(tp: Any) -> dict[str, Any]:
+    """Return {field_name: resolved_type} for a namedtuple class."""
+    try:
+        hints = get_type_hints(tp)
+    except (NameError, AttributeError, TypeError):
+        hints = {}
+    return {f: _resolve_type(hints.get(f, Any)) for f in tp._fields}
+
+
+def _namedtuple_defaults(tp: Any) -> dict[str, Any]:
+    """Return {field_name: default_value} for fields that have defaults."""
+    return dict(tp._field_defaults)
+
+
 def _is_dict(tp: Any) -> bool:
     """Check whether a type is dict[...] or an abstract mapping type (Mapping, MutableMapping).
 
@@ -467,7 +486,7 @@ def _is_plain_class(tp: Any) -> bool:
         return False
     if tp in _PLAIN_CLASS_BUILTINS or tp.__module__ == "builtins":
         return False
-    if issubclass(tp, enum.Enum) or issubclass(tp, PurePath):
+    if issubclass(tp, (enum.Enum, PurePath, tuple)):
         return False
     try:
         sig = inspect.signature(tp.__init__)

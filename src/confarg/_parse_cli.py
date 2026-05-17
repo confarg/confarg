@@ -32,12 +32,14 @@ from confarg._types import (
     _is_dict,
     _is_frozenset,
     _is_list,
+    _is_namedtuple,
     _is_set,
     _is_struct,
     _is_struct_like,
     _is_tuple,
     _is_union,
     _is_varlen_collection,
+    _namedtuple_fields,
     _resolve_type,
     _StrToken,
     _struct_fields,
@@ -89,8 +91,16 @@ def _step_tuple_type(tp: Any, part: str) -> Any | None:
         return None
 
 
-def _advance_field_type(tp: Any, part: str) -> Any | None:
+def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911
     """Advance one step into tp along path segment part. Returns new type or None."""
+    if _is_namedtuple(tp):
+        flds = _namedtuple_fields(tp)
+        if part in flds:
+            return flds[part]
+        try:
+            return list(flds.values())[int(part)]
+        except (ValueError, IndexError):
+            return None
     if _is_struct(tp):
         flds = _struct_fields(tp)
         return flds[part] if part in flds else _subclass_field_type(tp, part)
