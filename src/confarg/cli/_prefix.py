@@ -115,22 +115,6 @@ def strip_argv_prefix(argv: Sequence[str], cli_prefix: str) -> list[str]:
     and names no path below the root.
     """
     # Imported here: a module-level import would create a load-time import cycle.
-    from confarg._parse_cli import _looks_like_flag, _normalize_eq_args, _skip_flag_values  # noqa: PLC0415
+    from confarg._parse_cli import _strip_argv_prefix  # noqa: PLC0415
 
-    if not cli_prefix:
-        return list(argv)
-    args = _normalize_eq_args(list(argv))
-    dot_pfx = f"{cli_prefix}."
-    out: list[str] = []
-    i = 0
-    while i < len(args):
-        token = args[i]
-        if not _looks_like_flag(token) or not token[2:].startswith(dot_pfx):
-            i = _skip_flag_values(args, i) if _looks_like_flag(token) else i + 1
-            continue
-        out.append(f"--{token[2:].removeprefix(dot_pfx)}")
-        i += 1
-        while i < len(args) and not _looks_like_flag(args[i]):
-            out.append(args[i])
-            i += 1
-    return out
+    return _strip_argv_prefix(argv, cli_prefix)

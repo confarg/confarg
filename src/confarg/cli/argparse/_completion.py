@@ -34,9 +34,8 @@ from confarg.cli._build import (
     _build_callable_fn_specs,
     _build_leaf_spec,
     _build_union_tag_spec,
+    _callable_argument_targets,
     _collect_callable_field_specs,
-    _collect_fn_paths_from_argv,
-    _collect_fn_paths_from_config,
     _whole_value_spec,
 )
 from confarg.cli._collect import _tag_named_struct
@@ -263,15 +262,14 @@ def _pre_extend_parser_for_completion(
                 _log.debug("dynamic union flags: skipping %r", class_path, exc_info=True)
                 continue
 
-        config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
-        argv_fns = _collect_fn_paths_from_argv(argv, target, union_tag)
-        for field_flag, (target_path, mode, _directives) in {**config_fns, **argv_fns}.items():
+        for field_flag, target_path, mode, grouped in _callable_argument_targets(target, argv, config_dict, union_tag):
             try:
                 sibling_specs = _collect_callable_field_specs(
                     _in_prefix(field_flag, cli_prefix),
                     target_path,
                     mode,
                     walk_ctx.existing_dests,
+                    grouped=grouped,
                 )
                 load_flags_into_parser(sibling_specs, parser)
             except Exception:  # noqa: BLE001 — completion must never crash

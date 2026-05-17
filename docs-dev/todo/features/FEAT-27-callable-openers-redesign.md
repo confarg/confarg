@@ -40,11 +40,11 @@ restricted to compatible classes. `call:` is the general "run this and use its v
   alongside.
 - The old forms are removed outright, with no deprecation period: decided and landed with
   FEAT-30 ([bind yields a partial](../../architecture/design-decisions/bind-yields-a-partial-of-its-target.md)).
-
-**Not decided here**
-
-- What a bare path to an instance method does: auto-instantiate with no arguments (today's
-  rule), or raise. Today's rule is the default unless the maintainer says otherwise.
+- A bare path to an instance method still builds its owner with no arguments, `call:` takes
+  any callable spec as its target, and `class:` and a `classfn:` owner are built exactly as
+  named: decided and landed with FEAT-31
+  ([classfn](../../architecture/design-decisions/classfn-names-an-instance-method.md),
+  [class names the type it builds](../../architecture/design-decisions/class-names-the-type-it-builds.md)).
 
 **Precedents**: Hydra `instantiate` (`_target_`, `_partial_`) for the call and partial split;
 jsonargparse `class_path` for typed class targets (checked against the annotation). Neither has

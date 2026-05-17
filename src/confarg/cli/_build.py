@@ -26,7 +26,13 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 from confarg import _defaults
-from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _Directives, active_directives
+from confarg._callable import (
+    _ESCAPED_DIRECTIVES,
+    _PLAIN_DIRECTIVES,
+    _Directives,
+    _instance_method_owner,
+    active_directives,
+)
 from confarg._cast import SCALAR_CAST_TYPES
 from confarg._import import _import_dotted, dotted_name
 from confarg._merge import _peek_nested, _set_nested
@@ -68,6 +74,7 @@ from confarg.cli._prefix import apply_prefix, strip_argv_prefix
 from confarg.cli._spec import FlagSpec, _build_help, _get_field_docstrings, _get_field_meta
 from confarg.exceptions import ConfargWarning, SymbolImportError
 from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_registered_leaf
+from confarg.typedload._construct import _is_typed_call
 
 
 def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
@@ -301,7 +308,7 @@ def _build_callable_fn_specs(
     group: str | None,
     group_description: str,
 ) -> list[FlagSpec]:
-    """Build FlagSpecs for ``--<flag>.bind``, ``--<flag>.class``, ``--<flag>.call``.
+    """Build FlagSpecs for ``--<flag>.bind``, ``--<flag>.class``, ``--<flag>.call``, ``--<flag>.classfn``.
 
     Only the plain openers; the escaped openers (``--<flag>._bind`` etc.) are registered
     by :func:`build_dynamic_flags` when they appear in argv.
@@ -317,7 +324,8 @@ def _build_callable_fn_specs(
         for sub, desc in (
             ("bind", "function or class; the other --<flag>.<param> flags are partially applied to it"),
             ("class", "class to instantiate; the resulting instance is the callable"),
-            ("call", "factory function to call; result is used as the callable field value"),
+            ("call", "factory function to call with the other --<flag>.<param> flags; its result is the callable"),
+            ("classfn", "instance method; the other --<flag>.<param> flags build its owner"),
         )
     ]
 
@@ -356,11 +364,15 @@ def _sibling_specs_from_signature(
     field_flag: str,
     target_obj: Any,
     existing_names: set[str],
+    *,
+    grouped: bool = True,
 ) -> list[FlagSpec]:
     """Build ``--<field_flag>.<param>`` FlagSpecs from a callable's signature.
 
     A sibling of the opener is an argument of the target in every mode and in both directive
-    forms, so the flags sit directly below the field.
+    forms, so the flags sit directly below the field. *grouped* puts them in a group named
+    after the field, which only a Callable field leaves free: a struct field's own flags
+    already hold that name with another description, and cyclopts refuses two such groups.
     """
     try:
         sig = inspect.signature(target_obj)
@@ -389,8 +401,8 @@ def _sibling_specs_from_signature(
                     name=dest,
                     metavar=param_name.upper(),
                     help=", ".join(help_parts),
-                    group=field_flag,
-                    group_description=group_desc,
+                    group=field_flag if grouped else None,
+                    group_description=group_desc if grouped else "",
                 ),
             )
         existing_names.add(dest)
@@ -402,6 +414,8 @@ def _collect_callable_sibling_specs(
     field_flag: str,
     target_path: str,
     existing_names: set[str],
+    *,
+    grouped: bool = True,
 ) -> list[FlagSpec]:
     """Build FlagSpecs for ``--<field_flag>.<param>`` by inspecting the named target's signature."""
     try:
@@ -409,7 +423,7 @@ def _collect_callable_sibling_specs(
     except SymbolImportError:
         return []
     target_obj = obj.__init__ if isinstance(obj, type) else obj
-    return _sibling_specs_from_signature(field_flag, target_obj, existing_names)
+    return _sibling_specs_from_signature(field_flag, target_obj, existing_names, grouped=grouped)
 
 
 def _collect_callable_factory_specs(
@@ -450,19 +464,26 @@ def _collect_callable_field_specs(
     target_path: str,
     mode: str,
     existing_names: set[str],
+    *,
+    grouped: bool = True,
 ) -> list[FlagSpec]:
-    """Build the sibling FlagSpecs (``--<field>.<param>``) for one callable field given its target and mode.
+    """Build the sibling FlagSpecs (``--<field>.<param>``) for one callable spec given its target and mode.
 
-    A ``class`` target's siblings are its constructor arguments, typed as its fields are; a
-    ``bind`` or ``call`` target's are the parameters of the function, or of the class's
-    constructor, that it names.
+    A ``class`` target's siblings are its constructor arguments, typed as its fields are,
+    and so are those of a ``classfn`` target's owner; a ``bind`` or ``call`` target's are
+    the parameters of the function, or of the class's constructor, that it names, grouped
+    under the field when *grouped*. A ``classfn`` target that names no instance method buys
+    nothing: construction refuses it.
     """
+    if mode == _PLAIN_DIRECTIVES.classfn:
+        owner = _instance_method_owner(target_path)
+        return [] if owner is None else _collect_callable_factory_specs(field_flag, owner, existing_names)
     if mode == _PLAIN_DIRECTIVES.cls:
         with contextlib.suppress(SymbolImportError):
             cls = _import_dotted(target_path)
             if isinstance(cls, type):
                 return _collect_callable_factory_specs(field_flag, cls, existing_names)
-    return _collect_callable_sibling_specs(field_flag, target_path, existing_names)
+    return _collect_callable_sibling_specs(field_flag, target_path, existing_names, grouped=grouped)
 
 
 def _match_opener_suffix(key: str) -> tuple[str, str, _Directives] | None:
@@ -473,26 +494,30 @@ def _match_opener_suffix(key: str) -> tuple[str, str, _Directives] | None:
     return None
 
 
-def _path_is_callable_field(target: object, field_flag: str, union_tag: str) -> bool:
-    """Return True if the dotted ``field_flag`` resolves to a callable-typed field.
+def _is_callable_field(target: object, field_flag: str, union_tag: str) -> bool:
+    """Return True if the dotted ``field_flag`` resolves to a callable-typed field."""
+    from confarg._parse_cli import _resolve_field_type  # noqa: PLC0415  # import cycle
+
+    resolved = _resolve_field_type(target, field_flag.split("."), union_tag)
+    return resolved is not None and _is_callable(_unwrap_optional(_resolve_type(resolved)))
+
+
+def _opens_spec_at(target: object, field_flag: str, opener: str, union_tag: str) -> bool:
+    """Return True if ``--<field_flag>.<opener>`` opens a spec at ``field_flag``.
 
     The argv opener scan pattern-matches ``--<path>.bind/.class/.call`` against argv, so a
     struct field literally named ``bind`` (or ``class``/``call``) would be misread as an
-    opener for its parent.  Asking the target type — the same type-guided rule the
-    config-file walk and the static flag builder use — keeps the scan from registering
-    argument flags below a non-callable path (BUG-30).  The whole-value blob walk is already
-    type-guided and reads the shorthand correctly; this brings the argv scan to the same
-    answer.
+    opener for its parent.  Asking the type walk keeps the scan from registering argument
+    flags below a path that holds no spec (BUG-30): any opener opens one on a callable
+    field, and ``call`` on a field that takes a typed call
+    (:func:`~confarg._parse_cli._opener_at`).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
-    from confarg._parse_cli import _resolve_field_type  # noqa: PLC0415  # import cycle
+    from confarg._parse_cli import _opener_at  # noqa: PLC0415  # import cycle
 
-    resolved = _resolve_field_type(target, field_flag.split("."), union_tag)
-    if resolved is None:
-        return False
-    return _is_callable(_unwrap_optional(_resolve_type(resolved)))
+    return _opener_at(target, [*field_flag.split("."), opener], union_tag)
 
 
 def _collect_fn_paths_from_argv(
@@ -500,15 +525,15 @@ def _collect_fn_paths_from_argv(
     target: object,
     union_tag: str,
 ) -> dict[str, tuple[str, str, _Directives]]:
-    """Scan argv for --<field>.bind/.class/.call and their escaped ._bind/._class/._call forms.
+    """Scan argv for --<field>.bind/.class/.call/.classfn and their escaped ``._``-prefixed forms.
 
-    Returns {field_flag: (target_path, mode, directives)} where mode is "bind"/"class"/"call"
+    Returns {field_flag: (target_path, mode, directives)} where mode is "bind"/"class"/"call"/"classfn"
     and directives is the plain or the escaped form. CLI wins for duplicate keys.
 
-    A match is kept only when ``field_flag`` resolves to a callable-typed field in
-    *target*, so a plain struct field named like an opener (``bind``/``class``/``call``)
-    is a value, not an opener (BUG-30).  The whole-value blob walk already applies this
-    type-guided rule; the scan now agrees with it.
+    A match is kept only when the opener opens a spec at ``field_flag`` in *target*
+    (:func:`_opens_spec_at`), so a plain struct field named like an opener
+    (``bind``/``class``/``call``) is a value, not an opener (BUG-30).  The whole-value
+    blob walk already applies this type-guided rule; the scan now agrees with it.
 
     A field's escaped opener takes precedence over any plain-opener match for the same
     field: once ``--<field>._bind`` is present, a sibling ``--<field>.bind`` is an
@@ -529,7 +554,7 @@ def _collect_fn_paths_from_argv(
             matched = _match_opener_suffix(key)
             if matched is not None:
                 field_flag, mode, directives = matched
-                if _path_is_callable_field(target, field_flag, union_tag):
+                if _opens_spec_at(target, field_flag, directives.by_mode[mode], union_tag):
                     bucket = escaped if directives is _ESCAPED_DIRECTIVES else plain
                     bucket[field_flag] = (val, mode, directives)
             i += 1
@@ -537,7 +562,7 @@ def _collect_fn_paths_from_argv(
             matched = _match_opener_suffix(tok[2:])
             if matched is not None and i + 1 < len(argv) and not argv[i + 1].startswith("--"):
                 field_flag, mode, directives = matched
-                if _path_is_callable_field(target, field_flag, union_tag):
+                if _opens_spec_at(target, field_flag, directives.by_mode[mode], union_tag):
                     bucket = escaped if directives is _ESCAPED_DIRECTIVES else plain
                     bucket[field_flag] = (argv[i + 1], mode, directives)
                 i += 2
@@ -593,22 +618,62 @@ def _blob_document_from_argv(argv: Sequence[str]) -> dict[str, Any]:
     return doc
 
 
-def _callable_fn_path(sub: Any) -> tuple[str, str, _Directives] | None:
-    """Return (path, mode, directives) from a callable's config sub-value, or None if not present.
+def _yielded_callable_path(spec: Any) -> str | None:
+    """Return a dotted path whose signature lists the arguments of the callable *spec* yields.
 
-    Checks string shorthand (implicit "bind") and the opener keys of the active directive
-    form (plain ``bind``/``class``/``call`` or escaped ``_bind``/``_class``/``_call``),
-    selected canonically via :func:`~confarg._callable.active_directives`. An opener whose
-    value is a nested spec rather than a path names no target here.
+    ``None`` when the spec names none: a ``call:`` yields whatever its target returns, and a
+    target that is no dotted path names nothing to inspect. An instance's arguments are its
+    class's ``__call__``, a bound method's are the method's, a partial's its target's.
+    """
+    if isinstance(spec, str):
+        return spec
+    if not isinstance(spec, dict):
+        return None
+    d = active_directives(spec.__contains__)
+    opened = [(mode, spec[key]) for mode, key in d.by_mode.items() if key in spec]
+    if not opened:
+        return None
+    mode, value = opened[0]
+    if mode == _PLAIN_DIRECTIVES.bind:
+        return _yielded_callable_path(value)
+    if mode == _PLAIN_DIRECTIVES.call or not isinstance(value, str):
+        return None
+    return f"{value}.__call__" if mode == _PLAIN_DIRECTIVES.cls else value
+
+
+def _spec_openings(flag: str, sub: Any, *, typed: bool = False) -> dict[str, tuple[str, str, _Directives]]:
+    """Return {flag: (target_path, mode, directives)} for the spec *sub* at *flag*, nested target specs included.
+
+    Checks the string shorthand (implicit "bind") and the opener keys of the active
+    directive form, selected canonically via :func:`~confarg._callable.active_directives`.
+    A ``bind`` or ``call`` whose target is a spec of its own names two targets: the nested
+    spec's, whose siblings sit below the opener (``--<flag>.bind.<param>``), and the
+    callable that spec yields, whose arguments are the outer siblings (``--<flag>.<param>``,
+    :func:`_yielded_callable_path`). *typed*: the spec fills a field that is no Callable,
+    where only ``call`` opens one and a string is a value.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#cli
     """
     if isinstance(sub, str):
-        return (sub, _PLAIN_DIRECTIVES.bind, _PLAIN_DIRECTIVES)
-    if isinstance(sub, dict):
-        d = active_directives(sub.__contains__)
-        for mode, key in d.by_mode.items():
-            if isinstance(sub.get(key), str):
-                return (sub[key], mode, d)
-    return None
+        return {} if typed else {flag: (sub, _PLAIN_DIRECTIVES.bind, _PLAIN_DIRECTIVES)}
+    if not isinstance(sub, dict):
+        return {}
+    d = active_directives(sub.__contains__)
+    for mode, key in d.by_mode.items():
+        if key not in sub or (typed and mode != _PLAIN_DIRECTIVES.call):
+            continue
+        value = sub[key]
+        if isinstance(value, str):
+            return {flag: (value, mode, d)}
+        if not (isinstance(value, dict) and mode in (_PLAIN_DIRECTIVES.bind, _PLAIN_DIRECTIVES.call)):
+            return {}
+        found = _spec_openings(f"{flag}.{key}", value)
+        yielded = _yielded_callable_path(value)
+        if yielded is not None:
+            found[flag] = (yielded, mode, d)
+        return found
+    return {}
 
 
 def _collect_fn_paths_from_config(
@@ -617,10 +682,12 @@ def _collect_fn_paths_from_config(
     prefix: str,
     union_tag: str,
 ) -> dict[str, tuple[str, str, _Directives]]:
-    """Walk target + config_dict to find the targets the openers of Callable fields name.
+    """Walk target + config_dict to find the targets the callable specs name.
 
-    Returns {field_flag: (target_path, mode, directives)} where mode is "bind"/"class"/"call"
-    and directives is the plain or the escaped form.
+    A spec is a Callable field's value, or a ``call:`` filling a field of any other type
+    (:func:`~confarg.typedload._construct._is_typed_call`). Returns {field_flag:
+    (target_path, mode, directives)} where mode is "bind"/"class"/"call"/"classfn" and
+    directives is the plain or the escaped form (:func:`_spec_openings`).
     """
     result: dict[str, tuple[str, str, _Directives]] = {}
     tp = _resolve_type(target)
@@ -636,15 +703,37 @@ def _collect_fn_paths_from_config(
         resolved = _unwrap_optional(_resolve_type(ft))
         if resolved is None:
             continue
+        sub = config_dict.get(name)
         if _is_callable(resolved):
-            fn_path = _callable_fn_path(config_dict.get(name))
-            if fn_path is not None:
-                result[flag] = fn_path
-        elif _is_struct(resolved):
-            sub = config_dict.get(name, {})
-            if isinstance(sub, dict):
-                result.update(_collect_fn_paths_from_config(sub, resolved, flag, union_tag))
+            result.update(_spec_openings(flag, sub))
+        elif _is_typed_call(sub, ft):
+            result.update(_spec_openings(flag, sub, typed=True))
+        elif _is_struct(resolved) and isinstance(sub, dict):
+            result.update(_collect_fn_paths_from_config(sub, resolved, flag, union_tag))
     return result
+
+
+def _callable_argument_targets(
+    target: Any,
+    argv: Sequence[str],
+    config_dict: dict[str, Any],
+    union_tag: str,
+) -> list[tuple[str, str, str, bool]]:
+    """Return ``(field_flag, target_path, mode, grouped)`` for each spec whose arguments argv may spell.
+
+    The specs come from the ``--config`` files argv names (*config_dict*), from its whole
+    values, and from its opener flags, which beat the blob they refine, as the merge does.
+    ``--<field_flag>.<param>`` are the arguments of ``target_path`` as *mode* reads them
+    (:func:`_collect_callable_field_specs`), grouped under the field when it is a Callable
+    one. Flag registration and argparse's completion both ask it.
+    """
+    config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
+    blob_fns = _collect_fn_paths_from_config(_blob_document_from_argv(argv), target, "", union_tag)
+    argv_fns = _collect_fn_paths_from_argv(argv, target, union_tag)
+    return [
+        (field_flag, target_path, mode, _is_callable_field(target, field_flag, union_tag))
+        for field_flag, (target_path, mode, _directives) in {**config_fns, **blob_fns, **argv_fns}.items()
+    ]
 
 
 def _index_spelled(flag: str) -> bool:
@@ -1196,6 +1285,7 @@ def _collect_callable_key_argv_specs(
     argv: Sequence[str],
     union_tag: str,
     existing_names: set[str],
+    calls: frozenset[tuple[str, ...]],
 ) -> list[FlagSpec]:
     """Build FlagSpecs for ``--<callable>.<key>`` flags found in argv but not in a signature.
 
@@ -1203,10 +1293,13 @@ def _collect_callable_key_argv_specs(
     signature describes: a key of a nested ``bind`` target spec, a directive word in the
     spelling the opener left inactive (BUG-25), and a sibling kwarg the named target does
     not carry — or that names no target at all, the field having no opener anywhere (BUG-28).
-    The vanilla parser accepts any key below a callable field
-    (:func:`~confarg._parse_cli._addresses_callable_key`), so registration follows the same
-    rule and hands the token to the collector as a plain string; whether the kwarg is
-    acceptable is construction's answer to give, identically in all four front-ends.
+    Below a field of any other type the spec is a typed call: its ``call`` key in either
+    form, and a sibling of a call argv opens (*calls*, from
+    :func:`~confarg._parse_cli._typed_call_openings`).
+    The vanilla parser accepts any key below a callable field (:func:`~confarg._parse_cli._addresses_callable_key`), so
+    registration follows the same rule and hands the token to the collector as a plain
+    string; whether the kwarg is acceptable is construction's answer to give, identically
+    in all four front-ends.
 
     Append and delete flags are skipped: they take no value, or a variable number of them,
     and :func:`_collect_patch_argv_specs` already registers every one of them in the shape
@@ -1232,7 +1325,7 @@ def _collect_callable_key_argv_specs(
         _path, append_mode, delete_mode, _delete_idx, _is_list_delete = _parse_flag_mode(key)
         if append_mode or delete_mode:
             continue
-        if key in existing_names or not _addresses_callable_key(target, key.split("."), union_tag):
+        if key in existing_names or not _addresses_callable_key(target, key.split("."), union_tag, calls=calls):
             continue
         existing_names.add(key)
         specs.append(FlagSpec(name=key, metavar="VALUE", help=f"Value for '{key}' in the callable spec."))
@@ -1502,6 +1595,9 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
     Dev Notes:
         docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
+    # Imported here: a module-level import would create an import cycle with _parse_cli.
+    from confarg._parse_cli import _locals_keys, _typed_call_openings, _walk_target  # noqa: PLC0415
+
     try:
         # Strip first: the scans below resolve dotted paths against *target*, which
         # knows nothing of the prefix (docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix).
@@ -1512,15 +1608,18 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         import_tagged_classes(argv_list, target, union_tag=union_tag, config_flag=config_flag)
         config_dict = _partial_config_from_argv(argv_list, config_flag) if config_flag else {}
 
-        config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
-        blob_fns = _collect_fn_paths_from_config(_blob_document_from_argv(argv_list), target, "", union_tag)
-        argv_fns = _collect_fn_paths_from_argv(argv_list, target, union_tag)
         existing_names: set[str] = set()
-        result: list[FlagSpec] = _escaped_opener_specs(argv_fns, existing_names)
-        # Opener flags beat the blob they refine, as the collector's deep merge does.
-        for field_flag, (target_path, mode, _directives) in {**config_fns, **blob_fns, **argv_fns}.items():
-            result.extend(_collect_callable_field_specs(field_flag, target_path, mode, existing_names))
-        result.extend(_collect_callable_key_argv_specs(target, argv_list, union_tag, existing_names))
+        result = _escaped_opener_specs(_collect_fn_paths_from_argv(argv_list, target, union_tag), existing_names)
+        for field_flag, target_path, mode, grouped in _callable_argument_targets(
+            target,
+            argv_list,
+            config_dict,
+            union_tag,
+        ):
+            result.extend(_collect_callable_field_specs(field_flag, target_path, mode, existing_names, grouped=grouped))
+        walk_target = _walk_target(target, _locals_keys(target, union_tag))
+        calls = _typed_call_openings(walk_target, argv_list, union_tag, config_flag)
+        result.extend(_collect_callable_key_argv_specs(target, argv_list, union_tag, existing_names, calls))
         result.extend(_collect_leaf_tag_argv_specs(target, argv_list, union_tag, existing_names))
         if config_flag:
             result.extend(_collect_config_argv_specs(argv_list, config_flag))

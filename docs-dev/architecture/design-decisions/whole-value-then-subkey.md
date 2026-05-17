@@ -19,7 +19,7 @@ once. The alternatives, and why not:
 - **One blanket rule, "the subkey replaces the scalar."** Smallest possible change — a single
   branch in the type-blind `_set_nested` — and it matches the adapters and `_deep_merge`
   exactly. Rejected because it discards a value the user meaningfully typed, and the callable
-  case then fails with *must specify one of 'fn', 'class', or 'call'*: an error that says the
+  case then fails with *must specify one of 'bind', 'class', 'call' or 'classfn'*: an error that says the
   user named no target when they named one two tokens earlier.
 - **One blanket rule, "raise a `ConfargError`."** Never silent. Rejected because vanilla would
   then refuse a pair the four adapters and the file-then-CLI path keep accepting, which is a

@@ -22,6 +22,12 @@ so the two spellings of "takes nothing" disagree. The design pass decides what s
 is — a leaf, or a struct with no fields — which also decides whether a config omitting the
 field still builds: today the all-defaults shortcut builds `Marker()` from nothing.
 
+The leaf answer also reaches the callable specs, which build their class through the struct
+route: `{class: C}`, and `{classfn: C.m}` for the owner `C`, are refused with "Unsupported leaf
+type" when `C` declares `def __init__(self)`. The same spec works when `C` declares no
+`__init__` at all, or one with a defaulted parameter. A struct with no fields would build all
+three.
+
 Origin: latent since the initial version (PR-5): a plain class is a struct when its `__init__`
 signature has parameters, and that read never told an inherited `object.__init__` from one the class
 declares. Before PR-39 (namedtuple support) `build()` refused the `kwargs` field with a
@@ -48,4 +54,31 @@ confarg.load(Holder, argv=["--marker.kwargs.x", "1"])
 # expected: --marker.kwargs.x refused as an unknown flag, as for a class declaring __init__(self)
 # actual:   {'marker': {'kwargs': {'x': '1'}}}
 #           TypeError: Marker() takes no arguments
+```
+
+The callable-spec half, on a class that does declare `__init__(self)`:
+
+```python
+from collections.abc import Callable
+from dataclasses import dataclass
+
+import confarg
+
+
+class Seven:
+    def __init__(self) -> None:
+        self.base = 7
+
+    def __call__(self, x: int) -> int:
+        return x + self.base
+
+
+@dataclass
+class Config:
+    fn: Callable[[int], int]
+
+
+print(confarg.build(Config, {"fn": {"class": "__main__.Seven"}}).fn(1))
+# expected: 8
+# actual:   TypeCoercionError: Unsupported leaf type <class '__main__.Seven'> at 'fn'
 ```

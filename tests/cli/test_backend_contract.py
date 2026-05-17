@@ -4566,10 +4566,10 @@ class TestCallableOpenerRegistrationContract:
     """
 
     def test_static_openers(self, populating_loader: ConfargLoader) -> None:
-        """The three plain openers are registered statically; ``fn`` is not one of them."""
+        """The four plain openers are registered statically; ``fn`` is not one of them."""
         flags = populating_loader.registered_flags(_CallableConfig, config_flag="")
         assert flags is not None
-        assert {"fn", "fn.bind", "fn.class", "fn.call"} <= flags
+        assert {"fn", "fn.bind", "fn.class", "fn.call", "fn.classfn"} <= flags
         assert "fn.fn" not in flags
 
     @pytest.mark.parametrize("opener", ["bind", "call"])
@@ -4598,8 +4598,300 @@ class TestCallableOpenerRegistrationContract:
 
     def test_removed_fn_opener_is_refused_by_construction(self, loader: ConfargLoader) -> None:
         """``--fn.fn X`` is an ordinary key below the field, so the spec has no opener."""
-        with pytest.raises(TypeCoercionError, match="must specify one of 'bind', 'class', or 'call'"):
+        with pytest.raises(TypeCoercionError, match="must specify one of 'bind', 'class', 'call' or 'classfn'"):
             loader.load(_CallableConfig, argv=["--fn.fn", f"{__name__}._shout"], env={})
+
+
+class _ClassfnOwner:
+    """An instance method whose owner needs a constructor argument, which the method shares."""
+
+    def __init__(self, k: int) -> None:
+        self.k = k
+
+    def scale(self, k: int) -> int:
+        return self.k * k
+
+
+class _Adder:
+    """A class a ``call:`` spec builds: its constructor argument must be coerced (BUG-155)."""
+
+    def __init__(self, k: int) -> None:
+        self.k = k
+
+    def __call__(self, v: int) -> int:
+        return v + self.k
+
+
+@dataclass
+class _IntCallableConfig:
+    """A callable field over ints."""
+
+    fn: Callable[[int], int]
+
+
+@dataclass
+class _NullaryCallableConfig:
+    """A callable field that takes no argument, so every method argument is bound."""
+
+    fn: Callable[[], int]
+
+
+class TestClassfnContract:
+    """``classfn:`` builds an instance method's owner from its siblings, in every channel and front-end (FEAT-31)."""
+
+    def test_classfn_via_cli(self, loader: ConfargLoader) -> None:
+        """``--fn.classfn`` names the method; ``--fn.<ctor arg>`` builds its owner, coerced from the token."""
+        cfg = loader.load(
+            _IntCallableConfig,
+            argv=["--fn.classfn", f"{__name__}._ClassfnOwner.scale", "--fn.k", "3"],
+            env={},
+        )
+        assert cfg.fn(5) == 15
+
+    def test_classfn_via_env(self, loader: ConfargLoader) -> None:
+        """The env channel spells the same spec."""
+        cfg = loader.load(
+            _IntCallableConfig,
+            argv=[],
+            env={"APP_FN__CLASSFN": f"{__name__}._ClassfnOwner.scale", "APP_FN__K": "3"},
+            env_prefix="APP_",
+        )
+        assert cfg.fn(5) == 15
+
+    def test_bind_over_classfn_via_cli(self, loader: ConfargLoader) -> None:
+        """The owner's ``k`` sits in the nested spec and the method's ``k`` beside ``bind``."""
+        cfg = loader.load(
+            _NullaryCallableConfig,
+            argv=[
+                "--fn.bind.classfn",
+                f"{__name__}._ClassfnOwner.scale",
+                "--fn.bind.k",
+                "3",
+                "--fn.k",
+                "5",
+            ],
+            env={},
+        )
+        assert cfg.fn() == 15
+
+    def test_classfn_registers_the_owners_constructor(self, populating_loader: ConfargLoader) -> None:
+        """``--fn.classfn`` buys the owner's constructor flags."""
+        flags = populating_loader.registered_flags(
+            _IntCallableConfig,
+            argv=["--fn.classfn", f"{__name__}._ClassfnOwner.scale"],
+            config_flag="",
+        )
+        assert flags is not None
+        assert "fn.k" in flags
+
+    def test_call_coerces_a_class_constructor_argument(self, loader: ConfargLoader) -> None:
+        """``call:`` of a class builds its arguments as ``class:`` does (BUG-155)."""
+        cfg = loader.load(
+            _IntCallableConfig,
+            argv=["--fn.call", f"{__name__}._Adder", "--fn.k", "2"],
+            env={},
+        )
+        assert cfg.fn.k == 2
+
+
+# ---------------------------------------------------------------------------
+# A call: spec on the CLI: a nested target spec, and a field that is no Callable (FEAT-32)
+# ---------------------------------------------------------------------------
+
+
+def _twice(x: int) -> int:
+    """A function whose value fills an ``int`` field."""
+    return 2 * x
+
+
+@dataclass
+class _CallPoint:
+    """A struct a ``call:`` spec fills."""
+
+    a: int = 0
+    b: int = 0
+
+
+def _scaled_point(a: int, scale: int) -> _CallPoint:
+    """A factory with an argument the struct it builds has no member for."""
+    return _CallPoint(a=a * scale, b=scale)
+
+
+class _Multiplier:
+    """An owner whose method returns a callable, and shares its parameter name with the constructor."""
+
+    def __init__(self, k: int) -> None:
+        self.k = k
+
+    def by(self, k: int) -> Callable[[int], int]:
+        return lambda v: v * self.k * k
+
+
+@dataclass
+class _HasCallMember:
+    """A struct with a member named ``call``: the key is its data, never an opener."""
+
+    call: int = 0
+
+
+@dataclass
+class _TypedCallConfig:
+    """Fields of several types, each of which can hold a ``call:`` spec."""
+
+    n: int = 0
+    p: _CallPoint = dataclasses_field(default_factory=_CallPoint)
+    fn: Callable[[int], int] | None = None
+    h: _HasCallMember = dataclasses_field(default_factory=_HasCallMember)
+    d: dict[str, str] = dataclasses_field(default_factory=dict)
+
+
+class TestCallOnTheCliContract:
+    """``call:`` is a subtree like ``bind:``, and fills a field of any type, in every front-end (FEAT-32).
+
+    A sibling of a typed call is accepted where the command line opens the call: a flag, a
+    whole value or a ``--config`` file it names.
+    """
+
+    def test_nested_classfn_target_fills_an_int(self, loader: ConfargLoader) -> None:
+        """``--n.call.k`` builds the owner and ``--n.k`` is the method's own ``k``."""
+        argv = [
+            "--n.call.classfn",
+            f"{__name__}._ClassfnOwner.scale",
+            "--n.call.k",
+            "3",
+            "--n.k",
+            "5",
+        ]
+        merged = loader.merge(_TypedCallConfig, argv=argv, env={})
+        assert merged == {"n": {"call": {"classfn": f"{__name__}._ClassfnOwner.scale", "k": "3"}, "k": "5"}}
+        assert loader.load(_TypedCallConfig, argv=argv, env={}).n == 15
+
+    def test_nested_classfn_target_fills_an_int_via_env(self, loader: ConfargLoader) -> None:
+        """The env channel spells the same spec."""
+        env = {
+            "APP_N__CALL__CLASSFN": f"{__name__}._ClassfnOwner.scale",
+            "APP_N__CALL__K": "3",
+            "APP_N__K": "5",
+        }
+        assert loader.load(_TypedCallConfig, argv=[], env=env, env_prefix="APP_").n == 15
+
+    def test_nested_classfn_target_on_a_callable_field(self, loader: ConfargLoader) -> None:
+        """On a Callable field the method is called, and its value is the callable."""
+        cfg = loader.load(
+            _TypedCallConfig,
+            argv=["--fn.call.classfn", f"{__name__}._Multiplier.by", "--fn.call.k", "3", "--fn.k", "5"],
+            env={},
+        )
+        assert cfg.fn is not None
+        assert cfg.fn(2) == 30
+
+    def test_call_fills_an_int(self, loader: ConfargLoader) -> None:
+        """``--n.call`` opens the call, so ``--n.x`` is an argument of its target."""
+        argv = ["--n.call", f"{__name__}._twice", "--n.x", "4"]
+        assert loader.merge(_TypedCallConfig, argv=argv, env={}) == {"n": {"call": f"{__name__}._twice", "x": "4"}}
+        assert loader.load(_TypedCallConfig, argv=argv, env={}).n == 8
+
+    def test_call_fills_a_struct(self, loader: ConfargLoader) -> None:
+        """A sibling the struct has no member for is an argument of the factory."""
+        cfg = loader.load(
+            _TypedCallConfig,
+            argv=["--p.call", f"{__name__}._scaled_point", "--p.a", "2", "--p.scale", "3"],
+            env={},
+        )
+        assert cfg.p == _CallPoint(a=6, b=3)
+
+    def test_sibling_order_does_not_matter(self, loader: ConfargLoader) -> None:
+        """A sibling typed before the opener is accepted too."""
+        cfg = loader.load(_TypedCallConfig, argv=["--n.x", "4", "--n.call", f"{__name__}._twice"], env={})
+        assert cfg.n == 8
+
+    def test_call_opened_by_a_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A root ``--config`` file opens the call the CLI refines."""
+        base = tmp_yaml(f"n:\n  call: {__name__}._twice\n  x: 1\n")
+        cfg = loader.load(_TypedCallConfig, argv=["--config", str(base), "--n.x", "4"], env={})
+        assert cfg.n == 8
+
+    def test_call_opened_by_a_whole_value(self, loader: ConfargLoader) -> None:
+        """A whole ``{…}`` value opens the call too."""
+        cfg = loader.load(
+            _TypedCallConfig,
+            argv=["--p", json.dumps({"call": f"{__name__}._scaled_point", "a": 2}), "--p.scale", "3"],
+            env={},
+        )
+        assert cfg.p == _CallPoint(a=6, b=3)
+
+    def test_sibling_delete(self, loader: ConfargLoader) -> None:
+        """A sibling of an opened call deletes as a Callable field's sibling does."""
+        merged = loader.merge(
+            _TypedCallConfig,
+            argv=["--n.call", f"{__name__}._twice", "--n.x", "4", "--n.x-"],
+            env={},
+        )
+        assert merged == {"n": {"call": f"{__name__}._twice", "x": DICT_DELETE}}
+
+    @pytest.mark.parametrize("argv", [["--n.x", "4"], ["--p.scale", "3"]])
+    def test_sibling_without_an_opener_is_refused(self, loader: ConfargLoader, argv: list[str]) -> None:
+        """No call opened, no argument: a typo below a field stays a parse error."""
+        # Vanilla raises UnknownArgumentError; adapters raise SystemExit or their equivalent.
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_TypedCallConfig, argv=argv, env={})
+
+    def test_a_member_named_call_keeps_its_data(self, loader: ConfargLoader) -> None:
+        """``--h.call`` is the member, so nothing is opened and ``--h.x`` is refused."""
+        assert loader.load(_TypedCallConfig, argv=["--h.call", "5"], env={}).h == _HasCallMember(call=5)
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_TypedCallConfig, argv=["--h.call", "5", "--h.x", "1"], env={})
+
+    def test_a_dict_keeps_call_as_a_key(self, loader: ConfargLoader) -> None:
+        """A dict field holds ``call`` as data."""
+        assert loader.load(_TypedCallConfig, argv=["--d.call", "x"], env={}).d == {"call": "x"}
+
+    def test_the_root_opens_no_call(self, loader: ConfargLoader) -> None:
+        """The root's flags share the namespace with the host's own, so ``--call`` names nothing."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_TypedCallConfig, argv=["--call", f"{__name__}._twice"], env={})
+
+
+class TestCallOnTheCliRegistrationContract:
+    """A typed call's and a nested target spec's flags are discovered from the signatures they name (FEAT-32)."""
+
+    def test_typed_call_registers_its_targets_parameters(self, populating_loader: ConfargLoader) -> None:
+        """``--n.call`` is registered when typed and buys ``--n.<param>``."""
+        flags = populating_loader.registered_flags(
+            _TypedCallConfig,
+            argv=["--n.call", f"{__name__}._twice"],
+            config_flag="",
+        )
+        assert flags is not None
+        assert {"n.call", "n.x"} <= flags
+
+    def test_typed_call_is_not_registered_untyped(self, populating_loader: ConfargLoader) -> None:
+        """``--help`` lists no ``call`` flag per field."""
+        flags = populating_loader.registered_flags(_TypedCallConfig, config_flag="")
+        assert flags is not None
+        assert "n.call" not in flags
+        assert "p.call" not in flags
+
+    def test_nested_classfn_target_registers_owner_and_method(self, populating_loader: ConfargLoader) -> None:
+        """The owner's constructor sits below the opener and the method's parameters beside it."""
+        flags = populating_loader.registered_flags(
+            _TypedCallConfig,
+            argv=["--fn.call.classfn", f"{__name__}._Multiplier.by"],
+            config_flag="",
+        )
+        assert flags is not None
+        assert {"fn.call.k", "fn.k"} <= flags
+
+    def test_nested_class_target_registers_constructor_and_call(self, populating_loader: ConfargLoader) -> None:
+        """A ``bind:`` over a ``class:`` buys the constructor below it and ``__call__`` beside it."""
+        flags = populating_loader.registered_flags(
+            _CallableConfig,
+            argv=["--fn.bind.class", f"{__name__}._Greeter"],
+            config_flag="",
+        )
+        assert flags is not None
+        assert {"fn.bind.greeting", "fn.name", "fn.punct"} <= flags
+        assert "fn.greeting" not in flags
 
 
 # ---------------------------------------------------------------------------
@@ -4757,7 +5049,6 @@ class TestEscapedCallableContract:
         )
         assert cfg.fn() == 15  # _EscBinder(bind=5), partial(lr=10) -> 5 + 10
 
-    @pytest.mark.xfail(strict=True, reason="FEAT-31/FEAT-32: classfn: builds the owner with arguments")
     def test_opener_residual_via_cli(self, loader: ConfargLoader) -> None:
         """`_classfn` opener frees a plain `bind` key to be the owning class's constructor kwarg."""
         cfg = loader.load(

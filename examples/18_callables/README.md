@@ -56,3 +56,22 @@ Hi, world!
 
 > [!NOTE]
 > In case you wonder why we explicitly use the `class` key here to specify the class FQN as such, we will see in [Tutorial #20](https://confarg.github.io/confarg/examples/20_factories/) what happens when we use the class as a callable.
+## Class methods
+
+Like functions, class methods can be specified as callables. In the simplest case, when the object can be instantiated without arguments, the FQN of the method is passed either directly under the field key or under the `bind` key of an expanded dict definition.
+
+```console
+$ # 1. Directly under the key
+$ uv run print_greetings.py --greet_fn greetings.Greetings_printer.print
+Hello, world!
+$ # 2. In an expanded dict definition under the `bind` key
+$ uv run print_greetings.py --greet_fn.bind greetings.Greetings_printer.print
+Hello, world!
+```
+
+When parameters are needed to initialize the object, the FQN of the method goes under the `classfn` key instead, and the parameters alongside it are given to the object's constructor.
+
+```console
+$ uv run print_greetings.py --greet_fn.classfn greetings.Greetings_printer.print --greet_fn.greetings Hi
+Hi, world!
+```

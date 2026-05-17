@@ -151,7 +151,7 @@ class TestFactoryFromDict:
 
     def test_no_key_dict_raises(self):
         """A callable dict with no bind/class/call key is rejected (the implicit form is gone)."""
-        with pytest.raises(TypeCoercionError, match="must specify one of 'bind', 'class', or 'call'"):
+        with pytest.raises(TypeCoercionError, match="must specify one of 'bind', 'class', 'call' or 'classfn'"):
             confarg.build(
                 _WithConcreteOpt,
                 {"optimizer": {"lr": 0.02, "momentum": 0.8}},
@@ -250,7 +250,7 @@ class TestFactoryFromCLI:
 
     def test_kwarg_without_fn_or_class_raises(self):
         """A bare --optimizer.<kwarg> (no opener) is a keyless dict → rejected."""
-        with pytest.raises(TypeCoercionError, match="must specify one of 'bind', 'class', or 'call'"):
+        with pytest.raises(TypeCoercionError, match="must specify one of 'bind', 'class', 'call' or 'classfn'"):
             confarg.load(
                 _WithConcreteOpt,
                 argv=["--optimizer.lr=0.02"],
