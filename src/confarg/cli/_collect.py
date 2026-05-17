@@ -31,9 +31,11 @@ from confarg._types import (
     _resolve_type,
     _StrToken,
     _union_args_no_none,
+    _union_has_scalar_variant,
+    _union_has_varlen_variant,
     _unwrap_optional,
 )
-from confarg.exceptions import SymbolImportError
+from confarg.exceptions import ConfargError, SymbolImportError
 from confarg.typedload._coerce import _is_registered_leaf, _try_coerce
 
 _CAST_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
@@ -63,6 +65,31 @@ def _coerce_leaf_value(core: Any, v: Any) -> Any:
         et = _elem_type(core) if _is_varlen_collection(core) else None
         return [_coerce_scalar(et, item) for item in v]
     return _coerce_scalar(core, v)
+
+
+def _collect_union_seq_value(resolved: Any, v: Any, flag: str) -> Any:
+    """Shape a multi-variant union's CLI value, mirroring the vanilla parse path.
+
+    A framework-provided single-element list collapses to a bare scalar when the
+    union has a scalar variant (so ``--input foo`` stays ``'foo'``); otherwise the
+    str-tokenized list (or scalar) is returned unchanged. Keeps adapter merged
+    dicts byte-identical to ``confarg.load``.
+
+    An empty list raises ``ConfargError`` when the union has no varlen variant
+    (e.g. ``str | tuple[str, str]``), matching vanilla's parse-time
+    ``_consume_union_seq_args``: an empty list can build nothing valid for a
+    fixed-tuple-only union, so the front-end rejects it instead of synthesizing a
+    doomed value for ``construct`` to fail on later.
+    """
+    if isinstance(v, list):
+        if not v and not _union_has_varlen_variant(resolved):
+            token = f"--{flag}"
+            msg = f"Missing value for {token!r}. Usage: {token} <value>"
+            raise ConfargError(msg)
+        if len(v) == 1 and _union_has_scalar_variant(resolved):
+            return _str_token(v[0])
+        return [_str_token(item) for item in v]
+    return _str_token(v)
 
 
 def _find_cast_override(flat: dict[str, Any], flag: str) -> _Pinned | None:
@@ -320,9 +347,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912  # one branch per type case
             if cast_val is not None:
                 _set_nested(result, flag.split("."), cast_val)
             elif flag in flat:
-                v = flat[flag]
-                v = [_str_token(item) for item in v] if isinstance(v, list) else _str_token(v)
-                _set_nested(result, flag.split("."), v)
+                _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, flat[flag], flag))
             continue
 
         if _is_namedtuple(core):

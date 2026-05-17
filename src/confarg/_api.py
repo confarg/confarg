@@ -49,6 +49,14 @@ def merge(  # noqa: PLR0913
     dict reflects the config input exactly as written, with ${...}
     expression strings preserved.
 
+    The returned dict is **unvalidated**: it is not guaranteed to be
+    constructible into ``target``. Type validation and coercion happen in
+    ``build()`` (or the one-shot ``load()``), which raises ``TypeCoercionError``
+    / ``MissingFieldError`` for data that cannot be built. CLI parsing rejects
+    only the cases it can prove wrong at parse time (e.g. a missing value); a
+    config file or env var carrying ``"abc"`` for an ``int`` field merges
+    cleanly here and fails later, in ``build()``.
+
     Args:
         target: The dataclass type (or scalar type) used to guide CLI parsing.
         argv: CLI arguments to parse. Defaults to sys.argv[1:].

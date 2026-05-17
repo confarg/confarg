@@ -355,6 +355,48 @@ def _is_varlen_collection(tp: Any) -> bool:
     return False
 
 
+def _is_seq_variant(tp: Any) -> bool:
+    """True if tp is a sequence-shaped type: any tuple, or a list/set/frozenset."""
+    tp = _resolve_type(tp)
+    return _is_tuple(tp) or _is_varlen_collection(tp)
+
+
+def _union_has_seq_variant(tp: Any) -> bool:
+    """True if tp is a union with at least one sequence-shaped variant.
+
+    Such a field (e.g. ``str | tuple[str, str]`` or ``str | list[str]``) accepts
+    multiple CLI tokens; the front-ends consume greedily and defer
+    tuple/list/set vs scalar disambiguation to ``construct``.
+    """
+    tp = _resolve_type(tp)
+    return _is_union(tp) and any(_is_seq_variant(v) for v in _union_args_no_none(tp))
+
+
+def _union_has_varlen_variant(tp: Any) -> bool:
+    """True if tp is a union with at least one varlen-collection variant.
+
+    Such a union (e.g. ``int | list[int]``) legitimately accepts an empty CLI
+    flag: the front-end builds the empty list and defers to ``construct``. A
+    union whose only sequence variant is a fixed-length tuple is excluded, since
+    an empty list can build nothing valid for it.
+    """
+    tp = _resolve_type(tp)
+    return _is_union(tp) and any(_is_varlen_collection(_resolve_type(v)) for v in _union_args_no_none(tp))
+
+
+def _union_has_scalar_variant(tp: Any) -> bool:
+    """True if tp is a union with at least one non-sequence (scalar) variant.
+
+    Used as the single-token unwrap trigger: when a union mixes a scalar with a
+    sequence variant, a lone CLI token is stored as that bare scalar (so
+    ``--input foo`` stays ``'foo'``), while two-or-more tokens form the sequence.
+    For an all-sequence union this is False, so a lone token stays a 1-element
+    list and still builds e.g. ``tuple[str]``.
+    """
+    tp = _resolve_type(tp)
+    return _is_union(tp) and any(not _is_seq_variant(v) for v in _union_args_no_none(tp))
+
+
 def _elem_type(tp: Any) -> Any:
     """Return the element type of a generic collection.
 

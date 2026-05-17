@@ -46,6 +46,9 @@ from confarg._types import (
     _struct_fields,
     _tuple_types,
     _union_args_no_none,
+    _union_has_scalar_variant,
+    _union_has_seq_variant,
+    _union_has_varlen_variant,
 )
 from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce
@@ -481,13 +484,30 @@ def _consume_fixed_tuple_args(args: Sequence[str], i: int, tt: list[Any], path: 
     return i
 
 
-def _consume_union_tuple_args(args: Sequence[str], i: int, path: list[str], data: dict[str, Any]) -> int:
-    """Consume greedy space-separated args for a union-of-tuples field."""
+def _consume_union_seq_args(ctx: _ParseCtx, i: int, token: str, ft: Any, path: list[str]) -> int:
+    """Consume greedy space-separated args for a union with a sequence variant.
+
+    A single token is stored as a bare scalar when the union also has a scalar
+    variant (so ``--input foo`` stays ``'foo'``); otherwise the tokens form a
+    list and tuple/list/set disambiguation is deferred to ``construct``. No
+    tokens builds the empty list when the union has a varlen variant (e.g.
+    ``int | list[int]`` → ``[]``); otherwise it is a missing-value error.
+    """
+    args = ctx.argv
     items: list[Any] = []
     while i < len(args) and not _looks_like_flag(args[i]):
         items.append(_StrToken(args[i]))
         i += 1
-    _set_nested(data, path, items)
+    if not items:
+        if _union_has_varlen_variant(ft):
+            _set_nested(ctx.data, path, [])
+            return i
+        msg = f"Missing value for {token!r}. Usage: {token} <value>"
+        raise ConfargError(msg)
+    if len(items) == 1 and _union_has_scalar_variant(ft):
+        _set_nested(ctx.data, path, items[0])
+    else:
+        _set_nested(ctx.data, path, items)
     return i
 
 
@@ -565,12 +585,8 @@ def _consume_collection_or_scalar(
 ) -> int:
     """Consume collection (array/tuple/varlen) or scalar value; return new arg index."""
     args = ctx.argv
-    # JSON array → list / tuple / union-of-tuples
-    is_collection = (
-        _is_varlen_collection(ft)
-        or _is_tuple(ft)
-        or (_is_union(ft) and (nv := _union_args_no_none(ft)) and all(_is_tuple(_resolve_type(v)) for v in nv))
-    )
+    # JSON array → list / tuple / union-with-sequence-variant
+    is_collection = _is_varlen_collection(ft) or _is_tuple(ft) or _union_has_seq_variant(ft)
     if (
         is_collection
         and i < len(args)
@@ -597,11 +613,9 @@ def _consume_collection_or_scalar(
         if tt is not None:
             return _consume_fixed_tuple_args(args, i, tt, path, ctx.data)
 
-    # Union of tuple variants → consume greedily (disambiguation deferred to construct)
-    if _is_union(ft):
-        non_none_vars = _union_args_no_none(ft)
-        if non_none_vars and all(_is_tuple(_resolve_type(v)) for v in non_none_vars):
-            return _consume_union_tuple_args(args, i, path, ctx.data)
+    # Union with a sequence variant → consume greedily (disambiguation deferred to construct)
+    if _union_has_seq_variant(ft):
+        return _consume_union_seq_args(ctx, i, token, ft, path)
 
     # Default: consume one scalar value
     if i >= len(args) or _looks_like_flag(args[i]):

@@ -30,7 +30,7 @@ import pytest
 
 import confarg
 from confarg.cli.argparse._build import build_static_flags
-from confarg.exceptions import MissingFieldError, TypeCoercionError
+from confarg.exceptions import ConfargError, MissingFieldError, TypeCoercionError
 from tests.conftest import AppConfig, CacheConfig, DbConfig, make_target
 
 if TYPE_CHECKING:
@@ -107,6 +107,16 @@ class _WithStrBool:
 
 
 @dataclass
+class _WithStrTuple:
+    input: str | tuple[str, str]
+
+
+@dataclass
+class _WithStrList:
+    input: str | list[str]
+
+
+@dataclass
 class _BaseDB:
     """Abstract base database config (inheritance dispatch)."""
 
@@ -139,6 +149,25 @@ class _RootDBServer:
 
 
 _RootDBConfig: Any = _RootSQLite | _RootDBServer
+
+
+@dataclass
+class _RootMariaDBTyped:
+    """MariaDB variant with a Literal discriminator."""
+
+    type: Literal["mariadb"] = "mariadb"
+    host: str = ""
+
+
+@dataclass
+class _RootPostgreTyped:
+    """PostgreSQL variant with a Literal discriminator."""
+
+    type: Literal["postgre"] = "postgre"
+    host: str = ""
+
+
+_RootTypedDBConfig: Any = _RootMariaDBTyped | _RootPostgreTyped
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +327,67 @@ class TestStealingContract:
         cfg = loader.load(_WithStrBool, argv=["--input.str", "yes"], env={})
         assert cfg.input == "yes"
         assert type(cfg.input) is str
+
+
+# ---------------------------------------------------------------------------
+# Union with a sequence variant (str | tuple[...], str | list[str])
+# ---------------------------------------------------------------------------
+
+
+class TestUnionWithSequenceContract:
+    """A union mixing a scalar with a sequence variant accepts one or many tokens.
+
+    One token stays a bare scalar; two-or-more tokens form the sequence. The
+    multi-token CLI syntax follows the established per-convention split, so those
+    cases use the space_sep / repeated fixtures.
+    """
+
+    def test_str_tuple_single_value_is_scalar(self, loader: ConfargLoader) -> None:
+        """--input foo yields the bare str for str | tuple[str, str]."""
+        cfg = loader.load(_WithStrTuple, argv=["--input", "foo"], env={})
+        assert cfg.input == "foo"
+
+    def test_str_list_single_value_is_scalar(self, loader: ConfargLoader) -> None:
+        """--input foo yields the bare str for str | list[str]."""
+        cfg = loader.load(_WithStrList, argv=["--input", "foo"], env={})
+        assert cfg.input == "foo"
+
+    def test_str_tuple_two_values_space_sep(self, space_sep_loader: ConfargLoader) -> None:
+        """--input foo bar builds the tuple (vanilla, argparse, cyclopts)."""
+        cfg = space_sep_loader.load(_WithStrTuple, argv=["--input", "foo", "bar"], env={})
+        assert cfg.input == ("foo", "bar")
+
+    def test_str_tuple_two_values_repeated(self, repeated_loader: ConfargLoader) -> None:
+        """--input foo --input bar builds the tuple (click, cyclopts)."""
+        cfg = repeated_loader.load(_WithStrTuple, argv=["--input", "foo", "--input", "bar"], env={})
+        assert cfg.input == ("foo", "bar")
+
+    def test_str_list_two_values_space_sep(self, space_sep_loader: ConfargLoader) -> None:
+        """--input foo bar builds the list (vanilla, argparse, cyclopts)."""
+        cfg = space_sep_loader.load(_WithStrList, argv=["--input", "foo", "bar"], env={})
+        assert cfg.input == ["foo", "bar"]
+
+    def test_str_list_two_values_repeated(self, repeated_loader: ConfargLoader) -> None:
+        """--input foo --input bar builds the list (click, cyclopts)."""
+        cfg = repeated_loader.load(_WithStrList, argv=["--input", "foo", "--input", "bar"], env={})
+        assert cfg.input == ["foo", "bar"]
+
+    def test_str_list_empty_builds_empty_list_space_sep(self, space_sep_loader: ConfargLoader) -> None:
+        """--input with no token builds [] for str | list[str] (vanilla, argparse, cyclopts)."""
+        cfg = space_sep_loader.load(_WithStrList, argv=["--input"], env={})
+        assert cfg.input == []
+
+    def test_str_tuple_empty_raises_space_sep(self, space_sep_loader: ConfargLoader) -> None:
+        """--input with no token is rejected for str | tuple[str, str] (no varlen variant)."""
+        with pytest.raises(ConfargError):
+            space_sep_loader.load(_WithStrTuple, argv=["--input"], env={})
+
+    def test_flag_registered(self, populating_loader: ConfargLoader) -> None:
+        """The union-with-sequence field flag is registered on every adapter."""
+        for target in (_WithStrTuple, _WithStrList):
+            flags = populating_loader.registered_flags(target)
+            assert flags is not None
+            assert "input" in flags
 
 
 # ---------------------------------------------------------------------------
@@ -628,6 +718,24 @@ class TestUnionRootContract:
         )
         assert isinstance(result, _RootSQLite)
         assert result.dbpath == "/tmp/x.db"
+
+    def test_union_root_literal_discriminator_choices_merged(self) -> None:
+        """A Literal discriminator shared across variants accepts every variant's value.
+
+        Each variant contributes a ``type`` FlagSpec with its own single-member choices;
+        these must be merged into one flag rather than first-wins-collapsed.
+        """
+        flags = build_static_flags(_RootTypedDBConfig, union_tag="class", config_flag="")
+        type_specs = [f for f in flags if f.name == "type"]
+        assert len(type_specs) == 1
+        assert set(type_specs[0].choices or []) == {"mariadb", "postgre"}
+
+    def test_union_root_literal_discriminator_selects_variant(self, loader: ConfargLoader) -> None:
+        """--type <value> selects the matching union variant regardless of order."""
+        maria = loader.load(_RootTypedDBConfig, argv=["--type", "mariadb", "--host", "h"], env={}, config_flag="")
+        assert isinstance(maria, _RootMariaDBTyped)
+        postgre = loader.load(_RootTypedDBConfig, argv=["--type", "postgre", "--host", "h"], env={}, config_flag="")
+        assert isinstance(postgre, _RootPostgreTyped)
 
 
 # ---------------------------------------------------------------------------
