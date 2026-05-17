@@ -12,7 +12,8 @@ nav = [
   { "Get started" = "index.md" },
   { "Tutorials" = [
     "examples/README.md",
-    { "1. Three input sources" = "examples/10_three_input_sources/README.md" },
+    { "1. Three input sources" = "examples/1_three_input_sources/README.md" },
+    { "2. Input precedence" = "examples/2_input_precedence/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]
