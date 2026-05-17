@@ -24,6 +24,14 @@ Config(input='hello')
 $ uv run literal.py --input bye  # Error: not in the set of allowed values
 ...
 ```
+<!--
+```console
+$ uv run literal_argparse.py --input hello
+Config(input='hello')
+$ uv run literal_argparse.py --input bye  # Error: not in the set of allowed values
+...
+```
+-->
 
 ## `Annotated`
 
@@ -33,6 +41,12 @@ The `Annotated` generic type allows you to attach various metadata to a type. Co
 $ uv run annotated.py --input hello
 Config(input='hello')
 ```
+<!--
+```console
+$ uv run annotated_argparse.py --input hello
+Config(input='hello')
+```
+-->
 
 ## `Final`
 
@@ -52,6 +66,12 @@ The `final` value can be set to a string that is not the default value:
 $ uv run final.py --final bye
 Config(final='bye')
 ```
+<!--
+```console
+$ uv run final_argparse.py --final bye
+Config(final='bye')
+```
+-->
 
 This is consistent with the fact that a `Final` value may not have a default value at all.
 

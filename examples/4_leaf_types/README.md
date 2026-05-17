@@ -17,6 +17,15 @@ Config(value=<Value.FOO: 1>)
 $ uv run enum_value.py --value 2
 Config(value=<Value.BAR: 2>)
 ```
+<!--
+```console
+$ uv run enum_value_argparse.py --value FOO
+Config(value=<Value.FOO: 1>)
+$ uv run enum_value_argparse.py --value 2
+Config(value=<Value.BAR: 2>)
+```
+-->
+
 > [!NOTE] *Nitpicker's corner*
 > The argument is first matched against the key, then the value. You don't need to know this unless you are dealing with an enum whose keys and values are inconsistent — let's hope your don't.
 
@@ -57,5 +66,13 @@ Config(input=Int(value=42))
 $ uv run custom_leaf_type.py --input NaN
 Config(input=Int(value=None))
 ```
+<!--
+```console
+$ uv run custom_leaf_type_argparse.py --input 42
+Config(input=Int(value=42))
+$ uv run custom_leaf_type_argparse.py --input NaN
+Config(input=Int(value=None))
+```
+-->
 
 Without leaf type registration, initializing a custom `Int` would require an init dict (`--input.value 42`) that would make its initialization different from plain integers.

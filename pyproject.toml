@@ -19,6 +19,7 @@ completion = ["argcomplete>=3.0"]
 [dependency-groups]
 dev = [
     "click>=8.3.3",
+    "confarg-example-configs",
     "cyclopts>=4.11.2",
     "hypothesis>=6.100",
     "ipython>=9.12.0",
@@ -40,3 +41,9 @@ dev = [
 [build-system]
 build-backend = "uv_build"
 requires      = ["uv_build>=0.11.13,<0.12.0"]
+
+[tool.uv.workspace]
+members = ["examples/configs"]
+
+[tool.uv.sources]
+confarg-example-configs = { workspace = true }

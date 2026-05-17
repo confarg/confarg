@@ -1,0 +1,13 @@
+[project]
+description = "Shared dataclasses for the confarg examples, importable as `configs`."
+license = "MPL-2.0"
+name = "confarg-example-configs"
+requires-python = ">=3.12"
+version = "0.0.1"
+
+[build-system]
+build-backend = "uv_build"
+requires      = ["uv_build>=0.11.13,<0.12.0"]
+
+[tool.uv.build-backend]
+module-name = "configs"

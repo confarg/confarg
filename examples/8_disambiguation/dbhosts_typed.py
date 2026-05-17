@@ -1,10 +1,10 @@
 """Example: union with Literal type fields for explicit discrimination."""
 
-from configs import MariaDBConfig, PostgreSQLConfig
+from configs import MariaDBConfigTyped, PostgreSQLConfigTyped
 
 import confarg
 
-type Config = MariaDBConfig | PostgreSQLConfig
+type Config = MariaDBConfigTyped | PostgreSQLConfigTyped
 
 
 def main() -> None:
