@@ -253,14 +253,14 @@ class TestListAppendWithConfig:
         """--items.N with N >= len(config list) raises ConfargError (use + instead)."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
-        with pytest.raises(confarg.ConfargError, match="extend"):
+        with pytest.raises(confarg.ConfargError, match="append syntax"):
             confarg.load(WithList, args=["--items.2", "3"], env={}, files=[path])
 
     def test_env_index_out_of_range_raises(self, tmp_toml) -> None:
         """Env index beyond config list length raises ConfargError."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
-        with pytest.raises(confarg.ConfargError, match="extend"):
+        with pytest.raises(confarg.ConfargError, match="append syntax"):
             confarg.load(WithList, args=[], env={"ITEMS__2": "3"}, env_prefix="", files=[path])
 
 
@@ -441,3 +441,25 @@ class TestConfigFileDeleteSyntax:
         top = tmp_yaml("items+:\n  - w\n", "top.yaml")
         result = confarg.load(WithList, args=[], env={}, files=[base, mid, top])
         assert result.items == ["x", "z", "w"]
+
+    def test_negative_index_update_yaml(self, tmp_yaml) -> None:
+        """-1 key in YAML updates the last element."""
+        WithList = make_target("items", list[str], default_factory=list)
+        base = tmp_yaml("items:\n  - a\n  - b\n  - c\n", "base.yaml")
+        derived = tmp_yaml('items:\n  "-1": z\n', "derived.yaml")
+        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        assert result.items == ["a", "b", "z"]
+
+    def test_negative_index_delete_yaml(self, tmp_yaml) -> None:
+        """-1- key in YAML deletes the last element."""
+        WithList = make_target("items", list[str], default_factory=list)
+        base = tmp_yaml("items:\n  - a\n  - b\n  - c\n", "base.yaml")
+        derived = tmp_yaml("items:\n  -1-: ~\n", "derived.yaml")
+        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        assert result.items == ["a", "b"]
+
+    def test_negative_index_without_base_raises(self) -> None:
+        """from_dict with a negative index key and no base list raises TypeCoercionError."""
+        WithList = make_target("items", list[int], default_factory=list)
+        with pytest.raises(confarg.TypeCoercionError, match="[Nn]egative"):
+            confarg.from_dict(WithList, {"items": {"-1": 99}})

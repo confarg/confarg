@@ -423,6 +423,14 @@ class TestResolveExpressions:
         resolved = resolve_expressions(data)
         assert resolved["primary"] == "s1"
 
+    def test_negative_list_index_reference(self) -> None:
+        data = {
+            "servers": [{"host": "s1"}, {"host": "s2"}],
+            "last": "${servers[-1].host}",
+        }
+        resolved = resolve_expressions(data)
+        assert resolved["last"] == "s2"
+
     def test_deeply_nested_path(self) -> None:
         data = {
             "a": {"b": {"c": {"d": 42}}},
