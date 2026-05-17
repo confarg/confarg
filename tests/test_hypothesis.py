@@ -9,11 +9,12 @@ from __future__ import annotations
 import keyword
 
 import pytest
-from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 import confarg
 from confarg._parse_cli import _looks_like_flag
+from confarg.dictexpr._expressions import _EXPR_RE
 from tests.conftest import (
     Color,
     WithDefaults,
@@ -25,6 +26,18 @@ from tests.conftest import (
     make_target,
     valid_identifiers,
 )
+
+
+def _escape_expressions(value: str) -> str:
+    """Escape ${...} expression syntax so confarg keeps *value* literal.
+
+    ``$${...}`` is confarg's explicit escape: the resolver strips exactly one
+    leading ``$`` from every escaped match.  Prepending one ``$`` to each
+    ``$${...}``/``${...}`` occurrence therefore makes ``load()`` return the
+    original string unchanged, whatever hypothesis generated.
+    """
+    return _EXPR_RE.sub(lambda m: "$" + m.group(0), value)
+
 
 # ---------------------------------------------------------------------------
 # Round-trip coercion: value -> str -> parse -> value
@@ -55,8 +68,8 @@ class TestRoundTripCoercion:
 
     @given(value=leaf_strs)
     def test_str_round_trip(self, value: str) -> None:
-        """Str survives round-trip via CLI."""
-        result = confarg.load(WithDefaults, argv=["--name", value], env={})
+        """Str survives round-trip via CLI (expression syntax escaped with $${...})."""
+        result = confarg.load(WithDefaults, argv=["--name", _escape_expressions(value)], env={})
         assert result.name == value
 
     @given(value=leaf_ints)
@@ -85,9 +98,8 @@ class TestEnvNameConstruction:
     @given(field_name=_no_dunder, value=leaf_strs)
     def test_flat_field_read_from_uppercase_env(self, field_name: str, value: str) -> None:
         """FIELD_NAME.upper() in env maps to field_name on the dataclass."""
-        assume("${" not in value)  # avoid accidental expression syntax
         target = make_target(field_name, str, default="")
-        result = confarg.load(target, argv=[], env={field_name.upper(): value}, env_prefix="")
+        result = confarg.load(target, argv=[], env={field_name.upper(): _escape_expressions(value)}, env_prefix="")
         assert getattr(result, field_name) == value
 
     @given(
@@ -96,9 +108,8 @@ class TestEnvNameConstruction:
     )
     def test_prefixed_env_reads_field(self, prefix: str, value: str) -> None:
         """PREFIX__NAME env var maps to field 'name' with env_prefix=PREFIX."""
-        assume("${" not in value)
         target = make_target("name", str, default="")
-        result = confarg.load(target, argv=[], env={f"{prefix}__NAME": value}, env_prefix=prefix)
+        result = confarg.load(target, argv=[], env={f"{prefix}__NAME": _escape_expressions(value)}, env_prefix=prefix)
         assert result.name == value
 
 
@@ -115,8 +126,8 @@ class TestMergePriorityInvariant:
         """CLI value always wins over env value for the same field."""
         result = confarg.load(
             WithDefaults,
-            argv=["--name", cli_val],
-            env={"NAME": env_val},
+            argv=["--name", _escape_expressions(cli_val)],
+            env={"NAME": _escape_expressions(env_val)},
             env_prefix="",
         )
         assert result.name == cli_val
@@ -141,7 +152,7 @@ class TestMergePriorityInvariant:
         result = confarg.load(
             WithDefaults,
             argv=[],
-            env={"NAME": env_val},
+            env={"NAME": _escape_expressions(env_val)},
             env_prefix="",
             files=[config_file],
         )
@@ -155,8 +166,8 @@ class TestMergePriorityInvariant:
         config_file.write_text('name = "from_config"\n')
         result = confarg.load(
             WithDefaults,
-            argv=["--name", cli_val],
-            env={"NAME": env_val},
+            argv=["--name", _escape_expressions(cli_val)],
+            env={"NAME": _escape_expressions(env_val)},
             env_prefix="",
             files=[config_file],
         )
@@ -233,9 +244,9 @@ class TestCollectionRoundTrip:
         ),
     )
     def test_set_round_trip(self, values: frozenset[str]) -> None:
-        """Set of strings survives CLI round-trip."""
+        """Set of strings survives CLI round-trip (expression syntax escaped with $${...})."""
         WithSet = make_target("tags", set[str], default_factory=set)
-        args = ["--tags", *list(values)] if values else []
+        args = ["--tags", *[_escape_expressions(v) for v in values]] if values else []
         result = confarg.load(WithSet, argv=args, env={})
         assert result.tags == set(values)
 
