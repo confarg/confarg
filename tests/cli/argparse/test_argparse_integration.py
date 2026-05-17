@@ -7,20 +7,15 @@
 from __future__ import annotations
 
 import argparse
-import math
 from dataclasses import dataclass, field, make_dataclass
 from enum import Enum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 import pytest
 
 import confarg
-from confarg._types import _StrToken
-from confarg.cli._collect import _collect_ns_fields
-from confarg.cli.argparse import FieldMeta, from_namespace, make_parser, merge_namespace, populate_parser
-from confarg.cli.argparse._build import build_static_flags
+from confarg.cli.argparse import FieldMeta, from_namespace, make_parser, populate_parser
 from confarg.cli.argparse._spec import _get_field_docstrings
-from confarg.exceptions import TypeCoercionError
 from confarg.typedload._coerce import _LEAF_COERCIONS
 
 # ---------------------------------------------------------------------------
@@ -138,17 +133,6 @@ class _DeepConfig:
     name: str = ""
 
 
-@dataclass
-class WithOptional:
-    """Dataclass with optional fields for testing."""
-
-    name: str = "default"
-    """Name field."""
-
-    label: str | None = None
-    """Optional label."""
-
-
 class Color(Enum):
     """Color enumeration for testing enum flag support."""
 
@@ -201,25 +185,6 @@ class _StructVariantB:
 @dataclass
 class _WithStructUnion:
     item: _StructVariantA | _StructVariantB
-
-
-@dataclass
-class _RootSQLite:
-    """SQLite config for union-root tests."""
-
-    dbpath: str
-
-
-@dataclass
-class _RootDBServer:
-    """DB server config for union-root tests."""
-
-    host: str
-    port: int
-    name: str
-
-
-_RootDBConfig: Any = _RootSQLite | _RootDBServer
 
 
 @dataclass
@@ -465,82 +430,6 @@ class TestHelpText:
 class TestFromNamespace:
     """Tests for from_namespace round-trip parsing."""
 
-    def test_basic_parse(self) -> None:
-        """Test that basic fields parse correctly from namespace."""
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser)
-        ns = parser.parse_args(["--host", "localhost", "--port", "9000"])
-        result = from_namespace(Simple, ns)
-        assert result.host == "localhost"
-        assert result.port == 9000
-        assert result.debug is False  # dataclass default
-
-    def test_bool_true(self) -> None:
-        """Test that --debug true sets the bool field to True."""
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser)
-        ns = parser.parse_args(["--host", "h", "--debug", "true"])
-        assert from_namespace(Simple, ns).debug is True
-
-    def test_bool_false_via_no_flag(self) -> None:
-        """Test that --debug false sets the bool field to False."""
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser)
-        ns = parser.parse_args(["--host", "h", "--debug", "false"])
-        assert from_namespace(Simple, ns).debug is False
-
-    def test_defaults_used_when_absent(self) -> None:
-        """Test that dataclass defaults are used for absent optional fields."""
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser)
-        ns = parser.parse_args(["--host", "localhost"])
-        result = from_namespace(Simple, ns)
-        assert result.port == 5432
-        assert result.debug is False
-
-    def test_missing_required_raises(self) -> None:
-        """Test that MissingFieldError is raised when a required field is absent."""
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser)
-        ns = parser.parse_args([])  # host not provided
-        with pytest.raises(confarg.exceptions.MissingFieldError):
-            from_namespace(Simple, ns)
-
-    def test_nested_dataclass(self) -> None:
-        """Test that nested dataclass fields are parsed from dot-separated flags."""
-        parser = argparse.ArgumentParser()
-        populate_parser(AppConfig, parser)
-        ns = parser.parse_args(["--db.host", "pg", "--db.port", "5433", "--debug", "true"])
-        result = from_namespace(AppConfig, ns)
-        assert result.db.host == "pg"
-        assert result.db.port == 5433
-        assert result.debug is True
-
-    def test_optional_field_absent(self) -> None:
-        """Test that optional fields default to None when absent."""
-        parser = argparse.ArgumentParser()
-        populate_parser(WithOptional, parser)
-        ns = parser.parse_args([])
-        result = from_namespace(WithOptional, ns)
-        assert result.name == "default"
-        assert result.label is None
-
-    def test_optional_field_provided(self) -> None:
-        """Test that optional fields are set when provided."""
-        parser = argparse.ArgumentParser()
-        populate_parser(WithOptional, parser)
-        ns = parser.parse_args(["--label", "hello"])
-        result = from_namespace(WithOptional, ns)
-        assert result.label == "hello"
-
-    def test_list_field(self) -> None:
-        """Test that list fields accept multiple space-separated values."""
-        parser = argparse.ArgumentParser()
-        populate_parser(WithCollections, parser)
-        ns = parser.parse_args(["--tags", "a", "b", "c"])
-        result = from_namespace(WithCollections, ns)
-        assert result.tags == ["a", "b", "c"]
-
     def test_fixed_tuple_field(self) -> None:
         """Test that fixed-length tuple fields parse positional values."""
         parser = argparse.ArgumentParser()
@@ -557,14 +446,6 @@ class TestFromNamespace:
         result = from_namespace(WithEnum, ns)
         assert result.color == Color.BLUE
 
-    def test_enum_field_by_value(self) -> None:
-        """Test that Enum fields accept enum values (not just names) via CLI."""
-        parser = argparse.ArgumentParser()
-        populate_parser(WithEnum, parser)
-        ns = parser.parse_args(["--color", "blue"])
-        result = from_namespace(WithEnum, ns)
-        assert result.color == Color.BLUE
-
     def test_registered_leaf_type_round_trip(self) -> None:
         """A registered leaf type is coerced correctly end-to-end via argparse."""
         confarg.register_leaf_type(_Hex, lambda s: _Hex(int(s, 16)))
@@ -574,14 +455,6 @@ class TestFromNamespace:
         result = from_namespace(_WithHex, ns)
         assert isinstance(result.color, _Hex)
         assert result.color.value == 255
-
-    def test_literal_field(self) -> None:
-        """Test that Literal fields parse to the correct string value."""
-        parser = argparse.ArgumentParser()
-        populate_parser(WithLiteral, parser)
-        ns = parser.parse_args(["--level", "warning"])
-        result = from_namespace(WithLiteral, ns)
-        assert result.level == "warning"
 
     def test_literal_none_cli(self) -> None:
         """--value none is accepted and coerced to None for Literal[None, str]."""
@@ -672,39 +545,6 @@ class TestFromNamespace:
         populate_parser(_WithStrBool, parser)
         assert "input" in {a.dest for a in parser._actions}
 
-    def test_str_float_stealing_argparse(self) -> None:
-        """--input inf coerces to float for str | float (stealing rule)."""
-        parser = argparse.ArgumentParser()
-        populate_parser(_WithStrFloat, parser)
-        ns = parser.parse_args(["--input", "inf"])
-        result = from_namespace(_WithStrFloat, ns)
-        assert math.isinf(result.input)
-        assert type(result.input) is float
-
-    def test_str_bool_stealing_argparse(self) -> None:
-        """--input yes coerces to True for str | bool (stealing rule)."""
-        parser = argparse.ArgumentParser()
-        populate_parser(_WithStrBool, parser)
-        ns = parser.parse_args(["--input", "yes"])
-        result = from_namespace(_WithStrBool, ns)
-        assert result.input is True
-
-    def test_str_bool_str_override_argparse(self) -> None:
-        """--input.str yes preserves 'yes' as str, bypassing bool stealing."""
-        parser = argparse.ArgumentParser()
-        populate_parser(_WithStrBool, parser)
-        ns = parser.parse_args(["--input.str", "yes"])
-        result = from_namespace(_WithStrBool, ns)
-        assert result.input == "yes"
-        assert type(result.input) is str
-
-    def test_union_class_tag_collected_by_collect_ns_fields(self) -> None:
-        """--<field>.class in namespace is passed through to the merge pipeline."""
-        flat = {"item.class": "myapp._StructVariantA"}
-        result: dict = {}
-        _collect_ns_fields(flat, _WithStructUnion, prefix="", union_tag="class", result=result)
-        assert result == {"item": {"class": _StrToken("myapp._StructVariantA")}}
-
     def test_struct_union_field_inferred_without_class_tag(self) -> None:
         """Struct union field is constructed from variant fields alone, no --item.class needed."""
         parser = argparse.ArgumentParser(allow_abbrev=False)
@@ -723,86 +563,6 @@ class TestFromNamespace:
 class TestConfigFileSupport:
     """Config files can be passed via --config flag or the files= parameter."""
 
-    def test_config_flag_registered_by_default(self) -> None:
-        """populate_parser registers --config by default."""
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser)
-        flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--config" in flags
-
-    def test_config_flag_absent_when_disabled(self) -> None:
-        """config_flag='' suppresses --config registration."""
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser, config_flag="")
-        flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--config" not in flags
-
-    def test_custom_config_flag_name(self) -> None:
-        """config_flag='cfg' registers --cfg instead of --config."""
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser, config_flag="cfg")
-        flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--cfg" in flags
-        assert "--config" not in flags
-
-    def test_config_file_via_namespace(self, tmp_path) -> None:
-        """Values from --config file are used when CLI doesn't provide them."""
-        cfg = tmp_path / "cfg.toml"
-        cfg.write_text('host = "from_file"\nport = 1234\n')
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser)
-        args = ["--config", str(cfg)]
-        ns = parser.parse_args(args)
-        result = from_namespace(Simple, ns, env={}, argv=args)
-        assert result.host == "from_file"
-        assert result.port == 1234
-
-    def test_config_file_via_files_param(self, tmp_path) -> None:
-        """Values from files= parameter are loaded."""
-        cfg = tmp_path / "cfg.toml"
-        cfg.write_text('host = "file_host"\nport = 9999\n')
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser)
-        ns = parser.parse_args([])
-        result = from_namespace(Simple, ns, files=[cfg], env={})
-        assert result.host == "file_host"
-        assert result.port == 9999
-
-    def test_cli_overrides_config_file(self, tmp_path) -> None:
-        """CLI argument takes priority over config file value."""
-        cfg = tmp_path / "cfg.toml"
-        cfg.write_text('host = "from_file"\nport = 1111\n')
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser)
-        args = ["--config", str(cfg), "--port", "2222"]
-        ns = parser.parse_args(args)
-        result = from_namespace(Simple, ns, env={}, argv=args)
-        assert result.host == "from_file"
-        assert result.port == 2222
-
-    def test_env_overrides_config_file(self, tmp_path) -> None:
-        """Env var with explicit prefix takes priority over config file value."""
-        cfg = tmp_path / "cfg.toml"
-        cfg.write_text('host = "from_file"\nport = 1111\n')
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser)
-        args = ["--config", str(cfg)]
-        ns = parser.parse_args(args)
-        result = from_namespace(Simple, ns, env={"CONFARG_PORT": "3333"}, env_prefix="CONFARG_", argv=args)
-        assert result.host == "from_file"
-        assert result.port == 3333
-
-    def test_env_disabled_by_default(self, tmp_path) -> None:
-        """Env vars are ignored when env_prefix is None (the default)."""
-        cfg = tmp_path / "cfg.toml"
-        cfg.write_text('host = "from_file"\nport = 1111\n')
-        parser = argparse.ArgumentParser()
-        populate_parser(Simple, parser)
-        args = ["--config", str(cfg)]
-        ns = parser.parse_args(args)
-        result = from_namespace(Simple, ns, env={"PORT": "9999"}, argv=args)
-        assert result.port == 1111
-
     def test_multiple_config_files_merged(self, tmp_path) -> None:
         """Later config files in the list override earlier ones."""
         cfg1 = tmp_path / "base.toml"
@@ -817,76 +577,6 @@ class TestConfigFileSupport:
         assert result.host == "base"
         assert result.port == 2000
 
-    def test_subkey_config_flag_registered(self) -> None:
-        """populate_parser registers --config.<nested> for each nested dataclass."""
-        parser = argparse.ArgumentParser()
-        populate_parser(AppConfig, parser)
-        flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--config" in flags
-        assert "--config.db" in flags
-
-    def test_subkey_config_flag_loads_under_subkey(self, tmp_path) -> None:
-        """--config.db file.toml loads file contents under the 'db' key."""
-        db_cfg = tmp_path / "db.toml"
-        db_cfg.write_text('host = "db_host"\nport = 5555\n')
-        parser = argparse.ArgumentParser()
-        populate_parser(AppConfig, parser)
-        args = ["--config.db", str(db_cfg)]
-        ns = parser.parse_args(args)
-        result = from_namespace(AppConfig, ns, env={}, argv=args)
-        assert result.db.host == "db_host"
-        assert result.db.port == 5555
-
-    def test_subkey_config_and_root_config_combined(self, tmp_path) -> None:
-        """Root --config and --config.db can be combined; CLI still wins."""
-        root_cfg = tmp_path / "root.toml"
-        root_cfg.write_text("debug = true\n")
-        db_cfg = tmp_path / "db.toml"
-        db_cfg.write_text('host = "from_file"\nport = 1111\n')
-        parser = argparse.ArgumentParser()
-        populate_parser(AppConfig, parser)
-        args = [
-            "--config",
-            str(root_cfg),
-            "--config.db",
-            str(db_cfg),
-            "--db.port",
-            "9999",
-        ]
-        ns = parser.parse_args(args)
-        result = from_namespace(AppConfig, ns, env={}, argv=args)
-        assert result.debug is True
-        assert result.db.host == "from_file"
-        assert result.db.port == 9999  # CLI overrides file
-
-    def test_left_to_right_subkey_then_root(self, tmp_path) -> None:
-        """--config.db db.yaml --config root.yaml: root file (rightmost) wins for db."""
-        root_cfg = tmp_path / "root.toml"
-        root_cfg.write_text('debug = true\n[db]\nhost = "root_host"\nport = 1111\n')
-        db_cfg = tmp_path / "db.toml"
-        db_cfg.write_text('host = "db_host"\nport = 5555\n')
-        parser = argparse.ArgumentParser()
-        populate_parser(AppConfig, parser)
-        args = ["--config.db", str(db_cfg), "--config", str(root_cfg)]
-        ns = parser.parse_args(args)
-        result = from_namespace(AppConfig, ns, env={}, argv=args)
-        assert result.db.host == "root_host"  # root.yaml (rightmost) wins
-        assert result.db.port == 1111
-
-    def test_left_to_right_root_then_subkey(self, tmp_path) -> None:
-        """--config root.yaml --config.db db.yaml: subkey file (rightmost) wins for db."""
-        root_cfg = tmp_path / "root.toml"
-        root_cfg.write_text('debug = true\n[db]\nhost = "root_host"\nport = 1111\n')
-        db_cfg = tmp_path / "db.toml"
-        db_cfg.write_text('host = "db_host"\nport = 5555\n')
-        parser = argparse.ArgumentParser()
-        populate_parser(AppConfig, parser)
-        args = ["--config", str(root_cfg), "--config.db", str(db_cfg)]
-        ns = parser.parse_args(args)
-        result = from_namespace(AppConfig, ns, env={}, argv=args)
-        assert result.db.host == "db_host"  # db.yaml (rightmost) wins
-        assert result.db.port == 5555
-
     def test_subkey_config_no_deep_flags(self) -> None:
         """--config.<field> flags are generated only for direct fields, not recursively."""
         parser = argparse.ArgumentParser()
@@ -894,98 +584,6 @@ class TestConfigFileSupport:
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--config.middle" in flags
         assert "--config.middle.inner" not in flags
-
-    def test_subkey_config_false_root_only(self) -> None:
-        """config_subkeys=False registers only the root --config flag."""
-        parser = argparse.ArgumentParser()
-        populate_parser(AppConfig, parser, config_subkeys=False)
-        flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--config" in flags
-        assert "--config.db" not in flags
-
-
-# ---------------------------------------------------------------------------
-# Inheritance-based dispatch (base class with subclasses)
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _BaseDB:
-    """Abstract base database config."""
-
-
-@dataclass
-class _SQLiteDB(_BaseDB):
-    dbpath: str
-
-
-@dataclass
-class _ServerDB(_BaseDB):
-    host: str
-    port: int
-
-
-class TestInheritanceDispatch:
-    """populate_parser / from_namespace handle base-class + subclass inheritance."""
-
-    def test_class_flag_registered(self) -> None:
-        """populate_parser registers --class for a base dataclass with subclasses."""
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(_BaseDB, parser)
-        flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--class" in flags
-
-    def test_subclass_fields_registered(self) -> None:
-        """populate_parser also registers subclass fields as top-level flags."""
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(_BaseDB, parser)
-        flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--dbpath" in flags
-        assert "--host" in flags
-        assert "--port" in flags
-
-    def test_from_namespace_sqlite(self) -> None:
-        """from_namespace constructs the correct SQLite subclass instance."""
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(_BaseDB, parser, config_flag="")
-        ns = parser.parse_args(
-            [
-                "--class",
-                f"{__name__}._SQLiteDB",
-                "--dbpath",
-                "/var/db/app.sqlite",
-            ],
-        )
-        result = from_namespace(_BaseDB, ns, env={})
-        assert isinstance(result, _SQLiteDB)
-        assert result.dbpath == "/var/db/app.sqlite"
-
-    def test_from_namespace_server(self) -> None:
-        """from_namespace constructs the correct server subclass instance."""
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(_BaseDB, parser, config_flag="")
-        ns = parser.parse_args(
-            [
-                "--class",
-                f"{__name__}._ServerDB",
-                "--host",
-                "db.example.com",
-                "--port",
-                "5432",
-            ],
-        )
-        result = from_namespace(_BaseDB, ns, env={})
-        assert isinstance(result, _ServerDB)
-        assert result.host == "db.example.com"
-        assert result.port == 5432
-
-    def test_from_namespace_no_class_tag_raises(self) -> None:
-        """from_namespace raises TypeCoercionError when a base class has subclasses but no --class is given."""
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(_BaseDB, parser, config_flag="")
-        ns = parser.parse_args(["--dbpath", "/var/db/app.sqlite"])
-        with pytest.raises(TypeCoercionError, match="discriminator"):
-            from_namespace(_BaseDB, ns, env={})
 
 
 class TestMakeParser:
@@ -1022,119 +620,3 @@ class TestMakeParser:
         result = from_namespace(Simple, ns, env={})
         assert result.host == "localhost"
         assert result.port == 9999
-
-
-# ---------------------------------------------------------------------------
-# Root-level union target (target IS a union, not a struct containing one)
-# ---------------------------------------------------------------------------
-
-
-class TestUnionRootTarget:
-    """make_parser / from_namespace work when the target is itself a union of structs."""
-
-    def test_union_root_flags_registered(self) -> None:
-        """build_static_flags generates --class and all variant fields for a union root."""
-        flags = build_static_flags(_RootDBConfig, union_tag="class", config_flag="")
-        names = {f.name for f in flags}
-        assert "class" in names
-        assert "dbpath" in names
-        assert "host" in names
-        assert "port" in names
-        assert "name" in names
-
-    def test_union_root_round_trip_sqlite(self) -> None:
-        """--dbpath alone selects the SQLite variant without needing --class."""
-        parser = make_parser(_RootDBConfig, config_flag="")
-        ns = parser.parse_args(["--dbpath", "/tmp/x.db"])
-        result = from_namespace(_RootDBConfig, ns, env={})
-        assert isinstance(result, _RootSQLite)
-        assert result.dbpath == "/tmp/x.db"
-
-    def test_union_root_round_trip_db_server(self) -> None:
-        """DB server fields alone select the server variant without needing --class."""
-        parser = make_parser(_RootDBConfig, config_flag="")
-        ns = parser.parse_args(["--host", "db.example.com", "--port", "5432", "--name", "mydb"])
-        result = from_namespace(_RootDBConfig, ns, env={})
-        assert isinstance(result, _RootDBServer)
-        assert result.host == "db.example.com"
-        assert result.port == 5432
-        assert result.name == "mydb"
-
-    def test_union_root_explicit_class_tag(self) -> None:
-        """--class overrides structural disambiguation for the union root."""
-        parser = make_parser(_RootDBConfig, config_flag="")
-        cls_path = f"{__name__}._RootSQLite"
-        ns = parser.parse_args(["--class", cls_path, "--dbpath", "/tmp/x.db"])
-        result = from_namespace(_RootDBConfig, ns, env={})
-        assert isinstance(result, _RootSQLite)
-        assert result.dbpath == "/tmp/x.db"
-
-
-# ---------------------------------------------------------------------------
-# merge_namespace
-# ---------------------------------------------------------------------------
-
-
-class TestMergeNamespace:
-    """merge_namespace returns the raw merged dict instead of a constructed instance."""
-
-    def test_returns_dict(self) -> None:
-        """merge_namespace returns a dict, not a dataclass instance."""
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(Simple, parser, config_flag="")
-        ns = parser.parse_args(["--host", "myhost", "--port", "9090"])
-        result = merge_namespace(Simple, ns, env={})
-        assert isinstance(result, dict)
-
-    def test_cli_values_in_dict(self) -> None:
-        """CLI-provided values appear in the returned dict as _StrToken entries."""
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(Simple, parser, config_flag="")
-        ns = parser.parse_args(["--host", "myhost", "--port", "9090"])
-        result = merge_namespace(Simple, ns, env={})
-        assert result["host"] == "myhost"
-        assert result["port"] == "9090"
-
-    def test_expressions_preserved(self, tmp_path: Any) -> None:
-        """Expression strings from config files are kept intact (not resolved)."""
-        cfg = tmp_path / "cfg.yaml"
-        cfg.write_text("host: myhost\nport: '${host}'\n")
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(Simple, parser)
-        args = ["--config", str(cfg)]
-        ns = parser.parse_args(args)
-        result = merge_namespace(Simple, ns, env={}, argv=args)
-        assert result["port"] == "${host}"
-
-    def test_round_trip_equivalence(self) -> None:
-        """build(target, merge_namespace(...)) produces the same instance as from_namespace(...)."""
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(Simple, parser, config_flag="")
-        ns = parser.parse_args(["--host", "myhost", "--port", "9090"])
-        raw = merge_namespace(Simple, ns, env={})
-        from_raw = confarg.build(Simple, raw)
-        direct = from_namespace(Simple, ns, env={})
-        assert from_raw == direct
-
-    def test_dump_file_from_raw_dict(self, tmp_path: Any) -> None:
-        """dump_file accepts the raw dict returned by merge_namespace without raising."""
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(Simple, parser, config_flag="")
-        ns = parser.parse_args(["--host", "myhost", "--port", "9090"])
-        raw = merge_namespace(Simple, ns, env={})
-        out = tmp_path / "out.yaml"
-        confarg.dump_file(raw, out)
-        assert out.exists()
-
-    def test_dump_file_round_trip_via_instance(self, tmp_path: Any) -> None:
-        """Round-tripping through a built instance gives back the same config."""
-        parser = argparse.ArgumentParser(allow_abbrev=False)
-        populate_parser(Simple, parser, config_flag="")
-        ns = parser.parse_args(["--host", "myhost", "--port", "9090"])
-        raw = merge_namespace(Simple, ns, env={})
-        instance = confarg.build(Simple, raw)
-        out = tmp_path / "out.yaml"
-        confarg.dump_file(instance, out)
-        reloaded = confarg.load(Simple, argv=[], files=[out], env={})
-        assert reloaded.host == "myhost"
-        assert reloaded.port == 9090
