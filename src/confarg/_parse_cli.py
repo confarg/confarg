@@ -151,6 +151,39 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
     return tp
 
 
+def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> bool:  # noqa: PLR0911  # one early return per type case, mirroring _advance_field_type
+    """Return True if the dotted path indexes a list/tuple/set or keys a dict.
+
+    Such paths (e.g. ``users.0``, ``dbs.1.port``, ``foo.bar``) describe a
+    collection patch that a backend's flat-namespace collector cannot express
+    from the type walk alone — they are applied by the argv-order patch scan
+    (``_parse_cli(..., patch_only=True)``) instead.  Pure struct-field,
+    namedtuple, and callable paths return False (the flat collector handles
+    those).
+    """
+    tp = _resolve_type(target)
+    for idx, part in enumerate(parts):
+        if part == union_tag:
+            return False
+        tp = _resolve_type(tp)
+        if _is_union(tp):
+            return any(
+                _is_collection_patch_path(_resolve_type(v), parts[idx:], union_tag) for v in _union_args_no_none(tp)
+            )
+        if _is_callable(tp):
+            return False
+        if _is_namedtuple(tp):
+            return False
+        if _is_list(tp) or _is_set(tp) or _is_frozenset(tp) or _is_tuple(tp):
+            return True
+        if _is_dict(tp):
+            return True
+        tp = _advance_field_type(tp, part)
+        if tp is None:
+            return False
+    return False
+
+
 def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
     """Check if any prefix of the path lands on a dict type.
 
@@ -654,12 +687,22 @@ def _collect_config_file_pairs(
     return pairs
 
 
-def _parse_cli(
+def _skip_flag_values(argv: Sequence[str], i: int) -> int:
+    """Advance past a flag token at *i* and any following non-flag value tokens."""
+    i += 1
+    while i < len(argv) and not _looks_like_flag(argv[i]):
+        i += 1
+    return i
+
+
+def _parse_cli(  # noqa: C901, PLR0913  # single argv parse loop; patch_only adds skip branches over the same dispatch
     argv: Sequence[str],
     target: Any,
     cli_prefix: str,
     config_flag: str,
     union_tag: str,
+    *,
+    patch_only: bool = False,
 ) -> tuple[dict[str, Any], list[tuple[str, Path]]]:
     """Parse CLI arguments into a nested dict and a list of config file paths.
 
@@ -669,16 +712,27 @@ def _parse_cli(
         cli_prefix: Required prefix for CLI flags (empty string for no prefix).
         config_flag: The flag name used to specify config files.
         union_tag: The field name used as a discriminator tag in unions.
+        patch_only: When True, only collection-patch flags (list index/append/
+            delete and dict-subkey) are processed; every other token — normal
+            struct fields, scalar roots, force-casts, config files, and stray
+            values — is skipped, and no config-file pairs are returned.  The CLI
+            adapters use this to apply argv-ordered patch ops on top of values
+            already collected from the host framework's parse result, so
+            interleaved ``--field+ … --field.-1.sub …`` sequences resolve in
+            command order while the framework keeps ownership of whole-field
+            values (preserving e.g. click's repeated-flag list syntax).
 
     Returns:
         A tuple of (data_dict, config_files) where data_dict is the parsed
-        argument data and config_files is a list of (subpath, Path) pairs.
+        argument data and config_files is a list of (subpath, Path) pairs
+        (always empty when ``patch_only`` is True).
 
     Raises:
         UnknownArgumentError: If an unrecognized argument is encountered.
         ConfargError: If a config flag is missing its path argument or conflicts with a field name.
     """
-    _check_config_flag_conflict(target, config_flag, cli_prefix)
+    if not patch_only:
+        _check_config_flag_conflict(target, config_flag, cli_prefix)
     argv = _normalize_eq_args(argv)
 
     ctx = _ParseCtx(argv=argv, target=target, union_tag=union_tag)
@@ -690,6 +744,9 @@ def _parse_cli(
     while i < len(argv):
         token = argv[i]
         if not _looks_like_flag(token):
+            if patch_only:
+                i += 1  # stray value of a skipped non-patch flag
+                continue
             msg = (
                 f"Unexpected positional argument: {token!r}."
                 " All arguments must be named flags (e.g. --fieldname value)."
@@ -698,12 +755,24 @@ def _parse_cli(
 
         key = _strip_cli_prefix(token[2:], cli_prefix, token)
 
-        if key == config_flag or key.startswith(config_flag + "."):
+        if config_flag and (key == config_flag or key.startswith(config_flag + ".")):
+            if patch_only:
+                i = _skip_flag_values(argv, i)  # config files handled by the pipeline, not the patch scan
+                continue
             i, new_cfgs = _consume_config_paths(argv, i, key, config_flag)
             config_files.extend(new_cfgs)
             continue
 
         path, append_mode, delete_mode, force_cast, delete_idx, is_list_delete = _parse_flag_mode(key)
+
+        if (
+            patch_only
+            and not delete_mode
+            and not append_mode
+            and not _is_collection_patch_path(target, path, union_tag)
+        ):
+            i += 1  # normal field / scalar root / force-cast: owned by the flat collector
+            continue
 
         if delete_mode:
             _handle_delete_token(ctx, token, path, is_list_delete=is_list_delete, delete_idx=delete_idx)
@@ -733,3 +802,19 @@ def _parse_cli(
         i = _consume_typed_arg(ctx, i, token, ft, path)
 
     return ctx.data, config_files
+
+
+def _collect_cli_patch_ops(
+    argv: Sequence[str],
+    target: Any,
+    config_flag: str,
+    union_tag: str,
+) -> dict[str, Any]:
+    """Return the collection-patch ops in *argv* as a nested merge-op dict.
+
+    Thin wrapper over :func:`_parse_cli` in ``patch_only`` mode, used by the CLI
+    adapters: the result is deep-merged on top of the values already collected
+    from the host framework's parse result.
+    """
+    data, _ = _parse_cli(argv, target, "", config_flag, union_tag, patch_only=True)
+    return data

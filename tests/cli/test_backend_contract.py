@@ -19,6 +19,9 @@ from __future__ import annotations
 
 import dataclasses
 import math
+from collections.abc import (
+    Callable,  # noqa: TC003  # used in a runtime dataclass annotation confarg resolves via get_type_hints
+)
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
@@ -641,15 +644,15 @@ class TestMergeContract:
         assert isinstance(result, dict)
 
     def test_cli_values_in_dict(self, loader: ConfargLoader) -> None:
-        """CLI-provided values appear in the returned dict.
+        """CLI-provided values appear in the returned dict, eagerly coerced.
 
-        Known representation difference: vanilla _parse_cli coerces typed values
-        eagerly (port → 9090), while adapters keep raw strings and defer coercion
-        to build() (port → "9090").  Both construct identically.
+        Every integration coerces typed leaf values at merge time, so the raw
+        dict carries ``port`` as the int ``9090`` regardless of which backend
+        produced it (vanilla and adapters agree byte-for-byte).
         """
         result = loader.merge(Simple, argv=["--host", "myhost", "--port", "9090"], env={})
         assert result["host"] == "myhost"
-        assert result["port"] in (9090, "9090")
+        assert result["port"] == 9090
 
     def test_expressions_preserved(self, loader: ConfargLoader, tmp_yaml) -> None:
         """Expression strings from config files are kept intact (not resolved)."""
@@ -678,3 +681,229 @@ class TestMergeContract:
         reloaded = confarg.load(Simple, argv=[], files=[out], env={})
         assert reloaded.host == "myhost"
         assert reloaded.port == 9090
+
+
+# ---------------------------------------------------------------------------
+# Collection patches — list index/append/delete and dict subkeys via CLI
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _PatchSqlite:
+    """List-element struct for collection-patch tests."""
+
+    dbpath: str = ""
+
+
+@dataclass
+class _WithUsers:
+    """List-of-str field with a default base."""
+
+    users: list[str] = dataclasses.field(default_factory=list)
+
+
+@dataclass
+class _WithLang:
+    """Fixed-length tuple field."""
+
+    lang: tuple[str, str] = ("en", "EN")
+
+
+@dataclass
+class _WithDbs:
+    """List-of-struct field."""
+
+    dbs: list[_PatchSqlite] = dataclasses.field(default_factory=list)
+
+
+@dataclass
+class _WithMap:
+    """Dict field (skipped at static registration; patched via argv subkeys)."""
+
+    data: dict[str, int] = dataclasses.field(default_factory=dict)
+
+
+class TestCollectionPatchContract:
+    """List index/append/delete and dict-subkey CLI patches resolve identically everywhere.
+
+    These were vanilla-only before ``build_dynamic_flags`` registered the
+    argv-derived patch flags and ``_parse_cli(..., patch_only=True)`` applied
+    them in command order on top of the framework parse result.
+    """
+
+    def test_index_set(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--field.N value`` replaces a single list element."""
+        base = tmp_yaml("users: [alice, bob, claire]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users.0", "allan"], env={})
+        assert cfg.users == ["allan", "bob", "claire"]
+
+    def test_negative_index_set(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Negative indices count from the end."""
+        base = tmp_yaml("users: [alice, bob, claire]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users.-1", "billy"], env={})
+        assert cfg.users == ["alice", "bob", "billy"]
+
+    def test_nested_index_set(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Indices compose with sub-field paths (``--dbs.1.dbpath``)."""
+        base = tmp_yaml("dbs:\n  - dbpath: a\n  - dbpath: b\n")
+        cfg = loader.load(_WithDbs, argv=["--config", str(base), "--dbs.1.dbpath", "z"], env={})
+        assert cfg.dbs == [_PatchSqlite("a"), _PatchSqlite("z")]
+
+    def test_tuple_index_set(self, loader: ConfargLoader) -> None:
+        """Tuple elements are patchable by index."""
+        cfg = loader.load(_WithLang, argv=["--lang.1", "FR"], env={})
+        assert cfg.lang == ("en", "FR")
+
+    def test_append_single(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--field+ value`` appends one element."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users+", "david"], env={})
+        assert cfg.users == ["alice", "bob", "david"]
+
+    def test_delete_index(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--field.N-`` removes the element at N."""
+        base = tmp_yaml("users: [alice, bob, claire]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users.0-"], env={})
+        assert cfg.users == ["bob", "claire"]
+
+    def test_delete_negative_index(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Negative-index deletes count from the end."""
+        base = tmp_yaml("users: [alice, bob, claire]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users.-2-"], env={})
+        assert cfg.users == ["alice", "claire"]
+
+    def test_dict_subkey_set(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--field.key value`` adds/overrides a dict entry (coerced to the value type)."""
+        base = tmp_yaml("data: {a: 1, b: 2}\n")
+        cfg = loader.load(_WithMap, argv=["--config", str(base), "--data.c", "3"], env={})
+        assert cfg.data == {"a": 1, "b": 2, "c": 3}
+
+    def test_dict_key_delete(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--field.key-`` removes a dict entry."""
+        base = tmp_yaml("data: {a: 1, b: 2}\n")
+        cfg = loader.load(_WithMap, argv=["--config", str(base), "--data.a-"], env={})
+        assert cfg.data == {"b": 2}
+
+    def test_interleaved_append_and_patch_newest(self, loader: ConfargLoader) -> None:
+        """Append-empty-then-fill-by-(-1) repeats resolve in command order.
+
+        The hardest ordering case: the framework parse result cannot represent
+        the two interleaved ``--dbs.-1.dbpath`` patches, so values are read from
+        argv in order via the patch scan.
+        """
+        cfg = loader.load(
+            _WithDbs,
+            argv=["--dbs+", "{}", "--dbs.-1.dbpath", "db1", "--dbs+", "{}", "--dbs.-1.dbpath", "db2"],
+            env={},
+        )
+        assert cfg.dbs == [_PatchSqlite("db1"), _PatchSqlite("db2")]
+
+
+class TestCollectionPatchListSyntax:
+    """Multi-value appends follow each framework's list-argument convention.
+
+    Whole-field list values keep their framework syntax (space-separated for
+    argparse/cyclopts, repeated flags for click); the append/delete ordering on
+    top is shared.
+    """
+
+    def test_append_multi_space_separated(self, space_sep_loader: ConfargLoader, tmp_yaml) -> None:
+        """Space-separated multi-value append (argparse/cyclopts/vanilla)."""
+        base = tmp_yaml("users: [john]\n")
+        cfg = space_sep_loader.load(_WithUsers, argv=["--config", str(base), "--users+", "billy", "alice"], env={})
+        assert cfg.users == ["john", "billy", "alice"]
+
+    def test_append_multi_repeated(self, repeated_loader: ConfargLoader, tmp_yaml) -> None:
+        """Repeated-flag multi-value append (click/cyclopts)."""
+        base = tmp_yaml("users: [john]\n")
+        cfg = repeated_loader.load(
+            _WithUsers,
+            argv=["--config", str(base), "--users+", "billy", "--users+", "alice"],
+            env={},
+        )
+        assert cfg.users == ["john", "billy", "alice"]
+
+    def test_set_append_delete_order_space_sep(self, space_sep_loader: ConfargLoader) -> None:
+        """Whole-list set, then append, then delete — applied in command order."""
+        cfg = space_sep_loader.load(
+            _WithUsers,
+            argv=["--users", "john", "--users+", "billy", "alice", "--users.-2-"],
+            env={},
+        )
+        assert cfg.users == ["john", "alice"]
+
+    def test_set_append_delete_order_repeated(self, repeated_loader: ConfargLoader) -> None:
+        """Same ordering via click's repeated-flag list syntax."""
+        cfg = repeated_loader.load(
+            _WithUsers,
+            argv=["--users", "john", "--users+", "billy", "--users+", "alice", "--users.-2-"],
+            env={},
+        )
+        assert cfg.users == ["john", "alice"]
+
+
+# ---------------------------------------------------------------------------
+# Expressions over CLI-provided numbers (eager leaf coercion)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _ExprConfig:
+    """Config whose ``derived`` field is an expression over ``base``."""
+
+    base: int = 0
+    derived: int = 0
+
+
+class TestExpressionOverCliContract:
+    """A config expression resolves against a CLI-overridden numeric field in every backend.
+
+    Regression for the deferred-coercion gap: adapters used to leave the CLI
+    value as a string, so ``${base * 3}`` raised; eager leaf coercion fixes it.
+    """
+
+    def test_expr_references_cli_number(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A CLI int override flows into a config expression and resolves to an int."""
+        cfg = tmp_yaml("base: 10\nderived: '${base * 3}'\n")
+        result = loader.load(_ExprConfig, argv=["--config", str(cfg), "--base", "8"], env={})
+        assert result.base == 8
+        assert result.derived == 24
+
+
+# ---------------------------------------------------------------------------
+# Callable bind on a class __call__ parameter
+# ---------------------------------------------------------------------------
+
+
+class _Greeter:
+    """Callable instance: ``greeting`` is a constructor kwarg, ``punct`` a __call__ bind."""
+
+    def __init__(self, greeting: str) -> None:
+        self.greeting = greeting
+
+    def __call__(self, name: str, punct: str) -> str:
+        return f"{self.greeting}, {name}{punct}"
+
+
+@dataclass
+class _CallableConfig:
+    """Config with a single callable field."""
+
+    fn: Callable[[str], str]
+
+
+class TestCallableBindContract:
+    """``--field.bind.<param>`` for a class's ``__call__`` parameter is registered everywhere.
+
+    In ``.class`` mode the constructor params become ``--field.<param>`` factory
+    kwargs and the instance's ``__call__`` params become ``--field.bind.<param>``.
+    """
+
+    def test_bind_call_param(self, loader: ConfargLoader) -> None:
+        """A class chosen via .class binds a __call__ param through --field.bind.<param>."""
+        cfg = loader.load(
+            _CallableConfig,
+            argv=["--fn.class", f"{__name__}._Greeter", "--fn.greeting", "Hi", "--fn.bind.punct", "!"],
+            env={},
+        )
+        assert cfg.fn("world") == "Hi, world!"

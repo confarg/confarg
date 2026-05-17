@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import functools
+import sys
 from typing import TYPE_CHECKING, Any
 
 import click
@@ -35,6 +36,18 @@ class _ConfargOption(click.Option):
 
 def _spec_to_option(spec: FlagSpec) -> click.Option:
     """Convert one FlagSpec to a click.Option."""
+    if spec.nargs == 0:
+        # Value-less flag (e.g. a list/dict delete --field.N-): a boolean switch.
+        return _ConfargOption(
+            confarg_name=spec.name,
+            param_decls=[f"--{spec.name}"],
+            is_flag=True,
+            default=False,
+            required=False,
+            help=spec.help or None,
+            allow_from_autoenv=False,
+        )
+
     # Click does not support nargs=-1 for options; use multiple=True instead.
     multiple = spec.nargs == "*"
     nargs: int = 1 if (spec.nargs is None or spec.nargs == "*") else int(spec.nargs)
@@ -123,17 +136,22 @@ def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app s
         config_subkeys: Whether to register ``--<config_flag>.<field>`` options for
             each direct struct field of the root dataclass (default ``True``).
             Set to ``False`` to expose only the root ``--<config_flag>`` option.
-        argv: CLI argument list used to pre-resolve ``--<field>.fn`` /
-            ``--<field>.class`` values so that callable ``--<field>.bind.*``
-            options can be registered before parsing.
+        argv: CLI argument list scanned to register argv-derived dynamic
+            options: ``--<field>.bind.*`` for resolved ``--<field>.fn`` /
+            ``--<field>.class`` callables, ``--<config_flag>.<subpath>[+]``
+            scoped/append config files, and list-index / append / delete /
+            dict-subkey patch options.  Defaults to ``sys.argv[1:]`` (matching
+            :func:`from_context`); pass an explicit list, or ``[]`` to register
+            only the static, type-derived options.
     """
+    if argv is None:
+        argv = sys.argv[1:]
     before_names = {p.name for p in command.params}
 
     static = build_static_flags(target, union_tag=union_tag, config_flag=config_flag, config_subkeys=config_subkeys)
     load_flags_into_command(static, command)
-    if argv is not None:
-        dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
-        load_flags_into_command(dynamic, command)
+    dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
+    load_flags_into_command(dynamic, command)
 
     confarg_names = {p.name for p in command.params} - before_names
     if command.callback is not None and confarg_names:

@@ -154,7 +154,13 @@ class ArgparseLoader(ConfargLoader):
         config_subkeys: bool = True,
         union_tag: str = _defaults.UNION_TAG,
     ) -> set[str] | None:
-        parser = make_parser(target, config_flag=config_flag, config_subkeys=config_subkeys, union_tag=union_tag)
+        parser = make_parser(
+            target,
+            config_flag=config_flag,
+            config_subkeys=config_subkeys,
+            union_tag=union_tag,
+            argv=[],
+        )
         return {s[2:] for a in parser._actions for s in a.option_strings if s.startswith("--") and s != "--help"}
 
 
@@ -195,7 +201,14 @@ class ClickLoader(ConfargLoader):
         union_tag: str = _defaults.UNION_TAG,
     ) -> set[str] | None:
         cmd = click.command()(lambda **kwargs: None)
-        populate_command(target, cmd, config_flag=config_flag, config_subkeys=config_subkeys, union_tag=union_tag)
+        populate_command(
+            target,
+            cmd,
+            config_flag=config_flag,
+            config_subkeys=config_subkeys,
+            union_tag=union_tag,
+            argv=[],
+        )
         return {opt[2:] for p in cmd.params for opt in p.opts if opt.startswith("--")}
 
 
@@ -225,7 +238,7 @@ class CycloptsLoader(ConfargLoader):
         union_tag: str = _defaults.UNION_TAG,
     ) -> set[str] | None:
         app = cyclopts.App()
-        populate_app(target, app, config_flag=config_flag, config_subkeys=config_subkeys, union_tag=union_tag)
+        populate_app(target, app, config_flag=config_flag, config_subkeys=config_subkeys, union_tag=union_tag, argv=[])
         meta = _app_meta[id(app)]
         return set(meta["name_map"].values())
 

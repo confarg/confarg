@@ -18,7 +18,8 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._api import build
-from confarg._parse_cli import _collect_config_file_pairs
+from confarg._merge import _deep_merge
+from confarg._parse_cli import _collect_cli_patch_ops, _collect_config_file_pairs
 from confarg._pipeline import _merge_sources
 from confarg.cli._collect import _collect_ns_fields
 from confarg.cli.cyclopts._register import _app_meta
@@ -107,8 +108,11 @@ def merge_app(  # noqa: PLR0913
     _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data)
 
     # Scanning argv (not the bound arguments) preserves interleaved
-    # --config[.subpath] ordering, so later CLI config files win on conflict.
+    # --config[.subpath] ordering, so later CLI config files win on conflict, and
+    # lets the patch scan apply list-index / append / delete / dict-subkey ops in
+    # command order.
     argv_ = sys.argv[1:] if argv is None else list(argv)
+    cli_data = _deep_merge(cli_data, _collect_cli_patch_ops(argv_, target, config_flag, union_tag))
     cli_configs = _collect_config_file_pairs(argv_, config_flag) if config_flag else []
 
     return _merge_sources(

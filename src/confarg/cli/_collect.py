@@ -18,11 +18,13 @@ from confarg._import import _import_dotted
 from confarg._merge import _set_nested
 from confarg._types import (
     _callable_return_type,
+    _elem_type,
     _is_callable,
     _is_dict,
     _is_namedtuple,
     _is_struct,
     _is_union,
+    _is_varlen_collection,
     _namedtuple_fields,
     _Pinned,
     _resolve_struct,
@@ -32,9 +34,35 @@ from confarg._types import (
     _unwrap_optional,
 )
 from confarg.exceptions import SymbolImportError
-from confarg.typedload._coerce import _is_registered_leaf
+from confarg.typedload._coerce import _is_registered_leaf, _try_coerce
 
 _CAST_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
+
+
+def _coerce_scalar(tp: Any, v: Any) -> Any:
+    """Eagerly coerce a single CLI string value to its field type, mirroring _parse_cli.
+
+    Non-strings pass through unchanged.  Multi-variant unions, dicts, ``Any``, and
+    unknown types fall through to a bare :class:`_StrToken` (coercion deferred to
+    ``construct()``), exactly as :func:`_try_coerce` does for the vanilla path.
+    """
+    if not isinstance(v, str):
+        return v
+    token = _StrToken(v)
+    return _try_coerce(tp, token) if tp is not None else token
+
+
+def _coerce_leaf_value(core: Any, v: Any) -> Any:
+    """Eagerly coerce a CLI leaf value (scalar or list) to its field type.
+
+    Ensures the merged dict carries the same typed values as the vanilla
+    ``confarg.load`` path, so expressions over CLI-provided numbers resolve and
+    the four integrations produce byte-for-byte identical merged dicts.
+    """
+    if isinstance(v, list):
+        et = _elem_type(core) if _is_varlen_collection(core) else None
+        return [_coerce_scalar(et, item) for item in v]
+    return _coerce_scalar(core, v)
 
 
 def _find_cast_override(flat: dict[str, Any], flag: str) -> _Pinned | None:
@@ -256,7 +284,7 @@ def _collect_ns_union_root(
         _collect_ns_fields(flat, variant, prefix, union_tag, result)
 
 
-def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type case
+def _collect_ns_fields(  # noqa: C901, PLR0912  # one branch per type case
     flat: dict[str, Any],
     target: Any,
     prefix: str,
@@ -303,9 +331,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type c
 
         if _is_registered_leaf(core):
             if flag in flat:
-                v = flat[flag]
-                v = [_str_token(item) for item in v] if isinstance(v, list) else _str_token(v)
-                _set_nested(result, flag.split("."), v)
+                _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
             continue
 
         if _is_struct(core):
@@ -323,8 +349,6 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type c
         if cast_val is not None:
             _set_nested(result, flag.split("."), cast_val)
         elif flag in flat:
-            v = flat[flag]
-            v = [_str_token(item) for item in v] if isinstance(v, list) else _str_token(v)
-            _set_nested(result, flag.split("."), v)
+            _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
 
     _collect_ns_inheritance(flat, _tp, prefix, union_tag, result)

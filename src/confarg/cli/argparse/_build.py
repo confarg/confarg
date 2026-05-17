@@ -232,19 +232,13 @@ def _build_union_tag_spec(
     )
 
 
-def _collect_callable_bind_specs(
+def _bind_specs_from_signature(
     field_flag: str,
-    fn_path: str,
+    target_obj: Any,
     existing_names: set[str],
 ) -> list[FlagSpec]:
-    """Build FlagSpecs for ``--<field_flag>.bind.<param>`` by inspecting the target's signature."""
+    """Build ``--<field_flag>.bind.<param>`` FlagSpecs from a callable's signature."""
     try:
-        obj = _import_dotted(fn_path)
-    except SymbolImportError:
-        return []
-
-    try:
-        target_obj = obj.__init__ if isinstance(obj, type) else obj
         sig = inspect.signature(target_obj)
     except (ValueError, TypeError):
         return []
@@ -278,6 +272,41 @@ def _collect_callable_bind_specs(
         existing_names.add(dest)
 
     return result
+
+
+def _collect_callable_bind_specs(
+    field_flag: str,
+    fn_path: str,
+    existing_names: set[str],
+) -> list[FlagSpec]:
+    """Build FlagSpecs for ``--<field_flag>.bind.<param>`` by inspecting the target's signature."""
+    try:
+        obj = _import_dotted(fn_path)
+    except SymbolImportError:
+        return []
+    target_obj = obj.__init__ if isinstance(obj, type) else obj
+    return _bind_specs_from_signature(field_flag, target_obj, existing_names)
+
+
+def _collect_callable_call_bind_specs(
+    field_flag: str,
+    cls: type,
+    existing_names: set[str],
+) -> list[FlagSpec]:
+    """Build ``--<field_flag>.bind.<param>`` FlagSpecs from a class's ``__call__`` parameters.
+
+    In ``--<field>.class`` mode the constructor parameters become factory kwargs
+    (``--<field>.<param>``), while the *instance's* ``__call__`` parameters are
+    what ``bind`` targets — so they register here rather than via the
+    constructor-signature path.
+    """
+    # Look up __call__ in the class's own MRO rather than via getattr, which
+    # would fall back to the metaclass type.__call__ when instances are not
+    # themselves callable (yielding bogus bind params).
+    call = next((c.__dict__["__call__"] for c in cls.__mro__ if "__call__" in c.__dict__), None)
+    if call is None:
+        return []
+    return _bind_specs_from_signature(field_flag, call, existing_names)
 
 
 def _collect_callable_factory_specs(
@@ -324,7 +353,10 @@ def _collect_callable_field_specs(
         try:
             cls = _import_dotted(fn_path)
             if isinstance(cls, type):
-                return _collect_callable_factory_specs(field_flag, cls, existing_names)
+                # Constructor params → factory kwargs; __call__ params → bind kwargs.
+                specs = _collect_callable_factory_specs(field_flag, cls, existing_names)
+                specs.extend(_collect_callable_call_bind_specs(field_flag, cls, existing_names))
+                return specs
         except SymbolImportError:
             pass
     elif mode == "call":
@@ -336,7 +368,12 @@ def _collect_callable_field_specs(
                 return _collect_callable_factory_specs(field_flag, obj, existing_names)
             owning_cls = _detect_owning_class(obj)
             if owning_cls is not None:
-                return _collect_callable_factory_specs(field_flag, owning_cls, existing_names)
+                # Bound-method path (e.g. Class.method): the owning class's
+                # constructor params become factory kwargs, while the method's
+                # own params are what bind targets.
+                specs = _collect_callable_factory_specs(field_flag, owning_cls, existing_names)
+                specs.extend(_collect_callable_bind_specs(field_flag, fn_path, existing_names))
+                return specs
         except SymbolImportError:
             pass
     return _collect_callable_bind_specs(field_flag, fn_path, existing_names)
@@ -795,6 +832,67 @@ def _collect_config_argv_specs(argv: Sequence[str], config_flag: str) -> list[Fl
     return specs
 
 
+def _collect_patch_argv_specs(
+    target: object,
+    argv: Sequence[str],
+    union_tag: str,
+    config_flag: str,
+) -> list[FlagSpec]:
+    """Build FlagSpecs for collection-patch flags found in argv.
+
+    Scans for list index/append/delete and dict-subkey flags
+    (``--field.N``, ``--field+``, ``--field.N-``, ``--field.key``) whose dotted
+    path the *target* type confirms reaches a list, tuple, set, or dict.  These
+    are not derivable from the static type walk, so registering exactly the
+    ones the user typed lets the host framework accept them; the merge-side
+    patch scan (``_parse_cli`` in ``patch_only`` mode) reads their values from
+    argv in command order.  Delete flags register value-less (``nargs=0``).
+    """
+    # Imported here to keep the framework-agnostic _build module free of an
+    # import cycle with the argv parser at module load time.
+    from confarg._parse_cli import (  # noqa: PLC0415
+        _is_collection_patch_path,
+        _looks_like_flag,
+        _normalize_eq_args,
+        _parse_flag_mode,
+    )
+
+    specs: list[FlagSpec] = []
+    seen: set[str] = set()
+    args = _normalize_eq_args(list(argv))
+    for tok in args:
+        if not _looks_like_flag(tok):
+            continue
+        key = tok[2:]
+        if config_flag and (key == config_flag or key.startswith(config_flag + ".")):
+            continue  # config files are registered by _collect_config_argv_specs
+        if key in seen:
+            continue
+        path, append_mode, delete_mode, force_cast, _delete_idx, _is_list_delete = _parse_flag_mode(key)
+        if force_cast:
+            continue  # union cast flags (--field.int) are registered statically
+        if not (delete_mode or append_mode or _is_collection_patch_path(target, path, union_tag)):
+            continue
+        seen.add(key)
+        target_path = ".".join(path)
+        if delete_mode:
+            specs.append(FlagSpec(name=key, nargs=0, help=f"Delete the element or key at '{target_path}'."))
+        elif append_mode:
+            specs.append(
+                FlagSpec(
+                    name=key,
+                    nargs="*",
+                    metavar="ITEM",
+                    help=f"Append element(s) to the list at '{target_path}'.",
+                ),
+            )
+        else:
+            specs.append(
+                FlagSpec(name=key, nargs="*", metavar="VALUE", help=f"Set the collection element at '{target_path}'."),
+            )
+    return specs
+
+
 def build_dynamic_flags(
     target: object,
     argv: Sequence[str],
@@ -855,6 +953,7 @@ def build_dynamic_flags(
             result.extend(_collect_callable_field_specs(field_flag, fn_path, mode, existing_names))
         if config_flag:
             result.extend(_collect_config_argv_specs(argv_list, config_flag))
+        result.extend(_collect_patch_argv_specs(target, argv_list, union_tag, config_flag))
     except Exception:  # noqa: BLE001 — best-effort; must not crash populate_parser
         return []
     else:

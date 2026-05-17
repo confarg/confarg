@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -46,6 +47,13 @@ def _register_spec(
         "default": argparse.SUPPRESS,
         "help": spec.help,
     }
+    if spec.nargs == 0:
+        # Value-less flag (e.g. a list/dict delete --field.N-): argparse forbids
+        # nargs=0 on a store action, so register it as a presence-only switch.
+        action = target.add_argument(f"--{spec.name}", action="store_true", **common)
+        existing_dests.add(spec.name)
+        return
+
     if spec.choices is not None:
         common["choices"] = spec.choices
     if spec.metavar is not None:
@@ -129,22 +137,25 @@ def populate_parser(  # noqa: PLR0913
         config_subkeys: Whether to register ``--<config_flag>.<field>`` flags for
             each direct struct field of the root dataclass (default ``True``).
             Set to ``False`` to expose only the root ``--<config_flag>`` flag.
-        argv: CLI argument list used to pre-resolve ``--<field>.fn`` / ``--<field>.class``
-            values so that callable ``--<field>.bind.*`` flags can be registered
-            before :meth:`~argparse.ArgumentParser.parse_args` is called, and to
-            register ``--<config_flag>.<subpath>[+]`` flags found in argv (scoped
-            and append config files at any depth).
+        argv: CLI argument list scanned to register argv-derived dynamic flags:
+            ``--<field>.bind.*`` for resolved ``--<field>.fn`` / ``--<field>.class``
+            callables, ``--<config_flag>.<subpath>[+]`` scoped/append config files,
+            and list-index / append / delete / dict-subkey patch flags — so the
+            host parser accepts every flag ``from_namespace`` will later consume.
+            Defaults to ``sys.argv[1:]`` (matching :func:`from_namespace`); pass an
+            explicit list, or ``[]`` to register only the static, type-derived flags.
 
     Note:
         Prefer :func:`make_parser` for the common case — it sets
         ``allow_abbrev=False`` by default to prevent schema evolution from
         silently breaking abbreviated flag invocations.
     """
+    if argv is None:
+        argv = sys.argv[1:]
     static = build_static_flags(target, union_tag=union_tag, config_flag=config_flag, config_subkeys=config_subkeys)
     load_flags_into_parser(static, parser)
-    if argv is not None:
-        dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
-        load_flags_into_parser(dynamic, parser)
+    dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
+    load_flags_into_parser(dynamic, parser)
 
 
 def make_parser(
@@ -177,8 +188,9 @@ def make_parser(
             :func:`populate_parser`).
         config_subkeys: Whether to register per-field config flags (forwarded
             to :func:`populate_parser`).
-        argv: CLI argument list for pre-resolving callable flags (forwarded to
-            :func:`populate_parser`).
+        argv: CLI argument list for registering argv-derived dynamic flags
+            (forwarded to :func:`populate_parser`; defaults to ``sys.argv[1:]``,
+            pass ``[]`` to register only static flags).
         **kwargs: Additional keyword arguments forwarded to
             :class:`argparse.ArgumentParser`.
     """
