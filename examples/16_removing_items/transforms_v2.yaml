@@ -1,0 +1,5 @@
+transforms:
+  random_noise:
+    class: configs.RandomNoise
+  random_gamma:
+    class: configs.RandomGamma

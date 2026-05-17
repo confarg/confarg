@@ -25,7 +25,9 @@ nav = [
     { "11. Collections" = "examples/11_collections/README.md" },
     { "12. Collection items" = "examples/12_collection_items/README.md" },
     { "13. Dictionaries" = "examples/13_dictionaries/README.md" },
-    { "13. JSON inputs" = "examples/14_json_inputs/README.md" },
+    { "14. JSON inputs" = "examples/14_json_inputs/README.md" },
+    { "15. Appending items" = "examples/15_appending_items/README.md" },
+    { "16. Removing items" = "examples/16_removing_items/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]
