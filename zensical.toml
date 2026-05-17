@@ -38,6 +38,10 @@ nav = [
     { "22. Variable scopes" = "examples/22_variable_scopes/README.md" },
 { "23. Local variables" = "examples/23_local_variables/README.md" },
   ] },
+  { "How-to" = [
+    "how-to/index.md",
+    { "Derived values" = "how-to/derived-values.md" },
+  ] },
   { "Reference" = "reference.md" },
 ]
 
