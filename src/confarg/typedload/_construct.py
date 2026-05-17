@@ -32,6 +32,7 @@ from confarg._types import (
     _literal_values,
     _namedtuple_defaults,
     _namedtuple_fields,
+    _Pinned,
     _resolve_type,
     _StrToken,
     _struct_defaults,
@@ -58,7 +59,29 @@ from confarg.typedload._coerce import (
     _coerce_leaf,
     _coerce_type_ref,
     _src_type,
+    _steal_order,
 )
+
+_CAST_TYPE_NAMES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
+
+
+def _try_pinned_dict(data: Any) -> _Pinned | None:
+    """Detect a ``{__cast__: typename, __value__: raw}`` tagged dict and convert to _Pinned."""
+    if not (isinstance(data, dict) and data.keys() == {"__cast__", "__value__"}):
+        return None
+    typename = data["__cast__"]
+    tp: type | None = _CAST_TYPE_NAMES.get(typename)
+    if tp is None:
+        tp = next((t for t in _LEAF_COERCIONS if getattr(t, "__name__", None) == typename), None)
+    if tp is None:
+        valid = sorted(_CAST_TYPE_NAMES) + sorted(
+            t.__name__ for t in _LEAF_COERCIONS if t not in _CAST_TYPE_NAMES.values()
+        )
+        msg = f"Unknown __cast__ type: {typename!r}. Valid: {valid}"
+        raise TypeCoercionError(msg)
+    raw = data["__value__"]
+    value = _StrToken(str(raw)) if isinstance(raw, str) else raw
+    return _Pinned(tp, value)
 
 
 def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:  # noqa: C901 PLR0912
@@ -196,6 +219,11 @@ def construct(tp: Any, data: Any, *, path: str = "", union_tag: str = _defaults.
         TypeCoercionError: If a value cannot be coerced to the target type.
     """
     tp = _resolve_type(tp)
+    if isinstance(data, _Pinned):
+        return _coerce_leaf(data.tp, data.value, path)
+    pinned = _try_pinned_dict(data)
+    if pinned is not None:
+        return _coerce_leaf(pinned.tp, pinned.value, path)
     if data is None and _allows_none(tp):
         return None
     if _is_callable(tp):
@@ -599,13 +627,7 @@ def _coerce_scalar_variants(all_args: list[Any], scalar_leaf_vars: list[Any], da
             return data
         if isinstance(data, _StrToken) and data.lower() in (_TRUTHY | _FALSY):
             return _coerce_bool(data)
-    _has_str = any(_resolve_type(v) is str for v in scalar_leaf_vars)
-    if _has_str and isinstance(data, _StrToken):
-        ordered = [v for v in scalar_leaf_vars if _resolve_type(v) is not str] + [
-            v for v in scalar_leaf_vars if _resolve_type(v) is str
-        ]
-    else:
-        ordered = scalar_leaf_vars
+    ordered = _steal_order(scalar_leaf_vars, key=_resolve_type) if isinstance(data, _StrToken) else scalar_leaf_vars
     for var in ordered:
         vr = _resolve_type(var)
         if vr is type(None):  # pragma: no cover  # NoneType is excluded from non_none

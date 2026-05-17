@@ -51,6 +51,14 @@ class _StrToken(str):
     __slots__ = ()
 
 
+@dataclasses.dataclass(frozen=True)
+class _Pinned:
+    """Carries an explicitly-typed value through the merge dict, bypassing union stealing."""
+
+    tp: type
+    value: Any
+
+
 def _resolve_type(tp: Any) -> Any:
     """Unwrap TypeAliasType and Annotated wrappers.
 

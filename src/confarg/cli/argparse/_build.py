@@ -54,6 +54,23 @@ from confarg.cli.argparse._spec import FlagSpec, _build_help, _get_field_docstri
 from confarg.exceptions import SymbolImportError
 from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_registered_leaf
 
+_SCALAR_CAST_TYPES: frozenset[type] = frozenset({str, int, float, bool})
+
+
+def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
+    """Return scalar types to offer as explicit cast flags for a multi-variant union.
+
+    Returns non-empty only when the union has at least one enum variant and at least
+    one scalar (str, int, float, bool) variant — the combination where stealing-rule
+    disambiguation is non-obvious and an explicit cast escape-hatch is useful.
+    """
+    non_none = _union_args_no_none(resolved)
+    types = [_resolve_type(v) for v in non_none]
+    has_enum = any(_is_enum(t) for t in types)
+    if not has_enum:
+        return []
+    return [t for t in types if t in _SCALAR_CAST_TYPES]
+
 
 def _literal_cli_choices(vals: tuple[Any, ...]) -> list[str]:
     """Map Literal members to their accepted CLI strings."""
@@ -491,7 +508,7 @@ def _collect_namedtuple_specs(
     return result
 
 
-def _specs_for_field(  # noqa: PLR0911, PLR0913
+def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
     flag: str,
     name: str,
     raw_type: Any,
@@ -509,6 +526,24 @@ def _specs_for_field(  # noqa: PLR0911, PLR0913
         concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
         if concrete:
             return [_build_union_tag_spec(flag, union_tag, concrete, group, group_description)]
+        cast_types = _scalar_cast_types_in_union(resolved)
+        if cast_types:
+            help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
+            result: list[FlagSpec] = [
+                FlagSpec(name=flag, metavar="VALUE", help=help_text, group=group, group_description=group_description),
+            ]
+            for tp in cast_types:
+                cast_name = tp.__name__
+                result.append(
+                    FlagSpec(
+                        name=f"{flag}.{cast_name}",
+                        metavar=cast_name.upper(),
+                        help=f"Force {cast_name!r} type for '{flag}' (bypasses enum stealing).",
+                        group=group,
+                        group_description=group_description,
+                    ),
+                )
+            return result
         return []
 
     if _is_final(core):

@@ -40,6 +40,26 @@ def _cleanup_custom_leaf_types():
 # ---------------------------------------------------------------------------
 
 
+class _EsColor(Enum):
+    RED = "red"
+    BLUE = "blue"
+
+
+@dataclass
+class _WithEnumStr:
+    value: _EsColor | str = _EsColor.RED
+
+
+class _EsStatus(Enum):
+    OK = 1
+    ERR = 2
+
+
+@dataclass
+class _WithEnumInt:
+    value: _EsStatus | int = _EsStatus.OK
+
+
 @dataclass
 class Simple:
     """Simple dataclass for testing basic flag registration."""
@@ -557,6 +577,46 @@ class TestFromNamespace:
         result = from_namespace(Simple, ns)
         assert result.host == "h"
         assert ns.verbose is True
+
+    def test_enum_str_union_main_flag_registered(self) -> None:
+        """Union[Enum, str] generates a --value flag (no choices restriction)."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithEnumStr, parser)
+        dests = {a.dest for a in parser._actions}
+        assert "value" in dests
+
+    def test_enum_str_union_cast_flag_registered(self) -> None:
+        """Union[Enum, str] generates a --value.str cast flag."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithEnumStr, parser)
+        dests = {a.dest for a in parser._actions}
+        assert "value.str" in dests
+
+    def test_enum_int_union_cast_flag_registered(self) -> None:
+        """Union[Enum, int] generates a --value.int cast flag."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithEnumInt, parser)
+        dests = {a.dest for a in parser._actions}
+        assert "value.int" in dests
+        assert "value.str" not in dests  # only scalar types present in union
+
+    def test_enum_str_cast_via_argparse(self) -> None:
+        """--value.str red forces str even when 'red' is an enum member value."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithEnumStr, parser)
+        ns = parser.parse_args(["--value.str", "red"])
+        result = from_namespace(_WithEnumStr, ns)
+        assert result.value == "red"
+        assert type(result.value) is str
+
+    def test_enum_int_cast_via_argparse(self) -> None:
+        """--value.int 1 forces int even when 1 is an enum member value."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithEnumInt, parser)
+        ns = parser.parse_args(["--value.int", "1"])
+        result = from_namespace(_WithEnumInt, ns)
+        assert result.value == 1
+        assert type(result.value) is int
 
     def test_union_class_tag_collected_by_collect_ns_fields(self) -> None:
         """--<field>.class in namespace is passed through to the merge pipeline."""
