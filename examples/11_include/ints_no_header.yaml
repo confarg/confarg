@@ -1,0 +1,5 @@
+input:
+  __include__:
+    path: ./ints_no_header.csv
+    header: false
+    orient: rows

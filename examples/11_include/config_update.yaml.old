@@ -1,0 +1,4 @@
+# Start from this configuration
+__include__: ./config.yaml
+
+batch_size: 16

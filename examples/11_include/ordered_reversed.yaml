@@ -1,0 +1,3 @@
+__include__:
+- ./value_7.yaml    # value: 7
+- ./value.yaml      # value: 1

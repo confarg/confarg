@@ -1,7 +1,7 @@
-# Appending to lists
+# Appending items to lists
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/15_appending_items`](https://github.com/confarg/confarg/tree/master/examples/15_appending_items).
+> Code for examples in this page can be found in [`examples/16_appending_items`](https://github.com/confarg/confarg/tree/master/examples/16_appending_items).
 
 New elements can be appended to lists by postfixing the list key with a `+`.
 
@@ -23,7 +23,7 @@ $ uv run list_of_ints.py --config pair_of_ints.yaml --input+
 Config(input=[1, 2])
 ```
 
-When the items to be appended is more elaborate than a simple leaf node, inputs can be provided as JSON strings, as we just saw in [Tutorial 14](https://confarg.github.io/confarg/examples/14_json_inputs/).
+When the items to be appended is more elaborate than a simple leaf node, inputs can be provided as JSON strings, as we just saw in [Tutorial 15](https://confarg.github.io/confarg/examples/15_json_inputs/).
 
 <!-- pytest-markdown-console: platform:!win32 -->
 ```console
