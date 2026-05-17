@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,6 +17,36 @@ if TYPE_CHECKING:
     import argparse
 
 from confarg import _defaults
+from confarg._files import _load_file
+from confarg._import import _import_dotted
+from confarg._merge import _deep_merge
+from confarg._types import (
+    _final_inner,
+    _is_callable,
+    _is_dict,
+    _is_final,
+    _is_singleton_literal,
+    _is_struct,
+    _is_union,
+    _resolve_type,
+    _struct_defaults,
+    _struct_fields,
+    _union_args_no_none,
+    _unwrap_optional,
+    _var_param_names,
+)
+from confarg.cli.argparse._build import (
+    _collect_fn_paths_from_argv,
+    _collect_fn_paths_from_config,
+    _resolve_struct,
+)
+from confarg.cli.argparse._register import (
+    _add_callable_bind_flags,
+    _add_callable_fn_flags,
+    _add_leaf_argument,
+    _add_union_tag_argument,
+)
+from confarg.cli.argparse._spec import _build_help, _get_field_docstrings
 
 
 def _collect_partial_config(argv: list[str], config_flag: str) -> dict[str, Any]:
@@ -24,9 +55,6 @@ def _collect_partial_config(argv: list[str], config_flag: str) -> dict[str, Any]
     Errors (missing files, parse failures) are silently ignored — this runs
     at shell-completion time and must never crash.
     """
-    from confarg._files import _load_file
-    from confarg._merge import _deep_merge
-
     merged: dict[str, Any] = {}
     flag_prefix = f"--{config_flag}"
     i = 0
@@ -89,8 +117,6 @@ def _resolve_tags_from_config(
     union_tag: str,
 ) -> dict[str, str]:
     """Walk merged config in parallel with dc_type; return {prefix: class_path} for resolved unions."""
-    from confarg._types import _is_struct, _is_union, _resolve_type, _struct_fields, _union_args_no_none
-
     tags: dict[str, str] = {}
     tp = _resolve_type(dc_type)
     if not _is_struct(tp):
@@ -134,7 +160,7 @@ class _WalkCtx:
     existing_dests: set[str] = field(default_factory=set)
 
 
-def _extend_walk(  # noqa: PLR0912 PLR0915
+def _extend_walk(  # noqa: PLR0912
     dc_type: Any,
     ctx: _WalkCtx,
     group_target: argparse.ArgumentParser | argparse._ArgumentGroup,
@@ -143,23 +169,6 @@ def _extend_walk(  # noqa: PLR0912 PLR0915
     concrete: bool = False,
 ) -> None:
     """Register fields of dc_type under prefix, skipping already-registered dests."""
-    from confarg._types import (
-        _final_inner,
-        _is_callable,
-        _is_dict,
-        _is_final,
-        _is_singleton_literal,
-        _is_struct,
-        _resolve_type,
-        _struct_defaults,
-        _union_args_no_none,
-        _unwrap_optional,
-        _var_param_names,
-    )
-    from confarg.cli.argparse._build import _resolve_struct
-    from confarg.cli.argparse._register import _add_leaf_argument, _add_union_tag_argument
-    from confarg.cli.argparse._spec import _build_help, _get_field_docstrings
-
     setup = _resolve_struct(dc_type)
     if setup is None:
         return
@@ -199,8 +208,6 @@ def _extend_walk(  # noqa: PLR0912 PLR0915
                 help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
                 _add_leaf_argument(group_target, flag, raw_type, core, help_text)
                 ctx.existing_dests.add(flag)
-            from confarg.cli.argparse._register import _add_callable_fn_flags
-
             _add_callable_fn_flags(group_target, flag)
             ctx.existing_dests.update({f"{flag}.fn", f"{flag}.class"})
             continue
@@ -209,9 +216,7 @@ def _extend_walk(  # noqa: PLR0912 PLR0915
             # Find or create argument group
             existing_titles = {g.title for g in ctx.parser._action_groups}
             if flag not in existing_titles:
-                import inspect as _inspect
-
-                new_group = ctx.parser.add_argument_group(flag, _inspect.getdoc(core) or "")
+                new_group = ctx.parser.add_argument_group(flag, inspect.getdoc(core) or "")
             else:
                 new_group = next(g for g in ctx.parser._action_groups if g.title == flag)
             _extend_walk(core, ctx, new_group, flag, concrete=concrete)
@@ -239,9 +244,6 @@ def _pre_extend_parser_for_completion(
     tokens, then imports each resolved class and registers its fields onto the parser.
     All errors are silently swallowed — this must never crash a completion invocation.
     """
-    from confarg._callable import _import_dotted
-    from confarg._types import _is_struct, _resolve_type
-
     try:
         config_dict = _collect_partial_config(argv, config_flag)
         cli_tags = _collect_partial_cli_tags(argv, union_tag)
@@ -260,9 +262,6 @@ def _pre_extend_parser_for_completion(
                 _extend_walk(cls, walk_ctx, parser, field_prefix, concrete=True)
             except Exception:  # noqa: BLE001 — completion must never crash; any import/argparse failure is non-fatal
                 continue
-
-        from confarg.cli.argparse._build import _collect_fn_paths_from_argv, _collect_fn_paths_from_config
-        from confarg.cli.argparse._register import _add_callable_bind_flags
 
         config_fns = _collect_fn_paths_from_config(config_dict, dc_type, "", union_tag)
         argv_fns = _collect_fn_paths_from_argv(argv)
@@ -316,7 +315,7 @@ def setup_completion(
         ImportError: If ``argcomplete`` is not installed.
     """
     try:
-        import argcomplete
+        import argcomplete  # noqa: PLC0415
     except ImportError:
         msg = "Tab-completion requires 'argcomplete'. Install with: pip install confarg[completion]"
         raise ImportError(msg) from None

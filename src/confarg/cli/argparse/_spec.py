@@ -10,10 +10,12 @@ import ast
 import dataclasses
 import inspect
 import textwrap
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any, get_args, get_origin
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+from confarg._types import _allows_none, _resolve_type, _union_args_no_none
 
 
 @dataclasses.dataclass
@@ -75,8 +77,6 @@ class FieldMeta:
 
 def _get_field_meta(raw_type: Any) -> FieldMeta | None:
     """Return FieldMeta from Annotated[T, FieldMeta(...)] annotation, or None."""
-    from typing import Annotated, get_args, get_origin
-
     if get_origin(raw_type) is Annotated:
         for arg in get_args(raw_type)[1:]:
             if isinstance(arg, FieldMeta):
@@ -133,8 +133,6 @@ def _build_help(
     If the field has a dataclass default, appends ``(default: <repr>)``.
     If the field is Optional, appends a hint about the None sentinel.
     """
-    from confarg._types import _allows_none, _resolve_type, _union_args_no_none
-
     meta = _get_field_meta(raw_type)
     base = meta.help if meta is not None and meta.help is not None else docstrings.get(field_name, "")
 

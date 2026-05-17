@@ -120,13 +120,11 @@ class TestLoadFlagsIntoCommand:
 
     def test_choices(self) -> None:
         """FlagSpec.choices maps to click.Choice."""
-        import click as _click
-
         cmd = _make_command()
         flags = [FlagSpec(name="level", choices=["low", "high"])]
         load_flags_into_command(flags, cmd)
         opt = next(p for p in cmd.params if p.name == "level")
-        assert isinstance(opt.type, _click.Choice)
+        assert isinstance(opt.type, click.Choice)
         assert list(opt.type.choices) == ["low", "high"]
 
     def test_help_and_metavar(self) -> None:

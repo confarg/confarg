@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from confarg._errors import ConfargError, InvalidConfigFileError
+from confarg._merge import _deep_merge
 
 INCLUDE_KEY = "__include__"
 
@@ -250,8 +251,6 @@ def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path]) -
     A pure include (no siblings) may return any type. An include with sibling
     keys requires the included file to be a dict (for deep-merge).
     """
-    from confarg._merge import _deep_merge
-
     include_val = data.get(INCLUDE_KEY)
     if include_val is not None:
         path_str, options = _parse_include_val(include_val)
@@ -287,8 +286,6 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path]) -> lis
     (flattened) into the parent list. Items with sibling keys follow the same
     rules as dict nodes.
     """
-    from confarg._merge import _deep_merge
-
     result: list[Any] = []
     for item in data:
         if isinstance(item, dict) and INCLUDE_KEY in item:

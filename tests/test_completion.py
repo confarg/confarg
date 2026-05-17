@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import builtins
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
@@ -529,8 +530,6 @@ class TestSetupCompletionImportGuard:
 
     def test_raises_import_error_when_argcomplete_absent(self) -> None:
         """Test that ImportError is raised when argcomplete is not installed."""
-        import builtins
-
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):

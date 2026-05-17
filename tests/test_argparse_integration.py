@@ -7,14 +7,16 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, make_dataclass
 from enum import Enum
 from typing import Annotated, Literal
 
 import pytest
 
 import confarg
+from confarg._types import _StrToken
 from confarg.cli.argparse import FieldMeta, from_namespace, populate_parser
+from confarg.cli.argparse._namespace import _collect_ns_fields
 from confarg.cli.argparse._spec import _get_field_docstrings
 
 # ---------------------------------------------------------------------------
@@ -182,8 +184,6 @@ class TestGetFieldDocstrings:
 
     def test_dynamic_class_returns_empty(self) -> None:
         """Test that dynamically created dataclasses return an empty docstring dict."""
-        from dataclasses import make_dataclass
-
         Dyn = make_dataclass("Dyn", [("x", int)])
         assert _get_field_docstrings(Dyn) == {}
 
@@ -326,7 +326,6 @@ class TestHelpText:
 
     def test_optional_field_help_includes_none_sentinel(self) -> None:
         """Help text for Optional[X] fields mentions 'none' or 'null'."""
-        from dataclasses import dataclass
 
         @dataclass
         class WithOpt:
@@ -456,9 +455,6 @@ class TestFromNamespace:
 
     def test_union_class_tag_collected_by_collect_ns_fields(self) -> None:
         """--<field>.class in namespace is passed through to the merge pipeline."""
-        from confarg._types import _StrToken
-        from confarg.cli.argparse._namespace import _collect_ns_fields
-
         flat = {"item.class": "myapp._StructVariantA"}
         result: dict = {}
         _collect_ns_fields(flat, _WithStructUnion, prefix="", union_tag="class", result=result)

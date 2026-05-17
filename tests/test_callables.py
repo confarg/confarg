@@ -9,6 +9,7 @@ from __future__ import annotations
 import functools
 import inspect
 import json
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -211,8 +212,6 @@ class TestImportDotted:
 
     def test_stdlib_function(self) -> None:
         """Test importing a stdlib function by dotted path."""
-        import math
-
         fn = _import_dotted("math.sqrt")
         assert fn is math.sqrt
 
@@ -430,8 +429,6 @@ class TestFnDictAutoInstantiation:
 
     def test_fn_instance_method_no_sibling_kwargs_returns_bound_method(self, tmp_json: Any) -> None:
         """fn: auto-instantiation without kwargs produces a bound method (not a partial)."""
-        import functools
-
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._NoArgProcessor.transform"}}))
         result = confarg.load(WithBareCallable, args=[], env={}, files=[cfg])
         assert not isinstance(result.fn, functools.partial)
