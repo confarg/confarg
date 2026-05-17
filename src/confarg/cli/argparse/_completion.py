@@ -213,7 +213,7 @@ def _pre_extend_parser_for_completion(
                 continue
 
         config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
-        argv_fns = _collect_fn_paths_from_argv(argv)
+        argv_fns = _collect_fn_paths_from_argv(argv, target, union_tag)
         for field_flag, (fn_path, _mode, bind_key) in {**config_fns, **argv_fns}.items():
             try:
                 _add_callable_bind_flags(

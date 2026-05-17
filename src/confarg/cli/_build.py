@@ -484,11 +484,42 @@ def _match_opener_suffix(key: str) -> tuple[str, str, str] | None:
     return None
 
 
-def _collect_fn_paths_from_argv(argv: Sequence[str]) -> dict[str, tuple[str, str, str]]:
+def _path_is_callable_field(target: object, field_flag: str, union_tag: str) -> bool:
+    """Return True if the dotted ``field_flag`` resolves to a callable-typed field.
+
+    The argv opener scan pattern-matches ``--<path>.fn/.class/.call`` against argv, so a
+    struct field literally named ``fn`` (or ``class``/``call``) would be misread as an
+    opener for its parent.  Asking the target type — the same type-guided rule the
+    config-file walk and the static flag builder use — keeps the scan from registering
+    bind flags below a non-callable path (BUG-30).  The whole-value blob walk is already
+    type-guided and reads the shorthand correctly; this brings the argv scan to the same
+    answer.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
+    """
+    from confarg._parse_cli import _resolve_field_type  # noqa: PLC0415  # import cycle
+
+    resolved = _resolve_field_type(target, field_flag.split("."), union_tag)
+    if resolved is None:
+        return False
+    return _is_callable(_unwrap_optional(_resolve_type(resolved)))
+
+
+def _collect_fn_paths_from_argv(
+    argv: Sequence[str],
+    target: object,
+    union_tag: str,
+) -> dict[str, tuple[str, str, str]]:
     """Scan argv for --<field>.fn/.class/.call and their escaped ._fn/._class/._call forms.
 
     Returns {field_flag: (fn_path, mode, bind_key)} where mode is "fn"/"class"/"call"
     and bind_key is "bind" (plain) or "_bind" (escaped). CLI wins for duplicate keys.
+
+    A match is kept only when ``field_flag`` resolves to a callable-typed field in
+    *target*, so a plain struct field named like an opener (``fn``/``class``/``call``)
+    is a value, not an opener (BUG-30).  The whole-value blob walk already applies this
+    type-guided rule; the scan now agrees with it.
 
     A field's escaped opener takes precedence over any plain-opener match for the same
     field: once ``--<field>._fn`` is present, a sibling ``--<field>.fn`` is a factory
@@ -509,15 +540,17 @@ def _collect_fn_paths_from_argv(argv: Sequence[str]) -> dict[str, tuple[str, str
             matched = _match_opener_suffix(key)
             if matched is not None:
                 field_flag, mode, bind_key = matched
-                bucket = escaped if bind_key == _ESCAPED_DIRECTIVES.bind else plain
-                bucket[field_flag] = (val, mode, bind_key)
+                if _path_is_callable_field(target, field_flag, union_tag):
+                    bucket = escaped if bind_key == _ESCAPED_DIRECTIVES.bind else plain
+                    bucket[field_flag] = (val, mode, bind_key)
             i += 1
         else:
             matched = _match_opener_suffix(tok[2:])
             if matched is not None and i + 1 < len(argv) and not argv[i + 1].startswith("--"):
                 field_flag, mode, bind_key = matched
-                bucket = escaped if bind_key == _ESCAPED_DIRECTIVES.bind else plain
-                bucket[field_flag] = (argv[i + 1], mode, bind_key)
+                if _path_is_callable_field(target, field_flag, union_tag):
+                    bucket = escaped if bind_key == _ESCAPED_DIRECTIVES.bind else plain
+                    bucket[field_flag] = (argv[i + 1], mode, bind_key)
                 i += 2
             else:
                 i += 1
@@ -1258,7 +1291,7 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
 
         config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
         blob_fns = _collect_fn_paths_from_config(_blob_document_from_argv(argv_list), target, "", union_tag)
-        argv_fns = _collect_fn_paths_from_argv(argv_list)
+        argv_fns = _collect_fn_paths_from_argv(argv_list, target, union_tag)
         existing_names: set[str] = set()
         result: list[FlagSpec] = _escaped_opener_specs(argv_fns, existing_names)
         # Opener flags beat the blob they refine, as the collector's deep merge does.
