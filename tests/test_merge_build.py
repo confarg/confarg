@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+
 import confarg
 from tests.conftest import AppConfig, DbConfig, WithDefaults
 
@@ -142,17 +144,15 @@ class TestTwoStepEquivalence:
 
 
 class TestDumpRaw:
-    """Tests for dump() and dump_file() with raw dict inputs."""
+    """Tests for dump_file() with raw dict inputs."""
 
-    def test_dump_strips_str_tokens(self) -> None:
-        """Test that dump() converts _StrToken values back to plain strings."""
+    def test_dump_rejects_dict(self) -> None:
+        """dump() raises TypeError for plain dicts — raw dicts go through dump_file()."""
         from confarg._types import _StrToken
 
         data = {"name": _StrToken("hello"), "count": 42}
-        result = confarg.dump(data)
-        assert result["name"] == "hello"
-        assert type(result["name"]) is str
-        assert result["count"] == 42
+        with pytest.raises(TypeError, match="dump_file"):
+            confarg.dump(data)
 
     def test_dump_file_yaml(self, tmp_path) -> None:
         """Test that dump_file() writes a valid YAML file preserving expressions."""

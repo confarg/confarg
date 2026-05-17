@@ -108,7 +108,7 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
             )
         # tuple[X, ...] — variable length (unreachable: caught by _is_varlen_collection)
         et = _resolve_type(_elem_type(core))  # pragma: no cover
-        return FlagSpec(  # pragma: no cover
+        return FlagSpec(
             name=flag,
             nargs="*",
             metavar=metavar or getattr(et, "__name__", "ITEM").upper(),

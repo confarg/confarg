@@ -61,7 +61,7 @@ class WithList:
 
 def _make_command() -> click.Command:
     @click.command()
-    def cli(**kwargs: Any) -> None:  # pragma: no cover
+    def cli(**kwargs: Any) -> None:
         pass
 
     return cli

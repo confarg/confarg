@@ -802,18 +802,17 @@ class TestSerializationCornerCases:
         result = confarg.dump(obj)
         assert isinstance(result["location"], str)
 
-    def test_dump_raw_dict(self) -> None:
-        """dump() with a raw dict normalizes it (no error)."""
+    def test_dump_raw_dict_raises(self) -> None:
+        """dump() rejects plain dicts — use dump_file() for raw config dicts."""
         from confarg._types import _StrToken
 
         data = {"key": _StrToken("value"), "count": 42}
-        result = confarg.dump(data)
-        assert result == {"key": "value", "count": 42}
-        assert type(result["key"]) is str
+        with pytest.raises(TypeError, match="dump_file"):
+            confarg.dump(data)
 
     def test_dump_scalar_raises(self) -> None:
-        """dump() with a non-dataclass, non-dict value raises TypeError."""
-        with pytest.raises(TypeError, match="dataclass instance or dict"):
+        """dump() with a non-dataclass value raises TypeError."""
+        with pytest.raises(TypeError, match="dataclass instance"):
             confarg.dump(42)
 
     def test_dump_dataclass_class_raises(self) -> None:

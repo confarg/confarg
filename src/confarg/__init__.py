@@ -77,7 +77,7 @@ def merge(  # noqa: PLR0913
     config_flag: str = "config",
     files: Sequence[str | Path] = (),
     env_config: str | None = None,
-    union_tag: str = "class",
+    union_tag: str = _defaults.UNION_TAG,
 ) -> dict[str, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
@@ -96,12 +96,18 @@ def merge(  # noqa: PLR0913
             to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
             read only vars with that prefix.
         env_separator: Separator used to split env var names into nested keys.
-        cli_prefix: Required prefix for CLI flags.
-        config_flag: The flag name used to specify config files on the CLI.
+            Defaults to ``"__"`` (double underscore).
+        cli_prefix: Required prefix for all CLI flags. Defaults to ``""``,
+            which means no prefix is required.
+        config_flag: Flag name used to specify config files on the CLI
+            (``--config path/to/file.yaml``). Set to ``""`` to disable.
+            Defaults to ``"config"``.
         files: Paths to config files to load.
         env_config: Name of an env var whose value is a config file path to load.
             Loaded after ``files`` but before CLI ``--config`` files.
-        union_tag: The field name used as a discriminator tag in unions.
+        union_tag: Field name used as a discriminator tag in union types.
+            Defaults to ``"class"`` — a Python keyword that can never clash
+            with a dataclass field name.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
@@ -244,16 +250,8 @@ def from_dict[T](
 ) -> T:
     """Construct a typed object from an already-resolved config dict.
 
-    Unlike build(), this does NOT resolve ``${...}`` expressions — call
-    resolve() first if needed.
-
-    Use this together with resolve() when you want to keep the resolved
-    dict around (e.g. to dump it with dump_file()):
-
-        raw = confarg.merge(MyConfig, ...)
-        resolved = confarg.resolve(raw)
-        confarg.dump_file(resolved, "out.yaml")
-        cfg = confarg.from_dict(MyConfig, resolved)
+    Unlike ``build()``, this does NOT resolve ``${...}`` expressions — call
+    ``resolve()`` first if needed.
 
     Args:
         target: The dataclass or plain-class type to construct.
@@ -283,16 +281,13 @@ def load[T](  # noqa: PLR0913
     config_flag: str = "config",
     files: Sequence[str | Path] = (),
     env_config: str | None = None,
-    union_tag: str = "class",
+    union_tag: str = _defaults.UNION_TAG,
 ) -> T:
-    """Load configuration into the target type from CLI args, env vars, and config files.
+    """Merge configuration from all sources and construct the target type.
 
-    Sources are merged in priority order: config files (lowest), then
-    environment variables, then CLI arguments (highest).
-
-    This is a convenience wrapper around merge() + build(). For more
-    control — e.g. to inspect or save the raw merged dict before construction —
-    call those two functions directly.
+    Convenience wrapper for ``merge()`` + ``build()``. For more control —
+    e.g. to inspect or save the raw merged dict — call those directly.
+    See ``merge()`` for source priority and config file loading order.
 
     Args:
         target: The dataclass type (or scalar type) to load configuration into.
@@ -303,18 +298,21 @@ def load[T](  # noqa: PLR0913
             to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
             read only vars with that prefix.
         env_separator: Separator used to split env var names into nested keys.
-        cli_prefix: Required prefix for CLI flags.
-        config_flag: The flag name used to specify config files on the CLI.
+            Defaults to ``"__"`` (double underscore).
+        cli_prefix: Required prefix for all CLI flags. Defaults to ``""``,
+            which means no prefix is required.
+        config_flag: Flag name used to specify config files on the CLI
+            (``--config path/to/file.yaml``). Set to ``""`` to disable.
+            Defaults to ``"config"``.
         files: Paths to config files to load.
         env_config: Name of an env var whose value is a config file path to load.
             Loaded after ``files`` but before CLI ``--config`` files.
-        union_tag: The field name used as a discriminator tag in unions.
+        union_tag: Field name used as a discriminator tag in union types.
+            Defaults to ``"class"`` — a Python keyword that can never clash
+            with a dataclass field name.
 
     Returns:
         An instance of the target type populated with the merged configuration.
-
-    Config file loading order:
-        See ``merge()`` for the full description of config file loading order.
 
     Raises:
         MissingFieldError: If a required field is not provided by any source.
@@ -361,28 +359,25 @@ def dump(
     union_tag: str = "class",
     tag_policy: TagPolicy = "auto",
 ) -> dict[str, Any]:
-    """Serialize to a plain dict.
-
-    Dispatches on the value type:
-
-    - **Dataclass instance**: serializes to a config-compatible dict.
-      ``union_tag`` and ``tag_policy`` apply.
-    - **Raw dict** (e.g. from ``merge()``): normalizes internal tokens to plain
-      ``str``. ``union_tag`` and ``tag_policy`` are ignored.
+    """Serialize a dataclass instance to a config-compatible plain dict.
 
     Args:
-        value: A dataclass instance or a raw config dict.
+        value: A dataclass instance.
         union_tag: The field name used as a discriminator tag in unions.
-        tag_policy: "auto" (tag only when needed) or "always" (tag every union DC).
+        tag_policy: ``"auto"`` (tag only when needed) or ``"always"`` (tag every union member).
 
     Returns:
         A plain dict representation.
 
     Raises:
-        TypeError: If value is not a dataclass instance or a dict.
+        TypeError: If value is not a dataclass instance.
     """
     if isinstance(value, dict):
-        return _strip_str_tokens(value)
+        msg = (
+            "dump() takes a dataclass instance, not a dict."
+            " To write a raw config dict to a file, use dump_file() directly."
+        )
+        raise TypeError(msg)
     if isinstance(value, type) or not _is_dc(type(value)):
         tp_name = type(value).__name__
         if _is_struct(type(value)):
@@ -393,7 +388,7 @@ def dump(
                 f"  confarg.dump_file(raw, path)"
             )
             raise TypeError(msg)
-        msg = f"Expected a dataclass instance or dict, got {tp_name}"
+        msg = f"Expected a dataclass instance, got {tp_name}"
         raise TypeError(msg)
     tp = type(value)
     return _serialize(tp, value, "", union_tag, tag_policy)
@@ -406,23 +401,26 @@ def dump_file(
     union_tag: str = "class",
     tag_policy: TagPolicy = "auto",
 ) -> None:
-    """Write to a config file.
+    """Serialize and write to a config file.
 
-    Accepts dataclass instances or raw config dicts — see ``dump()`` for
-    dispatch behaviour. The output format is determined by the file extension
+    Accepts a dataclass instance or a raw config dict (e.g. from ``merge()``
+    or ``resolve()``). The output format is determined by the file extension
     (.toml, .yaml, .yml, .json).
 
     Args:
         value: A dataclass instance or a raw config dict.
         path: Path to the output file.
         union_tag: The field name used as a discriminator tag in unions.
-        tag_policy: "auto" or "always".
+        tag_policy: ``"auto"`` or ``"always"``.
 
     Raises:
         TypeError: If value is not a dataclass instance or a dict.
         InvalidConfigFileError: If the format is unsupported or the required library is not installed.
     """
-    _dump_file(dump(value, union_tag=union_tag, tag_policy=tag_policy), Path(path))
+    if isinstance(value, dict):
+        _dump_file(_strip_str_tokens(value), Path(path))
+    else:
+        _dump_file(dump(value, union_tag=union_tag, tag_policy=tag_policy), Path(path))
 
 
 __all__ = [
