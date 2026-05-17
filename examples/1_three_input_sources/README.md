@@ -23,7 +23,7 @@ Let's take a first tour of the different ways the configuration can be loaded th
 
 ## From the command line
 
-We can provide the values of the configuration using command line arguments:
+We can provide the values of the configuration using command-line arguments:
 
 ```console
 $ uv run myapp.py --host example.com --port 1234 --schema_name mydb
@@ -31,7 +31,7 @@ DBConfig(host='example.com', port=1234, schema_name='mydb')
 ```
 
 > [!NOTE]
-> Names are preserved in command line arguments. They are *not* slugified (e.g. `schema_name` does not become `--schema-name`). This consistency avoids unnecessary complications of search-and-replace operations.
+> Names are preserved in command-line arguments. They are *not* slugified (e.g. `schema_name` does not become `--schema-name`). This consistency avoids unnecessary complications of search-and-replace operations.
 
 ## From environment variables
 
@@ -48,7 +48,7 @@ DBConfig(host='example.com', port=1234, schema_name='mydb')
 
 ## From files
 
-Most complex configurations will generally be stored in one or several files. In the simplest case, such as here, the path to the configuration file can be passed via the `--config` command line argument.
+Most complex configurations will generally be stored in one or several files. In the simplest case, such as here, the path to the configuration file can be passed via the `--config` command-line argument.
 
 Confarg supports the following formats for configurations:
 
@@ -82,4 +82,4 @@ DBConfig(host='example.com', port=1234, schema_name='mydb')
 ```
 
 > [!NOTE] Integration with CLIs
-> `confarg.load` consumes command line arguments without advertisement. It is suited for simple tools and, as is the case here, for demonstrating the functionalities of the library. The subject of integration with CLIs is an entire topic of its own and we defer to it in a later tutorial.
+> `confarg.load` consumes command-line arguments without advertisement. It is suited for simple tools and, as is the case here, for demonstrating the functionality of the library. The subject of integration with CLIs is an entire topic of its own and we cover it in a later tutorial.

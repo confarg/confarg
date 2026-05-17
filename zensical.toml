@@ -14,6 +14,7 @@ nav = [
     "examples/README.md",
     { "1. Three input sources" = "examples/1_three_input_sources/README.md" },
     { "2. Input precedence" = "examples/2_input_precedence/README.md" },
+    { "3. Scalar types" = "examples/3_scalar_types/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]

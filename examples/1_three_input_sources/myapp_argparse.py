@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-import confarg
+import confarg.cli.argparse as confparse
 
 
 @dataclass
@@ -14,7 +14,9 @@ class DBConfig:
 
 def main() -> None:
     """Load and print the configuration."""
-    config = confarg.load(DBConfig, env_prefix="MYAPP_")
+    parser = confparse.make_parser(DBConfig)
+    options = parser.parse_args()
+    config = confparse.from_namespace(DBConfig, options, env_prefix="MYAPP_")
     print(config)
 
 

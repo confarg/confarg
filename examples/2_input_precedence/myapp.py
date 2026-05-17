@@ -1,5 +1,3 @@
-"""First example: load a simple dataclass from CLI/env/config."""
-
 from dataclasses import dataclass
 
 import confarg
@@ -7,7 +5,7 @@ import confarg
 
 @dataclass
 class DBConfig:
-    """Database connection configuration."""
+    """Database connection settings."""
 
     host: str
     port: int
@@ -15,9 +13,9 @@ class DBConfig:
 
 
 def main() -> None:
-    """Load and print the database configuration."""
-    db_config = confarg.load(DBConfig, env_prefix="MYAPP_")
-    print(db_config)
+    """Load and print the configuration."""
+    config = confarg.load(DBConfig, env_prefix="MYAPP_")
+    print(config)
 
 
 if __name__ == "__main__":

@@ -7,19 +7,19 @@ In the [previous tutorial](../1_three_input_sources/README.md), we saw that a co
 
 ## Input precedence
 
-It is not an error to have the same configuration element defined several times across the different inputs. When confarg reads a new value for an existing entry, the value is updated. This enables to update a configuration in a variety of ways.
+It is not an error to have the same configuration element defined several times across the different inputs. When confarg reads a new value for an existing entry, the value is overwritten. This enables to update a configuration in a variety of ways.
 
-Therefore, it is important to know the order in which configurations are read, knowing that later reads overwrite existing values.
+Therefore, it is important to know the order in which inputs are read, knowing that later reads overwrite existing values:
 
-* Configuration files are read first;
+* configuration files are read first;
 * then, values are read from environment variables;
 * and finally, values are read from command line arguments.
 
-It is a bit more subtle than what it might appear at first glance, but this is good enough for now.
+It is actually a bit more subtle than that, but this is the correct mental model.
 
 ### Overwriting the configuration from the command line
 
-Taking the same example as before, we can change the value of the configuration from the command line:
+Taking the same example as before, we can change values defined in the configuration file from the command line:
 
 ```console
 $ # change the schema name defined in `config.yaml` to `otherdb`
@@ -43,8 +43,8 @@ As mentioned above, command line arguments have the final word:
 <!-- pytest-markdown-console: platform:linux -->
 ```console
 $ # change the schema name defined in `config.yaml` to `otherdb`
-$ MYAPP_SCHEMA_NAME=otherdb uv run myapp.py --config config.yaml --schema_name=yetanotherdb
-DBConfig(host='example.com', port=1234, schema_name='yetanotherdb')
+$ MYAPP_SCHEMA_NAME=otherdb uv run myapp.py --config config.yaml --schema_name=finaldb
+DBConfig(host='example.com', port=1234, schema_name='finaldb')
 ```
 
 
@@ -67,21 +67,21 @@ $ uv run myapp.py --config config_no_schema.yaml --schema_name mydb
 DBConfig(host='example.com', port=5678, schema_name='mydb')
 ```
 
-## Multiple configuration files
+## Using multiple configuration files
 
-The `--config` option can be repeated. The resulting configuration files are read from left to right, the latter completing or amending existing data. This can be used to either amend part of an existing configuration, or to build a full configuration from various parts.
+The `--config` option can take multiple arguments. The provided configuration files are read from left to right. This can be used to either amend part of an existing configuration, or build a full configuration from various parts.
 
 In the example below, the data from `config_no_schema` overwrites `config` — note the port number. The `schema_name` from `config` is kept as it is missing from `config_no_schema`.
 
 ```console
-$ uv run myapp.py --config config.yaml --config config_no_schema.yaml
+$ uv run myapp.py --config config.yaml config_no_schema.yaml
 DBConfig(host='example.com', port=5678, schema_name='mydb')
 ```
 
 The order matters since the resolution is from left to right. If we invert the order of the arguments, `config_no_schema` gets entirely overwritten by the complete `config`.
 
 ```console
-$ uv run myapp.py --config config_no_schema.yaml --config config.yaml
+$ uv run myapp.py --config config_no_schema.yaml config.yaml
 DBConfig(host='example.com', port=1234, schema_name='mydb')
 ```
 

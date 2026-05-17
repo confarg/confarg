@@ -41,6 +41,9 @@ select = [
     "UP",   # pyupgrade
 ]
 [lint.per-file-ignores]
+"examples/**" = [
+    "D100", # undocumented-public-module
+]
 "tests/**" = [
     "ANN",     # flake8-annotations
     "ARG",     # flake8-unused-arguments
