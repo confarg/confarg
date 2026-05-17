@@ -134,16 +134,20 @@ class _WalkCtx:
     existing_dests: set[str] = field(default_factory=set)
 
 
-def _extend_walk(
+def _extend_walk(  # noqa: PLR0912 PLR0915
     dc_type: Any,
     ctx: _WalkCtx,
     group_target: argparse.ArgumentParser | argparse._ArgumentGroup,
     prefix: str,
+    *,
+    concrete: bool = False,
 ) -> None:
     """Register fields of dc_type under prefix, skipping already-registered dests."""
     from confarg._types import (
+        _final_inner,
         _is_callable,
         _is_dict,
+        _is_final,
         _is_struct,
         _resolve_type,
         _struct_defaults,
@@ -178,10 +182,15 @@ def _extend_walk(
             non_none = _union_args_no_none(resolved)
             dest = f"{flag}.{ctx.union_tag}"
             if dest not in ctx.existing_dests:
-                concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
-                _add_union_tag_argument(group_target, flag, ctx.union_tag, concrete)
+                concrete_variants = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
+                _add_union_tag_argument(group_target, flag, ctx.union_tag, concrete_variants)
                 ctx.existing_dests.add(dest)
             continue
+
+        if _is_final(core):
+            if concrete:
+                continue  # class already selected — Final value is determined by the class
+            core = _final_inner(core)
 
         if _is_callable(core):
             if flag not in ctx.existing_dests:
@@ -203,7 +212,7 @@ def _extend_walk(
                 new_group = ctx.parser.add_argument_group(flag, _inspect.getdoc(core) or "")
             else:
                 new_group = next(g for g in ctx.parser._action_groups if g.title == flag)
-            _extend_walk(core, ctx, new_group, flag)
+            _extend_walk(core, ctx, new_group, flag, concrete=concrete)
             continue
 
         if _is_dict(core):
@@ -246,7 +255,7 @@ def _pre_extend_parser_for_completion(
                 cls = _import_dotted(class_path)
                 if not isinstance(cls, type) or not _is_struct(_resolve_type(cls)):
                     continue
-                _extend_walk(cls, walk_ctx, parser, field_prefix)
+                _extend_walk(cls, walk_ctx, parser, field_prefix, concrete=True)
             except Exception:  # noqa: BLE001 — completion must never crash; any import/argparse failure is non-fatal
                 continue
 

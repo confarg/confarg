@@ -189,6 +189,10 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:
     tp = _resolve_type(tp)
     if _is_none_type(tp):
         return None
+    from confarg._types import _final_inner, _is_final
+
+    if _is_final(tp):
+        return _coerce_leaf(_final_inner(tp), value, path)
     if tp in _SCALAR_COERCIONS:
         return _SCALAR_COERCIONS[tp](value, path)
     if _is_literal(tp):

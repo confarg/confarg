@@ -22,10 +22,12 @@ from confarg._errors import SymbolImportError
 from confarg._types import (
     _callable_return_type,
     _elem_type,
+    _final_inner,
     _is_bool,
     _is_callable,
     _is_dict,
     _is_enum,
+    _is_final,
     _is_literal,
     _is_struct,
     _is_tuple,
@@ -458,6 +460,9 @@ def _collect_struct_specs(
             if concrete:
                 result.append(_build_union_tag_spec(flag, union_tag, concrete, group, group_description))
             continue
+
+        if _is_final(core):
+            core = _final_inner(core)
 
         if _is_callable(core):
             help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)

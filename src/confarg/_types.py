@@ -398,6 +398,33 @@ def _literal_values(tp: Any) -> tuple[Any, ...]:
     return get_args(_resolve_type(tp))
 
 
+def _is_final(tp: Any) -> bool:
+    """Check whether a type is a Final annotation.
+
+    Args:
+        tp: The type to check.
+
+    Returns:
+        True if tp is Final[X] for some X.
+    """
+    from typing import Final
+
+    return get_origin(tp) is Final
+
+
+def _final_inner(tp: Any) -> Any:
+    """Return the inner type of a Final annotation.
+
+    Args:
+        tp: A Final[X] type.
+
+    Returns:
+        X, or Any if Final has no argument.
+    """
+    args = get_args(tp)
+    return args[0] if args else Any
+
+
 def _is_enum(tp: Any) -> bool:
     """Check whether a type is an Enum subclass.
 
