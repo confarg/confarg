@@ -518,8 +518,9 @@ class TestFromNamespaceUnionDispatch:
             config_flag="config",
             argv=[f"--config={cfg}"],
         )
-        ns = parser.parse_args([f"--config={cfg}"])
-        result = from_namespace(_AppConfig, ns, env={})
+        args = [f"--config={cfg}"]
+        ns = parser.parse_args(args)
+        result = from_namespace(_AppConfig, ns, env={}, argv=args)
         assert isinstance(result.db, _ServerDB)
         assert result.db.host == "cfg_host"
 

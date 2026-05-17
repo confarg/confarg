@@ -350,15 +350,16 @@ class TestFromContext:
         cfg_file.write_text("host: filehost\nport: 5432\n")
 
         result_holder: list[Any] = []
+        args = ["--config", str(cfg_file)]
 
         @click.command()
         @click.option("--config", multiple=True)
         def cmd(**kwargs: Any) -> None:
             ctx = click.get_current_context()
-            result_holder.append(confargclick.from_context(Simple, ctx))
+            result_holder.append(confargclick.from_context(Simple, ctx, argv=args))
 
         runner = CliRunner()
-        runner.invoke(cmd, ["--config", str(cfg_file)], catch_exceptions=False)
+        runner.invoke(cmd, args, catch_exceptions=False)
         assert result_holder[0].host == "filehost"
         assert result_holder[0].port == 5432
 
@@ -368,12 +369,13 @@ class TestFromContext:
         cfg_file.write_text("host: filehost\nport: 5432\n")
 
         result_holder: list[Any] = []
+        args = ["--config", str(cfg_file), "--host", "clihost"]
 
         @click.command()
         @click.option("--config", multiple=True)
         def cmd(**kwargs: Any) -> None:
             ctx = click.get_current_context()
-            result_holder.append(confargclick.from_context(Simple, ctx, config_flag="config"))
+            result_holder.append(confargclick.from_context(Simple, ctx, config_flag="config", argv=args))
 
         cmd_with_fields = click.Command(
             name="cli",
@@ -383,9 +385,57 @@ class TestFromContext:
         populate_command(Simple, cmd_with_fields, config_flag="config")
 
         runner = CliRunner()
-        runner.invoke(cmd_with_fields, ["--config", str(cfg_file), "--host", "clihost"], catch_exceptions=False)
+        runner.invoke(cmd_with_fields, args, catch_exceptions=False)
         assert result_holder[0].host == "clihost"
         assert result_holder[0].port == 5432
+
+    def test_left_to_right_subkey_then_root(self, tmp_path: Path) -> None:
+        """--config.db db.yaml --config root.yaml: root file (rightmost) wins for db."""
+        root_cfg = tmp_path / "root.yaml"
+        root_cfg.write_text("db:\n  host: root_host\n  port: 1111\ndebug: true\n")
+        db_cfg = tmp_path / "db.yaml"
+        db_cfg.write_text("host: db_host\nport: 5555\n")
+
+        result_holder: list[Any] = []
+        args = ["--config.db", str(db_cfg), "--config", str(root_cfg)]
+
+        cmd = click.command()(lambda **kwargs: None)
+        populate_command(Nested, cmd)
+
+        @click.command()
+        def inner(**kwargs: Any) -> None:
+            ctx = click.get_current_context()
+            result_holder.append(confargclick.from_context(Nested, ctx, env={}, argv=args))
+
+        real_cmd = click.Command(name="cli", callback=inner.callback, params=cmd.params)
+        runner = CliRunner()
+        runner.invoke(real_cmd, args, catch_exceptions=False)
+        assert result_holder[0].db.host == "root_host"  # root.yaml (rightmost) wins
+        assert result_holder[0].db.port == 1111
+
+    def test_left_to_right_root_then_subkey(self, tmp_path: Path) -> None:
+        """--config root.yaml --config.db db.yaml: subkey file (rightmost) wins for db."""
+        root_cfg = tmp_path / "root.yaml"
+        root_cfg.write_text("db:\n  host: root_host\n  port: 1111\ndebug: true\n")
+        db_cfg = tmp_path / "db.yaml"
+        db_cfg.write_text("host: db_host\nport: 5555\n")
+
+        result_holder: list[Any] = []
+        args = ["--config", str(root_cfg), "--config.db", str(db_cfg)]
+
+        cmd = click.command()(lambda **kwargs: None)
+        populate_command(Nested, cmd)
+
+        @click.command()
+        def inner(**kwargs: Any) -> None:
+            ctx = click.get_current_context()
+            result_holder.append(confargclick.from_context(Nested, ctx, env={}, argv=args))
+
+        real_cmd = click.Command(name="cli", callback=inner.callback, params=cmd.params)
+        runner = CliRunner()
+        runner.invoke(real_cmd, args, catch_exceptions=False)
+        assert result_holder[0].db.host == "db_host"  # db.yaml (rightmost) wins
+        assert result_holder[0].db.port == 5555
 
     def test_enum_option_by_value(self) -> None:
         """Enum fields accept enum values (not just names) via Click CLI."""
@@ -723,6 +773,7 @@ class TestMergeContext:
         cfg = tmp_path / "cfg.yaml"
         cfg.write_text("host: myhost\nport: '${host}'\n")
         result_holder: list[Any] = []
+        args = ["--config", str(cfg)]
 
         cmd = click.command()(lambda **kwargs: None)
         populate_command(Simple, cmd)
@@ -730,11 +781,11 @@ class TestMergeContext:
         @click.command()
         def inner(**kwargs: Any) -> None:
             ctx = click.get_current_context()
-            result_holder.append(confargclick.merge_context(Simple, ctx, env={}))
+            result_holder.append(confargclick.merge_context(Simple, ctx, env={}, argv=args))
 
         real_cmd = click.Command(name="cli", callback=inner.callback, params=cmd.params)
         runner = CliRunner()
-        runner.invoke(real_cmd, ["--config", str(cfg)], catch_exceptions=False)
+        runner.invoke(real_cmd, args, catch_exceptions=False)
         assert result_holder[0]["port"] == "${host}"
 
     def test_round_trip_equivalence(self) -> None:

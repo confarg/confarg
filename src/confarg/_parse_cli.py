@@ -606,6 +606,54 @@ def _consume_typed_arg(
     return _consume_collection_or_scalar(ctx, i, token, ft, path)
 
 
+def _collect_config_file_pairs(
+    argv: Sequence[str],
+    config_flag: str,
+    cli_prefix: str = "",
+) -> list[tuple[str, Path]]:
+    """Return (subpath, Path) pairs for ``--config[.subpath]`` flags in command-line order.
+
+    Lenient: silently skips ``--config`` tokens not followed by a path argument (e.g. when
+    the adapter framework already consumed the paths and argv is rescanned for ordering).
+    Does not raise on missing paths; use ``_parse_cli`` when strict validation is needed.
+
+    Args:
+        argv: The CLI argument sequence to scan.
+        config_flag: The flag name used to specify config files (e.g. ``"config"``).
+        cli_prefix: Required prefix for CLI flags (empty string for no prefix).
+
+    Returns:
+        A list of ``(subpath, Path)`` pairs in the order they appear in argv.
+    """
+    normalized = _normalize_eq_args(list(argv))
+    pairs: list[tuple[str, Path]] = []
+    i = 0
+    while i < len(normalized):
+        token = normalized[i]
+        if not _looks_like_flag(token):
+            i += 1
+            continue
+        raw_key = token[2:]
+        if cli_prefix:
+            dot_pfx = f"{cli_prefix}."
+            if raw_key.startswith(dot_pfx):
+                raw_key = raw_key[len(dot_pfx) :]
+            elif raw_key == cli_prefix:
+                raw_key = ""
+            else:
+                i += 1
+                continue
+        if config_flag and (raw_key == config_flag or raw_key.startswith(config_flag + ".")):
+            subpath = raw_key[len(config_flag) + 1 :] if raw_key.startswith(config_flag + ".") else ""
+            i += 1
+            while i < len(normalized) and not _looks_like_flag(normalized[i]):
+                pairs.append((subpath, Path(normalized[i])))
+                i += 1
+        else:
+            i += 1
+    return pairs
+
+
 def _parse_cli(
     argv: Sequence[str],
     target: Any,
