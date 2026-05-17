@@ -84,6 +84,28 @@ class WithList:
 
 
 @dataclass
+class _WithSetTags:
+    """Dataclass whose varlen collection is a set."""
+
+    tags: set[str] = dataclasses.field(default_factory=set)
+
+
+@dataclass
+class _WithVarTuple:
+    """Dataclass whose varlen collection is a homogeneous tuple."""
+
+    tags: tuple[str, ...] = ()
+
+
+@dataclass
+class _WithTagsAndName:
+    """A varlen collection with a scalar neighbour, to check what a bare flag consumes."""
+
+    tags: list[str] = dataclasses.field(default_factory=list)
+    name: str = "default"
+
+
+@dataclass
 class WithOptional:
     """Dataclass with an optional field."""
 
@@ -448,6 +470,106 @@ class TestRepeatedFlagAccumulationContract:
         """Two tokens are two items, so the '[' one is not decoded (vanilla, argparse, cyclopts)."""
         cfg = space_sep_loader.load(WithList, argv=["--tags", '["a","b"]', "z"], env={})
         assert cfg.tags == ['["a","b"]', "z"]
+
+
+# ---------------------------------------------------------------------------
+# A bare varlen collection flag clears the collection, in every front-end
+# ---------------------------------------------------------------------------
+
+
+class TestBareVarlenFlagContract:
+    """``--<collection>`` with nothing after it empties the collection, everywhere.
+
+    A varlen collection flag consumes greedily and is content with zero tokens, so the
+    bare form is a legal command that *clears* the collection rather than a missing
+    value.  Regression guard: click and typer answered ``Option '--tags' requires an
+    argument.`` and cyclopts asserted the moment a bare occurrence stood beside a valued
+    one (BUG-38).
+    """
+
+    def test_bare_list_flag_yields_the_empty_list(self, loader: ConfargLoader) -> None:
+        """--tags alone builds the empty list."""
+        cfg = loader.load(WithList, argv=["--tags"], env={})
+        assert cfg.tags == []
+
+    def test_bare_list_flag_clears_a_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The clear is what a lower-priority source makes audible."""
+        base = tmp_yaml("tags: [alice, bob]\n")
+        cfg = loader.load(WithList, argv=["--config", str(base), "--tags"], env={})
+        assert cfg.tags == []
+
+    def test_bare_set_flag_clears_a_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A set is the same varlen family, so the bare form empties it too."""
+        base = tmp_yaml("tags: [alice, bob]\n")
+        cfg = loader.load(_WithSetTags, argv=["--config", str(base), "--tags"], env={})
+        assert cfg.tags == set()
+
+    def test_bare_varlen_tuple_flag_clears_a_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``tuple[str, ...]`` is varlen, not fixed-arity: the bare form empties it."""
+        base = tmp_yaml("tags: [alice, bob]\n")
+        cfg = loader.load(_WithVarTuple, argv=["--config", str(base), "--tags"], env={})
+        assert cfg.tags == ()
+
+    def test_bare_union_seq_flag_yields_the_empty_list(self, loader: ConfargLoader) -> None:
+        """A union with a varlen sequence variant takes the bare form as the empty list."""
+        cfg = loader.load(_WithIntList, argv=["--input"], env={})
+        assert cfg.input == []
+
+    def test_bare_union_without_a_varlen_variant_is_rejected(self, loader: ConfargLoader) -> None:
+        """``str | tuple[str, str]`` has no empty value to store, so the bare form is an error.
+
+        The gate is the multi-token *shape*, not "is there something to clear": the bare
+        occurrence is honored as far as the empty value, and the fixed-arity variant is
+        what refuses it -- with confarg's own error, in every front-end.
+        """
+        with pytest.raises(ConfargError):
+            loader.load(_WithStrTuple, argv=["--input"], env={})
+
+    def test_bare_flag_does_not_swallow_the_next_flag(self, loader: ConfargLoader) -> None:
+        """The flag after a bare occurrence is still a flag, not its item."""
+        cfg = loader.load(_WithTagsAndName, argv=["--tags", "--name", "bob"], env={})
+        assert cfg.tags == []
+        assert cfg.name == "bob"
+
+    def test_valued_then_bare_keeps_the_value(self, loader: ConfargLoader) -> None:
+        """A bare occurrence beside a valued one adds nothing rather than colliding."""
+        cfg = loader.load(WithList, argv=["--tags", "x", "--tags"], env={})
+        assert cfg.tags == ["x"]
+
+    def test_bare_then_valued_keeps_the_value(self, loader: ConfargLoader) -> None:
+        """Order does not matter: the bare occurrence contributes no item either way."""
+        cfg = loader.load(WithList, argv=["--tags", "--tags", "x"], env={})
+        assert cfg.tags == ["x"]
+
+    def test_bare_twice_is_still_the_empty_list(self, loader: ConfargLoader) -> None:
+        """Two bare occurrences clear the list once, rather than reading as a repeat."""
+        cfg = loader.load(WithList, argv=["--tags", "--tags"], env={})
+        assert cfg.tags == []
+
+    def test_merged_dict_matches_vanilla(self, loader: ConfargLoader) -> None:
+        """The raw merged dict records the clear identically in every front-end."""
+        merged = loader.merge(WithList, argv=["--tags"], env={})
+        assert merged == {"tags": []}
+
+    def test_dashed_item_is_still_an_item(self, loader: ConfargLoader) -> None:
+        """The filter asks vanilla's own flag/value split, so ``-8`` is an item, not nothing."""
+        cfg = loader.load(_WithIntList, argv=["--input", "-8"], env={})
+        assert cfg.input == -8
+
+    def test_equals_escape_is_never_a_bare_occurrence(self, loader: ConfargLoader) -> None:
+        """``--tags=--a`` carries its item by construction and is left alone."""
+        cfg = loader.load(WithList, argv=["--tags=--a"], env={})
+        assert cfg.tags == ["--a"]
+
+    def test_equals_escape_beside_a_bare_occurrence(self, loader: ConfargLoader) -> None:
+        """The ``=`` occurrence names ``tags=--a``, so the read-back must not overwrite its item."""
+        cfg = loader.load(WithList, argv=["--tags=--a", "--tags"], env={})
+        assert cfg.tags == ["--a"]
+
+    def test_bare_flag_under_a_cli_prefix(self, loader: ConfargLoader) -> None:
+        """The read-back reads the prefix-stripped argv, so ``--app.tags`` clears ``tags``."""
+        cfg = loader.load(WithList, argv=["--app.tags"], env={}, cli_prefix="app")
+        assert cfg.tags == []
 
 
 # ---------------------------------------------------------------------------
@@ -1386,6 +1508,13 @@ class _WithStrBools:
 
 
 @dataclass
+class _WithListMap:
+    """Dict field whose *values* are collections, so a subkey flag is itself multi-token."""
+
+    data: dict[str, list[int]] = dataclasses.field(default_factory=dict)
+
+
+@dataclass
 class _WithGrid:
     """List-of-list field — element is itself a sequence (nested index patch)."""
 
@@ -1528,6 +1657,25 @@ class TestCollectionPatchContract:
         base = tmp_yaml("users: [alice, bob]\n")
         cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users+", "--users+"], env={})
         assert cfg.users == ["alice", "bob"]
+
+    def test_bare_subkey_with_a_collection_value_type(self, loader: ConfargLoader) -> None:
+        """``--data.k`` with nothing after it stores the empty collection under the key.
+
+        The subkey flag inherits the value type's shape, so it stands bare exactly when a
+        field flag of that type would (BUG-38).
+        """
+        cfg = loader.load(_WithListMap, argv=["--data.k"], env={})
+        assert cfg.data == {"k": []}
+
+    def test_bare_element_flag_with_a_collection_element_type(self, loader: ConfargLoader) -> None:
+        """``--grid.0`` with nothing after it stores the empty collection at index 0."""
+        cfg = loader.load(_WithGrid, argv=["--grid.0"], env={})
+        assert cfg.grid == [[]]
+
+    def test_bare_subkey_with_a_scalar_value_type_is_rejected(self, loader: ConfargLoader) -> None:
+        """A scalar-valued subkey takes exactly one token, so the bare form stays an error."""
+        with pytest.raises((ConfargError, SystemExit)):
+            loader.load(_WithMap, argv=["--data.k"], env={})
 
     def test_delete_index(self, loader: ConfargLoader, tmp_yaml) -> None:
         """``--field.N-`` removes the element at N."""

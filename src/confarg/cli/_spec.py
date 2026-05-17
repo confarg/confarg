@@ -47,15 +47,19 @@ class FlagSpec:
     stands_bare: bool = False
     """The flag is legal with no value token at all.
 
-    Set on a collection append (``--<list>+``), the one flag family vanilla lets stand
-    bare: it appends nothing and leaves the lower-priority sources alone.  A framework
-    that cannot express a flag taking zero *or* more tokens parses an argv with this
-    flag's bare occurrences removed
-    (:func:`~confarg.cli._argv.drop_bare_occurrences`); the patch scan still reads the
-    original argv, so the no-op occurrence is honored rather than rejected.
+    Set on a collection append (``--<list>+``), which appends nothing and leaves the
+    lower-priority sources alone, and on every flag whose type
+    :func:`~confarg.cli._build._takes_multi_tokens` calls multi-token -- a field, a dict
+    subkey or a collection element -- whose empty value clears the collection.  A framework
+    that cannot express a flag taking zero *or* more tokens parses an argv with this flag's
+    bare occurrences removed (:func:`~confarg.cli._argv.drop_bare_occurrences`), so what a
+    dropped occurrence meant is read back off the original argv: the patch scan honors the
+    append, the subkey and the element, and
+    :func:`~confarg.cli._collect._bare_multi_token_flags` restores a field flag's clear.
+    Marking a flag with no such reader loses what the user typed.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-bare-append
+        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
     """
 
     accumulates: bool = False

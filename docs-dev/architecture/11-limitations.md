@@ -50,9 +50,9 @@ the boundary moves here.
 
 - A multi-token flag is spelled per framework: space-separated for vanilla/argparse/cyclopts,
   repeated for click/typer/cyclopts ([04](04-cli-adapters.md#list-syntax-divergence)). Only the
-  spelling diverges — repeating such a flag accumulates in every front-end. One gap still sits
-  beside the approved divergence: a bare `--<list>`, which clears the list in the other three
-  front-ends, is rejected by click and typer (BUG-38).
+  spelling diverges: repeating such a flag accumulates in every front-end, and a bare
+  `--<list>` clears the collection in every front-end
+  ([04](04-cli-adapters.md#a-flag-that-stands-bare)).
 - There is no end-of-options separator: a bare `--` is an ordinary token everywhere. A value
   that starts with `--` is written `--key=--value`, the form every front-end honors
   ([10](10-design-decisions.md#the--form-is-the-escape-for-a-dashed-value)).

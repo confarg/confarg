@@ -15,7 +15,7 @@ Deciding which answer is right settles it either way: a bare config append could
 the way a bare `--<list>+` appends no item, in which case the flag's specs take
 `FlagSpec.stands_bare` and vanilla stops raising; or the error is right, and the two lenient
 front-ends have to report it
-([04-cli-adapters.md#a-bare-append](../../architecture/04-cli-adapters.md#a-bare-append) explains
+([04-cli-adapters.md#a-flag-that-stands-bare](../../architecture/04-cli-adapters.md#a-flag-that-stands-bare) explains
 why the append flags alone carry the marker today). With a file *and* a bare occurrence
 (`--config.users+ extra.yaml --config.users+`), cyclopts additionally hits the implicit-token
 assertion described there.

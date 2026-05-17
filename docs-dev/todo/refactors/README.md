@@ -48,6 +48,6 @@ different board.
 | [REF-64 — The clicklike completion tests assert that nothing was added](REF-64-completion-tests-assert-nothing-was-added.md) | S | medium | none |
 | [REF-65 — `cli/_collect.py` re-implements the token shaping `_parse_cli` now owns](REF-65-collect-reimplements-the-token-shaping.md) | S | medium | none |
 | [REF-66 — the pinned ruff and the project's own ruff disagree](REF-66-pinned-ruff-disagrees-with-the-project-ruff.md) | S | low | none |
-| [REF-67 — a console block is duplicated in the collections tutorial](REF-67-duplicated-console-block-in-the-collections-tutorial.md) | S | low | none |
+| [REF-68 — the scalar root spec undoes the multi-token shape one attribute at a time](REF-68-scalar-root-undoes-the-multi-token-shape-one-field-at-a-time.md) | S | low | none |
 
 <!-- tickets:end -->

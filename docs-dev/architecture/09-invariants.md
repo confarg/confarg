@@ -55,7 +55,10 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "how many positional tokens, of which types?" | `_types._fixed_seq_types` |
 | "is this variant sequence-shaped?" | `_types._is_seq_variant` |
 | reconciling a registered `cli_prefix` with one passed to `merge_*` | `cli._prefix.resolve_prefix` |
+| "does this argv flag occurrence carry an item?" | `cli._argv._bare_occurrence` |
 | "which argv tokens does a host framework parse?" | `cli._argv.drop_bare_occurrences` |
+| "does this field's flag consume many tokens, and so stand bare?" | `cli._build._takes_multi_tokens` |
+| "which flags did the framework never see, and what did they mean?" | `cli._argv.bare_only_flag_names` (which) / `cli._collect._bare_multi_token_flags` (what) |
 | plain vs escaped callable directives | `_callable.active_directives` |
 | single-value (scalar/type-ref) construction | `_construct._construct_scalar` |
 | "which `__init__` parameters are `*args` / `**kwargs`?" | `_types._var_params` |
@@ -114,6 +117,10 @@ collection logic goes into `cli/_collect.py` mirroring the vanilla decision
   ([04](04-cli-adapters.md#the-clicklike-seam)).
 - Completion and dynamic flag registration never raise
   ([04](04-cli-adapters.md#completion)).
+- `FlagSpec.stands_bare` is set on what `cli._build._takes_multi_tokens` names, plus the
+  append flag. A bare occurrence of such a flag never reaches the framework's parse result, so
+  marking anything else needs a reader for what the dropped token meant — or the information
+  is gone ([04](04-cli-adapters.md#a-flag-that-stands-bare)).
 - `import_tagged_classes` runs before anything reads `__subclasses__()` — before the static
   type walk in `build_static_flags`, and before path resolution in `_parse_cli`
   ([10](10-design-decisions.md#a-named-tag-is-imported-before-registration)).

@@ -191,7 +191,7 @@ def load_flags_into_app(
         "command": __confarg_command__,
         "name_map": name_map,
         # merge_app drops these flags' bare occurrences before cyclopts parses
-        # (docs-dev/architecture/04-cli-adapters.md#a-bare-append).
+        # (docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare).
         "stands_bare": {spec.name for spec in flags if spec.stands_bare},
     }
 

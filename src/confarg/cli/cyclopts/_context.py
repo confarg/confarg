@@ -90,7 +90,7 @@ def merge_app(  # noqa: PLR0913
     # handed the argv without the bare occurrences of a flag that takes zero *or* more
     # items: it reads one as an implicit empty container and then asserts when that
     # meets a real token.  The scans below read the argv the user typed
-    # (docs-dev/architecture/04-cli-adapters.md#a-bare-append).
+    # (docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare).
     tokens = sys.argv[1:] if argv is None else list(argv)
     command, bound, _ = app.parse_args(
         drop_bare_occurrences(tokens, meta["stands_bare"] if meta else ()),

@@ -16,11 +16,15 @@ delete-then-set *is* that useful order, and it is the order someone reaches for 
 configured list and put something else in its place. So the gap is unapproved
 ([09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity)).
 
-`--items-` is the one clear-the-list spelling every front-end accepts (a bare `--items` is rejected
-by click and typer, BUG-38), which is what makes this worth fixing rather than documenting: the
-portable spelling is the one whose follow-up flag is silently dropped. A fix has to give
+`--items-` and a bare `--items` are both accepted by every front-end, and it is the *delete*
+spelling whose follow-up flag is silently dropped — which is what makes this worth fixing rather
+than documenting. A fix has to give
 `_restore_patch_deletes` the argv position of each delete, so a sibling set *after* it survives and
 one *before* it does not.
+
+[BUG-54](BUG-54-plain-occurrence-does-not-discard-earlier-patch-ops-in-the-adapters.md) is the same
+missing argv position seen from the other side — an append *before* a plain occurrence wrongly
+survives it — so the two want one fix and should be sized together.
 
 ```python
 from dataclasses import dataclass, field
