@@ -74,6 +74,8 @@ _CircleShapeOther.__module__ = "other.shapes"
 
 @dataclass
 class WithDuplicateNameUnion:
+    """Union of two CircleShape variants from different modules (same short name)."""
+
     shape: CircleShape | _CircleShapeOther
 
 
@@ -236,7 +238,7 @@ class TestDict:
         assert result.metadata == {}
 
     def test_dict_union_value_with_nested_dict(self) -> None:
-        """dict value type that is a union containing a dict variant constructs correctly."""
+        """Dict value type that is a union containing a dict variant constructs correctly."""
 
         @dataclass
         class Cfg:
@@ -250,7 +252,7 @@ class TestDict:
         assert isinstance(result.foo["qux"], dict)
 
     def test_dict_union_value_with_list(self) -> None:
-        """dict value type that is a union containing a list variant constructs correctly."""
+        """Dict value type that is a union containing a list variant constructs correctly."""
 
         @dataclass
         class Cfg:
@@ -651,6 +653,7 @@ class TestUnionClassTag:
         ids=["cli-circle", "cli-square", "env-circle", "env-square"],
     )
     def test_tag_cli_env(self, args, env, expected_cls, expected_radius) -> None:
+        """Test class tag via CLI and env resolves to the correct union variant."""
         result = confarg.load(WithUnionAmbiguous, args=args, env=env, env_prefix="")
         assert isinstance(result.shape, expected_cls)
         assert result.shape.radius == expected_radius
@@ -666,6 +669,7 @@ class TestUnionClassTag:
         ids=["circle", "square"],
     )
     def test_tag_toml(self, tmp_toml, class_path, expected_cls, radius) -> None:
+        """Test class tag in TOML resolves to the correct union variant."""
         path = tmp_toml(f'[shape]\nclass = "{class_path}"\nx = 1.0\ny = 2.0\nradius = {radius}\n')
         result = confarg.load(WithUnionAmbiguous, args=[], env={}, files=[path])
         assert isinstance(result.shape, expected_cls)
@@ -1149,6 +1153,7 @@ class TestTypeLiteralDiscriminator:
         ids=["cli-a", "cli-b", "env-a", "env-b"],
     )
     def test_type_literal_cli_env(self, args, env, expected_cls, expected_value) -> None:
+        """Test Literal discriminator via CLI and env selects the correct union variant."""
         result = confarg.load(WithTypeLiteralUnion, args=args, env=env, env_prefix="")
         assert isinstance(result.item, expected_cls)
         assert result.item.value == expected_value
@@ -1159,6 +1164,7 @@ class TestTypeLiteralDiscriminator:
         ids=["a", "b"],
     )
     def test_type_literal_toml(self, tmp_toml, type_val, value, expected_cls) -> None:
+        """Test Literal discriminator in TOML selects the correct union variant."""
         path = tmp_toml(f'[item]\ntype = "{type_val}"\nvalue = {value}\n')
         result = confarg.load(WithTypeLiteralUnion, args=[], env={}, files=[path])
         assert isinstance(result.item, expected_cls)

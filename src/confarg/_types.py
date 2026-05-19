@@ -325,7 +325,8 @@ def _is_varlen_collection(tp: Any) -> bool:
         return True
     if _is_tuple(tp):
         a = get_args(tp)
-        return len(a) == 2 and a[1] is Ellipsis
+        _variable_length_tuple_args = 2
+        return len(a) == _variable_length_tuple_args and a[1] is Ellipsis
     return False
 
 
@@ -352,7 +353,8 @@ def _tuple_types(tp: Any) -> list[Any] | None:
         A list of element types for fixed-length tuples, or None for variable-length.
     """
     a = get_args(_resolve_type(tp))
-    if len(a) == 2 and a[1] is Ellipsis:
+    _variable_length_tuple_args = 2
+    if len(a) == _variable_length_tuple_args and a[1] is Ellipsis:
         return None
     return [_resolve_type(x) for x in a]
 
@@ -449,7 +451,7 @@ def _init_fields(tp: Any) -> dict[str, Any]:
     """
     try:
         hints = get_type_hints(tp.__init__)
-    except Exception:
+    except (NameError, AttributeError, TypeError):
         hints = {}
     sig = inspect.signature(tp.__init__)
     result: dict[str, Any] = {}
@@ -582,8 +584,9 @@ def _callable_param_types(tp: Any) -> list[Any] | None:
 
 def _callable_return_type(tp: Any) -> Any | None:
     """Return the declared return type for Callable[..., R], or None for bare Callable."""
+    _callable_min_args = 2
     args = get_args(_resolve_type(tp))
-    if len(args) < 2:
+    if len(args) < _callable_min_args:
         return None
     return _resolve_type(args[1])
 
@@ -596,6 +599,7 @@ def _try_coerce(ft: Any, token: _StrToken) -> Any:
     str tokens are returned unchanged — _StrToken is already a str subclass.
     For multi-variant unions, returns token unchanged for construct() to handle.
     """
+    from confarg._errors import TypeCoercionError
     from confarg.typedload._coerce import _coerce_leaf  # lazy — avoids circular import
 
     if ft is None:
@@ -610,5 +614,5 @@ def _try_coerce(ft: Any, token: _StrToken) -> Any:
         return token
     try:
         return _coerce_leaf(ft, token)
-    except Exception:
+    except TypeCoercionError:
         return token

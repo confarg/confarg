@@ -337,7 +337,7 @@ class TestConfigFileAppendSyntax:
         assert result.users == ["alice", "bob", "frankenstein"]
 
     def test_json_append(self, tmp_json) -> None:
-        """\"key+\" works in JSON files."""
+        """Append syntax works in JSON files via the "key+" notation."""
         WithList = make_target("items", list[int], default_factory=list)
         base = tmp_json('{"items": [1, 2]}', "base.json")
         derived = tmp_json('{"items+": [3, 4]}', "derived.json")
@@ -345,7 +345,7 @@ class TestConfigFileAppendSyntax:
         assert result.items == [1, 2, 3, 4]
 
     def test_toml_append_quoted_key(self, tmp_toml) -> None:
-        """\"key+\" = [...] works in TOML (bare keys cannot contain +, so quoting is required)."""
+        """Append syntax works in TOML via quoted key ("key+" = [...]) since bare keys cannot contain +."""
         WithList = make_target("items", list[int], default_factory=list)
         base = tmp_toml("items = [1, 2]\n", "base.toml")
         derived = tmp_toml('"items+" = [3, 4]\n', "derived.toml")
@@ -410,7 +410,7 @@ class TestConfigFileDeleteSyntax:
         assert result.items == ["a", "d"]
 
     def test_delete_list_index_toml(self, tmp_toml) -> None:
-        """TOML requires quoting: \"1-\" = true syntax removes element at original index 1."""
+        r"""TOML requires quoting: "1-" = true syntax removes element at original index 1."""
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_toml('items = ["a", "b", "c"]\n', "base.toml")
         derived = tmp_toml('[items]\n"1-" = true\n', "derived.toml")

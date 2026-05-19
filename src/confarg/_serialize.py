@@ -52,37 +52,49 @@ def _serialize(
         A JSON-compatible structure (dict, list, or leaf value).
     """
     tp = _resolve_type(tp)
-
     if instance is None:
         return None
-
     if _is_callable(tp):
         from confarg._callable import _serialize_callable
 
         return _serialize_callable(instance)
+    return _serialize_by_type(tp, instance, path, union_tag, tag_policy)
 
+
+def _serialize_by_type(
+    tp: Any,
+    instance: Any,
+    path: str,
+    union_tag: str,
+    tag_policy: TagPolicy,
+) -> Any:
+    """Dispatch serialization by type after None and callable are handled."""
     if _is_union(tp):
         return _serialize_union(tp, instance, path, union_tag, tag_policy)
-
     if _is_struct(tp):
         return _serialize_struct(tp, instance, path, union_tag, tag_policy)
-
-    if _is_list(tp):
-        et = _elem_type(tp)
-        return [_serialize(et, v, f"{path}[{i}]", union_tag, tag_policy) for i, v in enumerate(instance)]
-
-    if _is_set(tp) or _is_frozenset(tp):
-        et = _elem_type(tp)
-        items = [_serialize(et, v, path, union_tag, tag_policy) for v in instance]
-        return sorted(items, key=_sort_key)
-
+    if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
+        return _serialize_collection(tp, instance, path, union_tag, tag_policy)
     if _is_tuple(tp):
         return _serialize_tuple(tp, instance, path, union_tag, tag_policy)
-
     if _is_dict(tp):
         return _serialize_dict(tp, instance, path, union_tag, tag_policy)
-
     return _serialize_leaf(tp, instance)
+
+
+def _serialize_collection(
+    tp: Any,
+    instance: Any,
+    path: str,
+    union_tag: str,
+    tag_policy: TagPolicy,
+) -> list[Any]:
+    """Serialize a list, set, or frozenset."""
+    et = _elem_type(tp)
+    if _is_list(tp):
+        return [_serialize(et, v, f"{path}[{i}]", union_tag, tag_policy) for i, v in enumerate(instance)]
+    items = [_serialize(et, v, path, union_tag, tag_policy) for v in instance]
+    return sorted(items, key=_sort_key)
 
 
 def _serialize_struct(
@@ -104,11 +116,12 @@ def _serialize_struct(
         try:
             value = getattr(instance, name)
         except AttributeError:
-            raise ConfargError(
+            msg = (
                 f"Field '{name}' is declared in {type(instance).__name__}.__init__"
                 f" but not accessible on the instance as self.{name}."
                 f" Plain classes must store every __init__ parameter as a same-named instance attribute."
-            ) from None
+            )
+            raise ConfargError(msg) from None
         fp = f"{path}.{name}" if path else name
         out[name] = _serialize(ft, value, fp, union_tag, tag_policy)
     return out
@@ -128,9 +141,12 @@ def _serialize_union(
 
     serialized = _serialize(variant_tp, instance, path, union_tag, tag_policy)
 
-    if _is_struct(variant_tp) and isinstance(serialized, dict):
-        if tag_policy == "always" or _needs_tag(tp, serialized, union_tag):
-            serialized[union_tag] = f"{variant_tp.__module__}.{variant_tp.__name__}"
+    if (
+        _is_struct(variant_tp)
+        and isinstance(serialized, dict)
+        and (tag_policy == "always" or _needs_tag(tp, serialized, union_tag))
+    ):
+        serialized[union_tag] = f"{variant_tp.__module__}.{variant_tp.__name__}"
 
     return serialized
 

@@ -7,9 +7,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 from confarg._errors import ConfargError, UnknownArgumentError
 from confarg._merge import (
@@ -65,6 +68,49 @@ def _subclass_field_type(tp: type, field: str) -> Any | None:
     return first if all(f == first for f in found[1:]) else str
 
 
+def _resolve_union_field_type(tp: Any, remaining: list[str], union_tag: str) -> Any | None:
+    """Resolve the field type through a Union by trying all non-None variants."""
+    resolved = []
+    for variant in _union_args_no_none(tp):
+        v = _resolve_type(variant)
+        result = _resolve_field_type(v, remaining, union_tag)
+        if result is not None:
+            resolved.append(result)
+    if not resolved:
+        return None
+    first = resolved[0]
+    return first if all(r == first for r in resolved[1:]) else str
+
+
+def _step_tuple_type(tp: Any, part: str) -> Any | None:
+    """Advance one step into a tuple type by numeric index."""
+    et = _tuple_types(tp)
+    if et is None:
+        return _elem_type(tp)
+    try:
+        return et[int(part)]
+    except (ValueError, IndexError):
+        return None
+
+
+def _advance_field_type(tp: Any, part: str) -> Any | None:
+    """Advance one step into tp along path segment part. Returns new type or None."""
+    if _is_struct(tp):
+        flds = _struct_fields(tp)
+        return flds[part] if part in flds else _subclass_field_type(tp, part)
+    if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
+        return _elem_type(tp)
+    if _is_tuple(tp):
+        return _step_tuple_type(tp, part)
+    if _is_dict(tp):
+        _, vt = _dict_kv(tp)
+        return vt
+    if _is_callable(tp):
+        # "fn"/"class"/"call" are recognized sub-keys; flat kwargs also accepted
+        return str
+    return None
+
+
 def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | None:
     """Walk the type tree following dot-separated path parts.
 
@@ -85,53 +131,12 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
             return str
         tp = _resolve_type(tp)
         if _is_union(tp):
-            remaining = parts[idx:]
-            resolved = []
-            for variant in _union_args_no_none(tp):
-                v = _resolve_type(variant)
-                result = _resolve_field_type(v, remaining, union_tag)
-                if result is not None:
-                    resolved.append(result)
-            if not resolved:
-                return None
-            first = resolved[0]
-            if all(r == first for r in resolved[1:]):
-                return first  # All variants agree → safe to use
-            return str  # Variants disagree → conservative string consumption
-        elif _is_struct(tp):
-            flds = _struct_fields(tp)
-            if part in flds:
-                tp = flds[part]
-            else:
-                tp = _subclass_field_type(tp, part)
-                if tp is None:
-                    return None
-        elif _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
-            tp = _elem_type(tp)
-        elif _is_tuple(tp):
-            et = _tuple_types(tp)
-            if et is None:
-                tp = _elem_type(tp)
-            else:
-                try:
-                    tp = et[int(part)]
-                except (ValueError, IndexError):
-                    return None
-        elif _is_dict(tp):
-            _, vt = _dict_kv(tp)
-            tp = vt
-        elif _is_callable(tp):
-            if part in ("fn", "class", "call"):
-                tp = str
-            elif part == "bind":
-                remaining_count = len(parts) - idx - 1
-                if remaining_count == 0:
-                    return None  # --field.bind alone is not addressable
-                return str  # --field.bind.key -> str leaf
-            else:
-                # Accept flat constructor kwargs for both factory mode and callable-object mode.
-                return str
-        else:
+            return _resolve_union_field_type(tp, parts[idx:], union_tag)
+        if _is_callable(tp) and part == "bind":
+            # --field.bind alone is not addressable; --field.bind.key → str leaf
+            return None if len(parts) - idx - 1 == 0 else str
+        tp = _advance_field_type(tp, part)
+        if tp is None:
             return None
     return tp
 
@@ -170,7 +175,8 @@ def _parse_json_arg(token: str, flag: str) -> Any:
     try:
         return json.loads(token)
     except json.JSONDecodeError as e:
-        raise ConfargError(f"Invalid JSON for {flag}: {e}") from e
+        msg = f"Invalid JSON for {flag}: {e}"
+        raise ConfargError(msg) from e
 
 
 def _looks_like_flag(token: str) -> bool:
@@ -184,7 +190,12 @@ def _looks_like_flag(token: str) -> bool:
     Returns:
         True if the token looks like a CLI flag.
     """
-    return token.startswith("--") and len(token) > 2 and not token[2:].lstrip("-").replace(".", "").isdigit()
+    _double_dash_len = 2
+    return (
+        token.startswith("--")
+        and len(token) > _double_dash_len
+        and not token[_double_dash_len:].lstrip("-").replace(".", "").isdigit()
+    )
 
 
 def _next_is_flag_or_end(args: Sequence[str], i: int) -> bool:
@@ -212,12 +223,13 @@ def _check_config_flag_conflict(target: Any, config_flag: str, cli_prefix: str) 
         flds = _struct_fields(tp)
         if config_flag in flds:
             tp_name = getattr(tp, "__name__", repr(tp))
-            raise ConfargError(
+            msg = (
                 f"{flag_display!r} is reserved as the config-file flag but {tp_name} has a field"
                 f" named {config_flag!r}. The field cannot be set via CLI because the flag is"
                 f" intercepted before field lookup."
                 f" Pass a different config_flag to merge()/load(), e.g. config_flag='conf'."
             )
+            raise ConfargError(msg)
 
     tp = _resolve_type(target)
     if _is_struct(tp):
@@ -227,6 +239,340 @@ def _check_config_flag_conflict(target: Any, config_flag: str, cli_prefix: str) 
             v = _resolve_type(variant)
             if _is_struct(v):
                 _check_struct(v)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for the main parse loop
+# ---------------------------------------------------------------------------
+
+
+def _normalize_eq_args(args: Sequence[str]) -> list[str]:
+    """Split --key=value tokens into --key value pairs."""
+    normalized: list[str] = []
+    for tok in args:
+        if tok.startswith("--") and "=" in tok:
+            flag, _, val = tok.partition("=")
+            normalized.append(flag)
+            normalized.append(val)
+        else:
+            normalized.append(tok)
+    return normalized
+
+
+def _strip_cli_prefix(raw_key: str, cli_prefix: str, token: str) -> str:
+    """Return raw_key with cli_prefix stripped, or raise UnknownArgumentError."""
+    if not cli_prefix:
+        return raw_key
+    dot_pfx = f"{cli_prefix}."
+    if raw_key.startswith(dot_pfx):
+        return raw_key[len(dot_pfx) :]
+    if raw_key == cli_prefix:
+        return ""
+    msg = f"Unknown argument: {token!r}. Expected arguments to start with --{cli_prefix}."
+    raise UnknownArgumentError(msg)
+
+
+def _consume_config_paths(args: list[str], i: int, key: str, config_flag: str) -> tuple[int, list[tuple[str, Path]]]:
+    """Consume file-path tokens for a --config[.subpath] flag.
+
+    Returns (new_i, [(subpath, Path)]).
+    """
+    subpath = key[len(config_flag) + 1 :] if key.startswith(config_flag + ".") else ""
+    i += 1
+    if i >= len(args) or _looks_like_flag(args[i]):
+        msg = f"Missing file path after --{config_flag}. Usage: --{config_flag} /path/to/config.yaml"
+        raise ConfargError(msg)
+    pairs: list[tuple[str, Path]] = []
+    while i < len(args) and not _looks_like_flag(args[i]):
+        pairs.append((subpath, Path(args[i])))
+        i += 1
+    return i, pairs
+
+
+def _parse_flag_mode(
+    key: str,
+) -> tuple[list[str], bool, bool, bool, int, bool]:
+    """Decode mode flags from a flag key.
+
+    Returns ``(path, append_mode, delete_mode, force_str, delete_idx, is_list_delete)``.
+    """
+    path = key.split(".") if key else []
+
+    append_mode = bool(path) and path[-1].endswith("+") and len(path[-1]) > 1
+    if append_mode:
+        path[-1] = path[-1][:-1]
+
+    delete_mode = not append_mode and bool(path) and path[-1].endswith("-") and len(path[-1]) > 1
+    delete_idx = -1
+    is_list_delete = False
+    if delete_mode:
+        raw_last = path[-1][:-1]
+        path[-1] = raw_last
+        try:
+            delete_idx = int(raw_last)
+            is_list_delete = True
+        except ValueError:
+            pass
+
+    force_str = not delete_mode and bool(path) and path[-1] == "str"
+    if force_str:
+        path = path[:-1]
+
+    return path, append_mode, delete_mode, force_str, delete_idx, is_list_delete
+
+
+@dataclass
+class _ParseCtx:
+    """Shared parse-loop state threaded through token handlers."""
+
+    args: Sequence[str]
+    target: Any
+    union_tag: str
+    data: dict[str, Any] = field(default_factory=dict)
+
+
+def _handle_delete_token(
+    ctx: _ParseCtx,
+    token: str,
+    path: list[str],
+    is_list_delete: bool,
+    delete_idx: int,
+) -> None:
+    """Apply a delete-mode flag (--foo.1- or --foo.bar-) to data."""
+    if is_list_delete:
+        parent_path = path[:-1]
+        ft_check = _resolve_field_type(ctx.target, path, ctx.union_tag)
+        if ft_check is None and not _is_dict_at_path(ctx.target, path, ctx.union_tag):
+            msg = f"Unknown argument: {token!r} (field '{'.'.join(parent_path)}' not found or not indexable)"
+            raise UnknownArgumentError(msg)
+        node: Any = ctx.data
+        for _p in parent_path:
+            node = node[_p] if isinstance(node, dict) and _p in node else {}
+        del_key = LIST_POST_APPEND_DELETE_KEY if isinstance(node, dict) and LIST_APPEND_KEY in node else LIST_DELETE_KEY
+        _accumulate_list_delete(ctx.data, parent_path, delete_idx, token, delete_key=del_key)
+    else:
+        ft_check = _resolve_field_type(ctx.target, path, ctx.union_tag)
+        if ft_check is None and not _is_dict_at_path(ctx.target, path, ctx.union_tag):
+            msg = f"Unknown argument: {token!r} (field '{'.'.join(path)}' not found)"
+            raise UnknownArgumentError(msg)
+        _set_nested(ctx.data, path, DICT_DELETE)
+
+
+def _collect_append_items(args: list[str], i: int, et: Any) -> tuple[list[Any], int]:
+    """Collect append-mode values from args, returning (items, new_i).
+
+    Accepts a JSON array literal as a single token, otherwise consumes space-separated
+    tokens until the next flag.
+    """
+    if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("["):
+        try:
+            parsed = json.loads(args[i])
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            return parsed, i + 1
+
+    items: list[Any] = []
+    while i < len(args) and not _looks_like_flag(args[i]):
+        tok = args[i]
+        if tok.startswith("{"):
+            try:
+                items.append(json.loads(tok))
+            except json.JSONDecodeError:
+                items.append(_try_coerce(et, _StrToken(tok)))
+        else:
+            items.append(_try_coerce(et, _StrToken(tok)))
+        i += 1
+    return items, i
+
+
+def _merge_append_ops(existing: Any, append_items: list[Any]) -> dict[str, Any]:
+    """Combine append_items with any existing list-operation dict at this path."""
+    if isinstance(existing, list):
+        return {LIST_REPLACE_BASE_KEY: existing, LIST_APPEND_KEY: append_items}
+    if isinstance(existing, dict):
+        if LIST_REPLACE_BASE_KEY in existing:
+            prior = existing.get(LIST_APPEND_KEY, [])
+            return {**existing, LIST_APPEND_KEY: prior + append_items}
+        if LIST_APPEND_KEY in existing:
+            return {**existing, LIST_APPEND_KEY: existing[LIST_APPEND_KEY] + append_items}
+        return {**existing, LIST_APPEND_KEY: append_items}
+    return {LIST_APPEND_KEY: append_items}
+
+
+def _handle_append_token(
+    ctx: _ParseCtx,
+    i: int,
+    token: str,
+    ft: Any,
+    path: list[str],
+) -> int:
+    """Process an append-mode flag (--foo+ items...) and return the new arg index."""
+    if not _is_varlen_collection(ft):
+        msg = (
+            f"Cannot use + (append) syntax on {token!r}:"
+            f" field '{'.'.join(path)}' has type {ft!r}, which is not a list, set, or frozenset."
+        )
+        raise ConfargError(msg)
+    et = _elem_type(ft)
+    append_items, i = _collect_append_items(ctx.args, i, et)
+    node: Any = ctx.data
+    for p in path[:-1]:
+        node = node.get(p, {}) if isinstance(node, dict) else {}
+    existing = node.get(path[-1]) if path and isinstance(node, dict) else None
+    _set_nested(ctx.data, path, _merge_append_ops(existing, append_items))
+    return i
+
+
+def _consume_fixed_tuple_args(args: list[str], i: int, tt: list[Any], path: list[str], data: dict[str, Any]) -> int:
+    """Consume exactly len(tt) arguments for a fixed-length tuple field."""
+    items: list[Any] = []
+    for et in tt:
+        if i < len(args):
+            items.append(_try_coerce(et, _StrToken(args[i])))
+            i += 1
+    _set_nested(data, path, items)
+    return i
+
+
+def _consume_union_tuple_args(args: list[str], i: int, path: list[str], data: dict[str, Any]) -> int:
+    """Consume greedy space-separated args for a union-of-tuples field."""
+    items: list[Any] = []
+    while i < len(args) and not _looks_like_flag(args[i]):
+        items.append(_StrToken(args[i]))
+        i += 1
+    _set_nested(data, path, items)
+    return i
+
+
+def _handle_scalar_root(args: list[str], i: int, token: str, target_r: Any, data: dict[str, Any]) -> int:
+    """Consume the single value for a non-struct scalar target. Returns new arg index."""
+    i += 1
+    if i >= len(args) or _looks_like_flag(args[i]):
+        msg = f"Missing value for {token!r}. Usage: {token} <value>"
+        raise ConfargError(msg)
+    data["__root__"] = _try_coerce(target_r, _StrToken(args[i]))
+    return i + 1
+
+
+def _handle_force_str(args: list[str], i: int, token: str, data: dict[str, Any], path: list[str]) -> int:
+    """Consume the value for a .str-cast flag, storing it as a plain str. Returns new arg index."""
+    if i >= len(args) or _looks_like_flag(args[i]):
+        msg = f"Missing value for {token!r}. Usage: {token} <value>"
+        raise ConfargError(msg)
+    _set_nested(data, path, str(args[i]))
+    return i + 1
+
+
+def _handle_unknown_field(
+    ctx: _ParseCtx,
+    i: int,
+    token: str,
+    path: list[str],
+    append_mode: bool,
+) -> int:
+    """Handle a flag whose field path could not be resolved.
+
+    For dict-typed paths, consumes an optional value and returns the new index.
+    Otherwise always raises UnknownArgumentError.
+    """
+    if append_mode:
+        msg = f"Unknown argument: {token} (field '{'.'.join(path)}' not found)"
+        raise UnknownArgumentError(msg)
+    if _is_dict_at_path(ctx.target, path, ctx.union_tag):
+        i += 1
+        if i < len(ctx.args) and not _looks_like_flag(ctx.args[i]):
+            _set_nested(ctx.data, path, _StrToken(ctx.args[i]))
+            i += 1
+        return i
+    if len(path) > 1 and path[-1] in ("", "+"):
+        dot_pos = token.rfind(".")
+        msg = f"Missing field name after '{token[: dot_pos + 1]}'"
+        raise UnknownArgumentError(msg)
+    msg = f"Unknown argument: {token} (field '{'.'.join(path)}' not found)"
+    raise UnknownArgumentError(msg)
+
+
+def _consume_collection_or_scalar(
+    ctx: _ParseCtx,
+    i: int,
+    token: str,
+    ft: Any,
+    path: list[str],
+) -> int:
+    """Consume collection (array/tuple/varlen) or scalar value; return new arg index."""
+    args = ctx.args
+    # JSON array → list / tuple / union-of-tuples
+    is_collection = (
+        _is_varlen_collection(ft)
+        or _is_tuple(ft)
+        or (_is_union(ft) and (nv := _union_args_no_none(ft)) and all(_is_tuple(_resolve_type(v)) for v in nv))
+    )
+    if is_collection and i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("["):
+        try:
+            parsed = json.loads(args[i])
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            _set_nested(ctx.data, path, parsed)
+            return i + 1
+
+    # Variable-length collection → consume until the next flag
+    if _is_varlen_collection(ft):
+        et = _elem_type(ft)
+        items: list[Any] = []
+        while i < len(args) and not _looks_like_flag(args[i]):
+            items.append(_try_coerce(et, _StrToken(args[i])))
+            i += 1
+        _set_nested(ctx.data, path, items)
+        return i
+
+    # Fixed-length tuple → consume exact count
+    if _is_tuple(ft):
+        tt = _tuple_types(ft)
+        if tt is not None:
+            return _consume_fixed_tuple_args(args, i, tt, path, ctx.data)
+
+    # Union of tuple variants → consume greedily (disambiguation deferred to construct)
+    if _is_union(ft):
+        non_none_vars = _union_args_no_none(ft)
+        if non_none_vars and all(_is_tuple(_resolve_type(v)) for v in non_none_vars):
+            return _consume_union_tuple_args(args, i, path, ctx.data)
+
+    # Default: consume one scalar value
+    if i >= len(args) or _looks_like_flag(args[i]):
+        msg = f"Missing value for {token!r}. Usage: {token} <value>"
+        raise ConfargError(msg)
+    _set_nested(ctx.data, path, _try_coerce(ft, _StrToken(args[i])))
+    return i + 1
+
+
+def _consume_typed_arg(
+    ctx: _ParseCtx,
+    i: int,
+    token: str,
+    ft: Any,
+    path: list[str],
+) -> int:
+    """Consume the value(s) for a resolved, non-append field type and return the new arg index."""
+    args = ctx.args
+    # JSON object → dataclass / dict / callable / union-with-dc
+    if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("{"):
+        accepts_obj = (
+            _is_dc(ft)
+            or _is_dict(ft)
+            or _is_callable(ft)
+            or (_is_union(ft) and any(_is_dc(_resolve_type(v)) for v in _union_args_no_none(ft)))
+        )
+        if accepts_obj:
+            _set_nested(ctx.data, path, _parse_json_arg(args[i], token))
+            return i + 1
+
+    # Dataclass flag with no value → use defaults
+    if _is_dc(ft) and _next_is_flag_or_end(args, i):
+        return i
+
+    return _consume_collection_or_scalar(ctx, i, token, ft, path)
 
 
 def _parse_cli(
@@ -253,21 +599,10 @@ def _parse_cli(
         UnknownArgumentError: If an unrecognized argument is encountered.
         ConfargError: If a config flag is missing its path argument or conflicts with a field name.
     """
-    # Detect config_flag shadowing a field name before parsing begins.
     _check_config_flag_conflict(target, config_flag, cli_prefix)
+    args = _normalize_eq_args(args)
 
-    # Normalize --key=value into --key value so the rest of the parser is uniform.
-    normalized: list[str] = []
-    for tok in args:
-        if tok.startswith("--") and "=" in tok:
-            flag, _, val = tok.partition("=")
-            normalized.append(flag)
-            normalized.append(val)
-        else:
-            normalized.append(tok)
-    args = normalized
-
-    data: dict[str, Any] = {}
+    ctx = _ParseCtx(args=args, target=target, union_tag=union_tag)
     config_files: list[tuple[str, Path]] = []
     target_r = _resolve_type(target)
     is_struct = _is_struct_like(target_r)
@@ -276,261 +611,46 @@ def _parse_cli(
     while i < len(args):
         token = args[i]
         if not _looks_like_flag(token):
-            raise UnknownArgumentError(
+            msg = (
                 f"Unexpected positional argument: {token!r}."
                 " All arguments must be named flags (e.g. --fieldname value)."
             )
+            raise UnknownArgumentError(msg)
 
-        raw_key = token[2:]
+        key = _strip_cli_prefix(token[2:], cli_prefix, token)
 
-        # Strip cli_prefix
-        key = raw_key
-        if cli_prefix:
-            dot_pfx = cli_prefix + "."
-            if key.startswith(dot_pfx):
-                key = key[len(dot_pfx) :]
-            elif key == cli_prefix:
-                key = ""
-            else:
-                raise UnknownArgumentError(
-                    f"Unknown argument: {token!r}. Expected arguments to start with --{cli_prefix}."
-                )
-
-        # Config flag
         if key == config_flag or key.startswith(config_flag + "."):
-            subpath = key[len(config_flag) + 1 :] if key.startswith(config_flag + ".") else ""
-            i += 1
-            if i >= len(args) or _looks_like_flag(args[i]):
-                raise ConfargError(
-                    f"Missing file path after --{config_flag}. Usage: --{config_flag} /path/to/config.yaml"
-                )
-            while i < len(args) and not _looks_like_flag(args[i]):
-                config_files.append((subpath, Path(args[i])))
-                i += 1
+            i, new_cfgs = _consume_config_paths(args, i, key, config_flag)
+            config_files.extend(new_cfgs)
             continue
 
-        path = key.split(".") if key else []
+        path, append_mode, delete_mode, force_str, delete_idx, is_list_delete = _parse_flag_mode(key)
 
-        # Detect + suffix on last path segment (list append): --foo.bar+
-        # len > 1 guard prevents bare "--+" or "--foo.+" from triggering append mode.
-        append_mode = bool(path) and path[-1].endswith("+") and len(path[-1]) > 1
-        if append_mode:
-            path[-1] = path[-1][:-1]
-
-        # Detect - suffix on last path segment (deletion): --foo.bar- or --foo.1-
-        # len > 1 guard prevents bare "--foo.-" from triggering delete mode.
-        delete_mode = not append_mode and bool(path) and path[-1].endswith("-") and len(path[-1]) > 1
         if delete_mode:
-            raw_last = path[-1][:-1]
-            path[-1] = raw_last
-            try:
-                delete_idx = int(raw_last)
-                is_list_delete = True
-            except ValueError:
-                is_list_delete = False
-                delete_idx = -1  # unused
-
-        # .str type-cast: --foo.str VALUE forces VALUE as a plain string (bypasses steal rule)
-        force_str = not delete_mode and bool(path) and path[-1] == "str"
-        if force_str:
-            path = path[:-1]
-
-        # Delete mode: --foo.bar- (dict-key deletion) or --foo.1- (list-index deletion)
-        if delete_mode:
-            if is_list_delete:
-                parent_path = path[:-1]
-                # Validate the parent path is reachable (use the numeric-index path for type look-up).
-                ft_check = _resolve_field_type(target, path, union_tag)
-                if ft_check is None and not _is_dict_at_path(target, path, union_tag):
-                    raise UnknownArgumentError(
-                        f"Unknown argument: {token!r} (field '{'.'.join(parent_path)}' not found or not indexable)"
-                    )
-                # If there's already an append op at this path, this delete applies to the
-                # post-append list; use LIST_POST_APPEND_DELETE_KEY so _apply_list_ops
-                # executes it after the appends rather than before.
-                node: Any = data
-                for _p in parent_path:
-                    if isinstance(node, dict) and _p in node:
-                        node = node[_p]
-                    else:
-                        node = {}
-                        break
-                has_append = isinstance(node, dict) and LIST_APPEND_KEY in node
-                del_key = LIST_POST_APPEND_DELETE_KEY if has_append else LIST_DELETE_KEY
-                _accumulate_list_delete(data, parent_path, delete_idx, token, delete_key=del_key)
-            else:
-                # Dict-key (or struct-field) deletion.
-                ft_check = _resolve_field_type(target, path, union_tag)
-                if ft_check is None and not _is_dict_at_path(target, path, union_tag):
-                    raise UnknownArgumentError(f"Unknown argument: {token!r} (field '{'.'.join(path)}' not found)")
-                _set_nested(data, path, DICT_DELETE)
+            _handle_delete_token(ctx, token, path, is_list_delete, delete_idx)
             i += 1
             continue
 
-        # Non-dataclass scalar target with empty path
         if not is_struct and not path:
-            i += 1
-            if i >= len(args) or _looks_like_flag(args[i]):
-                raise ConfargError(f"Missing value for {token!r}. Usage: {token} <value>")
-            data["__root__"] = _try_coerce(target_r, _StrToken(args[i]))
-            i += 1
+            i = _handle_scalar_root(args, i, token, target_r, ctx.data)
             continue
 
-        # Resolve type at this path
         ft = _resolve_field_type(target, path, union_tag)
-
         if ft is None:
-            if append_mode:
-                raise UnknownArgumentError(f"Unknown argument: {token} (field '{'.'.join(path)}' not found)")
-            if _is_dict_at_path(target, path, union_tag):
-                i += 1
-                if i < len(args) and not _looks_like_flag(args[i]):
-                    _set_nested(data, path, _StrToken(args[i]))
-                    i += 1
-                continue
-            if len(path) > 1 and path[-1] in ("", "+"):
-                dot_pos = token.rfind(".")
-                raise UnknownArgumentError(f"Missing field name after '{token[: dot_pos + 1]}'")
-            raise UnknownArgumentError(f"Unknown argument: {token} (field '{'.'.join(path)}' not found)")
+            i = _handle_unknown_field(ctx, i, token, path, append_mode)
+            continue
 
         ft = _resolve_type(ft)
-        i += 1  # move past the flag token
-
-        # .str cast: store next token as a plain str (bypasses steal rule in construct)
-        if force_str:
-            if i >= len(args) or _looks_like_flag(args[i]):
-                raise ConfargError(f"Missing value for {token!r}. Usage: {token} <value>")
-            _set_nested(data, path, str(args[i]))
-            i += 1
-            continue
-
-        # List/set/frozenset append mode (--foo+): collect values, store as {"+": [...]}
-        if append_mode:
-            if not _is_varlen_collection(ft):
-                raise ConfargError(
-                    f"Cannot use + (append) syntax on {token!r}:"
-                    f" field '{'.'.join(path)}' has type {ft!r}, which is not a list, set, or frozenset."
-                )
-            et = _elem_type(ft)
-            append_items: list[Any] = []
-            consumed_json = False
-            if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("["):
-                try:
-                    parsed = json.loads(args[i])
-                except json.JSONDecodeError:
-                    parsed = None
-                if isinstance(parsed, list):
-                    append_items = parsed
-                    i += 1
-                    consumed_json = True
-            if not consumed_json:
-                # Space-separated values; JSON objects are treated as single elements
-                while i < len(args) and not _looks_like_flag(args[i]):
-                    tok = args[i]
-                    if tok.startswith("{"):
-                        try:
-                            append_items.append(json.loads(tok))
-                        except json.JSONDecodeError:
-                            append_items.append(_try_coerce(et, _StrToken(tok)))
-                    else:
-                        append_items.append(_try_coerce(et, _StrToken(tok)))
-                    i += 1
-            # Combine with any prior operation on this path, preserving ordering semantics.
-            node = data
-            for p in path[:-1]:
-                node = node.get(p, {}) if isinstance(node, dict) else {}
-            existing = node.get(path[-1]) if path and isinstance(node, dict) else None
-
-            if isinstance(existing, list):
-                # Prior full-replace at this path; keep it as the new base so the
-                # reset is not lost when _deep_merge applies the config list.
-                new_val: dict[str, Any] = {LIST_REPLACE_BASE_KEY: existing, LIST_APPEND_KEY: append_items}
-            elif isinstance(existing, dict):
-                if LIST_REPLACE_BASE_KEY in existing:
-                    # Already has an explicit base; accumulate appends.
-                    prior = existing.get(LIST_APPEND_KEY, [])
-                    new_val = {**existing, LIST_APPEND_KEY: prior + append_items}
-                elif LIST_APPEND_KEY in existing:
-                    # Prior append without an explicit base; accumulate.
-                    new_val = {**existing, LIST_APPEND_KEY: existing[LIST_APPEND_KEY] + append_items}
-                else:
-                    # Has delete spec and/or index patches; add append alongside.
-                    new_val = {**existing, LIST_APPEND_KEY: append_items}
-            else:
-                new_val = {LIST_APPEND_KEY: append_items}
-            _set_nested(data, path, new_val)
-            continue
-
-        # JSON object for dataclass / dict / callable / union-with-dc fields
-        if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("{"):
-            accepts_obj = (
-                _is_dc(ft)
-                or _is_dict(ft)
-                or _is_callable(ft)
-                or (_is_union(ft) and any(_is_dc(_resolve_type(v)) for v in _union_args_no_none(ft)))
-            )
-            if accepts_obj:
-                _set_nested(data, path, _parse_json_arg(args[i], token))
-                i += 1
-                continue
-
-        # Dataclass field with no value → skip (use defaults)
-        if _is_dc(ft) and _next_is_flag_or_end(args, i):
-            continue
-
-        # JSON array for list / tuple / union-of-tuples fields
-        is_collection = (
-            _is_varlen_collection(ft)
-            or _is_tuple(ft)
-            or (_is_union(ft) and (nv := _union_args_no_none(ft)) and all(_is_tuple(_resolve_type(v)) for v in nv))
-        )
-        if is_collection and i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("["):
-            try:
-                parsed = json.loads(args[i])
-            except json.JSONDecodeError:
-                parsed = None
-            if isinstance(parsed, list):
-                _set_nested(data, path, parsed)
-                i += 1
-                continue
-
-        # Variable-length collection → consume until next flag
-        if _is_varlen_collection(ft):
-            et = _elem_type(ft)
-            items: list[Any] = []
-            while i < len(args) and not _looks_like_flag(args[i]):
-                items.append(_try_coerce(et, _StrToken(args[i])))
-                i += 1
-            _set_nested(data, path, items)
-            continue
-
-        # Fixed-length tuple → consume exact count
-        if _is_tuple(ft):
-            tt = _tuple_types(ft)
-            if tt is not None:
-                items = []
-                for et in tt:
-                    if i < len(args):
-                        items.append(_try_coerce(et, _StrToken(args[i])))
-                        i += 1
-                _set_nested(data, path, items)
-                continue
-
-        # Union of tuple variants → consume greedily (disambiguation at construct time)
-        if _is_union(ft):
-            non_none_vars = _union_args_no_none(ft)
-            if non_none_vars and all(_is_tuple(_resolve_type(v)) for v in non_none_vars):
-                items = []
-                while i < len(args) and not _looks_like_flag(args[i]):
-                    items.append(_StrToken(args[i]))
-                    i += 1
-                _set_nested(data, path, items)
-                continue
-
-        # Default: consume one value
-        if i >= len(args) or _looks_like_flag(args[i]):
-            raise ConfargError(f"Missing value for {token!r}. Usage: {token} <value>")
-        _set_nested(data, path, _try_coerce(ft, _StrToken(args[i])))
         i += 1
 
-    return data, config_files
+        if force_str:
+            i = _handle_force_str(args, i, token, ctx.data, path)
+            continue
+
+        if append_mode:
+            i = _handle_append_token(ctx, i, token, ft, path)
+            continue
+
+        i = _consume_typed_arg(ctx, i, token, ft, path)
+
+    return ctx.data, config_files

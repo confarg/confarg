@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 from confarg import _defaults
 from confarg._argparse import FieldMeta, from_namespace, populate_parser
@@ -24,6 +26,7 @@ from confarg._errors import (
     InvalidConfigFileError,
     MissingFieldError,
     MissingReferenceError,
+    SymbolImportError,
     TypeCoercionError,
     UnknownArgumentError,
     UnsafeExpressionError,
@@ -38,7 +41,34 @@ from confarg.dictexpr import resolve_expressions
 from confarg.typedload import construct as _tc
 
 
-def merge(
+def _load_cli_config(fpath: Path, subpath: str, config_flag: str) -> dict[str, Any]:
+    """Load one CLI config file (--config[.subpath][+] fpath) into a nested dict."""
+    if subpath.endswith("+"):
+        real_subpath = subpath[:-1].rstrip(".")
+        if not real_subpath:
+            msg = f"--{config_flag}+ requires a field path. Use --{config_flag}.fieldname+ /path/to/file."
+            raise ConfargError(msg)
+        last_key = real_subpath.rsplit(".", 1)[-1]
+        fitem = _load_file_item(fpath)
+        if isinstance(fitem, list):
+            append_items: list[Any] = [fitem]
+        elif isinstance(fitem, dict) and len(fitem) == 1 and last_key in fitem and isinstance(fitem[last_key], list):
+            append_items = fitem[last_key]
+        else:
+            append_items = [fitem]
+        fdata: dict[str, Any] = {LIST_APPEND_KEY: append_items}
+        for part in reversed(real_subpath.split(".")):
+            fdata = {part: fdata}
+        return fdata
+
+    fdata = _load_file(fpath)
+    if subpath:
+        for part in reversed(subpath.split(".")):
+            fdata = {part: fdata}
+    return fdata
+
+
+def merge(  # noqa: PLR0913
     target: type,
     *,
     args: Sequence[str] | None = None,
@@ -128,43 +158,12 @@ def merge(
                 fdata = {part: fdata}
         config_data = _deep_merge(config_data, fdata, union_tag=union_tag)
     for subpath, fpath in cli_configs:
-        if subpath.endswith("+"):
-            # Append mode: --config.foo.bar+ file  →  subpath = "foo.bar+"
-            real_subpath = subpath[:-1].rstrip(".")
-            if not real_subpath:
-                raise ConfargError(
-                    f"--{config_flag}+ requires a field path. Use --{config_flag}.fieldname+ /path/to/file."
-                )
-            last_key = real_subpath.rsplit(".", 1)[-1]
-            fitem = _load_file_item(fpath)
-            # Disambiguation (see convention):
-            # - top-level list  → the element to append IS the list
-            # - dict with exactly one key == last_key whose value is a list
-            #   → those list items are appended individually
-            # - anything else   → appended as a single element
-            if isinstance(fitem, list):
-                append_items: list[Any] = [fitem]
-            elif (
-                isinstance(fitem, dict) and len(fitem) == 1 and last_key in fitem and isinstance(fitem[last_key], list)
-            ):
-                append_items = fitem[last_key]
-            else:
-                append_items = [fitem]
-            fdata: dict[str, Any] = {LIST_APPEND_KEY: append_items}
-            for part in reversed(real_subpath.split(".")):
-                fdata = {part: fdata}
-        else:
-            fdata = _load_file(fpath)
-            if subpath:
-                for part in reversed(subpath.split(".")):
-                    fdata = {part: fdata}
+        fdata = _load_cli_config(fpath, subpath, config_flag)
         config_data = _deep_merge(config_data, fdata, union_tag=union_tag)
 
     # 4. Merge: config (lowest) → env → CLI (highest)
     merged = _deep_merge(config_data, env_data, union_tag=union_tag)
-    merged = _deep_merge(merged, cli_data, union_tag=union_tag)
-
-    return merged
+    return _deep_merge(merged, cli_data, union_tag=union_tag)
 
 
 def from_dict[T](
@@ -204,10 +203,11 @@ def from_dict[T](
     if not is_dataclass:
         raw = resolved.get("__root__", _MISSING)
         if raw is _MISSING:
-            raise MissingFieldError(
+            msg = (
                 f"No value provided for target type {target_r!r}."
                 " Provide a value via CLI flag (--<prefix> <value>), environment variable, or config file."
             )
+            raise MissingFieldError(msg)
         return _tc(target_r, raw, union_tag=union_tag)  # type: ignore[return-value]
 
     return _tc(target_r, resolved, union_tag=union_tag)  # type: ignore[return-value]
@@ -270,7 +270,7 @@ def construct[T](
     return _tc(target_r, data, union_tag=union_tag)  # type: ignore[return-value]
 
 
-def load[T](
+def load[T](  # noqa: PLR0913
     target: type[T],
     *,
     args: Sequence[str] | None = None,
@@ -384,13 +384,15 @@ def dump(
     if isinstance(value, type) or not _is_dc(type(value)):
         tp_name = type(value).__name__
         if _is_struct(type(value)):
-            raise TypeError(
+            msg = (
                 f"dump() only supports dataclass instances, not plain classes.\n"
                 f"{tp_name} is a plain class — keep the merged dict and dump that instead:\n"
                 f"  raw = confarg.merge(...)\n"
                 f"  confarg.dump_file(raw, path)"
             )
-        raise TypeError(f"Expected a dataclass instance or dict, got {tp_name}")
+            raise TypeError(msg)
+        msg = f"Expected a dataclass instance or dict, got {tp_name}"
+        raise TypeError(msg)
     tp = type(value)
     return _serialize(tp, value, "", union_tag, tag_policy)
 
@@ -444,6 +446,7 @@ __all__ = [
     "ConfargError",
     "ConfargWarning",
     "MissingFieldError",
+    "SymbolImportError",
     "TypeCoercionError",
     "InvalidConfigFileError",
     "UnknownArgumentError",

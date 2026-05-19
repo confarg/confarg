@@ -150,15 +150,18 @@ class TestCliBoolValueToken:
 
     @pytest.mark.parametrize("token", ["true", "True", "TRUE", "1", "yes", "on"])
     def test_truthy_tokens(self, token: str) -> None:
+        """Test that truthy string tokens set bool field to True."""
         result = confarg.load(WithDefaults, args=["--verbose", token], env={})
         assert result.verbose is True
 
     @pytest.mark.parametrize("token", ["false", "False", "FALSE", "0", "no", "off"])
     def test_falsy_tokens(self, token: str) -> None:
+        """Test that falsy string tokens set bool field to False."""
         result = confarg.load(WithDefaults, args=["--verbose", token], env={})
         assert result.verbose is False
 
     def test_nested_bool_true(self) -> None:
+        """Test that bool value token sets nested bool field to True."""
         result = confarg.load(
             AppConfig,
             args=["--db.host", "h", "--db.port", "1", "--db.name", "n", "--debug", "true"],
@@ -167,6 +170,7 @@ class TestCliBoolValueToken:
         assert result.debug is True
 
     def test_nested_bool_false(self) -> None:
+        """Test that bool value token sets nested bool field to False."""
         result = confarg.load(
             AppConfig,
             args=["--db.host", "h", "--db.port", "1", "--db.name", "n", "--cache.enabled", "false"],
@@ -175,11 +179,13 @@ class TestCliBoolValueToken:
         assert result.cache.enabled is False
 
     def test_optional_bool_none(self) -> None:
+        """Test that 'none' token sets optional bool field to None."""
         WithOptBool = make_target("flag", bool | None, default=None)
         result = confarg.load(WithOptBool, args=["--flag", "none"], env={})
         assert result.flag is None
 
     def test_bool_missing_value_raises(self) -> None:
+        """Test that a bool flag without a value raises ConfargError."""
         with pytest.raises(confarg.ConfargError, match="Missing value"):
             confarg.load(WithDefaults, args=["--verbose"], env={})
 
@@ -490,6 +496,7 @@ class TestCliNoneToken:
     )
     @pytest.mark.parametrize("token", ["none", "None", "NONE", "null", "Null", "NULL"])
     def test_none_token_sets_optional_to_none(self, target_cls, token: str) -> None:
+        """Test that none/null tokens set optional fields to None."""
         result = confarg.load(target_cls, args=["--value", token], env={})
         assert result.value is None
 
@@ -500,6 +507,7 @@ class TestCliNoneToken:
         assert result.value is None
 
     def test_nested_optional_field(self) -> None:
+        """Test that 'none' token sets optional nested dataclass field to None."""
         from dataclasses import make_dataclass
 
         Inner = make_dataclass("Inner", [("x", int, field(default=1))])
@@ -532,62 +540,76 @@ class TestCliStealRule:
     """When str is in a union, non-str types steal their natural string forms."""
 
     def test_str_none_none_token(self) -> None:
+        """Test that 'none' token in str | None resolves to Python None."""
         T = make_target("v", str | None, default="x")
         assert confarg.load(T, args=["--v", "none"], env={}).v is None
 
     def test_str_none_null_token(self) -> None:
+        """Test that 'null' token in str | None resolves to Python None."""
         T = make_target("v", str | None, default="x")
         assert confarg.load(T, args=["--v", "null"], env={}).v is None
 
     def test_str_float_inf(self) -> None:
+        """Test that 'inf' token in str | float resolves to float infinity."""
         T = make_target("v", str | float, default=0.0)
         assert confarg.load(T, args=["--v", "inf"], env={}).v == float("inf")
 
     def test_str_float_plus_inf(self) -> None:
+        """Test that '+inf' token in str | float resolves to positive float infinity."""
         T = make_target("v", str | float, default=0.0)
         assert confarg.load(T, args=["--v", "+inf"], env={}).v == float("inf")
 
     def test_str_float_minus_inf(self) -> None:
+        """Test that '-inf' token in str | float resolves to negative float infinity."""
         T = make_target("v", str | float, default=0.0)
         import math
 
         assert math.isinf(confarg.load(T, args=["--v", "-inf"], env={}).v)
 
     def test_str_float_nan(self) -> None:
+        """Test that 'nan' token in str | float resolves to float NaN."""
         import math
 
         T = make_target("v", str | float, default=0.0)
         assert math.isnan(confarg.load(T, args=["--v", "nan"], env={}).v)
 
     def test_str_bool_true(self) -> None:
+        """Test that 'true' token in str | bool resolves to True."""
         T = make_target("v", str | bool, default=False)
         assert confarg.load(T, args=["--v", "true"], env={}).v is True
 
     def test_str_bool_false(self) -> None:
+        """Test that 'false' token in str | bool resolves to False."""
         T = make_target("v", str | bool, default=True)
         assert confarg.load(T, args=["--v", "false"], env={}).v is False
 
     def test_str_float_decimal(self) -> None:
+        """Test that a decimal string in str | float resolves to float."""
         T = make_target("v", str | float, default=0.0)
         assert confarg.load(T, args=["--v", "0.1"], env={}).v == pytest.approx(0.1)
 
     def test_str_float_negative_decimal(self) -> None:
+        """Test that a negative decimal string in str | float resolves to float."""
         T = make_target("v", str | float, default=0.0)
         assert confarg.load(T, args=["--v", "-0.1"], env={}).v == pytest.approx(-0.1)
 
     def test_str_float_positive_decimal(self) -> None:
+        """Test that a positive-signed decimal string in str | float resolves to float."""
         T = make_target("v", str | float, default=0.0)
         assert confarg.load(T, args=["--v", "+0.1"], env={}).v == pytest.approx(0.1)
 
     def test_int_str_positive(self) -> None:
+        """Test that '+N' string in int | str resolves to int."""
         T = make_target("v", int | str, default="")
         assert confarg.load(T, args=["--v", "+1"], env={}).v == 1
 
     def test_int_str_negative(self) -> None:
+        """Test that '-N' string in int | str resolves to int."""
         T = make_target("v", int | str, default="")
         assert confarg.load(T, args=["--v", "-1"], env={}).v == -1
 
     def test_str_float_scientific(self) -> None:
+        """Test that scientific notation string in str | float resolves to float."""
         T = make_target("v", str | float, default=0.0)
         assert confarg.load(T, args=["--v", "1e-1"], env={}).v == pytest.approx(0.1)
 
@@ -617,6 +639,7 @@ class TestCliStrSentinel:
         assert result.value == "none"
 
     def test_str_escape_null_in_optional_str(self) -> None:
+        """--value.str null → string 'null', not Python None."""
         T = make_target("value", str | None, default=None)
         result = confarg.load(T, args=["--value.str", "null"], env={})
         assert result.value == "null"
@@ -640,6 +663,7 @@ class TestCliStrSentinel:
         assert result.value == "inf"
 
     def test_str_escape_missing_value_raises(self) -> None:
+        """--value.str with no following argument raises ConfargError."""
         T = make_target("value", str | None, default=None)
         with pytest.raises(confarg.ConfargError, match="Missing value"):
             confarg.load(T, args=["--value.str"], env={})

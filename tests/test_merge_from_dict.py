@@ -20,29 +20,35 @@ class TestMerge:
     """merge() returns the raw merged dict without resolving expressions or constructing."""
 
     def test_returns_dict(self) -> None:
+        """Test that merge() returns a plain dict."""
         result = confarg.merge(WithDefaults, args=[], env={})
         assert isinstance(result, dict)
 
     def test_cli_values_present(self) -> None:
+        """Test that CLI values are present in the merged dict."""
         result = confarg.merge(WithDefaults, args=["--name", "hello"], env={})
         assert result["name"] == "hello"
 
     def test_env_values_present(self) -> None:
+        """Test that env var values are present in the merged dict."""
         result = confarg.merge(WithDefaults, args=[], env={"NAME": "fromenv"}, env_prefix="")
         assert result["name"] == "fromenv"
 
     def test_file_values_present(self, tmp_yaml) -> None:
+        """Test that config file values are present in the merged dict."""
         path = tmp_yaml("name: fromfile\n")
         result = confarg.merge(WithDefaults, args=[], env={}, files=[path])
         assert result["name"] == "fromfile"
 
     def test_expressions_preserved(self, tmp_yaml) -> None:
+        """Test that ${...} expressions are preserved without evaluation by merge()."""
         # merge() must not evaluate ${...} — the raw expression string is kept
         path = tmp_yaml("name: hello\ncount: 42\nrate: 1.0\nverbose: false\nother: '${name}'\n")
         result = confarg.merge(WithDefaults, args=[], env={}, files=[path])
         assert result["other"] == "${name}"
 
     def test_merge_priority(self, tmp_yaml) -> None:
+        """Test that CLI > env > file priority is respected in merge()."""
         path = tmp_yaml("name: fromfile\n")
         result = confarg.merge(
             WithDefaults,
@@ -53,6 +59,7 @@ class TestMerge:
         assert result["name"] == "fromcli"
 
     def test_merge_is_equivalent_to_load_merge_step(self, tmp_yaml) -> None:
+        """Test that merge() is equivalent to the internal merge step in load()."""
         path = tmp_yaml("name: fromfile\n")
         merged = confarg.merge(WithDefaults, args=["--count", "7"], env={}, files=[path])
         instance = confarg.load(WithDefaults, args=["--count", "7"], env={}, files=[path])
@@ -69,12 +76,15 @@ class TestFromDict:
     """from_dict() constructs an instance from a plain dict."""
 
     def test_constructs_instance(self) -> None:
+        """Test that from_dict() constructs a dataclass instance from a dict."""
         data = {"name": "hi", "count": 3, "rate": 1.5, "verbose": False}
         result = confarg.from_dict(WithDefaults, data)
         assert isinstance(result, WithDefaults)
         assert result.name == "hi"
 
     def test_resolves_expressions_by_default(self) -> None:
+        """Test that from_dict() resolves ${...} expressions by default."""
+
         @dataclass
         class TwoStrings:
             base: str
@@ -85,6 +95,7 @@ class TestFromDict:
         assert result.derived == "hello_suffix"
 
     def test_nested_dataclass(self) -> None:
+        """Test that from_dict() constructs nested dataclasses correctly."""
         data = {
             "db": {"host": "localhost", "port": 5432, "name": "mydb"},
             "cache": {"enabled": True, "ttl": 60},
@@ -103,20 +114,23 @@ class TestTwoStepEquivalence:
     """merge() + from_dict() must produce the same result as load()."""
 
     def test_flat(self) -> None:
-        kwargs = dict(args=["--name", "x", "--count", "5", "--rate", "2.0", "--verbose", "true"], env={})
+        """Test that merge() + from_dict() equals load() for flat dataclasses."""
+        kwargs = {"args": ["--name", "x", "--count", "5", "--rate", "2.0", "--verbose", "true"], "env": {}}
         via_load = confarg.load(WithDefaults, **kwargs)
         via_two_step = confarg.from_dict(WithDefaults, confarg.merge(WithDefaults, **kwargs))
         assert via_load.name == via_two_step.name
         assert via_load.count == via_two_step.count
 
     def test_with_expression(self, tmp_yaml) -> None:
+        """Test that merge() + from_dict() equals load() when expressions are involved."""
+
         @dataclass
         class TwoStrings:
             base: str
             derived: str
 
         path = tmp_yaml("base: hello\nderived: '${base}_world'\n")
-        kwargs = dict(args=[], env={}, files=[path])
+        kwargs = {"args": [], "env": {}, "files": [path]}
         via_load = confarg.load(TwoStrings, **kwargs)
         via_two_step = confarg.from_dict(TwoStrings, confarg.merge(TwoStrings, **kwargs))
         assert via_load.derived == via_two_step.derived
@@ -128,7 +142,10 @@ class TestTwoStepEquivalence:
 
 
 class TestDumpRaw:
+    """Tests for dump() and dump_file() with raw dict inputs."""
+
     def test_dump_strips_str_tokens(self) -> None:
+        """Test that dump() converts _StrToken values back to plain strings."""
         from confarg._types import _StrToken
 
         data = {"name": _StrToken("hello"), "count": 42}
@@ -138,6 +155,7 @@ class TestDumpRaw:
         assert result["count"] == 42
 
     def test_dump_file_yaml(self, tmp_path) -> None:
+        """Test that dump_file() writes a valid YAML file preserving expressions."""
         data = {"name": "hello", "count": "${name}"}
         path = tmp_path / "out.yaml"
         confarg.dump_file(data, path)
@@ -149,6 +167,7 @@ class TestDumpRaw:
         assert loaded["count"] == "${name}"
 
     def test_raw_expressions_survive_file_round_trip(self, tmp_path, tmp_yaml) -> None:
+        """Test that raw ${...} expressions survive a merge → dump_file round-trip."""
         src = tmp_yaml("name: base\ncount: '${name}'\nrate: 1.0\nverbose: false\n")
         raw = confarg.merge(WithDefaults, args=[], env={}, files=[src])
         out = tmp_path / "snapshot.yaml"
@@ -169,6 +188,8 @@ class TestPostInitIsolation:
     """Demonstrates that merge() captures the input before __post_init__ can mutate."""
 
     def test_postinit_does_not_affect_raw_dict(self) -> None:
+        """Test that merge() captures input before __post_init__ can mutate the instance."""
+
         @dataclass
         class Uppercased:
             name: str

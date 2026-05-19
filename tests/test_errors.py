@@ -29,6 +29,7 @@ class TestExceptionHierarchy:
     def test_confarg_error_is_base(self) -> None:
         """All confarg exceptions inherit from ConfargError."""
         assert issubclass(confarg.MissingFieldError, confarg.ConfargError)
+        assert issubclass(confarg.SymbolImportError, confarg.ConfargError)
         assert issubclass(confarg.TypeCoercionError, confarg.ConfargError)
         assert issubclass(confarg.InvalidConfigFileError, confarg.ConfargError)
         assert issubclass(confarg.UnknownArgumentError, confarg.ConfargError)

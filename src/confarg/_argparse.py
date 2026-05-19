@@ -8,15 +8,19 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import dataclasses
 import inspect
 import os
 import textwrap
-from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, get_type_hints
+from typing import TYPE_CHECKING, Any, get_type_hints
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 from confarg import _defaults
+from confarg._errors import SymbolImportError
 from confarg._files import _load_file
 from confarg._merge import _deep_merge, _set_nested
 from confarg._parse_env import _parse_env
@@ -127,10 +131,7 @@ def _build_help(
     If the field is Optional, appends a hint about the None sentinel.
     """
     meta = _get_field_meta(raw_type)
-    if meta is not None and meta.help is not None:
-        base = meta.help
-    else:
-        base = docstrings.get(field_name, "")
+    base = meta.help if meta is not None and meta.help is not None else docstrings.get(field_name, "")
 
     if field_name in defaults:
         suffix = f"(default: {defaults[field_name]!r})"
@@ -269,7 +270,7 @@ def _add_callable_bind_flags(
 
     try:
         obj = _import_dotted(fn_path)
-    except Exception:
+    except SymbolImportError:
         return
 
     try:
@@ -303,7 +304,7 @@ def _add_callable_bind_flags(
             help_parts.append(getattr(ann, "__name__", repr(ann)))
         if param.default is not inspect.Parameter.empty:
             help_parts.append(f"default: {param.default!r}")
-        try:
+        with contextlib.suppress(Exception):
             group.add_argument(
                 f"--{dest}",
                 dest=dest,
@@ -312,8 +313,6 @@ def _add_callable_bind_flags(
                 metavar=param_name.upper(),
                 help=", ".join(help_parts),
             )
-        except Exception:
-            pass
         existing_dests.add(dest)
 
 
@@ -329,7 +328,7 @@ def _add_callable_factory_flags(
     try:
         fields = _init_fields(cls)
         defaults = _init_defaults(cls)
-    except Exception:
+    except (ValueError, TypeError, NameError, AttributeError):
         return
 
     if existing_dests is None:
@@ -346,10 +345,8 @@ def _add_callable_factory_flags(
             help_parts.append(type_name)
         if param_name in defaults:
             help_parts.append(f"default: {defaults[param_name]!r}")
-        try:
+        with contextlib.suppress(Exception):
             _add_leaf_argument(target, dest, ft, core_ft, ", ".join(help_parts))
-        except Exception:
-            pass
         existing_dests.add(dest)
 
 
@@ -425,7 +422,7 @@ def _collect_fn_paths_from_config(
         return result
     try:
         flds = _struct_fields(tp)
-    except Exception:
+    except (ValueError, TypeError, NameError, AttributeError):
         return result
 
     for name, ft in flds.items():
@@ -454,6 +451,44 @@ def _collect_fn_paths_from_config(
     return result
 
 
+def _register_callable_flags_for_field(
+    parser: argparse.ArgumentParser,
+    field_flag: str,
+    fn_path: str,
+    mode: str,
+    existing_dests: set[str],
+) -> None:
+    """Register bind/factory flags for one callable field given its fn_path and mode."""
+    if mode == "class":
+        try:
+            from confarg._callable import _import_dotted
+
+            cls = _import_dotted(fn_path)
+            if isinstance(cls, type):
+                _add_callable_factory_flags(parser, field_flag, cls, existing_dests)
+                return
+        except SymbolImportError:
+            pass
+    elif mode == "call":
+        _add_callable_bind_flags(parser, field_flag, fn_path, existing_dests)
+        return
+    else:  # mode == "fn"
+        try:
+            from confarg._callable import _detect_owning_class, _import_dotted
+
+            obj = _import_dotted(fn_path)
+            if isinstance(obj, type):
+                _add_callable_factory_flags(parser, field_flag, obj, existing_dests)
+                return
+            owning_cls = _detect_owning_class(obj)
+            if owning_cls is not None:
+                _add_callable_factory_flags(parser, field_flag, owning_cls, existing_dests)
+                return
+        except SymbolImportError:
+            pass
+    _add_callable_bind_flags(parser, field_flag, fn_path, existing_dests)
+
+
 def _extend_callable_flags(
     parser: argparse.ArgumentParser,
     dc_type: Any,
@@ -475,58 +510,24 @@ def _extend_callable_flags(
             if tok == flag_prefix:
                 i += 1
                 while i < len(argv_list) and not argv_list[i].startswith("--"):
-                    try:
+                    with contextlib.suppress(Exception):
                         config_dict = _deep_merge(config_dict, _load_file(Path(argv_list[i])))
-                    except Exception:
-                        pass
                     i += 1
             elif tok.startswith(f"{flag_prefix}="):
                 path_str = tok[len(flag_prefix) + 1 :]
                 if path_str:
-                    try:
+                    with contextlib.suppress(Exception):
                         config_dict = _deep_merge(config_dict, _load_file(Path(path_str)))
-                    except Exception:
-                        pass
                 i += 1
             else:
                 i += 1
 
         config_fns = _collect_fn_paths_from_config(config_dict, dc_type, "", union_tag)
         argv_fns = _collect_fn_paths_from_argv(argv_list)
-        all_fns = {**config_fns, **argv_fns}
-
         existing_dests = {a.dest for a in parser._actions}
-        for field_flag, (fn_path, mode) in all_fns.items():
-            if mode == "class":
-                try:
-                    from confarg._callable import _import_dotted
-
-                    cls = _import_dotted(fn_path)
-                    if isinstance(cls, type):
-                        _add_callable_factory_flags(parser, field_flag, cls, existing_dests)
-                        continue
-                except Exception:
-                    pass
-            elif mode == "call":
-                # Register the factory function's parameters as bind flags
-                _add_callable_bind_flags(parser, field_flag, fn_path, existing_dests)
-                continue
-            else:  # mode == "fn"
-                try:
-                    from confarg._callable import _detect_owning_class, _import_dotted
-
-                    obj = _import_dotted(fn_path)
-                    if isinstance(obj, type):
-                        _add_callable_factory_flags(parser, field_flag, obj, existing_dests)
-                        continue
-                    owning_cls = _detect_owning_class(obj)
-                    if owning_cls is not None:
-                        _add_callable_factory_flags(parser, field_flag, owning_cls, existing_dests)
-                        continue
-                except Exception:
-                    pass
-            _add_callable_bind_flags(parser, field_flag, fn_path, existing_dests)
-    except Exception:
+        for field_flag, (fn_path, mode) in {**config_fns, **argv_fns}.items():
+            _register_callable_flags_for_field(parser, field_flag, fn_path, mode, existing_dests)
+    except Exception:  # noqa: BLE001 — best-effort enhancement, must not crash populate_parser
         pass
 
 
@@ -568,11 +569,11 @@ def _resolve_struct(
         return None
     try:
         flds = _struct_fields(tp)
-    except Exception:
+    except (ValueError, TypeError, NameError, AttributeError):
         return None
     try:
         hints = get_type_hints(tp, include_extras=True)
-    except Exception:
+    except (NameError, AttributeError, TypeError):
         hints = {name: flds[name] for name in flds}
     return tp, flds, hints
 
@@ -745,6 +746,91 @@ def populate_parser(
         _extend_callable_flags(parser, dc_type, argv, config_flag, union_tag)
 
 
+def _str_token(v: Any) -> Any:
+    """Wrap str in _StrToken; pass through non-str unchanged."""
+    return _StrToken(v) if isinstance(v, str) else v
+
+
+def _merge_blob_into_spec(blob: dict[str, Any], spec: dict[str, Any], bind: dict[str, Any]) -> dict[str, Any]:
+    """Merge a pre-existing blob dict with the newly assembled spec, combining bind entries."""
+    merged = {**blob, **{k: v for k, v in spec.items() if k != "bind"}}
+    blob_bind = blob.get("bind", {})
+    if isinstance(blob_bind, dict) and bind:
+        merged["bind"] = {**blob_bind, **bind}
+    elif bind:
+        merged["bind"] = bind
+    return merged
+
+
+def _collect_callable_spec(
+    flat: dict[str, Any],
+    flag: str,
+    core: Any,
+    result: dict[str, Any],
+) -> None:
+    """Build and store the callable spec dict from flat namespace entries for flag."""
+    fn_key = f"{flag}.fn"
+    cls_key = f"{flag}.class"
+    call_key = f"{flag}.call"
+    bind_prefix = f"{flag}.bind."
+    flag_prefix = f"{flag}."
+    reserved = {fn_key, cls_key, call_key}
+
+    spec: dict[str, Any] = {}
+    for src_key, dest_name in ((fn_key, "fn"), (cls_key, "class"), (call_key, "call")):
+        if src_key in flat:
+            spec[dest_name] = _str_token(flat[src_key])
+
+    bind: dict[str, Any] = {k[len(bind_prefix) :]: _str_token(v) for k, v in flat.items() if k.startswith(bind_prefix)}
+    if bind:
+        spec["bind"] = bind
+
+    ret = _callable_return_type(core)
+    if ret is not None and isinstance(ret, type) and ret is not type(None) or cls_key in flat or fn_key in flat:
+        for k, v in flat.items():
+            if k.startswith(flag_prefix) and k not in reserved and not k.startswith(bind_prefix):
+                tail = k[len(flag_prefix) :]
+                if "." not in tail:
+                    spec[tail] = _str_token(v)
+
+    if flag in flat:
+        blob = flat[flag]
+        if isinstance(blob, str) and not spec:
+            _set_nested(result, flag.split("."), _StrToken(blob))
+            return
+        if isinstance(blob, dict):
+            spec = _merge_blob_into_spec(blob, spec, bind)
+
+    if spec:
+        _set_nested(result, flag.split("."), spec)
+
+
+def _collect_ns_union_field(
+    flat: dict[str, Any],
+    flag: str,
+    resolved: Any,
+    union_tag: str,
+    result: dict[str, Any],
+) -> None:
+    """Handle a multi-variant union field: pick up the class-tag and recurse into the resolved variant."""
+    non_none = _union_args_no_none(resolved)
+    if not any(_is_struct(_resolve_type(v)) for v in non_none):
+        return
+    tag_key = f"{flag}.{union_tag}"
+    if tag_key not in flat:
+        return
+    class_tag = flat[tag_key]
+    _set_nested(result, [*flag.split("."), union_tag], _str_token(class_tag))
+    try:
+        from confarg._callable import _import_dotted
+
+        cls = _import_dotted(str(class_tag))
+        if isinstance(cls, type) and _is_struct(_resolve_type(cls)):
+            _collect_ns_fields(flat, cls, flag, union_tag, result)
+    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
+        pass
+
+
 def _collect_ns_fields(
     flat: dict[str, Any],
     dc_type: Any,
@@ -768,22 +854,7 @@ def _collect_ns_fields(
 
         core = _unwrap_optional(resolved)
         if core is None:
-            # Multi-variant union: pick up --<flag>.<union_tag> and recurse into resolved variant.
-            non_none = _union_args_no_none(resolved)
-            if any(_is_struct(_resolve_type(v)) for v in non_none):
-                tag_key = f"{flag}.{union_tag}"
-                if tag_key in flat:
-                    class_tag = flat[tag_key]
-                    tok = _StrToken(class_tag) if isinstance(class_tag, str) else class_tag
-                    _set_nested(result, [*flag.split("."), union_tag], tok)
-                    try:
-                        from confarg._callable import _import_dotted
-
-                        cls = _import_dotted(str(class_tag))
-                        if isinstance(cls, type) and _is_struct(_resolve_type(cls)):
-                            _collect_ns_fields(flat, cls, flag, union_tag, result)
-                    except Exception:
-                        pass
+            _collect_ns_union_field(flat, flag, resolved, union_tag, result)
             continue
 
         if _is_struct(core):
@@ -794,73 +865,16 @@ def _collect_ns_fields(
             continue
 
         if _is_callable(core):
-            spec: dict[str, Any] = {}
-            fn_key = f"{flag}.fn"
-            cls_key = f"{flag}.class"
-            call_key = f"{flag}.call"
-            bind_prefix = f"{flag}.bind."
-            flag_prefix = f"{flag}."
-            if fn_key in flat:
-                v = flat[fn_key]
-                spec["fn"] = _StrToken(v) if isinstance(v, str) else v
-            if cls_key in flat:
-                v = flat[cls_key]
-                spec["class"] = _StrToken(v) if isinstance(v, str) else v
-            if call_key in flat:
-                v = flat[call_key]
-                spec["call"] = _StrToken(v) if isinstance(v, str) else v
-            bind: dict[str, Any] = {}
-            for k, v in flat.items():
-                if k.startswith(bind_prefix):
-                    param = k[len(bind_prefix) :]
-                    bind[param] = _StrToken(v) if isinstance(v, str) else v
-            if bind:
-                spec["bind"] = bind
-            # Factory mode: collect flat constructor kwargs (no bind. prefix)
-            ret = _callable_return_type(core)
-            if (
-                (ret is not None and isinstance(ret, type) and ret is not type(None))
-                or cls_key in flat
-                or fn_key in flat
-            ):
-                for k, v in flat.items():
-                    if (
-                        k.startswith(flag_prefix)
-                        and k != fn_key
-                        and k != cls_key
-                        and k != call_key
-                        and not k.startswith(bind_prefix)
-                        and "." not in k[len(flag_prefix) :]
-                    ):
-                        kwarg_name = k[len(flag_prefix) :]
-                        spec[kwarg_name] = _StrToken(v) if isinstance(v, str) else v
-            if flag in flat:
-                blob = flat[flag]
-                if isinstance(blob, str) and not spec:
-                    _set_nested(result, flag.split("."), _StrToken(blob))
-                    continue
-                if isinstance(blob, dict):
-                    blob_bind = blob.get("bind", {})
-                    merged_spec = {**blob, **{k: v for k, v in spec.items() if k != "bind"}}
-                    if isinstance(blob_bind, dict) and bind:
-                        merged_spec["bind"] = {**blob_bind, **bind}
-                    elif bind:
-                        merged_spec["bind"] = bind
-                    spec = merged_spec
-            if spec:
-                _set_nested(result, flag.split("."), spec)
+            _collect_callable_spec(flat, flag, core, result)
             continue
 
         if flag in flat:
             v = flat[flag]
-            if isinstance(v, str):
-                v = _StrToken(v)
-            elif isinstance(v, list):
-                v = [_StrToken(item) if isinstance(item, str) else item for item in v]
+            v = [_str_token(item) for item in v] if isinstance(v, list) else _str_token(v)
             _set_nested(result, flag.split("."), v)
 
 
-def from_namespace[T](
+def from_namespace[T](  # noqa: PLR0913
     ns: argparse.Namespace,
     dc_type: type[T],
     *,
@@ -916,14 +930,12 @@ def from_namespace[T](
     #    - --config.server file.toml → subpath "server"
     file_pairs: list[tuple[str, Path]] = [("", Path(f)) for f in files]
     if config_flag:
-        for f in getattr(ns, config_flag, None) or []:
-            file_pairs.append(("", Path(f)))
+        file_pairs.extend(("", Path(f)) for f in getattr(ns, config_flag, None) or [])
         cfg_prefix = f"{config_flag}."
         for key, val in vars(ns).items():
             if key.startswith(cfg_prefix):
                 subpath = key[len(cfg_prefix) :]
-                for f in val or []:
-                    file_pairs.append((subpath, Path(f)))
+                file_pairs.extend((subpath, Path(f)) for f in val or [])
 
     # 3. Load config files, nesting subpath files under their key
     config_data: dict[str, Any] = {}

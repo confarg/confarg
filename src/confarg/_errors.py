@@ -17,6 +17,15 @@ class MissingFieldError(ConfargError):
     """Raised when a required field is not provided by any source."""
 
 
+class SymbolImportError(ConfargError):
+    """Raised when a dotted import path cannot be resolved.
+
+    Distinct from :class:`TypeCoercionError` because the problem is with the
+    import path itself (typo, missing module, attribute not found), not with a
+    value that failed type conversion.
+    """
+
+
 class TypeCoercionError(ConfargError):
     """Raised when a value cannot be coerced to the target type."""
 

@@ -211,10 +211,12 @@ class TestEnvNoneSentinel:
         ids=["Optional[int]", "int|None", "str|None"],
     )
     def test_none_sentinel_sets_optional_to_none(self, target_cls) -> None:
+        """Test that 'none' env var value sets an Optional field to None."""
         result = confarg.load(target_cls, args=[], env={"VALUE": "none"}, env_prefix="")
         assert result.value is None
 
     def test_none_sentinel_case_insensitive(self) -> None:
+        """Test that 'none'/'None'/'NONE'/'null'/'Null'/'NULL' all set Optional to None."""
         WithOpt = make_target("value", Optional[int], default=99)
         for val in ["none", "None", "NONE", "null", "Null", "NULL"]:
             result = confarg.load(WithOpt, args=[], env={"VALUE": val}, env_prefix="")
@@ -227,11 +229,13 @@ class TestEnvNoneSentinel:
         assert result.value is None
 
     def test_none_sentinel_with_prefix(self) -> None:
+        """Test that none sentinel works when an env_prefix is set."""
         WithOpt = make_target("value", Optional[int], default=99)
         result = confarg.load(WithOpt, args=[], env={"APP__VALUE": "none"}, env_prefix="APP")
         assert result.value is None
 
     def test_none_sentinel_nested(self) -> None:
+        """Test that none sentinel works for a nested optional dataclass field."""
         from dataclasses import field, make_dataclass
 
         Inner = make_dataclass("Inner", [("x", int, field(default=1))])
@@ -562,6 +566,7 @@ class PlainTarget:
     """Plain class (non-dataclass) struct target for env var tests."""
 
     def __init__(self, host: str = "localhost", port: int = 5432) -> None:
+        """Initialize PlainTarget with host and port."""
         self.host = host
         self.port = port
 
