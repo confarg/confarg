@@ -148,6 +148,7 @@ def _extend_walk(  # noqa: PLR0912 PLR0915
         _is_callable,
         _is_dict,
         _is_final,
+        _is_singleton_literal,
         _is_struct,
         _resolve_type,
         _struct_defaults,
@@ -188,9 +189,10 @@ def _extend_walk(  # noqa: PLR0912 PLR0915
             continue
 
         if _is_final(core):
-            if concrete:
-                continue  # class already selected — Final value is determined by the class
             core = _final_inner(core)
+
+        if concrete and _is_singleton_literal(core):
+            continue  # class already selected — singleton value is determined by the class
 
         if _is_callable(core):
             if flag not in ctx.existing_dests:

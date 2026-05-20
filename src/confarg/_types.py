@@ -398,6 +398,18 @@ def _literal_values(tp: Any) -> tuple[Any, ...]:
     return get_args(_resolve_type(tp))
 
 
+def _is_singleton_literal(tp: Any) -> bool:
+    """Check whether a type is a Literal with exactly one allowed value.
+
+    Args:
+        tp: The type to check.
+
+    Returns:
+        True if tp is Literal[X] for a single value X.
+    """
+    return _is_literal(tp) and len(_literal_values(tp)) == 1
+
+
 def _is_final(tp: Any) -> bool:
     """Check whether a type is a Final annotation.
 
