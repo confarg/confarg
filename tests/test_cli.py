@@ -910,6 +910,72 @@ class TestCliListAppend:
         result = confarg.load(WithList, args=["--tags+", "{not json"], env={})
         assert result.tags == ["{not json"]
 
+    def test_append_multiple_json_dicts_without_config(self) -> None:
+        """--servers+ DICT1 DICT2 appends structured items without a base config."""
+        result = confarg.load(
+            WithNestedList,
+            args=["--servers+", '{"host":"a","port":1,"name":"db1"}', '{"host":"b","port":2,"name":"db2"}'],
+            env={},
+        )
+        assert len(result.servers) == 2
+        assert result.servers[0].host == "a"
+        assert result.servers[1].host == "b"
+
+    def test_append_json_array_of_dicts_without_config(self) -> None:
+        """--servers+ '[DICT1, DICT2]' appends structured items from a JSON array."""
+        result = confarg.load(
+            WithNestedList,
+            args=["--servers+", '[{"host":"a","port":1,"name":"db1"},{"host":"b","port":2,"name":"db2"}]'],
+            env={},
+        )
+        assert len(result.servers) == 2
+        assert result.servers[0].host == "a"
+        assert result.servers[1].port == 2
+
+    def test_append_json_dict_then_patch_field(self) -> None:
+        """--servers+ DICT --servers.0.host new patches the newly-appended item."""
+        result = confarg.load(
+            WithNestedList,
+            args=["--servers+", '{"host":"original","port":1,"name":"db1"}', "--servers.0.host", "patched"],
+            env={},
+        )
+        assert len(result.servers) == 1
+        assert result.servers[0].host == "patched"
+        assert result.servers[0].port == 1
+
+    def test_append_no_items_then_patch_raises(self) -> None:
+        """--servers+ with no items followed by --servers.0.host raises ConfargError."""
+        with pytest.raises(confarg.ConfargError, match="index 0"):
+            confarg.load(WithNestedList, args=["--servers+", "--servers.0.host", "toto"], env={})
+
+    def test_two_appends_with_neg1_patch_each(self) -> None:
+        """--servers+ {} --servers.-1.* a --servers+ {} --servers.-1.* b produces two items."""
+        result = confarg.load(
+            WithNestedList,
+            args=[
+                "--servers+",
+                "{}",
+                "--servers.-1.host",
+                "a",
+                "--servers.-1.port",
+                "1",
+                "--servers.-1.name",
+                "db1",
+                "--servers+",
+                "{}",
+                "--servers.-1.host",
+                "b",
+                "--servers.-1.port",
+                "2",
+                "--servers.-1.name",
+                "db2",
+            ],
+            env={},
+        )
+        assert len(result.servers) == 2
+        assert result.servers[0].host == "a"
+        assert result.servers[1].host == "b"
+
 
 # ---------------------------------------------------------------------------
 # Config-file append syntax (--config.field+)
