@@ -141,13 +141,6 @@ def _extend_walk(
     prefix: str,
 ) -> None:
     """Register fields of dc_type under prefix, skipping already-registered dests."""
-    from confarg._argparse import (
-        _add_leaf_argument,
-        _add_union_tag_argument,
-        _build_help,
-        _get_field_docstrings,
-        _resolve_struct,
-    )
     from confarg._types import (
         _is_callable,
         _is_dict,
@@ -158,6 +151,9 @@ def _extend_walk(
         _unwrap_optional,
         _var_param_names,
     )
+    from confarg.cli.argparse._build import _resolve_struct
+    from confarg.cli.argparse._register import _add_leaf_argument, _add_union_tag_argument
+    from confarg.cli.argparse._spec import _build_help, _get_field_docstrings
 
     setup = _resolve_struct(dc_type)
     if setup is None:
@@ -192,7 +188,7 @@ def _extend_walk(
                 help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
                 _add_leaf_argument(group_target, flag, raw_type, core, help_text)
                 ctx.existing_dests.add(flag)
-            from confarg._argparse import _add_callable_fn_flags
+            from confarg.cli.argparse._register import _add_callable_fn_flags
 
             _add_callable_fn_flags(group_target, flag)
             ctx.existing_dests.update({f"{flag}.fn", f"{flag}.class"})
@@ -254,11 +250,8 @@ def _pre_extend_parser_for_completion(
             except Exception:  # noqa: BLE001 — completion must never crash; any import/argparse failure is non-fatal
                 continue
 
-        from confarg._argparse import (
-            _add_callable_bind_flags,
-            _collect_fn_paths_from_argv,
-            _collect_fn_paths_from_config,
-        )
+        from confarg.cli.argparse._build import _collect_fn_paths_from_argv, _collect_fn_paths_from_config
+        from confarg.cli.argparse._register import _add_callable_bind_flags
 
         config_fns = _collect_fn_paths_from_config(config_dict, dc_type, "", union_tag)
         argv_fns = _collect_fn_paths_from_argv(argv)
@@ -282,7 +275,7 @@ def setup_completion(
 ) -> None:
     """Enable tab-completion for the parser.
 
-    Must be called after :func:`~confarg.populate_parser` and before
+    Must be called after :func:`~confarg.cli.argparse.populate_parser` and before
     ``parser.parse_args()``.  Requires the ``argcomplete`` package::
 
         pip install confarg[completion]
@@ -301,9 +294,9 @@ def setup_completion(
 
     Args:
         parser: The :class:`~argparse.ArgumentParser` previously populated by
-            :func:`~confarg.populate_parser`.
+            :func:`~confarg.cli.argparse.populate_parser`.
         dc_type: The top-level dataclass type (same as passed to
-            :func:`~confarg.populate_parser`).
+            :func:`~confarg.cli.argparse.populate_parser`).
         union_tag: Discriminator field name (default ``"class"``).
         config_flag: Config file flag name (default ``"config"``).
         argv: CLI argument list.  Defaults to ``sys.argv[1:]``.

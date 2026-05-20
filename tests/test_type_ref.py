@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import pytest
 
 import confarg
+import confarg.cli.argparse as confarg_ap
 from confarg._errors import TypeCoercionError
 from confarg._serialize import _serialize_leaf
 from confarg._types import _StrToken
@@ -257,7 +258,7 @@ class TestArgparseIntegration:
     def test_type_ref_field_registered_with_dotted_metavar(self) -> None:
         """populate_parser registers --worker with metavar 'DOTTED.CLASS.PATH'."""
         parser = argparse.ArgumentParser()
-        confarg.populate_parser(ConfigWithTypeRef, parser)
+        confarg_ap.populate_parser(ConfigWithTypeRef, parser)
         actions = {a.dest: a for a in parser._actions if hasattr(a, "dest")}
         assert "worker" in actions
         action = actions["worker"]
@@ -266,7 +267,7 @@ class TestArgparseIntegration:
     def test_bare_type_field_registered_with_dotted_metavar(self) -> None:
         """populate_parser registers --klass with metavar 'DOTTED.CLASS.PATH'."""
         parser = argparse.ArgumentParser()
-        confarg.populate_parser(ConfigWithBareType, parser)
+        confarg_ap.populate_parser(ConfigWithBareType, parser)
         actions = {a.dest: a for a in parser._actions if hasattr(a, "dest")}
         assert "klass" in actions
         action = actions["klass"]
@@ -275,8 +276,8 @@ class TestArgparseIntegration:
     def test_parse_args_produces_str_token_in_from_dict(self) -> None:
         """Parsing --worker via argparse then calling from_dict resolves the class."""
         parser = argparse.ArgumentParser()
-        confarg.populate_parser(ConfigWithTypeRef, parser)
+        confarg_ap.populate_parser(ConfigWithTypeRef, parser)
         ns = parser.parse_args(["--worker", _DERIVED_PATH])
         # Simulate what confarg.load does: namespace → nested dict → from_dict
-        result = confarg.from_namespace(ns, ConfigWithTypeRef, env_prefix=None)
+        result = confarg_ap.from_namespace(ns, ConfigWithTypeRef, env_prefix=None)
         assert result.worker is Derived

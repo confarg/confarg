@@ -15,8 +15,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 from confarg import _defaults
-from confarg._argparse import FieldMeta, from_namespace, populate_parser
-from confarg._completion import setup_completion
 from confarg._errors import (
     AmbiguousUnionError,
     CircularReferenceError,
@@ -437,11 +435,6 @@ __all__ = [
     "dump_file",
     # Types
     "TagPolicy",
-    # argparse helpers
-    "populate_parser",
-    "from_namespace",
-    "FieldMeta",
-    "setup_completion",
     # Errors / warnings
     "ConfargError",
     "ConfargWarning",

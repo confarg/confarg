@@ -17,8 +17,6 @@ from typing import Any
 import pytest
 
 import confarg
-from confarg import from_namespace, populate_parser
-from confarg._argparse import _walk_struct
 from confarg._callable import _detect_owning_class, _serialize_callable
 from confarg._merge import _to_append_list
 from confarg._types import (
@@ -29,6 +27,8 @@ from confarg._types import (
     _var_param_names,
     _var_positional_name,
 )
+from confarg.cli.argparse import from_namespace, populate_parser
+from confarg.cli.argparse._build import _collect_struct_specs
 from tests.conftest import WithDefaults, make_target
 
 # ---------------------------------------------------------------------------
@@ -1263,7 +1263,7 @@ class TestArgparseBranches:
 
     def test_get_field_docstrings_no_class_found(self) -> None:
         """_get_field_docstrings returns an empty dict when the class cannot be located by name."""
-        from confarg._argparse import _get_field_docstrings
+        from confarg.cli.argparse._spec import _get_field_docstrings
 
         @dataclass
         class Dummy:
@@ -1278,13 +1278,11 @@ class TestArgparseBranches:
             Dummy.__name__ = original_name
 
     def test_walk_struct_non_struct_returns_early(self) -> None:
-        """_walk_struct returns early without registering flags for non-struct types."""
-        parser = argparse.ArgumentParser()
-        _walk_struct(int, parser, parser, "", "class")
+        """_collect_struct_specs returns empty list for non-struct types."""
+        assert _collect_struct_specs(int, "", "class") == []
 
     def test_walk_struct_get_type_hints_exception(self) -> None:
-        """_walk_struct falls back gracefully when get_type_hints raises for broken annotations."""
-        parser = argparse.ArgumentParser()
+        """_collect_struct_specs falls back gracefully when get_type_hints raises for broken annotations."""
 
         # This class has a CLASS-LEVEL annotation with an undefined forward ref.
         # With `from __future__ import annotations`, all annotations are strings;
@@ -1296,7 +1294,7 @@ class TestArgparseBranches:
             def __init__(self, value: int) -> None:
                 self.value = value
 
-        _walk_struct(BrokenClassAnnot, parser, parser, "", "class")
+        _collect_struct_specs(BrokenClassAnnot, "", "class")
 
     def test_walk_struct_union_tag_field_skipped(self) -> None:
         """The union_tag field is not registered as a CLI flag by populate_parser."""
@@ -1337,27 +1335,24 @@ class TestArgparseBranches:
         assert "--nums" in flags
 
     def test_walk_struct_var_param_field_skipped(self) -> None:
-        """*args fields are not registered as CLI flags."""
+        """*args fields are not included in static flag specs."""
 
         class PlainWithArgs:
             def __init__(self, x: int, *extras: str):
                 pass
 
-        parser = argparse.ArgumentParser()
-        _walk_struct(PlainWithArgs, parser, parser, "", "class")
-        flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--extras" not in flags
+        specs = _collect_struct_specs(PlainWithArgs, "", "class")
+        assert not any(s.name == "extras" for s in specs)
 
     def test_register_subconfig_flags_non_struct(self) -> None:
-        """_register_subconfig_flags is a no-op for non-struct types."""
-        from confarg._argparse import _register_subconfig_flags
+        """_collect_subconfig_specs returns empty list for non-struct types."""
+        from confarg.cli.argparse._build import _collect_subconfig_specs
 
-        parser = argparse.ArgumentParser()
-        _register_subconfig_flags(int, parser, "config", "", "class")
+        assert _collect_subconfig_specs(int, "config", "", "class") == []
 
     def test_register_subconfig_flags_get_type_hints_exception(self) -> None:
-        """_register_subconfig_flags falls back gracefully when get_type_hints raises."""
-        from confarg._argparse import _register_subconfig_flags
+        """_collect_subconfig_specs falls back gracefully when get_type_hints raises."""
+        from confarg.cli.argparse._build import _collect_subconfig_specs
 
         # A class with a broken CLASS-LEVEL annotation (not __init__) causes
         # get_type_hints(cls) to fail, but _struct_fields succeeds via __init__.
@@ -1368,24 +1363,22 @@ class TestArgparseBranches:
                 self.x = x
                 self.y = y
 
-        parser = argparse.ArgumentParser()
-        _register_subconfig_flags(BrokenClassAnnot, parser, "config", "", "class")
+        _collect_subconfig_specs(BrokenClassAnnot, "config", "", "class")
 
     def test_register_subconfig_flags_union_tag_skipped(self) -> None:
-        """_register_subconfig_flags skips the union_tag field."""
-        from confarg._argparse import _register_subconfig_flags
+        """_collect_subconfig_specs skips the union_tag field."""
+        from confarg.cli.argparse._build import _collect_subconfig_specs
 
         @dataclass
         class WithTypeField:
             type: str = "a"
             value: int = 0
 
-        parser = argparse.ArgumentParser()
-        _register_subconfig_flags(WithTypeField, parser, "config", "", union_tag="type")
+        _collect_subconfig_specs(WithTypeField, "config", "", union_tag="type")
 
     def test_collect_ns_fields_non_struct(self) -> None:
         """_collect_ns_fields is a no-op for non-struct types."""
-        from confarg._argparse import _collect_ns_fields
+        from confarg.cli.argparse._namespace import _collect_ns_fields
 
         result: dict[str, Any] = {}
         _collect_ns_fields({}, int, "", "class", result)
@@ -1393,7 +1386,7 @@ class TestArgparseBranches:
 
     def test_collect_ns_fields_get_type_hints_exception(self) -> None:
         """_collect_ns_fields falls back gracefully when get_type_hints raises."""
-        from confarg._argparse import _collect_ns_fields
+        from confarg.cli.argparse._namespace import _collect_ns_fields
 
         class BrokenClassAnnot2:
             _bad: UndefinedType888  # noqa: F821,  class-level broken forward ref
@@ -1408,7 +1401,7 @@ class TestArgparseBranches:
 
     def test_collect_ns_fields_union_tag_skipped(self) -> None:
         """_collect_ns_fields excludes the union_tag field from the result."""
-        from confarg._argparse import _collect_ns_fields
+        from confarg.cli.argparse._namespace import _collect_ns_fields
 
         @dataclass
         class WithTypeField:
@@ -1421,7 +1414,7 @@ class TestArgparseBranches:
 
     def test_collect_ns_fields_multi_union_skipped(self) -> None:
         """_collect_ns_fields skips fields with multi-variant union types."""
-        from confarg._argparse import _collect_ns_fields
+        from confarg.cli.argparse._namespace import _collect_ns_fields
 
         @dataclass
         class WithMultiUnion:
@@ -1432,7 +1425,7 @@ class TestArgparseBranches:
 
     def test_collect_ns_fields_dict_skipped(self) -> None:
         """_collect_ns_fields skips dict-typed fields."""
-        from confarg._argparse import _collect_ns_fields
+        from confarg.cli.argparse._namespace import _collect_ns_fields
 
         @dataclass
         class WithDict:
