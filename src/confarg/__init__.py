@@ -210,17 +210,22 @@ def build[T](
     return _tc(target_r, resolved, union_tag=union_tag)  # type: ignore[return-value]
 
 
-def interpolate(data: dict[str, Any]) -> dict[str, Any]:
-    """Resolve ${...} expressions in a merged config dict.
+def resolve(data: dict[str, Any]) -> dict[str, Any]:
+    """Resolve ``${...}`` expressions in a merged config dict.
 
-    This is the first half of build(). Call it to get the fully-resolved
-    dict before passing it to from_dict() or inspecting values.
+    Use this between ``merge()`` and ``from_dict()`` when you need the
+    resolved dict itself (e.g. to inspect values or write it to a file):
+
+        raw = confarg.merge(MyConfig, ...)
+        resolved = confarg.resolve(raw)
+        confarg.dump_file(resolved, "out.yaml")
+        cfg = confarg.from_dict(MyConfig, resolved)
 
     Args:
-        data: A plain config dict, e.g. the output of merge().
+        data: A plain config dict, e.g. the output of ``merge()``.
 
     Returns:
-        A new dict with all ${...} expression strings replaced by their values.
+        A new dict with all ``${...}`` expression strings replaced by their values.
 
     Raises:
         CircularReferenceError: If expression references form a cycle.
@@ -237,22 +242,22 @@ def from_dict[T](
     *,
     union_tag: str = "class",
 ) -> T:
-    """Construct a typed object from an already-interpolated config dict.
+    """Construct a typed object from an already-resolved config dict.
 
     Unlike build(), this does NOT resolve ``${...}`` expressions — call
-    interpolate() first if needed.
+    resolve() first if needed.
 
-    Use this together with interpolate() when you want to keep the interpolated
+    Use this together with resolve() when you want to keep the resolved
     dict around (e.g. to dump it with dump_file()):
 
         raw = confarg.merge(MyConfig, ...)
-        resolved = confarg.interpolate(raw)
+        resolved = confarg.resolve(raw)
         confarg.dump_file(resolved, "out.yaml")
         cfg = confarg.from_dict(MyConfig, resolved)
 
     Args:
         target: The dataclass or plain-class type to construct.
-        data: An interpolated config dict (output of interpolate() or merge()).
+        data: A resolved config dict (output of resolve() or merge()).
         union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
@@ -425,7 +430,7 @@ __all__ = [
     "merge",
     "build",
     # Three-step API (dict-centric)
-    "interpolate",
+    "resolve",
     "from_dict",
     # One-step convenience
     "load",
