@@ -164,21 +164,20 @@ def merge(  # noqa: PLR0913
     return _deep_merge(merged, cli_data, union_tag=union_tag)
 
 
-def from_dict[T](
+def build[T](
     target: type[T],
     data: dict[str, Any],
     *,
     union_tag: str = "class",
 ) -> T:
-    """Construct a dataclass instance from a plain config dict.
+    """Resolve ``${...}`` expressions and construct the target type from a merged config dict.
 
-    Resolves ${...} expressions then constructs the target type. Use this as
-    the second step after merge(), or to load configuration from a dict you
-    have assembled yourself.
+    Use this as the second step after ``merge()``, or to load configuration
+    from a dict you have assembled yourself.
 
     Args:
         target: The dataclass type (or scalar type) to construct.
-        data: The raw config dict (e.g. the output of merge()).
+        data: The raw config dict (e.g. the output of ``merge()``).
         union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
@@ -214,8 +213,8 @@ def from_dict[T](
 def interpolate(data: dict[str, Any]) -> dict[str, Any]:
     """Resolve ${...} expressions in a merged config dict.
 
-    This is the first half of from_dict(). Call it to get the fully-resolved
-    dict before passing it to construct() or inspecting values.
+    This is the first half of build(). Call it to get the fully-resolved
+    dict before passing it to from_dict() or inspecting values.
 
     Args:
         data: A plain config dict, e.g. the output of merge().
@@ -232,7 +231,7 @@ def interpolate(data: dict[str, Any]) -> dict[str, Any]:
     return resolve_expressions(data)
 
 
-def construct[T](
+def from_dict[T](
     target: type[T],
     data: dict[str, Any],
     *,
@@ -240,16 +239,16 @@ def construct[T](
 ) -> T:
     """Construct a typed object from an already-interpolated config dict.
 
-    This is the second half of from_dict(). Unlike from_dict(), it does NOT
-    resolve ${...} expressions — call interpolate() first if needed.
+    Unlike build(), this does NOT resolve ``${...}`` expressions — call
+    interpolate() first if needed.
 
     Use this together with interpolate() when you want to keep the interpolated
     dict around (e.g. to dump it with dump_file()):
 
         raw = confarg.merge(MyConfig, ...)
         resolved = confarg.interpolate(raw)
-        confarg.dump_file(resolved, "out.yaml")          # serialize the dict
-        cfg = confarg.construct(MyConfig, resolved)    # build the typed object
+        confarg.dump_file(resolved, "out.yaml")
+        cfg = confarg.from_dict(MyConfig, resolved)
 
     Args:
         target: The dataclass or plain-class type to construct.
@@ -286,7 +285,7 @@ def load[T](  # noqa: PLR0913
     Sources are merged in priority order: config files (lowest), then
     environment variables, then CLI arguments (highest).
 
-    This is a convenience wrapper around merge() + from_dict(). For more
+    This is a convenience wrapper around merge() + build(). For more
     control — e.g. to inspect or save the raw merged dict before construction —
     call those two functions directly.
 
@@ -335,7 +334,7 @@ def load[T](  # noqa: PLR0913
         env_config=env_config,
         union_tag=union_tag,
     )
-    return from_dict(target, data, union_tag=union_tag)
+    return build(target, data, union_tag=union_tag)
 
 
 def _strip_str_tokens(value: Any) -> Any:
@@ -424,10 +423,10 @@ def dump_file(
 __all__ = [
     # Two-step API
     "merge",
-    "from_dict",
+    "build",
     # Three-step API (dict-centric)
     "interpolate",
-    "construct",
+    "from_dict",
     # One-step convenience
     "load",
     # Dump

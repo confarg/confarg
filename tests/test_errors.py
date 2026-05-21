@@ -81,7 +81,7 @@ class TestMissingFields:
     def test_scalar_target_missing_value_message(self) -> None:
         """MissingFieldError for scalar targets does not mention positional arguments."""
         with pytest.raises(confarg.MissingFieldError) as exc_info:
-            confarg.from_dict(int, {})
+            confarg.build(int, {})
         msg = str(exc_info.value)
         assert "positional" not in msg
         assert "CLI" in msg or "cli" in msg.lower()

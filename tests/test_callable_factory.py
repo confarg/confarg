@@ -95,7 +95,7 @@ class TestFactoryFromDict:
 
     def test_class_subclass_returns_partial(self):
         """Test that class: subclass of return type returns a partial constructor."""
-        result = confarg.from_dict(
+        result = confarg.build(
             _WithConcreteOpt,
             {"optimizer": {"class": f"{_MOD}._SGD", "lr": 0.05}},
         )
@@ -105,7 +105,7 @@ class TestFactoryFromDict:
 
     def test_calling_partial_produces_instance(self):
         """Test that calling the returned partial produces a correctly configured instance."""
-        result = confarg.from_dict(
+        result = confarg.build(
             _WithConcreteOpt,
             {"optimizer": {"class": f"{_MOD}._SGD", "lr": 0.05, "momentum": 0.9}},
         )
@@ -116,7 +116,7 @@ class TestFactoryFromDict:
 
     def test_no_class_key_concrete_return_type(self):
         """No 'class:' key: use return type as implicit class."""
-        result = confarg.from_dict(
+        result = confarg.build(
             _WithConcreteOpt,
             {"optimizer": {"lr": 0.02, "momentum": 0.8}},
         )
@@ -126,7 +126,7 @@ class TestFactoryFromDict:
 
     def test_subclass_override(self):
         """class: can be a subclass of the Callable return type."""
-        result = confarg.from_dict(
+        result = confarg.build(
             _WithConcreteOpt,
             {"optimizer": {"class": f"{_MOD}._SGDVariant", "lr": 0.01, "dampening": 0.1}},
         )
@@ -135,7 +135,7 @@ class TestFactoryFromDict:
 
     def test_abstract_base_with_class(self):
         """Test that class: with abstract base type creates a partial of the given class."""
-        result = confarg.from_dict(
+        result = confarg.build(
             _WithAbstractOpt,
             {"optimizer": {"class": f"{_MOD}._Adam", "lr": 0.003}},
         )
@@ -145,7 +145,7 @@ class TestFactoryFromDict:
 
     def test_non_subclass_uses_callable_object_mode(self):
         """class: not a subclass of return type → instantiate (callable-object mode)."""
-        result = confarg.from_dict(
+        result = confarg.build(
             _WithAbstractOpt,
             {"optimizer": {"class": f"{_MOD}._ProduceOpt", "strategy": "sgd"}},
         )
@@ -155,7 +155,7 @@ class TestFactoryFromDict:
     def test_bind_in_factory_mode_raises(self):
         """Test that using bind: in factory mode raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="bind.*not valid in factory mode"):
-            confarg.from_dict(
+            confarg.build(
                 _WithConcreteOpt,
                 {"optimizer": {"class": f"{_MOD}._SGD", "lr": 0.01, "bind": {"x": 1}}},
             )
@@ -163,14 +163,14 @@ class TestFactoryFromDict:
     def test_unknown_kwarg_raises(self):
         """Test that an unknown constructor kwarg raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="Unknown constructor kwargs"):
-            confarg.from_dict(
+            confarg.build(
                 _WithConcreteOpt,
                 {"optimizer": {"class": f"{_MOD}._SGD", "bad_kwarg": 99}},
             )
 
     def test_bare_string_factory(self):
         """A bare string class path is factory mode when class is a subclass of return type."""
-        result = confarg.from_dict(
+        result = confarg.build(
             _WithConcreteOpt,
             {"optimizer": f"{_MOD}._SGD"},
         )
@@ -180,7 +180,7 @@ class TestFactoryFromDict:
 
     def test_bare_string_callable_object_mode(self):
         """A bare string class path stays callable-object mode when not a subclass."""
-        result = confarg.from_dict(
+        result = confarg.build(
             _WithAbstractOpt,
             {"optimizer": f"{_MOD}._ProduceOpt"},
         )
@@ -289,13 +289,13 @@ class TestFactorySerialization:
         class Cfg:
             optimizer: Callable[..., _SGD]
 
-        cfg = confarg.from_dict(
+        cfg = confarg.build(
             Cfg,
             {"optimizer": {"class": f"{_MOD}._SGD", "lr": 0.05}},
         )
         dumped = confarg.dump(cfg)
         assert dumped["optimizer"] == {"class": f"{_MOD}._SGD", "lr": 0.05}
 
-        cfg2 = confarg.from_dict(Cfg, dumped)
+        cfg2 = confarg.build(Cfg, dumped)
         assert cfg2.optimizer.func is _SGD
         assert cfg2.optimizer.keywords["lr"] == pytest.approx(0.05)

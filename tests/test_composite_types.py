@@ -244,7 +244,7 @@ class TestDict:
         class Cfg:
             foo: dict[str, int | str | dict[str, int]]
 
-        result = confarg.from_dict(
+        result = confarg.build(
             Cfg,
             {"foo": {"hello": 42, "baz": "1", "qux": {"quxx": -1}}},
         )
@@ -258,7 +258,7 @@ class TestDict:
         class Cfg:
             data: dict[str, int | list[int]]
 
-        result = confarg.from_dict(
+        result = confarg.build(
             Cfg,
             {"data": {"count": 5, "ids": [1, 2, 3]}},
         )

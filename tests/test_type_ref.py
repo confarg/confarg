@@ -9,7 +9,7 @@ Covers:
   subclass validation, bare `type` (no constraint)
 - construct(): dispatch to _coerce_type_ref for type-ref fields
 - _serialize_leaf(): class objects serialized to 'module.qualname'
-- confarg.from_dict(): end-to-end construction for a dataclass with type[X]
+- confarg.build(): end-to-end construction for a dataclass with type[X]
 - populate_parser(): argparse metavar for type-ref fields
 """
 
@@ -190,7 +190,7 @@ class TestSerializeLeaf:
 
 
 # ---------------------------------------------------------------------------
-# TestFromDictRoundtrip — confarg.from_dict end-to-end
+# TestBuildRoundtrip — confarg.build end-to-end
 # ---------------------------------------------------------------------------
 
 
@@ -208,28 +208,28 @@ class ConfigWithBareType:
     klass: type
 
 
-class TestFromDictRoundtrip:
-    """End-to-end tests: from_dict builds a dataclass with type[X] fields."""
+class TestBuildRoundtrip:
+    """End-to-end tests: build() constructs a dataclass with type[X] fields."""
 
-    def test_from_dict_type_ref_field(self) -> None:
-        """from_dict constructs ConfigWithTypeRef, resolving the dotted path."""
-        result = confarg.from_dict(ConfigWithTypeRef, {"worker": _StrToken(_DERIVED_PATH)})
+    def test_build_type_ref_field(self) -> None:
+        """build() constructs ConfigWithTypeRef, resolving the dotted path."""
+        result = confarg.build(ConfigWithTypeRef, {"worker": _StrToken(_DERIVED_PATH)})
         assert result.worker is Derived
 
-    def test_from_dict_bare_type_field(self) -> None:
-        """from_dict constructs ConfigWithBareType without a constraint."""
-        result = confarg.from_dict(ConfigWithBareType, {"klass": _StrToken(_UNRELATED_PATH)})
+    def test_build_bare_type_field(self) -> None:
+        """build() constructs ConfigWithBareType without a constraint."""
+        result = confarg.build(ConfigWithBareType, {"klass": _StrToken(_UNRELATED_PATH)})
         assert result.klass is Unrelated
 
-    def test_from_dict_type_ref_base_class(self) -> None:
-        """from_dict accepts the exact bound class as the field value."""
-        result = confarg.from_dict(ConfigWithTypeRef, {"worker": _StrToken(_BASE_PATH)})
+    def test_build_type_ref_base_class(self) -> None:
+        """build() accepts the exact bound class as the field value."""
+        result = confarg.build(ConfigWithTypeRef, {"worker": _StrToken(_BASE_PATH)})
         assert result.worker is Base
 
-    def test_from_dict_type_ref_violation_raises(self) -> None:
-        """from_dict raises TypeCoercionError for a class that violates type[Base]."""
+    def test_build_type_ref_violation_raises(self) -> None:
+        """build() raises TypeCoercionError for a class that violates type[Base]."""
         with pytest.raises(TypeCoercionError):
-            confarg.from_dict(ConfigWithTypeRef, {"worker": _StrToken(_UNRELATED_PATH)})
+            confarg.build(ConfigWithTypeRef, {"worker": _StrToken(_UNRELATED_PATH)})
 
     def test_dump_round_trip(self) -> None:
         """dump() serializes the class object back to its dotted-path string."""
@@ -237,13 +237,13 @@ class TestFromDictRoundtrip:
         serialized = confarg.dump(instance)
         assert serialized == {"worker": _DERIVED_PATH}
 
-    def test_dump_and_restore(self) -> None:
-        """Invariant: dump then from_dict round-trips to the same class."""
+    def test_dump_and_build_roundtrip(self) -> None:
+        """Invariant: dump then build() round-trips to the same class."""
         instance = ConfigWithTypeRef(worker=Derived)
         serialized = confarg.dump(instance)
-        # from_dict needs _StrToken to trigger coercion; simulate what the pipeline does
+        # build() needs _StrToken to trigger coercion; simulate what the pipeline does
         token_data = {k: _StrToken(v) if isinstance(v, str) else v for k, v in serialized.items()}
-        restored = confarg.from_dict(ConfigWithTypeRef, token_data)
+        restored = confarg.build(ConfigWithTypeRef, token_data)
         assert restored.worker is instance.worker
 
 
@@ -273,11 +273,11 @@ class TestArgparseIntegration:
         action = actions["klass"]
         assert action.metavar == "DOTTED.CLASS.PATH"
 
-    def test_parse_args_produces_str_token_in_from_dict(self) -> None:
-        """Parsing --worker via argparse then calling from_dict resolves the class."""
+    def test_parse_args_produces_str_token_in_build(self) -> None:
+        """Parsing --worker via argparse then calling build() resolves the class."""
         parser = argparse.ArgumentParser()
         confarg_ap.populate_parser(ConfigWithTypeRef, parser)
         ns = parser.parse_args(["--worker", _DERIVED_PATH])
-        # Simulate what confarg.load does: namespace → nested dict → from_dict
+        # Simulate what confarg.load does: namespace → nested dict → build()
         result = confarg_ap.from_namespace(ns, ConfigWithTypeRef, env_prefix=None)
         assert result.worker is Derived
