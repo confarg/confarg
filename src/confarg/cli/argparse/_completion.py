@@ -266,7 +266,7 @@ def _pre_extend_parser_for_completion(
 
         config_fns = _collect_fn_paths_from_config(config_dict, dc_type, "", union_tag)
         argv_fns = _collect_fn_paths_from_argv(argv)
-        for field_flag, fn_path in {**config_fns, **argv_fns}.items():
+        for field_flag, (fn_path, _mode) in {**config_fns, **argv_fns}.items():
             try:
                 _add_callable_bind_flags(parser, field_flag, fn_path, walk_ctx.existing_dests)
             except Exception:  # noqa: BLE001 — completion must never crash

@@ -24,7 +24,7 @@ def _make_option_cls() -> type:
     """Return a click.Option subclass that allows dotted names (not valid Python identifiers)."""
     try:
         import click as _click
-    except ImportError as exc:  # pragma: no cover
+    except ImportError as exc:
         msg = "click is required for confarg.cli.click: pip install confarg[click]"
         raise ImportError(msg) from exc
 
@@ -45,7 +45,7 @@ def _spec_to_option(spec: FlagSpec) -> click.Option:
     try:
         import click as _click
         from click.shell_completion import CompletionItem
-    except ImportError as exc:  # pragma: no cover
+    except ImportError as exc:
         msg = "click is required for confarg.cli.click: pip install confarg[click]"
         raise ImportError(msg) from exc
 

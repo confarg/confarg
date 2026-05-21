@@ -2,8 +2,8 @@
 authors = [
     { name = "confarg", email = "280620574+confarg@users.noreply.github.com" },
 ]
-dependencies = []
-description = "A tool to manage complex, dynamic configurations."
+description = "Load and resolve complex configurations from files, environment variables and command line arguments. Keep your favorite CLI library."
+license = "MPL-2.0"
 name = "confarg"
 readme = "README.md"
 requires-python = ">=3.12"

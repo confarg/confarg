@@ -499,7 +499,7 @@ def _evaluate_ast(node: ast.AST, namespace: dict[str, Any]) -> Any:
     evaluator = _AST_EVALUATORS.get(type(node))
     if evaluator is None:
         msg = f"Cannot evaluate node type: {type(node).__name__}"
-        raise ExpressionEvalError(msg)  # pragma: no cover
+        raise ExpressionEvalError(msg)
     return evaluator(node, namespace)
 
 
