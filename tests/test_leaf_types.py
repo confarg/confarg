@@ -92,10 +92,10 @@ class TestFloat:
     @pytest.mark.parametrize(
         ("cli_val", "check"),
         [
-            ("nan", lambda r: math.isnan(r)),
-            ("NaN", lambda r: math.isnan(r)),
-            ("NAN", lambda r: math.isnan(r)),
-            ("Nan", lambda r: math.isnan(r)),
+            ("nan", math.isnan),
+            ("NaN", math.isnan),
+            ("NAN", math.isnan),
+            ("Nan", math.isnan),
             ("inf", lambda r: math.isinf(r) and r > 0),
             ("Inf", lambda r: math.isinf(r) and r > 0),
             ("INF", lambda r: math.isinf(r) and r > 0),
@@ -117,7 +117,7 @@ class TestFloat:
     @pytest.mark.parametrize(
         ("env_val", "check"),
         [
-            ("nan", lambda r: math.isnan(r)),
+            ("nan", math.isnan),
             ("inf", lambda r: math.isinf(r) and r > 0),
             ("-inf", lambda r: math.isinf(r) and r < 0),
         ],
@@ -135,7 +135,7 @@ class TestFloat:
     @pytest.mark.parametrize(
         ("toml_content", "check"),
         [
-            ("rate = nan\n", lambda r: math.isnan(r)),
+            ("rate = nan\n", math.isnan),
             ("rate = inf\n", lambda r: math.isinf(r) and r > 0),
             ("rate = -inf\n", lambda r: math.isinf(r) and r < 0),
         ],
@@ -150,7 +150,7 @@ class TestFloat:
     @pytest.mark.parametrize(
         ("yaml_content", "check"),
         [
-            ("rate: .nan\n", lambda r: math.isnan(r)),
+            ("rate: .nan\n", math.isnan),
             ("rate: .inf\n", lambda r: math.isinf(r) and r > 0),
             ("rate: -.inf\n", lambda r: math.isinf(r) and r < 0),
         ],

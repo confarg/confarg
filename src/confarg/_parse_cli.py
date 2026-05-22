@@ -41,10 +41,10 @@ from confarg._types import (
     _resolve_type,
     _StrToken,
     _struct_fields,
-    _try_coerce,
     _tuple_types,
     _union_args_no_none,
 )
+from confarg.typedload._coerce import _try_coerce
 
 
 def _subclass_field_type(tp: type, field: str) -> Any | None:

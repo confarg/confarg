@@ -23,7 +23,7 @@ from confarg.cli.argparse._build import build_dynamic_flags, build_static_flags
 def _make_option_cls() -> type:
     """Return a click.Option subclass that allows dotted names (not valid Python identifiers)."""
     try:
-        import click as _click
+        import click as _click  # noqa: PLC0415
     except ImportError as exc:
         msg = "click is required for confarg.cli.click: pip install confarg[click]"
         raise ImportError(msg) from exc
@@ -43,8 +43,8 @@ def _make_option_cls() -> type:
 def _spec_to_option(spec: FlagSpec) -> click.Option:
     """Convert one FlagSpec to a click.Option."""
     try:
-        import click as _click
-        from click.shell_completion import CompletionItem
+        import click as _click  # noqa: PLC0415
+        from click.shell_completion import CompletionItem  # noqa: PLC0415
     except ImportError as exc:
         msg = "click is required for confarg.cli.click: pip install confarg[click]"
         raise ImportError(msg) from exc

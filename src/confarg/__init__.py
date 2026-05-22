@@ -35,6 +35,7 @@ from confarg._parse_cli import _parse_cli
 from confarg._parse_env import _parse_env
 from confarg._serialize import _serialize
 from confarg._types import _MISSING, TagPolicy, _is_dc, _is_struct, _is_struct_like, _resolve_type
+from confarg._types import _StrToken as _ST
 from confarg.dictexpr import resolve_expressions
 from confarg.typedload import construct as _tc
 
@@ -342,8 +343,6 @@ def load[T](  # noqa: PLR0913
 
 def _strip_str_tokens(value: Any) -> Any:
     """Recursively convert _StrToken instances to plain str for serialization."""
-    from confarg._types import _StrToken as _ST
-
     if type(value) is _ST:
         return str(value)
     if isinstance(value, dict):
@@ -423,7 +422,7 @@ def dump_file(
         _dump_file(dump(value, union_tag=union_tag, tag_policy=tag_policy), Path(path))
 
 
-__all__ = [
+__all__ = [  # noqa: RUF022
     # Two-step API
     "merge",
     "build",

@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass as _dc
+from dataclasses import field, make_dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import pytest
 
@@ -236,8 +238,6 @@ class TestEnvNoneSentinel:
 
     def test_none_sentinel_nested(self) -> None:
         """Test that none sentinel works for a nested optional dataclass field."""
-        from dataclasses import field, make_dataclass
-
         Inner = make_dataclass("Inner", [("x", int, field(default=1))])
         Outer = make_dataclass("Outer", [("inner", Inner | None, field(default=None))])
         result = confarg.load(Outer, args=[], env={"INNER": "none"}, env_prefix="")
@@ -318,8 +318,6 @@ class TestEnvUnrecognized:
 
     def test_extra_env_vars_warn(self) -> None:
         """Env vars not matching any field emit ConfargWarning and are ignored."""
-        import warnings
-
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             result = confarg.load(WithDefaults, args=[], env={"UNKNOWN": "val", "NAME": "ok"}, env_prefix="")
@@ -331,8 +329,6 @@ class TestEnvUnrecognized:
 
     def test_extra_env_vars_with_prefix_warn(self) -> None:
         """Only prefixed vars are considered; unrecognised prefixed vars warn."""
-        import warnings
-
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             result = confarg.load(WithDefaults, args=[], env={"X__NAME": "ok", "X__BOGUS": "no"}, env_prefix="X")
@@ -496,8 +492,6 @@ class TestEnvPrefixNone:
 
     def test_none_prefix_no_warnings(self) -> None:
         """env_prefix=None emits no ConfargWarning even with unrecognised vars."""
-        import warnings
-
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             confarg.load(
@@ -519,8 +513,6 @@ class TestConfargWarning:
 
     def test_typo_in_field_name_warns(self) -> None:
         """A prefixed var with an unknown field name emits ConfargWarning."""
-        import warnings
-
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             result = confarg.load(
@@ -539,8 +531,6 @@ class TestConfargWarning:
 
     def test_correct_field_no_warning(self) -> None:
         """A correctly spelled prefixed var produces no warning."""
-        import warnings
-
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             result = confarg.load(
@@ -580,8 +570,6 @@ class TestConfargWarningPlainClass:
         Previously the guard used _is_dc which returned False for plain classes,
         so unknown fields were silently accepted instead of triggering a warning.
         """
-        import warnings
-
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             confarg.load(
@@ -599,8 +587,6 @@ class TestConfargWarningPlainClass:
 
     def test_valid_field_no_warning_on_plain_class_target(self) -> None:
         """Correctly named env var on a plain-class target produces no warning."""
-        import warnings
-
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             result = confarg.load(
@@ -632,9 +618,6 @@ class TestConfargWarningUnionWithPlainVariant:
         Previously only DC variants were checked, so a field exclusive to a plain
         class in the union was falsely treated as unknown and silently dropped.
         """
-        import warnings
-        from typing import Union
-
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             confarg.merge(
@@ -647,9 +630,6 @@ class TestConfargWarningUnionWithPlainVariant:
 
     def test_unknown_field_in_union_warns(self) -> None:
         """An env var matching no variant in the union still warns."""
-        import warnings
-        from typing import Union
-
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             confarg.merge(

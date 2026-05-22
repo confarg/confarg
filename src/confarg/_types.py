@@ -37,8 +37,8 @@ from collections.abc import (
 from collections.abc import (
     Set as SetABC,
 )
-from pathlib import Path, PurePath
-from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
+from pathlib import PurePath
+from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
 
 type TagPolicy = Literal["auto", "always"]
 
@@ -62,8 +62,6 @@ def _resolve_type(tp: Any) -> Any:
     """
     while type(tp).__name__ == "TypeAliasType":
         tp = tp.__value__
-    from typing import Annotated
-
     if get_origin(tp) is Annotated:
         tp = get_args(tp)[0]
     return tp
@@ -381,8 +379,6 @@ def _is_literal(tp: Any) -> bool:
     Returns:
         True if tp is a Literal type.
     """
-    from typing import Literal
-
     return get_origin(_resolve_type(tp)) is Literal
 
 
@@ -419,8 +415,6 @@ def _is_final(tp: Any) -> bool:
     Returns:
         True if tp is Final[X] for some X.
     """
-    from typing import Final
-
     return get_origin(tp) is Final
 
 
@@ -628,30 +622,3 @@ def _callable_return_type(tp: Any) -> Any | None:
     if len(args) < _callable_min_args:
         return None
     return _resolve_type(args[1])
-
-
-def _try_coerce(ft: Any, token: _StrToken) -> Any:
-    """Coerce a string token to the target type if unambiguous.
-
-    Coerces immediately for concrete leaf types (bool, int, float, Path,
-    Literal, Enum) so the merged dict has consistent types regardless of source.
-    str tokens are returned unchanged — _StrToken is already a str subclass.
-    For multi-variant unions, returns token unchanged for construct() to handle.
-    """
-    from confarg._errors import TypeCoercionError
-    from confarg.typedload._coerce import _coerce_leaf  # lazy — avoids circular import
-
-    if ft is None:
-        return token
-    ft = _resolve_type(ft)
-    if _is_union(ft):
-        non_none = _union_args_no_none(ft)
-        if len(non_none) != 1:
-            return token
-        ft = _resolve_type(non_none[0])
-    if not (_is_literal(ft) or _is_enum(ft) or ft in (bool, int, float, Path)):
-        return token
-    try:
-        return _coerce_leaf(ft, token)
-    except TypeCoercionError:
-        return token

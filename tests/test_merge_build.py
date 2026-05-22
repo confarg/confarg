@@ -11,7 +11,15 @@ from dataclasses import dataclass
 import pytest
 
 import confarg
+from confarg._types import _StrToken
 from tests.conftest import AppConfig, DbConfig, WithDefaults
+
+try:
+    import yaml
+
+    _YAML_AVAILABLE = True
+except ImportError:
+    _YAML_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # merge()
@@ -148,33 +156,28 @@ class TestDumpRaw:
 
     def test_dump_rejects_dict(self) -> None:
         """dump() raises TypeError for plain dicts — raw dicts go through dump_file()."""
-        from confarg._types import _StrToken
-
         data = {"name": _StrToken("hello"), "count": 42}
         with pytest.raises(TypeError, match="dump_file"):
             confarg.dump(data)
 
+    @pytest.mark.skipif(not _YAML_AVAILABLE, reason="pyyaml not installed")
     def test_dump_file_yaml(self, tmp_path) -> None:
         """Test that dump_file() writes a valid YAML file preserving expressions."""
         data = {"name": "hello", "count": "${name}"}
         path = tmp_path / "out.yaml"
         confarg.dump_file(data, path)
         assert path.exists()
-        import yaml
-
         loaded = yaml.safe_load(path.read_text())
         assert loaded["name"] == "hello"
         assert loaded["count"] == "${name}"
 
+    @pytest.mark.skipif(not _YAML_AVAILABLE, reason="pyyaml not installed")
     def test_raw_expressions_survive_file_round_trip(self, tmp_path, tmp_yaml) -> None:
         """Test that raw ${...} expressions survive a merge → dump_file round-trip."""
         src = tmp_yaml("name: base\ncount: '${name}'\nrate: 1.0\nverbose: false\n")
         raw = confarg.merge(WithDefaults, args=[], env={}, files=[src])
         out = tmp_path / "snapshot.yaml"
         confarg.dump_file(raw, out)
-
-        import yaml
-
         saved = yaml.safe_load(out.read_text())
         assert saved["count"] == "${name}"
 

@@ -7,29 +7,134 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import contextlib
+import enum
+import importlib
+import json
 import math
 import sys
+import types
+import unittest.mock
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Optional, Protocol, Union
 
 import pytest
 
 import confarg
-from confarg._callable import _detect_owning_class, _serialize_callable
-from confarg._merge import _to_append_list
+import confarg._callable as callable_mod
+import confarg.cli.argparse._build as build_mod
+import confarg.cli.argparse._register as reg_mod
+from confarg._callable import (
+    _check_bind_params,
+    _check_callable_signature,
+    _ClassSpec,
+    _coerce_bind_kwargs,
+    _detect_owning_class,
+    _format_fn_dict_example,
+    _import_dotted,
+    _is_factory_class,
+    _resolve_bare_string,
+    _resolve_call_kwargs,
+    _resolve_call_spec,
+    _resolve_callable_spec,
+    _resolve_class_spec,
+    _resolve_factory_kwargs,
+    _serialize_callable,
+)
+from confarg._errors import SymbolImportError, TypeCoercionError
+from confarg._files import (
+    _dump_file,
+    _dump_json,
+    _load_file,
+    _load_file_item,
+    _load_json,
+    _load_json_item,
+    _load_toml,
+    _load_yaml,
+    _load_yaml_item,
+)
+from confarg._merge import (
+    DICT_DELETE,
+    LIST_APPEND_KEY,
+    LIST_DELETE_KEY,
+    LIST_REPLACE_BASE_KEY,
+    _accumulate_list_delete,
+    _apply_append_key,
+    _deep_merge,
+    _merge_regular_key,
+    _normalize_merge_ops,
+    _set_nested,
+    _to_append_list,
+)
+from confarg._parse_cli import _handle_append_token, _ParseCtx, _resolve_field_type, _subclass_field_type
 from confarg._types import (
     _all_have_defaults,
+    _allows_none,
+    _init_fields,
     _is_collection,
+    _is_plain_class,
     _StrToken,
+    _unwrap_optional,
     _var_keyword_name,
     _var_param_names,
     _var_positional_name,
 )
 from confarg.cli.argparse import from_namespace, populate_parser
-from confarg.cli.argparse._build import _collect_struct_specs
+from confarg.cli.argparse._build import (
+    _collect_callable_bind_specs,
+    _collect_callable_factory_specs,
+    _collect_callable_field_specs,
+    _collect_fn_paths_from_argv,
+    _collect_fn_paths_from_config,
+    _collect_struct_specs,
+    _collect_subconfig_specs,
+    _get_callable_field_return_type,
+    _resolve_struct,
+    build_dynamic_flags,
+)
+from confarg.cli.argparse._completion import (
+    _extend_walk,
+    _pre_extend_parser_for_completion,
+    _resolve_tags_from_config,
+    _WalkCtx,
+)
+from confarg.cli.argparse._completion import (
+    setup_completion as _argparse_setup_completion,
+)
+from confarg.cli.argparse._namespace import (
+    _callable_return_type_for,
+    _collect_callable_spec,
+    _collect_ns_fields,
+    _merge_blob_into_spec,
+)
+from confarg.cli.argparse._register import _add_callable_bind_flags, _add_callable_fn_flags, _register_spec
+from confarg.cli.argparse._spec import FlagSpec, _get_field_docstrings
+from confarg.dictexpr._expressions import (
+    _attribute_chain,
+    _evaluate_ast,
+    _extract_references,
+    _get_nested,
+    _set_nested_by_path,
+    resolve_expressions,
+)
+from confarg.typedload._coerce import _coerce_leaf, _coerce_type_ref, _try_coerce
+from confarg.typedload._construct import _value_matches_type, construct
 from tests.conftest import WithDefaults, make_target
+
+try:
+    import click
+    from click.testing import CliRunner
+
+    from confarg.cli.click import from_context, populate_command
+    from confarg.cli.click._completion import setup_completion as _click_setup_completion
+
+    _CLICK_AVAILABLE = True
+except ImportError:
+    _CLICK_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Module-level dataclasses (needed to avoid `from __future__ import annotations`
@@ -332,7 +437,6 @@ class TestDumpDictList:
         data = {"items": [_StrToken("a"), _StrToken("b")]}
         out = tmp_path / "out.json"
         confarg.dump_file(data, out)
-        import json
 
         result = json.loads(out.read_text())
         assert result == {"items": ["a", "b"]}
@@ -343,7 +447,6 @@ class TestDumpDictList:
         raw = confarg.merge(WithList, args=["--items", "x", "y"], env={})
         out = tmp_path / "out.json"
         confarg.dump_file(raw, out)
-        import json
 
         result = json.loads(out.read_text())
         assert result["items"] == ["x", "y"]
@@ -373,29 +476,21 @@ class TestFileErrors:
 
     def test_load_toml_file_not_found(self, tmp_path: Path) -> None:
         """Missing TOML file raises InvalidConfigFileError."""
-        from confarg._files import _load_toml
-
         with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
             _load_toml(tmp_path / "missing.toml")
 
     def test_load_yaml_file_not_found(self, tmp_path: Path) -> None:
         """Missing YAML file raises InvalidConfigFileError."""
-        from confarg._files import _load_yaml
-
         with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
             _load_yaml(tmp_path / "missing.yaml")
 
     def test_load_json_file_not_found(self, tmp_path: Path) -> None:
         """Missing JSON file raises InvalidConfigFileError."""
-        from confarg._files import _load_json
-
         with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
             _load_json(tmp_path / "missing.json")
 
     def test_load_yaml_item_missing_library(self, tmp_path: Path, monkeypatch) -> None:
         """Missing PyYAML library raises InvalidConfigFileError."""
-        from confarg._files import _load_yaml_item
-
         p = tmp_path / "test.yaml"
         p.write_text("key: value")
         monkeypatch.setitem(sys.modules, "yaml", None)
@@ -404,15 +499,11 @@ class TestFileErrors:
 
     def test_load_yaml_item_file_not_found(self, tmp_path: Path) -> None:
         """Missing YAML item file raises InvalidConfigFileError."""
-        from confarg._files import _load_yaml_item
-
         with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
             _load_yaml_item(tmp_path / "missing.yaml")
 
     def test_load_yaml_item_malformed(self, tmp_path: Path) -> None:
         """Malformed YAML content raises InvalidConfigFileError."""
-        from confarg._files import _load_yaml_item
-
         p = tmp_path / "bad.yaml"
         p.write_text("key: :\n  - bad: [unclosed")
         with pytest.raises(confarg.InvalidConfigFileError, match="malformed"):
@@ -420,15 +511,11 @@ class TestFileErrors:
 
     def test_load_json_item_file_not_found(self, tmp_path: Path) -> None:
         """Missing JSON item file raises InvalidConfigFileError."""
-        from confarg._files import _load_json_item
-
         with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
             _load_json_item(tmp_path / "missing.json")
 
     def test_load_json_item_malformed(self, tmp_path: Path) -> None:
         """Malformed JSON content raises InvalidConfigFileError."""
-        from confarg._files import _load_json_item
-
         p = tmp_path / "bad.json"
         p.write_text("{bad json")
         with pytest.raises(confarg.InvalidConfigFileError, match="malformed"):
@@ -436,26 +523,19 @@ class TestFileErrors:
 
     def test_load_file_item_unsupported_format(self, tmp_path: Path) -> None:
         """Unsupported file extension raises InvalidConfigFileError."""
-        from confarg._files import _load_file_item
-
         with pytest.raises(confarg.InvalidConfigFileError, match="Unsupported"):
             _load_file_item(tmp_path / "file.xyz")
 
     def test_dump_json_writes_file(self, tmp_path: Path) -> None:
         """JSON dump writes a valid JSON file to disk."""
-        from confarg._files import _dump_json
-
         p = tmp_path / "out.json"
         _dump_json({"key": "value", "num": 42}, p)
-        import json
 
         data = json.loads(p.read_text())
         assert data == {"key": "value", "num": 42}
 
     def test_dump_file_unsupported_format(self, tmp_path: Path) -> None:
         """Unsupported file extension in dump raises InvalidConfigFileError."""
-        from confarg._files import _dump_file
-
         with pytest.raises(confarg.InvalidConfigFileError, match="Unsupported"):
             _dump_file({"key": "val"}, tmp_path / "out.xyz")
 
@@ -492,40 +572,34 @@ class TestCallableEdgeCases:
 
     def test_resolve_spec_already_callable(self) -> None:
         """A callable value passed directly to _resolve_callable_spec is returned unchanged."""
-        from confarg._callable import _resolve_callable_spec
 
         def my_func(x: int) -> str:
             return str(x)
 
-        result = _resolve_callable_spec(my_func, Callable[[int], str], path="test")
+        result = _resolve_callable_spec(
+            my_func, Callable[[int], str], path="test", union_tag="class", construct_fn=construct
+        )
         assert result is my_func
 
     def test_resolve_dict_spec_non_dict_bind_raises(self) -> None:
         """A non-dict bind: value in the fn: dict form raises TypeCoercionError."""
-        from confarg._callable import _resolve_callable_spec
-
         spec = {"fn": "os.path.join", "bind": "not_a_dict"}
         with pytest.raises(confarg.TypeCoercionError, match="must be a dict"):
-            _resolve_callable_spec(spec, Callable, path="test")
+            _resolve_callable_spec(spec, Callable, path="test", union_tag="class", construct_fn=construct)
 
     def test_resolve_class_spec_not_a_class_raises(self) -> None:
         """A non-class path in the class: dict form raises TypeCoercionError."""
-        from confarg._callable import _resolve_callable_spec
-
         spec = {"class": "os.path.join"}
         with pytest.raises(confarg.TypeCoercionError, match="must reference a class"):
-            _resolve_callable_spec(spec, Callable, path="test")
+            _resolve_callable_spec(spec, Callable, path="test", union_tag="class", construct_fn=construct)
 
     def test_resolve_spec_invalid_type_raises(self) -> None:
         """A non-str, non-dict callable spec raises TypeCoercionError."""
-        from confarg._callable import _resolve_callable_spec
-
         with pytest.raises(confarg.TypeCoercionError, match="expected str or dict"):
-            _resolve_callable_spec(12345, Callable, path="test")
+            _resolve_callable_spec(12345, Callable, path="test", union_tag="class", construct_fn=construct)
 
     def test_check_signature_var_positional_skipped(self) -> None:
         """*args functions skip parameter count checking."""
-        from confarg._callable import _check_callable_signature
 
         def varargs_func(*args: int) -> None:
             pass
@@ -534,7 +608,6 @@ class TestCallableEdgeCases:
 
     def test_check_signature_uninspectable(self) -> None:
         """Uninspectable callables skip signature checking."""
-        from confarg._callable import _check_callable_signature
 
         class Uninspectable:
             def __call__(self, x: int) -> None:
@@ -644,7 +717,6 @@ class TestTypesEdgeCases:
 
     def test_is_plain_class_uninspectable_init(self) -> None:
         """_is_plain_class returns False when __init__ is not inspectable."""
-        from confarg._types import _is_plain_class
 
         class Broken:
             pass
@@ -654,7 +726,6 @@ class TestTypesEdgeCases:
 
     def test_init_fields_broken_init_annotation_fallback(self) -> None:
         """_init_fields falls back gracefully when get_type_hints raises a NameError."""
-        from confarg._types import _init_fields
 
         # With `from __future__ import annotations`, `value: UndefinedTypeABC999` is
         # stored as the string "UndefinedTypeABC999". get_type_hints(cls.__init__)
@@ -677,32 +748,20 @@ class TestTypeHelpers:
 
     def test_unwrap_optional_non_union(self) -> None:
         """_unwrap_optional returns the type unchanged for non-union types."""
-        from confarg._types import _unwrap_optional
-
         assert _unwrap_optional(int) is int
 
     def test_unwrap_optional_single_variant(self) -> None:
         """_unwrap_optional strips None from Optional[X] and returns X."""
-        from typing import Optional
-
-        from confarg._types import _unwrap_optional
-
         result = _unwrap_optional(Optional[int])
         assert result is int
 
     def test_unwrap_optional_multi_variant(self) -> None:
         """_unwrap_optional returns None for multi-variant unions (not Optional)."""
-        from typing import Union
-
-        from confarg._types import _unwrap_optional
-
         result = _unwrap_optional(Union[int, str])
         assert result is None
 
     def test_try_coerce_none_ft_returns_token(self) -> None:
         """_try_coerce with ft=None returns the token unchanged."""
-        from confarg._types import _try_coerce
-
         token = _StrToken("hello")
         assert _try_coerce(None, token) is token
 
@@ -717,16 +776,12 @@ class TestTypeHelpers:
         str is not in the coercible set (bool, int, float, Path, Literal, Enum),
         so the token is passed back as-is rather than being actively coerced.
         """
-        from confarg._types import _try_coerce
-
         token = _StrToken("hello world")
         result = _try_coerce(str, token)
         assert result is token
 
     def test_try_coerce_str_token_is_still_str(self) -> None:
         """_StrToken IS a str subclass — passthrough means the caller gets a str-compatible value."""
-        from confarg._types import _try_coerce
-
         token = _StrToken("something")
         result = _try_coerce(str, token)
         assert isinstance(result, str)
@@ -762,36 +817,23 @@ class TestTypeHelpers:
     )
     def test_try_coerce_concrete_types(self, ft, raw, expected) -> None:
         """_try_coerce actively coerces bool, int, float, and Path tokens."""
-        from confarg._types import _try_coerce
-
         result = _try_coerce(ft, raw)
         assert result == expected
 
     def test_try_coerce_literal_str_matches_value(self) -> None:
         """_try_coerce with a Literal type coerces the token to the matching literal value."""
-        from typing import Literal
-
-        from confarg._types import _try_coerce
-
         token = _StrToken("fast")
         result = _try_coerce(Literal["fast", "slow"], token)
         assert result == "fast"
 
     def test_try_coerce_literal_int_value(self) -> None:
         """_try_coerce coerces a token to an integer literal."""
-        from typing import Literal
-
-        from confarg._types import _try_coerce
-
         token = _StrToken("1")
         result = _try_coerce(Literal[1, 2, 3], token)
         assert result == 1
 
     def test_try_coerce_enum_value(self) -> None:
         """_try_coerce coerces a token to an Enum member by value."""
-        import enum
-
-        from confarg._types import _try_coerce
 
         class Status(enum.Enum):
             ACTIVE = "active"
@@ -803,26 +845,18 @@ class TestTypeHelpers:
 
     def test_try_coerce_invalid_bool_returns_token(self) -> None:
         """When coercion fails (e.g. bad bool string), _try_coerce returns the original token."""
-        from confarg._types import _try_coerce
-
         token = _StrToken("not-a-bool")
         result = _try_coerce(bool, token)
         assert result is token
 
     def test_try_coerce_invalid_int_returns_token(self) -> None:
         """When coercion fails for int, _try_coerce returns the original token unchanged."""
-        from confarg._types import _try_coerce
-
         token = _StrToken("abc")
         result = _try_coerce(int, token)
         assert result is token
 
     def test_try_coerce_optional_single_variant_coerces(self) -> None:
         """Optional[int] / int | None — _try_coerce unwraps the single non-None variant and coerces."""
-        from typing import Optional
-
-        from confarg._types import _try_coerce
-
         token = _StrToken("99")
         result = _try_coerce(Optional[int], token)
         assert result == 99
@@ -832,16 +866,12 @@ class TestTypeHelpers:
 
         construct() is responsible for handling union disambiguation.
         """
-        from confarg._types import _try_coerce
-
         token = _StrToken("42")
         result = _try_coerce(int | str, token)
         assert result is token
 
     def test_try_coerce_unrecognised_type_returns_token(self) -> None:
         """A type that is not bool/int/float/Path/Literal/Enum → token returned unchanged."""
-        from confarg._types import _try_coerce
-
         # dict is not in the coercible set
         token = _StrToken("{}")
         result = _try_coerce(dict, token)
@@ -853,45 +883,33 @@ class TestParseCliBranches:
 
     def test_subclass_field_type_non_struct_subclass(self) -> None:
         """_subclass_field_type falls back to str for non-struct subclasses."""
-        from confarg._parse_cli import _subclass_field_type
-
         result = _subclass_field_type(_SubClassBase, "extra")
         assert result is str
 
     def test_subclass_field_type_disagreeing_types(self) -> None:
         """_subclass_field_type falls back to str when subclass field types disagree."""
-        from confarg._parse_cli import _subclass_field_type
-
         result = _subclass_field_type(_SubClassFieldBase, "val")
         assert result is str
 
     def test_resolve_field_type_tuple_variable_length(self) -> None:
         """_resolve_field_type handles variable-length tuple[int, ...] fields."""
-        from confarg._parse_cli import _resolve_field_type
-
         result = _resolve_field_type(_WithVarTupleField, ["nums", "0"], "class")
         assert result is not None
 
     def test_resolve_field_type_tuple_invalid_index(self) -> None:
         """_resolve_field_type returns None for out-of-range fixed tuple indices."""
-        from confarg._parse_cli import _resolve_field_type
-
         WithFixedTuple = make_target("coords", tuple[int, str])
         result = _resolve_field_type(WithFixedTuple, ["coords", "99"], "class")
         assert result is None
 
     def test_resolve_field_type_tuple_non_int_key(self) -> None:
         """_resolve_field_type returns None for non-integer tuple path segments."""
-        from confarg._parse_cli import _resolve_field_type
-
         WithFixedTuple = make_target("coords", tuple[int, str])
         result = _resolve_field_type(WithFixedTuple, ["coords", "notanint"], "class")
         assert result is None
 
     def test_resolve_field_type_subclass_fallback(self) -> None:
         """_resolve_field_type falls back to str for unknown fields via subclass scanning."""
-        from confarg._parse_cli import _resolve_field_type
-
         result = _resolve_field_type(_SubClassBase, ["extra"], "class")
         assert result is str
 
@@ -989,7 +1007,6 @@ class TestParseEnvBranches:
         """Env var matching no variant field emits a ConfargWarning and is skipped."""
         # "Z" doesn't match any field in either variant → warns and is skipped.
         # "A" matches _UnionRootVariantA.a → selects VariantA unambiguously.
-        import warnings
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -1053,135 +1070,93 @@ class TestExpressionBranches:
 
     def test_extract_refs_syntax_error_skipped(self) -> None:
         """Syntactically invalid expression content yields an empty reference set."""
-        from confarg.dictexpr._expressions import _extract_references
-
         # Expression with invalid syntax → SyntaxError caught → silently skipped
         refs = _extract_references("${invalid syntax!!!}")
         assert isinstance(refs, set)
 
     def test_collect_names_keyword_args(self) -> None:
         """Keyword argument names in function calls are collected as references."""
-        from confarg.dictexpr._expressions import _extract_references
-
         # keyword arg 'y' should be collected as a reference
         refs = _extract_references("${sorted(x, key=y)}")
         assert "x" in refs or "y" in refs
 
     def test_attribute_chain_subscript_at_top(self) -> None:
         """_attribute_chain handles a subscript at the top level gracefully."""
-        import ast
-
-        from confarg.dictexpr._expressions import _attribute_chain
-
         node = ast.parse("a[0]", mode="eval").body
         result = _attribute_chain(node)
         assert result is None or isinstance(result, list)
 
     def test_attribute_chain_non_int_subscript(self) -> None:
         """_attribute_chain returns None for non-integer subscript indices."""
-        import ast
-
-        from confarg.dictexpr._expressions import _attribute_chain
-
         node = ast.parse("a[x]", mode="eval").body
         result = _attribute_chain(node)
         assert result is None
 
     def test_bool_op_and_all_truthy(self) -> None:
         """BoolOp 'and' with all truthy operands evaluates to True."""
-        from confarg.dictexpr._expressions import resolve_expressions
-
         data = {"val": "${True and True and True}", "True": True}
         result = resolve_expressions(data)
         assert result["val"] is True
 
     def test_bool_op_or_all_falsy(self) -> None:
         """BoolOp 'or' with all falsy operands evaluates to False."""
-        from confarg.dictexpr._expressions import resolve_expressions
-
         data = {"val": "${False or False}", "False": False}
         result = resolve_expressions(data)
         assert result["val"] is False
 
     def test_call_evaluation_error(self) -> None:
         """A function call that raises inside an expression wraps the error as ExpressionEvalError."""
-        from confarg.dictexpr._expressions import resolve_expressions
-
         data = {"x": 0, "val": "${int('abc')}"}
         with pytest.raises(confarg.ExpressionEvalError):
             resolve_expressions(data)
 
     def test_expression_eval_error_reraise_pure(self) -> None:
         """A runtime error in a pure ${expr} expression raises ExpressionEvalError."""
-        from confarg.dictexpr._expressions import resolve_expressions
-
         data = {"x": 0, "val": "${1 / x}"}
         with pytest.raises(confarg.ExpressionEvalError):
             resolve_expressions(data)
 
     def test_expression_eval_error_reraise_interpolation(self) -> None:
         """A runtime error inside a string interpolation expression raises ExpressionEvalError."""
-        from confarg.dictexpr._expressions import resolve_expressions
-
         data = {"x": 0, "val": "prefix_${1 / x}"}
         with pytest.raises(confarg.ExpressionEvalError):
             resolve_expressions(data)
 
     def test_get_nested_list_invalid_index_type(self) -> None:
         """Non-integer path segment into a list raises MissingReferenceError."""
-        from confarg.dictexpr._expressions import _get_nested
-
         with pytest.raises(confarg.MissingReferenceError):
             _get_nested({"items": [1, 2, 3]}, "items.notanint")
 
     def test_get_nested_list_out_of_range(self) -> None:
         """Out-of-range index into a list raises MissingReferenceError."""
-        from confarg.dictexpr._expressions import _get_nested
-
         with pytest.raises(confarg.MissingReferenceError):
             _get_nested({"items": [1, 2]}, "items.99")
 
     def test_set_nested_traverse_error(self) -> None:
         """_set_nested_by_path raises MissingReferenceError when traversal encounters a non-container."""
-        from confarg.dictexpr._expressions import _set_nested_by_path
-
         with pytest.raises(confarg.MissingReferenceError):
             _set_nested_by_path({"a": 42}, "a.b.c", "value")
 
     def test_set_nested_set_non_container_raises(self) -> None:
         """_set_nested_by_path raises MissingReferenceError when the target node is not a container."""
-        from confarg.dictexpr._expressions import _set_nested_by_path
-
         # Traverse into list index 1 (yields int 2), then set "x" on int → else branch
         with pytest.raises(confarg.MissingReferenceError):
             _set_nested_by_path({"a": [1, 2, 3]}, "a.1.x", "value")
 
     def test_unsupported_binary_op_raises(self) -> None:
         """An unsupported binary operator (@ matrix multiply) raises ExpressionEvalError."""
-        import ast
-
-        from confarg.dictexpr._expressions import _evaluate_ast
-
         node = ast.parse("a @ b", mode="eval").body
         with pytest.raises(confarg.ExpressionEvalError, match="Unsupported binary"):
             _evaluate_ast(node, {"a": 1, "b": 2})
 
     def test_unsupported_unary_op_raises(self) -> None:
         """An unsupported unary operator (~ bitwise invert) raises ExpressionEvalError."""
-        import ast
-
-        from confarg.dictexpr._expressions import _evaluate_ast
-
         node = ast.parse("~a", mode="eval").body
         with pytest.raises(confarg.ExpressionEvalError, match="Unsupported unary"):
             _evaluate_ast(node, {"a": 1})
 
     def test_unsupported_comparison_raises(self) -> None:
         """An unsupported comparison operator ('is') raises ExpressionEvalError."""
-        import ast
-
-        from confarg.dictexpr._expressions import _evaluate_ast
-
         node = ast.parse("a is b", mode="eval").body
         with pytest.raises(confarg.ExpressionEvalError, match="Unsupported comparison"):
             _evaluate_ast(node, {"a": 1, "b": 1})
@@ -1197,14 +1172,11 @@ class TestCoerceEdgeCases:
 
     def test_coerce_leaf_path_failure(self) -> None:
         """_coerce_leaf raises TypeCoercionError when a None value cannot become a Path."""
-        from confarg.typedload._coerce import _coerce_leaf
-
         with pytest.raises(confarg.TypeCoercionError):
             _coerce_leaf(Path, None)
 
     def test_coerce_leaf_unsupported_type(self) -> None:
         """_coerce_leaf raises TypeCoercionError for unrecognized leaf types."""
-        from confarg.typedload._coerce import _coerce_leaf
 
         class WeirdType:
             pass
@@ -1223,43 +1195,31 @@ class TestConstructEdgeCases:
 
     def test_construct_list_from_empty_dict(self) -> None:
         """An empty dict constructs as an empty list."""
-        from confarg.typedload._construct import construct
-
         result = construct(list[int], {})
         assert result == []
 
     def test_construct_list_from_dict_with_non_int_keys_raises(self) -> None:
         """Dict with non-integer keys raises TypeCoercionError when constructing a list."""
-        from confarg.typedload._construct import construct
-
         with pytest.raises(confarg.TypeCoercionError, match="integer"):
             construct(list[int], {"bad": 1})
 
     def test_construct_tuple_from_dict_non_int_keys_raises(self) -> None:
         """Dict with non-integer keys raises TypeCoercionError when constructing a tuple."""
-        from confarg.typedload._construct import construct
-
         with pytest.raises(confarg.TypeCoercionError, match="integer"):
             construct(tuple[int, str], {"bad": "value"})
 
     def test_construct_union_none_with_none_type(self) -> None:
         """None value for an int | None union constructs to None."""
-        from confarg.typedload._construct import construct
-
         result = construct(int | None, None)
         assert result is None
 
     def test_construct_optional_coercion_failure_hint(self) -> None:
         """An uncoercible value for int | None hints about 'none'/'null' in the error message."""
-        from confarg.typedload._construct import construct
-
         with pytest.raises(confarg.TypeCoercionError, match="None"):
             construct(int | None, _StrToken("notanint"))
 
     def test_ambiguous_class_tag_multiple_matches_raises(self) -> None:
         """Class tag matching multiple union variants (subclass relationship) raises AmbiguousUnionError."""
-        from confarg.typedload._construct import construct
-
         # _StructUnionVariantB is a subclass of _StructUnionVariantA, so the
         # class tag for B matches both variants in the union → AmbiguousUnionError.
         data = {"class": f"{_StructUnionVariantB.__module__}.{_StructUnionVariantB.__name__}", "x": 0}
@@ -1268,8 +1228,6 @@ class TestConstructEdgeCases:
 
     def test_class_tag_no_matching_variant_raises(self) -> None:
         """Class tag that matches no union variant raises TypeCoercionError."""
-        from confarg.typedload._construct import construct
-
         # _StructUnionVariantA is not a subclass of either _ConstructAVariant or
         # _ConstructBVariant → TypeCoercionError "not compatible with any union variant".
         data = {"class": f"{_StructUnionVariantA.__module__}.{_StructUnionVariantA.__name__}", "x": 0}
@@ -1278,34 +1236,24 @@ class TestConstructEdgeCases:
 
     def test_construct_bool_in_bool_int_union(self) -> None:
         """Bool | int union: True value is constructed as bool."""
-        from confarg.typedload._construct import construct
-
         result = construct(bool | int, True)
         assert result is True
 
     def test_construct_union_none_type_in_scalar_loop(self) -> None:
         """Str | None union: a string value constructs as str."""
-        from confarg.typedload._construct import construct
-
         result = construct(str | None, "hello")
         assert result == "hello"
 
     def test_value_matches_type_none(self) -> None:
         """None value matches int | None."""
-        from confarg.typedload._construct import _value_matches_type
-
         assert _value_matches_type(None, int | None, "class") is True
 
     def test_value_matches_type_non_dict_for_struct(self) -> None:
         """A non-dict value does not match a struct type."""
-        from confarg.typedload._construct import _value_matches_type
-
         assert _value_matches_type("not_a_dict", _StructUnionVariantA, "class") is False
 
     def test_value_matches_type_float_from_invalid_str(self) -> None:
         """A non-numeric string token does not match float."""
-        from confarg.typedload._construct import _value_matches_type
-
         assert _value_matches_type(_StrToken("notfloat"), float, "class") is False
 
     def test_ambiguous_union_msg_includes_optional_fields(self) -> None:
@@ -1343,7 +1291,6 @@ class TestConstructEdgeCases:
             x: int = 0
 
         data = {"class": "nonexistent.module.SomeClass", "x": 1}
-        from confarg.typedload._construct import construct
 
         with pytest.raises(confarg.TypeCoercionError, match="Cannot import"):
             construct(A, data)
@@ -1359,7 +1306,6 @@ class TestArgparseBranches:
 
     def test_get_field_docstrings_no_class_found(self) -> None:
         """_get_field_docstrings returns an empty dict when the class cannot be located by name."""
-        from confarg.cli.argparse._spec import _get_field_docstrings
 
         @dataclass
         class Dummy:
@@ -1411,7 +1357,7 @@ class TestArgparseBranches:
 
         @dataclass
         class WithCallable:
-            fn: Callable[[int], str] = lambda x: str(x)
+            fn: Callable[[int], str] = str
 
         parser = argparse.ArgumentParser()
         populate_parser(WithCallable, parser)
@@ -1442,13 +1388,10 @@ class TestArgparseBranches:
 
     def test_register_subconfig_flags_non_struct(self) -> None:
         """_collect_subconfig_specs returns empty list for non-struct types."""
-        from confarg.cli.argparse._build import _collect_subconfig_specs
-
         assert _collect_subconfig_specs(int, "config", "", "class") == []
 
     def test_register_subconfig_flags_get_type_hints_exception(self) -> None:
         """_collect_subconfig_specs falls back gracefully when get_type_hints raises."""
-        from confarg.cli.argparse._build import _collect_subconfig_specs
 
         # A class with a broken CLASS-LEVEL annotation (not __init__) causes
         # get_type_hints(cls) to fail, but _struct_fields succeeds via __init__.
@@ -1463,7 +1406,6 @@ class TestArgparseBranches:
 
     def test_register_subconfig_flags_union_tag_skipped(self) -> None:
         """_collect_subconfig_specs skips the union_tag field."""
-        from confarg.cli.argparse._build import _collect_subconfig_specs
 
         @dataclass
         class WithTypeField:
@@ -1474,15 +1416,12 @@ class TestArgparseBranches:
 
     def test_collect_ns_fields_non_struct(self) -> None:
         """_collect_ns_fields is a no-op for non-struct types."""
-        from confarg.cli.argparse._namespace import _collect_ns_fields
-
         result: dict[str, Any] = {}
         _collect_ns_fields({}, int, "", "class", result)
         assert result == {}
 
     def test_collect_ns_fields_get_type_hints_exception(self) -> None:
         """_collect_ns_fields falls back gracefully when get_type_hints raises."""
-        from confarg.cli.argparse._namespace import _collect_ns_fields
 
         class BrokenClassAnnot2:
             _bad: UndefinedType888  # noqa: F821,  class-level broken forward ref
@@ -1497,7 +1436,6 @@ class TestArgparseBranches:
 
     def test_collect_ns_fields_union_tag_skipped(self) -> None:
         """_collect_ns_fields excludes the union_tag field from the result."""
-        from confarg.cli.argparse._namespace import _collect_ns_fields
 
         @dataclass
         class WithTypeField:
@@ -1510,7 +1448,6 @@ class TestArgparseBranches:
 
     def test_collect_ns_fields_multi_union_skipped(self) -> None:
         """_collect_ns_fields skips fields with multi-variant union types."""
-        from confarg.cli.argparse._namespace import _collect_ns_fields
 
         @dataclass
         class WithMultiUnion:
@@ -1521,7 +1458,6 @@ class TestArgparseBranches:
 
     def test_collect_ns_fields_dict_skipped(self) -> None:
         """_collect_ns_fields skips dict-typed fields."""
-        from confarg.cli.argparse._namespace import _collect_ns_fields
 
         @dataclass
         class WithDict:
@@ -1596,41 +1532,35 @@ class TestCallableBranches:
 
     def test_non_callable_instance_raises(self) -> None:
         """An instance of a non-callable class raises TypeCoercionError in _resolve_class_spec."""
-        from confarg._callable import _ClassSpec, _resolve_class_spec
-
         cls_path = f"{_NotCallableClass.__module__}.{_NotCallableClass.__qualname__}"
         with pytest.raises(confarg.TypeCoercionError, match="is not callable"):
             _resolve_class_spec(
                 _ClassSpec(cls_path, {}, {}, {"class": cls_path}),
                 "test_path",
                 "class",
+                None,
+                construct,
             )
 
     def test_slotted_callable_confarg_spec_except_branch(self) -> None:
         """A slotted callable class resolves successfully in _resolve_class_spec."""
-        from confarg._callable import _ClassSpec, _resolve_class_spec
-
         cls_path = f"{_SlottedCallableClass.__module__}.{_SlottedCallableClass.__qualname__}"
         result = _resolve_class_spec(
             _ClassSpec(cls_path, {"value": 5}, {}, {"class": cls_path, "value": 5}),
             "test_path",
             "class",
+            None,
+            construct,
         )
         assert callable(result)
 
     def test_check_callable_signature_non_callable_type_returns_early(self) -> None:
         """_check_callable_signature is a no-op when the target type is not Callable."""
-        from confarg._callable import _check_callable_signature
-
         # Line 222-223: `if not _is_callable(tp): return` — tp=int is not a Callable type
         _check_callable_signature(lambda: None, int, path="test")
 
     def test_check_callable_signature_bare_callable_returns_early(self) -> None:
         """_check_callable_signature is a no-op for bare Callable (no parameter types)."""
-        from collections.abc import Callable
-
-        from confarg._callable import _check_callable_signature
-
         # Line 225-226: bare Callable has no param_types → returns early
         _check_callable_signature(lambda: None, Callable, path="test")
 
@@ -1645,11 +1575,6 @@ class TestFilesMissingLibrary:
 
     def test_yaml_missing_library(self, tmp_yaml) -> None:
         """Missing PyYAML library raises InvalidConfigFileError when loading a YAML file."""
-        import sys
-        import unittest.mock
-
-        from confarg._files import _load_yaml
-
         path = tmp_yaml("host: myserver")
         with (
             unittest.mock.patch.dict(sys.modules, {"yaml": None}),
@@ -1677,8 +1602,6 @@ class TestParseCLIBranches:
 
     def test_union_variants_no_matching_field_returns_none(self) -> None:
         """_resolve_field_type returns None when the path matches no union variant field."""
-        from confarg._parse_cli import _resolve_field_type
-
         result = _resolve_field_type(_AmbigVariantX | _AmbigVariantY, ["z"], "class")
         assert result is None
 
@@ -1735,16 +1658,12 @@ class TestExpressionsBranches:
 
     def test_collect_names_keyword_arg_in_safe_method_call(self) -> None:
         """Keyword arg names in a safe method call are collected as references."""
-        from confarg.dictexpr._expressions import _extract_references
-
         refs = _extract_references("${x.replace(a, old=b)}")
         assert "x" in refs
         assert "b" in refs
 
     def test_attribute_chain_noninteger_subscript_returns_none(self) -> None:
         """_attribute_chain returns None for string subscripts (non-integer indices)."""
-        from confarg.dictexpr._expressions import _extract_references
-
         refs = _extract_references("${servers['primary'].host}")
         assert isinstance(refs, set)
 
@@ -1789,15 +1708,11 @@ class TestCoerceBranches:
 
     def test_float_from_dict_raises(self) -> None:
         """A dict value cannot be coerced to float; raises TypeCoercionError."""
-        from confarg.typedload._coerce import _coerce_leaf
-
         with pytest.raises(confarg.TypeCoercionError):
             _coerce_leaf(float, {"nested": "val"}, "field")
 
     def test_str_from_int_raises(self) -> None:
         """A bare int value cannot be coerced to str; raises TypeCoercionError."""
-        from confarg.typedload._coerce import _coerce_leaf
-
         with pytest.raises(confarg.TypeCoercionError):
             _coerce_leaf(str, 42, "field")
 
@@ -1824,50 +1739,36 @@ class TestConstructBranches:
 
     def test_construct_tuple_from_dict_non_integer_keys(self) -> None:
         """Dict with non-integer string keys raises TypeCoercionError for a tuple."""
-        from confarg.typedload._construct import construct
-
         with pytest.raises(confarg.TypeCoercionError, match="integer indices"):
             construct(tuple[int, str], {"a": 1, "b": "hello"})
 
     def test_construct_tuple_from_dict_out_of_range_index(self) -> None:
         """Out-of-range integer index for a fixed-length tuple raises TypeCoercionError."""
-        from confarg.typedload._construct import construct
-
         with pytest.raises(confarg.TypeCoercionError, match="out of range"):
             construct(tuple[int, str], {"0": 1, "5": "hello"})
 
     def test_tuple_variants_in_union_list_data(self) -> None:
         """tuple[int, str] | int union: a list value constructs as the tuple variant."""
-        from confarg.typedload._construct import construct
-
         result = construct(tuple[int, str] | int, [1, "hello"])
         assert result == (1, "hello")
 
     def test_tuple_variants_dict_noninteger_keys(self) -> None:
         """Dict with non-integer keys raises TypeCoercionError for a tuple | int union."""
-        from confarg.typedload._construct import construct
-
         with pytest.raises(confarg.TypeCoercionError):
             construct(tuple[int, str] | int, {"a": 1, "b": "hello"})
 
     def test_bool_int_union_bool_value_returns_bool(self) -> None:
         """Bool | int union: a True value is constructed as bool, not int."""
-        from confarg.typedload._construct import construct
-
         result = construct(bool | int, True)
         assert result is True
 
     def test_value_matches_type_bool_with_non_token_non_bool_value(self) -> None:
         """An int (non-bool, non-token) value does not match bool."""
-        from confarg.typedload._construct import _value_matches_type
-
         # Line 512: bool type, value is int (not bool, not _StrToken) → return False
         assert _value_matches_type(42, bool, "class") is False
 
     def test_union_class_tag_resolves_to_non_class(self) -> None:
         """A class tag that resolves to a non-class object raises TypeCoercionError."""
-        from confarg.typedload._construct import construct
-
         with pytest.raises(confarg.TypeCoercionError, match="must be a class path"):
             construct(
                 _StructUnionVariantA | _StructUnionVariantB,
@@ -1876,24 +1777,16 @@ class TestConstructBranches:
 
     def test_list_replace_base_key_in_construct(self) -> None:
         """LIST_REPLACE_BASE_KEY in a list construction dict applies ops against the base list."""
-        from confarg._merge import LIST_REPLACE_BASE_KEY
-        from confarg.typedload._construct import construct
-
         result = construct(list[int], {LIST_REPLACE_BASE_KEY: [1, 2, 3]})
         assert result == [1, 2, 3]
 
     def test_list_delete_without_base_raises(self) -> None:
         """LIST_DELETE_KEY without a base list raises TypeCoercionError."""
-        from confarg._merge import LIST_DELETE_KEY
-        from confarg.typedload._construct import construct
-
         with pytest.raises(confarg.TypeCoercionError, match="requires a base list"):
             construct(list[int], {LIST_DELETE_KEY: [0]})
 
     def test_try_coll_variants_all_fail_returns_no_match(self) -> None:
         """_try_coll_variants returns _UNION_NO_MATCH when all collection variants fail."""
-        from confarg.typedload._construct import construct
-
         # list[int] | int: passing {"bad": "val"} fails list construction → except → continue
         # then int coercion also fails → TypeCoercionError from outer union handler
         with pytest.raises(confarg.TypeCoercionError):
@@ -1901,8 +1794,6 @@ class TestConstructBranches:
 
     def test_coerce_scalar_variants_none_token_multi_union(self) -> None:
         """_coerce_scalar_variants returns None for 'none' token in a multi-variant union."""
-        from confarg.typedload._construct import construct
-
         # int | str | None with _StrToken("none") → hits line 503
         result = construct(int | str | None, _StrToken("none"))
         assert result is None
@@ -1918,14 +1809,10 @@ class TestMergeGaps:
 
     def test_delete_sentinel_repr(self) -> None:
         """DICT_DELETE sentinel has repr '_DELETE_'."""
-        from confarg._merge import DICT_DELETE
-
         assert repr(DICT_DELETE) == "_DELETE_"
 
     def test_merge_regular_key_delete_preserves_append(self) -> None:
         """When a delete-spec arrives and existing value has an append-spec, the append is preserved."""
-        from confarg._merge import LIST_APPEND_KEY, LIST_DELETE_KEY, _merge_regular_key
-
         result: dict = {"key": {LIST_APPEND_KEY: [1, 2]}}
         _merge_regular_key("key", {LIST_DELETE_KEY: [0]}, result)
         assert LIST_APPEND_KEY in result["key"]
@@ -1933,24 +1820,18 @@ class TestMergeGaps:
 
     def test_apply_append_key_existing_list(self) -> None:
         """When the existing value is a plain list, items are appended to it directly."""
-        from confarg._merge import _apply_append_key
-
         result: dict = {"key": [1, 2]}
         _apply_append_key("key", 3, result)
         assert result["key"] == [1, 2, 3]
 
     def test_apply_append_key_existing_append_dict(self) -> None:
         """When the existing value is a {'+': [...]} dict, items are merged into the append list."""
-        from confarg._merge import LIST_APPEND_KEY, _apply_append_key
-
         result: dict = {"key": {LIST_APPEND_KEY: [1, 2]}}
         _apply_append_key("key", 3, result)
         assert result["key"][LIST_APPEND_KEY] == [1, 2, 3]
 
     def test_normalize_merge_ops_double_delete_indices(self) -> None:
         """Two 'N-' keys in the same dict merge their delete indices (hits line 132)."""
-        from confarg._merge import LIST_DELETE_KEY, _normalize_merge_ops
-
         # "-" key (len=1) is treated as a regular key → stored as result["-"] = [1]
         # "3-" key → delete_indices = [3]
         # At end: existing_del = [1] → sorted({1, 3}) = [1, 3]
@@ -1960,8 +1841,6 @@ class TestMergeGaps:
 
     def test_deep_merge_list_delete_both_sides(self) -> None:
         """Merging two dicts both having LIST_DELETE_KEY combines deletion indices."""
-        from confarg._merge import LIST_DELETE_KEY, _deep_merge
-
         base = {"items": {LIST_DELETE_KEY: [0]}}
         override = {"items": {LIST_DELETE_KEY: [1]}}
         merged = _deep_merge(base, override)
@@ -1969,24 +1848,18 @@ class TestMergeGaps:
 
     def test_set_nested_nonint_key_in_append_dict(self) -> None:
         """Non-integer path segment into an append-dict falls through to normal dict set."""
-        from confarg._merge import LIST_APPEND_KEY, _set_nested
-
         d: dict = {LIST_APPEND_KEY: [{"a": 1}]}
         _set_nested(d, ["nonint", "b"], "value")
         assert d.get("nonint") == {"b": "value"}
 
     def test_set_nested_list_intermediate_converted(self) -> None:
         """An intermediate list value in _set_nested is converted to {LIST_REPLACE_BASE_KEY: list}."""
-        from confarg._merge import LIST_REPLACE_BASE_KEY, _set_nested
-
         d: dict = {"a": [1, 2, 3]}
         _set_nested(d, ["a", "subkey"], "value")
         assert LIST_REPLACE_BASE_KEY in d["a"]
 
     def test_accumulate_list_delete_list_intermediate(self) -> None:
         """An intermediate list value in _accumulate_list_delete is converted to a replace-base dict."""
-        from confarg._merge import LIST_REPLACE_BASE_KEY, _accumulate_list_delete
-
         d: dict = {"a": [1, 2, 3]}
         _accumulate_list_delete(d, ["a"], 0, "test")
         assert LIST_REPLACE_BASE_KEY in d["a"]
@@ -2014,7 +1887,6 @@ class TestParseCliGaps2:
 
     def test_append_token_non_dict_node_traversal(self) -> None:
         """_handle_append_token handles non-dict intermediate node gracefully."""
-        from confarg._parse_cli import _handle_append_token, _ParseCtx
 
         @dataclass
         class _Inner:
@@ -2048,7 +1920,6 @@ class TestParseEnvJsonFailure:
         WithList = make_target("items", list[str], default_factory=list)
         # "[1,2,3" is invalid JSON → JSONDecodeError → pass → _try_coerce as string
         # Result is unpredictable but must not crash
-        import contextlib
 
         with contextlib.suppress(confarg.TypeCoercionError):
             confarg.load(WithList, args=[], env={"ITEMS": "[1,2,3"}, env_prefix="")
@@ -2064,8 +1935,6 @@ class TestIsNullable:
 
     def test_is_nullable_none_type(self) -> None:
         """_allows_none(type(None)) returns True."""
-        from confarg._types import _allows_none
-
         assert _allows_none(type(None)) is True
 
 
@@ -2079,10 +1948,6 @@ class TestFilesIncludeGaps:
 
     def test_circular_include_in_list_raises(self, tmp_path: Path) -> None:
         """A list item with __include__ pointing back to itself raises ConfargError."""
-        import json
-
-        from confarg._files import _load_file
-
         p = tmp_path / "circular.json"
         p.write_text(json.dumps({"items": [{"__include__": "circular.json"}]}))
         with pytest.raises(confarg.ConfargError, match="Circular include"):
@@ -2090,10 +1955,6 @@ class TestFilesIncludeGaps:
 
     def test_unsupported_extension_in_include_raises(self, tmp_path: Path) -> None:
         """An __include__ pointing to an unsupported extension raises InvalidConfigFileError."""
-        import json
-
-        from confarg._files import _load_file
-
         unsupported = tmp_path / "data.xyz"
         unsupported.write_text("hello")
         p = tmp_path / "root.json"
@@ -2112,8 +1973,6 @@ class TestCoerceTypeRefNonClass:
 
     def test_type_ref_non_class_raises(self) -> None:
         """A dotted path resolving to a function raises TypeCoercionError for TypeRef fields."""
-        from confarg.typedload._coerce import _coerce_type_ref
-
         # os.path.join is a function, not a class; bare `type` has object constraint
         with pytest.raises(confarg.TypeCoercionError, match="expected a class"):
             _coerce_type_ref(type, _StrToken("os.path.join"))
@@ -2129,11 +1988,6 @@ class TestCallableGaps:
 
     def test_import_dotted_module_raises_non_import_error(self, monkeypatch) -> None:
         """_import_dotted raises SymbolImportError when module loading raises non-ImportError."""
-        import importlib
-
-        from confarg._callable import _import_dotted
-        from confarg._errors import SymbolImportError
-
         real_import = importlib.import_module
 
         def patched_import(name: str, *args, **kwargs):
@@ -2148,7 +2002,6 @@ class TestCallableGaps:
 
     def test_format_fn_dict_example_uninspectable(self) -> None:
         """_format_fn_dict_example falls back gracefully when signature inspection raises."""
-        from confarg._callable import _format_fn_dict_example
 
         class _NoSig:
             def __init__(self):
@@ -2160,9 +2013,6 @@ class TestCallableGaps:
 
     def test_format_fn_dict_example_optional_params(self) -> None:
         """_format_fn_dict_example formats optional constructor params (lines 128-130)."""
-        from confarg._callable import _resolve_bare_string
-        from confarg._errors import TypeCoercionError
-
         # _CovOptMethod has required=int, optional=str; calling it with no args raises TypeError
         # → _format_fn_dict_example is called → optional params loop runs
         with pytest.raises(TypeCoercionError, match="Cannot instantiate"):
@@ -2170,27 +2020,22 @@ class TestCallableGaps:
 
     def test_resolve_call_kwargs_uninspectable(self, monkeypatch) -> None:
         """_resolve_call_kwargs falls back to raw dict for uninspectable callables."""
-        import confarg._callable as callable_mod
-        from confarg._callable import _resolve_call_kwargs
 
         def _boom(*args, **kwargs):
             msg = "uninspectable"
             raise TypeError(msg)
 
         monkeypatch.setattr(callable_mod.inspect, "signature", _boom)
-        result = _resolve_call_kwargs(len, {"x": 1}, "test", "class")
+        result = _resolve_call_kwargs(len, {"x": 1}, "test", "class", construct_fn=None)
         assert result == {"x": 1}
 
     def test_resolve_call_spec_raises_on_call_failure(self) -> None:
         """_resolve_call_spec raises TypeCoercionError when the called function raises."""
-        from confarg._callable import _resolve_call_spec
-
         with pytest.raises(confarg.TypeCoercionError, match="Failed to call"):
-            _resolve_call_spec(f"{_COV_MOD}._cov_raise_fn", {"x": 1}, {}, "test", "class")
+            _resolve_call_spec(f"{_COV_MOD}._cov_raise_fn", {"x": 1}, {}, "test", "class", construct)
 
     def test_coerce_bind_kwargs_string_values(self) -> None:
         """_coerce_bind_kwargs coerces _StrToken bind values to annotated parameter types."""
-        from confarg._callable import _coerce_bind_kwargs
 
         def fn(lr: float, steps: int = 10) -> None:
             pass
@@ -2201,15 +2046,11 @@ class TestCallableGaps:
 
     def test_coerce_bind_kwargs_uninspectable(self) -> None:
         """_coerce_bind_kwargs returns bind unchanged for uninspectable callables."""
-        from confarg._callable import _coerce_bind_kwargs
-
         result = _coerce_bind_kwargs(len, {"x": "val"})
         assert result == {"x": "val"}
 
     def test_check_bind_params_uninspectable(self, monkeypatch) -> None:
         """_check_bind_params returns without error for uninspectable callables."""
-        import confarg._callable as callable_mod
-        from confarg._callable import _check_bind_params
 
         def _boom(*args, **kwargs):
             msg = "uninspectable"
@@ -2220,61 +2061,54 @@ class TestCallableGaps:
 
     def test_resolve_call_kwargs_unannotated_param(self) -> None:
         """_resolve_call_kwargs passes unannotated params through unchanged (line 229)."""
-        from confarg._callable import _resolve_call_kwargs
 
         def fn(x, y=10):  # no annotations
             pass
 
-        result = _resolve_call_kwargs(fn, {"x": "hello", "y": "5"}, "test", "class")
+        result = _resolve_call_kwargs(fn, {"x": "hello", "y": "5"}, "test", "class", construct_fn=None)
         assert result["x"] == "hello"
 
     def test_resolve_factory_kwargs_uninspectable(self) -> None:
         """_resolve_factory_kwargs returns raw kwargs for uninspectable __init__."""
-        from confarg._callable import _resolve_factory_kwargs
 
         class _Uninspectable:
             pass
 
         _Uninspectable.__init__ = None  # type: ignore[assignment]
-        result = _resolve_factory_kwargs(_Uninspectable, {"a": 1}, "test", "class")
+        result = _resolve_factory_kwargs(_Uninspectable, {"a": 1}, "test", "class", construct_fn=None)
         assert result == {"a": 1}
 
     def test_resolve_factory_kwargs_get_type_hints_fails(self) -> None:
         """_resolve_factory_kwargs falls back to {} hints when get_type_hints raises."""
-        from confarg._callable import _resolve_factory_kwargs
 
         class _BrokenHints:
             def __init__(self, x: UndefinedType777) -> None:  # noqa: F821
                 self.x = x
 
-        result = _resolve_factory_kwargs(_BrokenHints, {"x": 1}, "test", "class")
+        result = _resolve_factory_kwargs(_BrokenHints, {"x": 1}, "test", "class", construct_fn=None)
         assert result["x"] == 1
 
     def test_resolve_factory_kwargs_unannotated_param(self) -> None:
         """_resolve_factory_kwargs passes unannotated params through unchanged (line 451)."""
-        from confarg._callable import _resolve_factory_kwargs
 
         class _UnannotatedInit:
             def __init__(self, x, y=10):  # no annotations
                 pass
 
-        result = _resolve_factory_kwargs(_UnannotatedInit, {"x": "val", "y": "5"}, "test", "class")
+        result = _resolve_factory_kwargs(_UnannotatedInit, {"x": "val", "y": "5"}, "test", "class", construct_fn=None)
         assert result["x"] == "val"
 
     def test_resolve_call_kwargs_get_type_hints_fails(self) -> None:
         """_resolve_call_kwargs falls back to {} hints when get_type_hints raises."""
-        from confarg._callable import _resolve_call_kwargs
 
         def _fn(x: UndefinedType777) -> None:  # noqa: F821
             pass
 
-        result = _resolve_call_kwargs(_fn, {"x": 1}, "test", "class")
+        result = _resolve_call_kwargs(_fn, {"x": 1}, "test", "class", construct_fn=None)
         assert result["x"] == 1
 
     def test_coerce_bind_kwargs_signature_raises(self, monkeypatch) -> None:
         """_coerce_bind_kwargs returns bind unchanged when inspect.signature raises."""
-        import confarg._callable as callable_mod
-        from confarg._callable import _coerce_bind_kwargs
 
         def _boom(*args, **kwargs):
             msg = "uninspectable"
@@ -2290,7 +2124,6 @@ class TestCallableGaps:
 
     def test_coerce_bind_kwargs_get_type_hints_fails(self) -> None:
         """_coerce_bind_kwargs falls back to {} hints when get_type_hints raises."""
-        from confarg._callable import _coerce_bind_kwargs
 
         def _fn(x: UndefinedHintType999) -> None:  # noqa: F821
             pass
@@ -2300,7 +2133,6 @@ class TestCallableGaps:
 
     def test_coerce_bind_kwargs_unannotated_param(self) -> None:
         """_coerce_bind_kwargs passes _StrToken values through for unannotated params."""
-        from confarg._callable import _coerce_bind_kwargs
 
         def fn(x, y=10):  # no annotations
             pass
@@ -2310,7 +2142,6 @@ class TestCallableGaps:
 
     def test_coerce_bind_kwargs_non_numeric_type(self) -> None:
         """_coerce_bind_kwargs leaves _StrToken values for non-bool/int/float types."""
-        from confarg._callable import _coerce_bind_kwargs
 
         def fn(name: str) -> None:
             pass
@@ -2320,7 +2151,6 @@ class TestCallableGaps:
 
     def test_coerce_bind_kwargs_coercion_fails(self) -> None:
         """_coerce_bind_kwargs falls back to original value when coercion raises."""
-        from confarg._callable import _coerce_bind_kwargs
 
         def fn(x: int) -> None:
             pass
@@ -2330,10 +2160,6 @@ class TestCallableGaps:
 
     def test_is_factory_class_issubclass_type_error(self) -> None:
         """_is_factory_class returns False when issubclass raises TypeError."""
-        from collections.abc import Callable
-        from typing import Protocol
-
-        from confarg._callable import _is_factory_class
 
         # Non-runtime-checkable Protocol → issubclass raises TypeError
         class _P(Protocol):
@@ -2355,8 +2181,6 @@ class TestBuildCallableSpecs:
 
     def test_collect_callable_bind_specs_valid_fn(self) -> None:
         """_collect_callable_bind_specs returns FlagSpecs for a valid function's parameters."""
-        from confarg.cli.argparse._build import _collect_callable_bind_specs
-
         specs = _collect_callable_bind_specs("myfn", f"{_COV_MOD}._cov_call_fn", set())
         names = [s.name for s in specs]
         assert "myfn.bind.x" in names
@@ -2364,15 +2188,11 @@ class TestBuildCallableSpecs:
 
     def test_collect_callable_bind_specs_import_error(self) -> None:
         """_collect_callable_bind_specs returns [] for an unimportable fn_path."""
-        from confarg.cli.argparse._build import _collect_callable_bind_specs
-
         result = _collect_callable_bind_specs("myfn", "nonexistent.module.fn", set())
         assert result == []
 
     def test_collect_callable_bind_specs_dedup(self) -> None:
         """_collect_callable_bind_specs skips specs already in existing_names."""
-        from confarg.cli.argparse._build import _collect_callable_bind_specs
-
         existing = {"myfn.bind.x"}
         specs = _collect_callable_bind_specs("myfn", f"{_COV_MOD}._cov_call_fn", existing)
         names = [s.name for s in specs]
@@ -2381,40 +2201,30 @@ class TestBuildCallableSpecs:
 
     def test_collect_callable_factory_specs_valid_class(self) -> None:
         """_collect_callable_factory_specs returns FlagSpecs for factory constructor params."""
-        from confarg.cli.argparse._build import _collect_callable_factory_specs
-
         specs = _collect_callable_factory_specs("myopt", _CovCallableCls, set())
         names = [s.name for s in specs]
         assert "myopt.lr" in names
 
     def test_collect_callable_field_specs_class_mode(self) -> None:
         """_collect_callable_field_specs in 'class' mode returns factory specs."""
-        from confarg.cli.argparse._build import _collect_callable_field_specs
-
         specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "class", set())
         names = [s.name for s in specs]
         assert "opt.lr" in names
 
     def test_collect_callable_field_specs_fn_mode(self) -> None:
         """_collect_callable_field_specs in 'fn' mode returns bind specs."""
-        from confarg.cli.argparse._build import _collect_callable_field_specs
-
         specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "fn", set())
         names = [s.name for s in specs]
         assert "myfn.bind.x" in names
 
     def test_collect_callable_field_specs_call_mode(self) -> None:
         """_collect_callable_field_specs in 'call' mode returns bind specs."""
-        from confarg.cli.argparse._build import _collect_callable_field_specs
-
         specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "call", set())
         names = [s.name for s in specs]
         assert "myfn.bind.x" in names
 
     def test_collect_callable_field_specs_fn_mode_method(self) -> None:
         """_collect_callable_field_specs in 'fn' mode for a method uses owning class specs."""
-        from confarg.cli.argparse._build import _collect_callable_field_specs
-
         specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._CovOptMethod.method", "fn", set())
         # Owning class is _CovOptMethod; returns factory specs for its constructor
         names = [s.name for s in specs]
@@ -2422,47 +2232,33 @@ class TestBuildCallableSpecs:
 
     def test_get_callable_field_return_type(self) -> None:
         """_get_callable_field_return_type returns the return type for a Callable field."""
-        from confarg.cli.argparse._build import _get_callable_field_return_type
-
         ret = _get_callable_field_return_type(_WithCovCallable, "fn")
         assert ret is _CovDCResult
 
     def test_get_callable_field_return_type_non_struct(self) -> None:
         """_get_callable_field_return_type returns None for non-struct path segments."""
-        from confarg.cli.argparse._build import _get_callable_field_return_type
-
         assert _get_callable_field_return_type(int, "fn") is None
 
     def test_get_callable_field_return_type_missing_field(self) -> None:
         """_get_callable_field_return_type returns None when field path doesn't exist."""
-        from confarg.cli.argparse._build import _get_callable_field_return_type
-
         assert _get_callable_field_return_type(_WithCovCallable, "nonexistent") is None
 
     def test_get_callable_field_return_type_multi_union(self) -> None:
         """_get_callable_field_return_type returns None for multi-variant union field."""
-        from confarg.cli.argparse._build import _get_callable_field_return_type
-
         assert _get_callable_field_return_type(_WithUnionForCompletion, "val") is None
 
     def test_get_callable_field_return_type_non_callable_field(self) -> None:
         """_get_callable_field_return_type returns None for non-callable leaf field."""
-        from confarg.cli.argparse._build import _get_callable_field_return_type
-
         assert _get_callable_field_return_type(_CovDCResult, "result_val") is None
 
     def test_collect_callable_bind_specs_signature_fails(self) -> None:
         """_collect_callable_bind_specs returns [] when signature inspection raises."""
-        from confarg.cli.argparse._build import _collect_callable_bind_specs
-
         # _CovUninspectable.__init__.__signature__ is broken → TypeError
         result = _collect_callable_bind_specs("myopt", f"{_COV_MOD}._CovUninspectable", set())
         assert result == []
 
     def test_collect_callable_bind_specs_varargs_skipped(self) -> None:
         """_collect_callable_bind_specs skips *args/**kwargs parameters."""
-        from confarg.cli.argparse._build import _collect_callable_bind_specs
-
         specs = _collect_callable_bind_specs("myfn", f"{_COV_MOD}._cov_fn_with_varargs", set())
         names = [s.name for s in specs]
         assert "myfn.bind.key" in names
@@ -2470,46 +2266,35 @@ class TestBuildCallableSpecs:
 
     def test_collect_callable_factory_specs_fields_raises(self) -> None:
         """_collect_callable_factory_specs returns [] when _init_fields raises."""
-        from confarg.cli.argparse._build import _collect_callable_factory_specs
-
         # _CovUninspectable.__init__.__signature__ raises TypeError → _init_fields raises
         result = _collect_callable_factory_specs("myopt", _CovUninspectable, set())
         assert result == []
 
     def test_collect_callable_factory_specs_dedup(self) -> None:
         """_collect_callable_factory_specs skips specs already in existing_names."""
-        from confarg.cli.argparse._build import _collect_callable_factory_specs
-
         existing = {"myopt.lr"}
         specs = _collect_callable_factory_specs("myopt", _CovCallableCls, existing)
         assert all(s.name != "myopt.lr" for s in specs)
 
     def test_collect_callable_field_specs_class_mode_import_error(self) -> None:
         """_collect_callable_field_specs in 'class' mode falls through on import error."""
-        from confarg.cli.argparse._build import _collect_callable_field_specs
-
         # Bad path → SymbolImportError → falls through to bind specs → returns []
         result = _collect_callable_field_specs("opt", "nonexistent.Bad", "class", set())
         assert result == []
 
     def test_collect_callable_field_specs_fn_mode_class_path(self) -> None:
         """_collect_callable_field_specs in 'fn' mode with a class path returns factory specs."""
-        from confarg.cli.argparse._build import _collect_callable_field_specs
-
         specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "fn", set())
         names = [s.name for s in specs]
         assert "opt.lr" in names
 
     def test_collect_callable_field_specs_fn_mode_import_error(self) -> None:
         """_collect_callable_field_specs in 'fn' mode falls through on import error."""
-        from confarg.cli.argparse._build import _collect_callable_field_specs
-
         result = _collect_callable_field_specs("myfn", "nonexistent.fn", "fn", set())
         assert result == []
 
     def test_collect_fn_paths_from_config_fields_raises(self) -> None:
         """_collect_fn_paths_from_config returns {} when _struct_fields raises."""
-        from confarg.cli.argparse._build import _collect_fn_paths_from_config
 
         class _BrokenDCFields:
             pass
@@ -2522,10 +2307,6 @@ class TestBuildCallableSpecs:
 
     def test_build_dynamic_flags_config_equals_form(self, tmp_path: Path) -> None:
         """build_dynamic_flags reads fn paths from config file in --config=FILE argv form."""
-        import json
-
-        from confarg.cli.argparse._build import build_dynamic_flags
-
         cfg = tmp_path / "cfg.json"
         cfg.write_text(json.dumps({"fn": {"fn": f"{_COV_MOD}._cov_call_fn"}}))
         specs = build_dynamic_flags(
@@ -2537,8 +2318,6 @@ class TestBuildCallableSpecs:
 
     def test_build_dynamic_flags_exception_from_collect(self, monkeypatch) -> None:
         """build_dynamic_flags returns [] when an unexpected exception occurs."""
-        import confarg.cli.argparse._build as build_mod
-        from confarg.cli.argparse._build import build_dynamic_flags
 
         def _boom(*args, **kwargs):
             msg = "deliberate boom"
@@ -2550,36 +2329,26 @@ class TestBuildCallableSpecs:
 
     def test_collect_fn_paths_from_argv_equals_form(self) -> None:
         """_collect_fn_paths_from_argv handles --field.fn=path (= form)."""
-        from confarg.cli.argparse._build import _collect_fn_paths_from_argv
-
         result = _collect_fn_paths_from_argv(["--optimizer.fn=my.module.fn"])
         assert result == {"optimizer": ("my.module.fn", "fn")}
 
     def test_collect_fn_paths_from_argv_space_form(self) -> None:
         """_collect_fn_paths_from_argv handles --field.fn path (space form)."""
-        from confarg.cli.argparse._build import _collect_fn_paths_from_argv
-
         result = _collect_fn_paths_from_argv(["--optimizer.fn", "my.module.fn"])
         assert result == {"optimizer": ("my.module.fn", "fn")}
 
     def test_collect_fn_paths_from_argv_non_flag_token(self) -> None:
         """_collect_fn_paths_from_argv skips non-flag tokens."""
-        from confarg.cli.argparse._build import _collect_fn_paths_from_argv
-
         result = _collect_fn_paths_from_argv(["value", "--optimizer.class=my.Cls"])
         assert "optimizer" in result
 
     def test_collect_fn_paths_from_argv_space_form_no_value(self) -> None:
         """_collect_fn_paths_from_argv skips --field.fn with no following value."""
-        from confarg.cli.argparse._build import _collect_fn_paths_from_argv
-
         result = _collect_fn_paths_from_argv(["--optimizer.fn"])
         assert result == {}
 
     def test_collect_fn_paths_from_config_callable_fn(self) -> None:
         """_collect_fn_paths_from_config finds fn: entries for Callable fields."""
-        from confarg.cli.argparse._build import _collect_fn_paths_from_config
-
         config = {"fn": {"fn": "my.module.fn"}}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
         assert "fn" in result
@@ -2587,39 +2356,29 @@ class TestBuildCallableSpecs:
 
     def test_collect_fn_paths_from_config_callable_class(self) -> None:
         """_collect_fn_paths_from_config finds class: entries for Callable fields."""
-        from confarg.cli.argparse._build import _collect_fn_paths_from_config
-
         config = {"fn": {"class": "my.module.Cls"}}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
         assert result.get("fn") == ("my.module.Cls", "class")
 
     def test_collect_fn_paths_from_config_callable_call(self) -> None:
         """_collect_fn_paths_from_config finds call: entries for Callable fields."""
-        from confarg.cli.argparse._build import _collect_fn_paths_from_config
-
         config = {"fn": {"call": "my.module.factory"}}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
         assert result.get("fn") == ("my.module.factory", "call")
 
     def test_collect_fn_paths_from_config_callable_bare_string(self) -> None:
         """_collect_fn_paths_from_config handles bare string value for Callable field."""
-        from confarg.cli.argparse._build import _collect_fn_paths_from_config
-
         config = {"fn": "my.module.fn"}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
         assert result.get("fn") == ("my.module.fn", "fn")
 
     def test_collect_fn_paths_from_config_non_struct(self) -> None:
         """_collect_fn_paths_from_config returns {} for non-struct types."""
-        from confarg.cli.argparse._build import _collect_fn_paths_from_config
-
         result = _collect_fn_paths_from_config({}, int, "", "class")
         assert result == {}
 
     def test_collect_struct_specs_callable_with_struct_return(self) -> None:
         """_collect_struct_specs registers factory specs when Callable return type is a struct."""
-        from confarg.cli.argparse._build import _collect_struct_specs
-
         specs = _collect_struct_specs(_WithCovCallable, "", "class")
         names = [s.name for s in specs]
         # Should include factory specs for _CovDCResult fields
@@ -2627,8 +2386,6 @@ class TestBuildCallableSpecs:
 
     def test_build_dynamic_flags_with_argv(self) -> None:
         """build_dynamic_flags generates bind specs when --field.fn=path is in argv."""
-        from confarg.cli.argparse._build import build_dynamic_flags
-
         specs = build_dynamic_flags(
             _WithCovCallable,
             [f"--fn.fn={_COV_MOD}._cov_call_fn"],
@@ -2638,10 +2395,6 @@ class TestBuildCallableSpecs:
 
     def test_build_dynamic_flags_with_config_file(self, tmp_path: Path) -> None:
         """build_dynamic_flags reads fn paths from a config file referenced in argv."""
-        import json
-
-        from confarg.cli.argparse._build import build_dynamic_flags
-
         cfg = tmp_path / "cfg.json"
         cfg.write_text(json.dumps({"fn": {"fn": f"{_COV_MOD}._cov_call_fn"}}))
         specs = build_dynamic_flags(
@@ -2653,15 +2406,12 @@ class TestBuildCallableSpecs:
 
     def test_build_dynamic_flags_exception_returns_empty(self) -> None:
         """build_dynamic_flags returns [] on any internal exception."""
-        from confarg.cli.argparse._build import build_dynamic_flags
-
         # Passing a non-type target causes an internal error; result is []
         result = build_dynamic_flags(None, [])  # type: ignore[arg-type]
         assert result == []
 
     def test_resolve_struct_struct_fields_raises(self) -> None:
         """_resolve_struct returns None when _struct_fields raises for a struct-like type."""
-        from confarg.cli.argparse._build import _resolve_struct
 
         class _BrokenStruct:
             """Passes _is_struct but fails _struct_fields."""
@@ -2686,8 +2436,6 @@ class TestNamespaceGaps:
 
     def test_collect_callable_spec_fn_key(self) -> None:
         """_collect_callable_spec stores fn: value from flat namespace."""
-        from confarg.cli.argparse._namespace import _collect_callable_spec
-
         flat = {"myfn.fn": "some.module.fn"}
         result: dict = {}
         _collect_callable_spec(flat, "myfn", Callable, result)
@@ -2695,8 +2443,6 @@ class TestNamespaceGaps:
 
     def test_collect_callable_spec_class_key(self) -> None:
         """_collect_callable_spec stores class: value from flat namespace."""
-        from confarg.cli.argparse._namespace import _collect_callable_spec
-
         flat = {"myfn.class": "some.module.Cls"}
         result: dict = {}
         _collect_callable_spec(flat, "myfn", Callable, result)
@@ -2704,8 +2450,6 @@ class TestNamespaceGaps:
 
     def test_collect_callable_spec_bind_keys(self) -> None:
         """_collect_callable_spec assembles bind: dict from flat namespace."""
-        from confarg.cli.argparse._namespace import _collect_callable_spec
-
         flat = {"myfn.fn": "some.fn", "myfn.bind.x": "42"}
         result: dict = {}
         _collect_callable_spec(flat, "myfn", Callable, result)
@@ -2713,8 +2457,6 @@ class TestNamespaceGaps:
 
     def test_collect_callable_spec_bare_string_no_spec(self) -> None:
         """A bare string value with no other spec keys is stored as a plain string."""
-        from confarg.cli.argparse._namespace import _collect_callable_spec
-
         flat = {"myfn": "some.module.fn"}
         result: dict = {}
         _collect_callable_spec(flat, "myfn", Callable, result)
@@ -2722,8 +2464,6 @@ class TestNamespaceGaps:
 
     def test_collect_callable_spec_blob_dict_merged(self) -> None:
         """A pre-existing dict blob for the flag is merged with the assembled spec."""
-        from confarg.cli.argparse._namespace import _collect_callable_spec
-
         flat = {"myfn": {"fn": "existing.fn"}, "myfn.bind.x": "42"}
         result: dict = {}
         _collect_callable_spec(flat, "myfn", Callable, result)
@@ -2733,8 +2473,6 @@ class TestNamespaceGaps:
 
     def test_collect_ns_fields_callable_field(self) -> None:
         """_collect_ns_fields handles a Callable-typed field."""
-        from confarg.cli.argparse._namespace import _collect_ns_fields
-
         flat = {"fn.fn": "some.module.fn"}
         result: dict = {}
         _collect_ns_fields(flat, _WithCovCallable, "", "class", result)
@@ -2742,8 +2480,6 @@ class TestNamespaceGaps:
 
     def test_from_namespace_with_env_configs(self, tmp_path: Path) -> None:
         """from_namespace processes env_configs (files referenced by env vars)."""
-        import json
-
         cfg = tmp_path / "sub.json"
         cfg.write_text(json.dumps({"result_val": "from_env_config"}))
 
@@ -2761,23 +2497,17 @@ class TestNamespaceGaps:
 
     def test_callable_return_type_for(self) -> None:
         """_callable_return_type_for delegates to _callable_return_type."""
-        from confarg.cli.argparse._namespace import _callable_return_type_for
-
         result = _callable_return_type_for(Callable[..., _CovDCResult])
         assert result is _CovDCResult
 
     def test_merge_blob_into_spec_non_dict_bind(self) -> None:
         """_merge_blob_into_spec uses bind directly when blob.bind is not a dict."""
-        from confarg.cli.argparse._namespace import _merge_blob_into_spec
-
         # blob["bind"] is a string, not a dict → elif bind: merged["bind"] = bind
         merged = _merge_blob_into_spec({"bind": "not_a_dict"}, {}, {"x": 1})
         assert merged["bind"] == {"x": 1}
 
     def test_collect_callable_spec_factory_kwargs(self) -> None:
         """_collect_callable_spec collects flat factory kwargs into spec when fn key present."""
-        from confarg.cli.argparse._namespace import _collect_callable_spec
-
         flat = {"myfn.fn": "some.fn", "myfn.lr": "0.01"}
         result: dict = {}
         _collect_callable_spec(flat, "myfn", Callable[..., _CovCallableCls], result)
@@ -2785,8 +2515,6 @@ class TestNamespaceGaps:
 
     def test_from_namespace_env_config_subpath(self, tmp_path: Path) -> None:
         """from_namespace processes env_configs with non-empty subpath (lines 255-256)."""
-        import json
-
         cfg = tmp_path / "inner.json"
         cfg.write_text(json.dumps({"value": "from_env_subpath"}))
 
@@ -2812,9 +2540,6 @@ class TestRegisterGaps:
 
     def test_register_spec_skips_existing_dest(self) -> None:
         """_register_spec silently skips a spec whose name is already registered."""
-        from confarg.cli.argparse._register import _register_spec
-        from confarg.cli.argparse._spec import FlagSpec
-
         parser = argparse.ArgumentParser()
         parser.add_argument("--myfield", dest="myfield", default=argparse.SUPPRESS)
         existing = {"myfield"}
@@ -2836,8 +2561,6 @@ class TestRegisterGaps:
 
     def test_add_callable_fn_flags(self) -> None:
         """_add_callable_fn_flags registers fn/class/call flags on the parser."""
-        from confarg.cli.argparse._register import _add_callable_fn_flags
-
         parser = argparse.ArgumentParser()
         _add_callable_fn_flags(parser, "myfield")
         dests = {a.dest for a in parser._actions}
@@ -2847,8 +2570,6 @@ class TestRegisterGaps:
 
     def test_add_callable_bind_flags_no_existing_dests(self) -> None:
         """_add_callable_bind_flags works without pre-computed existing_dests."""
-        from confarg.cli.argparse._register import _add_callable_bind_flags
-
         parser = argparse.ArgumentParser()
         _add_callable_bind_flags(parser, "myfn", f"{_COV_MOD}._cov_call_fn")
         dests = {a.dest for a in parser._actions}
@@ -2865,14 +2586,11 @@ class TestCompletionGaps:
 
     def test_resolve_tags_from_config_non_struct(self) -> None:
         """_resolve_tags_from_config returns {} for non-struct types."""
-        from confarg.cli.argparse._completion import _resolve_tags_from_config
-
         result = _resolve_tags_from_config({}, int, "", "class")
         assert result == {}
 
     def test_resolve_tags_from_config_struct_fields_raises(self) -> None:
         """_resolve_tags_from_config returns {} when _struct_fields raises."""
-        from confarg.cli.argparse._completion import _resolve_tags_from_config
 
         class _BrokenStruct:
             __dataclass_fields__ = property(  # type: ignore[assignment]
@@ -2884,7 +2602,6 @@ class TestCompletionGaps:
 
     def test_resolve_tags_from_config_optional_union(self) -> None:
         """_resolve_tags_from_config handles Optional[T] (single-variant union) in config."""
-        from confarg.cli.argparse._completion import _resolve_tags_from_config
 
         @dataclass
         class _WithOptionalSub:
@@ -2897,9 +2614,6 @@ class TestCompletionGaps:
 
     def test_extend_walk_concrete_singleton_literal_skipped(self) -> None:
         """_extend_walk skips singleton literal fields when concrete=True."""
-        from typing import Literal
-
-        from confarg.cli.argparse._completion import _extend_walk, _WalkCtx
 
         @dataclass
         class _WithLiteral:
@@ -2907,16 +2621,14 @@ class TestCompletionGaps:
             value: int = 0
 
         parser = argparse.ArgumentParser()
-        populate_parser(_WithLiteral, parser)
-        ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
+        ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests=set())
         _extend_walk(_WithLiteral, ctx, parser, "", concrete=True)
         dests = {a.dest for a in parser._actions}
         assert "kind" not in dests  # singleton literal skipped in concrete mode
+        assert "value" in dests  # non-singleton fields are added
 
     def test_extend_walk_callable_field(self) -> None:
         """_extend_walk registers callable fn/class/call flags for Callable fields."""
-        from confarg.cli.argparse._completion import _extend_walk, _WalkCtx
-
         parser = argparse.ArgumentParser()
         ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
         _extend_walk(_WithCovCallable, ctx, parser, "")
@@ -2925,8 +2637,6 @@ class TestCompletionGaps:
 
     def test_pre_extend_parser_outer_except(self, monkeypatch) -> None:
         """_pre_extend_parser_for_completion swallows any outer exception."""
-        from confarg.cli.argparse._completion import _pre_extend_parser_for_completion
-
         # Monkeypatch _collect_partial_config to raise an unexpected exception
         monkeypatch.setattr(
             "confarg.cli.argparse._completion._collect_partial_config",
@@ -2938,8 +2648,6 @@ class TestCompletionGaps:
 
     def test_pre_extend_parser_with_union_tag(self) -> None:
         """_pre_extend_parser_for_completion extends parser when a union class tag is in argv."""
-        from confarg.cli.argparse._completion import _pre_extend_parser_for_completion
-
         cls_path = f"{_COV_MOD}._ConstructAVariant"
         parser = argparse.ArgumentParser()
         populate_parser(_WithUnionForCompletion, parser)
@@ -2955,8 +2663,6 @@ class TestCompletionGaps:
 
     def test_pre_extend_parser_with_callable_bind(self) -> None:
         """_pre_extend_parser_for_completion registers bind flags for --fn.fn in argv."""
-        from confarg.cli.argparse._completion import _pre_extend_parser_for_completion
-
         parser = argparse.ArgumentParser()
         populate_parser(_WithCovCallable, parser)
         _pre_extend_parser_for_completion(
@@ -2971,8 +2677,6 @@ class TestCompletionGaps:
 
     def test_extend_walk_var_params_skipped(self) -> None:
         """_extend_walk skips var_params fields like **kwargs in plain classes."""
-        from confarg.cli.argparse._completion import _extend_walk, _WalkCtx
-
         parser = argparse.ArgumentParser()
         ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
         _extend_walk(_CovWithKwargs, ctx, parser, "")
@@ -2982,8 +2686,6 @@ class TestCompletionGaps:
 
     def test_extend_walk_struct_group_already_exists(self) -> None:
         """_extend_walk reuses an existing group when the struct field was already walked."""
-        from confarg.cli.argparse._completion import _extend_walk, _WalkCtx
-
         parser = argparse.ArgumentParser()
         # First walk creates the "inner" group
         ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests=set())
@@ -2995,8 +2697,6 @@ class TestCompletionGaps:
 
     def test_extend_walk_dict_field_skipped(self) -> None:
         """_extend_walk skips dict-typed fields."""
-        from confarg.cli.argparse._completion import _extend_walk, _WalkCtx
-
         parser = argparse.ArgumentParser()
         ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
         _extend_walk(_CovWithDict, ctx, parser, "")
@@ -3007,8 +2707,6 @@ class TestCompletionGaps:
 
     def test_pre_extend_parser_non_struct_class_skipped(self) -> None:
         """_pre_extend_parser_for_completion skips class_path that resolves to non-struct."""
-        from confarg.cli.argparse._completion import _pre_extend_parser_for_completion
-
         parser = argparse.ArgumentParser()
         populate_parser(_WithUnionForCompletion, parser)
         # "builtins.int" is a type but NOT a struct → continue at line 259
@@ -3025,8 +2723,6 @@ class TestCompletionGaps:
 
     def test_pre_extend_parser_bind_flags_exception(self, monkeypatch) -> None:
         """_pre_extend_parser_for_completion swallows exception from _add_callable_bind_flags."""
-        import confarg.cli.argparse._register as reg_mod
-        from confarg.cli.argparse._completion import _pre_extend_parser_for_completion
 
         def _boom(*args, **kwargs):
             msg = "deliberate bind boom"
@@ -3046,11 +2742,6 @@ class TestCompletionGaps:
 
     def test_setup_completion_argv_defaults_to_sys_argv(self, monkeypatch) -> None:
         """setup_completion defaults argv to sys.argv[1:] when argv=None."""
-        import sys
-        import types
-
-        from confarg.cli.argparse._completion import setup_completion
-
         # Inject a mock argcomplete so ImportError is avoided
         mock_argcomplete = types.ModuleType("argcomplete")
         mock_argcomplete.autocomplete = lambda *a, **kw: None  # type: ignore[attr-defined]
@@ -3060,7 +2751,7 @@ class TestCompletionGaps:
         populate_parser(_CovDCResult, parser)
         monkeypatch.setattr(sys, "argv", ["prog", "--result_val=hello"])
         # argv=None → sys.argv[1:] is used → covers line 325
-        setup_completion(parser, _CovDCResult, argv=None)
+        _argparse_setup_completion(parser, _CovDCResult, argv=None)
 
 
 # ---------------------------------------------------------------------------
@@ -3068,18 +2759,12 @@ class TestCompletionGaps:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _CLICK_AVAILABLE, reason="click not installed")
 class TestClickContextGaps:
     """Uncovered branches in click/_context.py."""
 
     def test_from_context_subpath_config(self, tmp_path: Path) -> None:
         """from_context processes subpath config files (lines 103-104, 111-112)."""
-        import json
-
-        import click
-        from click.testing import CliRunner
-
-        from confarg.cli.click import from_context, populate_command
-
         # _CovOuter.inner is a struct field → populate_command registers --config.inner
         cfg = tmp_path / "inner.json"
         cfg.write_text(json.dumps({"value": "from_subpath"}))
@@ -3097,13 +2782,6 @@ class TestClickContextGaps:
 
     def test_from_context_env_configs(self, tmp_path: Path) -> None:
         """from_context processes env_configs from _parse_env (lines 122-126)."""
-        import json
-
-        import click
-        from click.testing import CliRunner
-
-        from confarg.cli.click import from_context, populate_command
-
         cfg = tmp_path / "cfg.json"
         cfg.write_text(json.dumps({"result_val": "from_env_file"}))
 
@@ -3125,13 +2803,6 @@ class TestClickContextGaps:
 
     def test_from_context_env_config_subpath(self, tmp_path: Path) -> None:
         """from_context processes env_configs with non-empty subpath (lines 124-125)."""
-        import json
-
-        import click
-        from click.testing import CliRunner
-
-        from confarg.cli.click import from_context, populate_command
-
         cfg = tmp_path / "inner.json"
         cfg.write_text(json.dumps({"value": "from_env_subpath"}))
 
@@ -3157,14 +2828,12 @@ class TestClickContextGaps:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _CLICK_AVAILABLE, reason="click not installed")
 class TestClickRegisterGaps:
     """Uncovered branches in click/_register.py."""
 
     def test_populate_command_with_argv(self) -> None:
         """populate_command with argv registers dynamic bind specs."""
-        import click
-
-        from confarg.cli.click import populate_command
 
         @click.command()
         def cmd(**_kwargs):
@@ -3184,15 +2853,12 @@ class TestClickRegisterGaps:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _CLICK_AVAILABLE, reason="click not installed")
 class TestClickCompletionGaps:
     """Uncovered branches in click/_completion.py."""
 
     def test_setup_completion_outer_except(self, monkeypatch) -> None:
         """setup_completion swallows any outer exception (lines 77-79)."""
-        import click
-
-        from confarg.cli.click._completion import setup_completion
-
         monkeypatch.setenv("_CMD_COMPLETE", "bash_complete")
 
         # Monkeypatch _partial_argv_from_env to raise
@@ -3206,4 +2872,4 @@ class TestClickCompletionGaps:
             pass
 
         # Must not raise
-        setup_completion(cmd, _CovDCResult)
+        _click_setup_completion(cmd, _CovDCResult)

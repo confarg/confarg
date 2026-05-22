@@ -1,21 +1,12 @@
 # A tool to manage complex configurations
 
-> Load and resolve complex configurations from files, environment variables and command line arguments. Keep your favorite CLI library.
+> Load and resolve complex configurations from files, environment variables and command line arguments. Keep your data structures and favorite CLI library.
 
+`confarg` is a Python library that helps you load configurations in a modular fashion from multiple sources: files, environment variables, and command line arguments.
 
-`confarg` is a Python library that helps you load your app configuration in a modular fashion from multiple sources: configuration files, environment variables, and command line arguments.
+It can handle deeply nested configurations, type unions, derived classes, expressions and variable interpolation, configuration compositions and more, and can integrate with your favorite argument parser library such as `argparse`, `click` or `typer`.
 
-It can handle deeply nested configurations, type unions, derived classes, expressions and variable interpolation, configuration compositions, and can coexist with your favorite argument parser library such as `argparse`, `click`, `typer` or `cyclopts`.
-
-If none of this makes sense to you, read along.
-
-## Keep your data structures and CLI
-
-`confarg` is deliberately not a framework, but just a tool.
-
-It does not offer custom data types or decorators, and does not own your CLI. Instead, it strives to play along with your own data structures and CLI framework, to make it easy to switch to it, or away from it.
-
-The scope of `confarg` is limited to the deserialization and serialization of complex configurations. By limiting itself to those transient moments in the lifetime of your application, the footprint of `confarg` in your app is limited to a few lines of code.
+`confarg` is not a framework. No decorator, base class or special annotation type required: none are provided. It is just a tool for the deserialization and serialization of complex configurations. Its footprint in your code is typically a few lines of code, making it easy to switch to it, or away from it.
 
 ## Install
 
@@ -23,7 +14,48 @@ The scope of `confarg` is limited to the deserialization and serialization of co
 pip install confarg
 ```
 
-Installing additional libraries such as `pyyaml` unlocks the support of extra configuration file formats.
+`confarg` comes with no dependency, but installing additional libraries such as `pyyaml` unlocks the support of extra configuration file formats.
+
+## TL;DR
+
+This library lets you read configurations stored in classes like this
+
+```python
+@dataclass
+class Config:
+  value: float
+  flag: bool
+  subconfig: SubConfig1 | SubConfig2
+```
+
+with this kind of code
+
+```python
+config = confarg.load(Config)
+```
+
+which lets you build a configuration object from files,
+
+```yaml
+value: 1.0
+flag: false
+subconfig:
+  foo: 42
+```
+
+but also and simultaneously from environment variables,
+
+```properties
+MYAPP_VALUE=0.0
+```
+
+and command line arguments,
+
+```bash
+myapp --subconfig.foo=33
+```
+
+Still here? Read along, we are just getting started.
 
 ## Getting started
 

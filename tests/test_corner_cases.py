@@ -13,6 +13,7 @@ cases, serialization edge cases, and more.
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional, Union
@@ -21,7 +22,7 @@ import pytest
 
 import confarg
 from confarg._errors import ConfargError, TypeCoercionError
-from confarg._merge import _deep_merge
+from confarg._merge import LIST_DELETE_KEY, _deep_merge
 from confarg._types import _is_frozenset, _is_set, _StrToken
 from confarg.dictexpr import resolve_expressions
 from confarg.typedload import construct
@@ -182,16 +183,12 @@ class TestDeepMergeListPatchErrors:
 
     def test_negative_delete_index(self) -> None:
         """{"-": [-1]} deletes the last element."""
-        from confarg._merge import LIST_DELETE_KEY
-
         base = {"items": [1, 2, 3]}
         result = _deep_merge(base, {"items": {LIST_DELETE_KEY: [-1]}})
         assert result["items"] == [1, 2]
 
     def test_negative_delete_oob_raises(self) -> None:
         """Deleting index -4 from a 3-element list raises ConfargError."""
-        from confarg._merge import LIST_DELETE_KEY
-
         base = {"items": [1, 2, 3]}
         with pytest.raises(ConfargError, match="-4"):
             _deep_merge(base, {"items": {LIST_DELETE_KEY: [-4]}})
@@ -804,8 +801,6 @@ class TestSerializationCornerCases:
 
     def test_dump_raw_dict_raises(self) -> None:
         """dump() rejects plain dicts — use dump_file() for raw config dicts."""
-        from confarg._types import _StrToken
-
         data = {"key": _StrToken("value"), "count": 42}
         with pytest.raises(TypeError, match="dump_file"):
             confarg.dump(data)
@@ -945,8 +940,6 @@ class TestEnvVarCornerCases:
 
     def test_env_extra_vars_warn(self) -> None:
         """Extra env vars not matching fields emit ConfargWarning and are ignored."""
-        import warnings
-
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             result = confarg.load(

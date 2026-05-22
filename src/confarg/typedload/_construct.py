@@ -10,6 +10,7 @@ import inspect
 from typing import Any
 
 from confarg import _defaults
+from confarg._callable import _resolve_callable_spec
 from confarg._errors import (
     AmbiguousUnionError,
     ConfargError,
@@ -17,6 +18,8 @@ from confarg._errors import (
     SymbolImportError,
     TypeCoercionError,
 )
+from confarg._import import _import_dotted
+from confarg._merge import LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, _apply_list_ops
 from confarg._types import (
     _all_have_defaults,
     _allows_none,
@@ -107,9 +110,7 @@ def construct(tp: Any, data: Any, *, path: str = "", union_tag: str = _defaults.
     if data is None and _allows_none(tp):
         return None
     if _is_callable(tp):
-        from confarg._callable import _resolve_callable_spec
-
-        return _resolve_callable_spec(data, tp, path=path, union_tag=union_tag)
+        return _resolve_callable_spec(data, tp, path=path, union_tag=union_tag, construct_fn=construct)
     return _construct_typed(tp, data, path, union_tag)
 
 
@@ -156,7 +157,7 @@ def _call_with_var_positional(
         if (
             param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY)
             and pname in kwargs
-        ):  # noqa: E501
+        ):
             pos_args.append(kwargs.pop(pname))
     return tp(*pos_args, *var_pos, **kwargs, **var_kw)
 
@@ -264,16 +265,12 @@ def _build_items(et: Any, data: Any, path: str, union_tag: str) -> list[Any]:
     if isinstance(data, list | set | frozenset | tuple):
         return [construct(et, v, path=f"{path}[{i}]", union_tag=union_tag) for i, v in enumerate(data)]
     if isinstance(data, dict):
-        from confarg._merge import LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, _apply_list_ops
-
         if LIST_REPLACE_BASE_KEY in data:
             # CLI-produced dict with an explicit base list; apply ops in order.
             working = _apply_list_ops(list(data[LIST_REPLACE_BASE_KEY]), data, path, None)
             return [construct(et, v, path=f"{path}[{i}]", union_tag=union_tag) for i, v in enumerate(working)]
         if LIST_APPEND_KEY in data:
             # Append-only dict: apply all list ops (appends, deletions, index patches) against an empty base.
-            from confarg._merge import _apply_list_ops
-
             working = _apply_list_ops([], data, path, None)
             return [construct(et, v, path=f"{path}[{i}]", union_tag=union_tag) for i, v in enumerate(working)]
         if LIST_DELETE_KEY in data:
@@ -724,9 +721,9 @@ def _disambiguate_struct(variants: list[Any], data: dict[str, Any], union_tag: s
     candidates = []
 
     for var in variants:
-        var = _resolve_type(var)
-        flds = _struct_fields(var)
-        defs = _struct_defaults(var)
+        resolved_var = _resolve_type(var)
+        flds = _struct_fields(resolved_var)
+        defs = _struct_defaults(resolved_var)
         required = {n for n in flds if n not in defs}
         all_names = set(flds)
 
@@ -734,7 +731,7 @@ def _disambiguate_struct(variants: list[Any], data: dict[str, Any], union_tag: s
             continue
         if not keys.issubset(all_names):
             continue
-        candidates.append(var)
+        candidates.append(resolved_var)
 
     if len(candidates) <= 1:
         return candidates
@@ -766,8 +763,6 @@ def _import_class_by_path(tag: str, path: str, union_tag: str) -> type:
     to a class. The tag must be a fully-qualified dotted path such as
     ``'mypackage.mymodule.MyClass'``.
     """
-    from confarg._callable import _import_dotted
-
     try:
         obj = _import_dotted(tag)
     except SymbolImportError as e:

@@ -8,47 +8,21 @@ from __future__ import annotations
 
 import contextlib
 import functools
-import importlib
 import inspect
 import sys
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, get_type_hints
 
-from confarg._errors import ConfargError, SymbolImportError, TypeCoercionError
+from confarg._errors import ConfargError, TypeCoercionError
+from confarg._import import _import_dotted
 from confarg._types import (
     _callable_param_types,
     _callable_return_type,
     _is_callable,
     _resolve_type,
+    _unwrap_optional,
 )
-
-
-def _import_dotted(path: str) -> Any:
-    """Import an object by dotted path, trying decreasing module prefixes.
-
-    Tries importing the longest valid module prefix first, then chains
-    getattr for the remaining parts.
-    """
-    parts = path.split(".")
-    for i in range(len(parts), 0, -1):
-        module_path = ".".join(parts[:i])
-        try:
-            obj = importlib.import_module(module_path)
-        except ImportError:
-            continue
-        except Exception as e:
-            msg = f"Cannot import {path!r}: error loading module '{module_path}': {e}"
-            raise SymbolImportError(msg) from e
-        try:
-            for attr in parts[i:]:
-                obj = getattr(obj, attr)
-        except AttributeError as e:
-            msg = f"Cannot import {path!r}: {e}"
-            raise SymbolImportError(msg) from e
-        else:
-            return obj
-    msg = f"Cannot import {path!r}: no importable module found in path"
-    raise SymbolImportError(msg)
+from confarg.typedload._coerce import _coerce_leaf
 
 
 def _detect_owning_class(func: Any) -> type | None:
@@ -131,7 +105,7 @@ def _format_fn_dict_example(fn_path: str, cls: type) -> str:
     return "\n".join(lines)
 
 
-def _resolve_callable_spec(spec: Any, tp: Any, path: str, union_tag: str = "class") -> Any:
+def _resolve_callable_spec(spec: Any, tp: Any, path: str, union_tag: str, construct_fn: Any) -> Any:
     """Resolve a Callable value from a raw spec (string or dict).
 
     Bare string:
@@ -159,7 +133,7 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: str, union_tag: str = "clas
     if isinstance(spec, str):
         result = _resolve_bare_string(str(spec), path, tp)
     elif isinstance(spec, dict):
-        result = _resolve_dict_spec(spec, tp, path, union_tag)
+        result = _resolve_dict_spec(spec, tp, path, union_tag, construct_fn)
     elif callable(spec):
         result = spec
     else:
@@ -192,18 +166,14 @@ def _resolve_bare_string(path_str: str, path: str, callable_tp: Any = None) -> A
     return _maybe_bind_method(obj, path)
 
 
-def _resolve_call_kwargs(func: Any, kwargs: dict, path: str, union_tag: str) -> dict:
+def _resolve_call_kwargs(func: Any, kwargs: dict, path: str, union_tag: str, construct_fn: Any) -> dict:
     """Coerce and validate kwargs against func's signature using typed construction."""
-    from confarg.typedload._construct import construct
-
     try:
         sig = inspect.signature(func)
     except (ValueError, TypeError):
         return dict(kwargs)
 
     try:
-        from typing import get_type_hints
-
         hints = get_type_hints(func)
     except (NameError, AttributeError, TypeError):
         hints = {}
@@ -228,17 +198,17 @@ def _resolve_call_kwargs(func: Any, kwargs: dict, path: str, union_tag: str) -> 
         if ann is inspect.Parameter.empty:
             coerced[k] = v
         else:
-            from confarg._types import _resolve_type
-
             resolved_ann = _resolve_type(ann)
-            coerced[k] = construct(resolved_ann, v, path=f"{path}.{k}", union_tag=union_tag)
+            coerced[k] = construct_fn(resolved_ann, v, path=f"{path}.{k}", union_tag=union_tag)
     return coerced
 
 
-def _resolve_call_spec(fn_path: str, call_kwargs: dict, original_spec: dict, path: str, union_tag: str) -> Any:
+def _resolve_call_spec(  # noqa: PLR0913
+    fn_path: str, call_kwargs: dict, original_spec: dict, path: str, union_tag: str, construct_fn: Any
+) -> Any:
     """Resolve a 'call:' spec: import the function, call it with call_kwargs, use the return value."""
     func = _import_dotted(fn_path)
-    coerced = _resolve_call_kwargs(func, call_kwargs, path, union_tag)
+    coerced = _resolve_call_kwargs(func, call_kwargs, path, union_tag, construct_fn)
     try:
         result = func(**coerced)
     except Exception as e:
@@ -255,7 +225,7 @@ def _resolve_call_spec(fn_path: str, call_kwargs: dict, original_spec: dict, pat
     return result
 
 
-def _resolve_dict_spec(spec: dict, callable_tp: Any, path: str, union_tag: str) -> Any:
+def _resolve_dict_spec(spec: dict, callable_tp: Any, path: str, union_tag: str, construct_fn: Any) -> Any:
     """Resolve a dict callable spec (fn/class/call + sibling kwargs + bind)."""
     has_fn = "fn" in spec
     has_class = "class" in spec
@@ -274,6 +244,7 @@ def _resolve_dict_spec(spec: dict, callable_tp: Any, path: str, union_tag: str) 
                 path,
                 union_tag,
                 callable_tp,
+                construct_fn,
             )
         msg = f"Callable dict at '{path}' must have either a 'fn' or 'class' key"
         raise TypeCoercionError(msg)
@@ -285,10 +256,12 @@ def _resolve_dict_spec(spec: dict, callable_tp: Any, path: str, union_tag: str) 
 
     if has_call:
         call_kwargs = {**init_kwargs, **bind_raw}
-        return _resolve_call_spec(spec["call"], call_kwargs, spec, path, union_tag)
+        return _resolve_call_spec(spec["call"], call_kwargs, spec, path, union_tag, construct_fn)
     if has_fn:
-        return _resolve_fn_spec(spec["fn"], init_kwargs, bind_raw, path, union_tag)
-    return _resolve_class_spec(_ClassSpec(spec["class"], init_kwargs, bind_raw, spec), path, union_tag, callable_tp)
+        return _resolve_fn_spec(spec["fn"], init_kwargs, bind_raw, path, union_tag, construct_fn)
+    return _resolve_class_spec(
+        _ClassSpec(spec["class"], init_kwargs, bind_raw, spec), path, union_tag, callable_tp, construct_fn
+    )
 
 
 def _coerce_bind_kwargs(callable_obj: Any, bind: dict) -> dict:
@@ -303,11 +276,6 @@ def _coerce_bind_kwargs(callable_obj: Any, bind: dict) -> dict:
         sig = inspect.signature(callable_obj)
     except (ValueError, TypeError):
         return bind
-
-    from typing import get_type_hints
-
-    from confarg._types import _resolve_type, _unwrap_optional
-    from confarg.typedload._coerce import _coerce_leaf
 
     try:
         hints = get_type_hints(callable_obj)
@@ -361,7 +329,7 @@ def _check_bind_params(callable_obj: Any, bind: dict, path: str) -> None:
         raise TypeCoercionError(msg)
 
 
-def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, path: str, union_tag: str) -> Any:
+def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, path: str, union_tag: str, construct_fn: Any) -> Any:  # noqa: PLR0913
     """Resolve a 'fn:' callable spec.
 
     If init_kwargs are provided, detect the owning class via __qualname__,
@@ -384,7 +352,7 @@ def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, path: str, uni
                 " Use 'bind' to partially apply arguments to a plain function or class."
             )
             raise TypeCoercionError(msg)
-        instance = _construct_class(cls, init_kwargs, path, union_tag)
+        instance = _construct_class(cls, init_kwargs, path, union_tag, construct_fn)
         result: Any = getattr(instance, func.__name__)
     else:
         result = _maybe_bind_method(func, path)
@@ -400,8 +368,6 @@ def _is_factory_class(cls: type, callable_tp: Any) -> bool:
 
     Factory mode activates when cls is a subclass of the Callable annotation's return type.
     """
-    from confarg._types import _callable_return_type
-
     ret = _callable_return_type(callable_tp)
     if ret is None or not isinstance(ret, type) or ret is type(None):
         return False
@@ -411,18 +377,14 @@ def _is_factory_class(cls: type, callable_tp: Any) -> bool:
         return False
 
 
-def _resolve_factory_kwargs(cls: type, kwargs: dict, path: str, union_tag: str) -> dict:
+def _resolve_factory_kwargs(cls: type, kwargs: dict, path: str, union_tag: str, construct_fn: Any) -> dict:
     """Coerce and validate factory kwargs against cls.__init__ signature."""
-    from confarg.typedload._construct import construct
-
     try:
         sig = inspect.signature(cls.__init__)
     except (ValueError, TypeError):
         return dict(kwargs)  # Uninspectable (C extension etc.)
 
     try:
-        from typing import get_type_hints
-
         hints = get_type_hints(cls.__init__)
     except (NameError, AttributeError, TypeError):
         hints = {}
@@ -450,11 +412,8 @@ def _resolve_factory_kwargs(cls: type, kwargs: dict, path: str, union_tag: str) 
         if ann is inspect.Parameter.empty:
             coerced[k] = v
         else:
-            from confarg._types import _resolve_type
-
             resolved_ann = _resolve_type(ann)
-            coerced_v = construct(resolved_ann, v, path=f"{path}.{k}", union_tag=union_tag)
-            coerced[k] = coerced_v
+            coerced[k] = construct_fn(resolved_ann, v, path=f"{path}.{k}", union_tag=union_tag)
     return coerced
 
 
@@ -472,7 +431,8 @@ def _resolve_class_spec(
     spec: _ClassSpec,
     path: str,
     union_tag: str,
-    callable_tp: Any = None,
+    callable_tp: Any,
+    construct_fn: Any,
 ) -> Any:
     """Resolve a 'class:' callable spec.
 
@@ -495,14 +455,14 @@ def _resolve_class_spec(
                 f" Pass constructor kwargs as sibling keys alongside 'class:'."
             )
             raise TypeCoercionError(msg)
-        coerced = _resolve_factory_kwargs(cls, spec.init_kwargs, path, union_tag)
+        coerced = _resolve_factory_kwargs(cls, spec.init_kwargs, path, union_tag, construct_fn)
         p = functools.partial(cls, **coerced)
         with contextlib.suppress(AttributeError, TypeError):
             p.__confarg_spec__ = spec.original
         return p
 
     # Callable-object mode
-    instance = _construct_class(cls, spec.init_kwargs, path, union_tag)
+    instance = _construct_class(cls, spec.init_kwargs, path, union_tag, construct_fn)
     if not callable(instance):
         msg = (
             f"Instance of {spec.cls_path!r} at '{path}' is not callable."
@@ -521,11 +481,9 @@ def _resolve_class_spec(
     return result
 
 
-def _construct_class(cls: type, kwargs: dict, path: str, union_tag: str) -> Any:
+def _construct_class(cls: type, kwargs: dict, path: str, union_tag: str, construct_fn: Any) -> Any:
     """Construct a class instance using the confarg struct construction pipeline."""
-    from confarg.typedload._construct import _construct_struct
-
-    return _construct_struct(cls, kwargs, path, union_tag)
+    return construct_fn(cls, kwargs, path=path, union_tag=union_tag)
 
 
 def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:

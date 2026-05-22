@@ -159,8 +159,6 @@ class TestLoadCsvNoHeader:
             "config.yaml",
             f"allowed:\n  {INCLUDE_KEY}:\n    path: ./hosts.csv\n    header: false\n",
         )
-        from confarg._files import _load_file
-
         result = _load_file(tmp_path / "config.yaml")
         assert result == {"allowed": ["a.com", "b.com"]}
 
@@ -252,8 +250,6 @@ class TestIncludeDictForm:
         """Test that the plain string __include__ form still works."""
         write(tmp_path, "hosts.csv", "host\na.com\nb.com\n")
         write(tmp_path, "config.yaml", f"allowed:\n  {INCLUDE_KEY}: ./hosts.csv\n")
-        from confarg._files import _load_file
-
         result = _load_file(tmp_path / "config.yaml")
         assert result == {"allowed": ["a.com", "b.com"]}
 
@@ -265,8 +261,6 @@ class TestIncludeDictForm:
             "config.yaml",
             f"users:\n  {INCLUDE_KEY}:\n    path: ./users.csv\n    orient: rows\n",
         )
-        from confarg._files import _load_file
-
         result = _load_file(tmp_path / "config.yaml")
         assert result == {"users": [{"name": "alice", "role": "admin"}]}
 
@@ -278,8 +272,6 @@ class TestIncludeDictForm:
             "config.yaml",
             f"metrics:\n  {INCLUDE_KEY}:\n    path: ./metrics.csv\n    orient: columns\n",
         )
-        from confarg._files import _load_file
-
         result = _load_file(tmp_path / "config.yaml")
         assert result == {"metrics": {"ts": ["2024-01", "2024-02"], "value": ["1", "2"]}}
 
@@ -291,8 +283,6 @@ class TestIncludeDictForm:
             "config.yaml",
             f"matrix:\n  {INCLUDE_KEY}:\n    path: ./grid.csv\n    orient: raw\n",
         )
-        from confarg._files import _load_file
-
         result = _load_file(tmp_path / "config.yaml")
         assert result == {"matrix": [["1", "2"], ["3", "4"]]}
 
@@ -304,8 +294,6 @@ class TestIncludeDictForm:
             "config.yaml",
             f"users:\n  {INCLUDE_KEY}:\n    path: ./users.csv\n",
         )
-        from confarg._files import _load_file
-
         result = _load_file(tmp_path / "config.yaml")
         assert result == {"users": [{"name": "alice", "role": "admin"}]}
 

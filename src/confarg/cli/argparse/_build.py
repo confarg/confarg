@@ -18,11 +18,17 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from confarg import _defaults
+from confarg._callable import _detect_owning_class
 from confarg._errors import SymbolImportError
+from confarg._files import _load_file
+from confarg._import import _import_dotted
+from confarg._merge import _deep_merge
 from confarg._types import (
     _callable_return_type,
     _elem_type,
     _final_inner,
+    _init_defaults,
+    _init_fields,
     _is_bool,
     _is_callable,
     _is_dict,
@@ -214,8 +220,6 @@ def _collect_callable_bind_specs(
     existing_names: set[str],
 ) -> list[FlagSpec]:
     """Build FlagSpecs for ``--<field_flag>.bind.<param>`` by inspecting the target's signature."""
-    from confarg._callable import _import_dotted
-
     try:
         obj = _import_dotted(fn_path)
     except SymbolImportError:
@@ -266,8 +270,6 @@ def _collect_callable_factory_specs(
     group_description: str = "",
 ) -> list[FlagSpec]:
     """Build FlagSpecs for factory-mode constructor kwargs of ``cls``."""
-    from confarg._types import _init_defaults, _init_fields
-
     try:
         fields = _init_fields(cls)
         defaults = _init_defaults(cls)
@@ -302,8 +304,6 @@ def _collect_callable_field_specs(
     """Build bind/factory FlagSpecs for one callable field given its fn_path and mode."""
     if mode == "class":
         try:
-            from confarg._callable import _import_dotted
-
             cls = _import_dotted(fn_path)
             if isinstance(cls, type):
                 return _collect_callable_factory_specs(field_flag, cls, existing_names)
@@ -313,8 +313,6 @@ def _collect_callable_field_specs(
         return _collect_callable_bind_specs(field_flag, fn_path, existing_names)
     else:  # mode == "fn"
         try:
-            from confarg._callable import _detect_owning_class, _import_dotted
-
             obj = _import_dotted(fn_path)
             if isinstance(obj, type):
                 return _collect_callable_factory_specs(field_flag, obj, existing_names)
@@ -606,9 +604,6 @@ def build_dynamic_flags(
         A list of additional :class:`~confarg.cli.argparse.FlagSpec` objects.
     """
     try:
-        from confarg._files import _load_file
-        from confarg._merge import _deep_merge
-
         config_dict: dict[str, Any] = {}
         argv_list = list(partial_argv)
         flag_prefix = f"--{config_flag}"

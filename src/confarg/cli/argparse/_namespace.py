@@ -17,9 +17,11 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._errors import SymbolImportError
 from confarg._files import _load_file
-from confarg._merge import _deep_merge
+from confarg._import import _import_dotted
+from confarg._merge import _deep_merge, _set_nested
 from confarg._parse_env import _parse_env
 from confarg._types import (
+    _callable_return_type,
     _is_callable,
     _is_dict,
     _is_struct,
@@ -56,8 +58,6 @@ def _collect_callable_spec(
     result: dict[str, Any],
 ) -> None:
     """Build and store the callable spec dict from flat namespace entries for flag."""
-    from confarg._merge import _set_nested
-
     fn_key = f"{flag}.fn"
     cls_key = f"{flag}.class"
     call_key = f"{flag}.call"
@@ -75,7 +75,7 @@ def _collect_callable_spec(
         spec["bind"] = bind
 
     ret = _callable_return_type_for(core)
-    if ret is not None and isinstance(ret, type) and ret is not type(None) or cls_key in flat or fn_key in flat:
+    if (ret is not None and isinstance(ret, type) and ret is not type(None)) or cls_key in flat or fn_key in flat:
         for k, v in flat.items():
             if k.startswith(flag_prefix) and k not in reserved and not k.startswith(bind_prefix):
                 tail = k[len(flag_prefix) :]
@@ -96,8 +96,6 @@ def _collect_callable_spec(
 
 def _callable_return_type_for(core: Any) -> Any | None:
     """Return the return type of a Callable type hint, or None."""
-    from confarg._types import _callable_return_type
-
     return _callable_return_type(core)
 
 
@@ -109,8 +107,6 @@ def _collect_ns_union_field(
     result: dict[str, Any],
 ) -> None:
     """Handle a multi-variant union field: pick up the class-tag and recurse into the resolved variant."""
-    from confarg._merge import _set_nested
-
     non_none = _union_args_no_none(resolved)
     if not any(_is_struct(_resolve_type(v)) for v in non_none):
         return
@@ -120,8 +116,6 @@ def _collect_ns_union_field(
     class_tag = flat[tag_key]
     _set_nested(result, [*flag.split("."), union_tag], _str_token(class_tag))
     try:
-        from confarg._callable import _import_dotted
-
         cls = _import_dotted(str(class_tag))
         if isinstance(cls, type) and _is_struct(_resolve_type(cls)):
             _collect_ns_fields(flat, cls, flag, union_tag, result)
@@ -137,8 +131,6 @@ def _collect_ns_fields(
     result: dict[str, Any],
 ) -> None:
     """Walk dc_type and copy matching flat-namespace entries into nested dict."""
-    from confarg._merge import _set_nested
-
     setup = _resolve_struct(dc_type)
     if setup is None:
         return

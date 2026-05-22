@@ -11,6 +11,8 @@ import pytest
 import confarg
 from tests.conftest import (
     AppConfig,
+    CacheConfig,
+    DbConfig,
     Empty,
     Flat,
     WithDefaults,
@@ -37,8 +39,6 @@ class TestReturnType:
             env={},
         )
         assert isinstance(result, AppConfig)
-        from tests.conftest import CacheConfig, DbConfig
-
         assert isinstance(result.db, DbConfig)
         assert isinstance(result.cache, CacheConfig)
 

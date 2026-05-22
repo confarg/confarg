@@ -6,13 +6,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+import math
+from dataclasses import dataclass, field, make_dataclass
 from pathlib import Path
 from typing import Optional
 
 import pytest
 
 import confarg
+from confarg._errors import ConfargError
 from tests.conftest import (
     AppConfig,
     Color,
@@ -450,28 +453,18 @@ class TestCliEdgeCases:
 
     def test_missing_value_for_str_field_raises(self) -> None:
         """--field with no following value raises ConfargError instead of silently skipping."""
-        from confarg._errors import ConfargError
-
         WithStr = make_target("name", str)
         with pytest.raises(ConfargError, match="Missing value for '--name'"):
             confarg.load(WithStr, args=["--name"], env={})
 
     def test_missing_value_when_next_is_flag_raises(self) -> None:
         """--field followed immediately by another flag raises ConfargError."""
-        from confarg._errors import ConfargError
-
-        make_target("name", str)
-        make_target("verbose", bool, default=False)
-        from dataclasses import make_dataclass
-
         Both = make_dataclass("Both", [("name", str), ("verbose", bool, field(default=False))])
         with pytest.raises(ConfargError, match="Missing value for '--name'"):
             confarg.load(Both, args=["--name", "--verbose"], env={})
 
     def test_missing_value_for_int_field_raises(self) -> None:
         """--field with no following value raises for int fields too."""
-        from confarg._errors import ConfargError
-
         WithInt = make_target("count", int)
         with pytest.raises(ConfargError, match="Missing value for '--count'"):
             confarg.load(WithInt, args=["--count"], env={})
@@ -508,8 +501,6 @@ class TestCliNoneToken:
 
     def test_nested_optional_field(self) -> None:
         """Test that 'none' token sets optional nested dataclass field to None."""
-        from dataclasses import make_dataclass
-
         Inner = make_dataclass("Inner", [("x", int, field(default=1))])
         Outer = make_dataclass("Outer", [("inner", Inner | None, field(default=None))])
         result = confarg.load(Outer, args=["--inner", "none"], env={})
@@ -517,8 +508,6 @@ class TestCliNoneToken:
 
     def test_none_followed_by_next_flag(self) -> None:
         """'none' token is consumed; next flag is parsed normally."""
-        from dataclasses import make_dataclass
-
         Both = make_dataclass(
             "Both",
             [
@@ -562,14 +551,10 @@ class TestCliStealRule:
     def test_str_float_minus_inf(self) -> None:
         """Test that '-inf' token in str | float resolves to negative float infinity."""
         T = make_target("v", str | float, default=0.0)
-        import math
-
         assert math.isinf(confarg.load(T, args=["--v", "-inf"], env={}).v)
 
     def test_str_float_nan(self) -> None:
         """Test that 'nan' token in str | float resolves to float NaN."""
-        import math
-
         T = make_target("v", str | float, default=0.0)
         assert math.isnan(confarg.load(T, args=["--v", "nan"], env={}).v)
 
@@ -883,7 +868,6 @@ class TestCliListAppend:
 
     def test_dotted_field_append(self) -> None:
         """--parent.items+ appends to a nested list field."""
-        from dataclasses import dataclass
 
         @dataclass
         class Parent:
@@ -1099,8 +1083,6 @@ class TestConfigFileAppend:
 
     def test_json_append_file(self, tmp_json) -> None:
         """JSON append files work the same way as YAML."""
-        import json
-
         base = tmp_json(json.dumps({"servers": [{"host": "a", "port": 1, "name": "db1"}]}))
         extra = tmp_json(json.dumps({"host": "b", "port": 2, "name": "db2"}), "extra.json")
         result = confarg.load(

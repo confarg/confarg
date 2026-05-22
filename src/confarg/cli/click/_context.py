@@ -43,7 +43,7 @@ def _flat_from_ctx(ctx: click.Context) -> dict[str, Any]:
     return result
 
 
-def from_context(  # noqa: PLR0912 PLR0913
+def from_context(  # noqa: PLR0913
     ctx: click.Context,
     dc_type: type,
     *,

@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import enum
 from collections.abc import Iterable, Mapping, MutableMapping, MutableSequence, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -111,7 +113,6 @@ class TestIsPlainClass:
 
     def test_enum_not_plain(self) -> None:
         """Test that an Enum subclass is not considered a plain class."""
-        import enum
 
         class Color(enum.Enum):
             RED = 1
@@ -120,8 +121,6 @@ class TestIsPlainClass:
 
     def test_path_not_plain(self) -> None:
         """Test that pathlib.Path is not considered a plain class."""
-        from pathlib import Path
-
         assert not _is_plain_class(Path)
 
 

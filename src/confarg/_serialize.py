@@ -10,6 +10,7 @@ import enum
 from pathlib import Path
 from typing import Any
 
+from confarg._callable import _serialize_callable
 from confarg._errors import ConfargError
 from confarg._types import (
     TagPolicy,
@@ -55,8 +56,6 @@ def _serialize(
     if instance is None:
         return None
     if _is_callable(tp):
-        from confarg._callable import _serialize_callable
-
         return _serialize_callable(instance)
     return _serialize_by_type(tp, instance, path, union_tag, tag_policy)
 

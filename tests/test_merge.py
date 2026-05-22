@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import pytest
 
 import confarg
@@ -314,7 +316,6 @@ class TestConfigFileAppendSyntax:
 
     def test_yaml_nested_key_append(self, tmp_yaml) -> None:
         """key+: works inside a nested dict (nested struct field)."""
-        from dataclasses import dataclass
 
         @dataclass
         class Inner:
@@ -354,7 +355,6 @@ class TestConfigFileAppendSyntax:
 
     def test_yaml_append_dict_item(self, tmp_yaml) -> None:
         """key+: with a dict value appends that dict as a single list element."""
-        from dataclasses import dataclass
 
         @dataclass
         class Server:

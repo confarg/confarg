@@ -12,6 +12,7 @@ import pytest
 
 import confarg
 from tests.conftest import (
+    AppConfig,
     Color,
     Flat,
     WithDefaults,
@@ -64,8 +65,6 @@ class TestMissingFields:
 
     def test_missing_nested_required(self) -> None:
         """Omitting required nested fields raises MissingFieldError."""
-        from tests.conftest import AppConfig
-
         with pytest.raises(confarg.MissingFieldError):
             confarg.load(AppConfig, args=[], env={})
 
