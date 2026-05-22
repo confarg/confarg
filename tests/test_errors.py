@@ -29,16 +29,16 @@ class TestExceptionHierarchy:
 
     def test_confarg_error_is_base(self) -> None:
         """All confarg exceptions inherit from ConfargError."""
-        assert issubclass(confarg.MissingFieldError, confarg.ConfargError)
-        assert issubclass(confarg.SymbolImportError, confarg.ConfargError)
-        assert issubclass(confarg.TypeCoercionError, confarg.ConfargError)
-        assert issubclass(confarg.InvalidConfigFileError, confarg.ConfargError)
-        assert issubclass(confarg.UnknownArgumentError, confarg.ConfargError)
-        assert issubclass(confarg.AmbiguousUnionError, confarg.ConfargError)
+        assert issubclass(confarg.exceptions.MissingFieldError, confarg.exceptions.ConfargError)
+        assert issubclass(confarg.exceptions.SymbolImportError, confarg.exceptions.ConfargError)
+        assert issubclass(confarg.exceptions.TypeCoercionError, confarg.exceptions.ConfargError)
+        assert issubclass(confarg.exceptions.InvalidConfigFileError, confarg.exceptions.ConfargError)
+        assert issubclass(confarg.exceptions.UnknownArgumentError, confarg.exceptions.ConfargError)
+        assert issubclass(confarg.exceptions.AmbiguousUnionError, confarg.exceptions.ConfargError)
 
     def test_confarg_error_is_exception(self) -> None:
         """ConfargError inherits from Exception."""
-        assert issubclass(confarg.ConfargError, Exception)
+        assert issubclass(confarg.exceptions.ConfargError, Exception)
 
 
 # ---------------------------------------------------------------------------
@@ -51,12 +51,12 @@ class TestMissingFields:
 
     def test_missing_all_required(self) -> None:
         """Flat has no defaults; omitting all fields raises MissingFieldError."""
-        with pytest.raises(confarg.MissingFieldError):
+        with pytest.raises(confarg.exceptions.MissingFieldError):
             confarg.load(Flat, args=[], env={})
 
     def test_missing_one_required(self) -> None:
         """Omitting one required field raises MissingFieldError."""
-        with pytest.raises(confarg.MissingFieldError):
+        with pytest.raises(confarg.exceptions.MissingFieldError):
             confarg.load(
                 Flat,
                 args=["--name", "x", "--rate", "1.0", "--verbose", "true"],
@@ -65,12 +65,12 @@ class TestMissingFields:
 
     def test_missing_nested_required(self) -> None:
         """Omitting required nested fields raises MissingFieldError."""
-        with pytest.raises(confarg.MissingFieldError):
+        with pytest.raises(confarg.exceptions.MissingFieldError):
             confarg.load(AppConfig, args=[], env={})
 
     def test_error_message_contains_field_name(self) -> None:
         """MissingFieldError message mentions the missing field."""
-        with pytest.raises(confarg.MissingFieldError, match="count"):
+        with pytest.raises(confarg.exceptions.MissingFieldError, match="count"):
             confarg.load(
                 Flat,
                 args=["--name", "x", "--rate", "1.0", "--verbose", "true"],
@@ -79,7 +79,7 @@ class TestMissingFields:
 
     def test_scalar_target_missing_value_message(self) -> None:
         """MissingFieldError for scalar targets does not mention positional arguments."""
-        with pytest.raises(confarg.MissingFieldError) as exc_info:
+        with pytest.raises(confarg.exceptions.MissingFieldError) as exc_info:
             confarg.build(int, {})
         msg = str(exc_info.value)
         assert "positional" not in msg
@@ -98,7 +98,7 @@ class TestTypeCoercionErrors:
 
     def test_int_coercion_failure(self) -> None:
         """Non-numeric string for int field raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(
                 Flat,
                 args=["--name", "x", "--count", "notanumber", "--rate", "0", "--verbose", "true"],
@@ -107,7 +107,7 @@ class TestTypeCoercionErrors:
 
     def test_float_coercion_failure(self) -> None:
         """Non-numeric string for float field raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(
                 Flat,
                 args=["--name", "x", "--count", "1", "--rate", "notafloat", "--verbose", "true"],
@@ -116,31 +116,31 @@ class TestTypeCoercionErrors:
 
     def test_bool_coercion_failure_from_env(self) -> None:
         """Unrecognized string for bool from env raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(WithDefaults, args=[], env={"VERBOSE": "maybe"}, env_prefix="")
 
     def test_literal_invalid_value(self) -> None:
         """Invalid Literal value raises an error."""
         WithLiteral = make_target("mode", Literal["fast", "slow"], default="fast")
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(WithLiteral, args=["--mode", "invalid"], env={})
 
     def test_enum_invalid_value(self) -> None:
         """Invalid enum value raises TypeCoercionError listing valid members."""
         WithEnum = make_target("color", Color, default=Color.RED)
-        with pytest.raises(confarg.TypeCoercionError, match=r"Valid members:.*RED.*GREEN.*BLUE"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"Valid members:.*RED.*GREEN.*BLUE"):
             confarg.load(WithEnum, args=["--color", "purple"], env={})
 
     def test_optional_int_null_string_hints_none_sentinel_cli(self) -> None:
         """TypeCoercionError for Optional[int] hints to use 'none' or 'null'."""
         WithOpt = make_target("value", int | None, default=None)
-        with pytest.raises(confarg.TypeCoercionError, match=r"'none' or 'null'"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"'none' or 'null'"):
             confarg.load(WithOpt, args=["--value", "blah"], env={})
 
     def test_optional_int_null_string_hints_none_sentinel_env(self) -> None:
         """TypeCoercionError for Optional[int] from env hints to use 'none' or 'null'."""
         WithOpt = make_target("value", int | None, default=None)
-        with pytest.raises(confarg.TypeCoercionError, match=r"'none' or 'null'"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"'none' or 'null'"):
             confarg.load(WithOpt, args=[], env={"VALUE": "blah"}, env_prefix="")
 
 
@@ -154,17 +154,17 @@ class TestUnknownArguments:
 
     def test_unknown_cli_arg(self) -> None:
         """Unknown CLI flag raises UnknownArgumentError."""
-        with pytest.raises(confarg.UnknownArgumentError):
+        with pytest.raises(confarg.exceptions.UnknownArgumentError):
             confarg.load(WithDefaults, args=["--nonexistent", "val"], env={})
 
     def test_unknown_nested_cli_arg(self) -> None:
         """Unknown nested CLI path raises UnknownArgumentError."""
-        with pytest.raises(confarg.UnknownArgumentError):
+        with pytest.raises(confarg.exceptions.UnknownArgumentError):
             confarg.load(WithDefaults, args=["--foo.bar", "val"], env={})
 
     def test_unknown_arg_message_contains_name(self) -> None:
         """UnknownArgumentError message mentions the unknown argument."""
-        with pytest.raises(confarg.UnknownArgumentError, match="nonexistent"):
+        with pytest.raises(confarg.exceptions.UnknownArgumentError, match="nonexistent"):
             confarg.load(WithDefaults, args=["--nonexistent", "val"], env={})
 
 
@@ -178,5 +178,5 @@ class TestNonDataclassErrors:
 
     def test_non_dataclass_no_prefix_is_handled(self) -> None:
         """Non-dataclass target without prefix raises or handles gracefully."""
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(int, args=["42"], env={})

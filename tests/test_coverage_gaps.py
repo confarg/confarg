@@ -45,7 +45,6 @@ from confarg._callable import (
     _resolve_factory_kwargs,
     _serialize_callable,
 )
-from confarg._errors import SymbolImportError, TypeCoercionError
 from confarg._files import (
     _dump_file,
     _dump_json,
@@ -121,6 +120,7 @@ from confarg.dictexpr._expressions import (
     _set_nested_by_path,
     resolve_expressions,
 )
+from confarg.exceptions import SymbolImportError, TypeCoercionError
 from confarg.typedload._coerce import _coerce_leaf, _coerce_type_ref, _try_coerce
 from confarg.typedload._construct import _value_matches_type, construct
 from tests.conftest import WithDefaults, make_target
@@ -334,7 +334,7 @@ class _CovUninspectable:
 
 
 _CovUninspectable.__init__.__signature__ = property(  # type: ignore[attr-defined]
-    lambda self: (_ for _ in ()).throw(TypeError("uninspectable"))
+    lambda self: (_ for _ in ()).throw(TypeError("uninspectable")),
 )
 
 
@@ -412,7 +412,7 @@ class TestToAppendList:
 
     def test_dict_with_non_int_keys_raises(self) -> None:
         """Dict with non-integer keys raises ConfargError."""
-        with pytest.raises(confarg.ConfargError, match="integer indices"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="integer indices"):
             _to_append_list({"bad": "value"})
 
     def test_scalar_wrapped_in_list(self) -> None:
@@ -462,7 +462,7 @@ class TestConfigAppendWithoutField:
 
     def test_config_append_no_field_path_raises(self) -> None:
         """--config.+ without a field path raises ConfargError."""
-        with pytest.raises(confarg.ConfargError, match="requires a field path"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="requires a field path"):
             confarg.load(WithDefaults, args=["--config.+", "dummy.toml"], env={})
 
 
@@ -476,17 +476,17 @@ class TestFileErrors:
 
     def test_load_toml_file_not_found(self, tmp_path: Path) -> None:
         """Missing TOML file raises InvalidConfigFileError."""
-        with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
             _load_toml(tmp_path / "missing.toml")
 
     def test_load_yaml_file_not_found(self, tmp_path: Path) -> None:
         """Missing YAML file raises InvalidConfigFileError."""
-        with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
             _load_yaml(tmp_path / "missing.yaml")
 
     def test_load_json_file_not_found(self, tmp_path: Path) -> None:
         """Missing JSON file raises InvalidConfigFileError."""
-        with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
             _load_json(tmp_path / "missing.json")
 
     def test_load_yaml_item_missing_library(self, tmp_path: Path, monkeypatch) -> None:
@@ -494,36 +494,36 @@ class TestFileErrors:
         p = tmp_path / "test.yaml"
         p.write_text("key: value")
         monkeypatch.setitem(sys.modules, "yaml", None)
-        with pytest.raises(confarg.InvalidConfigFileError, match="PyYAML"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="PyYAML"):
             _load_yaml_item(p)
 
     def test_load_yaml_item_file_not_found(self, tmp_path: Path) -> None:
         """Missing YAML item file raises InvalidConfigFileError."""
-        with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
             _load_yaml_item(tmp_path / "missing.yaml")
 
     def test_load_yaml_item_malformed(self, tmp_path: Path) -> None:
         """Malformed YAML content raises InvalidConfigFileError."""
         p = tmp_path / "bad.yaml"
         p.write_text("key: :\n  - bad: [unclosed")
-        with pytest.raises(confarg.InvalidConfigFileError, match="malformed"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="malformed"):
             _load_yaml_item(p)
 
     def test_load_json_item_file_not_found(self, tmp_path: Path) -> None:
         """Missing JSON item file raises InvalidConfigFileError."""
-        with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
             _load_json_item(tmp_path / "missing.json")
 
     def test_load_json_item_malformed(self, tmp_path: Path) -> None:
         """Malformed JSON content raises InvalidConfigFileError."""
         p = tmp_path / "bad.json"
         p.write_text("{bad json")
-        with pytest.raises(confarg.InvalidConfigFileError, match="malformed"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="malformed"):
             _load_json_item(p)
 
     def test_load_file_item_unsupported_format(self, tmp_path: Path) -> None:
         """Unsupported file extension raises InvalidConfigFileError."""
-        with pytest.raises(confarg.InvalidConfigFileError, match="Unsupported"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="Unsupported"):
             _load_file_item(tmp_path / "file.xyz")
 
     def test_dump_json_writes_file(self, tmp_path: Path) -> None:
@@ -536,7 +536,7 @@ class TestFileErrors:
 
     def test_dump_file_unsupported_format(self, tmp_path: Path) -> None:
         """Unsupported file extension in dump raises InvalidConfigFileError."""
-        with pytest.raises(confarg.InvalidConfigFileError, match="Unsupported"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="Unsupported"):
             _dump_file({"key": "val"}, tmp_path / "out.xyz")
 
 
@@ -577,25 +577,29 @@ class TestCallableEdgeCases:
             return str(x)
 
         result = _resolve_callable_spec(
-            my_func, Callable[[int], str], path="test", union_tag="class", construct_fn=construct
+            my_func,
+            Callable[[int], str],
+            path="test",
+            union_tag="class",
+            construct_fn=construct,
         )
         assert result is my_func
 
     def test_resolve_dict_spec_non_dict_bind_raises(self) -> None:
         """A non-dict bind: value in the fn: dict form raises TypeCoercionError."""
         spec = {"fn": "os.path.join", "bind": "not_a_dict"}
-        with pytest.raises(confarg.TypeCoercionError, match="must be a dict"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="must be a dict"):
             _resolve_callable_spec(spec, Callable, path="test", union_tag="class", construct_fn=construct)
 
     def test_resolve_class_spec_not_a_class_raises(self) -> None:
         """A non-class path in the class: dict form raises TypeCoercionError."""
         spec = {"class": "os.path.join"}
-        with pytest.raises(confarg.TypeCoercionError, match="must reference a class"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="must reference a class"):
             _resolve_callable_spec(spec, Callable, path="test", union_tag="class", construct_fn=construct)
 
     def test_resolve_spec_invalid_type_raises(self) -> None:
         """A non-str, non-dict callable spec raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError, match="expected str or dict"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="expected str or dict"):
             _resolve_callable_spec(12345, Callable, path="test", union_tag="class", construct_fn=construct)
 
     def test_check_signature_var_positional_skipped(self) -> None:
@@ -629,7 +633,7 @@ class TestCallableEdgeCases:
         obj = Proxy()
         obj.__module__ = None  # type: ignore
         obj.__qualname__ = None  # type: ignore
-        with pytest.raises(confarg.ConfargError, match="no __module__"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="no __module__"):
             _serialize_callable(obj)
 
 
@@ -948,7 +952,7 @@ class TestParseCliBranches:
     def test_append_unknown_field_raises(self) -> None:
         """--unknown+ for a non-existent field raises ConfargError."""
         WithList = make_target("items", list[int], default_factory=list)
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(WithList, args=["--nonexistent+", "1"], env={})
 
 
@@ -962,7 +966,7 @@ class TestParseEnvBranches:
 
     def test_ambiguous_env_var_in_union_raises(self) -> None:
         """An env var that matches fields in multiple union variants raises ConfargError."""
-        with pytest.raises(confarg.ConfargError, match="Ambiguous env var"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="Ambiguous env var"):
             confarg.load(
                 _AmbigUnion,
                 args=[],
@@ -1018,7 +1022,7 @@ class TestParseEnvBranches:
             )
         assert isinstance(result, _UnionRootVariantA)
         assert result.a == "hello"
-        assert any("Z" in str(w.message) for w in caught if issubclass(w.category, confarg.ConfargWarning))
+        assert any("Z" in str(w.message) for w in caught if issubclass(w.category, confarg.exceptions.ConfargWarning))
 
 
 # ---------------------------------------------------------------------------
@@ -1107,58 +1111,58 @@ class TestExpressionBranches:
     def test_call_evaluation_error(self) -> None:
         """A function call that raises inside an expression wraps the error as ExpressionEvalError."""
         data = {"x": 0, "val": "${int('abc')}"}
-        with pytest.raises(confarg.ExpressionEvalError):
+        with pytest.raises(confarg.exceptions.ExpressionEvalError):
             resolve_expressions(data)
 
     def test_expression_eval_error_reraise_pure(self) -> None:
         """A runtime error in a pure ${expr} expression raises ExpressionEvalError."""
         data = {"x": 0, "val": "${1 / x}"}
-        with pytest.raises(confarg.ExpressionEvalError):
+        with pytest.raises(confarg.exceptions.ExpressionEvalError):
             resolve_expressions(data)
 
     def test_expression_eval_error_reraise_interpolation(self) -> None:
         """A runtime error inside a string interpolation expression raises ExpressionEvalError."""
         data = {"x": 0, "val": "prefix_${1 / x}"}
-        with pytest.raises(confarg.ExpressionEvalError):
+        with pytest.raises(confarg.exceptions.ExpressionEvalError):
             resolve_expressions(data)
 
     def test_get_nested_list_invalid_index_type(self) -> None:
         """Non-integer path segment into a list raises MissingReferenceError."""
-        with pytest.raises(confarg.MissingReferenceError):
+        with pytest.raises(confarg.exceptions.MissingReferenceError):
             _get_nested({"items": [1, 2, 3]}, "items.notanint")
 
     def test_get_nested_list_out_of_range(self) -> None:
         """Out-of-range index into a list raises MissingReferenceError."""
-        with pytest.raises(confarg.MissingReferenceError):
+        with pytest.raises(confarg.exceptions.MissingReferenceError):
             _get_nested({"items": [1, 2]}, "items.99")
 
     def test_set_nested_traverse_error(self) -> None:
         """_set_nested_by_path raises MissingReferenceError when traversal encounters a non-container."""
-        with pytest.raises(confarg.MissingReferenceError):
+        with pytest.raises(confarg.exceptions.MissingReferenceError):
             _set_nested_by_path({"a": 42}, "a.b.c", "value")
 
     def test_set_nested_set_non_container_raises(self) -> None:
         """_set_nested_by_path raises MissingReferenceError when the target node is not a container."""
         # Traverse into list index 1 (yields int 2), then set "x" on int → else branch
-        with pytest.raises(confarg.MissingReferenceError):
+        with pytest.raises(confarg.exceptions.MissingReferenceError):
             _set_nested_by_path({"a": [1, 2, 3]}, "a.1.x", "value")
 
     def test_unsupported_binary_op_raises(self) -> None:
         """An unsupported binary operator (@ matrix multiply) raises ExpressionEvalError."""
         node = ast.parse("a @ b", mode="eval").body
-        with pytest.raises(confarg.ExpressionEvalError, match="Unsupported binary"):
+        with pytest.raises(confarg.exceptions.ExpressionEvalError, match="Unsupported binary"):
             _evaluate_ast(node, {"a": 1, "b": 2})
 
     def test_unsupported_unary_op_raises(self) -> None:
         """An unsupported unary operator (~ bitwise invert) raises ExpressionEvalError."""
         node = ast.parse("~a", mode="eval").body
-        with pytest.raises(confarg.ExpressionEvalError, match="Unsupported unary"):
+        with pytest.raises(confarg.exceptions.ExpressionEvalError, match="Unsupported unary"):
             _evaluate_ast(node, {"a": 1})
 
     def test_unsupported_comparison_raises(self) -> None:
         """An unsupported comparison operator ('is') raises ExpressionEvalError."""
         node = ast.parse("a is b", mode="eval").body
-        with pytest.raises(confarg.ExpressionEvalError, match="Unsupported comparison"):
+        with pytest.raises(confarg.exceptions.ExpressionEvalError, match="Unsupported comparison"):
             _evaluate_ast(node, {"a": 1, "b": 1})
 
 
@@ -1172,7 +1176,7 @@ class TestCoerceEdgeCases:
 
     def test_coerce_leaf_path_failure(self) -> None:
         """_coerce_leaf raises TypeCoercionError when a None value cannot become a Path."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             _coerce_leaf(Path, None)
 
     def test_coerce_leaf_unsupported_type(self) -> None:
@@ -1181,7 +1185,7 @@ class TestCoerceEdgeCases:
         class WeirdType:
             pass
 
-        with pytest.raises(confarg.TypeCoercionError, match="Unsupported leaf type"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="Unsupported leaf type"):
             _coerce_leaf(WeirdType, "value")
 
 
@@ -1200,12 +1204,12 @@ class TestConstructEdgeCases:
 
     def test_construct_list_from_dict_with_non_int_keys_raises(self) -> None:
         """Dict with non-integer keys raises TypeCoercionError when constructing a list."""
-        with pytest.raises(confarg.TypeCoercionError, match="integer"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="integer"):
             construct(list[int], {"bad": 1})
 
     def test_construct_tuple_from_dict_non_int_keys_raises(self) -> None:
         """Dict with non-integer keys raises TypeCoercionError when constructing a tuple."""
-        with pytest.raises(confarg.TypeCoercionError, match="integer"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="integer"):
             construct(tuple[int, str], {"bad": "value"})
 
     def test_construct_union_none_with_none_type(self) -> None:
@@ -1215,7 +1219,7 @@ class TestConstructEdgeCases:
 
     def test_construct_optional_coercion_failure_hint(self) -> None:
         """An uncoercible value for int | None hints about 'none'/'null' in the error message."""
-        with pytest.raises(confarg.TypeCoercionError, match="None"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="None"):
             construct(int | None, _StrToken("notanint"))
 
     def test_ambiguous_class_tag_multiple_matches_raises(self) -> None:
@@ -1223,7 +1227,7 @@ class TestConstructEdgeCases:
         # _StructUnionVariantB is a subclass of _StructUnionVariantA, so the
         # class tag for B matches both variants in the union → AmbiguousUnionError.
         data = {"class": f"{_StructUnionVariantB.__module__}.{_StructUnionVariantB.__name__}", "x": 0}
-        with pytest.raises(confarg.AmbiguousUnionError, match="matches multiple"):
+        with pytest.raises(confarg.exceptions.AmbiguousUnionError, match="matches multiple"):
             construct(_StructUnionVariantA | _StructUnionVariantB, data)
 
     def test_class_tag_no_matching_variant_raises(self) -> None:
@@ -1231,12 +1235,12 @@ class TestConstructEdgeCases:
         # _StructUnionVariantA is not a subclass of either _ConstructAVariant or
         # _ConstructBVariant → TypeCoercionError "not compatible with any union variant".
         data = {"class": f"{_StructUnionVariantA.__module__}.{_StructUnionVariantA.__name__}", "x": 0}
-        with pytest.raises(confarg.TypeCoercionError, match="not compatible"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="not compatible"):
             construct(_ConstructAVariant | _ConstructBVariant, data)
 
     def test_construct_bool_in_bool_int_union(self) -> None:
         """Bool | int union: True value is constructed as bool."""
-        result = construct(bool | int, True)
+        result = construct(bool | int, data=True)
         assert result is True
 
     def test_construct_union_none_type_in_scalar_loop(self) -> None:
@@ -1260,7 +1264,7 @@ class TestConstructEdgeCases:
         """AmbiguousUnionError message lists optional fields to help the user disambiguate."""
         # Both _AmbigOptionalP and _AmbigOptionalQ match {"val": {"x": 1}} →
         # AmbiguousUnionError with "optional" in message (listing optional fields).
-        with pytest.raises(confarg.AmbiguousUnionError, match="optional"):
+        with pytest.raises(confarg.exceptions.AmbiguousUnionError, match="optional"):
             confarg.build(_AmbigContainer, {"val": {"x": 1}})
 
     def test_construct_struct_union_tuple_from_union(self) -> None:
@@ -1292,7 +1296,7 @@ class TestConstructEdgeCases:
 
         data = {"class": "nonexistent.module.SomeClass", "x": 1}
 
-        with pytest.raises(confarg.TypeCoercionError, match="Cannot import"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="Cannot import"):
             construct(A, data)
 
 
@@ -1507,7 +1511,7 @@ class TestParseEnvDictAndFallthrough:
         # Index 5 is out of range for a 2-element tuple; the partial-index
         # merge extends the base list to 6 elements, then _construct_tuple rejects it.
         WithTuple = make_target("coords", tuple[int, str], default=(0, ""))
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(
                 WithTuple,
                 args=[],
@@ -1518,7 +1522,7 @@ class TestParseEnvDictAndFallthrough:
     def test_scalar_field_with_deep_env_path(self) -> None:
         """A deeper-than-expected env var path for a scalar field raises TypeCoercionError."""
         WithInt = make_target("count", int, default=0)
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(WithInt, args=[], env={"COUNT__EXTRA": "5"}, env_prefix="")
 
 
@@ -1533,7 +1537,7 @@ class TestCallableBranches:
     def test_non_callable_instance_raises(self) -> None:
         """An instance of a non-callable class raises TypeCoercionError in _resolve_class_spec."""
         cls_path = f"{_NotCallableClass.__module__}.{_NotCallableClass.__qualname__}"
-        with pytest.raises(confarg.TypeCoercionError, match="is not callable"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="is not callable"):
             _resolve_class_spec(
                 _ClassSpec(cls_path, {}, {}, {"class": cls_path}),
                 "test_path",
@@ -1578,7 +1582,7 @@ class TestFilesMissingLibrary:
         path = tmp_yaml("host: myserver")
         with (
             unittest.mock.patch.dict(sys.modules, {"yaml": None}),
-            pytest.raises(confarg.InvalidConfigFileError, match="PyYAML"),
+            pytest.raises(confarg.exceptions.InvalidConfigFileError, match="PyYAML"),
         ):
             _load_yaml(path)
 
@@ -1597,7 +1601,7 @@ class TestParseCLIBranches:
         # _NonStructSubChild overrides __init__ with no params → not a struct.
         # _subclass_field_type(_NonStructSubBase, "unknown") → scans subclasses,
         # hits `if not _is_struct(sub): continue` (line 80), returns None.
-        with pytest.raises(confarg.UnknownArgumentError):
+        with pytest.raises(confarg.exceptions.UnknownArgumentError):
             confarg.load(_NonStructSubBase, args=["--unknown_field", "5"])
 
     def test_union_variants_no_matching_field_returns_none(self) -> None:
@@ -1609,7 +1613,7 @@ class TestParseCLIBranches:
         """A deep CLI sub-key path into a dict-typed field raises TypeCoercionError."""
         DCWithDict = make_target("mapping", dict[str, int], default_factory=dict)
         # --mapping.subkey.deeper triggers ft=None, then _is_dict_at_path returns True
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(DCWithDict, args=["--mapping.subkey.deeper", "hello"])
 
     def test_dict_at_path_bare_flag(self) -> None:
@@ -1676,13 +1680,13 @@ class TestExpressionsBranches:
             b: str = ""
             result: str = ""
 
-        with pytest.raises(confarg.ExpressionEvalError):
+        with pytest.raises(confarg.exceptions.ExpressionEvalError):
             confarg.build(DC, {"a": [1, 2, 3], "b": "key", "result": "${a[b]}"})
 
     def test_interpolation_missing_ref_reraises(self) -> None:
         """A missing field reference inside a string interpolation raises MissingReferenceError."""
         WithStr = make_target("msg", str, default="")
-        with pytest.raises(confarg.MissingReferenceError):
+        with pytest.raises(confarg.exceptions.MissingReferenceError):
             confarg.build(WithStr, {"msg": "hello ${missing_field} world"})
 
     def test_interpolation_unexpected_exception_wrapped(self) -> None:
@@ -1694,7 +1698,7 @@ class TestExpressionsBranches:
             b: str = ""
             result: str = ""
 
-        with pytest.raises(confarg.ExpressionEvalError):
+        with pytest.raises(confarg.exceptions.ExpressionEvalError):
             confarg.build(DC, {"a": [1, 2, 3], "b": "key", "result": "prefix_${a[b]}_suffix"})
 
 
@@ -1708,12 +1712,12 @@ class TestCoerceBranches:
 
     def test_float_from_dict_raises(self) -> None:
         """A dict value cannot be coerced to float; raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             _coerce_leaf(float, {"nested": "val"}, "field")
 
     def test_str_from_int_raises(self) -> None:
         """A bare int value cannot be coerced to str; raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             _coerce_leaf(str, 42, "field")
 
 
@@ -1739,12 +1743,12 @@ class TestConstructBranches:
 
     def test_construct_tuple_from_dict_non_integer_keys(self) -> None:
         """Dict with non-integer string keys raises TypeCoercionError for a tuple."""
-        with pytest.raises(confarg.TypeCoercionError, match="integer indices"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="integer indices"):
             construct(tuple[int, str], {"a": 1, "b": "hello"})
 
     def test_construct_tuple_from_dict_out_of_range_index(self) -> None:
         """Out-of-range integer index for a fixed-length tuple raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError, match="out of range"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="out of range"):
             construct(tuple[int, str], {"0": 1, "5": "hello"})
 
     def test_tuple_variants_in_union_list_data(self) -> None:
@@ -1754,12 +1758,12 @@ class TestConstructBranches:
 
     def test_tuple_variants_dict_noninteger_keys(self) -> None:
         """Dict with non-integer keys raises TypeCoercionError for a tuple | int union."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             construct(tuple[int, str] | int, {"a": 1, "b": "hello"})
 
     def test_bool_int_union_bool_value_returns_bool(self) -> None:
         """Bool | int union: a True value is constructed as bool, not int."""
-        result = construct(bool | int, True)
+        result = construct(bool | int, data=True)
         assert result is True
 
     def test_value_matches_type_bool_with_non_token_non_bool_value(self) -> None:
@@ -1769,7 +1773,7 @@ class TestConstructBranches:
 
     def test_union_class_tag_resolves_to_non_class(self) -> None:
         """A class tag that resolves to a non-class object raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError, match="must be a class path"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="must be a class path"):
             construct(
                 _StructUnionVariantA | _StructUnionVariantB,
                 {"class": "confarg._defaults.UNION_TAG", "x": 0},
@@ -1782,14 +1786,14 @@ class TestConstructBranches:
 
     def test_list_delete_without_base_raises(self) -> None:
         """LIST_DELETE_KEY without a base list raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError, match="requires a base list"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="requires a base list"):
             construct(list[int], {LIST_DELETE_KEY: [0]})
 
     def test_try_coll_variants_all_fail_returns_no_match(self) -> None:
         """_try_coll_variants returns _UNION_NO_MATCH when all collection variants fail."""
         # list[int] | int: passing {"bad": "val"} fails list construction → except → continue
         # then int coercion also fails → TypeCoercionError from outer union handler
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             construct(list[int] | int, {"bad": "val"})
 
     def test_coerce_scalar_variants_none_token_multi_union(self) -> None:
@@ -1876,7 +1880,7 @@ class TestParseCliGaps2:
     def test_list_delete_unknown_field_raises(self) -> None:
         """--nonexistent.0- on a dataclass without that field raises UnknownArgumentError."""
         WithList = make_target("items", list[int], default_factory=list)
-        with pytest.raises(confarg.UnknownArgumentError):
+        with pytest.raises(confarg.exceptions.UnknownArgumentError):
             confarg.load(WithList, args=["--nonexistent.0-"])
 
     def test_double_append_after_replace_base(self) -> None:
@@ -1903,7 +1907,7 @@ class TestParseCliGaps2:
 
     def test_scalar_root_missing_value_raises(self) -> None:
         """Non-struct target with no value after the flag raises ConfargError."""
-        with pytest.raises(confarg.ConfargError, match="Missing value"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="Missing value"):
             confarg.load(str, args=["--confarg"], cli_prefix="confarg")
 
 
@@ -1921,7 +1925,7 @@ class TestParseEnvJsonFailure:
         # "[1,2,3" is invalid JSON → JSONDecodeError → pass → _try_coerce as string
         # Result is unpredictable but must not crash
 
-        with contextlib.suppress(confarg.TypeCoercionError):
+        with contextlib.suppress(confarg.exceptions.TypeCoercionError):
             confarg.load(WithList, args=[], env={"ITEMS": "[1,2,3"}, env_prefix="")
 
 
@@ -1950,7 +1954,7 @@ class TestFilesIncludeGaps:
         """A list item with __include__ pointing back to itself raises ConfargError."""
         p = tmp_path / "circular.json"
         p.write_text(json.dumps({"items": [{"__include__": "circular.json"}]}))
-        with pytest.raises(confarg.ConfargError, match="Circular include"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="Circular include"):
             _load_file(p)
 
     def test_unsupported_extension_in_include_raises(self, tmp_path: Path) -> None:
@@ -1959,7 +1963,7 @@ class TestFilesIncludeGaps:
         unsupported.write_text("hello")
         p = tmp_path / "root.json"
         p.write_text(json.dumps({"__include__": "data.xyz"}))
-        with pytest.raises(confarg.InvalidConfigFileError, match="Unsupported"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="Unsupported"):
             _load_file(p)
 
 
@@ -1974,7 +1978,7 @@ class TestCoerceTypeRefNonClass:
     def test_type_ref_non_class_raises(self) -> None:
         """A dotted path resolving to a function raises TypeCoercionError for TypeRef fields."""
         # os.path.join is a function, not a class; bare `type` has object constraint
-        with pytest.raises(confarg.TypeCoercionError, match="expected a class"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="expected a class"):
             _coerce_type_ref(type, _StrToken("os.path.join"))
 
 
@@ -2031,7 +2035,7 @@ class TestCallableGaps:
 
     def test_resolve_call_spec_raises_on_call_failure(self) -> None:
         """_resolve_call_spec raises TypeCoercionError when the called function raises."""
-        with pytest.raises(confarg.TypeCoercionError, match="Failed to call"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="Failed to call"):
             _resolve_call_spec(f"{_COV_MOD}._cov_raise_fn", {"x": 1}, {}, "test", "class", construct)
 
     def test_coerce_bind_kwargs_string_values(self) -> None:
@@ -2300,7 +2304,7 @@ class TestBuildCallableSpecs:
             pass
 
         _BrokenDCFields.__dataclass_fields__ = property(  # type: ignore[attr-defined]
-            lambda self: (_ for _ in ()).throw(TypeError("boom"))
+            lambda self: (_ for _ in ()).throw(TypeError("boom")),
         )
         result = _collect_fn_paths_from_config({}, _BrokenDCFields, "", "class")
         assert result == {}
@@ -2418,7 +2422,7 @@ class TestBuildCallableSpecs:
 
         # Make _is_struct think this is a struct by giving it __dataclass_fields__
         _BrokenStruct.__dataclass_fields__ = property(  # type: ignore[attr-defined]
-            lambda self: (_ for _ in ()).throw(TypeError("boom"))
+            lambda self: (_ for _ in ()).throw(TypeError("boom")),
         )
         # Should return None, not raise
         result = _resolve_struct(_BrokenStruct)
@@ -2594,7 +2598,7 @@ class TestCompletionGaps:
 
         class _BrokenStruct:
             __dataclass_fields__ = property(  # type: ignore[assignment]
-                lambda s: (_ for _ in ()).throw(ValueError("boom"))
+                lambda s: (_ for _ in ()).throw(ValueError("boom")),
             )
 
         result = _resolve_tags_from_config({}, _BrokenStruct, "", "class")

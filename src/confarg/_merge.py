@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from confarg._errors import ConfargError
+from confarg.exceptions import ConfargError
 
 # Special key used in the intermediate dict to signal "append these items to the list".
 # The value may be a list (from CLI), a scalar (single-value append), or a dict with
@@ -287,6 +287,30 @@ def _deep_merge(
     return result
 
 
+def _navigate_append_spec(d: dict[str, Any], part: str) -> dict[str, Any] | None:
+    """Return the appended item that a negative-index part points into, or None.
+
+    Used when traversing a path through an active append-spec (a dict keyed by
+    LIST_APPEND_KEY). A negative index resolves to the corresponding appended
+    item dict so that subsequent sub-field assignments patch it directly.
+    """
+    if LIST_APPEND_KEY not in d:
+        return None
+    try:
+        idx = int(part)
+    except ValueError:
+        return None
+    if idx >= 0:
+        return None
+    items = d[LIST_APPEND_KEY]
+    if not isinstance(items, list):
+        return None
+    resolved = idx + len(items)
+    if 0 <= resolved < len(items) and isinstance(items[resolved], dict):
+        return items[resolved]
+    return None
+
+
 def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
     """Set a value in a nested dict by following a list of keys.
 
@@ -304,19 +328,9 @@ def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
         # Negative index into an active append-spec: navigate directly into the
         # appended item so multiple --field+ / --field.-1.sub sequences each
         # patch their own newly-added item rather than colliding on the "-N" key.
-        if isinstance(d, dict) and LIST_APPEND_KEY in d:
-            try:
-                idx = int(part)
-            except ValueError:
-                pass
-            else:
-                if idx < 0:
-                    items = d[LIST_APPEND_KEY]
-                    if isinstance(items, list):
-                        resolved = idx + len(items)
-                        if 0 <= resolved < len(items) and isinstance(items[resolved], dict):
-                            d = items[resolved]
-                            continue
+        if isinstance(d, dict) and (target := _navigate_append_spec(d, part)) is not None:
+            d = target
+            continue
         if part not in d:
             d[part] = {}
         elif isinstance(d[part], list):
@@ -358,6 +372,6 @@ def _accumulate_list_delete(
         if idx in existing:
             msg = f"Duplicate list-deletion index {idx} for {source!r}."
             raise ConfargError(msg)
-        node[delete_key] = sorted(existing + [idx])
+        node[delete_key] = sorted([*existing, idx])
     else:
         node[delete_key] = [idx]

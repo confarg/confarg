@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-from confarg._errors import ConfargError, ConfargWarning
 from confarg._merge import DICT_DELETE, _accumulate_list_delete, _set_nested
 from confarg._types import (
     _dict_kv,
@@ -35,6 +34,7 @@ from confarg._types import (
     _tuple_types,
     _union_args_no_none,
 )
+from confarg.exceptions import ConfargError, ConfargWarning
 from confarg.typedload._coerce import _try_coerce
 
 
@@ -173,7 +173,7 @@ def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[
         parent_parts, _ = _resolve_env_parts(target, parent_raw) if parent_raw else ([], None)
         _accumulate_list_delete(data, parent_parts, delete_idx, orig_key)
     else:
-        del_parts, _ = _resolve_env_parts(target, parts[:-1] + [raw_last])
+        del_parts, _ = _resolve_env_parts(target, [*parts[:-1], raw_last])
         _set_nested(data, del_parts, DICT_DELETE)
 
 

@@ -363,7 +363,7 @@ class TestUnionEdgeCases:
 
     def test_union_overlapping_field_int_port_cli_ambiguous(self) -> None:
         """Union[ServerTcp, ServerUnix]: CLI numeric port is ambiguous."""
-        with pytest.raises(confarg.AmbiguousUnionError):
+        with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionOverlap,
                 args=["--server.host", "localhost", "--server.port", "5432"],
@@ -548,7 +548,7 @@ class TestUnionEdgeCases:
 
     def test_union_overlapping_cli_int_vs_str_ambiguous(self) -> None:
         """CLI numeric port matches both int and str variants -> AmbiguousUnionError."""
-        with pytest.raises(confarg.AmbiguousUnionError):
+        with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionOverlap,
                 args=["--server.host", "h", "--server.port", "5432"],
@@ -761,7 +761,7 @@ class TestUnionClassTag:
 
     def test_ambiguous_no_tag_raises(self) -> None:
         """Structurally identical Union without class tag raises AmbiguousUnionError."""
-        with pytest.raises(confarg.AmbiguousUnionError):
+        with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionAmbiguous,
                 args=["--shape.x", "1", "--shape.y", "2", "--shape.radius", "5"],
@@ -770,7 +770,7 @@ class TestUnionClassTag:
 
     def test_ambiguous_no_tag_env_raises(self) -> None:
         """Structurally identical Union without class tag in env raises AmbiguousUnionError."""
-        with pytest.raises(confarg.AmbiguousUnionError):
+        with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionAmbiguous,
                 args=[],
@@ -780,7 +780,7 @@ class TestUnionClassTag:
 
     def test_ambiguous_error_message_is_diagnostic(self) -> None:
         """AmbiguousUnionError lists candidates, their fields, and how to fix it."""
-        with pytest.raises(confarg.AmbiguousUnionError) as exc_info:
+        with pytest.raises(confarg.exceptions.AmbiguousUnionError) as exc_info:
             confarg.load(
                 WithUnionAmbiguous,
                 args=["--shape.x", "1", "--shape.y", "2", "--shape.radius", "5"],
@@ -797,7 +797,7 @@ class TestUnionClassTag:
 
     def test_invalid_tag_value_raises(self) -> None:
         """Class tag with a name not in the Union raises an error."""
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(
                 WithUnionAmbiguous,
                 args=[
@@ -874,7 +874,7 @@ class TestUnionClassTag:
 
     def test_tag_short_name_not_importable_raises(self) -> None:
         """A short (non-dotted) class name cannot be imported and raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(
                 WithDuplicateNameUnion,
                 args=["--shape.class", "CircleShape", "--shape.x", "1", "--shape.y", "2", "--shape.radius", "5"],
@@ -1172,7 +1172,7 @@ class TestTypeLiteralDiscriminator:
 
     def test_invalid_type_value_raises(self) -> None:
         """Type field value not in any Literal raises an error."""
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(
                 WithTypeLiteralUnion,
                 args=["--item.type", "c", "--item.value", "1"],
@@ -1181,7 +1181,7 @@ class TestTypeLiteralDiscriminator:
 
     def test_no_type_field_raises(self) -> None:
         """Omitting the type discriminator means neither variant can be constructed."""
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(
                 WithTypeLiteralUnion,
                 args=["--item.value", "1"],
@@ -1214,7 +1214,7 @@ class TestUnionFloatStrAmbiguity:
 
     def test_cli_inf_ambiguous_float_vs_str(self) -> None:
         """CLI --item.value inf is ambiguous: 'inf' parses as both float and str."""
-        with pytest.raises(confarg.AmbiguousUnionError):
+        with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionFloatStr,
                 args=["--item.value", "inf"],
@@ -1223,7 +1223,7 @@ class TestUnionFloatStrAmbiguity:
 
     def test_cli_nan_ambiguous_float_vs_str(self) -> None:
         """CLI --item.value nan is ambiguous: 'nan' parses as both float and str."""
-        with pytest.raises(confarg.AmbiguousUnionError):
+        with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionFloatStr,
                 args=["--item.value", "nan"],

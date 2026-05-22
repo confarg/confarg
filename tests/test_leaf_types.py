@@ -44,14 +44,19 @@ class TestInt:
     def test_int_from_cli(self, cli_val: str, expected: int) -> None:
         """Parse integers from CLI args."""
         result = confarg.load(
-            Flat, args=["--name", "x", "--count", cli_val, "--rate", "1.0", "--verbose", "true"], env={}
+            Flat,
+            args=["--name", "x", "--count", cli_val, "--rate", "1.0", "--verbose", "true"],
+            env={},
         )
         assert result.count == expected
 
     def test_int_from_env(self) -> None:
         """Parse an integer from an env var."""
         result = confarg.load(
-            Flat, args=["--name", "x", "--rate", "1.0", "--verbose", "true"], env={"COUNT": "99"}, env_prefix=""
+            Flat,
+            args=["--name", "x", "--rate", "1.0", "--verbose", "true"],
+            env={"COUNT": "99"},
+            env_prefix="",
         )
         assert result.count == 99
 
@@ -76,14 +81,19 @@ class TestFloat:
     def test_float_from_cli(self, cli_val: str, expected) -> None:
         """Parse float values from CLI args."""
         result = confarg.load(
-            Flat, args=["--name", "x", "--count", "1", "--rate", cli_val, "--verbose", "true"], env={}
+            Flat,
+            args=["--name", "x", "--count", "1", "--rate", cli_val, "--verbose", "true"],
+            env={},
         )
         assert result.rate == expected
 
     def test_float_from_env(self) -> None:
         """Parse a float from an env var."""
         result = confarg.load(
-            Flat, args=["--name", "x", "--count", "1", "--verbose", "true"], env={"RATE": "2.718"}, env_prefix=""
+            Flat,
+            args=["--name", "x", "--count", "1", "--verbose", "true"],
+            env={"RATE": "2.718"},
+            env_prefix="",
         )
         assert result.rate == pytest.approx(2.718)
 
@@ -108,7 +118,9 @@ class TestFloat:
     def test_float_special_from_cli(self, cli_val: str, check) -> None:
         """Parse nan/inf variants from CLI args (case-insensitive)."""
         result = confarg.load(
-            Flat, args=["--name", "x", "--count", "1", "--rate", cli_val, "--verbose", "true"], env={}
+            Flat,
+            args=["--name", "x", "--count", "1", "--rate", cli_val, "--verbose", "true"],
+            env={},
         )
         assert check(result.rate)
 
@@ -126,7 +138,10 @@ class TestFloat:
     def test_float_special_from_env(self, env_val: str, check) -> None:
         """Parse nan/inf from env vars."""
         result = confarg.load(
-            Flat, args=["--name", "x", "--count", "1", "--verbose", "true"], env={"RATE": env_val}, env_prefix=""
+            Flat,
+            args=["--name", "x", "--count", "1", "--verbose", "true"],
+            env={"RATE": env_val},
+            env_prefix="",
         )
         assert check(result.rate)
 
@@ -186,7 +201,7 @@ class TestBool:
         [("true", True), ("false", False)],
         ids=["true", "false"],
     )
-    def test_bool_from_env(self, env_val: str, expected: bool) -> None:
+    def test_bool_from_env(self, env_val: str, expected: bool) -> None:  # noqa: FBT001
         """Truthy/falsy env var strings set bool correctly."""
         result = confarg.load(WithDefaults, args=[], env={"VERBOSE": env_val}, env_prefix="")
         assert result.verbose is expected
@@ -203,7 +218,9 @@ class TestStr:
     def test_str_from_cli(self) -> None:
         """Parse a string from a CLI arg."""
         result = confarg.load(
-            Flat, args=["--name", "hello", "--count", "0", "--rate", "0", "--verbose", "true"], env={}
+            Flat,
+            args=["--name", "hello", "--count", "0", "--rate", "0", "--verbose", "true"],
+            env={},
         )
         assert result.name == "hello"
 
@@ -269,7 +286,7 @@ class TestNoneType:
     def test_optional_unset_via_empty_env(self, tmp_toml, target_cls) -> None:
         """Empty env VALUE= raises for int|None — use VALUE__NONE= to set None."""
         path = tmp_toml("value = 42\n")
-        with pytest.raises(confarg.TypeCoercionError, match="To set this field to None"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="To set this field to None"):
             confarg.load(target_cls, args=[], env={"VALUE": ""}, env_prefix="", files=[path])
 
     def test_optional_str_none_sentinel_cli(self) -> None:
@@ -292,7 +309,7 @@ class TestNoneType:
 
     def test_none_string_is_literal_for_non_optional(self) -> None:
         """'none' for a non-optional int field is just a bad int, raises TypeCoercionError."""
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(WithDefaults, args=["--count", "none"], env={})
 
 
@@ -373,7 +390,7 @@ class TestLiteral:
     def test_literal_invalid_raises(self) -> None:
         """Providing an invalid Literal value raises an error."""
         WithLiteral = make_target("mode", Literal["fast", "slow"], default="fast")
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(WithLiteral, args=["--mode", "turbo"], env={})
 
 
@@ -419,7 +436,10 @@ class TestTypeAlias:
     def test_type_alias_from_env(self) -> None:
         """Field using a type alias is parsed from indexed env vars."""
         result = confarg.load(
-            WithHostPort, args=[], env={"ENDPOINT__0": "envhost", "ENDPOINT__1": "443"}, env_prefix=""
+            WithHostPort,
+            args=[],
+            env={"ENDPOINT__0": "envhost", "ENDPOINT__1": "443"},
+            env_prefix="",
         )
         assert result.endpoint == ("envhost", 443)
 

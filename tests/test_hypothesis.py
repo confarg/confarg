@@ -48,7 +48,7 @@ class TestRoundTripCoercion:
         assert abs(result.rate - value) < 1e-6 or result.rate == value
 
     @given(value=leaf_bools)
-    def test_bool_round_trip(self, value: bool) -> None:
+    def test_bool_round_trip(self, value: bool) -> None:  # noqa: FBT001
         """Bool survives string round-trip via env."""
         result = confarg.load(WithDefaults, args=[], env={"VERBOSE": str(value).lower()}, env_prefix="")
         assert result.verbose is value
@@ -190,12 +190,12 @@ class TestBoolCoercionProperty:
             alphabet=st.characters(whitelist_categories=("L", "N")),
             min_size=1,
             max_size=20,
-        ).filter(lambda s: s not in _VALID_BOOL_STRINGS)
+        ).filter(lambda s: s not in _VALID_BOOL_STRINGS),
     )
     @settings(max_examples=50)
     def test_invalid_bool_string_raises(self, val: str) -> None:
         """Strings outside the recognised bool set raise TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(WithDefaults, args=[], env={"VERBOSE": val}, env_prefix="")
 
 
@@ -230,12 +230,12 @@ class TestCollectionRoundTrip:
             leaf_strs.filter(lambda s: len(s) > 0 and not _looks_like_flag(s)),
             min_size=0,
             max_size=10,
-        )
+        ),
     )
     def test_set_round_trip(self, values: frozenset[str]) -> None:
         """Set of strings survives CLI round-trip."""
         WithSet = make_target("tags", set[str], default_factory=set)
-        args = ["--tags"] + list(values) if values else []
+        args = ["--tags", *list(values)] if values else []
         result = confarg.load(WithSet, args=args, env={})
         assert result.tags == set(values)
 

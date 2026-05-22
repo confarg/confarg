@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from confarg._errors import SymbolImportError, TypeCoercionError
 from confarg._import import _import_dotted
 from confarg._types import (
     _final_inner,
@@ -24,6 +23,7 @@ from confarg._types import (
     _type_ref_constraint,
     _union_args_no_none,
 )
+from confarg.exceptions import SymbolImportError, TypeCoercionError
 
 _TRUTHY = frozenset({"true", "1", "yes", "on"})
 _FALSY = frozenset({"false", "0", "no", "off"})

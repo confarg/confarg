@@ -22,9 +22,9 @@ import pytest
 
 import confarg
 import confarg.cli.argparse as confarg_ap
-from confarg._errors import TypeCoercionError
 from confarg._serialize import _serialize_leaf
 from confarg._types import _StrToken
+from confarg.exceptions import TypeCoercionError
 from confarg.typedload._coerce import _coerce_type_ref
 from confarg.typedload._construct import construct
 

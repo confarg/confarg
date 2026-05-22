@@ -454,7 +454,7 @@ def _all_have_defaults(tp: Any) -> bool:
 
 
 _PLAIN_CLASS_BUILTINS = frozenset(
-    {str, int, float, bool, bytes, bytearray, type(None), list, dict, set, frozenset, tuple, CallableABC}
+    {str, int, float, bool, bytes, bytearray, type(None), list, dict, set, frozenset, tuple, CallableABC},
 )
 
 

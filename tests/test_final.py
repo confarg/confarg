@@ -35,7 +35,7 @@ class TestFinalStrLiteral:
     def test_invalid_raises(self) -> None:
         """Invalid literal value raises ConfargError."""
         Target = make_target("kind", Final[Literal["a"]], default="a")
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(Target, args=["--kind", "b"], env={})
 
     def test_default_used_when_not_provided(self) -> None:
@@ -62,7 +62,7 @@ class TestFinalIntLiteral:
     def test_invalid_raises(self) -> None:
         """Non-matching int token raises ConfargError."""
         Target = make_target("code", Final[Literal[42]], default=42)
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(Target, args=["--code", "43"], env={})
 
 
@@ -83,7 +83,7 @@ class TestFinalBoolLiteral:
     def test_invalid_case_raises(self) -> None:
         """CLI token 'true' (lowercase) is rejected — same behaviour as bare Literal[True]."""
         Target = make_target("flag", Final[Literal[True]], default=True)
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(Target, args=["--flag", "true"], env={})
 
 
@@ -139,7 +139,7 @@ class TestFinalInt:
     def test_wrong_type_raises(self) -> None:
         """Non-integer string raises ConfargError."""
         Target = make_target("count", Final[int], default=0)
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(Target, args=["--count", "not_an_int"], env={})
 
 

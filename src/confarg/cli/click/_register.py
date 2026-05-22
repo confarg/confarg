@@ -33,7 +33,7 @@ def _make_option_cls() -> type:
             self._confarg_name = confarg_name
             super().__init__(**kwargs)
 
-        def _parse_decls(self, decls: Any, expose_value: Any) -> tuple[str | None, list[str], list[str]]:
+        def _parse_decls(self, decls: Any, _expose_value: Any) -> tuple[str | None, list[str], list[str]]:
             opts = [d for d in decls if d.startswith("-")]
             return self._confarg_name, opts, []
 
@@ -75,8 +75,8 @@ def _spec_to_option(spec: FlagSpec) -> click.Option:
         _fn = spec.completer
 
         def _shell_complete(
-            ctx: _click.Context,
-            param: _click.Parameter,
+            _ctx: _click.Context,
+            _param: _click.Parameter,
             incomplete: str,
         ) -> list[CompletionItem]:
             return [CompletionItem(v) for v in _fn(incomplete)]

@@ -12,8 +12,8 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from confarg._errors import ConfargError, InvalidConfigFileError
 from confarg._merge import _deep_merge
+from confarg.exceptions import ConfargError, InvalidConfigFileError
 
 INCLUDE_KEY = "__include__"
 
@@ -55,7 +55,7 @@ def _load_yaml(path: Path) -> dict[str, Any]:
             or the file contains invalid YAML.
     """
     try:
-        import yaml
+        import yaml  # noqa: PLC0415
     except ImportError:
         msg = "PyYAML"
         raise InvalidConfigFileError.missing_library(msg, "pyyaml", "YAML support") from None
@@ -103,7 +103,7 @@ _LOADERS = {".toml": _load_toml, ".yaml": _load_yaml, ".yml": _load_yaml, ".json
 def _load_yaml_item(path: Path) -> Any:
     """Load YAML, returning the raw top-level value (dict, list, or scalar)."""
     try:
-        import yaml
+        import yaml  # noqa: PLC0415
     except ImportError:
         msg = "PyYAML"
         raise InvalidConfigFileError.missing_library(msg, "pyyaml", "YAML support") from None
@@ -377,6 +377,23 @@ def _load_file(path: Path) -> dict[str, Any]:
     return _load_raw(path, frozenset({path.resolve()}))
 
 
+def _load_subpath_files(entries: list[tuple[str, Path]], union_tag: str) -> dict[str, Any]:
+    """Load and merge a sequence of (subpath, file-path) pairs into a single dict.
+
+    Each file is nested under its dot-separated subpath before merging.
+    An empty subpath means the file is merged at the root. Later entries win
+    on conflict.
+    """
+    result: dict[str, Any] = {}
+    for subpath, fpath in entries:
+        fdata = _load_file(fpath)
+        if subpath:
+            for part in reversed(subpath.split(".")):
+                fdata = {part: fdata}
+        result = _deep_merge(result, fdata, union_tag=union_tag)
+    return result
+
+
 def _dump_toml(data: dict[str, Any], path: Path) -> None:
     """Write a dict to a TOML file.
 
@@ -388,7 +405,7 @@ def _dump_toml(data: dict[str, Any], path: Path) -> None:
         InvalidConfigFileError: If tomli_w is not installed.
     """
     try:
-        import tomli_w
+        import tomli_w  # noqa: PLC0415
     except ImportError:
         msg = "tomli_w"
         raise InvalidConfigFileError.missing_library(msg, "tomli_w", "writing TOML files") from None
@@ -407,7 +424,7 @@ def _dump_yaml(data: dict[str, Any], path: Path) -> None:
         InvalidConfigFileError: If PyYAML is not installed.
     """
     try:
-        import yaml
+        import yaml  # noqa: PLC0415
     except ImportError:
         msg = "PyYAML"
         raise InvalidConfigFileError.missing_library(msg, "pyyaml", "writing YAML files") from None

@@ -71,7 +71,7 @@ class TestJsonLoading:
         """JSON file whose top-level value is not an object raises an error."""
         p = tmp_path / "bad.json"
         p.write_text("[1, 2, 3]")
-        with pytest.raises(confarg.InvalidConfigFileError):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError):
             confarg.load(Flat, args=[], env={}, files=[p])
 
 
@@ -370,7 +370,7 @@ class TestFileFormat:
         """Unknown file extension raises an error."""
         p = tmp_path / "test.ini"
         p.write_text("[section]\nkey=val\n")
-        with pytest.raises(confarg.InvalidConfigFileError):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError):
             confarg.load(Flat, args=[], env={}, files=[p])
 
 
@@ -384,28 +384,28 @@ class TestInvalidConfigFiles:
 
     def test_nonexistent_file(self) -> None:
         """Non-existent file raises an error."""
-        with pytest.raises(confarg.InvalidConfigFileError):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError):
             confarg.load(Flat, args=[], env={}, files=[Path("/nonexistent.toml")])
 
     def test_malformed_toml(self, tmp_path: Path) -> None:
         """Malformed TOML raises an error."""
         p = tmp_path / "bad.toml"
         p.write_text("this is not valid toml [[[")
-        with pytest.raises(confarg.InvalidConfigFileError):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError):
             confarg.load(Flat, args=[], env={}, files=[p])
 
     def test_malformed_yaml(self, tmp_path: Path) -> None:
         """Malformed YAML raises an error."""
         p = tmp_path / "bad.yaml"
         p.write_text(":\n  - :\n    - : :\n  [invalid")
-        with pytest.raises(confarg.InvalidConfigFileError):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError):
             confarg.load(Flat, args=[], env={}, files=[p])
 
     def test_malformed_json(self, tmp_path: Path) -> None:
         """Malformed JSON raises an error."""
         p = tmp_path / "bad.json"
         p.write_text("{name: no quotes}")
-        with pytest.raises(confarg.InvalidConfigFileError):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError):
             confarg.load(Flat, args=[], env={}, files=[p])
 
 
@@ -542,7 +542,7 @@ class TestEnvConfig:
 
     def test_bad_path_raises(self) -> None:
         """A non-existent path in the env var raises InvalidConfigFileError."""
-        with pytest.raises(confarg.InvalidConfigFileError):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError):
             confarg.load(
                 Flat,
                 args=[],
@@ -683,7 +683,7 @@ class TestEnvVarSubConfig:
 
     def test_bad_path_raises(self) -> None:
         """A non-existent path in a CONFIG env var raises InvalidConfigFileError."""
-        with pytest.raises(confarg.InvalidConfigFileError):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError):
             confarg.load(
                 AppConfig,
                 args=[],

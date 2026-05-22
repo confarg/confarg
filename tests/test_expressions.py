@@ -12,18 +12,18 @@ from dataclasses import dataclass, field
 import pytest
 
 import confarg
-from confarg._errors import (
-    CircularReferenceError,
-    ExpressionEvalError,
-    MissingReferenceError,
-    UnsafeExpressionError,
-)
 from confarg.dictexpr._expressions import (
     _extract_references,
     _scan_expressions,
     _topological_sort,
     _validate_ast,
     resolve_expressions,
+)
+from confarg.exceptions import (
+    CircularReferenceError,
+    ExpressionEvalError,
+    MissingReferenceError,
+    UnsafeExpressionError,
 )
 from tests.conftest import (
     WithDefaults,

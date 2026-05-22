@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 from click import ParameterSource
 
 from confarg import _defaults
-from confarg._files import _load_file
+from confarg._files import _load_subpath_files
 from confarg._merge import _deep_merge
 from confarg._parse_env import _parse_env
 from confarg._types import _resolve_type
@@ -63,7 +63,7 @@ def from_context(  # noqa: PLR0913
     Only options registered by :func:`populate_command` are consumed from ``ctx``.
     Options absent from the Context (i.e. not provided by the user) fall back to
     env vars, config files, or dataclass defaults; missing required fields raise
-    :class:`~confarg.MissingFieldError`.
+    :class:`~confarg.exceptions.MissingFieldError`.
 
     Args:
         ctx: The :class:`click.Context` returned by Click during command execution.
@@ -104,13 +104,7 @@ def from_context(  # noqa: PLR0913
                 file_pairs.extend((subpath, Path(f)) for f in val or [])
 
     # 3. Load config files
-    config_data: dict[str, Any] = {}
-    for subpath, fpath in file_pairs:
-        fdata = _load_file(fpath)
-        if subpath:
-            for part in reversed(subpath.split(".")):
-                fdata = {part: fdata}
-        config_data = _deep_merge(config_data, fdata, union_tag=union_tag)
+    config_data = _load_subpath_files(file_pairs, union_tag)
 
     # 4. Parse env vars
     if env_prefix is None:
@@ -118,12 +112,7 @@ def from_context(  # noqa: PLR0913
         env_configs: list[tuple[str, Path]] = []
     else:
         env_data, env_configs = _parse_env(env, env_prefix, env_separator, dc_type)
-    for subpath, fpath in env_configs:
-        fdata = _load_file(fpath)
-        if subpath:
-            for part in reversed(subpath.split(".")):
-                fdata = {part: fdata}
-        config_data = _deep_merge(config_data, fdata, union_tag=union_tag)
+    config_data = _deep_merge(config_data, _load_subpath_files(env_configs, union_tag), union_tag=union_tag)
 
     # 5. Merge: config < env < CLI
     merged = _deep_merge(config_data, env_data, union_tag=union_tag)

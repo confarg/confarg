@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from confarg._callable import _serialize_callable
-from confarg._errors import ConfargError
 from confarg._types import (
     TagPolicy,
     _dict_kv,
@@ -30,6 +29,7 @@ from confarg._types import (
     _tuple_types,
     _union_args_no_none,
 )
+from confarg.exceptions import ConfargError
 from confarg.typedload._construct import _disambiguate_struct
 
 

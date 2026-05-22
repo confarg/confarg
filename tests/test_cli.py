@@ -15,7 +15,7 @@ from typing import Optional
 import pytest
 
 import confarg
-from confarg._errors import ConfargError
+from confarg.exceptions import ConfargError
 from tests.conftest import (
     AppConfig,
     Color,
@@ -134,7 +134,7 @@ class TestCliPrefix:
 
     def test_prefix_does_not_match_without_prefix(self) -> None:
         """Args without the prefix are not recognized."""
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(
                 Flat,
                 args=["--name", "x", "--count", "1", "--rate", "0", "--verbose", "true"],
@@ -189,17 +189,17 @@ class TestCliBoolValueToken:
 
     def test_bool_missing_value_raises(self) -> None:
         """Test that a bool flag without a value raises ConfargError."""
-        with pytest.raises(confarg.ConfargError, match="Missing value"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="Missing value"):
             confarg.load(WithDefaults, args=["--verbose"], env={})
 
     def test_trailing_dot_raises_missing_field_name(self) -> None:
         """--foo. (trailing dot) should say 'Missing field name after' not 'not found'."""
-        with pytest.raises(confarg.UnknownArgumentError, match="Missing field name after '--name.'"):
+        with pytest.raises(confarg.exceptions.UnknownArgumentError, match=r"Missing field name after '--name.'"):
             confarg.load(WithDefaults, args=["--name."], env={})
 
     def test_misplaced_append_plus_raises_missing_field_name(self) -> None:
         """--foo.+ (dot before +) should give the same error as --foo. (trailing dot)."""
-        with pytest.raises(confarg.UnknownArgumentError, match="Missing field name after '--name.'"):
+        with pytest.raises(confarg.exceptions.UnknownArgumentError, match=r"Missing field name after '--name.'"):
             confarg.load(WithDefaults, args=["--name.+"], env={})
 
 
@@ -650,7 +650,7 @@ class TestCliStrSentinel:
     def test_str_escape_missing_value_raises(self) -> None:
         """--value.str with no following argument raises ConfargError."""
         T = make_target("value", str | None, default=None)
-        with pytest.raises(confarg.ConfargError, match="Missing value"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="Missing value"):
             confarg.load(T, args=["--value.str"], env={})
 
 
@@ -716,7 +716,7 @@ class TestCliJsonComposite:
 
     def test_invalid_json_raises_error(self) -> None:
         """A malformed JSON value raises ConfargError."""
-        with pytest.raises(confarg.ConfargError, match="Invalid JSON"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="Invalid JSON"):
             confarg.load(
                 AppConfig,
                 args=["--db", "{not valid json}"],
@@ -765,7 +765,7 @@ class TestCliListAppend:
     def test_append_on_non_list_field_raises(self) -> None:
         """+ syntax on a non-list field raises ConfargError."""
         WithInt = make_target("count", int, default=0)
-        with pytest.raises(confarg.ConfargError, match=r"\+.*append"):
+        with pytest.raises(confarg.exceptions.ConfargError, match=r"\+.*append"):
             confarg.load(WithInt, args=["--count+", "1"], env={})
 
     def test_index_replacement_still_works(self) -> None:
@@ -779,7 +779,7 @@ class TestCliListAppend:
         cfg = tmp_path / "cfg.toml"
         cfg.write_text("items = [1, 2, 3]\n")
         WithList = make_target("items", list[int], default_factory=list)
-        with pytest.raises(confarg.ConfargError, match="append syntax"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="append syntax"):
             confarg.load(WithList, args=["--items.5", "99"], env={}, files=[cfg])
 
     def test_negative_index_update(self, tmp_path) -> None:
@@ -929,7 +929,7 @@ class TestCliListAppend:
 
     def test_append_no_items_then_patch_raises(self) -> None:
         """--servers+ with no items followed by --servers.0.host raises ConfargError."""
-        with pytest.raises(confarg.ConfargError, match="index 0"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="index 0"):
             confarg.load(WithNestedList, args=["--servers+", "--servers.0.host", "toto"], env={})
 
     def test_two_appends_with_neg1_patch_each(self) -> None:
@@ -1098,7 +1098,7 @@ class TestConfigFileAppend:
         # --config+ is not currently recognized by _parse_cli (doesn't start with "config.")
         # so it raises UnknownArgumentError rather than the config-specific error.
         extra = tmp_yaml("host: a\nport: 1\nname: db1\n", "extra.yaml")
-        with pytest.raises((confarg.ConfargError, confarg.UnknownArgumentError)):
+        with pytest.raises((confarg.exceptions.ConfargError, confarg.exceptions.UnknownArgumentError)):
             confarg.load(WithNestedList, args=["--config+", str(extra)], env={})
 
 
@@ -1118,7 +1118,7 @@ class TestConfigFlagFieldConflict:
             config: str = ""
             name: str = "x"
 
-        with pytest.raises(confarg.ConfargError, match="config_flag|reserved|config"):
+        with pytest.raises(confarg.exceptions.ConfargError, match=r"config_flag|reserved|config"):
             confarg.load(HasConfigField, args=[], env={})
 
     def test_custom_config_flag_conflicts_with_field(self) -> None:
@@ -1128,7 +1128,7 @@ class TestConfigFlagFieldConflict:
         class HasConfField:
             conf: str = ""
 
-        with pytest.raises(confarg.ConfargError, match="conf"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="conf"):
             confarg.load(HasConfField, args=[], env={}, config_flag="conf")
 
     def test_no_conflict_when_field_name_differs(self) -> None:
@@ -1163,7 +1163,7 @@ class TestConfigFlagFieldConflict:
         class VariantB:
             name: str = ""
 
-        with pytest.raises(confarg.ConfargError, match="config"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="config"):
             confarg.load(VariantA | VariantB, args=[], env={})
 
 
@@ -1178,7 +1178,7 @@ class TestCliDelete:
     def test_delete_required_field_raises(self, tmp_toml) -> None:
         """--field- on a required field (no default) causes MissingFieldError."""
         path = tmp_toml("name = 'from_config'\ncount = 5\nrate = 1.0\nverbose = false\n")
-        with pytest.raises(confarg.MissingFieldError):
+        with pytest.raises(confarg.exceptions.MissingFieldError):
             confarg.load(Flat, args=["--name-"], env={}, files=[path])
 
     def test_delete_field_resets_to_default(self, tmp_toml) -> None:
@@ -1195,7 +1195,7 @@ class TestCliDelete:
     def test_delete_nested_field(self, tmp_toml) -> None:
         """--parent.field- removes a nested field; raises MissingFieldError if required."""
         path = tmp_toml("[db]\nhost = 'myhost'\nport = 5432\nname = 'mydb'\n")
-        with pytest.raises(confarg.MissingFieldError):
+        with pytest.raises(confarg.exceptions.MissingFieldError):
             confarg.load(AppConfig, args=["--db.host-"], env={}, files=[path])
 
     def test_delete_list_index(self, tmp_toml) -> None:
@@ -1223,20 +1223,20 @@ class TestCliDelete:
         """--items.1- --items.1- raises ConfargError (duplicate deletion index)."""
         WithList = make_target("items", list[str], default_factory=list)
         path = tmp_toml('items = ["a", "b", "c"]\n')
-        with pytest.raises(confarg.ConfargError, match="[Dd]uplicate"):
+        with pytest.raises(confarg.exceptions.ConfargError, match=r"[Dd]uplicate"):
             confarg.load(WithList, args=["--items.1-", "--items.1-"], env={}, files=[path])
 
     def test_delete_out_of_range_raises(self, tmp_toml) -> None:
         """--items.5- on a 3-element list raises ConfargError."""
         WithList = make_target("items", list[str], default_factory=list)
         path = tmp_toml('items = ["a", "b", "c"]\n')
-        with pytest.raises(confarg.ConfargError):
+        with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(WithList, args=["--items.5-"], env={}, files=[path])
 
     def test_delete_unknown_field_raises(self) -> None:
         """--nonexistent- raises UnknownArgumentError."""
         result_type = make_target("name", str, default="x")
-        with pytest.raises(confarg.UnknownArgumentError):
+        with pytest.raises(confarg.exceptions.UnknownArgumentError):
             confarg.load(result_type, args=["--nonexistent-"], env={})
 
     def test_delete_then_append(self, tmp_toml) -> None:

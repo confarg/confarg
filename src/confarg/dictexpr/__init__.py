@@ -17,13 +17,13 @@ Typical use::
     # resolved == {"base": "/app", "log": "/app/logs"}
 """
 
-from confarg._errors import (
+from confarg.dictexpr._expressions import resolve_expressions
+from confarg.exceptions import (
     CircularReferenceError,
     ExpressionEvalError,
     MissingReferenceError,
     UnsafeExpressionError,
 )
-from confarg.dictexpr._expressions import resolve_expressions
 
 __all__ = [
     "CircularReferenceError",

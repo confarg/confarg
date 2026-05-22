@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-from confarg._errors import ConfargError, UnknownArgumentError
 from confarg._merge import (
     DICT_DELETE,
     LIST_APPEND_KEY,
@@ -44,6 +43,7 @@ from confarg._types import (
     _tuple_types,
     _union_args_no_none,
 )
+from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce
 
 
@@ -182,7 +182,8 @@ def _parse_json_arg(token: str, flag: str) -> Any:
 def _looks_like_flag(token: str) -> bool:
     """Check whether a token looks like a CLI flag (--word).
 
-    Bare ``--`` and negative numbers like ``--3.14`` are not considered flags.
+    A flag must start with ``--`` followed by a letter or underscore. Bare
+    ``--`` and tokens like ``--:`` or ``--3`` are not flags.
 
     Args:
         token: The CLI token to check.
@@ -190,11 +191,11 @@ def _looks_like_flag(token: str) -> bool:
     Returns:
         True if the token looks like a CLI flag.
     """
-    _double_dash_len = 2
+    _double_dash = "--"
     return (
-        token.startswith("--")
-        and len(token) > _double_dash_len
-        and not token[_double_dash_len:].lstrip("-").replace(".", "").isdigit()
+        token.startswith(_double_dash)
+        and len(token) > len(_double_dash)
+        and (token[len(_double_dash)].isalpha() or token[len(_double_dash)] == "_")
     )
 
 
@@ -335,6 +336,7 @@ def _handle_delete_token(
     ctx: _ParseCtx,
     token: str,
     path: list[str],
+    *,
     is_list_delete: bool,
     delete_idx: int,
 ) -> None:
@@ -469,6 +471,7 @@ def _handle_unknown_field(
     i: int,
     token: str,
     path: list[str],
+    *,
     append_mode: bool,
 ) -> int:
     """Handle a flag whose field path could not be resolved.
@@ -493,6 +496,15 @@ def _handle_unknown_field(
     raise UnknownArgumentError(msg)
 
 
+def _try_parse_json_list(arg: str) -> list[Any] | None:
+    """Parse arg as a JSON array and return it, or None if not valid JSON or not a list."""
+    try:
+        parsed = json.loads(arg)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, list) else None
+
+
 def _consume_collection_or_scalar(
     ctx: _ParseCtx,
     i: int,
@@ -508,14 +520,15 @@ def _consume_collection_or_scalar(
         or _is_tuple(ft)
         or (_is_union(ft) and (nv := _union_args_no_none(ft)) and all(_is_tuple(_resolve_type(v)) for v in nv))
     )
-    if is_collection and i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("["):
-        try:
-            parsed = json.loads(args[i])
-        except json.JSONDecodeError:
-            parsed = None
-        if isinstance(parsed, list):
-            _set_nested(ctx.data, path, parsed)
-            return i + 1
+    if (
+        is_collection
+        and i < len(args)
+        and not _looks_like_flag(args[i])
+        and args[i].startswith("[")
+        and (parsed := _try_parse_json_list(args[i])) is not None
+    ):
+        _set_nested(ctx.data, path, parsed)
+        return i + 1
 
     # Variable-length collection → consume until the next flag
     if _is_varlen_collection(ft):
@@ -627,7 +640,7 @@ def _parse_cli(
         path, append_mode, delete_mode, force_str, delete_idx, is_list_delete = _parse_flag_mode(key)
 
         if delete_mode:
-            _handle_delete_token(ctx, token, path, is_list_delete, delete_idx)
+            _handle_delete_token(ctx, token, path, is_list_delete=is_list_delete, delete_idx=delete_idx)
             i += 1
             continue
 
@@ -637,7 +650,7 @@ def _parse_cli(
 
         ft = _resolve_field_type(target, path, union_tag)
         if ft is None:
-            i = _handle_unknown_field(ctx, i, token, path, append_mode)
+            i = _handle_unknown_field(ctx, i, token, path, append_mode=append_mode)
             continue
 
         ft = _resolve_type(ft)

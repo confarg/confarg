@@ -9,7 +9,7 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
-from confarg._errors import SymbolImportError
+from confarg.exceptions import SymbolImportError
 
 
 def _import_dotted(path: str) -> Any:

@@ -21,10 +21,10 @@ from typing import Literal, Optional, Union
 import pytest
 
 import confarg
-from confarg._errors import ConfargError, TypeCoercionError
 from confarg._merge import LIST_DELETE_KEY, _deep_merge
 from confarg._types import _is_frozenset, _is_set, _StrToken
 from confarg.dictexpr import resolve_expressions
+from confarg.exceptions import ConfargError, TypeCoercionError
 from confarg.typedload import construct
 from confarg.typedload._coerce import _coerce_leaf
 from tests.conftest import (
@@ -307,7 +307,7 @@ class TestCliCornerCases:
         However, the raw string '--3.14' is not a valid float, so coercion
         fails. For negative numbers, use single dash: -3.14.
         """
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(
                 WithDefaults,
                 args=["--rate", "--3.14"],
@@ -325,12 +325,12 @@ class TestCliCornerCases:
 
     def test_positional_arg_raises(self) -> None:
         """Positional arguments without -- raise UnknownArgumentError."""
-        with pytest.raises(confarg.UnknownArgumentError, match="positional"):
+        with pytest.raises(confarg.exceptions.UnknownArgumentError, match="positional"):
             confarg.load(WithDefaults, args=["hello"], env={})
 
     def test_config_flag_missing_path(self) -> None:
         """--config without a following path raises ConfargError."""
-        with pytest.raises(confarg.ConfargError, match="Missing file path"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="Missing file path"):
             confarg.load(WithDefaults, args=["--config"], env={})
 
 
@@ -344,7 +344,7 @@ class TestBoolEdgeCases:
 
     def test_int_2_for_bool_raises(self) -> None:
         """Integer 2 for a bool field raises TypeCoercionError (not in truthy/falsy)."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(WithDefaults, args=[], env={"VERBOSE": "2"}, env_prefix="")
 
     def test_int_0_for_bool_false(self) -> None:
@@ -359,12 +359,12 @@ class TestBoolEdgeCases:
 
     def test_random_string_for_bool_raises(self) -> None:
         """Random string for bool field raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(WithDefaults, args=[], env={"VERBOSE": "yesno"}, env_prefix="")
 
     def test_invalid_bool_error_lists_valid_values(self) -> None:
         """TypeCoercionError for an invalid bool string lists the accepted tokens."""
-        with pytest.raises(confarg.TypeCoercionError, match=r"Valid values:.*false.*true"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"Valid values:.*false.*true"):
             confarg.load(WithDefaults, args=[], env={"VERBOSE": "enabled"}, env_prefix="")
 
     def test_native_bool_from_toml(self, tmp_toml) -> None:
@@ -376,7 +376,7 @@ class TestBoolEdgeCases:
     def test_bool_coercion_from_int_in_toml_raises(self, tmp_toml) -> None:
         """TOML integer 1 for a bool field raises TypeCoercionError (use true/false in TOML)."""
         path = tmp_toml("verbose = 1\n")
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(WithDefaults, args=[], env={}, files=[path])
 
 
@@ -401,7 +401,7 @@ class TestSparseLists:
     def test_sparse_list_non_optional_elem_raises(self) -> None:
         """Gaps in list[int] (non-optional element) raise TypeCoercionError naming the gap indices."""
         WithList = make_target("items", list[int], default_factory=list)
-        with pytest.raises(confarg.TypeCoercionError, match=r"gap.*\[0, 1\]"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"gap.*\[0, 1\]"):
             confarg.load(WithList, args=["--items.2", "42"], env={})
 
     def test_sparse_list_from_env_optional_elem(self) -> None:
@@ -416,7 +416,7 @@ class TestSparseLists:
     def test_sparse_list_from_env_non_optional_raises(self) -> None:
         """Gaps in list[int] from env var raise TypeCoercionError naming the gap indices."""
         WithList = make_target("items", list[int], default_factory=list)
-        with pytest.raises(confarg.TypeCoercionError, match=r"gap.*\[0, 1\]"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"gap.*\[0, 1\]"):
             confarg.load(WithList, args=[], env={"ITEMS__2": "42"}, env_prefix="")
 
     def test_index_beyond_config_list_raises(self, tmp_toml) -> None:
@@ -594,7 +594,7 @@ class TestUnionCornerCases:
 
     def test_union_class_tag_invalid_name(self) -> None:
         """Non-importable class tag raises TypeCoercionError."""
-        with pytest.raises(confarg.TypeCoercionError, match="Cannot import class"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="Cannot import class"):
             confarg.load(
                 WithUnionAmbiguous,
                 args=[
@@ -694,12 +694,12 @@ class TestConfigFileCornerCases:
         """Unsupported file extension raises InvalidConfigFileError."""
         p = tmp_path / "test.ini"
         p.write_text("[section]\nkey = value")
-        with pytest.raises(confarg.InvalidConfigFileError, match="Unsupported"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="Unsupported"):
             confarg.load(WithDefaults, args=[], env={}, files=[p])
 
     def test_nonexistent_config_file_raises(self) -> None:
         """Non-existent file raises InvalidConfigFileError."""
-        with pytest.raises(confarg.InvalidConfigFileError, match="not found"):
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
             confarg.load(WithDefaults, args=[], env={}, files=[Path("/does_not_exist.toml")])
 
 
@@ -950,7 +950,9 @@ class TestEnvVarCornerCases:
             )
         assert result.name == "ok"
         assert any(
-            "NONEXISTENT_FIELD" in str(w.message) for w in caught if issubclass(w.category, confarg.ConfargWarning)
+            "NONEXISTENT_FIELD" in str(w.message)
+            for w in caught
+            if issubclass(w.category, confarg.exceptions.ConfargWarning)
         )
 
     def test_env_prefix_mismatch_ignored(self) -> None:
@@ -1023,7 +1025,7 @@ class TestNonDataclassTargetCornerCases:
 
     def test_missing_non_dataclass_raises(self) -> None:
         """Non-dataclass target with no data raises MissingFieldError."""
-        with pytest.raises(confarg.MissingFieldError):
+        with pytest.raises(confarg.exceptions.MissingFieldError):
             confarg.load(int, args=[], env={}, cli_prefix="confarg")
 
 
@@ -1050,7 +1052,7 @@ class TestEnumCornerCases:
     def test_enum_invalid_value_raises(self) -> None:
         """Invalid enum value raises TypeCoercionError."""
         WithEnum = make_target("color", Color, default=Color.RED)
-        with pytest.raises(confarg.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(WithEnum, args=["--color", "purple"], env={})
 
     def test_enum_instance_passthrough(self) -> None:
@@ -1620,7 +1622,7 @@ class TestUnionTypeSwitchViaClassTag:
     def test_load_partial_override_same_type_without_repeating_class(self, tmp_yaml) -> None:
         """Test that partial override of same union type works without repeating class tag."""
         path = tmp_yaml(
-            "class: tests.test_corner_cases._ServerVariant\nhost: prod.example.com\nport: 5432\nname: mydb\n"
+            "class: tests.test_corner_cases._ServerVariant\nhost: prod.example.com\nport: 5432\nname: mydb\n",
         )
         result = confarg.load(
             _SqliteVariant | _ServerVariant,

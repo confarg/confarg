@@ -539,5 +539,6 @@ leaf_strs: st.SearchStrategy[str] = st.text(
     max_size=50,
 )
 leaf_bools: st.SearchStrategy[bool] = st.booleans()
+cli_safe_strs: st.SearchStrategy[str] = leaf_strs.filter(lambda s: not s.startswith("-"))
 
 env_prefixes: st.SearchStrategy[str] = st.from_regex(r"[A-Z][A-Z0-9_]{0,9}", fullmatch=True)

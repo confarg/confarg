@@ -27,7 +27,7 @@ Typical use::
     # val == 42
 """
 
-from confarg._errors import (
+from confarg.exceptions import (
     AmbiguousUnionError,
     MissingFieldError,
     TypeCoercionError,
