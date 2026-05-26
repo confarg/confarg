@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""CLI argument parsing for confarg."""
+"""CLI argument parsing."""
 
 from __future__ import annotations
 
@@ -360,7 +360,7 @@ def _handle_delete_token(
         _set_nested(ctx.data, path, DICT_DELETE)
 
 
-def _collect_append_items(args: list[str], i: int, et: Any) -> tuple[list[Any], int]:
+def _collect_append_items(args: Sequence[str], i: int, et: Any) -> tuple[list[Any], int]:
     """Collect append-mode values from args, returning (items, new_i).
 
     Accepts a JSON array literal as a single token, otherwise consumes space-separated
@@ -426,7 +426,7 @@ def _handle_append_token(
     return i
 
 
-def _consume_fixed_tuple_args(args: list[str], i: int, tt: list[Any], path: list[str], data: dict[str, Any]) -> int:
+def _consume_fixed_tuple_args(args: Sequence[str], i: int, tt: list[Any], path: list[str], data: dict[str, Any]) -> int:
     """Consume exactly len(tt) arguments for a fixed-length tuple field."""
     items: list[Any] = []
     for et in tt:
@@ -437,7 +437,7 @@ def _consume_fixed_tuple_args(args: list[str], i: int, tt: list[Any], path: list
     return i
 
 
-def _consume_union_tuple_args(args: list[str], i: int, path: list[str], data: dict[str, Any]) -> int:
+def _consume_union_tuple_args(args: Sequence[str], i: int, path: list[str], data: dict[str, Any]) -> int:
     """Consume greedy space-separated args for a union-of-tuples field."""
     items: list[Any] = []
     while i < len(args) and not _looks_like_flag(args[i]):

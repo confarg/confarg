@@ -120,7 +120,7 @@ class TestUnionClassTagRegistration:
         populate_parser(_AppConfig, parser)
         action = next(a for a in parser._actions if "--db.class" in a.option_strings)
         assert hasattr(action, "completer")
-        suggestions = action.completer(prefix="", parsed_args=None)
+        suggestions = action.completer(prefix="", parsed_args=None)  # ty: ignore[call-non-callable]  # argcomplete monkey-patches .completer onto actions
         module = _ServerDB.__module__
         assert f"{module}._ServerDB" in suggestions
         assert f"{module}._SQLiteDB" in suggestions
@@ -131,7 +131,7 @@ class TestUnionClassTagRegistration:
         populate_parser(_AppConfig, parser)
         action = next(a for a in parser._actions if "--db.class" in a.option_strings)
         module = _ServerDB.__module__
-        suggestions = action.completer(prefix=f"{module}._Server", parsed_args=None)
+        suggestions = action.completer(prefix=f"{module}._Server", parsed_args=None)  # ty: ignore[unresolved-attribute]  # argcomplete monkey-patches .completer onto actions
         assert f"{module}._ServerDB" in suggestions
         assert f"{module}._SQLiteDB" not in suggestions
 
@@ -611,6 +611,7 @@ class TestLiteralEnumCompletion:
         parser = argparse.ArgumentParser()
         populate_parser(_WithLiteral, parser)
         action = self._action_for(parser, "log_level")
+        assert action.choices is not None
         assert set(action.choices) == {"DEBUG", "INFO", "WARNING", "ERROR"}
 
     def test_optional_literal_field_choices(self) -> None:
@@ -618,6 +619,7 @@ class TestLiteralEnumCompletion:
         parser = argparse.ArgumentParser()
         populate_parser(_WithOptionalLiteral, parser)
         action = self._action_for(parser, "log_level")
+        assert action.choices is not None
         assert set(action.choices) == {"DEBUG", "INFO", "WARNING"}
 
     def test_enum_field_choices(self) -> None:
@@ -625,6 +627,7 @@ class TestLiteralEnumCompletion:
         parser = argparse.ArgumentParser()
         populate_parser(_WithEnum, parser)
         action = self._action_for(parser, "log_level")
+        assert action.choices is not None
         assert set(action.choices) == {"DEBUG", "INFO", "WARNING", "ERROR"}
 
     def test_nested_literal_field_choices(self) -> None:
@@ -632,6 +635,7 @@ class TestLiteralEnumCompletion:
         parser = argparse.ArgumentParser()
         populate_parser(_AppWithLogging, parser)
         action = self._action_for(parser, "logging.level")
+        assert action.choices is not None
         assert set(action.choices) == {"DEBUG", "INFO", "WARNING"}
 
     def test_extend_walk_literal_field_choices(self) -> None:
@@ -640,4 +644,5 @@ class TestLiteralEnumCompletion:
         ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
         _extend_walk(_VariantWithLiteral, ctx, parser, "backend")
         action = self._action_for(parser, "backend.mode")
+        assert action.choices is not None
         assert set(action.choices) == {"fast", "safe", "debug"}

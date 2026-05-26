@@ -2,17 +2,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Public API implementation: load, merge, build, from_dict, resolve, dump, dump_file."""
+"""Public API implementation."""
 
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, overload
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+    from types import UnionType
+    from typing import TypeAliasType
 
 from confarg import _defaults
 from confarg._files import _dump_file, _load_file, _load_file_item, _load_subpath_files
@@ -56,7 +58,7 @@ def _load_cli_config(fpath: Path, subpath: str, config_flag: str) -> dict[str, A
 
 
 def merge(  # noqa: PLR0913
-    target: type,
+    target: type | TypeAliasType | UnionType,
     *,
     args: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
@@ -150,8 +152,12 @@ def merge(  # noqa: PLR0913
     return _deep_merge(merged, cli_data, union_tag=union_tag)
 
 
+@overload
+def build[T](target: type[T], data: dict[str, Any], *, union_tag: str = ...) -> T: ...
+@overload
+def build(target: object, data: dict[str, Any], *, union_tag: str = ...) -> Any: ...
 def build[T](
-    target: type[T],
+    target: type[T] | TypeAliasType | UnionType,
     data: dict[str, Any],
     *,
     union_tag: str = "class",
@@ -191,9 +197,8 @@ def build[T](
                 " Provide a value via CLI flag (--<prefix> <value>), environment variable, or config file."
             )
             raise MissingFieldError(msg)
-        return _tc(target_r, raw, union_tag=union_tag)  # type: ignore[return-value]
-
-    return _tc(target_r, resolved, union_tag=union_tag)  # type: ignore[return-value]
+        return _tc(target_r, raw, union_tag=union_tag)
+    return _tc(target_r, resolved, union_tag=union_tag)
 
 
 def resolve(data: dict[str, Any]) -> dict[str, Any]:
@@ -222,8 +227,12 @@ def resolve(data: dict[str, Any]) -> dict[str, Any]:
     return resolve_expressions(data)
 
 
+@overload
+def from_dict[T](target: type[T], data: dict[str, Any], *, union_tag: str = ...) -> T: ...
+@overload
+def from_dict(target: object, data: dict[str, Any], *, union_tag: str = ...) -> Any: ...
 def from_dict[T](
-    target: type[T],
+    target: type[T] | TypeAliasType | UnionType,
     data: dict[str, Any],
     *,
     union_tag: str = "class",
@@ -247,11 +256,39 @@ def from_dict[T](
         AmbiguousUnionError: If a Union cannot be disambiguated.
     """
     target_r = _resolve_type(target)
-    return _tc(target_r, data, union_tag=union_tag)  # type: ignore[return-value]
+    return _tc(target_r, data, union_tag=union_tag)
 
 
-def load[T](  # noqa: PLR0913
+@overload
+def load[T](
     target: type[T],
+    *,
+    args: Sequence[str] | None = ...,
+    env: Mapping[str, str] | None = ...,
+    env_prefix: str | None = ...,
+    env_separator: str = ...,
+    cli_prefix: str = ...,
+    config_flag: str = ...,
+    files: Sequence[str | Path] = ...,
+    env_config: str | None = ...,
+    union_tag: str = ...,
+) -> T: ...
+@overload
+def load(
+    target: object,
+    *,
+    args: Sequence[str] | None = ...,
+    env: Mapping[str, str] | None = ...,
+    env_prefix: str | None = ...,
+    env_separator: str = ...,
+    cli_prefix: str = ...,
+    config_flag: str = ...,
+    files: Sequence[str | Path] = ...,
+    env_config: str | None = ...,
+    union_tag: str = ...,
+) -> Any: ...
+def load[T](  # noqa: PLR0913
+    target: type[T] | TypeAliasType | UnionType,
     *,
     args: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,

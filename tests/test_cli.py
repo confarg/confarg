@@ -10,7 +10,7 @@ import json
 import math
 from dataclasses import dataclass, field, make_dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 
@@ -503,7 +503,7 @@ class TestCliNoneToken:
         """Test that 'none' token sets optional nested dataclass field to None."""
         Inner = make_dataclass("Inner", [("x", int, field(default=1))])
         Outer = make_dataclass("Outer", [("inner", Inner | None, field(default=None))])
-        result = confarg.load(Outer, args=["--inner", "none"], env={})
+        result: Any = confarg.load(Outer, args=["--inner", "none"], env={})
         assert result.inner is None
 
     def test_none_followed_by_next_flag(self) -> None:
@@ -515,7 +515,7 @@ class TestCliNoneToken:
                 ("other", str, field(default="x")),
             ],
         )
-        result = confarg.load(Both, args=["--value", "none", "--other", "hello"], env={})
+        result: Any = confarg.load(Both, args=["--value", "none", "--other", "hello"], env={})
         assert result.value is None
         assert result.other == "hello"
 

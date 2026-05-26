@@ -41,7 +41,7 @@ def _partial_argv_from_env() -> list[str]:
 
 
 def setup_completion(
-    command: click.BaseCommand,
+    command: click.Command,
     dc_type: type,
     *,
     union_tag: str = _defaults.UNION_TAG,
@@ -63,7 +63,7 @@ def setup_completion(
     click-provided shell integration scripts).  Fish support can be added later.
 
     Args:
-        command: The :class:`click.BaseCommand` to extend.
+        command: The :class:`click.Command` to extend.
         dc_type: The dataclass type whose fields define the available flags.
         union_tag: Discriminator field name (same as :func:`confarg.load`).
         config_flag: Name of the config-file option (must match :func:`populate_command`).

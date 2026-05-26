@@ -163,4 +163,4 @@ class TestSignatureEnforcement:
         # This test verifies the signature; it should raise TypeError
         # if someone tries to pass args positionally after target.
         with pytest.raises(TypeError):
-            confarg.load(WithDefaults, [])  # type: ignore[misc]
+            confarg.load(WithDefaults, [])  # ty: ignore[no-matching-overload]  # passing a positional list to verify keyword-only enforcement

@@ -333,7 +333,7 @@ class _CovUninspectable:
         self.value = value
 
 
-_CovUninspectable.__init__.__signature__ = property(  # type: ignore[attr-defined]
+_CovUninspectable.__init__.__signature__ = property(  # ty: ignore[unresolved-attribute]  # deliberately corrupt __signature__ for testing
     lambda self: (_ for _ in ()).throw(TypeError("uninspectable")),
 )
 
@@ -631,8 +631,8 @@ class TestCallableEdgeCases:
             pass
 
         obj = Proxy()
-        obj.__module__ = None  # type: ignore
-        obj.__qualname__ = None  # type: ignore
+        obj.__module__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __module__ to trigger fallback path
+        obj.__qualname__ = None  # ty: ignore[unresolved-attribute]  # deliberately clobber __qualname__ to trigger fallback path
         with pytest.raises(confarg.exceptions.ConfargError, match="no __module__"):
             _serialize_callable(obj)
 
@@ -697,7 +697,7 @@ class TestTypesEdgeCases:
         class Broken:
             pass
 
-        Broken.__init__ = None  # type: ignore
+        Broken.__init__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __init__ to trigger fallback path
         result = _var_param_names(Broken)
         assert result == frozenset()
 
@@ -707,7 +707,7 @@ class TestTypesEdgeCases:
         class Broken:
             pass
 
-        Broken.__init__ = None  # type: ignore
+        Broken.__init__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __init__ to trigger fallback path
         assert _var_positional_name(Broken) is None
 
     def test_var_keyword_name_uninspectable(self) -> None:
@@ -716,7 +716,7 @@ class TestTypesEdgeCases:
         class Broken:
             pass
 
-        Broken.__init__ = None  # type: ignore
+        Broken.__init__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __init__ to trigger fallback path
         assert _var_keyword_name(Broken) is None
 
     def test_is_plain_class_uninspectable_init(self) -> None:
@@ -725,7 +725,7 @@ class TestTypesEdgeCases:
         class Broken:
             pass
 
-        Broken.__init__ = None  # type: ignore
+        Broken.__init__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __init__ to trigger fallback path
         assert _is_plain_class(Broken) is False
 
     def test_init_fields_broken_init_annotation_fallback(self) -> None:
@@ -735,7 +735,7 @@ class TestTypesEdgeCases:
         # stored as the string "UndefinedTypeABC999". get_type_hints(cls.__init__)
         # tries to evaluate it in this module's globals → NameError → fallback to {}.
         class BrokenInitAnnot:
-            def __init__(self, value: UndefinedTypeABC999) -> None:  # noqa: F821
+            def __init__(self, value: UndefinedTypeABC999) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
                 self.value = value
 
         result = _init_fields(BrokenInitAnnot)
@@ -1087,13 +1087,13 @@ class TestExpressionBranches:
     def test_attribute_chain_subscript_at_top(self) -> None:
         """_attribute_chain handles a subscript at the top level gracefully."""
         node = ast.parse("a[0]", mode="eval").body
-        result = _attribute_chain(node)
+        result = _attribute_chain(node)  # ty: ignore[invalid-argument-type]  # ast.parse returns ast.expr, but _attribute_chain expects a narrower union
         assert result is None or isinstance(result, list)
 
     def test_attribute_chain_non_int_subscript(self) -> None:
         """_attribute_chain returns None for non-integer subscript indices."""
         node = ast.parse("a[x]", mode="eval").body
-        result = _attribute_chain(node)
+        result = _attribute_chain(node)  # ty: ignore[invalid-argument-type]  # ast.parse returns ast.expr, but _attribute_chain expects a narrower union
         assert result is None
 
     def test_bool_op_and_all_truthy(self) -> None:
@@ -1335,7 +1335,7 @@ class TestArgparseBranches:
         # get_type_hints(cls) tries to evaluate "UndefinedTypeXYZ999" in this
         # module's globals → NameError → except Exception → fallback to flds.
         class BrokenClassAnnot:
-            _bad: UndefinedTypeXYZ999  # noqa: F821
+            _bad: UndefinedTypeXYZ999  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
 
             def __init__(self, value: int) -> None:
                 self.value = value
@@ -1400,7 +1400,7 @@ class TestArgparseBranches:
         # A class with a broken CLASS-LEVEL annotation (not __init__) causes
         # get_type_hints(cls) to fail, but _struct_fields succeeds via __init__.
         class BrokenClassAnnot:
-            _bad: UndefinedType999  # noqa: F821, class-level broken forward ref
+            _bad: UndefinedType999  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
 
             def __init__(self, x: int, y: str = "default") -> None:
                 self.x = x
@@ -1428,7 +1428,7 @@ class TestArgparseBranches:
         """_collect_ns_fields falls back gracefully when get_type_hints raises."""
 
         class BrokenClassAnnot2:
-            _bad: UndefinedType888  # noqa: F821,  class-level broken forward ref
+            _bad: UndefinedType888  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
 
             def __init__(self, x: int, y: str = "default") -> None:
                 self.x = x
@@ -2011,7 +2011,7 @@ class TestCallableGaps:
             def __init__(self):
                 pass
 
-        _NoSig.__init__ = None  # type: ignore[assignment]
+        _NoSig.__init__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __init__ to trigger fallback path
         result = _format_fn_dict_example("some.path", _NoSig)
         assert "some.path" in result
 
@@ -2078,7 +2078,7 @@ class TestCallableGaps:
         class _Uninspectable:
             pass
 
-        _Uninspectable.__init__ = None  # type: ignore[assignment]
+        _Uninspectable.__init__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __init__ to trigger fallback path
         result = _resolve_factory_kwargs(_Uninspectable, {"a": 1}, "test", "class", construct_fn=None)
         assert result == {"a": 1}
 
@@ -2086,7 +2086,7 @@ class TestCallableGaps:
         """_resolve_factory_kwargs falls back to {} hints when get_type_hints raises."""
 
         class _BrokenHints:
-            def __init__(self, x: UndefinedType777) -> None:  # noqa: F821
+            def __init__(self, x: UndefinedType777) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
                 self.x = x
 
         result = _resolve_factory_kwargs(_BrokenHints, {"x": 1}, "test", "class", construct_fn=None)
@@ -2105,7 +2105,7 @@ class TestCallableGaps:
     def test_resolve_call_kwargs_get_type_hints_fails(self) -> None:
         """_resolve_call_kwargs falls back to {} hints when get_type_hints raises."""
 
-        def _fn(x: UndefinedType777) -> None:  # noqa: F821
+        def _fn(x: UndefinedType777) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
             pass
 
         result = _resolve_call_kwargs(_fn, {"x": 1}, "test", "class", construct_fn=None)
@@ -2129,7 +2129,7 @@ class TestCallableGaps:
     def test_coerce_bind_kwargs_get_type_hints_fails(self) -> None:
         """_coerce_bind_kwargs falls back to {} hints when get_type_hints raises."""
 
-        def _fn(x: UndefinedHintType999) -> None:  # noqa: F821
+        def _fn(x: UndefinedHintType999) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
             pass
 
         result = _coerce_bind_kwargs(_fn, {"x": _StrToken("1")})
@@ -2303,7 +2303,7 @@ class TestBuildCallableSpecs:
         class _BrokenDCFields:
             pass
 
-        _BrokenDCFields.__dataclass_fields__ = property(  # type: ignore[attr-defined]
+        _BrokenDCFields.__dataclass_fields__ = property(  # ty: ignore[unresolved-attribute]  # deliberately corrupt __dataclass_fields__ for testing
             lambda self: (_ for _ in ()).throw(TypeError("boom")),
         )
         result = _collect_fn_paths_from_config({}, _BrokenDCFields, "", "class")
@@ -2411,7 +2411,7 @@ class TestBuildCallableSpecs:
     def test_build_dynamic_flags_exception_returns_empty(self) -> None:
         """build_dynamic_flags returns [] on any internal exception."""
         # Passing a non-type target causes an internal error; result is []
-        result = build_dynamic_flags(None, [])  # type: ignore[arg-type]
+        result = build_dynamic_flags(None, [])  # ty: ignore[invalid-argument-type]  # deliberately passing None to exercise internal error-handling
         assert result == []
 
     def test_resolve_struct_struct_fields_raises(self) -> None:
@@ -2421,7 +2421,7 @@ class TestBuildCallableSpecs:
             """Passes _is_struct but fails _struct_fields."""
 
         # Make _is_struct think this is a struct by giving it __dataclass_fields__
-        _BrokenStruct.__dataclass_fields__ = property(  # type: ignore[attr-defined]
+        _BrokenStruct.__dataclass_fields__ = property(  # ty: ignore[unresolved-attribute]  # deliberately corrupt __dataclass_fields__ for testing
             lambda self: (_ for _ in ()).throw(TypeError("boom")),
         )
         # Should return None, not raise
@@ -2597,7 +2597,7 @@ class TestCompletionGaps:
         """_resolve_tags_from_config returns {} when _struct_fields raises."""
 
         class _BrokenStruct:
-            __dataclass_fields__ = property(  # type: ignore[assignment]
+            __dataclass_fields__ = property(
                 lambda s: (_ for _ in ()).throw(ValueError("boom")),
             )
 
@@ -2748,7 +2748,7 @@ class TestCompletionGaps:
         """setup_completion defaults argv to sys.argv[1:] when argv=None."""
         # Inject a mock argcomplete so ImportError is avoided
         mock_argcomplete = types.ModuleType("argcomplete")
-        mock_argcomplete.autocomplete = lambda *a, **kw: None  # type: ignore[attr-defined]
+        mock_argcomplete.autocomplete = lambda *a, **kw: None  # ty: ignore[unresolved-attribute]  # dynamically adding attribute to a mock module
         monkeypatch.setitem(sys.modules, "argcomplete", mock_argcomplete)
 
         parser = argparse.ArgumentParser()

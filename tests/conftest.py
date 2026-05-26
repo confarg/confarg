@@ -9,9 +9,10 @@ from __future__ import annotations
 import enum
 import textwrap
 from dataclasses import dataclass, field, make_dataclass
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 import pytest
@@ -26,11 +27,11 @@ _SENTINEL = object()
 
 def make_target(
     field_name: str,
-    field_type: type,
+    field_type: Any,
     *,
     default: object = _SENTINEL,
-    default_factory: object = _SENTINEL,
-) -> type:
+    default_factory: Callable[[], Any] | object = _SENTINEL,
+) -> type[Any]:
     """Build a single-field dataclass on the fly via ``make_dataclass``.
 
     Replaces trivial hand-written wrappers like ``WithOptional``, ``WithList``, etc.
@@ -38,10 +39,10 @@ def make_target(
     if default is not _SENTINEL:
         fields = [(field_name, field_type, field(default=default))]
     elif default_factory is not _SENTINEL:
-        fields = [(field_name, field_type, field(default_factory=default_factory))]
+        fields = [(field_name, field_type, field(default_factory=cast("Callable[[], Any]", default_factory)))]
     else:
         fields = [(field_name, field_type)]
-    return make_dataclass("Target", fields)
+    return cast("type[Any]", make_dataclass("Target", fields))
 
 
 # ---------------------------------------------------------------------------

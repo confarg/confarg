@@ -12,7 +12,7 @@ import math
 import operator
 import re
 from collections import deque
-from typing import Any
+from typing import Any, cast
 
 from confarg.exceptions import (
     CircularReferenceError,
@@ -473,7 +473,7 @@ def _eval_ifexp(node: ast.IfExp, namespace: dict[str, Any]) -> Any:
 def _eval_call(node: ast.Call, namespace: dict[str, Any]) -> Any:
     func = _evaluate_ast(node.func, namespace)
     args = [_evaluate_ast(a, namespace) for a in node.args]
-    kwargs = {kw.arg: _evaluate_ast(kw.value, namespace) for kw in node.keywords}
+    kwargs = {cast("str", kw.arg): _evaluate_ast(kw.value, namespace) for kw in node.keywords}
     try:
         return func(*args, **kwargs)
     except Exception as exc:

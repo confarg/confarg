@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""confarg.dictexpr — expression interpolation engine for nested dicts.
+"""Expression interpolation engine for nested dicts.
 
 Resolves ``${field.path}`` references and safe Python expressions embedded in
 string values of a nested dict.  The engine operates on plain dicts and has no

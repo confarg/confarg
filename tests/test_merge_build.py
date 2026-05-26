@@ -125,9 +125,9 @@ class TestTwoStepEquivalence:
 
     def test_flat(self) -> None:
         """Test that merge() + build() equals load() for flat dataclasses."""
-        kwargs = {"args": ["--name", "x", "--count", "5", "--rate", "2.0", "--verbose", "true"], "env": {}}
-        via_load = confarg.load(WithDefaults, **kwargs)
-        via_two_step = confarg.build(WithDefaults, confarg.merge(WithDefaults, **kwargs))
+        args = ["--name", "x", "--count", "5", "--rate", "2.0", "--verbose", "true"]
+        via_load = confarg.load(WithDefaults, args=args, env={})
+        via_two_step = confarg.build(WithDefaults, confarg.merge(WithDefaults, args=args, env={}))
         assert via_load.name == via_two_step.name
         assert via_load.count == via_two_step.count
 
@@ -140,9 +140,8 @@ class TestTwoStepEquivalence:
             derived: str
 
         path = tmp_yaml("base: hello\nderived: '${base}_world'\n")
-        kwargs = {"args": [], "env": {}, "files": [path]}
-        via_load = confarg.load(TwoStrings, **kwargs)
-        via_two_step = confarg.build(TwoStrings, confarg.merge(TwoStrings, **kwargs))
+        via_load = confarg.load(TwoStrings, args=[], env={}, files=[path])
+        via_two_step = confarg.build(TwoStrings, confarg.merge(TwoStrings, args=[], env={}, files=[path]))
         assert via_load.derived == via_two_step.derived
 
 

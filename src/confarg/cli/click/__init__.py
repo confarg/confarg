@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Click adapter for confarg: populate commands from dataclass types and construct them back."""
+"""Click adapter: populate commands from dataclass types and construct them back."""
 
 from confarg.cli.click._completion import setup_completion
 from confarg.cli.click._context import from_context
