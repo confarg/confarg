@@ -383,7 +383,7 @@ class TestDumpSubclass:
         obj = _SubWrapper(item=_SubChild(value=2.5))
         path = tmp_path / "out.yaml"
         confarg.dump_file(obj, path)
-        loaded = confarg.load(_SubWrapper, args=[], env={}, files=[path])
+        loaded = confarg.load(_SubWrapper, argv=[], env={}, files=[path])
         assert isinstance(loaded.item, _SubChild)
         assert loaded.item.value == pytest.approx(2.5)
 
@@ -405,7 +405,7 @@ class TestDumpToml:
         )
         path = tmp_path / "out.toml"
         confarg.dump_file(obj, path)
-        loaded = confarg.load(AppConfig, args=[], env={}, files=[path])
+        loaded = confarg.load(AppConfig, argv=[], env={}, files=[path])
         assert loaded.db.host == "localhost"
         assert loaded.db.port == 5432
         assert loaded.cache.ttl == 600
@@ -416,7 +416,7 @@ class TestDumpToml:
         obj = Flat(name="x", count=0, rate=float("inf"), verbose=False)
         path = tmp_path / "out.toml"
         confarg.dump_file(obj, path)
-        loaded = confarg.load(Flat, args=[], env={}, files=[path])
+        loaded = confarg.load(Flat, argv=[], env={}, files=[path])
         assert loaded.rate == float("inf")
 
     def test_missing_tomli_w(self, tmp_path: Path) -> None:
@@ -447,7 +447,7 @@ class TestDumpYaml:
         )
         path = tmp_path / "out.yaml"
         confarg.dump_file(obj, path)
-        loaded = confarg.load(AppConfig, args=[], env={}, files=[path])
+        loaded = confarg.load(AppConfig, argv=[], env={}, files=[path])
         assert loaded.db.host == "localhost"
         assert loaded.db.port == 5432
         assert loaded.cache.ttl == 600
@@ -458,7 +458,7 @@ class TestDumpYaml:
         obj = Flat(name="x", count=0, rate=float("inf"), verbose=False)
         path = tmp_path / "out.yaml"
         confarg.dump_file(obj, path)
-        loaded = confarg.load(Flat, args=[], env={}, files=[path])
+        loaded = confarg.load(Flat, argv=[], env={}, files=[path])
         assert loaded.rate == float("inf")
 
     def test_missing_pyyaml(self, tmp_path: Path) -> None:
@@ -484,10 +484,10 @@ class TestDumpRoundTrip:
         """Test that a flat dataclass round-trips through load → dump → load."""
         path_in = tmp_path / "in.toml"
         path_in.write_text('name = "alice"\ncount = 3\nrate = 1.5\nverbose = true\n')
-        obj = confarg.load(Flat, args=[], env={}, files=[path_in])
+        obj = confarg.load(Flat, argv=[], env={}, files=[path_in])
         path_out = tmp_path / "out.toml"
         confarg.dump_file(obj, path_out)
-        obj2 = confarg.load(Flat, args=[], env={}, files=[path_out])
+        obj2 = confarg.load(Flat, argv=[], env={}, files=[path_out])
         assert obj == obj2
 
     def test_nested_roundtrip(self, tmp_path: Path) -> None:
@@ -499,7 +499,7 @@ class TestDumpRoundTrip:
         )
         path = tmp_path / "out.yaml"
         confarg.dump_file(obj, path)
-        obj2 = confarg.load(AppConfig, args=[], env={}, files=[path])
+        obj2 = confarg.load(AppConfig, argv=[], env={}, files=[path])
         assert obj == obj2
 
     def test_collections_roundtrip(self, tmp_path: Path) -> None:
@@ -508,7 +508,7 @@ class TestDumpRoundTrip:
         obj = WithDict(metadata={"a": 1, "b": 2})
         path = tmp_path / "out.toml"
         confarg.dump_file(obj, path)
-        obj2 = confarg.load(WithDict, args=[], env={}, files=[path])
+        obj2 = confarg.load(WithDict, argv=[], env={}, files=[path])
         assert obj == obj2
 
     def test_enum_roundtrip(self, tmp_path: Path) -> None:
@@ -517,7 +517,7 @@ class TestDumpRoundTrip:
         obj = WithEnum(color=Color.BLUE)
         path = tmp_path / "out.toml"
         confarg.dump_file(obj, path)
-        obj2 = confarg.load(WithEnum, args=[], env={}, files=[path])
+        obj2 = confarg.load(WithEnum, argv=[], env={}, files=[path])
         assert obj == obj2
 
     def test_union_with_tag_roundtrip(self, tmp_path: Path) -> None:
@@ -525,7 +525,7 @@ class TestDumpRoundTrip:
         obj = WithUnionAmbiguous(shape=SquareShape(x=0, y=0, radius=3))
         path = tmp_path / "out.toml"
         confarg.dump_file(obj, path)
-        obj2 = confarg.load(WithUnionAmbiguous, args=[], env={}, files=[path])
+        obj2 = confarg.load(WithUnionAmbiguous, argv=[], env={}, files=[path])
         assert isinstance(obj2.shape, SquareShape)
         assert obj2.shape.radius == pytest.approx(3.0)
 

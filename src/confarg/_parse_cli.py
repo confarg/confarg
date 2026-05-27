@@ -326,7 +326,7 @@ def _parse_flag_mode(
 class _ParseCtx:
     """Shared parse-loop state threaded through token handlers."""
 
-    args: Sequence[str]
+    argv: Sequence[str]
     target: Any
     union_tag: str
     data: dict[str, Any] = field(default_factory=dict)
@@ -417,7 +417,7 @@ def _handle_append_token(
         )
         raise ConfargError(msg)
     et = _elem_type(ft)
-    append_items, i = _collect_append_items(ctx.args, i, et)
+    append_items, i = _collect_append_items(ctx.argv, i, et)
     node: Any = ctx.data
     for p in path[:-1]:
         node = node.get(p, {}) if isinstance(node, dict) else {}
@@ -484,8 +484,8 @@ def _handle_unknown_field(
         raise UnknownArgumentError(msg)
     if _is_dict_at_path(ctx.target, path, ctx.union_tag):
         i += 1
-        if i < len(ctx.args) and not _looks_like_flag(ctx.args[i]):
-            _set_nested(ctx.data, path, _StrToken(ctx.args[i]))
+        if i < len(ctx.argv) and not _looks_like_flag(ctx.argv[i]):
+            _set_nested(ctx.data, path, _StrToken(ctx.argv[i]))
             i += 1
         return i
     if len(path) > 1 and path[-1] in ("", "+"):
@@ -513,7 +513,7 @@ def _consume_collection_or_scalar(
     path: list[str],
 ) -> int:
     """Consume collection (array/tuple/varlen) or scalar value; return new arg index."""
-    args = ctx.args
+    args = ctx.argv
     # JSON array → list / tuple / union-of-tuples
     is_collection = (
         _is_varlen_collection(ft)
@@ -568,7 +568,7 @@ def _consume_typed_arg(
     path: list[str],
 ) -> int:
     """Consume the value(s) for a resolved, non-append field type and return the new arg index."""
-    args = ctx.args
+    args = ctx.argv
     # JSON object → dataclass / dict / callable / union-with-dc
     if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("{"):
         accepts_obj = (
@@ -589,7 +589,7 @@ def _consume_typed_arg(
 
 
 def _parse_cli(
-    args: Sequence[str],
+    argv: Sequence[str],
     target: Any,
     cli_prefix: str,
     config_flag: str,
@@ -598,7 +598,7 @@ def _parse_cli(
     """Parse CLI arguments into a nested dict and a list of config file paths.
 
     Args:
-        args: The CLI argument sequence to parse.
+        argv: The CLI argument sequence to parse.
         target: The target type, used for type-aware parsing decisions.
         cli_prefix: Required prefix for CLI flags (empty string for no prefix).
         config_flag: The flag name used to specify config files.
@@ -613,16 +613,16 @@ def _parse_cli(
         ConfargError: If a config flag is missing its path argument or conflicts with a field name.
     """
     _check_config_flag_conflict(target, config_flag, cli_prefix)
-    args = _normalize_eq_args(args)
+    argv = _normalize_eq_args(argv)
 
-    ctx = _ParseCtx(args=args, target=target, union_tag=union_tag)
+    ctx = _ParseCtx(argv=argv, target=target, union_tag=union_tag)
     config_files: list[tuple[str, Path]] = []
     target_r = _resolve_type(target)
     is_struct = _is_struct_like(target_r)
     i = 0
 
-    while i < len(args):
-        token = args[i]
+    while i < len(argv):
+        token = argv[i]
         if not _looks_like_flag(token):
             msg = (
                 f"Unexpected positional argument: {token!r}."
@@ -633,7 +633,7 @@ def _parse_cli(
         key = _strip_cli_prefix(token[2:], cli_prefix, token)
 
         if key == config_flag or key.startswith(config_flag + "."):
-            i, new_cfgs = _consume_config_paths(args, i, key, config_flag)
+            i, new_cfgs = _consume_config_paths(argv, i, key, config_flag)
             config_files.extend(new_cfgs)
             continue
 
@@ -645,7 +645,7 @@ def _parse_cli(
             continue
 
         if not is_struct and not path:
-            i = _handle_scalar_root(args, i, token, target_r, ctx.data)
+            i = _handle_scalar_root(argv, i, token, target_r, ctx.data)
             continue
 
         ft = _resolve_field_type(target, path, union_tag)
@@ -657,7 +657,7 @@ def _parse_cli(
         i += 1
 
         if force_str:
-            i = _handle_force_str(args, i, token, ctx.data, path)
+            i = _handle_force_str(argv, i, token, ctx.data, path)
             continue
 
         if append_mode:

@@ -33,29 +33,29 @@ class TestEnvNaming:
 
     def test_flat_field_no_prefix(self) -> None:
         """Flat field is uppercased with env_prefix="" (no prefix)."""
-        result = confarg.load(WithDefaults, args=[], env={"NAME": "hello"}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"NAME": "hello"}, env_prefix="")
         assert result.name == "hello"
 
     def test_flat_field_explicit_prefix(self) -> None:
         """Env vars are read when an explicit env_prefix is set."""
-        result = confarg.load(WithDefaults, args=[], env={"CONFARG_NAME": "hello"}, env_prefix="CONFARG_")
+        result = confarg.load(WithDefaults, argv=[], env={"CONFARG_NAME": "hello"}, env_prefix="CONFARG_")
         assert result.name == "hello"
 
     def test_env_disabled_by_default(self) -> None:
         """Env vars are ignored when env_prefix is None (the default)."""
-        result = confarg.load(WithDefaults, args=[], env={"NAME": "ignored"})
+        result = confarg.load(WithDefaults, argv=[], env={"NAME": "ignored"})
         assert result.name == "default"
 
     def test_flat_field_with_prefix(self) -> None:
         """Flat field with prefix: PREFIX__FIELD."""
-        result = confarg.load(WithDefaults, args=[], env={"MYAPP__NAME": "world"}, env_prefix="MYAPP")
+        result = confarg.load(WithDefaults, argv=[], env={"MYAPP__NAME": "world"}, env_prefix="MYAPP")
         assert result.name == "world"
 
     def test_nested_field_double_underscore(self) -> None:
         """Nested field uses __ as level separator."""
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={"DB__HOST": "h", "DB__PORT": "1", "DB__NAME": "n"},
             env_prefix="",
         )
@@ -65,7 +65,7 @@ class TestEnvNaming:
         """Nested field with prefix: PREFIX__LEVEL__FIELD."""
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={"APP__DB__HOST": "h", "APP__DB__PORT": "1", "APP__DB__NAME": "n"},
             env_prefix="APP",
         )
@@ -84,7 +84,7 @@ class TestEnvCustomSeparator:
         """Use single underscore as separator (less safe but user's choice)."""
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={"DB_HOST": "h", "DB_PORT": "1", "DB_NAME": "n"},
             env_prefix="",
             env_separator="_",
@@ -95,7 +95,7 @@ class TestEnvCustomSeparator:
         """Use dot as separator."""
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={"DB.HOST": "h", "DB.PORT": "1", "DB.NAME": "n"},
             env_prefix="",
             env_separator=".",
@@ -106,7 +106,7 @@ class TestEnvCustomSeparator:
         """Custom separator combined with prefix."""
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={"X_DB_HOST": "h", "X_DB_PORT": "1", "X_DB_NAME": "n"},
             env_prefix="X",
             env_separator="_",
@@ -135,7 +135,7 @@ class TestEnvCoercion:
     def test_type_coercion(self, env_key, env_val, field, expected, target_cls) -> None:
         """Env var string coerced to the target type."""
         cls = target_cls or WithDefaults
-        result = confarg.load(cls, args=[], env={env_key: env_val}, env_prefix="")
+        result = confarg.load(cls, argv=[], env={env_key: env_val}, env_prefix="")
         actual = getattr(result, field)
         assert actual == expected
 
@@ -146,7 +146,7 @@ class TestEnvCoercion:
     )
     def test_bool_true_values(self, env_val: str) -> None:
         """Various truthy strings for bool."""
-        result = confarg.load(WithDefaults, args=[], env={"VERBOSE": env_val}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"VERBOSE": env_val}, env_prefix="")
         assert result.verbose is True, f"Expected True for {env_val!r}"
 
     @pytest.mark.parametrize(
@@ -156,7 +156,7 @@ class TestEnvCoercion:
     )
     def test_bool_false_values(self, env_val: str) -> None:
         """Various falsy strings for bool."""
-        result = confarg.load(WithDefaults, args=[], env={"VERBOSE": env_val}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"VERBOSE": env_val}, env_prefix="")
         assert result.verbose is False, f"Expected False for {env_val!r}"
 
     @pytest.mark.parametrize(
@@ -172,7 +172,7 @@ class TestEnvCoercion:
     )
     def test_optional_coercion(self, target_cls, env_val: str, expected) -> None:
         """Optional / pipe-none coercion from env var string."""
-        result = confarg.load(target_cls, args=[], env={"VALUE": env_val}, env_prefix="")
+        result = confarg.load(target_cls, argv=[], env={"VALUE": env_val}, env_prefix="")
         assert result.value == expected
 
     @pytest.mark.parametrize(
@@ -186,12 +186,12 @@ class TestEnvCoercion:
     def test_optional_int_empty_env_raises(self, target_cls) -> None:
         """Empty env VALUE= for int|None raises — use VALUE__NONE= to set None."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="To set this field to None"):
-            confarg.load(target_cls, args=[], env={"VALUE": ""}, env_prefix="")
+            confarg.load(target_cls, argv=[], env={"VALUE": ""}, env_prefix="")
 
     def test_optional_str_empty_env_is_empty_string(self) -> None:
         """Empty env VALUE= gives empty string for str | None, not None."""
         WithOptionalStr = make_target("value", str | None, default=None)
-        result = confarg.load(WithOptionalStr, args=[], env={"VALUE": ""}, env_prefix="")
+        result = confarg.load(WithOptionalStr, argv=[], env={"VALUE": ""}, env_prefix="")
         assert result.value == ""
 
 
@@ -214,33 +214,33 @@ class TestEnvNoneSentinel:
     )
     def test_none_sentinel_sets_optional_to_none(self, target_cls) -> None:
         """Test that 'none' env var value sets an Optional field to None."""
-        result = confarg.load(target_cls, args=[], env={"VALUE": "none"}, env_prefix="")
+        result = confarg.load(target_cls, argv=[], env={"VALUE": "none"}, env_prefix="")
         assert result.value is None
 
     def test_none_sentinel_case_insensitive(self) -> None:
         """Test that 'none'/'None'/'NONE'/'null'/'Null'/'NULL' all set Optional to None."""
         WithOpt = make_target("value", Optional[int], default=99)
         for val in ["none", "None", "NONE", "null", "Null", "NULL"]:
-            result = confarg.load(WithOpt, args=[], env={"VALUE": val}, env_prefix="")
+            result = confarg.load(WithOpt, argv=[], env={"VALUE": val}, env_prefix="")
             assert result.value is None
 
     def test_none_sentinel_value_is_ignored(self) -> None:
         """'null' is a case-insensitive alias for None alongside 'none'."""
         WithOpt = make_target("value", Optional[int], default=99)
-        result = confarg.load(WithOpt, args=[], env={"VALUE": "null"}, env_prefix="")
+        result = confarg.load(WithOpt, argv=[], env={"VALUE": "null"}, env_prefix="")
         assert result.value is None
 
     def test_none_sentinel_with_prefix(self) -> None:
         """Test that none sentinel works when an env_prefix is set."""
         WithOpt = make_target("value", Optional[int], default=99)
-        result = confarg.load(WithOpt, args=[], env={"APP__VALUE": "none"}, env_prefix="APP")
+        result = confarg.load(WithOpt, argv=[], env={"APP__VALUE": "none"}, env_prefix="APP")
         assert result.value is None
 
     def test_none_sentinel_nested(self) -> None:
         """Test that none sentinel works for a nested optional dataclass field."""
         Inner = make_dataclass("Inner", [("x", int, field(default=1))])
         Outer = make_dataclass("Outer", [("inner", Inner | None, field(default=None))])
-        result: Any = confarg.load(Outer, args=[], env={"INNER": "none"}, env_prefix="")
+        result: Any = confarg.load(Outer, argv=[], env={"INNER": "none"}, env_prefix="")
         assert result.inner is None
 
 
@@ -278,7 +278,7 @@ class TestEnvIndexedCollections:
     )
     def test_indexed_collection(self, target_cls, env, field, expected) -> None:
         """Collection items via indexed/keyed env vars."""
-        result = confarg.load(target_cls, args=[], env=env, env_prefix="")
+        result = confarg.load(target_cls, argv=[], env=env, env_prefix="")
         assert getattr(result, field) == expected
 
     def test_list_indexed_with_prefix(self) -> None:
@@ -286,7 +286,7 @@ class TestEnvIndexedCollections:
         WithList = make_target("items", list[int], default_factory=list)
         result = confarg.load(
             WithList,
-            args=[],
+            argv=[],
             env={"P__ITEMS__0": "1", "P__ITEMS__1": "2"},
             env_prefix="P",
         )
@@ -303,7 +303,7 @@ class TestEnvDisabled:
 
     def test_empty_env_ignores_vars(self) -> None:
         """Passing env={} means no env vars are read."""
-        result = confarg.load(WithDefaults, args=[], env={})
+        result = confarg.load(WithDefaults, argv=[], env={})
         assert result.name == "default"
         assert result.count == 0
 
@@ -320,7 +320,7 @@ class TestEnvUnrecognized:
         """Env vars not matching any field emit ConfargWarning and are ignored."""
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            result = confarg.load(WithDefaults, args=[], env={"UNKNOWN": "val", "NAME": "ok"}, env_prefix="")
+            result = confarg.load(WithDefaults, argv=[], env={"UNKNOWN": "val", "NAME": "ok"}, env_prefix="")
         assert result.name == "ok"
         assert len(caught) == 1
         assert issubclass(caught[0].category, confarg.exceptions.ConfargWarning)
@@ -331,7 +331,7 @@ class TestEnvUnrecognized:
         """Only prefixed vars are considered; unrecognised prefixed vars warn."""
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            result = confarg.load(WithDefaults, args=[], env={"X__NAME": "ok", "X__BOGUS": "no"}, env_prefix="X")
+            result = confarg.load(WithDefaults, argv=[], env={"X__NAME": "ok", "X__BOGUS": "no"}, env_prefix="X")
         assert result.name == "ok"
         assert any(
             "BOGUS" in str(w.message) for w in caught if issubclass(w.category, confarg.exceptions.ConfargWarning)
@@ -348,14 +348,14 @@ class TestEnvEdgeCases:
 
     def test_empty_string_value(self) -> None:
         """Empty string env var is treated as the value."""
-        result = confarg.load(WithDefaults, args=[], env={"NAME": ""}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"NAME": ""}, env_prefix="")
         assert result.name == ""
 
     def test_all_fields_from_env(self) -> None:
         """All fields of a flat dataclass from env vars."""
         result = confarg.load(
             Flat,
-            args=[],
+            argv=[],
             env={"NAME": "n", "COUNT": "1", "RATE": "2.0", "VERBOSE": "true"},
             env_prefix="",
         )
@@ -368,7 +368,7 @@ class TestEnvEdgeCases:
         """All nested fields from env vars."""
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={
                 "DB__HOST": "h",
                 "DB__PORT": "3306",
@@ -397,38 +397,38 @@ class TestEnvJsonValues:
     def test_json_array_for_list(self) -> None:
         """A JSON array string is decoded into a list field."""
         WithList = make_target("items", list[int])
-        result = confarg.load(WithList, args=[], env={"ITEMS": "[1, 2, 3]"}, env_prefix="")
+        result = confarg.load(WithList, argv=[], env={"ITEMS": "[1, 2, 3]"}, env_prefix="")
         assert result.items == [1, 2, 3]
 
     def test_json_array_for_tuple(self) -> None:
         """A JSON array string is decoded into a fixed-length tuple field."""
         WithTuple = make_target("point", tuple[float, float])
-        result = confarg.load(WithTuple, args=[], env={"POINT": "[1.5, 2.5]"}, env_prefix="")
+        result = confarg.load(WithTuple, argv=[], env={"POINT": "[1.5, 2.5]"}, env_prefix="")
         assert result.point == (1.5, 2.5)
 
     def test_json_array_with_prefix(self) -> None:
         """JSON array env var respects env_prefix."""
         WithList = make_target("tags", list[str])
-        result = confarg.load(WithList, args=[], env={"APP__TAGS": '["x", "y"]'}, env_prefix="APP")
+        result = confarg.load(WithList, argv=[], env={"APP__TAGS": '["x", "y"]'}, env_prefix="APP")
         assert result.tags == ["x", "y"]
 
     def test_json_array_wrong_length_raises(self) -> None:
         """A JSON array with wrong length raises a TypeCoercionError."""
         WithTuple = make_target("point", tuple[int, int, int])
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="expected 3 elements, got 2"):
-            confarg.load(WithTuple, args=[], env={"POINT": "[1, 2]"}, env_prefix="")
+            confarg.load(WithTuple, argv=[], env={"POINT": "[1, 2]"}, env_prefix="")
 
     def test_json_array_invalid_json_falls_back_to_string(self) -> None:
         """Malformed JSON starting with '[' is treated as a plain string."""
         WithStr = make_target("val", str, default="")
-        result = confarg.load(WithStr, args=[], env={"VAL": "[not json"}, env_prefix="")
+        result = confarg.load(WithStr, argv=[], env={"VAL": "[not json"}, env_prefix="")
         assert result.val == "[not json"
 
     def test_json_object_for_dataclass(self) -> None:
         """A JSON object string is decoded into a nested dataclass field."""
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={
                 "DB": '{"host": "localhost", "port": 5432, "name": "mydb"}',
                 "CACHE__ENABLED": "true",
@@ -444,7 +444,7 @@ class TestEnvJsonValues:
         """JSON object env var respects env_prefix."""
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={
                 "APP__DB": '{"host": "h", "port": 1, "name": "n"}',
                 "APP__CACHE__ENABLED": "false",
@@ -458,19 +458,19 @@ class TestEnvJsonValues:
     def test_json_object_invalid_json_falls_back_to_string(self) -> None:
         """Malformed JSON starting with '{' is treated as a plain string."""
         WithStr = make_target("val", str, default="")
-        result = confarg.load(WithStr, args=[], env={"VAL": "{not json"}, env_prefix="")
+        result = confarg.load(WithStr, argv=[], env={"VAL": "{not json"}, env_prefix="")
         assert result.val == "{not json"
 
     def test_json_object_not_parsed_for_str_field(self) -> None:
         """A valid JSON object string is stored verbatim in a str field."""
         WithStr = make_target("val", str, default="")
-        result = confarg.load(WithStr, args=[], env={"VAL": '{"key":"val"}'}, env_prefix="")
+        result = confarg.load(WithStr, argv=[], env={"VAL": '{"key":"val"}'}, env_prefix="")
         assert result.val == '{"key":"val"}'
 
     def test_json_array_not_parsed_for_str_field(self) -> None:
         """A valid JSON array string is stored verbatim in a str field."""
         WithStr = make_target("val", str, default="")
-        result = confarg.load(WithStr, args=[], env={"VAL": "[1,2,3]"}, env_prefix="")
+        result = confarg.load(WithStr, argv=[], env={"VAL": "[1,2,3]"}, env_prefix="")
         assert result.val == "[1,2,3]"
 
 
@@ -486,7 +486,7 @@ class TestEnvPrefixNone:
         """When env_prefix=None no env vars are processed."""
         result = confarg.load(
             WithDefaults,
-            args=[],
+            argv=[],
             env={"NAME": "from_env"},
             env_prefix=None,
         )
@@ -498,7 +498,7 @@ class TestEnvPrefixNone:
             warnings.simplefilter("always")
             confarg.load(
                 WithDefaults,
-                args=[],
+                argv=[],
                 env={"TOTALLY_UNKNOWN": "x"},
                 env_prefix=None,
             )
@@ -519,7 +519,7 @@ class TestConfargWarning:
             warnings.simplefilter("always")
             result = confarg.load(
                 WithDefaults,
-                args=[],
+                argv=[],
                 env={"APP_NAEM": "oops"},
                 env_prefix="APP_",
             )
@@ -537,7 +537,7 @@ class TestConfargWarning:
             warnings.simplefilter("always")
             result = confarg.load(
                 WithDefaults,
-                args=[],
+                argv=[],
                 env={"APP_NAME": "hello"},
                 env_prefix="APP_",
             )
@@ -576,7 +576,7 @@ class TestConfargWarningPlainClass:
             warnings.simplefilter("always")
             confarg.load(
                 PlainTarget,
-                args=[],
+                argv=[],
                 env={"APP_HOTS": "oops"},  # typo: HOTS instead of HOST
                 env_prefix="APP_",
             )
@@ -593,7 +593,7 @@ class TestConfargWarningPlainClass:
             warnings.simplefilter("always")
             result = confarg.load(
                 PlainTarget,
-                args=[],
+                argv=[],
                 env={"APP_HOST": "db.local"},
                 env_prefix="APP_",
             )
@@ -624,7 +624,7 @@ class TestConfargWarningUnionWithPlainVariant:
             warnings.simplefilter("always")
             confarg.merge(
                 Union[_DCVariant, _PlainVariant],
-                args=[],
+                argv=[],
                 env={"APP_Y": "hello"},  # 'y' only exists on _PlainVariant
                 env_prefix="APP_",
             )
@@ -636,7 +636,7 @@ class TestConfargWarningUnionWithPlainVariant:
             warnings.simplefilter("always")
             confarg.merge(
                 Union[_DCVariant, _PlainVariant],
-                args=[],
+                argv=[],
                 env={"APP_Z": "oops"},  # 'z' exists in neither variant
                 env_prefix="APP_",
             )
@@ -659,7 +659,7 @@ class TestEnvDelete:
         path = tmp_toml("name = 'from_config'\n")
         result = confarg.load(
             WithDefaults,
-            args=[],
+            argv=[],
             env={"NAME-": "anything"},
             env_prefix="",
             files=[path],
@@ -672,7 +672,7 @@ class TestEnvDelete:
         with pytest.raises(confarg.exceptions.MissingFieldError):
             confarg.load(
                 Flat,
-                args=[],
+                argv=[],
                 env={"NAME-": "anything"},
                 env_prefix="",
                 files=[path],
@@ -684,7 +684,7 @@ class TestEnvDelete:
         with pytest.raises(confarg.exceptions.MissingFieldError):
             confarg.load(
                 AppConfig,
-                args=[],
+                argv=[],
                 env={"DB__HOST-": "anything"},
                 env_prefix="",
                 files=[path],
@@ -696,7 +696,7 @@ class TestEnvDelete:
         path = tmp_toml('items = ["a", "b", "c"]\n')
         result = confarg.load(
             WithList,
-            args=[],
+            argv=[],
             env={"ITEMS__1-": "anything"},
             env_prefix="",
             files=[path],
@@ -709,7 +709,7 @@ class TestEnvDelete:
         path = tmp_toml('items = ["a", "b", "c", "d"]\n')
         result = confarg.load(
             WithList,
-            args=[],
+            argv=[],
             env={"ITEMS__1-": "x", "ITEMS__2-": "x"},
             env_prefix="",
             files=[path],
@@ -723,7 +723,7 @@ class TestEnvDelete:
         with pytest.raises(confarg.exceptions.ConfargError, match=r"[Dd]uplicate"):
             confarg.load(
                 WithList,
-                args=[],
+                argv=[],
                 env={"ITEMS__1-": "x", "items__1-": "x"},
                 env_prefix="",
                 files=[path],
@@ -736,7 +736,7 @@ class TestEnvDelete:
         with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(
                 WithList,
-                args=[],
+                argv=[],
                 env={"ITEMS__5-": "x"},
                 env_prefix="",
                 files=[path],
@@ -748,7 +748,7 @@ class TestEnvDelete:
         path = tmp_toml("items = [1, 2, 3]\n")
         result = confarg.load(
             WithList,
-            args=[],
+            argv=[],
             env={"ITEMS__-1": "99"},
             env_prefix="",
             files=[path],
@@ -761,7 +761,7 @@ class TestEnvDelete:
         path = tmp_toml('items = ["a", "b", "c"]\n')
         result = confarg.load(
             WithList,
-            args=[],
+            argv=[],
             env={"ITEMS__-1-": "x"},
             env_prefix="",
             files=[path],
@@ -773,7 +773,7 @@ class TestEnvDelete:
         path = tmp_toml("name = 'from_config'\n")
         result = confarg.load(
             WithDefaults,
-            args=[],
+            argv=[],
             env={"NAME-": "1"},
             env_prefix="",
             files=[path],

@@ -30,7 +30,7 @@ class TestMergePriority:
         """CLI value takes precedence over env var."""
         result = confarg.load(
             WithDefaults,
-            args=["--name", "from_cli"],
+            argv=["--name", "from_cli"],
             env={"NAME": "from_env"},
             env_prefix="",
         )
@@ -41,7 +41,7 @@ class TestMergePriority:
         path = tmp_toml('name = "from_config"\n')
         result = confarg.load(
             WithDefaults,
-            args=[],
+            argv=[],
             env={"NAME": "from_env"},
             env_prefix="",
             files=[path],
@@ -53,7 +53,7 @@ class TestMergePriority:
         path = tmp_toml('name = "from_config"\ncount = 1\nrate = 0.0\nverbose = false\n')
         result = confarg.load(
             Flat,
-            args=["--name", "from_cli", "--count", "1", "--rate", "0", "--verbose", "true"],
+            argv=["--name", "from_cli", "--count", "1", "--rate", "0", "--verbose", "true"],
             env={},
             files=[path],
         )
@@ -64,7 +64,7 @@ class TestMergePriority:
         path = tmp_toml("name = 'from_config'\ncount = 100\nrate = 1.0\nverbose = false\n")
         result = confarg.load(
             Flat,
-            args=["--name", "from_cli", "--count", "1", "--rate", "0", "--verbose", "true"],
+            argv=["--name", "from_cli", "--count", "1", "--rate", "0", "--verbose", "true"],
             env={"NAME": "from_env", "COUNT": "200"},
             env_prefix="",
             files=[path],
@@ -77,7 +77,7 @@ class TestMergePriority:
         path = tmp_toml("name = 'cfg'\ncount = 10\nrate = 0.5\nverbose = false\n")
         result = confarg.load(
             Flat,
-            args=["--name", "cli"],
+            argv=["--name", "cli"],
             env={"COUNT": "20", "RATE": "2.0", "VERBOSE": "true"},
             env_prefix="",
             files=[path],
@@ -106,7 +106,7 @@ class TestPartialMerge:
         """)
         result = confarg.load(
             AppConfig,
-            args=["--db.host", "cli_host"],
+            argv=["--db.host", "cli_host"],
             env={"DB__PORT": "3306"},
             env_prefix="",
             files=[path],
@@ -119,7 +119,7 @@ class TestPartialMerge:
         """Defaults fill fields not provided by any source."""
         result = confarg.load(
             WithDefaults,
-            args=["--name", "only_name"],
+            argv=["--name", "only_name"],
             env={},
         )
         assert result.name == "only_name"
@@ -142,7 +142,7 @@ class TestCollectionOverride:
         path = tmp_toml("items = [1, 2, 3]\n")
         result = confarg.load(
             WithList,
-            args=["--items", "10", "20"],
+            argv=["--items", "10", "20"],
             env={},
             files=[path],
         )
@@ -154,7 +154,7 @@ class TestCollectionOverride:
         path = tmp_toml("items = [1, 2, 3]\n")
         result = confarg.load(
             WithList,
-            args=["--items.1", "99"],
+            argv=["--items.1", "99"],
             env={},
             files=[path],
         )
@@ -168,7 +168,7 @@ class TestCollectionOverride:
         path = tmp_toml("items = [1, 2, 3]\n")
         result = confarg.load(
             WithList,
-            args=[],
+            argv=[],
             env={"ITEMS__0": "99"},
             env_prefix="",
             files=[path],
@@ -182,7 +182,7 @@ class TestCollectionOverride:
         path = tmp_toml("[metadata]\na = 1\n")
         result = confarg.load(
             WithDict,
-            args=["--metadata.b", "2"],
+            argv=["--metadata.b", "2"],
             env={},
             files=[path],
         )
@@ -194,7 +194,7 @@ class TestCollectionOverride:
         path = tmp_toml("[metadata]\na = 1\n")
         result = confarg.load(
             WithDict,
-            args=["--metadata.a", "99"],
+            argv=["--metadata.a", "99"],
             env={},
             files=[path],
         )
@@ -211,13 +211,13 @@ class TestEmptySources:
 
     def test_all_sources_empty_uses_defaults(self) -> None:
         """All sources empty -> defaults used."""
-        result = confarg.load(WithDefaults, args=[], env={})
+        result = confarg.load(WithDefaults, argv=[], env={})
         assert result.name == "default"
 
     def test_only_config(self, tmp_toml) -> None:
         """Only config file provides values."""
         path = tmp_toml("name = 'cfg'\ncount = 5\nrate = 1.0\nverbose = true\n")
-        result = confarg.load(Flat, args=[], env={}, files=[path])
+        result = confarg.load(Flat, argv=[], env={}, files=[path])
         assert result.name == "cfg"
         assert result.count == 5
 
@@ -234,21 +234,21 @@ class TestListAppendWithConfig:
         """--items+ appends elements after those from the config file."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
-        result = confarg.load(WithList, args=["--items+", "3", "4"], env={}, files=[path])
+        result = confarg.load(WithList, argv=["--items+", "3", "4"], env={}, files=[path])
         assert result.items == [1, 2, 3, 4]
 
     def test_cli_append_empty_adds_nothing(self, tmp_toml) -> None:
         """--items+ with no values leaves the config list unchanged."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
-        result = confarg.load(WithList, args=["--items+"], env={}, files=[path])
+        result = confarg.load(WithList, argv=["--items+"], env={}, files=[path])
         assert result.items == [1, 2]
 
     def test_cli_replacement_still_works(self, tmp_toml) -> None:
         """--items.N with N inside the existing list still replaces that element."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2, 3]\n")
-        result = confarg.load(WithList, args=["--items.1", "99"], env={}, files=[path])
+        result = confarg.load(WithList, argv=["--items.1", "99"], env={}, files=[path])
         assert result.items == [1, 99, 3]
 
     def test_cli_index_out_of_range_raises(self, tmp_toml) -> None:
@@ -256,14 +256,14 @@ class TestListAppendWithConfig:
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
         with pytest.raises(confarg.exceptions.ConfargError, match="append syntax"):
-            confarg.load(WithList, args=["--items.2", "3"], env={}, files=[path])
+            confarg.load(WithList, argv=["--items.2", "3"], env={}, files=[path])
 
     def test_env_index_out_of_range_raises(self, tmp_toml) -> None:
         """Env index beyond config list length raises ConfargError."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
         with pytest.raises(confarg.exceptions.ConfargError, match="append syntax"):
-            confarg.load(WithList, args=[], env={"ITEMS__2": "3"}, env_prefix="", files=[path])
+            confarg.load(WithList, argv=[], env={"ITEMS__2": "3"}, env_prefix="", files=[path])
 
 
 # ---------------------------------------------------------------------------
@@ -279,14 +279,14 @@ class TestConfigFileAppendSyntax:
         WithList = make_target("users", list[str], default_factory=list)
         base = tmp_yaml("users: [alice, bob]\n", "base.yaml")
         derived = tmp_yaml("users+: [frankenstein]\n", "derived.yaml")
-        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        result = confarg.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.users == ["alice", "bob", "frankenstein"]
 
     def test_yaml_append_no_base(self, tmp_yaml) -> None:
         """users+: [...] with no prior list creates the list from scratch."""
         WithList = make_target("users", list[str], default_factory=list)
         path = tmp_yaml("users+: [alice, bob]\n")
-        result = confarg.load(WithList, args=[], env={}, files=[path])
+        result = confarg.load(WithList, argv=[], env={}, files=[path])
         assert result.users == ["alice", "bob"]
 
     def test_yaml_append_then_cli_append(self, tmp_yaml) -> None:
@@ -294,7 +294,7 @@ class TestConfigFileAppendSyntax:
         WithList = make_target("users", list[str], default_factory=list)
         base = tmp_yaml("users: [alice]\n", "base.yaml")
         derived = tmp_yaml("users+: [bob]\n", "derived.yaml")
-        result = confarg.load(WithList, args=["--users+", "carol"], env={}, files=[base, derived])
+        result = confarg.load(WithList, argv=["--users+", "carol"], env={}, files=[base, derived])
         assert result.users == ["alice", "bob", "carol"]
 
     def test_yaml_append_scalar(self, tmp_yaml) -> None:
@@ -302,7 +302,7 @@ class TestConfigFileAppendSyntax:
         WithList = make_target("users", list[str], default_factory=list)
         base = tmp_yaml("users: [alice]\n", "base.yaml")
         derived = tmp_yaml("users+: bob\n", "derived.yaml")
-        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        result = confarg.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.users == ["alice", "bob"]
 
     def test_yaml_multiple_files_each_append(self, tmp_yaml) -> None:
@@ -311,7 +311,7 @@ class TestConfigFileAppendSyntax:
         f1 = tmp_yaml("users+: [alice]\n", "f1.yaml")
         f2 = tmp_yaml("users+: [bob]\n", "f2.yaml")
         f3 = tmp_yaml("users+: [carol]\n", "f3.yaml")
-        result = confarg.load(WithList, args=[], env={}, files=[f1, f2, f3])
+        result = confarg.load(WithList, argv=[], env={}, files=[f1, f2, f3])
         assert result.users == ["alice", "bob", "carol"]
 
     def test_yaml_nested_key_append(self, tmp_yaml) -> None:
@@ -324,7 +324,7 @@ class TestConfigFileAppendSyntax:
         Target = make_target("inner", Inner)
         base = tmp_yaml("inner:\n  items: [1, 2]\n", "base.yaml")
         derived = tmp_yaml("inner:\n  items+: [3]\n", "derived.yaml")
-        result = confarg.load(Target, args=[], env={}, files=[base, derived])
+        result = confarg.load(Target, argv=[], env={}, files=[base, derived])
         assert result.inner.items == [1, 2, 3]
 
     def test_yaml_include_chain_append(self, tmp_path) -> None:
@@ -334,7 +334,7 @@ class TestConfigFileAppendSyntax:
         derived = tmp_path / "derived.yaml"
         derived.write_text("__include__: ./base.yaml\nusers+: [frankenstein]\n")
         WithList = make_target("users", list[str], default_factory=list)
-        result = confarg.load(WithList, args=[], env={}, files=[derived])
+        result = confarg.load(WithList, argv=[], env={}, files=[derived])
         assert result.users == ["alice", "bob", "frankenstein"]
 
     def test_json_append(self, tmp_json) -> None:
@@ -342,7 +342,7 @@ class TestConfigFileAppendSyntax:
         WithList = make_target("items", list[int], default_factory=list)
         base = tmp_json('{"items": [1, 2]}', "base.json")
         derived = tmp_json('{"items+": [3, 4]}', "derived.json")
-        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        result = confarg.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == [1, 2, 3, 4]
 
     def test_toml_append_quoted_key(self, tmp_toml) -> None:
@@ -350,7 +350,7 @@ class TestConfigFileAppendSyntax:
         WithList = make_target("items", list[int], default_factory=list)
         base = tmp_toml("items = [1, 2]\n", "base.toml")
         derived = tmp_toml('"items+" = [3, 4]\n', "derived.toml")
-        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        result = confarg.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == [1, 2, 3, 4]
 
     def test_yaml_append_dict_item(self, tmp_yaml) -> None:
@@ -364,7 +364,7 @@ class TestConfigFileAppendSyntax:
         Target = make_target("servers", list[Server])
         base = tmp_yaml("servers:\n  - host: a\n    port: 1\n", "base.yaml")
         derived = tmp_yaml("servers+:\n  host: b\n  port: 2\n", "derived.yaml")
-        result = confarg.load(Target, args=[], env={}, files=[base, derived])
+        result = confarg.load(Target, argv=[], env={}, files=[base, derived])
         assert len(result.servers) == 2
         assert result.servers[0].host == "a"
         assert result.servers[1].host == "b"
@@ -383,7 +383,7 @@ class TestConfigFileDeleteSyntax:
         """key-: ~ in a derived file removes the field set in the base file."""
         base = tmp_yaml("name: from_base\n", "base.yaml")
         derived = tmp_yaml("name-: ~\n", "derived.yaml")
-        result = confarg.load(WithDefaults, args=[], env={}, files=[base, derived])
+        result = confarg.load(WithDefaults, argv=[], env={}, files=[base, derived])
         assert result.name == "default"
 
     def test_delete_required_field_raises(self, tmp_yaml) -> None:
@@ -391,14 +391,14 @@ class TestConfigFileDeleteSyntax:
         base = tmp_yaml("name: cfg\ncount: 5\nrate: 1.0\nverbose: false\n", "base.yaml")
         derived = tmp_yaml("name-: ~\n", "derived.yaml")
         with pytest.raises(confarg.exceptions.MissingFieldError):
-            confarg.load(Flat, args=[], env={}, files=[base, derived])
+            confarg.load(Flat, argv=[], env={}, files=[base, derived])
 
     def test_delete_list_index_yaml(self, tmp_yaml) -> None:
         """1-: ~ syntax removes the element at original index 1 from a list."""
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n  - c\n", "base.yaml")
         derived = tmp_yaml("items:\n  1-: ~\n", "derived.yaml")
-        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        result = confarg.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "c"]
 
     def test_delete_multiple_indices_use_original_positions(self, tmp_yaml) -> None:
@@ -406,7 +406,7 @@ class TestConfigFileDeleteSyntax:
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n  - c\n  - d\n", "base.yaml")
         derived = tmp_yaml("items:\n  1-: ~\n  2-: ~\n", "derived.yaml")
-        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        result = confarg.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "d"]
 
     def test_delete_list_index_toml(self, tmp_toml) -> None:
@@ -414,7 +414,7 @@ class TestConfigFileDeleteSyntax:
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_toml('items = ["a", "b", "c"]\n', "base.toml")
         derived = tmp_toml('[items]\n"1-" = true\n', "derived.toml")
-        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        result = confarg.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "c"]
 
     def test_delete_and_append_in_same_file(self, tmp_yaml) -> None:
@@ -422,7 +422,7 @@ class TestConfigFileDeleteSyntax:
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n  - c\n", "base.yaml")
         derived = tmp_yaml("items:\n  1-: ~\nitems+:\n  - d\n", "derived.yaml")
-        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        result = confarg.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "c", "d"]
 
     def test_delete_out_of_range_raises(self, tmp_yaml) -> None:
@@ -431,7 +431,7 @@ class TestConfigFileDeleteSyntax:
         base = tmp_yaml("items:\n  - a\n  - b\n", "base.yaml")
         derived = tmp_yaml("items:\n  5-: ~\n", "derived.yaml")
         with pytest.raises(confarg.exceptions.ConfargError):
-            confarg.load(WithList, args=[], env={}, files=[base, derived])
+            confarg.load(WithList, argv=[], env={}, files=[base, derived])
 
     def test_delete_field_in_include_chain(self, tmp_yaml) -> None:
         """Deletion in the middle of a multi-file include chain is applied correctly."""
@@ -439,7 +439,7 @@ class TestConfigFileDeleteSyntax:
         base = tmp_yaml("items:\n  - x\n  - y\n  - z\n", "base.yaml")
         mid = tmp_yaml("items:\n  1-: ~\n", "mid.yaml")
         top = tmp_yaml("items+:\n  - w\n", "top.yaml")
-        result = confarg.load(WithList, args=[], env={}, files=[base, mid, top])
+        result = confarg.load(WithList, argv=[], env={}, files=[base, mid, top])
         assert result.items == ["x", "z", "w"]
 
     def test_negative_index_update_yaml(self, tmp_yaml) -> None:
@@ -447,7 +447,7 @@ class TestConfigFileDeleteSyntax:
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n  - c\n", "base.yaml")
         derived = tmp_yaml('items:\n  "-1": z\n', "derived.yaml")
-        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        result = confarg.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "b", "z"]
 
     def test_negative_index_delete_yaml(self, tmp_yaml) -> None:
@@ -455,7 +455,7 @@ class TestConfigFileDeleteSyntax:
         WithList = make_target("items", list[str], default_factory=list)
         base = tmp_yaml("items:\n  - a\n  - b\n  - c\n", "base.yaml")
         derived = tmp_yaml("items:\n  -1-: ~\n", "derived.yaml")
-        result = confarg.load(WithList, args=[], env={}, files=[base, derived])
+        result = confarg.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "b"]
 
     def test_negative_index_without_base_raises(self) -> None:

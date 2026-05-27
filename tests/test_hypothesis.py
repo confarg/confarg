@@ -37,38 +37,38 @@ class TestRoundTripCoercion:
     @given(value=leaf_ints)
     def test_int_round_trip(self, value: int) -> None:
         """Int survives string round-trip via CLI."""
-        result = confarg.load(WithDefaults, args=["--count", str(value)], env={})
+        result = confarg.load(WithDefaults, argv=["--count", str(value)], env={})
         assert result.count == value
 
     @given(value=leaf_floats)
     def test_float_round_trip(self, value: float) -> None:
         """Float survives string round-trip via CLI."""
-        result = confarg.load(WithDefaults, args=["--rate", str(value)], env={})
+        result = confarg.load(WithDefaults, argv=["--rate", str(value)], env={})
         # Use approximate comparison for floats
         assert abs(result.rate - value) < 1e-6 or result.rate == value
 
     @given(value=leaf_bools)
     def test_bool_round_trip(self, value: bool) -> None:  # noqa: FBT001
         """Bool survives string round-trip via env."""
-        result = confarg.load(WithDefaults, args=[], env={"VERBOSE": str(value).lower()}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"VERBOSE": str(value).lower()}, env_prefix="")
         assert result.verbose is value
 
     @given(value=leaf_strs)
     def test_str_round_trip(self, value: str) -> None:
         """Str survives round-trip via CLI."""
-        result = confarg.load(WithDefaults, args=["--name", value], env={})
+        result = confarg.load(WithDefaults, argv=["--name", value], env={})
         assert result.name == value
 
     @given(value=leaf_ints)
     def test_int_round_trip_env(self, value: int) -> None:
         """Int survives string round-trip via env."""
-        result = confarg.load(WithDefaults, args=[], env={"COUNT": str(value)}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"COUNT": str(value)}, env_prefix="")
         assert result.count == value
 
     @given(value=leaf_floats)
     def test_float_round_trip_env(self, value: float) -> None:
         """Float survives string round-trip via env."""
-        result = confarg.load(WithDefaults, args=[], env={"RATE": str(value)}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"RATE": str(value)}, env_prefix="")
         assert abs(result.rate - value) < 1e-6 or result.rate == value
 
 
@@ -87,7 +87,7 @@ class TestEnvNameConstruction:
         """FIELD_NAME.upper() in env maps to field_name on the dataclass."""
         assume("${" not in value)  # avoid accidental expression syntax
         target = make_target(field_name, str, default="")
-        result = confarg.load(target, args=[], env={field_name.upper(): value}, env_prefix="")
+        result = confarg.load(target, argv=[], env={field_name.upper(): value}, env_prefix="")
         assert getattr(result, field_name) == value
 
     @given(
@@ -98,7 +98,7 @@ class TestEnvNameConstruction:
         """PREFIX__NAME env var maps to field 'name' with env_prefix=PREFIX."""
         assume("${" not in value)
         target = make_target("name", str, default="")
-        result = confarg.load(target, args=[], env={f"{prefix}__NAME": value}, env_prefix=prefix)
+        result = confarg.load(target, argv=[], env={f"{prefix}__NAME": value}, env_prefix=prefix)
         assert result.name == value
 
 
@@ -115,7 +115,7 @@ class TestMergePriorityInvariant:
         """CLI value always wins over env value for the same field."""
         result = confarg.load(
             WithDefaults,
-            args=["--name", cli_val],
+            argv=["--name", cli_val],
             env={"NAME": env_val},
             env_prefix="",
         )
@@ -126,7 +126,7 @@ class TestMergePriorityInvariant:
         """CLI int always wins over env int."""
         result = confarg.load(
             WithDefaults,
-            args=["--count", str(cli_val)],
+            argv=["--count", str(cli_val)],
             env={"COUNT": str(env_val)},
             env_prefix="",
         )
@@ -140,7 +140,7 @@ class TestMergePriorityInvariant:
         config_file.write_text('name = "from_config"\n')
         result = confarg.load(
             WithDefaults,
-            args=[],
+            argv=[],
             env={"NAME": env_val},
             env_prefix="",
             files=[config_file],
@@ -155,7 +155,7 @@ class TestMergePriorityInvariant:
         config_file.write_text('name = "from_config"\n')
         result = confarg.load(
             WithDefaults,
-            args=["--name", cli_val],
+            argv=["--name", cli_val],
             env={"NAME": env_val},
             env_prefix="",
             files=[config_file],
@@ -176,13 +176,13 @@ class TestBoolCoercionProperty:
     @given(val=st.sampled_from(sorted(["true", "True", "TRUE", "1", "yes", "on"])))
     def test_truthy_strings(self, val: str) -> None:
         """All truthy strings coerce to True."""
-        result = confarg.load(WithDefaults, args=[], env={"VERBOSE": val}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"VERBOSE": val}, env_prefix="")
         assert result.verbose is True
 
     @given(val=st.sampled_from(sorted(["false", "False", "FALSE", "0", "no", "off"])))
     def test_falsy_strings(self, val: str) -> None:
         """All falsy strings coerce to False."""
-        result = confarg.load(WithDefaults, args=[], env={"VERBOSE": val}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"VERBOSE": val}, env_prefix="")
         assert result.verbose is False
 
     @given(
@@ -196,7 +196,7 @@ class TestBoolCoercionProperty:
     def test_invalid_bool_string_raises(self, val: str) -> None:
         """Strings outside the recognised bool set raise TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithDefaults, args=[], env={"VERBOSE": val}, env_prefix="")
+            confarg.load(WithDefaults, argv=[], env={"VERBOSE": val}, env_prefix="")
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +212,7 @@ class TestCollectionRoundTrip:
         """List of ints survives CLI round-trip."""
         WithList = make_target("items", list[int], default_factory=list)
         args = ["--items"] + [str(v) for v in values] if values else []
-        result = confarg.load(WithList, args=args, env={})
+        result = confarg.load(WithList, argv=args, env={})
         assert result.items == values
 
     @given(values=st.lists(leaf_ints, min_size=1, max_size=10))
@@ -222,7 +222,7 @@ class TestCollectionRoundTrip:
         args: list[str] = []
         for i, v in enumerate(values):
             args.extend([f"--items.{i}", str(v)])
-        result = confarg.load(WithList, args=args, env={})
+        result = confarg.load(WithList, argv=args, env={})
         assert result.items == values
 
     @given(
@@ -236,7 +236,7 @@ class TestCollectionRoundTrip:
         """Set of strings survives CLI round-trip."""
         WithSet = make_target("tags", set[str], default_factory=set)
         args = ["--tags", *list(values)] if values else []
-        result = confarg.load(WithSet, args=args, env={})
+        result = confarg.load(WithSet, argv=args, env={})
         assert result.tags == set(values)
 
     @given(
@@ -253,7 +253,7 @@ class TestCollectionRoundTrip:
         d = dict(zip(keys, vals, strict=False))
         WithDict = make_target("mapping", dict[str, int], default_factory=dict)
         env = {f"MAPPING__{k}": str(v) for k, v in d.items()}
-        result = confarg.load(WithDict, args=[], env=env, env_prefix="")
+        result = confarg.load(WithDict, argv=[], env=env, env_prefix="")
         assert result.mapping == d
 
 
@@ -269,14 +269,14 @@ class TestEnumRoundTrip:
     def test_enum_from_cli_value(self, color: Color) -> None:
         """Enum member round-trips via its .value string through CLI."""
         WithEnum = make_target("color", Color, default=Color.RED)
-        result = confarg.load(WithEnum, args=["--color", color.value], env={})
+        result = confarg.load(WithEnum, argv=["--color", color.value], env={})
         assert result.color is color
 
     @given(color=st.sampled_from(list(Color)))
     def test_enum_from_env_value(self, color: Color) -> None:
         """Enum member round-trips via its .value string through env."""
         WithEnum = make_target("color", Color, default=Color.RED)
-        result = confarg.load(WithEnum, args=[], env={"COLOR": color.value}, env_prefix="")
+        result = confarg.load(WithEnum, argv=[], env={"COLOR": color.value}, env_prefix="")
         assert result.color is color
 
     @given(color=st.sampled_from(list(Color)))
@@ -285,5 +285,5 @@ class TestEnumRoundTrip:
         WithEnum = make_target("color", Color, default=Color.RED)
         obj = WithEnum(color=color)
         dumped = confarg.dump(obj)
-        loaded = confarg.load(WithEnum, args=[], env={"COLOR": dumped["color"]}, env_prefix="")
+        loaded = confarg.load(WithEnum, argv=[], env={"COLOR": dumped["color"]}, env_prefix="")
         assert loaded.color is color

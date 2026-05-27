@@ -29,19 +29,19 @@ class TestFinalStrLiteral:
     def test_valid(self) -> None:
         """Valid literal value is accepted."""
         Target = make_target("kind", Final[Literal["a"]], default="a")
-        result = confarg.load(Target, args=["--kind", "a"], env={})
+        result = confarg.load(Target, argv=["--kind", "a"], env={})
         assert result.kind == "a"
 
     def test_invalid_raises(self) -> None:
         """Invalid literal value raises ConfargError."""
         Target = make_target("kind", Final[Literal["a"]], default="a")
         with pytest.raises(confarg.exceptions.ConfargError):
-            confarg.load(Target, args=["--kind", "b"], env={})
+            confarg.load(Target, argv=["--kind", "b"], env={})
 
     def test_default_used_when_not_provided(self) -> None:
         """Default is used when the field is not set via CLI."""
         Target = make_target("kind", Final[Literal["a"]], default="a")
-        result = confarg.load(Target, args=[], env={})
+        result = confarg.load(Target, argv=[], env={})
         assert result.kind == "a"
 
 
@@ -56,14 +56,14 @@ class TestFinalIntLiteral:
     def test_valid(self) -> None:
         """CLI token '42' coerces to int 42 via str(v)==s."""
         Target = make_target("code", Final[Literal[42]], default=42)
-        result = confarg.load(Target, args=["--code", "42"], env={})
+        result = confarg.load(Target, argv=["--code", "42"], env={})
         assert result.code == 42
 
     def test_invalid_raises(self) -> None:
         """Non-matching int token raises ConfargError."""
         Target = make_target("code", Final[Literal[42]], default=42)
         with pytest.raises(confarg.exceptions.ConfargError):
-            confarg.load(Target, args=["--code", "43"], env={})
+            confarg.load(Target, argv=["--code", "43"], env={})
 
 
 # ---------------------------------------------------------------------------
@@ -77,14 +77,14 @@ class TestFinalBoolLiteral:
     def test_valid(self) -> None:
         """CLI token 'True' (capital T) is accepted for Literal[True]."""
         Target = make_target("flag", Final[Literal[True]], default=True)
-        result = confarg.load(Target, args=["--flag", "True"], env={})
+        result = confarg.load(Target, argv=["--flag", "True"], env={})
         assert result.flag is True
 
     def test_invalid_case_raises(self) -> None:
         """CLI token 'true' (lowercase) is rejected — same behaviour as bare Literal[True]."""
         Target = make_target("flag", Final[Literal[True]], default=True)
         with pytest.raises(confarg.exceptions.ConfargError):
-            confarg.load(Target, args=["--flag", "true"], env={})
+            confarg.load(Target, argv=["--flag", "true"], env={})
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ class TestFinalNoneLiteral:
     def test_valid(self) -> None:
         """CLI token 'None' is accepted for Literal[None]."""
         Target = make_target("sentinel", Final[Literal[None]], default=None)
-        result = confarg.load(Target, args=["--sentinel", "None"], env={})
+        result = confarg.load(Target, argv=["--sentinel", "None"], env={})
         assert result.sentinel is None
 
 
@@ -118,7 +118,7 @@ class TestFinalEnumLiteral:
         """CLI token matching str(EnumMember) is accepted."""
         Target = make_target("color", Final[Literal[_Color.RED]], default=_Color.RED)
         token = str(_Color.RED)
-        result = confarg.load(Target, args=["--color", token], env={})
+        result = confarg.load(Target, argv=["--color", token], env={})
         assert result.color is _Color.RED
 
 
@@ -133,14 +133,14 @@ class TestFinalInt:
     def test_any_int_accepted(self) -> None:
         """Any integer string is coerced correctly."""
         Target = make_target("count", Final[int], default=0)
-        result = confarg.load(Target, args=["--count", "99"], env={})
+        result = confarg.load(Target, argv=["--count", "99"], env={})
         assert result.count == 99
 
     def test_wrong_type_raises(self) -> None:
         """Non-integer string raises ConfargError."""
         Target = make_target("count", Final[int], default=0)
         with pytest.raises(confarg.exceptions.ConfargError):
-            confarg.load(Target, args=["--count", "not_an_int"], env={})
+            confarg.load(Target, argv=["--count", "not_an_int"], env={})
 
 
 # ---------------------------------------------------------------------------

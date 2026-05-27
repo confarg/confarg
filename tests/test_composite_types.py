@@ -91,7 +91,7 @@ class TestNestedDataclass:
         """Parse nested dataclass fields via dot-separated CLI args."""
         result = confarg.load(
             AppConfig,
-            args=["--db.host", "localhost", "--db.port", "5432", "--db.name", "mydb"],
+            argv=["--db.host", "localhost", "--db.port", "5432", "--db.name", "mydb"],
             env={},
         )
         assert result.db.host == "localhost"
@@ -102,7 +102,7 @@ class TestNestedDataclass:
         """Nested dataclass fields with defaults are optional."""
         result = confarg.load(
             AppConfig,
-            args=["--db.host", "localhost", "--db.port", "5432", "--db.name", "mydb"],
+            argv=["--db.host", "localhost", "--db.port", "5432", "--db.name", "mydb"],
             env={},
         )
         assert result.cache.enabled is True
@@ -113,7 +113,7 @@ class TestNestedDataclass:
         """Three levels of nesting via CLI."""
         result = confarg.load(
             DeepNested,
-            args=[
+            argv=[
                 "--app.db.host",
                 "h",
                 "--app.db.port",
@@ -179,31 +179,31 @@ class TestCollections:
     )
     def test_collection_from_cli(self, target_cls, args, field, expected) -> None:
         """Parse various collection types from CLI."""
-        result = confarg.load(target_cls, args=args, env={})
+        result = confarg.load(target_cls, argv=args, env={})
         assert getattr(result, field) == expected
 
     def test_list_empty_default(self) -> None:
         """Empty list default preserved when no input."""
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, args=[], env={})
+        result = confarg.load(WithList, argv=[], env={})
         assert result.items == []
 
     def test_list_from_env_indexed(self) -> None:
         """Parse a list from indexed env vars."""
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, args=[], env={"ITEMS__0": "5", "ITEMS__1": "6"}, env_prefix="")
+        result = confarg.load(WithList, argv=[], env={"ITEMS__0": "5", "ITEMS__1": "6"}, env_prefix="")
         assert result.items == [5, 6]
 
     def test_set_deduplication(self) -> None:
         """Set deduplicates input values."""
         WithSet = make_target("tags", set[str], default_factory=set)
-        result = confarg.load(WithSet, args=["--tags", "a", "a", "b"], env={})
+        result = confarg.load(WithSet, argv=["--tags", "a", "a", "b"], env={})
         assert result.tags == {"a", "b"}
 
     def test_tuple_default(self) -> None:
         """Tuple default preserved when no input."""
         WithTuple = make_target("pair", tuple[str, int], default=("", 0))
-        result = confarg.load(WithTuple, args=[], env={})
+        result = confarg.load(WithTuple, argv=[], env={})
         assert result.pair == ("", 0)
 
 
@@ -215,7 +215,7 @@ class TestDict:
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         result = confarg.load(
             WithDict,
-            args=["--metadata.alpha", "1", "--metadata.beta", "2"],
+            argv=["--metadata.alpha", "1", "--metadata.beta", "2"],
             env={},
         )
         assert result.metadata == {"alpha": 1, "beta": 2}
@@ -225,7 +225,7 @@ class TestDict:
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         result = confarg.load(
             WithDict,
-            args=[],
+            argv=[],
             env={"METADATA__foo": "10", "METADATA__bar": "20"},
             env_prefix="",
         )
@@ -234,7 +234,7 @@ class TestDict:
     def test_dict_empty_default(self) -> None:
         """Empty dict default preserved when no input."""
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
-        result = confarg.load(WithDict, args=[], env={})
+        result = confarg.load(WithDict, argv=[], env={})
         assert result.metadata == {}
 
     def test_dict_union_value_with_nested_dict(self) -> None:
@@ -285,7 +285,7 @@ class TestUnion:
     def test_union_int_str(self, args, expected, expected_type) -> None:
         """Union[int, str] picks correct variant based on input."""
         WithUnion = make_target("value", Union[int, str], default=0)
-        result = confarg.load(WithUnion, args=args, env={})
+        result = confarg.load(WithUnion, argv=args, env={})
         assert result.value == expected
         assert isinstance(result.value, expected_type)
 
@@ -306,7 +306,7 @@ class TestUnion:
     )
     def test_optional(self, target_cls, args, expected) -> None:
         """Optional/pipe-none fields default to None or parse value."""
-        result = confarg.load(target_cls, args=args, env={})
+        result = confarg.load(target_cls, argv=args, env={})
         assert result.value == expected
 
 
@@ -348,7 +348,7 @@ class TestUnionLeafDisambiguation:
         """Leaf union types disambiguate correctly."""
         args = source.get("args", [])
         env = source.get("env", {})
-        result = confarg.load(target_cls, args=args, env=env, env_prefix="")
+        result = confarg.load(target_cls, argv=args, env=env, env_prefix="")
         assert result.value == expected
         assert isinstance(result.value, expected_type)
 
@@ -366,7 +366,7 @@ class TestUnionEdgeCases:
         with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionOverlap,
-                args=["--server.host", "localhost", "--server.port", "5432"],
+                argv=["--server.host", "localhost", "--server.port", "5432"],
                 env={},
             )
 
@@ -374,7 +374,7 @@ class TestUnionEdgeCases:
         """Union[ServerTcp, ServerUnix]: non-numeric port disambiguates to ServerUnix."""
         result = confarg.load(
             WithUnionOverlap,
-            args=["--server.host", "localhost", "--server.port", "/var/run/pg.sock"],
+            argv=["--server.host", "localhost", "--server.port", "/var/run/pg.sock"],
             env={},
         )
         assert isinstance(result.server, ServerUnix)
@@ -387,7 +387,7 @@ class TestUnionEdgeCases:
             host = "localhost"
             port = 5432
         """)
-        result = confarg.load(WithUnionOverlap, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionOverlap, argv=[], env={}, files=[path])
         assert isinstance(result.server, ServerTcp)
         assert result.server.port == 5432
 
@@ -398,7 +398,7 @@ class TestUnionEdgeCases:
             host = "localhost"
             port = "/var/run/pg.sock"
         """)
-        result = confarg.load(WithUnionOverlap, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionOverlap, argv=[], env={}, files=[path])
         assert isinstance(result.server, ServerUnix)
         assert result.server.port == "/var/run/pg.sock"
 
@@ -406,7 +406,7 @@ class TestUnionEdgeCases:
         """Union[PgConfig, RedisConfig]: sslmode field disambiguates to PgConfig."""
         result = confarg.load(
             WithUnionDisjointDefaults,
-            args=[
+            argv=[
                 "--backend.host",
                 "h",
                 "--backend.port",
@@ -423,7 +423,7 @@ class TestUnionEdgeCases:
         """Union[PgConfig, RedisConfig]: db field disambiguates to RedisConfig."""
         result = confarg.load(
             WithUnionDisjointDefaults,
-            args=[
+            argv=[
                 "--backend.host",
                 "h",
                 "--backend.port",
@@ -438,14 +438,14 @@ class TestUnionEdgeCases:
 
     def test_union_nested_int_or_dataclass_int(self) -> None:
         """Union[int, DbConfig]: plain int value resolves to int."""
-        result = confarg.load(WithUnionNested, args=["--value", "42"], env={})
+        result = confarg.load(WithUnionNested, argv=["--value", "42"], env={})
         assert result.value == 42
 
     def test_union_nested_int_or_dataclass_dataclass(self) -> None:
         """Union[int, DbConfig]: subfields resolve to DbConfig."""
         result = confarg.load(
             WithUnionNested,
-            args=["--value.host", "h", "--value.port", "1", "--value.name", "n"],
+            argv=["--value.host", "h", "--value.port", "1", "--value.name", "n"],
             env={},
         )
         assert isinstance(result.value, DbConfig)
@@ -455,7 +455,7 @@ class TestUnionEdgeCases:
         """Union[SqlBackend, TokenBackend]: auth.username disambiguates to SqlBackend."""
         result = confarg.load(
             WithUnionDeepDisambiguation,
-            args=[
+            argv=[
                 "--backend.host",
                 "db.example.com",
                 "--backend.auth.username",
@@ -473,7 +473,7 @@ class TestUnionEdgeCases:
         """Union[SqlBackend, TokenBackend]: auth.token disambiguates to TokenBackend."""
         result = confarg.load(
             WithUnionDeepDisambiguation,
-            args=[
+            argv=[
                 "--backend.host",
                 "api.example.com",
                 "--backend.auth.token",
@@ -492,7 +492,7 @@ class TestUnionEdgeCases:
         """Union[SqlBackend, TokenBackend]: env auth fields disambiguate to SqlBackend."""
         result = confarg.load(
             WithUnionDeepDisambiguation,
-            args=[],
+            argv=[],
             env={
                 "BACKEND__HOST": "db.example.com",
                 "BACKEND__AUTH__USERNAME": "admin",
@@ -507,7 +507,7 @@ class TestUnionEdgeCases:
         """Union[SqlBackend, TokenBackend]: env auth fields disambiguate to TokenBackend."""
         result = confarg.load(
             WithUnionDeepDisambiguation,
-            args=[],
+            argv=[],
             env={
                 "BACKEND__HOST": "api.example.com",
                 "BACKEND__AUTH__TOKEN": "xyz",
@@ -528,7 +528,7 @@ class TestUnionEdgeCases:
             username = "admin"
             password = "secret"
         """)
-        result = confarg.load(WithUnionDeepDisambiguation, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionDeepDisambiguation, argv=[], env={}, files=[path])
         assert isinstance(result.backend, SqlBackend)
         assert result.backend.auth.password == "secret"
 
@@ -542,7 +542,7 @@ class TestUnionEdgeCases:
             token = "abc"
             expires = 1800
         """)
-        result = confarg.load(WithUnionDeepDisambiguation, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionDeepDisambiguation, argv=[], env={}, files=[path])
         assert isinstance(result.backend, TokenBackend)
         assert result.backend.auth.expires == 1800
 
@@ -551,7 +551,7 @@ class TestUnionEdgeCases:
         with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionOverlap,
-                args=["--server.host", "h", "--server.port", "5432"],
+                argv=["--server.host", "h", "--server.port", "5432"],
                 env={},
             )
 
@@ -559,7 +559,7 @@ class TestUnionEdgeCases:
         """Class tag resolves int-vs-str ambiguity for CLI numeric port."""
         result = confarg.load(
             WithUnionOverlap,
-            args=[
+            argv=[
                 "--server.class",
                 "tests.conftest.ServerTcp",
                 "--server.host",
@@ -576,7 +576,7 @@ class TestUnionEdgeCases:
         """CLI non-numeric port matches only ServerUnix (str) -> no ambiguity."""
         result = confarg.load(
             WithUnionOverlap,
-            args=["--server.host", "h", "--server.port", "/var/run/pg.sock"],
+            argv=["--server.host", "h", "--server.port", "/var/run/pg.sock"],
             env={},
         )
         assert isinstance(result.server, ServerUnix)
@@ -589,7 +589,7 @@ class TestUnionEdgeCases:
             host = "h"
             port = 5432
         """)
-        result = confarg.load(WithUnionOverlap, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionOverlap, argv=[], env={}, files=[path])
         assert isinstance(result.server, ServerTcp)
         assert result.server.port == 5432
 
@@ -654,7 +654,7 @@ class TestUnionClassTag:
     )
     def test_tag_cli_env(self, args, env, expected_cls, expected_radius) -> None:
         """Test class tag via CLI and env resolves to the correct union variant."""
-        result = confarg.load(WithUnionAmbiguous, args=args, env=env, env_prefix="")
+        result = confarg.load(WithUnionAmbiguous, argv=args, env=env, env_prefix="")
         assert isinstance(result.shape, expected_cls)
         assert result.shape.radius == expected_radius
 
@@ -671,7 +671,7 @@ class TestUnionClassTag:
     def test_tag_toml(self, tmp_toml, class_path, expected_cls, radius) -> None:
         """Test class tag in TOML resolves to the correct union variant."""
         path = tmp_toml(f'[shape]\nclass = "{class_path}"\nx = 1.0\ny = 2.0\nradius = {radius}\n')
-        result = confarg.load(WithUnionAmbiguous, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionAmbiguous, argv=[], env={}, files=[path])
         assert isinstance(result.shape, expected_cls)
         assert result.shape.radius == radius
 
@@ -684,7 +684,7 @@ class TestUnionClassTag:
               y: 2.0
               radius: 5.0
         """)
-        result = confarg.load(WithUnionAmbiguous, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionAmbiguous, argv=[], env={}, files=[path])
         assert isinstance(result.shape, CircleShape)
 
     # --- Custom tag name ---
@@ -693,7 +693,7 @@ class TestUnionClassTag:
         """Custom union_tag='type' used in CLI."""
         result = confarg.load(
             WithUnionAmbiguous,
-            args=[
+            argv=[
                 "--shape.type",
                 "tests.conftest.CircleShape",
                 "--shape.x",
@@ -712,7 +712,7 @@ class TestUnionClassTag:
         """Custom union_tag='kind' used in env."""
         result = confarg.load(
             WithUnionAmbiguous,
-            args=[],
+            argv=[],
             env={
                 "SHAPE__KIND": "tests.conftest.SquareShape",
                 "SHAPE__X": "0",
@@ -733,7 +733,7 @@ class TestUnionClassTag:
             y = 0.0
             radius = 3.0
         """)
-        result = confarg.load(WithUnionAmbiguous, args=[], env={}, files=[path], union_tag="type")
+        result = confarg.load(WithUnionAmbiguous, argv=[], env={}, files=[path], union_tag="type")
         assert isinstance(result.shape, SquareShape)
 
     # --- Tag not needed when structural disambiguation works ---
@@ -742,7 +742,7 @@ class TestUnionClassTag:
         """Rectangle has different fields; no tag needed even in a three-way Union."""
         result = confarg.load(
             WithUnionAmbiguousThree,
-            args=[
+            argv=[
                 "--shape.x",
                 "0",
                 "--shape.y",
@@ -764,7 +764,7 @@ class TestUnionClassTag:
         with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionAmbiguous,
-                args=["--shape.x", "1", "--shape.y", "2", "--shape.radius", "5"],
+                argv=["--shape.x", "1", "--shape.y", "2", "--shape.radius", "5"],
                 env={},
             )
 
@@ -773,7 +773,7 @@ class TestUnionClassTag:
         with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionAmbiguous,
-                args=[],
+                argv=[],
                 env={"SHAPE__X": "1", "SHAPE__Y": "2", "SHAPE__RADIUS": "5"},
                 env_prefix="",
             )
@@ -783,7 +783,7 @@ class TestUnionClassTag:
         with pytest.raises(confarg.exceptions.AmbiguousUnionError) as exc_info:
             confarg.load(
                 WithUnionAmbiguous,
-                args=["--shape.x", "1", "--shape.y", "2", "--shape.radius", "5"],
+                argv=["--shape.x", "1", "--shape.y", "2", "--shape.radius", "5"],
                 env={},
             )
         msg = str(exc_info.value)
@@ -800,7 +800,7 @@ class TestUnionClassTag:
         with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(
                 WithUnionAmbiguous,
-                args=[
+                argv=[
                     "--shape.class",
                     "TriangleShape",
                     "--shape.x",
@@ -827,7 +827,7 @@ class TestUnionClassTag:
         """In a three-way Union, tag selects the specified class."""
         result = confarg.load(
             WithUnionAmbiguousThree,
-            args=["--shape.class", class_path, "--shape.x", "0", "--shape.y", "0", "--shape.radius", str(radius)],
+            argv=["--shape.class", class_path, "--shape.x", "0", "--shape.y", "0", "--shape.radius", str(radius)],
             env={},
         )
         assert isinstance(result.shape, expected_cls)
@@ -852,7 +852,7 @@ class TestUnionClassTag:
     def test_tag_fully_qualified_name_cli_env(self, args_fn, env_fn) -> None:
         """Fully-qualified 'module.ClassName' is accepted as a class tag."""
         fqn = f"{CircleShape.__module__}.{CircleShape.__name__}"
-        result = confarg.load(WithUnionAmbiguous, args=args_fn(fqn), env=env_fn(fqn), env_prefix="")
+        result = confarg.load(WithUnionAmbiguous, argv=args_fn(fqn), env=env_fn(fqn), env_prefix="")
         assert isinstance(result.shape, CircleShape)
         assert result.shape.radius == pytest.approx(5.0)
 
@@ -866,7 +866,7 @@ class TestUnionClassTag:
             y = 2.0
             radius = 5.0
         """)
-        result = confarg.load(WithUnionAmbiguous, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionAmbiguous, argv=[], env={}, files=[path])
         assert isinstance(result.shape, CircleShape)
         assert result.shape.radius == pytest.approx(5.0)
 
@@ -877,7 +877,7 @@ class TestUnionClassTag:
         with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(
                 WithDuplicateNameUnion,
-                args=["--shape.class", "CircleShape", "--shape.x", "1", "--shape.y", "2", "--shape.radius", "5"],
+                argv=["--shape.class", "CircleShape", "--shape.x", "1", "--shape.y", "2", "--shape.radius", "5"],
                 env={},
             )
 
@@ -886,7 +886,7 @@ class TestUnionClassTag:
         fqn = f"{CircleShape.__module__}.{CircleShape.__name__}"
         result = confarg.load(
             WithDuplicateNameUnion,
-            args=["--shape.class", fqn, "--shape.x", "1", "--shape.y", "2", "--shape.radius", "5"],
+            argv=["--shape.class", fqn, "--shape.x", "1", "--shape.y", "2", "--shape.radius", "5"],
             env={},
         )
         assert isinstance(result.shape, CircleShape)
@@ -912,7 +912,7 @@ class TestNestedListOfDataclass:
         """Parse list of dataclasses via indexed CLI args."""
         result = confarg.load(
             WithNestedList,
-            args=[
+            argv=[
                 "--servers.0.host",
                 "a",
                 "--servers.0.port",
@@ -943,14 +943,14 @@ class TestOptionalNested:
 
     def test_optional_nested_none(self) -> None:
         """Optional nested dataclass defaults to None."""
-        result = confarg.load(WithOptionalNested, args=[], env={})
+        result = confarg.load(WithOptionalNested, argv=[], env={})
         assert result.db is None
 
     def test_optional_nested_provided(self) -> None:
         """Optional nested dataclass parsed when subfields provided."""
         result = confarg.load(
             WithOptionalNested,
-            args=["--db.host", "h", "--db.port", "1", "--db.name", "n"],
+            argv=["--db.host", "h", "--db.port", "1", "--db.name", "n"],
             env={},
         )
         assert result.db is not None
@@ -964,7 +964,7 @@ class TestOptionalNested:
             port = 1
             name = "n"
         """)
-        result = confarg.load(WithOptionalNested, args=["--db", "none"], env={}, files=[path])
+        result = confarg.load(WithOptionalNested, argv=["--db", "none"], env={}, files=[path])
         assert result.db is None
 
 
@@ -980,7 +980,7 @@ class TestMixedCollections:
         """Parse all collection types in one call."""
         result = confarg.load(
             WithCollections,
-            args=[
+            argv=[
                 "--names",
                 "a",
                 "b",
@@ -1016,7 +1016,7 @@ class TestCliUnionDisambiguation:
         """)
         result = confarg.load(
             WithTaggedUnion,
-            args=["--entry.value", "true"],
+            argv=["--entry.value", "true"],
             env={},
             files=[path],
         )
@@ -1032,7 +1032,7 @@ class TestCliUnionDisambiguation:
         """)
         result = confarg.load(
             WithTaggedUnion,
-            args=["--entry.value", "true"],
+            argv=["--entry.value", "true"],
             env={},
             files=[path],
         )
@@ -1044,7 +1044,7 @@ class TestCliUnionDisambiguation:
         """Env ENTRY__ID=2 selects TaggedStr; ENTRY__VALUE=true -> string "true"."""
         result = confarg.load(
             WithTaggedUnion,
-            args=[],
+            argv=[],
             env={"ENTRY__ID": "2", "ENTRY__VALUE": "true"},
             env_prefix="",
         )
@@ -1055,7 +1055,7 @@ class TestCliUnionDisambiguation:
         """Env ENTRY__ID=1 selects TaggedBool; ENTRY__VALUE=true -> bool True."""
         result = confarg.load(
             WithTaggedUnion,
-            args=[],
+            argv=[],
             env={"ENTRY__ID": "1", "ENTRY__VALUE": "true"},
             env_prefix="",
         )
@@ -1066,7 +1066,7 @@ class TestCliUnionDisambiguation:
         """CLI-only: --entry.id 2 --entry.value hello -> TaggedStr."""
         result = confarg.load(
             WithTaggedUnion,
-            args=["--entry.id", "2", "--entry.value", "hello"],
+            argv=["--entry.id", "2", "--entry.value", "hello"],
             env={},
         )
         assert isinstance(result.entry, TaggedStr)
@@ -1076,7 +1076,7 @@ class TestCliUnionDisambiguation:
         """CLI-only: --entry.id 1 --entry.value false -> TaggedBool."""
         result = confarg.load(
             WithTaggedUnion,
-            args=["--entry.id", "1", "--entry.value", "false"],
+            argv=["--entry.id", "1", "--entry.value", "false"],
             env={},
         )
         assert isinstance(result.entry, TaggedBool)
@@ -1086,7 +1086,7 @@ class TestCliUnionDisambiguation:
         """Variants disagree (list vs str) -> CLI consumes one value as string."""
         result = confarg.load(
             WithCollectionOrScalar,
-            args=["--entry.tag", "single", "--entry.data", "hello"],
+            argv=["--entry.tag", "single", "--entry.data", "hello"],
             env={},
         )
         assert isinstance(result.entry, SingleVal)
@@ -1100,7 +1100,7 @@ class TestCliUnionDisambiguation:
         """)
         result = confarg.load(
             WithCollectionOrScalar,
-            args=["--entry.data.0", "1", "--entry.data.1", "2", "--entry.data.2", "3"],
+            argv=["--entry.data.0", "1", "--entry.data.1", "2", "--entry.data.2", "3"],
             env={},
             files=[path],
         )
@@ -1111,7 +1111,7 @@ class TestCliUnionDisambiguation:
         """Both variants have flag: bool -> --entry.flag true sets flag=True."""
         result = confarg.load(
             WithAgreedBoolUnion,
-            args=["--entry.id", "a", "--entry.flag", "true"],
+            argv=["--entry.id", "a", "--entry.flag", "true"],
             env={},
         )
         assert isinstance(result.entry, BoolVariantA)
@@ -1126,7 +1126,7 @@ class TestCliUnionDisambiguation:
         """)
         result = confarg.load(
             WithTaggedUnion,
-            args=[],
+            argv=[],
             env={},
             files=[path],
         )
@@ -1154,7 +1154,7 @@ class TestTypeLiteralDiscriminator:
     )
     def test_type_literal_cli_env(self, args, env, expected_cls, expected_value) -> None:
         """Test Literal discriminator via CLI and env selects the correct union variant."""
-        result = confarg.load(WithTypeLiteralUnion, args=args, env=env, env_prefix="")
+        result = confarg.load(WithTypeLiteralUnion, argv=args, env=env, env_prefix="")
         assert isinstance(result.item, expected_cls)
         assert result.item.value == expected_value
 
@@ -1166,7 +1166,7 @@ class TestTypeLiteralDiscriminator:
     def test_type_literal_toml(self, tmp_toml, type_val, value, expected_cls) -> None:
         """Test Literal discriminator in TOML selects the correct union variant."""
         path = tmp_toml(f'[item]\ntype = "{type_val}"\nvalue = {value}\n')
-        result = confarg.load(WithTypeLiteralUnion, args=[], env={}, files=[path])
+        result = confarg.load(WithTypeLiteralUnion, argv=[], env={}, files=[path])
         assert isinstance(result.item, expected_cls)
         assert result.item.value == value
 
@@ -1175,7 +1175,7 @@ class TestTypeLiteralDiscriminator:
         with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(
                 WithTypeLiteralUnion,
-                args=["--item.type", "c", "--item.value", "1"],
+                argv=["--item.type", "c", "--item.value", "1"],
                 env={},
             )
 
@@ -1184,7 +1184,7 @@ class TestTypeLiteralDiscriminator:
         with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(
                 WithTypeLiteralUnion,
-                args=["--item.value", "1"],
+                argv=["--item.value", "1"],
                 env={},
             )
 
@@ -1197,7 +1197,7 @@ class TestTypeLiteralDiscriminator:
         """)
         result = confarg.load(
             WithTypeLiteralUnion,
-            args=["--item.type", "b"],
+            argv=["--item.type", "b"],
             env={},
             files=[path],
         )
@@ -1217,7 +1217,7 @@ class TestUnionFloatStrAmbiguity:
         with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionFloatStr,
-                args=["--item.value", "inf"],
+                argv=["--item.value", "inf"],
                 env={},
             )
 
@@ -1226,7 +1226,7 @@ class TestUnionFloatStrAmbiguity:
         with pytest.raises(confarg.exceptions.AmbiguousUnionError):
             confarg.load(
                 WithUnionFloatStr,
-                args=["--item.value", "nan"],
+                argv=["--item.value", "nan"],
                 env={},
             )
 
@@ -1236,7 +1236,7 @@ class TestUnionFloatStrAmbiguity:
             [item]
             value = inf
         """)
-        result = confarg.load(WithUnionFloatStr, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionFloatStr, argv=[], env={}, files=[path])
         assert isinstance(result.item, FloatHolder)
         assert result.item.value == float("inf")
 
@@ -1246,7 +1246,7 @@ class TestUnionFloatStrAmbiguity:
             [item]
             value = "inf"
         """)
-        result = confarg.load(WithUnionFloatStr, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionFloatStr, argv=[], env={}, files=[path])
         assert isinstance(result.item, StrHolder)
         assert result.item.value == "inf"
 
@@ -1254,7 +1254,7 @@ class TestUnionFloatStrAmbiguity:
         """CLI --item.class tests.conftest.FloatHolder --item.value inf resolves to FloatHolder."""
         result = confarg.load(
             WithUnionFloatStr,
-            args=["--item.class", "tests.conftest.FloatHolder", "--item.value", "inf"],
+            argv=["--item.class", "tests.conftest.FloatHolder", "--item.value", "inf"],
             env={},
         )
         assert isinstance(result.item, FloatHolder)

@@ -32,7 +32,7 @@ class TestJsonLoading:
     def test_flat_json(self, tmp_json) -> None:
         """Load all flat fields from JSON."""
         path = tmp_json('{"name": "json_name", "count": 42, "rate": 3.14, "verbose": true}')
-        result = confarg.load(Flat, args=[], env={}, files=[path])
+        result = confarg.load(Flat, argv=[], env={}, files=[path])
         assert result.name == "json_name"
         assert result.count == 42
         assert result.rate == pytest.approx(3.14)
@@ -47,7 +47,7 @@ class TestJsonLoading:
               "cache": {"enabled": false, "ttl": 120}
             }
         """)
-        result = confarg.load(AppConfig, args=[], env={}, files=[path])
+        result = confarg.load(AppConfig, argv=[], env={}, files=[path])
         assert result.db.host == "jhost"
         assert result.db.port == 5432
         assert result.cache.enabled is False
@@ -57,14 +57,14 @@ class TestJsonLoading:
         """List field from JSON array."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_json('{"items": [1, 2, 3]}')
-        result = confarg.load(WithList, args=[], env={}, files=[path])
+        result = confarg.load(WithList, argv=[], env={}, files=[path])
         assert result.items == [1, 2, 3]
 
     def test_json_dict(self, tmp_json) -> None:
         """Dict field from JSON object."""
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         path = tmp_json('{"metadata": {"a": 1, "b": 2}}')
-        result = confarg.load(WithDict, args=[], env={}, files=[path])
+        result = confarg.load(WithDict, argv=[], env={}, files=[path])
         assert result.metadata == {"a": 1, "b": 2}
 
     def test_json_non_object_raises(self, tmp_path) -> None:
@@ -72,7 +72,7 @@ class TestJsonLoading:
         p = tmp_path / "bad.json"
         p.write_text("[1, 2, 3]")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, args=[], env={}, files=[p])
+            confarg.load(Flat, argv=[], env={}, files=[p])
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ class TestTomlLoading:
             rate = 3.14
             verbose = true
         """)
-        result = confarg.load(Flat, args=[], env={}, files=[path])
+        result = confarg.load(Flat, argv=[], env={}, files=[path])
         assert result.name == "toml_name"
         assert result.count == 42
         assert result.rate == pytest.approx(3.14)
@@ -111,7 +111,7 @@ class TestTomlLoading:
             enabled = false
             ttl = 120
         """)
-        result = confarg.load(AppConfig, args=[], env={}, files=[path])
+        result = confarg.load(AppConfig, argv=[], env={}, files=[path])
         assert result.db.host == "dbhost"
         assert result.db.port == 5432
         assert result.cache.enabled is False
@@ -135,14 +135,14 @@ class TestTomlLoading:
             enabled = true
             ttl = 10
         """)
-        result = confarg.load(DeepNested, args=[], env={}, files=[path])
+        result = confarg.load(DeepNested, argv=[], env={}, files=[path])
         assert result.app.db.host == "deep"
         assert result.version == "2.0"
 
     def test_toml_partial(self, tmp_toml) -> None:
         """TOML provides only some fields; defaults fill the rest."""
         path = tmp_toml('name = "partial"\n')
-        result = confarg.load(WithDefaults, args=[], env={}, files=[path])
+        result = confarg.load(WithDefaults, argv=[], env={}, files=[path])
         assert result.name == "partial"
         assert result.count == 0
 
@@ -150,7 +150,7 @@ class TestTomlLoading:
         """List field from TOML array."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2, 3]\n")
-        result = confarg.load(WithList, args=[], env={}, files=[path])
+        result = confarg.load(WithList, argv=[], env={}, files=[path])
         assert result.items == [1, 2, 3]
 
     def test_toml_dict(self, tmp_toml) -> None:
@@ -161,14 +161,14 @@ class TestTomlLoading:
             a = 1
             b = 2
         """)
-        result = confarg.load(WithDict, args=[], env={}, files=[path])
+        result = confarg.load(WithDict, argv=[], env={}, files=[path])
         assert result.metadata == {"a": 1, "b": 2}
 
     def test_toml_enum(self, tmp_toml) -> None:
         """Enum field from TOML string value."""
         WithEnum = make_target("color", Color, default=Color.RED)
         path = tmp_toml('color = "green"\n')
-        result = confarg.load(WithEnum, args=[], env={}, files=[path])
+        result = confarg.load(WithEnum, argv=[], env={}, files=[path])
         assert result.color is Color.GREEN
 
 
@@ -188,7 +188,7 @@ class TestYamlLoading:
             rate: 2.718
             verbose: false
         """)
-        result = confarg.load(Flat, args=[], env={}, files=[path])
+        result = confarg.load(Flat, argv=[], env={}, files=[path])
         assert result.name == "yaml_name"
         assert result.count == 99
         assert result.rate == pytest.approx(2.718)
@@ -206,7 +206,7 @@ class TestYamlLoading:
               enabled: true
               ttl: 600
         """)
-        result = confarg.load(AppConfig, args=[], env={}, files=[path])
+        result = confarg.load(AppConfig, argv=[], env={}, files=[path])
         assert result.db.host == "yhost"
         assert result.cache.ttl == 600
 
@@ -219,7 +219,7 @@ class TestYamlLoading:
               - 20
               - 30
         """)
-        result = confarg.load(WithList, args=[], env={}, files=[path])
+        result = confarg.load(WithList, argv=[], env={}, files=[path])
         assert result.items == [10, 20, 30]
 
     def test_yaml_dict(self, tmp_yaml) -> None:
@@ -230,7 +230,7 @@ class TestYamlLoading:
               x: 1
               y: 2
         """)
-        result = confarg.load(WithDict, args=[], env={}, files=[path])
+        result = confarg.load(WithDict, argv=[], env={}, files=[path])
         assert result.metadata == {"x": 1, "y": 2}
 
 
@@ -246,7 +246,7 @@ class TestMultipleFiles:
         """Second file overrides values from the first."""
         p1 = tmp_toml("name = 'first'\ncount = 1\nrate = 0.0\nverbose = false\n", "a.toml")
         p2 = tmp_toml("name = 'second'\n", "b.toml")
-        result = confarg.load(Flat, args=[], env={}, files=[p1, p2])
+        result = confarg.load(Flat, argv=[], env={}, files=[p1, p2])
         assert result.name == "second"
         assert result.count == 1  # from first file
 
@@ -255,7 +255,7 @@ class TestMultipleFiles:
         p1 = tmp_toml("name = 'a'\ncount = 1\nrate = 0.0\nverbose = false\n", "1.toml")
         p2 = tmp_toml("name = 'b'\ncount = 2\n", "2.toml")
         p3 = tmp_toml("count = 3\n", "3.toml")
-        result = confarg.load(Flat, args=[], env={}, files=[p1, p2, p3])
+        result = confarg.load(Flat, argv=[], env={}, files=[p1, p2, p3])
         assert result.name == "b"
         assert result.count == 3
 
@@ -263,7 +263,7 @@ class TestMultipleFiles:
         """TOML and YAML files can be mixed."""
         p1 = tmp_toml("name = 'toml'\ncount = 1\nrate = 0.0\nverbose = false\n", "base.toml")
         p2 = tmp_yaml("name: yaml\n", "override.yaml")
-        result = confarg.load(Flat, args=[], env={}, files=[p1, p2])
+        result = confarg.load(Flat, argv=[], env={}, files=[p1, p2])
         assert result.name == "yaml"
         assert result.count == 1
 
@@ -283,7 +283,7 @@ class TestSubpathTargeting:
             port = 1234
             name = "subdb"
         """)
-        result = confarg.load(AppConfig, args=["--config.db", str(path)], env={})
+        result = confarg.load(AppConfig, argv=["--config.db", str(path)], env={})
         assert result.db.host == "sub"
         assert result.db.port == 1234
 
@@ -295,7 +295,7 @@ class TestCliMultipleConfigFiles:
         """Second path after --config overrides the first."""
         p1 = tmp_toml("name = 'first'\ncount = 1\nrate = 0.0\nverbose = false\n", "a.toml")
         p2 = tmp_toml("name = 'second'\n", "b.toml")
-        result = confarg.load(Flat, args=["--config", str(p1), str(p2)], env={})
+        result = confarg.load(Flat, argv=["--config", str(p1), str(p2)], env={})
         assert result.name == "second"
         assert result.count == 1  # from first file, not overridden
 
@@ -304,7 +304,7 @@ class TestCliMultipleConfigFiles:
         p1 = tmp_toml("name = 'a'\ncount = 1\nrate = 0.0\nverbose = false\n", "1.toml")
         p2 = tmp_toml("name = 'b'\ncount = 2\n", "2.toml")
         p3 = tmp_toml("count = 3\n", "3.toml")
-        result = confarg.load(Flat, args=["--config", str(p1), str(p2), str(p3)], env={})
+        result = confarg.load(Flat, argv=["--config", str(p1), str(p2), str(p3)], env={})
         assert result.name == "b"
         assert result.count == 3
 
@@ -312,7 +312,7 @@ class TestCliMultipleConfigFiles:
         """Multiple paths after --config.db both target the db subtree."""
         p1 = tmp_toml("host = 'h1'\nport = 1111\nname = 'db'\n", "db1.toml")
         p2 = tmp_toml("host = 'h2'\n", "db2.toml")
-        result = confarg.load(AppConfig, args=["--config.db", str(p1), str(p2)], env={})
+        result = confarg.load(AppConfig, argv=["--config.db", str(p1), str(p2)], env={})
         assert result.db.host == "h2"  # second file wins
         assert result.db.port == 1111  # only in first file
 
@@ -323,7 +323,7 @@ class TestCliMultipleConfigFiles:
         p_cli2 = tmp_toml("name = 'cli2'\n", "c2.toml")
         result = confarg.load(
             Flat,
-            args=["--config", str(p_cli1), str(p_cli2)],
+            argv=["--config", str(p_cli1), str(p_cli2)],
             env={},
             files=[p_base],
         )
@@ -342,28 +342,28 @@ class TestFileFormat:
         """File with .toml extension is parsed as TOML."""
         p = tmp_path / "test.toml"
         p.write_text('name = "ext"\ncount = 1\nrate = 0.0\nverbose = false\n')
-        result = confarg.load(Flat, args=[], env={}, files=[p])
+        result = confarg.load(Flat, argv=[], env={}, files=[p])
         assert result.name == "ext"
 
     def test_yaml_extension(self, tmp_path: Path) -> None:
         """File with .yaml extension is parsed as YAML."""
         p = tmp_path / "test.yaml"
         p.write_text("name: yamlext\ncount: 1\nrate: 0.0\nverbose: false\n")
-        result = confarg.load(Flat, args=[], env={}, files=[p])
+        result = confarg.load(Flat, argv=[], env={}, files=[p])
         assert result.name == "yamlext"
 
     def test_yml_extension(self, tmp_path: Path) -> None:
         """File with .yml extension is parsed as YAML."""
         p = tmp_path / "test.yml"
         p.write_text("name: ymlext\ncount: 1\nrate: 0.0\nverbose: false\n")
-        result = confarg.load(Flat, args=[], env={}, files=[p])
+        result = confarg.load(Flat, argv=[], env={}, files=[p])
         assert result.name == "ymlext"
 
     def test_json_extension(self, tmp_path: Path) -> None:
         """File with .json extension is parsed as JSON."""
         p = tmp_path / "test.json"
         p.write_text('{"name": "jsonext", "count": 1, "rate": 0.0, "verbose": false}')
-        result = confarg.load(Flat, args=[], env={}, files=[p])
+        result = confarg.load(Flat, argv=[], env={}, files=[p])
         assert result.name == "jsonext"
 
     def test_unknown_extension_raises(self, tmp_path: Path) -> None:
@@ -371,7 +371,7 @@ class TestFileFormat:
         p = tmp_path / "test.ini"
         p.write_text("[section]\nkey=val\n")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, args=[], env={}, files=[p])
+            confarg.load(Flat, argv=[], env={}, files=[p])
 
 
 # ---------------------------------------------------------------------------
@@ -385,28 +385,28 @@ class TestInvalidConfigFiles:
     def test_nonexistent_file(self) -> None:
         """Non-existent file raises an error."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, args=[], env={}, files=[Path("/nonexistent.toml")])
+            confarg.load(Flat, argv=[], env={}, files=[Path("/nonexistent.toml")])
 
     def test_malformed_toml(self, tmp_path: Path) -> None:
         """Malformed TOML raises an error."""
         p = tmp_path / "bad.toml"
         p.write_text("this is not valid toml [[[")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, args=[], env={}, files=[p])
+            confarg.load(Flat, argv=[], env={}, files=[p])
 
     def test_malformed_yaml(self, tmp_path: Path) -> None:
         """Malformed YAML raises an error."""
         p = tmp_path / "bad.yaml"
         p.write_text(":\n  - :\n    - : :\n  [invalid")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, args=[], env={}, files=[p])
+            confarg.load(Flat, argv=[], env={}, files=[p])
 
     def test_malformed_json(self, tmp_path: Path) -> None:
         """Malformed JSON raises an error."""
         p = tmp_path / "bad.json"
         p.write_text("{name: no quotes}")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
-            confarg.load(Flat, args=[], env={}, files=[p])
+            confarg.load(Flat, argv=[], env={}, files=[p])
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +427,7 @@ class TestConfigFileCollections:
             [mapping]
             k = 10
         """)
-        result = confarg.load(WithCollections, args=[], env={}, files=[path])
+        result = confarg.load(WithCollections, argv=[], env={}, files=[path])
         assert result.names == ["a", "b"]
         assert result.tags == {"t1", "t2"}
         assert result.mapping == {"k": 10}
@@ -446,7 +446,7 @@ class TestConfigFileCollections:
             mapping:
               k: 10
         """)
-        result = confarg.load(WithCollections, args=[], env={}, files=[path])
+        result = confarg.load(WithCollections, argv=[], env={}, files=[path])
         assert result.names == ["a", "b"]
         assert result.tags == {"t1"}
         assert result.mapping == {"k": 10}
@@ -463,7 +463,7 @@ class TestEnvConfig:
     def test_basic(self, tmp_toml) -> None:
         """Env var pointing to a file loads that file."""
         path = tmp_toml('name = "from_env_config"\ncount = 7\nrate = 1.5\nverbose = true')
-        result = confarg.load(Flat, args=[], env={"MY_CONFIG": str(path)}, env_prefix="", env_config="MY_CONFIG")
+        result = confarg.load(Flat, argv=[], env={"MY_CONFIG": str(path)}, env_prefix="", env_config="MY_CONFIG")
         assert result.name == "from_env_config"
         assert result.count == 7
 
@@ -471,7 +471,7 @@ class TestEnvConfig:
         """When the named env var is absent, no file is loaded."""
         result = confarg.load(
             Flat,
-            args=["--name", "cli_name", "--count", "1", "--rate", "0.5", "--verbose", "true"],
+            argv=["--name", "cli_name", "--count", "1", "--rate", "0.5", "--verbose", "true"],
             env={},
             env_config="MY_CONFIG",
         )
@@ -482,7 +482,7 @@ class TestEnvConfig:
         path = tmp_toml('name = "should_not_load"\ncount = 99\nrate = 0.1\nverbose = false')
         result = confarg.load(
             Flat,
-            args=["--name", "cli_name", "--count", "1", "--rate", "0.5", "--verbose", "true"],
+            argv=["--name", "cli_name", "--count", "1", "--rate", "0.5", "--verbose", "true"],
             env={"MY_CONFIG": str(path)},
         )
         assert result.name == "cli_name"
@@ -493,7 +493,7 @@ class TestEnvConfig:
         override = tmp_toml('name = "env_override"', "override.toml")
         result = confarg.load(
             Flat,
-            args=[],
+            argv=[],
             env={"MY_CONFIG": str(override)},
             env_config="MY_CONFIG",
             files=[base],
@@ -506,7 +506,7 @@ class TestEnvConfig:
         path = tmp_toml('name = "from_file"\ncount = 5\nrate = 1.0\nverbose = false')
         result = confarg.load(
             Flat,
-            args=[],
+            argv=[],
             env={"MY_CONFIG": str(path), "NAME": "from_env"},
             env_prefix="",
             env_config="MY_CONFIG",
@@ -519,7 +519,7 @@ class TestEnvConfig:
         path = tmp_toml('name = "from_file"\ncount = 5\nrate = 1.0\nverbose = false')
         result = confarg.load(
             Flat,
-            args=["--name", "from_cli"],
+            argv=["--name", "from_cli"],
             env={"MY_CONFIG": str(path)},
             env_prefix="",
             env_config="MY_CONFIG",
@@ -533,7 +533,7 @@ class TestEnvConfig:
         cli_file = tmp_toml('name = "from_cli_config"\ncount = 2\nrate = 0.2\nverbose = true', "cli.toml")
         result = confarg.load(
             Flat,
-            args=["--config", str(cli_file)],
+            argv=["--config", str(cli_file)],
             env={"MY_CONFIG": str(env_file)},
             env_prefix="",
             env_config="MY_CONFIG",
@@ -545,7 +545,7 @@ class TestEnvConfig:
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
             confarg.load(
                 Flat,
-                args=[],
+                argv=[],
                 env={"MY_CONFIG": "/nonexistent/path/config.toml"},
                 env_config="MY_CONFIG",
             )
@@ -564,7 +564,7 @@ class TestEnvVarSubConfig:
         db_file = tmp_toml("host = 'dbhost'\nport = 5432\nname = 'mydb'\n", "db.toml")
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={"CONFARG_CONFIG__DB": str(db_file)},
             env_prefix="CONFARG_",
         )
@@ -579,7 +579,7 @@ class TestEnvVarSubConfig:
         )
         result = confarg.load(
             Flat,
-            args=[],
+            argv=[],
             env={"CONFARG_CONFIG": str(path)},
             env_prefix="CONFARG_",
         )
@@ -591,7 +591,7 @@ class TestEnvVarSubConfig:
         db_file = tmp_toml("host = 'h'\nport = 1\nname = 'n'\n", "db.toml")
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={"CONFARG_config__DB": str(db_file)},
             env_prefix="CONFARG_",
         )
@@ -606,7 +606,7 @@ class TestEnvVarSubConfig:
         db_file = tmp_toml("host = 'env_file'\nport = 5432\nname = 'mydb'\n", "db.toml")
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={"CONFARG_CONFIG__DB": str(db_file)},
             env_prefix="CONFARG_",
             files=[base],
@@ -618,7 +618,7 @@ class TestEnvVarSubConfig:
         db_file = tmp_toml("host = 'from_file'\nport = 5432\nname = 'mydb'\n", "db.toml")
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={
                 "CONFARG_CONFIG__DB": str(db_file),
                 "CONFARG_DB__HOST": "from_inline",
@@ -634,7 +634,7 @@ class TestEnvVarSubConfig:
         cli_file = tmp_toml("host = 'from_cli_file'\nport = 2\nname = 'c'\n", "cli.toml")
         result = confarg.load(
             AppConfig,
-            args=["--config.db", str(cli_file)],
+            argv=["--config.db", str(cli_file)],
             env={"CONFARG_CONFIG__DB": str(env_file)},
             env_prefix="CONFARG_",
         )
@@ -645,7 +645,7 @@ class TestEnvVarSubConfig:
         db_file = tmp_toml("host = 'from_file'\nport = 5432\nname = 'mydb'\n", "db.toml")
         result = confarg.load(
             AppConfig,
-            args=["--db.host", "from_cli"],
+            argv=["--db.host", "from_cli"],
             env={"CONFARG_CONFIG__DB": str(db_file)},
             env_prefix="CONFARG_",
         )
@@ -658,7 +658,7 @@ class TestEnvVarSubConfig:
         cache_file = tmp_toml("enabled = false\nttl = 60\n", "cache.toml")
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={
                 "CONFARG_CONFIG__DB": str(db_file),
                 "CONFARG_CONFIG__CACHE": str(cache_file),
@@ -674,7 +674,7 @@ class TestEnvVarSubConfig:
         db_file = tmp_toml("host = 'h'\nport = 1\nname = 'n'\n", "db.toml")
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={"CONFARG_INCLUDE__DB": str(db_file)},
             env_prefix="CONFARG_",
             config_flag="include",
@@ -686,7 +686,7 @@ class TestEnvVarSubConfig:
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
             confarg.load(
                 AppConfig,
-                args=[],
+                argv=[],
                 env={"CONFARG_CONFIG__DB": "/nonexistent/db.toml"},
                 env_prefix="CONFARG_",
             )
@@ -708,7 +708,7 @@ class TestEnvVarSubConfig:
         # overridden by CONFIG (global), giving the wrong winner.
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={
                 "CONFARG_CONFIG__DB": str(db_file),
                 "CONFARG_CONFIG": str(global_file),

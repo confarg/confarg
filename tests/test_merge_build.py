@@ -31,30 +31,30 @@ class TestMerge:
 
     def test_returns_dict(self) -> None:
         """Test that merge() returns a plain dict."""
-        result = confarg.merge(WithDefaults, args=[], env={})
+        result = confarg.merge(WithDefaults, argv=[], env={})
         assert isinstance(result, dict)
 
     def test_cli_values_present(self) -> None:
         """Test that CLI values are present in the merged dict."""
-        result = confarg.merge(WithDefaults, args=["--name", "hello"], env={})
+        result = confarg.merge(WithDefaults, argv=["--name", "hello"], env={})
         assert result["name"] == "hello"
 
     def test_env_values_present(self) -> None:
         """Test that env var values are present in the merged dict."""
-        result = confarg.merge(WithDefaults, args=[], env={"NAME": "fromenv"}, env_prefix="")
+        result = confarg.merge(WithDefaults, argv=[], env={"NAME": "fromenv"}, env_prefix="")
         assert result["name"] == "fromenv"
 
     def test_file_values_present(self, tmp_yaml) -> None:
         """Test that config file values are present in the merged dict."""
         path = tmp_yaml("name: fromfile\n")
-        result = confarg.merge(WithDefaults, args=[], env={}, files=[path])
+        result = confarg.merge(WithDefaults, argv=[], env={}, files=[path])
         assert result["name"] == "fromfile"
 
     def test_expressions_preserved(self, tmp_yaml) -> None:
         """Test that ${...} expressions are preserved without evaluation by merge()."""
         # merge() must not evaluate ${...} — the raw expression string is kept
         path = tmp_yaml("name: hello\ncount: 42\nrate: 1.0\nverbose: false\nother: '${name}'\n")
-        result = confarg.merge(WithDefaults, args=[], env={}, files=[path])
+        result = confarg.merge(WithDefaults, argv=[], env={}, files=[path])
         assert result["other"] == "${name}"
 
     def test_merge_priority(self, tmp_yaml) -> None:
@@ -62,7 +62,7 @@ class TestMerge:
         path = tmp_yaml("name: fromfile\n")
         result = confarg.merge(
             WithDefaults,
-            args=["--name", "fromcli"],
+            argv=["--name", "fromcli"],
             env={"NAME": "fromenv"},
             files=[path],
         )
@@ -71,8 +71,8 @@ class TestMerge:
     def test_merge_is_equivalent_to_load_merge_step(self, tmp_yaml) -> None:
         """Test that merge() is equivalent to the internal merge step in load()."""
         path = tmp_yaml("name: fromfile\n")
-        merged = confarg.merge(WithDefaults, args=["--count", "7"], env={}, files=[path])
-        instance = confarg.load(WithDefaults, args=["--count", "7"], env={}, files=[path])
+        merged = confarg.merge(WithDefaults, argv=["--count", "7"], env={}, files=[path])
+        instance = confarg.load(WithDefaults, argv=["--count", "7"], env={}, files=[path])
         assert merged["name"] == instance.name
         assert merged["count"] == instance.count  # CLI int now pre-coerced
 
@@ -126,8 +126,8 @@ class TestTwoStepEquivalence:
     def test_flat(self) -> None:
         """Test that merge() + build() equals load() for flat dataclasses."""
         args = ["--name", "x", "--count", "5", "--rate", "2.0", "--verbose", "true"]
-        via_load = confarg.load(WithDefaults, args=args, env={})
-        via_two_step = confarg.build(WithDefaults, confarg.merge(WithDefaults, args=args, env={}))
+        via_load = confarg.load(WithDefaults, argv=args, env={})
+        via_two_step = confarg.build(WithDefaults, confarg.merge(WithDefaults, argv=args, env={}))
         assert via_load.name == via_two_step.name
         assert via_load.count == via_two_step.count
 
@@ -140,8 +140,8 @@ class TestTwoStepEquivalence:
             derived: str
 
         path = tmp_yaml("base: hello\nderived: '${base}_world'\n")
-        via_load = confarg.load(TwoStrings, args=[], env={}, files=[path])
-        via_two_step = confarg.build(TwoStrings, confarg.merge(TwoStrings, args=[], env={}, files=[path]))
+        via_load = confarg.load(TwoStrings, argv=[], env={}, files=[path])
+        via_two_step = confarg.build(TwoStrings, confarg.merge(TwoStrings, argv=[], env={}, files=[path]))
         assert via_load.derived == via_two_step.derived
 
 
@@ -174,7 +174,7 @@ class TestDumpRaw:
     def test_raw_expressions_survive_file_round_trip(self, tmp_path, tmp_yaml) -> None:
         """Test that raw ${...} expressions survive a merge → dump_file round-trip."""
         src = tmp_yaml("name: base\ncount: '${name}'\nrate: 1.0\nverbose: false\n")
-        raw = confarg.merge(WithDefaults, args=[], env={}, files=[src])
+        raw = confarg.merge(WithDefaults, argv=[], env={}, files=[src])
         out = tmp_path / "snapshot.yaml"
         confarg.dump_file(raw, out)
         saved = yaml.safe_load(out.read_text())
@@ -199,7 +199,7 @@ class TestPostInitIsolation:
             def __post_init__(self):
                 self.name = self.name.upper()
 
-        raw = confarg.merge(Uppercased, args=["--name", "hello"], env={})
+        raw = confarg.merge(Uppercased, argv=["--name", "hello"], env={})
         instance = confarg.build(Uppercased, raw)
 
         assert raw["name"] == "hello"

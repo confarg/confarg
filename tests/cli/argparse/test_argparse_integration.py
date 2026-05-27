@@ -350,7 +350,7 @@ class TestFromNamespace:
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         ns = parser.parse_args(["--host", "localhost", "--port", "9000"])
-        result = from_namespace(ns, Simple)
+        result = from_namespace(Simple, ns)
         assert result.host == "localhost"
         assert result.port == 9000
         assert result.debug is False  # dataclass default
@@ -360,21 +360,21 @@ class TestFromNamespace:
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         ns = parser.parse_args(["--host", "h", "--debug", "true"])
-        assert from_namespace(ns, Simple).debug is True
+        assert from_namespace(Simple, ns).debug is True
 
     def test_bool_false_via_no_flag(self) -> None:
         """Test that --debug false sets the bool field to False."""
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         ns = parser.parse_args(["--host", "h", "--debug", "false"])
-        assert from_namespace(ns, Simple).debug is False
+        assert from_namespace(Simple, ns).debug is False
 
     def test_defaults_used_when_absent(self) -> None:
         """Test that dataclass defaults are used for absent optional fields."""
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         ns = parser.parse_args(["--host", "localhost"])
-        result = from_namespace(ns, Simple)
+        result = from_namespace(Simple, ns)
         assert result.port == 5432
         assert result.debug is False
 
@@ -384,14 +384,14 @@ class TestFromNamespace:
         populate_parser(Simple, parser)
         ns = parser.parse_args([])  # host not provided
         with pytest.raises(confarg.exceptions.MissingFieldError):
-            from_namespace(ns, Simple)
+            from_namespace(Simple, ns)
 
     def test_nested_dataclass(self) -> None:
         """Test that nested dataclass fields are parsed from dot-separated flags."""
         parser = argparse.ArgumentParser()
         populate_parser(AppConfig, parser)
         ns = parser.parse_args(["--db.host", "pg", "--db.port", "5433", "--debug", "true"])
-        result = from_namespace(ns, AppConfig)
+        result = from_namespace(AppConfig, ns)
         assert result.db.host == "pg"
         assert result.db.port == 5433
         assert result.debug is True
@@ -401,7 +401,7 @@ class TestFromNamespace:
         parser = argparse.ArgumentParser()
         populate_parser(WithOptional, parser)
         ns = parser.parse_args([])
-        result = from_namespace(ns, WithOptional)
+        result = from_namespace(WithOptional, ns)
         assert result.name == "default"
         assert result.label is None
 
@@ -410,7 +410,7 @@ class TestFromNamespace:
         parser = argparse.ArgumentParser()
         populate_parser(WithOptional, parser)
         ns = parser.parse_args(["--label", "hello"])
-        result = from_namespace(ns, WithOptional)
+        result = from_namespace(WithOptional, ns)
         assert result.label == "hello"
 
     def test_list_field(self) -> None:
@@ -418,7 +418,7 @@ class TestFromNamespace:
         parser = argparse.ArgumentParser()
         populate_parser(WithCollections, parser)
         ns = parser.parse_args(["--tags", "a", "b", "c"])
-        result = from_namespace(ns, WithCollections)
+        result = from_namespace(WithCollections, ns)
         assert result.tags == ["a", "b", "c"]
 
     def test_fixed_tuple_field(self) -> None:
@@ -426,7 +426,7 @@ class TestFromNamespace:
         parser = argparse.ArgumentParser()
         populate_parser(WithCollections, parser)
         ns = parser.parse_args(["--coords", "1.5", "2.5"])
-        result = from_namespace(ns, WithCollections)
+        result = from_namespace(WithCollections, ns)
         assert result.coords == (1.5, 2.5)
 
     def test_enum_field(self) -> None:
@@ -434,7 +434,7 @@ class TestFromNamespace:
         parser = argparse.ArgumentParser()
         populate_parser(WithEnum, parser)
         ns = parser.parse_args(["--color", "BLUE"])
-        result = from_namespace(ns, WithEnum)
+        result = from_namespace(WithEnum, ns)
         assert result.color == Color.BLUE
 
     def test_literal_field(self) -> None:
@@ -442,7 +442,7 @@ class TestFromNamespace:
         parser = argparse.ArgumentParser()
         populate_parser(WithLiteral, parser)
         ns = parser.parse_args(["--level", "warning"])
-        result = from_namespace(ns, WithLiteral)
+        result = from_namespace(WithLiteral, ns)
         assert result.level == "warning"
 
     def test_coexists_with_user_flags(self) -> None:
@@ -451,7 +451,7 @@ class TestFromNamespace:
         populate_parser(Simple, parser)
         parser.add_argument("--verbose", action="store_true")
         ns = parser.parse_args(["--host", "h", "--verbose"])
-        result = from_namespace(ns, Simple)
+        result = from_namespace(Simple, ns)
         assert result.host == "h"
         assert ns.verbose is True
 
@@ -500,7 +500,7 @@ class TestConfigFileSupport:
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         ns = parser.parse_args(["--config", str(cfg)])
-        result = from_namespace(ns, Simple, env={})
+        result = from_namespace(Simple, ns, env={})
         assert result.host == "from_file"
         assert result.port == 1234
 
@@ -511,7 +511,7 @@ class TestConfigFileSupport:
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         ns = parser.parse_args([])
-        result = from_namespace(ns, Simple, files=[cfg], env={})
+        result = from_namespace(Simple, ns, files=[cfg], env={})
         assert result.host == "file_host"
         assert result.port == 9999
 
@@ -522,7 +522,7 @@ class TestConfigFileSupport:
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         ns = parser.parse_args(["--config", str(cfg), "--port", "2222"])
-        result = from_namespace(ns, Simple, env={})
+        result = from_namespace(Simple, ns, env={})
         assert result.host == "from_file"
         assert result.port == 2222
 
@@ -533,7 +533,7 @@ class TestConfigFileSupport:
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         ns = parser.parse_args(["--config", str(cfg)])
-        result = from_namespace(ns, Simple, env={"CONFARG_PORT": "3333"}, env_prefix="CONFARG_")
+        result = from_namespace(Simple, ns, env={"CONFARG_PORT": "3333"}, env_prefix="CONFARG_")
         assert result.host == "from_file"
         assert result.port == 3333
 
@@ -544,7 +544,7 @@ class TestConfigFileSupport:
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         ns = parser.parse_args(["--config", str(cfg)])
-        result = from_namespace(ns, Simple, env={"PORT": "9999"})
+        result = from_namespace(Simple, ns, env={"PORT": "9999"})
         assert result.port == 1111
 
     def test_multiple_config_files_merged(self, tmp_path) -> None:
@@ -556,7 +556,7 @@ class TestConfigFileSupport:
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         ns = parser.parse_args(["--config", str(cfg1), str(cfg2)])
-        result = from_namespace(ns, Simple, env={})
+        result = from_namespace(Simple, ns, env={})
         assert result.host == "base"
         assert result.port == 2000
 
@@ -575,7 +575,7 @@ class TestConfigFileSupport:
         parser = argparse.ArgumentParser()
         populate_parser(AppConfig, parser)
         ns = parser.parse_args(["--config.db", str(db_cfg)])
-        result = from_namespace(ns, AppConfig, env={})
+        result = from_namespace(AppConfig, ns, env={})
         assert result.db.host == "db_host"
         assert result.db.port == 5555
 
@@ -597,7 +597,7 @@ class TestConfigFileSupport:
                 "9999",
             ],
         )
-        result = from_namespace(ns, AppConfig, env={})
+        result = from_namespace(AppConfig, ns, env={})
         assert result.debug is True
         assert result.db.host == "from_file"
         assert result.db.port == 9999  # CLI overrides file

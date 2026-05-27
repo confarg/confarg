@@ -294,7 +294,7 @@ class TestPlainClassCli:
         """Test that CLI args correctly set plain class parameters."""
         result = confarg.load(
             TrainingConfig,
-            args=[
+            argv=[
                 "--epochs",
                 "10",
                 "--transform.p",
@@ -321,7 +321,7 @@ class TestPlainClassEnv:
         """Test that env vars correctly set plain class parameters."""
         result = confarg.load(
             TrainingConfig,
-            args=["--epochs", "2"],
+            argv=["--epochs", "2"],
             env={"TRANSFORM__CLASS": "tests.test_plain_classes.HorizontalFlip", "TRANSFORM__P": "0.6"},
             env_prefix="",
         )

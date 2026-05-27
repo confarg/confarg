@@ -138,13 +138,13 @@ def _union_field_tags(
 
 def _resolve_tags_from_config(
     merged: dict[str, Any],
-    dc_type: Any,
+    target: Any,
     prefix: str,
     union_tag: str,
 ) -> dict[str, str]:
-    """Walk merged config in parallel with dc_type; return {prefix: class_path} for resolved unions."""
+    """Walk merged config in parallel with target; return {prefix: class_path} for resolved unions."""
     tags: dict[str, str] = {}
-    tp = _resolve_type(dc_type)
+    tp = _resolve_type(target)
     if not _is_struct(tp):
         return tags
 
@@ -238,15 +238,15 @@ def _extend_walk_field(  # noqa: PLR0913
 
 
 def _extend_walk(
-    dc_type: Any,
+    target: Any,
     ctx: _WalkCtx,
     group_target: argparse.ArgumentParser | argparse._ArgumentGroup,
     prefix: str,
     *,
     concrete: bool = False,
 ) -> None:
-    """Register fields of dc_type under prefix, skipping already-registered dests."""
-    setup = _resolve_struct(dc_type)
+    """Register fields of target under prefix, skipping already-registered dests."""
+    setup = _resolve_struct(target)
     if setup is None:
         return
     tp, flds, hints = setup
@@ -266,7 +266,7 @@ def _extend_walk(
 
 def _pre_extend_parser_for_completion(
     parser: argparse.ArgumentParser,
-    dc_type: Any,
+    target: Any,
     union_tag: str,
     config_flag: str,
     argv: list[str],
@@ -280,7 +280,7 @@ def _pre_extend_parser_for_completion(
     try:
         config_dict = _collect_partial_config(argv, config_flag)
         cli_tags = _collect_partial_cli_tags(argv, union_tag)
-        config_tags = _resolve_tags_from_config(config_dict, dc_type, prefix="", union_tag=union_tag)
+        config_tags = _resolve_tags_from_config(config_dict, target, prefix="", union_tag=union_tag)
 
         # CLI wins over config
         all_tags = {**config_tags, **cli_tags}
@@ -297,7 +297,7 @@ def _pre_extend_parser_for_completion(
                 _log.debug("dynamic union flags: skipping %r", class_path, exc_info=True)
                 continue
 
-        config_fns = _collect_fn_paths_from_config(config_dict, dc_type, "", union_tag)
+        config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
         argv_fns = _collect_fn_paths_from_argv(argv)
         for field_flag, (fn_path, _mode) in {**config_fns, **argv_fns}.items():
             try:
@@ -312,7 +312,7 @@ def _pre_extend_parser_for_completion(
 
 def setup_completion(
     parser: argparse.ArgumentParser,
-    dc_type: Any,
+    target: Any,
     *,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = "config",
@@ -340,7 +340,7 @@ def setup_completion(
     Args:
         parser: The :class:`~argparse.ArgumentParser` previously populated by
             :func:`~confarg.cli.argparse.populate_parser`.
-        dc_type: The top-level dataclass type (same as passed to
+        target: The top-level dataclass type (same as passed to
             :func:`~confarg.cli.argparse.populate_parser`).
         union_tag: Discriminator field name (default ``"class"``).
         config_flag: Config file flag name (default ``"config"``).
@@ -358,5 +358,5 @@ def setup_completion(
     if argv is None:
         argv = sys.argv[1:]
 
-    _pre_extend_parser_for_completion(parser, dc_type, union_tag, config_flag, argv)
+    _pre_extend_parser_for_completion(parser, target, union_tag, config_flag, argv)
     argcomplete.autocomplete(parser)

@@ -77,7 +77,7 @@ def _run(dc_type: type, args: list[str], **kw: Any) -> Any:
     """Populate a fresh App, invoke from_app with *args*, return the result."""
     app = _make_app()
     populate_app(dc_type, app, config_flag="")
-    return confargcyclopts.from_app(app, dc_type, argv=args, config_flag="", **kw)
+    return confargcyclopts.from_app(dc_type, app, argv=args, config_flag="", **kw)
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +314,7 @@ class TestFromApp:
 
         app = _make_app()
         populate_app(Simple, app)
-        cfg = confargcyclopts.from_app(app, Simple, argv=["--config", str(cfg_file)])
+        cfg = confargcyclopts.from_app(Simple, app, argv=["--config", str(cfg_file)])
         assert cfg.host == "filehost"
         assert cfg.port == 5432
 
@@ -326,8 +326,8 @@ class TestFromApp:
         app = _make_app()
         populate_app(Simple, app)
         cfg = confargcyclopts.from_app(
-            app,
             Simple,
+            app,
             argv=["--config", str(cfg_file), "--host", "clihost"],
         )
         assert cfg.host == "clihost"

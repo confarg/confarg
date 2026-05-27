@@ -120,7 +120,7 @@ class TestNonIntegerDictKeysForCollections:
             name = "oops"
         """)
         with pytest.raises(TypeCoercionError, match="integer indices"):
-            confarg.load(WithList, args=[], env={}, files=[path])
+            confarg.load(WithList, argv=[], env={}, files=[path])
 
     def test_set_with_non_integer_keys(self) -> None:
         """Set from dict with non-integer keys raises TypeCoercionError."""
@@ -212,35 +212,35 @@ class TestCaseInsensitiveEnvMatching:
 
     def test_camel_case_field(self) -> None:
         """CamelCase field matched by uppercase env var."""
-        result = confarg.load(CamelCaseConfig, args=[], env={"DBHOST": "prod", "DBPORT": "3306"}, env_prefix="")
+        result = confarg.load(CamelCaseConfig, argv=[], env={"DBHOST": "prod", "DBPORT": "3306"}, env_prefix="")
         assert result.dbHost == "prod"
         assert result.dbPort == 3306
 
     def test_mixed_case_field(self) -> None:
         """MixedCase field matched by lowercase env var parts."""
-        result = confarg.load(MixedCaseConfig, args=[], env={"MYFIELD": "overridden"}, env_prefix="")
+        result = confarg.load(MixedCaseConfig, argv=[], env={"MYFIELD": "overridden"}, env_prefix="")
         assert result.MyField == "overridden"
 
     def test_nested_camel_case_field(self) -> None:
         """Nested camelCase field matched from env."""
-        result = confarg.load(OuterCamel, args=[], env={"INNER__SERVERNAME": "prod-server"}, env_prefix="")
+        result = confarg.load(OuterCamel, argv=[], env={"INNER__SERVERNAME": "prod-server"}, env_prefix="")
         assert result.inner.serverName == "prod-server"
 
     def test_snake_case_still_works(self) -> None:
         """Regular snake_case fields still work as before."""
-        result = confarg.load(WithDefaults, args=[], env={"NAME": "test", "COUNT": "42"}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"NAME": "test", "COUNT": "42"}, env_prefix="")
         assert result.name == "test"
         assert result.count == 42
 
     def test_case_insensitive_with_prefix(self) -> None:
         """CamelCase matching works with env prefix."""
-        result = confarg.load(CamelCaseConfig, args=[], env={"APP__DBHOST": "custom"}, env_prefix="APP")
+        result = confarg.load(CamelCaseConfig, argv=[], env={"APP__DBHOST": "custom"}, env_prefix="APP")
         assert result.dbHost == "custom"
 
     def test_ambiguous_fields_raises(self) -> None:
         """Fields that differ only in case raise ConfargError."""
         with pytest.raises(ConfargError, match=r"[Aa]mbiguous"):
-            confarg.load(AmbiguousFields, args=[], env={"NAME": "val"}, env_prefix="")
+            confarg.load(AmbiguousFields, argv=[], env={"NAME": "val"}, env_prefix="")
 
 
 # ===========================================================================
@@ -255,7 +255,7 @@ class TestCliCornerCases:
         """--app.debug false with cli_prefix='app' correctly sets debug=False."""
         result = confarg.load(
             AppConfig,
-            args=[
+            argv=[
                 "--app.db.host",
                 "h",
                 "--app.db.port",
@@ -275,7 +275,7 @@ class TestCliCornerCases:
         WithList = make_target("items", list[int], default_factory=list)
         result = confarg.load(
             WithList,
-            args=["--items", "1", "2", "--items", "3", "4"],
+            argv=["--items", "1", "2", "--items", "3", "4"],
             env={},
         )
         # Second --items replaces the first
@@ -286,7 +286,7 @@ class TestCliCornerCases:
         WithList = make_target("items", list[str], default_factory=list)
         result = confarg.load(
             WithList,
-            args=["--items", "a", "b", "--items", "c", "d"],
+            argv=["--items", "a", "b", "--items", "c", "d"],
             env={},
         )
         # Second --items overwrites the first (last wins)
@@ -296,7 +296,7 @@ class TestCliCornerCases:
         """Negative numbers like -5 are not treated as flags."""
         result = confarg.load(
             WithDefaults,
-            args=["--count", "-999"],
+            argv=["--count", "-999"],
             env={},
         )
         assert result.count == -999
@@ -310,7 +310,7 @@ class TestCliCornerCases:
         with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(
                 WithDefaults,
-                args=["--rate", "--3.14"],
+                argv=["--rate", "--3.14"],
                 env={},
             )
 
@@ -318,7 +318,7 @@ class TestCliCornerCases:
         """Empty string as CLI value is preserved."""
         result = confarg.load(
             WithDefaults,
-            args=["--name", ""],
+            argv=["--name", ""],
             env={},
         )
         assert result.name == ""
@@ -326,12 +326,12 @@ class TestCliCornerCases:
     def test_positional_arg_raises(self) -> None:
         """Positional arguments without -- raise UnknownArgumentError."""
         with pytest.raises(confarg.exceptions.UnknownArgumentError, match="positional"):
-            confarg.load(WithDefaults, args=["hello"], env={})
+            confarg.load(WithDefaults, argv=["hello"], env={})
 
     def test_config_flag_missing_path(self) -> None:
         """--config without a following path raises ConfargError."""
         with pytest.raises(confarg.exceptions.ConfargError, match="Missing file path"):
-            confarg.load(WithDefaults, args=["--config"], env={})
+            confarg.load(WithDefaults, argv=["--config"], env={})
 
 
 # ===========================================================================
@@ -345,39 +345,39 @@ class TestBoolEdgeCases:
     def test_int_2_for_bool_raises(self) -> None:
         """Integer 2 for a bool field raises TypeCoercionError (not in truthy/falsy)."""
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithDefaults, args=[], env={"VERBOSE": "2"}, env_prefix="")
+            confarg.load(WithDefaults, argv=[], env={"VERBOSE": "2"}, env_prefix="")
 
     def test_int_0_for_bool_false(self) -> None:
         """Integer 0 for a bool field gives False."""
-        result = confarg.load(WithDefaults, args=[], env={"VERBOSE": "0"}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"VERBOSE": "0"}, env_prefix="")
         assert result.verbose is False
 
     def test_int_1_for_bool_true(self) -> None:
         """Integer 1 for a bool field gives True."""
-        result = confarg.load(WithDefaults, args=[], env={"VERBOSE": "1"}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"VERBOSE": "1"}, env_prefix="")
         assert result.verbose is True
 
     def test_random_string_for_bool_raises(self) -> None:
         """Random string for bool field raises TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithDefaults, args=[], env={"VERBOSE": "yesno"}, env_prefix="")
+            confarg.load(WithDefaults, argv=[], env={"VERBOSE": "yesno"}, env_prefix="")
 
     def test_invalid_bool_error_lists_valid_values(self) -> None:
         """TypeCoercionError for an invalid bool string lists the accepted tokens."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"Valid values:.*false.*true"):
-            confarg.load(WithDefaults, args=[], env={"VERBOSE": "enabled"}, env_prefix="")
+            confarg.load(WithDefaults, argv=[], env={"VERBOSE": "enabled"}, env_prefix="")
 
     def test_native_bool_from_toml(self, tmp_toml) -> None:
         """Native TOML boolean is passed through directly."""
         path = tmp_toml("verbose = true\n")
-        result = confarg.load(WithDefaults, args=[], env={}, files=[path])
+        result = confarg.load(WithDefaults, argv=[], env={}, files=[path])
         assert result.verbose is True
 
     def test_bool_coercion_from_int_in_toml_raises(self, tmp_toml) -> None:
         """TOML integer 1 for a bool field raises TypeCoercionError (use true/false in TOML)."""
         path = tmp_toml("verbose = 1\n")
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithDefaults, args=[], env={}, files=[path])
+            confarg.load(WithDefaults, argv=[], env={}, files=[path])
 
 
 # ===========================================================================
@@ -391,7 +391,7 @@ class TestSparseLists:
     def test_sparse_list_from_cli_optional_elem(self) -> None:
         """Gaps in list[str | None] are filled with None via construct."""
         WithList = make_target("items", list[str | None], default_factory=list)
-        result = confarg.load(WithList, args=["--items.3", "hello"], env={})
+        result = confarg.load(WithList, argv=["--items.3", "hello"], env={})
         assert len(result.items) == 4
         assert result.items[3] == "hello"
         assert result.items[0] is None
@@ -402,12 +402,12 @@ class TestSparseLists:
         """Gaps in list[int] (non-optional element) raise TypeCoercionError naming the gap indices."""
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"gap.*\[0, 1\]"):
-            confarg.load(WithList, args=["--items.2", "42"], env={})
+            confarg.load(WithList, argv=["--items.2", "42"], env={})
 
     def test_sparse_list_from_env_optional_elem(self) -> None:
         """Sparse indices via env vars fill gaps with None for Optional element types."""
         WithList = make_target("items", list[int | None], default_factory=list)
-        result = confarg.load(WithList, args=[], env={"ITEMS__2": "42"}, env_prefix="")
+        result = confarg.load(WithList, argv=[], env={"ITEMS__2": "42"}, env_prefix="")
         assert len(result.items) == 3
         assert result.items[2] == 42
         assert result.items[0] is None
@@ -417,21 +417,21 @@ class TestSparseLists:
         """Gaps in list[int] from env var raise TypeCoercionError naming the gap indices."""
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"gap.*\[0, 1\]"):
-            confarg.load(WithList, args=[], env={"ITEMS__2": "42"}, env_prefix="")
+            confarg.load(WithList, argv=[], env={"ITEMS__2": "42"}, env_prefix="")
 
     def test_index_beyond_config_list_raises(self, tmp_toml) -> None:
         """Env index beyond the config list length raises ConfargError (replacement-only policy)."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
         with pytest.raises(ConfargError, match="append syntax"):
-            confarg.load(WithList, args=[], env={"ITEMS__4": "99"}, env_prefix="", files=[path])
+            confarg.load(WithList, argv=[], env={"ITEMS__4": "99"}, env_prefix="", files=[path])
 
     def test_index_beyond_optional_list_also_raises(self, tmp_toml) -> None:
         """Index beyond list length raises even for list[int | None] — use + syntax instead."""
         WithList = make_target("items", list[int | None], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
         with pytest.raises(ConfargError, match="append syntax"):
-            confarg.load(WithList, args=[], env={"ITEMS__4": "99"}, env_prefix="", files=[path])
+            confarg.load(WithList, argv=[], env={"ITEMS__4": "99"}, env_prefix="", files=[path])
 
 
 # ===========================================================================
@@ -447,31 +447,31 @@ class TestFixedTupleEdgeCases:
         WithTuple = make_target("pair", tuple[str, int], default=("", 0))
         # Only one value provided for a 2-element tuple: missing int can't be None
         with pytest.raises(TypeCoercionError):
-            confarg.load(WithTuple, args=["--pair", "hello"], env={})
+            confarg.load(WithTuple, argv=["--pair", "hello"], env={})
 
     def test_fewer_values_optional_element(self) -> None:
         """Fewer values with optional element type fills with None."""
         WithTuple = make_target("pair", tuple[str, int | None], default=("", None))
-        result = confarg.load(WithTuple, args=["--pair", "hello"], env={})
+        result = confarg.load(WithTuple, argv=["--pair", "hello"], env={})
         assert result.pair[0] == "hello"
         assert result.pair[1] is None
 
     def test_exact_values(self) -> None:
         """Exact number of values for fixed-length tuple."""
         WithTuple = make_target("triple", tuple[str, int, float], default=("", 0, 0.0))
-        result = confarg.load(WithTuple, args=["--triple", "a", "42", "1.5"], env={})
+        result = confarg.load(WithTuple, argv=["--triple", "a", "42", "1.5"], env={})
         assert result.triple == ("a", 42, pytest.approx(1.5))
 
     def test_empty_tuple(self) -> None:
         """Empty tuple type with no values."""
         WithTuple = make_target("empty", tuple[()], default=())
-        result = confarg.load(WithTuple, args=[], env={})
+        result = confarg.load(WithTuple, argv=[], env={})
         assert result.empty == ()
 
     def test_variable_length_tuple_from_cli(self) -> None:
         """Variable-length tuple from CLI space-separated values."""
         WithVarTuple = make_target("items", tuple[int, ...], default=())
-        result = confarg.load(WithVarTuple, args=["--items", "1", "2", "3"], env={})
+        result = confarg.load(WithVarTuple, argv=["--items", "1", "2", "3"], env={})
         assert result.items == (1, 2, 3)
 
 
@@ -486,13 +486,13 @@ class TestDictEdgeCases:
     def test_dict_with_int_keys(self) -> None:
         """Dict with int key type from CLI."""
         WithDict = make_target("mapping", dict[int, str], default_factory=dict)
-        result = confarg.load(WithDict, args=["--mapping.1", "a", "--mapping.2", "b"], env={})
+        result = confarg.load(WithDict, argv=["--mapping.1", "a", "--mapping.2", "b"], env={})
         assert result.mapping == {1: "a", 2: "b"}
 
     def test_dict_empty_value(self) -> None:
         """Dict with empty string value from CLI."""
         WithDict = make_target("mapping", dict[str, str], default_factory=dict)
-        result = confarg.load(WithDict, args=["--mapping.key", ""], env={})
+        result = confarg.load(WithDict, argv=["--mapping.key", ""], env={})
         assert result.mapping == {"key": ""}
 
     def test_dict_from_non_dict_data(self) -> None:
@@ -514,7 +514,7 @@ class TestDictEdgeCases:
             port = 5433
             name = "db2"
         """)
-        result = confarg.load(WithDcDict, args=[], env={}, files=[path])
+        result = confarg.load(WithDcDict, argv=[], env={}, files=[path])
         assert result.servers["primary"].host == "h1"
         assert result.servers["secondary"].port == 5433
 
@@ -545,33 +545,33 @@ class TestUnionCornerCases:
     def test_union_bool_str_with_truthy_value(self) -> None:
         """Union[bool, str]: 'true' should be coerced to bool (tried first)."""
         WithUnion = make_target("value", Union[bool, str], default=False)
-        result = confarg.load(WithUnion, args=[], env={"VALUE": "true"}, env_prefix="")
+        result = confarg.load(WithUnion, argv=[], env={"VALUE": "true"}, env_prefix="")
         assert result.value is True
         assert isinstance(result.value, bool)
 
     def test_union_bool_str_with_non_truthy(self) -> None:
         """Union[bool, str]: 'hello' is not truthy, falls through to str."""
         WithUnion = make_target("value", Union[bool, str], default=False)
-        result = confarg.load(WithUnion, args=[], env={"VALUE": "hello"}, env_prefix="")
+        result = confarg.load(WithUnion, argv=[], env={"VALUE": "hello"}, env_prefix="")
         assert result.value == "hello"
         assert isinstance(result.value, str)
 
     def test_union_int_str_none_empty_string(self) -> None:
         """Union[int, str, None]: empty string stays as empty string (str is in union)."""
         WithUnion = make_target("value", Union[int, str, None], default=None)
-        result = confarg.load(WithUnion, args=[], env={"VALUE": ""}, env_prefix="")
+        result = confarg.load(WithUnion, argv=[], env={"VALUE": ""}, env_prefix="")
         assert result.value == ""
 
     def test_union_int_none_empty_string(self) -> None:
         """Union[int, None]: empty string raises TypeCoercionError (use --value.None instead)."""
         WithUnion = make_target("value", Union[int, None], default=None)
         with pytest.raises(TypeCoercionError, match="To set this field to None"):
-            confarg.load(WithUnion, args=[], env={"VALUE": ""}, env_prefix="")
+            confarg.load(WithUnion, argv=[], env={"VALUE": ""}, env_prefix="")
 
     def test_union_none_only_variant(self) -> None:
         """Optional[int] with --value none: sets to None."""
         WithOptional = make_target("value", Optional[int], default=42)
-        result = confarg.load(WithOptional, args=["--value", "none"], env={})
+        result = confarg.load(WithOptional, argv=["--value", "none"], env={})
         assert result.value is None
 
     def test_union_dataclass_vs_leaf_with_dict(self, tmp_toml) -> None:
@@ -582,7 +582,7 @@ class TestUnionCornerCases:
             port = 1
             name = "n"
         """)
-        result = confarg.load(WithUnionNested, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionNested, argv=[], env={}, files=[path])
         assert isinstance(result.value, DbConfig)
         assert result.value.host == "h"
 
@@ -590,14 +590,14 @@ class TestUnionCornerCases:
         """Union[int, None] with non-numeric string raises (no silent fallback to None)."""
         WithUnion = make_target("value", Union[int, None], default=None)
         with pytest.raises(TypeCoercionError):
-            confarg.load(WithUnion, args=[], env={"VALUE": "not_a_number"}, env_prefix="")
+            confarg.load(WithUnion, argv=[], env={"VALUE": "not_a_number"}, env_prefix="")
 
     def test_union_class_tag_invalid_name(self) -> None:
         """Non-importable class tag raises TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="Cannot import class"):
             confarg.load(
                 WithUnionAmbiguous,
-                args=[
+                argv=[
                     "--shape.class",
                     "NonExistent",
                     "--shape.x",
@@ -614,7 +614,7 @@ class TestUnionCornerCases:
         """Class tag naming a type that is not a subclass of the field type raises TypeCoercionError."""
         path = tmp_yaml("inner:\n  class: tests.test_corner_cases._UnrelatedDc\n")
         with pytest.raises(TypeCoercionError, match="not a subclass"):
-            confarg.load(_OuterWithNoFieldBase, args=[], env={}, files=[path])
+            confarg.load(_OuterWithNoFieldBase, argv=[], env={}, files=[path])
 
     def test_union_native_typed_data_from_toml(self, tmp_toml) -> None:
         """TOML native int resolves Union[ServerTcp, ServerUnix] to ServerTcp."""
@@ -623,7 +623,7 @@ class TestUnionCornerCases:
             host = "h"
             port = 5432
         """)
-        result = confarg.load(WithUnionOverlap, args=[], env={}, files=[path])
+        result = confarg.load(WithUnionOverlap, argv=[], env={}, files=[path])
         assert isinstance(result.server, ServerTcp)
         assert result.server.port == 5432
 
@@ -640,7 +640,7 @@ class TestNestedDataclassAutoInstantiation:
         """Nested dataclass with all defaults is auto-created even without data."""
         result = confarg.load(
             AppConfig,
-            args=["--db.host", "h", "--db.port", "1", "--db.name", "n"],
+            argv=["--db.host", "h", "--db.port", "1", "--db.name", "n"],
             env={},
         )
         # CacheConfig has all defaults, should be auto-instantiated
@@ -650,7 +650,7 @@ class TestNestedDataclassAutoInstantiation:
 
     def test_optional_nested_not_auto_created(self) -> None:
         """Optional[DbConfig] is NOT auto-created — stays None."""
-        result = confarg.load(WithOptionalNested, args=[], env={})
+        result = confarg.load(WithOptionalNested, argv=[], env={})
         assert result.db is None
 
 
@@ -666,28 +666,28 @@ class TestConfigFileCornerCases:
         """Empty TOML file produces no values, defaults used."""
         p = tmp_path / "empty.toml"
         p.write_text("")
-        result = confarg.load(WithDefaults, args=[], env={}, files=[p])
+        result = confarg.load(WithDefaults, argv=[], env={}, files=[p])
         assert result.name == "default"
 
     def test_yaml_empty_file(self, tmp_path: Path) -> None:
         """Empty YAML file produces no values, defaults used."""
         p = tmp_path / "empty.yaml"
         p.write_text("")
-        result = confarg.load(WithDefaults, args=[], env={}, files=[p])
+        result = confarg.load(WithDefaults, argv=[], env={}, files=[p])
         assert result.name == "default"
 
     def test_yaml_non_dict_content(self, tmp_path: Path) -> None:
         """YAML file with non-dict content (e.g. a list) is treated as empty."""
         p = tmp_path / "list.yaml"
         p.write_text("- item1\n- item2\n")
-        result = confarg.load(WithDefaults, args=[], env={}, files=[p])
+        result = confarg.load(WithDefaults, argv=[], env={}, files=[p])
         assert result.name == "default"
 
     def test_yml_extension(self, tmp_path: Path) -> None:
         """File with .yml extension is parsed as YAML."""
         p = tmp_path / "test.yml"
         p.write_text("name: ymltest\n")
-        result = confarg.load(WithDefaults, args=[], env={}, files=[p])
+        result = confarg.load(WithDefaults, argv=[], env={}, files=[p])
         assert result.name == "ymltest"
 
     def test_unsupported_format_raises(self, tmp_path: Path) -> None:
@@ -695,12 +695,12 @@ class TestConfigFileCornerCases:
         p = tmp_path / "test.ini"
         p.write_text("[section]\nkey = value")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="Unsupported"):
-            confarg.load(WithDefaults, args=[], env={}, files=[p])
+            confarg.load(WithDefaults, argv=[], env={}, files=[p])
 
     def test_nonexistent_config_file_raises(self) -> None:
         """Non-existent file raises InvalidConfigFileError."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
-            confarg.load(WithDefaults, args=[], env={}, files=[Path("/does_not_exist.toml")])
+            confarg.load(WithDefaults, argv=[], env={}, files=[Path("/does_not_exist.toml")])
 
 
 # ===========================================================================
@@ -824,7 +824,7 @@ class TestSerializationCornerCases:
         )
         path = tmp_path / "out.toml"
         confarg.dump_file(obj, path)
-        loaded = confarg.load(AppConfig, args=[], env={}, files=[path])
+        loaded = confarg.load(AppConfig, argv=[], env={}, files=[path])
         assert loaded == obj
 
     def test_roundtrip_yaml_nested(self, tmp_path: Path) -> None:
@@ -836,7 +836,7 @@ class TestSerializationCornerCases:
         )
         path = tmp_path / "out.yaml"
         confarg.dump_file(obj, path)
-        loaded = confarg.load(AppConfig, args=[], env={}, files=[path])
+        loaded = confarg.load(AppConfig, argv=[], env={}, files=[path])
         assert loaded == obj
 
     def test_dump_union_auto_tag_needed(self) -> None:
@@ -870,7 +870,7 @@ class TestMergePriorityEdgeCases:
         """)
         result = confarg.load(
             AppConfig,
-            args=["--db.host", "cli_host"],
+            argv=["--db.host", "cli_host"],
             env={},
             files=[path],
         )
@@ -888,7 +888,7 @@ class TestMergePriorityEdgeCases:
         """)
         result = confarg.load(
             AppConfig,
-            args=[],
+            argv=[],
             env={"DB__PORT": "3306"},
             env_prefix="",
             files=[path],
@@ -907,7 +907,7 @@ class TestMergePriorityEdgeCases:
         """)
         result = confarg.load(
             AppConfig,
-            args=["--db.host", "cli_host", "--debug", "true"],
+            argv=["--db.host", "cli_host", "--debug", "true"],
             env={"DB__PORT": "3306"},
             env_prefix="",
             files=[path],
@@ -929,14 +929,14 @@ class TestEnvVarCornerCases:
     def test_env_empty_string_for_optional_str(self) -> None:
         """Empty env VALUE= for str|None gives empty string, not None."""
         WithOptionalStr = make_target("value", str | None, default=None)
-        result = confarg.load(WithOptionalStr, args=[], env={"VALUE": ""}, env_prefix="")
+        result = confarg.load(WithOptionalStr, argv=[], env={"VALUE": ""}, env_prefix="")
         assert result.value == ""
 
     def test_env_empty_string_for_optional_int(self) -> None:
         """Empty env VALUE= for int|None raises (use VALUE__NONE= instead)."""
         WithOptionalInt = make_target("value", int | None, default=None)
         with pytest.raises(TypeCoercionError, match="To set this field to None"):
-            confarg.load(WithOptionalInt, args=[], env={"VALUE": ""}, env_prefix="")
+            confarg.load(WithOptionalInt, argv=[], env={"VALUE": ""}, env_prefix="")
 
     def test_env_extra_vars_warn(self) -> None:
         """Extra env vars not matching fields emit ConfargWarning and are ignored."""
@@ -944,7 +944,7 @@ class TestEnvVarCornerCases:
             warnings.simplefilter("always")
             result = confarg.load(
                 WithDefaults,
-                args=[],
+                argv=[],
                 env={"NAME": "ok", "NONEXISTENT_FIELD": "ignored"},
                 env_prefix="",
             )
@@ -959,7 +959,7 @@ class TestEnvVarCornerCases:
         """Env vars not matching prefix are ignored."""
         result = confarg.load(
             WithDefaults,
-            args=[],
+            argv=[],
             env={"APP__NAME": "val", "NAME": "wrong"},
             env_prefix="APP",
         )
@@ -969,7 +969,7 @@ class TestEnvVarCornerCases:
         """Nested list from indexed env vars."""
         result = confarg.load(
             WithNestedList,
-            args=[],
+            argv=[],
             env={
                 "SERVERS__0__HOST": "a",
                 "SERVERS__0__PORT": "1",
@@ -1001,7 +1001,7 @@ class TestDefaultFactory:
     def test_empty_default_factory(self, tp, factory, field_name, expected) -> None:
         """Test that an empty default_factory produces the correct empty collection."""
         target = make_target(field_name, tp, default_factory=factory)
-        result = confarg.load(target, args=[], env={})
+        result = confarg.load(target, argv=[], env={})
         assert getattr(result, field_name) == expected
 
 
@@ -1015,18 +1015,18 @@ class TestNonDataclassTargetCornerCases:
 
     def test_int_from_env(self) -> None:
         """Plain int target from env var."""
-        result = confarg.load(int, args=[], env={"VALUE": "42"}, env_prefix="", cli_prefix="confarg")
+        result = confarg.load(int, argv=[], env={"VALUE": "42"}, env_prefix="", cli_prefix="confarg")
         assert result == 42
 
     def test_bool_from_cli_bare_flag(self) -> None:
         """Bool target with explicit value token."""
-        result = confarg.load(bool, args=["--confarg", "true"], env={}, cli_prefix="confarg")
+        result = confarg.load(bool, argv=["--confarg", "true"], env={}, cli_prefix="confarg")
         assert result is True
 
     def test_missing_non_dataclass_raises(self) -> None:
         """Non-dataclass target with no data raises MissingFieldError."""
         with pytest.raises(confarg.exceptions.MissingFieldError):
-            confarg.load(int, args=[], env={}, cli_prefix="confarg")
+            confarg.load(int, argv=[], env={}, cli_prefix="confarg")
 
 
 # ===========================================================================
@@ -1040,20 +1040,20 @@ class TestEnumCornerCases:
     def test_enum_by_name(self) -> None:
         """Enum matched by member name when value doesn't match."""
         WithEnum = make_target("color", Color, default=Color.RED)
-        result = confarg.load(WithEnum, args=["--color", "GREEN"], env={})
+        result = confarg.load(WithEnum, argv=["--color", "GREEN"], env={})
         assert result.color is Color.GREEN
 
     def test_enum_by_value(self) -> None:
         """Enum matched by member value."""
         WithEnum = make_target("color", Color, default=Color.RED)
-        result = confarg.load(WithEnum, args=["--color", "blue"], env={})
+        result = confarg.load(WithEnum, argv=["--color", "blue"], env={})
         assert result.color is Color.BLUE
 
     def test_enum_invalid_value_raises(self) -> None:
         """Invalid enum value raises TypeCoercionError."""
         WithEnum = make_target("color", Color, default=Color.RED)
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithEnum, args=["--color", "purple"], env={})
+            confarg.load(WithEnum, argv=["--color", "purple"], env={})
 
     def test_enum_instance_passthrough(self) -> None:
         """Enum instance from TOML is passed through."""
@@ -1074,19 +1074,19 @@ class TestLiteralCornerCases:
     def test_literal_int(self) -> None:
         """Literal[1, 2, 3] from CLI."""
         WithLiteral = make_target("level", Literal[1, 2, 3], default=1)
-        result = confarg.load(WithLiteral, args=["--level", "2"], env={})
+        result = confarg.load(WithLiteral, argv=["--level", "2"], env={})
         assert result.level == 2
 
     def test_literal_bool(self) -> None:
         """Literal[True, False] from CLI."""
         WithLiteral = make_target("flag", Literal[True, False], default=True)
-        result = confarg.load(WithLiteral, args=["--flag", "False"], env={})
+        result = confarg.load(WithLiteral, argv=["--flag", "False"], env={})
         assert result.flag is False
 
     def test_literal_mixed_types(self) -> None:
         """Literal['fast', 'slow', 1, 2] from CLI."""
         WithLiteral = make_target("mode", Literal["fast", "slow", 1, 2], default="fast")
-        result = confarg.load(WithLiteral, args=["--mode", "2"], env={})
+        result = confarg.load(WithLiteral, argv=["--mode", "2"], env={})
         assert result.mode == 2
 
 
@@ -1101,13 +1101,13 @@ class TestPathCornerCases:
     def test_path_with_spaces(self) -> None:
         """Path with spaces from CLI."""
         WithPath = make_target("location", Path, default=Path())
-        result = confarg.load(WithPath, args=["--location", "/path/with spaces/file"], env={})
+        result = confarg.load(WithPath, argv=["--location", "/path/with spaces/file"], env={})
         assert result.location == Path("/path/with spaces/file")
 
     def test_path_relative(self) -> None:
         """Relative path from CLI."""
         WithPath = make_target("location", Path, default=Path())
-        result = confarg.load(WithPath, args=["--location", "./relative/path"], env={})
+        result = confarg.load(WithPath, argv=["--location", "./relative/path"], env={})
         assert result.location == Path("./relative/path")
 
 
@@ -1125,7 +1125,7 @@ class TestMultipleConfigFilesCornerCases:
         p2 = tmp_toml("name = 'from_cli_config'\n", "override.toml")
         result = confarg.load(
             Flat,
-            args=["--config", str(p2)],
+            argv=["--config", str(p2)],
             env={},
             files=[p1],
         )
@@ -1139,7 +1139,7 @@ class TestMultipleConfigFilesCornerCases:
         p2 = tmp_toml("name = 'b'\n", "b.toml")
         result = confarg.load(
             Flat,
-            args=["--config", str(p1), "--config", str(p2)],
+            argv=["--config", str(p1), "--config", str(p2)],
             env={},
         )
         assert result.name == "b"
@@ -1158,7 +1158,7 @@ class TestUnionTagParameter:
         """Custom union_tag='type' in load()."""
         result = confarg.load(
             WithUnionAmbiguous,
-            args=[
+            argv=[
                 "--shape.type",
                 "tests.conftest.CircleShape",
                 "--shape.x",
@@ -1185,7 +1185,7 @@ class TestUnionTagParameter:
         obj = WithUnionAmbiguous(shape=SquareShape(x=0, y=0, radius=3))
         path = tmp_path / "out.toml"
         confarg.dump_file(obj, path, union_tag="kind")
-        loaded = confarg.load(WithUnionAmbiguous, args=[], env={}, files=[path], union_tag="kind")
+        loaded = confarg.load(WithUnionAmbiguous, argv=[], env={}, files=[path], union_tag="kind")
         assert isinstance(loaded.shape, SquareShape)
         assert loaded.shape.radius == pytest.approx(3.0)
 
@@ -1237,7 +1237,7 @@ class TestNonUnionClassTagDispatch:
             name: Whiskers
             indoor: false
         """)
-        result = confarg.load(_AnimalBase, args=[], env={}, files=[path])
+        result = confarg.load(_AnimalBase, argv=[], env={}, files=[path])
         assert isinstance(result, _Cat)
         assert result.name == "Whiskers"
         assert result.indoor is False
@@ -1262,13 +1262,13 @@ class TestEmptyDataclassCornerCases:
     def test_empty_dataclass_from_all_sources(self, tmp_toml) -> None:
         """Empty dataclass loaded from all three sources."""
         path = tmp_toml("")
-        result = confarg.load(Empty, args=[], env={}, files=[path])
+        result = confarg.load(Empty, argv=[], env={}, files=[path])
         assert isinstance(result, Empty)
 
     def test_dataclass_single_field(self) -> None:
         """Dataclass with a single required field."""
         WithSingle = make_target("value", int)
-        result = confarg.load(WithSingle, args=["--value", "42"], env={})
+        result = confarg.load(WithSingle, argv=["--value", "42"], env={})
         assert result.value == 42
 
 
@@ -1292,13 +1292,13 @@ class TestPostInit:
 
     def test_post_init_sets_bar_from_foo_when_bar_absent(self) -> None:
         """When bar is not provided, __post_init__ copies foo into bar."""
-        result = confarg.load(_WithPostInit, args=["--foo", "hello"], env={})
+        result = confarg.load(_WithPostInit, argv=["--foo", "hello"], env={})
         assert result.foo == "hello"
         assert result.bar == "hello"
 
     def test_post_init_does_not_override_explicit_bar(self) -> None:
         """When bar is provided explicitly, __post_init__ leaves it alone."""
-        result = confarg.load(_WithPostInit, args=["--foo", "hello", "--bar", "world"], env={})
+        result = confarg.load(_WithPostInit, argv=["--foo", "hello", "--bar", "world"], env={})
         assert result.foo == "hello"
         assert result.bar == "world"
 
@@ -1328,7 +1328,7 @@ class TestIsSetFrozensetConsistency:
     def test_frozenset_still_works_end_to_end(self) -> None:
         """Frozenset field still works correctly after _is_set fix."""
         WithFrozenSet = make_target("tags", frozenset[str], default_factory=frozenset)
-        result = confarg.load(WithFrozenSet, args=["--tags", "a", "b"], env={})
+        result = confarg.load(WithFrozenSet, argv=["--tags", "a", "b"], env={})
         assert result.tags == frozenset({"a", "b"})
 
     def test_frozenset_roundtrip(self, tmp_path: Path) -> None:
@@ -1362,18 +1362,18 @@ class TestSilentFailureFixes:
         """Test that an uncoercible union value raises TypeCoercionError."""
         WithUnion = make_target("value", type_ann, default=None)
         with pytest.raises(TypeCoercionError, match=match):
-            confarg.load(WithUnion, args=[], env={"VALUE": env_val}, env_prefix="")
+            confarg.load(WithUnion, argv=[], env={"VALUE": env_val}, env_prefix="")
 
     def test_union_int_float_none_empty_string_raises(self) -> None:
         """Union[int, float, None]: empty string raises (use VALUE__NONE= instead)."""
         WithUnion = make_target("value", int | float | None, default=None)
         with pytest.raises(TypeCoercionError):
-            confarg.load(WithUnion, args=[], env={"VALUE": ""}, env_prefix="")
+            confarg.load(WithUnion, argv=[], env={"VALUE": ""}, env_prefix="")
 
     def test_union_int_float_none_valid_int_still_works(self) -> None:
         """Test that a valid int still works in a Union[int, float, None]."""
         WithUnion = make_target("value", int | float | None, default=None)
-        result = confarg.load(WithUnion, args=[], env={"VALUE": "42"}, env_prefix="")
+        result = confarg.load(WithUnion, argv=[], env={"VALUE": "42"}, env_prefix="")
         assert result.value == 42
         assert isinstance(result.value, int)
 
@@ -1606,7 +1606,7 @@ class TestUnionTypeSwitchViaClassTag:
         path = tmp_yaml("host: example.com\nname: mydb\nport: 1234\n")
         result = confarg.load(
             _SqliteVariant | _ServerVariant,
-            args=[
+            argv=[
                 "--config",
                 str(path),
                 "--class",
@@ -1626,7 +1626,7 @@ class TestUnionTypeSwitchViaClassTag:
         )
         result = confarg.load(
             _SqliteVariant | _ServerVariant,
-            args=["--config", str(path), "--host", "localhost"],
+            argv=["--config", str(path), "--host", "localhost"],
             env={},
         )
         assert isinstance(result, _ServerVariant)

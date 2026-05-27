@@ -60,7 +60,7 @@ def _load_cli_config(fpath: Path, subpath: str, config_flag: str) -> dict[str, A
 def merge(  # noqa: PLR0913
     target: type | TypeAliasType | UnionType,
     *,
-    args: Sequence[str] | None = None,
+    argv: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = "__",
@@ -80,7 +80,7 @@ def merge(  # noqa: PLR0913
 
     Args:
         target: The dataclass type (or scalar type) used to guide CLI parsing.
-        args: CLI arguments to parse. Defaults to sys.argv[1:].
+        argv: CLI arguments to parse. Defaults to sys.argv[1:].
         env: Environment variable mapping to scan. Defaults to os.environ.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
             which disables environment variable parsing entirely. Set to ``""``
@@ -120,13 +120,13 @@ def merge(  # noqa: PLR0913
         InvalidConfigFileError: If a config file cannot be loaded.
         UnknownArgumentError: If an unrecognized CLI argument is encountered.
     """
-    if args is None:
-        args = sys.argv[1:]
+    if argv is None:
+        argv = sys.argv[1:]
     if env is None:
         env = os.environ
 
     # 1. Parse CLI
-    cli_data, cli_configs = _parse_cli(args, target, cli_prefix, config_flag, union_tag)
+    cli_data, cli_configs = _parse_cli(argv, target, cli_prefix, config_flag, union_tag)
 
     # 2. Parse env vars (done here so env-specified config files are loaded in order)
     if env_prefix is None:
@@ -263,7 +263,7 @@ def from_dict[T](
 def load[T](
     target: type[T],
     *,
-    args: Sequence[str] | None = ...,
+    argv: Sequence[str] | None = ...,
     env: Mapping[str, str] | None = ...,
     env_prefix: str | None = ...,
     env_separator: str = ...,
@@ -277,7 +277,7 @@ def load[T](
 def load(
     target: object,
     *,
-    args: Sequence[str] | None = ...,
+    argv: Sequence[str] | None = ...,
     env: Mapping[str, str] | None = ...,
     env_prefix: str | None = ...,
     env_separator: str = ...,
@@ -290,7 +290,7 @@ def load(
 def load[T](  # noqa: PLR0913
     target: type[T] | TypeAliasType | UnionType,
     *,
-    args: Sequence[str] | None = None,
+    argv: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = "__",
@@ -308,7 +308,7 @@ def load[T](  # noqa: PLR0913
 
     Args:
         target: The dataclass type (or scalar type) to load configuration into.
-        args: CLI arguments to parse. Defaults to sys.argv[1:].
+        argv: CLI arguments to parse. Defaults to sys.argv[1:].
         env: Environment variable mapping to scan. Defaults to os.environ.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
             which disables environment variable parsing entirely. Set to ``""``
@@ -344,7 +344,7 @@ def load[T](  # noqa: PLR0913
     """
     data = merge(
         target,
-        args=args,
+        argv=argv,
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
