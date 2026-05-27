@@ -4,6 +4,12 @@
 
 """Click adapter: populate commands from dataclass types and construct them back."""
 
+try:
+    import click as _click  # noqa: F401  # availability check; click is an optional dependency
+except ImportError as exc:
+    msg = "confarg.cli.click requires click: pip install click"
+    raise ImportError(msg) from exc
+
 from confarg.cli.click._completion import setup_completion
 from confarg.cli.click._context import from_context
 from confarg.cli.click._register import load_flags_into_command, populate_command
