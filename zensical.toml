@@ -22,12 +22,12 @@ features = [
   "content.tooltips",            # https://zensical.org/docs/authoring/tooltips/#improved-tooltips
   "navigation.expand",           # https://zensical.org/docs/setup/navigation/#navigation-expansion
   "navigation.footer",           # https://zensical.org/docs/setup/footer/#navigation
-  "navigation.indexes",          # https://zensical.org/docs/setup/navigation/#section-index-pages  
+  "navigation.indexes",          # https://zensical.org/docs/setup/navigation/#section-index-pages
   "navigation.instant",          # https://zensical.org/docs/setup/navigation/#instant-navigation
   "navigation.instant.prefetch", # https://zensical.org/docs/setup/navigation/#instant-prefetching
   "navigation.path",             # https://zensical.org/docs/setup/navigation/#navigation-path
   "navigation.sections",         # https://zensical.org/docs/setup/navigation/#navigation-sections
-  "navigation.top",              # https://zensical.org/docs/setup/navigation/#back-to-top-button  
+  "navigation.top",              # https://zensical.org/docs/setup/navigation/#back-to-top-button
   "search.highlight",            # https://zensical.org/docs/setup/search/#search-highlighting
 ]
 language = "en"
