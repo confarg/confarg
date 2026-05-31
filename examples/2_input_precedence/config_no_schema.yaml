@@ -1,0 +1,3 @@
+# This configuration purposedly omits the `schema_name` key
+host: example.com
+port: 5678
