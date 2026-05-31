@@ -8,7 +8,14 @@ site_description = "Documentation for confarg, a python library to load and reso
 site_name = "confarg documentation"
 site_url = "https://confarg.github.io/confarg/"
 
-nav = [{ "Get started" = "index.md" }, { "Reference" = "reference.md" }]
+nav = [
+  { "Get started" = "index.md" },
+  { "Tutorials" = [
+    "examples/README.md",
+    { "1. Three input sources" = "examples/10_three_input_sources/README.md" },
+  ] },
+  { "Reference" = "reference.md" },
+]
 
 #
 
@@ -31,7 +38,7 @@ features = [
   "search.highlight",            # https://zensical.org/docs/setup/search/#search-highlighting
 ]
 language = "en"
-logo = "assets/{c}.svg"
+logo = "assets/logo.svg"
 
 [project.theme.icon]
 logo = "lucide/cog"
@@ -73,6 +80,8 @@ permalink = true
 [project.markdown_extensions.pymdownx.arithmatex]
 generic = true
 [project.markdown_extensions.pymdownx.betterem]
+[project.markdown_extensions.pymdownx.quotes]
+callouts = true
 [project.markdown_extensions.pymdownx.caret]
 [project.markdown_extensions.pymdownx.details]
 [project.markdown_extensions.pymdownx.emoji]
@@ -111,3 +120,6 @@ show_signature_annotations = false
 show_source                = false
 show_symbol_type_heading   = true
 show_symbol_type_toc       = true
+
+[project.validation]
+unresolved_references = false  # https://github.com/zensical/zensical/issues/700#issuecomment-4552385582
