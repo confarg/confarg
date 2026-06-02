@@ -7,7 +7,7 @@ license = "MPL-2.0"
 name = "confarg"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "0.0.1.dev5"
+version = "0.0.1.dev6"
 
 [project.urls]
 Documentation = "https://confarg.github.io/confarg"
