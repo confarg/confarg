@@ -24,6 +24,7 @@ from confarg._merge import (
     _set_nested,
 )
 from confarg._types import (
+    _dataclass_subclasses,
     _dict_kv,
     _elem_type,
     _is_callable,
@@ -53,12 +54,7 @@ def _subclass_field_type(tp: type, field: str) -> Any | None:
     Returns the common type if all subclasses agree, str if they disagree, None if absent.
     """
     found: list[Any] = []
-    queue = list(tp.__subclasses__())
-    while queue:
-        sub = queue.pop()
-        queue.extend(sub.__subclasses__())
-        if not _is_struct(sub):
-            continue
+    for sub in _dataclass_subclasses(tp):
         flds = _struct_fields(sub)
         if field in flds:
             found.append(flds[field])

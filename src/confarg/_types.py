@@ -569,6 +569,18 @@ def _is_struct(tp: Any) -> bool:
     return _is_dc(tp) or _is_plain_class(tp)
 
 
+def _dataclass_subclasses(tp: type) -> list[type]:
+    """Return all struct subclasses of tp, recursively (BFS order)."""
+    found: list[type] = []
+    queue = list(tp.__subclasses__())
+    while queue:
+        sub = queue.pop()
+        queue.extend(sub.__subclasses__())
+        if _is_struct(sub):
+            found.append(sub)
+    return found
+
+
 def _struct_fields(tp: Any) -> dict[str, Any]:
     """Return {name: type} for all fields/parameters of a struct or plain class."""
     return _dc_fields(tp) if _is_dc(tp) else _init_fields(tp)

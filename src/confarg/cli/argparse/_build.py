@@ -24,6 +24,7 @@ from confarg._import import _import_dotted
 from confarg._merge import _deep_merge
 from confarg._types import (
     _callable_return_type,
+    _dataclass_subclasses,
     _elem_type,
     _final_inner,
     _init_defaults,
@@ -498,6 +499,36 @@ def _collect_struct_specs(
         result.extend(
             _specs_for_field(flag, name, raw_type, resolved, union_tag, group, group_description, docstrings, defaults),
         )
+
+    # Handle inheritance-based dispatch: if this struct has subclasses, register
+    # a --<union_tag> selector and the union of all subclass fields.
+    direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
+    if direct_subs:
+        all_subs = _dataclass_subclasses(tp)  # recursive, for tab-completion paths
+        tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
+        existing_names: set[str] = {s.name for s in result}
+        if tag_name not in existing_names:
+            paths = [f"{v.__module__}.{v.__qualname__}" for v in all_subs]
+            result.append(
+                FlagSpec(
+                    name=tag_name,
+                    metavar="DOTTED.CLASS.PATH",
+                    help=(
+                        f"Fully-qualified class path selecting the {tp.__name__!r} subclass "
+                        f"(e.g. mypackage.SubClass). "
+                        f"Once set, use the subclass's field flags."
+                    ),
+                    group=group,
+                    group_description=group_description,
+                    completer=_make_path_completer(paths),
+                ),
+            )
+            existing_names.add(tag_name)
+        for sub in direct_subs:
+            for spec in _collect_struct_specs(sub, prefix, union_tag, group, group_description):
+                if spec.name not in existing_names:
+                    result.append(spec)
+                    existing_names.add(spec.name)
 
     return result
 

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import inspect
+from keyword import iskeyword
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from cyclopts import Group
@@ -40,6 +41,8 @@ def _make_literal(choices: list[str]) -> Any:
 def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:
     """Convert one FlagSpec to a keyword-only inspect.Parameter."""
     py_name = spec.name.replace(".", "__")
+    if iskeyword(py_name):
+        py_name = f"{py_name}_"
 
     # Determine the Python type annotation (confarg handles actual coercion)
     if spec.choices:

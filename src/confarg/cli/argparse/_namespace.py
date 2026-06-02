@@ -146,6 +146,32 @@ def _collect_ns_union_field(
         pass
 
 
+def _collect_ns_inheritance(
+    flat: dict[str, Any],
+    tp: Any,
+    prefix: str,
+    union_tag: str,
+    result: dict[str, Any],
+) -> None:
+    """Handle inheritance dispatch: if the union_tag key is in flat at this level, recurse into the named subclass.
+
+    The `cls is not tp` guard prevents infinite recursion when the subclass
+    itself re-enters this function and still sees the same tag key.
+    """
+    tag_key = f"{prefix}.{union_tag}" if prefix else union_tag
+    if tag_key not in flat:
+        return
+    class_tag = flat[tag_key]
+    try:
+        cls = _import_dotted(str(class_tag))
+        if isinstance(cls, type) and _is_struct(_resolve_type(cls)) and cls is not tp:
+            tag_path = ([*prefix.split(".")] if prefix else []) + [union_tag]
+            _set_nested(result, tag_path, _str_token(class_tag))
+            _collect_ns_fields(flat, cls, prefix, union_tag, result)
+    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
+        pass
+
+
 def _collect_ns_fields(
     flat: dict[str, Any],
     target: Any,
@@ -187,6 +213,8 @@ def _collect_ns_fields(
             v = flat[flag]
             v = [_str_token(item) for item in v] if isinstance(v, list) else _str_token(v)
             _set_nested(result, flag.split("."), v)
+
+    _collect_ns_inheritance(flat, _tp, prefix, union_tag, result)
 
 
 def from_namespace(  # noqa: PLR0913
