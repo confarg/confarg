@@ -46,7 +46,15 @@ from confarg.exceptions import (
     SymbolImportError,
     TypeCoercionError,
 )
-from confarg.typedload._coerce import _FALSY, _TRUTHY, _coerce_bool, _coerce_leaf, _coerce_type_ref, _src_type
+from confarg.typedload._coerce import (
+    _FALSY,
+    _LEAF_COERCIONS,
+    _TRUTHY,
+    _coerce_bool,
+    _coerce_leaf,
+    _coerce_type_ref,
+    _src_type,
+)
 
 
 def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) -> Any:
@@ -77,7 +85,7 @@ def _construct_typed(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     """Dispatch construction by type after None and callable are handled."""
     if _is_union(tp):
         return _construct_union(tp, data, path, union_tag)
-    if _is_struct(tp):
+    if _is_struct(tp) and tp not in _LEAF_COERCIONS:
         return _construct_struct_dispatch(tp, data, path, union_tag)
     if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
         return _construct_sequence(tp, data, path, union_tag)
@@ -532,7 +540,7 @@ def _coerce_scalar_variants(all_args: list[Any], scalar_leaf_vars: list[Any], da
 
 def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, path: str, union_tag: str) -> Any:
     """Construct a union value by trying leaf variants in priority order."""
-    leaf_vars = [v for v in non_none if not _is_struct(_resolve_type(v))]
+    leaf_vars = [v for v in non_none if not _is_struct(_resolve_type(v)) or _resolve_type(v) in _LEAF_COERCIONS]
     tuple_vars = [v for v in leaf_vars if _is_tuple(_resolve_type(v))]
     coll_vars = [
         v

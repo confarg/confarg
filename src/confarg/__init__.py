@@ -10,9 +10,34 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 from confarg import exceptions
 from confarg._api import build, dump, dump_file, from_dict, load, merge, resolve
 from confarg._types import TagPolicy
+from confarg.typedload._coerce import _LEAF_COERCIONS
+
+
+def register_leaf_type(tp: type, coerce: Callable[[Any], Any]) -> None:
+    """Register a custom leaf type.
+
+    After registration, ``tp`` is treated as a leaf: values of that type can
+    appear as scalars in config files, env vars, and CLI args.  ``coerce`` is
+    called with the raw input value — either a ``_StrToken`` (a ``str``
+    subclass) from CLI/env sources, or the natively-parsed Python object from
+    config files — and must return an instance of ``tp``, raising
+    ``ValueError`` or ``TypeError`` on failure.
+
+    Example::
+
+        from uuid import UUID
+        confarg.register_leaf_type(UUID, UUID)
+    """
+    _LEAF_COERCIONS[tp] = coerce
+
 
 __all__ = [  # noqa: RUF022
     # Two-step API
@@ -28,6 +53,8 @@ __all__ = [  # noqa: RUF022
     "dump_file",
     # Types
     "TagPolicy",
+    # Leaf-type extension
+    "register_leaf_type",
     # Exceptions / warnings
     "exceptions",
 ]

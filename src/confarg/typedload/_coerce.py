@@ -173,6 +173,16 @@ _SCALAR_COERCIONS: dict[type, Any] = {
 }
 
 
+def _coerce_registered(tp: Any, value: Any, path: str) -> Any:
+    """Coerce value to a type registered in _LEAF_COERCIONS, passing instances through."""
+    if isinstance(value, tp):
+        return value
+    try:
+        return _LEAF_COERCIONS[tp](value)
+    except (TypeError, ValueError, OSError):
+        raise TypeCoercionError.cannot_coerce(_src_type(value), value, tp.__name__, path) from None
+
+
 def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:
     """Coerce a raw value to the target leaf type.
 
@@ -201,10 +211,7 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:
     if _is_enum(tp):
         return _coerce_enum_value(tp, value, path)
     if tp in _LEAF_COERCIONS:
-        try:
-            return _LEAF_COERCIONS[tp](value)
-        except (TypeError, ValueError, OSError):
-            raise TypeCoercionError.cannot_coerce(_src_type(value), value, tp.__name__, path) from None
+        return _coerce_registered(tp, value, path)
     msg = f"Unsupported leaf type {tp} at '{path}'"
     raise TypeCoercionError(msg)
 
@@ -212,10 +219,11 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:
 def _try_coerce(ft: Any, token: _StrToken) -> Any:
     """Coerce a string token to the target type if unambiguous.
 
-    Coerces immediately for concrete leaf types (bool, int, float, Path,
-    Literal, Enum) so the merged dict has consistent types regardless of source.
-    str tokens are returned unchanged — _StrToken is already a str subclass.
-    For multi-variant unions, returns token unchanged for construct() to handle.
+    Coerces immediately for concrete leaf types (bool, int, float, registered
+    types in _LEAF_COERCIONS, Literal, Enum) so the merged dict has consistent
+    types regardless of source.  str tokens are returned unchanged — _StrToken
+    is already a str subclass.  For multi-variant unions, returns token
+    unchanged for construct() to handle.
     """
     if ft is None:
         return token
@@ -225,7 +233,7 @@ def _try_coerce(ft: Any, token: _StrToken) -> Any:
         if len(non_none) != 1:
             return token
         ft = _resolve_type(non_none[0])
-    if not (_is_literal(ft) or _is_enum(ft) or ft in (bool, int, float, Path)):
+    if not (_is_literal(ft) or _is_enum(ft) or ft in (bool, int, float) or ft in _LEAF_COERCIONS):
         return token
     try:
         return _coerce_leaf(ft, token)
