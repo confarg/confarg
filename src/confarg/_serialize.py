@@ -19,10 +19,12 @@ from confarg._types import (
     _is_dict,
     _is_frozenset,
     _is_list,
+    _is_namedtuple,
     _is_set,
     _is_struct,
     _is_tuple,
     _is_union,
+    _namedtuple_fields,
     _resolve_type,
     _StrToken,
     _struct_fields,
@@ -60,7 +62,7 @@ def _serialize(
     return _serialize_by_type(tp, instance, path, union_tag, tag_policy)
 
 
-def _serialize_by_type(
+def _serialize_by_type(  # noqa: PLR0911
     tp: Any,
     instance: Any,
     path: str,
@@ -70,6 +72,8 @@ def _serialize_by_type(
     """Dispatch serialization by type after None and callable are handled."""
     if _is_union(tp):
         return _serialize_union(tp, instance, path, union_tag, tag_policy)
+    if _is_namedtuple(tp):
+        return _serialize_namedtuple(tp, instance, path, union_tag, tag_policy)
     if _is_struct(tp):
         return _serialize_struct(tp, instance, path, union_tag, tag_policy)
     if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
@@ -94,6 +98,23 @@ def _serialize_collection(
         return [_serialize(et, v, f"{path}[{i}]", union_tag, tag_policy) for i, v in enumerate(instance)]
     items = [_serialize(et, v, path, union_tag, tag_policy) for v in instance]
     return sorted(items, key=_sort_key)
+
+
+def _serialize_namedtuple(
+    tp: Any,
+    instance: Any,
+    path: str,
+    union_tag: str,
+    tag_policy: TagPolicy,
+) -> dict[str, Any]:
+    """Serialize a namedtuple instance to a dict keyed by field name."""
+    flds = _namedtuple_fields(tp)
+    out: dict[str, Any] = {}
+    for name, ft in flds.items():
+        value = getattr(instance, name)
+        fp = f"{path}.{name}" if path else name
+        out[name] = _serialize(ft, value, fp, union_tag, tag_policy)
+    return out
 
 
 def _serialize_struct(

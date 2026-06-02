@@ -35,11 +35,13 @@ from confarg._types import (
     _is_enum,
     _is_final,
     _is_literal,
+    _is_namedtuple,
     _is_struct,
     _is_tuple,
     _is_type_ref,
     _is_varlen_collection,
     _literal_values,
+    _namedtuple_fields,
     _resolve_type,
     _struct_defaults,
     _struct_fields,
@@ -430,7 +432,54 @@ def _collect_fn_paths_from_config(
     return result
 
 
-def _specs_for_field(  # noqa: PLR0913
+def _collect_namedtuple_specs(
+    core: Any,
+    flag: str,
+    group: str | None,
+    group_description: str,
+) -> list[FlagSpec]:
+    """Build FlagSpecs for a namedtuple field: nargs leaf + per-field-name + per-index flags."""
+    flds = _namedtuple_fields(core)
+    n = len(flds)
+    result: list[FlagSpec] = []
+    # Combined nargs flag (like a regular tuple)
+    result.append(
+        FlagSpec(
+            name=flag,
+            nargs=n,
+            metavar="VALUE",
+            help=f"Set all {n} field(s) of {core.__name__} at once (positional order: {', '.join(flds)})",
+            group=group,
+            group_description=group_description,
+        ),
+    )
+    # Individual flags by field name and by index
+    for i, (fname, ft) in enumerate(flds.items()):
+        field_help = f"Field {fname!r} of {core.__name__} (index {i})"
+        # By field name
+        result.append(
+            FlagSpec(
+                name=f"{flag}.{fname}",
+                metavar=getattr(ft, "__name__", "VALUE").upper(),
+                help=field_help,
+                group=group,
+                group_description=group_description,
+            ),
+        )
+        # By index
+        result.append(
+            FlagSpec(
+                name=f"{flag}.{i}",
+                metavar=getattr(ft, "__name__", "VALUE").upper(),
+                help=field_help,
+                group=group,
+                group_description=group_description,
+            ),
+        )
+    return result
+
+
+def _specs_for_field(  # noqa: PLR0911, PLR0913
     flag: str,
     name: str,
     raw_type: Any,
@@ -462,6 +511,9 @@ def _specs_for_field(  # noqa: PLR0913
             existing: set[str] = {s.name for s in specs}
             specs.extend(_collect_callable_factory_specs(flag, ret, existing, group, group_description))
         return specs
+
+    if _is_namedtuple(core):
+        return _collect_namedtuple_specs(core, flag, group, group_description)
 
     if _is_struct(core):
         return _collect_struct_specs(core, flag, union_tag, flag, inspect.getdoc(core) or "")

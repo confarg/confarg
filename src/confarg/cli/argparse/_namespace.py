@@ -23,7 +23,9 @@ from confarg._types import (
     _callable_return_type,
     _is_callable,
     _is_dict,
+    _is_namedtuple,
     _is_struct,
+    _namedtuple_fields,
     _resolve_type,
     _StrToken,
     _union_args_no_none,
@@ -172,6 +174,54 @@ def _collect_ns_inheritance(
         pass
 
 
+def _collect_ns_namedtuple(
+    flat: dict[str, Any],
+    core: Any,
+    flag: str,
+    result: dict[str, Any],
+) -> None:
+    """Collect a namedtuple field from the flat namespace.
+
+    Priority per field: field-name sub-flag > index sub-flag > nargs position.
+    When sub-flags and the nargs flag are both set, sub-flags override specific
+    positions and the nargs value fills the rest — they are merged, not exclusive.
+    """
+    flds = _namedtuple_fields(core)
+    field_names = list(flds.keys())
+
+    # Collect individual sub-flags (by name and by index)
+    sub: dict[str, Any] = {}
+    for i, fname in enumerate(field_names):
+        name_key = f"{flag}.{fname}"
+        idx_key = f"{flag}.{i}"
+        if name_key in flat and flat[name_key] is not None:
+            sub[fname] = _str_token(flat[name_key])
+        elif idx_key in flat and flat[idx_key] is not None:
+            sub[fname] = _str_token(flat[idx_key])
+
+    nargs_value = flat.get(flag)
+    has_nargs = nargs_value is not None
+
+    if not sub and not has_nargs:
+        return
+
+    if sub and has_nargs:
+        # Merge: nargs provides the base, sub-flags override individual positions.
+        nargs_list = nargs_value if isinstance(nargs_value, list) else [nargs_value]
+        merged: dict[str, Any] = {}
+        for i, fname in enumerate(field_names):
+            if fname in sub:
+                merged[fname] = sub[fname]
+            elif i < len(nargs_list):
+                merged[fname] = _str_token(nargs_list[i])
+        _set_nested(result, flag.split("."), merged)
+    elif sub:
+        _set_nested(result, flag.split("."), sub)
+    else:
+        v = [_str_token(item) for item in nargs_value] if isinstance(nargs_value, list) else _str_token(nargs_value)
+        _set_nested(result, flag.split("."), v)
+
+
 def _collect_ns_fields(
     flat: dict[str, Any],
     target: Any,
@@ -196,6 +246,10 @@ def _collect_ns_fields(
         core = _unwrap_optional(resolved)
         if core is None:
             _collect_ns_union_field(flat, flag, resolved, union_tag, result)
+            continue
+
+        if _is_namedtuple(core):
+            _collect_ns_namedtuple(flat, core, flag, result)
             continue
 
         if _is_struct(core):

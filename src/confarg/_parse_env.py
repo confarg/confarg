@@ -22,12 +22,14 @@ from confarg._types import (
     _is_dict,
     _is_frozenset,
     _is_list,
+    _is_namedtuple,
     _is_set,
     _is_struct,
     _is_struct_like,
     _is_tuple,
     _is_union,
     _is_varlen_collection,
+    _namedtuple_fields,
     _resolve_type,
     _StrToken,
     _struct_fields,
@@ -107,6 +109,32 @@ def _match_union_part(tp: Any, part: str) -> tuple[str, Any]:
     return part.lower(), None
 
 
+def _match_namedtuple_part(tp: Any, part: str) -> tuple[str, Any]:
+    """Match a single env var part against a namedtuple type (by field name or index)."""
+    flds = _namedtuple_fields(tp)
+    # Try field-name match first (case-insensitive)
+    matches = [name for name in flds if name.lower() == part.lower()]
+    if len(matches) > 1:
+        msg = (
+            f"Ambiguous env var segment {part!r}: matches multiple fields {matches} in {tp.__name__}."
+            " Check your namedtuple definition for duplicate case-insensitive field names."
+        )
+        raise ConfargError(msg)
+    if len(matches) == 1:
+        name = matches[0]
+        return name, flds[name]
+    # Fall back to numeric index
+    try:
+        idx = int(part)
+        field_names = list(flds.keys())
+        if 0 <= idx < len(field_names):
+            fname = field_names[idx]
+            return str(idx), flds[fname]
+    except ValueError:
+        pass
+    return part.lower(), None
+
+
 def _match_tuple_part(tp: Any, part: str) -> tuple[str, Any]:
     """Match a single env var part against a tuple type."""
     tt = _tuple_types(tp)
@@ -121,7 +149,7 @@ def _match_tuple_part(tp: Any, part: str) -> tuple[str, Any]:
     return part.lower(), None
 
 
-def _match_env_part(tp: Any, part: str) -> tuple[str, Any]:
+def _match_env_part(tp: Any, part: str) -> tuple[str, Any]:  # noqa: PLR0911
     """Match a single env var part against the current type level.
 
     Args:
@@ -133,6 +161,8 @@ def _match_env_part(tp: Any, part: str) -> tuple[str, Any]:
     """
     if tp is not None:
         tp = _resolve_type(tp)
+    if _is_namedtuple(tp):
+        return _match_namedtuple_part(tp, part)
     if _is_struct(tp):
         return _match_struct_part(tp, part)
     if _is_union(tp):
@@ -179,6 +209,27 @@ def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[
 
 def _warn_unknown_env_field(orig_key: str, parts: list[str], root_tp: Any) -> bool:
     """Warn and return True if the env var's first segment has no matching field."""
+    if _is_namedtuple(root_tp):
+        flds = _namedtuple_fields(root_tp)
+        part = parts[0]
+        # Accept numeric indices silently
+        try:
+            idx = int(part)
+            if 0 <= idx < len(flds):
+                return False
+        except ValueError:
+            pass
+        if part.lower() not in {f.lower() for f in flds}:
+            known = sorted(flds.keys())
+            warnings.warn(
+                f"Environment variable {orig_key!r} has no matching field"
+                f" (segment {part!r} not found in {root_tp.__name__})."
+                f" Known fields: {known}. The variable will be ignored.",
+                ConfargWarning,
+                stacklevel=4,
+            )
+            return True
+        return False
     if _is_struct(root_tp) and parts[0] not in _struct_fields(root_tp):
         known = sorted(_struct_fields(root_tp).keys())
         warnings.warn(
@@ -208,18 +259,27 @@ def _store_env_value(parts: list[str], ft: Any, value: str, data: dict[str, Any]
     """Parse an env var string value and store it at the resolved path in data."""
     if value.startswith(("[", "{")):
         accepts_obj = value.startswith("{") and (
-            _is_struct(ft)
+            _is_namedtuple(ft)
+            or _is_struct(ft)
             or _is_dict(ft)
             or _is_callable(ft)
-            or (_is_union(ft) and any(_is_struct(_resolve_type(v)) for v in _union_args_no_none(ft)))
+            or (
+                _is_union(ft)
+                and any(
+                    _is_namedtuple(_resolve_type(v)) or _is_struct(_resolve_type(v)) for v in _union_args_no_none(ft)
+                )
+            )
         )
         accepts_arr = value.startswith("[") and (
-            _is_varlen_collection(ft)
+            _is_namedtuple(ft)
+            or _is_varlen_collection(ft)
             or _is_tuple(ft)
             or (
                 _is_union(ft)
                 and any(
-                    _is_varlen_collection(_resolve_type(v)) or _is_tuple(_resolve_type(v))
+                    _is_namedtuple(_resolve_type(v))
+                    or _is_varlen_collection(_resolve_type(v))
+                    or _is_tuple(_resolve_type(v))
                     for v in _union_args_no_none(ft)
                 )
             )
