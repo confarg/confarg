@@ -133,12 +133,65 @@ def populate_parser(  # noqa: PLR0913
             values so that callable ``--<field>.bind.*`` flags can be registered
             before :meth:`~argparse.ArgumentParser.parse_args` is called.
             Has no effect on which config-source flags are registered.
+
+    Note:
+        Prefer :func:`make_parser` for the common case — it sets
+        ``allow_abbrev=False`` by default to prevent schema evolution from
+        silently breaking abbreviated flag invocations.
     """
     static = build_static_flags(target, union_tag=union_tag, config_flag=config_flag, config_subkeys=config_subkeys)
     load_flags_into_parser(static, parser)
     if argv is not None:
         dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
         load_flags_into_parser(dynamic, parser)
+
+
+def make_parser(
+    target: type,
+    *,
+    union_tag: str = _defaults.UNION_TAG,
+    config_flag: str = "config",
+    config_subkeys: bool = True,
+    argv: Sequence[str] | None = None,
+    **kwargs: Any,
+) -> argparse.ArgumentParser:
+    """Create an :class:`argparse.ArgumentParser` pre-populated with fields from *target*.
+
+    Sets ``allow_abbrev=False`` unless overridden, preventing schema evolution
+    from silently breaking abbreviated flag invocations.  All extra keyword
+    arguments are forwarded to :class:`argparse.ArgumentParser` (e.g.
+    ``description``, ``prog``).
+
+    Example::
+
+        parser = make_parser(Config, description="My app")
+        namespace = parser.parse_args()
+        config = from_namespace(Config, namespace)
+
+    Args:
+        target: The dataclass type whose fields to register.
+        union_tag: Name of the union discriminator field (forwarded to
+            :func:`populate_parser`).
+        config_flag: Name of the config-file flag (forwarded to
+            :func:`populate_parser`).
+        config_subkeys: Whether to register per-field config flags (forwarded
+            to :func:`populate_parser`).
+        argv: CLI argument list for pre-resolving callable flags (forwarded to
+            :func:`populate_parser`).
+        **kwargs: Additional keyword arguments forwarded to
+            :class:`argparse.ArgumentParser`.
+    """
+    kwargs.setdefault("allow_abbrev", False)
+    parser = argparse.ArgumentParser(**kwargs)
+    populate_parser(
+        target,
+        parser,
+        union_tag=union_tag,
+        config_flag=config_flag,
+        config_subkeys=config_subkeys,
+        argv=argv,
+    )
+    return parser
 
 
 # ---------------------------------------------------------------------------
