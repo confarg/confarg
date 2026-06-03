@@ -192,3 +192,70 @@ class TestBuildEndToEnd:
             {"id": _StrToken(_UUID_STR), "token": _StrToken(_UUID_STR)},
         )
         assert result == _Config(id=_UUID_OBJ, token=_UUID_OBJ)
+
+
+# ---------------------------------------------------------------------------
+# TestNoneTypeCoercion — _coerce_leaf and _try_coerce for NoneType
+# ---------------------------------------------------------------------------
+
+
+class TestNoneTypeCoercion:
+    """Tests for NoneType coercion: only None and recognised null tokens are accepted."""
+
+    def test_none_passthrough(self) -> None:
+        """A Python None value passes through unchanged."""
+        assert _coerce_leaf(type(None), None) is None
+
+    def test_none_token(self) -> None:
+        """The string token 'none' is accepted as a valid null representation."""
+        assert _coerce_leaf(type(None), _StrToken("none")) is None
+
+    def test_null_token(self) -> None:
+        """The string token 'null' is accepted as a valid null representation."""
+        assert _coerce_leaf(type(None), _StrToken("null")) is None
+
+    def test_case_insensitive(self) -> None:
+        """Null token matching is case-insensitive."""
+        assert _coerce_leaf(type(None), _StrToken("NONE")) is None
+        assert _coerce_leaf(type(None), _StrToken("NULL")) is None
+        assert _coerce_leaf(type(None), _StrToken("Null")) is None
+
+    def test_arbitrary_string_raises(self) -> None:
+        """An unrecognised string raises TypeCoercionError instead of silently returning None."""
+        with pytest.raises(TypeCoercionError):
+            _coerce_leaf(type(None), _StrToken("x"))
+
+    def test_empty_string_accepted(self) -> None:
+        """An empty string token (e.g. NOTHING= env var) is accepted as None."""
+        assert _coerce_leaf(type(None), _StrToken("")) is None
+
+    def test_try_coerce_none_token(self) -> None:
+        """_try_coerce eagerly converts 'none' tokens for NoneType fields."""
+        result = _try_coerce(type(None), _StrToken("none"))
+        assert result is None
+
+    def test_try_coerce_invalid_returns_token(self) -> None:
+        """_try_coerce returns the token unchanged when coercion would fail."""
+        token = _StrToken("x")
+        result = _try_coerce(type(None), token)
+        assert result is token
+
+    def test_load_integration_none_token(self) -> None:
+        """confarg.load() accepts 'none' for a value: None field."""
+
+        @dataclass
+        class Config:
+            value: None
+
+        result = confarg.load(Config, argv=["--value", "none"], env={})
+        assert result == Config(value=None)
+
+    def test_load_integration_rejects_arbitrary(self) -> None:
+        """confarg.load() rejects arbitrary strings for a value: None field."""
+
+        @dataclass
+        class Config:
+            value: None
+
+        with pytest.raises(TypeCoercionError):
+            confarg.load(Config, argv=["--value", "x"], env={})

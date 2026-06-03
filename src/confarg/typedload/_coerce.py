@@ -27,6 +27,7 @@ from confarg.exceptions import SymbolImportError, TypeCoercionError
 
 _TRUTHY = frozenset({"true", "1", "yes", "on"})
 _FALSY = frozenset({"false", "0", "no", "off"})
+_NONE_TOKENS = frozenset({"none", "null"})
 _LEAF_COERCIONS: dict[type, Any] = {Path: Path}
 
 
@@ -183,7 +184,7 @@ def _coerce_registered(tp: Any, value: Any, path: str) -> Any:
         raise TypeCoercionError.cannot_coerce(_src_type(value), value, tp.__name__, path) from None
 
 
-def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:
+def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  # one branch per leaf type
     """Coerce a raw value to the target leaf type.
 
     Handles bool, int, float, str, Literal, Enum, Path, and NoneType.
@@ -201,7 +202,11 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:
     """
     tp = _resolve_type(tp)
     if _is_none_type(tp):
-        return None
+        if value is None:
+            return None
+        if isinstance(value, _StrToken) and (str(value).lower() in _NONE_TOKENS or str(value) == ""):
+            return None
+        raise TypeCoercionError.cannot_coerce(_src_type(value), value, "None", path)
     if _is_final(tp):
         return _coerce_leaf(_final_inner(tp), value, path)
     if tp in _SCALAR_COERCIONS:
@@ -233,7 +238,7 @@ def _try_coerce(ft: Any, token: _StrToken) -> Any:
         if len(non_none) != 1:
             return token
         ft = _resolve_type(non_none[0])
-    if not (_is_literal(ft) or _is_enum(ft) or ft in (bool, int, float) or ft in _LEAF_COERCIONS):
+    if not (_is_literal(ft) or _is_enum(ft) or ft in (bool, int, float) or ft in _LEAF_COERCIONS or _is_none_type(ft)):
         return token
     try:
         return _coerce_leaf(ft, token)
