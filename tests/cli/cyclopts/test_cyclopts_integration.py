@@ -335,6 +335,35 @@ class TestFromApp:
 
 
 # ---------------------------------------------------------------------------
+# Bool convention
+# ---------------------------------------------------------------------------
+
+
+class TestBoolConvention:
+    """Verify the explicit --flag true/false convention for bool fields in cyclopts."""
+
+    def test_bool_explicit_true(self) -> None:
+        """--debug true sets a bool field to True."""
+        assert _run(Nested, ["--debug", "true"]).debug is True
+
+    def test_bool_explicit_false(self) -> None:
+        """--debug false sets a bool field to False."""
+        assert _run(Nested, ["--debug", "false"]).debug is False
+
+    def test_no_negative_flag_registered(self) -> None:
+        """Cyclopts does not generate a --no-debug flag for bool fields."""
+        app = _make_app()
+        populate_app(Nested, app, config_flag="")
+        option_names = _option_names(app.assemble_argument_collection())
+        assert "--no-debug" not in option_names
+
+    def test_bool_requires_value(self) -> None:
+        """--debug without a value fails — the convention requires --debug true/false."""
+        with pytest.raises(SystemExit):
+            _run(Nested, ["--debug"])
+
+
+# ---------------------------------------------------------------------------
 # Help / --help behaviour
 # ---------------------------------------------------------------------------
 

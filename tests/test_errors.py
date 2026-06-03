@@ -6,7 +6,10 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from tests._loaders import ConfargLoader
 
 import pytest
 
@@ -49,29 +52,29 @@ class TestExceptionHierarchy:
 class TestMissingFields:
     """Errors when required fields are not provided."""
 
-    def test_missing_all_required(self) -> None:
+    def test_missing_all_required(self, loader: ConfargLoader) -> None:
         """Flat has no defaults; omitting all fields raises MissingFieldError."""
         with pytest.raises(confarg.exceptions.MissingFieldError):
-            confarg.load(Flat, argv=[], env={})
+            loader.load(Flat, argv=[], env={})
 
-    def test_missing_one_required(self) -> None:
+    def test_missing_one_required(self, loader: ConfargLoader) -> None:
         """Omitting one required field raises MissingFieldError."""
         with pytest.raises(confarg.exceptions.MissingFieldError):
-            confarg.load(
+            loader.load(
                 Flat,
                 argv=["--name", "x", "--rate", "1.0", "--verbose", "true"],
                 env={},
             )
 
-    def test_missing_nested_required(self) -> None:
+    def test_missing_nested_required(self, loader: ConfargLoader) -> None:
         """Omitting required nested fields raises MissingFieldError."""
         with pytest.raises(confarg.exceptions.MissingFieldError):
-            confarg.load(AppConfig, argv=[], env={})
+            loader.load(AppConfig, argv=[], env={})
 
-    def test_error_message_contains_field_name(self) -> None:
+    def test_error_message_contains_field_name(self, loader: ConfargLoader) -> None:
         """MissingFieldError message mentions the missing field."""
         with pytest.raises(confarg.exceptions.MissingFieldError, match="count"):
-            confarg.load(
+            loader.load(
                 Flat,
                 argv=["--name", "x", "--rate", "1.0", "--verbose", "true"],
                 env={},
@@ -96,52 +99,60 @@ class TestMissingFields:
 class TestTypeCoercionErrors:
     """Errors when a value cannot be coerced to the target type."""
 
-    def test_int_coercion_failure(self) -> None:
+    def test_int_coercion_failure(self, loader: ConfargLoader) -> None:
         """Non-numeric string for int field raises TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(
+            loader.load(
                 Flat,
                 argv=["--name", "x", "--count", "notanumber", "--rate", "0", "--verbose", "true"],
                 env={},
             )
 
-    def test_float_coercion_failure(self) -> None:
+    def test_float_coercion_failure(self, loader: ConfargLoader) -> None:
         """Non-numeric string for float field raises TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(
+            loader.load(
                 Flat,
                 argv=["--name", "x", "--count", "1", "--rate", "notafloat", "--verbose", "true"],
                 env={},
             )
 
-    def test_bool_coercion_failure_from_env(self) -> None:
+    def test_bool_coercion_failure_from_env(self, loader: ConfargLoader) -> None:
         """Unrecognized string for bool from env raises TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithDefaults, argv=[], env={"VERBOSE": "maybe"}, env_prefix="")
+            loader.load(WithDefaults, argv=[], env={"VERBOSE": "maybe"}, env_prefix="")
 
     def test_literal_invalid_value(self) -> None:
-        """Invalid Literal value raises an error."""
+        """Invalid Literal value raises an error — vanilla only.
+
+        CLI integrations validate choices at parse time (raising framework-level
+        errors); vanilla validates at coercion time (raising ConfargError).
+        """
         WithLiteral = make_target("mode", Literal["fast", "slow"], default="fast")
         with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(WithLiteral, argv=["--mode", "invalid"], env={})
 
     def test_enum_invalid_value(self) -> None:
-        """Invalid enum value raises TypeCoercionError listing valid members."""
+        """Invalid enum value raises TypeCoercionError — vanilla only.
+
+        CLI integrations validate choices at parse time (raising framework-level
+        errors); vanilla validates at coercion time (raising TypeCoercionError).
+        """
         WithEnum = make_target("color", Color, default=Color.RED)
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"Valid members:.*RED.*GREEN.*BLUE"):
             confarg.load(WithEnum, argv=["--color", "purple"], env={})
 
-    def test_optional_int_null_string_hints_none_sentinel_cli(self) -> None:
+    def test_optional_int_null_string_hints_none_sentinel_cli(self, loader: ConfargLoader) -> None:
         """TypeCoercionError for Optional[int] hints to use 'none' or 'null'."""
         WithOpt = make_target("value", int | None, default=None)
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"'none' or 'null'"):
-            confarg.load(WithOpt, argv=["--value", "blah"], env={})
+            loader.load(WithOpt, argv=["--value", "blah"], env={})
 
-    def test_optional_int_null_string_hints_none_sentinel_env(self) -> None:
+    def test_optional_int_null_string_hints_none_sentinel_env(self, loader: ConfargLoader) -> None:
         """TypeCoercionError for Optional[int] from env hints to use 'none' or 'null'."""
         WithOpt = make_target("value", int | None, default=None)
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"'none' or 'null'"):
-            confarg.load(WithOpt, argv=[], env={"VALUE": "blah"}, env_prefix="")
+            loader.load(WithOpt, argv=[], env={"VALUE": "blah"}, env_prefix="")
 
 
 # ---------------------------------------------------------------------------
