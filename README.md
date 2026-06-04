@@ -1,6 +1,6 @@
 <!-- pytest-markdown-console-file: notest -->
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="confarg" />
+  <img src="https://raw.githubusercontent.com/confarg/confarg/master/docs/assets/banner.svg" alt="confarg" />
 </p>
 
 # A tool to manage complex configurations
