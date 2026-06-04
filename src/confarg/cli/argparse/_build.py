@@ -52,6 +52,7 @@ from confarg._types import (
 )
 from confarg.cli.argparse._spec import FlagSpec, _build_help, _get_field_docstrings, _get_field_meta
 from confarg.exceptions import SymbolImportError
+from confarg.typedload._coerce import _enum_choices
 
 
 def _resolve_struct(
@@ -138,7 +139,7 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
     if _is_enum(core):
         return FlagSpec(
             name=flag,
-            choices=[e.name for e in core],
+            choices=_enum_choices(core),
             metavar=metavar or flag.rsplit(".", 1)[-1].upper(),
             help=help_text,
             group=group,
