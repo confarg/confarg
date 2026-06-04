@@ -52,7 +52,7 @@ from confarg._types import (
 )
 from confarg.cli.argparse._spec import FlagSpec, _build_help, _get_field_docstrings, _get_field_meta
 from confarg.exceptions import SymbolImportError
-from confarg.typedload._coerce import _enum_choices
+from confarg.typedload._coerce import _enum_choices, _is_registered_leaf
 
 
 def _resolve_struct(
@@ -515,6 +515,10 @@ def _specs_for_field(  # noqa: PLR0911, PLR0913
 
     if _is_namedtuple(core):
         return _collect_namedtuple_specs(core, flag, group, group_description)
+
+    if _is_registered_leaf(core):
+        help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
+        return [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
 
     if _is_struct(core):
         return _collect_struct_specs(core, flag, union_tag, flag, inspect.getdoc(core) or "")

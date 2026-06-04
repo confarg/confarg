@@ -171,6 +171,11 @@ def _enum_choices(tp: Any) -> list[str]:
     return list(dict.fromkeys([e.name for e in tp] + [str(e.value) for e in tp]))
 
 
+def _is_registered_leaf(tp: Any) -> bool:
+    """True if tp was registered via register_leaf_type and should be treated as a leaf."""
+    return tp in _LEAF_COERCIONS
+
+
 _SCALAR_COERCIONS: dict[type, Any] = {
     bool: _coerce_bool_value,
     int: _coerce_int_value,

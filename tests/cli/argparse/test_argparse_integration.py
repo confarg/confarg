@@ -18,6 +18,22 @@ from confarg._types import _StrToken
 from confarg.cli.argparse import FieldMeta, from_namespace, make_parser, populate_parser
 from confarg.cli.argparse._namespace import _collect_ns_fields
 from confarg.cli.argparse._spec import _get_field_docstrings
+from confarg.typedload._coerce import _LEAF_COERCIONS
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_custom_leaf_types():
+    """Remove any custom types added to _LEAF_COERCIONS during a test."""
+    before = set(_LEAF_COERCIONS)
+    yield
+    for tp in list(_LEAF_COERCIONS):
+        if tp not in before:
+            del _LEAF_COERCIONS[tp]
+
 
 # ---------------------------------------------------------------------------
 # Dataclasses used across tests
@@ -162,6 +178,23 @@ class NoDocstrings:
     count: int = 0
 
 
+class _Hex:
+    """Custom leaf type: hex-string → integer wrapper, used to test register_leaf_type."""
+
+    __hash__ = None  # unhashable by design; only __eq__ is needed for assertions
+
+    def __init__(self, value: int) -> None:
+        self.value = value
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Hex) and other.value == self.value
+
+
+@dataclass
+class _WithHex:
+    color: _Hex
+
+
 # ---------------------------------------------------------------------------
 # _get_field_docstrings
 # ---------------------------------------------------------------------------
@@ -265,6 +298,16 @@ class TestPopulateParser:
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--item.class" in flags
         assert "--item" not in flags
+
+    def test_registered_leaf_type_flag(self) -> None:
+        """A field whose type is registered as a leaf gets a single flat flag, not sub-flags."""
+        confarg.register_leaf_type(_Hex, lambda s: _Hex(int(s, 16)))
+
+        parser = argparse.ArgumentParser()
+        populate_parser(_WithHex, parser)
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--color" in flags
+        assert "--color.value" not in flags
 
     def test_argument_groups_for_nested(self) -> None:
         """Test that nested dataclasses create named argument groups."""
@@ -444,6 +487,16 @@ class TestFromNamespace:
         ns = parser.parse_args(["--color", "blue"])
         result = from_namespace(WithEnum, ns)
         assert result.color == Color.BLUE
+
+    def test_registered_leaf_type_round_trip(self) -> None:
+        """A registered leaf type is coerced correctly end-to-end via argparse."""
+        confarg.register_leaf_type(_Hex, lambda s: _Hex(int(s, 16)))
+
+        parser = make_parser(_WithHex)
+        ns = parser.parse_args(["--color", "ff"])
+        result = from_namespace(_WithHex, ns)
+        assert isinstance(result.color, _Hex)
+        assert result.color.value == 255
 
     def test_literal_field(self) -> None:
         """Test that Literal fields parse to the correct string value."""
