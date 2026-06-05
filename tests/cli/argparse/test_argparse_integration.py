@@ -272,6 +272,21 @@ class TestPopulateParser:
         assert level_action.choices is not None
         assert set(level_action.choices) == {"debug", "info", "warning"}
 
+    def test_literal_none_choices_include_tokens(self) -> None:
+        """Literal[None, str] choices include 'none'/'null' so argparse accepts them."""
+
+        @dataclass
+        class WithNoneLiteral:
+            value: Literal[None, "toto"] = "toto"
+
+        parser = argparse.ArgumentParser()
+        populate_parser(WithNoneLiteral, parser)
+        action = next(a for a in parser._actions if "--value" in a.option_strings)
+        assert action.choices is not None
+        assert "none" in action.choices
+        assert "null" in action.choices
+        assert "toto" in action.choices
+
     def test_dict_field_skipped(self) -> None:
         """Test that dict fields are not registered as CLI flags."""
 
@@ -505,6 +520,33 @@ class TestFromNamespace:
         ns = parser.parse_args(["--level", "warning"])
         result = from_namespace(WithLiteral, ns)
         assert result.level == "warning"
+
+    def test_literal_none_cli(self) -> None:
+        """--value none is accepted and coerced to None for Literal[None, str]."""
+
+        @dataclass
+        class WithNoneLiteral:
+            value: Literal[None, "toto"] = "toto"
+
+        parser = argparse.ArgumentParser()
+        populate_parser(WithNoneLiteral, parser)
+        ns = parser.parse_args(["--value", "none"])
+        result = from_namespace(WithNoneLiteral, ns)
+        assert result.value is None
+
+    def test_literal_int_stealing_cli(self) -> None:
+        """--value 16 coerces to int 16 (not string '16') for Literal['16', 16]."""
+
+        @dataclass
+        class WithMixedLiteral:
+            value: Literal["16", 16] = 16
+
+        parser = argparse.ArgumentParser()
+        populate_parser(WithMixedLiteral, parser)
+        ns = parser.parse_args(["--value", "16"])
+        result = from_namespace(WithMixedLiteral, ns)
+        assert result.value == 16
+        assert type(result.value) is int
 
     def test_coexists_with_user_flags(self) -> None:
         """User can add their own flags; from_namespace ignores them."""

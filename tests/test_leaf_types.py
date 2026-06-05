@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import enum
 import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal, Optional
@@ -387,6 +388,17 @@ class TestEnum:
         result = confarg.load(WithIntEnum, argv=["--color", "2"], env={})
         assert result.color is IntColor.GREEN
 
+    def test_enum_name_takes_priority_over_value(self) -> None:
+        """When input matches both a member name and a different member's value, name wins."""
+
+        class Ambiguous(enum.Enum):
+            RED = "GREEN"  # name="RED", value="GREEN"
+            GREEN = "green"
+
+        WithAmbiguous = make_target("x", Ambiguous, default=Ambiguous.GREEN)
+        result = confarg.load(WithAmbiguous, argv=["--x", "GREEN"], env={})
+        assert result.x is Ambiguous.GREEN  # matched by name "GREEN", not by value of RED member
+
 
 # ---------------------------------------------------------------------------
 # Path
@@ -434,6 +446,33 @@ class TestLiteral:
         WithLiteral = make_target("mode", Literal["fast", "slow"], default="fast")
         with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(WithLiteral, argv=["--mode", "turbo"], env={})
+
+    @pytest.mark.parametrize("token", ["none", "null"])
+    def test_literal_none_from_str_token(self, token: str) -> None:
+        """'none'/'null' tokens coerce to None in Literal[None, str]."""
+        WithLiteral = make_target("value", Literal[None, "toto"], default="toto")
+        result = confarg.load(WithLiteral, argv=["--value", token], env={})
+        assert result.value is None
+
+    def test_literal_int_stealing_over_str(self) -> None:
+        """Int member is preferred over str member for Literal["16", 16]."""
+        WithLiteral = make_target("value", Literal["16", 16], default=16)
+        result = confarg.load(WithLiteral, argv=["--value", "16"], env={})
+        assert result.value == 16
+        assert type(result.value) is int
+
+    def test_literal_int_hex_notation(self) -> None:
+        """Hex notation resolves to the matching int member."""
+        WithLiteral = make_target("value", Literal["16", 16], default=16)
+        result = confarg.load(WithLiteral, argv=["--value", "0x10"], env={})
+        assert result.value == 16
+        assert type(result.value) is int
+
+    def test_literal_int_hex_no_match_raises(self) -> None:
+        """Hex value that doesn't match any Literal member raises an error."""
+        WithLiteral = make_target("value", Literal["16", 16], default=16)
+        with pytest.raises(confarg.exceptions.ConfargError):
+            confarg.load(WithLiteral, argv=["--value", "0xF"], env={})
 
 
 # ---------------------------------------------------------------------------
