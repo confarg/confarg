@@ -401,6 +401,105 @@ class TestEnum:
 
 
 # ---------------------------------------------------------------------------
+# Union[Enum, scalar] — stealing rule and explicit cast
+# ---------------------------------------------------------------------------
+
+
+class _Value(enum.Enum):
+    FOO = 1
+    BAR = 2
+
+
+class TestEnumScalarUnion:
+    """Stealing rule (enum > scalar > str) and explicit .TYPE cast for Union[Enum, scalar]."""
+
+    def test_enum_steals_from_str_by_name(self) -> None:
+        """'FOO' matches enum member by name even in Union[Enum, str]."""
+        T = make_target("value", _Value | str, default="x")
+        result = confarg.load(T, argv=["--value", "FOO"], env={})
+        assert result.value is _Value.FOO
+
+    def test_enum_steals_from_str_by_value(self) -> None:
+        """'1' matches enum member by value even in Union[Enum, str]."""
+        T = make_target("value", _Value | str, default="x")
+        result = confarg.load(T, argv=["--value", "1"], env={})
+        assert result.value is _Value.FOO
+
+    def test_str_cast_escapes_enum_stealing(self) -> None:
+        """--value.str FOO forces str even when FOO is an enum member name."""
+        T = make_target("value", _Value | str, default="x")
+        result = confarg.load(T, argv=["--value.str", "FOO"], env={})
+        assert result.value == "FOO"
+        assert type(result.value) is str
+
+    def test_str_cast_non_member_string(self) -> None:
+        """--value.str with a value not matching any enum member still produces str."""
+        T = make_target("value", _Value | str, default="x")
+        result = confarg.load(T, argv=["--value.str", "hello"], env={})
+        assert result.value == "hello"
+
+    def test_enum_steals_from_int_by_value(self) -> None:
+        """'1' matches enum member by value in Union[Enum, int]."""
+        T = make_target("value", _Value | int, default=0)
+        result = confarg.load(T, argv=["--value", "1"], env={})
+        assert result.value is _Value.FOO
+
+    def test_int_cast_escapes_enum_stealing(self) -> None:
+        """--value.int 1 forces int even when 1 is an enum member value."""
+        T = make_target("value", _Value | int, default=0)
+        result = confarg.load(T, argv=["--value.int", "1"], env={})
+        assert result.value == 1
+        assert type(result.value) is int
+
+    def test_int_cast_hex(self) -> None:
+        """--value.int 0x1 forces int parsing via int(s, 0)."""
+        T = make_target("value", _Value | int, default=0)
+        result = confarg.load(T, argv=["--value.int", "0x1"], env={})
+        assert result.value == 1
+        assert type(result.value) is int
+
+    def test_enum_priority_over_int_regardless_of_declaration_order(self) -> None:
+        """Enum wins over int even when int is declared first in the union."""
+        T = make_target("value", int | _Value, default=0)
+        result = confarg.load(T, argv=["--value", "1"], env={})
+        assert result.value is _Value.FOO
+
+    def test_str_fallback_when_no_enum_match(self) -> None:
+        """Non-matching string falls through to str when enum doesn't match."""
+        T = make_target("value", _Value | str, default="x")
+        result = confarg.load(T, argv=["--value", "UNKNOWN"], env={})
+        assert result.value == "UNKNOWN"
+        assert type(result.value) is str
+
+
+class TestCastDict:
+    """Tagged ``{__cast__, __value__}`` dict for explicit typing in config files."""
+
+    def test_cast_str_in_union_enum_str(self, tmp_toml) -> None:
+        """Config file with __cast__ forces str even in Union[Enum, str]."""
+        T = make_target("value", _Value | str, default="x")
+        path = tmp_toml('[value]\n__cast__ = "str"\n__value__ = "FOO"\n')
+        result = confarg.load(T, argv=[], env={}, files=[path])
+        assert result.value == "FOO"
+        assert type(result.value) is str
+
+    def test_cast_int_in_union_enum_int(self, tmp_toml) -> None:
+        """Config file with __cast__ forces int even in Union[Enum, int]."""
+        T = make_target("value", _Value | int, default=0)
+        path = tmp_toml('[value]\n__cast__ = "int"\n__value__ = 1\n')
+        result = confarg.load(T, argv=[], env={}, files=[path])
+        assert result.value == 1
+        assert type(result.value) is int
+
+    def test_cast_unknown_type_raises(self, tmp_toml) -> None:
+        """Unknown __cast__ type raises ConfargError."""
+        T = make_target("value", _Value | str, default="x")
+        path = tmp_toml('[value]\n__cast__ = "uuid"\n__value__ = "abc"\n')
+        with pytest.raises(confarg.exceptions.ConfargError):
+            confarg.load(T, argv=[], env={}, files=[path])
+
+
+# ---------------------------------------------------------------------------
 # Path
 # ---------------------------------------------------------------------------
 

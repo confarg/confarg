@@ -26,6 +26,7 @@ from confarg._types import (
     _is_namedtuple,
     _is_struct,
     _namedtuple_fields,
+    _Pinned,
     _resolve_type,
     _StrToken,
     _union_args_no_none,
@@ -36,6 +37,17 @@ from confarg.dictexpr import resolve_expressions
 from confarg.exceptions import SymbolImportError
 from confarg.typedload import construct
 from confarg.typedload._coerce import _is_registered_leaf
+
+_CAST_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
+
+
+def _find_cast_override(flat: dict[str, Any], flag: str) -> _Pinned | None:
+    """Check for explicit cast flags (e.g. ``flag.str``, ``flag.int``) in flat namespace."""
+    for cast_name, tp in _CAST_TYPES.items():
+        val = flat.get(f"{flag}.{cast_name}")
+        if val is not None:
+            return _Pinned(tp, _StrToken(val))
+    return None
 
 
 def _str_token(v: Any) -> Any:
@@ -223,7 +235,7 @@ def _collect_ns_namedtuple(
         _set_nested(result, flag.split("."), v)
 
 
-def _collect_ns_fields(  # noqa: C901  # one branch per type case
+def _collect_ns_fields(  # noqa: C901, PLR0912  # one branch per type case
     flat: dict[str, Any],
     target: Any,
     prefix: str,
@@ -246,7 +258,16 @@ def _collect_ns_fields(  # noqa: C901  # one branch per type case
 
         core = _unwrap_optional(resolved)
         if core is None:
+            # Struct unions: collect via class-tag
             _collect_ns_union_field(flat, flag, resolved, union_tag, result)
+            # Scalar unions: collect plain value or explicit cast
+            cast_val = _find_cast_override(flat, flag)
+            if cast_val is not None:
+                _set_nested(result, flag.split("."), cast_val)
+            elif flag in flat:
+                v = flat[flag]
+                v = [_str_token(item) for item in v] if isinstance(v, list) else _str_token(v)
+                _set_nested(result, flag.split("."), v)
             continue
 
         if _is_namedtuple(core):
@@ -271,7 +292,10 @@ def _collect_ns_fields(  # noqa: C901  # one branch per type case
             _collect_callable_spec(flat, flag, core, result)
             continue
 
-        if flag in flat:
+        cast_val = _find_cast_override(flat, flag)
+        if cast_val is not None:
+            _set_nested(result, flag.split("."), cast_val)
+        elif flag in flat:
             v = flat[flag]
             v = [_str_token(item) for item in v] if isinstance(v, list) else _str_token(v)
             _set_nested(result, flag.split("."), v)

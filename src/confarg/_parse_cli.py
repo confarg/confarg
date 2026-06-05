@@ -40,6 +40,7 @@ from confarg._types import (
     _is_union,
     _is_varlen_collection,
     _namedtuple_fields,
+    _Pinned,
     _resolve_type,
     _StrToken,
     _struct_fields,
@@ -48,6 +49,9 @@ from confarg._types import (
 )
 from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce
+
+_SCALAR_CAST_NAMES: frozenset[str] = frozenset({"str", "int", "float", "bool"})
+_CAST_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
 
 
 def _subclass_field_type(tp: type, field: str) -> Any | None:
@@ -298,10 +302,11 @@ def _consume_config_paths(args: list[str], i: int, key: str, config_flag: str) -
 
 def _parse_flag_mode(
     key: str,
-) -> tuple[list[str], bool, bool, bool, int, bool]:
+) -> tuple[list[str], bool, bool, str | None, int, bool]:
     """Decode mode flags from a flag key.
 
-    Returns ``(path, append_mode, delete_mode, force_str, delete_idx, is_list_delete)``.
+    Returns ``(path, append_mode, delete_mode, force_cast, delete_idx, is_list_delete)``.
+    ``force_cast`` is one of ``"str"``, ``"int"``, ``"float"``, ``"bool"``, or ``None``.
     """
     path = key.split(".") if key else []
 
@@ -321,11 +326,11 @@ def _parse_flag_mode(
         except ValueError:
             pass
 
-    force_str = not delete_mode and bool(path) and path[-1] == "str"
-    if force_str:
-        path = path[:-1]
+    force_cast: str | None = None
+    if not delete_mode and bool(path) and path[-1] in _SCALAR_CAST_NAMES:
+        force_cast = path.pop()
 
-    return path, append_mode, delete_mode, force_str, delete_idx, is_list_delete
+    return path, append_mode, delete_mode, force_cast, delete_idx, is_list_delete
 
 
 @dataclass
@@ -463,12 +468,19 @@ def _handle_scalar_root(args: list[str], i: int, token: str, target_r: Any, data
     return i + 1
 
 
-def _handle_force_str(args: list[str], i: int, token: str, data: dict[str, Any], path: list[str]) -> int:
-    """Consume the value for a .str-cast flag, storing it as a plain str. Returns new arg index."""
+def _handle_force_cast(  # noqa: PLR0913  # cast_name is a necessary discriminator, not incidental
+    args: list[str],
+    i: int,
+    token: str,
+    data: dict[str, Any],
+    path: list[str],
+    cast_name: str,
+) -> int:
+    """Consume the value for a .<type>-cast flag, storing it as _Pinned. Returns new arg index."""
     if i >= len(args) or _looks_like_flag(args[i]):
         msg = f"Missing value for {token!r}. Usage: {token} <value>"
         raise ConfargError(msg)
-    _set_nested(data, path, str(args[i]))
+    _set_nested(data, path, _Pinned(_CAST_TYPES[cast_name], _StrToken(args[i])))
     return i + 1
 
 
@@ -643,7 +655,7 @@ def _parse_cli(
             config_files.extend(new_cfgs)
             continue
 
-        path, append_mode, delete_mode, force_str, delete_idx, is_list_delete = _parse_flag_mode(key)
+        path, append_mode, delete_mode, force_cast, delete_idx, is_list_delete = _parse_flag_mode(key)
 
         if delete_mode:
             _handle_delete_token(ctx, token, path, is_list_delete=is_list_delete, delete_idx=delete_idx)
@@ -662,8 +674,8 @@ def _parse_cli(
         ft = _resolve_type(ft)
         i += 1
 
-        if force_str:
-            i = _handle_force_str(argv, i, token, ctx.data, path)
+        if force_cast:
+            i = _handle_force_cast(argv, i, token, ctx.data, path, force_cast)
             continue
 
         if append_mode:
