@@ -17,6 +17,8 @@ Config(value=<Value.FOO: 1>)
 $ uv run enum_value.py --value 2
 Config(value=<Value.BAR: 2>)
 ```
+> [!NOTE] *Nitpicker's corner*
+> The argument is first matched against the key, then the value. You don't need to know this unless you are dealing with an enum whose keys and values are inconsistent — let's hope your don't.
 
 
 ## `Path`

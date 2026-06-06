@@ -16,7 +16,8 @@ nav = [
     { "2. Input precedence" = "examples/2_input_precedence/README.md" },
     { "3. Scalar types" = "examples/3_scalar_types/README.md" },
     { "4. Leaf types" = "examples/4_leaf_types/README.md" },
-    { "4. Generics" = "examples/5_generics/README.md" },
+    { "5. Generics" = "examples/5_generics/README.md" },
+    { "6. Unions" = "examples/6_unions/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]
