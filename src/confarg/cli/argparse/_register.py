@@ -90,7 +90,7 @@ def load_flags_into_parser(
 
 
 def populate_parser(  # noqa: PLR0913
-    target: type,
+    target: object,
     parser: argparse.ArgumentParser,
     *,
     union_tag: str = _defaults.UNION_TAG,
@@ -147,7 +147,7 @@ def populate_parser(  # noqa: PLR0913
 
 
 def make_parser(
-    target: type,
+    target: object,
     *,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = "config",

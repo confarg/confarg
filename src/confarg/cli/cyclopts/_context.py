@@ -33,7 +33,7 @@ def _run_command(command: Any, bound: Any) -> Any:
 
 
 def from_app(  # noqa: PLR0913
-    target: type,
+    target: object,
     app: cyclopts.App,
     *,
     union_tag: str = _defaults.UNION_TAG,

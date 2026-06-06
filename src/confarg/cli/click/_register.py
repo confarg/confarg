@@ -97,7 +97,7 @@ def load_flags_into_command(
 
 
 def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app signatures; all params are keyword-only with sensible defaults
-    target: type,
+    target: object,
     command: click.Command,
     *,
     union_tag: str = _defaults.UNION_TAG,

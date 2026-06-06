@@ -720,7 +720,7 @@ def _collect_subconfig_specs(
 
 
 def build_static_flags(
-    target: type,
+    target: object,
     *,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = "config",
@@ -768,7 +768,7 @@ def build_static_flags(
 
 
 def build_dynamic_flags(
-    target: type,
+    target: object,
     argv: Sequence[str],
     *,
     union_tag: str = _defaults.UNION_TAG,
