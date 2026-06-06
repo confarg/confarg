@@ -555,3 +555,99 @@ class TestInheritanceDispatch:
         assert len(result_holder) == 1
         assert isinstance(result_holder[0], _SQLiteDB)
         assert result_holder[0].dbpath == "/var/db/app.sqlite"
+
+
+# ---------------------------------------------------------------------------
+# Root-level union target (target IS a union, not a struct containing one)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _RootSQLite:
+    """SQLite config for union-root tests."""
+
+    dbpath: str
+
+
+@dataclass
+class _RootDBServer:
+    """DB server config for union-root tests."""
+
+    host: str
+    port: int
+    name: str
+
+
+_RootDBConfig: Any = _RootSQLite | _RootDBServer
+
+
+class TestUnionRootTarget:
+    """populate_command / from_context work when the target is itself a union of structs."""
+
+    def test_union_root_flags_registered(self) -> None:
+        """build_static_flags generates --class and all variant fields for a union root."""
+        flags = build_static_flags(_RootDBConfig, union_tag="class", config_flag="")
+        names = {f.name for f in flags}
+        assert "class" in names
+        assert "dbpath" in names
+        assert "host" in names
+        assert "port" in names
+        assert "name" in names
+
+    def test_union_root_round_trip_sqlite(self) -> None:
+        """--dbpath alone selects the SQLite variant without needing --class."""
+        result_holder: list[Any] = []
+
+        @click.command()
+        @click.pass_context
+        def cli(ctx: click.Context) -> None:
+            result_holder.append(confargclick.from_context(_RootDBConfig, ctx, env={}))
+
+        populate_command(_RootDBConfig, cli, config_flag="")
+        runner = CliRunner()
+        runner.invoke(cli, ["--dbpath", "/tmp/x.db"], catch_exceptions=False)
+        assert len(result_holder) == 1
+        assert isinstance(result_holder[0], _RootSQLite)
+        assert result_holder[0].dbpath == "/tmp/x.db"
+
+    def test_union_root_round_trip_db_server(self) -> None:
+        """DB server fields alone select the server variant without needing --class."""
+        result_holder: list[Any] = []
+
+        @click.command()
+        @click.pass_context
+        def cli(ctx: click.Context) -> None:
+            result_holder.append(confargclick.from_context(_RootDBConfig, ctx, env={}))
+
+        populate_command(_RootDBConfig, cli, config_flag="")
+        runner = CliRunner()
+        runner.invoke(
+            cli,
+            ["--host", "db.example.com", "--port", "5432", "--name", "mydb"],
+            catch_exceptions=False,
+        )
+        assert len(result_holder) == 1
+        assert isinstance(result_holder[0], _RootDBServer)
+        assert result_holder[0].host == "db.example.com"
+        assert result_holder[0].port == 5432
+        assert result_holder[0].name == "mydb"
+
+    def test_union_root_explicit_class_tag(self) -> None:
+        """--class overrides structural disambiguation for the union root."""
+        result_holder: list[Any] = []
+
+        @click.command()
+        @click.pass_context
+        def cli(ctx: click.Context) -> None:
+            result_holder.append(confargclick.from_context(_RootDBConfig, ctx, env={}))
+
+        populate_command(_RootDBConfig, cli, config_flag="")
+        runner = CliRunner()
+        runner.invoke(
+            cli,
+            ["--class", f"{__name__}._RootSQLite", "--dbpath", "/tmp/x.db"],
+            catch_exceptions=False,
+        )
+        assert len(result_holder) == 1
+        assert isinstance(result_holder[0], _RootSQLite)
+        assert result_holder[0].dbpath == "/tmp/x.db"

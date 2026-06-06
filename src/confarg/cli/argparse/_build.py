@@ -39,6 +39,7 @@ from confarg._types import (
     _is_struct,
     _is_tuple,
     _is_type_ref,
+    _is_union,
     _is_varlen_collection,
     _literal_values,
     _namedtuple_fields,
@@ -576,7 +577,40 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
     return [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
 
 
-def _collect_struct_specs(
+def _collect_union_root_specs(
+    variants: list[Any],
+    prefix: str,
+    union_tag: str,
+) -> list[FlagSpec]:
+    """Build FlagSpecs for a union target (variants are the concrete struct types)."""
+    tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
+    paths = [f"{v.__module__}.{v.__qualname__}" for v in variants]
+    result: list[FlagSpec] = [
+        FlagSpec(
+            name=tag_name,
+            metavar="DOTTED.CLASS.PATH",
+            help=(
+                "Fully-qualified class path selecting the union variant "
+                f"(e.g. {paths[0] if paths else 'mypackage.MyClass'}). "
+                "Once set, use the variant's field flags."
+            ),
+            completer=_make_path_completer(paths),
+        ),
+    ]
+    for variant in variants:
+        result.extend(
+            _collect_struct_specs(
+                variant,
+                prefix,
+                union_tag,
+                group=variant.__name__,
+                group_description=inspect.getdoc(variant) or "",
+            ),
+        )
+    return result
+
+
+def _collect_struct_specs(  # noqa: C901  # union-root branch added one more conditional
     target: Any,
     prefix: str,
     union_tag: str,
@@ -586,6 +620,12 @@ def _collect_struct_specs(
     """Recursively build FlagSpecs for all fields of a struct type."""
     setup = _resolve_struct(target)
     if setup is None:
+        tp = _resolve_type(target)
+        if _is_union(tp):
+            non_none = _union_args_no_none(tp)
+            concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
+            if concrete:
+                return _collect_union_root_specs(concrete, prefix, union_tag)
         return []
     tp, flds, hints = setup
     var_params = _var_param_names(tp)

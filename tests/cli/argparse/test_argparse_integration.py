@@ -9,13 +9,14 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field, make_dataclass
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import pytest
 
 import confarg
 from confarg._types import _StrToken
 from confarg.cli.argparse import FieldMeta, from_namespace, make_parser, populate_parser
+from confarg.cli.argparse._build import build_static_flags
 from confarg.cli.argparse._namespace import _collect_ns_fields
 from confarg.cli.argparse._spec import _get_field_docstrings
 from confarg.typedload._coerce import _LEAF_COERCIONS
@@ -188,6 +189,25 @@ class _StructVariantB:
 @dataclass
 class _WithStructUnion:
     item: _StructVariantA | _StructVariantB
+
+
+@dataclass
+class _RootSQLite:
+    """SQLite config for union-root tests."""
+
+    dbpath: str
+
+
+@dataclass
+class _RootDBServer:
+    """DB server config for union-root tests."""
+
+    host: str
+    port: int
+    name: str
+
+
+_RootDBConfig: Any = _RootSQLite | _RootDBServer
 
 
 @dataclass
@@ -892,3 +912,49 @@ class TestMakeParser:
         result = from_namespace(Simple, ns, env={})
         assert result.host == "localhost"
         assert result.port == 9999
+
+
+# ---------------------------------------------------------------------------
+# Root-level union target (target IS a union, not a struct containing one)
+# ---------------------------------------------------------------------------
+
+
+class TestUnionRootTarget:
+    """make_parser / from_namespace work when the target is itself a union of structs."""
+
+    def test_union_root_flags_registered(self) -> None:
+        """build_static_flags generates --class and all variant fields for a union root."""
+        flags = build_static_flags(_RootDBConfig, union_tag="class", config_flag="")
+        names = {f.name for f in flags}
+        assert "class" in names
+        assert "dbpath" in names
+        assert "host" in names
+        assert "port" in names
+        assert "name" in names
+
+    def test_union_root_round_trip_sqlite(self) -> None:
+        """--dbpath alone selects the SQLite variant without needing --class."""
+        parser = make_parser(_RootDBConfig, config_flag="")
+        ns = parser.parse_args(["--dbpath", "/tmp/x.db"])
+        result = from_namespace(_RootDBConfig, ns, env={})
+        assert isinstance(result, _RootSQLite)
+        assert result.dbpath == "/tmp/x.db"
+
+    def test_union_root_round_trip_db_server(self) -> None:
+        """DB server fields alone select the server variant without needing --class."""
+        parser = make_parser(_RootDBConfig, config_flag="")
+        ns = parser.parse_args(["--host", "db.example.com", "--port", "5432", "--name", "mydb"])
+        result = from_namespace(_RootDBConfig, ns, env={})
+        assert isinstance(result, _RootDBServer)
+        assert result.host == "db.example.com"
+        assert result.port == 5432
+        assert result.name == "mydb"
+
+    def test_union_root_explicit_class_tag(self) -> None:
+        """--class overrides structural disambiguation for the union root."""
+        parser = make_parser(_RootDBConfig, config_flag="")
+        cls_path = f"{__name__}._RootSQLite"
+        ns = parser.parse_args(["--class", cls_path, "--dbpath", "/tmp/x.db"])
+        result = from_namespace(_RootDBConfig, ns, env={})
+        assert isinstance(result, _RootSQLite)
+        assert result.dbpath == "/tmp/x.db"
