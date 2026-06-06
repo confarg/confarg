@@ -136,7 +136,7 @@ class TestUnionClassTagRegistration:
         assert f"{module}._SQLiteDB" not in suggestions
 
     def test_non_struct_union_no_class_flag(self) -> None:
-        """Int | str union does NOT register a --value.class flag."""
+        """Int | str union does NOT register a --value.class flag (no struct variants)."""
 
         @dataclass
         class _WithPrimUnion:
@@ -146,10 +146,9 @@ class TestUnionClassTagRegistration:
         populate_parser(_WithPrimUnion, parser)
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--value.class" not in flags
-        assert "--value" not in flags
 
-    def test_non_struct_union_field_still_absent(self) -> None:
-        """Leaf fields of non-struct union variant stay absent (unchanged behaviour)."""
+    def test_str_int_union_registers_value_and_cast_flags(self) -> None:
+        """Int | str registers --value and cast override flags (stealing rule applies)."""
 
         @dataclass
         class _WithPrimUnion:
@@ -158,7 +157,9 @@ class TestUnionClassTagRegistration:
         parser = argparse.ArgumentParser()
         populate_parser(_WithPrimUnion, parser)
         flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--value" not in flags
+        assert "--value" in flags
+        assert "--value.str" in flags
+        assert "--value.int" in flags
 
 
 # ---------------------------------------------------------------------------

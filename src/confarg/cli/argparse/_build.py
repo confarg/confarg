@@ -61,16 +61,18 @@ _SCALAR_CAST_TYPES: frozenset[type] = frozenset({str, int, float, bool})
 def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
     """Return scalar types to offer as explicit cast flags for a multi-variant union.
 
-    Returns non-empty only when the union has at least one enum variant and at least
-    one scalar (str, int, float, bool) variant — the combination where stealing-rule
-    disambiguation is non-obvious and an explicit cast escape-hatch is useful.
+    Returns non-empty when the union has (a) at least one enum variant with scalar
+    co-members, or (b) str alongside at least one other scalar — both are combinations
+    where the stealing rule is non-obvious and an explicit cast escape-hatch is useful.
     """
     non_none = _union_args_no_none(resolved)
     types = [_resolve_type(v) for v in non_none]
+    scalars = [t for t in types if t in _SCALAR_CAST_TYPES]
     has_enum = any(_is_enum(t) for t in types)
-    if not has_enum:
+    has_str_with_other = str in scalars and len(scalars) > 1
+    if not has_enum and not has_str_with_other:
         return []
-    return [t for t in types if t in _SCALAR_CAST_TYPES]
+    return scalars
 
 
 def _literal_cli_choices(vals: tuple[Any, ...]) -> list[str]:
@@ -539,7 +541,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
                     FlagSpec(
                         name=f"{flag}.{cast_name}",
                         metavar=cast_name.upper(),
-                        help=f"Force {cast_name!r} type for '{flag}' (bypasses enum stealing).",
+                        help=f"Force {cast_name!r} type for '{flag}' (bypasses the stealing rule).",
                         group=group,
                         group_description=group_description,
                     ),
