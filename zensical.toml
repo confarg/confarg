@@ -18,6 +18,7 @@ nav = [
     { "4. Leaf types" = "examples/4_leaf_types/README.md" },
     { "5. Generics" = "examples/5_generics/README.md" },
     { "6. Unions" = "examples/6_unions/README.md" },
+    { "7. Stealing rule" = "examples/7_stealing_rule/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]
