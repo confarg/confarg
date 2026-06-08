@@ -11,12 +11,13 @@ except ImportError as exc:
     raise ImportError(msg) from exc
 
 from confarg.cli.click._completion import setup_completion
-from confarg.cli.click._context import from_context
+from confarg.cli.click._context import from_context, merge_context
 from confarg.cli.click._register import load_flags_into_command, populate_command
 
 __all__ = [
     "from_context",
     "load_flags_into_command",
+    "merge_context",
     "populate_command",
     "setup_completion",
 ]

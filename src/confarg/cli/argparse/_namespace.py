@@ -338,6 +338,78 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type c
     _collect_ns_inheritance(flat, _tp, prefix, union_tag, result)
 
 
+def merge_namespace(  # noqa: PLR0913
+    target: object,
+    ns: argparse.Namespace,
+    *,
+    union_tag: str = _defaults.UNION_TAG,
+    config_flag: str = "config",
+    files: Sequence[str | Path] = (),
+    env: Mapping[str, str] | None = None,
+    env_prefix: str | None = _defaults.ENV_PREFIX,
+    env_separator: str = "__",
+) -> dict[str, Any]:
+    """Collect and merge configuration from all sources into a raw dict.
+
+    Same as :func:`from_namespace` but returns the raw merged dict instead of a
+    constructed dataclass.  ``${...}`` expression strings are preserved — call
+    :func:`confarg.resolve` to resolve them, then :func:`confarg.build` or
+    :func:`confarg.from_dict` to construct the dataclass.
+
+    Args:
+        target: The dataclass type to construct.
+        ns: The Namespace returned by ``ArgumentParser.parse_args()``.
+        union_tag: Discriminator field name (same as :func:`confarg.load`).
+        config_flag: Name of the config-file attribute on ``ns`` (default
+            ``"config"``).  Must match the ``config_flag`` passed to
+            :func:`populate_parser`.  Subkey flags ``--config.<subpath>``
+            (registered automatically by :func:`populate_parser`) are also
+            consumed.  Set to ``""`` to ignore all config-file attributes.
+        files: Additional root-level config file paths to load (lowest priority).
+        env: Environment variable mapping.  Defaults to ``os.environ``.
+            Pass ``{}`` to disable env-var reading.
+        env_prefix: Prefix that env vars must start with. Defaults to ``None``,
+            which disables environment variable parsing entirely. Set to ``""``
+            to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
+            read only vars with that prefix.
+        env_separator: Separator used to split env var names into nested keys.
+
+    Returns:
+        A plain dict of the merged configuration, with expression strings intact.
+    """
+    if env is None:
+        env = os.environ
+
+    # 1. Collect CLI field values from the namespace
+    cli_data: dict[str, Any] = {}
+    _collect_ns_fields(vars(ns), target, prefix="", union_tag=union_tag, result=cli_data)
+
+    # 2. Collect (subpath, path) pairs for all config files
+    file_pairs: list[tuple[str, Path]] = [("", Path(f)) for f in files]
+    if config_flag:
+        file_pairs.extend(("", Path(f)) for f in getattr(ns, config_flag, None) or [])
+        cfg_prefix = f"{config_flag}."
+        for key, val in vars(ns).items():
+            if key.startswith(cfg_prefix):
+                subpath = key[len(cfg_prefix) :]
+                file_pairs.extend((subpath, Path(f)) for f in val or [])
+
+    # 3. Load config files
+    config_data = _load_subpath_files(file_pairs, union_tag)
+
+    # 4. Parse env vars
+    if env_prefix is None:
+        env_data: dict[str, Any] = {}
+        env_configs: list[tuple[str, Path]] = []
+    else:
+        env_data, env_configs = _parse_env(env, env_prefix, env_separator, target)
+    config_data = _deep_merge(config_data, _load_subpath_files(env_configs, union_tag), union_tag=union_tag)
+
+    # 5. Merge: config < env < CLI
+    merged = _deep_merge(config_data, env_data, union_tag=union_tag)
+    return _deep_merge(merged, cli_data, union_tag=union_tag)
+
+
 def from_namespace(  # noqa: PLR0913
     target: object,
     ns: argparse.Namespace,
@@ -381,40 +453,15 @@ def from_namespace(  # noqa: PLR0913
     Returns:
         An instance of ``target`` populated from all sources.
     """
-    if env is None:
-        env = os.environ
-
-    # 1. Collect CLI field values from the namespace
-    cli_data: dict[str, Any] = {}
-    _collect_ns_fields(vars(ns), target, prefix="", union_tag=union_tag, result=cli_data)
-
-    # 2. Collect (subpath, path) pairs for all config files
-    file_pairs: list[tuple[str, Path]] = [("", Path(f)) for f in files]
-    if config_flag:
-        file_pairs.extend(("", Path(f)) for f in getattr(ns, config_flag, None) or [])
-        cfg_prefix = f"{config_flag}."
-        for key, val in vars(ns).items():
-            if key.startswith(cfg_prefix):
-                subpath = key[len(cfg_prefix) :]
-                file_pairs.extend((subpath, Path(f)) for f in val or [])
-
-    # 3. Load config files
-    config_data = _load_subpath_files(file_pairs, union_tag)
-
-    # 4. Parse env vars
-    if env_prefix is None:
-        env_data: dict[str, Any] = {}
-        env_configs: list[tuple[str, Path]] = []
-    else:
-        env_data, env_configs = _parse_env(env, env_prefix, env_separator, target)
-    config_data = _deep_merge(config_data, _load_subpath_files(env_configs, union_tag), union_tag=union_tag)
-
-    # 5. Merge: config < env < CLI
-    merged = _deep_merge(config_data, env_data, union_tag=union_tag)
-    merged = _deep_merge(merged, cli_data, union_tag=union_tag)
-
-    # 6. Resolve expressions
+    merged = merge_namespace(
+        target,
+        ns,
+        union_tag=union_tag,
+        config_flag=config_flag,
+        files=files,
+        env=env,
+        env_prefix=env_prefix,
+        env_separator=env_separator,
+    )
     merged = resolve_expressions(merged)
-
-    # 7. Construct
     return construct(_resolve_type(target), merged, union_tag=union_tag)

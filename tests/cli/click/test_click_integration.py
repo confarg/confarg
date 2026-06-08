@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     import pytest
 
+import confarg
 import confarg.cli.click as confargclick
 from confarg.cli import FieldMeta, FlagSpec
 from confarg.cli.argparse._build import build_static_flags
@@ -679,3 +680,125 @@ class TestUnionRootTarget:
         assert len(result_holder) == 1
         assert isinstance(result_holder[0], _RootSQLite)
         assert result_holder[0].dbpath == "/tmp/x.db"
+
+
+# ---------------------------------------------------------------------------
+# merge_context
+# ---------------------------------------------------------------------------
+
+
+class TestMergeContext:
+    """merge_context returns the raw merged dict instead of a constructed instance."""
+
+    def _run_raw(self, dc_type: type, args: list[str], **kw: Any) -> Any:
+        """Run a Click command and return the raw merged dict from merge_context."""
+        result_holder: list[Any] = []
+
+        cmd = click.command()(lambda **kwargs: None)
+        populate_command(dc_type, cmd, config_flag="")
+
+        @click.command()
+        def inner(**kwargs: Any) -> None:
+            ctx = click.get_current_context()
+            result_holder.append(confargclick.merge_context(dc_type, ctx, config_flag="", **kw))
+
+        real_cmd = click.Command(name="cli", callback=inner.callback, params=cmd.params)
+        runner = CliRunner()
+        runner.invoke(real_cmd, args, catch_exceptions=False)
+        return result_holder[0]
+
+    def test_returns_dict(self) -> None:
+        """merge_context returns a dict, not a dataclass instance."""
+        result = self._run_raw(Simple, ["--host", "myhost", "--port", "9090"])
+        assert isinstance(result, dict)
+
+    def test_cli_values_in_dict(self) -> None:
+        """CLI-provided values appear in the returned dict."""
+        result = self._run_raw(Simple, ["--host", "myhost", "--port", "9090"])
+        assert result["host"] == "myhost"
+        assert result["port"] == "9090"
+
+    def test_expressions_preserved(self, tmp_path: Any) -> None:
+        """Expression strings from config files are kept intact (not resolved)."""
+        cfg = tmp_path / "cfg.yaml"
+        cfg.write_text("host: myhost\nport: '${host}'\n")
+        result_holder: list[Any] = []
+
+        cmd = click.command()(lambda **kwargs: None)
+        populate_command(Simple, cmd)
+
+        @click.command()
+        def inner(**kwargs: Any) -> None:
+            ctx = click.get_current_context()
+            result_holder.append(confargclick.merge_context(Simple, ctx, env={}))
+
+        real_cmd = click.Command(name="cli", callback=inner.callback, params=cmd.params)
+        runner = CliRunner()
+        runner.invoke(real_cmd, ["--config", str(cfg)], catch_exceptions=False)
+        assert result_holder[0]["port"] == "${host}"
+
+    def test_round_trip_equivalence(self) -> None:
+        """build(target, merge_context(...)) produces the same instance as from_context(...)."""
+        built_holder: list[Any] = []
+        direct_holder: list[Any] = []
+
+        cmd = click.command()(lambda **kwargs: None)
+        populate_command(Simple, cmd, config_flag="")
+
+        @click.command()
+        def inner(**kwargs: Any) -> None:
+            ctx = click.get_current_context()
+            raw = confargclick.merge_context(Simple, ctx, config_flag="", env={})
+            built_holder.append(confarg.build(Simple, raw))
+            direct_holder.append(confargclick.from_context(Simple, ctx, config_flag="", env={}))
+
+        real_cmd = click.Command(name="cli", callback=inner.callback, params=cmd.params)
+        runner = CliRunner()
+        runner.invoke(real_cmd, ["--host", "myhost", "--port", "9090"], catch_exceptions=False)
+        assert built_holder[0] == direct_holder[0]
+
+    def test_dump_file_from_raw_dict(self, tmp_path: Any) -> None:
+        """dump_file accepts the raw dict returned by merge_context without raising."""
+        out = tmp_path / "out.yaml"
+        result_holder: list[Any] = []
+
+        cmd = click.command()(lambda **kwargs: None)
+        populate_command(Simple, cmd, config_flag="")
+
+        @click.command()
+        def inner(**kwargs: Any) -> None:
+            ctx = click.get_current_context()
+            raw = confargclick.merge_context(Simple, ctx, config_flag="", env={})
+            confarg.dump_file(raw, out)
+            result_holder.append(True)
+
+        real_cmd = click.Command(name="cli", callback=inner.callback, params=cmd.params)
+        runner = CliRunner()
+        runner.invoke(real_cmd, ["--host", "myhost", "--port", "9090"], catch_exceptions=False)
+        assert result_holder
+        assert out.exists()
+
+    def test_dump_file_round_trip_via_instance(self, tmp_path: Any) -> None:
+        """Round-tripping through a built instance gives back the same config."""
+        out = tmp_path / "out.yaml"
+        result_holder: list[Any] = []
+
+        cmd = click.command()(lambda **kwargs: None)
+        populate_command(Simple, cmd, config_flag="")
+
+        @click.command()
+        def inner(**kwargs: Any) -> None:
+            ctx = click.get_current_context()
+            raw = confargclick.merge_context(Simple, ctx, config_flag="", env={})
+            instance = confarg.build(Simple, raw)
+            confarg.dump_file(instance, out)
+            result_holder.append(True)
+
+        real_cmd = click.Command(name="cli", callback=inner.callback, params=cmd.params)
+        runner = CliRunner()
+        runner.invoke(real_cmd, ["--host", "myhost", "--port", "9090"], catch_exceptions=False)
+        assert result_holder
+        assert out.exists()
+        reloaded = confarg.load(Simple, argv=[], files=[out], env={})
+        assert reloaded.host == "myhost"
+        assert reloaded.port == 9090

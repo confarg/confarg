@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 import cyclopts
 import pytest
 
+import confarg
 import confarg.cli.cyclopts as confargcyclopts
 from confarg.cli import FieldMeta, FlagSpec
 from confarg.cli.argparse._build import build_static_flags
@@ -579,3 +580,101 @@ class TestUnionRootTarget:
         result = _run(_RootDBConfig, ["--class", cls_path, "--dbpath", "/tmp/x.db"])
         assert isinstance(result, _RootSQLite)
         assert result.dbpath == "/tmp/x.db"
+
+
+# ---------------------------------------------------------------------------
+# merge_app
+# ---------------------------------------------------------------------------
+
+
+def _make_app() -> cyclopts.App:  # type: ignore[return]  # cyclopts is available
+    return cyclopts.App()
+
+
+class TestMergeApp:
+    """merge_app returns the raw merged dict instead of a constructed instance."""
+
+    def _run_raw(self, dc_type: type, args: list[str], **kw: Any) -> Any:
+        """Populate a fresh App, invoke merge_app with *args*, return the raw dict."""
+        app = _make_app()
+        populate_app(dc_type, app, config_flag="")
+        return confargcyclopts.merge_app(dc_type, app, argv=args, config_flag="", **kw)
+
+    def test_returns_dict(self) -> None:
+        """merge_app returns a dict, not a dataclass instance."""
+        result = self._run_raw(Simple, ["--host", "myhost", "--port", "9090"])
+        assert isinstance(result, dict)
+
+    def test_cli_values_in_dict(self) -> None:
+        """CLI-provided values appear in the returned dict."""
+        result = self._run_raw(Simple, ["--host", "myhost", "--port", "9090"])
+        assert result["host"] == "myhost"
+        assert result["port"] == "9090"
+
+    def test_expressions_preserved(self, tmp_path: Any) -> None:
+        """Expression strings from config files are kept intact (not resolved)."""
+        cfg = tmp_path / "cfg.yaml"
+        cfg.write_text("host: myhost\nport: '${host}'\n")
+        app = _make_app()
+        populate_app(Simple, app)
+        result = confargcyclopts.merge_app(Simple, app, argv=["--config", str(cfg)], env={})
+        assert result["port"] == "${host}"
+
+    def test_round_trip_equivalence(self) -> None:
+        """build(target, merge_app(...)) produces the same instance as from_app(...)."""
+        app1 = _make_app()
+        populate_app(Simple, app1, config_flag="")
+        raw = confargcyclopts.merge_app(
+            Simple,
+            app1,
+            argv=["--host", "myhost", "--port", "9090"],
+            config_flag="",
+            env={},
+        )
+        from_raw = confarg.build(Simple, raw)
+
+        app2 = _make_app()
+        populate_app(Simple, app2, config_flag="")
+        direct = confargcyclopts.from_app(
+            Simple,
+            app2,
+            argv=["--host", "myhost", "--port", "9090"],
+            config_flag="",
+            env={},
+        )
+
+        assert from_raw == direct
+
+    def test_dump_file_from_raw_dict(self, tmp_path: Any) -> None:
+        """dump_file accepts the raw dict returned by merge_app without raising."""
+        out = tmp_path / "out.yaml"
+        app = _make_app()
+        populate_app(Simple, app, config_flag="")
+        raw = confargcyclopts.merge_app(
+            Simple,
+            app,
+            argv=["--host", "myhost", "--port", "9090"],
+            config_flag="",
+            env={},
+        )
+        confarg.dump_file(raw, out)
+        assert out.exists()
+
+    def test_dump_file_round_trip_via_instance(self, tmp_path: Any) -> None:
+        """Round-tripping through a built instance gives back the same config."""
+        out = tmp_path / "out.yaml"
+        app = _make_app()
+        populate_app(Simple, app, config_flag="")
+        raw = confargcyclopts.merge_app(
+            Simple,
+            app,
+            argv=["--host", "myhost", "--port", "9090"],
+            config_flag="",
+            env={},
+        )
+        instance = confarg.build(Simple, raw)
+        confarg.dump_file(instance, out)
+        assert out.exists()
+        reloaded = confarg.load(Simple, argv=[], files=[out], env={})
+        assert reloaded.host == "myhost"
+        assert reloaded.port == 9090
