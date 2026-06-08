@@ -145,21 +145,29 @@ def _collect_ns_union_field(
     union_tag: str,
     result: dict[str, Any],
 ) -> None:
-    """Handle a multi-variant union field: pick up the class-tag and recurse into the resolved variant."""
+    """Handle a multi-variant union field.
+
+    When the class-tag is present, recurse only into the named variant.
+    When it is absent, collect all struct variant fields so structural inference
+    in typedload can select the right one.
+    """
     non_none = _union_args_no_none(resolved)
-    if not any(_is_struct(_resolve_type(v)) for v in non_none):
+    concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
+    if not concrete:
         return
     tag_key = f"{flag}.{union_tag}"
-    if tag_key not in flat:
-        return
-    class_tag = flat[tag_key]
-    _set_nested(result, [*flag.split("."), union_tag], _str_token(class_tag))
-    try:
-        cls = _import_dotted(str(class_tag))
-        if isinstance(cls, type) and _is_struct(_resolve_type(cls)):
-            _collect_ns_fields(flat, cls, flag, union_tag, result)
-    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
-        pass
+    if tag_key in flat:
+        class_tag = flat[tag_key]
+        _set_nested(result, [*flag.split("."), union_tag], _str_token(class_tag))
+        try:
+            cls = _import_dotted(str(class_tag))
+            if isinstance(cls, type) and _is_struct(_resolve_type(cls)):
+                _collect_ns_fields(flat, cls, flag, union_tag, result)
+        except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
+            pass
+    else:
+        for variant in concrete:
+            _collect_ns_fields(flat, variant, flag, union_tag, result)
 
 
 def _collect_ns_inheritance(
@@ -189,8 +197,7 @@ def _collect_ns_inheritance(
             pass
     else:
         direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
-        for sub in direct_subs:
-            _collect_ns_fields(flat, sub, prefix, union_tag, result)
+        _collect_ns_union_root(flat, direct_subs, prefix, union_tag, result)
 
 
 def _collect_ns_namedtuple(

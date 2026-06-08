@@ -511,7 +511,7 @@ def _collect_namedtuple_specs(
     return result
 
 
-def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
+def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913
     flag: str,
     name: str,
     raw_type: Any,
@@ -528,7 +528,20 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
         non_none = _union_args_no_none(resolved)
         concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
         if concrete:
-            return [_build_union_tag_spec(flag, union_tag, concrete, group, group_description)]
+            specs = [_build_union_tag_spec(flag, union_tag, concrete, group, group_description)]
+            existing: set[str] = {specs[0].name}
+            for variant in concrete:
+                for spec in _collect_struct_specs(
+                    variant,
+                    flag,
+                    union_tag,
+                    group=variant.__name__,
+                    group_description=inspect.getdoc(variant) or "",
+                ):
+                    if spec.name not in existing:
+                        specs.append(spec)
+                        existing.add(spec.name)
+            return specs
         cast_types = _scalar_cast_types_in_union(resolved)
         if cast_types:
             help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)

@@ -2721,9 +2721,11 @@ class TestCompletionGaps:
             "config",
             ["--val.class=builtins.int"],
         )
-        # Should not crash and should not add int's (nonexistent) fields
+        # Should not crash; val.x/val.y are already registered by populate_parser
+        # (not added by _pre_extend_parser_for_completion from a non-struct class).
         dests = {a.dest for a in parser._actions}
-        assert "val.x" not in dests
+        assert "val.x" in dests
+        assert "val.class" in dests
 
     def test_pre_extend_parser_bind_flags_exception(self, monkeypatch) -> None:
         """_pre_extend_parser_for_completion swallows exception from _add_callable_bind_flags."""

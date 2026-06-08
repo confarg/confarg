@@ -339,7 +339,7 @@ class TestPreExtendParser:
         assert "--db.port" in flags
 
     def test_cli_class_tag_wins_over_config_file(self, tmp_path) -> None:
-        """Test that CLI class tag takes priority over config file class tag."""
+        """Test that CLI class tag takes priority over config file class tag (no crash)."""
         module = _SQLiteDB.__module__
         cfg = tmp_path / "cfg.toml"
         cfg.write_text(f'[db]\nclass = "{module}._ServerDB"\n')
@@ -351,13 +351,16 @@ class TestPreExtendParser:
             config_flag="config",
             argv=[f"--config={cfg}", f"--db.class={module}._SQLiteDB"],
         )
+        # All variant flags are registered by populate_parser; _pre_extend_parser_for_completion
+        # adds nothing new here since existing_dests guards against duplicates.
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--db.dbpath" in flags
-        assert "--db.host" not in flags
+        assert "--db.host" in flags
 
     def test_bad_class_path_silently_ignored(self) -> None:
-        """Test that a non-importable class path is silently ignored."""
+        """Test that a non-importable class path is silently ignored (no crash)."""
         parser = self._make_parser()
+        flags_before = {s for a in parser._actions for s in a.option_strings}
         _pre_extend_parser_for_completion(
             parser,
             _AppConfig,
@@ -365,9 +368,9 @@ class TestPreExtendParser:
             config_flag="config",
             argv=["--db.class=nonexistent.module.Foo"],
         )
-        flags = {s for a in parser._actions for s in a.option_strings}
-        # No extra flags, no crash
-        assert "--db.host" not in flags
+        flags_after = {s for a in parser._actions for s in a.option_strings}
+        # No extra flags beyond what populate_parser already registered, no crash
+        assert flags_after == flags_before
 
     def test_no_argv_no_extension(self) -> None:
         """Test that empty argv leaves the parser unchanged."""
