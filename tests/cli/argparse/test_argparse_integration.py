@@ -928,6 +928,23 @@ class TestInheritanceDispatch:
         assert result.host == "db.example.com"
         assert result.port == 5432
 
+    def test_from_namespace_sqlite_no_class_tag(self) -> None:
+        """from_namespace infers the correct subclass from field presence alone."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(_BaseDB, parser, config_flag="")
+        ns = parser.parse_args(["--dbpath", "/var/db/app.sqlite"])
+        result = from_namespace(_BaseDB, ns, env={})
+        assert isinstance(result, _SQLiteDB)
+        assert result.dbpath == "/var/db/app.sqlite"
+
+    def test_from_namespace_base_fallback_no_class_tag(self) -> None:
+        """from_namespace falls back to the base class when no subclass fields are given."""
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        populate_parser(_BaseDB, parser, config_flag="")
+        ns = parser.parse_args([])
+        result = from_namespace(_BaseDB, ns, env={})
+        assert result == _BaseDB()
+
 
 class TestMakeParser:
     """make_parser creates a pre-populated ArgumentParser with safe defaults."""

@@ -157,12 +157,23 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
 
 
 def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) -> Any:
-    """Dispatch struct construction, handling the union_tag class-path variant."""
+    """Dispatch struct construction, handling the union_tag class-path variant.
+
+    When no union_tag is present and the type has direct dataclass subclasses,
+    attempt structural disambiguation to infer the correct subclass.
+    """
     if not isinstance(data, dict):
         msg = f"Cannot construct {tp.__name__} at '{path}': expected dict, got {_src_type(data)} {data!r}"
         raise TypeCoercionError(msg)
     if union_tag in data:
         return _construct_by_class_path(tp, data, path, union_tag)
+    direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
+    if direct_subs:
+        matches = _disambiguate_struct(direct_subs, data, union_tag)
+        if len(matches) == 1:
+            return _construct_struct(matches[0], data, path, union_tag)
+        if len(matches) > 1:
+            raise AmbiguousUnionError(_ambiguous_union_msg(matches, data, path, union_tag))
     return _construct_struct(tp, data, path, union_tag)
 
 

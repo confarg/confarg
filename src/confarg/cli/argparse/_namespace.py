@@ -169,23 +169,28 @@ def _collect_ns_inheritance(
     union_tag: str,
     result: dict[str, Any],
 ) -> None:
-    """Handle inheritance dispatch: if the union_tag key is in flat at this level, recurse into the named subclass.
+    """Handle inheritance dispatch for a base class with subclasses.
 
-    The `cls is not tp` guard prevents infinite recursion when the subclass
-    itself re-enters this function and still sees the same tag key.
+    When the union_tag key is explicitly present in flat, recurse only into
+    the named subclass (the `cls is not tp` guard prevents infinite recursion).
+    When it is absent, collect fields for all direct struct subclasses so that
+    structural inference in typedload can pick the right one.
     """
     tag_key = f"{prefix}.{union_tag}" if prefix else union_tag
-    if tag_key not in flat:
-        return
-    class_tag = flat[tag_key]
-    try:
-        cls = _import_dotted(str(class_tag))
-        if isinstance(cls, type) and _is_struct(_resolve_type(cls)) and cls is not tp:
-            tag_path = ([*prefix.split(".")] if prefix else []) + [union_tag]
-            _set_nested(result, tag_path, _str_token(class_tag))
-            _collect_ns_fields(flat, cls, prefix, union_tag, result)
-    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
-        pass
+    if tag_key in flat:
+        class_tag = flat[tag_key]
+        try:
+            cls = _import_dotted(str(class_tag))
+            if isinstance(cls, type) and _is_struct(_resolve_type(cls)) and cls is not tp:
+                tag_path = ([*prefix.split(".")] if prefix else []) + [union_tag]
+                _set_nested(result, tag_path, _str_token(class_tag))
+                _collect_ns_fields(flat, cls, prefix, union_tag, result)
+        except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
+            pass
+    else:
+        direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
+        for sub in direct_subs:
+            _collect_ns_fields(flat, sub, prefix, union_tag, result)
 
 
 def _collect_ns_namedtuple(
