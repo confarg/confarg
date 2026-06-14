@@ -26,14 +26,14 @@ def merge_namespace(  # noqa: PLR0913
     target: object,
     ns: argparse.Namespace,
     *,
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
-    files: Sequence[str | Path] = (),
+    argv: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = "__",
+    env_separator: str = _defaults.ENV_SEPARATOR,
+    config_flag: str = _defaults.CONFIG_FLAG,
+    files: Sequence[str | Path] = (),
     env_config: str | None = None,
-    argv: Sequence[str] | None = None,
+    union_tag: str = _defaults.UNION_TAG,
 ) -> dict[str, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
@@ -45,13 +45,9 @@ def merge_namespace(  # noqa: PLR0913
     Args:
         target: The dataclass type to construct.
         ns: The Namespace returned by ``ArgumentParser.parse_args()``.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
-        config_flag: Name of the config-file attribute on ``ns`` (default
-            ``"config"``).  Must match the ``config_flag`` passed to
-            :func:`populate_parser`.  Subkey flags ``--config.<subpath>``
-            (registered automatically by :func:`populate_parser`) are also
-            consumed.  Set to ``""`` to ignore all config-file attributes.
-        files: Additional root-level config file paths to load (lowest priority).
+        argv: CLI argument list used to determine config-file loading order.
+            Defaults to ``sys.argv[1:]``.  Pass an explicit list when
+            ``parse_args()`` was called with a custom argv.
         env: Environment variable mapping.  Defaults to ``os.environ``.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
@@ -59,14 +55,25 @@ def merge_namespace(  # noqa: PLR0913
             to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
             read only vars with that prefix.
         env_separator: Separator used to split env var names into nested keys.
+        config_flag: Name of the config-file attribute on ``ns`` (default
+            ``"config"``).  Must match the ``config_flag`` passed to
+            :func:`populate_parser`.  Subkey flags ``--config.<subpath>``
+            (registered automatically by :func:`populate_parser`) are also
+            consumed.  Set to ``""`` to ignore all config-file attributes.
+        files: Additional root-level config file paths to load (lowest priority).
         env_config: Name of an env var whose value is a config file path to load.
             Loaded after ``files`` but before CLI ``--config`` files.
-        argv: CLI argument list used to determine config-file loading order.
-            Defaults to ``sys.argv[1:]``.  Pass an explicit list when
-            ``parse_args()`` was called with a custom argv.
+        union_tag: Discriminator field name (same as :func:`confarg.load`).
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
+
+    Config file loading order:
+        All config files share the same priority level (below inline env vars and
+        CLI args).  Within that level they are loaded left-to-right so that later
+        sources win on conflict: ``files`` first, then ``env_config``, then
+        ``<config_flag>`` env vars (shallower subpaths first), then CLI
+        ``--config`` / ``--config.subpath`` flags in left-to-right order.
     """
     if env is None:
         env = os.environ
@@ -97,14 +104,14 @@ def from_namespace(  # noqa: PLR0913
     target: object,
     ns: argparse.Namespace,
     *,
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
-    files: Sequence[str | Path] = (),
+    argv: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = "__",
+    env_separator: str = _defaults.ENV_SEPARATOR,
+    config_flag: str = _defaults.CONFIG_FLAG,
+    files: Sequence[str | Path] = (),
     env_config: str | None = None,
-    argv: Sequence[str] | None = None,
+    union_tag: str = _defaults.UNION_TAG,
 ) -> Any:
     """Construct a dataclass instance from an argparse :class:`~argparse.Namespace`.
 
@@ -120,13 +127,9 @@ def from_namespace(  # noqa: PLR0913
     Args:
         target: The dataclass type to construct.
         ns: The Namespace returned by ``ArgumentParser.parse_args()``.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
-        config_flag: Name of the config-file attribute on ``ns`` (default
-            ``"config"``).  Must match the ``config_flag`` passed to
-            :func:`populate_parser`.  Subkey flags ``--config.<subpath>``
-            (registered automatically by :func:`populate_parser`) are also
-            consumed.  Set to ``""`` to ignore all config-file attributes.
-        files: Additional root-level config file paths to load (lowest priority).
+        argv: CLI argument list used to determine config-file loading order.
+            Defaults to ``sys.argv[1:]``.  Pass an explicit list when
+            ``parse_args()`` was called with a custom argv.
         env: Environment variable mapping.  Defaults to ``os.environ``.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
@@ -134,11 +137,15 @@ def from_namespace(  # noqa: PLR0913
             to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
             read only vars with that prefix.
         env_separator: Separator used to split env var names into nested keys.
+        config_flag: Name of the config-file attribute on ``ns`` (default
+            ``"config"``).  Must match the ``config_flag`` passed to
+            :func:`populate_parser`.  Subkey flags ``--config.<subpath>``
+            (registered automatically by :func:`populate_parser`) are also
+            consumed.  Set to ``""`` to ignore all config-file attributes.
+        files: Additional root-level config file paths to load (lowest priority).
         env_config: Name of an env var whose value is a config file path to load.
             Loaded after ``files`` but before CLI ``--config`` files.
-        argv: CLI argument list used to determine config-file loading order.
-            Defaults to ``sys.argv[1:]``.  Pass an explicit list when
-            ``parse_args()`` was called with a custom argv.
+        union_tag: Discriminator field name (same as :func:`confarg.load`).
 
     Returns:
         An instance of ``target`` populated from all sources.
@@ -146,13 +153,13 @@ def from_namespace(  # noqa: PLR0913
     merged = merge_namespace(
         target,
         ns,
-        union_tag=union_tag,
-        config_flag=config_flag,
-        files=files,
+        argv=argv,
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
+        config_flag=config_flag,
+        files=files,
         env_config=env_config,
-        argv=argv,
+        union_tag=union_tag,
     )
     return build(target, merged, union_tag=union_tag)

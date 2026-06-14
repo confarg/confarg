@@ -721,7 +721,7 @@ def build_static_flags(
     target: object,
     *,
     union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
+    config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
 ) -> list[FlagSpec]:
     """Build the collection of static CLI flags for a dataclass type.
@@ -800,7 +800,7 @@ def build_dynamic_flags(
     argv: Sequence[str],
     *,
     union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
+    config_flag: str = _defaults.CONFIG_FLAG,
 ) -> list[FlagSpec]:
     """Build CLI flags discoverable only from argv.
 

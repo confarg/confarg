@@ -34,9 +34,9 @@ def merge(  # noqa: PLR0913
     argv: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = "__",
+    env_separator: str = _defaults.ENV_SEPARATOR,
     cli_prefix: str = "",
-    config_flag: str = "config",
+    config_flag: str = _defaults.CONFIG_FLAG,
     files: Sequence[str | Path] = (),
     env_config: str | None = None,
     union_tag: str = _defaults.UNION_TAG,
@@ -119,7 +119,7 @@ def build[T](
     target: type[T] | TypeAliasType | UnionType,
     data: dict[str, Any],
     *,
-    union_tag: str = "class",
+    union_tag: str = _defaults.UNION_TAG,
 ) -> T:
     """Resolve ``${...}`` expressions and construct the target type from a merged config dict.
 
@@ -194,7 +194,7 @@ def from_dict[T](
     target: type[T] | TypeAliasType | UnionType,
     data: dict[str, Any],
     *,
-    union_tag: str = "class",
+    union_tag: str = _defaults.UNION_TAG,
 ) -> T:
     """Construct a typed object from an already-resolved config dict.
 
@@ -252,9 +252,9 @@ def load[T](  # noqa: PLR0913
     argv: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = "__",
+    env_separator: str = _defaults.ENV_SEPARATOR,
     cli_prefix: str = "",
-    config_flag: str = "config",
+    config_flag: str = _defaults.CONFIG_FLAG,
     files: Sequence[str | Path] = (),
     env_config: str | None = None,
     union_tag: str = _defaults.UNION_TAG,
@@ -330,7 +330,7 @@ def _strip_str_tokens(value: Any) -> Any:
 def dump(
     value: Any,
     *,
-    union_tag: str = "class",
+    union_tag: str = _defaults.UNION_TAG,
     tag_policy: TagPolicy = "auto",
 ) -> dict[str, Any]:
     """Serialize a dataclass instance to a config-compatible plain dict.
@@ -372,7 +372,7 @@ def dump_file(
     value: Any,
     path: str | Path,
     *,
-    union_tag: str = "class",
+    union_tag: str = _defaults.UNION_TAG,
     tag_policy: TagPolicy = "auto",
 ) -> None:
     """Serialize and write to a config file.

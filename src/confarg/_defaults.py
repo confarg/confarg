@@ -23,3 +23,16 @@ An empty prefix (``""``) is intentionally not the default: env vars are
 global and shared across all processes, so reading *all* of them without a
 filter would be unsafe in any multi-app environment.
 """
+
+ENV_SEPARATOR: Final[str] = "__"
+"""Default separator splitting env var names into nested keys.
+
+A double underscore so that single underscores remain usable inside
+field names (``MYAPP_DB__MAX_CONNECTIONS`` → ``db.max_connections``).
+"""
+
+CONFIG_FLAG: Final[str] = "config"
+"""Default name of the config-file CLI flag and env-pointer segment.
+
+``""`` disables config-file handling entirely.
+"""

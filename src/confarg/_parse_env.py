@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+from confarg import _defaults
 from confarg._merge import DICT_DELETE, _accumulate_list_delete, _set_nested
 from confarg._types import (
     _dict_kv,
@@ -300,7 +301,7 @@ def _parse_env(
     prefix: str,
     separator: str,
     target: Any,
-    config_flag: str = "config",
+    config_flag: str = _defaults.CONFIG_FLAG,
 ) -> tuple[dict[str, Any], list[tuple[str, Path]]]:
     """Parse environment variables into a nested dict matching the target type.
 

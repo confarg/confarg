@@ -145,7 +145,7 @@ def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command s
     app: cyclopts.App,
     *,
     union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = "config",
+    config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
     argv: Sequence[str] | None = None,
 ) -> None:
