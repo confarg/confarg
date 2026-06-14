@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,7 @@ from confarg import _defaults
 from confarg._files import _load_subpath_files
 from confarg._import import _import_dotted
 from confarg._merge import _deep_merge, _set_nested
+from confarg._parse_cli import _collect_config_file_pairs
 from confarg._parse_env import _parse_env
 from confarg._types import (
     _callable_return_type,
@@ -345,6 +347,7 @@ def merge_namespace(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = "__",
+    argv: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
@@ -370,6 +373,9 @@ def merge_namespace(  # noqa: PLR0913
             to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
             read only vars with that prefix.
         env_separator: Separator used to split env var names into nested keys.
+        argv: CLI argument list used to determine config-file loading order.
+            Defaults to ``sys.argv[1:]``.  Pass an explicit list when
+            ``parse_args()`` was called with a custom argv.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
@@ -381,15 +387,13 @@ def merge_namespace(  # noqa: PLR0913
     cli_data: dict[str, Any] = {}
     _collect_ns_fields(vars(ns), target, prefix="", union_tag=union_tag, result=cli_data)
 
-    # 2. Collect (subpath, path) pairs for all config files
+    # 2. Collect (subpath, path) pairs for all config files in left-to-right CLI order.
+    #    Scanning argv directly preserves interleaved ordering (e.g. --config.db a.yaml
+    #    --config b.yaml loads a.yaml first, then b.yaml, so b.yaml wins on conflict).
+    _argv = sys.argv[1:] if argv is None else list(argv)
     file_pairs: list[tuple[str, Path]] = [("", Path(f)) for f in files]
     if config_flag:
-        file_pairs.extend(("", Path(f)) for f in getattr(ns, config_flag, None) or [])
-        cfg_prefix = f"{config_flag}."
-        for key, val in vars(ns).items():
-            if key.startswith(cfg_prefix):
-                subpath = key[len(cfg_prefix) :]
-                file_pairs.extend((subpath, Path(f)) for f in val or [])
+        file_pairs.extend(_collect_config_file_pairs(_argv, config_flag))
 
     # 3. Load config files
     config_data = _load_subpath_files(file_pairs, union_tag)
@@ -417,6 +421,7 @@ def from_namespace(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = "__",
+    argv: Sequence[str] | None = None,
 ) -> Any:
     """Construct a dataclass instance from an argparse :class:`~argparse.Namespace`.
 
@@ -446,6 +451,9 @@ def from_namespace(  # noqa: PLR0913
             to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
             read only vars with that prefix.
         env_separator: Separator used to split env var names into nested keys.
+        argv: CLI argument list used to determine config-file loading order.
+            Defaults to ``sys.argv[1:]``.  Pass an explicit list when
+            ``parse_args()`` was called with a custom argv.
 
     Returns:
         An instance of ``target`` populated from all sources.
@@ -459,6 +467,7 @@ def from_namespace(  # noqa: PLR0913
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
+        argv=argv,
     )
     merged = resolve_expressions(merged)
     return construct(_resolve_type(target), merged, union_tag=union_tag)

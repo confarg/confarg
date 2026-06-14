@@ -2774,16 +2774,17 @@ class TestClickContextGaps:
         # _CovOuter.inner is a struct field → populate_command registers --config.inner
         cfg = tmp_path / "inner.json"
         cfg.write_text(json.dumps({"value": "from_subpath"}))
+        args = [f"--config.inner={cfg}"]
 
         @click.command()
         def cmd(**_kwargs):
             ctx = click.get_current_context()
-            result = from_context(_CovOuter, ctx, env={}, env_prefix=None)
+            result = from_context(_CovOuter, ctx, env={}, env_prefix=None, argv=args)
             assert result.inner.value == "from_subpath"
 
         populate_command(_CovOuter, cmd)
         runner = CliRunner()
-        r = runner.invoke(cmd, [f"--config.inner={cfg}"])
+        r = runner.invoke(cmd, args)
         assert r.exit_code == 0, r.output
 
     def test_from_context_env_configs(self, tmp_path: Path) -> None:

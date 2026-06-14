@@ -383,6 +383,40 @@ class TestFromApp:
         assert cfg.input == "yes"
         assert type(cfg.input) is str
 
+    def test_left_to_right_subkey_then_root(self, tmp_path: Path) -> None:
+        """--config.db db.yaml --config root.yaml: root file (rightmost) wins for db."""
+        root_cfg = tmp_path / "root.yaml"
+        root_cfg.write_text("db:\n  host: root_host\n  port: 1111\ndebug: true\n")
+        db_cfg = tmp_path / "db.yaml"
+        db_cfg.write_text("host: db_host\nport: 5555\n")
+
+        app = _make_app()
+        populate_app(Nested, app)
+        cfg = confargcyclopts.from_app(
+            Nested,
+            app,
+            argv=["--config.db", str(db_cfg), "--config", str(root_cfg)],
+        )
+        assert cfg.db.host == "root_host"  # root.yaml (rightmost) wins
+        assert cfg.db.port == 1111
+
+    def test_left_to_right_root_then_subkey(self, tmp_path: Path) -> None:
+        """--config root.yaml --config.db db.yaml: subkey file (rightmost) wins for db."""
+        root_cfg = tmp_path / "root.yaml"
+        root_cfg.write_text("db:\n  host: root_host\n  port: 1111\ndebug: true\n")
+        db_cfg = tmp_path / "db.yaml"
+        db_cfg.write_text("host: db_host\nport: 5555\n")
+
+        app = _make_app()
+        populate_app(Nested, app)
+        cfg = confargcyclopts.from_app(
+            Nested,
+            app,
+            argv=["--config", str(root_cfg), "--config.db", str(db_cfg)],
+        )
+        assert cfg.db.host == "db_host"  # db.yaml (rightmost) wins
+        assert cfg.db.port == 5555
+
 
 # ---------------------------------------------------------------------------
 # Bool convention

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._files import _load_subpath_files
 from confarg._merge import _deep_merge
+from confarg._parse_cli import _collect_config_file_pairs
 from confarg._parse_env import _parse_env
 from confarg._types import _resolve_type
 from confarg.cli.argparse._namespace import _collect_ns_fields
@@ -99,15 +100,11 @@ def merge_app(  # noqa: PLR0913
     cli_data: dict[str, Any] = {}
     _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data)
 
-    # 2. Collect (subpath, path) pairs for all config files
+    # 2. Collect (subpath, path) pairs for all config files in left-to-right CLI order.
+    _argv = list(sys.argv[1:]) if argv is None else list(argv)
     file_pairs: list[tuple[str, Path]] = [("", Path(f)) for f in files]
     if config_flag:
-        file_pairs.extend(("", Path(f)) for f in flat.get(config_flag) or [])
-        cfg_prefix = f"{config_flag}."
-        for key, val in flat.items():
-            if key.startswith(cfg_prefix):
-                subpath = key[len(cfg_prefix) :]
-                file_pairs.extend((subpath, Path(f)) for f in val or [])
+        file_pairs.extend(_collect_config_file_pairs(_argv, config_flag))
 
     # 3. Load config files
     config_data = _load_subpath_files(file_pairs, union_tag)

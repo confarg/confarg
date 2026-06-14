@@ -751,8 +751,9 @@ class TestConfigFileSupport:
         cfg.write_text('host = "from_file"\nport = 1234\n')
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
-        ns = parser.parse_args(["--config", str(cfg)])
-        result = from_namespace(Simple, ns, env={})
+        args = ["--config", str(cfg)]
+        ns = parser.parse_args(args)
+        result = from_namespace(Simple, ns, env={}, argv=args)
         assert result.host == "from_file"
         assert result.port == 1234
 
@@ -773,8 +774,9 @@ class TestConfigFileSupport:
         cfg.write_text('host = "from_file"\nport = 1111\n')
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
-        ns = parser.parse_args(["--config", str(cfg), "--port", "2222"])
-        result = from_namespace(Simple, ns, env={})
+        args = ["--config", str(cfg), "--port", "2222"]
+        ns = parser.parse_args(args)
+        result = from_namespace(Simple, ns, env={}, argv=args)
         assert result.host == "from_file"
         assert result.port == 2222
 
@@ -784,8 +786,9 @@ class TestConfigFileSupport:
         cfg.write_text('host = "from_file"\nport = 1111\n')
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
-        ns = parser.parse_args(["--config", str(cfg)])
-        result = from_namespace(Simple, ns, env={"CONFARG_PORT": "3333"}, env_prefix="CONFARG_")
+        args = ["--config", str(cfg)]
+        ns = parser.parse_args(args)
+        result = from_namespace(Simple, ns, env={"CONFARG_PORT": "3333"}, env_prefix="CONFARG_", argv=args)
         assert result.host == "from_file"
         assert result.port == 3333
 
@@ -795,8 +798,9 @@ class TestConfigFileSupport:
         cfg.write_text('host = "from_file"\nport = 1111\n')
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
-        ns = parser.parse_args(["--config", str(cfg)])
-        result = from_namespace(Simple, ns, env={"PORT": "9999"})
+        args = ["--config", str(cfg)]
+        ns = parser.parse_args(args)
+        result = from_namespace(Simple, ns, env={"PORT": "9999"}, argv=args)
         assert result.port == 1111
 
     def test_multiple_config_files_merged(self, tmp_path) -> None:
@@ -807,8 +811,9 @@ class TestConfigFileSupport:
         cfg2.write_text("port = 2000\n")
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
-        ns = parser.parse_args(["--config", str(cfg1), str(cfg2)])
-        result = from_namespace(Simple, ns, env={})
+        args = ["--config", str(cfg1), str(cfg2)]
+        ns = parser.parse_args(args)
+        result = from_namespace(Simple, ns, env={}, argv=args)
         assert result.host == "base"
         assert result.port == 2000
 
@@ -826,8 +831,9 @@ class TestConfigFileSupport:
         db_cfg.write_text('host = "db_host"\nport = 5555\n')
         parser = argparse.ArgumentParser()
         populate_parser(AppConfig, parser)
-        ns = parser.parse_args(["--config.db", str(db_cfg)])
-        result = from_namespace(AppConfig, ns, env={})
+        args = ["--config.db", str(db_cfg)]
+        ns = parser.parse_args(args)
+        result = from_namespace(AppConfig, ns, env={}, argv=args)
         assert result.db.host == "db_host"
         assert result.db.port == 5555
 
@@ -839,20 +845,47 @@ class TestConfigFileSupport:
         db_cfg.write_text('host = "from_file"\nport = 1111\n')
         parser = argparse.ArgumentParser()
         populate_parser(AppConfig, parser)
-        ns = parser.parse_args(
-            [
-                "--config",
-                str(root_cfg),
-                "--config.db",
-                str(db_cfg),
-                "--db.port",
-                "9999",
-            ],
-        )
-        result = from_namespace(AppConfig, ns, env={})
+        args = [
+            "--config",
+            str(root_cfg),
+            "--config.db",
+            str(db_cfg),
+            "--db.port",
+            "9999",
+        ]
+        ns = parser.parse_args(args)
+        result = from_namespace(AppConfig, ns, env={}, argv=args)
         assert result.debug is True
         assert result.db.host == "from_file"
         assert result.db.port == 9999  # CLI overrides file
+
+    def test_left_to_right_subkey_then_root(self, tmp_path) -> None:
+        """--config.db db.yaml --config root.yaml: root file (rightmost) wins for db."""
+        root_cfg = tmp_path / "root.toml"
+        root_cfg.write_text('debug = true\n[db]\nhost = "root_host"\nport = 1111\n')
+        db_cfg = tmp_path / "db.toml"
+        db_cfg.write_text('host = "db_host"\nport = 5555\n')
+        parser = argparse.ArgumentParser()
+        populate_parser(AppConfig, parser)
+        args = ["--config.db", str(db_cfg), "--config", str(root_cfg)]
+        ns = parser.parse_args(args)
+        result = from_namespace(AppConfig, ns, env={}, argv=args)
+        assert result.db.host == "root_host"  # root.yaml (rightmost) wins
+        assert result.db.port == 1111
+
+    def test_left_to_right_root_then_subkey(self, tmp_path) -> None:
+        """--config root.yaml --config.db db.yaml: subkey file (rightmost) wins for db."""
+        root_cfg = tmp_path / "root.toml"
+        root_cfg.write_text('debug = true\n[db]\nhost = "root_host"\nport = 1111\n')
+        db_cfg = tmp_path / "db.toml"
+        db_cfg.write_text('host = "db_host"\nport = 5555\n')
+        parser = argparse.ArgumentParser()
+        populate_parser(AppConfig, parser)
+        args = ["--config", str(root_cfg), "--config.db", str(db_cfg)]
+        ns = parser.parse_args(args)
+        result = from_namespace(AppConfig, ns, env={}, argv=args)
+        assert result.db.host == "db_host"  # db.yaml (rightmost) wins
+        assert result.db.port == 5555
 
     def test_subkey_config_no_deep_flags(self) -> None:
         """--config.<field> flags are generated only for direct fields, not recursively."""
@@ -1068,8 +1101,9 @@ class TestMergeNamespace:
         cfg.write_text("host: myhost\nport: '${host}'\n")
         parser = argparse.ArgumentParser(allow_abbrev=False)
         populate_parser(Simple, parser)
-        ns = parser.parse_args(["--config", str(cfg)])
-        result = merge_namespace(Simple, ns, env={})
+        args = ["--config", str(cfg)]
+        ns = parser.parse_args(args)
+        result = merge_namespace(Simple, ns, env={}, argv=args)
         assert result["port"] == "${host}"
 
     def test_round_trip_equivalence(self) -> None:

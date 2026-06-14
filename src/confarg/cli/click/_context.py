@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -20,6 +21,7 @@ from click import ParameterSource
 from confarg import _defaults
 from confarg._files import _load_subpath_files
 from confarg._merge import _deep_merge
+from confarg._parse_cli import _collect_config_file_pairs
 from confarg._parse_env import _parse_env
 from confarg._types import _resolve_type
 from confarg.cli.argparse._namespace import _collect_ns_fields
@@ -53,6 +55,7 @@ def merge_context(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = "__",
+    argv: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
@@ -76,6 +79,10 @@ def merge_context(  # noqa: PLR0913
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
             which disables environment variable parsing entirely.
         env_separator: Separator used to split env var names into nested keys.
+        argv: CLI argument list used to determine config-file loading order.
+            Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
+            command was invoked with a custom argv (e.g. in tests via
+            :func:`click.testing.CliRunner`).
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
@@ -89,15 +96,11 @@ def merge_context(  # noqa: PLR0913
     cli_data: dict[str, Any] = {}
     _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data)
 
-    # 2. Collect (subpath, path) pairs for all config files
+    # 2. Collect (subpath, path) pairs for all config files in left-to-right CLI order.
+    _argv = sys.argv[1:] if argv is None else list(argv)
     file_pairs: list[tuple[str, Path]] = [("", Path(f)) for f in files]
     if config_flag:
-        file_pairs.extend(("", Path(f)) for f in flat.get(config_flag) or [])
-        cfg_prefix = f"{config_flag}."
-        for key, val in flat.items():
-            if key.startswith(cfg_prefix):
-                subpath = key[len(cfg_prefix) :]
-                file_pairs.extend((subpath, Path(f)) for f in val or [])
+        file_pairs.extend(_collect_config_file_pairs(_argv, config_flag))
 
     # 3. Load config files
     config_data = _load_subpath_files(file_pairs, union_tag)
@@ -125,6 +128,7 @@ def from_context(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = "__",
+    argv: Sequence[str] | None = None,
 ) -> Any:
     """Construct a dataclass instance from a Click :class:`~click.Context`.
 
@@ -152,6 +156,10 @@ def from_context(  # noqa: PLR0913
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
             which disables environment variable parsing entirely.
         env_separator: Separator used to split env var names into nested keys.
+        argv: CLI argument list used to determine config-file loading order.
+            Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
+            command was invoked with a custom argv (e.g. in tests via
+            :func:`click.testing.CliRunner`).
 
     Returns:
         An instance of ``target`` populated from all sources.
@@ -165,6 +173,7 @@ def from_context(  # noqa: PLR0913
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
+        argv=argv,
     )
     merged = resolve_expressions(merged)
     return construct(_resolve_type(target), merged, union_tag=union_tag)
