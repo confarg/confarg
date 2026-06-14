@@ -5,23 +5,426 @@
 """Contract tests: every CLI integration must behave exactly like ``confarg.load()``.
 
 All tests here run against the parametrised ``loader`` fixture (vanilla,
-argparse, click, cyclopts).  They pin the behaviors that historically diverged
-between the vanilla pipeline and the CLI adapters before both were routed
-through ``confarg._pipeline._merge_sources``.
+argparse, click, cyclopts) or one of its subsets.  Behavior shared by the
+integrations belongs here, written once; only genuinely framework-specific
+behavior (help text, registration idioms, completion) stays in the per-backend
+test directories.
+
+List-field CLI syntax intentionally differs between integrations and stays
+visible: ``TestListSpaceSeparated`` runs on vanilla/argparse/cyclopts and
+``TestListRepeatedFlags`` on click/cyclopts.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import dataclasses
+import math
+from dataclasses import dataclass
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Literal
 
+import pytest
+
+import confarg
+from confarg.cli.argparse._build import build_static_flags
+from confarg.exceptions import MissingFieldError, TypeCoercionError
 from tests.conftest import AppConfig, CacheConfig, DbConfig, make_target
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from tests._loaders import ConfargLoader
+
+# ---------------------------------------------------------------------------
+# Shared dataclasses
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Simple:
+    """Simple flat dataclass with defaults."""
+
+    host: str = "localhost"
+    port: int = 8080
+
+
+@dataclass
+class Nested:
+    """Dataclass with a nested struct field."""
+
+    db: Simple = dataclasses.field(default_factory=Simple)
+    debug: bool = False
+
+
+@dataclass
+class WithList:
+    """Dataclass with a list field."""
+
+    tags: list[str] = dataclasses.field(default_factory=list)
+
+
+@dataclass
+class WithOptional:
+    """Dataclass with an optional field."""
+
+    name: str = "default"
+    label: str | None = None
+
+
+class Color(Enum):
+    """Color enumeration for enum tests."""
+
+    RED = "red"
+    GREEN = "green"
+    BLUE = "blue"
+
+
+@dataclass
+class WithEnum:
+    """Dataclass with an Enum field."""
+
+    color: Color = Color.RED
+
+
+@dataclass
+class WithLiteral:
+    """Dataclass with a Literal field."""
+
+    level: Literal["debug", "info", "warning"] = "info"
+
+
+@dataclass
+class _WithStrFloat:
+    input: str | float
+
+
+@dataclass
+class _WithStrBool:
+    input: str | bool
+
+
+@dataclass
+class _BaseDB:
+    """Abstract base database config (inheritance dispatch)."""
+
+
+@dataclass
+class _SQLiteDB(_BaseDB):
+    dbpath: str
+
+
+@dataclass
+class _ServerDB(_BaseDB):
+    host: str
+    port: int
+
+
+@dataclass
+class _RootSQLite:
+    """SQLite config for union-root tests."""
+
+    dbpath: str
+
+
+@dataclass
+class _RootDBServer:
+    """DB server config for union-root tests."""
+
+    host: str
+    port: int
+    name: str
+
+
+_RootDBConfig: Any = _RootSQLite | _RootDBServer
+
+
+# ---------------------------------------------------------------------------
+# Loading basics
+# ---------------------------------------------------------------------------
+
+
+class TestLoadContract:
+    """Core load behavior every integration must share."""
+
+    def test_scalar_values(self, loader: ConfargLoader) -> None:
+        """CLI values are coerced to the field types."""
+        cfg = loader.load(Simple, argv=["--host", "myhost", "--port", "9090"], env={})
+        assert cfg.host == "myhost"
+        assert cfg.port == 9090
+
+    def test_defaults_used_when_not_provided(self, loader: ConfargLoader) -> None:
+        """Omitted options fall back to dataclass defaults."""
+        cfg = loader.load(Simple, argv=[], env={})
+        assert cfg.host == "localhost"
+        assert cfg.port == 8080
+
+    def test_only_cli_values_override_defaults(self, loader: ConfargLoader) -> None:
+        """Provided options override defaults; omitted ones keep them."""
+        cfg = loader.load(Simple, argv=["--host", "explicit"], env={})
+        assert cfg.host == "explicit"
+        assert cfg.port == 8080
+
+    def test_nested(self, loader: ConfargLoader) -> None:
+        """Dotted options are nested into the correct sub-struct."""
+        cfg = loader.load(Nested, argv=["--db.host", "db1", "--debug", "true"], env={})
+        assert cfg.db.host == "db1"
+        assert cfg.debug is True
+
+    def test_missing_required_raises(self, loader: ConfargLoader) -> None:
+        """A required field absent from all sources raises MissingFieldError."""
+        with pytest.raises(MissingFieldError):
+            loader.load(DbConfig, argv=[], env={})
+
+    def test_optional_field_absent(self, loader: ConfargLoader) -> None:
+        """Optional fields default to None when absent."""
+        cfg = loader.load(WithOptional, argv=[], env={})
+        assert cfg.name == "default"
+        assert cfg.label is None
+
+    def test_optional_field_provided(self, loader: ConfargLoader) -> None:
+        """Optional fields are set when provided."""
+        cfg = loader.load(WithOptional, argv=["--label", "hello"], env={})
+        assert cfg.label == "hello"
+
+    def test_enum_by_value(self, loader: ConfargLoader) -> None:
+        """Enum fields accept enum values (not just names)."""
+        cfg = loader.load(WithEnum, argv=["--color", "blue"], env={})
+        assert cfg.color is Color.BLUE
+
+    def test_literal_field(self, loader: ConfargLoader) -> None:
+        """Literal fields accept their member values."""
+        cfg = loader.load(WithLiteral, argv=["--level", "warning"], env={})
+        assert cfg.level == "warning"
+
+    def test_env_vars(self, loader: ConfargLoader) -> None:
+        """Environment variables are merged at lower priority than CLI."""
+        cfg = loader.load(
+            Simple,
+            argv=[],
+            env={"MYAPP_HOST": "envhost", "MYAPP_PORT": "1234"},
+            env_prefix="MYAPP_",
+        )
+        assert cfg.host == "envhost"
+        assert cfg.port == 1234
+
+    def test_cli_overrides_env(self, loader: ConfargLoader) -> None:
+        """CLI values have higher priority than env vars."""
+        cfg = loader.load(
+            Simple,
+            argv=["--host", "clihost"],
+            env={"MYAPP_HOST": "envhost"},
+            env_prefix="MYAPP_",
+        )
+        assert cfg.host == "clihost"
+
+    def test_env_disabled_by_default(self, loader: ConfargLoader) -> None:
+        """Env vars are ignored when env_prefix is None (the default)."""
+        cfg = loader.load(Simple, argv=[], env={"HOST": "envhost", "PORT": "9999"})
+        assert cfg.host == "localhost"
+        assert cfg.port == 8080
+
+
+# ---------------------------------------------------------------------------
+# List syntax — intentionally split per convention
+# ---------------------------------------------------------------------------
+
+
+class TestListSpaceSeparated:
+    """Space-separated list values (vanilla, argparse, cyclopts)."""
+
+    def test_list_field(self, space_sep_loader: ConfargLoader) -> None:
+        """--tags a b c collects into a list."""
+        cfg = space_sep_loader.load(WithList, argv=["--tags", "a", "b", "c"], env={})
+        assert cfg.tags == ["a", "b", "c"]
+
+
+class TestListRepeatedFlags:
+    """Repeated-flag list values (click, cyclopts)."""
+
+    def test_list_field(self, repeated_loader: ConfargLoader) -> None:
+        """--tags a --tags b collects into a list."""
+        cfg = repeated_loader.load(WithList, argv=["--tags", "x", "--tags", "y"], env={})
+        assert cfg.tags == ["x", "y"]
+
+
+# ---------------------------------------------------------------------------
+# Bool convention
+# ---------------------------------------------------------------------------
+
+
+class TestBoolValueConvention:
+    """The explicit --flag true/false convention holds in every integration."""
+
+    def test_bool_explicit_true(self, loader: ConfargLoader) -> None:
+        """--debug true sets a bool field to True."""
+        assert loader.load(Nested, argv=["--debug", "true"], env={}).debug is True
+
+    def test_bool_explicit_false(self, loader: ConfargLoader) -> None:
+        """--debug false sets a bool field to False."""
+        assert loader.load(Nested, argv=["--debug", "false"], env={}).debug is False
+
+    def test_no_negative_flag_registered(self, populating_loader: ConfargLoader) -> None:
+        """No --no-debug style negative flag is generated for bool fields."""
+        flags = populating_loader.registered_flags(Nested, config_flag="")
+        assert flags is not None
+        assert "no-debug" not in flags
+        assert "no_debug" not in flags
+
+
+# ---------------------------------------------------------------------------
+# Union stealing rule and cast overrides
+# ---------------------------------------------------------------------------
+
+
+class TestStealingContract:
+    """Scalar-union stealing rule and .str/.int cast overrides."""
+
+    def test_str_float_stealing(self, loader: ConfargLoader) -> None:
+        """--input inf coerces to float for str | float (stealing rule)."""
+        cfg = loader.load(_WithStrFloat, argv=["--input", "inf"], env={})
+        assert math.isinf(cfg.input)
+        assert type(cfg.input) is float
+
+    def test_str_bool_stealing(self, loader: ConfargLoader) -> None:
+        """--input yes coerces to True for str | bool (stealing rule)."""
+        cfg = loader.load(_WithStrBool, argv=["--input", "yes"], env={})
+        assert cfg.input is True
+
+    def test_str_override(self, loader: ConfargLoader) -> None:
+        """--input.str yes preserves 'yes' as str, bypassing bool stealing."""
+        cfg = loader.load(_WithStrBool, argv=["--input.str", "yes"], env={})
+        assert cfg.input == "yes"
+        assert type(cfg.input) is str
+
+
+# ---------------------------------------------------------------------------
+# Config files
+# ---------------------------------------------------------------------------
+
+
+class TestConfigFilesContract:
+    """Config-file loading and precedence behave identically in every integration."""
+
+    def test_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Files passed via --config are loaded and merged."""
+        cfg_file = tmp_yaml("host: filehost\nport: 5432\n")
+        cfg = loader.load(Simple, argv=["--config", str(cfg_file)], env={})
+        assert cfg.host == "filehost"
+        assert cfg.port == 5432
+
+    def test_config_file_via_files_param(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Files passed via files= are loaded without any CLI flag."""
+        cfg_file = tmp_yaml("host: file_host\nport: 9999\n")
+        cfg = loader.load(Simple, argv=[], env={}, files=[cfg_file])
+        assert cfg.host == "file_host"
+        assert cfg.port == 9999
+
+    def test_cli_overrides_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """CLI values take priority over config-file values."""
+        cfg_file = tmp_yaml("host: filehost\nport: 1111\n")
+        cfg = loader.load(Simple, argv=["--config", str(cfg_file), "--port", "2222"], env={})
+        assert cfg.host == "filehost"
+        assert cfg.port == 2222
+
+    def test_env_overrides_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Env vars take priority over config-file values."""
+        cfg_file = tmp_yaml("host: filehost\nport: 1111\n")
+        cfg = loader.load(
+            Simple,
+            argv=["--config", str(cfg_file)],
+            env={"MYAPP_PORT": "3333"},
+            env_prefix="MYAPP_",
+        )
+        assert cfg.host == "filehost"
+        assert cfg.port == 3333
+
+    def test_multiple_config_files_merged(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Later --config files override earlier ones (repeated-flag form works everywhere)."""
+        base = tmp_yaml("host: base\nport: 1000\n", filename="base.yaml")
+        override = tmp_yaml("port: 2000\n", filename="override.yaml")
+        cfg = loader.load(Simple, argv=["--config", str(base), "--config", str(override)], env={})
+        assert cfg.host == "base"
+        assert cfg.port == 2000
+
+    def test_subkey_config_loads_under_subkey(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """--config.db file.yaml loads file contents under the 'db' key."""
+        db_cfg = tmp_yaml("host: db_host\nport: 5555\nname: db_name\n", filename="db.yaml")
+        cfg = loader.load(AppConfig, argv=["--config.db", str(db_cfg)], env={})
+        assert cfg.db == DbConfig(host="db_host", port=5555, name="db_name")
+
+    def test_subkey_and_root_config_combined(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Root --config and --config.db combine; CLI still wins over both."""
+        root_cfg = tmp_yaml("debug: true\ncache:\n  enabled: false\n", filename="root.yaml")
+        db_cfg = tmp_yaml("host: from_file\nport: 1111\nname: n\n", filename="db.yaml")
+        cfg = loader.load(
+            AppConfig,
+            argv=["--config", str(root_cfg), "--config.db", str(db_cfg), "--db.port", "9999"],
+            env={},
+        )
+        assert cfg.debug is True
+        assert cfg.cache == CacheConfig(enabled=False)
+        assert cfg.db.host == "from_file"
+        assert cfg.db.port == 9999
+
+    def test_left_to_right_subkey_then_root(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """--config.db db.yaml --config root.yaml: root file (rightmost) wins for db."""
+        root_cfg = tmp_yaml(
+            "db:\n  host: root_host\n  port: 1111\n  name: root_db\ncache:\n  enabled: true\n",
+            filename="root.yaml",
+        )
+        db_cfg = tmp_yaml("host: db_host\nport: 5555\nname: db_db\n", filename="db.yaml")
+        cfg = loader.load(AppConfig, argv=["--config.db", str(db_cfg), "--config", str(root_cfg)], env={})
+        assert cfg.db == DbConfig(host="root_host", port=1111, name="root_db")
+
+    def test_left_to_right_root_then_subkey(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """--config root.yaml --config.db db.yaml: subkey file (rightmost) wins for db."""
+        root_cfg = tmp_yaml(
+            "db:\n  host: root_host\n  port: 1111\n  name: root_db\ncache:\n  enabled: true\n",
+            filename="root.yaml",
+        )
+        db_cfg = tmp_yaml("host: db_host\nport: 5555\nname: db_db\n", filename="db.yaml")
+        cfg = loader.load(AppConfig, argv=["--config", str(root_cfg), "--config.db", str(db_cfg)], env={})
+        assert cfg.db == DbConfig(host="db_host", port=5555, name="db_db")
+
+    def test_config_flag_registered_by_default(self, populating_loader: ConfargLoader) -> None:
+        """populate_* registers the --config flag (and subkey flags) by default."""
+        flags = populating_loader.registered_flags(AppConfig)
+        assert flags is not None
+        assert "config" in flags
+        assert "config.db" in flags
+
+    def test_config_flag_absent_when_disabled(self, populating_loader: ConfargLoader) -> None:
+        """config_flag='' suppresses --config registration."""
+        flags = populating_loader.registered_flags(Simple, config_flag="")
+        assert flags is not None
+        assert "config" not in flags
+
+    def test_custom_config_flag_name(self, populating_loader: ConfargLoader) -> None:
+        """config_flag='cfg' registers --cfg instead of --config."""
+        flags = populating_loader.registered_flags(Simple, config_flag="cfg")
+        assert flags is not None
+        assert "cfg" in flags
+        assert "config" not in flags
+
+    def test_config_subkeys_false_root_only(self, populating_loader: ConfargLoader) -> None:
+        """config_subkeys=False registers only the root --config flag."""
+        flags = populating_loader.registered_flags(AppConfig, config_subkeys=False)
+        assert flags is not None
+        assert "config" in flags
+        assert "config.db" not in flags
+
+
+# ---------------------------------------------------------------------------
+# Pipeline parity — regressions for former vanilla-vs-adapter divergences
+# ---------------------------------------------------------------------------
 
 
 class TestPipelineParity:
-    """Regression tests for former vanilla-vs-adapter divergences (one per bug)."""
+    """Regression tests for former vanilla-vs-adapter divergences.
+
+    One test per behavior that historically diverged between confarg.load()
+    and the CLI adapters before both shared _merge_sources.
+    """
 
     def test_custom_config_flag_env_pointer(self, loader: ConfargLoader, tmp_yaml) -> None:
         """A custom config_flag is honored for env-specified config files.
@@ -52,9 +455,7 @@ class TestPipelineParity:
             target,
             argv=["--config.users+", str(extra)],
             env={},
-            env_prefix=None,
             files=[base],
-            config_flag="config",
         )
         assert result.users == ["alice", "bob", "carol"]
 
@@ -99,7 +500,6 @@ class TestPipelineParity:
             argv=[],
             env={"MYAPP_CONFIG__DB": str(db), "MYAPP_CONFIG": str(base)},
             env_prefix="MYAPP_",
-            config_flag="config",
         )
         assert result.db == DbConfig(host="dbhost", port=2222, name="dbdb")
         assert result.cache == CacheConfig(enabled=False)
@@ -116,26 +516,165 @@ class TestPipelineParity:
         )
         assert result.config == "hello"
 
-    def test_cli_config_interleaved_ordering(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """--config.subpath and --config flags load left-to-right, later files win."""
-        sub = tmp_yaml("host: subhost\nport: 1111\nname: subdb\n", filename="sub.yaml")
-        full = tmp_yaml(
-            """\
-            db:
-              host: fullhost
-              port: 2222
-              name: fulldb
-            cache:
-              enabled: true
-            """,
-            filename="full.yaml",
-        )
+    def test_scalar_root_target_via_env(self, loader: ConfargLoader) -> None:
+        """A non-struct root target works through every integration (build's __root__ path).
+
+        Adapters used to call construct() directly, which lacked the __root__
+        unwrapping that build() does for scalar targets.  CLI input for scalar
+        roots needs cli_prefix (vanilla-only), so the shared path here is env.
+        """
+        result = loader.load(int, argv=[], env={"VALUE": "8080"}, env_prefix="", config_flag="")
+        assert result == 8080
+
+
+# ---------------------------------------------------------------------------
+# Inheritance-based dispatch (base class with subclasses)
+# ---------------------------------------------------------------------------
+
+
+class TestInheritanceDispatchContract:
+    """Base-class targets dispatch to subclasses identically in every integration."""
+
+    def test_class_flag_registered(self, populating_loader: ConfargLoader) -> None:
+        """populate_* registers --class for a base dataclass with subclasses."""
+        flags = populating_loader.registered_flags(_BaseDB, config_flag="")
+        assert flags is not None
+        assert "class" in flags
+
+    def test_subclass_fields_registered(self, populating_loader: ConfargLoader) -> None:
+        """populate_* also registers subclass fields as top-level flags."""
+        flags = populating_loader.registered_flags(_BaseDB, config_flag="")
+        assert flags is not None
+        assert {"dbpath", "host", "port"} <= flags
+
+    def test_dispatch_sqlite(self, loader: ConfargLoader) -> None:
+        """--class selects and constructs the SQLite subclass."""
         result = loader.load(
-            AppConfig,
-            argv=["--config.db", str(sub), "--config", str(full)],
+            _BaseDB,
+            argv=["--class", f"{__name__}._SQLiteDB", "--dbpath", "/var/db/app.sqlite"],
             env={},
-            env_prefix=None,
-            config_flag="config",
+            config_flag="",
         )
-        # full.yaml comes later on the CLI, so it wins over the earlier subpath file.
-        assert result.db == DbConfig(host="fullhost", port=2222, name="fulldb")
+        assert isinstance(result, _SQLiteDB)
+        assert result.dbpath == "/var/db/app.sqlite"
+
+    def test_dispatch_server(self, loader: ConfargLoader) -> None:
+        """--class selects and constructs the server subclass."""
+        result = loader.load(
+            _BaseDB,
+            argv=["--class", f"{__name__}._ServerDB", "--host", "db.example.com", "--port", "5432"],
+            env={},
+            config_flag="",
+        )
+        assert isinstance(result, _ServerDB)
+        assert result.host == "db.example.com"
+        assert result.port == 5432
+
+    def test_no_class_tag_raises(self, loader: ConfargLoader) -> None:
+        """A base class with subclasses but no --class raises TypeCoercionError."""
+        with pytest.raises(TypeCoercionError, match="discriminator"):
+            loader.load(_BaseDB, argv=["--dbpath", "/var/db/app.sqlite"], env={}, config_flag="")
+
+
+# ---------------------------------------------------------------------------
+# Root-level union target (target IS a union, not a struct containing one)
+# ---------------------------------------------------------------------------
+
+
+class TestUnionRootContract:
+    """Union-of-structs root targets work identically in every integration."""
+
+    def test_union_root_flags_built(self) -> None:
+        """build_static_flags generates --class and all variant fields for a union root."""
+        flags = build_static_flags(_RootDBConfig, union_tag="class", config_flag="")
+        names = {f.name for f in flags}
+        assert {"class", "dbpath", "host", "port", "name"} <= names
+
+    def test_union_root_flags_registered(self, populating_loader: ConfargLoader) -> None:
+        """populate_* registers --class and all variant fields for a union root."""
+        flags = populating_loader.registered_flags(_RootDBConfig, config_flag="")
+        assert flags is not None
+        assert {"class", "dbpath", "host", "port", "name"} <= flags
+
+    def test_union_root_round_trip_sqlite(self, loader: ConfargLoader) -> None:
+        """--dbpath alone selects the SQLite variant without needing --class."""
+        result = loader.load(_RootDBConfig, argv=["--dbpath", "/tmp/x.db"], env={}, config_flag="")
+        assert isinstance(result, _RootSQLite)
+        assert result.dbpath == "/tmp/x.db"
+
+    def test_union_root_round_trip_db_server(self, loader: ConfargLoader) -> None:
+        """DB server fields alone select the server variant without needing --class."""
+        result = loader.load(
+            _RootDBConfig,
+            argv=["--host", "db.example.com", "--port", "5432", "--name", "mydb"],
+            env={},
+            config_flag="",
+        )
+        assert isinstance(result, _RootDBServer)
+        assert result.host == "db.example.com"
+        assert result.port == 5432
+        assert result.name == "mydb"
+
+    def test_union_root_explicit_class_tag(self, loader: ConfargLoader) -> None:
+        """--class overrides structural disambiguation for the union root."""
+        result = loader.load(
+            _RootDBConfig,
+            argv=["--class", f"{__name__}._RootSQLite", "--dbpath", "/tmp/x.db"],
+            env={},
+            config_flag="",
+        )
+        assert isinstance(result, _RootSQLite)
+        assert result.dbpath == "/tmp/x.db"
+
+
+# ---------------------------------------------------------------------------
+# merge() — the raw-dict variant
+# ---------------------------------------------------------------------------
+
+
+class TestMergeContract:
+    """merge_* returns the raw merged dict, identically in every integration."""
+
+    def test_returns_dict(self, loader: ConfargLoader) -> None:
+        """Merge returns a dict, not a dataclass instance."""
+        result = loader.merge(Simple, argv=["--host", "myhost", "--port", "9090"], env={})
+        assert isinstance(result, dict)
+
+    def test_cli_values_in_dict(self, loader: ConfargLoader) -> None:
+        """CLI-provided values appear in the returned dict.
+
+        Known representation difference: vanilla _parse_cli coerces typed values
+        eagerly (port → 9090), while adapters keep raw strings and defer coercion
+        to build() (port → "9090").  Both construct identically.
+        """
+        result = loader.merge(Simple, argv=["--host", "myhost", "--port", "9090"], env={})
+        assert result["host"] == "myhost"
+        assert result["port"] in (9090, "9090")
+
+    def test_expressions_preserved(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Expression strings from config files are kept intact (not resolved)."""
+        cfg = tmp_yaml("host: myhost\nport: '${host}'\n")
+        result = loader.merge(Simple, argv=["--config", str(cfg)], env={})
+        assert result["port"] == "${host}"
+
+    def test_round_trip_equivalence(self, loader: ConfargLoader) -> None:
+        """build(target, merge(...)) equals load(...) for the same inputs."""
+        argv = ["--host", "myhost", "--port", "9090"]
+        raw = loader.merge(Simple, argv=argv, env={})
+        assert confarg.build(Simple, raw) == loader.load(Simple, argv=argv, env={})
+
+    def test_dump_file_from_raw_dict(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """dump_file accepts the raw dict returned by merge without raising."""
+        out = tmp_path / "out.yaml"
+        raw = loader.merge(Simple, argv=["--host", "myhost", "--port", "9090"], env={})
+        confarg.dump_file(raw, out)
+        assert out.exists()
+
+    def test_dump_file_round_trip_via_instance(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """Round-tripping through a built instance gives back the same config."""
+        out = tmp_path / "out.yaml"
+        raw = loader.merge(Simple, argv=["--host", "myhost", "--port", "9090"], env={})
+        confarg.dump_file(confarg.build(Simple, raw), out)
+        reloaded = confarg.load(Simple, argv=[], files=[out], env={})
+        assert reloaded.host == "myhost"
+        assert reloaded.port == 9090

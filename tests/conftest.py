@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 import pytest
 from hypothesis import strategies as st
 
-from tests._loaders import ALL_LOADERS, REPEATED_FLAG_LOADERS, SPACE_SEP_LOADERS
+from tests._loaders import ALL_LOADERS, POPULATING_LOADERS, REPEATED_FLAG_LOADERS, SPACE_SEP_LOADERS
 
 # ---------------------------------------------------------------------------
 # Dynamic single-field dataclass factory
@@ -550,6 +550,12 @@ def space_sep_loader(request: pytest.FixtureRequest) -> ConfargLoader:
 @pytest.fixture(params=REPEATED_FLAG_LOADERS, ids=[ldr.id for ldr in REPEATED_FLAG_LOADERS])
 def repeated_loader(request: pytest.FixtureRequest) -> ConfargLoader:
     """Loaders that accept repeated flags for lists: click, cyclopts."""
+    return request.param
+
+
+@pytest.fixture(params=POPULATING_LOADERS, ids=[ldr.id for ldr in POPULATING_LOADERS])
+def populating_loader(request: pytest.FixtureRequest) -> ConfargLoader:
+    """Loaders with a populate_* registration step: argparse, click, cyclopts."""
     return request.param
 
 
