@@ -230,7 +230,7 @@ dev = [
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-markdown-console", specifier = ">=0.0.1.dev2" },
+    { name = "pytest-markdown-console", specifier = ">=0.0.1" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "tomli-w", specifier = ">=1.0" },
     { name = "ty", specifier = ">=0.0.39" },
@@ -1078,14 +1078,14 @@ wheels = [
 
 [[package]]
 name = "pytest-markdown-console"
-version = "0.0.1.dev2"
+version = "0.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pytest" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4b/52/5bf8d5d5496e37e63101b9d898b71b60dee3ea06289575fcade154c700f5/pytest_markdown_console-0.0.1.dev2.tar.gz", hash = "sha256:83585552393bd778a2ecef09d6c3fe46ac2d6401ab32a4e1be743df9bd0f8d6a", size = 7473, upload-time = "2026-05-31T16:35:42.234Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2d/fc/7edf0c6dfeaad401fe9653f9b9c4728e1f9fdd56765b50e3fd63694edeb3/pytest_markdown_console-0.0.1.tar.gz", hash = "sha256:0ac298463309c22ec085043fbecde51474b375b5f85cb79fd984f099961bcad1", size = 9724, upload-time = "2026-06-07T20:42:10.909Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/58/da/8fa6c7f711b8520cf02082585517b8fa68f64d93f6abb73255a80731ea00/pytest_markdown_console-0.0.1.dev2-py3-none-any.whl", hash = "sha256:2e356e5e0988f4b4efdaf8150b2c0ae1be864113573a8b8a7e9338370dcffae0", size = 10168, upload-time = "2026-05-31T16:35:41.069Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/2d/f7da333cc287a333ce1cb708bc3c595c39b1a0474b218f665ae033a58326/pytest_markdown_console-0.0.1-py3-none-any.whl", hash = "sha256:6fe15c00e49cb5d8320276993041e46ff1b6d258573080c07d15cc2f98c43da5", size = 12426, upload-time = "2026-06-07T20:42:09.63Z" },
 ]
 
 [[package]]
