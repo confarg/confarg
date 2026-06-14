@@ -29,6 +29,7 @@ from confarg._types import (
     _is_singleton_literal,
     _is_struct,
     _is_union,
+    _resolve_struct,
     _resolve_type,
     _struct_defaults,
     _struct_fields,
@@ -39,7 +40,6 @@ from confarg._types import (
 from confarg.cli.argparse._build import (
     _collect_fn_paths_from_argv,
     _collect_fn_paths_from_config,
-    _resolve_struct,
 )
 from confarg.cli.argparse._register import (
     _add_callable_bind_flags,

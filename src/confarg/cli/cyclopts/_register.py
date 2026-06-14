@@ -40,7 +40,9 @@ def _make_literal(choices: list[str]) -> Any:
 
 def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:
     """Convert one FlagSpec to a keyword-only inspect.Parameter."""
-    py_name = spec.name.replace(".", "__")
+    # "+" (append config flags like --config.users+) is not a valid identifier
+    # character; map it to a reserved suffix. The name_map restores the CLI name.
+    py_name = spec.name.replace(".", "__").replace("+", "__append_")
     if iskeyword(py_name):
         py_name = f"{py_name}_"
 
@@ -117,6 +119,10 @@ def load_flags_into_app(
 
     for spec in flags:
         param = _spec_to_inspect_param(spec)
+        if param.name in name_map:
+            # Same flag spec'd twice (e.g. static + dynamic): first wins, like
+            # load_flags_into_parser's silent skip of already-registered dests.
+            continue
         params.append(param)
         name_map[param.name] = spec.name
 

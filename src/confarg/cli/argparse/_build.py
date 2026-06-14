@@ -12,7 +12,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, get_type_hints
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -43,6 +43,7 @@ from confarg._types import (
     _is_varlen_collection,
     _literal_values,
     _namedtuple_fields,
+    _resolve_struct,
     _resolve_type,
     _struct_defaults,
     _struct_fields,
@@ -84,24 +85,6 @@ def _literal_cli_choices(vals: tuple[Any, ...]) -> list[str]:
         else:
             choices.append(str(v))
     return choices
-
-
-def _resolve_struct(
-    target: Any,
-) -> tuple[Any, dict[str, Any], dict[str, Any]] | None:
-    """Resolve a struct type to (tp, fields, hints), or None if not a struct."""
-    tp = _resolve_type(target)
-    if not _is_struct(tp):
-        return None
-    try:
-        flds = _struct_fields(tp)
-    except (ValueError, TypeError, NameError, AttributeError):
-        return None
-    try:
-        hints = get_type_hints(tp, include_extras=True)
-    except (NameError, AttributeError, TypeError):
-        hints = {name: flds[name] for name in flds}
-    return tp, flds, hints
 
 
 def _build_leaf_spec(  # noqa: PLR0911 PLR0913
@@ -782,6 +765,36 @@ def build_static_flags(
     return flags
 
 
+def _collect_config_argv_specs(argv: Sequence[str], config_flag: str) -> list[FlagSpec]:
+    """Build FlagSpecs for ``--<config_flag>.<subpath>[+]`` flags found in argv.
+
+    Static registration only covers direct struct fields; scanning argv lets any
+    subpath the user actually typed — deeper paths and ``+`` append flags — be
+    accepted by the host CLI framework, matching what ``confarg.load()`` parses.
+    """
+    specs: list[FlagSpec] = []
+    seen: set[str] = set()
+    prefix = f"--{config_flag}."
+    for tok in argv:
+        if not tok.startswith(prefix):
+            continue
+        name = tok.split("=", 1)[0][2:]
+        if name in seen:
+            continue
+        seen.add(name)
+        subpath = name[len(config_flag) + 1 :]
+        action = "appended to" if subpath.endswith("+") else "merged under"
+        specs.append(
+            FlagSpec(
+                name=name,
+                nargs="*",
+                metavar="FILE",
+                help=f"Config file(s) whose contents are {action} the '{subpath.rstrip('+')}' field path.",
+            ),
+        )
+    return specs
+
+
 def build_dynamic_flags(
     target: object,
     argv: Sequence[str],
@@ -789,12 +802,16 @@ def build_dynamic_flags(
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = "config",
 ) -> list[FlagSpec]:
-    """Build CLI flags discoverable only from argv (callable bind/factory args).
+    """Build CLI flags discoverable only from argv.
 
     Scans ``argv`` and any config files it references for ``--<field>.fn``,
     ``--<field>.class``, and ``--<field>.call`` tokens.  For each found path, imports
     the target and generates :class:`~confarg.cli.argparse.FlagSpec` objects for its
     parameters (bind kwargs or factory constructor args).
+
+    Also registers a spec for every ``--<config_flag>.<subpath>[+]`` token found
+    in ``argv``, so scoped and append config-file flags at any depth are accepted
+    by the host framework (duplicates of static flags are skipped at load time).
 
     Errors are silently ignored — this is a best-effort enhancement.
 
@@ -836,6 +853,8 @@ def build_dynamic_flags(
         result: list[FlagSpec] = []
         for field_flag, (fn_path, mode) in {**config_fns, **argv_fns}.items():
             result.extend(_collect_callable_field_specs(field_flag, fn_path, mode, existing_names))
+        if config_flag:
+            result.extend(_collect_config_argv_specs(argv_list, config_flag))
     except Exception:  # noqa: BLE001 — best-effort; must not crash populate_parser
         return []
     else:

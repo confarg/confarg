@@ -17,44 +17,15 @@ if TYPE_CHECKING:
     from typing import TypeAliasType
 
 from confarg import _defaults
-from confarg._files import _dump_file, _load_file, _load_file_item, _load_subpath_files
-from confarg._merge import LIST_APPEND_KEY as _LIST_APPEND_KEY
-from confarg._merge import _deep_merge
+from confarg._files import _dump_file
 from confarg._parse_cli import _parse_cli
-from confarg._parse_env import _parse_env
+from confarg._pipeline import _merge_sources
 from confarg._serialize import _serialize
 from confarg._types import _MISSING, TagPolicy, _is_dc, _is_struct, _is_struct_like, _resolve_type
 from confarg._types import _StrToken as _ST
 from confarg.dictexpr import resolve_expressions
-from confarg.exceptions import ConfargError, MissingFieldError
+from confarg.exceptions import MissingFieldError
 from confarg.typedload import construct as _tc
-
-
-def _load_cli_config(fpath: Path, subpath: str, config_flag: str) -> dict[str, Any]:
-    """Load one CLI config file (--config[.subpath][+] fpath) into a nested dict."""
-    if subpath.endswith("+"):
-        real_subpath = subpath[:-1].rstrip(".")
-        if not real_subpath:
-            msg = f"--{config_flag}+ requires a field path. Use --{config_flag}.fieldname+ /path/to/file."
-            raise ConfargError(msg)
-        last_key = real_subpath.rsplit(".", 1)[-1]
-        fitem = _load_file_item(fpath)
-        if isinstance(fitem, list):
-            append_items: list[Any] = [fitem]
-        elif isinstance(fitem, dict) and len(fitem) == 1 and last_key in fitem and isinstance(fitem[last_key], list):
-            append_items = fitem[last_key]
-        else:
-            append_items = [fitem]
-        fdata: dict[str, Any] = {_LIST_APPEND_KEY: append_items}
-        for part in reversed(real_subpath.split(".")):
-            fdata = {part: fdata}
-        return fdata
-
-    fdata = _load_file(fpath)
-    if subpath:
-        for part in reversed(subpath.split(".")):
-            fdata = {part: fdata}
-    return fdata
 
 
 def merge(  # noqa: PLR0913
@@ -125,31 +96,19 @@ def merge(  # noqa: PLR0913
     if env is None:
         env = os.environ
 
-    # 1. Parse CLI
     cli_data, cli_configs = _parse_cli(argv, target, cli_prefix, config_flag, union_tag)
-
-    # 2. Parse env vars (done here so env-specified config files are loaded in order)
-    if env_prefix is None:
-        env_data: dict[str, Any] = {}
-        env_configs: list[tuple[str, Path]] = []
-    else:
-        # Exclude the env_config key so it is not mistakenly treated as a field.
-        env_for_fields = {k: v for k, v in env.items() if k != env_config} if env_config else env
-        env_data, env_configs = _parse_env(env_for_fields, env_prefix, env_separator, target, config_flag)
-
-    # 3. Load config files in priority order (all become config-level, below inline env/CLI)
-    file_entries: list[tuple[str, Path]] = [("", Path(f)) for f in files]
-    if env_config and (env_config_path := env.get(env_config)):
-        file_entries.append(("", Path(env_config_path)))
-    env_configs.sort(key=lambda ec: ec[0])
-    config_data = _load_subpath_files(file_entries + env_configs, union_tag)
-    for subpath, fpath in cli_configs:
-        fdata = _load_cli_config(fpath, subpath, config_flag)
-        config_data = _deep_merge(config_data, fdata, union_tag=union_tag)
-
-    # 4. Merge: config (lowest) → env → CLI (highest)
-    merged = _deep_merge(config_data, env_data, union_tag=union_tag)
-    return _deep_merge(merged, cli_data, union_tag=union_tag)
+    return _merge_sources(
+        target,
+        cli_data,
+        cli_configs,
+        env=env,
+        env_prefix=env_prefix,
+        env_separator=env_separator,
+        config_flag=config_flag,
+        files=files,
+        env_config=env_config,
+        union_tag=union_tag,
+    )
 
 
 @overload

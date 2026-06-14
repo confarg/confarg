@@ -341,7 +341,7 @@ def _parse_env(
 
         parts = key.split(separator) if separator in key else [key]
 
-        if parts[0].lower() == config_flag.lower():
+        if config_flag and parts[0].lower() == config_flag.lower():
             _handle_env_config_flag(parts, target, env_configs, value)
             continue
 

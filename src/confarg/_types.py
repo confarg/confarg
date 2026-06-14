@@ -618,6 +618,24 @@ def _struct_defaults(tp: Any) -> dict[str, Any]:
     return _dc_defaults(tp) if _is_dc(tp) else _init_defaults(tp)
 
 
+def _resolve_struct(
+    target: Any,
+) -> tuple[Any, dict[str, Any], dict[str, Any]] | None:
+    """Resolve a struct type to (tp, fields, hints), or None if not a struct."""
+    tp = _resolve_type(target)
+    if not _is_struct(tp):
+        return None
+    try:
+        flds = _struct_fields(tp)
+    except (ValueError, TypeError, NameError, AttributeError):
+        return None
+    try:
+        hints = get_type_hints(tp, include_extras=True)
+    except (NameError, AttributeError, TypeError):
+        hints = {name: flds[name] for name in flds}
+    return tp, flds, hints
+
+
 def _is_type_ref(tp: Any) -> bool:
     """True for `type`, `type[X]`, or `Type[X]`."""
     tp = _resolve_type(tp)

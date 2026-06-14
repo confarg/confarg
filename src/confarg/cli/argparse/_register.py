@@ -131,8 +131,9 @@ def populate_parser(  # noqa: PLR0913
             Set to ``False`` to expose only the root ``--<config_flag>`` flag.
         argv: CLI argument list used to pre-resolve ``--<field>.fn`` / ``--<field>.class``
             values so that callable ``--<field>.bind.*`` flags can be registered
-            before :meth:`~argparse.ArgumentParser.parse_args` is called.
-            Has no effect on which config-source flags are registered.
+            before :meth:`~argparse.ArgumentParser.parse_args` is called, and to
+            register ``--<config_flag>.<subpath>[+]`` flags found in argv (scoped
+            and append config files at any depth).
 
     Note:
         Prefer :func:`make_parser` for the common case — it sets
