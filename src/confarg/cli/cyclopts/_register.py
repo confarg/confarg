@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import inspect
+import sys
 from keyword import iskeyword
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
@@ -38,13 +39,46 @@ def _make_literal(choices: list[str]) -> Any:
     return Literal[tuple(choices)]  # ty: ignore[invalid-type-form]  # dynamic Literal construction at runtime; equivalent to Literal[c1, c2, ...]
 
 
-def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:
+def _pyname(name: str) -> str:
+    """Map a dotted CLI flag name to a valid, unique Python identifier.
+
+    ``.``, ``+`` (append config flags), and ``-`` (list/dict delete flags) are
+    not identifier characters; each maps to a reserved token.  The name_map
+    restores the original CLI name, so only validity and uniqueness matter here.
+    """
+    out = name.replace(".", "__").replace("+", "__append_").replace("-", "__delete_")
+    if out and out[0].isdigit():
+        out = f"_{out}"
+    if iskeyword(out):
+        out = f"{out}_"
+    return out
+
+
+def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901  # one branch per nargs shape (flag / choices / multi / scalar)
     """Convert one FlagSpec to a keyword-only inspect.Parameter."""
-    # "+" (append config flags like --config.users+) is not a valid identifier
-    # character; map it to a reserved suffix. The name_map restores the CLI name.
-    py_name = spec.name.replace(".", "__").replace("+", "__append_")
-    if iskeyword(py_name):
-        py_name = f"{py_name}_"
+    py_name = _pyname(spec.name)
+
+    # Build cyclopts Parameter kwargs
+    param_kwargs: dict[str, Any] = {
+        "name": f"--{spec.name}",
+        "required": False,
+        "show_default": False,
+        # Suppress --no-* (bool) and --empty-* (iterable) negative flags.
+        # All our fields are Optional[str/list]; confarg handles coercion.
+        "negative": (),
+    }
+
+    if spec.nargs == 0:
+        # Value-less flag (e.g. a list/dict delete --field.N-): a boolean switch.
+        if spec.help:
+            param_kwargs["help"] = spec.help
+        cyclopts_param = CycloptsParam(**param_kwargs)
+        return inspect.Parameter(
+            name=py_name,
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            default=False,
+            annotation=Annotated[bool, cyclopts_param],
+        )
 
     # Determine the Python type annotation (confarg handles actual coercion)
     if spec.choices:
@@ -56,15 +90,6 @@ def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:
 
     annotation_type = inner | None
 
-    # Build cyclopts Parameter kwargs
-    param_kwargs: dict[str, Any] = {
-        "name": f"--{spec.name}",
-        "required": False,
-        "show_default": False,
-        # Suppress --no-* (bool) and --empty-* (iterable) negative flags.
-        # All our fields are Optional[str/list]; confarg handles coercion.
-        "negative": (),
-    }
     # Cyclopts has no `metavar` parameter; prefix the type name into help text
     # so users can see the expected type (e.g. "(INT) (default: 8080)").
     help_parts: list[str] = []
@@ -167,16 +192,21 @@ def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command s
         config_subkeys: Whether to register ``--<config_flag>.<field>`` options
             for each direct struct field of the root dataclass (default
             ``True``).
-        argv: CLI argument list used to pre-resolve ``--<field>.fn`` /
-            ``--<field>.class`` values so that callable ``--<field>.bind.*``
-            options can be registered before parsing.
+        argv: CLI argument list scanned to register argv-derived dynamic
+            parameters: ``--<field>.bind.*`` for resolved ``--<field>.fn`` /
+            ``--<field>.class`` callables, ``--<config_flag>.<subpath>[+]``
+            scoped/append config files, and list-index / append / delete /
+            dict-subkey patch parameters.  Defaults to ``sys.argv[1:]`` (matching
+            :func:`from_app`); pass an explicit list, or ``[]`` to register only
+            the static, type-derived parameters.
     """
+    if argv is None:
+        argv = sys.argv[1:]
     flags = build_static_flags(
         target,
         union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,
     )
-    if argv is not None:
-        flags = flags + build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
+    flags = flags + build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
     load_flags_into_app(flags, app)
