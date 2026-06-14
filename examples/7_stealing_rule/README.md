@@ -72,7 +72,7 @@ This works similarly on the enumeration value, using an `.int` suffix to force t
 $ # Enum has higher precedence than `int`
 $ uv run enum_or_int.py --input 2
 Config(input=<Value.BAR: 2>)
-$ # input is explicitely coerced to `int`
+$ # input is explicitly coerced to `int`
 $ uv run enum_or_int.py --input.int 2
 Config(input=2)
 ```
