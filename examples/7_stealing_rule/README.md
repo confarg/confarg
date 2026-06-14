@@ -1,7 +1,7 @@
 # Leaf type unions and the stealing rule
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/7_stealing_rule`](https://github.com/confarg/confarg/tree/master/examples/examples/7_stealing_rule).
+> Code for examples in this page can be found in [`examples/7_stealing_rule`](https://github.com/confarg/confarg/tree/master/examples/7_stealing_rule).
 
 Now that we learn in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/) how confarg can handle unions, we need to go back to leaf types and talk about the stealing rule, that is, the precedence of leaf type in unions for inputs provided as CLI arguments or environment variables.
 

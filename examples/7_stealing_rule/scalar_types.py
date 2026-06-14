@@ -19,7 +19,7 @@ class Config:
 
 def main() -> None:
     """Load and print the configuration."""
-    config = confarg.load(Config)
+    config = confarg.load(Config, env_prefix="MYAPP_")
     pprint(config)
 
 
