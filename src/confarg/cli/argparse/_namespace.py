@@ -195,9 +195,6 @@ def _collect_ns_inheritance(
                 _collect_ns_fields(flat, cls, prefix, union_tag, result)
         except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
             pass
-    else:
-        direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
-        _collect_ns_union_root(flat, direct_subs, prefix, union_tag, result)
 
 
 def _collect_ns_namedtuple(

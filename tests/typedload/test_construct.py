@@ -2,74 +2,61 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Unit tests for _construct_struct_dispatch inheritance inference."""
+"""Unit tests for _construct_struct_dispatch inheritance behaviour."""
 
 from dataclasses import dataclass
 
 import pytest
 
 from confarg._types import _StrToken
-from confarg.exceptions import AmbiguousUnionError
+from confarg.exceptions import TypeCoercionError
 from confarg.typedload._construct import _construct_struct_dispatch
 
 # Each scenario uses its own base class so __subclasses__() does not bleed across tests.
 
 
 @dataclass
-class _UniqueBase:
+class _BaseWithSubs:
     """Base whose subclasses have disjoint required fields."""
 
 
 @dataclass
-class _UniqueChild1(_UniqueBase):
+class _Sub1(_BaseWithSubs):
     x: str
 
 
 @dataclass
-class _UniqueChild2(_UniqueBase):
+class _Sub2(_BaseWithSubs):
     y: int
 
 
 @dataclass
-class _FallbackBase:
-    """Base whose only subclass requires a field absent from the data."""
+class _BaseNoSubs:
+    """Base with no subclasses — can be constructed directly."""
+
+    value: int = 0
 
 
-@dataclass
-class _FallbackChild(_FallbackBase):
-    required_field: str
+class TestConstructStructDispatch:
+    """_construct_struct_dispatch raises when subclasses exist but no union_tag is given."""
 
+    def test_subclasses_without_tag_raises(self) -> None:
+        """When a struct has subclasses and no union_tag is present, raise TypeCoercionError."""
+        with pytest.raises(TypeCoercionError, match="discriminator"):
+            _construct_struct_dispatch(_BaseWithSubs, {"x": _StrToken("hello")}, "", "class")
 
-@dataclass
-class _AmbigBase:
-    """Base with two subclasses that both match the same data structurally."""
-
-
-@dataclass
-class _AmbigChildA(_AmbigBase):
-    z: str
-
-
-@dataclass
-class _AmbigChildB(_AmbigBase):
-    z: str
-
-
-class TestConstructStructDispatchInheritance:
-    """_construct_struct_dispatch infers subclass when union_tag is absent."""
-
-    def test_unique_match_selects_subclass(self) -> None:
-        """Unique structural match selects the correct subclass."""
-        result = _construct_struct_dispatch(_UniqueBase, {"x": _StrToken("hello")}, "", "class")
-        assert isinstance(result, _UniqueChild1)
+    def test_subclasses_with_tag_constructs(self) -> None:
+        """When the union_tag is present, the named subclass is constructed."""
+        result = _construct_struct_dispatch(
+            _BaseWithSubs,
+            {"class": f"{__name__}._Sub1", "x": _StrToken("hello")},
+            "",
+            "class",
+        )
+        assert isinstance(result, _Sub1)
         assert result.x == "hello"
 
-    def test_no_subclass_fields_falls_back_to_base(self) -> None:
-        """No matching subclass falls back to constructing the base class."""
-        result = _construct_struct_dispatch(_FallbackBase, {}, "", "class")
-        assert result == _FallbackBase()
-
-    def test_ambiguous_subclasses_raises(self) -> None:
-        """Multiple structurally-matching subclasses raise AmbiguousUnionError."""
-        with pytest.raises(AmbiguousUnionError):
-            _construct_struct_dispatch(_AmbigBase, {"z": _StrToken("v")}, "", "class")
+    def test_no_subclasses_constructs_directly(self) -> None:
+        """When the struct has no subclasses, it is constructed directly without a tag."""
+        result = _construct_struct_dispatch(_BaseNoSubs, {}, "", "class")
+        assert result == _BaseNoSubs()

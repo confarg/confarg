@@ -274,11 +274,11 @@ class TestPlainClassSerialization:
 
     def test_dict_centric_roundtrip(self) -> None:
         """The dict-centric workflow: merge → resolve → from_dict; dump_dict_file the dict."""
-        raw = {"epochs": 3, "transform": {"p": 0.8}}
+        raw = {"epochs": 3, "transform": {"class": "tests.test_plain_classes.HorizontalFlip", "p": 0.8}}
         resolved = confarg.resolve(raw)
         cfg = confarg.from_dict(TrainingConfig, resolved)
         assert cfg.epochs == 3
-        assert isinstance(cfg.transform, Transform)
+        assert isinstance(cfg.transform, HorizontalFlip)
         assert cfg.transform.p == pytest.approx(0.8)
 
 
