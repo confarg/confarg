@@ -9,11 +9,11 @@ One of the powerful features of confarg, which lies at the heart of complex conf
 Let's go back to our database example introduced in [Tutorial #1](https://confarg.github.io/confarg/examples/1_three_input_sources/), where our app relies on this configuration to connect to a DB server:
 
 ```python
-@dataclass
-class DBServerConfig:
+@dataclass(kw_only=True)
+class PostgreSQLConfig:
     host: str
-    port: int
-    name: str
+    port: int = 5432
+    schema_name: str
 ```
 
 Say our app now needs to also support an SQLite backend. We introduce a new configuration:
@@ -27,7 +27,7 @@ class SQLiteConfig:
 The two backends are mutually exclusive. In confarg, we translate this in our configuration in the most pythonic way, using a union type. We declare our configuration to be of type
 
 ```python
-type Config = SQLiteConfig | DBServerConfig
+type Config = PostgreSQLConfig | SQLiteConfig
 ```
 
 We can now dynamically select among union variants. To select an SQLite backend, we simply need to provide the elements required by its configuration:
@@ -36,27 +36,52 @@ We can now dynamically select among union variants. To select an SQLite backend,
 $ uv run myapp.py --dbpath /path/to.db.sqlite
 SQLiteConfig(dbpath='/path/to.db.sqlite')
 ```
+<!--
+```console
+$ uv run myapp_argparse.py --dbpath /path/to.db.sqlite
+SQLiteConfig(dbpath='/path/to.db.sqlite')
+```
+-->
 
 Choosing a DB server backend instead works similarly:
 
 ```console
-$ uv run myapp.py --host example.com --port 5432 --name schema
-DBServerConfig(host='example.com', port=5432, name='schema')
+$ uv run myapp.py --host example.com --schema_name schema
+PostgreSQLConfig(host='example.com', port=5432, schema_name='schema')
 ```
+<!--
+```console
+$ uv run myapp_argparse.py --host example.com --schema_name schema
+PostgreSQLConfig(host='example.com', port=5432, schema_name='schema')
+```
+-->
 
 This works as well with configuration files, which could contain a configuration of either sort:
 
-* a DBServerConfig configuration file:
+* a PostgreSQLConfig configuration file:
     ```console
     $ uv run myapp.py --config postgre.yaml
-    DBServerConfig(host='example.com', port=5432, name='mydb')
+    PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
     ```
+<!--  
+    ```console
+    $ uv run myapp_argparse.py --config postgre.yaml
+    PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
+    ```
+-->
 
 * or, a SQLiteConfig configuration file:
     ```console
     $ uv run myapp.py --config sqlite.yaml
     SQLiteConfig(dbpath='/path/to/db.sqlite')
     ```
+<!--
+    ```console
+    $ uv run myapp_argparse.py --config sqlite.yaml
+    SQLiteConfig(dbpath='/path/to/db.sqlite')
+    ```
+-->
+
 
 > [!NOTE]
 > Confarg is smart enough to know which type in the union is targeted from the provided input types. However, such implicit disambiguation is not always possible, or even desirable. We will see in [Tutorial #8](https://confarg.github.io/confarg/examples/8_disambiguation/) how to set the target type explicitly.

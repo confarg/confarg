@@ -27,6 +27,20 @@ $ uv run str_or_bool.py --input no
 Config(input=False)
 ```
 
+<!--
+```console
+$ # "none" gets coerced into None
+$ uv run str_or_none_argparse.py --input none
+Config(input=None)
+$ # "inf" gets coerced into inf
+$ uv run str_or_float_argparse.py --input inf
+Config(input=inf)
+$ # "no" gets coerced into bool
+$ uv run str_or_bool_argparse.py --input no
+Config(input=False)
+```
+-->
+
 > [!NOTE]
 > This last example is not an instance of the [Norway problem](https://hitchdev.com/strictyaml/why/implicit-typing-removed/), as this coercion happens only if `bool` is one of the expected types.
 
@@ -43,6 +57,16 @@ $ # Override the stealing rule and force coercion to `str`: `"yes"` string is pr
 $ uv run str_or_bool.py --input.str yes
 Config(input='yes')
 ```
+<!--
+```console
+$ # Stealing rule applies: `"yes"` is converted to True
+$ uv run str_or_bool_argparse.py --input yes
+Config(input=True)
+$ # Override the stealing rule and force coercion to `str`: `"yes"` string is preserved
+$ uv run str_or_bool_argparse.py --input.str yes
+Config(input='yes')
+```
+-->
 
 The override also works in case of a union with an enumeration. As we saw in [Tutorial #4](https://confarg.github.io/confarg/examples/6_unions/), an enumeration can be specified by either its key or its value, both of which may steal the value from a scalar type in a union. Take this enumeration again:
 
@@ -58,6 +82,12 @@ In a union with a string, the key takes precedence:
 $ uv run enum_or_str.py --input FOO
 Config(input=<Value.FOO: 1>)
 ```
+<!--
+```console
+$ uv run enum_or_str_argparse.py --input FOO
+Config(input=<Value.FOO: 1>)
+```
+-->
 
 Using the `.str` type suffix on the CLI argument forces the coercion to string.
 
@@ -65,6 +95,12 @@ Using the `.str` type suffix on the CLI argument forces the coercion to string.
 $ uv run enum_or_str.py --input.str FOO
 Config(input='FOO')
 ```
+<!--
+```console
+$ uv run enum_or_str_argparse.py --input.str FOO
+Config(input='FOO')
+```
+-->
 
 This works similarly on the enumeration value, using an `.int` suffix to force the coercion of the input to `int`.
 
@@ -76,3 +112,13 @@ $ # input is explicitly coerced to `int`
 $ uv run enum_or_int.py --input.int 2
 Config(input=2)
 ```
+<!--
+```console
+$ # Stealing rule applies: `"yes"` is converted to True
+$ uv run str_or_bool_argparse.py --input yes
+Config(input=True)
+$ # Override the stealing rule and force coercion to `str`: `"yes"` string is preserved
+$ uv run str_or_bool_argparse.py --input.str yes
+Config(input='yes')
+```
+-->

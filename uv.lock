@@ -2,6 +2,12 @@ version = 1
 revision = 3
 requires-python = ">=3.12"
 
+[manifest]
+members = [
+    "confarg",
+    "confarg-example-configs",
+]
+
 [[package]]
 name = "annotated-doc"
 version = "0.0.4"
@@ -195,6 +201,7 @@ completion = [
 [package.dev-dependencies]
 dev = [
     { name = "click" },
+    { name = "confarg-example-configs" },
     { name = "cyclopts" },
     { name = "hypothesis" },
     { name = "ipython" },
@@ -220,6 +227,7 @@ provides-extras = ["completion"]
 [package.metadata.requires-dev]
 dev = [
     { name = "click", specifier = ">=8.3.3" },
+    { name = "confarg-example-configs", editable = "examples/configs" },
     { name = "cyclopts", specifier = ">=4.11.2" },
     { name = "hypothesis", specifier = ">=6.100" },
     { name = "ipython", specifier = ">=9.12.0" },
@@ -237,6 +245,11 @@ dev = [
     { name = "typer", specifier = ">=0.25.1" },
     { name = "zensical", specifier = ">=0.0.41" },
 ]
+
+[[package]]
+name = "confarg-example-configs"
+version = "0.0.1"
+source = { editable = "examples/configs" }
 
 [[package]]
 name = "coverage"

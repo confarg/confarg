@@ -3,48 +3,56 @@
 > [!TIP]
 > Code for examples in this page can be found in [`examples/8_disambiguation`](https://github.com/confarg/confarg/tree/master/examples/8_disambiguation).
 
+As we have seen in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/), confarg can handle union types, and can even guess which type variant is targeted based on the provided arguments. However, this is not always possible, or indeed desirable. You could have different variants sharing the same arguments. You could also want the variant to be explicit in the configuration file, rather than having to guess from the present arguments. All are valid concerns, but for the simplest choices, being explicit about the selected variant is usually the better option.
 
 Let's see how to achieve that in confarg.
 
-## The discriminator field pattern
+## The discriminator pattern
 
 Our first option is to still rely on automatic disambiguation, and making sure it always succeeds by adding a discriminator field that can furthermore explicitly convey the variant that is chosen.
 
 Let's go back again to our database example. Say we have two configurations to connect to either a PostgreSQL or a MariaDB backend. Both configurations are identical in our example, and therefore cannot be discriminated. Even if they were, we would still like it to be obvious which backend is chosen in our configuration file, rather than having to guess.
 
-We apply the discriminator-field pattern by introducing a `Literal` field that identifies the configurations with a clear, explicit label.
+We apply the discriminator pattern by introducing a `Literal` field that identifies the configurations with a clear, explicit label.
 
 ```python
 @dataclass(kw_only=True)
-class PostgreConfig:
-    tag: Literal["postgre"] = "postgre"
+class PostgreSQLConfigTyped:
+    type: Literal["postgre"] = "postgre"  # discriminator field
     host: str
-    port: int
-    name: str
+    port: int = 5432
+    schema_name: str
 
 
 @dataclass(kw_only=True)
-class MariaDBConfig:
-    tag: Literal["mariadb"] = "mariadb"
+class MariaDBConfigTyped:
+    type: Literal["mariadb"] = "mariadb"   # discriminator field
     host: str
-    port: int
-    name: str
+    port: int = 3306
+    schema_name: str
 ```
 
-Now we rely on the tag to select a variant.
+Now we rely on the label to select a variant.
 
 ```console
-$ uv run dbhosts_tag.py --tag postgre --host example.com --port 5432 --name mydb
-PostgreConfig(tag='postgre', host='example.com', port=5432, name='mydb')
+$ uv run dbhosts_typed.py --type postgre --host example.com --schema_name mydb
+PostgreSQLConfigTyped(type='postgre', host='example.com', port=5432, schema_name='mydb')
 ```
 
-This works similarly with configuration files.
+This works similarly with configuration files. We modify our configuration file to introduce the discriminator field.
+
+```yaml
+# postgre_typed.yaml
+type: postgre
+host: example.com
+schema_name: mydb
+```
 
 ```console
-$ uv run dbhosts_tag.py --config postgre_tagged.yaml
-PostgreConfig(tag='postgre', host='example.com', port=1234, name='mydb')
-$ uv run dbhosts_tag.py --config mariadb_tagged.yaml
-MariaDBConfig(tag='mariadb', host='example.com', port=5678, name='mydb')
+$ uv run dbhosts_typed.py --config postgre_typed.yaml
+PostgreSQLConfigTyped(type='postgre', host='example.com', port=5432, schema_name='mydb')
+$ uv run dbhosts_typed.py --config mariadb_typed.yaml
+MariaDBConfigTyped(type='mariadb', host='example.com', port=3306, schema_name='mydb')
 ```
 
 This pattern relies on the automatic disambiguation of confarg based on compatibilities of the provided input — here, a `Literal` field, that doesn't need to be explicitly flagged to confarg as such. It is a reasonable pattern if you own the classes and are willing to add a field for the sole purpose of deserialization.
@@ -63,26 +71,26 @@ Going back to our database example, the configurations don't need a discriminato
 
 ```python
 @dataclass(kw_only=True)
-class PostgreConfig:
+class PostgreSQLConfig:
     host: str
     port: int
-    name: str
+    schema_name: str
 
 
 @dataclass(kw_only=True)
 class MariaDBConfig:
     host: str
     port: int
-    name: str
+    schema_name: str
 ```
 
 To properly select one variant, we provide its class with the `class` key.
 
 ```console
-$ uv run dbhosts.py --class __main__.PostgreConfig --host example.com --port 5432 --name mydb
-PostgreConfig(tag='postgre', host='example.com', port=5432, name='mydb')
-$ uv run dbhosts.py --class __main__.MariaDBConfig --host example.com --port 3306 --name mydb
-MariaDBConfig(tag='mariadb', host='example.com', port=3306, name='mydb')
+$ uv run dbhosts.py --class configs.PostgreSQLConfig --host example.com --schema_name mydb
+PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
+$ uv run dbhosts.py --class configs.MariaDBConfig --host example.com --schema_name mydb
+MariaDBConfig(host='example.com', port=3306, schema_name='mydb')
 ```
 
 ## Overriding a variant
@@ -92,7 +100,7 @@ We saw in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/) ho
 ```console
 $ # Loading a PostgreSQL configuration from file
 $ uv run myapp.py --config postgre.yaml
-DBServerConfig(host='example.com', port=1234, name='mydb')
+PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
 $ # Setting a SQLite configuration from the command line
 $ uv run myapp.py --dbpath /path/to/db.sqlite
 SQLiteConfig(dbpath='/path/to/db.sqlite')
@@ -109,7 +117,7 @@ In confarg, to discard any existing input for a given entry, you can provide the
 
 ```console
 $ # OK: explicitly discard previous keys and start fresh
-$ uv run myapp.py --config postgre.yaml --class __main__.SQLiteConfig --dbpath /path/to/db.sqlite
+$ uv run myapp.py --config postgre.yaml --class configs.SQLiteConfig --dbpath /path/to/db.sqlite
 SQLiteConfig(dbpath='/path/to/db.sqlite')
 ```
 
