@@ -1,0 +1,5 @@
+db:
+  class: configs.PostgreSQLConfigChild
+  host: example.com
+  schema_name: mydb
+log_level: DEBUG
