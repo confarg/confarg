@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 import pytest
 
 import confarg
+from confarg._merge import _deep_merge
 from tests.conftest import (
     AppConfig,
     Flat,
@@ -479,3 +480,31 @@ class TestConfigFileDeleteSyntax:
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"[Nn]egative"):
             confarg.build(WithList, {"items": {"-1": 99}})
+
+
+class TestNestedIndexMerge:
+    """An index patch over a list/tuple element composes recursively, not replaces.
+
+    The per-index patch in _apply_list_ops delegates to the canonical
+    _merge_existing_value dispatcher, so a list-typed element + an index-keyed
+    dict recurses instead of being overwritten — at any depth.
+    """
+
+    def test_index_into_list_element_patches(self) -> None:
+        """{'0': {'0': 42}} over [[1,2,3],[4,5]] patches [0][0], keeping the rest."""
+        merged = _deep_merge({"input": [[1, 2, 3], [4, 5]]}, {"input": {"0": {"0": 42}}})
+        assert merged == {"input": [[42, 2, 3], [4, 5]]}
+
+    def test_index_into_list_element_arbitrary_depth(self) -> None:
+        """Three-deep index patch composes through every level."""
+        base = {"input": [[[1, 2], [3, 4]], [[5, 6]]]}
+        merged = _deep_merge(base, {"input": {"0": {"1": {"0": 99}}}})
+        assert merged == {"input": [[[1, 2], [99, 4]], [[5, 6]]]}
+
+    def test_index_into_list_element_via_loader(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """End-to-end: a config base list + a nested-index config patch compose identically."""
+        WithGrid = make_target("grid", list[list[int]], default_factory=list)
+        base = tmp_yaml("grid:\n  - [1, 2, 3]\n  - [4, 5]\n", "base.yaml")
+        derived = tmp_yaml("grid:\n  0:\n    0: 42\n", "derived.yaml")
+        result = loader.load(WithGrid, argv=[], env={}, files=[base, derived])
+        assert result.grid == [[42, 2, 3], [4, 5]]

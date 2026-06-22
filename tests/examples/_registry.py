@@ -91,6 +91,7 @@ REGISTRY: dict[tuple[str, str], ScriptSpec] = {
     ("9_child_configurations", "myapp.py"): ScriptSpec(target="DBConfig"),
     ("9_child_configurations", "db_or_api.py"): ScriptSpec(),
     ("10_nested_configurations", "myapp.py"): ScriptSpec(printer="pprint"),
+    ("12_collection_items", "list_of_list_of_ints.py"): ScriptSpec(printer="pprint"),
     ("50_list", "myapp.py"): ScriptSpec(printer="pprint"),
     ("60_type", "myapp.py"): ScriptSpec(),
     ("70_subconfig", "myapp.py"): ScriptSpec(printer="pprint"),

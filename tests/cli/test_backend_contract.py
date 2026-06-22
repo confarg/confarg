@@ -846,6 +846,20 @@ class _WithMap:
     data: dict[str, int] = dataclasses.field(default_factory=dict)
 
 
+@dataclass
+class _WithGrid:
+    """List-of-list field — element is itself a sequence (nested index patch)."""
+
+    grid: list[list[int]] = dataclasses.field(default_factory=list)
+
+
+@dataclass
+class _WithPairs:
+    """List-of-tuple field — element is a fixed-length sequence (nested index patch)."""
+
+    pairs: list[tuple[int, int]] = dataclasses.field(default_factory=list)
+
+
 class TestCollectionPatchContract:
     """List index/append/delete and dict-subkey CLI patches resolve identically everywhere.
 
@@ -871,6 +885,18 @@ class TestCollectionPatchContract:
         base = tmp_yaml("dbs:\n  - dbpath: a\n  - dbpath: b\n")
         cfg = loader.load(_WithDbs, argv=["--config", str(base), "--dbs.1.dbpath", "z"], env={})
         assert cfg.dbs == [_PatchSqlite("a"), _PatchSqlite("z")]
+
+    def test_index_into_list_element_patches_not_replaces(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--grid.0.0`` patches the inner list element, not replaces the whole inner list."""
+        base = tmp_yaml("grid:\n  - [1, 2, 3]\n  - [4, 5]\n")
+        cfg = loader.load(_WithGrid, argv=["--config", str(base), "--grid.0.0", "42"], env={})
+        assert cfg.grid == [[42, 2, 3], [4, 5]]
+
+    def test_index_into_tuple_element_patches_not_replaces(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--pairs.0.1`` patches one slot of an inner tuple element, not the whole tuple."""
+        base = tmp_yaml("pairs:\n  - [1, 2]\n  - [3, 4]\n")
+        cfg = loader.load(_WithPairs, argv=["--config", str(base), "--pairs.0.1", "9"], env={})
+        assert cfg.pairs == [(1, 9), (3, 4)]
 
     def test_tuple_index_set(self, loader: ConfargLoader) -> None:
         """Tuple elements are patchable by index."""
