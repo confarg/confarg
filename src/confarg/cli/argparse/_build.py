@@ -49,6 +49,7 @@ from confarg._types import (
     _struct_fields,
     _tuple_types,
     _union_args_no_none,
+    _union_has_seq_variant,
     _unwrap_optional,
     _var_param_names,
 )
@@ -85,6 +86,24 @@ def _literal_cli_choices(vals: tuple[Any, ...]) -> list[str]:
         else:
             choices.append(str(v))
     return choices
+
+
+def _merge_or_append_spec(result: list[FlagSpec], by_name: dict[str, FlagSpec], spec: FlagSpec) -> None:
+    """Append ``spec`` to ``result``, or merge its ``choices`` into a same-named earlier spec.
+
+    Union variants can each contribute a ``FlagSpec`` for the same discriminator field
+    (e.g. ``type: Literal["mariadb"]`` vs ``Literal["postgre"]``). First-wins dedup would
+    drop all but the first variant's choices, so a merged single flag must accept every
+    variant's value. When both the existing and new spec carry ``choices``, union them
+    (order-preserving); otherwise keep the first spec unchanged.
+    """
+    existing = by_name.get(spec.name)
+    if existing is None:
+        result.append(spec)
+        by_name[spec.name] = spec
+        return
+    if existing.choices is not None and spec.choices is not None:
+        existing.choices.extend(c for c in spec.choices if c not in existing.choices)
 
 
 def _build_leaf_spec(  # noqa: PLR0911 PLR0913
@@ -531,6 +550,25 @@ def _collect_namedtuple_specs(
     return result
 
 
+def _union_cast_flag_specs(
+    flag: str,
+    cast_types: list[type],
+    group: str | None,
+    group_description: str,
+) -> list[FlagSpec]:
+    """Build ``--<flag>.<scalar>`` force-cast FlagSpecs for a multi-variant union."""
+    return [
+        FlagSpec(
+            name=f"{flag}.{tp.__name__}",
+            metavar=tp.__name__.upper(),
+            help=f"Force {tp.__name__!r} type for '{flag}' (bypasses the stealing rule).",
+            group=group,
+            group_description=group_description,
+        )
+        for tp in cast_types
+    ]
+
+
 def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913
     flag: str,
     name: str,
@@ -549,7 +587,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913
         concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
         if concrete:
             specs = [_build_union_tag_spec(flag, union_tag, concrete, group, group_description)]
-            existing: set[str] = {specs[0].name}
+            by_name: dict[str, FlagSpec] = {specs[0].name: specs[0]}
             for variant in concrete:
                 for spec in _collect_struct_specs(
                     variant,
@@ -558,28 +596,33 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913
                     group=variant.__name__,
                     group_description=inspect.getdoc(variant) or "",
                 ):
-                    if spec.name not in existing:
-                        specs.append(spec)
-                        existing.add(spec.name)
+                    _merge_or_append_spec(specs, by_name, spec)
             return specs
+        # Union with a sequence variant (str | tuple[...], str | list[str]) →
+        # a multi-token flag; vanilla consumes greedily, so register nargs="*".
+        if _union_has_seq_variant(resolved):
+            help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
+            seq_specs: list[FlagSpec] = [
+                FlagSpec(
+                    name=flag,
+                    nargs="*",
+                    metavar="VALUE",
+                    help=help_text,
+                    group=group,
+                    group_description=group_description,
+                ),
+            ]
+            seq_specs.extend(
+                _union_cast_flag_specs(flag, _scalar_cast_types_in_union(resolved), group, group_description),
+            )
+            return seq_specs
         cast_types = _scalar_cast_types_in_union(resolved)
         if cast_types:
             help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
-            result: list[FlagSpec] = [
+            return [
                 FlagSpec(name=flag, metavar="VALUE", help=help_text, group=group, group_description=group_description),
+                *_union_cast_flag_specs(flag, cast_types, group, group_description),
             ]
-            for tp in cast_types:
-                cast_name = tp.__name__
-                result.append(
-                    FlagSpec(
-                        name=f"{flag}.{cast_name}",
-                        metavar=cast_name.upper(),
-                        help=f"Force {cast_name!r} type for '{flag}' (bypasses the stealing rule).",
-                        group=group,
-                        group_description=group_description,
-                    ),
-                )
-            return result
         return []
 
     if _is_final(core):
@@ -632,20 +675,20 @@ def _collect_union_root_specs(
             completer=_make_path_completer(paths),
         ),
     ]
+    by_name: dict[str, FlagSpec] = {result[0].name: result[0]}
     for variant in variants:
-        result.extend(
-            _collect_struct_specs(
-                variant,
-                prefix,
-                union_tag,
-                group=variant.__name__,
-                group_description=inspect.getdoc(variant) or "",
-            ),
-        )
+        for spec in _collect_struct_specs(
+            variant,
+            prefix,
+            union_tag,
+            group=variant.__name__,
+            group_description=inspect.getdoc(variant) or "",
+        ):
+            _merge_or_append_spec(result, by_name, spec)
     return result
 
 
-def _collect_struct_specs(  # noqa: C901  # union-root branch added one more conditional
+def _collect_struct_specs(  # union-root branch added one more conditional
     target: Any,
     prefix: str,
     union_tag: str,
@@ -684,29 +727,26 @@ def _collect_struct_specs(  # noqa: C901  # union-root branch added one more con
     if direct_subs:
         all_subs = _dataclass_subclasses(tp)  # recursive, for tab-completion paths
         tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
-        existing_names: set[str] = {s.name for s in result}
-        if tag_name not in existing_names:
+        by_name: dict[str, FlagSpec] = {s.name: s for s in result}
+        if tag_name not in by_name:
             paths = [f"{v.__module__}.{v.__qualname__}" for v in all_subs]
-            result.append(
-                FlagSpec(
-                    name=tag_name,
-                    metavar="DOTTED.CLASS.PATH",
-                    help=(
-                        f"Fully-qualified class path selecting the {tp.__name__!r} subclass "
-                        f"(e.g. mypackage.SubClass). "
-                        f"Once set, use the subclass's field flags."
-                    ),
-                    group=group,
-                    group_description=group_description,
-                    completer=_make_path_completer(paths),
+            tag_spec = FlagSpec(
+                name=tag_name,
+                metavar="DOTTED.CLASS.PATH",
+                help=(
+                    f"Fully-qualified class path selecting the {tp.__name__!r} subclass "
+                    f"(e.g. mypackage.SubClass). "
+                    f"Once set, use the subclass's field flags."
                 ),
+                group=group,
+                group_description=group_description,
+                completer=_make_path_completer(paths),
             )
-            existing_names.add(tag_name)
+            result.append(tag_spec)
+            by_name[tag_name] = tag_spec
         for sub in direct_subs:
             for spec in _collect_struct_specs(sub, prefix, union_tag, group, group_description):
-                if spec.name not in existing_names:
-                    result.append(spec)
-                    existing_names.add(spec.name)
+                _merge_or_append_spec(result, by_name, spec)
 
     return result
 

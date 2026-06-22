@@ -272,6 +272,46 @@ class TestCliCollections:
         assert result.mapping == {"k": 5}
 
 
+class TestCliUnionWithSequence:
+    """Unions mixing a scalar with a sequence variant (str | tuple, str | list)."""
+
+    def test_str_tuple_single_token_is_scalar(self) -> None:
+        """A lone token stays a bare str for str | tuple[str, str]."""
+        target = make_target("input", str | tuple[str, str])
+        assert confarg.load(target, argv=["--input", "foo"], env={}).input == "foo"
+
+    def test_str_tuple_two_tokens_build_tuple(self) -> None:
+        """Two tokens build the tuple variant."""
+        target = make_target("input", str | tuple[str, str])
+        assert confarg.load(target, argv=["--input", "foo", "bar"], env={}).input == ("foo", "bar")
+
+    def test_str_list_two_tokens_build_list(self) -> None:
+        """Two tokens build the list variant for str | list[str]."""
+        target = make_target("input", str | list[str])
+        assert confarg.load(target, argv=["--input", "a", "b", "c"], env={}).input == ["a", "b", "c"]
+
+    def test_json_array_token(self) -> None:
+        """A single JSON-array token builds the sequence variant."""
+        target = make_target("input", str | tuple[str, str])
+        assert confarg.load(target, argv=["--input", '["a","b"]'], env={}).input == ("a", "b")
+
+    def test_missing_value_raises(self) -> None:
+        """--input with no following token raises for a fixed-tuple-only union."""
+        target = make_target("input", str | tuple[str, str])
+        with pytest.raises(ConfargError, match="Missing value for '--input'"):
+            confarg.load(target, argv=["--input"], env={})
+
+    def test_varlen_union_empty_builds_empty_list(self) -> None:
+        """--input with no token builds [] when the union has a varlen variant."""
+        target = make_target("input", int | list[int])
+        assert confarg.load(target, argv=["--input"], env={}).input == []
+
+    def test_all_sequence_union_single_token_keeps_one_tuple(self) -> None:
+        """An all-sequence union does not unwrap: one token still builds a 1-tuple."""
+        target = make_target("input", tuple[str] | tuple[str, str])
+        assert confarg.load(target, argv=["--input", "foo"], env={}).input == ("foo",)
+
+
 # ---------------------------------------------------------------------------
 # Config flag
 # ---------------------------------------------------------------------------
