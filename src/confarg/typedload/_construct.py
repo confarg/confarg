@@ -40,6 +40,7 @@ from confarg._types import (
     _tuple_types,
     _union_args,
     _union_args_no_none,
+    _UnionSeqToken,
     _var_keyword_name,
     _var_positional_name,
 )
@@ -678,6 +679,15 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
     result = _coerce_scalar_variants(all_args, scalar_leaf_vars, data, path)
     if result is not _UNION_NO_MATCH:
         return result
+
+    # A lone CLI token (e.g. `--input hello` for `bool | list[str]`) that no scalar
+    # variant accepts falls back to filling the sequence variant as a one-element list,
+    # mirroring a sole `list[str]` field. Gated on _UnionSeqToken so env/config scalars
+    # (plain _StrToken / native values) stay strict — they express lists explicitly.
+    if isinstance(data, _UnionSeqToken):
+        result = _try_coll_variants(coll_vars, [_StrToken(data)], path, union_tag)
+        if result is not _UNION_NO_MATCH:
+            return result
 
     variant_names = " | ".join(
         "None" if v is type(None) else getattr(_resolve_type(v), "__name__", repr(v)) for v in all_args

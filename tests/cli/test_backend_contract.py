@@ -117,6 +117,11 @@ class _WithStrList:
 
 
 @dataclass
+class _WithBoolList:
+    input: bool | list[str]
+
+
+@dataclass
 class _BaseDB:
     """Abstract base database config (inheritance dispatch)."""
 
@@ -351,6 +356,16 @@ class TestUnionWithSequenceContract:
         """--input foo yields the bare str for str | list[str]."""
         cfg = loader.load(_WithStrList, argv=["--input", "foo"], env={})
         assert cfg.input == "foo"
+
+    def test_bool_list_single_value_matches_scalar(self, loader: ConfargLoader) -> None:
+        """--input true matches the bool variant for bool | list[str] (scalar priority)."""
+        cfg = loader.load(_WithBoolList, argv=["--input", "true"], env={})
+        assert cfg.input is True
+
+    def test_bool_list_single_value_falls_back_to_list(self, loader: ConfargLoader) -> None:
+        """--input hello: bool rejects it, so it fills list[str] as ['hello'] (the reported bug)."""
+        cfg = loader.load(_WithBoolList, argv=["--input", "hello"], env={})
+        assert cfg.input == ["hello"]
 
     def test_str_tuple_two_values_space_sep(self, space_sep_loader: ConfargLoader) -> None:
         """--input foo bar builds the tuple (vanilla, argparse, cyclopts)."""
