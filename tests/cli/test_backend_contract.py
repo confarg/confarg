@@ -833,6 +833,13 @@ class _WithLang:
 
 
 @dataclass
+class _WithPair:
+    """Fixed-length tuple field with no default (built element-by-element from CLI)."""
+
+    input: tuple[int, int]
+
+
+@dataclass
 class _WithDbs:
     """List-of-struct field."""
 
@@ -902,6 +909,16 @@ class TestCollectionPatchContract:
         """Tuple elements are patchable by index."""
         cfg = loader.load(_WithLang, argv=["--lang.1", "FR"], env={})
         assert cfg.lang == ("en", "FR")
+
+    def test_tuple_negative_index_set(self, loader: ConfargLoader) -> None:
+        """A negative index resolves against the fixed tuple length (``-1`` → last slot)."""
+        cfg = loader.load(_WithLang, argv=["--lang.-1", "FR"], env={})
+        assert cfg.lang == ("en", "FR")
+
+    def test_tuple_build_with_mixed_indices_no_base(self, loader: ConfargLoader) -> None:
+        """A fixed tuple builds element-by-element from mixed positive/negative indices."""
+        cfg = loader.load(_WithPair, argv=["--input.0", "0", "--input.-1", "1"], env={})
+        assert cfg.input == (0, 1)
 
     def test_append_single(self, loader: ConfargLoader, tmp_yaml) -> None:
         """``--field+ value`` appends one element."""
