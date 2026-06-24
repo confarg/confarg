@@ -22,6 +22,7 @@ nav = [
     { "8. Disambiguation" = "examples/8_disambiguation/README.md" },
     { "9. Child configurations" = "examples/9_child_configurations/README.md" },
     { "10. Nested configurations" = "examples/10_nested_configurations/README.md" },
+    { "11. Collections" = "examples/11_collections/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]
