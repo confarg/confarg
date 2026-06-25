@@ -1,0 +1,8 @@
+__include__: ./config.yaml
+
+dbs:
+  0:
+    dbpath: db2.sqlite
+
+users:
+  2: frankenstein
