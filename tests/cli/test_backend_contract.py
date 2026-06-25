@@ -840,6 +840,13 @@ class _WithPair:
 
 
 @dataclass
+class _WithTriple:
+    """Fixed-length 3-tuple field — completed from a shorter config base via index patch."""
+
+    input: tuple[int, int, int]
+
+
+@dataclass
 class _WithDbs:
     """List-of-struct field."""
 
@@ -919,6 +926,27 @@ class TestCollectionPatchContract:
         """A fixed tuple builds element-by-element from mixed positive/negative indices."""
         cfg = loader.load(_WithPair, argv=["--input.0", "0", "--input.-1", "1"], env={})
         assert cfg.input == (0, 1)
+
+    def test_tuple_completed_from_shorter_config_base(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A config base shorter than the tuple is completed by an index patch past its end.
+
+        The merge layer cannot tell a list from a fixed tuple, so an index outside the
+        base list is deferred to build(), which fills the declared tuple slot instead of
+        raising the list replacement-only error.
+        """
+        base = tmp_yaml("input: [1, 2]\n")
+        cfg = loader.load(_WithTriple, argv=["--config", str(base), "--input.2", "3"], env={})
+        assert cfg.input == (1, 2, 3)
+
+    def test_list_index_past_config_base_still_errors(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The same out-of-base index on a *list* field still errors (replacement-only).
+
+        Confirms the deferral only relocated the list error to build() — it did not
+        weaken list semantics.
+        """
+        base = tmp_yaml("users: [alice, bob]\n")
+        with pytest.raises(ConfargError):
+            loader.load(_WithUsers, argv=["--config", str(base), "--users.4", "carol"], env={})
 
     def test_append_single(self, loader: ConfargLoader, tmp_yaml) -> None:
         """``--field+ value`` appends one element."""
