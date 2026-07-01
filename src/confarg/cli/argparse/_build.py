@@ -92,7 +92,7 @@ def _merge_or_append_spec(result: list[FlagSpec], by_name: dict[str, FlagSpec], 
     """Append ``spec`` to ``result``, or merge its ``choices`` into a same-named earlier spec.
 
     Union variants can each contribute a ``FlagSpec`` for the same discriminator field
-    (e.g. ``type: Literal["mariadb"]`` vs ``Literal["postgre"]``). First-wins dedup would
+    (e.g. ``type: Literal["mariadb"]`` vs ``Literal["postgres"]``). First-wins dedup would
     drop all but the first variant's choices, so a merged single flag must accept every
     variant's value. When both the existing and new spec carry ``choices``, union them
     (order-preserving); otherwise keep the first spec unchanged.

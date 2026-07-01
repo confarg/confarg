@@ -48,7 +48,7 @@ This works as well with configuration files, which could contain a configuration
 
 * a PostgreSQLConfig configuration file:
     ```console
-    $ uv run myapp.py --config postgre.yaml
+    $ uv run myapp.py --config postgres.yaml
     PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
     ```
 

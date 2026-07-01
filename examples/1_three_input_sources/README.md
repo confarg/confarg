@@ -59,21 +59,21 @@ Confarg supports the following formats for configurations:
 * **JSON**:
 
     ```console
-    $ uv run myapp.py --config postgre.json
+    $ uv run myapp.py --config postgres.json
     PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
     ```
 
 * **TOML**:
 
     ```console
-    $ uv run myapp.py --config postgre.toml
+    $ uv run myapp.py --config postgres.toml
     PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
     ```
 
 * **YAML**, if the `pyyaml` package is installed:
 
     ```console
-    $ uv run myapp.py --config postgre.yaml
+    $ uv run myapp.py --config postgres.yaml
     PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
     ```
 
@@ -82,7 +82,7 @@ The configuration can also be specified from the environment:
 
 <!-- pytest-markdown-console: platform:linux -->
 ```console
-$ MYAPP_CONFIG=postgre.yaml uv run myapp.py
+$ MYAPP_CONFIG=postgres.yaml uv run myapp.py
 PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
 ```
 

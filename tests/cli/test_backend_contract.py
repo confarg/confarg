@@ -168,7 +168,7 @@ class _RootMariaDBTyped:
 class _RootPostgreTyped:
     """PostgreSQL variant with a Literal discriminator."""
 
-    type: Literal["postgre"] = "postgre"
+    type: Literal["postgres"] = "postgres"
     host: str = ""
 
 
@@ -743,14 +743,14 @@ class TestUnionRootContract:
         flags = build_static_flags(_RootTypedDBConfig, union_tag="class", config_flag="")
         type_specs = [f for f in flags if f.name == "type"]
         assert len(type_specs) == 1
-        assert set(type_specs[0].choices or []) == {"mariadb", "postgre"}
+        assert set(type_specs[0].choices or []) == {"mariadb", "postgres"}
 
     def test_union_root_literal_discriminator_selects_variant(self, loader: ConfargLoader) -> None:
         """--type <value> selects the matching union variant regardless of order."""
         maria = loader.load(_RootTypedDBConfig, argv=["--type", "mariadb", "--host", "h"], env={}, config_flag="")
         assert isinstance(maria, _RootMariaDBTyped)
-        postgre = loader.load(_RootTypedDBConfig, argv=["--type", "postgre", "--host", "h"], env={}, config_flag="")
-        assert isinstance(postgre, _RootPostgreTyped)
+        postgres = loader.load(_RootTypedDBConfig, argv=["--type", "postgres", "--host", "h"], env={}, config_flag="")
+        assert isinstance(postgres, _RootPostgreTyped)
 
 
 # ---------------------------------------------------------------------------

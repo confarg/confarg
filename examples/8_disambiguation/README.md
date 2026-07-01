@@ -18,7 +18,7 @@ We apply the discriminator pattern by introducing a `Literal` field that identif
 ```python
 @dataclass(kw_only=True)
 class PostgreSQLConfigTyped:
-    type: Literal["postgre"] = "postgre"  # discriminator field
+    type: Literal["postgres"] = "postgres"  # discriminator field
     host: str
     port: int = 5432
     schema_name: str
@@ -35,22 +35,22 @@ class MariaDBConfigTyped:
 Now we rely on the label to select a variant.
 
 ```console
-$ uv run dbhosts_typed.py --type postgre --host example.com --schema_name mydb
-PostgreSQLConfigTyped(type='postgre', host='example.com', port=5432, schema_name='mydb')
+$ uv run dbhosts_typed.py --type postgres --host example.com --schema_name mydb
+PostgreSQLConfigTyped(type='postgres', host='example.com', port=5432, schema_name='mydb')
 ```
 
 This works similarly with configuration files. We modify our configuration file to introduce the discriminator field.
 
 ```yaml
-# postgre_typed.yaml
-type: postgre
+# postgres_typed.yaml
+type: postgres
 host: example.com
 schema_name: mydb
 ```
 
 ```console
-$ uv run dbhosts_typed.py --config postgre_typed.yaml
-PostgreSQLConfigTyped(type='postgre', host='example.com', port=5432, schema_name='mydb')
+$ uv run dbhosts_typed.py --config postgres_typed.yaml
+PostgreSQLConfigTyped(type='postgres', host='example.com', port=5432, schema_name='mydb')
 $ uv run dbhosts_typed.py --config mariadb_typed.yaml
 MariaDBConfigTyped(type='mariadb', host='example.com', port=3306, schema_name='mydb')
 ```
@@ -99,25 +99,25 @@ We saw in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/) ho
 
 ```console
 $ # Loading a PostgreSQL configuration from file
-$ uv run myapp.py --config postgre.yaml
+$ uv run myapp.py --config postgres.yaml
 PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
 $ # Setting a SQLite configuration from the command line
 $ uv run myapp.py --dbpath /path/to/db.sqlite
 SQLiteConfig(dbpath='/path/to/db.sqlite')
 $ # Can we overwrite the config from the command line like so?
-$ uv run myapp.py --config postgre.yaml --dbpath /path/to/db.sqlite  # Error
+$ uv run myapp.py --config postgres.yaml --dbpath /path/to/db.sqlite  # Error
 ...
 ```
 
 This last command fail, and it is important to understand why.
 
-As mentioned in [Tutorial #2](https://confarg.github.io/confarg/examples/2_input_precedence/), the configuration is built progressively, and collected arguments are checked against the configuration type at the very end only. Here, the `dbpath` key from the command line is added to the keys defined in `postgre.yaml`, and since no configuration accepts all of those keys, the configuration fails to load.
+As mentioned in [Tutorial #2](https://confarg.github.io/confarg/examples/2_input_precedence/), the configuration is built progressively, and collected arguments are checked against the configuration type at the very end only. Here, the `dbpath` key from the command line is added to the keys defined in `postgres.yaml`, and since no configuration accepts all of those keys, the configuration fails to load.
 
 In confarg, to discard any existing input for a given entry, you can provide the `.class` key — the same one that is used for disambiguation. By using this key, you signal to confarg that you are creating a new object of this type, and that any existing input under that entry is to be discarded.
 
 ```console
 $ # OK: explicitly discard previous keys and start fresh
-$ uv run myapp.py --config postgre.yaml --class configs.SQLiteConfig --dbpath /path/to/db.sqlite
+$ uv run myapp.py --config postgres.yaml --class configs.SQLiteConfig --dbpath /path/to/db.sqlite
 SQLiteConfig(dbpath='/path/to/db.sqlite')
 ```
 
