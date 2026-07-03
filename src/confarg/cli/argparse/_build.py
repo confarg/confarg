@@ -872,7 +872,7 @@ def _collect_config_argv_specs(argv: Sequence[str], config_flag: str) -> list[Fl
     return specs
 
 
-def _collect_patch_argv_specs(
+def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind (delete/append/collection/json cast)
     target: object,
     argv: Sequence[str],
     union_tag: str,
@@ -895,6 +895,7 @@ def _collect_patch_argv_specs(
         _looks_like_flag,
         _normalize_eq_args,
         _parse_flag_mode,
+        detect_force_cast,
     )
 
     specs: list[FlagSpec] = []
@@ -908,9 +909,19 @@ def _collect_patch_argv_specs(
             continue  # config files are registered by _collect_config_argv_specs
         if key in seen:
             continue
-        path, append_mode, delete_mode, force_cast, _delete_idx, _is_list_delete = _parse_flag_mode(key)
-        if force_cast:
-            continue  # union cast flags (--field.int) are registered statically
+        path, append_mode, delete_mode, _delete_idx, _is_list_delete = _parse_flag_mode(key)
+        if not (append_mode or delete_mode):
+            path, force_cast = detect_force_cast(path, target, union_tag)
+            if force_cast == "json":
+                # .json is broadly applicable, so it is registered dynamically (only when
+                # typed) rather than statically like the scalar-union casts (--field.int).
+                seen.add(key)
+                specs.append(
+                    FlagSpec(name=key, metavar="JSON", help=f"Parse the value as JSON for '{'.'.join(path)}'."),
+                )
+                continue
+            if force_cast:
+                continue  # scalar union cast flags (--field.int) are registered statically
         if not (delete_mode or append_mode or _is_collection_patch_path(target, path, union_tag)):
             continue
         seen.add(key)

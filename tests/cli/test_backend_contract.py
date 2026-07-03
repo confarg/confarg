@@ -122,6 +122,16 @@ class _WithBoolList:
 
 
 @dataclass
+class _WithStrBoolList:
+    values: list[str | bool] = dataclasses.field(default_factory=list)
+
+
+@dataclass
+class _WithIntNoneList:
+    values: list[int | None] = dataclasses.field(default_factory=list)
+
+
+@dataclass
 class _BaseDB:
     """Abstract base database config (inheritance dispatch)."""
 
@@ -173,6 +183,35 @@ class _RootPostgreTyped:
 
 
 _RootTypedDBConfig: Any = _RootMariaDBTyped | _RootPostgreTyped
+
+
+@dataclass
+class _WithAnyField:
+    """A field the two-gate JSON magic can't reach — only ``.json`` decodes it."""
+
+    data: Any = None
+
+
+@dataclass
+class _WithJsonNamedField:
+    """A field literally named ``json`` (a cast word): the real field must win."""
+
+    json: int = 0
+
+
+@dataclass
+class _InnerJson:
+    json: int = 0
+
+
+@dataclass
+class _OuterInner:
+    inner: _InnerJson = dataclasses.field(default_factory=_InnerJson)
+
+
+@dataclass
+class _WithDictField:
+    d: dict[str, int] = dataclasses.field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +442,46 @@ class TestUnionWithSequenceContract:
             flags = populating_loader.registered_flags(target)
             assert flags is not None
             assert "input" in flags
+
+
+# ---------------------------------------------------------------------------
+# Inline JSON array as a single token (nargs="*" collection / union-seq fields)
+# ---------------------------------------------------------------------------
+
+
+class TestJsonArrayTokenContract:
+    """A single inline JSON-array token sets a collection field, matching confarg.load().
+
+    A ``nargs="*"`` flag (a varlen list or a union-with-sequence-variant) accepts one
+    inline JSON array as its whole value. Elements keep their JSON types: unlike the
+    space-separated form, strings are exempt from the stealing rule and ``null`` is
+    expressible. Every adapter must agree with the vanilla loader.
+    """
+
+    def test_varlen_list_json_array(self, loader: ConfargLoader) -> None:
+        """--values '["hello", "yes", "well"]' -> strings; "yes" is NOT stolen to True."""
+        cfg = loader.load(_WithStrBoolList, argv=["--values", '["hello", "yes", "well"]'], env={})
+        assert cfg.values == ["hello", "yes", "well"]
+
+    def test_varlen_list_json_preserves_null(self, loader: ConfargLoader) -> None:
+        """--values '[null, 550]' -> [None, 550]; null cannot be expressed space-separated."""
+        cfg = loader.load(_WithIntNoneList, argv=["--values", "[null, 550]"], env={})
+        assert cfg.values == [None, 550]
+
+    def test_union_seq_json_array(self, loader: ConfargLoader) -> None:
+        """--input '["a", "b"]' fills the list variant of str | list[str]."""
+        cfg = loader.load(_WithStrList, argv=["--input", '["a", "b"]'], env={})
+        assert cfg.input == ["a", "b"]
+
+    def test_invalid_json_falls_back_to_literal(self, loader: ConfargLoader) -> None:
+        """A non-JSON '[' token is not parsed; it stays a single literal element."""
+        cfg = loader.load(_WithStrBoolList, argv=["--values", "[oops"], env={})
+        assert cfg.values == ["[oops"]
+
+    def test_merged_dict_matches_vanilla(self, loader: ConfargLoader) -> None:
+        """The raw merged dict is byte-identical across all four loaders (plain values)."""
+        merged = loader.merge(_WithStrBoolList, argv=["--values", '["hello", "yes", "well"]'], env={})
+        assert merged == {"values": ["hello", "yes", "well"]}
 
 
 # ---------------------------------------------------------------------------
@@ -1101,3 +1180,102 @@ class TestCallableBindContract:
             env={},
         )
         assert cfg.fn("world") == "Hi, world!"
+
+
+# ---------------------------------------------------------------------------
+# Explicit .json / __json force-cast
+# ---------------------------------------------------------------------------
+
+
+class TestJsonCastContract:
+    """The explicit ``.json`` suffix parses a value as JSON for any field type.
+
+    It is the fifth member of the ``.str``/``.int``/``.float``/``.bool`` cast family:
+    an escape hatch that is predictable regardless of the field type and reaches cases
+    the implicit two-gate magic cannot (``Any``-typed fields, ``null`` in a list).  A
+    real field/dict-key of the same name always wins over the cast.
+    """
+
+    def test_struct_field_from_json(self, loader: ConfargLoader) -> None:
+        """--db.json '{...}' builds a nested struct."""
+        cfg = loader.load(Nested, argv=["--db.json", '{"host": "h", "port": 9}'], env={})
+        assert cfg.db == Simple(host="h", port=9)
+
+    def test_list_with_null_from_json(self, loader: ConfargLoader) -> None:
+        """--values.json '[null, 5]' passes a None the space-separated syntax can't express."""
+        cfg = loader.load(_WithIntNoneList, argv=["--values.json", "[null, 5]"], env={})
+        assert cfg.values == [None, 5]
+
+    def test_any_field_only_reachable_via_json(self, loader: ConfargLoader) -> None:
+        """.json decodes into an ``Any`` field, which the two-gate magic never touches."""
+        cfg = loader.load(_WithAnyField, argv=["--data.json", '{"a": 1}'], env={})
+        assert cfg.data == {"a": 1}
+
+    def test_json_null_is_stored_not_dropped(self, loader: ConfargLoader) -> None:
+        """--data.json null yields None (the falsy result is not mistaken for 'no cast')."""
+        cfg = loader.load(_WithAnyField, argv=["--data.json", "null"], env={})
+        assert cfg.data is None
+
+    def test_invalid_json_raises(self, loader: ConfargLoader) -> None:
+        """An explicit .json with a malformed value hard-errors (explicit → loud)."""
+        with pytest.raises(ConfargError):
+            loader.load(Nested, argv=["--db.json", "not json"], env={})
+
+    def test_real_json_field_wins(self, loader: ConfargLoader) -> None:
+        """A field literally named ``json`` is addressed as a field, not a cast."""
+        cfg = loader.load(_WithJsonNamedField, argv=["--json", "7"], env={})
+        assert cfg.json == 7
+
+    def test_nested_real_json_field_wins(self, loader: ConfargLoader) -> None:
+        """--inner.json 3 sets the real sub-field ``json`` rather than casting ``inner``."""
+        cfg = loader.load(_OuterInner, argv=["--inner.json", "3"], env={})
+        assert cfg.inner.json == 3
+
+    def test_dict_key_named_json(self, loader: ConfargLoader) -> None:
+        """On a dict field, --d.json addresses the key ``json`` (a valid key path wins)."""
+        cfg = loader.load(_WithDictField, argv=["--d.json", "5"], env={})
+        assert cfg.d == {"json": 5}
+
+    def test_merged_dict_is_shared(self, loader: ConfargLoader) -> None:
+        """merge() yields the decoded structure raw, identically across every integration."""
+        data = loader.merge(Nested, argv=["--db.json", '{"host": "h", "port": 9}'], env={})
+        assert data["db"] == {"host": "h", "port": 9}
+
+    def test_bare_object_on_any_is_a_string_via_cli(self, loader: ConfargLoader) -> None:
+        """Without .json, a brace value on an Any field stays a string (the magic never guesses)."""
+        data = loader.merge(_WithAnyField, argv=["--data", '{"a": 1}'], env={})
+        assert data["data"] == '{"a": 1}'
+
+    def test_bare_object_on_any_agrees_across_cli_and_env(self, loader: ConfargLoader) -> None:
+        """CLI and env store the identical string for a bare object on an Any field.
+
+        Regression for a divergence where env treated ``Any`` as a struct (via
+        ``_is_plain_class(typing.Any)``) and JSON-parsed it while the CLI kept the string.
+        """
+        cli = loader.merge(_WithAnyField, argv=["--data", '{"a": 1}'], env={})
+        env = loader.merge(_WithAnyField, argv=[], env={"MYAPP_DATA": '{"a": 1}'}, env_prefix="MYAPP_")
+        assert cli["data"] == env["data"] == '{"a": 1}'
+
+
+class TestEnvJsonCastContract:
+    """The env counterpart ``FOO__field__json`` mirrors the CLI ``.json`` suffix."""
+
+    def test_env_struct_from_json(self, loader: ConfargLoader) -> None:
+        """MYAPP_DB__json='{...}' builds a nested struct from env."""
+        cfg = loader.load(
+            Nested,
+            argv=[],
+            env={"MYAPP_DB__json": '{"host": "eh", "port": 1}'},
+            env_prefix="MYAPP_",
+        )
+        assert cfg.db == Simple(host="eh", port=1)
+
+    def test_env_invalid_json_raises(self, loader: ConfargLoader) -> None:
+        """A malformed __json env value hard-errors, matching the CLI."""
+        with pytest.raises(ConfargError):
+            loader.load(Nested, argv=[], env={"MYAPP_DB__json": "nope"}, env_prefix="MYAPP_")
+
+    def test_env_real_json_field_wins(self, loader: ConfargLoader) -> None:
+        """MYAPP_INNER__json sets the real ``json`` sub-field, not a cast on ``inner``."""
+        cfg = loader.load(_OuterInner, argv=[], env={"MYAPP_INNER__json": "9"}, env_prefix="MYAPP_")
+        assert cfg.inner.json == 9
