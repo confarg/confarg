@@ -25,6 +25,7 @@ nav = [
     { "11. Collections" = "examples/11_collections/README.md" },
     { "12. Collection items" = "examples/12_collection_items/README.md" },
     { "13. Dictionaries" = "examples/13_dictionaries/README.md" },
+    { "13. JSON inputs" = "examples/14_json_inputs/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]
