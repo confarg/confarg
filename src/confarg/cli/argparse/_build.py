@@ -915,9 +915,11 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
             if force_cast == "json":
                 # .json is broadly applicable, so it is registered dynamically (only when
                 # typed) rather than statically like the scalar-union casts (--field.int).
+                # An empty path is the root `--json` cast (inject the whole config).
                 seen.add(key)
+                target_desc = f"'{'.'.join(path)}'" if path else "the whole config"
                 specs.append(
-                    FlagSpec(name=key, metavar="JSON", help=f"Parse the value as JSON for '{'.'.join(path)}'."),
+                    FlagSpec(name=key, metavar="JSON", help=f"Parse the value as JSON for {target_desc}."),
                 )
                 continue
             if force_cast:

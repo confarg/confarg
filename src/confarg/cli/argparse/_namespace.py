@@ -20,7 +20,7 @@ from confarg._api import build
 from confarg._merge import _deep_merge
 from confarg._parse_cli import _collect_cli_patch_ops, _collect_config_file_pairs
 from confarg._pipeline import _merge_sources
-from confarg.cli._collect import _collect_ns_fields
+from confarg.cli._collect import _collect_ns_fields, apply_root_json
 
 
 def merge_namespace(  # noqa: PLR0913
@@ -79,14 +79,16 @@ def merge_namespace(  # noqa: PLR0913
     if env is None:
         env = os.environ
 
+    ns_flat = vars(ns)
     cli_data: dict[str, Any] = {}
-    _collect_ns_fields(vars(ns), target, prefix="", union_tag=union_tag, result=cli_data)
+    _collect_ns_fields(ns_flat, target, prefix="", union_tag=union_tag, result=cli_data)
 
     # Scanning argv (not the namespace) preserves interleaved --config[.subpath]
     # ordering, so later CLI config files win on conflict, and lets the patch
     # scan apply list-index / append / delete / dict-subkey ops in command order.
     argv_ = sys.argv[1:] if argv is None else list(argv)
     cli_data = _deep_merge(cli_data, _collect_cli_patch_ops(argv_, target, config_flag, union_tag))
+    apply_root_json(ns_flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
     cli_configs = _collect_config_file_pairs(argv_, config_flag) if config_flag else []
 
     return _merge_sources(

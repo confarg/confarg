@@ -18,6 +18,7 @@ visible: ``TestListSpaceSeparated`` runs on vanilla/argparse/cyclopts and
 from __future__ import annotations
 
 import dataclasses
+import json
 import math
 from collections.abc import (
     Callable,  # noqa: TC003  # used in a runtime dataclass annotation confarg resolves via get_type_hints
@@ -1255,6 +1256,62 @@ class TestJsonCastContract:
         cli = loader.merge(_WithAnyField, argv=["--data", '{"a": 1}'], env={})
         env = loader.merge(_WithAnyField, argv=[], env={"MYAPP_DATA": '{"a": 1}'}, env_prefix="MYAPP_")
         assert cli["data"] == env["data"] == '{"a": 1}'
+
+
+class TestRootJsonContract:
+    """A bare ``--json`` injects the whole config at CLI priority: the root peer of ``--field.json``.
+
+    It mirrors the per-field ``.json`` cast for the root object — field flags refine it and a
+    real root field named ``json`` still wins (see ``test_real_json_field_wins`` above).
+    """
+
+    def test_struct_root_from_json(self, loader: ConfargLoader) -> None:
+        """--json '{...}' builds the whole struct root."""
+        cfg = loader.load(Nested, argv=["--json", '{"db": {"host": "h", "port": 9}, "debug": true}'], env={})
+        assert cfg == Nested(db=Simple(host="h", port=9), debug=True)
+
+    def test_union_root_from_json_structural(self, loader: ConfargLoader) -> None:
+        """--json selects a union-root variant by structure, no --class needed."""
+        cfg = loader.load(_RootDBConfig, argv=["--json", '{"dbpath": "/tmp/x.db"}'], env={}, config_flag="")
+        assert cfg == _RootSQLite(dbpath="/tmp/x.db")
+
+    def test_union_root_from_json_explicit_class(self, loader: ConfargLoader) -> None:
+        """--json may carry an explicit class tag for the union root."""
+        blob = json.dumps({"class": f"{__name__}._RootSQLite", "dbpath": "/tmp/x.db"})
+        cfg = loader.load(_RootDBConfig, argv=["--json", blob], env={}, config_flag="")
+        assert cfg == _RootSQLite(dbpath="/tmp/x.db")
+
+    def test_field_flag_overrides_json_either_order(self, loader: ConfargLoader) -> None:
+        """A per-field CLI flag wins over --json regardless of argv order."""
+        base = '{"db": {"host": "h", "port": 9}}'
+        a = loader.load(Nested, argv=["--json", base, "--db.port", "1"], env={})
+        b = loader.load(Nested, argv=["--db.port", "1", "--json", base], env={})
+        assert a == b == Nested(db=Simple(host="h", port=1))
+
+    def test_json_beats_env(self, loader: ConfargLoader) -> None:
+        """Root --json lands at CLI priority, overriding env for the same key."""
+        cfg = loader.load(
+            Nested,
+            argv=["--json", '{"db": {"host": "from-json"}}'],
+            env={"MYAPP_DB__HOST": "from-env"},
+            env_prefix="MYAPP_",
+        )
+        assert cfg.db.host == "from-json"
+
+    def test_non_object_for_struct_root_raises(self, loader: ConfargLoader) -> None:
+        """A non-object --json for a structured target is rejected."""
+        with pytest.raises(ConfargError):
+            loader.load(Nested, argv=["--json", "[1, 2]"], env={})
+
+    def test_invalid_json_raises(self, loader: ConfargLoader) -> None:
+        """A malformed root --json hard-errors (explicit → loud)."""
+        with pytest.raises(ConfargError):
+            loader.load(Nested, argv=["--json", "{bad"], env={})
+
+    def test_merged_dict_is_shared(self, loader: ConfargLoader) -> None:
+        """merge() folds the decoded object into the raw dict identically across integrations."""
+        data = loader.merge(Nested, argv=["--json", '{"db": {"host": "h", "port": 9}}'], env={})
+        assert data["db"] == {"host": "h", "port": 9}
 
 
 class TestEnvJsonCastContract:

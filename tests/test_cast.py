@@ -76,3 +76,24 @@ def test_detect_json_on_any_field_is_cast() -> None:
 def test_detect_non_cast_suffix_is_untouched() -> None:
     """A trailing segment that is not a cast word is returned unchanged."""
     assert detect_force_cast(["data", "host"], _Config, "class") == (["data", "host"], None)
+
+
+@dataclass
+class _NoJson:
+    host: str = ""
+
+
+def test_detect_root_json_cast() -> None:
+    """A bare --json at the root (no json field) is the whole-config JSON cast: empty path."""
+    assert detect_force_cast(["json"], _NoJson, "class") == ([], "json")
+
+
+def test_detect_root_real_json_field_wins() -> None:
+    """A root struct that really has a ``json`` field keeps --json as a field access."""
+    assert detect_force_cast(["json"], _Config, "class") == (["json"], None)
+
+
+@pytest.mark.parametrize("name", sorted(SCALAR_CAST_TYPES))
+def test_detect_root_scalar_cast_is_ignored(name: str) -> None:
+    """Root-level scalar casts have no struct to attach to, so they are left untouched."""
+    assert detect_force_cast([name], _NoJson, "class") == ([name], None)

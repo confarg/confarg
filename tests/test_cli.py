@@ -763,6 +763,34 @@ class TestCliJsonComposite:
                 env={},
             )
 
+    def test_whole_config_as_root_json(self) -> None:
+        """A bare --json '{...}' injects the entire config at the root."""
+        result = confarg.load(
+            AppConfig,
+            argv=["--json", '{"db":{"host":"h","port":1,"name":"n"}}'],
+            env={},
+        )
+        assert result.db == DbConfig(host="h", port=1, name="n")
+
+    def test_root_json_with_cli_prefix(self) -> None:
+        """With a cli_prefix, the root cast is addressed as --<prefix>.json."""
+        result = confarg.load(
+            AppConfig,
+            argv=["--app.json", '{"db":{"host":"h","port":1,"name":"n"}}'],
+            env={},
+            cli_prefix="app",
+        )
+        assert result.db == DbConfig(host="h", port=1, name="n")
+
+    def test_scalar_root_from_json(self) -> None:
+        """For a non-struct root, --json stores the decoded value under __root__."""
+        assert confarg.load(int, argv=["--json", "5"], env={}) == 5
+
+    def test_root_json_missing_value_raises(self) -> None:
+        """--json with no following value errors."""
+        with pytest.raises(ConfargError, match="Missing value"):
+            confarg.load(AppConfig, argv=["--json"], env={})
+
 
 # ---------------------------------------------------------------------------
 # List append syntax (--field+)
