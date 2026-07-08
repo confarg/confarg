@@ -1,0 +1,6 @@
+# TOML bare keys cannot contain '+', so the key must be quoted.
+"users+" = ["frankenstein"]
+
+[["dbs+"]]
+class  = "configs.append.SQLiteConfig"
+dbpath = "other.sqlite"

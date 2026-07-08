@@ -3,7 +3,7 @@ name: CI / Check PR Title
 on:
   pull_request:
     branches: [master]
-    types: [opened, edited, reopened]
+    types: [opened, edited, reopened, synchronize]
 
 permissions:
   pull-requests: read

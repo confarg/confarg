@@ -1,0 +1,4 @@
+dbs:
+- class: configs.PostgreSQLConfigChild
+  host: example.com
+  schema_name: mydb
