@@ -1,0 +1,20 @@
+dbs:
+- class: configs.deletion.SQLiteConfig
+  dbpath: db.sqlite
+- class: configs.deletion.SQLiteConfig
+  dbpath: otherdb.sqlite
+
+users: [alice, bob, claire]
+
+pages:
+- [page001, page002, page003]
+- [page010, page011]
+
+
+more_dbs:
+  backup1:
+    class: configs.deletion.SQLiteConfig
+    dbpath: backup1.sqlite
+  backup2:
+    class: configs.deletion.SQLiteConfig
+    dbpath: backup2.sqlite

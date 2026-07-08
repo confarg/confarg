@@ -1,0 +1,5 @@
+__include__: ./users.yaml
+
+users:
+  0-:
+    hello: 32
