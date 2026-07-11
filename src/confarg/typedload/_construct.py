@@ -685,7 +685,11 @@ def _coerce_scalar_variants(all_args: list[Any], scalar_leaf_vars: list[Any], da
         if vr is bool and int in scalar_leaf_vars:
             continue  # handled above
         try:
-            return _coerce_leaf(vr, data, path)
+            # Delegate to the canonical single-value constructor so every leaf kind
+            # participates — including type refs (`type`, `type[X]`), which _coerce_leaf
+            # alone can't build. Calling _coerce_leaf directly here let str always steal
+            # a type-ref variant, violating the stealing rule.
+            return _construct_scalar(var, data, path)
         except (TypeCoercionError, ValueError, TypeError):
             continue
     return _UNION_NO_MATCH

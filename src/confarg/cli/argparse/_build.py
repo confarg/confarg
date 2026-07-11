@@ -63,15 +63,20 @@ _SCALAR_CAST_TYPES: frozenset[type] = frozenset({str, int, float, bool})
 def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
     """Return scalar types to offer as explicit cast flags for a multi-variant union.
 
-    Returns non-empty when the union has (a) at least one enum variant with scalar
-    co-members, or (b) str alongside at least one other scalar — both are combinations
-    where the stealing rule is non-obvious and an explicit cast escape-hatch is useful.
+    Returns non-empty when the union has (a) at least one enum variant, or (b) str
+    alongside any other variant — both are combinations where the stealing rule is
+    non-obvious and an explicit cast escape-hatch is useful. Case (b) covers str
+    sharing the union with a non-scalar variant too (``str | type``, ``str | Path``),
+    so ``--field.str`` is always available to bypass a stolen str, whatever the other
+    variant is.
     """
     non_none = _union_args_no_none(resolved)
     types = [_resolve_type(v) for v in non_none]
     scalars = [t for t in types if t in _SCALAR_CAST_TYPES]
     has_enum = any(_is_enum(t) for t in types)
-    has_str_with_other = str in scalars and len(scalars) > 1
+    # In this branch the union always has >= 2 non-None variants, so a bare `str in
+    # scalars` already means "str shares the union with at least one other variant".
+    has_str_with_other = str in scalars
     if not has_enum and not has_str_with_other:
         return []
     return scalars
@@ -569,7 +574,7 @@ def _union_cast_flag_specs(
     ]
 
 
-def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913
+def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
     flag: str,
     name: str,
     raw_type: Any,
@@ -616,14 +621,15 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913
                 _union_cast_flag_specs(flag, _scalar_cast_types_in_union(resolved), group, group_description),
             )
             return seq_specs
-        cast_types = _scalar_cast_types_in_union(resolved)
-        if cast_types:
-            help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
-            return [
-                FlagSpec(name=flag, metavar="VALUE", help=help_text, group=group, group_description=group_description),
-                *_union_cast_flag_specs(flag, cast_types, group, group_description),
-            ]
-        return []
+        # Any other multi-variant leaf union (str | type, int | float, str | Path, …)
+        # is a single scalar flag. Register it unconditionally so the field is
+        # accepted; add force-cast escape hatches when the stealing rule is
+        # non-obvious (str-with-scalar or enum unions).
+        help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
+        return [
+            FlagSpec(name=flag, metavar="VALUE", help=help_text, group=group, group_description=group_description),
+            *_union_cast_flag_specs(flag, _scalar_cast_types_in_union(resolved), group, group_description),
+        ]
 
     if _is_final(core):
         core = _final_inner(core)
@@ -922,8 +928,10 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
                     FlagSpec(name=key, metavar="JSON", help=f"Parse the value as JSON for {target_desc}."),
                 )
                 continue
-            if force_cast:
-                continue  # scalar union cast flags (--field.int) are registered statically
+            if force_cast and not _is_collection_patch_path(target, path, union_tag):
+                continue  # scalar-union cast on a plain field (--field.int): registered statically
+            # else: cast on a collection element (--field.N.str) falls through to
+            # dynamic collection-patch registration below.
         if not (delete_mode or append_mode or _is_collection_patch_path(target, path, union_tag)):
             continue
         seen.add(key)

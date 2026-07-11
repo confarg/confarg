@@ -869,8 +869,8 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         if not append_mode and not delete_mode:
             path, force_cast = detect_force_cast(path, target, union_tag)
 
-        if patch_only and force_cast is not None:
-            i += 1  # force-cast owned by the flat collector; its value is skipped as a stray token
+        if patch_only and force_cast is not None and not _is_collection_patch_path(target, path, union_tag):
+            i += 1  # cast on a plain field: owned by the flat collector; its value is a stray token
             continue
 
         if (
