@@ -428,7 +428,7 @@ def _dump_yaml(data: dict[str, Any], path: Path) -> None:
     except ImportError:
         msg = "PyYAML"
         raise InvalidConfigFileError.missing_library(msg, "pyyaml", "writing YAML files") from None
-    with Path(path).open("w", encoding="utf-8") as f:
+    with Path(path).open("w", encoding="utf-8", newline="\n") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper)
 
 
@@ -439,7 +439,7 @@ def _dump_json(data: dict[str, Any], path: Path) -> None:
         data: The dict to write.
         path: Path to the output file.
     """
-    with Path(path).open("w", encoding="utf-8") as f:
+    with Path(path).open("w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=2)
 
 

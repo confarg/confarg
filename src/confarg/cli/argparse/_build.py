@@ -18,12 +18,11 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 from confarg import _defaults
-from confarg._callable import _detect_owning_class
+from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _detect_owning_class, active_directives
 from confarg._files import _load_file
 from confarg._import import _import_dotted
 from confarg._merge import _deep_merge
 from confarg._types import (
-    _callable_return_type,
     _dataclass_subclasses,
     _elem_type,
     _final_inner,
@@ -204,12 +203,67 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
     )
 
 
+# (opener_suffix, mode, bind_key) for both the plain and escaped directive forms.
+# Escaped forms come first so the longer suffix (``._class``) is matched before the
+# plain one (``.class``). The single source of truth for how an argv opener flag maps
+# to a mode + bind-flag namespace, mirroring ``confarg._callable.active_directives`` on
+# the construction side so registration and collection agree.
+_OPENER_SPECS: tuple[tuple[str, str, str], ...] = tuple(
+    (f".{opener}", mode, directives.bind)
+    for directives in (_ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES)
+    for opener, mode in ((directives.fn, "fn"), (directives.cls, "class"), (directives.call, "call"))
+)
+
+
+def _escaped_opener_name(mode: str) -> str:
+    """Return the escaped opener flag name (``_fn``/``_class``/``_call``) for a mode."""
+    return {
+        "fn": _ESCAPED_DIRECTIVES.fn,
+        "class": _ESCAPED_DIRECTIVES.cls,
+        "call": _ESCAPED_DIRECTIVES.call,
+    }[mode]
+
+
+def _escaped_opener_specs(
+    argv_fns: dict[str, tuple[str, str, str]],
+    existing_names: set[str],
+) -> list[FlagSpec]:
+    """Register the escaped opener flags (``--<field>._class`` etc.) actually typed on the CLI.
+
+    Escaped openers are not registered statically; only those present in argv are added, so
+    the host framework accepts them while ``--help`` stays uncluttered. No group is set:
+    sharing the field's group name with a different description trips cyclopts' "2 distinct
+    Group objects with same name" check.
+    """
+    result: list[FlagSpec] = []
+    for field_flag, (_fn_path, mode, bind_key) in argv_fns.items():
+        if bind_key != _ESCAPED_DIRECTIVES.bind:
+            continue
+        opener_flag = f"{field_flag}.{_escaped_opener_name(mode)}"
+        if opener_flag in existing_names:
+            continue
+        result.append(
+            FlagSpec(
+                name=opener_flag,
+                metavar="DOTTED.PATH",
+                help=f"Escaped-mode opener for the '{field_flag}' callable.",
+            ),
+        )
+        existing_names.add(opener_flag)
+    return result
+
+
 def _build_callable_fn_specs(
     flag: str,
     group: str | None,
     group_description: str,
 ) -> list[FlagSpec]:
-    """Build FlagSpecs for ``--<flag>.fn``, ``--<flag>.class``, ``--<flag>.call``."""
+    """Build FlagSpecs for ``--<flag>.fn``, ``--<flag>.class``, ``--<flag>.call``.
+
+    Only the plain openers are registered statically; the escaped openers
+    (``--<flag>._fn`` etc.) are registered on demand by :func:`build_dynamic_flags`
+    when they actually appear in argv, keeping the static ``--help`` uncluttered.
+    """
     return [
         FlagSpec(
             name=f"{flag}.{sub}",
@@ -259,9 +313,14 @@ def _build_union_tag_spec(
 def _bind_specs_from_signature(
     field_flag: str,
     target_obj: Any,
+    bind_key: str,
     existing_names: set[str],
 ) -> list[FlagSpec]:
-    """Build ``--<field_flag>.bind.<param>`` FlagSpecs from a callable's signature."""
+    """Build ``--<field_flag>.<bind_key>.<param>`` FlagSpecs from a callable's signature.
+
+    ``bind_key`` is ``bind`` in plain mode and ``_bind`` in escaped mode, so the
+    registered flags match the active directive namespace.
+    """
     try:
         sig = inspect.signature(target_obj)
     except (ValueError, TypeError):
@@ -274,7 +333,7 @@ def _bind_specs_from_signature(
             continue
         if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
             continue
-        dest = f"{field_flag}.bind.{param_name}"
+        dest = f"{field_flag}.{bind_key}.{param_name}"
         if dest in existing_names:
             continue
         help_parts = []
@@ -301,23 +360,25 @@ def _bind_specs_from_signature(
 def _collect_callable_bind_specs(
     field_flag: str,
     fn_path: str,
+    bind_key: str,
     existing_names: set[str],
 ) -> list[FlagSpec]:
-    """Build FlagSpecs for ``--<field_flag>.bind.<param>`` by inspecting the target's signature."""
+    """Build FlagSpecs for ``--<field_flag>.<bind_key>.<param>`` by inspecting the target's signature."""
     try:
         obj = _import_dotted(fn_path)
     except SymbolImportError:
         return []
     target_obj = obj.__init__ if isinstance(obj, type) else obj
-    return _bind_specs_from_signature(field_flag, target_obj, existing_names)
+    return _bind_specs_from_signature(field_flag, target_obj, bind_key, existing_names)
 
 
 def _collect_callable_call_bind_specs(
     field_flag: str,
     cls: type,
+    bind_key: str,
     existing_names: set[str],
 ) -> list[FlagSpec]:
-    """Build ``--<field_flag>.bind.<param>`` FlagSpecs from a class's ``__call__`` parameters.
+    """Build ``--<field_flag>.<bind_key>.<param>`` FlagSpecs from a class's ``__call__`` parameters.
 
     In ``--<field>.class`` mode the constructor parameters become factory kwargs
     (``--<field>.<param>``), while the *instance's* ``__call__`` parameters are
@@ -330,7 +391,7 @@ def _collect_callable_call_bind_specs(
     call = next((c.__dict__["__call__"] for c in cls.__mro__ if "__call__" in c.__dict__), None)
     if call is None:
         return []
-    return _bind_specs_from_signature(field_flag, call, existing_names)
+    return _bind_specs_from_signature(field_flag, call, bind_key, existing_names)
 
 
 def _collect_callable_factory_specs(
@@ -370,66 +431,68 @@ def _collect_callable_field_specs(
     field_flag: str,
     fn_path: str,
     mode: str,
+    bind_key: str,
     existing_names: set[str],
 ) -> list[FlagSpec]:
-    """Build bind/factory FlagSpecs for one callable field given its fn_path and mode."""
+    """Build bind/factory FlagSpecs for one callable field given its fn_path, mode and bind_key.
+
+    ``bind_key`` (``bind`` or ``_bind``) names the active bind-flag namespace; factory
+    kwargs stay plain (``--<field>.<param>``) in both modes.
+    """
     if mode == "class":
         try:
             cls = _import_dotted(fn_path)
             if isinstance(cls, type):
                 # Constructor params → factory kwargs; __call__ params → bind kwargs.
                 specs = _collect_callable_factory_specs(field_flag, cls, existing_names)
-                specs.extend(_collect_callable_call_bind_specs(field_flag, cls, existing_names))
+                specs.extend(_collect_callable_call_bind_specs(field_flag, cls, bind_key, existing_names))
                 return specs
         except SymbolImportError:
             pass
     elif mode == "call":
-        return _collect_callable_bind_specs(field_flag, fn_path, existing_names)
+        return _collect_callable_bind_specs(field_flag, fn_path, bind_key, existing_names)
     else:  # mode == "fn"
         try:
             obj = _import_dotted(fn_path)
             if isinstance(obj, type):
-                return _collect_callable_factory_specs(field_flag, obj, existing_names)
+                # 'fn: SomeClass' is a factory; its constructor params are bind targets
+                # (--<field>.bind.<param>), applied via functools.partial.
+                return _collect_callable_bind_specs(field_flag, fn_path, bind_key, existing_names)
             owning_cls = _detect_owning_class(obj)
             if owning_cls is not None:
                 # Bound-method path (e.g. Class.method): the owning class's
                 # constructor params become factory kwargs, while the method's
                 # own params are what bind targets.
                 specs = _collect_callable_factory_specs(field_flag, owning_cls, existing_names)
-                specs.extend(_collect_callable_bind_specs(field_flag, fn_path, existing_names))
+                specs.extend(_collect_callable_bind_specs(field_flag, fn_path, bind_key, existing_names))
                 return specs
         except SymbolImportError:
             pass
-    return _collect_callable_bind_specs(field_flag, fn_path, existing_names)
+    return _collect_callable_bind_specs(field_flag, fn_path, bind_key, existing_names)
 
 
-def _get_callable_field_return_type(target: Any, flag: str) -> Any | None:
-    """Return the Callable return type for the field at the given dot-separated flag path."""
-    parts = flag.split(".")
-    tp = _resolve_type(target)
-    for part in parts:
-        if not _is_struct(tp):
-            return None
-        flds = _struct_fields(tp)
-        if part not in flds:
-            return None
-        tp = _resolve_type(flds[part])
-        unwrapped = _unwrap_optional(tp)
-        if unwrapped is None:
-            return None
-        tp = unwrapped
-    if not _is_callable(tp):
-        return None
-    return _callable_return_type(tp)
+def _match_opener_suffix(key: str) -> tuple[str, str, str] | None:
+    """Return (field_flag, mode, bind_key) if ``key`` ends with a plain or escaped opener suffix."""
+    for suffix, mode, bind_key in _OPENER_SPECS:
+        if key.endswith(suffix) and len(key) > len(suffix):
+            return key[: -len(suffix)], mode, bind_key
+    return None
 
 
-def _collect_fn_paths_from_argv(argv: Sequence[str]) -> dict[str, tuple[str, str]]:
-    """Scan argv for --<field>.fn or --<field>.class tokens.
+def _collect_fn_paths_from_argv(argv: Sequence[str]) -> dict[str, tuple[str, str, str]]:
+    """Scan argv for --<field>.fn/.class/.call and their escaped ._fn/._class/._call forms.
 
-    Returns {field_flag: (fn_path, mode)} where mode is "fn", "class", or "call".
-    CLI wins for duplicate keys.
+    Returns {field_flag: (fn_path, mode, bind_key)} where mode is "fn"/"class"/"call"
+    and bind_key is "bind" (plain) or "_bind" (escaped). CLI wins for duplicate keys.
+
+    A field's escaped opener takes precedence over any plain-opener match for the same
+    field: once ``--<field>._fn`` is present, a sibling ``--<field>.fn`` is a factory
+    kwarg named ``fn``, not a second opener. This mirrors
+    :func:`~confarg._callable.active_directives`, where the opener's form alone selects
+    the mode.
     """
-    result: dict[str, tuple[str, str]] = {}
+    escaped: dict[str, tuple[str, str, str]] = {}
+    plain: dict[str, tuple[str, str, str]] = {}
     i = 0
     while i < len(argv):
         tok = argv[i]
@@ -438,38 +501,38 @@ def _collect_fn_paths_from_argv(argv: Sequence[str]) -> dict[str, tuple[str, str
             continue
         if "=" in tok:
             key, _, val = tok[2:].partition("=")
-            for suffix in (".fn", ".class", ".call"):
-                if key.endswith(suffix) and len(key) > len(suffix):
-                    result[key[: -len(suffix)]] = (val, suffix[1:])
-                    break
+            matched = _match_opener_suffix(key)
+            if matched is not None:
+                field_flag, mode, bind_key = matched
+                bucket = escaped if bind_key == _ESCAPED_DIRECTIVES.bind else plain
+                bucket[field_flag] = (val, mode, bind_key)
             i += 1
         else:
-            key = tok[2:]
-            for suffix in (".fn", ".class", ".call"):
-                if key.endswith(suffix) and len(key) > len(suffix):
-                    field_flag = key[: -len(suffix)]
-                    if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
-                        result[field_flag] = (argv[i + 1], suffix[1:])
-                        i += 2
-                    else:
-                        i += 1
-                    break
+            matched = _match_opener_suffix(tok[2:])
+            if matched is not None and i + 1 < len(argv) and not argv[i + 1].startswith("--"):
+                field_flag, mode, bind_key = matched
+                bucket = escaped if bind_key == _ESCAPED_DIRECTIVES.bind else plain
+                bucket[field_flag] = (argv[i + 1], mode, bind_key)
+                i += 2
             else:
                 i += 1
-    return result
+    return {**plain, **escaped}  # escaped opener wins: a field's plain '.fn' is then data
 
 
-def _callable_fn_path(sub: Any) -> tuple[str, str] | None:
-    """Return (path, mode) from a callable's config sub-value, or None if not present.
+def _callable_fn_path(sub: Any) -> tuple[str, str, str] | None:
+    """Return (path, mode, bind_key) from a callable's config sub-value, or None if not present.
 
-    Checks string shorthand (implicit "fn") and dict keys "fn", "class", "call".
+    Checks string shorthand (implicit "fn") and the opener keys of the active directive
+    form (plain ``fn``/``class``/``call`` or escaped ``_fn``/``_class``/``_call``),
+    selected canonically via :func:`~confarg._callable.active_directives`.
     """
     if isinstance(sub, str):
-        return (sub, "fn")
+        return (sub, "fn", _PLAIN_DIRECTIVES.bind)
     if isinstance(sub, dict):
-        for key, mode in (("fn", "fn"), ("class", "class"), ("call", "call")):
+        d = active_directives(sub.__contains__)
+        for key, mode in ((d.fn, "fn"), (d.cls, "class"), (d.call, "call")):
             if isinstance(sub.get(key), str):
-                return (sub[key], mode)
+                return (sub[key], mode, d.bind)
     return None
 
 
@@ -478,12 +541,13 @@ def _collect_fn_paths_from_config(
     target: Any,
     prefix: str,
     union_tag: str,
-) -> dict[str, tuple[str, str]]:
+) -> dict[str, tuple[str, str, str]]:
     """Walk target + config_dict to find fn/class values for Callable fields.
 
-    Returns {field_flag: (fn_path, mode)} where mode is "fn", "class", or "call".
+    Returns {field_flag: (fn_path, mode, bind_key)} where mode is "fn"/"class"/"call"
+    and bind_key is "bind" (plain) or "_bind" (escaped).
     """
-    result: dict[str, tuple[str, str]] = {}
+    result: dict[str, tuple[str, str, str]] = {}
     tp = _resolve_type(target)
     if not _is_struct(tp):
         return result
@@ -638,10 +702,6 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
         help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
         specs: list[FlagSpec] = [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
         specs.extend(_build_callable_fn_specs(flag, group, group_description))
-        ret = _callable_return_type(core)
-        if ret is not None and isinstance(ret, type) and _is_struct(ret):
-            existing: set[str] = {s.name for s in specs}
-            specs.extend(_collect_callable_factory_specs(flag, ret, existing, group, group_description))
         return specs
 
     if _is_namedtuple(core):
@@ -1009,9 +1069,9 @@ def build_dynamic_flags(
         config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
         argv_fns = _collect_fn_paths_from_argv(argv_list)
         existing_names: set[str] = set()
-        result: list[FlagSpec] = []
-        for field_flag, (fn_path, mode) in {**config_fns, **argv_fns}.items():
-            result.extend(_collect_callable_field_specs(field_flag, fn_path, mode, existing_names))
+        result: list[FlagSpec] = _escaped_opener_specs(argv_fns, existing_names)
+        for field_flag, (fn_path, mode, bind_key) in {**config_fns, **argv_fns}.items():
+            result.extend(_collect_callable_field_specs(field_flag, fn_path, mode, bind_key, existing_names))
         if config_flag:
             result.extend(_collect_config_argv_specs(argv_list, config_flag))
         result.extend(_collect_patch_argv_specs(target, argv_list, union_tag, config_flag))

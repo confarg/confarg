@@ -6,18 +6,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from confarg._types import _StrToken
 from confarg.cli._collect import (
-    _callable_return_type_for,
     _collect_callable_spec,
     _collect_ns_fields,
     _merge_blob_into_spec,
 )
-from tests._cov_helpers import _CovCallableCls, _CovDCResult, _WithCovCallable
+from tests._cov_helpers import _WithCovCallable
 
 
 @dataclass
@@ -113,56 +111,51 @@ class TestCollectCallableSpec:
         """_collect_callable_spec stores fn: value from flat namespace."""
         flat = {"myfn.fn": "some.module.fn"}
         result: dict[str, Any] = {}
-        _collect_callable_spec(flat, "myfn", Callable, result)
+        _collect_callable_spec(flat, "myfn", result)
         assert result.get("myfn", {}).get("fn") == "some.module.fn"
 
     def test_class_key(self) -> None:
         """_collect_callable_spec stores class: value from flat namespace."""
         flat = {"myfn.class": "some.module.Cls"}
         result: dict[str, Any] = {}
-        _collect_callable_spec(flat, "myfn", Callable, result)
+        _collect_callable_spec(flat, "myfn", result)
         assert result.get("myfn", {}).get("class") == "some.module.Cls"
 
     def test_bind_keys(self) -> None:
         """_collect_callable_spec assembles bind: dict from flat namespace."""
         flat = {"myfn.fn": "some.fn", "myfn.bind.x": "42"}
         result: dict[str, Any] = {}
-        _collect_callable_spec(flat, "myfn", Callable, result)
+        _collect_callable_spec(flat, "myfn", result)
         assert result["myfn"]["bind"]["x"] == "42"
 
     def test_bare_string_no_spec(self) -> None:
         """A bare string value with no other spec keys is stored as a plain string."""
         flat = {"myfn": "some.module.fn"}
         result: dict[str, Any] = {}
-        _collect_callable_spec(flat, "myfn", Callable, result)
+        _collect_callable_spec(flat, "myfn", result)
         assert result.get("myfn") == "some.module.fn"
 
     def test_blob_dict_merged(self) -> None:
         """A pre-existing dict blob for the flag is merged with the assembled spec."""
         flat = {"myfn": {"fn": "existing.fn"}, "myfn.bind.x": "42"}
         result: dict[str, Any] = {}
-        _collect_callable_spec(flat, "myfn", Callable, result)
+        _collect_callable_spec(flat, "myfn", result)
         merged = result.get("myfn", {})
         assert merged.get("fn") == "existing.fn"
         assert merged.get("bind", {}).get("x") == "42"
 
-    def test_factory_kwargs(self) -> None:
-        """_collect_callable_spec collects flat factory kwargs into spec when fn key present."""
-        flat = {"myfn.fn": "some.fn", "myfn.lr": "0.01"}
+    def test_class_init_kwargs(self) -> None:
+        """Sibling kwargs are collected as instance-init kwargs when 'class:' is present."""
+        flat = {"myfn.class": "some.Cls", "myfn.lr": "0.01"}
         result: dict[str, Any] = {}
-        _collect_callable_spec(flat, "myfn", Callable[..., _CovCallableCls], result)
+        _collect_callable_spec(flat, "myfn", result)
         assert result.get("myfn", {}).get("lr") == "0.01"
 
 
 class TestCollectHelpers:
     """Small helper functions of cli/_collect.py."""
 
-    def test_callable_return_type_for(self) -> None:
-        """_callable_return_type_for delegates to _callable_return_type."""
-        result = _callable_return_type_for(Callable[..., _CovDCResult])
-        assert result is _CovDCResult
-
     def test_merge_blob_into_spec_non_dict_bind(self) -> None:
         """_merge_blob_into_spec uses bind directly when blob.bind is not a dict."""
-        merged = _merge_blob_into_spec({"bind": "not_a_dict"}, {}, {"x": 1})
+        merged = _merge_blob_into_spec({"bind": "not_a_dict"}, {}, {"x": 1}, "bind")
         assert merged["bind"] == {"x": 1}

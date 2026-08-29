@@ -25,20 +25,18 @@ import pytest
 import confarg
 import confarg._callable as callable_mod
 from confarg._callable import (
-    _check_bind_params,
     _check_callable_signature,
     _ClassSpec,
-    _coerce_bind_kwargs,
     _detect_owning_class,
     _format_fn_dict_example,
     _import_dotted,
-    _is_factory_class,
+    _issubclass_safe,
     _resolve_bare_string,
+    _resolve_bind_kwargs,
     _resolve_call_kwargs,
     _resolve_call_spec,
     _resolve_callable_spec,
     _resolve_class_spec,
-    _resolve_factory_kwargs,
     _serialize_callable,
 )
 from confarg._files import (
@@ -1211,7 +1209,6 @@ class TestCallableBranches:
                 _ClassSpec(cls_path, {}, {}, {"class": cls_path}),
                 "test_path",
                 "class",
-                None,
                 construct,
             )
 
@@ -1222,7 +1219,6 @@ class TestCallableBranches:
             _ClassSpec(cls_path, {"value": 5}, {}, {"class": cls_path, "value": 5}),
             "test_path",
             "class",
-            None,
             construct,
         )
         assert callable(result)
@@ -1707,30 +1703,31 @@ class TestCallableGaps:
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="Failed to call"):
             _resolve_call_spec(f"{_COV_MOD}._cov_raise_fn", {"x": 1}, {}, "test", "class", construct)
 
-    def test_coerce_bind_kwargs_string_values(self) -> None:
-        """_coerce_bind_kwargs coerces _StrToken bind values to annotated parameter types."""
+    def test_resolve_bind_kwargs_string_values(self) -> None:
+        """_resolve_bind_kwargs coerces _StrToken bind values to annotated parameter types."""
 
         def fn(lr: float, steps: int = 10) -> None:
             pass
 
-        result = _coerce_bind_kwargs(fn, {"lr": _StrToken("0.01"), "steps": _StrToken("5")})
+        result = _resolve_bind_kwargs(
+            fn,
+            {"lr": _StrToken("0.01"), "steps": _StrToken("5")},
+            "test",
+            "class",
+            construct,
+        )
         assert result["lr"] == pytest.approx(0.01)
         assert result["steps"] == 5
 
-    def test_coerce_bind_kwargs_uninspectable(self) -> None:
-        """_coerce_bind_kwargs returns bind unchanged for uninspectable callables."""
-        result = _coerce_bind_kwargs(len, {"x": "val"})
-        assert result == {"x": "val"}
-
-    def test_check_bind_params_uninspectable(self, monkeypatch) -> None:
-        """_check_bind_params returns without error for uninspectable callables."""
+    def test_resolve_bind_kwargs_signature_boom(self, monkeypatch) -> None:
+        """_resolve_bind_kwargs returns bind unchanged when inspect.signature raises."""
 
         def _boom(*args, **kwargs):
             msg = "uninspectable"
             raise ValueError(msg)
 
         monkeypatch.setattr(callable_mod.inspect, "signature", _boom)
-        _check_bind_params(len, {"x": 1}, "test")
+        assert _resolve_bind_kwargs(len, {"x": 1}, "test", "class", construct) == {"x": 1}
 
     def test_resolve_call_kwargs_unannotated_param(self) -> None:
         """_resolve_call_kwargs passes unannotated params through unchanged (line 229)."""
@@ -1741,36 +1738,6 @@ class TestCallableGaps:
         result = _resolve_call_kwargs(fn, {"x": "hello", "y": "5"}, "test", "class", construct_fn=None)
         assert result["x"] == "hello"
 
-    def test_resolve_factory_kwargs_uninspectable(self) -> None:
-        """_resolve_factory_kwargs returns raw kwargs for uninspectable __init__."""
-
-        class _Uninspectable:
-            pass
-
-        _Uninspectable.__init__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __init__ to trigger fallback path
-        result = _resolve_factory_kwargs(_Uninspectable, {"a": 1}, "test", "class", construct_fn=None)
-        assert result == {"a": 1}
-
-    def test_resolve_factory_kwargs_get_type_hints_fails(self) -> None:
-        """_resolve_factory_kwargs falls back to {} hints when get_type_hints raises."""
-
-        class _BrokenHints:
-            def __init__(self, x: UndefinedType777) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
-                self.x = x
-
-        result = _resolve_factory_kwargs(_BrokenHints, {"x": 1}, "test", "class", construct_fn=None)
-        assert result["x"] == 1
-
-    def test_resolve_factory_kwargs_unannotated_param(self) -> None:
-        """_resolve_factory_kwargs passes unannotated params through unchanged (line 451)."""
-
-        class _UnannotatedInit:
-            def __init__(self, x, y=10):  # no annotations
-                pass
-
-        result = _resolve_factory_kwargs(_UnannotatedInit, {"x": "val", "y": "5"}, "test", "class", construct_fn=None)
-        assert result["x"] == "val"
-
     def test_resolve_call_kwargs_get_type_hints_fails(self) -> None:
         """_resolve_call_kwargs falls back to {} hints when get_type_hints raises."""
 
@@ -1780,59 +1747,44 @@ class TestCallableGaps:
         result = _resolve_call_kwargs(_fn, {"x": 1}, "test", "class", construct_fn=None)
         assert result["x"] == 1
 
-    def test_coerce_bind_kwargs_signature_raises(self, monkeypatch) -> None:
-        """_coerce_bind_kwargs returns bind unchanged when inspect.signature raises."""
-
-        def _boom(*args, **kwargs):
-            msg = "uninspectable"
-            raise ValueError(msg)
-
-        monkeypatch.setattr(callable_mod.inspect, "signature", _boom)
-
-        def fn(x: int) -> None:
-            pass
-
-        result = _coerce_bind_kwargs(fn, {"x": _StrToken("1")})
-        assert result == {"x": _StrToken("1")}
-
-    def test_coerce_bind_kwargs_get_type_hints_fails(self) -> None:
-        """_coerce_bind_kwargs falls back to {} hints when get_type_hints raises."""
+    def test_resolve_bind_kwargs_get_type_hints_fails(self) -> None:
+        """_resolve_bind_kwargs falls back to {} hints when get_type_hints raises."""
 
         def _fn(x: UndefinedHintType999) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
             pass
 
-        result = _coerce_bind_kwargs(_fn, {"x": _StrToken("1")})
+        result = _resolve_bind_kwargs(_fn, {"x": _StrToken("1")}, "test", "class", construct)
         assert result["x"] == _StrToken("1")
 
-    def test_coerce_bind_kwargs_unannotated_param(self) -> None:
-        """_coerce_bind_kwargs passes _StrToken values through for unannotated params."""
+    def test_resolve_bind_kwargs_unannotated_param(self) -> None:
+        """_resolve_bind_kwargs passes _StrToken values through for unannotated params."""
 
         def fn(x, y=10):  # no annotations
             pass
 
-        result = _coerce_bind_kwargs(fn, {"x": _StrToken("hello")})
+        result = _resolve_bind_kwargs(fn, {"x": _StrToken("hello")}, "test", "class", construct)
         assert result["x"] == _StrToken("hello")
 
-    def test_coerce_bind_kwargs_non_numeric_type(self) -> None:
-        """_coerce_bind_kwargs leaves _StrToken values for non-bool/int/float types."""
+    def test_resolve_bind_kwargs_non_scalar_type_constructs(self) -> None:
+        """_resolve_bind_kwargs now constructs non-scalar-annotated params via the canonical route."""
 
         def fn(name: str) -> None:
             pass
 
-        result = _coerce_bind_kwargs(fn, {"name": _StrToken("hello")})
-        assert result["name"] == _StrToken("hello")
+        result = _resolve_bind_kwargs(fn, {"name": _StrToken("hello")}, "test", "class", construct)
+        assert result["name"] == "hello"
 
-    def test_coerce_bind_kwargs_coercion_fails(self) -> None:
-        """_coerce_bind_kwargs falls back to original value when coercion raises."""
+    def test_resolve_bind_kwargs_bad_value_raises(self) -> None:
+        """_resolve_bind_kwargs fails fast (like any other config value) on an uncoercible value."""
 
         def fn(x: int) -> None:
             pass
 
-        result = _coerce_bind_kwargs(fn, {"x": _StrToken("not_an_int")})
-        assert result["x"] == _StrToken("not_an_int")
+        with pytest.raises(confarg.exceptions.TypeCoercionError):
+            _resolve_bind_kwargs(fn, {"x": _StrToken("not_an_int")}, "test", "class", construct)
 
-    def test_is_factory_class_issubclass_type_error(self) -> None:
-        """_is_factory_class returns False when issubclass raises TypeError."""
+    def test_issubclass_safe_type_error(self) -> None:
+        """_issubclass_safe returns False when issubclass raises TypeError."""
 
         # Non-runtime-checkable Protocol → issubclass raises TypeError
         class _P(Protocol):
@@ -1841,4 +1793,4 @@ class TestCallableGaps:
         class _A:
             pass
 
-        assert _is_factory_class(_A, Callable[..., _P]) is False
+        assert _issubclass_safe(_A, _P) is False
