@@ -139,6 +139,9 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: str, union_tag: str, constr
     else:
         msg = f"Cannot construct Callable at '{path}': expected str or dict, got {type(spec).__name__} {spec!r}"
         raise TypeCoercionError(msg)
+    if not callable(result):
+        msg = f"Callable at '{path}': {spec!r} resolved to {result!r}, which is not callable."
+        raise TypeCoercionError(msg)
     _check_callable_signature(result, tp, path)
     return result
 

@@ -766,6 +766,15 @@ class TestFnInitMethod:
             confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
 
+class TestBareStringNonCallable:
+    """A bare path that resolves (or instantiates) to a non-callable value is rejected."""
+
+    def test_bare_string_non_callable_instance_raises(self) -> None:
+        """pathlib.Path is a class whose instances are not callable; reject it."""
+        with pytest.raises(TypeCoercionError, match="not callable"):
+            confarg.load(WithBareCallable, argv=["--fn", "pathlib.Path"], env={})
+
+
 class TestCallDictForm:
     """Tests for the 'call:' dict key: call a factory function and use its return value."""
 
