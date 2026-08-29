@@ -28,6 +28,7 @@ nav = [
     { "14. JSON inputs" = "examples/14_json_inputs/README.md" },
     { "15. Appending items" = "examples/15_appending_items/README.md" },
     { "16. Removing items" = "examples/16_removing_items/README.md" },
+    { "17. Callables" = "examples/17_callables/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]
