@@ -9,10 +9,12 @@ from __future__ import annotations
 import csv
 import json
 import tomllib
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from confarg._merge import _deep_merge
+from confarg._types import _StrToken
 from confarg.exceptions import ConfargError, InvalidConfigFileError
 
 INCLUDE_KEY = "__include__"
@@ -129,41 +131,64 @@ def _load_json_item(path: Path) -> Any:
         raise InvalidConfigFileError.malformed(msg, path, e) from e
 
 
-def _load_csv_no_header(all_rows: list[list[str]], orient: str) -> Any:
+def _read_rows(f: Any, delimiter: str) -> list[list[_StrToken]]:
+    """Read all CSV rows, wrapping every cell in _StrToken and dropping blank lines.
+
+    CSV carries no types, so its cells are exactly like CLI/env tokens: _StrToken marks
+    them eligible for coercion to the target leaf type. Blank lines are dropped so they
+    never register as ragged rows (csv.reader yields [] for them).
+    """
+    return [[_StrToken(cell) for cell in row] for row in csv.reader(f, delimiter=delimiter) if row]
+
+
+def _check_rectangular(rows: list[list[_StrToken]], ncols: int, path: Path, *, offset: int) -> None:
+    """Raise if any row's cell count differs from ncols.
+
+    Args:
+        rows: The data rows to check.
+        ncols: The expected cell count.
+        path: The source file, for the error message.
+        offset: Rows consumed before these (1 when a header row was split off), so the
+            reported row number is 1-based over the whole file.
+    """
+    for i, row in enumerate(rows):
+        if len(row) != ncols:
+            raise InvalidConfigFileError.ragged_csv_row(path, i + 1 + offset, ncols, len(row))
+
+
+def _load_csv_no_header(all_rows: list[list[_StrToken]], orient: str, path: Path) -> Any:
     """Build the result for CSV loaded without a header row."""
-    if orient == "rows":
-        if not all_rows:
-            return []
-        return [row[0] for row in all_rows] if all(len(row) == 1 for row in all_rows) else all_rows
-    # orient == "columns": positional index keys "0", "1", …
     if not all_rows:
-        return {}
-    ncols = len(all_rows[0])
-    col_data: dict[str, list[str]] = {str(i): [] for i in range(ncols)}
-    for row in all_rows:
-        for i, v in enumerate(row):
-            col_data[str(i)].append(v)
-    return col_data
+        return [] if orient == "rows" else {}
+    if orient == "columns":  # positional index keys "0", "1", …
+        ncols = len(all_rows[0])
+        _check_rectangular(all_rows, ncols, path, offset=0)
+        return {str(i): [row[i] for row in all_rows] for i in range(ncols)}
+    return [row[0] for row in all_rows] if all(len(row) == 1 for row in all_rows) else all_rows
 
 
-def _load_csv_with_header(f: Any, orient: str, delimiter: str) -> Any:
+def _load_csv_with_header(all_rows: list[list[_StrToken]], orient: str, path: Path) -> Any:
     """Build the result for CSV loaded with a header row."""
-    reader = csv.DictReader(f, delimiter=delimiter)
-    fieldnames = list(reader.fieldnames or [])
+    if not all_rows:
+        return [] if orient == "rows" else {}
+    header, *rows = all_rows
+    names = [str(cell) for cell in header]  # keys are structural, not values — keep them plain str
+    dupes = [n for n, count in Counter(names).items() if count > 1]
+    if dupes:
+        raise InvalidConfigFileError.duplicate_csv_columns(path, dupes)
+    _check_rectangular(rows, len(names), path, offset=1)
     if orient == "columns":
-        result: dict[str, list[str]] = {name: [] for name in fieldnames}
-        for row in reader:
-            for k, v in row.items():
-                result[k].append(v)
-        return result
-    rows = [dict(row) for row in reader]
-    if len(fieldnames) == 1:
-        return [row[fieldnames[0]] for row in rows]
-    return rows
+        return {name: [row[i] for row in rows] for i, name in enumerate(names)}
+    if len(names) == 1:
+        return [row[0] for row in rows]
+    return [dict(zip(names, row, strict=True)) for row in rows]
 
 
 def _load_csv(path: Path, *, orient: str = "rows", delimiter: str = ",", header: bool = True) -> Any:
     """Load a CSV/TSV file, returning a Python structure determined by orient and header.
+
+    Every cell is a _StrToken, so CSV values coerce to the target leaf type (int, float,
+    bool, Enum, …) exactly like CLI arguments and environment variables do.
 
     orient='rows' (default):
         header=True:  single-column → list[str]; multi-column → list[dict[str, str]].
@@ -173,19 +198,25 @@ def _load_csv(path: Path, *, orient: str = "rows", delimiter: str = ",", header:
         header=False: dict[str, list[str]] keyed by positional index ("0", "1", …).
     orient='raw':
         list[list[str]] — every row returned as-is; header option is ignored.
+
+    Rows must be rectangular wherever the result is keyed (orient='columns', or
+    orient='rows' with a header) — a ragged row has no representation there and raises.
+    orient='raw' and orient='rows' with header=False yield list[list[str]], where ragged
+    rows are representable, so they are allowed.
     """
     if orient not in ("rows", "columns", "raw"):
         msg = f"Invalid CSV orient {orient!r}. Must be 'rows', 'columns', or 'raw'."
         raise ConfargError(msg)
     try:
         with path.open(newline="", encoding="utf-8-sig") as f:
-            if orient == "raw":
-                return [list(row) for row in csv.reader(f, delimiter=delimiter)]
-            if not header:
-                return _load_csv_no_header([list(row) for row in csv.reader(f, delimiter=delimiter)], orient)
-            return _load_csv_with_header(f, orient, delimiter)
+            all_rows = _read_rows(f, delimiter)
     except FileNotFoundError:
         raise InvalidConfigFileError.not_found(path) from None
+    if orient == "raw":
+        return all_rows
+    if not header:
+        return _load_csv_no_header(all_rows, orient, path)
+    return _load_csv_with_header(all_rows, orient, path)
 
 
 _ITEM_LOADERS: dict[str, Any] = {
@@ -196,6 +227,10 @@ _ITEM_LOADERS: dict[str, Any] = {
     ".csv": lambda path: _load_csv(path, orient="rows"),
     ".tsv": lambda path: _load_csv(path, orient="rows", delimiter="\t"),
 }
+
+#: Extensions whose content is data rather than a configuration layer. An include of one
+#: replaces whatever earlier entries produced instead of merging key-wise into it.
+_DATA_SUFFIXES = frozenset({".csv", ".tsv"})
 
 
 def _load_file_item(path: Path) -> Any:
@@ -221,8 +256,8 @@ def _load_file_item(path: Path) -> Any:
     return loader(path)
 
 
-def _parse_include_val(val: Any) -> tuple[str, dict[str, Any]]:
-    """Parse an INCLUDE_KEY value into (path_str, options).
+def _parse_include_entry(val: Any) -> tuple[str, dict[str, Any]]:
+    """Parse one INCLUDE_KEY entry into (path_str, options).
 
     Accepts either a plain string path or a dict with a required 'path' key and
     optional per-format options (e.g. orient for CSV).
@@ -234,6 +269,48 @@ def _parse_include_val(val: Any) -> tuple[str, dict[str, Any]]:
         return val["path"], options
     msg = f"{INCLUDE_KEY} must be a path string or a dict with a string 'path' key, got {val!r}"
     raise ConfargError(msg)
+
+
+def _parse_include_val(val: Any) -> list[tuple[str, dict[str, Any]]]:
+    """Parse an INCLUDE_KEY value into an ordered list of (path_str, options) entries.
+
+    A string or dict yields a single entry; a list yields one entry per item, layered
+    left to right by _load_includes so later entries win.
+    """
+    if isinstance(val, list):
+        if not val:
+            msg = f"{INCLUDE_KEY} list must name at least one path"
+            raise ConfargError(msg)
+        return [_parse_include_entry(item) for item in val]
+    return [_parse_include_entry(val)]
+
+
+def _load_includes(entries: list[tuple[str, dict[str, Any]]], base_dir: Path, seen: frozenset[Path]) -> Any:
+    """Load every include entry and layer them left to right, later entries winning.
+
+    Two dicts deep-merge, mirroring what repeated ``--config`` already does. Anything
+    else is replaced by the later entry, and so is a CSV/TSV entry even when it loads
+    as a dict: a CSV contributes a *value*, not a configuration layer — under
+    ``orient: columns`` its keys are column headers, data rather than structure an
+    author chose — so merging it per column would splice unrelated tables together.
+
+    ``seen`` grows per entry rather than across the list: sibling entries are
+    sequential layers, not nesting, so naming the same file twice is legal while a
+    genuine cycle still raises.
+    """
+    result: Any = None
+    for i, (path_str, options) in enumerate(entries):
+        inc_path = (base_dir / path_str).resolve()
+        if inc_path in seen:
+            msg = f"Circular include detected: {inc_path}"
+            raise ConfargError(msg)
+        loaded = _load_any(inc_path, seen | {inc_path}, options=options)
+        is_data = inc_path.suffix.lower() in _DATA_SUFFIXES
+        if i == 0 or is_data or not (isinstance(result, dict) and isinstance(loaded, dict)):
+            result = loaded
+        else:
+            result = _deep_merge(result, loaded)
+    return result
 
 
 def _resolve_node(data: Any, base_dir: Path, seen: frozenset[Path]) -> Any:
@@ -248,17 +325,14 @@ def _resolve_node(data: Any, base_dir: Path, seen: frozenset[Path]) -> Any:
 def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path]) -> Any:
     """Resolve INCLUDE_KEY in a dict node.
 
-    A pure include (no siblings) may return any type. An include with sibling
-    keys requires the included file to be a dict (for deep-merge).
+    INCLUDE_KEY may name one file or a list of them; a list is layered left to
+    right by _load_includes before anything else happens. A pure include (no
+    siblings) may return any type. An include with sibling keys requires the
+    layered result to be a dict (for deep-merge).
     """
     include_val = data.get(INCLUDE_KEY)
     if include_val is not None:
-        path_str, options = _parse_include_val(include_val)
-        inc_path = (base_dir / path_str).resolve()
-        if inc_path in seen:
-            msg = f"Circular include detected: {inc_path}"
-            raise ConfargError(msg)
-        included = _load_any(inc_path, seen | {inc_path}, options=options)
+        included = _load_includes(_parse_include_val(include_val), base_dir, seen)
         siblings = {k: v for k, v in data.items() if k != INCLUDE_KEY}
         if not siblings:
             return included
@@ -282,19 +356,15 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path]) -> lis
     """Resolve INCLUDE_KEY in list items.
 
     A list item that is a pure {INCLUDE_KEY: path} dict is replaced by the
-    included file's content; if that content is itself a list it is spliced
-    (flattened) into the parent list. Items with sibling keys follow the same
-    rules as dict nodes.
+    included content; if that content is itself a list it is spliced (flattened)
+    into the parent list. A list of paths is layered into a single value first,
+    so the list form means the same thing here as in a dict node. Items with
+    sibling keys follow the same rules as dict nodes.
     """
     result: list[Any] = []
     for item in data:
         if isinstance(item, dict) and INCLUDE_KEY in item:
-            path_str, options = _parse_include_val(item[INCLUDE_KEY])
-            inc_path = (base_dir / path_str).resolve()
-            if inc_path in seen:
-                msg = f"Circular include detected: {inc_path}"
-                raise ConfargError(msg)
-            included = _load_any(inc_path, seen | {inc_path}, options=options)
+            included = _load_includes(_parse_include_val(item[INCLUDE_KEY]), base_dir, seen)
             siblings = {k: v for k, v in item.items() if k != INCLUDE_KEY}
             if not siblings:
                 if isinstance(included, list):

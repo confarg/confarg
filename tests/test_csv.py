@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -16,6 +17,7 @@ import pytest
 
 import confarg
 from confarg._files import INCLUDE_KEY, _load_csv, _load_file
+from confarg._types import _StrToken
 from confarg.exceptions import ConfargError, InvalidConfigFileError
 
 
@@ -380,3 +382,220 @@ class TestAppendMode:
         )
         # CSV single-column → ["alpha", "beta"]; append mode wraps it as one element
         assert result.rows == [["alpha", "beta"]]
+
+
+# ---------------------------------------------------------------------------
+# Leaf coercion: CSV cells are _StrToken, so they coerce like CLI args and env vars
+# ---------------------------------------------------------------------------
+
+
+class Tier(enum.Enum):
+    """Enum used to check enum coercion from CSV cells."""
+
+    GOLD = "gold"
+    SILVER = "silver"
+
+
+@dataclass
+class Record:
+    """Row record mixing every scalar leaf type."""
+
+    name: str
+    age: int
+    score: float
+    admin: bool
+    tier: Tier
+    kind: Literal["a", "b"]
+
+
+@dataclass
+class WithRecords:
+    """Dataclass holding a list of CSV row records."""
+
+    people: list[Record] = field(default_factory=list)
+
+
+@dataclass
+class WithInts:
+    """Dataclass holding a list of ints."""
+
+    nums: list[int] = field(default_factory=list)
+
+
+@dataclass
+class WithFloatColumns:
+    """Dataclass holding CSV columns as float lists."""
+
+    cols: dict[str, list[float]] = field(default_factory=dict)
+
+
+@dataclass
+class Series:
+    """Named CSV columns landing in a dataclass."""
+
+    ts: list[str]
+    value: list[float]
+
+
+@dataclass
+class WithSeries:
+    """Dataclass wrapping a Series built from CSV columns."""
+
+    s: Series
+
+
+@dataclass
+class WithMatrix:
+    """Dataclass holding a numeric matrix."""
+
+    grid: list[list[int]] = field(default_factory=list)
+
+
+@dataclass
+class WithPairs:
+    """Dataclass holding fixed-shape (str, int) pairs."""
+
+    pairs: list[tuple[str, int]] = field(default_factory=list)
+
+
+@dataclass
+class WithStrs:
+    """Dataclass holding plain strings (guards against over-coercion)."""
+
+    vals: list[str] = field(default_factory=list)
+
+
+def include_yaml(tmp_path: Path, csv_name: str, key: str, **options: object) -> Path:
+    """Write a config.yaml whose `key` includes `csv_name`, with optional include options."""
+    if options:
+        opts = "".join(f"    {k}: {v}\n" for k, v in options.items())
+        body = f"{key}:\n  {INCLUDE_KEY}:\n    path: ./{csv_name}\n{opts}"
+    else:
+        body = f"{key}:\n  {INCLUDE_KEY}: ./{csv_name}\n"
+    return write(tmp_path, "config.yaml", body)
+
+
+class TestCsvLeafCoercion:
+    """CSV cells coerce to the target leaf type, exactly like CLI args and env vars."""
+
+    def test_rows_header_coerces_every_scalar_leaf(self, tmp_path: Path) -> None:
+        """Test that a multi-column CSV builds dataclasses with int/float/bool/enum fields."""
+        write(tmp_path, "people.csv", "name,age,score,admin,tier,kind\nalice,30,1.5,true,gold,a\n")
+        cfg_file = include_yaml(tmp_path, "people.csv", "people")
+        cfg = confarg.load(WithRecords, argv=[], files=[cfg_file])
+        assert cfg.people == [Record(name="alice", age=30, score=1.5, admin=True, tier=Tier.GOLD, kind="a")]
+
+    def test_single_column_coerces_to_list_of_ints(self, tmp_path: Path) -> None:
+        """Test that a single-column CSV lands in list[int]."""
+        write(tmp_path, "nums.csv", "n\n1\n2\n3\n")
+        cfg_file = include_yaml(tmp_path, "nums.csv", "nums")
+        assert confarg.load(WithInts, argv=[], files=[cfg_file]).nums == [1, 2, 3]
+
+    def test_columns_orient_coerces_to_dict_of_float_lists(self, tmp_path: Path) -> None:
+        """Test that columns orient lands in dict[str, list[float]]."""
+        write(tmp_path, "m.csv", "a,b\n1.5,2.5\n3.5,4.5\n")
+        cfg_file = include_yaml(tmp_path, "m.csv", "cols", orient="columns")
+        cfg = confarg.load(WithFloatColumns, argv=[], files=[cfg_file])
+        assert cfg.cols == {"a": [1.5, 3.5], "b": [2.5, 4.5]}
+
+    def test_columns_orient_coerces_into_dataclass(self, tmp_path: Path) -> None:
+        """Test that named CSV columns land in a dataclass with typed list fields."""
+        write(tmp_path, "s.csv", "ts,value\n2024-01,1.5\n2024-02,2.5\n")
+        cfg_file = include_yaml(tmp_path, "s.csv", "s", orient="columns")
+        cfg = confarg.load(WithSeries, argv=[], files=[cfg_file])
+        assert cfg.s == Series(ts=["2024-01", "2024-02"], value=[1.5, 2.5])
+
+    def test_raw_orient_coerces_to_list_of_int_lists(self, tmp_path: Path) -> None:
+        """Test that raw orient lands in list[list[int]]."""
+        write(tmp_path, "g.csv", "1,2\n3,4\n")
+        cfg_file = include_yaml(tmp_path, "g.csv", "grid", orient="raw")
+        assert confarg.load(WithMatrix, argv=[], files=[cfg_file]).grid == [[1, 2], [3, 4]]
+
+    def test_no_header_coerces_to_fixed_tuples(self, tmp_path: Path) -> None:
+        """Test that a headerless CSV lands in list[tuple[str, int]]."""
+        write(tmp_path, "p.csv", "a,1\nb,2\n")
+        cfg_file = include_yaml(tmp_path, "p.csv", "pairs", header="false")
+        cfg = confarg.load(WithPairs, argv=[], files=[cfg_file])
+        assert cfg.pairs == [("a", 1), ("b", 2)]
+
+    def test_str_target_is_not_over_coerced(self, tmp_path: Path) -> None:
+        """Test that numeric-looking cells stay strings when the target field is str."""
+        write(tmp_path, "v.csv", "v\n1\ntrue\n")
+        cfg_file = include_yaml(tmp_path, "v.csv", "vals")
+        cfg = confarg.load(WithStrs, argv=[], files=[cfg_file])
+        assert cfg.vals == ["1", "true"]
+        assert all(type(v) is str for v in cfg.vals)
+
+    def test_append_mode_coerces_numeric_csv(self, tmp_path: Path) -> None:
+        """Test that a CSV appended via --config.field+ coerces its cells."""
+        p = write(tmp_path, "row.csv", "n\n1\n2\n")
+        result = confarg.load(WithMatrix, argv=["--config.grid+", str(p)])
+        assert result.grid == [[1, 2]]
+
+    def test_cells_are_str_tokens(self, tmp_path: Path) -> None:
+        """Test that _load_csv marks cells as _StrToken so downstream coercion can fire."""
+        p = write(tmp_path, "x.csv", "a,b\n1,2\n")
+        row = _load_csv(p)[0]
+        assert all(isinstance(v, _StrToken) for v in row.values())
+        assert all(type(k) is str for k in row)  # keys are structural, kept as plain str
+
+
+# ---------------------------------------------------------------------------
+# Structural validation: ragged rows and duplicate headers
+# ---------------------------------------------------------------------------
+
+
+class TestCsvStructuralValidation:
+    """Rows must be rectangular wherever the result is keyed."""
+
+    def test_short_row_with_header_raises(self, tmp_path: Path) -> None:
+        """Test that a row with too few cells raises, naming the row and counts."""
+        p = write(tmp_path, "d.csv", "a,b,c\n1,2\n")
+        with pytest.raises(InvalidConfigFileError, match=r"Ragged CSV row 2.*expected 3 cells, got 2"):
+            _load_csv(p)
+
+    def test_long_row_with_header_raises(self, tmp_path: Path) -> None:
+        """Test that a row with too many cells raises."""
+        p = write(tmp_path, "d.csv", "a,b\n1,2\n3,4,5\n")
+        with pytest.raises(InvalidConfigFileError, match=r"Ragged CSV row 3.*expected 2 cells, got 3"):
+            _load_csv(p)
+
+    def test_ragged_rejected_in_columns_orient_with_header(self, tmp_path: Path) -> None:
+        """Test that columns orient with a header rejects ragged rows."""
+        p = write(tmp_path, "d.csv", "a,b\n1\n")
+        with pytest.raises(InvalidConfigFileError, match="Ragged CSV row 2"):
+            _load_csv(p, orient="columns")
+
+    def test_ragged_rejected_in_columns_orient_without_header(self, tmp_path: Path) -> None:
+        """Test that columns orient without a header rejects ragged rows."""
+        p = write(tmp_path, "d.csv", "1\n2,3\n")
+        with pytest.raises(InvalidConfigFileError, match="Ragged CSV row 2"):
+            _load_csv(p, orient="columns", header=False)
+
+    def test_duplicate_header_names_raise(self, tmp_path: Path) -> None:
+        """Test that a repeated column name raises instead of silently dropping data."""
+        p = write(tmp_path, "d.csv", "a,a\n1,2\n")
+        with pytest.raises(InvalidConfigFileError, match=r"Duplicate CSV column name\(s\).*'a'"):
+            _load_csv(p)
+
+    def test_ragged_allowed_in_raw_orient(self, tmp_path: Path) -> None:
+        """Test that raw orient still tolerates ragged rows."""
+        p = write(tmp_path, "d.csv", "a\nb,c\n")
+        assert _load_csv(p, orient="raw") == [["a"], ["b", "c"]]
+
+    def test_ragged_allowed_in_rows_orient_without_header(self, tmp_path: Path) -> None:
+        """Test that rows orient without a header still tolerates ragged rows."""
+        p = write(tmp_path, "d.csv", "a\nb,c\n")
+        assert _load_csv(p, header=False) == [["a"], ["b", "c"]]
+
+    def test_blank_lines_are_ignored(self, tmp_path: Path) -> None:
+        """Test that blank lines are dropped rather than counted as ragged rows."""
+        p = write(tmp_path, "d.csv", "a,b\n1,2\n\n3,4\n")
+        assert _load_csv(p) == [{"a": "1", "b": "2"}, {"a": "3", "b": "4"}]
+
+    def test_validation_error_surfaces_through_load(self, tmp_path: Path) -> None:
+        """Test that a ragged CSV include fails loudly through confarg.load."""
+        write(tmp_path, "d.csv", "a,b,c\n1,2\n")
+        cfg_file = include_yaml(tmp_path, "d.csv", "vals")
+        with pytest.raises(InvalidConfigFileError, match="Ragged CSV row 2"):
+            confarg.load(WithStrs, argv=[], files=[cfg_file])

@@ -403,3 +403,265 @@ class TestIntegrationPriorityOrdering:
         )
         assert result.db.host == "env_host"
         assert result.db.port == 5432
+
+
+# ---------------------------------------------------------------------------
+# List form: __include__ takes several files, layered in list order
+# ---------------------------------------------------------------------------
+
+
+class TestIncludeList:
+    """Tests for a list-valued __include__, where later entries override earlier ones."""
+
+    def test_later_entry_wins_on_shared_keys(self, tmp_path: Path) -> None:
+        """Test that the last entry naming a key supplies its value."""
+        write(tmp_path, "a.yaml", "host: a_host\nport: 1\n")
+        write(tmp_path, "b.yaml", "host: b_host\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}:\n  - ./a.yaml\n  - ./b.yaml\n")
+
+        assert _load_file(tmp_path / "config.yaml") == {"host": "b_host", "port": 1}
+
+    def test_keys_unique_to_an_earlier_entry_survive(self, tmp_path: Path) -> None:
+        """Test that a key only the first entry defines is kept."""
+        write(tmp_path, "a.yaml", "host: a_host\nonly_a: 1\n")
+        write(tmp_path, "b.yaml", "host: b_host\nonly_b: 2\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: [./a.yaml, ./b.yaml]\n")
+
+        assert _load_file(tmp_path / "config.yaml") == {"host": "b_host", "only_a": 1, "only_b": 2}
+
+    def test_nested_dicts_deep_merge_across_entries(self, tmp_path: Path) -> None:
+        """Test that nested mappings merge rather than replace wholesale."""
+        write(tmp_path, "a.yaml", "db:\n  name: adb\n  pool: 5\n")
+        write(tmp_path, "b.yaml", "db:\n  name: bdb\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: [./a.yaml, ./b.yaml]\n")
+
+        assert _load_file(tmp_path / "config.yaml") == {"db": {"name": "bdb", "pool": 5}}
+
+    def test_three_entries_fold_left_to_right(self, tmp_path: Path) -> None:
+        """Test that entries are applied in order, the last one winning."""
+        for name in ("a", "b", "c"):
+            write(tmp_path, f"{name}.yaml", f"host: {name}_host\n{name}: 1\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: [./a.yaml, ./b.yaml, ./c.yaml]\n")
+
+        result = _load_file(tmp_path / "config.yaml")
+        assert result == {"host": "c_host", "a": 1, "b": 1, "c": 1}
+
+    def test_single_entry_list_matches_scalar_form(self, tmp_path: Path) -> None:
+        """Test that a one-element list behaves exactly like a plain string include."""
+        write(tmp_path, "a.yaml", "host: a_host\n")
+        write(tmp_path, "scalar.yaml", f"{INCLUDE_KEY}: ./a.yaml\n")
+        write(tmp_path, "listed.yaml", f"{INCLUDE_KEY}: [./a.yaml]\n")
+
+        assert _load_file(tmp_path / "listed.yaml") == _load_file(tmp_path / "scalar.yaml")
+
+    def test_siblings_beat_every_entry(self, tmp_path: Path) -> None:
+        """Test that sibling keys override the whole include stack."""
+        write(tmp_path, "a.yaml", "host: a_host\nport: 1\n")
+        write(tmp_path, "b.yaml", "host: b_host\n")
+        write(
+            tmp_path,
+            "config.yaml",
+            f"{INCLUDE_KEY}: [./a.yaml, ./b.yaml]\nhost: sibling_host\n",
+        )
+
+        assert _load_file(tmp_path / "config.yaml") == {"host": "sibling_host", "port": 1}
+
+    def test_mixed_formats_in_one_list(self, tmp_path: Path) -> None:
+        """Test that a list may mix YAML, JSON and TOML entries."""
+        write(tmp_path, "a.yaml", "host: a_host\nport: 1\n")
+        write(tmp_path, "b.json", '{"host": "b_host", "extra": true}')
+        write(tmp_path, "c.toml", 'host = "c_host"\n')
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: [./a.yaml, ./b.json, ./c.toml]\n")
+
+        result = _load_file(tmp_path / "config.yaml")
+        assert result == {"host": "c_host", "port": 1, "extra": True}
+
+    def test_append_shorthand_composes_across_entries(self, tmp_path: Path) -> None:
+        """Test that a later entry's key+ appends to a list an earlier entry defined."""
+        write(tmp_path, "a.yaml", "plugins:\n  - core\n")
+        write(tmp_path, "b.yaml", "plugins+:\n  - auth\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: [./a.yaml, ./b.yaml]\n")
+
+        assert _load_file(tmp_path / "config.yaml") == {"plugins": ["core", "auth"]}
+
+    def test_per_entry_options_are_honoured(self, tmp_path: Path) -> None:
+        """Test that each entry keeps its own per-format options."""
+        write(tmp_path, "hosts.csv", "a.com\nb.com\n")
+        write(tmp_path, "base.yaml", "allowed: []\n")
+        write(
+            tmp_path,
+            "config.yaml",
+            f"allowed:\n  {INCLUDE_KEY}:\n    - path: ./hosts.csv\n      header: false\n",
+        )
+
+        assert _load_file(tmp_path / "config.yaml") == {"allowed": ["a.com", "b.com"]}
+
+    def test_same_file_twice_is_not_a_cycle(self, tmp_path: Path) -> None:
+        """Test that repeating a file in one list is legal — entries are layers, not nesting."""
+        write(tmp_path, "a.yaml", "host: a_host\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: [./a.yaml, ./a.yaml]\n")
+
+        assert _load_file(tmp_path / "config.yaml") == {"host": "a_host"}
+
+    def test_genuine_cycle_still_raises(self, tmp_path: Path) -> None:
+        """Test that a cycle reached through the list form is still detected."""
+        write(tmp_path, "c1.yaml", f"{INCLUDE_KEY}: [./c2.yaml]\n")
+        write(tmp_path, "c2.yaml", f"{INCLUDE_KEY}: [./c1.yaml]\n")
+
+        with pytest.raises(ConfargError, match="Circular include"):
+            _load_file(tmp_path / "c1.yaml")
+
+    def test_missing_entry_reports_the_file(self, tmp_path: Path) -> None:
+        """Test that a missing file in the list raises with its path."""
+        write(tmp_path, "a.yaml", "host: a_host\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: [./a.yaml, ./missing.yaml]\n")
+
+        with pytest.raises(InvalidConfigFileError, match="not found"):
+            _load_file(tmp_path / "config.yaml")
+
+
+# ---------------------------------------------------------------------------
+# List form: CSV entries replace rather than merge
+# ---------------------------------------------------------------------------
+
+
+class TestIncludeListCsvReplaces:
+    """A CSV/TSV entry contributes a value, so it replaces what earlier entries produced."""
+
+    def test_later_csv_replaces_earlier_csv_columns_wholesale(self, tmp_path: Path) -> None:
+        """Test that a later column-oriented CSV replaces the earlier one, disjoint columns included."""
+        write(tmp_path, "x.csv", "ts,value\n01,1\n02,2\n")
+        write(tmp_path, "y.csv", "ts,weight\n03,9\n")
+        write(
+            tmp_path,
+            "config.yaml",
+            f"m:\n  {INCLUDE_KEY}:\n"
+            f"    - {{path: ./x.csv, orient: columns}}\n"
+            f"    - {{path: ./y.csv, orient: columns}}\n",
+        )
+
+        # 'value' is gone: the second CSV replaces the first rather than merging per column.
+        assert _load_file(tmp_path / "config.yaml") == {"m": {"ts": ["03"], "weight": ["9"]}}
+
+    def test_later_csv_replaces_an_earlier_mapping(self, tmp_path: Path) -> None:
+        """Test that a CSV entry discards a mapping laid down by an earlier entry."""
+        write(tmp_path, "base.yaml", "ts: [old]\nnote: hi\n")
+        write(tmp_path, "x.csv", "ts,value\n01,1\n")
+        write(
+            tmp_path,
+            "config.yaml",
+            f"m:\n  {INCLUDE_KEY}:\n    - ./base.yaml\n    - {{path: ./x.csv, orient: columns}}\n",
+        )
+
+        assert _load_file(tmp_path / "config.yaml") == {"m": {"ts": ["01"], "value": ["1"]}}
+
+    def test_row_oriented_csv_entries_replace(self, tmp_path: Path) -> None:
+        """Test that the last row-oriented CSV supplies the rows."""
+        write(tmp_path, "a.csv", "name\nalice\n")
+        write(tmp_path, "b.csv", "name\nbob\n")
+        write(tmp_path, "config.yaml", f"names:\n  {INCLUDE_KEY}: [./a.csv, ./b.csv]\n")
+
+        assert _load_file(tmp_path / "config.yaml") == {"names": ["bob"]}
+
+    def test_mapping_after_a_csv_still_deep_merges(self, tmp_path: Path) -> None:
+        """Test that a mapping entry following a CSV merges into it."""
+        write(tmp_path, "x.csv", "ts,value\n01,1\n")
+        write(tmp_path, "extra.yaml", "note: hi\n")
+        write(
+            tmp_path,
+            "config.yaml",
+            f"m:\n  {INCLUDE_KEY}:\n    - {{path: ./x.csv, orient: columns}}\n    - ./extra.yaml\n",
+        )
+
+        result = _load_file(tmp_path / "config.yaml")
+        assert result == {"m": {"ts": ["01"], "value": ["1"], "note": "hi"}}
+
+
+# ---------------------------------------------------------------------------
+# List form: list-item position and errors
+# ---------------------------------------------------------------------------
+
+
+class TestIncludeListInListItem:
+    """In a list item the entries fold to one value first, then splice or append."""
+
+    def test_entries_fold_before_splicing(self, tmp_path: Path) -> None:
+        """Test that list files layer into one list, which is then spliced."""
+        write(tmp_path, "l1.yaml", "- auth\n- audit\n")
+        write(tmp_path, "l2.yaml", "- debug\n")
+        write(
+            tmp_path,
+            "config.yaml",
+            f"plugins:\n  - core\n  - {INCLUDE_KEY}: [./l1.yaml, ./l2.yaml]\n",
+        )
+
+        assert _load_file(tmp_path / "config.yaml") == {"plugins": ["core", "debug"]}
+
+    def test_dict_entries_fold_to_one_element(self, tmp_path: Path) -> None:
+        """Test that mapping entries merge into a single appended element."""
+        write(tmp_path, "m1.yaml", "x: 1\ny: 2\n")
+        write(tmp_path, "m2.yaml", "y: 99\n")
+        write(
+            tmp_path,
+            "config.yaml",
+            f"items:\n  - {INCLUDE_KEY}: [./m1.yaml, ./m2.yaml]\n",
+        )
+
+        assert _load_file(tmp_path / "config.yaml") == {"items": [{"x": 1, "y": 99}]}
+
+    def test_siblings_override_the_folded_element(self, tmp_path: Path) -> None:
+        """Test that sibling keys in a list item still beat the whole stack."""
+        write(tmp_path, "m1.yaml", "x: 1\ny: 2\n")
+        write(tmp_path, "m2.yaml", "y: 99\n")
+        write(
+            tmp_path,
+            "config.yaml",
+            f"items:\n  - {INCLUDE_KEY}: [./m1.yaml, ./m2.yaml]\n    y: 7\n",
+        )
+
+        assert _load_file(tmp_path / "config.yaml") == {"items": [{"x": 1, "y": 7}]}
+
+
+class TestIncludeListErrors:
+    """Error cases specific to the list form."""
+
+    def test_empty_list_raises(self, tmp_path: Path) -> None:
+        """Test that an empty include list raises rather than silently erasing the node."""
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: []\n")
+
+        with pytest.raises(ConfargError, match="at least one path"):
+            _load_file(tmp_path / "config.yaml")
+
+    def test_nested_list_raises(self, tmp_path: Path) -> None:
+        """Test that a list nested inside the include list raises."""
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}:\n  - [./a.yaml]\n")
+
+        with pytest.raises(ConfargError, match="path"):
+            _load_file(tmp_path / "config.yaml")
+
+    def test_non_string_entry_raises(self, tmp_path: Path) -> None:
+        """Test that a non-string, non-dict entry raises."""
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: [./a.yaml, 42]\n")
+
+        with pytest.raises(ConfargError, match="path"):
+            _load_file(tmp_path / "config.yaml")
+
+    def test_entry_dict_without_path_raises(self, tmp_path: Path) -> None:
+        """Test that a dict entry missing 'path' raises."""
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}:\n  - orient: rows\n")
+
+        with pytest.raises(ConfargError, match="'path'"):
+            _load_file(tmp_path / "config.yaml")
+
+    def test_list_with_siblings_and_non_dict_result_raises(self, tmp_path: Path) -> None:
+        """Test that sibling keys alongside a list-producing stack still raise."""
+        write(tmp_path, "l1.yaml", "- a\n")
+        write(tmp_path, "l2.yaml", "- b\n")
+        write(
+            tmp_path,
+            "config.yaml",
+            f"{INCLUDE_KEY}: [./l1.yaml, ./l2.yaml]\nextra: 1\n",
+        )
+
+        with pytest.raises(ConfargError, match="sibling"):
+            _load_file(tmp_path / "config.yaml")

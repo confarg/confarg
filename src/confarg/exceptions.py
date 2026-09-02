@@ -58,6 +58,17 @@ class InvalidConfigFileError(ConfargError):
         """Return an error for a config file extension that confarg cannot load."""
         return cls(f"Unsupported config file format: {ext!r}. Supported formats: .yaml/.yml, .toml, .json")
 
+    @classmethod
+    def ragged_csv_row(cls, path: Any, row_num: int, expected: int, got: int) -> InvalidConfigFileError:
+        """Return an error for a CSV row whose cell count does not match the header/first row."""
+        return cls(f"Ragged CSV row {row_num} in {path}: expected {expected} cells, got {got}")
+
+    @classmethod
+    def duplicate_csv_columns(cls, path: Any, names: list[str]) -> InvalidConfigFileError:
+        """Return an error for a CSV header row that repeats a column name."""
+        listed = ", ".join(repr(n) for n in names)
+        return cls(f"Duplicate CSV column name(s) in {path}: {listed}")
+
 
 class UnknownArgumentError(ConfargError):
     """Raised when an unrecognized CLI argument is encountered."""

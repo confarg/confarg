@@ -61,6 +61,13 @@ class Nested:
 
 
 @dataclass
+class WithCsvRows:
+    """Dataclass whose list field is populated from a CSV include."""
+
+    db: list[Simple] = dataclasses.field(default_factory=list)
+
+
+@dataclass
 class WithList:
     """Dataclass with a list field."""
 
@@ -532,6 +539,31 @@ class TestConfigFilesContract:
         cfg = loader.load(Simple, argv=[], env={}, files=[cfg_file])
         assert cfg.host == "file_host"
         assert cfg.port == 9999
+
+    def test_csv_include_coerces_to_target_types(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        tmp_yaml,
+    ) -> None:
+        """A CSV pulled in by __include__ coerces its cells to the target leaf types."""
+        (tmp_path / "rows.csv").write_text("host,port\nfilehost,5432\n")
+        cfg_file = tmp_yaml("db:\n  __include__: ./rows.csv\n")
+        cfg = loader.load(WithCsvRows, argv=["--config", str(cfg_file)], env={})
+        assert cfg.db == [Simple(host="filehost", port=5432)]
+
+    def test_include_list_layers_in_order(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        tmp_yaml,
+    ) -> None:
+        """A list-valued __include__ layers left to right, later entries winning."""
+        (tmp_path / "a.yaml").write_text("host: a_host\nport: 1\n")
+        (tmp_path / "b.yaml").write_text("host: b_host\n")
+        cfg_file = tmp_yaml("__include__: [./a.yaml, ./b.yaml]\n")
+        cfg = loader.load(Simple, argv=["--config", str(cfg_file)], env={})
+        assert cfg == Simple(host="b_host", port=1)
 
     def test_cli_overrides_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
         """CLI values take priority over config-file values."""
