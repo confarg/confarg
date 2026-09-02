@@ -1,7 +1,7 @@
 # Dictionaries
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/13_dictionaries`](https://github.com/confarg/confarg/tree/master/examples/13_dictionaries).
+> Code for examples in this page can be found in [`examples/14_dictionaries`](https://github.com/confarg/confarg/tree/master/examples/14_dictionaries).
 
 
 Configurations can contain dictionaries, whose keys can be dynamically assigned. Take the following configuration:
@@ -27,7 +27,7 @@ $ uv run dict_of_strs_int_index.py --input.42 hello --input.-0xF world
 Config(input={42: 'hello', -15: 'world'})
 ```
 
-Just like lists, dictionaries allow for configurations with dynamic sizes, but they allow for more natural indexing. Let's take the example from [Tutorial #12](https://github.com/confarg/confarg/tree/master/examples/12_collection_items) featuring a dynamic number of database backends, and rewrite the configuration using dictionaries.
+Just like lists, dictionaries allow for configurations with dynamic sizes, but they allow for more natural indexing. Let's take the example from [Tutorial #13](https://github.com/confarg/confarg/tree/master/examples/13_collection_items) featuring a dynamic number of database backends, and rewrite the configuration using dictionaries.
 
 ```python
 @dataclass

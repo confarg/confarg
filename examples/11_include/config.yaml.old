@@ -1,0 +1,9 @@
+batch_size: 8
+labels:
+  __include__:
+    # Load labels from a CSV file
+    path: ./labels.csv
+    header: false
+metrics:
+- class: configs.include.MyMetric
+  labels: ${labels}

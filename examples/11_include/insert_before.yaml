@@ -1,0 +1,2 @@
+__include__: ./value.yaml
+value: 42

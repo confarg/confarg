@@ -1,7 +1,7 @@
 # Collections
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/11_collections`](https://github.com/confarg/confarg/tree/master/examples/11_collections).
+> Code for examples in this page can be found in [`examples/12_collections`](https://github.com/confarg/confarg/tree/master/examples/12_collections).
 
 Configuration may contain collections of items in the form of lists or tuples.
 

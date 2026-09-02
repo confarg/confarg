@@ -1,7 +1,7 @@
 # Object factories
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/19_factories`](https://github.com/confarg/confarg/tree/master/examples/19_factories).
+> Code for examples in this page can be found in [`examples/20_factories`](https://github.com/confarg/confarg/tree/master/examples/20_factories).
 
 To close our tour of callables, let us look at a special but frequent case: configuring a factory — a callable that produces objects. Factories are useful when the objects to build require parameters that are only known at runtime, yet still need to be configured.
 
@@ -31,12 +31,6 @@ You could write a factory yourself and configure it the usual way, as for any ot
 $ uv run trainer.py --optimizer optimizer.Optimizer
 Optimizer(lr=0.1, momentum=0.99)
 ```
-<!--
-```console
-$ uv run trainer_argparse.py --optimizer optimizer.Optimizer
-Optimizer(lr=0.1, momentum=0.99)
-```
--->
 
 Should we need to specify initialization arguments, we resort to the expanded dict definition. Note that the FQN of the class goes under the `fn` key, not `class` — we are not instantiating the class here, but pointing to the type itself as a callable factory — and that the extra arguments are bound to it with `bind`.
 
@@ -44,9 +38,3 @@ Should we need to specify initialization arguments, we resort to the expanded di
 $ uv run trainer.py --optimizer.fn optimizer.Optimizer --optimizer.bind.lr 0.25
 Optimizer(lr=0.25, momentum=0.99)
 ```
-<!--
-```console
-$ uv run trainer_argparse.py --optimizer.fn optimizer.Optimizer --optimizer.bind.lr 0.25
-Optimizer(lr=0.25, momentum=0.99)
-```
--->

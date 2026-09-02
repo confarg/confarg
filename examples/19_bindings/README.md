@@ -1,7 +1,7 @@
 # Binding arguments
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/18_bindings`](https://github.com/confarg/confarg/tree/master/examples/18_bindings).
+> Code for examples in this page can be found in [`examples/19_bindings`](https://github.com/confarg/confarg/tree/master/examples/19_bindings).
 
 When specifying a callable, we may want to bind some of its parameters to fixed values. This is done with the dedicated `bind` key.
 
@@ -13,12 +13,6 @@ To bind a value to a function argument, we must use the expanded dict definition
 $ uv run print_greetings.py --greet_fn.fn greetings.print_greetings --greet_fn.bind.greetings Hi
 Hi, world!
 ```
-<!--
-```console
-$ uv run print_greetings_argparse.py --greet_fn.fn greetings.print_greetings --greet_fn.bind.greetings Hi
-Hi, world!
-```
--->
 
 In configuration files, this translates as:
 
@@ -41,12 +35,6 @@ greet_fn:
 > ```
 > In that case, *all* directives of that callable must be drawn from the alternative set.
 
-<!--
-> ```console
-> $ uv run print_greetings_argparse.py --greet_fn._fn greetings.print_greetings --greet_fn._bind.greetings Hi
-> Hi, world!
-> ```
--->
 
 ## To callable classes
 
@@ -56,12 +44,6 @@ As for functions, binding arguments to a callable class requires an expanded dic
 $ uv run print_greetings.py --greet_fn.class greetings.Print_greetings --greet_fn.bind.adjective beautiful
 Hello, beautiful world!
 ```
-<!--
-```console
-$ uv run print_greetings_argparse.py --greet_fn.class greetings.Print_greetings --greet_fn.bind.adjective beautiful
-Hello, beautiful world!
-```
--->
 
 If the class needs initialization parameters, simply add them alongside the `class` key, as usual.
 
@@ -69,18 +51,13 @@ If the class needs initialization parameters, simply add them alongside the `cla
 $ uv run print_greetings.py --greet_fn.class greetings.Print_greetings --greet_fn.greetings Hi --greet_fn.bind.adjective beautiful
 Hi, beautiful world!
 ```
-<!--
-```console
-$ uv run print_greetings_argparse.py --greet_fn.class greetings.Print_greetings --greet_fn.greetings Hi --greet_fn.bind.adjective beautiful
-Hi, beautiful world!
-```
--->
 
 In configuration files, this translates as:
 
 ```yaml
-# Use a callable object as-is (short form, leaf-type style)
-greet_fn: greetings.Print_greetings
+# Use a callable object
+greet_fn:
+  class: greetings.Print_greetings
 
 # Use a callable object with parameter bindings (no initialization parameter)
 greet_fn:
@@ -104,12 +81,6 @@ greet_fn:
 > ```
 > Again, *all* directives of that callable must be drawn from the alternative set.
 
-<!--
-> ```console
-> $ uv run print_greetings_argparse.py --greet_fn._class greetings.Print_greetings --greet_fn.greetings Hi --greet_fn._bind.adjective beautiful
-> Hi, beautiful world!
-> ```
--->
 
 ## To class methods
 
@@ -119,12 +90,6 @@ When binding arguments to a class method, the expanded dict definition must once
 $ uv run print_greetings.py --greet_fn.fn greetings.Greetings_printer.print --greet_fn.bind.adjective beautiful
 Hello, beautiful world!
 ```
-<!--
-```console
-$ uv run print_greetings_argparse.py --greet_fn.fn greetings.Greetings_printer.print --greet_fn.bind.adjective beautiful
-Hello, beautiful world!
-```
--->
 
 If the object needs initialization parameters, simply add them alongside the `fn` key, as usual.
 
@@ -132,12 +97,6 @@ If the object needs initialization parameters, simply add them alongside the `fn
 $ uv run print_greetings.py --greet_fn.fn greetings.Greetings_printer.print --greet_fn.greetings Hi --greet_fn.bind.adjective beautiful
 Hi, beautiful world!
 ```
-<!--
-```console
-$ uv run print_greetings_argparse.py --greet_fn.fn greetings.Greetings_printer.print --greet_fn.greetings Hi --greet_fn.bind.adjective beautiful
-Hi, beautiful world!
-```
--->
 
 In configuration files, this translates as:
 

@@ -1,8 +1,0 @@
-greetings_fns:
-- configs.callables.print_greetings
-- class: configs.callables.Print_greetings
-- configs.callables.Greetings_printer.print
-- class: configs.callables.Print_complex_greetings
-  greetings: Hi
-- fn: configs.callables.Complex_greetings_printer.print
-  greetings: Howdy

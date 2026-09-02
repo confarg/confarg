@@ -1,7 +1,7 @@
 # Collection items
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/12_collection_items`](https://github.com/confarg/confarg/tree/master/examples/12_collection_items).
+> Code for examples in this page can be found in [`examples/13_collection_items`](https://github.com/confarg/confarg/tree/master/examples/13_collection_items).
 
 You can reference an individual item in a collection by its index, which lets you modify its value.
 
@@ -9,7 +9,7 @@ You can reference an individual item in a collection by its index, which lets yo
 
 Individual items of a collection are referenced using their positional index in their path.
 
-For example, returning to the examples introduced in [Tutorial #11](https://github.com/confarg/confarg/tree/master/examples/11_collections), we can modify the first item of the input using the `--input.0` flag.
+For example, returning to the examples introduced in [Tutorial #12](https://github.com/confarg/confarg/tree/master/examples/12_collections), we can modify the first item of the input using the `--input.0` flag.
 
 ```console
 $ uv run list_of_ints.py --config pair_of_ints.yaml --input.0 -4
@@ -23,7 +23,7 @@ $ uv run pair_of_ints.py --config pair_of_ints.yaml --input.0 -4
 Config(input=(-4, 2))
 ```
 
-Negative indices also work, allowing to index counting from the end of the sequence. For example, here we modify the last element of the input:
+Negative indices also work, letting you count from the end of the sequence. For example, here we modify the last element of the input:
 
 ```console
 $ uv run pair_of_ints.py --config pair_of_ints.yaml --input.-1 -4
