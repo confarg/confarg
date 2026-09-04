@@ -58,6 +58,14 @@ Confarg supports the following formats for configurations:
 
 * **JSON**:
 
+    ```json
+    // postgres.json
+    {
+        "host": "example.com",
+        "schema_name": "mydb"
+    }
+    ```
+
     ```console
     $ uv run myapp.py --config postgres.json
     PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
@@ -65,12 +73,24 @@ Confarg supports the following formats for configurations:
 
 * **TOML**:
 
+    ```toml
+    # postgres.toml
+    host = "example.com"
+    schema_name = "mydb"
+    ```
+
     ```console
     $ uv run myapp.py --config postgres.toml
     PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
     ```
 
 * **YAML**, if the `pyyaml` package is installed:
+
+    ```yaml
+    # postgres.yaml
+    host: example.com
+    schema_name: mydb
+    ```
 
     ```console
     $ uv run myapp.py --config postgres.yaml
