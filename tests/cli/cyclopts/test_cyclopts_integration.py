@@ -16,7 +16,12 @@ import pytest
 import confarg.cli.cyclopts as confargcyclopts
 from confarg.cli import FieldMeta, FlagSpec
 from confarg.cli.argparse._build import build_static_flags
-from confarg.cli.cyclopts._register import _app_meta, load_flags_into_app, populate_app
+from confarg.cli.cyclopts._register import (
+    _app_meta,
+    _expression_tolerant_convert,
+    load_flags_into_app,
+    populate_app,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -134,6 +139,26 @@ class TestLoadFlagsIntoApp:
         # cyclopts resolves Optional, so hint is Literal["low", "high"] directly.
         assert typing.get_origin(opt.hint) is typing.Literal
         assert set(typing.get_args(opt.hint)) == {"low", "high"}
+
+    def test_choices_get_the_expression_tolerant_converter(self) -> None:
+        """A choices flag carries the converter that bypasses Literal enforcement for ``${...}``."""
+        app = _make_app()
+        load_flags_into_app([FlagSpec(name="level", choices=["low", "high"])], app)
+        args = app.assemble_argument_collection()
+        opt = next(a for a in args if "--level" in (str(n) for n in (a.parameter.name or ())))
+        assert opt.parameter.converter is _expression_tolerant_convert
+
+    def test_choices_still_reject_a_plain_out_of_domain_value(self) -> None:
+        """Bypassing conversion for ``${...}`` must not disable the check for ordinary values."""
+        with pytest.raises(SystemExit):
+            _run(WithChoices, ["--level", "nope"])
+
+    def test_choices_admit_an_unresolved_expression(self) -> None:
+        """A ``${...}`` token survives the cyclopts parse and reaches the merged dict intact."""
+        app = _make_app()
+        populate_app(WithChoices, app, config_flag="")
+        merged = confargcyclopts.merge_app(WithChoices, app, argv=["--level", "${other}"], config_flag="", env={})
+        assert merged["level"] == "${other}"
 
     def test_help_text(self) -> None:
         """FlagSpec.help is forwarded to the cyclopts Parameter."""

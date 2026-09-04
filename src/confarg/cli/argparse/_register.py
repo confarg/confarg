@@ -25,6 +25,27 @@ from confarg.cli.argparse._build import (
     build_dynamic_flags,
     build_static_flags,
 )
+from confarg.dictexpr import contains_expression
+
+
+class _ExpressionTolerantChoices(list):
+    """An argparse ``choices`` list that also admits unresolved ``${...}`` tokens.
+
+    argparse gates a value with ``value not in action.choices`` and renders help
+    by iterating the same object, so overriding ``__contains__`` widens the
+    accepted domain while keeping the native ``{a,b}`` metavar and the native
+    ``invalid choice: 'zz' (choose from a, b)`` error for real values.
+
+    An expression's value is unknown until ``resolve_expressions`` runs, so the
+    front-end cannot prove it wrong at parse time; ``build()`` validates the
+    resolved result instead.  Membership defers via the canonical
+    :func:`~confarg.dictexpr.contains_expression`, the same predicate the click
+    and cyclopts adapters use.
+    """
+
+    def __contains__(self, value: object) -> bool:
+        """Accept a declared choice, or any token expression resolution will rewrite."""
+        return contains_expression(value) or super().__contains__(value)
 
 
 def _get_actions(target: argparse.ArgumentParser | argparse._ArgumentGroup) -> list[argparse.Action]:
@@ -56,7 +77,7 @@ def _register_spec(
         return
 
     if spec.choices is not None:
-        common["choices"] = spec.choices
+        common["choices"] = _ExpressionTolerantChoices(spec.choices)
     if spec.metavar is not None:
         common["metavar"] = spec.metavar
 

@@ -25,6 +25,7 @@ from collections.abc import (
 )
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
@@ -35,8 +36,6 @@ from confarg.exceptions import ConfargError, MissingFieldError, TypeCoercionErro
 from tests.conftest import AppConfig, CacheConfig, DbConfig, make_target
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from tests._loaders import ConfargLoader
 
 # ---------------------------------------------------------------------------
@@ -1227,6 +1226,84 @@ class TestExpressionOverCliContract:
         result = loader.load(_ExprConfig, argv=["--config", str(cfg), "--base", "8"], env={})
         assert result.base == 8
         assert result.derived == 24
+
+
+# ---------------------------------------------------------------------------
+# Expressions into value-restricted and registered-leaf fields
+# ---------------------------------------------------------------------------
+
+
+class _Colour(Enum):
+    """Enum whose members double as the values an expression may resolve to."""
+
+    RED = "red"
+    BLUE = "blue"
+
+
+@dataclass
+class _ChoiceConfig:
+    """Config pairing a free-form ``name`` with domain-restricted ``lit`` / ``colour``."""
+
+    name: str = "a"
+    lit: Literal["a", "b"] = "a"
+    colour: _Colour = _Colour.RED
+
+
+@dataclass
+class _LeafConfig:
+    """Config whose ``log`` is a registered leaf type (``Path``) fed by an expression."""
+
+    base: str = "/app"
+    log: Path = dataclasses.field(default_factory=lambda: Path("."))
+
+
+class TestExpressionIntoRestrictedFieldContract:
+    """A ``${...}`` token reaches a Literal/Enum field through every front-end.
+
+    Regression for the parse-time ``choices`` divergence: the adapters used to
+    hand ``FlagSpec.choices`` straight to argparse / ``click.Choice`` /
+    ``Literal[...]``, which rejected ``${name}`` before confarg saw it, while
+    vanilla (and the env and config-file channels of every front-end) accepted
+    it.  An expression's value is unknown until ``resolve_expressions`` runs, so
+    the domain check belongs to ``build()``.
+    """
+
+    def test_expr_into_literal_field(self, loader: ConfargLoader) -> None:
+        """An expression naming another field resolves into a Literal field."""
+        cfg = loader.load(_ChoiceConfig, argv=["--name", "b", "--lit", "${name}"], env={})
+        assert cfg.lit == "b"
+
+    def test_expr_into_enum_field(self, loader: ConfargLoader) -> None:
+        """An expression naming another field resolves into an Enum field."""
+        cfg = loader.load(_ChoiceConfig, argv=["--name", "blue", "--colour", "${name}"], env={})
+        assert cfg.colour is _Colour.BLUE
+
+    def test_expr_resolving_outside_domain_fails_in_build(self, loader: ConfargLoader) -> None:
+        """Deferred, not dropped: an expression resolving off-domain still fails, in build()."""
+        with pytest.raises(TypeCoercionError, match="Literal"):
+            loader.load(_ChoiceConfig, argv=["--name", "zz", "--lit", "${name}"], env={})
+
+    def test_expr_into_registered_leaf_field(self, loader: ConfargLoader) -> None:
+        """An expression survives eager coercion to a registered leaf type (``Path``).
+
+        ``Path("${base}/logs")`` coerces *successfully*, so before the explicit
+        expression check in ``_try_coerce`` the token became a ``Path`` that
+        ``resolve_expressions`` (which scans ``str`` leaves only) never revisited
+        — silently yielding a literal ``${base}/logs`` path.
+        """
+        cfg = loader.load(_LeafConfig, argv=["--base", "/app", "--log", "${base}/logs"], env={})
+        assert cfg.log == Path("/app/logs")
+
+    def test_registered_leaf_expr_matches_config_file_channel(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The CLI, env and config-file channels agree on a leaf-typed expression."""
+        cfg_file = tmp_yaml("""
+base: /app
+log: '${base}/logs'
+""")
+        from_file = loader.load(_LeafConfig, argv=["--config", str(cfg_file)], env={})
+        from_env = loader.load(_LeafConfig, argv=[], env={"X_BASE": "/app", "X_LOG": "${base}/logs"}, env_prefix="X_")
+        from_cli = loader.load(_LeafConfig, argv=["--base", "/app", "--log", "${base}/logs"], env={})
+        assert from_file.log == from_env.log == from_cli.log == Path("/app/logs")
 
 
 # ---------------------------------------------------------------------------

@@ -15,9 +15,15 @@ Typical use::
     data = {"base": "/app", "log": "${base}/logs"}
     resolved = resolve_expressions(data)
     # resolved == {"base": "/app", "log": "/app/logs"}
+
+:func:`contains_expression` is the canonical predicate for "would resolution
+rewrite this value?".  Every gate that inspects a value before resolution runs
+— eager leaf coercion, the CLI adapters' parse-time domain checks — must ask
+it rather than test for ``${`` itself, so all front-ends and input channels
+defer on exactly the same tokens.
 """
 
-from confarg.dictexpr._expressions import resolve_expressions
+from confarg.dictexpr._expressions import contains_expression, resolve_expressions
 from confarg.exceptions import (
     CircularReferenceError,
     ExpressionEvalError,
@@ -30,5 +36,6 @@ __all__ = [
     "ExpressionEvalError",
     "MissingReferenceError",
     "UnsafeExpressionError",
+    "contains_expression",
     "resolve_expressions",
 ]

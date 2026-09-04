@@ -23,6 +23,7 @@ from confarg._types import (
     _type_ref_constraint,
     _union_args_no_none,
 )
+from confarg.dictexpr import contains_expression
 from confarg.exceptions import SymbolImportError, TypeCoercionError
 
 _TRUTHY = frozenset({"true", "1", "yes", "on"})
@@ -288,8 +289,17 @@ def _try_coerce(ft: Any, token: _StrToken) -> Any:
     types regardless of source.  str tokens are returned unchanged — _StrToken
     is already a str subclass.  For multi-variant unions, returns token
     unchanged for construct() to handle.
+
+    Expression tokens are returned unchanged **by rule**, not as a side effect of
+    a failed coercion: their value is unknown until ``resolve_expressions`` runs
+    in ``build()``, which coerces the *result*.  Without the explicit check a
+    registered leaf whose coercion happens to succeed on the raw text (``Path``
+    accepts ``"${base}/logs"``) would swallow the expression, leaving a non-str
+    value that the resolver never revisits.
     """
     if ft is None:
+        return token
+    if contains_expression(token):
         return token
     ft = _resolve_type(ft)
     if _is_union(ft):

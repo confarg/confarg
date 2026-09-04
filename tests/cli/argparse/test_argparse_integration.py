@@ -304,6 +304,25 @@ class TestPopulateParser:
         assert "null" in action.choices
         assert "toto" in action.choices
 
+    def test_choices_still_reject_a_plain_out_of_domain_value(self) -> None:
+        """Widening choices for ``${...}`` must not disable the check for ordinary values."""
+        parser = argparse.ArgumentParser()
+        populate_parser(WithLiteral, parser)
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--level", "nope"])
+
+    def test_choices_admit_an_unresolved_expression(self) -> None:
+        """A ``${...}`` token parses; its domain is only knowable after resolution."""
+        parser = argparse.ArgumentParser()
+        populate_parser(WithLiteral, parser)
+        assert parser.parse_args(["--level", "${other}"]).level == "${other}"
+
+    def test_choices_still_render_natively_in_usage(self) -> None:
+        """The permissive container keeps argparse's own ``{a,b}`` metavar."""
+        parser = argparse.ArgumentParser()
+        populate_parser(WithLiteral, parser)
+        assert "{debug,info,warning}" in parser.format_usage()
+
     def test_dict_field_skipped(self) -> None:
         """Test that dict fields are not registered as CLI flags."""
 

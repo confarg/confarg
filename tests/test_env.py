@@ -142,6 +142,22 @@ class TestEnvCoercion:
         actual = getattr(result, field)
         assert actual == expected
 
+    def test_expression_survives_coercion_to_a_registered_leaf(self, loader: ConfargLoader) -> None:
+        """An env expression stays a str through coercion so the resolver can still see it.
+
+        ``Path("${base}/logs")`` coerces *successfully*, so without the explicit
+        expression check in ``_try_coerce`` env coercion turned the token into a
+        ``Path`` that ``resolve_expressions`` never revisited — leaving a literal
+        ``${base}/logs``, while the same value from a config file resolved.
+        """
+        cls = make_dataclass("WithLeafExpr", [("base", str, "/app"), ("log", Path, Path())])
+        merged = loader.merge(cls, argv=[], env={"BASE": "/app", "LOG": "${base}/logs"}, env_prefix="")
+        assert merged["log"] == "${base}/logs"
+        assert isinstance(merged["log"], str)
+        assert loader.load(cls, argv=[], env={"BASE": "/app", "LOG": "${base}/logs"}, env_prefix="").log == Path(
+            "/app/logs",
+        )
+
     @pytest.mark.parametrize(
         "env_val",
         ["true", "True", "TRUE", "1", "yes", "on"],
