@@ -35,7 +35,7 @@ dev = [
     "tomli-w>=1.0",
     "ty>=0.0.39",
     "typer>=0.25.1",
-    "zensical>=0.0.41",
+    "zensical>=0.0.59",
 ]
 
 [build-system]
