@@ -1,0 +1,5 @@
+locals:
+  cpus: 4
+
+workers: ${locals.cpus * 2}
+reserved: ${locals.cpus}

@@ -1,0 +1,6 @@
+locals:
+  dirs:
+    base: /srv/myapp
+
+output_dir: ${locals.dirs.base}/output
+log_dir: ${locals.dirs.base}/logs
