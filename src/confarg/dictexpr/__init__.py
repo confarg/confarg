@@ -21,7 +21,7 @@ Typical use::
 uses it to leave such values untouched.
 
 Agent Notes:
-    architecture/07-expressions.md
+    docs-dev/architecture/07-expressions.md
 """
 
 from confarg.dictexpr._expressions import contains_expression, resolve_expressions

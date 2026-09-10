@@ -11,7 +11,7 @@ the nested structure expected by the merge pipeline.  The result must equal what
 vanilla parser produces for the same argv.
 
 Agent Notes:
-    architecture/04-cli-adapters.md#byte-identical-merged-dicts
+    docs-dev/architecture/04-cli-adapters.md#byte-identical-merged-dicts
 """
 
 from __future__ import annotations

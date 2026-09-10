@@ -1,12 +1,20 @@
 # confarg architecture notes
 
-Internal notes for contributors and coding agents. They are **not** published (the
-documentation site is built from `docs/` only).
+Internal notes for contributors and coding agents, part of [`docs-dev/`](../README.md).
+They are deliberately **not** published: they name private symbols, carry *(inferred)*
+rationale, open questions and known deviations from the intended behavior. Publishing them
+(for instance as an "Internals" section copied into the site at build time, the way
+`examples/` is) is to be reconsidered once the library ships.
 
 These documents are the **single source of truth for the "why"**: design choices,
-rationale, rejected alternatives, trade-offs, known gaps and future directions. The code
-and its docstrings describe *what* things do; they must not repeat the reasoning kept
-here. When a rationale changes, change it here.
+rationale, rejected alternatives, trade-offs and limitations. The code and its docstrings
+describe *what* things do; they must not repeat the reasoning kept here. When a rationale
+changes, change it here.
+
+Work that is still *open* — bugs, missing features, refactors, questions for the
+maintainer — lives on the boards in [`../todo/`](../todo/README.md), not in these notes. A
+ticket describes work to do; closing it usually leaves a decision, and the decision comes
+back here.
 
 ## How to use these notes
 
@@ -19,7 +27,7 @@ here. When a rationale changes, change it here.
        """Coerce a string token to the target type if unambiguous.
 
        Agent Notes:
-           architecture/07-expressions.md#deferral-rule
+           docs-dev/architecture/07-expressions.md#deferral-rule
        """
    ```
 
@@ -41,7 +49,7 @@ here. When a rationale changes, change it here.
 | `_callable.py`, anything `Callable`-typed | [06-callables.md](06-callables.md) |
 | `dictexpr/**`, any value gate that runs before `build()` | [07-expressions.md](07-expressions.md) |
 | anything mentioning `locals` / `_locals` | [08-locals.md](08-locals.md) |
-| a new feature or public behavior | [10-design-decisions.md](10-design-decisions.md), [11-limitations-and-directions.md](11-limitations-and-directions.md) |
+| a new feature or public behavior | [10-design-decisions.md](10-design-decisions.md), [11-limitations.md](11-limitations.md), and the boards in [../todo/](../todo/README.md) |
 | tests | [12-testing.md](12-testing.md) |
 
 ## Vocabulary

@@ -11,8 +11,8 @@ local-variable checks, the final ``config < env < CLI`` merge and reference
 canonicalization.
 
 Agent Notes:
-    architecture/01-pipeline-and-contracts.md#the-single-merge-pipeline
-    architecture/08-locals.md
+    docs-dev/architecture/01-pipeline-and-contracts.md#the-single-merge-pipeline
+    docs-dev/architecture/08-locals.md
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def _check_locals_are_typed(node: Any, locals_key: str, path: str) -> None:
     ``__include__``, or ``--config.<key>[+]``.
 
     Agent Notes:
-        architecture/08-locals.md#declare-in-files-modify-anywhere
+        docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
     """
     if isinstance(node, _StrToken):
         raise InvalidConfigFileError.locals_not_self_describing(locals_key, path)
@@ -125,8 +125,8 @@ def _coerce_override(value: Any, declared: Any, path: str) -> Any:
     through untouched.
 
     Agent Notes:
-        architecture/08-locals.md#declare-in-files-modify-anywhere
-        architecture/07-expressions.md#deferral-rule
+        docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
+        docs-dev/architecture/07-expressions.md#deferral-rule
     """
     if contains_expression(value) or declared is None:
         return value
@@ -158,7 +158,7 @@ def _apply_locals_overrides(  # noqa: PLR0913  # recursive walk: carries both th
     undeclared name, an add/remove operation, or a whole-namespace assignment.
 
     Agent Notes:
-        architecture/08-locals.md#declare-in-files-modify-anywhere
+        docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
     """
     if not isinstance(override, dict):
         raise LocalsError.not_assignable(locals_key, config_flag, source)
@@ -208,7 +208,7 @@ def _iter_namespace_nodes(
     namespace present in any single source is visited.
 
     Agent Notes:
-        architecture/08-locals.md#declare-in-files-modify-anywhere
+        docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
     """
     path = path or []
     dicts = [s for s in sources if isinstance(s, dict)]
@@ -246,7 +246,7 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
     checked against it and coerced in place. Namespaces are found at every node.
 
     Agent Notes:
-        architecture/08-locals.md
+        docs-dev/architecture/08-locals.md
     """
     for path, keys in _iter_namespace_nodes([config_data, env_data, cli_data], target, union_tag):
         node = _lookup_path(config_data, path)
@@ -357,5 +357,5 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
     merged = _deep_merge(merged, cli_data, union_tag=union_tag)
 
     # Every file is mounted now: rewrite document-root references (${.x}) as plain paths.
-    # See architecture/07-expressions.md#reference-anchoring.
+    # See docs-dev/architecture/07-expressions.md#reference-anchoring.
     return canonicalize_references(merged)

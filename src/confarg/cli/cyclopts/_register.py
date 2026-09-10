@@ -50,7 +50,7 @@ def _expression_tolerant_convert(type_: Any, tokens: Any) -> Any:
     own error.  ``build()`` validates the resolved expression.
 
     Agent Notes:
-        architecture/04-cli-adapters.md#expression-tolerant-choice-gates
+        docs-dev/architecture/04-cli-adapters.md#expression-tolerant-choice-gates
     """
     if any(contains_expression(t.value) for t in tokens):
         return tokens[0].value if len(tokens) == 1 else [t.value for t in tokens]

@@ -5,7 +5,7 @@
 """Expression resolution for ${...} field references and computations.
 
 Agent Notes:
-    architecture/07-expressions.md
+    docs-dev/architecture/07-expressions.md
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def contains_expression(value: object) -> bool:
     ``build()`` must use this predicate to leave such values untouched.
 
     Agent Notes:
-        architecture/07-expressions.md#deferral-rule
+        docs-dev/architecture/07-expressions.md#deferral-rule
     """
     return isinstance(value, str) and _EXPR_RE.search(value) is not None
 
@@ -680,7 +680,7 @@ def _anchor_dots(expr_content: str) -> list[int]:
     in ``a if .b else c`` is.
 
     Agent Notes:
-        architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     starts = _line_starts(expr_content)
     found: list[int] = []
@@ -751,7 +751,7 @@ class _Prefixer(ast.NodeTransformer):
     that binds names (lambdas, comprehensions).
 
     Agent Notes:
-        architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/07-expressions.md#reference-anchoring
     """
 
     def __init__(self, prefix: str) -> None:
@@ -810,7 +810,7 @@ def prefix_references(data: Any, prefix: str) -> Any:
     returns *data* itself, unchanged.
 
     Agent Notes:
-        architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     if not prefix:
         return data
@@ -823,6 +823,6 @@ def canonicalize_references(data: Any) -> Any:
     Run once every file has been mounted.
 
     Agent Notes:
-        architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     return _map_strings(data, _strip_anchor)

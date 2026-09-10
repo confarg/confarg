@@ -69,7 +69,7 @@ custom (registered) leaf type > Enum > [float, int, bool, None] > str
 declaration order > str`, with `None` words and the bool-vs-int case handled first in
 `_construct._coerce_scalar_variants`. Registered leaf types are not ahead of `Enum`, and the
 middle bucket has no fixed order. This deviation is recorded in
-[11](11-limitations-and-directions.md#intent-versus-implementation); do not "fix" the
+[BUG-4](../todo/bugs.md); do not "fix" the
 documentation to match the code.
 
 Details that are intended:
@@ -108,7 +108,7 @@ string `__value__` re-enters coercion as a token; a native value does not.
 A struct field whose class has subclasses requires the union tag naming the concrete class;
 without it construction fails rather than guessing. (Implicit subclass inference existed in
 PR #58 and was removed in PR #63; see the open question in
-[11](11-limitations-and-directions.md#open-questions).) The tag must be a full dotted path
+[Q-1](../todo/questions.md).) The tag must be a full dotted path
 so the class can be imported.
 
 ## Structs, collections and defaults
@@ -144,4 +144,4 @@ so the class can be imported.
 `_import_dotted` tries the longest importable module prefix, then `getattr` for the rest,
 then falls back to `builtins` so `int`, `str`, … need no prefix (this is what makes
 `--value int` work for `str | type`). It assumes no builtin name collides with an importable
-module name ([11](11-limitations-and-directions.md#code-level-warts)).
+module name ([REF-5](../todo/refactors.md)).

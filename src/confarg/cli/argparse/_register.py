@@ -38,7 +38,7 @@ class _ExpressionTolerantChoices(list):
     expression.
 
     Agent Notes:
-        architecture/04-cli-adapters.md#expression-tolerant-choice-gates
+        docs-dev/architecture/04-cli-adapters.md#expression-tolerant-choice-gates
     """
 
     def __contains__(self, value: object) -> bool:
@@ -232,7 +232,7 @@ def make_parser(  # thin pass-through: every parameter is forwarded to populate_
 
 # ---------------------------------------------------------------------------
 # Thin wrappers used by _completion.py; they delegate to the spec builders and
-# _register_spec.  See architecture/11-limitations-and-directions.md#code-level-warts.
+# _register_spec.  See REF-3 in docs-dev/todo/refactors.md.
 # ---------------------------------------------------------------------------
 
 

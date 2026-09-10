@@ -9,7 +9,7 @@ force-cast detection, the local-variables name derivation, the ``--config`` scan
 patch-only parse used by the adapters.
 
 Agent Notes:
-    architecture/03-cli-parsing.md
+    docs-dev/architecture/03-cli-parsing.md
 """
 
 from __future__ import annotations
@@ -178,7 +178,7 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
     flat collector. Pure struct-field, namedtuple, and callable paths return False.
 
     Agent Notes:
-        architecture/04-cli-adapters.md#collection-patch-parity
+        docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
     """
     tp = _resolve_type(target)
     for idx, part in enumerate(parts):
@@ -232,7 +232,7 @@ def _segment_names_real_field(pt: Any, seg: str, union_tag: str) -> bool:
     lists, sets, tuples, callables, and scalars have no named members (False).
 
     Agent Notes:
-        architecture/03-cli-parsing.md#real-field-wins
+        docs-dev/architecture/03-cli-parsing.md#real-field-wins
     """
     if seg == union_tag:
         return True
@@ -257,7 +257,7 @@ def _locals_keys(target: Any, union_tag: str) -> tuple[str, ...]:
     *union_tag* only.
 
     Agent Notes:
-        architecture/08-locals.md#derived-name
+        docs-dev/architecture/08-locals.md#derived-name
     """
     return tuple(key for key in _defaults.LOCALS_KEYS if not _segment_names_real_field(target, key, union_tag))
 
@@ -284,7 +284,7 @@ def _locals_keys_at(target: Any, path: list[str], union_tag: str) -> tuple[str, 
     walk, the env parser) asks at each node.
 
     Agent Notes:
-        architecture/08-locals.md#per-node-namespaces
+        docs-dev/architecture/08-locals.md#per-node-namespaces
     """
     if not path:
         return _locals_keys(target, union_tag)
@@ -458,7 +458,7 @@ def _locals_walk_root(locals_keys: tuple[str, ...]) -> Any:
     resolve like a real dict field. Validation happens in the pipeline, not here.
 
     Agent Notes:
-        architecture/08-locals.md#walk-target-graft
+        docs-dev/architecture/08-locals.md#walk-target-graft
     """
     name = "_LocalsRoot_" + "_".join(locals_keys)
     return dataclasses.make_dataclass(name, [(key, dict[str, Any]) for key in locals_keys])
@@ -474,7 +474,7 @@ def _walk_target(target: Any, locals_keys: tuple[str, ...]) -> Any:
     :func:`_resolve_field_type` itself.
 
     Agent Notes:
-        architecture/08-locals.md#walk-target-graft
+        docs-dev/architecture/08-locals.md#walk-target-graft
     """
     if not locals_keys:
         return target
@@ -1063,7 +1063,7 @@ def _collect_cli_patch_ops(
     from the host framework's parse result.
 
     Agent Notes:
-        architecture/04-cli-adapters.md#collection-patch-parity
+        docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
     """
     data, _ = _parse_cli(argv, target, "", config_flag, union_tag, patch_only=True)
     return data

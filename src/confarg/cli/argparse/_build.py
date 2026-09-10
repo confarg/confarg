@@ -8,8 +8,8 @@ Must not import argparse (it is shared by all adapters) and imports ``_parse_cli
 inside functions only.
 
 Agent Notes:
-    architecture/04-cli-adapters.md#framework-neutral-flag-model
-    architecture/04-cli-adapters.md#static-and-dynamic-flags
+    docs-dev/architecture/04-cli-adapters.md#framework-neutral-flag-model
+    docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
     alongside any other variant, scalar or not (``str | type``, ``str | Path``).
 
     Agent Notes:
-        architecture/04-cli-adapters.md#union-inheritance-and-cast-flags
+        docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags
     """
     non_none = _union_args_no_none(resolved)
     types = [_resolve_type(v) for v in non_none]
@@ -235,7 +235,7 @@ def _escaped_opener_specs(
     with the same name and different descriptions).
 
     Agent Notes:
-        architecture/04-cli-adapters.md#static-and-dynamic-flags
+        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
     """
     result: list[FlagSpec] = []
     for field_flag, (_fn_path, mode, bind_key) in argv_fns.items():
@@ -966,7 +966,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
     mode.  Delete flags register value-less (``nargs=0``).
 
     Agent Notes:
-        architecture/04-cli-adapters.md#collection-patch-parity
+        docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
     """
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import (  # noqa: PLC0415

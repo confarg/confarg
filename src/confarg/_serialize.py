@@ -5,7 +5,7 @@
 """Serialization of dataclass instances to plain dicts (the inverse of construction).
 
 Agent Notes:
-    architecture/05-types-and-construction.md#serialization
+    docs-dev/architecture/05-types-and-construction.md#serialization
 """
 
 from __future__ import annotations

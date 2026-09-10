@@ -80,7 +80,7 @@ def merge_namespace(  # noqa: PLR0913
     _collect_ns_fields(ns_flat, target, prefix="", union_tag=union_tag, result=cli_data)
 
     # Patch ops and --config order are read from argv, not the namespace
-    # (architecture/04-cli-adapters.md#collection-patch-parity).
+    # (docs-dev/architecture/04-cli-adapters.md#collection-patch-parity).
     argv_ = sys.argv[1:] if argv is None else list(argv)
     cli_data = _deep_merge(cli_data, _collect_cli_patch_ops(argv_, target, config_flag, union_tag))
     apply_root_json(ns_flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
