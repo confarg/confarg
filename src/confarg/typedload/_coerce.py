@@ -133,6 +133,10 @@ def _coerce_str_value(value: Any, path: str) -> str:
 def _steal_order(variants: list[Any], *, key: Any) -> list[Any]:
     """Sort variants into stealing priority: enum > non-str non-enum > str.
 
+    Agent Notes:
+        architecture/05-types-and-construction.md#stealing-rule (this order deviates
+        from the intended rule)
+
     Args:
         variants: The list to order.
         key: Callable returning the type to classify each variant by.
@@ -247,7 +251,10 @@ def _coerce_registered(tp: Any, value: Any, path: str) -> Any:
 def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  # one branch per leaf type
     """Coerce a raw value to the target leaf type.
 
-    Handles bool, int, float, str, Literal, Enum, Path, and NoneType.
+    Handles bool, int, float, str, NoneType, ``Final[T]``, Literal, Enum, and registered
+    leaf types (``Path`` and any type passed to ``confarg.register_leaf_type``). Only
+    string tokens from the CLI, env vars or CSV files are parsed from text; any other
+    value must already have the target type.
 
     Args:
         tp: The target type to coerce to.
@@ -288,14 +295,11 @@ def _try_coerce(ft: Any, token: _StrToken) -> Any:
     types in _LEAF_COERCIONS, Literal, Enum) so the merged dict has consistent
     types regardless of source.  str tokens are returned unchanged — _StrToken
     is already a str subclass.  For multi-variant unions, returns token
-    unchanged for construct() to handle.
+    unchanged for construct() to handle.  Never raises: a failed coercion also
+    returns the token.  Expression tokens are always returned unchanged.
 
-    Expression tokens are returned unchanged **by rule**, not as a side effect of
-    a failed coercion: their value is unknown until ``resolve_expressions`` runs
-    in ``build()``, which coerces the *result*.  Without the explicit check a
-    registered leaf whose coercion happens to succeed on the raw text (``Path``
-    accepts ``"${base}/logs"``) would swallow the expression, leaving a non-str
-    value that the resolver never revisits.
+    Agent Notes:
+        architecture/07-expressions.md#deferral-rule
     """
     if ft is None:
         return token

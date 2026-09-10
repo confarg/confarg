@@ -1,0 +1,6 @@
+/* Docstring "Agent Notes:" sections point contributors and coding agents at the
+   architecture/ notes, which are not published. mkdocstrings renders the section
+   as <details class="agent-notes">; keep it out of the public API reference. */
+details.agent-notes {
+  display: none;
+}

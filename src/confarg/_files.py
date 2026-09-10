@@ -2,7 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Config file loading."""
+"""Config file loading and dumping, dispatched by extension; ``__include__`` resolution.
+
+Files are mounted at a path of the merged document (``__include__``, ``--config.<path>``,
+``CONFIG__<PATH>``); expression references are prefixed accordingly while mounting.
+
+Agent Notes:
+    architecture/02-files-and-env.md
+    architecture/07-expressions.md#reference-anchoring
+"""
 
 from __future__ import annotations
 
@@ -135,9 +143,8 @@ def _load_json_item(path: Path) -> Any:
 def _read_rows(f: Any, delimiter: str) -> list[list[_StrToken]]:
     """Read all CSV rows, wrapping every cell in _StrToken and dropping blank lines.
 
-    CSV carries no types, so its cells are exactly like CLI/env tokens: _StrToken marks
-    them eligible for coercion to the target leaf type. Blank lines are dropped so they
-    never register as ragged rows (csv.reader yields [] for them).
+    Agent Notes:
+        architecture/02-files-and-env.md#data-files-versus-configuration-layers
     """
     return [[_StrToken(cell) for cell in row] for row in csv.reader(f, delimiter=delimiter) if row]
 
@@ -201,9 +208,8 @@ def _load_csv(path: Path, *, orient: str = "rows", delimiter: str = ",", header:
         list[list[str]] — every row returned as-is; header option is ignored.
 
     Rows must be rectangular wherever the result is keyed (orient='columns', or
-    orient='rows' with a header) — a ragged row has no representation there and raises.
-    orient='raw' and orient='rows' with header=False yield list[list[str]], where ragged
-    rows are representable, so they are allowed.
+    orient='rows' with a header); a ragged row raises there. orient='raw' and
+    orient='rows' with header=False allow ragged rows.
     """
     if orient not in ("rows", "columns", "raw"):
         msg = f"Invalid CSV orient {orient!r}. Must be 'rows', 'columns', or 'raw'."
@@ -231,6 +237,7 @@ _ITEM_LOADERS: dict[str, Any] = {
 
 #: Extensions whose content is data rather than a configuration layer. An include of one
 #: replaces whatever earlier entries produced instead of merging key-wise into it.
+#: See architecture/02-files-and-env.md#data-files-versus-configuration-layers.
 _DATA_SUFFIXES = frozenset({".csv", ".tsv"})
 
 
@@ -289,15 +296,12 @@ def _parse_include_val(val: Any) -> list[tuple[str, dict[str, Any]]]:
 def _load_includes(entries: list[tuple[str, dict[str, Any]]], base_dir: Path, seen: frozenset[Path]) -> Any:
     """Load every include entry and layer them left to right, later entries winning.
 
-    Two dicts deep-merge, mirroring what repeated ``--config`` already does. Anything
-    else is replaced by the later entry, and so is a CSV/TSV entry even when it loads
-    as a dict: a CSV contributes a *value*, not a configuration layer — under
-    ``orient: columns`` its keys are column headers, data rather than structure an
-    author chose — so merging it per column would splice unrelated tables together.
+    Two dicts deep-merge. Anything else is replaced by the later entry, and so is a
+    CSV/TSV entry even when it loads as a dict. ``seen`` grows per entry, not across
+    the list: naming the same file twice is legal, a genuine cycle raises.
 
-    ``seen`` grows per entry rather than across the list: sibling entries are
-    sequential layers, not nesting, so naming the same file twice is legal while a
-    genuine cycle still raises.
+    Agent Notes:
+        architecture/02-files-and-env.md#include-semantics
     """
     result: Any = None
     for i, (path_str, options) in enumerate(entries):
@@ -341,9 +345,11 @@ def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path], p
     siblings) may return any type. An include with sibling keys requires the
     layered result to be a dict (for deep-merge).
 
-    The included document's own root lands here, so its file-anchored references
-    are prefixed by *path_in_file* before it merges with any sibling keys —
-    siblings were written in *this* file and keep this file's anchoring.
+    The included document's references are prefixed by *path_in_file* before the
+    sibling keys (which keep this file's anchoring) are merged on top.
+
+    Agent Notes:
+        architecture/07-expressions.md#reference-anchoring
     """
     include_val = data.get(INCLUDE_KEY)
     if include_val is not None:
@@ -376,11 +382,12 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path], path_i
     A list item that is a pure {INCLUDE_KEY: path} dict is replaced by the
     included content; if that content is itself a list it is spliced (flattened)
     into the parent list. A list of paths is layered into a single value first,
-    so the list form means the same thing here as in a dict node. Items with
-    sibling keys follow the same rules as dict nodes.
+    as in a dict node. Items with sibling keys follow the same rules as dict nodes.
 
-    Splicing shifts indices, so each item is anchored at the index it actually
-    lands on rather than its position in *data*.
+    Each item's references are prefixed by the index it lands on after splicing.
+
+    Agent Notes:
+        architecture/07-expressions.md#reference-anchoring
     """
     result: list[Any] = []
     for item in data:
@@ -479,9 +486,7 @@ def _load_subpath_files(entries: list[tuple[str, Path]], union_tag: str) -> dict
     for subpath, fpath in entries:
         fdata = _load_file(fpath)
         if subpath:
-            # The file's root lands at `subpath`, so its file-anchored references
-            # move with it, exactly as they would through __include__.
-            fdata = prefix_references(fdata, subpath)
+            fdata = prefix_references(fdata, subpath)  # mounted at `subpath`, as with __include__
             for part in reversed(subpath.split(".")):
                 fdata = {part: fdata}
         result = _deep_merge(result, fdata, union_tag=union_tag)

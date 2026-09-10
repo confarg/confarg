@@ -2,7 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Callable resolution and serialization."""
+"""Callable resolution and serialization.
+
+Agent Notes:
+    architecture/06-callables.md
+"""
 
 from __future__ import annotations
 
@@ -134,11 +138,10 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: str, union_tag: str, constr
       - Each directive also has a single-underscore form ('_fn', '_class', '_call',
         '_bind'). Using an escaped *opener* ('_fn'/'_class'/'_call') switches the whole
         spec to escaped mode, where the underscore forms are the directives and every
-        plain word — including 'bind', 'fn', 'call' — is an ordinary constructor kwarg.
-        This lets a callable whose own parameter is named like a directive still be
-        configured (e.g. '_class: H' with a plain 'bind:' init arg and '_bind:' to
-        partial-apply __call__). Do not mix forms within one spec: the opener alone
-        selects the mode, so a stray '_bind' under a plain opener is treated as data.
+        plain word — including 'bind', 'fn', 'call' — is an ordinary constructor kwarg
+        (e.g. '_class: H' with a plain 'bind:' init arg and '_bind:' to partial-apply
+        __call__). Do not mix forms within one spec: the opener alone selects the mode,
+        so a stray '_bind' under a plain opener is treated as data.
     """
     if isinstance(spec, str):
         result = _resolve_bare_string(str(spec), path, tp)
@@ -163,10 +166,9 @@ def _resolve_bare_string(path_str: str, path: str, callable_tp: Any = None) -> A
     functools.partial(cls) with no pre-bound kwargs, so calling it constructs an
     instance. To use an instance as the callable, use the 'class:' dict form.
 
-    When the Callable declares a concrete return type (including ``None``) that the
-    class cannot produce, raise and point at the 'class:' form rather than silently
-    building a factory of the wrong type. A bare or abstractly-typed Callable has no
-    return type to check against, so the class is trusted as a factory.
+    Raises ``TypeCoercionError`` pointing at the 'class:' form when the Callable
+    declares a concrete return type (including ``None``) that the class cannot
+    produce. A bare or abstractly-typed Callable is not checked.
 
     Functions and methods are used as-is.
     """
@@ -235,13 +237,15 @@ def _coerce_kwargs(  # noqa: PLR0913
 ) -> dict:
     """Validate and typed-construct kwargs against a callable's signature.
 
-    The single canonical coercion route shared by 'call', 'class' (factory), and
-    'bind' kwargs: unknown keys raise, and each value is built via construct_fn
-    (the same route as every other configuration element).
+    Shared by 'call', 'class' (factory), and 'bind' kwargs: unknown keys raise, and
+    each value is built via construct_fn.
 
     ``sig_obj`` and ``hints_obj`` are passed separately because for a class they
     differ: ``inspect.signature(cls)`` yields the constructor params (self excluded),
     but the annotations live on ``cls.__init__``.
+
+    Agent Notes:
+        architecture/06-callables.md#one-coercion-route
     """
     try:
         sig = inspect.signature(sig_obj)
@@ -315,11 +319,12 @@ class _Directives:
     """The directive key names active for a spec, in either plain or escaped mode.
 
     A callable dict names its target with an *opener* (``fn``/``class``/``call``)
-    and may partially apply the result with ``bind``. Because these words sit as
-    siblings of the target's own kwargs, a parameter named ``fn``/``call``/``bind``
-    would collide. The escaped mode swaps every directive for its single-underscore
-    form (``_fn``/``_class``/``_call``/``_bind``), freeing every plain word to be an
-    ordinary kwarg. The opener's form selects the mode for the whole spec.
+    and may partially apply the result with ``bind``. The escaped mode uses the
+    single-underscore forms (``_fn``/``_class``/``_call``/``_bind``) and treats every
+    plain word as an ordinary kwarg. The opener's form selects the mode for the whole spec.
+
+    Agent Notes:
+        architecture/06-callables.md#plain-and-escaped-directives
     """
 
     fn: str
@@ -343,17 +348,16 @@ _ESCAPED_DIRECTIVES = _Directives(fn="_fn", cls="_class", call="_call", bind="_b
 def active_directives(has_key: Callable[[str], bool]) -> _Directives:
     """Pick the active directive names by the opener's form, via a key-presence predicate.
 
-    The single canonical mode selector, shared by the vanilla construct path and the
-    CLI collection/registration paths so every channel agrees on plain-vs-escaped
-    without duplicating the tables. ``has_key(name)`` answers "is this directive key
-    present?" — a spec dict passes ``spec.__contains__``; the CLI passes a probe over
-    its flat ``{flag}.{name}`` namespace.
+    ``has_key(name)`` answers "is this directive key present?" — a spec dict passes
+    ``spec.__contains__``; the CLI passes a probe over its flat ``{flag}.{name}``
+    namespace. Use this everywhere plain-vs-escaped must be decided.
 
     Escaped mode is selected when an escaped *opener* (``_fn``/``_class``/``_call``) is
-    present; otherwise plain mode. Deliberately lenient: the opener alone decides, and a
-    directive word in the *other* form is treated as ordinary data. Do not mix forms
-    within one spec — a plain opener with a stray ``_bind`` leaves that ``_bind`` a
-    kwarg, not the directive.
+    present; otherwise plain mode. A directive word in the *other* form is ordinary
+    data: a plain opener with a stray ``_bind`` leaves that ``_bind`` a kwarg.
+
+    Agent Notes:
+        architecture/06-callables.md#plain-and-escaped-directives
     """
     if any(has_key(opener) for opener in _ESCAPED_DIRECTIVES.openers):
         return _ESCAPED_DIRECTIVES
@@ -420,9 +424,8 @@ def _bind_hints_source(callable_obj: Any) -> Any:
 def _resolve_bind_kwargs(callable_obj: Any, bind: dict, path: str, union_tag: str, construct_fn: Any) -> dict:
     """Validate and typed-construct 'bind' kwargs against callable_obj's signature.
 
-    Routes bind values through the same canonical construction path as every other
-    configuration element (see _coerce_kwargs), so bound arguments gain full typed
-    construction (enums, dataclasses, lists, unions) and fail-fast on bad values.
+    Values go through :func:`_coerce_kwargs`, so bound arguments get full typed
+    construction (enums, dataclasses, lists, unions) and bad values raise.
     """
     subject = getattr(callable_obj, "__qualname__", None) or getattr(
         type(callable_obj),

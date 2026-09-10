@@ -8,6 +8,8 @@ site_description = "Documentation for confarg, a python library to load and reso
 site_name = "confarg documentation"
 site_url = "https://confarg.github.io/confarg/"
 
+extra_css = ["assets/stylesheets/extra.css"]
+
 nav = [
   { "Get started" = "index.md" },
   { "Tutorials" = [

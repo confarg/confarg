@@ -16,11 +16,12 @@ Typical use::
     resolved = resolve_expressions(data)
     # resolved == {"base": "/app", "log": "/app/logs"}
 
-:func:`contains_expression` is the canonical predicate for "would resolution
-rewrite this value?".  Every gate that inspects a value before resolution runs
-— eager leaf coercion, the CLI adapters' parse-time domain checks — must ask
-it rather than test for ``${`` itself, so all front-ends and input channels
-defer on exactly the same tokens.
+:func:`contains_expression` tells whether resolution would rewrite a value
+(``${...}`` or the ``$${...}`` escape); code inspecting values before resolution
+uses it to leave such values untouched.
+
+Agent Notes:
+    architecture/07-expressions.md
 """
 
 from confarg.dictexpr._expressions import contains_expression, resolve_expressions

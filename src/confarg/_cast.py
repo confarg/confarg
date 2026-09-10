@@ -11,11 +11,12 @@ following value is interpreted, bypassing the type-directed "magic":
   union "stealing rule").
 - ``.json`` — parse the value as JSON, storing the decoded structure raw.
 
-This module is the single source of truth for *which* names are casts and *what value*
-each produces, so ``confarg.load`` and every backend produce byte-identical results.
-The parse-path decision of *whether* a trailing segment is a cast (vs. a real field of
-the same name) lives in :func:`confarg._parse_cli.detect_force_cast`, which needs the
-argv parser's type-walk helpers.
+This module defines *which* names are casts and *what value* each produces.  Whether a
+trailing segment is a cast at all (vs. a real field of the same name) is decided by
+:func:`confarg._parse_cli.detect_force_cast`.
+
+Agent Notes:
+    architecture/03-cli-parsing.md#force-casts
 """
 
 from __future__ import annotations
@@ -39,8 +40,7 @@ def resolve_forced_value(cast_name: str, raw: str, *, flag: str = "") -> Any:
 
     Scalar casts yield a :class:`_Pinned` token (deferred single-type coercion that
     bypasses union stealing); ``json`` decodes the value immediately and stores the
-    structure raw, hard-erroring on invalid JSON — an explicit request deserves a loud
-    failure rather than a silent fallback.
+    structure raw, raising on invalid JSON.
 
     Args:
         cast_name: One of :data:`FORCE_CAST_NAMES`.

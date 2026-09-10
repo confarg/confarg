@@ -6,8 +6,13 @@
 
 Every entry point — vanilla :func:`confarg.merge` and the argparse/click/cyclopts
 ``merge_*`` functions — first extracts CLI-provided values and ``--config`` file
-pairs in its own way, then delegates here.  Fix merge-order or file-loading
-behavior in this module only; it lands in all integrations at once.
+pairs in its own way, then delegates here for env parsing, config-file loading,
+local-variable checks, the final ``config < env < CLI`` merge and reference
+canonicalization.
+
+Agent Notes:
+    architecture/01-pipeline-and-contracts.md#the-single-merge-pipeline
+    architecture/08-locals.md
 """
 
 from __future__ import annotations
@@ -67,12 +72,11 @@ def _load_cli_config(fpath: Path, subpath: str, config_flag: str) -> dict[str, A
 def _check_locals_are_typed(node: Any, locals_key: str, path: str) -> None:
     """Raise if any leaf under the local-variables namespace is an untyped string token.
 
-    Values from data files (.csv/.tsv) arrive as :class:`_StrToken` so that they
-    coerce against the *target* leaf type — which a local variable, having no
-    annotation, does not have.  Left alone they would silently make
-    ``${locals.n + 1}`` concatenate instead of add, so the namespace accepts only
-    self-describing formats.  One walk covers every route a data file can take
-    into the namespace: ``files=``, ``__include__``, and ``--config.<key>[+]``.
+    Such tokens come from data files (.csv/.tsv), by any route: ``files=``,
+    ``__include__``, or ``--config.<key>[+]``.
+
+    Agent Notes:
+        architecture/08-locals.md#declare-in-files-modify-anywhere
     """
     if isinstance(node, _StrToken):
         raise InvalidConfigFileError.locals_not_self_describing(locals_key, path)
@@ -114,19 +118,15 @@ def _lookup_declared(node: Any, path: list[str]) -> Any:
 
 
 def _coerce_override(value: Any, declared: Any, path: str) -> Any:
-    """Coerce one env/CLI local-variable override to the type of its declaration.
+    """Coerce one env/CLI local-variable override to the runtime type of its declaration.
 
-    A local carries no annotation, so its declaration *is* its type: whatever the
-    config file's format produced.  Coercing here is what keeps
-    ``${locals.n * 2}`` arithmetic rather than string repetition when ``n`` is
-    overridden from the command line, and :func:`_coerce_leaf` (rather than
-    ``_try_coerce``, which swallows the failure and returns the token) is what
-    makes a type-changing override an error instead of a silent string.
+    Raises ``TypeCoercionError`` when the override cannot take the declared type, or
+    when it swaps a container for a scalar (or the reverse). Expression tokens pass
+    through untouched.
 
-    Expression tokens are exempt by rule: their value is unknown until
-    ``resolve_expressions`` runs in ``build()``, so this gate — like every other
-    value gate in confarg — asks :func:`~confarg.dictexpr.contains_expression`
-    instead of inspecting the raw text.
+    Agent Notes:
+        architecture/08-locals.md#declare-in-files-modify-anywhere
+        architecture/07-expressions.md#deferral-rule
     """
     if contains_expression(value) or declared is None:
         return value
@@ -154,20 +154,18 @@ def _apply_locals_overrides(  # noqa: PLR0913  # recursive walk: carries both th
 ) -> None:
     """Check and coerce one source's local-variable overrides in place.
 
-    Local variables are *declared* in configuration files, which is what gives
-    them a type, and *modified* from any channel.  Config files are loaded after
-    argv and env are parsed, so neither check is possible at parse time — this
-    runs once the declaration layer exists, in the pipeline all four front-ends
-    share.
+    *declared* is the config-file layer of the namespace. Raises ``LocalsError`` for an
+    undeclared name, an add/remove operation, or a whole-namespace assignment.
+
+    Agent Notes:
+        architecture/08-locals.md#declare-in-files-modify-anywhere
     """
     if not isinstance(override, dict):
         raise LocalsError.not_assignable(locals_key, config_flag, source)
     prefix = prefix or []
     for key, value in override.items():
         path = [*prefix, key]
-        # Merge-op markers mean "add/remove an entry"; a local's existence is the
-        # declaring file's business, so reject them with that reason rather than
-        # letting the sentinel fall through to a confusing coercion failure.
+        # Merge-op markers would add or remove a local: refused with their own error.
         if value is DICT_DELETE or key in _MERGE_OP_KEYS:
             raise LocalsError.not_restructurable(".".join(prefix or path), locals_key, source)
         found = _lookup_declared(declared, path)
@@ -206,11 +204,11 @@ def _iter_namespace_nodes(
 ) -> Iterator[tuple[list[str], tuple[str, ...]]]:
     """Yield ``(path, keys)`` for each node that may hold a local-variables namespace.
 
-    Walks the *union* of the sources' key structures rather than the merged
-    result, because the merge has not happened yet and because a namespace
-    written only on the command line still has to be checked against the
-    declaration layer -- that is how an undeclared local is caught instead of
-    surfacing later as an unknown field.
+    Walks the union of the key structures of all *sources* (not a merged result), so a
+    namespace present in any single source is visited.
+
+    Agent Notes:
+        architecture/08-locals.md#declare-in-files-modify-anywhere
     """
     path = path or []
     dicts = [s for s in sources if isinstance(s, dict)]
@@ -244,10 +242,11 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
 ) -> None:
     """Validate and coerce every local-variables namespace across the three layers.
 
-    The config layer is the declaration layer: it alone introduces local
-    variables, and its file format alone gives them a type.  A namespace can sit
-    at any node, because an included file's root -- and with it its ``locals:``
-    block -- lands wherever the file was mounted.
+    *config_data* declares the locals; overrides in *env_data* and *cli_data* are
+    checked against it and coerced in place. Namespaces are found at every node.
+
+    Agent Notes:
+        architecture/08-locals.md
     """
     for path, keys in _iter_namespace_nodes([config_data, env_data, cli_data], target, union_tag):
         node = _lookup_path(config_data, path)
@@ -308,7 +307,6 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
            subpath depth (shallower paths first).
         4. ``cli_configs`` — in left-to-right CLI order.
     """
-    # Derived once here and threaded down: _parse_env has no union_tag of its own.
     locals_keys = _locals_keys(target, union_tag)
     if config_flag in locals_keys:
         msg = (
@@ -358,8 +356,6 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
     merged = _deep_merge(config_data, env_data, union_tag=union_tag)
     merged = _deep_merge(merged, cli_data, union_tag=union_tag)
 
-    # Every file has now been mounted, so a document-root reference finally knows
-    # which document it belongs to.  Canonicalizing here leaves the raw dict
-    # uniformly file-anchored *relative to the merged root*, which is what keeps a
-    # dumped config both resolvable and includable somewhere else.
+    # Every file is mounted now: rewrite document-root references (${.x}) as plain paths.
+    # See architecture/07-expressions.md#reference-anchoring.
     return canonicalize_references(merged)

@@ -76,8 +76,7 @@ def merge(  # noqa: PLR0913
         env_config: Name of an env var whose value is a config file path to load.
             Loaded after ``files`` but before CLI ``--config`` files.
         union_tag: Field name used as a discriminator tag in union types.
-            Defaults to ``"class"`` — a Python keyword that can never clash
-            with a dataclass field name.
+            Defaults to ``"class"``.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
@@ -120,17 +119,13 @@ def merge(  # noqa: PLR0913
 
 
 def _strip_locals(data: dict[str, Any], target: Any, union_tag: str) -> dict[str, Any]:
-    """Return *data* without the reserved local-variables namespaces.
+    """Return *data* without the reserved local-variables namespaces, at every node.
 
-    Which names address a namespace is a property of *target*, not of the call
-    site, so it is derived here with the same canonical rule the parsers use --
-    and asked at every node, because a configuration file's root (and with it its
-    ``locals:`` block) lands wherever the file was mounted.
+    Never mutates *data*: nodes are copied only where a namespace is dropped, and
+    returned as-is otherwise.
 
-    Copies rather than pops, and only where something is actually dropped:
-    ``resolve_expressions`` hands back the caller's own dict when the config
-    holds no expressions, so mutating in place would strip the namespace out of
-    the caller's data as a side effect.
+    Agent Notes:
+        architecture/08-locals.md#stripping
     """
     return cast("dict[str, Any]", _strip_locals_node(data, target, union_tag, []))
 
@@ -322,8 +317,7 @@ def load[T](  # noqa: PLR0913
         env_config: Name of an env var whose value is a config file path to load.
             Loaded after ``files`` but before CLI ``--config`` files.
         union_tag: Field name used as a discriminator tag in union types.
-            Defaults to ``"class"`` — a Python keyword that can never clash
-            with a dataclass field name.
+            Defaults to ``"class"``.
 
     Returns:
         An instance of the target type populated with the merged configuration.
@@ -372,6 +366,11 @@ def dump(
     tag_policy: TagPolicy = "auto",
 ) -> dict[str, Any]:
     """Serialize a dataclass instance to a config-compatible plain dict.
+
+    The instance holds resolved values, so ``${...}`` expressions are not reproduced;
+    to save a configuration with its expressions, pass the dict returned by
+    ``merge()`` to ``dump_file()`` instead. Plain (non-dataclass) classes are not
+    supported.
 
     Args:
         value: A dataclass instance.

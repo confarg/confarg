@@ -70,11 +70,7 @@ def merge_namespace(  # noqa: PLR0913
         A plain dict of the merged configuration, with expression strings intact.
 
     Config file loading order:
-        All config files share the same priority level (below inline env vars and
-        CLI args).  Within that level they are loaded left-to-right so that later
-        sources win on conflict: ``files`` first, then ``env_config``, then
-        ``<config_flag>`` env vars (shallower subpaths first), then CLI
-        ``--config`` / ``--config.subpath`` flags in left-to-right order.
+        Same as :func:`confarg.merge`.
     """
     if env is None:
         env = os.environ
@@ -83,9 +79,8 @@ def merge_namespace(  # noqa: PLR0913
     cli_data: dict[str, Any] = {}
     _collect_ns_fields(ns_flat, target, prefix="", union_tag=union_tag, result=cli_data)
 
-    # Scanning argv (not the namespace) preserves interleaved --config[.subpath]
-    # ordering, so later CLI config files win on conflict, and lets the patch
-    # scan apply list-index / append / delete / dict-subkey ops in command order.
+    # Patch ops and --config order are read from argv, not the namespace
+    # (architecture/04-cli-adapters.md#collection-patch-parity).
     argv_ = sys.argv[1:] if argv is None else list(argv)
     cli_data = _deep_merge(cli_data, _collect_cli_patch_ops(argv_, target, config_flag, union_tag))
     apply_root_json(ns_flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
