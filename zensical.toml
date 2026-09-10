@@ -33,6 +33,7 @@ nav = [
     { "19. Bindings" = "examples/19_bindings/README.md" },
     { "20. Factories" = "examples/20_factories/README.md" },
     { "21. Expressions" = "examples/21_expressions/README.md" },
+    { "22. Variable scopes" = "examples/22_variable_scopes/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]

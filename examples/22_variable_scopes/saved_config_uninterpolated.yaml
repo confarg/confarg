@@ -1,0 +1,4 @@
+value: ${values.value1 + 2}
+values:
+  value1: 3.0
+  value2: ${value + values.value1 * 1.5}
