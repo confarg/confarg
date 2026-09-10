@@ -174,13 +174,18 @@ def populate_parser(  # noqa: PLR0913
     """
     if argv is None:
         argv = sys.argv[1:]
-    static = build_static_flags(target, union_tag=union_tag, config_flag=config_flag, config_subkeys=config_subkeys)
+    static = build_static_flags(
+        target,
+        union_tag=union_tag,
+        config_flag=config_flag,
+        config_subkeys=config_subkeys,
+    )
     load_flags_into_parser(static, parser)
     dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
     load_flags_into_parser(dynamic, parser)
 
 
-def make_parser(
+def make_parser(  # thin pass-through: every parameter is forwarded to populate_parser
     target: object,
     *,
     union_tag: str = _defaults.UNION_TAG,

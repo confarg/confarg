@@ -8,11 +8,17 @@ from __future__ import annotations
 
 import ast
 import copy
+import io
+import keyword
 import math
 import operator
 import re
+import tokenize
 from collections import deque
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from confarg.exceptions import (
     CircularReferenceError,
@@ -225,7 +231,7 @@ def _extract_references(expr_str: str) -> set[str]:
         if expr_content is None:
             continue  # escaped $${...}
         try:
-            tree = ast.parse(expr_content, mode="eval")
+            tree = ast.parse(_strip_anchor(expr_content), mode="eval")
         except SyntaxError:
             continue
         _collect_names(tree, refs)
@@ -375,7 +381,7 @@ def _validate_ast(expr_str: str) -> None:
     Raises UnsafeExpressionError for disallowed constructs.
     """
     try:
-        tree = ast.parse(expr_str, mode="eval")
+        tree = ast.parse(_strip_anchor(expr_str), mode="eval")
     except SyntaxError as exc:
         msg = f"Invalid expression syntax: {expr_str!r}"
         raise UnsafeExpressionError(msg) from exc
@@ -421,7 +427,16 @@ def _eval_attribute(node: ast.Attribute, namespace: dict[str, Any]) -> Any:
             return _get_nested(namespace, ".".join(parts))
         except MissingReferenceError:
             pass
-    return getattr(_evaluate_ast(node.value, namespace), node.attr)
+    try:
+        # Not a config path: a genuine attribute access, e.g. the receiver of a
+        # whitelisted string method.
+        return getattr(_evaluate_ast(node.value, namespace), node.attr)
+    except AttributeError:
+        if parts is None:
+            raise
+        # It looked like a config path after all, so report the missing field
+        # rather than leaking "'dict' object has no attribute ...".
+        raise MissingReferenceError.field_not_found(".".join(parts)) from None
 
 
 def _eval_subscript(node: ast.Subscript, namespace: dict[str, Any]) -> Any:
@@ -534,7 +549,7 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
     m = re.fullmatch(r"\$\{([^}]+)\}", stripped)
     if m and stripped == expr_str:
         # Pure expression — return typed result
-        tree = ast.parse(m.group(1), mode="eval")
+        tree = ast.parse(_strip_anchor(m.group(1)), mode="eval")
         try:
             return _evaluate_ast(tree, namespace)
         except (MissingReferenceError, UnsafeExpressionError):
@@ -559,7 +574,7 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
             result_parts.append(escaped_text[1:])  # strip one $, producing "${foo}"
         else:
             # Real expression — evaluate and stringify
-            tree = ast.parse(m.group(1), mode="eval")
+            tree = ast.parse(_strip_anchor(m.group(1)), mode="eval")
             try:
                 value = _evaluate_ast(tree, namespace)
             except (MissingReferenceError, UnsafeExpressionError):
@@ -621,3 +636,197 @@ def _set_nested_by_path(data: dict[str, Any], path: str, value: Any) -> None:
     else:
         msg = f"Cannot set path '{path}'"
         raise MissingReferenceError(msg)
+
+
+# ---------------------------------------------------------------------------
+# Reference anchoring
+# ---------------------------------------------------------------------------
+
+#: Transient stand-in for a document-root anchor while an expression is parsed.
+#: A leading ``.`` is not valid Python, so it is swapped for this name before
+#: :func:`ast.parse` and swapped back on the way out.
+_ROOT_ANCHOR = "__ROOT__"
+
+#: Layout tokens that carry no operand meaning when scanning for anchors.
+_IGNORED_TOKENS = frozenset(
+    {tokenize.NEWLINE, tokenize.NL, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER, tokenize.COMMENT},
+)
+
+#: Token kinds a ``.`` may follow while still being ordinary attribute access.
+_ANCHOR_BLOCKING_TYPES = frozenset({tokenize.NUMBER, tokenize.STRING})
+_ANCHOR_BLOCKING_OPS = frozenset({")", "]", "}", "."})
+
+
+def _line_starts(text: str) -> list[int]:
+    """Absolute offset at which each line of *text* begins."""
+    starts = [0]
+    for line in text.splitlines(keepends=True):
+        starts.append(starts[-1] + len(line))
+    return starts
+
+
+def _replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
+    """Apply (start, end, replacement) edits to *text*, rightmost first."""
+    for begin, finish, repl in sorted(edits, reverse=True):
+        text = text[:begin] + repl + text[finish:]
+    return text
+
+
+def _anchor_dots(expr_content: str) -> list[int]:
+    """Offsets of each ``.`` that begins an operand — the document-root marker.
+
+    The scan is lexical rather than a regex because a dot is only a marker when
+    nothing precedes it in the same operand.  A tokenizer settles that reliably:
+    ``1.5`` is a single NUMBER and ``','.join(x)`` starts with a single STRING,
+    so neither reports a dot the way a lookbehind pattern would.
+    """
+    starts = _line_starts(expr_content)
+    found: list[int] = []
+    prev_type: int | None = None
+    prev_str = ""
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(expr_content).readline):
+            if tok.type in _IGNORED_TOKENS:
+                continue
+            # A keyword tokenizes as NAME but cannot own an attribute, so a dot
+            # after `if`/`else`/`and`/... starts a new operand and is a marker.
+            blocked = (
+                prev_type in _ANCHOR_BLOCKING_TYPES
+                or (prev_type == tokenize.NAME and not keyword.iskeyword(prev_str))
+                or (prev_type == tokenize.OP and prev_str in _ANCHOR_BLOCKING_OPS)
+            )
+            if tok.type == tokenize.OP and tok.string == "." and not blocked:
+                found.append(starts[tok.start[0] - 1] + tok.start[1])
+            prev_type, prev_str = tok.type, tok.string
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return []  # malformed: let ast.parse report it with its own message
+    return found
+
+
+def _strip_anchor(expr_content: str) -> str:
+    """Rewrite document-root references as plain paths (``.foo.bar`` -> ``foo.bar``).
+
+    In a standalone dict the document root *is* the dict root, so dropping the
+    marker is exactly what a document-root reference means there.  Every parse
+    site goes through this, so ``build()`` and ``resolve()`` accept the marker
+    even though :func:`confarg.merge` normally canonicalizes it away first.
+    """
+    return _replace_spans(expr_content, [(o, o + 1, "") for o in _anchor_dots(expr_content)])
+
+
+def _name_anchor(expr_content: str) -> str:
+    """Swap the document-root marker for a parseable name (``.foo`` -> ``__ROOT__.foo``)."""
+    return _replace_spans(
+        expr_content,
+        [(o, o + 1, _ROOT_ANCHOR + ".") for o in _anchor_dots(expr_content)],
+    )
+
+
+def _unname_anchor(expr_content: str) -> str:
+    """Turn ``__ROOT__.foo`` back into ``.foo`` after unparsing.
+
+    Lexical for the same reason as :func:`_anchor_dots`: the name must not be
+    stripped out of a string literal that happens to contain it.
+    """
+    starts = _line_starts(expr_content)
+    edits: list[tuple[int, int, str]] = []
+    try:
+        edits = [
+            (starts[tok.start[0] - 1] + tok.start[1], starts[tok.end[0] - 1] + tok.end[1], "")
+            for tok in tokenize.generate_tokens(io.StringIO(expr_content).readline)
+            if tok.type == tokenize.NAME and tok.string == _ROOT_ANCHOR
+        ]
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return expr_content
+    return _replace_spans(expr_content, edits)
+
+
+class _Prefixer(ast.NodeTransformer):
+    """Rewrite each file-anchored reference base ``name`` into ``<prefix>.name``.
+
+    Every :class:`ast.Name` here is either a whitelisted free function or the
+    base of a field reference: comprehensions and lambdas are absent from
+    :data:`_ALLOWED_NODES`, so there are no bound variables to mistake for one.
+    Prefixing therefore needs no chain reconstruction — replacing the base
+    ``Name`` of ``servers[0].host`` with ``db.servers`` yields
+    ``db.servers[0].host``, and the same holds for a method receiver
+    (``x.upper()`` → ``db.x.upper()``).
+    """
+
+    def __init__(self, prefix: str) -> None:
+        self._parts = prefix.split(".")
+
+    def visit_Name(self, node: ast.Name) -> ast.AST:  # NodeTransformer dispatches on the AST class name
+        """Return *node* unchanged for a function or anchor, else prefixed."""
+        if node.id in _SAFE_FUNCTIONS or node.id == _ROOT_ANCHOR:
+            return node
+        built: ast.expr = ast.Name(id=self._parts[0], ctx=ast.Load())
+        for part in [*self._parts[1:], node.id]:
+            built = ast.Attribute(value=built, attr=part, ctx=ast.Load())
+        return ast.copy_location(built, node)
+
+
+def _prefix_content(expr_content: str, prefix: str) -> str:
+    """Prefix every file-anchored reference in one ``${...}`` body by *prefix*."""
+    tree = ast.parse(_name_anchor(expr_content), mode="eval")
+    tree = _Prefixer(prefix).visit(tree)
+    ast.fix_missing_locations(tree)
+    return _unname_anchor(ast.unparse(tree))
+
+
+def _map_expressions(value: str, fn: Callable[[str], str]) -> str:
+    """Apply *fn* to the body of each real ``${...}``, leaving ``$${...}`` escapes alone."""
+    out: list[str] = []
+    last = 0
+    for m in _EXPR_RE.finditer(value):
+        out.append(value[last : m.start()])
+        out.append(m.group(0) if m.group(1) is None else "${" + fn(m.group(1)) + "}")
+        last = m.end()
+    out.append(value[last:])
+    return "".join(out)
+
+
+def _map_strings(data: Any, fn: Callable[[str], str]) -> Any:
+    """Rebuild *data*, applying *fn* to every expression-bearing string leaf."""
+    if isinstance(data, dict):
+        return {k: _map_strings(v, fn) for k, v in data.items()}
+    if isinstance(data, list):
+        return [_map_strings(v, fn) for v in data]
+    if isinstance(data, tuple):
+        return tuple(_map_strings(v, fn) for v in data)
+    if contains_expression(data):
+        # Preserve a str subclass (_StrToken) rather than flattening it to str.
+        return type(data)(_map_expressions(cast("str", data), fn))
+    return data
+
+
+def prefix_references(data: Any, prefix: str) -> Any:
+    """Return *data* with every file-anchored reference prefixed by *prefix*.
+
+    Called when one configuration file's content is mounted at *prefix* inside a
+    larger document.  A bare reference is anchored at the root of the file it was
+    written in, whatever its depth inside that file, so the prefix is uniform per
+    file rather than per position — which is what lets the same fragment be
+    mounted at any depth and still mean the same thing.
+
+    Document-root references (``${.foo}``) are deliberately left untouched: their
+    anchor is not known until every file has been mounted.
+
+    An empty *prefix* returns *data* unchanged and unrebuilt, so a config loaded
+    at the root keeps its expression text exactly as authored.
+    """
+    if not prefix:
+        return data
+    return _map_strings(data, lambda content: _prefix_content(content, prefix))
+
+
+def canonicalize_references(data: Any) -> Any:
+    """Return *data* with document-root references rewritten as plain paths.
+
+    Run once every file has been mounted, so ``${.foo}`` can finally be resolved
+    against the document it turned out to belong to.  The result is uniformly
+    file-anchored *relative to the merged root*, which is why a dumped merged
+    config is still a well-formed fragment: mount it somewhere else and its
+    references prefix correctly all over again.
+    """
+    return _map_strings(data, _strip_anchor)

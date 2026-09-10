@@ -172,7 +172,12 @@ def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app s
         argv = sys.argv[1:]
     before_names = {p.name for p in command.params}
 
-    static = build_static_flags(target, union_tag=union_tag, config_flag=config_flag, config_subkeys=config_subkeys)
+    static = build_static_flags(
+        target,
+        union_tag=union_tag,
+        config_flag=config_flag,
+        config_subkeys=config_subkeys,
+    )
     load_flags_into_command(static, command)
     dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
     load_flags_into_command(dynamic, command)

@@ -885,6 +885,10 @@ def build_static_flags(
     Returns:
         A list of :class:`~confarg.cli.argparse.FlagSpec` objects, one per CLI flag.
     """
+    # Imported here for the same reason as in _collect_patch_argv_specs: this module
+    # must stay free of a load-time import cycle with the argv parser.
+    from confarg._parse_cli import _locals_keys  # noqa: PLC0415
+
     flags = _collect_struct_specs(target, prefix="", union_tag=union_tag)
 
     if config_flag:
@@ -904,6 +908,18 @@ def build_static_flags(
         )
         if config_subkeys:
             flags.extend(_collect_subconfig_specs(target, config_flag, prefix="", union_tag=union_tag))
+            for key in _locals_keys(target, union_tag):
+                # How new local variables are declared from the command line, so these
+                # are registered statically; _collect_subconfig_specs only walks real
+                # fields and would never emit them.
+                flags.append(
+                    FlagSpec(
+                        name=f"{config_flag}.{key}",
+                        nargs="*",
+                        metavar="FILE",
+                        help=f"Config file(s) declaring local variables in the {key!r} namespace.",
+                    ),
+                )
 
     return flags
 
@@ -957,12 +973,19 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
     # Imported here to keep the framework-agnostic _build module free of an
     # import cycle with the argv parser at module load time.
     from confarg._parse_cli import (  # noqa: PLC0415
+        _addresses_key,
         _is_collection_patch_path,
+        _locals_keys,
         _looks_like_flag,
         _normalize_eq_args,
         _parse_flag_mode,
+        _walk_target,
         detect_force_cast,
     )
+
+    # Same graft the vanilla parser uses, so `--<key>.<name>` registers through
+    # the identical path as any other dict subkey.
+    target = _walk_target(target, _locals_keys(target, union_tag))
 
     specs: list[FlagSpec] = []
     seen: set[str] = set()
@@ -971,7 +994,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
         if not _looks_like_flag(tok):
             continue
         key = tok[2:]
-        if config_flag and (key == config_flag or key.startswith(config_flag + ".")):
+        if _addresses_key(key, config_flag):
             continue  # config files are registered by _collect_config_argv_specs
         if key in seen:
             continue
@@ -1014,7 +1037,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
     return specs
 
 
-def build_dynamic_flags(
+def build_dynamic_flags(  # one branch per argv-scanned flag family (config/locals/callable/patch)
     target: object,
     argv: Sequence[str],
     *,
