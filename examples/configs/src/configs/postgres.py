@@ -10,8 +10,6 @@ from .dbbaseconfig import DBBaseConfig
 
 @dataclass(kw_only=True)
 class PostgreSQLConfig:
-    """PostgreSQL database configuration."""
-
     host: str
     port: int = 5432
     schema_name: str
@@ -19,8 +17,6 @@ class PostgreSQLConfig:
 
 @dataclass(kw_only=True)
 class PostgreSQLConfigTyped:
-    """PostgreSQL config disambiguated by an explicit ``type`` field."""
-
     type: Literal["postgres"]
     host: str
     port: int = 5432
@@ -29,8 +25,6 @@ class PostgreSQLConfigTyped:
 
 @dataclass(kw_only=True)
 class PostgreSQLConfigChild(DBBaseConfig):
-    """PostgreSQL configuration sharing a common base class."""
-
     host: str
     port: int = 5432
     schema_name: str

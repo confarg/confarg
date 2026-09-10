@@ -9,13 +9,9 @@ from .dbbaseconfig import DBBaseConfig
 
 @dataclass
 class SQLiteConfig:
-    """SQLite file-based database configuration."""
-
     dbpath: str
 
 
 @dataclass(kw_only=True)
 class SQLiteConfigChild(DBBaseConfig):
-    """SQLite configuration sharing a common base class."""
-
     dbpath: str

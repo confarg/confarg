@@ -4,7 +4,6 @@ import confarg
 
 
 def main() -> None:
-    """Load and print the configuration."""
     config = confarg.load(PostgreSQLConfig, env_prefix="MYAPP_")
     print(config)
 

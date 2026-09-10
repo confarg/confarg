@@ -6,13 +6,10 @@ import confarg
 
 @dataclass
 class Config:
-    """Configuration with an int field."""
-
     value: int
 
 
 def main() -> None:
-    """Load and print the configuration."""
     config = confarg.load(Config, env_prefix="MYAPP_")
     pprint(config)
 

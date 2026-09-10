@@ -6,13 +6,10 @@ import confarg
 
 @dataclass
 class Config:
-    """Configuration with a None field."""
-
     value: None
 
 
 def main() -> None:
-    """Load and print the configuration."""
     config = confarg.load(Config, env_prefix="MYAPP_")
     pprint(config)
 

@@ -1,5 +1,3 @@
-"""Example: union with Literal type fields for explicit discrimination."""
-
 from configs import MariaDBConfig, PostgreSQLConfig
 
 import confarg
@@ -8,7 +6,6 @@ type Config = MariaDBConfig | PostgreSQLConfig
 
 
 def main() -> None:
-    """Load and print the database configuration."""
     config = confarg.load(Config, env_prefix="MYAPP_")
     print(config)
 

@@ -1,5 +1,3 @@
-"""Example: nested dataclass with union dispatch via the class: type."""
-
 from dataclasses import dataclass
 from pprint import pprint
 
@@ -8,13 +6,10 @@ import confarg.cli.argparse as confparse
 
 @dataclass
 class Config:
-    """Top-level application configuration."""
-
     users: list[str]
 
 
 def main() -> None:
-    """Load configuration and print it."""
     parser = confparse.make_parser(Config)
     options = parser.parse_args()
     config = confparse.from_namespace(Config, options, env_prefix="MYAPP_")

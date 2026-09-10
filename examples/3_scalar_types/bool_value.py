@@ -6,14 +6,11 @@ import confarg
 
 @dataclass
 class Config:
-    """Configuration with bool fields."""
-
     value1: bool
     value2: bool
 
 
 def main() -> None:
-    """Load and print the configuration."""
     config = confarg.load(Config, env_prefix="MYAPP_")
     pprint(config)
 

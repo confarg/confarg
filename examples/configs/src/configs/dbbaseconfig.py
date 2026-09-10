@@ -8,4 +8,4 @@ from dataclasses import dataclass
 
 @dataclass
 class DBBaseConfig:
-    """Common base class shared by database configs."""
+    pass

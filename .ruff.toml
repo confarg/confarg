@@ -43,7 +43,12 @@ select = [
 [lint.per-file-ignores]
 "examples/**" = [
     "D100", # undocumented-public-module
+    "D101", # undocumented-public-class
+    "D102", # undocumented-public-method
+    "D103", # undocumented-public-function
+    "D104", # undocumented-public-package
     "D105", # undocumented-magic-method
+    "D106", # undocumented-public-nested-class
     "D107", # undocumented-public-init
 ]
 "tests/**" = [
