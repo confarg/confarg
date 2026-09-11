@@ -25,11 +25,14 @@ def register_leaf_type(tp: type, coerce: Callable[[Any], Any]) -> None:
     """Register a custom leaf type.
 
     After registration, ``tp`` is treated as a leaf: values of that type can
-    appear as scalars in config files, env vars, and CLI args.  ``coerce`` is
-    called with the raw input value — either a ``_StrToken`` (a ``str``
-    subclass) from CLI/env sources, or the natively-parsed Python object from
-    config files — and must return an instance of ``tp``, raising
-    ``ValueError`` or ``TypeError`` on failure.
+    appear as scalars in config files, env vars, and CLI args, even if ``tp``
+    would otherwise be constructed field by field as a class.  ``coerce`` is
+    called with the raw input value — either a ``str`` subclass from CLI, env
+    and CSV sources, or the natively-parsed Python object from config files —
+    and must return an instance of ``tp``, raising ``ValueError``,
+    ``TypeError`` or ``OSError`` on failure.  Values that already are
+    instances of ``tp`` are used as-is.  Unresolved ``${...}`` expressions are
+    never passed to ``coerce``; it receives their resolved value.
 
     Example::
 

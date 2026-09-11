@@ -2,7 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Value construction and union disambiguation."""
+"""Value construction and union disambiguation.
+
+Agent Notes:
+    architecture/05-types-and-construction.md
+"""
 
 from __future__ import annotations
 
@@ -67,7 +71,13 @@ _CAST_TYPE_NAMES: dict[str, type] = {"str": str, "int": int, "float": float, "bo
 
 
 def _try_pinned_dict(data: Any) -> _Pinned | None:
-    """Detect a ``{__cast__: typename, __value__: raw}`` tagged dict and convert to _Pinned."""
+    """Detect a ``{__cast__: typename, __value__: raw}`` tagged dict and convert to _Pinned.
+
+    Only a dict with exactly these two keys is a cast.
+
+    Agent Notes:
+        architecture/05-types-and-construction.md#cast-pinning-in-files
+    """
     if not (isinstance(data, dict) and data.keys() == {"__cast__", "__value__"}):
         return None
     typename = data["__cast__"]
@@ -193,7 +203,7 @@ def _construct_scalar(tp: Any, data: Any, path: str) -> Any:
 def _construct_typed(tp: Any, data: Any, path: str, union_tag: str) -> Any:  # noqa: PLR0911
     """Dispatch construction by type after None and callable are handled."""
     if tp is Any:
-        # typing.Any became a real type in Python 3.12; pass data through unchanged.
+        # typing.Any is a real (subclassable) class since Python 3.11; pass data through unchanged.
         return data
     if _is_union(tp):
         return _construct_union(tp, data, path, union_tag)
@@ -251,8 +261,7 @@ def _indexed_dict_to_positions(
 ) -> dict[int, Any]:
     """Map an index-keyed dict to ``{abs_index: value}`` for a sequence of known *length*.
 
-    Negative keys count from the end (``-1`` → ``length - 1``), the canonical rule applied
-    wherever a sequence's length is known (mirroring list patches against a runtime base).
+    Negative keys count from the end (``-1`` → ``length - 1``), as list patches do.
 
     Args:
         data: The index-keyed dict to normalise.
@@ -685,10 +694,8 @@ def _coerce_scalar_variants(all_args: list[Any], scalar_leaf_vars: list[Any], da
         if vr is bool and int in scalar_leaf_vars:
             continue  # handled above
         try:
-            # Delegate to the canonical single-value constructor so every leaf kind
-            # participates — including type refs (`type`, `type[X]`), which _coerce_leaf
-            # alone can't build. Calling _coerce_leaf directly here let str always steal
-            # a type-ref variant, violating the stealing rule.
+            # Not _coerce_leaf: it cannot build type refs (`type`, `type[X]`).
+            # See architecture/05-types-and-construction.md#stealing-rule.
             return _construct_scalar(var, data, path)
         except (TypeCoercionError, ValueError, TypeError):
             continue
@@ -725,9 +732,7 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
         return result
 
     # A lone CLI token (e.g. `--input hello` for `bool | list[str]`) that no scalar
-    # variant accepts falls back to filling the sequence variant as a one-element list,
-    # mirroring a sole `list[str]` field. Gated on _UnionSeqToken so env/config scalars
-    # (plain _StrToken / native values) stay strict — they express lists explicitly.
+    # variant accepts becomes a one-element list. Only _UnionSeqToken gets this fallback.
     if isinstance(data, _UnionSeqToken):
         result = _try_coll_variants(coll_vars, [_StrToken(data)], path, union_tag)
         if result is not _UNION_NO_MATCH:

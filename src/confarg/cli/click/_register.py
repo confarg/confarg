@@ -26,17 +26,13 @@ from confarg.dictexpr import contains_expression
 class _ExpressionTolerantChoice(click.Choice):
     """A ``click.Choice`` that also admits unresolved ``${...}`` tokens.
 
-    ``Choice.convert`` resolves the value through a normalized mapping, so the
-    bypass has to sit in ``convert`` rather than in the choices container.
-    Everything else is inherited: ``--help`` still renders ``[a|b]``, shell
-    completion still offers the declared values, and a real out-of-domain value
-    still fails with click's own ``'zz' is not one of 'a', 'b'.``
+    The bypass sits in ``convert``, where ``Choice`` validates.  Everything else is
+    inherited: ``--help`` still renders ``[a|b]``, shell completion still offers the
+    declared values, and a real out-of-domain value still fails with click's own
+    error.  ``build()`` validates the resolved expression.
 
-    An expression's value is unknown until ``resolve_expressions`` runs, so the
-    front-end cannot prove it wrong at parse time; ``build()`` validates the
-    resolved result instead.  Deferral goes through the canonical
-    :func:`~confarg.dictexpr.contains_expression`, the same predicate the
-    argparse and cyclopts adapters use.
+    Agent Notes:
+        architecture/04-cli-adapters.md#expression-tolerant-choice-gates
     """
 
     def convert(self, value: Any, param: click.Parameter | None, ctx: click.Context | None) -> Any:

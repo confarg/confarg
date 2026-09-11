@@ -8,10 +8,15 @@ Builds typed instances from plain dicts, with union disambiguation (tag-based,
 structural, or leaf-coercion), nested dataclass support, and collection handling.
 Also exposes leaf-value coercion for scalar types.
 
+Values are expected to carry their final type already, as they do when loaded from
+YAML, TOML or JSON. Text is parsed into other types (``"8080"`` → ``8080``) only for
+the string tokens produced from command-line arguments and environment variables;
+a plain ``str`` given for an ``int`` field is a ``TypeCoercionError``.
+
 Typical use::
 
     from dataclasses import dataclass
-    from confarg.typedload import construct, coerce
+    from confarg.typedload import construct
 
 
     @dataclass
@@ -20,11 +25,11 @@ Typical use::
         port: int
 
 
-    srv = construct(Server, {"host": "localhost", "port": "8080"})
+    srv = construct(Server, {"host": "localhost", "port": 8080})
     # srv == Server(host="localhost", port=8080)
 
-    val = coerce(int, "42")
-    # val == 42
+Agent Notes:
+    architecture/05-types-and-construction.md
 """
 
 from confarg.exceptions import (

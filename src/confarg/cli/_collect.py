@@ -7,7 +7,11 @@
 Backend-neutral: every CLI adapter (argparse, click, cyclopts) first flattens its
 framework-specific parse result into a plain dict of dotted flag names, then calls
 :func:`_collect_ns_fields` to walk the target type and copy matching entries into
-the nested structure expected by the merge pipeline.
+the nested structure expected by the merge pipeline.  The result must equal what the
+vanilla parser produces for the same argv.
+
+Agent Notes:
+    architecture/04-cli-adapters.md#byte-identical-merged-dicts
 """
 
 from __future__ import annotations
@@ -62,12 +66,9 @@ def _json_array_override(v: Any) -> list[Any] | None:
     """Return a parsed list when a collection field's value is a lone JSON-array token.
 
     A ``nargs="*"`` flag delivers a single inline JSON array (``['[1, 2]']``) as a
-    one-element list holding the raw string. Routes through the same
-    ``_try_parse_json_list`` the vanilla ``_consume_collection_or_scalar`` path uses,
-    so the backends interpret it exactly as ``confarg.load`` does. The parsed list is
-    returned raw (plain values, not ``_StrToken``) to match vanilla, which stores
-    ``json.loads`` output verbatim — keeping JSON elements exempt from the stealing
-    rule (e.g. ``"yes"`` stays a string rather than becoming ``True``).
+    one-element list holding the raw string. Parsed with the vanilla
+    ``_try_parse_json_list`` and returned raw (plain values, not ``_StrToken``), as
+    vanilla stores it.
     """
     if isinstance(v, list) and len(v) == 1 and isinstance(v[0], str) and v[0].startswith("["):
         return _try_parse_json_list(v[0])
@@ -75,12 +76,7 @@ def _json_array_override(v: Any) -> list[Any] | None:
 
 
 def _coerce_leaf_value(core: Any, v: Any) -> Any:
-    """Eagerly coerce a CLI leaf value (scalar or list) to its field type.
-
-    Ensures the merged dict carries the same typed values as the vanilla
-    ``confarg.load`` path, so expressions over CLI-provided numbers resolve and
-    the four integrations produce byte-for-byte identical merged dicts.
-    """
+    """Eagerly coerce a CLI leaf value (scalar or list) to its field type, as vanilla does."""
     parsed = _json_array_override(v)
     if parsed is not None:
         return parsed
@@ -98,13 +94,10 @@ def _collect_union_seq_value(resolved: Any, v: Any, flag: str) -> Any:
     ``_UnionSeqToken`` so ``construct`` can fall back to a one-element list if no
     scalar variant accepts it (e.g. ``--input hello`` for ``bool | list[str]`` →
     ``['hello']``); otherwise the str-tokenized list (or scalar) is returned
-    unchanged. Keeps adapter merged dicts byte-identical to ``confarg.load``.
+    unchanged.
 
     An empty list raises ``ConfargError`` when the union has no varlen variant
-    (e.g. ``str | tuple[str, str]``), matching vanilla's parse-time
-    ``_consume_union_seq_args``: an empty list can build nothing valid for a
-    fixed-tuple-only union, so the front-end rejects it instead of synthesizing a
-    doomed value for ``construct`` to fail on later.
+    (e.g. ``str | tuple[str, str]``), like vanilla's ``_consume_union_seq_args``.
     """
     parsed = _json_array_override(v)
     if parsed is not None:
@@ -124,8 +117,7 @@ def _find_scalar_cast_override(flat: dict[str, Any], flag: str) -> Any:
     """Return the pinned value for an explicit scalar cast flag, or ``_NO_CAST`` if absent.
 
     Recognizes ``flag.str``/``flag.int``/``flag.float``/``flag.bool`` via the shared
-    :func:`resolve_forced_value`, so the adapter result is byte-identical to the vanilla
-    ``_handle_force_cast`` path.  ``.json`` is handled uniformly for every field type in
+    :func:`resolve_forced_value`.  ``.json`` is handled for every field type in
     :func:`_collect_ns_fields`, not here.
     """
     for cast_name in SCALAR_CAST_TYPES:
@@ -194,8 +186,7 @@ def _merge_blob_into_spec(
 def _collect_fn_identity(flat: dict[str, Any], flag: str, d: _Directives) -> dict[str, Any]:
     """Extract fn/class/call identity entries from flat into a spec dict.
 
-    Keyed by the *active* (plain or escaped) directive names so the produced spec is
-    byte-identical to a config file and re-detected by ``_select_directives`` downstream.
+    Keyed by the *active* (plain or escaped) directive names, as in a config file.
     """
     spec: dict[str, Any] = {}
     for name in d.openers:
@@ -229,9 +220,8 @@ def _collect_callable_spec(
     """Build and store the callable spec dict from flat namespace entries for flag.
 
     Directive flags come in a plain and an escaped (single-underscore) form; the opener
-    present in the flat namespace selects the mode via the canonical
-    :func:`~confarg._callable.active_directives`, so every produced key uses the active
-    names and stays byte-identical to the config-file / vanilla paths.
+    present in the flat namespace selects the mode via
+    :func:`~confarg._callable.active_directives`.
     """
     d = active_directives(lambda name: f"{flag}.{name}" in flat)
     bind_prefix = f"{flag}.{d.bind}."
@@ -247,8 +237,6 @@ def _collect_callable_spec(
     # Sibling --<field>.<param> flags are init kwargs when a class/fn identity is given:
     # 'class:' instantiates with them; 'fn: Class.method' constructs the method's owning
     # class with them. (Plain 'fn: Class' factories carry their args under bind instead.)
-    # The old return-type-derived implicit form is gone, so a bare return type no longer
-    # triggers collection.
     if f"{flag}.{d.cls}" in flat or f"{flag}.{d.fn}" in flat:
         spec.update(_collect_factory_kwargs(flat, flag_prefix, bind_prefix, reserved))
 

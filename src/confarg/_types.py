@@ -46,7 +46,11 @@ _MISSING = object()
 
 
 class _StrToken(str):
-    """String value from CLI args or env vars — eligible for coercion to target type."""
+    """Untyped text from CLI args, env vars or CSV cells — eligible for coercion to the target type.
+
+    Agent Notes:
+        architecture/05-types-and-construction.md#token-model
+    """
 
     __slots__ = ()
 
@@ -54,11 +58,12 @@ class _StrToken(str):
 class _UnionSeqToken(_StrToken):
     """A lone CLI token for a union that has both scalar and sequence variants.
 
-    Marks the CLI single-token case (e.g. ``--input hello`` for ``bool | list[str]``)
-    so union construction can try the scalar variants first and, only if they all
-    fail, fall back to filling the sequence variant as a one-element list. A plain
-    ``_StrToken`` (e.g. an env scalar) gets no such fallback, keeping env/config
-    strict — they express lists explicitly.
+    Union construction tries the scalar variants first and, only if they all fail,
+    fills the sequence variant as a one-element list (``--input hello`` for
+    ``bool | list[str]`` → ``['hello']``). A plain ``_StrToken`` gets no such fallback.
+
+    Agent Notes:
+        architecture/03-cli-parsing.md#unions-with-sequence-variants
     """
 
     __slots__ = ()

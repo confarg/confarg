@@ -2,7 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Expression resolution for ${...} field references and computations."""
+"""Expression resolution for ${...} field references and computations.
+
+Agent Notes:
+    architecture/07-expressions.md
+"""
 
 from __future__ import annotations
 
@@ -34,15 +38,12 @@ _EXPR_RE = re.compile(r"\$\$\{[^}]*\}|\$\{([^}]+)\}")
 def contains_expression(value: object) -> bool:
     """Return ``True`` when expression resolution would rewrite *value*.
 
-    The single canonical answer to "is this token deferred to ``build()``?".
-    Every value gate in confarg — eager leaf coercion and the CLI adapters'
-    parse-time domain checks alike — must consult this predicate rather than
-    inspect the raw string itself, so all four front-ends and all three input
-    channels defer on exactly the same set of tokens.
-
     Matches both a real ``${...}`` and an escaped ``$${...}`` (which resolution
-    unescapes to a literal ``${...}``): both are rewritten by
-    :func:`resolve_expressions`, so both must survive any earlier gate intact.
+    unescapes to a literal ``${...}``). Every check that inspects a value before
+    ``build()`` must use this predicate to leave such values untouched.
+
+    Agent Notes:
+        architecture/07-expressions.md#deferral-rule
     """
     return isinstance(value, str) and _EXPR_RE.search(value) is not None
 
@@ -675,10 +676,11 @@ def _replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
 def _anchor_dots(expr_content: str) -> list[int]:
     """Offsets of each ``.`` that begins an operand — the document-root marker.
 
-    The scan is lexical rather than a regex because a dot is only a marker when
-    nothing precedes it in the same operand.  A tokenizer settles that reliably:
-    ``1.5`` is a single NUMBER and ``','.join(x)`` starts with a single STRING,
-    so neither reports a dot the way a lookbehind pattern would.
+    Token-based: the dots of ``1.5`` or ``','.join(x)`` are not markers, while the one
+    in ``a if .b else c`` is.
+
+    Agent Notes:
+        architecture/07-expressions.md#reference-anchoring
     """
     starts = _line_starts(expr_content)
     found: list[int] = []
@@ -725,8 +727,7 @@ def _name_anchor(expr_content: str) -> str:
 def _unname_anchor(expr_content: str) -> str:
     """Turn ``__ROOT__.foo`` back into ``.foo`` after unparsing.
 
-    Lexical for the same reason as :func:`_anchor_dots`: the name must not be
-    stripped out of a string literal that happens to contain it.
+    Token-based, so a string literal containing the name is left intact.
     """
     starts = _line_starts(expr_content)
     edits: list[tuple[int, int, str]] = []
@@ -744,13 +745,13 @@ def _unname_anchor(expr_content: str) -> str:
 class _Prefixer(ast.NodeTransformer):
     """Rewrite each file-anchored reference base ``name`` into ``<prefix>.name``.
 
-    Every :class:`ast.Name` here is either a whitelisted free function or the
-    base of a field reference: comprehensions and lambdas are absent from
-    :data:`_ALLOWED_NODES`, so there are no bound variables to mistake for one.
-    Prefixing therefore needs no chain reconstruction — replacing the base
-    ``Name`` of ``servers[0].host`` with ``db.servers`` yields
-    ``db.servers[0].host``, and the same holds for a method receiver
-    (``x.upper()`` → ``db.x.upper()``).
+    Replacing the base ``Name`` of ``servers[0].host`` with ``db.servers`` yields
+    ``db.servers[0].host``; a method receiver works the same (``x.upper()`` →
+    ``db.x.upper()``). Correct only while :data:`_ALLOWED_NODES` has no construct
+    that binds names (lambdas, comprehensions).
+
+    Agent Notes:
+        architecture/07-expressions.md#reference-anchoring
     """
 
     def __init__(self, prefix: str) -> None:
@@ -804,16 +805,12 @@ def prefix_references(data: Any, prefix: str) -> Any:
     """Return *data* with every file-anchored reference prefixed by *prefix*.
 
     Called when one configuration file's content is mounted at *prefix* inside a
-    larger document.  A bare reference is anchored at the root of the file it was
-    written in, whatever its depth inside that file, so the prefix is uniform per
-    file rather than per position — which is what lets the same fragment be
-    mounted at any depth and still mean the same thing.
+    larger document; every bare reference of the file gets the same prefix.
+    Document-root references (``${.foo}``) are left untouched.  An empty *prefix*
+    returns *data* itself, unchanged.
 
-    Document-root references (``${.foo}``) are deliberately left untouched: their
-    anchor is not known until every file has been mounted.
-
-    An empty *prefix* returns *data* unchanged and unrebuilt, so a config loaded
-    at the root keeps its expression text exactly as authored.
+    Agent Notes:
+        architecture/07-expressions.md#reference-anchoring
     """
     if not prefix:
         return data
@@ -823,10 +820,9 @@ def prefix_references(data: Any, prefix: str) -> Any:
 def canonicalize_references(data: Any) -> Any:
     """Return *data* with document-root references rewritten as plain paths.
 
-    Run once every file has been mounted, so ``${.foo}`` can finally be resolved
-    against the document it turned out to belong to.  The result is uniformly
-    file-anchored *relative to the merged root*, which is why a dumped merged
-    config is still a well-formed fragment: mount it somewhere else and its
-    references prefix correctly all over again.
+    Run once every file has been mounted.
+
+    Agent Notes:
+        architecture/07-expressions.md#reference-anchoring
     """
     return _map_strings(data, _strip_anchor)

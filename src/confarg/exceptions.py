@@ -86,10 +86,14 @@ class UnknownArgumentError(ConfargError):
 class LocalsError(ConfargError):
     """Raised for misuse of the reserved local-variables namespace.
 
-    Local variables carry no type annotation, so their type comes from the file
-    format that declares them.  That is why they may only be *declared* in a
-    self-describing configuration file, though they may be *modified* from any
-    channel — see :data:`confarg._defaults.LOCALS_KEYS`.
+    Local variables may only be *declared* in a self-describing configuration file
+    (YAML, TOML, JSON), which fixes their type; they may be *modified* from any
+    channel, but only to a value of that type. Setting an undeclared local, adding or
+    removing one from the environment or command line, or declaring the same
+    namespace under both ``locals`` and ``_locals`` raises this error.
+
+    Agent Notes:
+        architecture/08-locals.md
     """
 
     @classmethod

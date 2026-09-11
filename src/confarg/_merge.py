@@ -2,7 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Deep merge and nested dict utilities."""
+"""Deep merge of the intermediate dicts, and the list/dict patch sentinels it understands.
+
+Agent Notes:
+    architecture/01-pipeline-and-contracts.md#deep-merge-semantics
+"""
 
 from __future__ import annotations
 
@@ -10,25 +14,21 @@ from typing import Any
 
 from confarg.exceptions import ConfargError
 
-# Special key used in the intermediate dict to signal "append these items to the list".
-# The value may be a list (from CLI), a scalar (single-value append), or a dict with
-# integer string keys (from future env-var support).
+# "Append these items to the list".  The value is a list, a scalar (single-value append),
+# or a dict with integer string keys.
 LIST_APPEND_KEY = "+"
 
-# Special key used in the intermediate dict to signal "delete these indices from the list".
-# The value is a sorted list of integers (original indices before deletion).
+# "Delete these indices from the list".  The value is a sorted list of integers
+# (original indices before deletion).
 LIST_DELETE_KEY = "-"
 
-# Special key used in the intermediate dict to signal "replace the base list with this
-# value before applying other operations".  Produced by the CLI parser when a full-replace
-# (--field or --field val…) is followed by a patch/append so that the replace is not lost
-# during merge.  The value is the replacement list.
+# "Replace the base list with this value before applying the other operations".
+# Produced when a whole-list value is followed by a patch or append.  The value is the
+# replacement list.
 LIST_REPLACE_BASE_KEY = "*"
 
-# Special key used in the intermediate dict to signal "delete these indices from the list
-# AFTER appends have been applied".  Produced by the CLI parser when --field.N- appears
-# after --field+ in the argument list, so the index refers to the post-append list.
-# The value is a sorted list of integers (original post-append indices).
+# "Delete these indices AFTER appends have been applied".  Produced by the CLI parser when
+# --field.N- appears after --field+.  The value is a sorted list of post-append indices.
 LIST_POST_APPEND_DELETE_KEY = "~"
 
 
@@ -200,10 +200,8 @@ def _apply_list_ops(
             )
             raise ConfargError(msg)
         working = list(working)  # ensure mutability
-        # Delegate to the canonical "combine existing value with override" dispatcher so an
-        # index patch composes at any depth: a list/tuple element + index-keyed dict recurses
-        # through _apply_list_ops (instead of being replaced), a dict element + dict patch
-        # deep-merges, and anything else is replaced by iv.
+        # A list/tuple element + index-keyed dict recurses through _apply_list_ops, a dict
+        # element + dict patch deep-merges, and anything else is replaced by iv.
         working[idx] = _merge_existing_value(working[idx], iv, key, union_tag)
 
     return working
@@ -212,14 +210,12 @@ def _apply_list_ops(
 def _index_patch_escapes_base(base: list[Any], ops: dict[str, Any]) -> bool:
     """Whether *ops* is a pure index patch with an index outside *base*.
 
-    Such a patch is ambiguous: list semantics make it an out-of-range error, while
-    fixed-tuple semantics fill the declared slot.  Only the type-aware ``build()`` layer
-    can decide, so the merge layer defers it (carrying the base) rather than picking a
-    rule.  Append/delete keys are list-only operations a tuple cannot reinterpret, so a
-    patch containing them is handled eagerly (and may raise) as before.
+    Such a patch is deferred to ``build()`` with the base carried along. Patches with
+    append/delete keys, and non-integer keys, return False so ``_apply_list_ops``
+    handles them (and raises its specific errors).
 
-    Returns False for a non-integer key so ``_apply_list_ops`` still raises its specific
-    non-integer-key error.
+    Agent Notes:
+        architecture/01-pipeline-and-contracts.md#merge-build-contract
     """
     if any(k in ops for k in (LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_POST_APPEND_DELETE_KEY)):
         return False
@@ -266,7 +262,7 @@ def _merge_list_base(bv: list[Any], val: dict[str, Any], key: str, union_tag: st
     if LIST_REPLACE_BASE_KEY in val:
         return _apply_list_ops(list(val[LIST_REPLACE_BASE_KEY]), val, key, union_tag)
     if _index_patch_escapes_base(bv, val):
-        # Defer: list vs. fixed-tuple diverge here, and only build() knows the type.
+        # Defer to build(): an out-of-range index is an error for a list, a slot for a tuple.
         return {LIST_REPLACE_BASE_KEY: list(bv), **val}
     return _apply_list_ops(list(bv), val, key, union_tag)
 

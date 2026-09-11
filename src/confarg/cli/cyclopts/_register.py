@@ -44,18 +44,13 @@ def _make_literal(choices: list[str]) -> Any:
 def _expression_tolerant_convert(type_: Any, tokens: Any) -> Any:
     """Convert choice tokens, passing unresolved ``${...}`` expressions through untouched.
 
-    cyclopts enforces a ``Literal`` by converting the token, so a ``converter``
-    is the bypass point: it replaces that conversion, while the ``Literal``
-    annotation stays in place and keeps rendering ``[choices: a, b]`` in help.
-    Non-expression tokens are handed straight back to :func:`cyclopts.convert`,
-    so a real out-of-domain value still fails with cyclopts' own
-    ``unable to convert "zz" into one of {'a', 'b'}``.
+    Installed as the parameter's ``converter`` while the ``Literal`` annotation stays in
+    place for help (``[choices: a, b]``).  Non-expression tokens go to
+    :func:`cyclopts.convert`, so a real out-of-domain value still fails with cyclopts'
+    own error.  ``build()`` validates the resolved expression.
 
-    An expression's value is unknown until ``resolve_expressions`` runs, so the
-    front-end cannot prove it wrong at parse time; ``build()`` validates the
-    resolved result instead.  Deferral goes through the canonical
-    :func:`~confarg.dictexpr.contains_expression`, the same predicate the
-    argparse and click adapters use.
+    Agent Notes:
+        architecture/04-cli-adapters.md#expression-tolerant-choice-gates
     """
     if any(contains_expression(t.value) for t in tokens):
         return tokens[0].value if len(tokens) == 1 else [t.value for t in tokens]
@@ -154,11 +149,10 @@ def load_flags_into_app(
 
     Because cyclopts is signature-driven, this generates a synthetic default
     function whose :class:`inspect.Signature` encodes all flags and registers it
-    via ``app.default()``.  The app receives two private attributes so that
-    :func:`from_app` can extract parsed values:
-
-    - ``_confarg_command`` — reference to the synthetic function itself
-    - ``_confarg_name_map`` — ``{py_identifier: dotted_cli_name}`` mapping
+    via ``app.default()``.  The synthetic function and a
+    ``{py_identifier: dotted_cli_name}`` name map are recorded in the module-level
+    ``_app_meta`` registry (keyed by ``id(app)``) so that :func:`from_app` can
+    extract parsed values.
 
     Args:
         flags: The specs to register, typically from

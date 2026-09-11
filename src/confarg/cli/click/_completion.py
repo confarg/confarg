@@ -60,7 +60,7 @@ def setup_completion(
     appropriate extra options on *command* so that Click can suggest them.
 
     Works with bash and zsh (which emulate bash completion env vars via
-    click-provided shell integration scripts).  Fish support can be added later.
+    click-provided shell integration scripts); fish is not supported.
 
     Args:
         command: The :class:`click.Command` to extend.

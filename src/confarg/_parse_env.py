@@ -2,7 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Environment variable parsing."""
+"""Environment variable parsing into a nested dict shaped by the target type.
+
+Agent Notes:
+    architecture/02-files-and-env.md#environment-parsing
+"""
 
 from __future__ import annotations
 
@@ -348,13 +352,10 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
         separator: Separator used to split variable names into nested keys.
         target: The target type, used to determine dataclass vs scalar handling.
         config_flag: The magic segment name that marks a sub-config file pointer.
-        union_tag: The field name used as a discriminator tag in union types;
-            needed here to derive which names address the reserved
-            local-variables namespace at each node of the path.  A variable
-            addressing one is stored without the usual unknown-field warning;
-            whether the local is declared, and what type it has, is checked in
-            ``_pipeline._apply_locals_overrides`` once the config files are
-            loaded.
+        union_tag: The field name used as a discriminator tag in union types; also
+            used to find the local-variables namespace at each node of the path.
+            Variables addressing that namespace are stored raw, without the
+            unknown-field warning, and checked later by the pipeline.
 
     Returns:
         A tuple of (data_dict, env_configs) where data_dict contains inline values
@@ -392,16 +393,12 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
             continue
 
         parts, ft = _resolve_env_parts(target, parts)
-        # A local-variables namespace is not a field of the target, so the
-        # unknown-field warning would drop it -- and it can sit at any depth,
-        # because an included file's root lands where it is mounted.  Whether the
-        # local is declared, and what its type is, is checked once the config
-        # files are loaded, in ``_pipeline._apply_locals_overrides``.
+        # Locals are not target fields: skip the unknown-field warning and store the raw
+        # token; _pipeline checks and coerces them (architecture/08-locals.md).
         is_locals = _locals_segment_index(target, parts, union_tag) is not None
         if not is_locals and _warn_unknown_env_field(orig_key, parts, _resolve_type(target)):
             continue
         if is_locals:
-            # No declared type is known yet, so store the raw token uncoerced.
             ft = None
 
         _store_env_value(parts, ft, value, data)

@@ -2,9 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Build lists of FlagSpec from dataclass type information.
+"""Build lists of FlagSpec from dataclass type information, for every CLI adapter.
 
-No argparse import — this module is usable by any CLI adapter.
+Must not import argparse (it is shared by all adapters) and imports ``_parse_cli``
+inside functions only.
+
+Agent Notes:
+    architecture/04-cli-adapters.md#framework-neutral-flag-model
+    architecture/04-cli-adapters.md#static-and-dynamic-flags
 """
 
 from __future__ import annotations
@@ -63,11 +68,10 @@ def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
     """Return scalar types to offer as explicit cast flags for a multi-variant union.
 
     Returns non-empty when the union has (a) at least one enum variant, or (b) str
-    alongside any other variant — both are combinations where the stealing rule is
-    non-obvious and an explicit cast escape-hatch is useful. Case (b) covers str
-    sharing the union with a non-scalar variant too (``str | type``, ``str | Path``),
-    so ``--field.str`` is always available to bypass a stolen str, whatever the other
-    variant is.
+    alongside any other variant, scalar or not (``str | type``, ``str | Path``).
+
+    Agent Notes:
+        architecture/04-cli-adapters.md#union-inheritance-and-cast-flags
     """
     non_none = _union_args_no_none(resolved)
     types = [_resolve_type(v) for v in non_none]
@@ -95,11 +99,10 @@ def _literal_cli_choices(vals: tuple[Any, ...]) -> list[str]:
 def _merge_or_append_spec(result: list[FlagSpec], by_name: dict[str, FlagSpec], spec: FlagSpec) -> None:
     """Append ``spec`` to ``result``, or merge its ``choices`` into a same-named earlier spec.
 
-    Union variants can each contribute a ``FlagSpec`` for the same discriminator field
-    (e.g. ``type: Literal["mariadb"]`` vs ``Literal["postgres"]``). First-wins dedup would
-    drop all but the first variant's choices, so a merged single flag must accept every
-    variant's value. When both the existing and new spec carry ``choices``, union them
-    (order-preserving); otherwise keep the first spec unchanged.
+    Union variants can each contribute a ``FlagSpec`` for the same field (e.g.
+    ``type: Literal["mariadb"]`` vs ``Literal["postgres"]``). When both the existing and
+    new spec carry ``choices``, union them (order-preserving); otherwise keep the first
+    spec unchanged.
     """
     existing = by_name.get(spec.name)
     if existing is None:
@@ -205,9 +208,7 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
 
 # (opener_suffix, mode, bind_key) for both the plain and escaped directive forms.
 # Escaped forms come first so the longer suffix (``._class``) is matched before the
-# plain one (``.class``). The single source of truth for how an argv opener flag maps
-# to a mode + bind-flag namespace, mirroring ``confarg._callable.active_directives`` on
-# the construction side so registration and collection agree.
+# plain one (``.class``). Must agree with ``confarg._callable.active_directives``.
 _OPENER_SPECS: tuple[tuple[str, str, str], ...] = tuple(
     (f".{opener}", mode, directives.bind)
     for directives in (_ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES)
@@ -230,10 +231,11 @@ def _escaped_opener_specs(
 ) -> list[FlagSpec]:
     """Register the escaped opener flags (``--<field>._class`` etc.) actually typed on the CLI.
 
-    Escaped openers are not registered statically; only those present in argv are added, so
-    the host framework accepts them while ``--help`` stays uncluttered. No group is set:
-    sharing the field's group name with a different description trips cyclopts' "2 distinct
-    Group objects with same name" check.
+    Only openers present in argv are added. No group is set (cyclopts rejects two groups
+    with the same name and different descriptions).
+
+    Agent Notes:
+        architecture/04-cli-adapters.md#static-and-dynamic-flags
     """
     result: list[FlagSpec] = []
     for field_flag, (_fn_path, mode, bind_key) in argv_fns.items():
@@ -260,9 +262,8 @@ def _build_callable_fn_specs(
 ) -> list[FlagSpec]:
     """Build FlagSpecs for ``--<flag>.fn``, ``--<flag>.class``, ``--<flag>.call``.
 
-    Only the plain openers are registered statically; the escaped openers
-    (``--<flag>._fn`` etc.) are registered on demand by :func:`build_dynamic_flags`
-    when they actually appear in argv, keeping the static ``--help`` uncluttered.
+    Only the plain openers; the escaped openers (``--<flag>._fn`` etc.) are registered
+    by :func:`build_dynamic_flags` when they appear in argv.
     """
     return [
         FlagSpec(
@@ -885,8 +886,7 @@ def build_static_flags(
     Returns:
         A list of :class:`~confarg.cli.argparse.FlagSpec` objects, one per CLI flag.
     """
-    # Imported here for the same reason as in _collect_patch_argv_specs: this module
-    # must stay free of a load-time import cycle with the argv parser.
+    # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import _locals_keys  # noqa: PLC0415
 
     flags = _collect_struct_specs(target, prefix="", union_tag=union_tag)
@@ -909,9 +909,8 @@ def build_static_flags(
         if config_subkeys:
             flags.extend(_collect_subconfig_specs(target, config_flag, prefix="", union_tag=union_tag))
             for key in _locals_keys(target, union_tag):
-                # How new local variables are declared from the command line, so these
-                # are registered statically; _collect_subconfig_specs only walks real
-                # fields and would never emit them.
+                # --config.<locals> FILE declares locals from the CLI; not a real field,
+                # so _collect_subconfig_specs does not emit it.
                 flags.append(
                     FlagSpec(
                         name=f"{config_flag}.{key}",
@@ -927,9 +926,7 @@ def build_static_flags(
 def _collect_config_argv_specs(argv: Sequence[str], config_flag: str) -> list[FlagSpec]:
     """Build FlagSpecs for ``--<config_flag>.<subpath>[+]`` flags found in argv.
 
-    Static registration only covers direct struct fields; scanning argv lets any
-    subpath the user actually typed — deeper paths and ``+`` append flags — be
-    accepted by the host CLI framework, matching what ``confarg.load()`` parses.
+    Covers the deeper subpaths and ``+`` append flags that static registration does not.
     """
     specs: list[FlagSpec] = []
     seen: set[str] = set()
@@ -964,14 +961,14 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
 
     Scans for list index/append/delete and dict-subkey flags
     (``--field.N``, ``--field+``, ``--field.N-``, ``--field.key``) whose dotted
-    path the *target* type confirms reaches a list, tuple, set, or dict.  These
-    are not derivable from the static type walk, so registering exactly the
-    ones the user typed lets the host framework accept them; the merge-side
-    patch scan (``_parse_cli`` in ``patch_only`` mode) reads their values from
-    argv in command order.  Delete flags register value-less (``nargs=0``).
+    path the *target* type confirms reaches a list, tuple, set, or dict, plus ``.json``
+    casts.  Their values are read later from argv by ``_parse_cli`` in ``patch_only``
+    mode.  Delete flags register value-less (``nargs=0``).
+
+    Agent Notes:
+        architecture/04-cli-adapters.md#collection-patch-parity
     """
-    # Imported here to keep the framework-agnostic _build module free of an
-    # import cycle with the argv parser at module load time.
+    # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import (  # noqa: PLC0415
         _addresses_key,
         _is_collection_patch_path,
@@ -1002,9 +999,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
         if not (append_mode or delete_mode):
             path, force_cast = detect_force_cast(path, target, union_tag)
             if force_cast == "json":
-                # .json is broadly applicable, so it is registered dynamically (only when
-                # typed) rather than statically like the scalar-union casts (--field.int).
-                # An empty path is the root `--json` cast (inject the whole config).
+                # .json is registered only when typed. An empty path is the root `--json` cast.
                 seen.add(key)
                 target_desc = f"'{'.'.join(path)}'" if path else "the whole config"
                 specs.append(
@@ -1055,7 +1050,10 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
     in ``argv``, so scoped and append config-file flags at any depth are accepted
     by the host framework (duplicates of static flags are skipped at load time).
 
-    Errors are silently ignored — this is a best-effort enhancement.
+    Also registers the collection-patch flags (``--field.N``, ``--field+``,
+    ``--field.N-``, ``--field.key``) and ``.json`` casts found in ``argv``.
+
+    Errors are silently ignored: on any failure no dynamic flag is returned.
 
     Args:
         target: The top-level dataclass type.

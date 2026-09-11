@@ -34,13 +34,11 @@ class _ExpressionTolerantChoices(list):
     argparse gates a value with ``value not in action.choices`` and renders help
     by iterating the same object, so overriding ``__contains__`` widens the
     accepted domain while keeping the native ``{a,b}`` metavar and the native
-    ``invalid choice: 'zz' (choose from a, b)`` error for real values.
+    ``invalid choice`` error for real values.  ``build()`` validates the resolved
+    expression.
 
-    An expression's value is unknown until ``resolve_expressions`` runs, so the
-    front-end cannot prove it wrong at parse time; ``build()`` validates the
-    resolved result instead.  Membership defers via the canonical
-    :func:`~confarg.dictexpr.contains_expression`, the same predicate the click
-    and cyclopts adapters use.
+    Agent Notes:
+        architecture/04-cli-adapters.md#expression-tolerant-choice-gates
     """
 
     def __contains__(self, value: object) -> bool:
@@ -136,18 +134,16 @@ def populate_parser(  # noqa: PLR0913
         port: Annotated[int, FieldMeta(help="TCP port.", metavar="PORT")]
 
     All confarg arguments use ``default=argparse.SUPPRESS``, so fields absent
-    from the command line do not appear in the resulting Namespace.  This makes
-    it straightforward to compose with :func:`from_namespace` for config-file
-    and env-var sources.
+    from the command line do not appear in the resulting Namespace and never
+    override config files or env vars in :func:`from_namespace`.
 
     A ``--<config_flag>`` argument (default ``--config``) is also registered so
-    users can pass one or more TOML/YAML config files on the command line.
+    users can pass one or more config files on the command line.
     Pass ``config_flag=""`` to suppress it.
 
-    **Skipped fields:**
-
-    - ``dict``-typed fields (keys are unknown at registration time).
-    - Multi-variant union fields (ambiguous argparse type mapping).
+    ``dict``-typed fields get no static flag (their keys are unknown); each
+    ``--field.key`` found in ``argv`` is registered instead.  Values are passed as
+    strings: type coercion happens in :func:`from_namespace`, not in argparse.
 
     Args:
         target: The dataclass type whose fields to register.
@@ -235,9 +231,8 @@ def make_parser(  # thin pass-through: every parameter is forwarded to populate_
 
 
 # ---------------------------------------------------------------------------
-# Thin wrappers retained for _completion.py compatibility.
-# These delegate to the spec-builder functions + _register_spec.
-# A future refactoring of _completion.py can remove them.
+# Thin wrappers used by _completion.py; they delegate to the spec builders and
+# _register_spec.  See architecture/11-limitations-and-directions.md#code-level-warts.
 # ---------------------------------------------------------------------------
 
 
