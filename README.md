@@ -9,9 +9,9 @@
 
 `confarg` is a Python library that helps you load configurations in a modular fashion from multiple sources: files, environment variables, and command line arguments.
 
-It can handle deeply nested configurations, type unions, derived classes, expressions and variable interpolation, configuration compositions and more, and can integrate with your favorite argument parser library such as `argparse`, `click` or `typer`.
+It can handle deeply nested configurations, type unions, derived classes, expressions and variable interpolation, configuration compositions and more, and can integrate with your favorite argument parser library such as `argparse`, `click`, `typer` or `cyclopts`.
 
-`confarg` is not a framework. No decorator, base class or special annotation type required: none are provided. It is just a tool for the deserialization and serialization of complex configurations. Its footprint in your code is typically a few lines of code.
+`confarg` is not a framework. No decorator, base class or special annotation type required: none are provided. It is just a tool for the deserialization and serialization of complex configurations. It is designed to have a minimal footprint in your code.
 
 ## Install
 

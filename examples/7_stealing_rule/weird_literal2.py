@@ -6,13 +6,10 @@ import confarg
 
 @dataclass
 class Config:
-    """Configuration with a Literal["16", 16] field."""
-
     value: Literal["16", 16]
 
 
 def main() -> None:
-    """Load and print the configuration."""
     config = confarg.load(Config, env_prefix="MYAPP_")
     print(config)
 

@@ -8,8 +8,6 @@ from typing import Literal
 
 @dataclass(kw_only=True)
 class MariaDBConfig:
-    """MariaDB connection configuration."""
-
     host: str
     port: int = 3306
     schema_name: str
@@ -17,8 +15,6 @@ class MariaDBConfig:
 
 @dataclass(kw_only=True)
 class MariaDBConfigTyped:
-    """MariaDB connection configuration with a 'mariadb' type."""
-
     type: Literal["mariadb"] = "mariadb"
     host: str
     port: int = 3306

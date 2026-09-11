@@ -8,7 +8,5 @@ from dataclasses import dataclass
 
 @dataclass
 class APIConfig:
-    """REST API connection configuration."""
-
     url: str
     token: str

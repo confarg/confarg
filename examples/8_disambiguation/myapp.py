@@ -6,7 +6,6 @@ type Config = PostgreSQLConfig | SQLiteConfig
 
 
 def main() -> None:
-    """Load and print the database configuration."""
     config = confarg.load(Config, env_prefix="MYAPP_")
     print(config)
 

@@ -1,5 +1,3 @@
-"""Example: unstructured dict fields with mixed and structured value types."""
-
 from dataclasses import dataclass
 from pprint import pprint
 
@@ -8,13 +6,10 @@ import confarg
 
 @dataclass
 class Config:
-    """Top-level application configuration."""
-
     input: dict[int, str]
 
 
 def main() -> None:
-    """Load and print the configuration."""
     config = confarg.load(Config, env_prefix="MYAPP_")
     pprint(config)
 
