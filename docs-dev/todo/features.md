@@ -25,6 +25,24 @@ Callable specs bind against a concrete signature. A field typed as a `Protocol` 
 as keyword arguments and how they are validated.
 See [06-callables.md](../architecture/06-callables.md).
 
+### FEAT-9 — A `confarg check` command to validate a config file against a target
+
+**Where:** new console script (no `[project.scripts]` entry exists yet) · **Filed:** 2026-09-12
+
+In a project environment, `confarg check module.Config config.yaml` should load the file,
+resolve its `${...}` expressions and construct the target, reporting each error with its key
+path and exiting non-zero — a lint step for CI and editors, without writing a throwaway
+script. `_import_dotted` already resolves `module.Config` and `load()` already does the work,
+so the command is mostly argument plumbing plus error formatting.
+
+Open before this becomes work: whether "correctly formatted" means the whole `merge` →
+`resolve` → `build` pipeline or stops before construction (side-effect-free validation, cf.
+FEAT-5); how the environment and CLI channels are represented, since only the file channel can
+be checked statically — a parity divergence needing explicit approval; whether several files
+may be passed to check the merged result; and that importing `module.Config` executes user
+code, so the command is not safe on untrusted input.
+See [01-pipeline-and-contracts.md#merge-build-contract](../architecture/01-pipeline-and-contracts.md#merge-build-contract).
+
 ## Unvetted ideas
 
 Carried over from an earlier architecture review. None is decided; each needs a design pass
