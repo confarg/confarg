@@ -6,7 +6,37 @@ on:
     types: [opened, reopened, synchronize]
 
 jobs:
+  # Don't rely on `paths-ignore`: a workflow skipped by a path filter never
+  # reports its checks at all, so a required check stays pending and blocks
+  # the merge.
+  changes:
+    name: Detect testable changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+    - id: filter
+      env:
+        BASE: ${{ github.event.pull_request.base.sha }}
+        HEAD: ${{ github.event.pull_request.head.sha }}
+      run: |
+        git fetch --depth=1 origin "$BASE"
+        git fetch --depth=1 origin "$HEAD"
+        # docs-dev/ holds the architecture notes and the boards, and the test
+        # suite reads none of it, so a pull request confined to those files has
+        # nothing to test.  Everything else counts as code -- examples/*/README.md
+        # included, since pytest-markdown-console replays those as subprocesses.
+        changed=$(git diff --name-only "$BASE" "$HEAD" | grep -v '^docs-dev/' || true)
+        if [ -n "$changed" ]; then
+          echo 'code=true' >> "$GITHUB_OUTPUT"
+        else
+          echo 'code=false' >> "$GITHUB_OUTPUT"
+        fi
+
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -16,8 +46,8 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
-    - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5.4.2
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+    - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86   # v5.4.2
     - if: matrix.resolution == 'locked'
       run: uv run --locked pytest
     - if: matrix.resolution == 'latest'
