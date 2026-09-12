@@ -8,6 +8,7 @@ hygiene, performance. See [README.md](README.md) for the ticket format.
 ### REF-1 — The framework-neutral flag model lives under `cli/argparse/`
 
 **Where:** `src/confarg/cli/argparse/_spec.py`, `_build.py` · **Filed:** 2026-09-12
+**Effort:** M · **Risk:** low
 
 `FlagSpec`, `FieldMeta` and the spec generation in `_build.py` are used by every adapter, not
 just argparse; they sit under `cli/argparse/` by historical accident and belong in `cli/`.
@@ -18,6 +19,7 @@ See [04-cli-adapters.md#framework-neutral-flag-model](../architecture/04-cli-ada
 
 **Where:** `_cast.SCALAR_CAST_TYPES`, `typedload/_construct._CAST_TYPE_NAMES`,
 `cli/argparse/_build._SCALAR_CAST_TYPES` · **Filed:** 2026-09-12
+**Effort:** S · **Risk:** medium
 
 Three copies of the same list of castable scalar types, one per call site. `_cast` should own
 it and the other two should import it — a new cast type currently has to be added in three
@@ -26,6 +28,7 @@ places to work everywhere. See [09-invariants.md](../architecture/09-invariants.
 ### REF-3 — `_add_*` wrappers survive only for completion
 
 **Where:** `src/confarg/cli/argparse/_register.py` · **Filed:** 2026-09-12
+**Effort:** M · **Risk:** medium
 
 The thin `_add_*` helpers exist because `_completion.py` needs the `argparse` action objects.
 Refactoring completion onto `FlagSpec` would delete them.
@@ -33,6 +36,7 @@ Refactoring completion onto `FlagSpec` would delete them.
 ### REF-4 — `tests/examples/_registry.py` is orphaned
 
 **Where:** `tests/examples/_registry.py` · **Filed:** 2026-09-12
+**Effort:** S · **Risk:** low
 
 It describes a README replay harness (`test_readme_commands.py`) that no longer exists; README
 commands are now replayed by `pytest-markdown-console`. Delete it or re-point it.
@@ -43,6 +47,7 @@ See [12-testing.md](../architecture/12-testing.md).
 ### REF-5 — `_import_dotted` conflates two failures
 
 **Where:** `src/confarg/_import.py` · **Filed:** 2026-09-12
+**Effort:** S · **Risk:** medium
 
 It assumes no builtin name collides with an importable module, and treats an `ImportError`
 raised *inside* a module the same as "this is not a module" — so a broken dependency reads as
@@ -51,6 +56,7 @@ a typo'd path. See [05-types-and-construction.md#dotted-imports](../architecture
 ### REF-6 — `LIST_APPEND_KEY` accepts a value nothing produces
 
 **Where:** `src/confarg/_merge.py` · **Filed:** 2026-09-12
+**Effort:** S · **Risk:** high
 
 The index-keyed dict branch was added "for future env-var support" that never arrived. Either
 wire up the env path or drop the branch; untested speculative code in the merge core is worse
@@ -61,6 +67,7 @@ than neither.
 ### REF-7 — Expression resolution repeats work
 
 **Where:** `src/confarg/dictexpr/_expressions.py` · **Filed:** 2026-09-12
+**Effort:** M · **Risk:** medium
 
 The topological sort is quadratic in the number of expressions, and each expression is parsed
 several times (dependency extraction, safety check, evaluation). Parse once into a cached AST
@@ -72,6 +79,7 @@ rewriting. See [07-expressions.md](../architecture/07-expressions.md).
 ### REF-8 — Tests use `env_prefix=""`
 
 **Where:** `tests/` (~160 call sites) · **Filed:** 2026-09-12
+**Effort:** M · **Risk:** low
 
 An empty prefix means every environment variable in the process is a candidate field, which is
 neither what users do nor what the default (`None`, off) encourages. Use a realistic prefix
@@ -81,6 +89,7 @@ See [10-design-decisions.md#environment-variables-off-by-default](../architectur
 ### REF-11 — A test run leaves artifacts in the working copy
 
 **Where:** `examples/21_expressions/` · **Filed:** 2026-09-12
+**Effort:** S · **Risk:** low
 
 A full `uv run pytest` writes `saved_config_interpolated.yaml` and
 `saved_config_uninterpolated.yaml` next to the example, so every run dirties the working copy
@@ -93,6 +102,7 @@ ignored.
 ### REF-9 — Review public argument names and order
 
 **Where:** `src/confarg/_api.py`, `src/confarg/cli/*/` · **Filed:** 2026-09-12
+**Effort:** L · **Risk:** medium
 
 The keyword sets of `load` / `merge` / `build` and the three adapter triads grew one feature at
 a time. Review names and ordering once, while the library is not shipping and breaking changes
@@ -101,6 +111,7 @@ are free. See [01-pipeline-and-contracts.md#public-api-seams](../architecture/01
 ### REF-10 — Sweep for code obsoleted by past refactors
 
 **Where:** `src/confarg/` · **Filed:** 2026-09-12
+**Effort:** M · **Risk:** high
 
 Helpers, branches and parameters kept alive by a single caller that a later refactor made
 redundant. Worth one deliberate pass with coverage data rather than opportunistic deletions.

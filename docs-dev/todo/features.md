@@ -10,6 +10,7 @@ ticket format. Anything accepted or rejected here leaves a decision in
 
 **Where:** `src/confarg/cli/argparse/_completion.py`, `src/confarg/cli/click/_completion.py` ·
 **Filed:** 2026-09-12
+**Effort:** L · **Risk:** low
 
 argparse (argcomplete) and click have completion helpers; cyclopts has none. Click completion
 covers bash and zsh, not fish. Completion is the one place where per-framework divergence may
@@ -19,6 +20,7 @@ See [04-cli-adapters.md](../architecture/04-cli-adapters.md).
 ### FEAT-2 — Protocol-typed callables and `**kwargs`
 
 **Where:** `src/confarg/_callable.py` · **Filed:** 2026-09-12
+**Effort:** L · **Risk:** medium
 
 Callable specs bind against a concrete signature. A field typed as a `Protocol` with
 `__call__`, or a target accepting `**kwargs`, has no story yet: decide whether extra keys bind
@@ -28,6 +30,7 @@ See [06-callables.md](../architecture/06-callables.md).
 ### FEAT-9 — A `confarg check` command to validate a configuration against a target
 
 **Where:** new console script (no `[project.scripts]` entry exists yet) · **Filed:** 2026-09-12
+**Effort:** L · **Risk:** low
 
 In a project environment, `confarg check module.Config -- --config app.yaml --db.port 5433`
 should run the same pipeline `confarg.load()` runs — every channel, not a single file — resolve
@@ -49,6 +52,7 @@ See [01-pipeline-and-contracts.md#merge-build-contract](../architecture/01-pipel
 ### FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin
 
 **Where:** new console script, shared with FEAT-9 · **Filed:** 2026-09-12
+**Effort:** XL *(depends on FEAT-8)* · **Risk:** low
 
 `confarg explain module.Config -- --config app.yaml --db.port 5433` takes the same argument
 vector as `confarg check` and prints the merged, resolved configuration with, for every leaf,
@@ -72,6 +76,7 @@ See [02-files-and-env.md#environment-parsing](../architecture/02-files-and-env.m
 ### FEAT-11 — Configuration versioning and a migration registry
 
 **Where:** new module, plus a hook in the merge pipeline · **Filed:** 2026-09-12
+**Effort:** XL · **Risk:** high
 
 Renaming or moving a field today breaks every configuration file, environment variable and
 command-line flag in the wild, and confarg has nothing to say about it. A registry would: a
@@ -109,6 +114,7 @@ See [01-pipeline-and-contracts.md#the-single-merge-pipeline](../architecture/01-
 
 **Where:** `src/confarg/dictexpr/_expressions.py` (`_ALLOWED_NODES`, the call whitelist) ·
 **Filed:** 2026-09-12
+**Effort:** L *(list literals alone; XL with dict and set literals)* · **Risk:** high
 
 The safety model forbids list/dict/set literals, slices, comprehensions, lambdas, f-strings
 and `}` inside an expression
@@ -153,11 +159,15 @@ before it becomes work.
 
 ### FEAT-3 — A registry of reserved sentinel keys
 
+**Effort:** S *(design pass; implementation not sized)* · **Risk:** high
+
 `__root__`, `__cast__`, `__value__`, `__include__`, `+`, `-`, `*`, `~` are recognised in
 several places. One registry, plus a guard against user keys colliding with them, would harden
 the plain-dict IR. See [01-pipeline-and-contracts.md#deep-merge-semantics](../architecture/01-pipeline-and-contracts.md#deep-merge-semantics).
 
 ### FEAT-4 — An explicit ordered patch-op stream
+
+**Effort:** M *(design pass; implementation not sized)* · **Risk:** high
 
 Vanilla and the adapters agree on collection patches because the adapters re-run the vanilla
 parse loop in `patch_only` mode. An ordered stream of patch operations, produced once and
@@ -166,20 +176,28 @@ See [04-cli-adapters.md#collection-patch-parity](../architecture/04-cli-adapters
 
 ### FEAT-5 — Optional structural validation right after `merge()`
 
+**Effort:** S *(design pass; implementation not sized)* · **Risk:** low
+
 Errors would surface earlier and closer to their source, without changing the
 merge/build contract (`merge()` stays unvalidated by default).
 See [01-pipeline-and-contracts.md#merge-build-contract](../architecture/01-pipeline-and-contracts.md#merge-build-contract).
 
 ### FEAT-6 — `Annotated` field metadata read by all three channels
 
+**Effort:** L *(design pass; implementation not sized)* · **Risk:** medium
+
 Help text, aliases and per-field options without requiring a custom type on user data
 structures. Must land in files, environment and CLI at once.
 
 ### FEAT-7 — Lazy resolution between `merge` and `build`
 
+**Effort:** M *(design pass; implementation not sized)* · **Risk:** high
+
 For very large configurations, resolve only the branches actually constructed.
 
 ### FEAT-8 — Value provenance
+
+**Effort:** M *(design pass; implementation not sized)* · **Risk:** high
 
 Remember which source set each value (as Dynaconf's `inspect` does), as an opt-in richer IR.
 Useful for `--help`-time explanations and for debugging precedence surprises.
