@@ -36,6 +36,19 @@ CLI `--json '{…}'` injects a whole configuration, but `<PREFIX>JSON` is declin
 and then reported as an unknown field. Confirm with a test first: if it reproduces, the fix
 belongs in the canonical cast path rather than a second special case in `_parse_env`.
 
+### BUG-6 — Subclass flags are registered only for subclasses already imported
+
+**Where:** `src/confarg/cli/argparse/_build.py` (`tp.__subclasses__()`) · **Filed:** 2026-09-12 ·
+*(inferred — from code reading, no test covers it)*
+
+Flag registration for a base-class field enumerates `__subclasses__()` at parser-build time, so
+a subclass that has not been imported yet contributes no flags. Since unknown CLI flags are
+errors, `--f.class=pkg.Sub --f.only_in_sub=1` would fail where the same keys in a file succeed —
+`build()` imports the tagged class itself. The same import dependence is why subclass inference
+was rejected ([10-design-decisions.md#no-implicit-subclass-inference](../architecture/10-design-decisions.md#no-implicit-subclass-inference));
+here it leaks into the CLI channel. Confirm with a test first.
+See [04-cli-adapters.md#union-inheritance-and-cast-flags](../architecture/04-cli-adapters.md#union-inheritance-and-cast-flags).
+
 ## Intent versus implementation
 
 ### BUG-4 — Stealing order does not match the documented rule

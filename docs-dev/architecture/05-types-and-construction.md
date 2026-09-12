@@ -106,10 +106,10 @@ string `__value__` re-enters coercion as a token; a native value does not.
 ## Inheritance
 
 A struct field whose class has subclasses requires the union tag naming the concrete class;
-without it construction fails rather than guessing. (Implicit subclass inference existed in
-PR #58 and was removed in PR #63; see the open question in
-[Q-1](../todo/questions.md).) The tag must be a full dotted path
-so the class can be imported.
+without it construction fails rather than guessing, because the set of visible subclasses
+depends on what has been imported
+([10](10-design-decisions.md#no-implicit-subclass-inference)). The tag must be a full dotted
+path so the class can be imported.
 
 ## Structs, collections and defaults
 
