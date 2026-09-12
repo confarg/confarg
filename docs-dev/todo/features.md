@@ -25,23 +25,49 @@ Callable specs bind against a concrete signature. A field typed as a `Protocol` 
 as keyword arguments and how they are validated.
 See [06-callables.md](../architecture/06-callables.md).
 
-### FEAT-9 — A `confarg check` command to validate a config file against a target
+### FEAT-9 — A `confarg check` command to validate a configuration against a target
 
 **Where:** new console script (no `[project.scripts]` entry exists yet) · **Filed:** 2026-09-12
 
-In a project environment, `confarg check module.Config config.yaml` should load the file,
-resolve its `${...}` expressions and construct the target, reporting each error with its key
-path and exiting non-zero — a lint step for CI and editors, without writing a throwaway
-script. `_import_dotted` already resolves `module.Config` and `load()` already does the work,
-so the command is mostly argument plumbing plus error formatting.
+In a project environment, `confarg check module.Config -- --config app.yaml --db.port 5433`
+should run the same pipeline `confarg.load()` runs — every channel, not a single file — resolve
+the `${...}` expressions, construct the target, then report each error with its key path and
+exit non-zero. A lint step for CI and editors, without writing a throwaway script. It must take
+the whole argument vector because a configuration file is allowed to be partial: the keys it
+omits may be supplied by the environment or on the command line, so checking the file alone
+would report failures that never occur in the real run. `_import_dotted` already resolves
+`module.Config` and `load()` already does the work, so the command is mostly argument plumbing
+plus error formatting.
 
 Open before this becomes work: whether "correctly formatted" means the whole `merge` →
 `resolve` → `build` pipeline or stops before construction (side-effect-free validation, cf.
-FEAT-5); how the environment and CLI channels are represented, since only the file channel can
-be checked statically — a parity divergence needing explicit approval; whether several files
-may be passed to check the merged result; and that importing `module.Config` executes user
-code, so the command is not safe on untrusted input.
+FEAT-5); how the command learns the `load()` keywords the calling program passes in code —
+`env_prefix` above all, see FEAT-10, which has the same problem; and that importing
+`module.Config` executes user code, so the command is not safe on untrusted input.
 See [01-pipeline-and-contracts.md#merge-build-contract](../architecture/01-pipeline-and-contracts.md#merge-build-contract).
+
+### FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin
+
+**Where:** new console script, shared with FEAT-9 · **Filed:** 2026-09-12
+
+`confarg explain module.Config -- --config app.yaml --db.port 5433` takes the same argument
+vector as `confarg check` and prints the merged, resolved configuration with, for every leaf,
+where its value came from: which config file (and which key in it), which environment variable,
+which command-line argument, or the target's own default. That is the answer to "why is this
+value what it is" — precedence surprises, a file silently overridden by a stale environment
+variable, an expression resolving to something unexpected — and it is the same question
+`--help`-time explanations need. It depends on FEAT-8: the plain-dict IR remembers no source
+today, so provenance has to exist before it can be printed.
+
+Passing `env_prefix` is the open problem, and it is not specific to this command. The prefix is
+a `load()` keyword the calling program sets in code, so a standalone tool cannot know it, yet
+without it the environment channel is either off or guessed. Options: an explicit tool flag
+(`--env-prefix APP_`, which needs a `--` separator so it cannot collide with a user field of
+the same name), a `[tool.confarg]` table in `pyproject.toml`, declaring it on the target type,
+or pointing the tool at the program's own `load()` call site instead of at the target. The same
+choice governs every other keyword the tool would otherwise have to guess (`union_tag`,
+`config_files`, `TagPolicy`), so settle it once for both commands.
+See [02-files-and-env.md#environment-parsing](../architecture/02-files-and-env.md#environment-parsing).
 
 ## Unvetted ideas
 
