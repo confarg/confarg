@@ -16,7 +16,7 @@ trailing segment is a cast at all (vs. a real field of the same name) is decided
 :func:`confarg._parse_cli.detect_force_cast`.
 
 Agent Notes:
-    architecture/03-cli-parsing.md#force-casts
+    docs-dev/architecture/03-cli-parsing.md#force-casts
 """
 
 from __future__ import annotations

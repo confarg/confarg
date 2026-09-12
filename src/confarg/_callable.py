@@ -5,7 +5,7 @@
 """Callable resolution and serialization.
 
 Agent Notes:
-    architecture/06-callables.md
+    docs-dev/architecture/06-callables.md
 """
 
 from __future__ import annotations
@@ -245,7 +245,7 @@ def _coerce_kwargs(  # noqa: PLR0913
     but the annotations live on ``cls.__init__``.
 
     Agent Notes:
-        architecture/06-callables.md#one-coercion-route
+        docs-dev/architecture/06-callables.md#one-coercion-route
     """
     try:
         sig = inspect.signature(sig_obj)
@@ -324,7 +324,7 @@ class _Directives:
     plain word as an ordinary kwarg. The opener's form selects the mode for the whole spec.
 
     Agent Notes:
-        architecture/06-callables.md#plain-and-escaped-directives
+        docs-dev/architecture/06-callables.md#plain-and-escaped-directives
     """
 
     fn: str
@@ -357,7 +357,7 @@ def active_directives(has_key: Callable[[str], bool]) -> _Directives:
     data: a plain opener with a stray ``_bind`` leaves that ``_bind`` a kwarg.
 
     Agent Notes:
-        architecture/06-callables.md#plain-and-escaped-directives
+        docs-dev/architecture/06-callables.md#plain-and-escaped-directives
     """
     if any(has_key(opener) for opener in _ESCAPED_DIRECTIVES.openers):
         return _ESCAPED_DIRECTIVES

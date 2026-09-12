@@ -5,7 +5,7 @@
 """Deep merge of the intermediate dicts, and the list/dict patch sentinels it understands.
 
 Agent Notes:
-    architecture/01-pipeline-and-contracts.md#deep-merge-semantics
+    docs-dev/architecture/01-pipeline-and-contracts.md#deep-merge-semantics
 """
 
 from __future__ import annotations
@@ -215,7 +215,7 @@ def _index_patch_escapes_base(base: list[Any], ops: dict[str, Any]) -> bool:
     handles them (and raises its specific errors).
 
     Agent Notes:
-        architecture/01-pipeline-and-contracts.md#merge-build-contract
+        docs-dev/architecture/01-pipeline-and-contracts.md#merge-build-contract
     """
     if any(k in ops for k in (LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_POST_APPEND_DELETE_KEY)):
         return False

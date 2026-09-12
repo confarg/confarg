@@ -8,8 +8,8 @@ Files are mounted at a path of the merged document (``__include__``, ``--config.
 ``CONFIG__<PATH>``); expression references are prefixed accordingly while mounting.
 
 Agent Notes:
-    architecture/02-files-and-env.md
-    architecture/07-expressions.md#reference-anchoring
+    docs-dev/architecture/02-files-and-env.md
+    docs-dev/architecture/07-expressions.md#reference-anchoring
 """
 
 from __future__ import annotations
@@ -144,7 +144,7 @@ def _read_rows(f: Any, delimiter: str) -> list[list[_StrToken]]:
     """Read all CSV rows, wrapping every cell in _StrToken and dropping blank lines.
 
     Agent Notes:
-        architecture/02-files-and-env.md#data-files-versus-configuration-layers
+        docs-dev/architecture/02-files-and-env.md#data-files-versus-configuration-layers
     """
     return [[_StrToken(cell) for cell in row] for row in csv.reader(f, delimiter=delimiter) if row]
 
@@ -237,7 +237,7 @@ _ITEM_LOADERS: dict[str, Any] = {
 
 #: Extensions whose content is data rather than a configuration layer. An include of one
 #: replaces whatever earlier entries produced instead of merging key-wise into it.
-#: See architecture/02-files-and-env.md#data-files-versus-configuration-layers.
+#: See docs-dev/architecture/02-files-and-env.md#data-files-versus-configuration-layers.
 _DATA_SUFFIXES = frozenset({".csv", ".tsv"})
 
 
@@ -301,7 +301,7 @@ def _load_includes(entries: list[tuple[str, dict[str, Any]]], base_dir: Path, se
     the list: naming the same file twice is legal, a genuine cycle raises.
 
     Agent Notes:
-        architecture/02-files-and-env.md#include-semantics
+        docs-dev/architecture/02-files-and-env.md#include-semantics
     """
     result: Any = None
     for i, (path_str, options) in enumerate(entries):
@@ -349,7 +349,7 @@ def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path], p
     sibling keys (which keep this file's anchoring) are merged on top.
 
     Agent Notes:
-        architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     include_val = data.get(INCLUDE_KEY)
     if include_val is not None:
@@ -387,7 +387,7 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path], path_i
     Each item's references are prefixed by the index it lands on after splicing.
 
     Agent Notes:
-        architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     result: list[Any] = []
     for item in data:

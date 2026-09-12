@@ -93,7 +93,7 @@ class LocalsError(ConfargError):
     namespace under both ``locals`` and ``_locals`` raises this error.
 
     Agent Notes:
-        architecture/08-locals.md
+        docs-dev/architecture/08-locals.md
     """
 
     @classmethod

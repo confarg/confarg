@@ -5,7 +5,7 @@
 """Environment variable parsing into a nested dict shaped by the target type.
 
 Agent Notes:
-    architecture/02-files-and-env.md#environment-parsing
+    docs-dev/architecture/02-files-and-env.md#environment-parsing
 """
 
 from __future__ import annotations
@@ -394,7 +394,7 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
 
         parts, ft = _resolve_env_parts(target, parts)
         # Locals are not target fields: skip the unknown-field warning and store the raw
-        # token; _pipeline checks and coerces them (architecture/08-locals.md).
+        # token; _pipeline checks and coerces them (docs-dev/architecture/08-locals.md).
         is_locals = _locals_segment_index(target, parts, union_tag) is not None
         if not is_locals and _warn_unknown_env_field(orig_key, parts, _resolve_type(target)):
             continue

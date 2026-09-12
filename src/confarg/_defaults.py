@@ -8,7 +8,7 @@ Always reference these constants instead of repeating the literals, so the four 
 cannot drift apart.
 
 Agent Notes:
-    architecture/10-design-decisions.md
+    docs-dev/architecture/10-design-decisions.md
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ UNION_TAG: Final[str] = "class"
 """Default discriminator field name for union variants.
 
 Agent Notes:
-    architecture/10-design-decisions.md#union_tag-defaults-to-class
+    docs-dev/architecture/10-design-decisions.md#union_tag-defaults-to-class
 """
 
 ENV_PREFIX: Final[str | None] = None
@@ -29,7 +29,7 @@ ENV_PREFIX: Final[str | None] = None
 to enable it, or ``""`` to read every variable.
 
 Agent Notes:
-    architecture/10-design-decisions.md#environment-variables-off-by-default
+    docs-dev/architecture/10-design-decisions.md#environment-variables-off-by-default
 """
 
 ENV_SEPARATOR: Final[str] = "__"
@@ -54,5 +54,5 @@ which case the other spelling is used; a target owning both names has no namespa
 See ``confarg._parse_cli._locals_keys_at``.
 
 Agent Notes:
-    architecture/08-locals.md
+    docs-dev/architecture/08-locals.md
 """

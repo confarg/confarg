@@ -5,7 +5,7 @@
 """Value construction and union disambiguation.
 
 Agent Notes:
-    architecture/05-types-and-construction.md
+    docs-dev/architecture/05-types-and-construction.md
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def _try_pinned_dict(data: Any) -> _Pinned | None:
     Only a dict with exactly these two keys is a cast.
 
     Agent Notes:
-        architecture/05-types-and-construction.md#cast-pinning-in-files
+        docs-dev/architecture/05-types-and-construction.md#cast-pinning-in-files
     """
     if not (isinstance(data, dict) and data.keys() == {"__cast__", "__value__"}):
         return None
@@ -695,7 +695,7 @@ def _coerce_scalar_variants(all_args: list[Any], scalar_leaf_vars: list[Any], da
             continue  # handled above
         try:
             # Not _coerce_leaf: it cannot build type refs (`type`, `type[X]`).
-            # See architecture/05-types-and-construction.md#stealing-rule.
+            # See docs-dev/architecture/05-types-and-construction.md#stealing-rule.
             return _construct_scalar(var, data, path)
         except (TypeCoercionError, ValueError, TypeError):
             continue

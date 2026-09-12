@@ -105,7 +105,7 @@ order after the framework already consumed the paths; it never raises.
 The adapters' `populate_*` functions own flag naming; a prefix given only at merge time
 could silently disagree with what was registered, so it is not offered there. A side
 effect: a non-struct (scalar) target can be set from the CLI only as `--<prefix> VALUE`,
-so adapters have no CLI form for scalar roots ([11](11-limitations-and-directions.md#parity-gaps)).
+so adapters have no CLI form for scalar roots ([BUG-2](../todo/bugs.md)).
 
 ## Callable paths
 

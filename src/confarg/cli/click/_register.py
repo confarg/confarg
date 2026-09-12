@@ -32,7 +32,7 @@ class _ExpressionTolerantChoice(click.Choice):
     error.  ``build()`` validates the resolved expression.
 
     Agent Notes:
-        architecture/04-cli-adapters.md#expression-tolerant-choice-gates
+        docs-dev/architecture/04-cli-adapters.md#expression-tolerant-choice-gates
     """
 
     def convert(self, value: Any, param: click.Parameter | None, ctx: click.Context | None) -> Any:

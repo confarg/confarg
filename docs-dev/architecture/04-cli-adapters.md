@@ -51,7 +51,7 @@ for dynamically created classes) > empty.
 
 `_build.py` must not import argparse. It (and `_spec.py`) lives under `cli/argparse/` for
 historical reasons only — it grew out of the argparse backend. See
-[11](11-limitations-and-directions.md#code-level-warts).
+[REF-1](../todo/refactors.md).
 
 `_build.py` imports `_parse_cli` inside functions: importing it at module level would
 create a load-time import cycle.

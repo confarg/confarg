@@ -29,7 +29,7 @@ Typical use::
     # srv == Server(host="localhost", port=8080)
 
 Agent Notes:
-    architecture/05-types-and-construction.md
+    docs-dev/architecture/05-types-and-construction.md
 """
 
 from confarg.exceptions import (

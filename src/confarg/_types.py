@@ -49,7 +49,7 @@ class _StrToken(str):
     """Untyped text from CLI args, env vars or CSV cells — eligible for coercion to the target type.
 
     Agent Notes:
-        architecture/05-types-and-construction.md#token-model
+        docs-dev/architecture/05-types-and-construction.md#token-model
     """
 
     __slots__ = ()
@@ -63,7 +63,7 @@ class _UnionSeqToken(_StrToken):
     ``bool | list[str]`` → ``['hello']``). A plain ``_StrToken`` gets no such fallback.
 
     Agent Notes:
-        architecture/03-cli-parsing.md#unions-with-sequence-variants
+        docs-dev/architecture/03-cli-parsing.md#unions-with-sequence-variants
     """
 
     __slots__ = ()

@@ -12,7 +12,7 @@ implemented. Approved divergences so far: list syntax per framework
 ([02](02-files-and-env.md#reserved-file-only-keys)); declaring locals only in files
 ([08](08-locals.md#declare-in-files-modify-anywhere)); `cli_prefix` vanilla-only
 ([03](03-cli-parsing.md#cli_prefix)). Known unapproved gaps are listed in
-[11](11-limitations-and-directions.md#parity-gaps).
+[../todo/bugs.md](../todo/bugs.md).
 
 ## Delegate to the canonical function
 

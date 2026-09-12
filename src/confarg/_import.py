@@ -40,7 +40,7 @@ def _import_dotted(path: str) -> Any:
         else:
             return obj
     # No importable module prefix matched; fall back to builtins so a bare
-    # name like "int" resolves.  See architecture/05-types-and-construction.md#dotted-imports.
+    # name like "int" resolves.  See docs-dev/architecture/05-types-and-construction.md#dotted-imports.
     try:
         obj = builtins
         for attr in parts:
