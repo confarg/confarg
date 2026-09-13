@@ -22,6 +22,7 @@ from confarg.cli.argparse._build import (
     _build_leaf_spec,
     _build_union_tag_spec,
     _collect_callable_bind_specs,
+    _whole_value_spec,
     build_dynamic_flags,
     build_static_flags,
 )
@@ -141,9 +142,10 @@ def populate_parser(  # noqa: PLR0913
     users can pass one or more config files on the command line.
     Pass ``config_flag=""`` to suppress it.
 
-    ``dict``-typed fields get no static flag (their keys are unknown); each
-    ``--field.key`` found in ``argv`` is registered instead.  Values are passed as
-    strings: type coercion happens in :func:`from_namespace`, not in argparse.
+    A ``dict``-typed field gets only the bare ``--field JSON`` whole-value flag (its
+    keys are unknown statically); each ``--field.key`` found in ``argv`` is registered
+    alongside it.  Values are passed as strings: type coercion happens in
+    :func:`from_namespace`, not in argparse.
 
     Args:
         target: The dataclass type whose fields to register.
@@ -245,6 +247,21 @@ def _add_leaf_argument(
 ) -> None:
     """Register a single leaf field as an argparse argument."""
     spec = _build_leaf_spec(flag, raw_type, core, help_text, None, "")
+    existing = {a.dest for a in _get_actions(target)}
+    _register_spec(spec, target, existing)
+
+
+def _add_whole_value_argument(  # noqa: PLR0913
+    target: argparse.ArgumentParser | argparse._ArgumentGroup,
+    flag: str,
+    name: str,
+    raw_type: Any,
+    resolved: Any,
+    help_text: str,
+) -> None:
+    """Register the bare ``--<flag>`` whole-value argument for a dict, struct or union field."""
+    spec = _whole_value_spec(flag, name, raw_type, resolved, None, "", {}, {})
+    spec.help = help_text
     existing = {a.dest for a in _get_actions(target)}
     _register_spec(spec, target, existing)
 

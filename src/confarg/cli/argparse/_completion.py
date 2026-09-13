@@ -46,6 +46,7 @@ from confarg.cli.argparse._register import (
     _add_callable_fn_flags,
     _add_leaf_argument,
     _add_union_tag_argument,
+    _add_whole_value_argument,
 )
 from confarg.cli.argparse._spec import _build_help, _get_field_docstrings
 
@@ -187,6 +188,23 @@ def _get_or_create_arg_group(
     return ctx.parser.add_argument_group(flag, inspect.getdoc(core) or "")
 
 
+def _add_whole_value(  # noqa: PLR0913
+    group_target: argparse.ArgumentParser | argparse._ArgumentGroup,
+    ctx: _WalkCtx,
+    flag: str,
+    name: str,
+    raw_type: Any,
+    docstrings: dict[str, str],
+    defaults: dict[str, Any],
+) -> None:
+    """Register the bare ``--<flag>`` whole-value argument, once, during the completion walk."""
+    if flag in ctx.existing_dests:
+        return
+    help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
+    _add_whole_value_argument(group_target, flag, name, raw_type, _resolve_type(raw_type), help_text)
+    ctx.existing_dests.add(flag)
+
+
 def _extend_walk_field(  # noqa: PLR0913
     name: str,
     raw_type: Any,
@@ -205,6 +223,7 @@ def _extend_walk_field(  # noqa: PLR0913
         dest = f"{flag}.{ctx.union_tag}"
         if dest not in ctx.existing_dests:
             concrete_variants = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
+            _add_whole_value(group_target, ctx, flag, name, raw_type, docstrings, defaults)
             _add_union_tag_argument(group_target, flag, ctx.union_tag, concrete_variants)
             ctx.existing_dests.add(dest)
         return
@@ -225,10 +244,13 @@ def _extend_walk_field(  # noqa: PLR0913
         return
 
     if _is_struct(core):
+        _add_whole_value(group_target, ctx, flag, name, raw_type, docstrings, defaults)
         _extend_walk(core, ctx, _get_or_create_arg_group(ctx, flag, core), flag, concrete=concrete)
         return
 
     if _is_dict(core):
+        # No statically known keys, so the bare whole-value flag is all completion can offer.
+        _add_whole_value(group_target, ctx, flag, name, raw_type, docstrings, defaults)
         return
 
     if flag not in ctx.existing_dests:

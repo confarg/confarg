@@ -78,8 +78,8 @@ class TestCollectNsFields:
         result: dict[str, Any] = {}
         _collect_ns_fields({"val": "99"}, WithMultiUnion, "", "class", result)
 
-    def test_dict_skipped(self) -> None:
-        """_collect_ns_fields skips dict-typed fields."""
+    def test_dict_whole_value_decoded(self) -> None:
+        """_collect_ns_fields decodes a whole-mapping token for a dict-typed field."""
 
         @dataclass
         class WithDict:
@@ -87,7 +87,18 @@ class TestCollectNsFields:
 
         result: dict[str, Any] = {}
         _collect_ns_fields({"mapping": '{"a": 1}'}, WithDict, "", "class", result)
-        assert "mapping" not in result
+        assert result["mapping"] == {"a": 1}
+
+    def test_dict_non_object_token_kept_raw(self) -> None:
+        """A token that is not a JSON object stays raw for build() to reject."""
+
+        @dataclass
+        class WithDict:
+            mapping: dict[str, int] = field(default_factory=dict)
+
+        result: dict[str, Any] = {}
+        _collect_ns_fields({"mapping": "oops"}, WithDict, "", "class", result)
+        assert result["mapping"] == "oops"
 
     def test_callable_field(self) -> None:
         """_collect_ns_fields handles a Callable-typed field."""

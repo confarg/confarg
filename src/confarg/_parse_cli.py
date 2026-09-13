@@ -832,6 +832,26 @@ def _consume_collection_or_scalar(
     return i + 1
 
 
+def _accepts_object_value(ft: Any) -> bool:
+    """Return whether a field of type *ft* takes a whole ``{...}`` JSON token as its value.
+
+    The one test behind every whole-value flag: it decides both what the vanilla parser
+    decodes and which bare ``--<field>`` flags the CLI adapters register and decode, so the
+    two can never disagree.  Pass the field type as resolved, *without* unwrapping
+    ``Optional``: ``dict[str, str] | None`` is not a dict here, exactly as vanilla has
+    always treated it.
+
+    Agent Notes:
+        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+    """
+    return (
+        _is_dc(ft)
+        or _is_dict(ft)
+        or _is_callable(ft)
+        or (_is_union(ft) and any(_is_dc(_resolve_type(v)) for v in _union_args_no_none(ft)))
+    )
+
+
 def _consume_typed_arg(
     ctx: _ParseCtx,
     i: int,
@@ -842,16 +862,9 @@ def _consume_typed_arg(
     """Consume the value(s) for a resolved, non-append field type and return the new arg index."""
     args = ctx.argv
     # JSON object → dataclass / dict / callable / union-with-dc
-    if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("{"):
-        accepts_obj = (
-            _is_dc(ft)
-            or _is_dict(ft)
-            or _is_callable(ft)
-            or (_is_union(ft) and any(_is_dc(_resolve_type(v)) for v in _union_args_no_none(ft)))
-        )
-        if accepts_obj:
-            _set_nested(ctx.data, path, _parse_json_arg(args[i], token))
-            return i + 1
+    if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("{") and _accepts_object_value(ft):
+        _set_nested(ctx.data, path, _parse_json_arg(args[i], token))
+        return i + 1
 
     # Dataclass flag with no value → use defaults
     if _is_dc(ft) and _next_is_flag_or_end(args, i):

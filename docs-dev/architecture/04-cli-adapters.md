@@ -90,6 +90,30 @@ identically; vanilla `load()` registers nothing and has no analogue.
 Escaped opener specs carry no group: sharing a group name with a different description
 trips cyclopts' "2 distinct Group objects with same name" check.
 
+## Whole-value flags
+
+A bare `--<field> '{…}'` assigns an entire object in one token — the CLI peer of the env
+channel's `PFX_ENV='{"a":"b"}'`. `_parse_cli._accepts_object_value` is the one predicate
+deciding which field types take one: dataclass, dict, callable, or a union with a dataclass
+variant. It answers for the vanilla parser, for static registration and for the collector,
+so the three cannot drift.
+
+The flags are **static**, not argv-scanned: the field is declared, so it belongs in `--help`
+next to the bare `--tags` / `--pair` flags lists and tuples already get, and completion can
+offer it. `nargs=None` — vanilla consumes exactly one token here and rejects a second as a
+stray positional. The metavar is `JSON` only where the predicate says the token is decoded;
+`dict[str, str] | None` is not a dict to `_is_dict`, so it gets `VALUE` and keeps vanilla's
+behavior of storing the raw string ([BUG-9](../todo/bugs.md)).
+
+A dict field's bare flag is its *only* static flag (its keys are unknown until argv is read);
+subkeys arrive as patch flags and are deep-merged over the whole value, so
+`--env '{"a":"b"}' --env.c d` yields `{"a": "b", "c": "d"}` as in vanilla.
+
+Limitation, shared with [collection patches](#collection-patch-parity): a framework's parse
+result carries no argv order, so the adapters always let a sibling `--<field>.<sub>` refine
+the whole value. Vanilla honors argv order, so `--sub.a 3 --sub '{"a":2}'` disagrees. The
+useful order — whole value first, refinements after — agrees.
+
 ## Collection patch parity
 
 Frameworks own whole-field values (so click keeps its repeated-flag list syntax), but their
