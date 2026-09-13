@@ -78,6 +78,29 @@ record, so reading that clause literally would make every one of them `L`. Risk 
 blast radius of the eventual change; that much is knowable from where the code would have to
 go, even before the design exists.
 
+## Squashing a bug
+
+A bug is fixed **test-first**. What proves the fix is not the regression test on its own but
+the red run before the green one: without it, nothing says the test exercises the defect.
+
+1. **Reproduce first.** Write the test(s) that fail *because of* the bug, in the file the
+   layout table in [`../../CLAUDE.md`](../../CLAUDE.md) dictates. Behavior shared by the four
+   front-ends goes once into `tests/cli/test_backend_contract.py` against the `loader` /
+   `populating_loader` fixtures, never once per backend.
+2. **Run them and read the failure.** A test that fails for an unrelated reason — a typo, the
+   wrong fixture, a missing import — proves nothing. The message must name the defect.
+3. **Fix at the canonical site**, not at the call site that happened to reveal it: one
+   decision-maker, so every channel and every front-end inherits the fix
+   ([09-invariants.md](../architecture/09-invariants.md)).
+4. **Re-run.** The new tests pass and `uv run pytest` is green. A green run with no red run
+   before it is not a regression test.
+5. **Verify.** `uv run pre-commit run --all-files`, then
+   `uvx --with click --with argcomplete ty check` — no pre-commit hook covers the type checker.
+6. **Close the ticket** — see the next section.
+
+If a bug genuinely cannot be reproduced by a test, say so in the `jj describe` message and say
+why, rather than skipping step 1 in silence.
+
 ## Closing a ticket
 
 Delete the entry, mention its ID in the `jj describe` message, and record any lasting
