@@ -222,6 +222,24 @@ def _serialize_leaf(tp: Any, value: Any) -> Any:
     return value
 
 
+def _serialize_untyped(value: Any) -> Any:
+    """Serialize a raw merged dict: containers recursed, leaves through _serialize_leaf.
+
+    The counterpart of :func:`_serialize` for data that carries no declared types
+    (the dict accepted by ``dump_file``), so only the type-less leaf rules apply:
+    ``Enum`` becomes its value, ``Path`` a string, ``_StrToken`` a plain ``str``.
+    An ``int`` is never widened to ``float`` — nothing here says it should be one.
+
+    Agent Notes:
+        docs-dev/architecture/05-types-and-construction.md#serialization
+    """
+    if isinstance(value, dict):
+        return {k: _serialize_untyped(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_serialize_untyped(v) for v in value]
+    return _serialize_leaf(None, value)
+
+
 def _find_variant_type(tp: Any, instance: Any) -> Any | None:
     """Find which Union variant matches the instance's type."""
     args = _union_args_no_none(tp)

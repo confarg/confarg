@@ -108,21 +108,50 @@ own risk", the two documentation claims must say so. Either way the claim and th
 have to agree.
 See [04-cli-adapters.md](../architecture/04-cli-adapters.md).
 
-### BUG-10 — `dump_file` cannot write back a merged dict holding a coerced leaf
+### BUG-11 — A registered leaf type cannot be dumped, by either path
 
-**Where:** `src/confarg/_api.py` (`_strip_str_tokens`) · **Filed:** 2026-09-13
+**Where:** `src/confarg/_serialize.py` (`_serialize_leaf`) · **Filed:** 2026-09-13
 **Effort:** S · **Risk:** medium
 
-`_try_coerce` coerces CLI and environment leaves eagerly so the merged dict "has the same types
-whichever channel supplied them"
-([03-cli-parsing.md#token-consumption](../architecture/03-cli-parsing.md#token-consumption)), but
-the dict branch of `dump_file` only unwraps `_StrToken`. The two coercions that yield a
-non-native leaf — `Path` (`_LEAF_COERCIONS`) and `Enum` (`_coerce_enum_value` returns the member,
-not `.value`) — reach the dumper untouched:
-`dump_file(merge(C, argv=["--out=/tmp/x"]), "c.yaml")` raises `RepresenterError: cannot represent
-an object, WindowsPath('/tmp/x')`, and JSON and TOML fail alike. The same key sourced from a
-config file dumps fine, so the round trip promised by
-[01-pipeline-and-contracts.md#public-api-seams](../architecture/01-pipeline-and-contracts.md#public-api-seams)
-holds or not depending on which channel supplied the value. Observed on 0.0.2 and on the current
-working copy. Fix direction: give the dict path the type-less half of `_serialize_leaf`
-(`Enum -> .value`, `Path -> str`), not a second conversion table.
+`_serialize_leaf` names `Enum` and `Path` one by one, so a type added with
+`register_leaf_type` is a leaf on the way *in* and not on the way *out*. With
+`register_leaf_type(UUID, UUID)` and `id: UUID`, `merge(A, argv=["--id", "…"])` stores a
+`UUID` and `dump_file` of that dict raises (`RepresenterError` / `TypeError` in YAML, JSON and
+TOML) — BUG-10 all over again for every type but `Path`. Worse on the typed path:
+`dump(A(id=…))` does not raise, it takes the `UUID` for a struct and emits
+`{'hex': …, 'bytes': b'…', 'fields': (…), …}`, which is silent garbage that no loader reads
+back. Fix direction: one branch for any instance of a type in `_LEAF_COERCIONS` → `str(value)`
+(which subsumes the `Path` branch), so registration makes a type a leaf on both sides. It
+changes `dump()` output, hence a decision to record in
+[10-design-decisions.md](../architecture/10-design-decisions.md).
+See [05-types-and-construction.md#serialization](../architecture/05-types-and-construction.md#serialization).
+
+### BUG-12 — `_UnionSeqToken` leaks into dumps
+
+**Where:** `src/confarg/_serialize.py` (`_serialize_leaf`) · **Filed:** 2026-09-13
+**Effort:** S · **Risk:** low
+
+Tokens must never leak into dumps
+([09-invariants.md#tokens-mean-untyped-text](../architecture/09-invariants.md#tokens-mean-untyped-text)),
+but the unwrap tests `type(v) is _StrToken`, and `_UnionSeqToken` is a *subclass*:
+`dump_file(merge(B, argv=["--input", "hello"]), "c.yaml")` for `input: bool | list[str]`
+raises `RepresenterError: ('cannot represent an object', 'hello')` — a str subclass that YAML
+will not represent, while JSON happily writes it as a string. The exact-type test is a
+deliberate choice ("so other `str` subclasses are untouched",
+[05-types-and-construction.md#token-model](../architecture/05-types-and-construction.md#token-model)),
+so widening it to `isinstance` is a decision, not a typo fix: it also flattens a user's own
+`str` subclass. The alternative is to name confarg's own token types explicitly.
+
+### BUG-13 — A force-cast cannot be dumped, though the file spelling exists
+
+**Where:** `src/confarg/_serialize.py` (`_serialize_untyped`) · **Filed:** 2026-09-13
+**Effort:** S · **Risk:** low
+
+`--count.int 5` stores `_Pinned(tp=int, value='5')` in the merged dict (`_cast.resolve_forced_value`),
+and no writer accepts a `_Pinned`: `dump_file` raises in YAML, JSON and TOML alike. Unlike the
+coerced leaves of BUG-10 this one loses nothing when written, because the cast already has an
+exact file spelling — `{"__cast__": "int", "__value__": "5"}`, read back by
+`_construct._try_pinned_dict` — so `_serialize_untyped` can emit that dict and the pin
+survives the round trip intact. Only the untyped path is affected; a `_Pinned` never reaches
+`dump(instance)`, which serializes a constructed object.
+See [05-types-and-construction.md#cast-pinning-in-files](../architecture/05-types-and-construction.md#cast-pinning-in-files).

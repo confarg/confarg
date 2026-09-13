@@ -899,6 +899,14 @@ class TestUnionRootContract:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _CoercedLeaves:
+    """Leaves whose eager coercion yields a non-native type (``Path``, ``Enum``)."""
+
+    out: Path = Path("default.txt")
+    color: Color = Color.RED
+
+
 class TestMergeContract:
     """merge_* returns the raw merged dict, identically in every integration."""
 
@@ -936,6 +944,27 @@ class TestMergeContract:
         raw = loader.merge(Simple, argv=["--host", "myhost", "--port", "9090"], env={})
         confarg.dump_file(raw, out)
         assert out.exists()
+
+    @pytest.mark.parametrize("suffix", [".yaml", ".json", ".toml"])
+    def test_dump_file_from_raw_dict_with_coerced_leaves(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        suffix: str,
+    ) -> None:
+        """A merged dict holding an eagerly coerced ``Path``/``Enum`` leaf dumps in every format.
+
+        Leaves are coerced at merge time, so the dict carries a ``Path`` and an
+        ``Enum`` member that no config-file writer accepts; both must leave as
+        the scalars a config file would have carried.
+        """
+        out = tmp_path / f"snap{suffix}"
+        raw = loader.merge(_CoercedLeaves, argv=["--out", "sub/x.txt", "--color", "blue"], env={})
+        confarg.dump_file(raw, out)
+
+        reloaded = loader.merge(_CoercedLeaves, argv=[], env={}, files=[out])
+        assert reloaded == {"out": str(Path("sub/x.txt")), "color": "blue"}
+        assert confarg.build(_CoercedLeaves, raw) == confarg.build(_CoercedLeaves, reloaded)
 
     def test_dump_file_round_trip_via_instance(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """Round-tripping through a built instance gives back the same config."""

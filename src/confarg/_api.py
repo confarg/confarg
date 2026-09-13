@@ -20,9 +20,8 @@ from confarg import _defaults
 from confarg._files import _dump_file
 from confarg._parse_cli import _locals_keys_at, _parse_cli
 from confarg._pipeline import _merge_sources
-from confarg._serialize import _serialize
+from confarg._serialize import _serialize, _serialize_untyped
 from confarg._types import _MISSING, TagPolicy, _is_dc, _is_struct, _is_struct_like, _resolve_type
-from confarg._types import _StrToken as _ST
 from confarg.dictexpr import resolve_expressions
 from confarg.exceptions import MissingFieldError
 from confarg.typedload import construct as _tc
@@ -348,17 +347,6 @@ def load[T](  # noqa: PLR0913
     return build(target, data, union_tag=union_tag)
 
 
-def _strip_str_tokens(value: Any) -> Any:
-    """Recursively convert _StrToken instances to plain str for serialization."""
-    if type(value) is _ST:
-        return str(value)
-    if isinstance(value, dict):
-        return {k: _strip_str_tokens(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_strip_str_tokens(v) for v in value]
-    return value
-
-
 def dump(
     value: Any,
     *,
@@ -429,6 +417,6 @@ def dump_file(
         InvalidConfigFileError: If the format is unsupported or the required library is not installed.
     """
     if isinstance(value, dict):
-        _dump_file(_strip_str_tokens(value), Path(path))
+        _dump_file(_serialize_untyped(value), Path(path))
     else:
         _dump_file(dump(value, union_tag=union_tag, tag_policy=tag_policy), Path(path))

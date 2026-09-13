@@ -27,9 +27,9 @@ confarg requires no base class, decorator or field marker
   alone may fall back to a one-element list ([03](03-cli-parsing.md#unions-with-sequence-variants)).
 - `_Pinned(tp, value)` carries an explicitly cast value through the merge dict; `construct`
   honors it before anything else, including `None` handling.
-- Tokens must never leak out: error messages print them as `str` (`_src_type`), `dump_file`
-  unwraps them with `type(v) is _StrToken` (so other `str` subclasses are untouched), and
-  `dictexpr._map_strings` preserves the subclass when rewriting expressions.
+- Tokens must never leak out: error messages print them as `str` (`_src_type`), the dump path
+  unwraps them in `_serialize_leaf` with `type(v) is _StrToken` (so other `str` subclasses are
+  untouched), and `dictexpr._map_strings` preserves the subclass when rewriting expressions.
 
 ## Leaf coercion
 
@@ -127,14 +127,19 @@ path so the class can be imported.
 
 ## Serialization
 
-`_serialize` is the inverse of construction for `dump()`.
+`_serialize` is the inverse of construction for `dump()`; `_serialize_untyped` is its
+counterpart for the raw dict `dump_file()` accepts, walking containers and routing every leaf
+through the same `_serialize_leaf`.
 
 - `tag_policy="auto"` emits the union tag only when `_needs_tag` shows that structural
   disambiguation of the serialized data would not select exactly one variant on the way
   back in; `"always"` tags every struct union member. A subclass of the declared type is
   always tagged.
 - Enums dump as values, paths as strings, types as dotted paths, sets sorted by
-  `(type name, str)` so output is deterministic.
+  `(type name, str)` so output is deterministic. These rules read the *value*, not the
+  declared type, which is why the untyped path can share them; only widening an `int` to a
+  `float` needs a type, so it never happens on a raw dict
+  ([01](01-pipeline-and-contracts.md#public-api-seams)).
 - Plain classes must store every `__init__` parameter as a same-named attribute to be
   serializable.
 - Callables dump via their stored spec ([06](06-callables.md#round-trip)).
