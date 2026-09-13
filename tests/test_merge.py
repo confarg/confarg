@@ -194,7 +194,7 @@ class TestCollectionOverride:
         assert result.items[1] == 2
 
     def test_dict_merge_across_sources(self, tmp_toml) -> None:
-        """CLI dict key merge — vanilla only (dict fields are skipped by CLI integrations)."""
+        """A CLI dict key merges into the config file's mapping (parity: TestCollectionPatchContract)."""
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         path = tmp_toml("[metadata]\na = 1\n")
         result = confarg.load(
@@ -206,7 +206,7 @@ class TestCollectionOverride:
         assert result.metadata == {"a": 1, "b": 2}
 
     def test_cli_dict_key_overrides_config_key(self, tmp_toml) -> None:
-        """CLI dict key override — vanilla only (dict fields are skipped by CLI integrations)."""
+        """A CLI dict key wins over the config file's (parity: TestCollectionPatchContract)."""
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         path = tmp_toml("[metadata]\na = 1\n")
         result = confarg.load(

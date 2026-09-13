@@ -632,14 +632,14 @@ class TestCompletionGaps:
         # Should not raise
         assert any(g.title == "inner" for g in parser._action_groups)
 
-    def test_extend_walk_dict_field_skipped(self) -> None:
-        """_extend_walk skips dict-typed fields."""
+    def test_extend_walk_dict_field_offers_only_the_whole_value_flag(self) -> None:
+        """_extend_walk offers --settings for a dict field; its keys are unknown statically."""
         parser = argparse.ArgumentParser()
         ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
         _extend_walk(_CovWithDict, ctx, parser, "")
         dests = {a.dest for a in parser._actions}
-        # "settings" is a dict field → should be skipped
-        assert "settings" not in dests
+        assert "settings" in dests
+        assert not any(d.startswith("settings.") for d in dests)
         assert "name" in dests
 
     def test_pre_extend_parser_non_struct_class_skipped(self) -> None:

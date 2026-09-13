@@ -8,17 +8,6 @@ the documented intent. See [README.md](README.md) for the ticket format.
 Cross-channel parity is mandatory (CLAUDE.md); every entry here is a violation nobody has
 approved, not a design choice.
 
-### BUG-1 — Bare whole-dict flags behave differently in the adapters
-
-**Where:** `src/confarg/_parse_cli.py`, `src/confarg/cli/argparse/_build.py` · **Filed:** 2026-09-12
-**Effort:** L · **Risk:** medium
-
-`--locals VALUE` and `--<dictfield> VALUE` (assigning a whole mapping in one token): vanilla
-`load()` reports a confarg error naming the real problem, while the adapters register no such
-flag, so the framework rejects the token with its own unrelated message. The diagnosis, not
-just the rejection, should be the same across front-ends.
-See [08-locals.md#gap](../architecture/08-locals.md#gap).
-
 ### BUG-2 — Adapters cannot set a scalar root from the CLI
 
 **Where:** `src/confarg/cli/` · **Filed:** 2026-09-12
@@ -52,6 +41,31 @@ errors, `--f.class=pkg.Sub --f.only_in_sub=1` would fail where the same keys in 
 was rejected ([10-design-decisions.md#no-implicit-subclass-inference](../architecture/10-design-decisions.md#no-implicit-subclass-inference));
 here it leaks into the CLI channel. Confirm with a test first.
 See [04-cli-adapters.md#union-inheritance-and-cast-flags](../architecture/04-cli-adapters.md#union-inheritance-and-cast-flags).
+
+### BUG-8 — A bare struct flag with no value is vanilla-only
+
+**Where:** `src/confarg/cli/argparse/_spec.py` (`FlagSpec.nargs`) · **Filed:** 2026-09-13
+**Effort:** M · **Risk:** low
+
+`--<structfield>` with no value means "use defaults" in vanilla
+([03-cli-parsing.md#token-consumption](../architecture/03-cli-parsing.md#token-consumption))
+and merges nothing; the adapters register the flag with `nargs=None` and their framework
+demands a value. `FlagSpec.nargs` has no `"?"`, and click cannot express an optional-value
+option at all, so closing this needs a decision on the vocabulary — or on retiring the
+no-value form, which contributes nothing to the merged dict.
+See [04-cli-adapters.md#whole-value-flags](../architecture/04-cli-adapters.md#whole-value-flags).
+
+### BUG-9 — `dict | None` does not accept the whole-mapping token that `dict` does
+
+**Where:** `src/confarg/_parse_cli.py` (`_accepts_object_value`) · **Filed:** 2026-09-13
+**Effort:** S · **Risk:** medium
+
+`--env '{"a": "b"}'` decodes for `dict[str, str]` and for `Sub | None` (the union arm tests
+`_is_dc` on each variant), but not for `dict[str, str] | None`: `_is_dict` is false on the
+union and no arm tests dicts. The token is stored raw and `build()` then rejects it. This is
+a channel-wide inconsistency in vanilla, not an adapter gap — the adapters mirror it
+deliberately so their merged dict stays byte-identical. The fix is one arm in
+`_accepts_object_value`, but it changes vanilla's parse result, so it needs its own decision.
 
 ## Intent versus implementation
 

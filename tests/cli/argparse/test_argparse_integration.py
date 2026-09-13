@@ -323,17 +323,19 @@ class TestPopulateParser:
         populate_parser(WithLiteral, parser)
         assert "{debug,info,warning}" in parser.format_usage()
 
-    def test_dict_field_skipped(self) -> None:
-        """Test that dict fields are not registered as CLI flags."""
+    def test_dict_field_registers_only_the_whole_value_flag(self) -> None:
+        """A dict field gets the bare --mapping JSON flag; its keys are registered from argv."""
 
         @dataclass
         class WithDict:
             mapping: dict[str, int] = field(default_factory=dict)
 
         parser = argparse.ArgumentParser()
-        populate_parser(WithDict, parser)
+        populate_parser(WithDict, parser, argv=[])
         flags = {a.option_strings[0] for a in parser._actions if a.option_strings}
-        assert "--mapping" not in flags
+        assert "--mapping" in flags
+        assert not any(f.startswith("--mapping.") for f in flags)
+        assert "JSON" in parser.format_usage()
 
     def test_str_int_union_flag_registered(self) -> None:
         """Int | str registers --value and cast override flags (stealing rule applies)."""
@@ -345,12 +347,12 @@ class TestPopulateParser:
         assert "value.int" in dests
 
     def test_struct_union_registers_class_tag_flag(self) -> None:
-        """Multi-variant struct union gets --<field>.class registered."""
+        """Multi-variant struct union gets --<field>.class and the bare whole-value flag."""
         parser = argparse.ArgumentParser()
         populate_parser(_WithStructUnion, parser)
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--item.class" in flags
-        assert "--item" not in flags
+        assert "--item" in flags  # a whole variant object carries its own discriminator
 
     def test_struct_union_registers_variant_field_flags(self) -> None:
         """Multi-variant struct union also registers each variant's own field flags."""

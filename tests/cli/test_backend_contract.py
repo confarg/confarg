@@ -996,7 +996,7 @@ class _WithDbs:
 
 @dataclass
 class _WithMap:
-    """Dict field (skipped at static registration; patched via argv subkeys)."""
+    """Dict field (bare whole-value flag statically; keys patched via argv subkeys)."""
 
     data: dict[str, int] = dataclasses.field(default_factory=dict)
 
@@ -1577,6 +1577,119 @@ class TestEnvJsonCastContract:
 
 
 # ---------------------------------------------------------------------------
+# Whole-value flags (a bare ``--<field> '{...}'`` assigning an object in one token)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _WholeInner:
+    """Struct with a nested dict field, to exercise whole-value flags at depth."""
+
+    a: int = 1
+    d: dict[str, int] = dataclasses.field(default_factory=dict)
+
+
+@dataclass
+class _WholeSqlite:
+    """Struct-union variant for whole-value tests."""
+
+    dbpath: str = ""
+
+
+@dataclass
+class _WholeServer:
+    """Struct-union variant for whole-value tests."""
+
+    host: str = ""
+    port: int = 0
+
+
+@dataclass
+class _WholeValue:
+    """One field per type that accepts a whole ``{...}`` token."""
+
+    env: dict[str, str] = dataclasses.field(default_factory=dict)
+    sub: _WholeInner = dataclasses.field(default_factory=_WholeInner)
+    u: _WholeSqlite | _WholeServer | None = None
+
+
+class TestWholeValueFlagContract:
+    """A dict, struct, struct-union or callable field takes its whole value in one token.
+
+    ``--env '{"a": "b"}'`` assigns the entire mapping, the peer of the env channel's
+    ``MYAPP_ENV='{"a": "b"}'``.  The flag is registered statically, so it shows up in
+    ``--help`` beside the bare ``--tags``/``--pair`` flags that lists and tuples get.
+    A token that is not a JSON object is kept raw and rejected by ``build()``, because
+    the merge layer never validates.
+    """
+
+    def test_whole_dict_from_json(self, loader: ConfargLoader) -> None:
+        """--env '{...}' assigns the whole mapping in one token."""
+        cfg = loader.load(_WholeValue, argv=["--env", '{"a": "b"}'], env={})
+        assert cfg.env == {"a": "b"}
+
+    def test_nested_whole_dict_from_json(self, loader: ConfargLoader) -> None:
+        """A dict nested inside a struct takes a whole value too."""
+        cfg = loader.load(_WholeValue, argv=["--sub.d", '{"k": 1}'], env={})
+        assert cfg.sub.d == {"k": 1}
+
+    def test_whole_dict_merges_with_subkey(self, loader: ConfargLoader) -> None:
+        """A later --env.<key> refines the mapping assigned as a whole."""
+        cfg = loader.load(_WholeValue, argv=["--env", '{"a": "b"}', "--env.c", "d"], env={})
+        assert cfg.env == {"a": "b", "c": "d"}
+
+    def test_whole_struct_from_json(self, loader: ConfargLoader) -> None:
+        """--sub '{...}' assigns a whole nested struct."""
+        cfg = loader.load(_WholeValue, argv=["--sub", '{"a": 2}'], env={})
+        assert cfg.sub == _WholeInner(a=2)
+
+    def test_whole_struct_union_from_json(self, loader: ConfargLoader) -> None:
+        """--u '{...}' carries its own discriminator and builds the variant."""
+        cfg = loader.load(
+            _WholeValue,
+            argv=["--u", f'{{"class": "{__name__}._WholeSqlite", "dbpath": "/x"}}'],
+            env={},
+        )
+        assert cfg.u == _WholeSqlite(dbpath="/x")
+
+    def test_whole_callable_from_json(self, loader: ConfargLoader) -> None:
+        """A callable field decodes its blob into a spec rather than keeping the string."""
+        cfg = loader.load(
+            _CallableConfig,
+            argv=["--fn", f'{{"class": "{__name__}._Greeter", "greeting": "Hi", "bind": {{"punct": "!"}}}}'],
+            env={},
+        )
+        assert cfg.fn("world") == "Hi, world!"
+
+    def test_whole_dict_matches_env_channel(self, loader: ConfargLoader) -> None:
+        """The CLI and env spellings of a whole mapping merge to the identical dict."""
+        cli = loader.merge(_WholeValue, argv=["--env", '{"a": "b"}'], env={})
+        env = loader.merge(_WholeValue, argv=[], env={"MYAPP_ENV": '{"a": "b"}'}, env_prefix="MYAPP_")
+        assert cli["env"] == env["env"] == {"a": "b"}
+
+    def test_non_object_token_is_kept_raw(self, loader: ConfargLoader) -> None:
+        """merge() keeps a non-JSON token verbatim: the merge layer never validates."""
+        data = loader.merge(_WholeValue, argv=["--env", "oops"], env={})
+        assert data["env"] == "oops"
+
+    def test_non_object_token_fails_to_build(self, loader: ConfargLoader) -> None:
+        """build() is what rejects it, with the same diagnosis everywhere."""
+        with pytest.raises(TypeCoercionError, match="expected dict"):
+            loader.load(_WholeValue, argv=["--env", "oops"], env={})
+
+    def test_malformed_object_raises(self, loader: ConfargLoader) -> None:
+        """A token that opens a JSON object but is malformed hard-errors identically."""
+        with pytest.raises(ConfargError, match="Invalid JSON"):
+            loader.load(_WholeValue, argv=["--env", "{"], env={})
+
+    def test_whole_value_flags_registered(self, populating_loader: ConfargLoader) -> None:
+        """Every adapter registers the bare flag, so it is visible in --help."""
+        flags = populating_loader.registered_flags(_WholeValue)
+        assert flags is not None
+        assert {"env", "sub", "u"} <= flags
+
+
+# ---------------------------------------------------------------------------
 # Local variables (the reserved ``locals:`` namespace)
 # ---------------------------------------------------------------------------
 
@@ -1631,13 +1744,15 @@ class TestLocalsContract:
     a string, and a write to an undeclared name is an error rather than a new
     variable.  These tests pin all of that across the four front-ends.
 
-    Every *per-name* form (``--locals.<name>``) has full parity here.  The bare
-    whole-namespace form (``--locals VALUE``) is rejected everywhere, but only
-    vanilla reports it as a ``LocalsError``: the adapters register no flag for
-    it, exactly as they register none for a bare ``--<dictfield>``, so their own
-    framework rejects the token first.  That pre-existing whole-dict gap is
-    covered vanilla-side in ``tests/test_locals.py``.
+    The bare whole-namespace form (``--locals VALUE``) has parity too: the graft
+    makes ``locals`` a dict-typed path, so every front-end registers the flag and
+    the pipeline — not the host framework — rejects the assignment.
     """
+
+    def test_whole_namespace_cannot_be_assigned(self, loader: ConfargLoader) -> None:
+        """A bare --locals would replace the namespace; every front-end says so itself."""
+        with pytest.raises(ConfargError, match="cannot be assigned as a whole"):
+            loader.load(_LocalsConfig, argv=["--locals", "x"], env={})
 
     def test_locals_feed_expressions(self, loader: ConfargLoader, tmp_yaml) -> None:
         """Config-file locals resolve into fields and never reach the target type."""

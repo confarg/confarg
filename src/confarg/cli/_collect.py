@@ -22,7 +22,7 @@ from confarg._callable import _Directives, active_directives
 from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, resolve_forced_value
 from confarg._import import _import_dotted
 from confarg._merge import _deep_merge, _set_nested
-from confarg._parse_cli import _segment_names_real_field, _try_parse_json_list
+from confarg._parse_cli import _accepts_object_value, _parse_json_arg, _segment_names_real_field, _try_parse_json_list
 from confarg._types import (
     _elem_type,
     _is_callable,
@@ -167,6 +167,24 @@ def _str_token(v: Any) -> Any:
     return _StrToken(v) if isinstance(v, str) else v
 
 
+def _whole_value(flat: dict[str, Any], flag: str, resolved: Any) -> Any:
+    """Return the bare ``--<flag>`` value decoded the way the vanilla parser decodes it.
+
+    A ``{``-prefixed token becomes the object it spells (malformed JSON raises the same
+    ``ConfargError`` vanilla raises); anything else is left for the caller's own branch.
+    Returns :data:`_NO_CAST` when the flag carries no whole value to decode.
+
+    Agent Notes:
+        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+    """
+    if flag not in flat:
+        return _NO_CAST
+    v = flat[flag]
+    if isinstance(v, str) and v.startswith("{") and _accepts_object_value(resolved):
+        return _parse_json_arg(v, f"--{flag}")
+    return _NO_CAST
+
+
 def _merge_blob_into_spec(
     blob: dict[str, Any],
     spec: dict[str, Any],
@@ -216,6 +234,7 @@ def _collect_callable_spec(
     flat: dict[str, Any],
     flag: str,
     result: dict[str, Any],
+    whole: Any = _NO_CAST,
 ) -> None:
     """Build and store the callable spec dict from flat namespace entries for flag.
 
@@ -241,7 +260,7 @@ def _collect_callable_spec(
         spec.update(_collect_factory_kwargs(flat, flag_prefix, bind_prefix, reserved))
 
     if flag in flat:
-        blob = flat[flag]
+        blob = flat[flag] if whole is _NO_CAST else whole
         if isinstance(blob, str) and not spec:
             _set_nested(result, flag.split("."), _StrToken(blob))
             return
@@ -375,7 +394,7 @@ def _collect_ns_union_root(
         _collect_ns_fields(flat, variant, prefix, union_tag, result)
 
 
-def _collect_ns_fields(  # noqa: C901, PLR0912  # one branch per type case
+def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type case
     flat: dict[str, Any],
     target: Any,
     prefix: str,
@@ -412,14 +431,20 @@ def _collect_ns_fields(  # noqa: C901, PLR0912  # one branch per type case
             _set_nested(result, flag.split("."), json_val)
             continue
 
+        # A bare `--<flag> '{...}'` assigns the whole field; sibling `--<flag>.<sub>`
+        # entries are collected on top of it below, as they refine it in vanilla.
+        whole = _whole_value(flat, flag, resolved)
+
         if core is None:
-            # Struct unions: collect via class-tag
+            # Struct unions: the whole object carries its own class-tag; variant fields refine it
+            if whole is not _NO_CAST:
+                _set_nested(result, flag.split("."), whole)
             _collect_ns_union_field(flat, flag, resolved, union_tag, result)
             # Scalar unions: collect plain value or explicit scalar cast
             cast_val = _find_scalar_cast_override(flat, flag)
             if cast_val is not _NO_CAST:
                 _set_nested(result, flag.split("."), cast_val)
-            elif flag in flat:
+            elif flag in flat and whole is _NO_CAST:
                 _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, flat[flag], flag))
             continue
 
@@ -433,14 +458,21 @@ def _collect_ns_fields(  # noqa: C901, PLR0912  # one branch per type case
             continue
 
         if _is_struct(core):
+            if whole is not _NO_CAST:
+                _set_nested(result, flag.split("."), whole)
             _collect_ns_fields(flat, core, flag, union_tag, result)
             continue
 
         if _is_dict(core):
+            # Keys are collected by the argv patch scan and deep-merged over this value.
+            if whole is not _NO_CAST:
+                _set_nested(result, flag.split("."), whole)
+            elif flag in flat:
+                _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
             continue
 
         if _is_callable(core):
-            _collect_callable_spec(flat, flag, result)
+            _collect_callable_spec(flat, flag, result, whole)
             continue
 
         cast_val = _find_scalar_cast_override(flat, flag)

@@ -22,7 +22,8 @@ accepted as a dict key.
 - Values run until the next flag: variable-length collections consume greedily, fixed
   tuples consume exactly their arity, and a dataclass flag with no value means "use defaults".
 - A token starting with `{` or `[` is decoded as JSON when the field type accepts an object
-  or a list.
+  or a list. `_accepts_object_value` owns the object half, because the adapters must register
+  and decode the same bare flags ([04](04-cli-adapters.md#whole-value-flags)).
 - Leaves are coerced eagerly with `_try_coerce` so the merged dict has the same types
   whichever channel supplied them (and so CLI numbers work inside expressions).
 - Bool fields take an explicit value: `--verbose true` ([10](10-design-decisions.md#explicit-boolean-values)).

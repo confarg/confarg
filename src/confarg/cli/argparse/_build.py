@@ -640,6 +640,38 @@ def _union_cast_flag_specs(
     ]
 
 
+def _whole_value_spec(  # noqa: PLR0913
+    flag: str,
+    name: str,
+    raw_type: Any,
+    resolved: Any,
+    group: str | None,
+    group_description: str,
+    docstrings: dict[str, str],
+    defaults: dict[str, Any],
+) -> FlagSpec:
+    """Return the bare ``--<flag>`` spec assigning the whole field value in one token.
+
+    ``nargs=None``: the vanilla parser consumes exactly one token here and rejects a
+    second as a stray positional.  The metavar is ``JSON`` only where that token is
+    actually decoded as an object, so a field the predicate declines does not advertise
+    a syntax it will not honour.
+
+    Agent Notes:
+        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+    """
+    # Imported here: a module-level import would create an import cycle with _parse_cli.
+    from confarg._parse_cli import _accepts_object_value  # noqa: PLC0415
+
+    return FlagSpec(
+        name=flag,
+        metavar="JSON" if _accepts_object_value(resolved) else "VALUE",
+        help=_build_help(name, raw_type, docstrings, defaults, flag=flag),
+        group=group,
+        group_description=group_description,
+    )
+
+
 def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
     flag: str,
     name: str,
@@ -657,8 +689,10 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
         non_none = _union_args_no_none(resolved)
         concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
         if concrete:
-            specs = [_build_union_tag_spec(flag, union_tag, concrete, group, group_description)]
-            by_name: dict[str, FlagSpec] = {specs[0].name: specs[0]}
+            # The bare flag first: a whole variant object carries its own discriminator.
+            whole = _whole_value_spec(flag, name, raw_type, resolved, group, group_description, docstrings, defaults)
+            specs = [whole, _build_union_tag_spec(flag, union_tag, concrete, group, group_description)]
+            by_name: dict[str, FlagSpec] = {s.name: s for s in specs}
             for variant in concrete:
                 for spec in _collect_struct_specs(
                     variant,
@@ -714,10 +748,13 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
         return [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
 
     if _is_struct(core):
-        return _collect_struct_specs(core, flag, union_tag, flag, inspect.getdoc(core) or "")
+        whole = _whole_value_spec(flag, name, raw_type, resolved, group, group_description, docstrings, defaults)
+        return [whole, *_collect_struct_specs(core, flag, union_tag, flag, inspect.getdoc(core) or "")]
 
     if _is_dict(core):
-        return []
+        # A dict has no statically known keys, so the bare flag is its only static form;
+        # each --<flag>.<key> found in argv is registered dynamically alongside it.
+        return [_whole_value_spec(flag, name, raw_type, resolved, group, group_description, docstrings, defaults)]
 
     help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
     return [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]

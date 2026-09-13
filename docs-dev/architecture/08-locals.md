@@ -91,8 +91,10 @@ the machinery real dict fields already use — including adapter patch-flag regi
 `resolve_expressions` returns the caller's own dict when there are no expressions, so
 mutating would strip the namespace out of the caller's data.
 
-## Gap
+## Assigning the whole namespace
 
-`--locals VALUE` (whole namespace) is rejected everywhere, but only vanilla reports a
-`LocalsError`; adapters register no flag for a whole dict, so their framework rejects the
-token first — the same pre-existing gap as a bare `--<dictfield>`.
+`--locals VALUE` is rejected in every front-end, by confarg rather than by a host framework.
+The graft makes `locals` a `dict[str, Any]` path, so `_is_collection_patch_path` accepts it
+and the adapters register the flag; the token then reaches `_apply_locals_overrides`, which
+raises `LocalsError.not_assignable`. Nothing here is locals-specific machinery — it is the
+same route a bare `--<dictfield>` takes ([04](04-cli-adapters.md#whole-value-flags)).
