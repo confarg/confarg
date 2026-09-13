@@ -42,6 +42,29 @@ It describes a README replay harness (`test_readme_commands.py`) that no longer 
 commands are now replayed by `pytest-markdown-console`. Delete it or re-point it.
 See [12-testing.md](../architecture/12-testing.md).
 
+### REF-12 — `CLAUDE.md` points agents at a directory that does not exist
+
+**Where:** `CLAUDE.md` (13 occurrences) · **Filed:** 2026-09-13
+**Effort:** S · **Risk:** low
+
+Every reference reads `doc-dev/`, but the directory is `docs-dev/` — including the links an
+agent is told to open first (`doc-dev/architecture/README.md`, `doc-dev/architecture/09-invariants.md`,
+the board paths). An agent that follows them literally finds nothing and carries on without the
+rationale the instructions call mandatory. `AGENTS.md` carries none of these links, which is
+its own problem (REF-13).
+
+### REF-13 — `AGENTS.md` has drifted from `CLAUDE.md`
+
+**Where:** `AGENTS.md` · **Filed:** 2026-09-13
+**Effort:** S · **Risk:** low
+
+The two files are meant to tell different agents the same thing, but `AGENTS.md` stopped at an
+older revision: it still lists the public API function by function and lacks the architecture,
+boards, testing and contributing sections entirely, so a non-Claude agent never learns about
+`docs-dev/`, the drive-by ticket rule or the parity mandate. Decide whether one file is
+generated from the other or is a symlink to it; two hand-maintained copies are what produced
+the drift. Both are `.gitignore`d (`.gitignore:226-227`), so no CI check can catch it.
+
 ## Robustness
 
 ### REF-5 — `_import_dotted` conflates two failures
@@ -96,6 +119,19 @@ A full `uv run pytest` writes `saved_config_interpolated.yaml` and
 with untracked files that have to be deleted by hand before describing a revision. The README
 command that produces them should write to a temporary directory, or the paths should be
 ignored.
+
+### REF-14 — A dynamic-flag test passes for the wrong reason
+
+**Where:** `tests/cli/argparse/test_gaps.py` (`test_build_dynamic_flags_exception_returns_empty`)
+· **Filed:** 2026-09-13
+**Effort:** S · **Risk:** low
+
+The test claims to exercise the error handler in `build_dynamic_flags` by passing `None` as
+the target, but `None` raises nothing: the scan simply finds no flags and returns `[]`.
+Verified while closing BUG-5 — with the handler now warning, that call emits no warning, so
+the handler is never reached. The monkeypatch test next to it
+(`test_build_dynamic_flags_warns_on_internal_error`) already covers the real path, so this
+one is either deleted or rewritten around an input that genuinely fails.
 
 ## Sweeps
 
