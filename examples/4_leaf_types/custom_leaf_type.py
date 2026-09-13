@@ -15,13 +15,17 @@ def coerce_int(value: str) -> Int:
     return Int(None if value == "NaN" else int(value))
 
 
+def serialize_int(value: Int) -> str | int:
+    return "NaN" if value.value is None else value.value
+
+
 @dataclass
 class Config:
     input: Int
 
 
 def main() -> None:
-    confarg.register_leaf_type(Int, coerce_int)
+    confarg.register_leaf_type(Int, coerce_int, serialize=serialize_int)
     config = confarg.load(Config, env_prefix="MYAPP_")
     print(config)
 

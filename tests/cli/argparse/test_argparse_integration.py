@@ -16,7 +16,6 @@ import pytest
 import confarg
 from confarg.cli.argparse import FieldMeta, from_namespace, make_parser, populate_parser
 from confarg.cli.argparse._spec import _get_field_docstrings
-from confarg.typedload._coerce import _LEAF_COERCIONS
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -24,13 +23,8 @@ from confarg.typedload._coerce import _LEAF_COERCIONS
 
 
 @pytest.fixture(autouse=True)
-def _cleanup_custom_leaf_types():
-    """Remove any custom types added to _LEAF_COERCIONS during a test."""
-    before = set(_LEAF_COERCIONS)
-    yield
-    for tp in list(_LEAF_COERCIONS):
-        if tp not in before:
-            del _LEAF_COERCIONS[tp]
+def _cleanup_custom_leaf_types(leaf_registry: None) -> None:
+    """Restore both leaf registries after each test that registers a custom type."""
 
 
 # ---------------------------------------------------------------------------

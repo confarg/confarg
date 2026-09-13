@@ -29,6 +29,7 @@ from dataclasses import field as dataclasses_field
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
+from uuid import UUID
 
 import pytest
 
@@ -907,6 +908,17 @@ class _CoercedLeaves:
     color: Color = Color.RED
 
 
+_UUID_TEXT = "12345678-1234-5678-1234-567812345678"
+_NIL_UUID = UUID(int=0)
+
+
+@dataclass
+class _RegisteredLeaf:
+    """A field whose type is a leaf only because ``register_leaf_type`` says so."""
+
+    id: UUID = _NIL_UUID
+
+
 class TestMergeContract:
     """merge_* returns the raw merged dict, identically in every integration."""
 
@@ -965,6 +977,30 @@ class TestMergeContract:
         reloaded = loader.merge(_CoercedLeaves, argv=[], env={}, files=[out])
         assert reloaded == {"out": str(Path("sub/x.txt")), "color": "blue"}
         assert confarg.build(_CoercedLeaves, raw) == confarg.build(_CoercedLeaves, reloaded)
+
+    @pytest.mark.parametrize("suffix", [".yaml", ".json", ".toml"])
+    def test_dump_file_with_a_registered_leaf_type(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        suffix: str,
+        leaf_registry: None,
+    ) -> None:
+        """A type registered with ``register_leaf_type`` dumps as a scalar in every integration.
+
+        Registration makes a type a leaf in both directions, so the merged
+        ``UUID`` must leave as the string a config file would have carried —
+        identically whichever front-end produced the dict.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        out = tmp_path / f"snap{suffix}"
+        raw = loader.merge(_RegisteredLeaf, argv=["--id", _UUID_TEXT], env={})
+        assert raw == {"id": UUID(_UUID_TEXT)}
+        confarg.dump_file(raw, out)
+
+        reloaded = loader.merge(_RegisteredLeaf, argv=[], env={}, files=[out])
+        assert reloaded == {"id": _UUID_TEXT}
+        assert confarg.build(_RegisteredLeaf, raw) == confarg.build(_RegisteredLeaf, reloaded)
 
     def test_dump_file_round_trip_via_instance(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """Round-tripping through a built instance gives back the same config."""

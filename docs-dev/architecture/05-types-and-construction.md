@@ -43,10 +43,14 @@ registered leaf types. Policies:
 - Enum: member name first, then `str(value)`;
 - tokens only: a native value from a file must already have the right type.
 
-**Registry**: `_LEAF_COERCIONS` maps a type to a coerce function; `Path` is simply its first
-entry, so built-in and user leaf types (`register_leaf_type`) are one mechanism. A
-registered type is treated as a leaf even if it looks like a struct. Coerce functions may
-raise `ValueError`, `TypeError` or `OSError`.
+**Registry**: `_LEAF_COERCIONS` maps a type to a coerce function and `_LEAF_SERIALIZERS` maps
+it to the inverse; `register_leaf_type` writes both, and `Path` is simply the first entry of
+each (`Path: Path`, `Path: str`), so built-in and user leaf types are one mechanism. A
+registered type is treated as a leaf even if it looks like a struct, in **both** directions:
+construction skips the struct branch for it (`_construct_typed`) and so does serialization
+(`_serialize_by_type`). Coerce functions may raise `ValueError`, `TypeError` or `OSError`;
+`serialize` defaults to `str` and must return something a config writer accepts and `coerce`
+reads back ([10](10-design-decisions.md#registered-leaf-types-dump-through-a-registered-serializer)).
 
 `_try_coerce` (eager, used by parsers) never raises: it coerces only unambiguous targets and
 returns the token unchanged otherwise, leaving the decision to `construct`. `_coerce_leaf`
@@ -135,11 +139,13 @@ through the same `_serialize_leaf`.
   disambiguation of the serialized data would not select exactly one variant on the way
   back in; `"always"` tags every struct union member. A subclass of the declared type is
   always tagged.
-- Enums dump as values, paths as strings, types as dotted paths, sets sorted by
+- Enums dump as values, registered leaf types through their registered serializer (`Path`
+  being the first of them, hence a string), types as dotted paths, sets sorted by
   `(type name, str)` so output is deterministic. These rules read the *value*, not the
   declared type, which is why the untyped path can share them; only widening an `int` to a
   `float` needs a type, so it never happens on a raw dict
-  ([01](01-pipeline-and-contracts.md#public-api-seams)).
+  ([01](01-pipeline-and-contracts.md#public-api-seams)). The `_StrToken` unwrap comes before
+  the registry loop, so a token cannot be captured by a serializer registered for `str`.
 - Plain classes must store every `__init__` parameter as a same-named attribute to be
   serializable.
 - Callables dump via their stored spec ([06](06-callables.md#round-trip)).

@@ -14,7 +14,7 @@ import pytest
 import confarg
 from confarg._types import _StrToken
 from confarg.exceptions import TypeCoercionError
-from confarg.typedload._coerce import _LEAF_COERCIONS, _coerce_leaf, _try_coerce
+from confarg.typedload._coerce import _LEAF_COERCIONS, _LEAF_SERIALIZERS, _coerce_leaf, _try_coerce
 from confarg.typedload._construct import construct
 
 # ---------------------------------------------------------------------------
@@ -23,10 +23,8 @@ from confarg.typedload._construct import construct
 
 
 @pytest.fixture(autouse=True)
-def _cleanup_uuid(request: pytest.FixtureRequest):
-    """Remove UUID from _LEAF_COERCIONS after each test that registers it."""
-    yield
-    _LEAF_COERCIONS.pop(UUID, None)
+def _cleanup_uuid(leaf_registry: None) -> None:
+    """Restore both leaf registries after each test that registers UUID."""
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +52,25 @@ class TestRegisterLeafType:
         coerce2 = lambda v: UUID(str(v))  # noqa: E731
         confarg.register_leaf_type(UUID, coerce2)
         assert _LEAF_COERCIONS[UUID] is coerce2
+
+    def test_register_stores_the_serializer(self) -> None:
+        """The serialize callable passed to register_leaf_type is stored verbatim."""
+        serialize = lambda v: v.hex  # noqa: E731
+        confarg.register_leaf_type(UUID, UUID, serialize=serialize)
+        assert _LEAF_SERIALIZERS[UUID] is serialize
+
+    def test_serializer_defaults_to_str(self) -> None:
+        """Omitting serialize= registers str, the wire form of most leaf types."""
+        confarg.register_leaf_type(UUID, UUID)
+        assert _LEAF_SERIALIZERS[UUID] is str
+
+    def test_register_overrides_both_halves(self) -> None:
+        """Re-registering the same type replaces the coercion and the serializer together."""
+        confarg.register_leaf_type(UUID, UUID, serialize=lambda v: v.hex)
+        coerce2 = lambda v: UUID(str(v))  # noqa: E731
+        confarg.register_leaf_type(UUID, coerce2)
+        assert _LEAF_COERCIONS[UUID] is coerce2
+        assert _LEAF_SERIALIZERS[UUID] is str
 
 
 # ---------------------------------------------------------------------------
