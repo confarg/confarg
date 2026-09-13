@@ -43,6 +43,16 @@ behind a helper.
 `<!-- pytest-markdown-console-file: notest -->` (the root README does, since it illustrates a
 fictitious app).
 
+Each block runs with the README's own directory as its working directory, so a script that
+writes a file writes it there — `21_expressions` and `22_variable_scopes` end their scripts
+with `dump_file()` and leave `saved_config_*.yaml` behind on every run. Those artifacts are
+`.gitignore`d rather than redirected: writing next to the configuration is what the tutorials
+show a reader getting, and parameterizing the path would put test scaffolding into script
+source the documentation site renders verbatim. The alternative — copying each example into a
+per-block temporary directory with `cwd:${tmpdir}` and a fixture — was rejected as the larger
+change: it needs a `conftest.py` inside the published `examples/` tree and a `UV_PROJECT`
+injection, because `uv run` outside the project root resolves no project environment.
+
 ## Property tests
 
 `tests/test_hypothesis.py` uses Hypothesis. Generated strings escape `${` as `$${` so random
