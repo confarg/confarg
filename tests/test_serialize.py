@@ -531,6 +531,68 @@ class TestDumpRoundTrip:
 
 
 # ---------------------------------------------------------------------------
+# Raw merged dicts: coerced leaves
+# ---------------------------------------------------------------------------
+
+
+class TestDumpRawDictCoercedLeaves:
+    """dump_file(raw_dict) survives the leaves merge() coerces eagerly.
+
+    CLI, env and CSV values are coerced at merge time, so a merged dict can hold
+    a ``Path`` or an ``Enum`` member where a config file would have held a plain
+    scalar. The dict path applies the same leaf rules as ``dump()``.
+    """
+
+    @pytest.mark.parametrize("suffix", [".toml", ".yaml", ".json"])
+    def test_cli_path_leaf(self, tmp_path: Path, suffix: str) -> None:
+        """A Path coerced from the CLI dumps as its string form, in every format."""
+        WithPath = make_target("out", Path, default=Path("default.txt"))
+        raw = confarg.merge(WithPath, argv=["--out", "sub/x.txt"], env={})
+        assert raw["out"] == Path("sub/x.txt")
+
+        path = tmp_path / f"out{suffix}"
+        confarg.dump_file(raw, path)
+        # str(Path) is the native spelling, so the separator is the platform's.
+        assert confarg.merge(WithPath, argv=[], env={}, files=[path]) == {"out": str(Path("sub/x.txt"))}
+
+    @pytest.mark.parametrize("suffix", [".toml", ".yaml", ".json"])
+    def test_env_enum_leaf(self, tmp_path: Path, suffix: str) -> None:
+        """An Enum coerced from the environment dumps as its value, in every format."""
+        WithEnum = make_target("color", Color, default=Color.RED)
+        raw = confarg.merge(WithEnum, env={"APP__COLOR": "blue"}, env_prefix="APP", argv=[])
+        assert raw["color"] is Color.BLUE
+
+        path = tmp_path / f"out{suffix}"
+        confarg.dump_file(raw, path)
+        assert confarg.merge(WithEnum, argv=[], env={}, files=[path]) == {"color": "blue"}
+
+    def test_coerced_leaf_inside_containers(self, tmp_path: Path) -> None:
+        """Coerced leaves are converted wherever they sit, not only at the top level."""
+        WithPaths = make_target("outs", list[Path], default_factory=list)
+        raw = confarg.merge(WithPaths, argv=["--outs", "a.txt", "b.txt"], env={})
+
+        path = tmp_path / "out.yaml"
+        confarg.dump_file(raw, path)
+        assert confarg.merge(WithPaths, argv=[], env={}, files=[path]) == {"outs": ["a.txt", "b.txt"]}
+
+    def test_round_trip_holds_on_the_built_object(self, tmp_path: Path) -> None:
+        """The dict itself cannot round-trip a coerced leaf; the built object does.
+
+        Re-reading the dumped file yields the plain scalar a config file carries —
+        file values are never re-interpreted — so identity holds one seam later,
+        after ``build()``.
+        """
+        WithPath = make_target("out", Path, default=Path("default.txt"))
+        raw = confarg.merge(WithPath, argv=["--out", "sub/x.txt"], env={})
+        path = tmp_path / "out.yaml"
+        confarg.dump_file(raw, path)
+        reloaded = confarg.merge(WithPath, argv=[], env={}, files=[path])
+
+        assert raw != reloaded
+        assert confarg.build(WithPath, raw) == confarg.build(WithPath, reloaded)
+
+
+# ---------------------------------------------------------------------------
 # Error cases
 # ---------------------------------------------------------------------------
 

@@ -117,3 +117,18 @@ which flag an abbreviated invocation means.
 Text is converted to the most specific type that accepts it, with `str` last, but only for
 untyped channels ([05](05-types-and-construction.md#stealing-rule)). Coercion happens only when
 the target type allows it, so this is not the YAML "Norway problem".
+
+## Dump round-trips at the built object
+
+`dump_file(merge(...), path)` writes a coerced leaf in its scalar form (`Path` → string,
+`Enum` → value), so re-reading the file gives a plain `str` and the merged dicts are not
+equal; the *built* objects are. The alternative — re-coercing values read from config files
+so the dict itself round-trips — was rejected: it would make file values type-directed and
+break the token model, whose whole point is that a self-describing file is never
+re-interpreted ([05](05-types-and-construction.md#token-model)). Round-trip fidelity is
+claimed one seam later instead ([01](01-pipeline-and-contracts.md#public-api-seams)).
+
+Precedents: pydantic draws the same line with `model_dump(mode="json")` — `Path`, `Enum` and
+`UUID` degrade to scalars on the way out and are re-validated, not re-typed, on the way in;
+cattrs likewise pairs a lossy `unstructure` with a typed `structure`, never claiming that the
+unstructured forms compare equal to the originals.

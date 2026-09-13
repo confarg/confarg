@@ -286,7 +286,7 @@ class TestToAppendList:
 class TestDumpDictList:
     """dump_file() strips _StrToken markers from lists and raw merge dicts."""
 
-    def test_strip_str_tokens_in_list(self, tmp_path: Path) -> None:
+    def test_serialize_untyped_in_list(self, tmp_path: Path) -> None:
         """_StrToken values in a list are written as plain str via dump_file()."""
         data = {"items": [_StrToken("a"), _StrToken("b")]}
         out = tmp_path / "out.json"

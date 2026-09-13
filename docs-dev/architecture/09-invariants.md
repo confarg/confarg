@@ -33,6 +33,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | plain vs escaped callable directives | `_callable.active_directives` |
 | single-value (scalar/type-ref) construction in unions | `_construct._construct_scalar` |
 | combine existing value with override | `_merge._merge_existing_value` |
+| how a leaf value leaves the library | `_serialize._serialize_leaf` |
 
 ## Merge stays unvalidated
 
