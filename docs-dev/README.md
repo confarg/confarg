@@ -1,3 +1,7 @@
+| A contract: arguments, return value, errors, footguns, an example | The docstring |
+| A pointer from a function to the rationale behind it | A `Dev Notes:` section in its docstring |
+| A pointer from a function to the rationale behind it | A `Dev Notes:` section in its docstring |
+| A pointer from a function to the rationale behind it | A `Dev Notes:` section in its docstring |
 # docs-dev
 
 Reference documentation for contributors and coding agents working *on* confarg: why the code
@@ -20,6 +24,7 @@ maps source modules to documents, so you can open only what your change touches.
 | What you have | Where it goes |
 |---|---|
 | A contract: arguments, return value, errors, footguns, an example | The docstring |
+| A pointer from a function to the rationale behind it | A `Dev Notes:` section in its docstring |
 | A reason, a trade-off, a rejected alternative, an invariant | `architecture/` |
 | Something broken, missing, or ugly that you are not fixing right now | `todo/` |
 | A question only the maintainer can answer | `todo/questions.md` |

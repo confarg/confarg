@@ -31,7 +31,7 @@ class _ExpressionTolerantChoice(click.Choice):
     declared values, and a real out-of-domain value still fails with click's own
     error.  ``build()`` validates the resolved expression.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#expression-tolerant-choice-gates
     """
 

@@ -38,7 +38,7 @@ class _ExpressionTolerantChoices(list):
     ``invalid choice`` error for real values.  ``build()`` validates the resolved
     expression.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#expression-tolerant-choice-gates
     """
 

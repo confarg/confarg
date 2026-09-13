@@ -7,7 +7,7 @@
 Always reference these constants instead of repeating the literals, so the four front-ends
 cannot drift apart.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/10-design-decisions.md
 """
 
@@ -18,7 +18,7 @@ from typing import Final
 UNION_TAG: Final[str] = "class"
 """Default discriminator field name for union variants.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/10-design-decisions.md#union_tag-defaults-to-class
 """
 
@@ -28,7 +28,7 @@ ENV_PREFIX: Final[str | None] = None
 ``None`` disables environment variable parsing. Set an explicit prefix (e.g. ``"MYAPP_"``)
 to enable it, or ``""`` to read every variable.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/10-design-decisions.md#environment-variables-off-by-default
 """
 
@@ -53,6 +53,6 @@ Either spelling addresses the namespace unless the target has a field of that na
 which case the other spelling is used; a target owning both names has no namespace.
 See ``confarg._parse_cli._locals_keys_at``.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/08-locals.md
 """

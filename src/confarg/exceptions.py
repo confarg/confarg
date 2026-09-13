@@ -92,7 +92,7 @@ class LocalsError(ConfargError):
     removing one from the environment or command line, or declaring the same
     namespace under both ``locals`` and ``_locals`` raises this error.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/08-locals.md
     """
 

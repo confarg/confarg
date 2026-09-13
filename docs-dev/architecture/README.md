@@ -21,9 +21,22 @@ back here.
 Rationale marked *(inferred)* was reconstructed from the code, not stated by the maintainer.
 It is a hypothesis, not a fact: confirm it before relying on it, and correct it once you know.
 
-Docstrings cite these documents by document and `##` heading anchor, for example
-`docs-dev/architecture/07-expressions.md#deferral-rule`. Headings are kept stable for that
-reason — renaming one means fixing the citations that name it (`grep -rn "<old-anchor>" src/`).
+Docstrings point here through a `Dev Notes:` section, e.g.
+
+```python
+def _try_coerce(ft, token):
+    """Coerce a string token to the target type if unambiguous.
+
+    Dev Notes:
+        docs-dev/architecture/07-expressions.md#deferral-rule
+    """
+```
+
+The section is hidden on the documentation site by `docs/assets/stylesheets/extra.css`
+(mkdocstrings renders it as `<details class="dev-notes">`), so it is written for whoever works
+on confarg rather than for whoever uses it. A citation names one document and one `##` heading
+anchor; headings in these files are kept stable for that reason, and renaming one means fixing
+the citations that name it (`grep -rn "<old-anchor>" src/`).
 
 Open the topic documents that match the code you are touching; the reading guide below maps
 source modules to documents.

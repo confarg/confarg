@@ -4,7 +4,7 @@
 
 """Serialization of dataclass instances to plain dicts (the inverse of construction).
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/05-types-and-construction.md#serialization
 """
 
@@ -210,7 +210,7 @@ def _serialize_dict(
 def _serialize_leaf(tp: Any, value: Any) -> Any:
     """Serialize a leaf value: Enum → .value, registered leaf → its serializer, else passthrough.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/05-types-and-construction.md#serialization
     """
     if isinstance(value, enum.Enum):
@@ -238,7 +238,7 @@ def _serialize_untyped(value: Any) -> Any:
     ``Enum`` becomes its value, ``Path`` a string, ``_StrToken`` a plain ``str``.
     An ``int`` is never widened to ``float`` — nothing here says it should be one.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/05-types-and-construction.md#serialization
     """
     if isinstance(value, dict):

@@ -8,7 +8,7 @@ Also hosts helpers shared with the env parser and the CLI adapters: the type wal
 force-cast detection, the local-variables name derivation, the ``--config`` scan and the
 patch-only parse used by the adapters.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/03-cli-parsing.md
 """
 
@@ -177,7 +177,7 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
     argv-order patch scan (``_parse_cli(..., patch_only=True)``), not by the adapters'
     flat collector. Pure struct-field, namedtuple, and callable paths return False.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
     """
     tp = _resolve_type(target)
@@ -231,7 +231,7 @@ def _segment_names_real_field(pt: Any, seg: str, union_tag: str) -> bool:
     variants are checked for a matching field; for dicts every segment is a real key;
     lists, sets, tuples, callables, and scalars have no named members (False).
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/03-cli-parsing.md#real-field-wins
     """
     if seg == union_tag:
@@ -256,7 +256,7 @@ def _locals_keys(target: Any, union_tag: str) -> tuple[str, ...]:
     dict). A scalar (``__root__``) root keeps both. Must depend on *target* and
     *union_tag* only.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/08-locals.md#derived-name
     """
     return tuple(key for key in _defaults.LOCALS_KEYS if not _segment_names_real_field(target, key, union_tag))
@@ -283,7 +283,7 @@ def _locals_keys_at(target: Any, path: list[str], union_tag: str) -> tuple[str, 
     The one question every consumer (stripping, the declaration scan, the CLI type
     walk, the env parser) asks at each node.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/08-locals.md#per-node-namespaces
     """
     if not path:
@@ -457,7 +457,7 @@ def _locals_walk_root(locals_keys: tuple[str, ...]) -> Any:
     Grafted onto the walk target by :func:`_walk_target` so ``--<key>.<name>`` paths
     resolve like a real dict field. Validation happens in the pipeline, not here.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/08-locals.md#walk-target-graft
     """
     name = "_LocalsRoot_" + "_".join(locals_keys)
@@ -473,7 +473,7 @@ def _walk_target(target: Any, locals_keys: tuple[str, ...]) -> Any:
     routes ``--<name>.x`` away from that field. Nested namespaces are handled by
     :func:`_resolve_field_type` itself.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/08-locals.md#walk-target-graft
     """
     if not locals_keys:
@@ -841,7 +841,7 @@ def _accepts_object_value(ft: Any) -> bool:
     ``Optional``: ``dict[str, str] | None`` is not a dict here, exactly as vanilla has
     always treated it.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#whole-value-flags
     """
     return (
@@ -1075,7 +1075,7 @@ def _collect_cli_patch_ops(
     adapters: the result is deep-merged on top of the values already collected
     from the host framework's parse result.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
     """
     data, _ = _parse_cli(argv, target, "", config_flag, union_tag, patch_only=True)

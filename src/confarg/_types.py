@@ -48,7 +48,7 @@ _MISSING = object()
 class _StrToken(str):
     """Untyped text from CLI args, env vars or CSV cells — eligible for coercion to the target type.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/05-types-and-construction.md#token-model
     """
 
@@ -62,7 +62,7 @@ class _UnionSeqToken(_StrToken):
     fills the sequence variant as a one-element list (``--input hello`` for
     ``bool | list[str]`` → ``['hello']``). A plain ``_StrToken`` gets no such fallback.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/03-cli-parsing.md#unions-with-sequence-variants
     """
 

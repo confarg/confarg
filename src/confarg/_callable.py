@@ -4,7 +4,7 @@
 
 """Callable resolution and serialization.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/06-callables.md
 """
 
@@ -244,7 +244,7 @@ def _coerce_kwargs(  # noqa: PLR0913
     differ: ``inspect.signature(cls)`` yields the constructor params (self excluded),
     but the annotations live on ``cls.__init__``.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/06-callables.md#one-coercion-route
     """
     try:
@@ -323,7 +323,7 @@ class _Directives:
     single-underscore forms (``_fn``/``_class``/``_call``/``_bind``) and treats every
     plain word as an ordinary kwarg. The opener's form selects the mode for the whole spec.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/06-callables.md#plain-and-escaped-directives
     """
 
@@ -356,7 +356,7 @@ def active_directives(has_key: Callable[[str], bool]) -> _Directives:
     present; otherwise plain mode. A directive word in the *other* form is ordinary
     data: a plain opener with a stray ``_bind`` leaves that ``_bind`` a kwarg.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/06-callables.md#plain-and-escaped-directives
     """
     if any(has_key(opener) for opener in _ESCAPED_DIRECTIVES.openers):

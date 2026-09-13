@@ -7,7 +7,7 @@
 Must not import argparse (it is shared by all adapters) and imports ``_parse_cli``
 inside functions only.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/04-cli-adapters.md#framework-neutral-flag-model
     docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
 """
@@ -71,7 +71,7 @@ def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
     Returns non-empty when the union has (a) at least one enum variant, or (b) str
     alongside any other variant, scalar or not (``str | type``, ``str | Path``).
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags
     """
     non_none = _union_args_no_none(resolved)
@@ -235,7 +235,7 @@ def _escaped_opener_specs(
     Only openers present in argv are added. No group is set (cyclopts rejects two groups
     with the same name and different descriptions).
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
     """
     result: list[FlagSpec] = []
@@ -657,7 +657,7 @@ def _whole_value_spec(  # noqa: PLR0913
     actually decoded as an object, so a field the predicate declines does not advertise
     a syntax it will not honour.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#whole-value-flags
     """
     # Imported here: a module-level import would create an import cycle with _parse_cli.
@@ -1003,7 +1003,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
     casts.  Their values are read later from argv by ``_parse_cli`` in ``patch_only``
     mode.  Delete flags register value-less (``nargs=0``).
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
     """
     # Imported here: a module-level import would create an import cycle with _parse_cli.
@@ -1107,7 +1107,7 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
     Returns:
         A list of additional :class:`~confarg.cli.argparse.FlagSpec` objects.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
     """
     try:

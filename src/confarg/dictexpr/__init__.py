@@ -20,7 +20,7 @@ Typical use::
 (``${...}`` or the ``$${...}`` escape); code inspecting values before resolution
 uses it to leave such values untouched.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/07-expressions.md
 """
 

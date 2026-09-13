@@ -123,7 +123,7 @@ def _strip_locals(data: dict[str, Any], target: Any, union_tag: str) -> dict[str
     Never mutates *data*: nodes are copied only where a namespace is dropped, and
     returned as-is otherwise.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/08-locals.md#stripping
     """
     return cast("dict[str, Any]", _strip_locals_node(data, target, union_tag, []))

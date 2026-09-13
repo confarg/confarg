@@ -10,7 +10,7 @@ pairs in its own way, then delegates here for env parsing, config-file loading,
 local-variable checks, the final ``config < env < CLI`` merge and reference
 canonicalization.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/01-pipeline-and-contracts.md#the-single-merge-pipeline
     docs-dev/architecture/08-locals.md
 """
@@ -75,7 +75,7 @@ def _check_locals_are_typed(node: Any, locals_key: str, path: str) -> None:
     Such tokens come from data files (.csv/.tsv), by any route: ``files=``,
     ``__include__``, or ``--config.<key>[+]``.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
     """
     if isinstance(node, _StrToken):
@@ -124,7 +124,7 @@ def _coerce_override(value: Any, declared: Any, path: str) -> Any:
     when it swaps a container for a scalar (or the reverse). Expression tokens pass
     through untouched.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
         docs-dev/architecture/07-expressions.md#deferral-rule
     """
@@ -157,7 +157,7 @@ def _apply_locals_overrides(  # noqa: PLR0913  # recursive walk: carries both th
     *declared* is the config-file layer of the namespace. Raises ``LocalsError`` for an
     undeclared name, an add/remove operation, or a whole-namespace assignment.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
     """
     if not isinstance(override, dict):
@@ -207,7 +207,7 @@ def _iter_namespace_nodes(
     Walks the union of the key structures of all *sources* (not a merged result), so a
     namespace present in any single source is visited.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
     """
     path = path or []
@@ -245,7 +245,7 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
     *config_data* declares the locals; overrides in *env_data* and *cli_data* are
     checked against it and coerced in place. Namespaces are found at every node.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/08-locals.md
     """
     for path, keys in _iter_namespace_nodes([config_data, env_data, cli_data], target, union_tag):

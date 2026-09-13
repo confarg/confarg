@@ -134,7 +134,7 @@ def _coerce_str_value(value: Any, path: str) -> str:
 def _steal_order(variants: list[Any], *, key: Any) -> list[Any]:
     """Sort variants into stealing priority: enum > non-str non-enum > str.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/05-types-and-construction.md#stealing-rule (this order deviates
         from the intended rule)
 
@@ -299,7 +299,7 @@ def _try_coerce(ft: Any, token: _StrToken) -> Any:
     unchanged for construct() to handle.  Never raises: a failed coercion also
     returns the token.  Expression tokens are always returned unchanged.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/07-expressions.md#deferral-rule
     """
     if ft is None:
