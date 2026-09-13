@@ -107,3 +107,22 @@ front-end it needs the shared `loader`-fixture contract like the other three
 own risk", the two documentation claims must say so. Either way the claim and the test suite
 have to agree.
 See [04-cli-adapters.md](../architecture/04-cli-adapters.md).
+
+### BUG-10 — `dump_file` cannot write back a merged dict holding a coerced leaf
+
+**Where:** `src/confarg/_api.py` (`_strip_str_tokens`) · **Filed:** 2026-09-13
+**Effort:** S · **Risk:** medium
+
+`_try_coerce` coerces CLI and environment leaves eagerly so the merged dict "has the same types
+whichever channel supplied them"
+([03-cli-parsing.md#token-consumption](../architecture/03-cli-parsing.md#token-consumption)), but
+the dict branch of `dump_file` only unwraps `_StrToken`. The two coercions that yield a
+non-native leaf — `Path` (`_LEAF_COERCIONS`) and `Enum` (`_coerce_enum_value` returns the member,
+not `.value`) — reach the dumper untouched:
+`dump_file(merge(C, argv=["--out=/tmp/x"]), "c.yaml")` raises `RepresenterError: cannot represent
+an object, WindowsPath('/tmp/x')`, and JSON and TOML fail alike. The same key sourced from a
+config file dumps fine, so the round trip promised by
+[01-pipeline-and-contracts.md#public-api-seams](../architecture/01-pipeline-and-contracts.md#public-api-seams)
+holds or not depending on which channel supplied the value. Observed on 0.0.2 and on the current
+working copy. Fix direction: give the dict path the type-less half of `_serialize_leaf`
+(`Enum -> .value`, `Path -> str`), not a second conversion table.
