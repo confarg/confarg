@@ -52,18 +52,6 @@ so the script dies with `ModuleNotFoundError` on import. Nothing catches it: the
 `README.md` never invokes `myapp.py`, so `pytest-markdown-console` does not replay it, and the
 only signal is a `ty check` `unresolved-import`. Point it at a real config module or delete it.
 
-### REF-13 — `AGENTS.md` has drifted from `CLAUDE.md`
-
-**Where:** `AGENTS.md` · **Filed:** 2026-09-13
-**Effort:** S · **Risk:** low
-
-The two files are meant to tell different agents the same thing, but `AGENTS.md` stopped at an
-older revision: it still lists the public API function by function and lacks the architecture,
-boards, testing and contributing sections entirely, so a non-Claude agent never learns about
-`docs-dev/`, the drive-by ticket rule or the parity mandate. Decide whether one file is
-generated from the other or is a symlink to it; two hand-maintained copies are what produced
-the drift. Both are `.gitignore`d (`.gitignore:226-227`), so no CI check can catch it.
-
 ## Robustness
 
 ### REF-5 — `_import_dotted` conflates two failures
