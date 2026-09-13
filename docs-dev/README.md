@@ -24,3 +24,17 @@ maps source modules to documents, so you can open only what your change touches.
 | Something broken, missing, or ugly that you are not fixing right now | `todo/` |
 | A question only the maintainer can answer | `todo/questions.md` |
 | Anything a *user* of confarg needs | `README.md`, `docs/`, `examples/` |
+| A standing instruction to coding agents | `AGENTS.md` |
+
+## Agent instructions: one file, `AGENTS.md`
+
+`AGENTS.md` holds the standing instructions for every coding agent. `CLAUDE.md` is a single
+`@AGENTS.md` line — a Claude Code [memory import](https://code.claude.com/docs/en/memory),
+expanded into context at session start, so Claude reads exactly what other agents read.
+Never edit `CLAUDE.md`; edit `AGENTS.md`.
+
+Two hand-maintained copies is what this replaces: they drifted (REF-13), and because both
+files are `.gitignore`d, no CI check could have caught it. A symlink would work too, but
+creating one on Windows needs Administrator privileges or Developer Mode, and this project is
+developed on Windows. Claude-specific instructions, should any ever be needed, go *below* the
+import line in `CLAUDE.md`.
