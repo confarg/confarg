@@ -42,16 +42,15 @@ It describes a README replay harness (`test_readme_commands.py`) that no longer 
 commands are now replayed by `pytest-markdown-console`. Delete it or re-point it.
 See [12-testing.md](../architecture/12-testing.md).
 
-### REF-12 — `CLAUDE.md` points agents at a directory that does not exist
+### REF-15 — `examples/17_removing_items/myapp.py` imports a module that does not exist
 
-**Where:** `CLAUDE.md` (13 occurrences) · **Filed:** 2026-09-13
+**Where:** `examples/17_removing_items/myapp.py` · **Filed:** 2026-09-13
 **Effort:** S · **Risk:** low
 
-Every reference reads `doc-dev/`, but the directory is `docs-dev/` — including the links an
-agent is told to open first (`doc-dev/architecture/README.md`, `doc-dev/architecture/09-invariants.md`,
-the board paths). An agent that follows them literally finds nothing and carries on without the
-rationale the instructions call mandatory. `AGENTS.md` carries none of these links, which is
-its own problem (REF-13).
+`from configs.deletion import Config` — `examples/configs/src/configs/` has no `deletion.py`,
+so the script dies with `ModuleNotFoundError` on import. Nothing catches it: the example's
+`README.md` never invokes `myapp.py`, so `pytest-markdown-console` does not replay it, and the
+only signal is a `ty check` `unresolved-import`. Point it at a real config module or delete it.
 
 ### REF-13 — `AGENTS.md` has drifted from `CLAUDE.md`
 
