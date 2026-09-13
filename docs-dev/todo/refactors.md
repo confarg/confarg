@@ -96,17 +96,6 @@ neither what users do nor what the default (`None`, off) encourages. Use a reali
 such as `MYAPP_`, and keep `""` only where the empty prefix is the behavior under test.
 See [10-design-decisions.md#environment-variables-off-by-default](../architecture/10-design-decisions.md#environment-variables-off-by-default).
 
-### REF-11 — A test run leaves artifacts in the working copy
-
-**Where:** `examples/21_expressions/` · **Filed:** 2026-09-12
-**Effort:** S · **Risk:** low
-
-A full `uv run pytest` writes `saved_config_interpolated.yaml` and
-`saved_config_uninterpolated.yaml` next to the example, so every run dirties the working copy
-with untracked files that have to be deleted by hand before describing a revision. The README
-command that produces them should write to a temporary directory, or the paths should be
-ignored.
-
 ### REF-14 — A dynamic-flag test passes for the wrong reason
 
 **Where:** `tests/cli/argparse/test_gaps.py` (`test_build_dynamic_flags_exception_returns_empty`)
