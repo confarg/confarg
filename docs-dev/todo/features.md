@@ -152,6 +152,53 @@ Ansible hand config templating to Jinja2 and accept arbitrary-expression risk; O
 is now. The curated-literals-and-builtins point is the Bicep/CUE end, reachable without
 adopting a language.
 
+### FEAT-13 — Struct types that are generic
+
+**Where:** `src/confarg/_types.py` (`_resolve_type`, `_is_plain_class`) · **Filed:** 2026-09-13
+**Effort:** L · **Risk:** high
+
+A field annotated with a parameterized user generic is rejected outright: `item: GBase[Any]`, where
+`GBase[T]` is an ABC with dataclass subclasses, gives `TypeCoercionError: Unsupported leaf type
+GBase[typing.Any] at 'item'`. `_resolve_type` unwraps `TypeAliasType` and `Annotated` but not a
+generic parameterization, so `_is_dc` and `_is_plain_class` both fail their `isinstance(tp, type)`
+test, nothing else claims the type, and `_coerce_leaf` falls through to its "unsupported" arm. Tag
+resolution would fail next anyway — `issubclass(cls, GBase[Any])` raises `TypeError`. The
+workaround, never parameterizing a tag base, costs the user the type argument everywhere, because
+the bare form then trips a type checker's missing-type-argument rule.
+
+Fix direction: unwrap `get_origin()` for *user* generics before struct detection and before the
+subclass test. It cannot go into `_resolve_type` unconditionally — `_is_list`, `_is_dict` and
+`_is_union` read `get_origin` themselves, so the ordering is the design question, and
+`_resolve_type` sits under every channel
+([09-invariants.md#fragile-couplings](../architecture/09-invariants.md#fragile-couplings)).
+See [05-types-and-construction.md#type-introspection](../architecture/05-types-and-construction.md#type-introspection)
+and [#inheritance](../architecture/05-types-and-construction.md#inheritance).
+
+### FEAT-14 — Dataclass fields that are not `__init__` parameters
+
+**Where:** `src/confarg/_types.py` (`_dc_fields`, `_dc_defaults`) · **Filed:** 2026-09-13
+**Effort:** L *(M for the `init=False` half alone)* · **Risk:** high
+
+`_dc_fields` and `_dc_defaults` use `dataclasses.fields()` as a proxy for the `__init__` signature,
+but the two sets differ in **both** directions, and construction ends in `tp(**kwargs)`
+(`typedload/_construct.py`):
+
+- `field(init=False)` is in `fields()` but not in `__init__`. Its default is collected and passed
+  anyway, so a dataclass carrying `derived: int = field(init=False, default=0)` fails with a bare
+  `TypeError: __init__() got an unexpected keyword argument 'derived'` — **even when no channel
+  mentions `derived`**. Such a field cannot exist on a confarg target at all, and the failure
+  escapes confarg's own exception hierarchy.
+- `InitVar` is in `__init__` but not in `fields()`, so it cannot be set from any channel:
+  `TypeCoercionError: Unknown field(s) ['seed'] for C at ''. Valid fields: ['n']` — an error that
+  names the wrong problem.
+
+Filtering `_dc_fields` and `_dc_defaults` on `f.init` closes the first half and is mechanical; the
+second needs a decision on whether `InitVar` becomes a settable key, which is what makes this `L`.
+Both bite a user who wrote an ordinary dataclass, which sits badly with
+[10-design-decisions.md#no-custom-types-required](../architecture/10-design-decisions.md#no-custom-types-required):
+requiring users to *avoid* a stdlib field option is a field marker in reverse.
+See [05-types-and-construction.md#structs-collections-and-defaults](../architecture/05-types-and-construction.md#structs-collections-and-defaults).
+
 ## Unvetted ideas
 
 Carried over from an earlier architecture review. None is decided; each needs a design pass
