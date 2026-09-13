@@ -11,7 +11,6 @@ Agent Notes:
 from __future__ import annotations
 
 import enum
-from pathlib import Path
 from typing import Any
 
 from confarg._callable import _serialize_callable
@@ -36,6 +35,7 @@ from confarg._types import (
     _union_args_no_none,
 )
 from confarg.exceptions import ConfargError
+from confarg.typedload._coerce import _LEAF_SERIALIZERS, _is_registered_leaf
 from confarg.typedload._construct import _disambiguate_struct
 
 
@@ -78,7 +78,7 @@ def _serialize_by_type(  # noqa: PLR0911
         return _serialize_union(tp, instance, path, union_tag, tag_policy)
     if _is_namedtuple(tp):
         return _serialize_namedtuple(tp, instance, path, union_tag, tag_policy)
-    if _is_struct(tp):
+    if _is_struct(tp) and not _is_registered_leaf(tp):
         return _serialize_struct(tp, instance, path, union_tag, tag_policy)
     if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
         return _serialize_collection(tp, instance, path, union_tag, tag_policy)
@@ -208,15 +208,23 @@ def _serialize_dict(
 
 
 def _serialize_leaf(tp: Any, value: Any) -> Any:
-    """Serialize a leaf value: Enum → .value, Path → str, float → float, else passthrough."""
+    """Serialize a leaf value: Enum → .value, registered leaf → its serializer, else passthrough.
+
+    Agent Notes:
+        docs-dev/architecture/05-types-and-construction.md#serialization
+    """
     if isinstance(value, enum.Enum):
         return value.value
-    if isinstance(value, Path):
-        return str(value)
-    if tp is float and isinstance(value, int) and not isinstance(value, bool):
-        return float(value)
+    # Before the registry loop: a token is a str subclass, and registering ``str`` must not
+    # let one leak out. See docs-dev/architecture/09-invariants.md#tokens-mean-untyped-text.
     if type(value) is _StrToken:
         return str(value)
+    for leaf_tp, serialize in _LEAF_SERIALIZERS.items():
+        # isinstance, not an exact type test: a real Path is a WindowsPath or a PosixPath.
+        if isinstance(value, leaf_tp):
+            return serialize(value)
+    if tp is float and isinstance(value, int) and not isinstance(value, bool):
+        return float(value)
     if isinstance(value, type):
         return f"{value.__module__}.{value.__qualname__}"
     return value

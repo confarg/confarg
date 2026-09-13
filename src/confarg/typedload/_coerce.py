@@ -30,6 +30,7 @@ _TRUTHY = frozenset({"true", "1", "yes", "on"})
 _FALSY = frozenset({"false", "0", "no", "off"})
 _NONE_TOKENS = frozenset({"none", "null"})
 _LEAF_COERCIONS: dict[type, Any] = {Path: Path}
+_LEAF_SERIALIZERS: dict[type, Any] = {Path: str}
 
 
 def _src_type(value: Any) -> str:

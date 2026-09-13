@@ -108,24 +108,6 @@ own risk", the two documentation claims must say so. Either way the claim and th
 have to agree.
 See [04-cli-adapters.md](../architecture/04-cli-adapters.md).
 
-### BUG-11 — A registered leaf type cannot be dumped, by either path
-
-**Where:** `src/confarg/_serialize.py` (`_serialize_leaf`) · **Filed:** 2026-09-13
-**Effort:** S · **Risk:** medium
-
-`_serialize_leaf` names `Enum` and `Path` one by one, so a type added with
-`register_leaf_type` is a leaf on the way *in* and not on the way *out*. With
-`register_leaf_type(UUID, UUID)` and `id: UUID`, `merge(A, argv=["--id", "…"])` stores a
-`UUID` and `dump_file` of that dict raises (`RepresenterError` / `TypeError` in YAML, JSON and
-TOML) — BUG-10 all over again for every type but `Path`. Worse on the typed path:
-`dump(A(id=…))` does not raise, it takes the `UUID` for a struct and emits
-`{'hex': …, 'bytes': b'…', 'fields': (…), …}`, which is silent garbage that no loader reads
-back. Fix direction: one branch for any instance of a type in `_LEAF_COERCIONS` → `str(value)`
-(which subsumes the `Path` branch), so registration makes a type a leaf on both sides. It
-changes `dump()` output, hence a decision to record in
-[10-design-decisions.md](../architecture/10-design-decisions.md).
-See [05-types-and-construction.md#serialization](../architecture/05-types-and-construction.md#serialization).
-
 ### BUG-12 — `_UnionSeqToken` leaks into dumps
 
 **Where:** `src/confarg/_serialize.py` (`_serialize_leaf`) · **Filed:** 2026-09-13
@@ -155,3 +137,18 @@ exact file spelling — `{"__cast__": "int", "__value__": "5"}`, read back by
 survives the round trip intact. Only the untyped path is affected; a `_Pinned` never reaches
 `dump(instance)`, which serializes a constructed object.
 See [05-types-and-construction.md#cast-pinning-in-files](../architecture/05-types-and-construction.md#cast-pinning-in-files).
+
+### BUG-14 — `_needs_tag` counts a registered leaf as a struct variant
+
+**Where:** `src/confarg/_serialize.py` (`_needs_tag`) · **Filed:** 2026-09-13 ·
+*(inferred — from code reading; currently unreachable, no test covers it)*
+**Effort:** S · **Risk:** low
+
+`_needs_tag` builds `struct_vars` with `_is_struct`, which is `True` for a registered leaf
+type that happens to have an `__init__` (`UUID` does). In a union of one struct and one such
+leaf it therefore sees two struct variants and hands the leaf to `_disambiguate_struct` as a
+candidate, which can tag — or refuse to tag — the wrong way. Unreachable today because
+`_serialize_by_type` now routes a registered leaf to `_serialize_leaf`, so `serialized` is a
+scalar and the `isinstance(serialized, dict)` guard fires first; the filter should still use
+the same registry exclusion as the dispatch
+([05-types-and-construction.md#leaf-coercion](../architecture/05-types-and-construction.md#leaf-coercion)).

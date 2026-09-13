@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 import pytest
 from hypothesis import strategies as st
 
+from confarg.typedload._coerce import _LEAF_COERCIONS, _LEAF_SERIALIZERS
 from tests._loaders import ALL_LOADERS, POPULATING_LOADERS, REPEATED_FLAG_LOADERS, SPACE_SEP_LOADERS
 
 # ---------------------------------------------------------------------------
@@ -528,6 +529,26 @@ def tmp_json(tmp_path: Path):
         return p
 
     return _write
+
+
+# ---------------------------------------------------------------------------
+# Fixtures — leaf-type registry
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def leaf_registry():
+    """Restore both leaf registries after a test that calls register_leaf_type.
+
+    ``register_leaf_type`` writes two dicts, so cleaning up only ``_LEAF_COERCIONS``
+    leaks a serializer into later tests. Snapshot and restore both.
+    """
+    coercions, serializers = dict(_LEAF_COERCIONS), dict(_LEAF_SERIALIZERS)
+    yield
+    _LEAF_COERCIONS.clear()
+    _LEAF_COERCIONS.update(coercions)
+    _LEAF_SERIALIZERS.clear()
+    _LEAF_SERIALIZERS.update(serializers)
 
 
 # ---------------------------------------------------------------------------

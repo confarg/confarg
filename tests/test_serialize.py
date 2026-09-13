@@ -12,6 +12,7 @@ from dataclasses import dataclass as _dc
 from pathlib import Path
 from typing import Literal, Union
 from unittest import mock
+from uuid import UUID
 
 import pytest
 
@@ -590,6 +591,126 @@ class TestDumpRawDictCoercedLeaves:
 
         assert raw != reloaded
         assert confarg.build(WithPath, raw) == confarg.build(WithPath, reloaded)
+
+
+# ---------------------------------------------------------------------------
+# Registered leaf types
+# ---------------------------------------------------------------------------
+
+
+class _Version:
+    """A registered leaf type whose ``str()`` is *not* its wire form."""
+
+    def __init__(self, major: int, minor: int) -> None:
+        self.major = major
+        self.minor = minor
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Version) and (self.major, self.minor) == (other.major, other.minor)
+
+    def __hash__(self) -> int:
+        return hash((self.major, self.minor))
+
+    def __str__(self) -> str:
+        return f"<Version {self.major}.{self.minor}>"
+
+
+def _coerce_version(value: object) -> _Version:
+    major, minor = str(value).split(".")
+    return _Version(int(major), int(minor))
+
+
+_UUID_TEXT = "12345678-1234-5678-1234-567812345678"
+
+
+@pytest.mark.usefixtures("leaf_registry")
+class TestDumpRegisteredLeafTypes:
+    """A type registered with register_leaf_type is a leaf on the way out too.
+
+    Registration makes a type a leaf on the way in even when it looks like a
+    struct; serialization must mirror that, or ``dump()`` emits the type's
+    fields and ``dump_file()`` hands the writers an object they cannot
+    represent.
+    """
+
+    def test_dump_instance(self) -> None:
+        """dump() emits the scalar form, not the type's attributes."""
+        confarg.register_leaf_type(UUID, UUID)
+        WithUuid = make_target("id", UUID, default=UUID(int=0))
+        assert confarg.dump(WithUuid(id=UUID(_UUID_TEXT))) == {"id": _UUID_TEXT}
+
+    @pytest.mark.parametrize("suffix", [".toml", ".yaml", ".json"])
+    def test_dump_file_from_raw_dict(self, tmp_path: Path, suffix: str) -> None:
+        """A registered leaf coerced at merge time is written as a scalar, in every format."""
+        confarg.register_leaf_type(UUID, UUID)
+        WithUuid = make_target("id", UUID, default=UUID(int=0))
+        raw = confarg.merge(WithUuid, argv=["--id", _UUID_TEXT], env={})
+        assert raw["id"] == UUID(_UUID_TEXT)
+
+        path = tmp_path / f"out{suffix}"
+        confarg.dump_file(raw, path)
+        reloaded = confarg.merge(WithUuid, argv=[], env={}, files=[path])
+        assert reloaded == {"id": _UUID_TEXT}
+        assert confarg.build(WithUuid, raw) == confarg.build(WithUuid, reloaded)
+
+    def test_dump_file_from_instance(self, tmp_path: Path) -> None:
+        """The typed path round-trips through a file as well."""
+        confarg.register_leaf_type(UUID, UUID)
+        WithUuid = make_target("id", UUID, default=UUID(int=0))
+        path = tmp_path / "out.yaml"
+        confarg.dump_file(WithUuid(id=UUID(_UUID_TEXT)), path)
+        assert confarg.load(WithUuid, argv=[], env={}, files=[path]) == WithUuid(id=UUID(_UUID_TEXT))
+
+    def test_inside_containers(self, tmp_path: Path) -> None:
+        """Registered leaves are converted wherever they sit, not only at the top level."""
+        confarg.register_leaf_type(UUID, UUID)
+        WithUuids = make_target("ids", list[UUID], default_factory=list)
+        raw = confarg.merge(WithUuids, argv=["--ids", _UUID_TEXT], env={})
+
+        path = tmp_path / "out.yaml"
+        confarg.dump_file(raw, path)
+        assert confarg.merge(WithUuids, argv=[], env={}, files=[path]) == {"ids": [_UUID_TEXT]}
+
+    def test_as_dict_value_and_key(self) -> None:
+        """A registered leaf serializes as a dict value and as a dict key."""
+        confarg.register_leaf_type(UUID, UUID)
+        WithMap = make_target("ids", dict[UUID, UUID], default_factory=dict)
+        dumped = confarg.dump(WithMap(ids={UUID(_UUID_TEXT): UUID(int=0)}))
+        assert dumped == {"ids": {_UUID_TEXT: str(UUID(int=0))}}
+
+    def test_optional(self) -> None:
+        """A registered leaf in a union is serialized through its variant."""
+        confarg.register_leaf_type(UUID, UUID)
+        WithOptional = make_target("id", Union[UUID, None], default=None)
+        assert confarg.dump(WithOptional(id=UUID(_UUID_TEXT))) == {"id": _UUID_TEXT}
+        assert confarg.dump(WithOptional(id=None)) == {"id": None}
+
+    def test_serialize_hook_is_used(self, tmp_path: Path) -> None:
+        """An explicit serialize= callable replaces the str() default, on both paths."""
+        confarg.register_leaf_type(_Version, _coerce_version, serialize=lambda v: f"{v.major}.{v.minor}")
+        WithVersion = make_target("v", _Version, default=_Version(0, 0))
+
+        assert confarg.dump(WithVersion(v=_Version(1, 2))) == {"v": "1.2"}
+
+        path = tmp_path / "out.yaml"
+        confarg.dump_file(confarg.merge(WithVersion, argv=["--v", "1.2"], env={}), path)
+        assert confarg.merge(WithVersion, argv=[], env={}, files=[path]) == {"v": "1.2"}
+
+    @pytest.mark.parametrize("suffix", [".toml", ".yaml", ".json"])
+    def test_serialize_hook_may_return_a_non_string(self, tmp_path: Path, suffix: str) -> None:
+        """A serializer returning a native scalar keeps that type in the file."""
+        confarg.register_leaf_type(_Version, _coerce_version, serialize=lambda v: v.major)
+        WithVersion = make_target("v", _Version, default=_Version(0, 0))
+
+        path = tmp_path / f"out{suffix}"
+        confarg.dump_file(WithVersion(v=_Version(7, 0)), path)
+        assert confarg.merge(WithVersion, argv=[], env={}, files=[path]) == {"v": 7}
+
+    def test_serialize_defaults_to_str(self) -> None:
+        """Omitting serialize= falls back to str(), warts and all."""
+        confarg.register_leaf_type(_Version, _coerce_version)
+        WithVersion = make_target("v", _Version, default=_Version(0, 0))
+        assert confarg.dump(WithVersion(v=_Version(1, 2))) == {"v": "<Version 1.2>"}
 
 
 # ---------------------------------------------------------------------------

@@ -49,7 +49,7 @@ def _setup_custom_leaf_type() -> None:
     from .test_readme_commands import load_script_module  # noqa: PLC0415  # circular at module level
 
     mod = load_script_module("4_leaf_types", "custom_leaf_type.py")
-    confarg.register_leaf_type(mod.Int, mod.coerce_int)
+    confarg.register_leaf_type(mod.Int, mod.coerce_int, serialize=mod.serialize_int)
 
 
 @dataclass(frozen=True)

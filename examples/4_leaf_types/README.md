@@ -104,3 +104,17 @@ Config(input=Int(value=None))
 ```
 
 Without leaf type registration, initializing a custom `Int` would require an init dict (`--input.value 42`) that would make its initialization different from plain integers.
+
+### Writing the value back
+
+Registration makes `Int` a leaf in both directions: [`confarg.dump`](https://confarg.github.io/confarg/reference/#confarg.dump) and [`confarg.dump_file`](https://confarg.github.io/confarg/reference/#confarg.dump_file) write it as a single scalar rather than as an init dict. How that scalar is spelled is the `serialize` argument, the inverse of `coerce`:
+
+```python
+def serialize_int(value: Int) -> str | int:
+    return "NaN" if value.value is None else value.value
+
+
+confarg.register_leaf_type(Int, coerce_int, serialize=serialize_int)
+```
+
+`serialize` defaults to `str`, which is the wire form of types like `UUID`, `Decimal` or `Path`. Our `Int` is not one of them — `str(Int(42))` is the debugging form `Int(value=42)`, which `coerce_int` would refuse on the way back in — so it passes an explicit serializer, and a dumped configuration loads again unchanged.
