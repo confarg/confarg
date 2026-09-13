@@ -130,12 +130,23 @@ so widening it to `isinstance` is a decision, not a typo fix: it also flattens a
 **Effort:** S · **Risk:** low
 
 `--count.int 5` stores `_Pinned(tp=int, value='5')` in the merged dict (`_cast.resolve_forced_value`),
-and no writer accepts a `_Pinned`: `dump_file` raises in YAML, JSON and TOML alike. Unlike the
-coerced leaves of BUG-10 this one loses nothing when written, because the cast already has an
-exact file spelling — `{"__cast__": "int", "__value__": "5"}`, read back by
-`_construct._try_pinned_dict` — so `_serialize_untyped` can emit that dict and the pin
-survives the round trip intact. Only the untyped path is affected; a `_Pinned` never reaches
-`dump(instance)`, which serializes a constructed object.
+and no writer accepts a `_Pinned`: `dump_file` raises in YAML, JSON and TOML alike. Emit the
+file spelling of the cast instead — `{"__cast__": "int", "__value__": "5"}`, read back by
+`_construct._try_pinned_dict` — unwrapping the `_StrToken` in `__value__` so it does not trip
+BUG-12. A `__cast__` dict that came from a file already re-dumps unchanged, so the emission is
+idempotent.
+
+Writing the *coerced* value instead, as BUG-10 does for a coerced leaf, is tempting and wrong.
+It is sufficient while the pin only separates scalars — a file is self-describing and its values
+are never re-interpreted, so `int | str` and `str | int` both read `5` back as an `int`. It is
+lossy as soon as a non-scalar leaf variant precedes the scalar: `Color | str` reads `v = "FOO"`
+back as `Color.FOO` and `Path | str` reads `v = "x/y"` back as a `Path`, by declaration order.
+`--v.str FOO` builds `'FOO'` and a plain `v = "FOO"` dump does not, which breaks
+`build(merge()) == build(merge(dumped))`
+([10](../architecture/10-design-decisions.md#dump-round-trips-at-the-built-object)).
+`_serialize_untyped` is type-blind and cannot tell the two apart, so it must keep the pin.
+Only the untyped path is affected; a `_Pinned` never reaches `dump(instance)`, which serializes
+a constructed object — the typed path has its own version of this, BUG-15.
 See [05-types-and-construction.md#cast-pinning-in-files](../architecture/05-types-and-construction.md#cast-pinning-in-files).
 
 ### BUG-14 — `_needs_tag` counts a registered leaf as a struct variant
@@ -152,3 +163,22 @@ candidate, which can tag — or refuse to tag — the wrong way. Unreachable tod
 scalar and the `isinstance(serialized, dict)` guard fires first; the filter should still use
 the same registry exclusion as the dispatch
 ([05-types-and-construction.md#leaf-coercion](../architecture/05-types-and-construction.md#leaf-coercion)).
+
+### BUG-15 — `dump()` drops a leaf a union variant will steal back
+
+**Where:** `src/confarg/_serialize.py` (`_serialize_union`) · **Filed:** 2026-09-13
+**Effort:** L · **Risk:** medium
+
+`dump(E(v="FOO"))` for `v: Color | str` emits `{'v': 'FOO'}`, and loading that file back builds
+`Color.FOO`: `load(dump(x)) != x`, the one round trip
+[01-pipeline-and-contracts.md#public-api-seams](../architecture/01-pipeline-and-contracts.md#public-api-seams)
+does promise. Same for `Path | str` holding a plain `str`. Native file values are matched in
+declaration order, so any `Enum`, `Literal`, registered leaf or type-ref variant ahead of the
+scalar steals the bare scalar on the way back in. No `_Pinned` is involved — this is the typed
+sibling of BUG-13, and unlike `_serialize_untyped` the typed path knows the declared type and
+can decide. Fix direction: a `_needs_cast` check on leaf variants mirroring `_needs_tag` on
+struct variants — emit `{__cast__, __value__}` only when re-reading the bare scalar would not
+select the variant that produced it. Precedent: YAML emitters tag a scalar (`!!str 5`) exactly
+when the plain form would resolve to another type. It changes `dump()` output, so it needs a
+decision recorded in [10-design-decisions.md](../architecture/10-design-decisions.md).
+See [05-types-and-construction.md#serialization](../architecture/05-types-and-construction.md#serialization).
