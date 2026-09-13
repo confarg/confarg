@@ -93,14 +93,3 @@ front-end it needs the shared `loader`-fixture contract like the other three
 own risk", the two documentation claims must say so. Either way the claim and the test suite
 have to agree.
 See [04-cli-adapters.md](../architecture/04-cli-adapters.md).
-
-## Error handling
-
-### BUG-5 — `build_dynamic_flags` swallows every error
-
-**Where:** `src/confarg/cli/argparse/_build.py` · **Filed:** 2026-09-12
-**Effort:** S · **Risk:** low
-
-Dynamic flag registration catches everything, so a genuine failure inside it is invisible: the
-only symptom is the framework later rejecting a flag that should exist. At minimum the
-swallowed exception should surface as a `ConfargWarning`.

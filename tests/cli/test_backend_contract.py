@@ -20,6 +20,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import math
+import warnings
 from collections.abc import (
     Callable,  # noqa: TC003  # used in a runtime dataclass annotation confarg resolves via get_type_hints
 )
@@ -32,9 +33,10 @@ from typing import TYPE_CHECKING, Any, Literal
 import pytest
 
 import confarg
+import confarg.cli.argparse._build as build_mod
 from confarg._files import INCLUDE_KEY
 from confarg.cli.argparse._build import build_static_flags
-from confarg.exceptions import ConfargError, MissingFieldError, TypeCoercionError
+from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError
 from tests.conftest import AppConfig, CacheConfig, DbConfig, make_target
 
 if TYPE_CHECKING:
@@ -1795,3 +1797,36 @@ n: ${locals.k * 2}
         cfg = tmp_yaml(f"db:\n  {INCLUDE_KEY}: ./db.yaml\n")
         with pytest.raises(ConfargError, match=r"db\.locals\.nope"):
             loader.load(_LocalsNested, argv=["--config", str(cfg), "--db.locals.nope", "x"], env={})
+
+
+# ---------------------------------------------------------------------------
+# Dynamic flag registration failures
+# ---------------------------------------------------------------------------
+
+
+class TestDynamicFlagFailureContract:
+    """A failure inside dynamic flag registration is announced by every front-end (BUG-5)."""
+
+    def test_registration_failure_warns_in_every_front_end(
+        self,
+        populating_loader: ConfargLoader,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``populate_*`` keeps its static flags but warns that the dynamic ones are missing.
+
+        All three adapters route registration through the same ``build_dynamic_flags``, so one
+        warning path has to cover them; silence would leave the user with nothing but the
+        framework's own "unknown flag" message.
+        """
+
+        def _boom(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            msg = "deliberate boom"
+            raise RuntimeError(msg)
+
+        monkeypatch.setattr(build_mod, "_collect_fn_paths_from_argv", _boom)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            flags = populating_loader.registered_flags(Simple)
+        assert flags is not None
+        assert "host" in flags  # static registration is unaffected
+        assert any(issubclass(w.category, ConfargWarning) and "deliberate boom" in str(w.message) for w in caught)
