@@ -14,6 +14,7 @@ import argparse
 import json
 import sys
 import types
+import warnings
 from collections.abc import (
     Callable,  # noqa: TC003  # runtime import: confarg resolves test-class annotations via get_type_hints
 )
@@ -45,6 +46,7 @@ from confarg.cli.argparse._completion import (
 )
 from confarg.cli.argparse._register import _add_callable_bind_flags, _add_callable_fn_flags, _register_spec
 from confarg.cli.argparse._spec import FlagSpec, _get_field_docstrings
+from confarg.exceptions import ConfargWarning
 from tests._cov_helpers import (
     _COV_MOD,
     _CovCallableCls,
@@ -310,16 +312,29 @@ class TestBuildCallableSpecs:
         names = [s.name for s in specs]
         assert "fn.bind.x" in names
 
-    def test_build_dynamic_flags_exception_from_collect(self, monkeypatch) -> None:
-        """build_dynamic_flags returns [] when an unexpected exception occurs."""
+    def test_build_dynamic_flags_warns_on_internal_error(self, monkeypatch) -> None:
+        """An unexpected exception returns [] and is announced as a ConfargWarning (BUG-5).
+
+        Registration stays best-effort — no exception escapes into ``populate_*`` — but the
+        failure must name itself, or the only symptom is the framework later rejecting a flag
+        that should exist.
+        """
 
         def _boom(*args, **kwargs):
             msg = "deliberate boom"
             raise RuntimeError(msg)
 
         monkeypatch.setattr(build_mod, "_collect_fn_paths_from_argv", _boom)
-        result = build_dynamic_flags(_WithCovCallable, [])
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = build_dynamic_flags(_WithCovCallable, [])
         assert result == []
+        assert len(caught) == 1
+        assert issubclass(caught[0].category, ConfargWarning)
+        message = str(caught[0].message)
+        assert "RuntimeError" in message
+        assert "deliberate boom" in message
+        assert "no dynamic flags" in message
 
     def test_collect_fn_paths_from_argv_equals_form(self) -> None:
         """_collect_fn_paths_from_argv handles --field.fn=path (= form)."""

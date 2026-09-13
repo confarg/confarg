@@ -77,6 +77,16 @@ forms (escaped openers, `.json`) statically would clutter `--help`. Dynamic regi
 **best-effort**: any exception returns no extra flags rather than breaking `populate_*`; the
 worst case is the framework rejecting a flag.
 
+Best-effort, but not silent (BUG-5). A failure emits a `ConfargWarning` naming the original
+exception: the rejection the user then sees comes from the host framework and says nothing
+about the real cause, so without the warning a bug inside registration is indistinguishable
+from a flag the user mistyped. Swallowing stays the default because the alternative — letting
+the exception escape — takes down every `populate_*` call and shell completion over a flag
+that may not even be typed; a caller who wants it fatal has
+`warnings.filterwarnings("error", ConfargWarning)`, the hatch `exceptions.py` documents. The
+warning fires from the one shared `build_dynamic_flags`, so all three adapters report
+identically; vanilla `load()` registers nothing and has no analogue.
+
 Escaped opener specs carry no group: sharing a group name with a different description
 trips cyclopts' "2 distinct Group objects with same name" check.
 

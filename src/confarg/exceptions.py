@@ -168,8 +168,9 @@ class ConfargWarning(UserWarning):
     """Emitted for non-fatal configuration issues.
 
     Currently raised when an environment variable matches the configured prefix
-    but does not correspond to any known field on the target type.  Convert to
-    errors in your test-suite via::
+    but does not correspond to any known field on the target type, and when
+    dynamic CLI flag registration fails (the flags are skipped, not the parse).
+    Convert to errors in your test-suite via::
 
         warnings.filterwarnings("error", category=confarg.exceptions.ConfargWarning)
     """

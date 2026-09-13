@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -58,7 +59,7 @@ from confarg._types import (
     _var_param_names,
 )
 from confarg.cli.argparse._spec import FlagSpec, _build_help, _get_field_docstrings, _get_field_meta
-from confarg.exceptions import SymbolImportError
+from confarg.exceptions import ConfargWarning, SymbolImportError
 from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_registered_leaf
 
 _SCALAR_CAST_TYPES: frozenset[type] = frozenset({str, int, float, bool})
@@ -1053,7 +1054,11 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
     Also registers the collection-patch flags (``--field.N``, ``--field+``,
     ``--field.N-``, ``--field.key``) and ``.json`` casts found in ``argv``.
 
-    Errors are silently ignored: on any failure no dynamic flag is returned.
+    Registration is best-effort: no exception escapes into ``populate_*``.  A failure
+    returns no dynamic flag and emits a :class:`~confarg.exceptions.ConfargWarning`
+    naming it, since otherwise the only symptom is the host framework later rejecting a
+    flag that should exist.  Turn it into an error with
+    ``warnings.filterwarnings("error", ConfargWarning)``.
 
     Args:
         target: The top-level dataclass type.
@@ -1064,6 +1069,9 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
 
     Returns:
         A list of additional :class:`~confarg.cli.argparse.FlagSpec` objects.
+
+    Agent Notes:
+        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
     """
     try:
         config_dict: dict[str, Any] = {}
@@ -1096,7 +1104,15 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         if config_flag:
             result.extend(_collect_config_argv_specs(argv_list, config_flag))
         result.extend(_collect_patch_argv_specs(target, argv_list, union_tag, config_flag))
-    except Exception:  # noqa: BLE001 — best-effort; must not crash populate_parser
+    except Exception as exc:  # noqa: BLE001 — best-effort; must not crash populate_parser
+        warnings.warn(
+            f"Dynamic CLI flag registration failed ({type(exc).__name__}: {exc});"
+            " no dynamic flags were registered, so flags discoverable only from argv"
+            " (collection patches, '.json' casts, callable bind parameters, scoped"
+            f" --{config_flag} flags) may be rejected as unknown.",
+            ConfargWarning,
+            stacklevel=2,
+        )
         return []
     else:
         return result
