@@ -1,8 +1,8 @@
 # docs-dev
 
-Documentation for contributors and coding agents working *on* confarg. It is internal: the
-published site (`docs/`) is built for people *using* the library, and nothing here is copied
-into it.
+Reference documentation for contributors and coding agents working *on* confarg: why the code
+is the way it is, and what is left to do. It is internal: the published site (`docs/`) is built
+for people *using* the library, and nothing here is copied into it.
 
 | Folder | Holds |
 |---|---|
@@ -24,7 +24,15 @@ maps source modules to documents, so you can open only what your change touches.
 | Something broken, missing, or ugly that you are not fixing right now | `todo/` |
 | A question only the maintainer can answer | `todo/questions.md` |
 | Anything a *user* of confarg needs | `README.md`, `docs/`, `examples/` |
-| A standing instruction to coding agents | `AGENTS.md` |
+| A standing instruction to coding agents | `AGENTS.md`, or the protocol folder it names |
+
+## Reference here, protocol elsewhere
+
+These folders describe the project; they do not tell anyone how to work on it. The step
+protocols — read order, docstring conventions, test-first bug fixing, how to file and close a
+ticket — live in their own folder, which `AGENTS.md` points to. Nothing here links to it: this
+documentation has to stand on its own for any reader, and instructions written for one class of
+reader would make it depend on them.
 
 ## Agent instructions: one file, `AGENTS.md`
 
@@ -38,3 +46,6 @@ files are `.gitignore`d, no CI check could have caught it. A symlink would work 
 creating one on Windows needs Administrator privileges or Developer Mode, and this project is
 developed on Windows. Claude-specific instructions, should any ever be needed, go *below* the
 import line in `CLAUDE.md`.
+
+Only what an agent needs in *every* session stays in `AGENTS.md`; a protocol that matters for
+one kind of task is loaded from the protocol folder when that task comes up.

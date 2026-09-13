@@ -5,8 +5,9 @@ the documented intent. See [README.md](README.md) for the ticket format.
 
 ## Parity gaps
 
-Cross-channel parity is mandatory (CLAUDE.md); every entry here is a violation nobody has
-approved, not a design choice.
+Cross-channel parity is mandatory
+([09-invariants.md#cross-channel-parity](../architecture/09-invariants.md#cross-channel-parity));
+every entry here is a violation nobody has approved, not a design choice.
 
 ### BUG-2 — Adapters cannot set a scalar root from the CLI
 
