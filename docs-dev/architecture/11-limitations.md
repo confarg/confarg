@@ -18,6 +18,12 @@ the boundary moves here.
   be derived from it. The error surfaces at validation instead, with the expression text.
 - `--config.<path>+` fragments keep their references anchored at the merged root, not at the
   mount point ([07](07-expressions.md#reference-anchoring)).
+- A reference to a whole node substitutes that node's *value*, so each referencing site is
+  constructed separately: two fields referring to one struct hold equal, non-identical
+  objects. There is no way to share one instance
+  ([07](07-expressions.md#referencing-a-whole-subtree)).
+- In a `resolve()`d dict those paths do alias one sub-dict, so mutating it in place reaches
+  every site that referenced it. Inspect and dump the resolved dict; do not edit it.
 
 ## Collections
 
