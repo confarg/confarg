@@ -1,7 +1,8 @@
 # Bugs
 
 Defects, unapproved divergences between front-ends or channels, and code that deviates from
-the documented intent. See [README.md](README.md) for the ticket format.
+the documented intent. See [README.md](README.md) for the ticket format, including the
+[reproduction snippet](README.md#reproduction) every entry here carries.
 
 ## Parity gaps
 
@@ -11,42 +12,125 @@ every entry here is a violation nobody has approved, not a design choice.
 
 ### BUG-3 — A root-level JSON cast is refused in the environment
 
-**Where:** `src/confarg/_parse_env.py` (`_apply_env_json_cast`) · **Filed:** 2026-09-12 ·
-*(inferred — from code reading, no test covers it)*
+**Where:** `src/confarg/_parse_env.py` (`_apply_env_json_cast`) · **Filed:** 2026-09-12
 **Effort:** M · **Risk:** high
 
-CLI `--json '{…}'` injects a whole configuration, but `<PREFIX>JSON` is declined at the root
-and then reported as an unknown field. Confirm with a test first: if it reproduces, the fix
-belongs in the canonical cast path rather than a second special case in `_parse_env`.
+CLI `--json '{…}'` injects a whole configuration; `<PREFIX>JSON` is declined at the root, then
+warned about as an unknown field and dropped, so the configuration silently keeps its defaults.
+The fix belongs in the canonical cast path rather than in a second special case in `_parse_env`.
 
-### BUG-6 — Subclass flags are registered only for subclasses already imported
+```python
+from dataclasses import dataclass
+import confarg
 
-**Where:** `src/confarg/cli/argparse/_build.py` (`tp.__subclasses__()`) · **Filed:** 2026-09-12 ·
-*(inferred — from code reading, no test covers it)*
+@dataclass
+class Config:
+    host: str = "localhost"
+    port: int = 8080
+
+blob = '{"host": "db", "port": 5432}'
+print("cli:", confarg.load(Config, argv=["--json", blob]))
+print("env:", confarg.load(Config, argv=[], env={"MYAPP_JSON": blob}, env_prefix="MYAPP_"))
+# expected: cli: Config(host='db', port=5432)
+#           env: Config(host='db', port=5432)
+# actual:   cli: Config(host='db', port=5432)
+#           ConfargWarning: Environment variable 'MYAPP_JSON' has no matching field
+#           (segment 'json' not found in Config). Known fields: ['host', 'port'].
+#           The variable will be ignored.
+#           env: Config(host='localhost', port=8080)
+```
+
+### BUG-6 — The subclass selector flag is registered only for subclasses already imported
+
+**Where:** `src/confarg/cli/argparse/_build.py` (`tp.__subclasses__()`) · **Filed:** 2026-09-12
 **Effort:** L · **Risk:** medium
 
-Flag registration for a base-class field enumerates `__subclasses__()` at parser-build time, so
-a subclass that has not been imported yet contributes no flags. Since unknown CLI flags are
-errors, `--f.class=pkg.Sub --f.only_in_sub=1` would fail where the same keys in a file succeed —
+`_collect_struct_specs` registers the `--<field>.<union_tag>` selector only when
+`tp.__subclasses__()` is non-empty at parser-build time, so a plugin subclass that has not been
+imported yet leaves the host parser with no way to name it. The subclass's own field flags do
+arrive — the argv scan imports the class named by `--<field>.class` and registers them — so the
+selector is the single missing flag, and the same keys in a config file succeed because
 `build()` imports the tagged class itself. The same import dependence is why subclass inference
 was rejected ([10-design-decisions.md#no-implicit-subclass-inference](../architecture/10-design-decisions.md#no-implicit-subclass-inference));
-here it leaks into the CLI channel. Confirm with a test first.
+here it leaks into the CLI channel.
 See [04-cli-adapters.md#union-inheritance-and-cast-flags](../architecture/04-cli-adapters.md#union-inheritance-and-cast-flags).
+
+```python
+# handlers.py
+from dataclasses import dataclass
+
+@dataclass
+class Handler:
+    name: str = "base"
+```
+
+```python
+# plugins.py — a plugin module the application does not import
+from dataclasses import dataclass
+from handlers import Handler
+
+@dataclass
+class FileHandler(Handler):
+    path: str = "/var/log/a"
+```
+
+```python
+# app.py
+import argparse
+from dataclasses import dataclass, field
+from handlers import Handler
+from confarg.cli.argparse import populate_parser, from_namespace
+
+@dataclass
+class Config:
+    handler: Handler = field(default_factory=Handler)
+
+argv = ["--handler.class", "plugins.FileHandler", "--handler.path", "/var/log/a"]
+parser = argparse.ArgumentParser()
+populate_parser(Config, parser, argv=argv)
+print(from_namespace(Config, parser.parse_args(argv), argv=argv))
+# expected: Config(handler=FileHandler(name='base', path='/var/log/a'))
+#           — what the same keys in a file already build:
+#           confarg.build(Config, {"handler": {"class": "plugins.FileHandler",
+#                                              "path": "/var/log/a"}})
+# actual:   app.py: error: unrecognized arguments: --handler.class plugins.FileHandler
+#           (--handler.path was registered; only the selector is missing)
+```
 
 ### BUG-16 — A NamedTuple takes a whole `{...}` token in the environment but not on the CLI
 
 **Where:** `src/confarg/_parse_cli.py` (`_accepts_object_value`) · **Filed:** 2026-09-14
 **Effort:** S · **Risk:** medium
 
-`MYAPP_NT='{"a": 5}'` builds `NT(a=5, b=2)`; `--nt '{"a": 5}'` stores the token raw and
-`build()` fails with `Cannot construct NT at 'nt': expected list, tuple, or dict, got
-_StrToken`. `_parse_env` tests `_is_namedtuple` in both its direct and its union arm;
-`_accepts_object_value` tests `_is_dc`, which a NamedTuple is not, so neither `NT` nor
-`NT | None` qualifies. Fixing it means adding the arm *and* checking it against the
-fixed-tuple consumption path a NamedTuple field also has
+`_parse_env` tests `_is_namedtuple` in both its direct and its union arm; `_accepts_object_value`
+tests `_is_dc`, which a NamedTuple is not, so neither `NT` nor `NT | None` qualifies and the CLI
+stores the token raw. Fixing it means adding the arm *and* checking it against the fixed-tuple
+consumption path a NamedTuple field also has
 ([03-cli-parsing.md#token-consumption](../architecture/03-cli-parsing.md#token-consumption)),
 which the `{`-prefix guard should keep out of the way.
 See [10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](../architecture/10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts).
+
+```python
+from dataclasses import dataclass
+from typing import NamedTuple
+import confarg
+
+class NT(NamedTuple):
+    a: int
+    b: int = 2
+
+@dataclass
+class Config:
+    nt: NT = NT(1)
+
+print("env:", confarg.load(Config, argv=[], env={"MYAPP_NT": '{"a": 5}'}, env_prefix="MYAPP_"))
+print("cli:", confarg.load(Config, argv=["--nt", '{"a": 5}']))
+# expected: env: Config(nt=NT(a=5, b=2))
+#           cli: Config(nt=NT(a=5, b=2))
+# actual:   env: Config(nt=NT(a=5, b=2))
+#           cli: TypeCoercionError: Cannot construct NT at 'nt': expected list, tuple,
+#                or dict, got _StrToken '{"a": 5}'
+```
 
 ### BUG-17 — `Callable | None` does not accept the whole-spec token that `Callable` does
 
@@ -54,16 +138,39 @@ See [10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accep
 `src/confarg/_parse_env.py` (`_store_env_value`) · **Filed:** 2026-09-14
 **Effort:** S · **Risk:** medium
 
-`--fn '{"class": "pkg.Greeter", …}'` decodes into a callable spec, but the same token on a
-`Callable[[str], str] | None` field is kept raw in both channels and reaches the importer as
-a symbol name: `SymbolImportError: Cannot import '{"class": …}': no importable module found
-in path`. Same shape as the dict case, and the rule is already recorded — optionality is not
-a statement about syntax — so this is applying it, not deciding it. Both channels move
-together, as they did there: the callable arms are `_is_callable` in
-`_accepts_object_value` and in `_parse_env._store_env_value`'s `accepts_obj`, and neither
-union arm asks about callables. Watch the spec/bind merge in `cli/_collect.py`
-(`_whole_value` → `_merge_blob_into_spec`), which the raw path never reaches today.
+A whole-spec token decodes on a `Callable[...]` field and is kept raw on the optional one, in
+both channels, so it reaches the importer as if it were a symbol name. Same shape as the dict
+case, and the rule is already recorded — optionality is not a statement about syntax — so this
+is applying it, not deciding it. Both channels move together, as they did there: the callable
+arms are `_is_callable` in `_accepts_object_value` and in `_parse_env._store_env_value`'s
+`accepts_obj`, and neither union arm asks about callables. Watch the spec/bind merge in
+`cli/_collect.py` (`_whole_value` → `_merge_blob_into_spec`), which the raw path never reaches
+today.
 See [10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](../architecture/10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts).
+
+```python
+from collections.abc import Callable
+from dataclasses import dataclass
+import confarg
+
+@dataclass
+class Plain:
+    fn: Callable[[str], str] = str.upper
+
+@dataclass
+class Opt:
+    fn: Callable[[str], str] | None = None
+
+spec = '{"fn": "string.capwords"}'
+print("plain:", confarg.load(Plain, argv=["--fn", spec]).fn)
+print("opt  :", confarg.load(Opt, argv=["--fn", spec]).fn)
+# expected: plain: <function capwords ...>
+#           opt  : <function capwords ...>
+# actual:   plain: <function capwords ...>
+#           opt  : SymbolImportError: Cannot import '{"fn": "string.capwords"}':
+#                  no importable module found in path
+# The env channel fails identically, with env={"MYAPP_FN": spec}, env_prefix="MYAPP_".
+```
 
 ## Intent versus implementation
 
@@ -75,8 +182,34 @@ See [10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accep
 Intended (confirmed by the maintainer, and what the tutorial in `examples/7_stealing_rule/`
 teaches): `registered leaf > Enum > [float, int, bool, None] > str`. Implemented:
 `Enum > other non-str types in declaration order > str`, with `None` and bool-vs-int handled
-first. Fix the code, not the tutorial.
+first — so the declaration order of the union decides what the documented rule fixes. Fix the
+code, not the tutorial.
 See [05-types-and-construction.md#stealing-rule](../architecture/05-types-and-construction.md#stealing-rule).
+
+```python
+from dataclasses import dataclass
+from decimal import Decimal
+import confarg
+
+confarg.register_leaf_type(Decimal, Decimal)
+
+@dataclass
+class A:
+    v: int | Decimal = 0
+
+@dataclass
+class B:
+    v: Decimal | int = 0
+
+print("A:", repr(confarg.load(A, argv=["--v", "5"]).v))
+print("B:", repr(confarg.load(B, argv=["--v", "5"]).v))
+# expected: A: Decimal('5')   — a registered leaf outranks int whatever the order
+#           B: Decimal('5')
+# actual:   A: 5              — declaration order wins
+#           B: Decimal('5')
+# The documented float-before-int rule goes the same way: `int | float` gives 5,
+# `float | int` gives 5.0.
+```
 
 ### BUG-7 — Typer integration is claimed, never tested, and currently broken
 
@@ -89,15 +222,12 @@ half: `typer` is in the `dev` dependency group (`pyproject.toml:37`) but no test
 module imports it, and the four front-ends behind the `loader` fixture are argparse, click,
 cyclopts and vanilla only.
 
-Probed, and it does not work. Registration is fine — `populate_command(Config,
-typer.main.get_command(app), ...)` on a `TyperCommand` registers every expected option,
-subkeys included — but invocation dies in `click.core.Parameter.handle_parse_result` with
-`AttributeError: 'Context' object has no attribute '_param_default_explicit'`, because typer
-supplies its own `Context` from its vendored click shim while the adapter registers real
-`click.Option` instances. Isolated from confarg: appending a bare `click.Option` to a typer
-command reproduces it identically (typer 0.27.2, click 8.5.0), so the fix direction is a seam
-letting the option class be `typer.core.TyperOption` when the command is a typer command,
-rather than anything in the merge path.
+Registration is fine — every expected option, subkeys included, lands on the `TyperCommand` —
+but invocation dies, because typer supplies its own `Context` from its vendored click shim
+while the adapter registers real `click.Option` instances. Isolated from confarg: appending a
+bare `click.Option` to a typer command reproduces it identically (typer 0.27.2, click 8.5.0),
+so the fix direction is a seam letting the option class be `typer.core.TyperOption` when the
+command is a typer command, rather than anything in the merge path.
 
 Decide the scope first, since it sets the parity obligation: if typer is a supported
 front-end it needs the shared `loader`-fixture contract like the other three
@@ -105,6 +235,29 @@ front-end it needs the shared `loader`-fixture contract like the other three
 own risk", the two documentation claims must say so. Either way the claim and the test suite
 have to agree.
 See [04-cli-adapters.md](../architecture/04-cli-adapters.md).
+
+```python
+from dataclasses import dataclass
+import typer
+from confarg.cli.click import populate_command, from_context
+
+@dataclass
+class Config:
+    host: str = "localhost"
+
+app = typer.Typer()
+
+@app.command()
+def main(ctx: typer.Context) -> None:
+    print(from_context(Config, ctx))
+
+command = typer.main.get_command(app)
+populate_command(Config, command, argv=["--host", "db"])
+command(["--host", "db"], standalone_mode=False)
+# expected: Config(host='db')
+# actual:   AttributeError: 'Context' object has no attribute '_param_default_explicit'
+#           raised from click/core.py, Parameter.handle_parse_result
+```
 
 ### BUG-13 — A force-cast cannot be dumped, though the file spelling exists
 
@@ -131,26 +284,64 @@ Only the untyped path is affected; a `_Pinned` never reaches `dump(instance)`, w
 a constructed object — the typed path has its own version of this, BUG-15.
 See [05-types-and-construction.md#cast-pinning-in-files](../architecture/05-types-and-construction.md#cast-pinning-in-files).
 
+```python
+from dataclasses import dataclass
+import confarg
+
+@dataclass
+class Config:
+    count: int | str = 0
+
+merged = confarg.merge(Config, argv=["--count.int", "5"])
+print("merged:", merged)
+confarg.dump_file(merged, "out.json")
+# expected: merged: {'count': _Pinned(tp=<class 'int'>, value='5')}
+#           out.json holds {"count": {"__cast__": "int", "__value__": "5"}}
+# actual:   merged: {'count': _Pinned(tp=<class 'int'>, value='5')}
+#           TypeError: Object of type _Pinned is not JSON serializable
+```
+
 ### BUG-15 — `dump()` drops a leaf a union variant will steal back
 
 **Where:** `src/confarg/_serialize.py` (`_serialize_union`) · **Filed:** 2026-09-13
 **Effort:** L · **Risk:** medium
 
-`dump(E(v="FOO"))` for `v: Color | str` emits `{'v': 'FOO'}`, and loading that file back builds
-`Color.FOO`: `load(dump(x)) != x`, the one round trip
+`load(dump(x)) != x`, the one round trip
 [01-pipeline-and-contracts.md#public-api-seams](../architecture/01-pipeline-and-contracts.md#public-api-seams)
-does promise. Same for `Path | str` holding a plain `str`. Native file values are matched in
-declaration order, so any `Enum`, `Literal`, registered leaf or type-ref variant ahead of the
-scalar steals the bare scalar on the way back in. No `_Pinned` is involved — this is the typed
-sibling of BUG-13, and unlike `_serialize_untyped` the typed path knows the declared type and
-can decide. Fix direction: a `_needs_cast` check on leaf variants mirroring `_needs_tag` on
+does promise. Native file values are matched in declaration order, so any `Enum`, `Literal`,
+registered leaf or type-ref variant ahead of the scalar steals the bare scalar on the way back
+in; `Path | str` holding a plain `str` goes the same way. No `_Pinned` is involved — this is the
+typed sibling of BUG-13, and unlike `_serialize_untyped` the typed path knows the declared type
+and can decide. Fix direction: a `_needs_cast` check on leaf variants mirroring `_needs_tag` on
 struct variants — emit `{__cast__, __value__}` only when re-reading the bare scalar would not
 select the variant that produced it. Precedent: YAML emitters tag a scalar (`!!str 5`) exactly
 when the plain form would resolve to another type. It changes `dump()` output, so it needs a
 decision recorded in [10-design-decisions.md](../architecture/10-design-decisions.md).
 See [05-types-and-construction.md#serialization](../architecture/05-types-and-construction.md#serialization).
 
-### BUG-17 — A struct built from `{}` can raise its own `TypeError` out of `build()`
+```python
+from dataclasses import dataclass
+from enum import Enum
+import confarg
+
+class Color(Enum):
+    FOO = 1
+
+@dataclass
+class Config:
+    v: Color | str = Color.FOO
+
+original = Config(v="FOO")
+blob = confarg.dump(original)
+print("dump  :", blob)
+print("reload:", confarg.build(Config, blob))
+# expected: dump  : {'v': {'__cast__': 'str', '__value__': 'FOO'}}
+#           reload: Config(v='FOO')      — equal to `original`
+# actual:   dump  : {'v': 'FOO'}
+#           reload: Config(v=<Color.FOO: 1>)
+```
+
+### BUG-18 — A struct built from `{}` can raise its own `TypeError` out of `build()`
 
 **Where:** `src/confarg/typedload/_construct.py` (`_construct_struct`, the `_all_have_defaults`
 branch) · **Filed:** 2026-09-14
@@ -159,9 +350,25 @@ branch) · **Filed:** 2026-09-14
 `_all_have_defaults` reads `__init__` parameter defaults, which is not the same question as
 "does `tp()` work": `UUID` defaults all seven of its parameters and still refuses being called
 with none. A missing field typed as an *unregistered* struct of that shape therefore takes the
-"built from `{}`" shortcut and lets the constructor's own `TypeError: one of the hex, bytes,
-... must be given` escape `build()`, where every other missing field is a `MissingFieldError`.
+"built from `{}`" shortcut and lets the constructor's own `TypeError` escape `build()`, where
+every other missing field is a `MissingFieldError`.
 Registered leaves no longer reach the branch ([BUG-16](../architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in), closed), which is why only plain classes are left in it.
 Fix direction: the shortcut is a guess, so a `TypeError` from it means the guess was wrong —
 catch it and raise the `MissingFieldError` the field would otherwise have got.
 See [05-types-and-construction.md#structs-collections-and-defaults](../architecture/05-types-and-construction.md#structs-collections-and-defaults).
+
+```python
+from dataclasses import dataclass
+from uuid import UUID
+import confarg
+
+@dataclass
+class Config:
+    ident: UUID            # required, unregistered, every __init__ parameter has a default
+
+confarg.load(Config, argv=[])
+# expected: MissingFieldError: Missing required field 'ident' of type <class 'uuid.UUID'>.
+#           Set it via CLI (--ident), environment variable, or config file.
+#           — which is what a plain `ident: str` already raises
+# actual:   TypeError: one of the hex, bytes, bytes_le, fields, or int arguments must be given
+```
