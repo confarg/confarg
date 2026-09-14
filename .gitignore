@@ -222,11 +222,9 @@ __marimo__/
 # -----------------------------------------------------------------------------
 .claude/
 .vibe/
+docs-agents/
+examples/*/saved_config_*.yaml
 openspec/
 AGENTS.md
 CLAUDE.md
 TODO.md
-
-# Configurations written by the dump_file() calls in the example scripts; a full
-# `uv run pytest` replays the README commands with the example directory as cwd.
-examples/*/saved_config_*.yaml
