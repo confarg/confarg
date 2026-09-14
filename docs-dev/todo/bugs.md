@@ -131,21 +131,6 @@ Only the untyped path is affected; a `_Pinned` never reaches `dump(instance)`, w
 a constructed object — the typed path has its own version of this, BUG-15.
 See [05-types-and-construction.md#cast-pinning-in-files](../architecture/05-types-and-construction.md#cast-pinning-in-files).
 
-### BUG-14 — `_needs_tag` counts a registered leaf as a struct variant
-
-**Where:** `src/confarg/_serialize.py` (`_needs_tag`) · **Filed:** 2026-09-13 ·
-*(inferred — from code reading; currently unreachable, no test covers it)*
-**Effort:** S · **Risk:** low
-
-`_needs_tag` builds `struct_vars` with `_is_struct`, which is `True` for a registered leaf
-type that happens to have an `__init__` (`UUID` does). In a union of one struct and one such
-leaf it therefore sees two struct variants and hands the leaf to `_disambiguate_struct` as a
-candidate, which can tag — or refuse to tag — the wrong way. Unreachable today because
-`_serialize_by_type` now routes a registered leaf to `_serialize_leaf`, so `serialized` is a
-scalar and the `isinstance(serialized, dict)` guard fires first; the filter should still use
-the same registry exclusion as the dispatch
-([05-types-and-construction.md#leaf-coercion](../architecture/05-types-and-construction.md#leaf-coercion)).
-
 ### BUG-15 — `dump()` drops a leaf a union variant will steal back
 
 **Where:** `src/confarg/_serialize.py` (`_serialize_union`) · **Filed:** 2026-09-13
@@ -164,3 +149,30 @@ select the variant that produced it. Precedent: YAML emitters tag a scalar (`!!s
 when the plain form would resolve to another type. It changes `dump()` output, so it needs a
 decision recorded in [10-design-decisions.md](../architecture/10-design-decisions.md).
 See [05-types-and-construction.md#serialization](../architecture/05-types-and-construction.md#serialization).
+
+### BUG-16 — Three struct checks still ignore the leaf registry
+
+**Where:** `src/confarg/typedload/_construct.py` (lines 359, 607/617, 872) · **Filed:** 2026-09-14
+**Effort:** S · **Risk:** medium
+
+`_is_struct_variant` is the canonical "does this type get taken apart into fields?"
+([09-invariants.md#delegate-to-the-canonical-function](../architecture/09-invariants.md#delegate-to-the-canonical-function)),
+but three sites still ask bare `_is_struct`, so a registered leaf with an all-default
+`__init__` is still a struct to them. Two are observed with `UUID` registered:
+
+- **line 359** — a *missing* required field typed as a registered leaf takes the
+  "struct with all-default fields is built from `{}`" branch: `build(C, {})` for `id: UUID`
+  escapes as a raw `TypeError: one of the hex, bytes, ... must be given` instead of
+  `MissingFieldError`. A stdlib exception leaking out of `build()` is the worst of it.
+- **lines 607/617** — `_construct_union_by_tag` accepts a tag naming the leaf and takes it
+  apart: `{"class": "uuid.UUID", "int": 5}` builds `UUID(int=5)` from fields, which is exactly
+  what registration says never happens
+  ([10-design-decisions.md#a-registered-leaf-is-never-a-struct-variant](../architecture/10-design-decisions.md#a-registered-leaf-is-never-a-struct-variant)).
+- **line 872** — `_value_matches_type` routes a registered leaf to `_struct_matches_value`,
+  so a dict can "match" a leaf-typed field. *(inferred — no test reaches it now that both
+  `_disambiguate_struct` call sites filter the registry out first.)*
+
+Found while closing BUG-14, which fixed the same mistake at the dispatchers and the two
+union-variant filters; these three were left out of that change deliberately, not missed.
+Line 607 is a behavior decision, not a typo — say whether a tag may name a leaf at all — so it
+wants a note in [10-design-decisions.md](../architecture/10-design-decisions.md) either way.

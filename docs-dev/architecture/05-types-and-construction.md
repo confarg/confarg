@@ -52,7 +52,16 @@ it to the inverse; `register_leaf_type` writes both, and `Path` is simply the fi
 each (`Path: Path`, `Path: str`), so built-in and user leaf types are one mechanism. A
 registered type is treated as a leaf even if it looks like a struct, in **both** directions:
 construction skips the struct branch for it (`_construct_typed`) and so does serialization
-(`_serialize_by_type`). Coerce functions may raise `ValueError`, `TypeError` or `OSError`;
+(`_serialize_by_type`). `_is_struct_variant` is the one function that answers "does this type
+get taken apart into fields?" — `_is_struct` minus the registry — and both dispatchers and both
+union-variant filters (`_construct_union`'s `dc_vars` and its complement in
+`_construct_union_leaf`, `_serialize._needs_tag`) go through it
+([09](09-invariants.md#delegate-to-the-canonical-function)). Asking `_is_struct` directly is
+the mistake: a registered leaf may have an `__init__` — `UUID` has one with a default for every
+parameter — so a `Release | UUID` field otherwise looks like a union of two structs and is
+neither ambiguous on the way in nor in need of a tag on the way out
+([10](10-design-decisions.md#a-registered-leaf-is-never-a-struct-variant)).
+Coerce functions may raise `ValueError`, `TypeError` or `OSError`;
 `serialize` defaults to `str` and must return something a config writer accepts and `coerce`
 reads back ([10](10-design-decisions.md#registered-leaf-types-dump-through-a-registered-serializer)).
 

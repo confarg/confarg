@@ -34,6 +34,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | single-value (scalar/type-ref) construction in unions | `_construct._construct_scalar` |
 | combine existing value with override | `_merge._merge_existing_value` |
 | how a leaf value leaves the library | `_serialize._serialize_leaf` |
+| "does this type get taken apart into fields?" | `typedload._coerce._is_struct_variant` |
 
 ## Merge stays unvalidated
 

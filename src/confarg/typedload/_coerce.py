@@ -16,6 +16,7 @@ from confarg._types import (
     _is_final,
     _is_literal,
     _is_none_type,
+    _is_struct,
     _is_union,
     _literal_values,
     _resolve_type,
@@ -229,6 +230,21 @@ def _enum_choices(tp: Any) -> list[str]:
 def _is_registered_leaf(tp: Any) -> bool:
     """True if tp was registered via register_leaf_type and should be treated as a leaf."""
     return tp in _LEAF_COERCIONS
+
+
+def _is_struct_variant(tp: Any) -> bool:
+    """True if tp is a struct for dispatch and union disambiguation — a registered leaf is not.
+
+    The single answer to "does this type get taken apart into fields?", asked by the
+    construction and serialization dispatchers and by both sides' union-variant filters.
+    Plain ``_is_struct`` is not that answer: a registered leaf may well have an ``__init__``
+    (``UUID`` does, with a default for every parameter), and counting one as a struct variant
+    both refuses unions that are not ambiguous and tags dumps that need no tag.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#leaf-coercion
+    """
+    return _is_struct(tp) and not _is_registered_leaf(tp)
 
 
 _SCALAR_COERCIONS: dict[type, Any] = {

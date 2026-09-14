@@ -32,6 +32,7 @@ from tests.conftest import (
     PgConfig,
     RectangleShape,
     RedisConfig,
+    Release,
     ServerTcp,
     SquareShape,
     WithCollections,
@@ -755,6 +756,32 @@ class TestDumpRegisteredLeafTypes:
         confarg.register_leaf_type(_Version, _coerce_version)
         WithVersion = make_target("v", _Version, default=_Version(0, 0))
         assert confarg.dump(WithVersion(v=_Version(1, 2))) == {"v": "<Version 1.2>"}
+
+    def test_struct_union_is_not_tagged(self) -> None:
+        """A registered leaf is not a second struct variant, so no tag is emitted.
+
+        ``UUID`` is a struct by introspection and its ``__init__`` takes a
+        ``version``, so ``_needs_tag`` used to see two candidates for a
+        ``Release | UUID`` field and tag a union with only one struct in it.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        WithRelease = make_target("v", Union[Release, UUID], default_factory=Release)
+        assert confarg.dump(WithRelease(v=Release(version=2))) == {"v": {"version": 2}}
+
+    def test_struct_union_round_trips_untagged(self) -> None:
+        """Both variants survive dump() -> build() with no tag in between."""
+        confarg.register_leaf_type(UUID, UUID)
+        WithRelease = make_target("v", Union[Release, UUID], default_factory=Release)
+        for value in (Release(version=2), UUID(_UUID_TEXT)):
+            instance = WithRelease(v=value)
+            assert confarg.build(WithRelease, confarg.dump(instance)) == instance
+
+    def test_struct_union_still_tagged_when_policy_is_always(self) -> None:
+        """tag_policy="always" is unaffected: the one struct variant is still tagged."""
+        confarg.register_leaf_type(UUID, UUID)
+        WithRelease = make_target("v", Union[Release, UUID], default_factory=Release)
+        dumped = confarg.dump(WithRelease(v=Release(version=2)), tag_policy="always")
+        assert dumped == {"v": {"version": 2, "class": "tests.conftest.Release"}}
 
 
 # ---------------------------------------------------------------------------
