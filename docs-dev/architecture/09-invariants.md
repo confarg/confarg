@@ -36,6 +36,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | how a leaf value leaves the library | `_serialize._serialize_leaf` |
 | "does this type get taken apart into fields?" | `typedload._coerce._is_struct_variant` |
 | "may an explicit class tag still open this leaf?" | `typedload._coerce._is_taggable_leaf` |
+| the error for a field no channel supplied | `typedload._construct._missing_field_error` |
 
 ## Merge stays unvalidated
 

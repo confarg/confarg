@@ -72,6 +72,18 @@ from confarg.typedload._coerce import (
 _CAST_TYPE_NAMES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
 
 
+def _missing_field_error(fp: str, ft: Any) -> MissingFieldError:
+    """Return the error for a field of type *ft* that no channel supplied at path *fp*.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#structs-collections-and-defaults
+    """
+    msg = (
+        f"Missing required field '{fp}' of type {ft!r}. Set it via CLI (--{fp}), environment variable, or config file."
+    )
+    return MissingFieldError(msg)
+
+
 def _try_pinned_dict(data: Any) -> _Pinned | None:
     """Detect a ``{__cast__: typename, __value__: raw}`` tagged dict and convert to _Pinned.
 
@@ -155,11 +167,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
                     kwargs[fname] = defs[fname]
                 else:
                     fp = f"{path}.{fname}" if path else fname
-                    msg = (
-                        f"Missing required field '{fp}' of type {ft!r}."
-                        f" Set it via CLI (--{fp}), environment variable, or config file."
-                    )
-                    raise MissingFieldError(msg)
+                    raise _missing_field_error(fp, ft)
 
         return tp(**kwargs)
 
@@ -381,13 +389,14 @@ def _construct_struct(tp: Any, data: dict[str, Any], path: str, union_tag: str) 
         elif name in defs:
             kwargs[name] = defs[name]
         elif _is_struct_variant(ft) and _all_have_defaults(ft):
-            kwargs[name] = _construct_struct(ft, {}, fp, union_tag)
+            try:
+                kwargs[name] = _construct_struct(ft, {}, fp, union_tag)
+            except TypeError:
+                # Defaulted __init__ parameters do not promise that tp() works: the
+                # shortcut guessed wrong, so the field is simply missing.
+                raise _missing_field_error(fp, ft) from None
         else:
-            msg = (
-                f"Missing required field '{fp}' of type {ft!r}."
-                f" Set it via CLI (--{fp}), environment variable, or config file."
-            )
-            raise MissingFieldError(msg)
+            raise _missing_field_error(fp, ft)
 
     var_pos_name = _var_positional_name(tp)
     var_kw_name = _var_keyword_name(tp)

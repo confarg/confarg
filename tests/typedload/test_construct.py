@@ -2,14 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Unit tests for _construct_struct_dispatch inheritance behaviour."""
+"""Unit tests for _construct: struct dispatch, union fallbacks and the all-default shortcut."""
 
 from dataclasses import dataclass
+from uuid import UUID
 
 import pytest
 
+import confarg
 from confarg._types import _StrToken, _UnionSeqToken
-from confarg.exceptions import TypeCoercionError
+from confarg.exceptions import MissingFieldError, TypeCoercionError
 from confarg.typedload._construct import _construct_struct_dispatch, construct
 
 # Each scenario uses its own base class so __subclasses__() does not bleed across tests.
@@ -113,3 +115,51 @@ class TestUnionTypeRefStealing:
         assert construct(str | type[_TypeStealTarget], _StrToken("int")) == "int"  # int not a subclass → str wins
         path = f"{_TypeStealTarget.__module__}.{_TypeStealTarget.__qualname__}"
         assert construct(str | type[_TypeStealTarget], _StrToken(path)) is _TypeStealTarget
+
+
+@dataclass
+class _NeedsIdent:
+    """A required field typed as an unregistered class with an all-default __init__."""
+
+    ident: UUID
+
+
+@dataclass
+class _AllDefaults:
+    """A struct that really can be built from nothing."""
+
+    n: int = 1
+
+
+@dataclass
+class _NeedsAllDefaults:
+    """A required field whose type is a struct that really can be built from nothing."""
+
+    nested: _AllDefaults
+
+
+class TestAllDefaultShortcut:
+    """A missing field is built from {} only if that works; otherwise it stays missing.
+
+    ``_all_have_defaults`` reads ``__init__`` parameter defaults, which is not the same
+    question as "does ``tp()`` work": ``UUID`` defaults all seven of its parameters and
+    still refuses an empty call. The shortcut is a guess, so its ``TypeError`` means the
+    guess was wrong, not that the user gets a stdlib traceback out of ``build()``.
+    """
+
+    def test_constructor_refusing_empty_call_is_a_missing_field(self) -> None:
+        """An unregistered all-default-__init__ class that refuses {} is a MissingFieldError."""
+        with pytest.raises(MissingFieldError, match="ident"):
+            confarg.build(_NeedsIdent, {})
+
+    def test_message_matches_the_plain_missing_field_message(self) -> None:
+        """The message is the one any other missing field gets, naming type and flag."""
+        with pytest.raises(MissingFieldError) as exc_info:
+            confarg.build(_NeedsIdent, {})
+        msg = str(exc_info.value)
+        assert repr(UUID) in msg
+        assert "--ident" in msg
+
+    def test_buildable_struct_is_still_auto_created(self) -> None:
+        """The shortcut itself is intact: a struct that accepts {} is still built from it."""
+        assert confarg.build(_NeedsAllDefaults, {}) == _NeedsAllDefaults(nested=_AllDefaults())

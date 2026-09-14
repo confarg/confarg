@@ -140,6 +140,15 @@ path so the class can be imported.
 - A missing struct field whose type has all-default fields is built from `{}` — a registered
   leaf never is, however defaulted its `__init__` looks, so a missing one is a
   `MissingFieldError` rather than whatever its constructor raises for no arguments.
+- That shortcut is a **guess**, and an unregistered class can defeat it: `_all_have_defaults`
+  reads `__init__` parameter defaults, which is not the same question as "does `tp()` work"
+  (`UUID` defaults all seven of its parameters and still refuses an empty call). A `TypeError`
+  out of the shortcut therefore means the guess was wrong, not that the caller gets a stdlib
+  traceback out of `build()`: it is caught and the field is reported missing like any other.
+  Catching it is preferred to asking the question up front — there is no way to ask short of
+  calling the constructor, and a class whose `__init__` has side effects should be called once,
+  not twice. Every missing field goes through `_missing_field_error`, so its type never changes
+  the message ([09](09-invariants.md#delegate-to-the-canonical-function)).
 - An index-keyed dict for a tuple field with a default patches the default in place, unless
   the merge layer carried a base (`"*"`), which wins.
 - Lists accept a list or an index-keyed dict. Index-keyed lists must be gap-free unless the
