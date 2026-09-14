@@ -1,12 +1,13 @@
-name: CI / Lint
+name: CI / Lint cache
 
 on:
-  pull_request:
+  push:
     branches: [master]
-    types: [opened, reopened, synchronize]
+    paths: [.pre-commit-config.yaml]
+  workflow_dispatch:
 
 jobs:
-  lint:
+  warm-cache:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
@@ -19,16 +20,10 @@ jobs:
         path: ~/.cache/pre-commit
         key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
         restore-keys: pre-commit-${{ runner.os }}-
-    - run: |
-        git fetch --depth=1 origin ${{ github.event.pull_request.base.sha }}
-        git fetch --depth=1 origin ${{ github.event.pull_request.head.sha }}
-        uvx pre-commit run \
-          --from-ref ${{ github.event.pull_request.base.sha }} \
-          --to-ref ${{ github.event.pull_request.head.sha }} \
-          --show-diff-on-failure \
-          --color always
+    - run: uvx pre-commit install-hooks
+    - run: uvx pre-commit gc
     - uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57  # v4.2.0
-      if: always() && steps.precommit-cache.outputs.cache-hit != 'true'
+      if: steps.precommit-cache.outputs.cache-hit != 'true'
       with:
         path: ~/.cache/pre-commit
         key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
