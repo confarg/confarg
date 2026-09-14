@@ -37,11 +37,12 @@ from confarg._types import (
     _unwrap_optional,
     _var_params,
 )
-from confarg.cli._prefix import PREFIX_ATTR, strip_argv_prefix
-from confarg.cli.argparse._build import (
+from confarg.cli._build import (
     _collect_fn_paths_from_argv,
     _collect_fn_paths_from_config,
 )
+from confarg.cli._prefix import PREFIX_ATTR, strip_argv_prefix
+from confarg.cli._spec import _build_help, _get_field_docstrings
 from confarg.cli.argparse._register import (
     _add_callable_bind_flags,
     _add_callable_fn_flags,
@@ -49,7 +50,6 @@ from confarg.cli.argparse._register import (
     _add_union_tag_argument,
     _add_whole_value_argument,
 )
-from confarg.cli.argparse._spec import _build_help, _get_field_docstrings
 
 _log = logging.getLogger(__name__)
 

@@ -4,8 +4,8 @@
 
 """Framework-agnostic CLI building blocks."""
 
-from confarg.cli.argparse._build import build_dynamic_flags, build_static_flags
-from confarg.cli.argparse._spec import FieldMeta, FlagSpec
+from confarg.cli._build import build_dynamic_flags, build_static_flags
+from confarg.cli._spec import FieldMeta, FlagSpec
 
 __all__ = [
     "FieldMeta",

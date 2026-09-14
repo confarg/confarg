@@ -13,12 +13,11 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from confarg.cli.argparse._spec import FlagSpec
+    from confarg.cli._spec import FlagSpec
 
 from confarg import _defaults
 from confarg._callable import _PLAIN_DIRECTIVES
-from confarg.cli._prefix import PREFIX_ATTR
-from confarg.cli.argparse._build import (
+from confarg.cli._build import (
     _build_callable_fn_specs,
     _build_leaf_spec,
     _build_union_tag_spec,
@@ -27,6 +26,7 @@ from confarg.cli.argparse._build import (
     build_dynamic_flags,
     build_static_flags,
 )
+from confarg.cli._prefix import PREFIX_ATTR
 from confarg.dictexpr import contains_expression
 
 

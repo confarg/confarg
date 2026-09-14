@@ -14,7 +14,7 @@ from typing import Final, Literal
 import pytest
 
 import confarg
-from confarg.cli.argparse._build import _collect_struct_specs
+from confarg.cli._build import _collect_struct_specs
 from confarg.cli.argparse._completion import _extend_walk, _WalkCtx
 from tests.conftest import make_target
 

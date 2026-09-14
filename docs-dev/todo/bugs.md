@@ -42,7 +42,7 @@ print("env:", confarg.load(Config, argv=[], env={"MYAPP_JSON": blob}, env_prefix
 
 ### BUG-6 — The subclass selector flag is registered only for subclasses already imported
 
-**Where:** `src/confarg/cli/argparse/_build.py` (`tp.__subclasses__()`) · **Filed:** 2026-09-12
+**Where:** `src/confarg/cli/_build.py` (`tp.__subclasses__()`) · **Filed:** 2026-09-12
 **Effort:** L · **Risk:** medium
 
 `_collect_struct_specs` registers the `--<field>.<union_tag>` selector only when

@@ -5,16 +5,6 @@ hygiene, performance. See [README.md](README.md) for the ticket format.
 
 ## Structure
 
-### REF-1 — The framework-neutral flag model lives under `cli/argparse/`
-
-**Where:** `src/confarg/cli/argparse/_spec.py`, `_build.py` · **Filed:** 2026-09-12
-**Effort:** M · **Risk:** low
-
-`FlagSpec`, `FieldMeta` and the spec generation in `_build.py` are used by every adapter, not
-just argparse; they sit under `cli/argparse/` by historical accident and belong in `cli/`.
-Confirmed by the maintainer as an accident, not a decision.
-See [04-cli-adapters.md#framework-neutral-flag-model](../architecture/04-cli-adapters.md#framework-neutral-flag-model).
-
 `_cast` now also derives the reverse map, `cast_name_for_type`, which names a `_Pinned` on the
 way out; `_construct._CAST_TYPE_NAMES` is the copy that reads that name back, so folding it in
 is what keeps the writer and the reader on one table.
@@ -108,7 +98,7 @@ Reduces nesting and ~10 lines.
 
 ### REF-23 — `_build_leaf_spec` repeats `group` / `group_description` on every FlagSpec
 
-**Where:** `src/confarg/cli/argparse/_build.py` (`_build_leaf_spec`) · **Filed:** 2026-09-13
+**Where:** `src/confarg/cli/_build.py` (`_build_leaf_spec`) · **Filed:** 2026-09-13
 **Effort:** S · **Risk:** low
 
 Seven `FlagSpec(...)` constructors in `_build_leaf_spec` (lines 117-207) each repeat

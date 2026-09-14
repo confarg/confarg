@@ -21,11 +21,10 @@ from collections.abc import (
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-import confarg.cli.argparse._build as build_mod
+import confarg.cli._build as build_mod
 import confarg.cli.argparse._register as reg_mod
 from confarg._types import _resolve_struct
-from confarg.cli.argparse import from_namespace, populate_parser
-from confarg.cli.argparse._build import (
+from confarg.cli._build import (
     _collect_callable_bind_specs,
     _collect_callable_factory_specs,
     _collect_callable_field_specs,
@@ -35,6 +34,8 @@ from confarg.cli.argparse._build import (
     _collect_subconfig_specs,
     build_dynamic_flags,
 )
+from confarg.cli._spec import FlagSpec, _get_field_docstrings
+from confarg.cli.argparse import from_namespace, populate_parser
 from confarg.cli.argparse._completion import (
     _extend_walk,
     _pre_extend_parser_for_completion,
@@ -45,7 +46,6 @@ from confarg.cli.argparse._completion import (
     setup_completion as _argparse_setup_completion,
 )
 from confarg.cli.argparse._register import _add_callable_bind_flags, _add_callable_fn_flags, _register_spec
-from confarg.cli.argparse._spec import FlagSpec, _get_field_docstrings
 from confarg.exceptions import ConfargWarning
 from tests._cov_helpers import (
     _COV_MOD,

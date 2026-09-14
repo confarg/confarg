@@ -15,8 +15,8 @@ if TYPE_CHECKING:
     import click
 
 from confarg import _defaults
+from confarg.cli._build import build_dynamic_flags
 from confarg.cli._prefix import PREFIX_ATTR
-from confarg.cli.argparse._build import build_dynamic_flags
 from confarg.cli.click._register import load_flags_into_command
 
 _log = logging.getLogger(__name__)

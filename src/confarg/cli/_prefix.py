@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from confarg.cli.argparse._spec import FlagSpec
+    from confarg.cli._spec import FlagSpec
 
 from confarg.exceptions import ConfargError
 
