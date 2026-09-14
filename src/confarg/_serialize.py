@@ -216,8 +216,10 @@ def _serialize_leaf(tp: Any, value: Any) -> Any:
     if isinstance(value, enum.Enum):
         return value.value
     # Before the registry loop: a token is a str subclass, and registering ``str`` must not
-    # let one leak out. See docs-dev/architecture/09-invariants.md#tokens-mean-untyped-text.
-    if type(value) is _StrToken:
+    # let one leak out. isinstance, so a token subclass (_UnionSeqToken) is caught too; it
+    # still spares a caller's own str subclass, which cannot inherit from a private type.
+    # See docs-dev/architecture/09-invariants.md#tokens-mean-untyped-text.
+    if isinstance(value, _StrToken):
         return str(value)
     for leaf_tp, serialize in _LEAF_SERIALIZERS.items():
         # isinstance, not an exact type test: a real Path is a WindowsPath or a PosixPath.

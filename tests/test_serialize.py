@@ -17,6 +17,8 @@ from uuid import UUID
 import pytest
 
 import confarg
+from confarg._serialize import _serialize_leaf
+from confarg._types import _StrToken, _UnionSeqToken
 from tests.conftest import (
     AppConfig,
     CacheConfig,
@@ -591,6 +593,48 @@ class TestDumpRawDictCoercedLeaves:
 
         assert raw != reloaded
         assert confarg.build(WithPath, raw) == confarg.build(WithPath, reloaded)
+
+
+class TestDumpRawDictTokens:
+    """No token type reaches a writer: every one of them is unwrapped to a plain ``str``.
+
+    A lone CLI token for a scalar+sequence union is a ``_UnionSeqToken``, a *subclass*
+    of ``_StrToken``, so the unwrap has to recognise the whole token hierarchy and not
+    just its root — see docs-dev/architecture/09-invariants.md#tokens-mean-untyped-text.
+    """
+
+    @pytest.mark.parametrize("suffix", [".toml", ".yaml", ".json"])
+    def test_union_seq_token_dumps_as_plain_str(self, tmp_path: Path, suffix: str) -> None:
+        """``--input hello`` for ``bool | list[str]`` dumps as a string, in every format."""
+        WithScalarOrList = make_target("input", Union[bool, list[str]], default=False)
+        raw = confarg.merge(WithScalarOrList, argv=["--input", "hello"], env={})
+        assert type(raw["input"]) is _UnionSeqToken
+
+        path = tmp_path / f"out{suffix}"
+        confarg.dump_file(raw, path)
+        assert confarg.merge(WithScalarOrList, argv=[], env={}, files=[path]) == {"input": "hello"}
+
+    def test_token_subclass_leaves_as_exactly_str(self) -> None:
+        """The unwrap flattens the subclass, not only the base.
+
+        JSON and TOML write a ``str`` subclass without complaint, so the format
+        round trip above cannot see the leak on its own; the leaf serializer can.
+        """
+        assert type(_serialize_leaf(str, _UnionSeqToken("hello"))) is str
+        assert type(_serialize_leaf(str, _StrToken("hello"))) is str
+
+    def test_foreign_str_subclass_is_untouched(self) -> None:
+        """Only confarg's own tokens are unwrapped; a caller's ``str`` subclass is not.
+
+        ``_StrToken`` is private, so nothing a user writes inherits from it, and the
+        registry loop below the unwrap stays reachable for a registered ``str`` leaf.
+        """
+
+        class _Tagged(str):
+            __slots__ = ()
+
+        value = _Tagged("hello")
+        assert _serialize_leaf(str, value) is value
 
 
 # ---------------------------------------------------------------------------

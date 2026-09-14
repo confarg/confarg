@@ -128,22 +128,6 @@ own risk", the two documentation claims must say so. Either way the claim and th
 have to agree.
 See [04-cli-adapters.md](../architecture/04-cli-adapters.md).
 
-### BUG-12 — `_UnionSeqToken` leaks into dumps
-
-**Where:** `src/confarg/_serialize.py` (`_serialize_leaf`) · **Filed:** 2026-09-13
-**Effort:** S · **Risk:** low
-
-Tokens must never leak into dumps
-([09-invariants.md#tokens-mean-untyped-text](../architecture/09-invariants.md#tokens-mean-untyped-text)),
-but the unwrap tests `type(v) is _StrToken`, and `_UnionSeqToken` is a *subclass*:
-`dump_file(merge(B, argv=["--input", "hello"]), "c.yaml")` for `input: bool | list[str]`
-raises `RepresenterError: ('cannot represent an object', 'hello')` — a str subclass that YAML
-will not represent, while JSON happily writes it as a string. The exact-type test is a
-deliberate choice ("so other `str` subclasses are untouched",
-[05-types-and-construction.md#token-model](../architecture/05-types-and-construction.md#token-model)),
-so widening it to `isinstance` is a decision, not a typo fix: it also flattens a user's own
-`str` subclass. The alternative is to name confarg's own token types explicitly.
-
 ### BUG-13 — A force-cast cannot be dumped, though the file spelling exists
 
 **Where:** `src/confarg/_serialize.py` (`_serialize_untyped`) · **Filed:** 2026-09-13

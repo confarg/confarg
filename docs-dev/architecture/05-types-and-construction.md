@@ -28,8 +28,12 @@ confarg requires no base class, decorator or field marker
 - `_Pinned(tp, value)` carries an explicitly cast value through the merge dict; `construct`
   honors it before anything else, including `None` handling.
 - Tokens must never leak out: error messages print them as `str` (`_src_type`), the dump path
-  unwraps them in `_serialize_leaf` with `type(v) is _StrToken` (so other `str` subclasses are
-  untouched), and `dictexpr._map_strings` preserves the subclass when rewriting expressions.
+  unwraps them in `_serialize_leaf` with `isinstance(v, _StrToken)`, and `dictexpr._map_strings`
+  preserves the subclass when rewriting expressions. The test is `isinstance`, not an exact
+  type test, so it covers the whole token hierarchy — `_UnionSeqToken` included, and any token
+  type added later. Other `str` subclasses stay untouched all the same: `_StrToken` is private,
+  so nothing a caller writes — a registered `str` leaf type included — can inherit from it, and
+  the registry loop below the unwrap stays reachable for it.
 
 ## Leaf coercion
 
