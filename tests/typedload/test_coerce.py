@@ -16,6 +16,7 @@ from confarg._types import _StrToken
 from confarg.exceptions import TypeCoercionError
 from confarg.typedload._coerce import _LEAF_COERCIONS, _LEAF_SERIALIZERS, _coerce_leaf, _try_coerce
 from confarg.typedload._construct import construct
+from tests.conftest import Release
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -173,6 +174,30 @@ class TestConstructCustomType:
         confarg.register_leaf_type(UUID, UUID)
         result = construct(UUID | None, None)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# TestRegisteredLeafInStructUnion — a registered leaf is not a struct variant
+# ---------------------------------------------------------------------------
+
+
+class TestRegisteredLeafInStructUnion:
+    """A registered leaf never competes with structs for structural matching.
+
+    ``UUID`` is a struct by introspection — every ``__init__`` parameter has a
+    default — so a ``Release | UUID`` field used to see two struct variants and
+    refuse to pick one, even though only ``Release`` is really a struct.
+    """
+
+    def test_struct_variant_wins_an_untagged_dict(self) -> None:
+        """A dict matching the struct constructs it, with no class tag needed."""
+        confarg.register_leaf_type(UUID, UUID)
+        assert construct(Release | UUID, {"version": 2}) == Release(version=2)
+
+    def test_leaf_variant_still_wins_a_scalar(self) -> None:
+        """The registered leaf still claims the scalar form of the same union."""
+        confarg.register_leaf_type(UUID, UUID)
+        assert construct(Release | UUID, _StrToken(_UUID_STR)) == _UUID_OBJ
 
 
 # ---------------------------------------------------------------------------

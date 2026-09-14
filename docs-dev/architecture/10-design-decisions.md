@@ -219,3 +219,32 @@ Teaching three front-ends a form that contributes nothing to the merged dict, on
 shape the fourth already refused, was the worse trade. The rule is now uniform, so
 `_accepts_object_value` decides *what* a whole-value flag decodes and nothing decides
 *whether* it needs one.
+
+## A registered leaf is never a struct variant
+
+A type in `_LEAF_COERCIONS` is not taken apart into fields anywhere: not by the construction
+and serialization dispatchers, and not by the union-variant filters on either side. The one
+predicate is `_is_struct_variant`
+([05](05-types-and-construction.md#leaf-coercion)); asking `_is_struct` was the bug
+([BUG-14](../todo/bugs.md), closed).
+
+The distinction has teeth because `_is_struct` is structural: a class with any `__init__`
+parameter is a struct, and `UUID.__init__` takes seven, all with defaults. So a field typed
+`Release | UUID` — where `Release` is a struct with a `version` field, a name `UUID.__init__`
+also uses — read as a union of two structs. `build()` refused `{"version": 2}` with
+`AmbiguousUnionError`, and `dump()` emitted a `class` tag for a union holding exactly one
+struct. The two defects hid each other: the spurious tag is what kept `load(dump(x)) == x`
+working, so fixing either alone would have broken the round trip
+([01](01-pipeline-and-contracts.md#public-api-seams)).
+
+This narrows what `build()` rejects: data that used to be ambiguous now constructs the struct.
+That is the intended direction — registration is a promise that the type is opaque, and a
+promise that holds in one direction only is worse than none. A registered leaf still claims
+the *scalar* form of the same union through the leaf path, so neither variant loses its
+spelling.
+
+Precedent: cattrs treats a type with a registered structure hook as opaque and never considers
+it in union disambiguation, which only ever looks at attrs classes. The rejected alternative —
+keep the registry out of the union filters and require an explicit tag on such unions — pushes
+the cost of an introspection accident onto every user of a union with a registered leaf in it,
+and says nothing about which of `UUID`'s seven parameters the tagged dict should fill.

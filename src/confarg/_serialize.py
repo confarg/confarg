@@ -35,7 +35,7 @@ from confarg._types import (
     _union_args_no_none,
 )
 from confarg.exceptions import ConfargError
-from confarg.typedload._coerce import _LEAF_SERIALIZERS, _is_registered_leaf
+from confarg.typedload._coerce import _LEAF_SERIALIZERS, _is_struct_variant
 from confarg.typedload._construct import _disambiguate_struct
 
 
@@ -78,7 +78,7 @@ def _serialize_by_type(  # noqa: PLR0911
         return _serialize_union(tp, instance, path, union_tag, tag_policy)
     if _is_namedtuple(tp):
         return _serialize_namedtuple(tp, instance, path, union_tag, tag_policy)
-    if _is_struct(tp) and not _is_registered_leaf(tp):
+    if _is_struct_variant(tp):
         return _serialize_struct(tp, instance, path, union_tag, tag_policy)
     if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
         return _serialize_collection(tp, instance, path, union_tag, tag_policy)
@@ -166,7 +166,7 @@ def _serialize_union(
     serialized = _serialize(variant_tp, instance, path, union_tag, tag_policy)
 
     if (
-        _is_struct(variant_tp)
+        _is_struct_variant(variant_tp)
         and isinstance(serialized, dict)
         and (tag_policy == "always" or _needs_tag(tp, serialized, union_tag))
     ):
@@ -262,7 +262,7 @@ def _find_variant_type(tp: Any, instance: Any) -> Any | None:
 
 def _needs_tag(tp: Any, serialized_data: dict[str, Any], union_tag: str) -> bool:
     """Check if a class tag is needed by running disambiguation on the serialized data."""
-    struct_vars = [v for v in _union_args_no_none(tp) if _is_struct(_resolve_type(v))]
+    struct_vars = [v for v in _union_args_no_none(tp) if _is_struct_variant(_resolve_type(v))]
     if len(struct_vars) <= 1:
         return False
     matches = _disambiguate_struct(struct_vars, serialized_data, union_tag)

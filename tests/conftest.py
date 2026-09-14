@@ -351,6 +351,23 @@ class WithUnionAmbiguousThree:
 
 
 # ---------------------------------------------------------------------------
+# Union of a struct and a registered leaf type
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Release:
+    """A struct whose only field is also a ``UUID.__init__`` parameter name.
+
+    ``UUID`` is a struct by introspection — every ``__init__`` parameter has a
+    default — so a union of this and ``UUID`` is where a registered leaf can be
+    mistaken for a second struct variant (BUG-14).
+    """
+
+    version: int = 1
+
+
+# ---------------------------------------------------------------------------
 # Union with Literal discriminators
 # ---------------------------------------------------------------------------
 
