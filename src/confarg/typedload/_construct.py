@@ -64,6 +64,7 @@ from confarg.typedload._coerce import (
     _coerce_leaf,
     _coerce_type_ref,
     _is_struct_variant,
+    _is_taggable_leaf,
     _src_type,
     _steal_order,
 )
@@ -187,6 +188,25 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) ->
     return _construct_struct(tp, data, path, union_tag)
 
 
+def _construct_taggable_leaf(tp: Any, data: dict[str, Any], path: str, union_tag: str) -> Any:
+    """Construct a struct-shaped registered leaf from the dict that tags it.
+
+    Raises:
+        TypeCoercionError: If the dict carries no ``union_tag`` naming the class.
+
+    Dev Notes:
+        docs-dev/architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in
+    """
+    if union_tag in data:
+        return _construct_struct_dispatch(tp, data, path, union_tag)
+    msg = (
+        f"Cannot coerce dict {data!r} to {tp.__name__} at '{path}'."
+        f" {tp.__name__} is a registered leaf type: pass a value it coerces from, or add a"
+        f" {union_tag!r} field naming {tp.__module__}.{tp.__qualname__} to build it from its fields."
+    )
+    raise TypeCoercionError(msg)
+
+
 def _construct_sequence(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     """Construct a list, set, or frozenset."""
     if _is_list(tp):
@@ -194,10 +214,13 @@ def _construct_sequence(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     return _construct_set(tp, data, path, union_tag)
 
 
-def _construct_scalar(tp: Any, data: Any, path: str) -> Any:
+def _construct_scalar(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     """Construct a type reference or leaf value."""
     if _is_type_ref(tp):
         return _coerce_type_ref(tp, data, path)
+    resolved = _resolve_type(tp)
+    if _is_taggable_leaf(resolved) and isinstance(data, dict):
+        return _construct_taggable_leaf(resolved, data, path, union_tag)
     return _coerce_leaf(tp, data, path)
 
 
@@ -218,7 +241,7 @@ def _construct_typed(tp: Any, data: Any, path: str, union_tag: str) -> Any:  # n
         return _construct_tuple(tp, data, path, union_tag)
     if _is_dict(tp):
         return _construct_dict(tp, data, path, union_tag)
-    return _construct_scalar(tp, data, path)
+    return _construct_scalar(tp, data, path, union_tag)
 
 
 def construct(tp: Any, data: Any, *, path: str = "", union_tag: str = _defaults.UNION_TAG) -> Any:
@@ -357,7 +380,7 @@ def _construct_struct(tp: Any, data: dict[str, Any], path: str, union_tag: str) 
             kwargs[name] = construct(ft, field_data, path=fp, union_tag=union_tag)
         elif name in defs:
             kwargs[name] = defs[name]
-        elif _is_struct(ft) and _all_have_defaults(ft):
+        elif _is_struct_variant(ft) and _all_have_defaults(ft):
             kwargs[name] = _construct_struct(ft, {}, fp, union_tag)
         else:
             msg = (
@@ -602,7 +625,14 @@ def _construct_single_variant_union(
 
 
 def _construct_union_by_tag(non_none: list[Any], data: dict[str, Any], path: str, union_tag: str) -> Any:
-    """Construct a union value using its class tag field."""
+    """Construct a union value using its class tag field.
+
+    The candidates are every ``_is_struct`` variant, registered leaves included: a tag names a
+    class to build from fields, which is the one thing a leaf stays open to.
+
+    Dev Notes:
+        docs-dev/architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in
+    """
     tag = data[union_tag]
     cls = _import_class_by_path(tag, path, union_tag)
     matching = [v for v in non_none if _is_struct(_resolve_type(v)) and issubclass(cls, _resolve_type(v))]
@@ -678,7 +708,13 @@ def _try_coll_variants(coll_vars: list[Any], data: Any, path: str, union_tag: st
     return _UNION_NO_MATCH
 
 
-def _coerce_scalar_variants(all_args: list[Any], scalar_leaf_vars: list[Any], data: Any, path: str) -> Any:
+def _coerce_scalar_variants(
+    all_args: list[Any],
+    scalar_leaf_vars: list[Any],
+    data: Any,
+    path: str,
+    union_tag: str,
+) -> Any:
     """Coerce data to one of the scalar leaf variants; returns _UNION_NO_MATCH on failure."""
     if type(None) in all_args and isinstance(data, _StrToken) and data.lower() in _NONE_TOKENS:
         return None
@@ -697,7 +733,7 @@ def _coerce_scalar_variants(all_args: list[Any], scalar_leaf_vars: list[Any], da
         try:
             # Not _coerce_leaf: it cannot build type refs (`type`, `type[X]`).
             # See docs-dev/architecture/05-types-and-construction.md#stealing-rule.
-            return _construct_scalar(var, data, path)
+            return _construct_scalar(var, data, path, union_tag)
         except (TypeCoercionError, ValueError, TypeError):
             continue
     return _UNION_NO_MATCH
@@ -728,7 +764,7 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
     if result is not _UNION_NO_MATCH:
         return result
 
-    result = _coerce_scalar_variants(all_args, scalar_leaf_vars, data, path)
+    result = _coerce_scalar_variants(all_args, scalar_leaf_vars, data, path, union_tag)
     if result is not _UNION_NO_MATCH:
         return result
 
@@ -870,7 +906,7 @@ def _value_matches_type(value: Any, tp: Any, union_tag: str) -> bool:
     tp = _resolve_type(tp)
     if value is None:
         return _allows_none(tp)
-    if _is_struct(tp):
+    if _is_struct_variant(tp):
         return _struct_matches_value(tp, value, union_tag)
     if tp in _SCALAR_MATCHES:
         return _SCALAR_MATCHES[tp](value)

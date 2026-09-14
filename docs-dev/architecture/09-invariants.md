@@ -31,10 +31,11 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "does this field take a whole `{…}` token?" | `_parse_cli._accepts_object_value` |
 | reconciling a registered `cli_prefix` with one passed to `merge_*` | `cli._prefix.resolve_prefix` |
 | plain vs escaped callable directives | `_callable.active_directives` |
-| single-value (scalar/type-ref) construction in unions | `_construct._construct_scalar` |
+| single-value (scalar/type-ref) construction | `_construct._construct_scalar` |
 | combine existing value with override | `_merge._merge_existing_value` |
 | how a leaf value leaves the library | `_serialize._serialize_leaf` |
 | "does this type get taken apart into fields?" | `typedload._coerce._is_struct_variant` |
+| "may an explicit class tag still open this leaf?" | `typedload._coerce._is_taggable_leaf` |
 
 ## Merge stays unvalidated
 
