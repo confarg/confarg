@@ -365,19 +365,6 @@ def _looks_like_flag(token: str) -> bool:
     )
 
 
-def _next_is_flag_or_end(args: Sequence[str], i: int) -> bool:
-    """Check whether the next position is past the end or is a flag.
-
-    Args:
-        args: The CLI argument sequence.
-        i: The index to check.
-
-    Returns:
-        True if index i is past the end of args or args[i] looks like a flag.
-    """
-    return i >= len(args) or _looks_like_flag(args[i])
-
-
 def _check_reserved_key_conflict(target: Any, name: str, detail: str) -> None:
     """Raise ConfargError if the reserved name *name* is also a top-level field of *target*.
 
@@ -862,16 +849,19 @@ def _consume_typed_arg(
     ft: Any,
     path: list[str],
 ) -> int:
-    """Consume the value(s) for a resolved, non-append field type and return the new arg index."""
+    """Consume the value(s) for a resolved, non-append field type and return the new arg index.
+
+    A whole-value flag needs its value: the bare ``--<struct>`` form falls through to the
+    missing-value error every other value-taking flag raises.
+
+    Agent Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
     args = ctx.argv
     # JSON object → dataclass / dict / callable / union-with-dc
     if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("{") and _accepts_object_value(ft):
         _set_nested(ctx.data, path, _parse_json_arg(args[i], token))
         return i + 1
-
-    # Dataclass flag with no value → use defaults
-    if _is_dc(ft) and _next_is_flag_or_end(args, i):
-        return i
 
     return _consume_collection_or_scalar(ctx, i, token, ft, path)
 

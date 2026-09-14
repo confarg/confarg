@@ -175,3 +175,28 @@ this rule (`list[str] | None` takes a JSON array in the environment, and the CLI
 - Not extended to unions with a callable or a NamedTuple variant: those are separate gaps with
   their own asymmetries ([BUG-16](../todo/bugs.md), [BUG-17](../todo/bugs.md)), not consequences
   of this rule.
+
+## A whole-value flag needs its value
+
+`--db` with nothing after it is an error in every front-end, exactly like `--port` with
+nothing after it. Vanilla used to make one exception: a **non-optional dataclass** field
+consumed no token and merged nothing ([BUG-8](../todo/bugs.md), closed). The exception was
+indefensible on three counts.
+
+- It bought nothing. The branch returned without calling `_set_nested`, so the flag was a
+  silent no-op — and not "use defaults" as its comment claimed, since a value already merged
+  from a config file stayed put.
+- It was inconsistent inside vanilla. The guard tested `_is_dc(ft)` on the resolved-but-not
+  Optional-unwrapped type, so `Sub | None` and `dict[str, str]` — which get the same bare
+  whole-value flag — already raised `Missing value`. Only one of the four whole-value shapes
+  had the exception.
+- No adapter could reproduce it, and one of them never can. argparse has `nargs="?"` and
+  click reaches the same shape with `is_flag=False, flag_value=<sentinel>`, but cyclopts
+  fixes a parameter's token count by construction: annotating the optional-value shape fails
+  with `Cannot Union types that consume different numbers of tokens`. Nor can an adapter
+  rewrite argv around the gap — the user owns the framework's parse call, not confarg.
+
+Teaching three front-ends a form that contributes nothing to the merged dict, on a field
+shape the fourth already refused, was the worse trade. The rule is now uniform, so
+`_accepts_object_value` decides *what* a whole-value flag decodes and nothing decides
+*whether* it needs one.

@@ -43,19 +43,6 @@ was rejected ([10-design-decisions.md#no-implicit-subclass-inference](../archite
 here it leaks into the CLI channel. Confirm with a test first.
 See [04-cli-adapters.md#union-inheritance-and-cast-flags](../architecture/04-cli-adapters.md#union-inheritance-and-cast-flags).
 
-### BUG-8 — A bare struct flag with no value is vanilla-only
-
-**Where:** `src/confarg/cli/argparse/_spec.py` (`FlagSpec.nargs`) · **Filed:** 2026-09-13
-**Effort:** M · **Risk:** low
-
-`--<structfield>` with no value means "use defaults" in vanilla
-([03-cli-parsing.md#token-consumption](../architecture/03-cli-parsing.md#token-consumption))
-and merges nothing; the adapters register the flag with `nargs=None` and their framework
-demands a value. `FlagSpec.nargs` has no `"?"`, and click cannot express an optional-value
-option at all, so closing this needs a decision on the vocabulary — or on retiring the
-no-value form, which contributes nothing to the merged dict.
-See [04-cli-adapters.md#whole-value-flags](../architecture/04-cli-adapters.md#whole-value-flags).
-
 ### BUG-16 — A NamedTuple takes a whole `{...}` token in the environment but not on the CLI
 
 **Where:** `src/confarg/_parse_cli.py` (`_accepts_object_value`) · **Filed:** 2026-09-14
