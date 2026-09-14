@@ -55,17 +55,37 @@ option at all, so closing this needs a decision on the vocabulary — or on reti
 no-value form, which contributes nothing to the merged dict.
 See [04-cli-adapters.md#whole-value-flags](../architecture/04-cli-adapters.md#whole-value-flags).
 
-### BUG-9 — `dict | None` does not accept the whole-mapping token that `dict` does
+### BUG-16 — A NamedTuple takes a whole `{...}` token in the environment but not on the CLI
 
-**Where:** `src/confarg/_parse_cli.py` (`_accepts_object_value`) · **Filed:** 2026-09-13
+**Where:** `src/confarg/_parse_cli.py` (`_accepts_object_value`) · **Filed:** 2026-09-14
 **Effort:** S · **Risk:** medium
 
-`--env '{"a": "b"}'` decodes for `dict[str, str]` and for `Sub | None` (the union arm tests
-`_is_dc` on each variant), but not for `dict[str, str] | None`: `_is_dict` is false on the
-union and no arm tests dicts. The token is stored raw and `build()` then rejects it. This is
-a channel-wide inconsistency in vanilla, not an adapter gap — the adapters mirror it
-deliberately so their merged dict stays byte-identical. The fix is one arm in
-`_accepts_object_value`, but it changes vanilla's parse result, so it needs its own decision.
+`MYAPP_NT='{"a": 5}'` builds `NT(a=5, b=2)`; `--nt '{"a": 5}'` stores the token raw and
+`build()` fails with `Cannot construct NT at 'nt': expected list, tuple, or dict, got
+_StrToken`. `_parse_env` tests `_is_namedtuple` in both its direct and its union arm;
+`_accepts_object_value` tests `_is_dc`, which a NamedTuple is not, so neither `NT` nor
+`NT | None` qualifies. Fixing it means adding the arm *and* checking it against the
+fixed-tuple consumption path a NamedTuple field also has
+([03-cli-parsing.md#token-consumption](../architecture/03-cli-parsing.md#token-consumption)),
+which the `{`-prefix guard should keep out of the way.
+See [10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](../architecture/10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts).
+
+### BUG-17 — `Callable | None` does not accept the whole-spec token that `Callable` does
+
+**Where:** `src/confarg/_parse_cli.py` (`_accepts_object_value`),
+`src/confarg/_parse_env.py` (`_store_env_value`) · **Filed:** 2026-09-14
+**Effort:** S · **Risk:** medium
+
+`--fn '{"class": "pkg.Greeter", …}'` decodes into a callable spec, but the same token on a
+`Callable[[str], str] | None` field is kept raw in both channels and reaches the importer as
+a symbol name: `SymbolImportError: Cannot import '{"class": …}': no importable module found
+in path`. Same shape as the dict case, and the rule is already recorded — optionality is not
+a statement about syntax — so this is applying it, not deciding it. Both channels move
+together, as they did there: the callable arms are `_is_callable` in
+`_accepts_object_value` and in `_parse_env._store_env_value`'s `accepts_obj`, and neither
+union arm asks about callables. Watch the spec/bind merge in `cli/_collect.py`
+(`_whole_value` → `_merge_blob_into_spec`), which the raw path never reaches today.
+See [10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](../architecture/10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts).
 
 ## Intent versus implementation
 

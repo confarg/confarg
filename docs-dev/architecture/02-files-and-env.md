@@ -68,7 +68,9 @@ namespace) therefore avoids the dunder form.
 - Segments are matched **case-insensitively** against the target type tree, because env
   names are conventionally upper-case; a segment matching several fields is an error.
 - Values starting with `[` or `{` are parsed as JSON only when the target type can accept a
-  list or an object; otherwise they are ordinary tokens.
+  list or an object; otherwise they are ordinary tokens. Optionality does not change the
+  answer — `dict[str, str] | None` decodes what `dict[str, str]` decodes
+  ([10](10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts)).
 - `<PREFIX>…__json` mirrors the CLI `.json` cast, including "real field wins" and a hard
   error on invalid JSON.
 - `FOO__BAR-` / `FOO__ITEMS__1-` are deletes, mirroring `--bar-` / `--items.1-`.

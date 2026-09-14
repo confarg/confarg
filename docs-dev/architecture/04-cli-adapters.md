@@ -95,15 +95,18 @@ trips cyclopts' "2 distinct Group objects with same name" check.
 A bare `--<field> '{…}'` assigns an entire object in one token — the CLI peer of the env
 channel's `PFX_ENV='{"a":"b"}'`. `_parse_cli._accepts_object_value` is the one predicate
 deciding which field types take one: dataclass, dict, callable, or a union with a dataclass
-variant. It answers for the vanilla parser, for static registration and for the collector,
-so the three cannot drift.
+or dict variant. It answers for the vanilla parser, for static registration and for the
+collector, so the three cannot drift.
 
 The flags are **static**, not argv-scanned: the field is declared, so it belongs in `--help`
 next to the bare `--tags` / `--pair` flags lists and tuples already get, and completion can
 offer it. `nargs=None` — vanilla consumes exactly one token here and rejects a second as a
-stray positional. The metavar is `JSON` only where the predicate says the token is decoded;
-`dict[str, str] | None` is not a dict to `_is_dict`, so it gets `VALUE` and keeps vanilla's
-behavior of storing the raw string ([BUG-9](../todo/bugs.md)).
+stray positional. The metavar is `JSON` only where the predicate says the token is decoded, so a field that
+keeps its token raw does not advertise a syntax it will not honour. Optionality is not one of
+the things that decides this: `dict[str, str] | None` takes the mapping `dict[str, str]` takes
+and gets the same `JSON` metavar
+([10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts)).
+A `Callable[…] | None` still does not ([BUG-17](../todo/bugs.md)).
 
 A dict field's bare flag is its *only* static flag (its keys are unknown until argv is read);
 subkeys arrive as patch flags and are deep-merged over the whole value, so

@@ -474,6 +474,18 @@ class TestEnvJsonValues:
         assert result.db.host == "h"
         assert result.db.port == 1
 
+    def test_json_object_for_dict(self, loader: ConfargLoader) -> None:
+        """A JSON object string is decoded into a dict field."""
+        WithDict = make_target("env", dict[str, str], default_factory=dict)
+        result = loader.load(WithDict, argv=[], env={"ENV": '{"a": "b"}'}, env_prefix="")
+        assert result.env == {"a": "b"}
+
+    def test_json_object_for_optional_dict(self, loader: ConfargLoader) -> None:
+        """An optional dict decodes the whole mapping its non-optional peer decodes."""
+        WithOptDict = make_target("env", dict[str, str] | None, default=None)
+        result = loader.load(WithOptDict, argv=[], env={"ENV": '{"a": "b"}'}, env_prefix="")
+        assert result.env == {"a": "b"}
+
     def test_json_object_invalid_json_falls_back_to_string(self, loader: ConfargLoader) -> None:
         """Malformed JSON starting with '{' is treated as a plain string."""
         WithStr = make_target("val", str, default="")
