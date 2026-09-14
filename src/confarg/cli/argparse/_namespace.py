@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -16,11 +14,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from confarg import _defaults
-from confarg._api import build
-from confarg._merge import _deep_merge
-from confarg._parse_cli import _collect_cli_patch_ops, _collect_config_file_pairs
-from confarg._pipeline import _merge_sources
-from confarg.cli._collect import _collect_ns_fields, apply_root_json
+from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 
 
 def merge_namespace(  # noqa: PLR0913
@@ -72,24 +66,10 @@ def merge_namespace(  # noqa: PLR0913
     Config file loading order:
         Same as :func:`confarg.merge`.
     """
-    if env is None:
-        env = os.environ
-
-    ns_flat = vars(ns)
-    cli_data: dict[str, Any] = {}
-    _collect_ns_fields(ns_flat, target, prefix="", union_tag=union_tag, result=cli_data)
-
-    # Patch ops and --config order are read from argv, not the namespace
-    # (docs-dev/architecture/04-cli-adapters.md#collection-patch-parity).
-    argv_ = sys.argv[1:] if argv is None else list(argv)
-    cli_data = _deep_merge(cli_data, _collect_cli_patch_ops(argv_, target, config_flag, union_tag))
-    apply_root_json(ns_flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
-    cli_configs = _collect_config_file_pairs(argv_, config_flag) if config_flag else []
-
-    return _merge_sources(
+    return _merge_from_flat(
+        vars(ns),
         target,
-        cli_data,
-        cli_configs,
+        argv=argv,
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
@@ -162,4 +142,4 @@ def from_namespace(  # noqa: PLR0913
         env_config=env_config,
         union_tag=union_tag,
     )
-    return build(target, merged, union_tag=union_tag)
+    return _construct_from_merged(target, merged, union_tag)
