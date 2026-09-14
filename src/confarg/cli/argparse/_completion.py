@@ -37,6 +37,7 @@ from confarg._types import (
     _unwrap_optional,
     _var_param_names,
 )
+from confarg.cli._prefix import PREFIX_ATTR, strip_argv_prefix
 from confarg.cli.argparse._build import (
     _collect_fn_paths_from_argv,
     _collect_fn_paths_from_config,
@@ -286,6 +287,11 @@ def _extend_walk(
         _extend_walk_field(name, raw_type, flag, core, ctx, group_target, docstrings, defaults, concrete=concrete)
 
 
+def _in_prefix(flag: str, cli_prefix: str) -> str:
+    """Put a field path back under *cli_prefix*, after the scans resolved it without one."""
+    return f"{cli_prefix}.{flag}" if cli_prefix else flag
+
+
 def _pre_extend_parser_for_completion(
     parser: argparse.ArgumentParser,
     target: Any,
@@ -298,14 +304,20 @@ def _pre_extend_parser_for_completion(
     Reads class tags from config files listed in argv and from explicit --<field>.class argv
     tokens, then imports each resolved class and registers its fields onto the parser.
     All errors are silently swallowed — this must never crash a completion invocation.
+
+    A ``cli_prefix`` recorded by :func:`~confarg.cli.argparse.populate_parser` is stripped
+    from argv before the scans (whose dotted paths resolve against *target*) and put back
+    on the field paths, so the flags land under the same namespace as the static ones.
     """
     try:
+        cli_prefix = parser.get_default(PREFIX_ATTR) or ""
+        argv = strip_argv_prefix(argv, cli_prefix)
         config_dict = _collect_partial_config(argv, config_flag)
         cli_tags = _collect_partial_cli_tags(argv, union_tag)
         config_tags = _resolve_tags_from_config(config_dict, target, prefix="", union_tag=union_tag)
 
         # CLI wins over config
-        all_tags = {**config_tags, **cli_tags}
+        all_tags = {_in_prefix(flag, cli_prefix): tag for flag, tag in {**config_tags, **cli_tags}.items()}
 
         walk_ctx = _WalkCtx(parser=parser, union_tag=union_tag, existing_dests={a.dest for a in parser._actions})
 
@@ -323,7 +335,13 @@ def _pre_extend_parser_for_completion(
         argv_fns = _collect_fn_paths_from_argv(argv)
         for field_flag, (fn_path, _mode, bind_key) in {**config_fns, **argv_fns}.items():
             try:
-                _add_callable_bind_flags(parser, field_flag, fn_path, walk_ctx.existing_dests, bind_key)
+                _add_callable_bind_flags(
+                    parser,
+                    _in_prefix(field_flag, cli_prefix),
+                    fn_path,
+                    walk_ctx.existing_dests,
+                    bind_key,
+                )
             except Exception:  # noqa: BLE001 — completion must never crash
                 _log.debug("callable bind flags: skipping %r", fn_path, exc_info=True)
                 continue

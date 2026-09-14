@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._callable import _PLAIN_DIRECTIVES
+from confarg.cli._prefix import PREFIX_ATTR
 from confarg.cli.argparse._build import (
     _build_callable_fn_specs,
     _build_leaf_spec,
@@ -122,6 +123,7 @@ def populate_parser(  # noqa: PLR0913
     target: object,
     parser: argparse.ArgumentParser,
     *,
+    cli_prefix: str = "",
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
@@ -150,6 +152,13 @@ def populate_parser(  # noqa: PLR0913
     Args:
         target: The dataclass type whose fields to register.
         parser: The :class:`argparse.ArgumentParser` to populate.
+        cli_prefix: Namespace every confarg flag lives under, so
+            ``--<prefix>.<field>`` stays distinguishable from the host
+            application's own flags.  Defaults to ``""`` (no prefix).  The value is
+            recorded on the parser, so :func:`merge_namespace` / :func:`from_namespace`
+            recover it and need not repeat it.  A non-struct (scalar) target is
+            registered as the bare ``--<prefix>`` flag and has no CLI spelling
+            without a prefix.
         union_tag: Name of the union discriminator field to skip (matches
             the ``union_tag`` parameter of :func:`from_namespace`).
         config_flag: Name of the config-file flag (default ``"config"``).
@@ -174,18 +183,24 @@ def populate_parser(  # noqa: PLR0913
         argv = sys.argv[1:]
     static = build_static_flags(
         target,
+        cli_prefix=cli_prefix,
         union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,
     )
     load_flags_into_parser(static, parser)
-    dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
+    dynamic = build_dynamic_flags(target, argv, cli_prefix=cli_prefix, union_tag=union_tag, config_flag=config_flag)
     load_flags_into_parser(dynamic, parser)
+    if cli_prefix:
+        # argparse hands from_namespace only a Namespace, with no way back to this
+        # parser, so the prefix rides along on every Namespace the parser produces.
+        parser.set_defaults(**{PREFIX_ATTR: cli_prefix})
 
 
-def make_parser(  # thin pass-through: every parameter is forwarded to populate_parser
+def make_parser(  # noqa: PLR0913  # thin pass-through: every parameter goes to populate_parser
     target: object,
     *,
+    cli_prefix: str = "",
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
@@ -207,6 +222,8 @@ def make_parser(  # thin pass-through: every parameter is forwarded to populate_
 
     Args:
         target: The dataclass type whose fields to register.
+        cli_prefix: Namespace every confarg flag lives under (forwarded to
+            :func:`populate_parser`).
         union_tag: Name of the union discriminator field (forwarded to
             :func:`populate_parser`).
         config_flag: Name of the config-file flag (forwarded to
@@ -224,6 +241,7 @@ def make_parser(  # thin pass-through: every parameter is forwarded to populate_
     populate_parser(
         target,
         parser,
+        cli_prefix=cli_prefix,
         union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,

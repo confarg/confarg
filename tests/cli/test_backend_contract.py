@@ -770,11 +770,101 @@ class TestPipelineParity:
         """A non-struct root target works through every integration (build's __root__ path).
 
         Adapters used to call construct() directly, which lacked the __root__
-        unwrapping that build() does for scalar targets.  CLI input for scalar
-        roots needs cli_prefix (vanilla-only), so the shared path here is env.
+        unwrapping that build() does for scalar targets.  The CLI channel is
+        covered by :class:`TestCliPrefixContract`, which needs a cli_prefix to
+        name the root.
         """
         result = loader.load(int, argv=[], env={"VALUE": "8080"}, env_prefix="", config_flag="")
         assert result == 8080
+
+
+# ---------------------------------------------------------------------------
+# cli_prefix
+# ---------------------------------------------------------------------------
+
+
+class TestCliPrefixContract:
+    """``cli_prefix`` namespaces every confarg flag, identically in every integration.
+
+    The prefix was vanilla-only until the adapters learned to apply it when
+    registering flags and strip it when reading them back (BUG-2).  The loader
+    harness hands it to ``populate_*`` only, so every test here also covers
+    recovering the prefix recorded at registration time.
+    """
+
+    def test_scalar_root_from_cli(self, loader: ConfargLoader) -> None:
+        """``--<prefix> VALUE`` sets a non-struct root — the CLI spelling BUG-2 lacked."""
+        assert loader.load(int, argv=["--app", "8080"], env={}, cli_prefix="app", config_flag="") == 8080
+
+    def test_scalar_root_merges_to_root_key(self, loader: ConfargLoader) -> None:
+        """The merged dict for a scalar root is byte-identical to vanilla's ``__root__`` dict."""
+        merged = loader.merge(int, argv=["--app", "8080"], env={}, cli_prefix="app", config_flag="")
+        assert merged == {"__root__": 8080}
+
+    def test_scalar_root_json_cast(self, loader: ConfargLoader) -> None:
+        """``--<prefix>.json`` sets a non-struct root, as vanilla's root cast does."""
+        assert loader.load(int, argv=["--app.json", "42"], env={}, cli_prefix="app", config_flag="") == 42
+
+    def test_scalar_root_json_cast_list(self, loader: ConfargLoader) -> None:
+        """A root ``.json`` cast builds a whole collection root from one token."""
+        got = loader.load(list[int], argv=["--app.json", "[1, 2]"], env={}, cli_prefix="app", config_flag="")
+        assert got == [1, 2]
+
+    def test_scalar_root_optional_none_token(self, loader: ConfargLoader) -> None:
+        """The ``none`` token resolves to None for an optional scalar root."""
+        assert loader.load(str | None, argv=["--app", "none"], env={}, cli_prefix="app", config_flag="") is None
+
+    def test_prefixed_flat_field(self, loader: ConfargLoader) -> None:
+        """A flat field is addressed as ``--<prefix>.<field>``."""
+        target = make_target("name", str)
+        assert loader.load(target, argv=["--app.name", "val"], env={}, cli_prefix="app").name == "val"
+
+    def test_prefixed_nested_field(self, loader: ConfargLoader) -> None:
+        """A nested path keeps the prefix in front of the whole dotted path."""
+        result = loader.load(
+            AppConfig,
+            argv=["--cfg.db.host", "h", "--cfg.db.port", "1", "--cfg.db.name", "n"],
+            env={},
+            cli_prefix="cfg",
+        )
+        assert result.db == DbConfig(host="h", port=1, name="n")
+
+    def test_prefixed_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The config-file flag is prefixed too, as vanilla requires (``--<prefix>.config``)."""
+        cfg = tmp_yaml("{host: filehost, port: 5432, name: filedb}")
+        result = loader.load(DbConfig, argv=["--app.config", str(cfg)], env={}, cli_prefix="app")
+        assert result == DbConfig(host="filehost", port=5432, name="filedb")
+
+    def test_prefixed_collection_patch(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Argv-order collection patches survive the prefix strip of the argv rescan."""
+        base = tmp_yaml("users: [alice, bob, claire]")
+        cfg = loader.load(
+            _WithUsers,
+            argv=["--app.config", str(base), "--app.users.0", "allan"],
+            env={},
+            cli_prefix="app",
+        )
+        assert cfg.users == ["allan", "bob", "claire"]
+
+    def test_prefixed_expression_over_cli(self, loader: ConfargLoader) -> None:
+        """Eager coercion still happens under a prefix, so CLI numbers work in expressions."""
+        target = make_target("port", int)
+        assert loader.load(target, argv=["--app.port", "8080"], env={}, cli_prefix="app").port == 8080
+
+    def test_every_registered_flag_carries_the_prefix(self, populating_loader: ConfargLoader) -> None:
+        """``populate_*`` registers nothing outside the prefix namespace."""
+        flags = populating_loader.registered_flags(AppConfig, cli_prefix="app")
+        assert flags
+        assert all(f == "app" or f.startswith("app.") for f in flags), sorted(flags)
+
+    def test_scalar_root_registers_the_bare_prefix_flag(self, populating_loader: ConfargLoader) -> None:
+        """A non-struct root is registered as the bare ``--<prefix>`` flag."""
+        flags = populating_loader.registered_flags(int, cli_prefix="app", config_flag="")
+        assert flags == {"app"}
+
+    def test_no_prefix_registers_no_scalar_root_flag(self, populating_loader: ConfargLoader) -> None:
+        """Without a prefix there is no flag name for a scalar root — as in vanilla."""
+        assert populating_loader.registered_flags(int, config_flag="") == set()
 
 
 # ---------------------------------------------------------------------------

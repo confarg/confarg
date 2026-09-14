@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
+from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 
 
 def merge_namespace(  # noqa: PLR0913
@@ -25,6 +26,7 @@ def merge_namespace(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = _defaults.ENV_SEPARATOR,
+    cli_prefix: str | None = None,
     config_flag: str = _defaults.CONFIG_FLAG,
     files: Sequence[str | Path] = (),
     env_config: str | None = None,
@@ -50,6 +52,11 @@ def merge_namespace(  # noqa: PLR0913
             to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
             read only vars with that prefix.
         env_separator: Separator used to split env var names into nested keys.
+        cli_prefix: Namespace the confarg flags live under.  Omit it (the
+            default) to reuse the value passed to :func:`populate_parser`, which
+            is the normal case; passing one that disagrees with what was
+            registered raises :class:`~confarg.exceptions.ConfargError`
+            rather than silently matching no flags.
         config_flag: Name of the config-file attribute on ``ns`` (default
             ``"config"``).  Must match the ``config_flag`` passed to
             :func:`populate_parser`.  Subkey flags ``--config.<subpath>``
@@ -66,10 +73,14 @@ def merge_namespace(  # noqa: PLR0913
     Config file loading order:
         Same as :func:`confarg.merge`.
     """
+    flat = vars(ns)
+    # argparse hands us no reference to the parser, so populate_parser left the prefix
+    # it registered with on the Namespace itself.
     return _merge_from_flat(
-        vars(ns),
+        flat,
         target,
         argv=argv,
+        cli_prefix=resolve_prefix(flat.get(PREFIX_ATTR), cli_prefix),
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
@@ -88,6 +99,7 @@ def from_namespace(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = _defaults.ENV_SEPARATOR,
+    cli_prefix: str | None = None,
     config_flag: str = _defaults.CONFIG_FLAG,
     files: Sequence[str | Path] = (),
     env_config: str | None = None,
@@ -117,6 +129,11 @@ def from_namespace(  # noqa: PLR0913
             to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
             read only vars with that prefix.
         env_separator: Separator used to split env var names into nested keys.
+        cli_prefix: Namespace the confarg flags live under.  Omit it (the
+            default) to reuse the value passed to :func:`populate_parser`, which
+            is the normal case; passing one that disagrees with what was
+            registered raises :class:`~confarg.exceptions.ConfargError`
+            rather than silently matching no flags.
         config_flag: Name of the config-file attribute on ``ns`` (default
             ``"config"``).  Must match the ``config_flag`` passed to
             :func:`populate_parser`.  Subkey flags ``--config.<subpath>``
@@ -137,6 +154,7 @@ def from_namespace(  # noqa: PLR0913
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
+        cli_prefix=cli_prefix,
         config_flag=config_flag,
         files=files,
         env_config=env_config,

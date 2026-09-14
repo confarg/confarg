@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     import click
 
 from confarg import _defaults
+from confarg.cli._prefix import PREFIX_ATTR
 from confarg.cli.argparse._build import build_dynamic_flags
 from confarg.cli.click._register import load_flags_into_command
 
@@ -75,7 +76,18 @@ def setup_completion(
             return
 
         argv = _partial_argv_from_env()
-        dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
+        # The prefix populate_command registered with travels on the options themselves.
+        cli_prefix = next(
+            (p for p in (getattr(param, PREFIX_ATTR, None) for param in command.params) if p is not None),
+            "",
+        )
+        dynamic = build_dynamic_flags(
+            target,
+            argv,
+            cli_prefix=cli_prefix,
+            union_tag=union_tag,
+            config_flag=config_flag,
+        )
         load_flags_into_command(dynamic, command)
     except Exception:  # noqa: BLE001
         # Completion must never crash; silently degrade.

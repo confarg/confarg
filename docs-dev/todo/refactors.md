@@ -54,6 +54,20 @@ only signal is a `ty check` `unresolved-import`. Point it at a real config modul
 
 ## Duplication
 
+### REF-25 — The `__root__` key is a literal in four modules
+
+**Where:** `src/confarg/_api.py`, `_parse_cli.py`, `_parse_env.py`, `cli/_collect.py` ·
+**Filed:** 2026-09-14
+**Effort:** S · **Risk:** low
+
+The reserved key holding a non-struct target's value is spelled `"__root__"` inline at every
+site that writes or reads it — `_handle_scalar_root`, `_handle_root_cast`, `_store_env_value`,
+`_collect_ns_fields`, `apply_root_json` and `build`. Every channel and front-end has to agree
+on it, which is exactly the condition the "never repeat the literals" rule in
+[09-invariants.md](../architecture/09-invariants.md) names; `_defaults.py` holds only the
+public keyword defaults, so this one wants either a home there or a module-level constant the
+six sites import. Grew by one site when `cli_prefix` reached the adapters.
+
 ### REF-17 — `_var_param_names` / `_var_positional_name` / `_var_keyword_name` re-inspect the same signature
 
 **Where:** `src/confarg/_types.py` · **Filed:** 2026-09-13

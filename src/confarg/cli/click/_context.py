@@ -18,6 +18,7 @@ from click import ParameterSource
 
 from confarg import _defaults
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
+from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 
 
 def _flat_from_ctx(ctx: click.Context) -> dict[str, Any]:
@@ -36,6 +37,19 @@ def _flat_from_ctx(ctx: click.Context) -> dict[str, Any]:
     return result
 
 
+def _registered_prefix(ctx: click.Context) -> str | None:
+    """Return the prefix :func:`populate_command` registered with, or None if it did not.
+
+    Read off the options rather than the command, so it still resolves when the
+    params were copied onto a different :class:`click.Command`.
+    """
+    for param in ctx.command.params:
+        prefix = getattr(param, PREFIX_ATTR, None)
+        if prefix is not None:
+            return prefix
+    return None
+
+
 def merge_context(  # noqa: PLR0913
     target: object,
     ctx: click.Context,
@@ -44,6 +58,7 @@ def merge_context(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = _defaults.ENV_SEPARATOR,
+    cli_prefix: str | None = None,
     config_flag: str = _defaults.CONFIG_FLAG,
     files: Sequence[str | Path] = (),
     env_config: str | None = None,
@@ -69,6 +84,11 @@ def merge_context(  # noqa: PLR0913
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
             which disables environment variable parsing entirely.
         env_separator: Separator used to split env var names into nested keys.
+        cli_prefix: Namespace the confarg flags live under.  Omit it (the
+            default) to reuse the value passed to :func:`populate_command`, which
+            is the normal case; passing one that disagrees with what was
+            registered raises :class:`~confarg.exceptions.ConfargError`
+            rather than silently matching no flags.
         config_flag: Name of the config-file option on ``ctx`` (default
             ``"config"``).  Must match the ``config_flag`` passed to
             :func:`populate_command`.  Set to ``""`` to ignore all config-file
@@ -88,6 +108,7 @@ def merge_context(  # noqa: PLR0913
         _flat_from_ctx(ctx),
         target,
         argv=argv,
+        cli_prefix=resolve_prefix(_registered_prefix(ctx), cli_prefix),
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
@@ -106,6 +127,7 @@ def from_context(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = _defaults.ENV_SEPARATOR,
+    cli_prefix: str | None = None,
     config_flag: str = _defaults.CONFIG_FLAG,
     files: Sequence[str | Path] = (),
     env_config: str | None = None,
@@ -135,6 +157,11 @@ def from_context(  # noqa: PLR0913
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
             which disables environment variable parsing entirely.
         env_separator: Separator used to split env var names into nested keys.
+        cli_prefix: Namespace the confarg flags live under.  Omit it (the
+            default) to reuse the value passed to :func:`populate_command`, which
+            is the normal case; passing one that disagrees with what was
+            registered raises :class:`~confarg.exceptions.ConfargError`
+            rather than silently matching no flags.
         config_flag: Name of the config-file option on ``ctx`` (default
             ``"config"``).  Must match the ``config_flag`` passed to
             :func:`populate_command`.  Set to ``""`` to ignore all config-file
@@ -154,6 +181,7 @@ def from_context(  # noqa: PLR0913
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
+        cli_prefix=cli_prefix,
         config_flag=config_flag,
         files=files,
         env_config=env_config,

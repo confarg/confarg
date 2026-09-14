@@ -5,11 +5,15 @@
 """Loader wrappers that give each CLI integration a confarg.load()-compatible interface.
 
 Each loader provides ``load()`` and ``merge()`` methods with the same signature
-as ``confarg.load()`` / ``confarg.merge()`` (minus the vanilla-only parameter
-``cli_prefix``), forwarding arguments unchanged to the underlying integration.
-``registered_flags()`` exposes the dotted flag names that ``populate_*``
-registers on the host framework (``None`` for vanilla, which has no
-registration step).
+as ``confarg.load()`` / ``confarg.merge()``, forwarding arguments unchanged to
+the underlying integration.  ``registered_flags()`` exposes the dotted flag
+names that ``populate_*`` registers on the host framework (``None`` for
+vanilla, which has no registration step).
+
+``cli_prefix`` reaches the adapters through their registration step: each
+adapter loader passes it to ``populate_*`` and then calls ``merge_*``/``from_*``
+*without* it, so every parity test also exercises the prefix recovery path
+(docs-dev/architecture/03-cli-parsing.md#cli_prefix).
 
 List-field CLI syntax differs between loaders:
 - ``VanillaLoader``, ``ArgparseLoader``, ``CycloptsLoader``: space-separated
@@ -33,6 +37,8 @@ from click.testing import CliRunner
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
+    from types import UnionType
+    from typing import TypeAliasType
 
 import confarg
 import confarg.cli.click as confargclick
@@ -50,17 +56,18 @@ class ConfargLoader(ABC):
     id: str
 
     @abstractmethod
-    def _run(self, target: type, *, construct: bool, **kw: Any) -> Any:
+    def _run(self, target: type | TypeAliasType | UnionType, *, construct: bool, **kw: Any) -> Any:
         """Run the integration's full pipeline; construct the target or return the raw dict."""
 
     def load(  # noqa: PLR0913 — mirrors confarg.load's keyword-only signature
         self,
-        target: type,
+        target: type | TypeAliasType | UnionType,
         *,
         argv: Sequence[str] | None = None,
         env: Mapping[str, str] | None = None,
         env_prefix: str | None = _defaults.ENV_PREFIX,
         env_separator: str = _defaults.ENV_SEPARATOR,
+        cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         files: Sequence[Path] = (),
         env_config: str | None = None,
@@ -74,6 +81,7 @@ class ConfargLoader(ABC):
             env=env,
             env_prefix=env_prefix,
             env_separator=env_separator,
+            cli_prefix=cli_prefix,
             config_flag=config_flag,
             files=files,
             env_config=env_config,
@@ -82,12 +90,13 @@ class ConfargLoader(ABC):
 
     def merge(  # noqa: PLR0913 — mirrors confarg.merge's keyword-only signature
         self,
-        target: type,
+        target: type | TypeAliasType | UnionType,
         *,
         argv: Sequence[str] | None = None,
         env: Mapping[str, str] | None = None,
         env_prefix: str | None = _defaults.ENV_PREFIX,
         env_separator: str = _defaults.ENV_SEPARATOR,
+        cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         files: Sequence[Path] = (),
         env_config: str | None = None,
@@ -101,6 +110,7 @@ class ConfargLoader(ABC):
             env=env,
             env_prefix=env_prefix,
             env_separator=env_separator,
+            cli_prefix=cli_prefix,
             config_flag=config_flag,
             files=files,
             env_config=env_config,
@@ -109,8 +119,9 @@ class ConfargLoader(ABC):
 
     def registered_flags(
         self,
-        target: type,
+        target: type | TypeAliasType | UnionType,
         *,
+        cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
         union_tag: str = _defaults.UNION_TAG,
@@ -127,7 +138,7 @@ class VanillaLoader(ConfargLoader):
 
     id = "vanilla"
 
-    def _run(self, target: type, *, construct: bool, **kw: Any) -> Any:
+    def _run(self, target: type | TypeAliasType | UnionType, *, construct: bool, **kw: Any) -> Any:
         fn = confarg.load if construct else confarg.merge
         return fn(target, **kw)
 
@@ -137,12 +148,13 @@ class ArgparseLoader(ConfargLoader):
 
     id = "argparse"
 
-    def _run(self, target: type, *, construct: bool, **kw: Any) -> Any:
+    def _run(self, target: type | TypeAliasType | UnionType, *, construct: bool, **kw: Any) -> Any:
         argv = list(kw.pop("argv") or [])
         config_flag = kw.pop("config_flag")
         union_tag = kw.pop("union_tag")
         parser = make_parser(
             target,
+            cli_prefix=kw.pop("cli_prefix"),
             config_flag=config_flag,
             union_tag=union_tag,
             argv=argv,
@@ -160,14 +172,16 @@ class ArgparseLoader(ConfargLoader):
 
     def registered_flags(
         self,
-        target: type,
+        target: type | TypeAliasType | UnionType,
         *,
+        cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
         union_tag: str = _defaults.UNION_TAG,
     ) -> set[str] | None:
         parser = make_parser(
             target,
+            cli_prefix=cli_prefix,
             config_flag=config_flag,
             config_subkeys=config_subkeys,
             union_tag=union_tag,
@@ -186,7 +200,7 @@ class ClickLoader(ConfargLoader):
 
     id = "click"
 
-    def _run(self, target: type, *, construct: bool, **kw: Any) -> Any:
+    def _run(self, target: type | TypeAliasType | UnionType, *, construct: bool, **kw: Any) -> Any:
         argv = list(kw.pop("argv") or [])
         config_flag = kw.pop("config_flag")
         result_holder: list[Any] = []
@@ -195,6 +209,7 @@ class ClickLoader(ConfargLoader):
         populate_command(
             target,
             base_cmd,
+            cli_prefix=kw.pop("cli_prefix"),
             config_flag=config_flag,
             union_tag=kw["union_tag"],
             argv=argv,
@@ -217,8 +232,9 @@ class ClickLoader(ConfargLoader):
 
     def registered_flags(
         self,
-        target: type,
+        target: type | TypeAliasType | UnionType,
         *,
+        cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
         union_tag: str = _defaults.UNION_TAG,
@@ -227,6 +243,7 @@ class ClickLoader(ConfargLoader):
         populate_command(
             target,
             cmd,
+            cli_prefix=cli_prefix,
             config_flag=config_flag,
             config_subkeys=config_subkeys,
             union_tag=union_tag,
@@ -244,13 +261,14 @@ class CycloptsLoader(ConfargLoader):
 
     id = "cyclopts"
 
-    def _run(self, target: type, *, construct: bool, **kw: Any) -> Any:
+    def _run(self, target: type | TypeAliasType | UnionType, *, construct: bool, **kw: Any) -> Any:
         argv = list(kw.pop("argv") or [])
         config_flag = kw.pop("config_flag")
         app = cyclopts.App()
         populate_app(
             target,
             app,
+            cli_prefix=kw.pop("cli_prefix"),
             config_flag=config_flag,
             union_tag=kw["union_tag"],
             argv=argv,
@@ -260,8 +278,9 @@ class CycloptsLoader(ConfargLoader):
 
     def registered_flags(
         self,
-        target: type,
+        target: type | TypeAliasType | UnionType,
         *,
+        cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
         union_tag: str = _defaults.UNION_TAG,
@@ -270,6 +289,7 @@ class CycloptsLoader(ConfargLoader):
         populate_app(
             target,
             app,
+            cli_prefix=cli_prefix,
             config_flag=config_flag,
             config_subkeys=config_subkeys,
             union_tag=union_tag,

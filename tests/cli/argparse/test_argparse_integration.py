@@ -635,3 +635,52 @@ class TestMakeParser:
         result = from_namespace(Simple, ns, env={})
         assert result.host == "localhost"
         assert result.port == 9999
+
+
+# ---------------------------------------------------------------------------
+# cli_prefix (argparse-specific: recovery via the Namespace, host-flag coexistence)
+# ---------------------------------------------------------------------------
+
+
+class TestCliPrefixArgparse:
+    """The prefix registered by populate_parser reaches from_namespace on its own."""
+
+    def test_coexists_with_host_flags(self) -> None:
+        """The host application's own flags are untouched, and confarg ignores them."""
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--verbose", action="store_true")
+        parser.add_argument("--port", type=int)  # the host's --port, not Simple.port
+        populate_parser(Simple, parser, cli_prefix="app", config_flag="", argv=[])
+
+        ns = parser.parse_args(["--verbose", "--port", "1", "--app.host", "h", "--app.port", "9999"])
+        assert ns.verbose is True
+        assert ns.port == 1
+
+        result = from_namespace(Simple, ns, env={}, config_flag="")
+        assert result.host == "h"
+        assert result.port == 9999
+
+    def test_prefix_recovered_from_namespace(self) -> None:
+        """from_namespace needs no cli_prefix of its own."""
+        parser = make_parser(Simple, cli_prefix="app", config_flag="")
+        ns = parser.parse_args(["--app.host", "h"])
+        assert from_namespace(Simple, ns, env={}, config_flag="").host == "h"
+
+    def test_matching_prefix_accepted(self) -> None:
+        """Repeating the registered prefix is allowed."""
+        parser = make_parser(Simple, cli_prefix="app", config_flag="")
+        ns = parser.parse_args(["--app.host", "h"])
+        assert from_namespace(Simple, ns, env={}, cli_prefix="app", config_flag="").host == "h"
+
+    def test_mismatched_prefix_raises(self) -> None:
+        """A prefix disagreeing with the registered one fails loudly, not silently."""
+        parser = make_parser(Simple, cli_prefix="app", config_flag="")
+        ns = parser.parse_args(["--app.host", "h"])
+        with pytest.raises(confarg.exceptions.ConfargError, match="cli_prefix mismatch"):
+            from_namespace(Simple, ns, env={}, cli_prefix="cfg", config_flag="")
+
+    def test_no_prefix_leaves_namespace_clean(self) -> None:
+        """Without a prefix the Namespace carries no confarg bookkeeping key."""
+        parser = make_parser(Simple, config_flag="")
+        ns = parser.parse_args(["--host", "h"])
+        assert not [k for k in vars(ns) if k.startswith("__confarg")]
