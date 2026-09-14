@@ -297,7 +297,8 @@ def _store_env_value(parts: list[str], ft: Any, value: str, data: dict[str, Any]
             or (
                 _is_union(ft)
                 and any(
-                    _is_namedtuple(_resolve_type(v)) or _is_struct(_resolve_type(v)) for v in _union_args_no_none(ft)
+                    _is_namedtuple(_resolve_type(v)) or _is_struct(_resolve_type(v)) or _is_dict(_resolve_type(v))
+                    for v in _union_args_no_none(ft)
                 )
             )
         )

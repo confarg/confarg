@@ -1674,6 +1674,7 @@ class _WholeValue:
     """One field per type that accepts a whole ``{...}`` token."""
 
     env: dict[str, str] = dataclasses.field(default_factory=dict)
+    opt: dict[str, str] | None = None
     sub: _WholeInner = dataclasses.field(default_factory=_WholeInner)
     u: _WholeSqlite | _WholeServer | None = None
 
@@ -1702,6 +1703,22 @@ class TestWholeValueFlagContract:
         """A later --env.<key> refines the mapping assigned as a whole."""
         cfg = loader.load(_WholeValue, argv=["--env", '{"a": "b"}', "--env.c", "d"], env={})
         assert cfg.env == {"a": "b", "c": "d"}
+
+    def test_whole_optional_dict_from_json(self, loader: ConfargLoader) -> None:
+        """An optional dict takes the whole mapping its non-optional peer takes."""
+        cfg = loader.load(_WholeValue, argv=["--opt", '{"a": "b"}'], env={})
+        assert cfg.opt == {"a": "b"}
+
+    def test_whole_optional_dict_merges_with_subkey(self, loader: ConfargLoader) -> None:
+        """A later --opt.<key> refines the optional mapping assigned as a whole."""
+        cfg = loader.load(_WholeValue, argv=["--opt", '{"a": "b"}', "--opt.c", "d"], env={})
+        assert cfg.opt == {"a": "b", "c": "d"}
+
+    def test_whole_optional_dict_matches_env_channel(self, loader: ConfargLoader) -> None:
+        """The CLI and env spellings of a whole optional mapping agree, as for a plain dict."""
+        cli = loader.merge(_WholeValue, argv=["--opt", '{"a": "b"}'], env={})
+        env = loader.merge(_WholeValue, argv=[], env={"MYAPP_OPT": '{"a": "b"}'}, env_prefix="MYAPP_")
+        assert cli["opt"] == env["opt"] == {"a": "b"}
 
     def test_whole_struct_from_json(self, loader: ConfargLoader) -> None:
         """--sub '{...}' assigns a whole nested struct."""
@@ -1751,7 +1768,7 @@ class TestWholeValueFlagContract:
         """Every adapter registers the bare flag, so it is visible in --help."""
         flags = populating_loader.registered_flags(_WholeValue)
         assert flags is not None
-        assert {"env", "sub", "u"} <= flags
+        assert {"env", "opt", "sub", "u"} <= flags
 
 
 # ---------------------------------------------------------------------------

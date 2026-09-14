@@ -153,3 +153,25 @@ with `register_unstructure_hook`, pydantic a validator with `PlainSerializer`, m
 `dec_hook` with `enc_hook`, and the standard library's `json` pairs `object_hook` with
 `default=`. Registering the pair is the common shape; defaulting the second half to `str` is
 confarg's concession to the common case.
+
+## Optionality does not change what a whole value accepts
+
+`--env '{"a": "b"}'` and `MYAPP_ENV='{"a": "b"}'` decode the same for `dict[str, str]` and for
+`dict[str, str] | None`. Optionality says what a field may be *unset* to; it is not a statement
+about its syntax, so making `| None` the difference between a decoded mapping and a raw string
+would be a spelling trap ([BUG-9](../todo/bugs.md), closed). Both predicates —
+`_parse_cli._accepts_object_value` and the `accepts_obj` test in `_parse_env._store_env_value` —
+therefore ask their union arm about dicts as well as structs.
+
+Both channels were fixed in one change on purpose. The gap was symmetric, so repairing only the
+CLI would have *created* a divergence where none existed, which
+[09](09-invariants.md#cross-channel-parity) forbids. Collections were already consistent under
+this rule (`list[str] | None` takes a JSON array in the environment, and the CLI's
+`_union_has_seq_variant` reaches it), so dicts were the outlier, not the precedent.
+
+- Cost: a token that used to survive as a string now decodes, so a target with an
+  `Any`-tolerant `| None` arm that was relying on the raw text sees a mapping instead. Nothing
+  in the channel model ever promised that text; the raw value could not be built.
+- Not extended to unions with a callable or a NamedTuple variant: those are separate gaps with
+  their own asymmetries ([BUG-16](../todo/bugs.md), [BUG-17](../todo/bugs.md)), not consequences
+  of this rule.
