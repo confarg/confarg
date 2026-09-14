@@ -18,6 +18,7 @@ import confarg
 from confarg.exceptions import ConfargError
 from tests.conftest import (
     AppConfig,
+    CacheConfig,
     Color,
     DbConfig,
     DeepNested,
@@ -508,6 +509,25 @@ class TestCliEdgeCases:
         WithInt = make_target("count", int)
         with pytest.raises(ConfargError, match="Missing value for '--count'"):
             confarg.load(WithInt, argv=["--count"], env={})
+
+    def test_missing_value_for_struct_field_raises(self) -> None:
+        """--field with no following value raises for a dataclass field too (BUG-8).
+
+        The bare form used to be silently accepted for a non-optional dataclass field
+        and merge nothing, which no CLI adapter could reproduce.
+        """
+        Outer = make_dataclass("Outer", [("cache", CacheConfig, field(default_factory=CacheConfig))])
+        with pytest.raises(ConfargError, match="Missing value for '--cache'"):
+            confarg.load(Outer, argv=["--cache"], env={})
+
+    def test_missing_value_for_struct_field_before_flag_raises(self) -> None:
+        """A bare dataclass flag followed by another flag raises rather than being skipped."""
+        Outer = make_dataclass(
+            "Outer",
+            [("cache", CacheConfig, field(default_factory=CacheConfig)), ("debug", bool, field(default=False))],
+        )
+        with pytest.raises(ConfargError, match="Missing value for '--cache'"):
+            confarg.load(Outer, argv=["--cache", "--debug", "true"], env={})
 
 
 # ---------------------------------------------------------------------------

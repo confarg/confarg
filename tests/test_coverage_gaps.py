@@ -190,12 +190,6 @@ class _WithVarTupleField:
 
 
 @dataclass
-class _WithNestedDefaultInner:
-    inner: WithDefaults = field(default_factory=WithDefaults)
-    name: str = "test"
-
-
-@dataclass
 class _WithNoneValField:
     val: _StructUnionVariantA | None = None
 
@@ -797,11 +791,6 @@ class TestParseCliBranches:
         """'none' token for a non-struct optional target resolves to None."""
         result = confarg.load(int | None, argv=["--confarg", "none"], env={}, cli_prefix="confarg")
         assert result is None
-
-    def test_dataclass_field_with_no_value(self) -> None:
-        """A bare --inner flag without a value triggers default construction."""
-        result = confarg.load(_WithNestedDefaultInner, argv=["--inner"], env={})
-        assert result.inner.name == "default"
 
     def test_append_unknown_field_raises(self) -> None:
         """--unknown+ for a non-existent field raises ConfargError."""

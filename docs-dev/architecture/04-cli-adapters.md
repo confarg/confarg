@@ -100,8 +100,10 @@ collector, so the three cannot drift.
 
 The flags are **static**, not argv-scanned: the field is declared, so it belongs in `--help`
 next to the bare `--tags` / `--pair` flags lists and tuples already get, and completion can
-offer it. `nargs=None` — vanilla consumes exactly one token here and rejects a second as a
-stray positional. The metavar is `JSON` only where the predicate says the token is decoded, so a field that
+offer it. `nargs=None` — vanilla consumes exactly one token here, rejects a second as a stray
+positional, and rejects none at all with `Missing value`
+([10](10-design-decisions.md#a-whole-value-flag-needs-its-value)): the `FlagSpec` vocabulary
+deliberately has no optional-value `"?"`, because cyclopts cannot express one. The metavar is `JSON` only where the predicate says the token is decoded, so a field that
 keeps its token raw does not advertise a syntax it will not honour. Optionality is not one of
 the things that decides this: `dict[str, str] | None` takes the mapping `dict[str, str]` takes
 and gets the same `JSON` metavar

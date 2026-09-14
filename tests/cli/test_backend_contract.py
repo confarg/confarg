@@ -1679,6 +1679,11 @@ class _WholeValue:
     u: _WholeSqlite | _WholeServer | None = None
 
 
+# Vanilla raises its own ConfargError; argparse, click and cyclopts reject the flag in
+# their own parsers and exit.  Both are "the front-end refused it", which is the contract.
+_REJECTS_BARE_FLAG = (ConfargError, SystemExit)
+
+
 class TestWholeValueFlagContract:
     """A dict, struct, struct-union or callable field takes its whole value in one token.
 
@@ -1763,6 +1768,32 @@ class TestWholeValueFlagContract:
         """A token that opens a JSON object but is malformed hard-errors identically."""
         with pytest.raises(ConfargError, match="Invalid JSON"):
             loader.load(_WholeValue, argv=["--env", "{"], env={})
+
+    def test_bare_struct_flag_without_a_value_is_rejected(self, loader: ConfargLoader) -> None:
+        """--sub with no token is rejected everywhere: a whole-value flag needs its value (BUG-8).
+
+        Vanilla used to accept the bare form for a non-optional struct field and merge
+        nothing, a no-op no adapter could reproduce -- cyclopts cannot express a parameter
+        whose token count varies.  Every front-end now refuses it, the way they already
+        refused the same form on the ``dict`` and ``dict | None`` fields below.
+        """
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(_WholeValue, argv=["--sub"], env={})
+
+    def test_bare_struct_flag_before_another_flag_is_rejected(self, loader: ConfargLoader) -> None:
+        """--sub followed by another flag is rejected too, not silently skipped."""
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(_WholeValue, argv=["--sub", "--env", '{"a": "b"}'], env={})
+
+    def test_bare_dict_flag_without_a_value_is_rejected(self, loader: ConfargLoader) -> None:
+        """The dict peer of the struct flag refuses the bare form identically."""
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(_WholeValue, argv=["--env"], env={})
+
+    def test_bare_optional_dict_flag_without_a_value_is_rejected(self, loader: ConfargLoader) -> None:
+        """Optionality does not buy a bare form either."""
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(_WholeValue, argv=["--opt"], env={})
 
     def test_whole_value_flags_registered(self, populating_loader: ConfargLoader) -> None:
         """Every adapter registers the bare flag, so it is visible in --help."""

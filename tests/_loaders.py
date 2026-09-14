@@ -207,7 +207,12 @@ class ClickLoader(ConfargLoader):
             result_holder.append(fn(target, ctx, argv=argv, config_flag=config_flag, **kw))
 
         real_cmd = click.Command(name="cli", callback=_inner.callback, params=base_cmd.params)
-        CliRunner().invoke(real_cmd, argv, catch_exceptions=False)
+        result = CliRunner().invoke(real_cmd, argv, catch_exceptions=False)
+        if not result_holder:
+            # Click rejected argv itself: standalone mode printed the usage error and
+            # exited, and CliRunner swallowed the SystemExit.  Re-raise it so callers
+            # see the framework's verdict instead of an IndexError on an empty list.
+            raise SystemExit(result.exit_code)
         return result_holder[0]
 
     def registered_flags(
