@@ -42,6 +42,7 @@ from confarg._types import (
     _is_literal,
     _is_namedtuple,
     _is_struct,
+    _is_struct_like,
     _is_tuple,
     _is_type_ref,
     _is_union,
@@ -58,6 +59,7 @@ from confarg._types import (
     _unwrap_optional,
     _var_param_names,
 )
+from confarg.cli._prefix import apply_prefix, strip_argv_prefix
 from confarg.cli.argparse._spec import FlagSpec, _build_help, _get_field_docstrings, _get_field_meta
 from confarg.exceptions import ConfargWarning, SymbolImportError
 from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_registered_leaf
@@ -899,9 +901,32 @@ def _collect_subconfig_specs(
     return result
 
 
+def _scalar_root_spec(target: Any) -> FlagSpec:
+    """Build the nameless FlagSpec for a non-struct (scalar) root target.
+
+    :func:`~confarg.cli._prefix.apply_prefix` turns the empty name into the bare
+    ``--<cli_prefix>`` flag -- the only CLI spelling a scalar root has -- and drops
+    the spec entirely when no prefix is set.
+
+    ``nargs`` is forced to a single token because vanilla's
+    :func:`~confarg._parse_cli._handle_scalar_root` consumes exactly one: a
+    ``list[int]`` root must not pick up the greedy ``nargs="*"`` that
+    :func:`_build_leaf_spec` gives a collection *field*.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#cli_prefix
+    """
+    resolved = _resolve_type(target)
+    core = _unwrap_optional(resolved)
+    spec = _build_leaf_spec("", target, resolved if core is None else core, "The configuration value.", None, "")
+    spec.nargs = None
+    return spec
+
+
 def build_static_flags(
     target: object,
     *,
+    cli_prefix: str = "",
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
@@ -914,6 +939,11 @@ def build_static_flags(
 
     Args:
         target: The dataclass type whose fields to describe.
+        cli_prefix: Namespace every flag lives under, so ``--<prefix>.<field>``
+            distinguishes configuration flags from the host framework's own.
+            ``""`` (the default) registers bare field names.  A non-struct
+            (scalar) target is registered as the bare ``--<prefix>`` flag, and has
+            no CLI spelling at all without a prefix -- as in vanilla.
         union_tag: Discriminator field name (default ``"class"``).
         config_flag: Name of the config-file flag (default ``"config"``).
             Pass ``""`` to omit config-file flag specs.
@@ -928,6 +958,8 @@ def build_static_flags(
     from confarg._parse_cli import _locals_keys  # noqa: PLC0415
 
     flags = _collect_struct_specs(target, prefix="", union_tag=union_tag)
+    if not _is_struct_like(_resolve_type(target)):
+        flags.insert(0, _scalar_root_spec(target))
 
     if config_flag:
         flags.append(
@@ -958,7 +990,7 @@ def build_static_flags(
                     ),
                 )
 
-    return flags
+    return apply_prefix(flags, cli_prefix)
 
 
 def _collect_config_argv_specs(argv: Sequence[str], config_flag: str) -> list[FlagSpec]:
@@ -1074,6 +1106,7 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
     target: object,
     argv: Sequence[str],
     *,
+    cli_prefix: str = "",
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
 ) -> list[FlagSpec]:
@@ -1101,6 +1134,9 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         target: The top-level dataclass type.
         argv: The CLI argument list seen so far (e.g. ``sys.argv[1:]`` at
             completion time, or the full argv at parse time).
+        cli_prefix: Namespace the flags live under.  argv is stripped of it before
+            the scan, so the dotted paths resolve against *target*, and the specs
+            are renamed back into the namespace on the way out.
         union_tag: Discriminator field name.
         config_flag: Name of the config-file flag.
 
@@ -1112,7 +1148,9 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
     """
     try:
         config_dict: dict[str, Any] = {}
-        argv_list = list(argv)
+        # Strip first: the scans below resolve dotted paths against *target*, which
+        # knows nothing of the prefix (docs-dev/architecture/03-cli-parsing.md#cli_prefix).
+        argv_list = strip_argv_prefix(argv, cli_prefix)
         flag_prefix = f"--{config_flag}"
         i = 0
         while i < len(argv_list):
@@ -1152,4 +1190,4 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         )
         return []
     else:
-        return result
+        return apply_prefix(result, cli_prefix)

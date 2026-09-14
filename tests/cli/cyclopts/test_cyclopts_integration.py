@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal
 import cyclopts
 import pytest
 
+import confarg
 import confarg.cli.cyclopts as confargcyclopts
 from confarg.cli import FieldMeta, FlagSpec
 from confarg.cli.argparse._build import build_static_flags
@@ -316,3 +317,50 @@ def test_public_api() -> None:
     assert hasattr(confargcyclopts, "populate_app")
     assert hasattr(confargcyclopts, "load_flags_into_app")
     assert hasattr(confargcyclopts, "from_app")
+
+
+# ---------------------------------------------------------------------------
+# cli_prefix (cyclopts-specific: recovery via the adapter's own _app_meta entry)
+# ---------------------------------------------------------------------------
+
+
+class TestCliPrefixCyclopts:
+    """The prefix registered by populate_app reaches from_app on its own."""
+
+    @staticmethod
+    def _app(argv: list[str]) -> cyclopts.App:
+        app = cyclopts.App()
+        populate_app(Simple, app, cli_prefix="app", config_flag="", argv=argv)
+        return app
+
+    def test_prefix_recovered_from_app(self) -> None:
+        """from_app needs no cli_prefix of its own."""
+        argv = ["--app.host", "h"]
+        result = confargcyclopts.from_app(Simple, self._app(argv), argv=argv, env={}, config_flag="")
+        assert result.host == "h"
+
+    def test_matching_prefix_accepted(self) -> None:
+        """Repeating the registered prefix is allowed."""
+        argv = ["--app.host", "h"]
+        result = confargcyclopts.from_app(
+            Simple,
+            self._app(argv),
+            argv=argv,
+            env={},
+            cli_prefix="app",
+            config_flag="",
+        )
+        assert result.host == "h"
+
+    def test_mismatched_prefix_raises(self) -> None:
+        """A prefix disagreeing with the registered one fails loudly, not silently."""
+        argv = ["--app.host", "h"]
+        with pytest.raises(confarg.exceptions.ConfargError, match="cli_prefix mismatch"):
+            confargcyclopts.from_app(
+                Simple,
+                self._app(argv),
+                argv=argv,
+                env={},
+                cli_prefix="cfg",
+                config_flag="",
+            )

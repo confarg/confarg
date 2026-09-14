@@ -9,16 +9,6 @@ Cross-channel parity is mandatory
 ([09-invariants.md#cross-channel-parity](../architecture/09-invariants.md#cross-channel-parity));
 every entry here is a violation nobody has approved, not a design choice.
 
-### BUG-2 — Adapters cannot set a scalar root from the CLI
-
-**Where:** `src/confarg/cli/` · **Filed:** 2026-09-12
-**Effort:** L · **Risk:** medium
-
-A non-struct target is set from argv as `--<cli_prefix> VALUE`, but `cli_prefix` is
-vanilla-only, so the adapters have no spelling for it. Environment variables and config files
-set a scalar root in every front-end; the CLI does not.
-See [03-cli-parsing.md#cli_prefix](../architecture/03-cli-parsing.md#cli_prefix).
-
 ### BUG-3 — A root-level JSON cast is refused in the environment
 
 **Where:** `src/confarg/_parse_env.py` (`_apply_env_json_cast`) · **Filed:** 2026-09-12 ·

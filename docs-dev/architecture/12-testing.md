@@ -9,7 +9,7 @@ live directly in `tests/`.
 ## Contract suite
 
 Parity is enforced by tests, not by review. `tests/_loaders.py` wraps the four front-ends
-behind a `confarg.load()`/`merge()`-compatible interface (minus `cli_prefix`):
+behind a `confarg.load()`/`merge()`-compatible interface:
 
 | Loader | Pipeline |
 |---|---|

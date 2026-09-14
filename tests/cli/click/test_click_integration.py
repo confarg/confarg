@@ -14,6 +14,7 @@ import click
 import pytest
 from click.testing import CliRunner
 
+import confarg
 import confarg.cli.click as confargclick
 from confarg.cli import FieldMeta, FlagSpec
 from confarg.cli.argparse._build import build_static_flags
@@ -328,3 +329,42 @@ def test_public_api() -> None:
     assert hasattr(confargclick, "load_flags_into_command")
     assert hasattr(confargclick, "from_context")
     assert hasattr(confargclick, "setup_completion")
+
+
+# ---------------------------------------------------------------------------
+# cli_prefix (click-specific: recovery off the options, which travel with params)
+# ---------------------------------------------------------------------------
+
+
+class TestCliPrefixClick:
+    """The prefix registered by populate_command reaches from_context on its own."""
+
+    @staticmethod
+    def _run(argv: list[str], *, cli_prefix: str | None = None) -> Any:
+        holder: list[Any] = []
+        base = click.command()(lambda **kwargs: None)
+        populate_command(Simple, base, cli_prefix="app", config_flag="", argv=argv)
+
+        @click.command()
+        def _inner(**kwargs: Any) -> None:
+            ctx = click.get_current_context()
+            kw = {} if cli_prefix is None else {"cli_prefix": cli_prefix}
+            holder.append(confargclick.from_context(Simple, ctx, argv=argv, env={}, config_flag="", **kw))
+
+        # Params are transplanted onto a different Command, as click apps routinely do.
+        cmd = click.Command(name="cli", callback=_inner.callback, params=base.params)
+        CliRunner().invoke(cmd, argv, catch_exceptions=False)
+        return holder[0]
+
+    def test_prefix_recovered_from_options(self) -> None:
+        """from_context needs no cli_prefix, even after params moved to another Command."""
+        assert self._run(["--app.host", "h"]).host == "h"
+
+    def test_matching_prefix_accepted(self) -> None:
+        """Repeating the registered prefix is allowed."""
+        assert self._run(["--app.host", "h"], cli_prefix="app").host == "h"
+
+    def test_mismatched_prefix_raises(self) -> None:
+        """A prefix disagreeing with the registered one fails loudly, not silently."""
+        with pytest.raises(confarg.exceptions.ConfargError, match="cli_prefix mismatch"):
+            self._run(["--app.host", "h"], cli_prefix="cfg")

@@ -869,7 +869,6 @@ def _consume_typed_arg(
 def _collect_config_file_pairs(
     argv: Sequence[str],
     config_flag: str,
-    cli_prefix: str = "",
 ) -> list[tuple[str, Path]]:
     """Return (subpath, Path) pairs for ``--config[.subpath]`` flags in command-line order.
 
@@ -877,10 +876,13 @@ def _collect_config_file_pairs(
     the adapter framework already consumed the paths and argv is rescanned for ordering).
     Does not raise on missing paths; use ``_parse_cli`` when strict validation is needed.
 
+    Takes argv with any ``cli_prefix`` already removed: the adapters strip it with
+    :func:`~confarg.cli._prefix.strip_argv_prefix` before rescanning, so this scan
+    never has to know about it.
+
     Args:
-        argv: The CLI argument sequence to scan.
+        argv: The CLI argument sequence to scan, free of any ``cli_prefix``.
         config_flag: The flag name used to specify config files (e.g. ``"config"``).
-        cli_prefix: Required prefix for CLI flags (empty string for no prefix).
 
     Returns:
         A list of ``(subpath, Path)`` pairs in the order they appear in argv.
@@ -894,15 +896,6 @@ def _collect_config_file_pairs(
             i += 1
             continue
         raw_key = token[2:]
-        if cli_prefix:
-            dot_pfx = f"{cli_prefix}."
-            if raw_key.startswith(dot_pfx):
-                raw_key = raw_key[len(dot_pfx) :]
-            elif raw_key == cli_prefix:
-                raw_key = ""
-            else:
-                i += 1
-                continue
         if _addresses_key(raw_key, config_flag):
             subpath = raw_key[len(config_flag) + 1 :] if raw_key.startswith(config_flag + ".") else ""
             i += 1

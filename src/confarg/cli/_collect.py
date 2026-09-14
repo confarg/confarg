@@ -44,6 +44,7 @@ from confarg._types import (
     _is_dict,
     _is_namedtuple,
     _is_struct,
+    _is_struct_like,
     _is_union,
     _is_varlen_collection,
     _namedtuple_fields,
@@ -56,6 +57,7 @@ from confarg._types import (
     _UnionSeqToken,
     _unwrap_optional,
 )
+from confarg.cli._prefix import strip_argv_prefix, strip_flat_prefix
 from confarg.exceptions import ConfargError, SymbolImportError
 from confarg.typedload._coerce import _is_registered_leaf, _try_coerce
 
@@ -162,13 +164,21 @@ def apply_root_json(flat: dict[str, Any], target: Any, union_tag: str, result: d
     the whole config, but per-field CLI flags (already collected into ``result``) win, so
     the decoded object is deep-merged *underneath* ``result``.  A real root field named
     ``json`` wins over the cast (same rule as :func:`_find_json_cast`).  The decoded value
-    must be a JSON object for a structured target.  Called once at the top level by each
+    must be a JSON object for a structured target; for a non-struct (scalar) root it
+    becomes ``__root__`` whatever its shape.  Called once at the top level by each
     adapter's context builder.
     """
     raw = flat.get(JSON_CAST_NAME)
     if raw is None or _segment_names_real_field(target, JSON_CAST_NAME, union_tag):
         return
     decoded = resolve_forced_value(JSON_CAST_NAME, raw, flag=f"--{JSON_CAST_NAME}")
+    if not _is_struct_like(_resolve_type(target)):
+        # Non-struct root: the decoded value *is* the configuration, whatever its
+        # shape, as in vanilla's _handle_root_cast. setdefault keeps the bare
+        # `--<cli_prefix>` flag winning, the same way the deep merge below lets
+        # per-field flags win over the injected object.
+        result.setdefault("__root__", decoded)
+        return
     if not isinstance(decoded, dict):
         msg = f"--{JSON_CAST_NAME} for a structured target must be a JSON object, got {type(decoded).__name__}."
         raise ConfargError(msg)
@@ -425,6 +435,11 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type c
             concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
             if concrete:
                 _collect_ns_union_root(flat, concrete, prefix, union_tag, result)
+                return
+        if "" in flat:
+            # Non-struct root: the empty key is the bare `--<cli_prefix>` flag, left
+            # behind by strip_flat_prefix. Mirrors vanilla's _handle_scalar_root.
+            result["__root__"] = _coerce_scalar(tp, flat[""])
         return
     _tp, flds, hints = setup
 
@@ -507,6 +522,7 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
     env: Mapping[str, str] | None,
     env_prefix: str | None,
     env_separator: str,
+    cli_prefix: str,
     config_flag: str,
     files: Sequence[str | Path],
     env_config: str | None,
@@ -528,6 +544,8 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
         env: Environment variable mapping; ``None`` means ``os.environ``.
         env_prefix: Prefix that env vars must start with.
         env_separator: Separator splitting env var names into nested keys.
+        cli_prefix: Namespace the flags were registered under; stripped from both
+            *flat* and *argv* so everything downstream stays prefix-blind.
         config_flag: Flag name used to specify config files.
         files: Config file paths to load at lowest priority.
         env_config: Name of an env var holding a config file path.
@@ -542,12 +560,17 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
     if env is None:
         env = os.environ
 
+    # Strip the prefix at both inputs, so the type walk and the argv rescan below
+    # resolve paths against *target* alone
+    # (docs-dev/architecture/03-cli-parsing.md#cli_prefix).
+    flat = strip_flat_prefix(flat, cli_prefix)
     cli_data: dict[str, Any] = {}
     _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data)
 
     # Patch ops and --config order are read from argv, not the framework's parse result
     # (docs-dev/architecture/04-cli-adapters.md#collection-patch-parity).
     argv_ = sys.argv[1:] if argv is None else list(argv)
+    argv_ = strip_argv_prefix(argv_, cli_prefix)
     cli_data = _deep_merge(cli_data, _collect_cli_patch_ops(argv_, target, config_flag, union_tag))
     apply_root_json(flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
     cli_configs = _collect_config_file_pairs(argv_, config_flag) if config_flag else []

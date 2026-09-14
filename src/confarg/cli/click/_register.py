@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from confarg.cli.argparse._spec import FlagSpec
 
 from confarg import _defaults
+from confarg.cli._prefix import PREFIX_ATTR
 from confarg.cli.argparse._build import build_dynamic_flags, build_static_flags
 from confarg.dictexpr import contains_expression
 
@@ -133,6 +134,7 @@ def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app s
     target: object,
     command: click.Command,
     *,
+    cli_prefix: str = "",
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
@@ -150,6 +152,13 @@ def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app s
     Args:
         target: The dataclass type whose fields to register.
         command: The :class:`click.Command` to populate.
+        cli_prefix: Namespace every confarg option lives under, so
+            ``--<prefix>.<field>`` stays distinguishable from the host
+            application's own options.  Defaults to ``""`` (no prefix).  The value
+            is recorded against the command, so :func:`merge_context` /
+            :func:`from_context` recover it and need not repeat it.  A non-struct
+            (scalar) target is registered as the bare ``--<prefix>`` option and has
+            no CLI spelling without a prefix.
         union_tag: Name of the union discriminator field to skip.
         config_flag: Name of the config-file option (default ``"config"``).
             Set to ``""`` to disable config-file option registration.
@@ -170,13 +179,21 @@ def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app s
 
     static = build_static_flags(
         target,
+        cli_prefix=cli_prefix,
         union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,
     )
     load_flags_into_command(static, command)
-    dynamic = build_dynamic_flags(target, argv, union_tag=union_tag, config_flag=config_flag)
+    dynamic = build_dynamic_flags(target, argv, cli_prefix=cli_prefix, union_tag=union_tag, config_flag=config_flag)
     load_flags_into_command(dynamic, command)
+    if cli_prefix:
+        # Recorded on the options, not on the command: click routinely copies
+        # ``params`` onto another Command (groups, decorators), and the prefix must
+        # survive that so merge_context still finds it.
+        for param in command.params:
+            if isinstance(param, _ConfargOption):
+                setattr(param, PREFIX_ATTR, cli_prefix)
 
     confarg_names = {p.name for p in command.params} - before_names
     if command.callback is not None and confarg_names:

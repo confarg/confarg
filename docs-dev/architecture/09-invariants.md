@@ -10,8 +10,7 @@ divergence needs a concrete reason **and** the maintainer's explicit approval be
 implemented. Approved divergences so far: list syntax per framework
 ([04](04-cli-adapters.md#list-syntax-divergence)); file-only dunder keys
 ([02](02-files-and-env.md#reserved-file-only-keys)); declaring locals only in files
-([08](08-locals.md#declare-in-files-modify-anywhere)); `cli_prefix` vanilla-only
-([03](03-cli-parsing.md#cli_prefix)). Known unapproved gaps are listed in
+([08](08-locals.md#declare-in-files-modify-anywhere)). Known unapproved gaps are listed in
 [../todo/bugs.md](../todo/bugs.md).
 
 ## Delegate to the canonical function
@@ -30,6 +29,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | locals namespace names | `_parse_cli._locals_keys_at` |
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |
 | "does this field take a whole `{…}` token?" | `_parse_cli._accepts_object_value` |
+| reconciling a registered `cli_prefix` with one passed to `merge_*` | `cli._prefix.resolve_prefix` |
 | plain vs escaped callable directives | `_callable.active_directives` |
 | single-value (scalar/type-ref) construction in unions | `_construct._construct_scalar` |
 | combine existing value with override | `_merge._merge_existing_value` |

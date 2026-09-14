@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
+from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 from confarg.cli.cyclopts._register import _app_meta
 
 
@@ -33,6 +34,7 @@ def merge_app(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = _defaults.ENV_SEPARATOR,
+    cli_prefix: str | None = None,
     config_flag: str = _defaults.CONFIG_FLAG,
     files: Sequence[str | Path] = (),
     env_config: str | None = None,
@@ -62,6 +64,11 @@ def merge_app(  # noqa: PLR0913
             parsing entirely.
         env_separator: Separator used to split env var names into nested
             keys.
+        cli_prefix: Namespace the confarg flags live under.  Omit it (the
+            default) to reuse the value passed to :func:`populate_app`, which
+            is the normal case; passing one that disagrees with what was
+            registered raises :class:`~confarg.exceptions.ConfargError`
+            rather than silently matching no flags.
         config_flag: Name of the config-file option (must match
             :func:`populate_app`).  Set to ``""`` to ignore all config-file
             options.
@@ -96,6 +103,7 @@ def merge_app(  # noqa: PLR0913
         flat,
         target,
         argv=argv,
+        cli_prefix=resolve_prefix(meta.get(PREFIX_ATTR) if meta else None, cli_prefix),
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
@@ -114,6 +122,7 @@ def from_app(  # noqa: PLR0913
     env: Mapping[str, str] | None = None,
     env_prefix: str | None = _defaults.ENV_PREFIX,
     env_separator: str = _defaults.ENV_SEPARATOR,
+    cli_prefix: str | None = None,
     config_flag: str = _defaults.CONFIG_FLAG,
     files: Sequence[str | Path] = (),
     env_config: str | None = None,
@@ -144,6 +153,11 @@ def from_app(  # noqa: PLR0913
             parsing entirely.
         env_separator: Separator used to split env var names into nested
             keys.
+        cli_prefix: Namespace the confarg flags live under.  Omit it (the
+            default) to reuse the value passed to :func:`populate_app`, which
+            is the normal case; passing one that disagrees with what was
+            registered raises :class:`~confarg.exceptions.ConfargError`
+            rather than silently matching no flags.
         config_flag: Name of the config-file option (must match
             :func:`populate_app`).  Set to ``""`` to ignore all config-file
             options.
@@ -162,6 +176,7 @@ def from_app(  # noqa: PLR0913
         env=env,
         env_prefix=env_prefix,
         env_separator=env_separator,
+        cli_prefix=cli_prefix,
         config_flag=config_flag,
         files=files,
         env_config=env_config,

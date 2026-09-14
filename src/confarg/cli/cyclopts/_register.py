@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from confarg.cli.argparse._spec import FlagSpec
 
 from confarg import _defaults
+from confarg.cli._prefix import PREFIX_ATTR
 from confarg.cli.argparse._build import build_dynamic_flags, build_static_flags
 from confarg.dictexpr import contains_expression
 
@@ -189,6 +190,7 @@ def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command s
     target: object,
     app: cyclopts.App,
     *,
+    cli_prefix: str = "",
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
@@ -206,6 +208,13 @@ def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command s
     Args:
         target: The dataclass type whose fields to register.
         app: The cyclopts :class:`~cyclopts.App` to populate.
+        cli_prefix: Namespace every confarg option lives under, so
+            ``--<prefix>.<field>`` stays distinguishable from the host
+            application's own options.  Defaults to ``""`` (no prefix).  The value
+            is recorded against the app, so :func:`merge_app` / :func:`from_app`
+            recover it and need not repeat it.  A non-struct (scalar) target is
+            registered as the bare ``--<prefix>`` option and has no CLI spelling
+            without a prefix.
         union_tag: Name of the union discriminator field to skip.
         config_flag: Name of the config-file option (default ``"config"``).
             Set to ``""`` to disable config-file option registration.
@@ -224,6 +233,7 @@ def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command s
         argv = sys.argv[1:]
     flags = build_static_flags(
         target,
+        cli_prefix=cli_prefix,
         union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,
@@ -231,7 +241,11 @@ def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command s
     flags = flags + build_dynamic_flags(
         target,
         argv,
+        cli_prefix=cli_prefix,
         union_tag=union_tag,
         config_flag=config_flag,
     )
     load_flags_into_app(flags, app)
+    # load_flags_into_app has just (re)created this entry; merge_app reads the prefix
+    # back from it, since cyclopts hands the very same App to the merge step.
+    _app_meta[id(app)][PREFIX_ATTR] = cli_prefix

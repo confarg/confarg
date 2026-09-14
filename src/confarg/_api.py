@@ -66,8 +66,12 @@ def merge(  # noqa: PLR0913
             read only vars with that prefix.
         env_separator: Separator used to split env var names into nested keys.
             Defaults to ``"__"`` (double underscore).
-        cli_prefix: Required prefix for all CLI flags. Defaults to ``""``,
-            which means no prefix is required.
+        cli_prefix: Namespace that all CLI flags live under, addressed as
+            ``--<prefix>.<field>``. Defaults to ``""``, which means no prefix is
+            required; with one set, a flag that lacks it is rejected. It is also
+            the only way to address a non-struct (scalar) target from the CLI,
+            as ``--<prefix> VALUE``. The CLI adapters accept the same keyword on
+            their ``populate_*`` functions, which is where they apply it.
         config_flag: Flag name used to specify config files on the CLI
             (``--config path/to/file.yaml``). Set to ``""`` to disable.
             Defaults to ``"config"``.
@@ -307,8 +311,12 @@ def load[T](  # noqa: PLR0913
             read only vars with that prefix.
         env_separator: Separator used to split env var names into nested keys.
             Defaults to ``"__"`` (double underscore).
-        cli_prefix: Required prefix for all CLI flags. Defaults to ``""``,
-            which means no prefix is required.
+        cli_prefix: Namespace that all CLI flags live under, addressed as
+            ``--<prefix>.<field>``. Defaults to ``""``, which means no prefix is
+            required; with one set, a flag that lacks it is rejected. It is also
+            the only way to address a non-struct (scalar) target from the CLI,
+            as ``--<prefix> VALUE``. The CLI adapters accept the same keyword on
+            their ``populate_*`` functions, which is where they apply it.
         config_flag: Flag name used to specify config files on the CLI
             (``--config path/to/file.yaml``). Set to ``""`` to disable.
             Defaults to ``"config"``.
