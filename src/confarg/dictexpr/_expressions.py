@@ -4,7 +4,7 @@
 
 """Expression resolution for ${...} field references and computations.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/07-expressions.md
 """
 
@@ -42,7 +42,7 @@ def contains_expression(value: object) -> bool:
     unescapes to a literal ``${...}``). Every check that inspects a value before
     ``build()`` must use this predicate to leave such values untouched.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/07-expressions.md#deferral-rule
     """
     return isinstance(value, str) and _EXPR_RE.search(value) is not None
@@ -679,7 +679,7 @@ def _anchor_dots(expr_content: str) -> list[int]:
     Token-based: the dots of ``1.5`` or ``','.join(x)`` are not markers, while the one
     in ``a if .b else c`` is.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     starts = _line_starts(expr_content)
@@ -750,7 +750,7 @@ class _Prefixer(ast.NodeTransformer):
     ``db.x.upper()``). Correct only while :data:`_ALLOWED_NODES` has no construct
     that binds names (lambdas, comprehensions).
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/07-expressions.md#reference-anchoring
     """
 
@@ -809,7 +809,7 @@ def prefix_references(data: Any, prefix: str) -> Any:
     Document-root references (``${.foo}``) are left untouched.  An empty *prefix*
     returns *data* itself, unchanged.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     if not prefix:
@@ -822,7 +822,7 @@ def canonicalize_references(data: Any) -> Any:
 
     Run once every file has been mounted.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     return _map_strings(data, _strip_anchor)

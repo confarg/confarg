@@ -49,7 +49,7 @@ def _expression_tolerant_convert(type_: Any, tokens: Any) -> Any:
     :func:`cyclopts.convert`, so a real out-of-domain value still fails with cyclopts'
     own error.  ``build()`` validates the resolved expression.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#expression-tolerant-choice-gates
     """
     if any(contains_expression(t.value) for t in tokens):

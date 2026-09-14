@@ -16,26 +16,30 @@ maintainer — lives on the boards in [`../todo/`](../todo/README.md), not in th
 ticket describes work to do; closing it usually leaves a decision, and the decision comes
 back here.
 
-## How to use these notes
+## Conventions
 
-1. Read this file, then [09-invariants.md](09-invariants.md) before changing anything.
-2. Open only the topic documents that match the code you are touching (table below).
-3. Docstrings point here through an `Agent Notes:` section, e.g.
+Rationale marked *(inferred)* was reconstructed from the code, not stated by the maintainer.
+It is a hypothesis, not a fact: confirm it before relying on it, and correct it once you know.
 
-   ```python
-   def _try_coerce(ft, token):
-       """Coerce a string token to the target type if unambiguous.
+Docstrings point here through a `Dev Notes:` section, e.g.
 
-       Agent Notes:
-           docs-dev/architecture/07-expressions.md#deferral-rule
-       """
-   ```
+```python
+def _try_coerce(ft, token):
+    """Coerce a string token to the target type if unambiguous.
 
-   The section is hidden on the documentation site by `docs/assets/stylesheets/extra.css`
-   (mkdocstrings renders it as `<details class="agent-notes">`). Cite a document and an
-   `##` heading anchor; headings in these files are kept stable for that reason.
-4. Rationale marked *(inferred)* was reconstructed from the code, not stated by the
-   maintainer. Treat it as a hypothesis and confirm before relying on it.
+    Dev Notes:
+        docs-dev/architecture/07-expressions.md#deferral-rule
+    """
+```
+
+The section is hidden on the documentation site by `docs/assets/stylesheets/extra.css`
+(mkdocstrings renders it as `<details class="dev-notes">`), so it is written for whoever works
+on confarg rather than for whoever uses it. A citation names one document and one `##` heading
+anchor; headings in these files are kept stable for that reason, and renaming one means fixing
+the citations that name it (`grep -rn "<old-anchor>" src/`).
+
+Open the topic documents that match the code you are touching; the reading guide below maps
+source modules to documents.
 
 ## Reading guide
 
@@ -108,3 +112,20 @@ confarg/
     ├── click/         _register, _context, _completion
     └── cyclopts/      _register, _context
 ```
+
+## Public surface
+
+What `src/confarg/__init__.py` exports: `load`, `merge`, `build`, `resolve`, `from_dict`,
+`dump`, `dump_file`, `TagPolicy`, `register_leaf_type`, `exceptions`.
+
+The CLI adapters export a matching triple each — populate the framework's own object, merge
+from it, build from it:
+
+| Module | Functions |
+|---|---|
+| `confarg.cli.argparse` | `populate_parser` / `merge_namespace` / `from_namespace`, plus `make_parser` |
+| `confarg.cli.click` | `populate_command` / `merge_context` / `from_context` |
+| `confarg.cli.cyclopts` | `populate_app` / `merge_app` / `from_app` |
+
+Defaults for the keywords those functions share live in `_defaults.py`. Reference them; never
+repeat the literals ([09-invariants.md](09-invariants.md)).

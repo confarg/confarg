@@ -10,7 +10,7 @@ framework-specific parse result into a plain dict of dotted flag names, then cal
 the nested structure expected by the merge pipeline.  The result must equal what the
 vanilla parser produces for the same argv.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/04-cli-adapters.md#byte-identical-merged-dicts
 """
 
@@ -174,7 +174,7 @@ def _whole_value(flat: dict[str, Any], flag: str, resolved: Any) -> Any:
     ``ConfargError`` vanilla raises); anything else is left for the caller's own branch.
     Returns :data:`_NO_CAST` when the flag carries no whole value to decode.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#whole-value-flags
     """
     if flag not in flat:

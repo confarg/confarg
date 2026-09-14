@@ -4,7 +4,7 @@
 
 """Value construction and union disambiguation.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/05-types-and-construction.md
 """
 
@@ -75,7 +75,7 @@ def _try_pinned_dict(data: Any) -> _Pinned | None:
 
     Only a dict with exactly these two keys is a cast.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/05-types-and-construction.md#cast-pinning-in-files
     """
     if not (isinstance(data, dict) and data.keys() == {"__cast__", "__value__"}):

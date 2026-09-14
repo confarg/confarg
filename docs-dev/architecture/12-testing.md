@@ -2,7 +2,8 @@
 
 ## Layout
 
-Tests mirror `src/confarg/` (see CLAUDE.md for the table); cross-cutting integration tests
+Tests mirror `src/confarg/` — `tests/cli/` for `src/confarg/cli/`, `tests/typedload/` for
+`src/confarg/typedload/`, `tests/dictexpr/` for `src/confarg/dictexpr/`; cross-cutting tests
 live directly in `tests/`.
 
 ## Contract suite

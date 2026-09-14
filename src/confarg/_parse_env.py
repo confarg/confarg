@@ -4,7 +4,7 @@
 
 """Environment variable parsing into a nested dict shaped by the target type.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/02-files-and-env.md#environment-parsing
 """
 

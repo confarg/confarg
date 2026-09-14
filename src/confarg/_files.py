@@ -7,7 +7,7 @@
 Files are mounted at a path of the merged document (``__include__``, ``--config.<path>``,
 ``CONFIG__<PATH>``); expression references are prefixed accordingly while mounting.
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/02-files-and-env.md
     docs-dev/architecture/07-expressions.md#reference-anchoring
 """
@@ -143,7 +143,7 @@ def _load_json_item(path: Path) -> Any:
 def _read_rows(f: Any, delimiter: str) -> list[list[_StrToken]]:
     """Read all CSV rows, wrapping every cell in _StrToken and dropping blank lines.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/02-files-and-env.md#data-files-versus-configuration-layers
     """
     return [[_StrToken(cell) for cell in row] for row in csv.reader(f, delimiter=delimiter) if row]
@@ -300,7 +300,7 @@ def _load_includes(entries: list[tuple[str, dict[str, Any]]], base_dir: Path, se
     CSV/TSV entry even when it loads as a dict. ``seen`` grows per entry, not across
     the list: naming the same file twice is legal, a genuine cycle raises.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/02-files-and-env.md#include-semantics
     """
     result: Any = None
@@ -348,7 +348,7 @@ def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path], p
     The included document's references are prefixed by *path_in_file* before the
     sibling keys (which keep this file's anchoring) are merged on top.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     include_val = data.get(INCLUDE_KEY)
@@ -386,7 +386,7 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path], path_i
 
     Each item's references are prefixed by the index it lands on after splicing.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     result: list[Any] = []

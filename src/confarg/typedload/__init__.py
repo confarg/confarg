@@ -28,7 +28,7 @@ Typical use::
     srv = construct(Server, {"host": "localhost", "port": 8080})
     # srv == Server(host="localhost", port=8080)
 
-Agent Notes:
+Dev Notes:
     docs-dev/architecture/05-types-and-construction.md
 """
 
