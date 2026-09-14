@@ -109,6 +109,20 @@ Details that are intended:
 hijacked. The type name is a scalar cast name or the `__name__` of a registered leaf. A
 string `__value__` re-enters coercion as a token; a native value does not.
 
+It is also the spelling a `_Pinned` **leaves** by. A `.str`/`.int`/… cast on the CLI stores a
+`_Pinned` in the merged dict, and no writer can represent one, so `_serialize_untyped` emits the
+file form instead — `cast_name_for_type` naming the type, `_serialize_untyped` itself unwrapping
+the `_StrToken` in `__value__` so no token reaches a writer. Writing the *coerced* value, as a
+coerced leaf beside it does, would be lossy: it is enough while the pin only separates scalars,
+because a file is self-describing and its values are never re-interpreted, but as soon as a
+non-scalar leaf variant precedes the scalar the bare form is stolen back on the way in —
+`Color | str` reads `v = "red"` as `Color.RED`, so `--v.str red` would stop round-tripping at
+the built object ([10](10-design-decisions.md#dump-round-trips-at-the-built-object)).
+`_serialize_untyped` is type-blind and cannot tell the two apart, so it keeps the pin in every
+case. A `__cast__` dict that came from a file is already in this form and re-dumps unchanged,
+so the emission is idempotent. Only the untyped path is affected: `dump(instance)` serializes a
+constructed object, which no longer holds a pin.
+
 ## Union construction
 
 `_construct_union` tries, in order:
@@ -162,7 +176,8 @@ path so the class can be imported.
 
 `_serialize` is the inverse of construction for `dump()`; `_serialize_untyped` is its
 counterpart for the raw dict `dump_file()` accepts, walking containers and routing every leaf
-through the same `_serialize_leaf`.
+through the same `_serialize_leaf` — plus the one thing only a raw dict holds, a force-cast
+`_Pinned` ([cast pinning in files](#cast-pinning-in-files)).
 
 - `tag_policy="auto"` emits the union tag only when `_needs_tag` shows that structural
   disambiguation of the serialized data would not select exactly one variant on the way

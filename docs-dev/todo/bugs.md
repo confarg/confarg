@@ -259,48 +259,6 @@ command(["--host", "db"], standalone_mode=False)
 #           raised from click/core.py, Parameter.handle_parse_result
 ```
 
-### BUG-13 — A force-cast cannot be dumped, though the file spelling exists
-
-**Where:** `src/confarg/_serialize.py` (`_serialize_untyped`) · **Filed:** 2026-09-13
-**Effort:** S · **Risk:** low
-
-`--count.int 5` stores `_Pinned(tp=int, value='5')` in the merged dict (`_cast.resolve_forced_value`),
-and no writer accepts a `_Pinned`: `dump_file` raises in YAML, JSON and TOML alike. Emit the
-file spelling of the cast instead — `{"__cast__": "int", "__value__": "5"}`, read back by
-`_construct._try_pinned_dict` — unwrapping the `_StrToken` in `__value__` so it does not trip
-BUG-12. A `__cast__` dict that came from a file already re-dumps unchanged, so the emission is
-idempotent.
-
-Writing the *coerced* value instead, as BUG-10 does for a coerced leaf, is tempting and wrong.
-It is sufficient while the pin only separates scalars — a file is self-describing and its values
-are never re-interpreted, so `int | str` and `str | int` both read `5` back as an `int`. It is
-lossy as soon as a non-scalar leaf variant precedes the scalar: `Color | str` reads `v = "FOO"`
-back as `Color.FOO` and `Path | str` reads `v = "x/y"` back as a `Path`, by declaration order.
-`--v.str FOO` builds `'FOO'` and a plain `v = "FOO"` dump does not, which breaks
-`build(merge()) == build(merge(dumped))`
-([10](../architecture/10-design-decisions.md#dump-round-trips-at-the-built-object)).
-`_serialize_untyped` is type-blind and cannot tell the two apart, so it must keep the pin.
-Only the untyped path is affected; a `_Pinned` never reaches `dump(instance)`, which serializes
-a constructed object — the typed path has its own version of this, BUG-15.
-See [05-types-and-construction.md#cast-pinning-in-files](../architecture/05-types-and-construction.md#cast-pinning-in-files).
-
-```python
-from dataclasses import dataclass
-import confarg
-
-@dataclass
-class Config:
-    count: int | str = 0
-
-merged = confarg.merge(Config, argv=["--count.int", "5"])
-print("merged:", merged)
-confarg.dump_file(merged, "out.json")
-# expected: merged: {'count': _Pinned(tp=<class 'int'>, value='5')}
-#           out.json holds {"count": {"__cast__": "int", "__value__": "5"}}
-# actual:   merged: {'count': _Pinned(tp=<class 'int'>, value='5')}
-#           TypeError: Object of type _Pinned is not JSON serializable
-```
-
 ### BUG-15 — `dump()` drops a leaf a union variant will steal back
 
 **Where:** `src/confarg/_serialize.py` (`_serialize_union`) · **Filed:** 2026-09-13
@@ -311,9 +269,10 @@ confarg.dump_file(merged, "out.json")
 does promise. Native file values are matched in declaration order, so any `Enum`, `Literal`,
 registered leaf or type-ref variant ahead of the scalar steals the bare scalar on the way back
 in; `Path | str` holding a plain `str` goes the same way. No `_Pinned` is involved — this is the
-typed sibling of BUG-13, and unlike `_serialize_untyped` the typed path knows the declared type
-and can decide. Fix direction: a `_needs_cast` check on leaf variants mirroring `_needs_tag` on
-struct variants — emit `{__cast__, __value__}` only when re-reading the bare scalar would not
+typed sibling of the pin `_serialize_untyped` now writes back
+([05](../architecture/05-types-and-construction.md#cast-pinning-in-files)), and unlike that
+type-blind path the typed one knows the declared type and can decide. Fix direction: a
+`_needs_cast` check on leaf variants mirroring `_needs_tag` on struct variants — emit `{__cast__, __value__}` only when re-reading the bare scalar would not
 select the variant that produced it. Precedent: YAML emitters tag a scalar (`!!str 5`) exactly
 when the plain form would resolve to another type. It changes `dump()` output, so it needs a
 decision recorded in [10-design-decisions.md](../architecture/10-design-decisions.md).

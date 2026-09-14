@@ -14,6 +14,7 @@ import enum
 from typing import Any
 
 from confarg._callable import _serialize_callable
+from confarg._cast import cast_name_for_type
 from confarg._types import (
     TagPolicy,
     _dict_kv,
@@ -28,6 +29,7 @@ from confarg._types import (
     _is_tuple,
     _is_union,
     _namedtuple_fields,
+    _Pinned,
     _resolve_type,
     _StrToken,
     _struct_fields,
@@ -240,14 +242,32 @@ def _serialize_untyped(value: Any) -> Any:
     ``Enum`` becomes its value, ``Path`` a string, ``_StrToken`` a plain ``str``.
     An ``int`` is never widened to ``float`` — nothing here says it should be one.
 
+    A force-cast is written back as the ``{__cast__, __value__}`` dict a file spells it
+    with, rather than as the value it pins: nothing here knows the declared type, and a
+    bare scalar is re-read by declaration order.
+
     Dev Notes:
         docs-dev/architecture/05-types-and-construction.md#serialization
     """
+    if isinstance(value, _Pinned):
+        return _serialize_pinned(value)
     if isinstance(value, dict):
         return {k: _serialize_untyped(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_serialize_untyped(v) for v in value]
     return _serialize_leaf(None, value)
+
+
+def _serialize_pinned(pin: _Pinned) -> dict[str, Any]:
+    """Write a force-cast as the ``{__cast__, __value__}`` dict ``_try_pinned_dict`` reads back.
+
+    The pinned value goes back through :func:`_serialize_untyped`, which unwraps the
+    ``_StrToken`` a CLI cast pins and walks a container a file cast may hold.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#cast-pinning-in-files
+    """
+    return {"__cast__": cast_name_for_type(pin.tp), "__value__": _serialize_untyped(pin.value)}
 
 
 def _find_variant_type(tp: Any, instance: Any) -> Any | None:
