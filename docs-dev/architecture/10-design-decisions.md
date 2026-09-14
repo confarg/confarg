@@ -222,8 +222,9 @@ shape the fourth already refused, was the worse trade. The rule is now uniform, 
 
 ## A registered leaf is never a struct variant
 
-A type in `_LEAF_COERCIONS` is not taken apart into fields anywhere: not by the construction
-and serialization dispatchers, and not by the union-variant filters on either side. The one
+A type in `_LEAF_COERCIONS` is not taken apart into fields by anything that *infers* it should
+be: not by the construction and serialization dispatchers, and not by the union-variant filters
+on either side. Only an explicit tag still opens it, and that is the next section. The one
 predicate is `_is_struct_variant`
 ([05](05-types-and-construction.md#leaf-coercion)); asking `_is_struct` was the bug
 ([BUG-14](../todo/bugs.md), closed).
@@ -245,6 +246,38 @@ spelling.
 
 Precedent: cattrs treats a type with a registered structure hook as opaque and never considers
 it in union disambiguation, which only ever looks at attrs classes. The rejected alternative —
-keep the registry out of the union filters and require an explicit tag on such unions — pushes
-the cost of an introspection accident onto every user of a union with a registered leaf in it,
-and says nothing about which of `UUID`'s seven parameters the tagged dict should fill.
+keep the registry out of the union filters and require an explicit tag on every union with a
+registered leaf in it — pushes the cost of an introspection accident onto every user of such a
+union, to spell out a variant that the leaf path already resolves on its own.
+
+## An explicit tag opts a leaf back in
+
+`register_leaf_type` may not take a spelling away. Before registration a struct-shaped type is
+built from its fields like any other, tag included: `{"class": "uuid.UUID", "int": 5}` produces
+`UUID(int=5)` for a field typed `UUID` or `Release | UUID`. Registering `UUID` broke the plain
+field — `UUID.__init__` got the dict and its `AttributeError` escaped `build()` — which is the
+previous section's promise misapplied to a value that was never inferred to be a struct in the
+first place. An existing configuration file is not wrong because a type it names was later
+registered.
+
+So the rule splits by who asked. A registered leaf is opaque to every **implicit** decision:
+struct dispatch on a bare dict, the "struct with all-default fields is built from `{}`" shortcut
+for a missing field, structural union disambiguation, tag emission on the way out
+([`_is_struct_variant`](09-invariants.md#delegate-to-the-canonical-function)). An **explicit**
+tag naming its class asks for field construction in so many words and gets it
+(`_is_taggable_leaf`). Both halves meet in `_construct_scalar`, the canonical single-value
+constructor, so the tag works wherever a leaf is addressed — a plain field, a list element, a
+union variant — and not just where the bug was noticed ([BUG-16](../todo/bugs.md), closed).
+
+An untagged dict stays an error, and the message says how to ask for fields. The rejected
+alternative — let *any* dict rebuild a registered leaf from its fields, exactly as before
+registration — keeps more old configurations working, but it leaves registration meaning nothing
+for dict-shaped data and re-opens the introspection accident the previous section closes: the
+maintainer's call is that the tag is the opt-in, and nothing else is.
+
+Precedent: nobody else lets a tag name an opaque type, but nobody else has this tag. cattrs'
+`configure_tagged_union`, pydantic's discriminated unions and msgspec's tagged unions are
+closed-world discriminators over modeled variants, so an opaque type cannot appear in one at
+all. confarg's `class` is a dotted import path that names any class and fills its parameters
+([#no-implicit-subclass-inference](#no-implicit-subclass-inference)); a registered leaf is a
+class like another, and refusing to import it would be the special case.

@@ -52,7 +52,10 @@ it to the inverse; `register_leaf_type` writes both, and `Path` is simply the fi
 each (`Path: Path`, `Path: str`), so built-in and user leaf types are one mechanism. A
 registered type is treated as a leaf even if it looks like a struct, in **both** directions:
 construction skips the struct branch for it (`_construct_typed`) and so does serialization
-(`_serialize_by_type`). `_is_struct_variant` is the one function that answers "does this type
+(`_serialize_by_type`). The one way back in is an explicit class tag: `_is_taggable_leaf` marks a
+struct-shaped registered type, and `_construct_scalar` hands a dict carrying the tag to
+`_construct_struct_dispatch` and rejects one without it
+([10](10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in)). `_is_struct_variant` is the one function that answers "does this type
 get taken apart into fields?" — `_is_struct` minus the registry — and both dispatchers and both
 union-variant filters (`_construct_union`'s `dc_vars` and its complement in
 `_construct_union_leaf`, `_serialize._needs_tag`) go through it
@@ -112,7 +115,9 @@ string `__value__` re-enters coercion as a token; a native value does not.
 
 1. single non-None variant (with `none`/`null` tokens for Optional);
 2. the **union tag** (`class` by default): a full dotted class path, which must be a subclass
-   of exactly one struct variant;
+   of exactly one variant that `_is_struct` accepts — registered leaves included, since a tag is
+   an explicit request to build from fields
+   ([10](10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in));
 3. **structural** matching for struct variants: required fields ⊆ provided keys ⊆ fields,
    refined by value/type compatibility; more than one match is an `AmbiguousUnionError`
    whose message lists each variant's fields and suggests the tag; zero matches falls back
@@ -132,7 +137,9 @@ path so the class can be imported.
 
 - Unknown keys are errors (typo detection); missing required fields are `MissingFieldError`
   naming the CLI flag to set.
-- A missing struct field whose type has all-default fields is built from `{}`.
+- A missing struct field whose type has all-default fields is built from `{}` — a registered
+  leaf never is, however defaulted its `__init__` looks, so a missing one is a
+  `MissingFieldError` rather than whatever its constructor raises for no arguments.
 - An index-keyed dict for a tuple field with a default patches the default in place, unless
   the merge layer carried a base (`"*"`), which wins.
 - Lists accept a list or an index-keyed dict. Index-keyed lists must be gap-free unless the

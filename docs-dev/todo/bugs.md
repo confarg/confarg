@@ -150,29 +150,18 @@ when the plain form would resolve to another type. It changes `dump()` output, s
 decision recorded in [10-design-decisions.md](../architecture/10-design-decisions.md).
 See [05-types-and-construction.md#serialization](../architecture/05-types-and-construction.md#serialization).
 
-### BUG-16 — Three struct checks still ignore the leaf registry
+### BUG-17 — A struct built from `{}` can raise its own `TypeError` out of `build()`
 
-**Where:** `src/confarg/typedload/_construct.py` (lines 359, 607/617, 872) · **Filed:** 2026-09-14
+**Where:** `src/confarg/typedload/_construct.py` (`_construct_struct`, the `_all_have_defaults`
+branch) · **Filed:** 2026-09-14
 **Effort:** S · **Risk:** medium
 
-`_is_struct_variant` is the canonical "does this type get taken apart into fields?"
-([09-invariants.md#delegate-to-the-canonical-function](../architecture/09-invariants.md#delegate-to-the-canonical-function)),
-but three sites still ask bare `_is_struct`, so a registered leaf with an all-default
-`__init__` is still a struct to them. Two are observed with `UUID` registered:
-
-- **line 359** — a *missing* required field typed as a registered leaf takes the
-  "struct with all-default fields is built from `{}`" branch: `build(C, {})` for `id: UUID`
-  escapes as a raw `TypeError: one of the hex, bytes, ... must be given` instead of
-  `MissingFieldError`. A stdlib exception leaking out of `build()` is the worst of it.
-- **lines 607/617** — `_construct_union_by_tag` accepts a tag naming the leaf and takes it
-  apart: `{"class": "uuid.UUID", "int": 5}` builds `UUID(int=5)` from fields, which is exactly
-  what registration says never happens
-  ([10-design-decisions.md#a-registered-leaf-is-never-a-struct-variant](../architecture/10-design-decisions.md#a-registered-leaf-is-never-a-struct-variant)).
-- **line 872** — `_value_matches_type` routes a registered leaf to `_struct_matches_value`,
-  so a dict can "match" a leaf-typed field. *(inferred — no test reaches it now that both
-  `_disambiguate_struct` call sites filter the registry out first.)*
-
-Found while closing BUG-14, which fixed the same mistake at the dispatchers and the two
-union-variant filters; these three were left out of that change deliberately, not missed.
-Line 607 is a behavior decision, not a typo — say whether a tag may name a leaf at all — so it
-wants a note in [10-design-decisions.md](../architecture/10-design-decisions.md) either way.
+`_all_have_defaults` reads `__init__` parameter defaults, which is not the same question as
+"does `tp()` work": `UUID` defaults all seven of its parameters and still refuses being called
+with none. A missing field typed as an *unregistered* struct of that shape therefore takes the
+"built from `{}`" shortcut and lets the constructor's own `TypeError: one of the hex, bytes,
+... must be given` escape `build()`, where every other missing field is a `MissingFieldError`.
+Registered leaves no longer reach the branch ([BUG-16](../architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in), closed), which is why only plain classes are left in it.
+Fix direction: the shortcut is a guess, so a `TypeError` from it means the guess was wrong —
+catch it and raise the `MissingFieldError` the field would otherwise have got.
+See [05-types-and-construction.md#structs-collections-and-defaults](../architecture/05-types-and-construction.md#structs-collections-and-defaults).

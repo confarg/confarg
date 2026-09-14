@@ -13,7 +13,7 @@ import pytest
 
 import confarg
 from confarg._types import _StrToken
-from confarg.exceptions import TypeCoercionError
+from confarg.exceptions import MissingFieldError, TypeCoercionError
 from confarg.typedload._coerce import _LEAF_COERCIONS, _LEAF_SERIALIZERS, _coerce_leaf, _try_coerce
 from confarg.typedload._construct import construct
 from tests.conftest import Release
@@ -198,6 +198,111 @@ class TestRegisteredLeafInStructUnion:
         """The registered leaf still claims the scalar form of the same union."""
         confarg.register_leaf_type(UUID, UUID)
         assert construct(Release | UUID, _StrToken(_UUID_STR)) == _UUID_OBJ
+
+
+# ---------------------------------------------------------------------------
+# TestTaggedRegisteredLeaf — an explicit class tag opts a leaf back into fields
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Tagged:
+    id: UUID
+
+
+@dataclass
+class _TaggedUnion:
+    id: Release | UUID
+
+
+_UUID_TAG = {"class": "uuid.UUID", "int": 5}
+_UUID_FROM_TAG = UUID(int=5)
+
+
+class TestTaggedRegisteredLeaf:
+    """Registering a type as a leaf must not break configurations that tag it.
+
+    ``{"class": "uuid.UUID", ...}`` builds a ``UUID`` from its ``__init__``
+    parameters before registration, and registration may not take that spelling
+    away — an explicit tag is the one thing that opts a registered leaf back into
+    field construction.
+    """
+
+    def test_tag_builds_a_leaf_typed_field_from_fields(self) -> None:
+        """A tagged dict builds the registered leaf of a plainly-typed field."""
+        confarg.register_leaf_type(UUID, UUID)
+        assert confarg.build(_Tagged, {"id": dict(_UUID_TAG)}) == _Tagged(id=_UUID_FROM_TAG)
+
+    def test_tag_builds_a_leaf_variant_of_a_union(self) -> None:
+        """A tagged dict names the registered leaf variant of a union and builds it."""
+        confarg.register_leaf_type(UUID, UUID)
+        assert confarg.build(_TaggedUnion, {"id": dict(_UUID_TAG)}) == _TaggedUnion(id=_UUID_FROM_TAG)
+
+    def test_tag_builds_the_same_value_after_registration_as_before(self) -> None:
+        """Registration leaves the tagged spelling exactly where it was."""
+        before = confarg.build(_Tagged, {"id": dict(_UUID_TAG)})
+        confarg.register_leaf_type(UUID, UUID)
+        assert confarg.build(_Tagged, {"id": dict(_UUID_TAG)}) == before
+
+    def test_custom_union_tag_is_honoured(self) -> None:
+        """The opt-in follows union_tag=, not a hard-coded 'class' key."""
+        confarg.register_leaf_type(UUID, UUID)
+        data = {"id": {"kind": "uuid.UUID", "int": 5}}
+        assert confarg.build(_Tagged, data, union_tag="kind") == _Tagged(id=_UUID_FROM_TAG)
+
+    def test_untagged_dict_is_not_taken_apart(self) -> None:
+        """Without a tag the leaf stays opaque — and the error says how to ask for fields."""
+        confarg.register_leaf_type(UUID, UUID)
+        with pytest.raises(TypeCoercionError, match="'class'"):
+            confarg.build(_Tagged, {"id": {"int": 5}})
+
+    def test_tag_naming_an_unrelated_class_is_rejected(self) -> None:
+        """A tag that does not name the leaf (or a subclass of it) is still an error."""
+        confarg.register_leaf_type(UUID, UUID)
+        with pytest.raises(TypeCoercionError, match="not a subclass"):
+            confarg.build(_Tagged, {"id": {"class": "tests.conftest.Release"}})
+
+
+# ---------------------------------------------------------------------------
+# TestRegisteredLeafIsNotAutoBuilt — no implicit path reaches a leaf's fields
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Ident:
+    id: UUID
+    n: int
+
+
+@dataclass
+class _Serial:
+    id: int
+    n: int
+
+
+class TestRegisteredLeafIsNotAutoBuilt:
+    """No implicit path takes a registered leaf apart, however struct-like it looks."""
+
+    def test_missing_leaf_field_raises_missing_field(self) -> None:
+        """A missing required leaf field is a MissingFieldError, not a stdlib TypeError.
+
+        Every ``UUID.__init__`` parameter has a default, so the "struct with
+        all-default fields is built from {}" shortcut used to call ``UUID()`` and
+        let its own ``TypeError`` escape ``build()``.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        with pytest.raises(MissingFieldError, match="id"):
+            confarg.build(_Tagged, {})
+
+    def test_leaf_typed_field_disambiguates_a_struct_union(self) -> None:
+        """A value the leaf accepts picks the variant that holds it.
+
+        Structural refinement asked whether the value was a valid *dict* for
+        ``UUID``'s fields; a UUID string is not, so the variant lost a comparison
+        it should have won and the union came out ambiguous.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        assert construct(_Ident | _Serial, {"id": _StrToken(_UUID_STR), "n": 1}) == _Ident(id=_UUID_OBJ, n=1)
 
 
 # ---------------------------------------------------------------------------

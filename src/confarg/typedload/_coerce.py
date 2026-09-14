@@ -247,6 +247,18 @@ def _is_struct_variant(tp: Any) -> bool:
     return _is_struct(tp) and not _is_registered_leaf(tp)
 
 
+def _is_taggable_leaf(tp: Any) -> bool:
+    """True if tp is a registered leaf whose fields an explicit union tag may still name.
+
+    The complement of ``_is_struct_variant``: a registered leaf is opaque to every implicit
+    decision, but a tag naming its class builds it from its ``__init__`` parameters.
+
+    Dev Notes:
+        docs-dev/architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in
+    """
+    return _is_registered_leaf(tp) and _is_struct(tp)
+
+
 _SCALAR_COERCIONS: dict[type, Any] = {
     bool: _coerce_bool_value,
     int: _coerce_int_value,
