@@ -54,23 +54,6 @@ only signal is a `ty check` `unresolved-import`. Point it at a real config modul
 
 ## Duplication
 
-### REF-16 — The three adapter `merge_*` / `from_*` bodies are copy-pasted
-
-**Where:** `src/confarg/cli/argparse/_namespace.py`, `src/confarg/cli/click/_context.py`,
-`src/confarg/cli/cyclopts/_context.py` · **Filed:** 2026-09-13
-**Effort:** M · **Risk:** low
-
-The 18-line merge tail — `_collect_ns_fields` → `_collect_cli_patch_ops` → `apply_root_json` →
-`_collect_config_file_pairs` → `_merge_sources(...)` with all eight kwargs forwarded — is byte-identical
-across the three adapters except the local variable holding the flat dict (`ns_flat` / `ctx_flat` /
-`flat`). The three `from_*` functions are likewise each `merge_*(...)` followed by
-`build(target, merged, union_tag=...)`, duplicated verbatim. Extract `_merge_from_flat` and
-`_construct_from_merged` in `cli/_collect.py` (which already hosts the shared `_collect_ns_fields`);
-each `merge_*` then shrinks to "build the flat dict" + `return _merge_from_flat(flat, ...)`. Removes
-~90 lines of near-duplicate code and the repeated `# noqa: PLR0913` on six functions. Aligns with
-REF-1 (the framework-neutral flag model already lives outside `cli/argparse/`); the merge path should
-too. The bodies are already identical, so the change is mechanical.
-
 ### REF-17 — `_var_param_names` / `_var_positional_name` / `_var_keyword_name` re-inspect the same signature
 
 **Where:** `src/confarg/_types.py` · **Filed:** 2026-09-13

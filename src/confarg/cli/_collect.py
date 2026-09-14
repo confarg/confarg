@@ -16,13 +16,28 @@ Dev Notes:
 
 from __future__ import annotations
 
-from typing import Any
+import os
+import sys
+from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
+
+from confarg._api import build
 from confarg._callable import _Directives, active_directives
 from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, resolve_forced_value
 from confarg._import import _import_dotted
 from confarg._merge import _deep_merge, _set_nested
-from confarg._parse_cli import _accepts_object_value, _parse_json_arg, _segment_names_real_field, _try_parse_json_list
+from confarg._parse_cli import (
+    _accepts_object_value,
+    _collect_cli_patch_ops,
+    _collect_config_file_pairs,
+    _parse_json_arg,
+    _segment_names_real_field,
+    _try_parse_json_list,
+)
+from confarg._pipeline import _merge_sources
 from confarg._types import (
     _elem_type,
     _is_callable,
@@ -482,3 +497,75 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type c
             _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
 
     _collect_ns_inheritance(flat, _tp, prefix, union_tag, result)
+
+
+def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only signature
+    flat: dict[str, Any],
+    target: object,
+    *,
+    argv: Sequence[str] | None,
+    env: Mapping[str, str] | None,
+    env_prefix: str | None,
+    env_separator: str,
+    config_flag: str,
+    files: Sequence[str | Path],
+    env_config: str | None,
+    union_tag: str,
+) -> dict[str, Any]:
+    """Merge every source into a raw dict, starting from an adapter's flat parse result.
+
+    The shared tail of ``merge_namespace`` / ``merge_context`` / ``merge_app``: each
+    adapter flattens its framework's parse result to ``{dotted.flag: value}`` and hands
+    it here, so the three cannot drift.  Patch ops and ``--config`` ordering are read
+    from *argv* rather than from *flat*, because a framework's parse result carries no
+    command-line order.
+
+    Args:
+        flat: The adapter's parse result as ``{dotted.flag: value}``.
+        target: The target type, used to guide the type walk.
+        argv: CLI arguments to rescan for patch ops and config-file order.
+            ``None`` means ``sys.argv[1:]``.
+        env: Environment variable mapping; ``None`` means ``os.environ``.
+        env_prefix: Prefix that env vars must start with.
+        env_separator: Separator splitting env var names into nested keys.
+        config_flag: Flag name used to specify config files.
+        files: Config file paths to load at lowest priority.
+        env_config: Name of an env var holding a config file path.
+        union_tag: Field name used as a discriminator tag in unions.
+
+    Returns:
+        A plain dict of the merged configuration, with expression strings intact.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#the-triad
+    """
+    if env is None:
+        env = os.environ
+
+    cli_data: dict[str, Any] = {}
+    _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data)
+
+    # Patch ops and --config order are read from argv, not the framework's parse result
+    # (docs-dev/architecture/04-cli-adapters.md#collection-patch-parity).
+    argv_ = sys.argv[1:] if argv is None else list(argv)
+    cli_data = _deep_merge(cli_data, _collect_cli_patch_ops(argv_, target, config_flag, union_tag))
+    apply_root_json(flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
+    cli_configs = _collect_config_file_pairs(argv_, config_flag) if config_flag else []
+
+    return _merge_sources(
+        target,
+        cli_data,
+        cli_configs,
+        env=env,
+        env_prefix=env_prefix,
+        env_separator=env_separator,
+        config_flag=config_flag,
+        files=files,
+        env_config=env_config,
+        union_tag=union_tag,
+    )
+
+
+def _construct_from_merged(target: object, merged: dict[str, Any], union_tag: str) -> Any:
+    """Construct *target* from an already-merged dict; the shared tail of every ``from_*``."""
+    return build(target, merged, union_tag=union_tag)
