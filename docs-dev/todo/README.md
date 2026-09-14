@@ -19,7 +19,7 @@ revision that closed it.
 
 ## Ticket format
 
-```markdown
+````markdown
 ### BUG-7 — One-line summary in the imperative or as a defect statement
 
 **Where:** `src/confarg/_parse_env.py` · **Filed:** 2026-09-12 · *(inferred — from code
@@ -28,12 +28,25 @@ reading, no test covers it)*
 
 Two or three lines: what is wrong, when it bites, and what the fix direction looks like.
 Link the rationale it touches: [07-expressions.md#deferral-rule](../architecture/07-expressions.md#deferral-rule).
+
+```python
+@dataclass
+class Config:
+    port: int = 8080
+
+confarg.load(Config, argv=[], env={"MYAPP_PORT": "5432"}, env_prefix="MYAPP_")
+# expected: Config(port=5432)
+# actual:   Config(port=8080)
 ```
+````
 
 - **ID**: prefix (`BUG` / `FEAT` / `REF` / `Q`) plus the next unused number on that board.
   IDs are never reused, so they stay greppable in code comments and revision descriptions.
 - **Confidence**: mark anything you have not actually observed as *(inferred)*, as in the
   architecture notes. A suspicion is worth filing; a suspicion sold as a fact is not.
+- **Reproduction**: every ticket on `bugs.md` ends with a runnable snippet contrasting the
+  expected outcome with the actual one. See [Reproduction](#reproduction). The other three
+  boards are exempt — nothing is broken yet to reproduce.
 - **Effort and risk**: every ticket on `bugs.md`, `features.md` and `refactors.md` carries
   both, on their own line under `**Where:**`. See [Effort and risk](#effort-and-risk).
   `questions.md` is exempt — a question is answered, not implemented.
@@ -41,6 +54,34 @@ Link the rationale it touches: [07-expressions.md#deferral-rule](../architecture
   the body if it matters.
 - Keep it short. The code and `../architecture/` hold the detail; a ticket only has to be
   enough to pick the work up cold.
+
+## Reproduction
+
+A bug ticket is not filed until someone else can see the bug for themselves. Every entry on
+`bugs.md` therefore ends with a **reproduction snippet**: the smallest program that shows the
+defect, with the expected outcome and the actual one side by side.
+
+- **Runnable as written.** A `.py` file someone can paste into a scratch directory and run —
+  `confarg`, the standard library, and (where the bug is in a front-end) that front-end. No
+  pytest, no fixtures, no repository test helpers: a ticket is read cold, often by someone who
+  has not cloned anything yet. A bug about import timing or module layout needs more than one
+  file; show each of them under its filename, and keep each one to a handful of lines.
+- **Smallest shape that still shows it.** One field where one field is enough, defaults where
+  the values do not matter, `argv=[...]` and `env={...}` passed explicitly rather than assumed
+  from the real environment.
+- **Expected against actual, both spelled out.** Either as trailing comments, as above, or as
+  two labelled lines of output when the snippet prints both halves of a parity gap. Say which
+  one is which; a reader must never have to work out which line is the bug.
+- **Copied from a real run, not predicted.** Paste the actual exception type and message the
+  snippet produced. If you cannot run it — a front-end you have no way to invoke, a platform
+  you are not on — keep the *(inferred)* marker and label the actual line as predicted, in
+  those words. Never let a guessed transcript read like a transcript.
+- **Running it settles the confidence marker.** If an *(inferred)* ticket reproduces, drop the
+  marker in the same edit. If it does not reproduce, the ticket is wrong: correct the entry or
+  delete it — do not leave a snippet on the board that nobody can make fail.
+- **The snippet is not the regression test.** It goes on the board, never in `tests/`. Fixing
+  the bug starts by turning it into a real test under the test-first protocol, and closing the
+  ticket deletes the snippet with the rest of the entry.
 
 ## Effort and risk
 
