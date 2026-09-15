@@ -537,6 +537,25 @@ def _evaluate_ast(node: ast.AST, namespace: dict[str, Any]) -> Any:
     return evaluator(node, namespace)
 
 
+def _eval_expr(tree: ast.Expression, namespace: dict[str, Any], context: str) -> Any:
+    """Evaluate a parsed expression, wrapping an unexpected failure in ``ExpressionEvalError``.
+
+    ``MissingReferenceError``, ``UnsafeExpressionError`` and an ``ExpressionEvalError`` the
+    interpreter already raised propagate unchanged. Anything else — typically raised by a
+    whitelisted function the expression called — becomes an ``ExpressionEvalError`` quoting
+    *context*: the whole string for a pure expression, the ``${...}`` fragment alone for one
+    embedded in an interpolation.
+    """
+    try:
+        return _evaluate_ast(tree, namespace)
+    # Load-bearing: without it the catch-all below would re-wrap the typed errors.
+    except (MissingReferenceError, UnsafeExpressionError, ExpressionEvalError):
+        raise
+    except Exception as exc:
+        msg = f"Error in expression {context!r}: {exc}"
+        raise ExpressionEvalError(msg) from exc
+
+
 def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
     """Resolve a single expression string.
 
@@ -551,15 +570,7 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
     if m and stripped == expr_str:
         # Pure expression — return typed result
         tree = ast.parse(_strip_anchor(m.group(1)), mode="eval")
-        try:
-            return _evaluate_ast(tree, namespace)
-        except (MissingReferenceError, UnsafeExpressionError):
-            raise
-        except ExpressionEvalError:
-            raise
-        except Exception as exc:
-            msg = f"Error in expression {expr_str!r}: {exc}"
-            raise ExpressionEvalError(msg) from exc
+        return _eval_expr(tree, namespace, expr_str)
 
     # Interpolation or escape mode: build string from parts
     result_parts: list[str] = []
@@ -576,15 +587,7 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
         else:
             # Real expression — evaluate and stringify
             tree = ast.parse(_strip_anchor(m.group(1)), mode="eval")
-            try:
-                value = _evaluate_ast(tree, namespace)
-            except (MissingReferenceError, UnsafeExpressionError):
-                raise
-            except ExpressionEvalError:
-                raise
-            except Exception as exc:
-                msg = f"Error in expression {m.group(0)!r}: {exc}"
-                raise ExpressionEvalError(msg) from exc
+            value = _eval_expr(tree, namespace, m.group(0))
             result_parts.append(str(value))
 
         last_end = m.end()
