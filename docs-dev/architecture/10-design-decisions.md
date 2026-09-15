@@ -196,9 +196,63 @@ this rule (`list[str] | None` takes a JSON array in the environment, and the CLI
 - Cost: a token that used to survive as a string now decodes, so a target with an
   `Any`-tolerant `| None` arm that was relying on the raw text sees a mapping instead. Nothing
   in the channel model ever promised that text; the raw value could not be built.
-- Not extended to unions with a callable or a NamedTuple variant: those are separate gaps with
-  their own asymmetries ([BUG-16](../todo/bugs.md), [BUG-17](../todo/bugs.md)), not consequences
-  of this rule.
+- Not extended to unions with a callable variant: that is a separate gap with its own
+  asymmetry ([BUG-17](../todo/bugs.md)), not a consequence of this rule. The namedtuple half
+  was settled separately, by making a namedtuple a sequence everywhere
+  ([#a-namedtuple-is-a-fixed-length-sequence](#a-namedtuple-is-a-fixed-length-sequence)).
+
+## A namedtuple is a fixed-length sequence
+
+A namedtuple field takes every CLI spelling a same-arity `tuple` takes, and the whole `{...}`
+object its field names additionally make meaningful. Vanilla used to treat it as a scalar: it
+consumed one token, so `--pair 13 42` was `Unexpected positional argument: '42'`, `--pair
+'[13, 42]'` and `--pair '{"x": 13}'` were stored as raw text and died in `build()`, and the
+three adapters — which have registered the arity flag and the per-field flags all along —
+disagreed with vanilla on a field shape they all support ([BUG-16](../todo/bugs.md), closed;
+the ID is a duplicate, see the note below).
+
+The fix is one classification, not three special cases. A namedtuple *is* a tuple subclass of
+known arity, so:
+
+- `_types._is_seq_variant` counts it as sequence-shaped, which is what
+  `_union_has_seq_variant` and `_union_has_scalar_variant` are built from — so `Point | None`
+  consumes its arity exactly as `tuple[int, int] | None` does, and optionality stays a
+  statement about being unset rather than about syntax
+  ([#optionality-does-not-change-what-a-whole-value-accepts](#optionality-does-not-change-what-a-whole-value-accepts));
+- `_types._fixed_seq_types` answers "how many positional tokens, of which types?" for both
+  spellings, so the parser's collection test and its consumption branch cannot learn about
+  namedtuples separately and drift apart;
+- `_parse_cli._accepts_object_value` gains the namedtuple arm the env channel's `accepts_obj`
+  has had all along, in both its direct and its union half — which is the parity gap the
+  ticket was actually filed for.
+
+The rejected alternative was to teach the whole-`{...}` arm alone, as the ticket proposed. It
+closes the env/CLI gap the ticket names and leaves the larger one: vanilla would take a whole
+object for a namedtuple but still refuse the positional form all three adapters accept. A
+predicate that says "this field is sequence-shaped" cannot be right for `tuple[int, int]` and
+wrong for a two-field namedtuple; splitting them is what produced the gap.
+
+Precedent: `typing.NamedTuple` is documented as a tuple subclass, and every consumer here
+already treated it as one *somewhere* — the env channel accepts both JSON shapes for it, the
+adapters register its arity, `construct` builds it from a list. Vanilla's argv parser was the
+only holdout.
+
+- Cost: a lone token now behaves differently on a multi-variant union with a namedtuple
+  variant. `str | Point` used to fail in the parser (`--v 3 4` was a stray positional); it now
+  parses greedily like `str | tuple[int, int]` and fails in `construct`, which does not
+  consider a namedtuple among its tuple variants ([BUG-21](../todo/bugs.md)). The shape was
+  broken before and after; it is now broken in one layer, identically in all four front-ends.
+- Boundary: the three adapters still cannot take a whole `{...}` or `[...]` token on a
+  fixed-arity flag, because the framework fixes its token count at registration. That is not a
+  namedtuple property — `tuple[int, int]` refuses `--pair '[13, 42]'` in exactly the same
+  three front-ends — so it is filed once, for both ([BUG-20](../todo/bugs.md)).
+
+A note on the ID: `BUG-16` was used twice. The first one —
+[#an-explicit-tag-opts-a-leaf-back-in](#an-explicit-tag-opts-a-leaf-back-in) — closed long
+before the namedtuple ticket was filed under the same number, against
+[todo/README.md](../todo/README.md)'s rule that IDs are never reused. Both are closed; the
+citations above say which is which, and the next free number on `bugs.md` is what the rule
+intends.
 
 ## A whole-value flag needs its value
 

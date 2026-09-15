@@ -29,6 +29,8 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | locals namespace names | `_parse_cli._locals_keys_at` |
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |
 | "does this field take a whole `{…}` token?" | `_parse_cli._accepts_object_value` |
+| "how many positional tokens, of which types?" | `_types._fixed_seq_types` |
+| "is this variant sequence-shaped?" | `_types._is_seq_variant` |
 | reconciling a registered `cli_prefix` with one passed to `merge_*` | `cli._prefix.resolve_prefix` |
 | plain vs escaped callable directives | `_callable.active_directives` |
 | single-value (scalar/type-ref) construction | `_construct._construct_scalar` |

@@ -42,12 +42,14 @@ from confarg._types import (
     _dataclass_subclasses,
     _dict_kv,
     _elem_type,
+    _fixed_seq_types,
     _is_callable,
     _is_dc,
     _is_dict,
     _is_frozenset,
     _is_list,
     _is_namedtuple,
+    _is_seq_variant,
     _is_set,
     _is_struct,
     _is_struct_like,
@@ -780,8 +782,8 @@ def _consume_collection_or_scalar(
 ) -> int:
     """Consume collection (array/tuple/varlen) or scalar value; return new arg index."""
     args = ctx.argv
-    # JSON array → list / tuple / union-with-sequence-variant
-    is_collection = _is_varlen_collection(ft) or _is_tuple(ft) or _union_has_seq_variant(ft)
+    # JSON array → list / tuple / namedtuple / union-with-sequence-variant
+    is_collection = _is_seq_variant(ft) or _union_has_seq_variant(ft)
     if (
         is_collection
         and i < len(args)
@@ -802,11 +804,10 @@ def _consume_collection_or_scalar(
         _set_nested(ctx.data, path, items)
         return i
 
-    # Fixed-length tuple → consume exact count
-    if _is_tuple(ft):
-        tt = _tuple_types(ft)
-        if tt is not None:
-            return _consume_fixed_tuple_args(args, i, tt, path, ctx.data)
+    # Fixed-length sequence (tuple[X, Y] or a namedtuple) → consume exact count
+    tt = _fixed_seq_types(ft)
+    if tt is not None:
+        return _consume_fixed_tuple_args(args, i, tt, path, ctx.data)
 
     # Union with a sequence variant → consume greedily (disambiguation deferred to construct)
     if _union_has_seq_variant(ft):
@@ -832,15 +833,12 @@ def _accepts_object_value(ft: Any) -> bool:
     Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#whole-value-flags
     """
-    return (
-        _is_dc(ft)
-        or _is_dict(ft)
-        or _is_callable(ft)
-        or (
-            _is_union(ft)
-            and any(_is_dc(_resolve_type(v)) or _is_dict(_resolve_type(v)) for v in _union_args_no_none(ft))
-        )
-    )
+
+    def accepts(v: Any) -> bool:
+        v = _resolve_type(v)
+        return _is_dc(v) or _is_namedtuple(v) or _is_dict(v)
+
+    return accepts(ft) or _is_callable(ft) or (_is_union(ft) and any(accepts(v) for v in _union_args_no_none(ft)))
 
 
 def _consume_typed_arg(

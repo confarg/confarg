@@ -134,8 +134,8 @@ trips cyclopts' "2 distinct Group objects with same name" check.
 
 A bare `--<field> '{…}'` assigns an entire object in one token — the CLI peer of the env
 channel's `PFX_ENV='{"a":"b"}'`. `_parse_cli._accepts_object_value` is the one predicate
-deciding which field types take one: dataclass, dict, callable, or a union with a dataclass
-or dict variant. It answers for the vanilla parser, for static registration and for the
+deciding which field types take one: dataclass, namedtuple, dict, callable, or a union with a
+dataclass, namedtuple or dict variant. It answers for the vanilla parser, for static registration and for the
 collector, so the three cannot drift.
 
 The flags are **static**, not argv-scanned: the field is declared, so it belongs in `--help`
@@ -149,6 +149,15 @@ the things that decides this: `dict[str, str] | None` takes the mapping `dict[st
 and gets the same `JSON` metavar
 ([10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts)).
 A `Callable[…] | None` still does not ([BUG-17](../todo/bugs.md)).
+
+A **fixed-arity** flag is the one place an adapter cannot follow vanilla here. A namedtuple and
+a `tuple[X, Y]` register with the framework's own exact token count, decided before argv is
+parsed, so the framework rejects the single whole-value token vanilla accepts — `--pair
+'[13, 42]'` for the tuple, `--pair '{"x": 13}'` for the namedtuple — with its own arity error.
+The gap belongs to fixed arity, not to namedtuples: both shapes lose the same spelling in the
+same three front-ends ([BUG-20](../todo/bugs.md)). Everything else about a namedtuple is shared
+— the arity flag, the per-field and per-index flags, and the vanilla positional form
+([10](10-design-decisions.md#a-namedtuple-is-a-fixed-length-sequence)).
 
 A dict field's bare flag is its *only* static flag (its keys are unknown until argv is read);
 subkeys arrive as patch flags and are deep-merged over the whole value, so

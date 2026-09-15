@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from dataclasses import field as dataclasses_field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 from uuid import UUID
 
 import pytest
@@ -127,6 +127,28 @@ class _StealMarker:
 @dataclass
 class _WithStrType:
     value: str | type
+
+
+class _Point(NamedTuple):
+    """Fixed-length sequence with named fields."""
+
+    x: int
+    y: int
+
+
+@dataclass
+class _WithIntPair:
+    pair: tuple[int, int] = (0, 0)
+
+
+@dataclass
+class _WithPoint:
+    pair: _Point = dataclasses_field(default_factory=lambda: _Point(0, 0))
+
+
+@dataclass
+class _WithOptionalPoint:
+    pair: _Point | None = None
 
 
 @dataclass
@@ -344,6 +366,43 @@ class TestListRepeatedFlags:
         """--tags a --tags b collects into a list."""
         cfg = repeated_loader.load(WithList, argv=["--tags", "x", "--tags", "y"], env={})
         assert cfg.tags == ["x", "y"]
+
+
+# ---------------------------------------------------------------------------
+# Fixed-length sequences: tuple and namedtuple spell alike
+# ---------------------------------------------------------------------------
+
+
+class TestFixedSequenceContract:
+    """A namedtuple takes the CLI spellings a same-arity ``tuple`` takes, everywhere.
+
+    A namedtuple is a fixed-length sequence, so every front-end consumes exactly its
+    arity in positional tokens -- the same count a ``tuple[int, int]`` field consumes --
+    and the per-field and per-index flags refine it
+    (docs-dev/architecture/03-cli-parsing.md#token-consumption).
+    """
+
+    def test_tuple_positional(self, loader: ConfargLoader) -> None:
+        """--pair 13 42 fills a tuple[int, int] field."""
+        assert loader.load(_WithIntPair, argv=["--pair", "13", "42"], env={}).pair == (13, 42)
+
+    def test_namedtuple_positional(self, loader: ConfargLoader) -> None:
+        """--pair 13 42 fills a namedtuple field the same way."""
+        assert loader.load(_WithPoint, argv=["--pair", "13", "42"], env={}).pair == _Point(x=13, y=42)
+
+    def test_optional_namedtuple_positional(self, loader: ConfargLoader) -> None:
+        """Optionality does not change the spelling (10-design-decisions.md)."""
+        assert loader.load(_WithOptionalPoint, argv=["--pair", "13", "42"], env={}).pair == _Point(x=13, y=42)
+
+    def test_namedtuple_field_flags(self, loader: ConfargLoader) -> None:
+        """--pair.x / --pair.y address the fields by name."""
+        cfg = loader.load(_WithPoint, argv=["--pair.x", "13", "--pair.y", "42"], env={})
+        assert cfg.pair == _Point(x=13, y=42)
+
+    def test_namedtuple_index_flags(self, loader: ConfargLoader) -> None:
+        """--pair.0 / --pair.1 address the fields by position."""
+        cfg = loader.load(_WithPoint, argv=["--pair.0", "13", "--pair.1", "42"], env={})
+        assert cfg.pair == _Point(x=13, y=42)
 
 
 # ---------------------------------------------------------------------------

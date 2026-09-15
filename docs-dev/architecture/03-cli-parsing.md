@@ -19,13 +19,20 @@ accepted as a dict key.
 
 - `--key=value` is normalized to `--key value`.
 - A flag is `--` followed by a letter or `_`, so `-5` and `--3` are values.
-- Values run until the next flag: variable-length collections consume greedily and fixed
-  tuples consume exactly their arity. A value-taking flag always needs its value, struct
-  flags included: `--db` with nothing after it is `Missing value for '--db'`
+- Values run until the next flag: variable-length collections consume greedily and
+  fixed-length ones consume exactly their arity. A value-taking flag always needs its value,
+  struct flags included: `--db` with nothing after it is `Missing value for '--db'`
   ([10](10-design-decisions.md#a-whole-value-flag-needs-its-value)).
+- **Fixed-length** means `tuple[X, Y]` *or* a namedtuple: both are sequences of a known
+  arity, so one function answers "how many tokens, of which types?" for both,
+  `_types._fixed_seq_types` — and `_is_seq_variant` counts a namedtuple as sequence-shaped
+  wherever a union variant is classified
+  ([10](10-design-decisions.md#a-namedtuple-is-a-fixed-length-sequence)).
 - A token starting with `{` or `[` is decoded as JSON when the field type accepts an object
   or a list. `_accepts_object_value` owns the object half, because the adapters must register
-  and decode the same bare flags ([04](04-cli-adapters.md#whole-value-flags)).
+  and decode the same bare flags ([04](04-cli-adapters.md#whole-value-flags)). The `{`-prefix
+  guard runs *before* the arity path, so a namedtuple takes a whole object without ever
+  competing with its own positional form.
 - Leaves are coerced eagerly with `_try_coerce` so the merged dict has the same types
   whichever channel supplied them (and so CLI numbers work inside expressions).
 - Bool fields take an explicit value: `--verbose true` ([10](10-design-decisions.md#explicit-boolean-values)).
