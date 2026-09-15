@@ -488,6 +488,13 @@ class TestFnDictForm:
         result = confarg.load(WithBareCallable, argv=[], env={"CONFARG_FN": spec}, env_prefix="CONFARG_")
         assert result.fn(2) == 5
 
+    def test_fn_env_json_optional(self) -> None:
+        """An optional callable decodes the spec its non-optional peer decodes (BUG-17)."""
+        spec = json.dumps({"fn": f"{_MOD}._add", "bind": {"y": 3}})
+        result = confarg.load(WithOptionalCallable, argv=[], env={"CONFARG_FN": spec}, env_prefix="CONFARG_")
+        assert result.fn is not None
+        assert result.fn(2) == 5
+
 
 # ---------------------------------------------------------------------------
 # fn: auto-instantiation behaviour
