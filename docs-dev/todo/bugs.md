@@ -40,41 +40,6 @@ print("env:", confarg.load(Config, argv=[], env={"MYAPP_JSON": blob}, env_prefix
 #           env: Config(host='localhost', port=8080)
 ```
 
-### BUG-16 — A NamedTuple takes a whole `{...}` token in the environment but not on the CLI
-
-**Where:** `src/confarg/_parse_cli.py` (`_accepts_object_value`) · **Filed:** 2026-09-14
-**Effort:** S · **Risk:** medium
-
-`_parse_env` tests `_is_namedtuple` in both its direct and its union arm; `_accepts_object_value`
-tests `_is_dc`, which a NamedTuple is not, so neither `NT` nor `NT | None` qualifies and the CLI
-stores the token raw. Fixing it means adding the arm *and* checking it against the fixed-tuple
-consumption path a NamedTuple field also has
-([03-cli-parsing.md#token-consumption](../architecture/03-cli-parsing.md#token-consumption)),
-which the `{`-prefix guard should keep out of the way.
-See [10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](../architecture/10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts).
-
-```python
-from dataclasses import dataclass
-from typing import NamedTuple
-import confarg
-
-class NT(NamedTuple):
-    a: int
-    b: int = 2
-
-@dataclass
-class Config:
-    nt: NT = NT(1)
-
-print("env:", confarg.load(Config, argv=[], env={"MYAPP_NT": '{"a": 5}'}, env_prefix="MYAPP_"))
-print("cli:", confarg.load(Config, argv=["--nt", '{"a": 5}']))
-# expected: env: Config(nt=NT(a=5, b=2))
-#           cli: Config(nt=NT(a=5, b=2))
-# actual:   env: Config(nt=NT(a=5, b=2))
-#           cli: TypeCoercionError: Cannot construct NT at 'nt': expected list, tuple,
-#                or dict, got _StrToken '{"a": 5}'
-```
-
 ### BUG-17 — `Callable | None` does not accept the whole-spec token that `Callable` does
 
 **Where:** `src/confarg/_parse_cli.py` (`_accepts_object_value`),
@@ -165,6 +130,48 @@ print("argparse:", from_namespace(Config, parser.parse_args(argv), argv=argv, en
 # actual:   vanilla : Config(handler=FileHandler(name='base', path='/x'))
 #           argparse: Config(handler=FileHandler(name='base', path='/var/log/a'))
 # click and cyclopts drop it identically.
+```
+
+### BUG-20 — A fixed-arity flag refuses in the adapters the whole-value token vanilla takes
+
+**Where:** `src/confarg/cli/_build.py` (`_build_leaf_spec`, `_collect_namedtuple_specs`)
+**Filed:** 2026-09-15 · **Effort:** M · **Risk:** medium
+
+A `tuple[X, Y]` and a namedtuple register with the framework's exact token count, fixed before
+argv is read, so the framework rejects the single whole-value token vanilla decodes —
+`--pair '[13, 42]'` for either, and `--pair '{"x": 13}'` for the namedtuple. Not a namedtuple
+property: both shapes lose the same spelling in the same three front-ends, which is why this is
+one ticket. The `FlagSpec` vocabulary can express it (`nargs="*"` plus an arity check in
+`cli/_collect.py`), but click renders `nargs="*"` as `multiple=True`, so that spelling would
+cost click its `--pair 13 42` form and extend the approved list-syntax divergence
+([04](../architecture/04-cli-adapters.md#list-syntax-divergence)) to fixed arity — a trade the
+maintainer has to approve. An argv-scanned arity is the other candidate and contradicts
+`build_static_flags`' promise that argv never changes the declared flag set.
+See [04-cli-adapters.md#whole-value-flags](../architecture/04-cli-adapters.md#whole-value-flags).
+
+```python
+import argparse
+from dataclasses import dataclass
+
+import confarg
+from confarg.cli.argparse import populate_parser
+
+
+@dataclass
+class Config:
+    pair: tuple[int, int] = (0, 0)
+
+
+argv = ["--pair", "[13, 42]"]
+print("vanilla:", confarg.load(Config, argv=argv, env={}))
+parser = argparse.ArgumentParser()
+populate_parser(Config, parser, argv=argv)
+print("argparse:", parser.parse_args(argv))
+# expected: vanilla:  Config(pair=(13, 42))
+#           argparse: Namespace(pair=[13, 42], ...)
+# actual:   vanilla:  Config(pair=(13, 42))
+#           argparse: r20.py: error: argument --pair: expected 2 arguments
+#                     SystemExit: 2
 ```
 
 ## Intent versus implementation
@@ -293,4 +300,51 @@ print("reload:", confarg.build(Config, blob))
 #           reload: Config(v='FOO')      — equal to `original`
 # actual:   dump  : {'v': 'FOO'}
 #           reload: Config(v=<Color.FOO: 1>)
+```
+
+### BUG-21 — A union with a namedtuple variant cannot be built from a sequence
+
+**Where:** `src/confarg/typedload/_construct.py` (`_construct_union_leaf`,
+`_try_tuple_variants`) · **Filed:** 2026-09-15 · **Effort:** S · **Risk:** medium
+
+`_construct_union_leaf` partitions the variants with `_is_tuple`, so a namedtuple variant lands
+among the *scalar* leaves and is never offered the list. `str | tuple[int, int]` builds from
+`[13, 42]`; `str | Point` refuses it, in every channel — this is below the parsers, so files,
+env and CLI fail alike. The parse side already agrees with the tuple since a namedtuple became
+sequence-shaped ([10](../architecture/10-design-decisions.md#a-namedtuple-is-a-fixed-length-sequence)),
+which is what moved the failure down here. Fix direction: partition on
+`_types._fixed_seq_types(...) is not None` rather than `_is_tuple`, in both the split and the
+arity filter inside `_try_tuple_variants`, so the one function that answers "fixed arity, of
+which types?" answers here too
+([09](../architecture/09-invariants.md#delegate-to-the-canonical-function)).
+See [05-types-and-construction.md#leaf-coercion](../architecture/05-types-and-construction.md#leaf-coercion).
+
+```python
+from dataclasses import dataclass
+from typing import NamedTuple
+
+import confarg
+
+
+class Point(NamedTuple):
+    x: int
+    y: int
+
+
+@dataclass
+class Config:
+    v: str | Point = "unset"
+
+
+@dataclass
+class Plain:
+    v: str | tuple[int, int] = "unset"
+
+
+print("tuple     :", confarg.build(Plain, {"v": [13, 42]}))
+print("namedtuple:", confarg.build(Config, {"v": [13, 42]}))
+# expected: tuple     : Plain(v=(13, 42))
+#           namedtuple: Config(v=Point(x=13, y=42))
+# actual:   tuple     : Plain(v=(13, 42))
+#           namedtuple: TypeCoercionError: Cannot coerce list [13, 42] to str | Point at 'v'
 ```

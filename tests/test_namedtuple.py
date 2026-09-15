@@ -58,6 +58,20 @@ class WithColor:
 
 
 @dataclass
+class WithIntPair:
+    """Dataclass with a plain fixed-length tuple field, the namedtuple's reference shape."""
+
+    pair: tuple[int, int] = (0, 0)
+
+
+@dataclass
+class WithOptionalPoint:
+    """Dataclass with an optional namedtuple field."""
+
+    pair: Point | None = None
+
+
+@dataclass
 class WithCoord:
     """Dataclass with an untyped namedtuple field."""
 
@@ -243,6 +257,78 @@ class TestCLIArgparse:
         ns = parser.parse_args(["--color.r", "200", "--color.g", "100", "--color.b", "50"])
         result = from_namespace(WithColor, ns)
         assert result.color == Color(r=200, g=100, b=50, a=255)
+
+
+class TestCLIVanilla:
+    """Vanilla argv parsing treats a namedtuple as the fixed-length sequence it is.
+
+    A namedtuple field takes the CLI spellings ``tuple[int, int]`` takes -- exactly its
+    arity in positional tokens, or a whole ``[...]`` JSON array -- plus the whole
+    ``{...}`` JSON object its field names make meaningful, which the env channel already
+    accepts.
+    """
+
+    def test_positional_form(self) -> None:
+        """--pair 13 42 consumes exactly the namedtuple's arity, as a fixed tuple does."""
+        assert confarg.load(WithPoint, argv=["--pair", "13", "42"], env={}).pair == Point(x=13, y=42)
+
+    def test_json_array_form(self) -> None:
+        """--pair '[13, 42]' takes a whole JSON array, as a fixed tuple does."""
+        assert confarg.load(WithPoint, argv=["--pair", "[13, 42]"], env={}).pair == Point(x=13, y=42)
+
+    def test_json_object_form(self) -> None:
+        """--pair '{"x": 13, "y": 42}' takes a whole JSON object, as the env channel does."""
+        cfg = confarg.load(WithPoint, argv=["--pair", '{"x": 13, "y": 42}'], env={})
+        assert cfg.pair == Point(x=13, y=42)
+
+    def test_json_object_form_partial(self) -> None:
+        """A whole JSON object may omit a field that has a default."""
+        cfg = confarg.load(WithColor, argv=["--color", '{"r": 1, "g": 2, "b": 3}'], env={})
+        assert cfg.color == Color(r=1, g=2, b=3, a=255)
+
+    def test_json_object_matches_env(self) -> None:
+        """The CLI and the env channel decode the same whole JSON object (BUG-16)."""
+        blob = '{"x": 13, "y": 42}'
+        assert confarg.load(WithPoint, argv=["--pair", blob], env={}) == confarg.load(
+            WithPoint,
+            argv=[],
+            env={"PAIR": blob},
+            env_prefix="",
+        )
+
+    def test_optional_positional_form(self) -> None:
+        """Optionality does not change the spelling: Point | None consumes its arity too."""
+        cfg = confarg.load(WithOptionalPoint, argv=["--pair", "13", "42"], env={})
+        assert cfg.pair == Point(x=13, y=42)
+
+    def test_optional_json_object_form(self) -> None:
+        """Optionality does not change the spelling: Point | None takes the whole object."""
+        cfg = confarg.load(WithOptionalPoint, argv=["--pair", '{"x": 13, "y": 42}'], env={})
+        assert cfg.pair == Point(x=13, y=42)
+
+    def test_field_name_form(self) -> None:
+        """--pair.x 13 --pair.y 42 still addresses the fields individually."""
+        cfg = confarg.load(WithPoint, argv=["--pair.x", "13", "--pair.y", "42"], env={})
+        assert cfg.pair == Point(x=13, y=42)
+
+    def test_bare_flag_is_rejected(self) -> None:
+        """--pair with no token is rejected, exactly as a same-arity tuple field is."""
+        with pytest.raises(TypeCoercionError):
+            confarg.load(WithIntPair, argv=["--pair"], env={})
+        with pytest.raises(TypeCoercionError):
+            confarg.load(WithPoint, argv=["--pair"], env={})
+
+    def test_spellings_match_a_same_arity_tuple(self) -> None:
+        """Every positional spelling a tuple[int, int] accepts, the namedtuple accepts."""
+        for argv in (["--pair", "13", "42"], ["--pair", "[13, 42]"]):
+            assert (
+                tuple(confarg.load(WithPoint, argv=argv, env={}).pair)
+                == confarg.load(
+                    WithIntPair,
+                    argv=argv,
+                    env={},
+                ).pair
+            )
 
 
 # ---------------------------------------------------------------------------

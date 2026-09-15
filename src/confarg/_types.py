@@ -374,9 +374,35 @@ def _is_varlen_collection(tp: Any) -> bool:
 
 
 def _is_seq_variant(tp: Any) -> bool:
-    """True if tp is a sequence-shaped type: any tuple, or a list/set/frozenset."""
+    """True if tp is a sequence-shaped type: any tuple, a namedtuple, or a list/set/frozenset.
+
+    A namedtuple counts: it is a fixed-length sequence with names attached, so it takes
+    the CLI and file spellings a same-arity ``tuple`` takes.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
     tp = _resolve_type(tp)
-    return _is_tuple(tp) or _is_varlen_collection(tp)
+    return _is_tuple(tp) or _is_namedtuple(tp) or _is_varlen_collection(tp)
+
+
+def _fixed_seq_types(tp: Any) -> list[Any] | None:
+    """Return the element types a fixed-length sequence consumes, or None if it has none.
+
+    The one answer to "how many positional tokens does this field take, and of which
+    types?", for both spellings of a fixed-length sequence: ``tuple[X, Y]`` and a
+    namedtuple class.  ``None`` means the question does not apply -- a variable-length
+    collection, or no sequence at all.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
+    tp = _resolve_type(tp)
+    if _is_namedtuple(tp):
+        return list(_namedtuple_fields(tp).values())
+    if _is_tuple(tp):
+        return _tuple_types(tp)
+    return None
 
 
 def _union_has_seq_variant(tp: Any) -> bool:
