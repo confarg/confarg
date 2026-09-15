@@ -110,16 +110,16 @@ def load_flags_into_command(
     flags: list[FlagSpec],
     command: click.Command,
 ) -> None:
-    """Load a list of :class:`~confarg.cli.argparse.FlagSpec` objects into a Click command.
+    """Load a list of :class:`~confarg.cli.FlagSpec` objects into a Click command.
 
     Each spec becomes a :class:`click.Option` appended to ``command.params``.
     Flags whose ``name`` is already registered are silently skipped.
-    The ``group`` field of :class:`~confarg.cli.argparse.FlagSpec` is not used —
+    The ``group`` field of :class:`~confarg.cli.FlagSpec` is not used —
     Click has no argument-group concept.
 
     Args:
-        flags: The specs to register, typically from :func:`~confarg.cli.argparse.build_static_flags`
-            or :func:`~confarg.cli.argparse.build_dynamic_flags`.
+        flags: The specs to register, typically from :func:`~confarg.cli.build_static_flags`
+            or :func:`~confarg.cli.build_dynamic_flags`.
         command: The :class:`click.Command` to populate.
     """
     existing = {p.name for p in command.params}

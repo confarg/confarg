@@ -94,7 +94,7 @@ def load_flags_into_parser(
     flags: list[FlagSpec],
     parser: argparse.ArgumentParser,
 ) -> None:
-    """Load a list of :class:`~confarg.cli.argparse.FlagSpec` objects into an ArgumentParser.
+    """Load a list of :class:`~confarg.cli.FlagSpec` objects into an ArgumentParser.
 
     Creates argument groups lazily as needed (keyed by :attr:`FlagSpec.group`).
     Flags whose ``name`` is already registered as a ``dest`` are silently skipped.

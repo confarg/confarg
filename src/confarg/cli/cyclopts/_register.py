@@ -146,7 +146,7 @@ def load_flags_into_app(
     flags: list[FlagSpec],
     app: cyclopts.App,
 ) -> None:
-    """Register a list of :class:`~confarg.cli.argparse.FlagSpec` objects on a cyclopts :class:`~cyclopts.App`.
+    """Register a list of :class:`~confarg.cli.FlagSpec` objects on a cyclopts :class:`~cyclopts.App`.
 
     Because cyclopts is signature-driven, this generates a synthetic default
     function whose :class:`inspect.Signature` encodes all flags and registers it
@@ -157,7 +157,7 @@ def load_flags_into_app(
 
     Args:
         flags: The specs to register, typically from
-            :func:`~confarg.cli.argparse.build_static_flags`.
+            :func:`~confarg.cli.build_static_flags`.
         app: The cyclopts :class:`~cyclopts.App` to populate.
     """
     params: list[inspect.Parameter] = []

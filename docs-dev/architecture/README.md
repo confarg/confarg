@@ -106,9 +106,11 @@ confarg/
 │
 │   CLI adapters
 └── cli/
+    ├── _spec.py       FlagSpec, FieldMeta: the framework-neutral flag model
+    ├── _build.py      target type → FlagSpec lists (shared by all adapters)
     ├── _collect.py    flat {dotted.flag: value} → nested dict (shared by all adapters)
-    ├── argparse/      _spec (FlagSpec, FieldMeta), _build (framework-neutral spec
-    │                  generation, used by every adapter), _register, _namespace, _completion
+    ├── _prefix.py     cli_prefix recording, reconciliation and stripping
+    ├── argparse/      _register, _namespace, _completion
     ├── click/         _register, _context, _completion
     └── cyclopts/      _register, _context
 ```
@@ -123,6 +125,7 @@ from it, build from it:
 
 | Module | Functions |
 |---|---|
+| `confarg.cli` | `FlagSpec`, `FieldMeta`, `build_static_flags`, `build_dynamic_flags` — the neutral model every adapter shares |
 | `confarg.cli.argparse` | `populate_parser` / `merge_namespace` / `from_namespace`, plus `make_parser` |
 | `confarg.cli.click` | `populate_command` / `merge_context` / `from_context` |
 | `confarg.cli.cyclopts` | `populate_app` / `merge_app` / `from_app` |
