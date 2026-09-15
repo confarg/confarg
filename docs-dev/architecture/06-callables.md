@@ -73,3 +73,14 @@ the named target at `populate_*` time ([04](04-cli-adapters.md#static-and-dynami
 In `class` mode constructor params are `--f.<p>` and `__call__` params are `--f.bind.<p>`;
 in `fn: Class` mode constructor params are bind targets. A former implicit form, where a
 bare return type triggered collection of sibling flags, was removed.
+
+The bare-string shorthand takes sibling flags too: `--f pkg.func --f.bind.sep -` is
+`--f.fn pkg.func --f.bind.sep -`, because `"pkg.func"` and `{fn: "pkg.func"}` are two
+spellings of one spec. `promote_bare_spec` is the single place that writes the equivalence
+down, and `_parse_cli._open_callable_shorthand` the single place that decides when to apply
+it — before a deeper key descends through the string, in both the CLI and the env loop
+([03](03-cli-parsing.md#token-consumption)). The promoted form is always the *plain* `fn`:
+the bare string has no escaped spelling, so it is a plain opener, and an escaped key beside
+it is ordinary data exactly as beside a written-out `fn:`. An opener flag is not a
+refinement but a rival spelling of the target, so it replaces the shorthand rather than
+joining it, matching how an opener beats the `{…}` blob it sits next to.

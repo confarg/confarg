@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from confarg import _defaults
-from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES
+from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, names_an_opener, promote_bare_spec
 from confarg._cast import FORCE_CAST_NAMES, JSON_CAST_NAME, resolve_forced_value
 from confarg._merge import (
     DICT_DELETE,
@@ -35,6 +35,7 @@ from confarg._merge import (
     LIST_REPLACE_BASE_KEY,
     _accumulate_list_delete,
     _deep_merge,
+    _peek_nested,
     _set_nested,
 )
 from confarg._tags import import_tagged_classes
@@ -842,6 +843,55 @@ def _accepts_object_value(ft: Any) -> bool:
     return accepts(ft) or (_is_union(ft) and any(accepts(v) for v in _union_args_no_none(ft)))
 
 
+def _takes_callable_shorthand(ft: Any) -> bool:
+    """Return whether a bare string at a field of type *ft* is a callable spec shorthand.
+
+    Mirrors the union handling of :func:`_accepts_object_value`: the union arm answers for
+    the optional spellings, so ``Callable[..., T] | None`` reads a bare string the same way
+    ``Callable[..., T]`` does.
+    """
+
+    def is_callable_variant(v: Any) -> bool:
+        return _is_callable(_resolve_type(v))
+
+    return is_callable_variant(ft) or (_is_union(ft) and any(is_callable_variant(v) for v in _union_args_no_none(ft)))
+
+
+def _open_callable_shorthand(data: dict[str, Any], path: list[str], target: Any, union_tag: str) -> None:
+    """Open a bare-string callable value into its dict form before *path* descends into it.
+
+    ``--fn pkg.func`` is the shorthand for ``--fn.fn pkg.func``, so a later
+    ``--fn.bind.<param>`` must refine the target the shorthand named, not erase it.  This is
+    the one place that decides it, for every channel: the CLI parse loop and the env parse
+    loop both call it before they store, so ``FN=pkg.func`` plus ``FN__BIND__SEP=-`` reads
+    the same as the two flags.
+
+    A segment that names an *opener* is not a refinement but a second spelling of the
+    target, so it replaces the shorthand rather than joining it — the rule that already
+    makes an opener flag beat the whole-value blob it sits next to.  A field with no such
+    shorthand is left alone: its scalar means nothing, and :func:`~confarg._merge._set_nested`
+    replaces it.
+
+    Args:
+        data: The dict being built, modified in place.
+        path: Path segments of the flag or variable about to be stored.
+        target: The type paths resolve against (locals-grafted, where that applies).
+        union_tag: The field name used as a union discriminator.
+
+    Dev Notes:
+        docs-dev/architecture/06-callables.md#cli
+    """
+    for n in range(1, len(path)):
+        if names_an_opener(path[n]):
+            continue
+        existing = _peek_nested(data, path[:n])
+        if not isinstance(existing, str):
+            continue
+        ft = _resolve_field_type(target, path[:n], union_tag)
+        if ft is not None and _takes_callable_shorthand(_resolve_type(ft)):
+            _set_nested(data, path[:n], promote_bare_spec(existing))
+
+
 def _consume_typed_arg(
     ctx: _ParseCtx,
     i: int,
@@ -1003,6 +1053,10 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         ):
             i += 1  # normal field / scalar root: owned by the flat collector
             continue
+
+        # A bare callable shorthand already stored at a prefix of this path is a spec, not
+        # a stale scalar: open it so this flag refines it (03-cli-parsing.md#token-consumption).
+        _open_callable_shorthand(ctx.data, path, walk_target, union_tag)
 
         if delete_mode:
             _handle_delete_token(ctx, token, path, is_list_delete=is_list_delete, delete_idx=delete_idx)

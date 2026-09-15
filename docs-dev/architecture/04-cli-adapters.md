@@ -158,9 +158,14 @@ alongside the flat flags, so a blob's `class` selects the directive form and ope
 `--<field>.<param>` init kwargs the opener flag opens. Feeding the walk rather than
 pattern-matching argv is what keeps a mapping field whose value happens to carry a `class` key
 from being read as a callable spec — the walk is type-guided, the scan is not. Openers still
-win over the blob they refine, matching the collector's deep merge. The string shorthand
-`--<field> some.module.fn` is out of scope: vanilla cannot combine it with a sibling flag at all
-([BUG-23](../todo/bugs.md)).
+win over the blob they refine, matching the collector's deep merge. The string shorthand `--<field> some.module.fn` buys them too: it is the
+spelling `{fn: …}` abbreviates, so the argv scan collects a bare string as a whole value
+beside a `{`-prefixed blob and hands both to the same type-guided walk, which has always read
+a config file's string spec that way. The collector then folds the string into the spec its
+sibling flags built, under the plain `fn` the bare form implies — an opener flag beside it
+still wins, being another spelling of the target rather than a refinement
+([03](03-cli-parsing.md#token-consumption)). A *delete* flag is the exception, since it
+travels with the patch ops rather than the flat collector ([BUG-24](../todo/bugs.md)).
 
 A **fixed-arity** flag is the one place an adapter cannot follow vanilla here. A namedtuple and
 a `tuple[X, Y]` register with the framework's own exact token count, decided before argv is

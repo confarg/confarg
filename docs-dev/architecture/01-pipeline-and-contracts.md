@@ -149,3 +149,22 @@ post-append deletes, index patches) so the result never depends on dict iteratio
 patch merges; `"~"` exists so an index typed after an append refers to the post-append list.
 An index patch recurses through `_merge_existing_value`, the one "combine existing with
 override" dispatcher, so patches compose at any depth.
+
+## Scalar intermediates
+
+A path can reach a key whose parent already holds a scalar — `--d oops --d.c x`, or `D=oops`
+beside `D__C=x`. There is nothing to descend into, so `_set_nested` replaces the scalar with
+a fresh dict and the deeper key wins. That is not a new rule: `_deep_merge` already lets a
+dict from a higher-precedence source replace a scalar from a lower one, the adapters' flat
+collector already nests the subkey over the whole value, and the reverse order already lets
+the whole value replace the subkeys. The crashing case was the only one that resolved to a
+Python `TypeError` escaping the merge core instead of to last-write-wins.
+
+Replacing is right only because the scalar meant nothing to its field. Where it *does* mean
+something — a bare string at a `Callable` field is the shorthand for `{fn: <string>}` — the
+parsers open it into that meaning before `_set_nested` ever sees it, so the later key refines
+it instead ([03](03-cli-parsing.md#token-consumption)). `_set_nested` stays type-blind: it is
+merge-layer code, and asking it which scalars are meaningful would put type knowledge behind
+the [merge/build contract](#merge-build-contract). The alternatives weighed — one blanket
+rule either way, or splitting by whether the scalar was meaningful — are in
+[10](10-design-decisions.md#a-whole-value-followed-by-a-subkey-opens-rather-than-collides).

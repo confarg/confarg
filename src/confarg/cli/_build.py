@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _detect_owning_class, active_directives
 from confarg._import import _import_dotted
-from confarg._merge import _set_nested
+from confarg._merge import _peek_nested, _set_nested
 from confarg._tags import _partial_config_from_argv, import_tagged_classes
 from confarg._types import (
     _dataclass_subclasses,
@@ -524,16 +524,19 @@ def _collect_fn_paths_from_argv(argv: Sequence[str]) -> dict[str, tuple[str, str
 
 
 def _blob_document_from_argv(argv: Sequence[str]) -> dict[str, Any]:
-    """Nest every whole-value ``--<dotted.path> '{...}'`` token of argv into one document.
+    """Nest every whole-value ``--<dotted.path> <value>`` token of argv into one document.
 
     The result is shaped like a config file, so :func:`_collect_fn_paths_from_config`
-    reads the callable openers a blob spells with the very walk it uses on ``--config``
-    files.  That walk is type-guided, which is what keeps a mapping field whose value
-    happens to carry a ``class`` key from being read as a callable spec.
+    reads the callable openers a whole value spells with the very walk it uses on
+    ``--config`` files.  That walk is type-guided, which is what keeps a mapping field
+    whose value happens to carry a ``class`` key from being read as a callable spec.
 
-    Only ``{``-prefixed tokens are collected — the shape the vanilla parser and the
-    collector agree is a whole value — and a malformed one is skipped rather than
-    raised on: registration is best-effort, and the real error belongs to the parse.
+    Both whole-value shapes are collected, because a config file may spell a callable
+    either way and the walk already reads both: a ``{``-prefixed blob, and a bare string,
+    which is the shorthand for ``{fn: <string>}`` and must buy the same bind flags.  A
+    malformed blob is skipped rather than raised on — registration is best-effort, and
+    the real error belongs to the parse.  A key that would have to descend through a
+    shorthand already collected is skipped too: it is the refinement, not a competitor.
 
     Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#whole-value-flags
@@ -554,11 +557,16 @@ def _blob_document_from_argv(argv: Sequence[str]) -> dict[str, Any]:
         else:
             i += 1
             continue
+        parts = key.split(".")
+        if any(isinstance(_peek_nested(doc, parts[:n]), str) for n in range(1, len(parts))):
+            continue
         if val.startswith("{"):
             with contextlib.suppress(json.JSONDecodeError):
                 decoded = json.loads(val)
                 if isinstance(decoded, dict):
-                    _set_nested(doc, key.split("."), decoded)
+                    _set_nested(doc, parts, decoded)
+        else:
+            _set_nested(doc, parts, val)
     return doc
 
 

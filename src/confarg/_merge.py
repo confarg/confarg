@@ -346,18 +346,53 @@ def _navigate_append_spec(d: dict[str, Any], part: str) -> dict[str, Any] | None
     return None
 
 
+def _peek_nested(d: dict[str, Any], path: list[str]) -> Any:
+    """Return the value stored at *path*, or ``None`` when the path is not (fully) there.
+
+    The read-only twin of :func:`_set_nested`'s descent: it navigates append-specs the
+    same way and stops at anything that is not a dict, so a caller can ask what
+    ``_set_nested`` would have to descend through before it descends. Keep the two in step.
+
+    Args:
+        d: The root dict to read from.
+        path: A list of keys forming the path to the target location.
+
+    Returns:
+        The value at ``path``, or ``None`` if any segment is absent or not traversable.
+    """
+    node: Any = d
+    for part in path:
+        if not isinstance(node, dict):
+            return None
+        if (target := _navigate_append_spec(node, part)) is not None:
+            node = target
+            continue
+        if part not in node:
+            return None
+        node = node[part]
+    return node
+
+
 def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
     """Set a value in a nested dict by following a list of keys.
 
     Intermediate dicts are created as needed.  If an intermediate value is a
     plain list (from a prior full-replace CLI operation), it is converted to
     ``{LIST_REPLACE_BASE_KEY: list}`` so that subsequent index patches can be
-    accumulated alongside it.
+    accumulated alongside it.  Any other non-dict intermediate is a scalar an
+    earlier whole-value assignment left behind; a path cannot descend through it,
+    so the deeper key replaces it (last write wins, as it already does when the
+    two arrive from different sources).  A scalar that *means* something to its
+    field is opened into that meaning before it gets here — see
+    :func:`~confarg._parse_cli._open_callable_shorthand`.
 
     Args:
         d: The root dict to modify in place.
         path: A list of keys forming the path to the target location.
         value: The value to set at the target path.
+
+    Dev Notes:
+        docs-dev/architecture/01-pipeline-and-contracts.md#scalar-intermediates
     """
     for part in path[:-1]:
         # Negative index into an active append-spec: navigate directly into the
@@ -370,6 +405,8 @@ def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
             d[part] = {}
         elif isinstance(d[part], list):
             d[part] = {LIST_REPLACE_BASE_KEY: d[part]}
+        elif not isinstance(d[part], dict):
+            d[part] = {}
         d = d[part]
     if path:
         d[path[-1]] = value
