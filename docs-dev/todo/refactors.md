@@ -134,15 +134,6 @@ Grab-bag of small, low-risk tidyings found while analyzing the two modules:
 
 ## Robustness
 
-### REF-5 — `_import_dotted` conflates two failures
-
-**Where:** `src/confarg/_import.py` · **Filed:** 2026-09-12
-**Effort:** S · **Risk:** medium
-
-It assumes no builtin name collides with an importable module, and treats an `ImportError`
-raised _inside_ a module the same as "this is not a module" — so a broken dependency reads as
-a typo'd path. See [05-types-and-construction.md#dotted-imports](../architecture/05-types-and-construction.md#dotted-imports).
-
 ### REF-6 — `LIST_APPEND_KEY` accepts a value nothing produces
 
 **Where:** `src/confarg/_merge.py` · **Filed:** 2026-09-12
