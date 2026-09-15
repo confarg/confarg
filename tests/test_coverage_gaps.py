@@ -72,9 +72,7 @@ from confarg._types import (
     _is_plain_class,
     _StrToken,
     _unwrap_optional,
-    _var_keyword_name,
-    _var_param_names,
-    _var_positional_name,
+    _var_params,
 )
 from confarg.dictexpr._expressions import (
     _attribute_chain,
@@ -510,62 +508,53 @@ class TestTypesEdgeCases:
         assert _all_have_defaults(int) is False
         assert _all_have_defaults(str) is False
 
-    def test_var_param_names_plain_class(self) -> None:
-        """_var_param_names returns *args and **kwargs names for plain classes."""
+    def test_var_params_plain_class(self) -> None:
+        """_var_params returns both the *args and the **kwargs name for plain classes."""
 
         class PlainWithVars:
             def __init__(self, x: int, *args: str, **kwargs: float):
                 pass
 
-        names = _var_param_names(PlainWithVars)
-        assert "args" in names
-        assert "kwargs" in names
+        var = _var_params(PlainWithVars)
+        assert var.positional == "args"
+        assert var.keyword == "kwargs"
+        assert var.names == frozenset({"args", "kwargs"})
 
-    def test_var_positional_name_plain_class(self) -> None:
-        """_var_positional_name returns the *args parameter name for plain classes."""
+    def test_var_params_positional_only(self) -> None:
+        """_var_params leaves keyword None when __init__ takes only *args."""
 
         class PlainWithArgs:
             def __init__(self, *items: int):
                 pass
 
-        assert _var_positional_name(PlainWithArgs) == "items"
+        var = _var_params(PlainWithArgs)
+        assert var.positional == "items"
+        assert var.keyword is None
+        assert var.names == frozenset({"items"})
 
-    def test_var_keyword_name_plain_class(self) -> None:
-        """_var_keyword_name returns the **kwargs parameter name for plain classes."""
+    def test_var_params_keyword_only(self) -> None:
+        """_var_params leaves positional None when __init__ takes only **kwargs."""
 
         class PlainWithKwargs:
             def __init__(self, **opts: str):
                 pass
 
-        assert _var_keyword_name(PlainWithKwargs) == "opts"
+        var = _var_params(PlainWithKwargs)
+        assert var.positional is None
+        assert var.keyword == "opts"
+        assert var.names == frozenset({"opts"})
 
-    def test_var_param_names_uninspectable(self) -> None:
-        """_var_param_names returns an empty frozenset when __init__ is not inspectable."""
-
-        class Broken:
-            pass
-
-        Broken.__init__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __init__ to trigger fallback path
-        result = _var_param_names(Broken)
-        assert result == frozenset()
-
-    def test_var_positional_name_uninspectable(self) -> None:
-        """_var_positional_name returns None when __init__ is not inspectable."""
+    def test_var_params_uninspectable(self) -> None:
+        """_var_params returns an empty result when __init__ is not inspectable."""
 
         class Broken:
             pass
 
         Broken.__init__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __init__ to trigger fallback path
-        assert _var_positional_name(Broken) is None
-
-    def test_var_keyword_name_uninspectable(self) -> None:
-        """_var_keyword_name returns None when __init__ is not inspectable."""
-
-        class Broken:
-            pass
-
-        Broken.__init__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __init__ to trigger fallback path
-        assert _var_keyword_name(Broken) is None
+        var = _var_params(Broken)
+        assert var.positional is None
+        assert var.keyword is None
+        assert var.names == frozenset()
 
     def test_is_plain_class_uninspectable_init(self) -> None:
         """_is_plain_class returns False when __init__ is not inspectable."""

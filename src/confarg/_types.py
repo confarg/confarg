@@ -611,47 +611,44 @@ def _init_defaults(tp: Any) -> dict[str, Any]:
     return result
 
 
-def _var_param_names(tp: Any) -> frozenset[str]:
-    """Return names of all *args and **kwargs parameters of tp.__init__."""
+@dataclasses.dataclass(frozen=True)
+class _VarParams:
+    """The *args and **kwargs parameter names of a struct's __init__, None when absent."""
+
+    positional: str | None = None
+    keyword: str | None = None
+
+    @property
+    def names(self) -> frozenset[str]:
+        """The names that are present, for membership tests against declared fields."""
+        return frozenset(name for name in (self.positional, self.keyword) if name is not None)
+
+
+def _var_params(tp: Any) -> _VarParams:
+    """Return the *args and **kwargs parameter names of tp.__init__.
+
+    Dataclasses never have either, and an uninspectable __init__ tells us nothing,
+    so both short-circuit to an empty result.
+
+    Args:
+        tp: The struct type to inspect.
+
+    Returns:
+        A _VarParams holding the two names, each None when the parameter is absent.
+    """
     if _is_dc(tp):
-        return frozenset()
+        return _VarParams()
     try:
         sig = inspect.signature(tp.__init__)
-        return frozenset(
-            name
-            for name, param in sig.parameters.items()
-            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-        )
     except (ValueError, TypeError):
-        return frozenset()
-
-
-def _var_positional_name(tp: Any) -> str | None:
-    """Return the name of the *args parameter of tp.__init__, or None."""
-    if _is_dc(tp):
-        return None
-    try:
-        sig = inspect.signature(tp.__init__)
-        for name, param in sig.parameters.items():
-            if param.kind == inspect.Parameter.VAR_POSITIONAL:
-                return name
-    except (ValueError, TypeError):
-        pass
-    return None
-
-
-def _var_keyword_name(tp: Any) -> str | None:
-    """Return the name of the **kwargs parameter of tp.__init__, or None."""
-    if _is_dc(tp):
-        return None
-    try:
-        sig = inspect.signature(tp.__init__)
-        for name, param in sig.parameters.items():
-            if param.kind == inspect.Parameter.VAR_KEYWORD:
-                return name
-    except (ValueError, TypeError):
-        pass
-    return None
+        return _VarParams()
+    positional = keyword = None
+    for name, param in sig.parameters.items():
+        if param.kind == inspect.Parameter.VAR_POSITIONAL:
+            positional = name
+        elif param.kind == inspect.Parameter.VAR_KEYWORD:
+            keyword = name
+    return _VarParams(positional, keyword)
 
 
 def _is_struct(tp: Any) -> bool:

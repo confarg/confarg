@@ -46,8 +46,7 @@ from confarg._types import (
     _union_args,
     _union_args_no_none,
     _UnionSeqToken,
-    _var_keyword_name,
-    _var_positional_name,
+    _var_params,
 )
 from confarg.exceptions import (
     AmbiguousUnionError,
@@ -397,14 +396,13 @@ def _construct_struct(tp: Any, data: dict[str, Any], path: str, union_tag: str) 
         else:
             raise _missing_field_error(fp, ft)
 
-    var_pos_name = _var_positional_name(tp)
-    var_kw_name = _var_keyword_name(tp)
-    var_kw = dict(kwargs.pop(var_kw_name, {})) if var_kw_name else {}
+    var = _var_params(tp)
+    var_kw = dict(kwargs.pop(var.keyword, {})) if var.keyword else {}
 
-    if var_pos_name is None:
+    if var.positional is None:
         return tp(**kwargs, **var_kw)
 
-    return _call_with_var_positional(tp, kwargs, var_pos_name, var_kw)
+    return _call_with_var_positional(tp, kwargs, var.positional, var_kw)
 
 
 def _construct_list(tp: Any, data: Any, path: str, union_tag: str) -> list[Any]:

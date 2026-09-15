@@ -35,7 +35,7 @@ from confarg._types import (
     _struct_fields,
     _union_args_no_none,
     _unwrap_optional,
-    _var_param_names,
+    _var_params,
 )
 from confarg.cli._prefix import PREFIX_ATTR, strip_argv_prefix
 from confarg.cli.argparse._build import (
@@ -274,7 +274,7 @@ def _extend_walk(
         return
     tp, flds, hints = setup
 
-    var_params = _var_param_names(tp)
+    var_params = _var_params(tp).names
     docstrings = _get_field_docstrings(tp)
     defaults = _struct_defaults(tp)
 
