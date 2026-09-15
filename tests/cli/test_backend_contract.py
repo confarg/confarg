@@ -1548,6 +1548,13 @@ class _CallableConfig:
     fn: Callable[[str], str]
 
 
+@dataclass
+class _OptCallableConfig:
+    """Config whose callable field is optional: optionality is not a statement about syntax."""
+
+    fn: Callable[[str], str] | None = None
+
+
 class TestCallableBindContract:
     """``--field.bind.<param>`` for a class's ``__call__`` parameter is registered everywhere.
 
@@ -1898,6 +1905,23 @@ class TestWholeValueFlagContract:
             env={},
         )
         assert cfg.fn("world") == "Hi, world!"
+
+    def test_whole_optional_callable_from_json(self, loader: ConfargLoader) -> None:
+        """An optional callable decodes the blob its non-optional peer decodes (BUG-17)."""
+        cfg = loader.load(
+            _OptCallableConfig,
+            argv=["--fn", f'{{"class": "{__name__}._Greeter", "greeting": "Hi", "bind": {{"punct": "!"}}}}'],
+            env={},
+        )
+        assert cfg.fn is not None
+        assert cfg.fn("world") == "Hi, world!"
+
+    def test_whole_optional_callable_matches_env_channel(self, loader: ConfargLoader) -> None:
+        """The CLI and env spellings of a whole optional callable spec agree, as for a dict."""
+        blob = f'{{"class": "{__name__}._Greeter", "greeting": "Hi"}}'
+        cli = loader.merge(_OptCallableConfig, argv=["--fn", blob], env={})
+        env = loader.merge(_OptCallableConfig, argv=[], env={"MYAPP_FN": blob}, env_prefix="MYAPP_")
+        assert cli["fn"] == env["fn"] == {"class": f"{__name__}._Greeter", "greeting": "Hi"}
 
     def test_whole_dict_matches_env_channel(self, loader: ConfargLoader) -> None:
         """The CLI and env spellings of a whole mapping merge to the identical dict."""

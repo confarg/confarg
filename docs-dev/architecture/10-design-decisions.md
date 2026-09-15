@@ -185,7 +185,10 @@ confarg's concession to the common case.
 about its syntax, so making `| None` the difference between a decoded mapping and a raw string
 would be a spelling trap ([BUG-9](../todo/bugs.md), closed). Both predicates —
 `_parse_cli._accepts_object_value` and the `accepts_obj` test in `_parse_env._store_env_value` —
-therefore ask their union arm about dicts as well as structs.
+therefore ask their union arm about every type the bare arm accepts: structs, namedtuples,
+dicts and callables. In `_accepts_object_value` that is literally one test, the inner
+`accepts()`, applied to the type and then to each non-`None` union variant; nothing may answer
+only for the bare arm.
 
 Both channels were fixed in one change on purpose. The gap was symmetric, so repairing only the
 CLI would have *created* a divergence where none existed, which
@@ -196,10 +199,18 @@ this rule (`list[str] | None` takes a JSON array in the environment, and the CLI
 - Cost: a token that used to survive as a string now decodes, so a target with an
   `Any`-tolerant `| None` arm that was relying on the raw text sees a mapping instead. Nothing
   in the channel model ever promised that text; the raw value could not be built.
-- Not extended to unions with a callable variant: that is a separate gap with its own
-  asymmetry ([BUG-17](../todo/bugs.md)), not a consequence of this rule. The namedtuple half
-  was settled separately, by making a namedtuple a sequence everywhere
+- Callables came second, the same way ([BUG-17](../todo/bugs.md), closed). `Callable[…]`
+  had its own bare-arm-only test — `_is_callable` sat *beside* the union walk in
+  `_accepts_object_value`, not inside it — so `Callable[…] | None` kept the spec token raw and
+  handed the whole JSON blob to the importer, in both channels. Folding `_is_callable` into
+  `accepts()` removed the second place a whole value could be decided, which is why the fix is
+  one line smaller than the bug. The namedtuple half was settled separately, by making a
+  namedtuple a sequence everywhere
   ([#a-namedtuple-is-a-fixed-length-sequence](#a-namedtuple-is-a-fixed-length-sequence)).
+- Decoding the blob is not registering flags: the adapters still learn a callable's factory and
+  `bind` flags only from a `--<field>.class` opener on argv, so a class named inside the blob
+  leaves them unregistered ([BUG-22](../todo/bugs.md)). Vanilla, which re-reads argv, is
+  unaffected — the divergence is in the scan, not in this predicate.
 
 ## A namedtuple is a fixed-length sequence
 

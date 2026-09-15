@@ -40,46 +40,6 @@ print("env:", confarg.load(Config, argv=[], env={"MYAPP_JSON": blob}, env_prefix
 #           env: Config(host='localhost', port=8080)
 ```
 
-### BUG-17 — `Callable | None` does not accept the whole-spec token that `Callable` does
-
-**Where:** `src/confarg/_parse_cli.py` (`_accepts_object_value`),
-`src/confarg/_parse_env.py` (`_store_env_value`) · **Filed:** 2026-09-14
-**Effort:** S · **Risk:** medium
-
-A whole-spec token decodes on a `Callable[...]` field and is kept raw on the optional one, in
-both channels, so it reaches the importer as if it were a symbol name. Same shape as the dict
-case, and the rule is already recorded — optionality is not a statement about syntax — so this
-is applying it, not deciding it. Both channels move together, as they did there: the callable
-arms are `_is_callable` in `_accepts_object_value` and in `_parse_env._store_env_value`'s
-`accepts_obj`, and neither union arm asks about callables. Watch the spec/bind merge in
-`cli/_collect.py` (`_whole_value` → `_merge_blob_into_spec`), which the raw path never reaches
-today.
-See [10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](../architecture/10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts).
-
-```python
-from collections.abc import Callable
-from dataclasses import dataclass
-import confarg
-
-@dataclass
-class Plain:
-    fn: Callable[[str], str] = str.upper
-
-@dataclass
-class Opt:
-    fn: Callable[[str], str] | None = None
-
-spec = '{"fn": "string.capwords"}'
-print("plain:", confarg.load(Plain, argv=["--fn", spec]).fn)
-print("opt  :", confarg.load(Opt, argv=["--fn", spec]).fn)
-# expected: plain: <function capwords ...>
-#           opt  : <function capwords ...>
-# actual:   plain: <function capwords ...>
-#           opt  : SymbolImportError: Cannot import '{"fn": "string.capwords"}':
-#                  no importable module found in path
-# The env channel fails identically, with env={"MYAPP_FN": spec}, env_prefix="MYAPP_".
-```
-
 ### BUG-19 — A subclass field is dropped when its class tag came from a config file
 
 **Where:** `src/confarg/cli/_collect.py` (`_collect_ns_inheritance`) · **Filed:** 2026-09-15
@@ -171,6 +131,57 @@ print("argparse:", parser.parse_args(argv))
 #           argparse: Namespace(pair=[13, 42], ...)
 # actual:   vanilla:  Config(pair=(13, 42))
 #           argparse: r20.py: error: argument --pair: expected 2 arguments
+#                     SystemExit: 2
+```
+
+### BUG-22 — A callable's factory and bind flags are not registered from a whole-value blob
+
+**Where:** `src/confarg/cli/_build.py` (`_collect_fn_paths_from_argv`) · **Filed:** 2026-09-15
+**Effort:** S · **Risk:** low
+
+`build_dynamic_flags` learns which class a callable field names by scanning argv for
+`--<field>.class` / `.fn` / `.call` openers, and config files through `_callable_fn_path`. The
+whole-value `--<field> '{"class": …}'` spelling is neither: the blob is decoded, but never read
+for its opener, so the constructor kwargs and `--<field>.bind.<param>` flags it implies go
+unregistered and the framework rejects them. Vanilla, which reads argv itself, accepts the
+same line. Independent of optionality — it reproduces on a plain `Callable[…]` field too (found
+while fixing BUG-17). `_callable_fn_path` already answers the question for a decoded dict; the
+argv scan should hand it the blob instead of only matching opener tokens.
+See [04-cli-adapters.md#whole-value-flags](../architecture/04-cli-adapters.md#whole-value-flags).
+
+```python
+import argparse
+import json
+from collections.abc import Callable
+from dataclasses import dataclass
+
+import confarg
+from confarg.cli.argparse import populate_parser
+
+
+class Greeter:
+    def __init__(self, greeting: str) -> None:
+        self.greeting = greeting
+
+    def __call__(self, name: str, punct: str) -> str:
+        return f"{self.greeting}, {name}{punct}"
+
+
+@dataclass
+class Config:
+    fn: Callable[[str], str] | None = None
+
+
+blob = json.dumps({"class": f"{__name__}.Greeter", "greeting": "Hi"})
+argv = ["--fn", blob, "--fn.bind.punct", "!"]
+print("vanilla :", confarg.load(Config, argv=argv, env={}).fn("world"))
+parser = argparse.ArgumentParser()
+populate_parser(Config, parser, argv=argv)
+print("argparse:", parser.parse_args(argv))
+# expected: vanilla : Hi, world!
+#           argparse: Namespace(fn='{"class": ...}', **{'fn.bind.punct': '!'})
+# actual:   vanilla : Hi, world!
+#           argparse: r22.py: error: unrecognized arguments: --fn.bind.punct !
 #                     SystemExit: 2
 ```
 

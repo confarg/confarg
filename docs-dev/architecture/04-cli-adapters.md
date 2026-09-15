@@ -134,8 +134,8 @@ trips cyclopts' "2 distinct Group objects with same name" check.
 
 A bare `--<field> '{…}'` assigns an entire object in one token — the CLI peer of the env
 channel's `PFX_ENV='{"a":"b"}'`. `_parse_cli._accepts_object_value` is the one predicate
-deciding which field types take one: dataclass, namedtuple, dict, callable, or a union with a
-dataclass, namedtuple or dict variant. It answers for the vanilla parser, for static registration and for the
+deciding which field types take one: dataclass, namedtuple, dict, callable, or a union with any
+of those as a variant. It answers for the vanilla parser, for static registration and for the
 collector, so the three cannot drift.
 
 The flags are **static**, not argv-scanned: the field is declared, so it belongs in `--help`
@@ -145,10 +145,11 @@ positional, and rejects none at all with `Missing value`
 ([10](10-design-decisions.md#a-whole-value-flag-needs-its-value)): the `FlagSpec` vocabulary
 deliberately has no optional-value `"?"`, because cyclopts cannot express one. The metavar is `JSON` only where the predicate says the token is decoded, so a field that
 keeps its token raw does not advertise a syntax it will not honour. Optionality is not one of
-the things that decides this: `dict[str, str] | None` takes the mapping `dict[str, str]` takes
-and gets the same `JSON` metavar
+the things that decides this: `dict[str, str] | None` takes the mapping `dict[str, str]` takes,
+`Callable[…] | None` takes the spec `Callable[…]` takes, and both get the same `JSON` metavar
 ([10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts)).
-A `Callable[…] | None` still does not ([BUG-17](../todo/bugs.md)).
+What a decoded callable blob does *not* buy is the factory and `bind` flags its class implies:
+those are argv-scanned from the `--<field>.class` opener only ([BUG-22](../todo/bugs.md)).
 
 A **fixed-arity** flag is the one place an adapter cannot follow vanilla here. A namedtuple and
 a `tuple[X, Y]` register with the framework's own exact token count, decided before argv is
