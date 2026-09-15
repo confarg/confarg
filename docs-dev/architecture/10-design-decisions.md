@@ -147,6 +147,11 @@ break the token model, whose whole point is that a self-describing file is never
 re-interpreted ([05](05-types-and-construction.md#token-model)). Round-trip fidelity is
 claimed one seam later instead ([01](01-pipeline-and-contracts.md#public-api-seams)).
 
+A force-cast is the one value that is *not* degraded to its scalar form: a `_Pinned` is written
+back as its `{__cast__, __value__}` file spelling, because the bare scalar would be stolen by an
+earlier union variant and the built objects would then differ too
+([05](05-types-and-construction.md#cast-pinning-in-files)).
+
 Precedents: pydantic draws the same line with `model_dump(mode="json")` — `Path`, `Enum` and
 `UUID` degrade to scalars on the way out and are re-validated, not re-typed, on the way in;
 cattrs likewise pairs a lossy `unstructure` with a typed `structure`, never claiming that the

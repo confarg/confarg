@@ -31,6 +31,8 @@ JSON_CAST_NAME = "json"
 
 SCALAR_CAST_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
 
+_SCALAR_CAST_NAMES: dict[type, str] = {tp: name for name, tp in SCALAR_CAST_TYPES.items()}
+
 #: Every recognized force-cast suffix (scalar casts plus ``json``).
 FORCE_CAST_NAMES: frozenset[str] = frozenset({*SCALAR_CAST_TYPES, JSON_CAST_NAME})
 
@@ -61,3 +63,23 @@ def resolve_forced_value(cast_name: str, raw: str, *, flag: str = "") -> Any:
             msg = f"Invalid JSON for {label}: {e}"
             raise ConfargError(msg) from e
     return _Pinned(SCALAR_CAST_TYPES[cast_name], _StrToken(raw))
+
+
+def cast_name_for_type(tp: type) -> str:
+    """Name the pinned type the way a file spells it, for the ``__cast__`` key.
+
+    The inverse of the name lookup in
+    :func:`confarg.typedload._construct._try_pinned_dict`: a scalar cast keeps the name
+    :data:`SCALAR_CAST_TYPES` gives it, and any other pinned type — a registered leaf,
+    which only the file spelling can produce — is named by its ``__name__``.
+
+    Args:
+        tp: The type carried by a :class:`~confarg._types._Pinned`.
+
+    Returns:
+        The cast name that reads the same value back.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#cast-pinning-in-files
+    """
+    return _SCALAR_CAST_NAMES.get(tp) or tp.__name__

@@ -15,6 +15,10 @@ just argparse; they sit under `cli/argparse/` by historical accident and belong 
 Confirmed by the maintainer as an accident, not a decision.
 See [04-cli-adapters.md#framework-neutral-flag-model](../architecture/04-cli-adapters.md#framework-neutral-flag-model).
 
+`_cast` now also derives the reverse map, `cast_name_for_type`, which names a `_Pinned` on the
+way out; `_construct._CAST_TYPE_NAMES` is the copy that reads that name back, so folding it in
+is what keeps the writer and the reader on one table.
+
 ### REF-3 — `_add_*` wrappers survive only for completion
 
 **Where:** `src/confarg/cli/argparse/_register.py` · **Filed:** 2026-09-12

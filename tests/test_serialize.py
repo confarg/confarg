@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import sys
 from dataclasses import dataclass as _dc
+from dataclasses import field
 from pathlib import Path
 from typing import Literal, Union
 from unittest import mock
@@ -17,8 +18,8 @@ from uuid import UUID
 import pytest
 
 import confarg
-from confarg._serialize import _serialize_leaf
-from confarg._types import _StrToken, _UnionSeqToken
+from confarg._serialize import _serialize_leaf, _serialize_untyped
+from confarg._types import _Pinned, _StrToken, _UnionSeqToken
 from tests.conftest import (
     AppConfig,
     CacheConfig,
@@ -636,6 +637,90 @@ class TestDumpRawDictTokens:
 
         value = _Tagged("hello")
         assert _serialize_leaf(str, value) is value
+
+
+@_dc
+class _CastInner:
+    count: Union[int, str] = 0
+
+
+@_dc
+class _CastOuter:
+    inner: _CastInner = field(default_factory=_CastInner)
+
+
+class TestDumpRawDictForceCasts:
+    """dump_file(raw_dict) writes a force-cast back in its file spelling.
+
+    A ``.int``/``.str``/... suffix on the CLI stores a pin in the merged dict, and no
+    writer accepts one. The pin is emitted as the ``{__cast__, __value__}`` dict a
+    config file uses for the same purpose, so the cast survives the round trip instead
+    of being flattened to a bare scalar an earlier union variant could steal back.
+    """
+
+    @pytest.mark.parametrize("suffix", [".toml", ".yaml", ".json"])
+    def test_scalar_cast_dumps_as_the_file_spelling(self, tmp_path: Path, suffix: str) -> None:
+        """``--count.int 5`` is written as ``{__cast__: int, __value__: "5"}``, in every format."""
+        WithUnion = make_target("count", Union[int, str], default=0)
+        raw = confarg.merge(WithUnion, argv=["--count.int", "5"], env={})
+        assert raw["count"] == _Pinned(int, _StrToken("5"))
+
+        path = tmp_path / f"out{suffix}"
+        confarg.dump_file(raw, path)
+        reloaded = confarg.merge(WithUnion, argv=[], env={}, files=[path])
+        assert reloaded == {"count": {"__cast__": "int", "__value__": "5"}}
+        assert confarg.build(WithUnion, raw) == confarg.build(WithUnion, reloaded)
+        assert confarg.build(WithUnion, raw).count == 5
+
+    def test_cast_value_is_a_plain_str(self) -> None:
+        """The pinned token is unwrapped: no token type reaches a writer.
+
+        ``__value__`` holds a ``_StrToken``, which the writers accept as a ``str``
+        subclass without complaint, so only the serializer can see the leak.
+        See docs-dev/architecture/09-invariants.md#tokens-mean-untyped-text.
+        """
+        out = _serialize_untyped({"count": _Pinned(int, _StrToken("5"))})
+        assert type(out["count"]["__value__"]) is str
+
+    def test_cast_inside_a_nested_struct(self, tmp_path: Path) -> None:
+        """A pin is emitted wherever it sits, not only at the top level."""
+        raw = confarg.merge(_CastOuter, argv=["--inner.count.int", "5"], env={})
+        assert raw == {"inner": {"count": _Pinned(int, _StrToken("5"))}}
+
+        path = tmp_path / "out.yaml"
+        confarg.dump_file(raw, path)
+        assert confarg.merge(_CastOuter, argv=[], env={}, files=[path]) == {
+            "inner": {"count": {"__cast__": "int", "__value__": "5"}},
+        }
+
+    def test_file_spelling_re_dumps_unchanged(self, tmp_path: Path) -> None:
+        """A cast that came from a file is already in its file spelling: dumping is idempotent."""
+        WithUnion = make_target("count", Union[int, str], default=0)
+        path = tmp_path / "in.json"
+        path.write_text('{"count": {"__cast__": "int", "__value__": "5"}}', encoding="utf-8")
+        raw = confarg.merge(WithUnion, argv=[], env={}, files=[path])
+
+        out = tmp_path / "out.json"
+        confarg.dump_file(raw, out)
+        assert confarg.merge(WithUnion, argv=[], env={}, files=[out]) == raw
+
+    def test_the_cast_still_wins_over_an_earlier_variant(self, tmp_path: Path) -> None:
+        """Flattening the pin to its bare value would lose the round trip.
+
+        ``Color | str`` reads a plain ``"red"`` back as ``Color.RED`` by declaration
+        order, so writing the coerced value is only safe while the pin separates
+        scalars. ``_serialize_untyped`` is type-blind and cannot tell the two apart,
+        so it keeps the pin in every case.
+        """
+        WithColorOrStr = make_target("v", Union[Color, str], default=Color.RED)
+        raw = confarg.merge(WithColorOrStr, argv=["--v.str", "red"], env={})
+        assert confarg.build(WithColorOrStr, {"v": "red"}).v is Color.RED
+
+        path = tmp_path / "out.yaml"
+        confarg.dump_file(raw, path)
+        reloaded = confarg.merge(WithColorOrStr, argv=[], env={}, files=[path])
+        assert confarg.build(WithColorOrStr, raw) == confarg.build(WithColorOrStr, reloaded)
+        assert confarg.build(WithColorOrStr, reloaded).v == "red"
 
 
 # ---------------------------------------------------------------------------
