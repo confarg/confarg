@@ -58,7 +58,7 @@ from confarg._types import (
     _union_args_no_none,
     _union_has_seq_variant,
     _unwrap_optional,
-    _var_param_names,
+    _var_params,
 )
 from confarg.cli._prefix import apply_prefix, strip_argv_prefix
 from confarg.cli.argparse._spec import FlagSpec, _build_help, _get_field_docstrings, _get_field_meta
@@ -815,7 +815,7 @@ def _collect_struct_specs(  # union-root branch added one more conditional
                 return _collect_union_root_specs(concrete, prefix, union_tag)
         return []
     tp, flds, hints = setup
-    var_params = _var_param_names(tp)
+    var_params = _var_params(tp).names
     docstrings = _get_field_docstrings(tp)
     defaults = _struct_defaults(tp)
 

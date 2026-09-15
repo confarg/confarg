@@ -32,6 +32,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | reconciling a registered `cli_prefix` with one passed to `merge_*` | `cli._prefix.resolve_prefix` |
 | plain vs escaped callable directives | `_callable.active_directives` |
 | single-value (scalar/type-ref) construction | `_construct._construct_scalar` |
+| "which `__init__` parameters are `*args` / `**kwargs`?" | `_types._var_params` |
 | combine existing value with override | `_merge._merge_existing_value` |
 | how a leaf value leaves the library | `_serialize._serialize_leaf` |
 | "does this type get taken apart into fields?" | `typedload._coerce._is_struct_variant` |
