@@ -390,7 +390,7 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
             continue
 
         if not is_struct:
-            data["__root__"] = _try_coerce(_resolve_type(target), _StrToken(value))
+            data[_defaults.ROOT_KEY] = _try_coerce(_resolve_type(target), _StrToken(value))
             continue
 
         parts, ft = _resolve_env_parts(target, parts)

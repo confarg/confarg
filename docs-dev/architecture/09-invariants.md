@@ -72,7 +72,9 @@ collection logic goes into `cli/_collect.py` mirroring the vanilla decision
   ([04](04-cli-adapters.md#framework-neutral-flag-model)).
 - Completion and dynamic flag registration never raise
   ([04](04-cli-adapters.md#completion)).
-- Defaults live in `_defaults.py`; never repeat the literals.
+- Defaults and shared reserved key names (`ROOT_KEY`, `LOCALS_KEYS`) live in
+  `_defaults.py`; never repeat the literals
+  ([10](10-design-decisions.md#shared-reserved-key-names-live-in-_defaultspy)).
 - A type in `_LEAF_COERCIONS` must also be in `_LEAF_SERIALIZERS`: registration makes a type
   a leaf in both directions, and only `register_leaf_type` writes them
   ([05](05-types-and-construction.md#leaf-coercion)).

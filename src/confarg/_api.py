@@ -185,7 +185,7 @@ def build[T](
     resolved = _strip_locals(resolve_expressions(data), target_r, union_tag)
 
     if not is_dataclass:
-        raw = resolved.get("__root__", _MISSING)
+        raw = resolved.get(_defaults.ROOT_KEY, _MISSING)
         if raw is _MISSING:
             msg = (
                 f"No value provided for target type {target_r!r}."

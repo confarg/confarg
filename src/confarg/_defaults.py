@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Default values of the keywords shared by ``confarg.load`` and every CLI adapter.
+"""Defaults and reserved key names shared by ``confarg.load`` and every CLI adapter.
 
 Always reference these constants instead of repeating the literals, so the four front-ends
 cannot drift apart.
@@ -55,4 +55,14 @@ See ``confarg._parse_cli._locals_keys_at``.
 
 Dev Notes:
     docs-dev/architecture/08-locals.md
+"""
+
+ROOT_KEY: Final[str] = "__root__"
+"""Reserved key under which a non-struct target's value is stored in the merged dict.
+
+Every channel writes it and ``build`` reads it, so all four front-ends have to agree on the
+spelling.
+
+Dev Notes:
+    docs-dev/architecture/02-files-and-env.md#reserved-file-only-keys
 """

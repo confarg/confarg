@@ -675,7 +675,7 @@ def _handle_scalar_root(args: list[str], i: int, token: str, target_r: Any, data
     if i >= len(args) or _looks_like_flag(args[i]):
         msg = f"Missing value for {token!r}. Usage: {token} <value>"
         raise ConfargError(msg)
-    data["__root__"] = _try_coerce(target_r, _StrToken(args[i]))
+    data[_defaults.ROOT_KEY] = _try_coerce(target_r, _StrToken(args[i]))
     return i + 1
 
 
@@ -707,7 +707,7 @@ def _handle_root_cast(  # noqa: PLR0913  # each arg carries distinct root-placem
             raise ConfargError(msg)
         root_json.append(value)
     else:
-        data["__root__"] = value
+        data[_defaults.ROOT_KEY] = value
     return i + 1
 
 
