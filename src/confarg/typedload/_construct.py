@@ -23,6 +23,7 @@ from confarg._types import (
     _allows_none,
     _dict_kv,
     _elem_type,
+    _fixed_seq_types,
     _is_callable,
     _is_dict,
     _is_frozenset,
@@ -34,6 +35,7 @@ from confarg._types import (
     _is_tuple,
     _is_type_ref,
     _is_union,
+    _is_varlen_collection,
     _literal_values,
     _namedtuple_defaults,
     _namedtuple_fields,
@@ -690,9 +692,16 @@ def _try_construct_union_struct(dc_vars: list[Any], data: dict[str, Any], path: 
     return _UNION_NO_MATCH
 
 
-def _try_tuple_variants(tuple_vars: list[Any], data: Any, path: str, union_tag: str) -> Any:
-    """Try constructing from tuple variants; returns _UNION_NO_MATCH if none accept data."""
-    if not (tuple_vars and isinstance(data, list | dict)):
+def _try_fixed_seq_variants(fixed_vars: list[Any], data: Any, path: str, union_tag: str) -> Any:
+    """Try the fixed-arity sequence variants; returns _UNION_NO_MATCH if none accept data.
+
+    A namedtuple variant belongs here beside ``tuple[X, Y]``: both take exactly their arity
+    of positional values, so both are filtered on the arity ``_fixed_seq_types`` reports.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#leaf-coercion
+    """
+    if not (fixed_vars and isinstance(data, list | dict)):
         return _UNION_NO_MATCH
     if isinstance(data, list):
         data_len = len(data)
@@ -702,10 +711,8 @@ def _try_tuple_variants(tuple_vars: list[Any], data: Any, path: str, union_tag: 
         except ValueError:
             data_len = -1
     candidates = (
-        [v for v in tuple_vars if (tt := _tuple_types(_resolve_type(v))) is None or len(tt) == data_len]
-        if data_len >= 0
-        else []
-    ) or tuple_vars
+        [v for v in fixed_vars if len(_fixed_seq_types(_resolve_type(v)) or ()) == data_len] if data_len >= 0 else []
+    ) or fixed_vars
     for var in candidates:
         try:
             return construct(var, data, path=path, union_tag=union_tag)
@@ -760,21 +767,15 @@ def _coerce_scalar_variants(
 def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, path: str, union_tag: str) -> Any:
     """Construct a union value by trying leaf variants in priority order."""
     leaf_vars = [v for v in non_none if not _is_struct_variant(_resolve_type(v))]
-    tuple_vars = [v for v in leaf_vars if _is_tuple(_resolve_type(v))]
+    fixed_vars = [v for v in leaf_vars if _fixed_seq_types(_resolve_type(v)) is not None]
     coll_vars = [
         v
         for v in leaf_vars
-        if not _is_tuple(_resolve_type(v))
-        and (
-            _is_dict(_resolve_type(v))
-            or _is_list(_resolve_type(v))
-            or _is_set(_resolve_type(v))
-            or _is_frozenset(_resolve_type(v))
-        )
+        if v not in fixed_vars and (_is_dict(_resolve_type(v)) or _is_varlen_collection(_resolve_type(v)))
     ]
-    scalar_leaf_vars = [v for v in leaf_vars if not _is_tuple(_resolve_type(v)) and v not in coll_vars]
+    scalar_leaf_vars = [v for v in leaf_vars if v not in fixed_vars and v not in coll_vars]
 
-    result = _try_tuple_variants(tuple_vars, data, path, union_tag)
+    result = _try_fixed_seq_variants(fixed_vars, data, path, union_tag)
     if result is not _UNION_NO_MATCH:
         return result
 

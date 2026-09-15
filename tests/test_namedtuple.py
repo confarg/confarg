@@ -78,6 +78,20 @@ class WithCoord:
     location: Coord
 
 
+@dataclass
+class WithStrOrPoint:
+    """Dataclass whose field is a union with a namedtuple variant."""
+
+    v: str | Point = "unset"
+
+
+@dataclass
+class WithStrOrIntPair:
+    """The same union spelled with a plain tuple, the namedtuple's reference shape."""
+
+    v: str | tuple[int, int] = "unset"
+
+
 # ---------------------------------------------------------------------------
 # Construction tests
 # ---------------------------------------------------------------------------
@@ -152,6 +166,51 @@ class TestConstruct:
         """Untyped namedtuple constructed from list passes values through as-is."""
         result = construct(Coord, ["51.5", "-0.1"])
         assert result == Coord(lat="51.5", lon="-0.1")
+
+
+class TestUnionVariant:
+    """A namedtuple variant of a union takes the sequence its reference tuple takes.
+
+    ``str | Point`` and ``str | tuple[int, int]`` are the same shape, so every channel
+    must build the namedtuple from ``[13, 42]`` exactly as it builds the tuple (BUG-21).
+    """
+
+    def test_union_from_list(self) -> None:
+        """A list builds the namedtuple variant rather than failing against str."""
+        assert confarg.build(WithStrOrPoint, {"v": [13, 42]}).v == Point(x=13, y=42)
+
+    def test_union_matches_plain_tuple(self) -> None:
+        """The namedtuple variant accepts exactly what the same-arity tuple variant accepts."""
+        assert (
+            tuple(confarg.build(WithStrOrPoint, {"v": [13, 42]}).v)
+            == confarg.build(
+                WithStrOrIntPair,
+                {"v": [13, 42]},
+            ).v
+        )
+
+    def test_union_from_dict(self) -> None:
+        """A dict of field names still builds the namedtuple variant."""
+        assert confarg.build(WithStrOrPoint, {"v": {"x": 13, "y": 42}}).v == Point(x=13, y=42)
+
+    def test_union_scalar_variant_still_wins(self) -> None:
+        """A plain string still goes to the str variant, not to the namedtuple."""
+        assert confarg.build(WithStrOrPoint, {"v": "hello"}).v == "hello"
+
+    def test_union_wrong_arity_is_refused(self) -> None:
+        """A list of the wrong arity matches no variant, as it does for the plain tuple."""
+        for target in (WithStrOrIntPair, WithStrOrPoint):
+            with pytest.raises(TypeCoercionError):
+                confarg.build(target, {"v": [13, 42, 7]})
+
+    def test_union_from_cli(self) -> None:
+        """The CLI spelling reaches the namedtuple variant too."""
+        assert confarg.load(WithStrOrPoint, argv=["--v", "13", "42"], env={}).v == Point(x=13, y=42)
+
+    def test_union_from_env(self) -> None:
+        """The env spelling reaches the namedtuple variant too."""
+        cfg = confarg.load(WithStrOrPoint, argv=[], env={"V": "[13, 42]"}, env_prefix="")
+        assert cfg.v == Point(x=13, y=42)
 
 
 # ---------------------------------------------------------------------------

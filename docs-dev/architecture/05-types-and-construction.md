@@ -64,6 +64,18 @@ the mistake: a registered leaf may have an `__init__` — `UUID` has one with a 
 parameter — so a `Release | UUID` field otherwise looks like a union of two structs and is
 neither ambiguous on the way in nor in need of a tag on the way out
 ([10](10-design-decisions.md#a-registered-leaf-is-never-a-struct-variant)).
+`_construct_union_leaf` then splits what is left three ways, each bucket decided by a canonical
+function rather than by a type test spelled out in place: **fixed-arity sequences**
+(`_fixed_seq_types(...) is not None` — `tuple[X, Y]` *and* a namedtuple), tried first and
+filtered on the arity that same function reports; **variable-length collections and dicts**
+(`_is_varlen_collection` or `_is_dict`, which is where `tuple[X, ...]` belongs, not with the
+fixed ones); and the **scalar leaves**, whatever is left. Asking `_is_tuple` for the first
+bucket is the mistake it used to make: a namedtuple is a tuple subclass, not a `tuple[...]`
+generic alias, so `str | Point` landed among the scalars and refused the list
+`str | tuple[int, int]` accepts — in every channel, since this is below the parsers
+([BUG-21](../todo/bugs.md), closed;
+[10](10-design-decisions.md#a-namedtuple-is-a-fixed-length-sequence)).
+
 Coerce functions may raise `ValueError`, `TypeError` or `OSError`;
 `serialize` defaults to `str` and must return something a config writer accepts and `coerce`
 reads back ([10](10-design-decisions.md#registered-leaf-types-dump-through-a-registered-serializer)).
