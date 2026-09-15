@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import json
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _detect_owning_class, active_directives
 from confarg._import import _import_dotted
+from confarg._merge import _set_nested
 from confarg._tags import _partial_config_from_argv, import_tagged_classes
 from confarg._types import (
     _dataclass_subclasses,
@@ -519,6 +521,45 @@ def _collect_fn_paths_from_argv(argv: Sequence[str]) -> dict[str, tuple[str, str
             else:
                 i += 1
     return {**plain, **escaped}  # escaped opener wins: a field's plain '.fn' is then data
+
+
+def _blob_document_from_argv(argv: Sequence[str]) -> dict[str, Any]:
+    """Nest every whole-value ``--<dotted.path> '{...}'`` token of argv into one document.
+
+    The result is shaped like a config file, so :func:`_collect_fn_paths_from_config`
+    reads the callable openers a blob spells with the very walk it uses on ``--config``
+    files.  That walk is type-guided, which is what keeps a mapping field whose value
+    happens to carry a ``class`` key from being read as a callable spec.
+
+    Only ``{``-prefixed tokens are collected — the shape the vanilla parser and the
+    collector agree is a whole value — and a malformed one is skipped rather than
+    raised on: registration is best-effort, and the real error belongs to the parse.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+    """
+    doc: dict[str, Any] = {}
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if not tok.startswith("--"):
+            i += 1
+            continue
+        if "=" in tok:
+            key, _, val = tok[2:].partition("=")
+            i += 1
+        elif i + 1 < len(argv) and not argv[i + 1].startswith("--"):
+            key, val = tok[2:], argv[i + 1]
+            i += 2
+        else:
+            i += 1
+            continue
+        if val.startswith("{"):
+            with contextlib.suppress(json.JSONDecodeError):
+                decoded = json.loads(val)
+                if isinstance(decoded, dict):
+                    _set_nested(doc, key.split("."), decoded)
+    return doc
 
 
 def _callable_fn_path(sub: Any) -> tuple[str, str, str] | None:
@@ -1158,10 +1199,12 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         config_dict = _partial_config_from_argv(argv_list, config_flag) if config_flag else {}
 
         config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
+        blob_fns = _collect_fn_paths_from_config(_blob_document_from_argv(argv_list), target, "", union_tag)
         argv_fns = _collect_fn_paths_from_argv(argv_list)
         existing_names: set[str] = set()
         result: list[FlagSpec] = _escaped_opener_specs(argv_fns, existing_names)
-        for field_flag, (fn_path, mode, bind_key) in {**config_fns, **argv_fns}.items():
+        # Opener flags beat the blob they refine, as the collector's deep merge does.
+        for field_flag, (fn_path, mode, bind_key) in {**config_fns, **blob_fns, **argv_fns}.items():
             result.extend(_collect_callable_field_specs(field_flag, fn_path, mode, bind_key, existing_names))
         if config_flag:
             result.extend(_collect_config_argv_specs(argv_list, config_flag))
