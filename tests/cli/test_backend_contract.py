@@ -38,6 +38,7 @@ import confarg.cli._build as build_mod
 from confarg._files import INCLUDE_KEY
 from confarg.cli._build import build_static_flags
 from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError
+from tests._loaders import ClickLoader
 from tests.conftest import AppConfig, CacheConfig, DbConfig, make_target
 
 if TYPE_CHECKING:
@@ -410,6 +411,56 @@ class TestFixedSequenceContract:
         """--pair.0 / --pair.1 address the fields by position."""
         cfg = loader.load(_WithPoint, argv=["--pair.0", "13", "--pair.1", "42"], env={})
         assert cfg.pair == _Point(x=13, y=42)
+
+    def test_tuple_whole_value(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """--pair '[13, 42]' fills a tuple[int, int] in one token (click declines it)."""
+        cfg = whole_value_arity_loader.load(_WithIntPair, argv=["--pair", "[13, 42]"], env={})
+        assert cfg.pair == (13, 42)
+
+    def test_namedtuple_whole_value_object(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """--pair '{"x": 13, "y": 42}' fills a namedtuple by field name in one token."""
+        cfg = whole_value_arity_loader.load(_WithPoint, argv=["--pair", '{"x": 13, "y": 42}'], env={})
+        assert cfg.pair == _Point(x=13, y=42)
+
+    def test_namedtuple_whole_value_array(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """--pair '[13, 42]' fills a namedtuple positionally, as the same-arity tuple does."""
+        cfg = whole_value_arity_loader.load(_WithPoint, argv=["--pair", "[13, 42]"], env={})
+        assert cfg.pair == _Point(x=13, y=42)
+
+    def test_optional_namedtuple_whole_value(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """Optionality does not change what the whole value accepts (10-design-decisions.md)."""
+        cfg = whole_value_arity_loader.load(_WithOptionalPoint, argv=["--pair", '{"x": 13, "y": 42}'], env={})
+        assert cfg.pair == _Point(x=13, y=42)
+
+    def test_whole_value_refined_by_field_flag(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """A sibling --pair.y refines the whole value, as it does for a struct field."""
+        cfg = whole_value_arity_loader.load(
+            _WithPoint,
+            argv=["--pair", '{"x": 13, "y": 42}', "--pair.y", "7"],
+            env={},
+        )
+        assert cfg.pair == _Point(x=13, y=7)
+
+    def test_tuple_too_many_tokens_raises(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """Arity is confarg's to enforce once the flag is registered nargs="*"."""
+        with pytest.raises(ConfargError):
+            whole_value_arity_loader.load(_WithIntPair, argv=["--pair", "1", "2", "3"], env={})
+
+    def test_tuple_too_few_tokens_raises(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """A short whole value is rejected by build(), not by the framework."""
+        with pytest.raises(ConfargError):
+            whole_value_arity_loader.load(_WithIntPair, argv=["--pair", "[13]"], env={})
+
+    def test_click_declines_the_whole_value_token(self) -> None:
+        """Click registers the exact token count, so it rejects the whole-value token.
+
+        The approved divergence (09-invariants.md#cross-channel-parity): click's options
+        cannot take a variable token count, and ``multiple=True`` -- its only alternative --
+        would cost click users ``--pair 13 42``, the spelling a CLI user expects
+        (10-design-decisions.md#a-divergence-leans-towards-the-affected-backends-own-idiom).
+        """
+        with pytest.raises(SystemExit):
+            ClickLoader().load(_WithIntPair, argv=["--pair", "[13, 42]"], env={})
 
 
 # ---------------------------------------------------------------------------

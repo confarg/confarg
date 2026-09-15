@@ -33,6 +33,40 @@ needed. Help for large, dynamic configurations is inevitably long and incomplete
 classes' fields are unknown until selected), and configuration files are the primary
 interface, so a rich CLI UX is a secondary goal.
 
+## A divergence leans towards the affected backend's own idiom
+
+Parity is the rule ([09](09-invariants.md#cross-channel-parity)): a feature is spelled the same
+way in all four front-ends and all three channels. Some spellings cannot reach every front-end,
+because a host framework fixes at registration what confarg decides from argv. This section says
+which way to lean when that happens; it does not lower the bar for *whether* it happens, which
+still needs a concrete reason and the maintainer's explicit approval, obtained before the
+divergence is implemented.
+
+When parity cannot be reached, the front-end that has to give something up keeps **its own way
+of working**, so the result stays native to the people who chose that framework. A confarg
+spelling is not worth making a click user type something click would never ask them to type.
+Concretely: the backend that cannot express the shared spelling declines it, rather than every
+backend being dragged down to the narrowest common form.
+
+The tie breaks towards the **CLI-oriented** backend, not towards confarg's config-oriented
+philosophy. Command-line parameters are first and foremost user-friendly knobs for tweaking a
+configuration at the last minute; they are not a configuration-file format that happens to live
+in argv. Inline JSON on a command line is not friendly, so a whole-value `'[13, 42]'` or
+`'{"x": 13}'` token is the half that gives way -- not the readable `--pair 13 42` a CLI user
+expects, and not a framework's own native convention. Files and the environment remain where a
+whole object is spelled comfortably; the CLI is where it is tweaked.
+
+The corollary is that a divergence is **narrowed to the backend that imposes it**, never widened
+to keep the four front-ends symmetrical. A front-end that *can* express the spelling gets it.
+Symmetry is not the goal -- parity is, and where parity is unreachable the goal is the smallest
+number of surprised users.
+
+Worked example: [04](04-cli-adapters.md#whole-value-flags) -- a fixed-arity flag (`tuple[X, Y]`,
+namedtuple) registers `nargs="*"` for argparse and cyclopts, which can take both the positional
+form and a single whole-value token, while click keeps its exact token count and declines the
+whole-value token, because click's only alternative (`multiple=True`) would have cost click
+users `--pair 13 42` ([BUG-20](../todo/bugs.md), closed).
+
 ## union_tag defaults to "class"
 
 `class` is a Python keyword, so no dataclass field can ever be named `class`: the
@@ -259,10 +293,11 @@ only holdout.
   the arity filter it feeds, so the one function that answers "fixed arity, of which types?"
   answers on the way in as well
   ([05](05-types-and-construction.md#leaf-coercion)).
-- Boundary: the three adapters still cannot take a whole `{...}` or `[...]` token on a
-  fixed-arity flag, because the framework fixes its token count at registration. That is not a
-  namedtuple property — `tuple[int, int]` refuses `--pair '[13, 42]'` in exactly the same
-  three front-ends — so it is filed once, for both ([BUG-20](../todo/bugs.md)).
+- Boundary: taking a whole `{...}` or `[...]` token on a fixed-arity flag needs a framework
+  that can vary a flag's token count at parse time. argparse and cyclopts can and now do;
+  click cannot and declines, the approved divergence argued in
+  [04](04-cli-adapters.md#whole-value-flags). That was never a namedtuple property —
+  `tuple[int, int]` behaved identically — so it was filed once, for both (BUG-20, closed).
 
 A note on the ID: `BUG-16` was used twice. The first one —
 [#an-explicit-tag-opts-a-leaf-back-in](#an-explicit-tag-opts-a-leaf-back-in) — closed long

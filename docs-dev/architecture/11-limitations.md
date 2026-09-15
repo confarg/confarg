@@ -37,6 +37,17 @@ the boundary moves here.
 - Index-keyed lists must be gap-free, unless the element type is Optional — a gap would
   otherwise have to invent an element of an unknown type.
 
+## CLI front-ends
+
+- A multi-token flag is spelled per framework: space-separated for vanilla/argparse/cyclopts,
+  repeated for click/cyclopts ([04](04-cli-adapters.md#list-syntax-divergence)).
+- A fixed-arity flag (`tuple[X, Y]`, namedtuple) takes one whole-value token — `--pair
+  '[13, 42]'`, `--pair '{"x": 13}'` — everywhere except click, whose options cannot vary their
+  token count at parse time. click keeps `--pair 13 42`, which is the spelling a CLI user
+  reaches for, and declines the JSON one
+  ([04](04-cli-adapters.md#whole-value-flags)). Use a config file, an environment variable or
+  the per-field flags (`--pair.x 13`) to set it whole under click.
+
 ## Subclasses
 
 - `--help` lists a subclass's flags only once something has imported it: naming the class is

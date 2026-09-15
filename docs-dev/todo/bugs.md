@@ -40,48 +40,6 @@ print("env:", confarg.load(Config, argv=[], env={"MYAPP_JSON": blob}, env_prefix
 #           env: Config(host='localhost', port=8080)
 ```
 
-### BUG-20 — A fixed-arity flag refuses in the adapters the whole-value token vanilla takes
-
-**Where:** `src/confarg/cli/_build.py` (`_build_leaf_spec`, `_collect_namedtuple_specs`)
-**Filed:** 2026-09-15 · **Effort:** M · **Risk:** medium
-
-A `tuple[X, Y]` and a namedtuple register with the framework's exact token count, fixed before
-argv is read, so the framework rejects the single whole-value token vanilla decodes —
-`--pair '[13, 42]'` for either, and `--pair '{"x": 13}'` for the namedtuple. Not a namedtuple
-property: both shapes lose the same spelling in the same three front-ends, which is why this is
-one ticket. The `FlagSpec` vocabulary can express it (`nargs="*"` plus an arity check in
-`cli/_collect.py`), but click renders `nargs="*"` as `multiple=True`, so that spelling would
-cost click its `--pair 13 42` form and extend the approved list-syntax divergence
-([04](../architecture/04-cli-adapters.md#list-syntax-divergence)) to fixed arity — a trade the
-maintainer has to approve. An argv-scanned arity is the other candidate and contradicts
-`build_static_flags`' promise that argv never changes the declared flag set.
-See [04-cli-adapters.md#whole-value-flags](../architecture/04-cli-adapters.md#whole-value-flags).
-
-```python
-import argparse
-from dataclasses import dataclass
-
-import confarg
-from confarg.cli.argparse import populate_parser
-
-
-@dataclass
-class Config:
-    pair: tuple[int, int] = (0, 0)
-
-
-argv = ["--pair", "[13, 42]"]
-print("vanilla:", confarg.load(Config, argv=argv, env={}))
-parser = argparse.ArgumentParser()
-populate_parser(Config, parser, argv=argv)
-print("argparse:", parser.parse_args(argv))
-# expected: vanilla:  Config(pair=(13, 42))
-#           argparse: Namespace(pair=[13, 42], ...)
-# actual:   vanilla:  Config(pair=(13, 42))
-#           argparse: r20.py: error: argument --pair: expected 2 arguments
-#                     SystemExit: 2
-```
-
 ### BUG-24 — A delete flag drops the callable shorthand it refines in the adapters
 
 **Where:** `src/confarg/cli/_collect.py` (`_collect_callable_spec`) · **Filed:** 2026-09-15

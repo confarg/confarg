@@ -195,6 +195,28 @@ def _str_token(v: Any) -> Any:
     return _StrToken(v) if isinstance(v, str) else v
 
 
+def _fixed_arity_whole_value(v: Any, core: Any, flag: str) -> Any:
+    """Decode the lone whole-value token of a fixed-arity flag, or return :data:`_NO_CAST`.
+
+    A ``FlagSpec.whole_value`` flag registers greedily, so the framework hands its single
+    ``'[13, 42]'`` / ``'{"x": 13}'`` token over as a one-element list.  Both halves defer to
+    the decoders the other branches use -- :func:`_json_array_override` for the array,
+    :func:`_accepts_object_value` plus :func:`_parse_json_arg` for the object -- so a
+    fixed-arity field cannot drift from what vanilla decodes for the same token.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+    """
+    parsed = _json_array_override(v)
+    if parsed is not None:
+        return parsed
+    if isinstance(v, list) and len(v) == 1 and isinstance(v[0], str):
+        token = v[0]
+        if token.startswith("{") and _accepts_object_value(core):
+            return _parse_json_arg(token, f"--{flag}")
+    return _NO_CAST
+
+
 def _whole_value(flat: dict[str, Any], flag: str, resolved: Any) -> Any:
     """Return the bare ``--<flag>`` value decoded the way the vanilla parser decodes it.
 
@@ -383,6 +405,26 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
         pass
 
 
+def _namedtuple_sub_flags(flat: dict[str, Any], flag: str, field_names: list[str]) -> dict[str, Any]:
+    """Collect a namedtuple's per-name and per-index sub-flags, name winning over index."""
+    sub: dict[str, Any] = {}
+    for i, fname in enumerate(field_names):
+        for key in (f"{flag}.{fname}", f"{flag}.{i}"):
+            if flat.get(key) is not None:
+                sub[fname] = _str_token(flat[key])
+                break
+    return sub
+
+
+def _namedtuple_arity_value(nargs_value: Any, whole: Any) -> Any:
+    """Return what the arity flag alone supplies: the decoded whole value, or its tokens."""
+    if whole is not _NO_CAST:
+        return whole
+    if isinstance(nargs_value, list):
+        return [_str_token(item) for item in nargs_value]
+    return _str_token(nargs_value)
+
+
 def _collect_ns_namedtuple(
     flat: dict[str, Any],
     core: Any,
@@ -391,44 +433,46 @@ def _collect_ns_namedtuple(
 ) -> None:
     """Collect a namedtuple field from the flat namespace.
 
-    Priority per field: field-name sub-flag > index sub-flag > nargs position.
-    When sub-flags and the nargs flag are both set, sub-flags override specific
-    positions and the nargs value fills the rest — they are merged, not exclusive.
+    Priority per field: field-name sub-flag > index sub-flag > arity-flag position.
+    When sub-flags and the arity flag are both set, sub-flags override specific
+    positions and the arity value fills the rest — they are merged, not exclusive.
+    A lone whole-value token refines the same way, by name when it spells an object
+    and by position when it spells an array.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
     """
-    flds = _namedtuple_fields(core)
-    field_names = list(flds.keys())
-
-    # Collect individual sub-flags (by name and by index)
-    sub: dict[str, Any] = {}
-    for i, fname in enumerate(field_names):
-        name_key = f"{flag}.{fname}"
-        idx_key = f"{flag}.{i}"
-        if name_key in flat and flat[name_key] is not None:
-            sub[fname] = _str_token(flat[name_key])
-        elif idx_key in flat and flat[idx_key] is not None:
-            sub[fname] = _str_token(flat[idx_key])
-
+    field_names = list(_namedtuple_fields(core))
+    sub = _namedtuple_sub_flags(flat, flag, field_names)
     nargs_value = flat.get(flag)
-    has_nargs = nargs_value is not None
+    path = flag.split(".")
 
-    if not sub and not has_nargs:
+    if nargs_value is None:
+        if sub:
+            _set_nested(result, path, sub)
         return
 
-    if sub and has_nargs:
-        # Merge: nargs provides the base, sub-flags override individual positions.
-        nargs_list = nargs_value if isinstance(nargs_value, list) else [nargs_value]
-        merged: dict[str, Any] = {}
-        for i, fname in enumerate(field_names):
-            if fname in sub:
-                merged[fname] = sub[fname]
-            elif i < len(nargs_list):
-                merged[fname] = _str_token(nargs_list[i])
-        _set_nested(result, flag.split("."), merged)
-    elif sub:
-        _set_nested(result, flag.split("."), sub)
-    else:
-        v = [_str_token(item) for item in nargs_value] if isinstance(nargs_value, list) else _str_token(nargs_value)
-        _set_nested(result, flag.split("."), v)
+    whole = _fixed_arity_whole_value(nargs_value, core, flag)
+
+    if not sub:
+        # Store what the flag spelled and let build() judge its arity, as the same-arity
+        # tuple field does — the framework no longer counts the tokens for us.
+        _set_nested(result, path, _namedtuple_arity_value(nargs_value, whole))
+        return
+
+    if isinstance(whole, dict):
+        _set_nested(result, path, {**whole, **sub})
+        return
+
+    value = _namedtuple_arity_value(nargs_value, whole)
+    base = value if isinstance(value, list) else [value]
+    merged: dict[str, Any] = {}
+    for i, fname in enumerate(field_names):
+        if fname in sub:
+            merged[fname] = sub[fname]
+        elif i < len(base):
+            merged[fname] = base[i]
+    _set_nested(result, path, merged)
 
 
 def _collect_ns_union_root(  # noqa: PLR0913  # the type-walk context, threaded whole

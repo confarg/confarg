@@ -167,13 +167,45 @@ still wins, being another spelling of the target rather than a refinement
 ([03](03-cli-parsing.md#token-consumption)). A *delete* flag is the exception, since it
 travels with the patch ops rather than the flat collector ([BUG-24](../todo/bugs.md)).
 
-A **fixed-arity** flag is the one place an adapter cannot follow vanilla here. A namedtuple and
-a `tuple[X, Y]` register with the framework's own exact token count, decided before argv is
-parsed, so the framework rejects the single whole-value token vanilla accepts — `--pair
-'[13, 42]'` for the tuple, `--pair '{"x": 13}'` for the namedtuple — with its own arity error.
-The gap belongs to fixed arity, not to namedtuples: both shapes lose the same spelling in the
-same three front-ends ([BUG-20](../todo/bugs.md)). Everything else about a namedtuple is shared
-— the arity flag, the per-field and per-index flags, and the vanilla positional form
+A **fixed-arity** flag — a namedtuple or a `tuple[X, Y]` — is registered with the framework's
+own exact token count, which is decided before argv is parsed and therefore cannot also admit
+the single whole-value token vanilla takes (`--pair '[13, 42]'` for the tuple, `--pair
+'{"x": 13}'` for the namedtuple). `FlagSpec.whole_value` marks those specs, and each adapter
+grants what its framework can express (BUG-20, closed):
+
+| Front-end | Registration | `--pair 13 42` | `--pair '[13, 42]'` |
+|---|---|---|---|
+| vanilla | — | ✅ | ✅ |
+| argparse | `nargs="*"` | ✅ | ✅ |
+| cyclopts | `consume_multiple=True` | ✅ | ✅ |
+| click | `nargs=<n>` | ✅ | ❌ |
+
+click is the exception, and it is an **approved divergence**
+([09](09-invariants.md#cross-channel-parity)). A click `Option` cannot vary its token count:
+`nargs=-1` raises `nargs=-1 is not supported for options`, and the only alternative,
+`multiple=True`, would buy the whole-value token by taking `--pair 13 42` away and demanding
+`--pair 13 --pair 42` in its place. Inline JSON is not what a CLI user reaches for, so click
+keeps the readable positional form and declines the whole value, per
+[10](10-design-decisions.md#a-divergence-leans-towards-the-affected-backends-own-idiom). The
+divergence is confined to click: argparse and cyclopts, which *can* vary the count, get both.
+
+Registering `nargs="*"` hands **arity enforcement back to confarg** — the framework no longer
+counts the tokens, so `--pair 1 2 3` reaches `build()` and fails there rather than at the
+parser. That is not new machinery: a union with a sequence variant (`str | tuple[str, str]`)
+has registered `nargs="*"` and let `build()` judge the arity since it was first written, so a
+fixed-arity flag now behaves the way the union-wrapped one already did. The error text differs
+from vanilla's, which consumes exactly the declared count and reports the surplus token as
+`Unexpected positional argument: '3'`; both are `ConfargError`, which is the level the contract
+suite asserts.
+
+For the namedtuple, `cli/_collect.py` decodes the lone token through
+`_fixed_arity_whole_value`, which delegates to the same two decoders the other branches use
+(`_json_array_override` for `[…]`, `_accepts_object_value` + `_parse_json_arg` for `{…}`), so
+the object form cannot drift from what vanilla decodes. Sub-flags refine it exactly as they
+refine a struct's whole value — by name over a decoded object, by position otherwise.
+
+Everything else about a namedtuple is shared — the arity flag, the per-field and per-index
+flags, and the vanilla positional form
 ([10](10-design-decisions.md#a-namedtuple-is-a-fixed-length-sequence)).
 
 A dict field's bare flag is its *only* static flag (its keys are unknown until argv is read);
