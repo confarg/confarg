@@ -83,6 +83,18 @@ def _missing_field_error(fp: str, ft: Any) -> MissingFieldError:
     return MissingFieldError(msg)
 
 
+def _missing_field_error(fp: str, ft: Any) -> MissingFieldError:
+    """Return the error for a field of type *ft* that no channel supplied at path *fp*.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#structs-collections-and-defaults
+    """
+    msg = (
+        f"Missing required field '{fp}' of type {ft!r}. Set it via CLI (--{fp}), environment variable, or config file."
+    )
+    return MissingFieldError(msg)
+
+
 def _try_pinned_dict(data: Any) -> _Pinned | None:
     """Detect a ``{__cast__: typename, __value__: raw}`` tagged dict and convert to _Pinned.
 
