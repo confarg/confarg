@@ -15,6 +15,7 @@ from typing import Any
 
 from confarg import _defaults
 from confarg._callable import _resolve_callable_spec
+from confarg._cast import SCALAR_CAST_TYPES
 from confarg._import import _import_dotted
 from confarg._merge import LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, _apply_list_ops
 from confarg._types import (
@@ -69,8 +70,6 @@ from confarg.typedload._coerce import (
     _steal_order,
 )
 
-_CAST_TYPE_NAMES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
-
 
 def _missing_field_error(fp: str, ft: Any) -> MissingFieldError:
     """Return the error for a field of type *ft* that no channel supplied at path *fp*.
@@ -95,12 +94,12 @@ def _try_pinned_dict(data: Any) -> _Pinned | None:
     if not (isinstance(data, dict) and data.keys() == {"__cast__", "__value__"}):
         return None
     typename = data["__cast__"]
-    tp: type | None = _CAST_TYPE_NAMES.get(typename)
+    tp: type | None = SCALAR_CAST_TYPES.get(typename)
     if tp is None:
         tp = next((t for t in _LEAF_COERCIONS if getattr(t, "__name__", None) == typename), None)
     if tp is None:
-        valid = sorted(_CAST_TYPE_NAMES) + sorted(
-            t.__name__ for t in _LEAF_COERCIONS if t not in _CAST_TYPE_NAMES.values()
+        valid = sorted(SCALAR_CAST_TYPES) + sorted(
+            t.__name__ for t in _LEAF_COERCIONS if t not in SCALAR_CAST_TYPES.values()
         )
         msg = f"Unknown __cast__ type: {typename!r}. Valid: {valid}"
         raise TypeCoercionError(msg)
