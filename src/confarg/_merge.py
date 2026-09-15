@@ -136,6 +136,27 @@ def _normalize_merge_ops(d: Any) -> Any:
     return result if has_change else d
 
 
+def _resolve_index(orig_idx: int, length: int, key: str, kind: str) -> int:
+    """Validate *orig_idx* against a list of *length* and return the wrapped index.
+
+    Negative indices count from the end; out-of-range indices raise ``ConfargError``.
+    *kind* is ``"delete"`` or ``"patch"`` and only selects the error wording.
+    """
+    idx = orig_idx + length if orig_idx < 0 else orig_idx
+    if 0 <= idx < length:
+        return idx
+    _rng = "(the list is empty)" if not length else f"(valid indices {-length} to {length - 1})"
+    if kind == "delete":
+        msg = f"Cannot delete index {orig_idx} from '{key}': the list has {length} element(s) {_rng}."
+    else:
+        msg = (
+            f"Cannot patch list '{key}' at index {orig_idx}:"
+            f" the list has {length} element(s) {_rng}."
+            " Use the + append syntax (e.g. --field+ for CLI) to add new elements."
+        )
+    raise ConfargError(msg)
+
+
 def _apply_list_ops(
     working: list[Any],
     ops: dict[str, Any],
@@ -154,18 +175,9 @@ def _apply_list_ops(
     LIST_REPLACE_BASE_KEY (``"*"``) is ignored here; the caller already used it
     to set *working*.
     """
-
-    def _check_del(orig_idx: int, lst: list[Any]) -> int:
-        idx = orig_idx + len(lst) if orig_idx < 0 else orig_idx
-        if idx < 0 or idx >= len(lst):
-            _rng = "(the list is empty)" if not lst else f"(valid indices {-len(lst)} to {len(lst) - 1})"
-            msg = f"Cannot delete index {orig_idx} from '{key}': the list has {len(lst)} element(s) {_rng}."
-            raise ConfargError(msg)
-        return idx
-
     # 1. Pre-append deletions
     if LIST_DELETE_KEY in ops:
-        del_set = {_check_del(i, working) for i in ops[LIST_DELETE_KEY]}
+        del_set = {_resolve_index(i, len(working), key, "delete") for i in ops[LIST_DELETE_KEY]}
         working = [item for i, item in enumerate(working) if i not in del_set]
 
     # 2. Appends
@@ -174,7 +186,7 @@ def _apply_list_ops(
 
     # 3. Post-append deletions
     if LIST_POST_APPEND_DELETE_KEY in ops:
-        del_set = {_check_del(i, working) for i in ops[LIST_POST_APPEND_DELETE_KEY]}
+        del_set = {_resolve_index(i, len(working), key, "delete") for i in ops[LIST_POST_APPEND_DELETE_KEY]}
         working = [item for i, item in enumerate(working) if i not in del_set]
 
     # 4. Index patches
@@ -190,15 +202,7 @@ def _apply_list_ops(
                 " List patches must use integer string keys (e.g. {'0': ..., '1': ...})."
             )
             raise ConfargError(msg) from None
-        idx = orig_idx + len(working) if orig_idx < 0 else orig_idx
-        if idx < 0 or idx >= len(working):
-            _rng = "(the list is empty)" if not working else f"(valid indices {-len(working)} to {len(working) - 1})"
-            msg = (
-                f"Cannot patch list '{key}' at index {orig_idx}:"
-                f" the list has {len(working)} element(s) {_rng}."
-                " Use the + append syntax (e.g. --field+ for CLI) to add new elements."
-            )
-            raise ConfargError(msg)
+        idx = _resolve_index(orig_idx, len(working), key, "patch")
         working = list(working)  # ensure mutability
         # A list/tuple element + index-keyed dict recurses through _apply_list_ops, a dict
         # element + dict patch deep-merges, and anything else is replaced by iv.
