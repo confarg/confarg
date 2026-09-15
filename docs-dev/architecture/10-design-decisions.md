@@ -207,10 +207,12 @@ this rule (`list[str] | None` takes a JSON array in the environment, and the CLI
   one line smaller than the bug. The namedtuple half was settled separately, by making a
   namedtuple a sequence everywhere
   ([#a-namedtuple-is-a-fixed-length-sequence](#a-namedtuple-is-a-fixed-length-sequence)).
-- Decoding the blob is not registering flags: the adapters still learn a callable's factory and
-  `bind` flags only from a `--<field>.class` opener on argv, so a class named inside the blob
-  leaves them unregistered ([BUG-22](../todo/bugs.md)). Vanilla, which re-reads argv, is
-  unaffected — the divergence is in the scan, not in this predicate.
+- Decoding the blob was not yet registering the flags it implies: the adapters learned a
+  callable's factory and `bind` flags from a `--<field>.class` opener on argv only, so a class
+  named inside the blob left them unregistered ([BUG-22](../todo/bugs.md), closed the same way
+  — by widening an existing walk, not by adding a scan). Vanilla, which re-reads argv, was
+  never affected; the divergence was in the scan, not in this predicate, which is why it
+  survived the fix above and needed its own.
 
 ## A namedtuple is a fixed-length sequence
 

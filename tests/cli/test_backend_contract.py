@@ -1916,6 +1916,30 @@ class TestWholeValueFlagContract:
         assert cfg.fn is not None
         assert cfg.fn("world") == "Hi, world!"
 
+    def test_bind_flag_registers_from_whole_callable_blob(self, loader: ConfargLoader) -> None:
+        """A class named inside the blob still buys its --fn.bind.<param> flag (BUG-22)."""
+        blob = json.dumps({"class": f"{__name__}._Greeter", "greeting": "Hi"})
+        cfg = loader.load(_CallableConfig, argv=["--fn", blob, "--fn.bind.punct", "!"], env={})
+        assert cfg.fn("world") == "Hi, world!"
+
+    def test_factory_flag_registers_from_whole_optional_callable_blob(self, loader: ConfargLoader) -> None:
+        """The blob's class buys its constructor kwarg flags too, optional field included (BUG-22)."""
+        blob = json.dumps({"class": f"{__name__}._Greeter"})
+        cfg = loader.load(
+            _OptCallableConfig,
+            argv=["--fn", blob, "--fn.greeting", "Hi", "--fn.bind.punct", "!"],
+            env={},
+        )
+        assert cfg.fn is not None
+        assert cfg.fn("world") == "Hi, world!"
+
+    def test_dict_blob_buys_no_callable_flags(self, populating_loader: ConfargLoader) -> None:
+        """A mapping that happens to carry a 'class' key is not read as a callable spec (BUG-22)."""
+        blob = json.dumps({"class": f"{__name__}._Greeter"})
+        flags = populating_loader.registered_flags(_WholeValue, argv=["--env", blob])
+        assert flags is not None
+        assert not {f for f in flags if f.startswith(("env.greeting", "env.bind."))}
+
     def test_whole_optional_callable_matches_env_channel(self, loader: ConfargLoader) -> None:
         """The CLI and env spellings of a whole optional callable spec agree, as for a dict."""
         blob = f'{{"class": "{__name__}._Greeter", "greeting": "Hi"}}'
