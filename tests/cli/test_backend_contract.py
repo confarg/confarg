@@ -34,9 +34,9 @@ from uuid import UUID
 import pytest
 
 import confarg
-import confarg.cli.argparse._build as build_mod
+import confarg.cli._build as build_mod
 from confarg._files import INCLUDE_KEY
-from confarg.cli.argparse._build import build_static_flags
+from confarg.cli._build import build_static_flags
 from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError
 from tests.conftest import AppConfig, CacheConfig, DbConfig, make_target
 

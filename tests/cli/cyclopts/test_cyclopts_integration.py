@@ -16,7 +16,7 @@ import pytest
 import confarg
 import confarg.cli.cyclopts as confargcyclopts
 from confarg.cli import FieldMeta, FlagSpec
-from confarg.cli.argparse._build import build_static_flags
+from confarg.cli._build import build_static_flags
 from confarg.cli.cyclopts._register import (
     _app_meta,
     _expression_tolerant_convert,

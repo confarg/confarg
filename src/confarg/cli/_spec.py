@@ -22,8 +22,8 @@ from confarg._types import _allows_none, _resolve_type, _union_args_no_none
 class FlagSpec:
     """Framework-agnostic description of a single CLI flag.
 
-    Produced by :func:`~confarg.cli.argparse.build_static_flags` and
-    :func:`~confarg.cli.argparse.build_dynamic_flags`; consumed by
+    Produced by :func:`~confarg.cli.build_static_flags` and
+    :func:`~confarg.cli.build_dynamic_flags`; consumed by
     :func:`~confarg.cli.argparse.load_flags_into_parser` or any other CLI adapter.
     """
 
@@ -58,7 +58,7 @@ class FlagSpec:
 
 @dataclasses.dataclass
 class FieldMeta:
-    """Optional per-field metadata for argparse integration.
+    """Optional per-field metadata for every CLI adapter.
 
     Attach via ``Annotated``::
 

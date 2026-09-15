@@ -16,11 +16,11 @@ from click.shell_completion import CompletionItem
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from confarg.cli.argparse._spec import FlagSpec
+    from confarg.cli._spec import FlagSpec
 
 from confarg import _defaults
+from confarg.cli._build import build_dynamic_flags, build_static_flags
 from confarg.cli._prefix import PREFIX_ATTR
-from confarg.cli.argparse._build import build_dynamic_flags, build_static_flags
 from confarg.dictexpr import contains_expression
 
 

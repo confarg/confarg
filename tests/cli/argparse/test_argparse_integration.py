@@ -14,8 +14,9 @@ from typing import Annotated, Literal
 import pytest
 
 import confarg
-from confarg.cli.argparse import FieldMeta, from_namespace, make_parser, populate_parser
-from confarg.cli.argparse._spec import _get_field_docstrings
+from confarg.cli import FieldMeta
+from confarg.cli._spec import _get_field_docstrings
+from confarg.cli.argparse import from_namespace, make_parser, populate_parser
 
 # ---------------------------------------------------------------------------
 # Fixtures

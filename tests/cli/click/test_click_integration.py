@@ -17,7 +17,7 @@ from click.testing import CliRunner
 import confarg
 import confarg.cli.click as confargclick
 from confarg.cli import FieldMeta, FlagSpec
-from confarg.cli.argparse._build import build_static_flags
+from confarg.cli._build import build_static_flags
 from confarg.cli.click._completion import _partial_argv_from_env, setup_completion
 from confarg.cli.click._register import load_flags_into_command, populate_command
 

@@ -4,30 +4,26 @@
 
 """Argparse integration.
 
+The framework-neutral half — :class:`~confarg.cli.FlagSpec`,
+:class:`~confarg.cli.FieldMeta`, :func:`~confarg.cli.build_static_flags` and
+:func:`~confarg.cli.build_dynamic_flags` — lives in :mod:`confarg.cli`; this package holds
+only what speaks :mod:`argparse`.
+
 Public API
 ----------
-- :class:`FlagSpec` — framework-agnostic description of one CLI flag
-- :class:`FieldMeta` — per-field metadata (help text, metavar)
-- :func:`build_static_flags` — collect flag specs from a dataclass type
-- :func:`build_dynamic_flags` — collect flag specs discoverable from partial argv
 - :func:`load_flags_into_parser` — load specs into an :class:`argparse.ArgumentParser`
+- :func:`make_parser` — build a parser pre-populated for a target type
 - :func:`populate_parser` — one-shot: build + load (+ optional dynamic extension)
 - :func:`merge_namespace` — merge all sources into a raw dict from a parsed :class:`argparse.Namespace`
 - :func:`from_namespace` — construct a dataclass from a parsed :class:`argparse.Namespace`
 - :func:`setup_completion` — enable tab-completion (requires ``argcomplete``)
 """
 
-from confarg.cli.argparse._build import build_dynamic_flags, build_static_flags
 from confarg.cli.argparse._completion import setup_completion
 from confarg.cli.argparse._namespace import from_namespace, merge_namespace
 from confarg.cli.argparse._register import load_flags_into_parser, make_parser, populate_parser
-from confarg.cli.argparse._spec import FieldMeta, FlagSpec
 
 __all__ = [
-    "FieldMeta",
-    "FlagSpec",
-    "build_dynamic_flags",
-    "build_static_flags",
     "from_namespace",
     "load_flags_into_parser",
     "make_parser",
