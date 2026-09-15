@@ -15,16 +15,6 @@ just argparse; they sit under `cli/argparse/` by historical accident and belong 
 Confirmed by the maintainer as an accident, not a decision.
 See [04-cli-adapters.md#framework-neutral-flag-model](../architecture/04-cli-adapters.md#framework-neutral-flag-model).
 
-### REF-2 — The scalar-cast table exists three times
-
-**Where:** `_cast.SCALAR_CAST_TYPES`, `typedload/_construct._CAST_TYPE_NAMES`,
-`cli/argparse/_build._SCALAR_CAST_TYPES` · **Filed:** 2026-09-12
-**Effort:** S · **Risk:** medium
-
-Three copies of the same list of castable scalar types, one per call site. `_cast` should own
-it and the other two should import it — a new cast type currently has to be added in three
-places to work everywhere. See [09-invariants.md](../architecture/09-invariants.md).
-
 ### REF-3 — `_add_*` wrappers survive only for completion
 
 **Where:** `src/confarg/cli/argparse/_register.py` · **Filed:** 2026-09-12

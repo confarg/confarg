@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _detect_owning_class, active_directives
+from confarg._cast import SCALAR_CAST_TYPES
 from confarg._files import _load_file
 from confarg._import import _import_dotted
 from confarg._merge import _deep_merge
@@ -64,7 +65,8 @@ from confarg.cli.argparse._spec import FlagSpec, _build_help, _get_field_docstri
 from confarg.exceptions import ConfargWarning, SymbolImportError
 from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_registered_leaf
 
-_SCALAR_CAST_TYPES: frozenset[type] = frozenset({str, int, float, bool})
+#: Value side of the canonical cast table; membership tests need the types, not the names.
+_SCALAR_CAST_TYPES: frozenset[type] = frozenset(SCALAR_CAST_TYPES.values())
 
 
 def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
