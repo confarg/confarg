@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
 
+from confarg import _defaults
 from confarg._api import build
 from confarg._callable import _Directives, active_directives
 from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, resolve_forced_value
@@ -177,7 +178,7 @@ def apply_root_json(flat: dict[str, Any], target: Any, union_tag: str, result: d
         # shape, as in vanilla's _handle_root_cast. setdefault keeps the bare
         # `--<cli_prefix>` flag winning, the same way the deep merge below lets
         # per-field flags win over the injected object.
-        result.setdefault("__root__", decoded)
+        result.setdefault(_defaults.ROOT_KEY, decoded)
         return
     if not isinstance(decoded, dict):
         msg = f"--{JSON_CAST_NAME} for a structured target must be a JSON object, got {type(decoded).__name__}."
@@ -439,7 +440,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type c
         if "" in flat:
             # Non-struct root: the empty key is the bare `--<cli_prefix>` flag, left
             # behind by strip_flat_prefix. Mirrors vanilla's _handle_scalar_root.
-            result["__root__"] = _coerce_scalar(tp, flat[""])
+            result[_defaults.ROOT_KEY] = _coerce_scalar(tp, flat[""])
         return
     _tp, flds, hints = setup
 

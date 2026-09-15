@@ -83,7 +83,7 @@ know nothing about channels. `dictexpr` imports only the standard library and
 confarg/
 ├── __init__.py        public surface; register_leaf_type
 ├── _api.py            load / merge / build / from_dict / resolve / dump / dump_file
-├── _defaults.py       shared keyword defaults (always reference, never repeat literals)
+├── _defaults.py       shared keyword defaults and reserved key names
 ├── exceptions.py      ConfargError hierarchy, ConfargWarning
 │
 │   channels
@@ -127,5 +127,6 @@ from it, build from it:
 | `confarg.cli.click` | `populate_command` / `merge_context` / `from_context` |
 | `confarg.cli.cyclopts` | `populate_app` / `merge_app` / `from_app` |
 
-Defaults for the keywords those functions share live in `_defaults.py`. Reference them; never
-repeat the literals ([09-invariants.md](09-invariants.md)).
+Defaults for the keywords those functions share live in `_defaults.py`, together with the
+reserved key names every front-end must spell alike (`ROOT_KEY`, `LOCALS_KEYS`). Reference
+them; never repeat the literals ([09-invariants.md](09-invariants.md)).

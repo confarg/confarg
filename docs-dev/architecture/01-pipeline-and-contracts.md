@@ -40,7 +40,8 @@ deliberately (non-alphabetical, hence `noqa: RUF022`):
 | one-step | `load` | everything |
 | dump | `dump`, `dump_file` | serialization |
 
-Shared keyword defaults live in `_defaults.py` so the four front-ends cannot drift.
+Shared keyword defaults and reserved key names live in `_defaults.py` so the four front-ends
+cannot drift.
 
 **Round-trip fidelity comes from the seam, not from a reverse pass.** `merge()` keeps
 `${...}` verbatim and `dump_file(raw_dict, path)` writes it back, so a merged config can be
