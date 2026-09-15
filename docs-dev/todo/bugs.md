@@ -134,55 +134,39 @@ print("argparse:", parser.parse_args(argv))
 #                     SystemExit: 2
 ```
 
-### BUG-22 — A callable's factory and bind flags are not registered from a whole-value blob
+### BUG-23 — A scalar whole value followed by a subkey crashes with a bare `TypeError`
 
-**Where:** `src/confarg/cli/_build.py` (`_collect_fn_paths_from_argv`) · **Filed:** 2026-09-15
-**Effort:** S · **Risk:** low
+**Where:** `src/confarg/_parse_cli.py` (`_consume_collection_or_scalar` → `_merge._set_nested`)
+**Filed:** 2026-09-15
+**Effort:** S · **Risk:** medium
 
-`build_dynamic_flags` learns which class a callable field names by scanning argv for
-`--<field>.class` / `.fn` / `.call` openers, and config files through `_callable_fn_path`. The
-whole-value `--<field> '{"class": …}'` spelling is neither: the blob is decoded, but never read
-for its opener, so the constructor kwargs and `--<field>.bind.<param>` flags it implies go
-unregistered and the framework rejects them. Vanilla, which reads argv itself, accepts the
-same line. Independent of optionality — it reproduces on a plain `Callable[…]` field too (found
-while fixing BUG-17). `_callable_fn_path` already answers the question for a decoded dict; the
-argv scan should hand it the blob instead of only matching opener tokens.
-See [04-cli-adapters.md#whole-value-flags](../architecture/04-cli-adapters.md#whole-value-flags).
+`--<field> <scalar> --<field>.<sub> <v>` stores a `_StrToken` at the field path, then asks
+`_set_nested` to descend through it, which raises Python's own `TypeError` out of the merge
+core instead of a `ConfargError` naming the flag. Not type-specific: a dict field given a
+non-JSON token and a callable field given the string shorthand fail identically, and the
+adapters never reach it because their flat collector nests the paths itself. Either reject the
+pair with a real error, or let the later subkey replace the scalar the way the adapters do
+— that choice is the ticket. Found while fixing BUG-22.
+See [03-cli-parsing.md#token-consumption](../architecture/03-cli-parsing.md#token-consumption).
 
 ```python
-import argparse
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 
 import confarg
-from confarg.cli.argparse import populate_parser
-
-
-class Greeter:
-    def __init__(self, greeting: str) -> None:
-        self.greeting = greeting
-
-    def __call__(self, name: str, punct: str) -> str:
-        return f"{self.greeting}, {name}{punct}"
 
 
 @dataclass
 class Config:
-    fn: Callable[[str], str] | None = None
+    fn: Callable[[str], str] = str.upper
 
 
-blob = json.dumps({"class": f"{__name__}.Greeter", "greeting": "Hi"})
-argv = ["--fn", blob, "--fn.bind.punct", "!"]
-print("vanilla :", confarg.load(Config, argv=argv, env={}).fn("world"))
-parser = argparse.ArgumentParser()
-populate_parser(Config, parser, argv=argv)
-print("argparse:", parser.parse_args(argv))
-# expected: vanilla : Hi, world!
-#           argparse: Namespace(fn='{"class": ...}', **{'fn.bind.punct': '!'})
-# actual:   vanilla : Hi, world!
-#           argparse: r22.py: error: unrecognized arguments: --fn.bind.punct !
-#                     SystemExit: 2
+print(confarg.load(Config, argv=["--fn", "string.capwords", "--fn.bind.sep", "-"], env={}))
+# expected: Config(fn=functools.partial(<function capwords ...>, sep='-'))
+#           — what --fn.fn string.capwords --fn.bind.sep - already gives
+# actual:   TypeError: '_StrToken' object does not support item assignment
+# The same line on a dict field fails the same way:
+#   confarg.merge(D, argv=["--d", "oops", "--d.c", "x"], env={})  # D.d: dict[str, str] | None
 ```
 
 ## Intent versus implementation

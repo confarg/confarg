@@ -106,7 +106,8 @@ from it, so `argv=[]` still describes exactly the declared type.
 **Dynamic flags** (`build_dynamic_flags`) are those whose existence depends on what the
 user typed, found by scanning argv (and config files named on argv):
 
-- bind/factory parameters of callables named by `--f.fn/.class/.call` (in argv or config);
+- bind/factory parameters of callables, whether the class is named by `--f.fn/.class/.call`,
+  by a whole-value `--f '{"class": …}'` blob, or by a config file;
 - escaped openers (`--f._class`) actually typed;
 - `--config.<any.depth>[+]`;
 - collection patches (`--f.N`, `--f+`, `--f.N-`, `--f.key`) and `.json` casts.
@@ -148,8 +149,18 @@ keeps its token raw does not advertise a syntax it will not honour. Optionality 
 the things that decides this: `dict[str, str] | None` takes the mapping `dict[str, str]` takes,
 `Callable[…] | None` takes the spec `Callable[…]` takes, and both get the same `JSON` metavar
 ([10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts)).
-What a decoded callable blob does *not* buy is the factory and `bind` flags its class implies:
-those are argv-scanned from the `--<field>.class` opener only ([BUG-22](../todo/bugs.md)).
+A decoded callable blob buys the factory and `bind` flags its class implies, exactly as a
+`--<field>.class` opener does ([BUG-22](../todo/bugs.md), closed). Neither half of that is a
+second decision: `_blob_document_from_argv` nests argv's `{`-prefixed tokens into one
+config-file-shaped document and hands it to the *same* target walk that reads a `--config`
+file's openers, and the flat collector's `active_directives` probe asks the blob's keys
+alongside the flat flags, so a blob's `class` selects the directive form and opens the sibling
+`--<field>.<param>` init kwargs the opener flag opens. Feeding the walk rather than
+pattern-matching argv is what keeps a mapping field whose value happens to carry a `class` key
+from being read as a callable spec — the walk is type-guided, the scan is not. Openers still
+win over the blob they refine, matching the collector's deep merge. The string shorthand
+`--<field> some.module.fn` is out of scope: vanilla cannot combine it with a sibling flag at all
+([BUG-23](../todo/bugs.md)).
 
 A **fixed-arity** flag is the one place an adapter cannot follow vanilla here. A namedtuple and
 a `tuple[X, Y]` register with the framework's own exact token count, decided before argv is

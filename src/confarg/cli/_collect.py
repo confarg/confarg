@@ -265,10 +265,19 @@ def _collect_callable_spec(
     """Build and store the callable spec dict from flat namespace entries for flag.
 
     Directive flags come in a plain and an escaped (single-underscore) form; the opener
-    present in the flat namespace selects the mode via
-    :func:`~confarg._callable.active_directives`.
+    selects the mode via :func:`~confarg._callable.active_directives`.  An opener spelled
+    inside the whole-value blob counts as one: vanilla deep-merges the blob and its
+    sibling flags into a single spec before anything reads an opener, so a blob's
+    ``class`` must buy its sibling ``--<field>.<param>`` init kwargs exactly as the
+    ``--<field>.class`` flag does.
     """
-    d = active_directives(lambda name: f"{flag}.{name}" in flat)
+    blob = (flat[flag] if whole is _NO_CAST else whole) if flag in flat else _NO_CAST
+    blob_keys: dict[str, Any] = blob if isinstance(blob, dict) else {}
+
+    def _has(name: str) -> bool:
+        return f"{flag}.{name}" in flat or name in blob_keys
+
+    d = active_directives(_has)
     bind_prefix = f"{flag}.{d.bind}."
     flag_prefix = f"{flag}."
     reserved = {f"{flag}.{name}" for name in d.openers}
@@ -282,11 +291,10 @@ def _collect_callable_spec(
     # Sibling --<field>.<param> flags are init kwargs when a class/fn identity is given:
     # 'class:' instantiates with them; 'fn: Class.method' constructs the method's owning
     # class with them. (Plain 'fn: Class' factories carry their args under bind instead.)
-    if f"{flag}.{d.cls}" in flat or f"{flag}.{d.fn}" in flat:
+    if _has(d.cls) or _has(d.fn):
         spec.update(_collect_factory_kwargs(flat, flag_prefix, bind_prefix, reserved))
 
-    if flag in flat:
-        blob = flat[flag] if whole is _NO_CAST else whole
+    if blob is not _NO_CAST:
         if isinstance(blob, str) and not spec:
             _set_nested(result, flag.split("."), _StrToken(blob))
             return
