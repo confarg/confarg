@@ -340,35 +340,3 @@ print("reload:", confarg.build(Config, blob))
 # actual:   dump  : {'v': 'FOO'}
 #           reload: Config(v=<Color.FOO: 1>)
 ```
-
-### BUG-18 — A struct built from `{}` can raise its own `TypeError` out of `build()`
-
-**Where:** `src/confarg/typedload/_construct.py` (`_construct_struct`, the `_all_have_defaults`
-branch) · **Filed:** 2026-09-14
-**Effort:** S · **Risk:** medium
-
-`_all_have_defaults` reads `__init__` parameter defaults, which is not the same question as
-"does `tp()` work": `UUID` defaults all seven of its parameters and still refuses being called
-with none. A missing field typed as an *unregistered* struct of that shape therefore takes the
-"built from `{}`" shortcut and lets the constructor's own `TypeError` escape `build()`, where
-every other missing field is a `MissingFieldError`.
-Registered leaves no longer reach the branch ([BUG-16](../architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in), closed), which is why only plain classes are left in it.
-Fix direction: the shortcut is a guess, so a `TypeError` from it means the guess was wrong —
-catch it and raise the `MissingFieldError` the field would otherwise have got.
-See [05-types-and-construction.md#structs-collections-and-defaults](../architecture/05-types-and-construction.md#structs-collections-and-defaults).
-
-```python
-from dataclasses import dataclass
-from uuid import UUID
-import confarg
-
-@dataclass
-class Config:
-    ident: UUID            # required, unregistered, every __init__ parameter has a default
-
-confarg.load(Config, argv=[])
-# expected: MissingFieldError: Missing required field 'ident' of type <class 'uuid.UUID'>.
-#           Set it via CLI (--ident), environment variable, or config file.
-#           — which is what a plain `ident: str` already raises
-# actual:   TypeError: one of the hex, bytes, bytes_le, fields, or int arguments must be given
-```
