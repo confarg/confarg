@@ -240,6 +240,16 @@ help, completion and error text for real values:
   selector and the subclass's own flags exist or not depending on which modules happened to
   load ([BUG-6](../todo/bugs.md), closed). The completer is left unset when the subclass list
   is empty — an empty one suppresses the shell's own suggestions.
+
+  Registration and collection read the *same* answer: `merge_*` runs `_tags.collect_tags` over
+  the stripped argv and hands the resulting `{field path: class path}` map to
+  `_collect_ns_fields`, so the flat collector descends into the subclass a `--config` file names
+  exactly as it descends into one a `--<path>.<union_tag>` flag names. Reading the tag from the
+  flat parse result alone left a subclass field typed on the CLI with no type to hang on, and it
+  was dropped while vanilla kept it ([BUG-19](../todo/bugs.md), closed). Only a tag found in
+  *flat* is written back into the collected dict: a file's tag already reaches the merge at its
+  own priority, and re-emitting it at CLI priority would replace the file's plain string with a
+  `_StrToken` and break [byte-identical merged dicts](#byte-identical-merged-dicts).
 - Force-cast flags (`--f.int`, …) are registered statically only where the stealing rule is
   non-obvious: an enum variant, or `str` next to any other variant.
 

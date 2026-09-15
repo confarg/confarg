@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import sys
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ from confarg._parse_cli import (
     _try_parse_json_list,
 )
 from confarg._pipeline import _merge_sources
+from confarg._tags import collect_tags
 from confarg._types import (
     _elem_type,
     _is_callable,
@@ -305,12 +307,13 @@ def _collect_callable_spec(
         _set_nested(result, flag.split("."), spec)
 
 
-def _collect_ns_union_field(
+def _collect_ns_union_field(  # noqa: PLR0913  # the type-walk context, threaded whole
     flat: dict[str, Any],
     flag: str,
     resolved: Any,
     union_tag: str,
     result: dict[str, Any],
+    tags: Mapping[str, str],
 ) -> None:
     """Handle a multi-variant union field.
 
@@ -329,39 +332,47 @@ def _collect_ns_union_field(
         try:
             cls = _import_dotted(str(class_tag))
             if isinstance(cls, type) and _is_struct(_resolve_type(cls)):
-                _collect_ns_fields(flat, cls, flag, union_tag, result)
+                _collect_ns_fields(flat, cls, flag, union_tag, result, tags)
         except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
             pass
     else:
         for variant in concrete:
-            _collect_ns_fields(flat, variant, flag, union_tag, result)
+            _collect_ns_fields(flat, variant, flag, union_tag, result, tags)
 
 
-def _collect_ns_inheritance(
+def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded whole
     flat: dict[str, Any],
     tp: Any,
     prefix: str,
     union_tag: str,
     result: dict[str, Any],
+    tags: Mapping[str, str],
 ) -> None:
     """Handle inheritance dispatch for a base class with subclasses.
 
-    When the union_tag key is explicitly present in flat, recurse only into
-    the named subclass (the `cls is not tp` guard prevents infinite recursion).
-    When it is absent, collect fields for all direct struct subclasses so that
-    structural inference in typedload can pick the right one.
+    The subclass to descend into is whichever the configuration names at this path -- a
+    ``--<path>.<union_tag>`` flag in *flat*, or a tag a ``--config`` file sets, which
+    *tags* carries (`cls is not tp` then stops the recursion).  Only the flag is written
+    back into *result*: a file's tag already reaches the merge at its own priority, and
+    re-emitting it at CLI priority would make the merged dict differ from vanilla's.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags
     """
     tag_key = f"{prefix}.{union_tag}" if prefix else union_tag
-    if tag_key in flat:
-        class_tag = flat[tag_key]
-        try:
-            cls = _import_dotted(str(class_tag))
-            if isinstance(cls, type) and _is_struct(_resolve_type(cls)) and cls is not tp:
+    from_flat = tag_key in flat
+    class_tag = flat[tag_key] if from_flat else tags.get(prefix)
+    if class_tag is None:
+        return
+    try:
+        cls = _import_dotted(str(class_tag))
+        if isinstance(cls, type) and _is_struct(_resolve_type(cls)) and cls is not tp:
+            if from_flat:
                 tag_path = ([*prefix.split(".")] if prefix else []) + [union_tag]
                 _set_nested(result, tag_path, _str_token(class_tag))
-                _collect_ns_fields(flat, cls, prefix, union_tag, result)
-        except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
-            pass
+            _collect_ns_fields(flat, cls, prefix, union_tag, result, tags)
+    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
+        pass
 
 
 def _collect_ns_namedtuple(
@@ -412,12 +423,13 @@ def _collect_ns_namedtuple(
         _set_nested(result, flag.split("."), v)
 
 
-def _collect_ns_union_root(
+def _collect_ns_union_root(  # noqa: PLR0913  # the type-walk context, threaded whole
     flat: dict[str, Any],
     variants: list[Any],
     prefix: str,
     union_tag: str,
     result: dict[str, Any],
+    tags: Mapping[str, str],
 ) -> None:
     """Collect CLI values for a root-level union target (variants are concrete struct types)."""
     tag_key = f"{prefix}.{union_tag}" if prefix else union_tag
@@ -425,17 +437,23 @@ def _collect_ns_union_root(
         tag_path = ([*prefix.split(".")] if prefix else []) + [union_tag]
         _set_nested(result, tag_path, _str_token(flat[tag_key]))
     for variant in variants:
-        _collect_ns_fields(flat, variant, prefix, union_tag, result)
+        _collect_ns_fields(flat, variant, prefix, union_tag, result, tags)
 
 
-def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type case
+def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch per type case
     flat: dict[str, Any],
     target: Any,
     prefix: str,
     union_tag: str,
     result: dict[str, Any],
+    tags: Mapping[str, str] = MappingProxyType({}),
 ) -> None:
-    """Walk target and copy matching flat-namespace entries into nested dict."""
+    """Walk target and copy matching flat-namespace entries into nested dict.
+
+    *tags* is ``{field_path: class_path}`` for every class tag the configuration names
+    outside *flat* -- a ``--config`` file's, typically -- so inheritance dispatch sees the
+    same subclass the vanilla type walk does.
+    """
     setup = _resolve_struct(target)
     if setup is None:
         tp = _resolve_type(target)
@@ -443,7 +461,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type c
             non_none = _union_args_no_none(tp)
             concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
             if concrete:
-                _collect_ns_union_root(flat, concrete, prefix, union_tag, result)
+                _collect_ns_union_root(flat, concrete, prefix, union_tag, result, tags)
                 return
         if "" in flat:
             # Non-struct root: the empty key is the bare `--<cli_prefix>` flag, left
@@ -478,7 +496,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type c
             # Struct unions: the whole object carries its own class-tag; variant fields refine it
             if whole is not _NO_CAST:
                 _set_nested(result, flag.split("."), whole)
-            _collect_ns_union_field(flat, flag, resolved, union_tag, result)
+            _collect_ns_union_field(flat, flag, resolved, union_tag, result, tags)
             # Scalar unions: collect plain value or explicit scalar cast
             cast_val = _find_scalar_cast_override(flat, flag)
             if cast_val is not _NO_CAST:
@@ -499,7 +517,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type c
         if _is_struct(core):
             if whole is not _NO_CAST:
                 _set_nested(result, flag.split("."), whole)
-            _collect_ns_fields(flat, core, flag, union_tag, result)
+            _collect_ns_fields(flat, core, flag, union_tag, result, tags)
             continue
 
         if _is_dict(core):
@@ -520,7 +538,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0915  # one branch per type c
         elif flag in flat:
             _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
 
-    _collect_ns_inheritance(flat, _tp, prefix, union_tag, result)
+    _collect_ns_inheritance(flat, _tp, prefix, union_tag, result, tags)
 
 
 def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only signature
@@ -573,13 +591,20 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
     # resolve paths against *target* alone
     # (docs-dev/architecture/03-cli-parsing.md#cli_prefix).
     flat = strip_flat_prefix(flat, cli_prefix)
-    cli_data: dict[str, Any] = {}
-    _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data)
 
-    # Patch ops and --config order are read from argv, not the framework's parse result
-    # (docs-dev/architecture/04-cli-adapters.md#collection-patch-parity).
+    # Patch ops, --config order and the class tags are read from argv, not the framework's
+    # parse result (docs-dev/architecture/04-cli-adapters.md#collection-patch-parity).
     argv_ = sys.argv[1:] if argv is None else list(argv)
     argv_ = strip_argv_prefix(argv_, cli_prefix)
+
+    # The same scan registration uses, so a tag a --config file sets steers the type walk
+    # here exactly as it steers vanilla's
+    # (docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags).
+    tags = collect_tags(argv_, target, union_tag=union_tag, config_flag=config_flag)
+
+    cli_data: dict[str, Any] = {}
+    _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data, tags=tags)
+
     cli_data = _deep_merge(cli_data, _collect_cli_patch_ops(argv_, target, config_flag, union_tag))
     apply_root_json(flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
     cli_configs = _collect_config_file_pairs(argv_, config_flag) if config_flag else []
