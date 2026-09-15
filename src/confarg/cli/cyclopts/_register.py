@@ -233,6 +233,7 @@ def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command s
         argv = sys.argv[1:]
     flags = build_static_flags(
         target,
+        argv=argv,
         cli_prefix=cli_prefix,
         union_tag=union_tag,
         config_flag=config_flag,

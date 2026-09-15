@@ -17,11 +17,8 @@ import pytest
 
 from confarg.cli.argparse import from_namespace, populate_parser, setup_completion
 from confarg.cli.argparse._completion import (
-    _collect_partial_cli_tags,
-    _collect_partial_config,
     _extend_walk,
     _pre_extend_parser_for_completion,
-    _resolve_tags_from_config,
     _WalkCtx,
 )
 
@@ -160,137 +157,6 @@ class TestUnionClassTagRegistration:
         assert "--value" in flags
         assert "--value.str" in flags
         assert "--value.int" in flags
-
-
-# ---------------------------------------------------------------------------
-# _collect_partial_config
-# ---------------------------------------------------------------------------
-
-
-class TestCollectPartialConfig:
-    """Tests for _collect_partial_config helper."""
-
-    def test_reads_toml_from_argv(self, tmp_path) -> None:
-        """Test that TOML config file is read from argv."""
-        cfg = tmp_path / "cfg.toml"
-        cfg.write_text('[db]\nclass = "myapp.ServerDB"\n')
-        result = _collect_partial_config([f"--config={cfg}"], "config")
-        assert result == {"db": {"class": "myapp.ServerDB"}}
-
-    def test_reads_multiple_config_files(self, tmp_path) -> None:
-        """Test that multiple config files are merged together."""
-        cfg1 = tmp_path / "a.toml"
-        cfg1.write_text("x = 1\n")
-        cfg2 = tmp_path / "b.toml"
-        cfg2.write_text("y = 2\n")
-        result = _collect_partial_config(["--config", str(cfg1), str(cfg2)], "config")
-        assert result == {"x": 1, "y": 2}
-
-    def test_missing_file_silently_ignored(self) -> None:
-        """Test that a missing config file is silently ignored."""
-        result = _collect_partial_config(["--config", "/nonexistent/file.toml"], "config")
-        assert result == {}
-
-    def test_does_not_read_subkey_config_flags(self, tmp_path) -> None:
-        """--config.db file.toml is a subkey flag; root config collector ignores it."""
-        cfg = tmp_path / "cfg.toml"
-        cfg.write_text("x = 1\n")
-        result = _collect_partial_config([f"--config.db={cfg}"], "config")
-        assert result == {}
-
-    def test_yaml_file_read(self, tmp_path) -> None:
-        """Test that YAML config files are also read correctly."""
-        pytest.importorskip("yaml")
-        cfg = tmp_path / "cfg.yaml"
-        cfg.write_text("db:\n  class: myapp.ServerDB\n")
-        result = _collect_partial_config([f"--config={cfg}"], "config")
-        assert result == {"db": {"class": "myapp.ServerDB"}}
-
-    def test_empty_argv(self) -> None:
-        """Test that empty argv returns an empty dict."""
-        result = _collect_partial_config([], "config")
-        assert result == {}
-
-
-# ---------------------------------------------------------------------------
-# _collect_partial_cli_tags
-# ---------------------------------------------------------------------------
-
-
-class TestCollectPartialCliTags:
-    """Tests for _collect_partial_cli_tags helper."""
-
-    def test_space_separated(self) -> None:
-        """Test that space-separated --field.class value is parsed."""
-        tags = _collect_partial_cli_tags(["--db.class", "myapp.ServerDB"], "class")
-        assert tags == {"db": "myapp.ServerDB"}
-
-    def test_equals_form(self) -> None:
-        """Test that --field.class=value form is parsed."""
-        tags = _collect_partial_cli_tags(["--db.class=myapp.ServerDB"], "class")
-        assert tags == {"db": "myapp.ServerDB"}
-
-    def test_multiple_tags(self) -> None:
-        """Test that multiple class tag flags are all collected."""
-        tags = _collect_partial_cli_tags(
-            ["--db.class", "myapp.ServerDB", "--cache.class", "myapp.Redis"],
-            "class",
-        )
-        assert tags == {"db": "myapp.ServerDB", "cache": "myapp.Redis"}
-
-    def test_nested_prefix(self) -> None:
-        """Test that a deeply nested class tag is keyed by full prefix."""
-        tags = _collect_partial_cli_tags(["--db.backend.class", "myapp.Redis"], "class")
-        assert tags == {"db.backend": "myapp.Redis"}
-
-    def test_no_match(self) -> None:
-        """Test that argv with no class tags returns an empty dict."""
-        tags = _collect_partial_cli_tags(["--host", "localhost", "--port", "5432"], "class")
-        assert tags == {}
-
-    def test_ignores_flag_without_value(self) -> None:
-        """Test that a class tag flag with no following value is ignored."""
-        # --db.class at end of argv with no following value
-        tags = _collect_partial_cli_tags(["--db.class"], "class")
-        assert tags == {}
-
-    def test_ignores_flag_followed_by_another_flag(self) -> None:
-        """Test that a class tag flag followed by another flag is ignored."""
-        tags = _collect_partial_cli_tags(["--db.class", "--other"], "class")
-        assert tags == {}
-
-
-# ---------------------------------------------------------------------------
-# _resolve_tags_from_config
-# ---------------------------------------------------------------------------
-
-
-class TestResolveTagsFromConfig:
-    """Tests for _resolve_tags_from_config helper."""
-
-    def test_finds_struct_union_tag(self) -> None:
-        """Test that a union tag is found in the merged config dict."""
-        merged = {"db": {"class": "myapp.ServerDB", "host": "localhost"}}
-        tags = _resolve_tags_from_config(merged, _AppConfig, prefix="", union_tag="class")
-        assert tags == {"db": "myapp.ServerDB"}
-
-    def test_empty_when_no_union_tag(self) -> None:
-        """Test that no union tag in config yields an empty dict."""
-        merged = {"db": {"host": "localhost"}}
-        tags = _resolve_tags_from_config(merged, _AppConfig, prefix="", union_tag="class")
-        assert tags == {}
-
-    def test_empty_when_merged_empty(self) -> None:
-        """Test that an empty merged config yields an empty tags dict."""
-        tags = _resolve_tags_from_config({}, _AppConfig, prefix="", union_tag="class")
-        assert tags == {}
-
-    def test_uses_given_prefix(self) -> None:
-        """Test that a non-empty prefix is applied when resolving tags."""
-        merged = {"class": "myapp.ServerDB"}
-        tags = _resolve_tags_from_config(merged, _DBBase, prefix="db", union_tag="class")
-        # _DBBase is not a union field itself; struct walk yields nothing here
-        assert isinstance(tags, dict)
 
 
 # ---------------------------------------------------------------------------

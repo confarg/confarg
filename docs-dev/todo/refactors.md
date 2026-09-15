@@ -5,6 +5,26 @@ hygiene, performance. See [README.md](README.md) for the ticket format.
 
 ## Structure
 
+### REF-1 — The framework-neutral flag model lives under `cli/argparse/`
+
+**Where:** `src/confarg/cli/argparse/_spec.py`, `_build.py` · **Filed:** 2026-09-12
+**Effort:** M · **Risk:** low
+
+`FlagSpec`, `FieldMeta` and the spec generation in `_build.py` are used by every adapter, not
+just argparse; they sit under `cli/argparse/` by historical accident and belong in `cli/`.
+Confirmed by the maintainer as an accident, not a decision.
+See [04-cli-adapters.md#framework-neutral-flag-model](../architecture/04-cli-adapters.md#framework-neutral-flag-model).
+
+### REF-2 — The scalar-cast table exists three times
+
+**Where:** `_cast.SCALAR_CAST_TYPES`, `typedload/_construct._CAST_TYPE_NAMES`,
+`cli/argparse/_build._SCALAR_CAST_TYPES` · **Filed:** 2026-09-12
+**Effort:** S · **Risk:** medium
+
+Three copies of the same list of castable scalar types, one per call site. `_cast` should own
+it and the other two should import it — a new cast type currently has to be added in three
+places to work everywhere. See [09-invariants.md](../architecture/09-invariants.md).
+
 `_cast` now also derives the reverse map, `cast_name_for_type`, which names a `_Pinned` on the
 way out; `_construct._CAST_TYPE_NAMES` is the copy that reads that name back, so folding it in
 is what keeps the writer and the reader on one table.
@@ -128,7 +148,7 @@ Grab-bag of small, low-risk tidyings found while analyzing the two modules:
 **Effort:** S · **Risk:** medium
 
 It assumes no builtin name collides with an importable module, and treats an `ImportError`
-raised *inside* a module the same as "this is not a module" — so a broken dependency reads as
+raised _inside_ a module the same as "this is not a module" — so a broken dependency reads as
 a typo'd path. See [05-types-and-construction.md#dotted-imports](../architecture/05-types-and-construction.md#dotted-imports).
 
 ### REF-6 — `LIST_APPEND_KEY` accepts a value nothing produces
@@ -195,3 +215,18 @@ are free. See [01-pipeline-and-contracts.md#public-api-seams](../architecture/01
 
 Helpers, branches and parameters kept alive by a single caller that a later refactor made
 redundant. Worth one deliberate pass with coverage data rather than opportunistic deletions.
+
+### REF-26 — The `--config` files named on argv are parsed three times per run
+
+**Where:** `src/confarg/_tags.py` (`_partial_config_from_argv`), `src/confarg/cli/_build.py`,
+`src/confarg/_pipeline.py` · **Filed:** 2026-09-15
+**Effort:** M · **Risk:** low
+
+`_partial_config_from_argv` re-reads and re-parses every file argv names, and three callers now
+want the same answer independently: `build_static_flags` (to import tagged classes),
+`build_dynamic_flags` (to find callable openers), and `_parse_cli` (to import tagged classes
+again), before the pipeline reads the files a fourth time for their actual contents. Nothing is
+wrong with the result — the reads are idempotent and only happen when `--config` is present —
+but the same bytes are parsed once per caller. A small argv-keyed cache, or threading one
+pre-parsed dict through the registration path, would collapse them. Grew from one caller to
+three when BUG-6 closed.

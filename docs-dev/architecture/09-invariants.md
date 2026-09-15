@@ -73,6 +73,9 @@ collection logic goes into `cli/_collect.py` mirroring the vanilla decision
   ([04](04-cli-adapters.md#framework-neutral-flag-model)).
 - Completion and dynamic flag registration never raise
   ([04](04-cli-adapters.md#completion)).
+- `import_tagged_classes` runs before anything reads `__subclasses__()` — before the static
+  type walk in `build_static_flags`, and before path resolution in `_parse_cli`
+  ([10](10-design-decisions.md#a-named-tag-is-imported-before-registration)).
 - Defaults and shared reserved key names (`ROOT_KEY`, `LOCALS_KEYS`) live in
   `_defaults.py`; never repeat the literals
   ([10](10-design-decisions.md#shared-reserved-key-names-live-in-_defaultspy)).

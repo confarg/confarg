@@ -17,7 +17,6 @@ from __future__ import annotations
 import contextlib
 import inspect
 import warnings
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -25,9 +24,8 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _detect_owning_class, active_directives
-from confarg._files import _load_file
 from confarg._import import _import_dotted
-from confarg._merge import _deep_merge
+from confarg._tags import _partial_config_from_argv, import_tagged_classes
 from confarg._types import (
     _dataclass_subclasses,
     _elem_type,
@@ -837,6 +835,7 @@ def _collect_struct_specs(  # union-root branch added one more conditional
         by_name: dict[str, FlagSpec] = {s.name: s for s in result}
         if tag_name not in by_name:
             paths = [f"{v.__module__}.{v.__qualname__}" for v in all_subs]
+            # An empty completer would suppress the shell's own suggestions, so leave it unset.
             tag_spec = FlagSpec(
                 name=tag_name,
                 metavar="DOTTED.CLASS.PATH",
@@ -847,7 +846,7 @@ def _collect_struct_specs(  # union-root branch added one more conditional
                 ),
                 group=group,
                 group_description=group_description,
-                completer=_make_path_completer(paths),
+                completer=_make_path_completer(paths) if paths else None,
             )
             result.append(tag_spec)
             by_name[tag_name] = tag_spec
@@ -923,9 +922,10 @@ def _scalar_root_spec(target: Any) -> FlagSpec:
     return spec
 
 
-def build_static_flags(
+def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring confarg.load
     target: object,
     *,
+    argv: Sequence[str] = (),
     cli_prefix: str = "",
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
@@ -939,6 +939,10 @@ def build_static_flags(
 
     Args:
         target: The dataclass type whose fields to describe.
+        argv: The CLI argument list, read only to import the classes it names by
+            ``union_tag`` before the type walk -- a subclass is invisible to the walk
+            until its module has run.  It never adds a flag of its own: ``()`` (the
+            default) and ``argv=[]`` still describe exactly the declared type.
         cli_prefix: Namespace every flag lives under, so ``--<prefix>.<field>``
             distinguishes configuration flags from the host framework's own.
             ``""`` (the default) registers bare field names.  A non-struct
@@ -957,6 +961,7 @@ def build_static_flags(
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import _locals_keys  # noqa: PLC0415
 
+    import_tagged_classes(argv, target, union_tag=union_tag, config_flag=config_flag)
     flags = _collect_struct_specs(target, prefix="", union_tag=union_tag)
     if not _is_struct_like(_resolve_type(target)):
         flags.insert(0, _scalar_root_spec(target))
@@ -1147,28 +1152,10 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
     """
     try:
-        config_dict: dict[str, Any] = {}
         # Strip first: the scans below resolve dotted paths against *target*, which
         # knows nothing of the prefix (docs-dev/architecture/03-cli-parsing.md#cli_prefix).
         argv_list = strip_argv_prefix(argv, cli_prefix)
-        flag_prefix = f"--{config_flag}"
-        i = 0
-        while i < len(argv_list):
-            tok = argv_list[i]
-            if tok == flag_prefix:
-                i += 1
-                while i < len(argv_list) and not argv_list[i].startswith("--"):
-                    with contextlib.suppress(Exception):
-                        config_dict = _deep_merge(config_dict, _load_file(Path(argv_list[i])))
-                    i += 1
-            elif tok.startswith(f"{flag_prefix}="):
-                path_str = tok[len(flag_prefix) + 1 :]
-                if path_str:
-                    with contextlib.suppress(Exception):
-                        config_dict = _deep_merge(config_dict, _load_file(Path(path_str)))
-                i += 1
-            else:
-                i += 1
+        config_dict = _partial_config_from_argv(argv_list, config_flag) if config_flag else {}
 
         config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
         argv_fns = _collect_fn_paths_from_argv(argv_list)
