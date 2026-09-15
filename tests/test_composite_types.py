@@ -191,7 +191,12 @@ class TestCollections:
     def test_list_from_env_indexed(self) -> None:
         """Parse a list from indexed env vars."""
         WithList = make_target("items", list[int], default_factory=list)
-        result = confarg.load(WithList, argv=[], env={"ITEMS__0": "5", "ITEMS__1": "6"}, env_prefix="")
+        result = confarg.load(
+            WithList,
+            argv=[],
+            env={"MYAPP_ITEMS__0": "5", "MYAPP_ITEMS__1": "6"},
+            env_prefix="MYAPP_",
+        )
         assert result.items == [5, 6]
 
     def test_set_deduplication(self) -> None:
@@ -226,8 +231,8 @@ class TestDict:
         result = confarg.load(
             WithDict,
             argv=[],
-            env={"METADATA__foo": "10", "METADATA__bar": "20"},
-            env_prefix="",
+            env={"MYAPP_METADATA__foo": "10", "MYAPP_METADATA__bar": "20"},
+            env_prefix="MYAPP_",
         )
         assert result.metadata == {"foo": 10, "bar": 20}
 
@@ -325,8 +330,8 @@ class TestUnionLeafDisambiguation:
             (make_target("value", Union[int, float], default=0), {"args": ["--value", "42"]}, 42, int),
             (make_target("value", Union[int, float], default=0), {"args": ["--value", "3.14"]}, 3.14, float),
             # bool vs int
-            (make_target("value", Union[bool, int], default=0), {"env": {"VALUE": "true"}}, True, bool),
-            (make_target("value", Union[bool, int], default=0), {"env": {"VALUE": "false"}}, False, bool),
+            (make_target("value", Union[bool, int], default=0), {"env": {"MYAPP_VALUE": "true"}}, True, bool),
+            (make_target("value", Union[bool, int], default=0), {"env": {"MYAPP_VALUE": "false"}}, False, bool),
             (make_target("value", Union[bool, int], default=0), {"args": ["--value", "42"]}, 42, int),
             # three-way
             (make_target("value", Union[int, float, str], default=0), {"args": ["--value", "7"]}, 7, int),
@@ -348,7 +353,7 @@ class TestUnionLeafDisambiguation:
         """Leaf union types disambiguate correctly."""
         args = source.get("args", [])
         env = source.get("env", {})
-        result = confarg.load(target_cls, argv=args, env=env, env_prefix="")
+        result = confarg.load(target_cls, argv=args, env=env, env_prefix="MYAPP_")
         assert result.value == expected
         assert isinstance(result.value, expected_type)
 
@@ -494,11 +499,11 @@ class TestUnionEdgeCases:
             WithUnionDeepDisambiguation,
             argv=[],
             env={
-                "BACKEND__HOST": "db.example.com",
-                "BACKEND__AUTH__USERNAME": "admin",
-                "BACKEND__AUTH__PASSWORD": "secret",
+                "MYAPP_BACKEND__HOST": "db.example.com",
+                "MYAPP_BACKEND__AUTH__USERNAME": "admin",
+                "MYAPP_BACKEND__AUTH__PASSWORD": "secret",
             },
-            env_prefix="",
+            env_prefix="MYAPP_",
         )
         assert isinstance(result.backend, SqlBackend)
         assert result.backend.auth.username == "admin"
@@ -509,11 +514,11 @@ class TestUnionEdgeCases:
             WithUnionDeepDisambiguation,
             argv=[],
             env={
-                "BACKEND__HOST": "api.example.com",
-                "BACKEND__AUTH__TOKEN": "xyz",
-                "BACKEND__AUTH__EXPIRES": "7200",
+                "MYAPP_BACKEND__HOST": "api.example.com",
+                "MYAPP_BACKEND__AUTH__TOKEN": "xyz",
+                "MYAPP_BACKEND__AUTH__EXPIRES": "7200",
             },
-            env_prefix="",
+            env_prefix="MYAPP_",
         )
         assert isinstance(result.backend, TokenBackend)
         assert result.backend.auth.token == "xyz"
@@ -639,13 +644,23 @@ class TestUnionClassTag:
             ),
             (
                 [],
-                {"SHAPE__CLASS": "tests.conftest.CircleShape", "SHAPE__X": "1", "SHAPE__Y": "2", "SHAPE__RADIUS": "5"},
+                {
+                    "MYAPP_SHAPE__CLASS": "tests.conftest.CircleShape",
+                    "MYAPP_SHAPE__X": "1",
+                    "MYAPP_SHAPE__Y": "2",
+                    "MYAPP_SHAPE__RADIUS": "5",
+                },
                 CircleShape,
                 5.0,
             ),
             (
                 [],
-                {"SHAPE__CLASS": "tests.conftest.SquareShape", "SHAPE__X": "0", "SHAPE__Y": "0", "SHAPE__RADIUS": "3"},
+                {
+                    "MYAPP_SHAPE__CLASS": "tests.conftest.SquareShape",
+                    "MYAPP_SHAPE__X": "0",
+                    "MYAPP_SHAPE__Y": "0",
+                    "MYAPP_SHAPE__RADIUS": "3",
+                },
                 SquareShape,
                 3.0,
             ),
@@ -654,7 +669,7 @@ class TestUnionClassTag:
     )
     def test_tag_cli_env(self, args, env, expected_cls, expected_radius) -> None:
         """Test class tag via CLI and env resolves to the correct union variant."""
-        result = confarg.load(WithUnionAmbiguous, argv=args, env=env, env_prefix="")
+        result = confarg.load(WithUnionAmbiguous, argv=args, env=env, env_prefix="MYAPP_")
         assert isinstance(result.shape, expected_cls)
         assert result.shape.radius == expected_radius
 
@@ -714,12 +729,12 @@ class TestUnionClassTag:
             WithUnionAmbiguous,
             argv=[],
             env={
-                "SHAPE__KIND": "tests.conftest.SquareShape",
-                "SHAPE__X": "0",
-                "SHAPE__Y": "0",
-                "SHAPE__RADIUS": "3",
+                "MYAPP_SHAPE__KIND": "tests.conftest.SquareShape",
+                "MYAPP_SHAPE__X": "0",
+                "MYAPP_SHAPE__Y": "0",
+                "MYAPP_SHAPE__RADIUS": "3",
             },
-            env_prefix="",
+            env_prefix="MYAPP_",
             union_tag="kind",
         )
         assert isinstance(result.shape, SquareShape)
@@ -774,8 +789,8 @@ class TestUnionClassTag:
             confarg.load(
                 WithUnionAmbiguous,
                 argv=[],
-                env={"SHAPE__X": "1", "SHAPE__Y": "2", "SHAPE__RADIUS": "5"},
-                env_prefix="",
+                env={"MYAPP_SHAPE__X": "1", "MYAPP_SHAPE__Y": "2", "MYAPP_SHAPE__RADIUS": "5"},
+                env_prefix="MYAPP_",
             )
 
     def test_ambiguous_error_message_is_diagnostic(self) -> None:
@@ -844,7 +859,12 @@ class TestUnionClassTag:
             ),
             (
                 lambda fqn: [],
-                lambda fqn: {"SHAPE__CLASS": fqn, "SHAPE__X": "1", "SHAPE__Y": "2", "SHAPE__RADIUS": "5"},
+                lambda fqn: {
+                    "MYAPP_SHAPE__CLASS": fqn,
+                    "MYAPP_SHAPE__X": "1",
+                    "MYAPP_SHAPE__Y": "2",
+                    "MYAPP_SHAPE__RADIUS": "5",
+                },
             ),
         ],
         ids=["cli", "env"],
@@ -852,7 +872,7 @@ class TestUnionClassTag:
     def test_tag_fully_qualified_name_cli_env(self, args_fn, env_fn) -> None:
         """Fully-qualified 'module.ClassName' is accepted as a class tag."""
         fqn = f"{CircleShape.__module__}.{CircleShape.__name__}"
-        result = confarg.load(WithUnionAmbiguous, argv=args_fn(fqn), env=env_fn(fqn), env_prefix="")
+        result = confarg.load(WithUnionAmbiguous, argv=args_fn(fqn), env=env_fn(fqn), env_prefix="MYAPP_")
         assert isinstance(result.shape, CircleShape)
         assert result.shape.radius == pytest.approx(5.0)
 
@@ -1045,8 +1065,8 @@ class TestCliUnionDisambiguation:
         result = confarg.load(
             WithTaggedUnion,
             argv=[],
-            env={"ENTRY__ID": "2", "ENTRY__VALUE": "true"},
-            env_prefix="",
+            env={"MYAPP_ENTRY__ID": "2", "MYAPP_ENTRY__VALUE": "true"},
+            env_prefix="MYAPP_",
         )
         assert isinstance(result.entry, TaggedStr)
         assert result.entry.value == "true"
@@ -1056,8 +1076,8 @@ class TestCliUnionDisambiguation:
         result = confarg.load(
             WithTaggedUnion,
             argv=[],
-            env={"ENTRY__ID": "1", "ENTRY__VALUE": "true"},
-            env_prefix="",
+            env={"MYAPP_ENTRY__ID": "1", "MYAPP_ENTRY__VALUE": "true"},
+            env_prefix="MYAPP_",
         )
         assert isinstance(result.entry, TaggedBool)
         assert result.entry.value is True
@@ -1147,14 +1167,14 @@ class TestTypeLiteralDiscriminator:
         [
             (["--item.type", "a", "--item.value", "1"], {}, TypedVariantA, 1),
             (["--item.type", "b", "--item.value", "2"], {}, TypedVariantB, 2),
-            ([], {"ITEM__TYPE": "a", "ITEM__VALUE": "10"}, TypedVariantA, 10),
-            ([], {"ITEM__TYPE": "b", "ITEM__VALUE": "20"}, TypedVariantB, 20),
+            ([], {"MYAPP_ITEM__TYPE": "a", "MYAPP_ITEM__VALUE": "10"}, TypedVariantA, 10),
+            ([], {"MYAPP_ITEM__TYPE": "b", "MYAPP_ITEM__VALUE": "20"}, TypedVariantB, 20),
         ],
         ids=["cli-a", "cli-b", "env-a", "env-b"],
     )
     def test_type_literal_cli_env(self, args, env, expected_cls, expected_value) -> None:
         """Test Literal discriminator via CLI and env selects the correct union variant."""
-        result = confarg.load(WithTypeLiteralUnion, argv=args, env=env, env_prefix="")
+        result = confarg.load(WithTypeLiteralUnion, argv=args, env=env, env_prefix="MYAPP_")
         assert isinstance(result.item, expected_cls)
         assert result.item.value == expected_value
 

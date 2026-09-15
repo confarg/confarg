@@ -802,8 +802,8 @@ class TestParseEnvBranches:
             confarg.load(
                 _AmbigUnion,
                 argv=[],
-                env={"SERVICE__NAME": "hello"},
-                env_prefix="",
+                env={"MYAPP_SERVICE__NAME": "hello"},
+                env_prefix="MYAPP_",
             )
 
     def test_tuple_variable_length_from_env(self) -> None:
@@ -812,8 +812,8 @@ class TestParseEnvBranches:
         result = confarg.load(
             WithVarTuple,
             argv=[],
-            env={"ITEMS__0": "99"},
-            env_prefix="",
+            env={"MYAPP_ITEMS__0": "99"},
+            env_prefix="MYAPP_",
         )
         assert result.items[0] == 99
 
@@ -823,8 +823,8 @@ class TestParseEnvBranches:
         result = confarg.load(
             WithFixedTuple,
             argv=[],
-            env={"COORDS__BAD": "hello"},
-            env_prefix="",
+            env={"MYAPP_COORDS__BAD": "hello"},
+            env_prefix="MYAPP_",
         )
         assert result.coords == (0, "")
 
@@ -834,8 +834,8 @@ class TestParseEnvBranches:
         result = confarg.load(
             str | None,
             argv=[],
-            env={"VALUE": "none"},
-            env_prefix="",
+            env={"MYAPP_VALUE": "none"},
+            env_prefix="MYAPP_",
         )
         assert result is None
 
@@ -849,8 +849,8 @@ class TestParseEnvBranches:
             result = confarg.load(
                 _UnionRootVariantA | _UnionRootVariantB,
                 argv=[],
-                env={"A": "hello", "Z": "skipped"},
-                env_prefix="",
+                env={"MYAPP_A": "hello", "MYAPP_Z": "skipped"},
+                env_prefix="MYAPP_",
             )
         assert isinstance(result, _UnionRootVariantA)
         assert result.a == "hello"
@@ -1116,7 +1116,7 @@ class TestConstructEdgeCases:
         class WithTuple:
             items: tuple[int, str] = (1, "x")
 
-        result = confarg.load(WithTuple, argv=[], env={"ITEMS__1": "y"}, env_prefix="")
+        result = confarg.load(WithTuple, argv=[], env={"MYAPP_ITEMS__1": "y"}, env_prefix="MYAPP_")
         assert result.items == (1, "y")
 
     def test_class_tag_import_error_raises(self) -> None:
@@ -1146,8 +1146,8 @@ class TestParseEnvDictAndFallthrough:
         result = confarg.load(
             WithDict,
             argv=[],
-            env={"MAPPING__KEY": "42"},
-            env_prefix="",
+            env={"MYAPP_MAPPING__KEY": "42"},
+            env_prefix="MYAPP_",
         )
         assert result.mapping.get("key") == 42 or "key" in result.mapping
 
@@ -1160,15 +1160,15 @@ class TestParseEnvDictAndFallthrough:
             confarg.load(
                 WithTuple,
                 argv=[],
-                env={"COORDS__5": "hello"},
-                env_prefix="",
+                env={"MYAPP_COORDS__5": "hello"},
+                env_prefix="MYAPP_",
             )
 
     def test_scalar_field_with_deep_env_path(self) -> None:
         """A deeper-than-expected env var path for a scalar field raises TypeCoercionError."""
         WithInt = make_target("count", int, default=0)
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithInt, argv=[], env={"COUNT__EXTRA": "5"}, env_prefix="")
+            confarg.load(WithInt, argv=[], env={"MYAPP_COUNT__EXTRA": "5"}, env_prefix="MYAPP_")
 
 
 # ---------------------------------------------------------------------------
@@ -1379,8 +1379,8 @@ class TestConstructBranches:
         result = confarg.load(
             _WithUnionTupleOrNone,
             argv=[],
-            env={"COORD__0": "1", "COORD__1": "hello"},
-            env_prefix="",
+            env={"MYAPP_COORD__0": "1", "MYAPP_COORD__1": "hello"},
+            env_prefix="MYAPP_",
         )
         assert result.coord == (1, "hello")
 
@@ -1569,7 +1569,7 @@ class TestParseEnvJsonFailure:
         # Result is unpredictable but must not crash
 
         with contextlib.suppress(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithList, argv=[], env={"ITEMS": "[1,2,3"}, env_prefix="")
+            confarg.load(WithList, argv=[], env={"MYAPP_ITEMS": "[1,2,3"}, env_prefix="MYAPP_")
 
 
 # ---------------------------------------------------------------------------

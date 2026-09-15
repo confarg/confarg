@@ -842,7 +842,7 @@ class TestPipelineParity:
         covered by :class:`TestCliPrefixContract`, which needs a cli_prefix to
         name the root.
         """
-        result = loader.load(int, argv=[], env={"VALUE": "8080"}, env_prefix="", config_flag="")
+        result = loader.load(int, argv=[], env={"MYAPP_VALUE": "8080"}, env_prefix="MYAPP_", config_flag="")
         assert result == 8080
 
 

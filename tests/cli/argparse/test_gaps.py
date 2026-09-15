@@ -189,7 +189,12 @@ class TestArgparseBranches:
         populate_parser(WithExpr, parser)
         ns = parser.parse_args([])
         # Pass env vars with an expression — the resolved value triggers expr_map storage
-        result = from_namespace(WithExpr, ns, env={"HOST": "${db_host}", "DB_HOST": "realserver"}, env_prefix="")
+        result = from_namespace(
+            WithExpr,
+            ns,
+            env={"MYAPP_HOST": "${db_host}", "MYAPP_DB_HOST": "realserver"},
+            env_prefix="MYAPP_",
+        )
         assert result.host == "realserver"
 
 

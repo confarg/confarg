@@ -42,7 +42,7 @@ class TestMerge:
 
     def test_env_values_present(self) -> None:
         """Test that env var values are present in the merged dict."""
-        result = confarg.merge(WithDefaults, argv=[], env={"NAME": "fromenv"}, env_prefix="")
+        result = confarg.merge(WithDefaults, argv=[], env={"MYAPP_NAME": "fromenv"}, env_prefix="MYAPP_")
         assert result["name"] == "fromenv"
 
     def test_file_values_present(self, tmp_yaml) -> None:

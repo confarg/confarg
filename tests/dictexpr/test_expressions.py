@@ -619,8 +619,8 @@ class TestLoadWithExpressions:
         result = confarg.load(
             Cfg,
             argv=[],
-            env={"GREETING": "hello", "NAME": "${greeting}"},
-            env_prefix="",
+            env={"MYAPP_GREETING": "hello", "MYAPP_NAME": "${greeting}"},
+            env_prefix="MYAPP_",
         )
         assert result.name == "hello"
 
@@ -724,13 +724,13 @@ class TestCrossSourceInterpolation:
     def test_env_value_interpolated_in_config(self, tmp_toml) -> None:
         """Config expression resolves a value supplied by an env var."""
         path = tmp_toml('url = "jdbc://${host}"\nport = 5432\n')
-        result = confarg.load(CrossCfg, argv=[], env={"HOST": "env-host"}, env_prefix="", files=[path])
+        result = confarg.load(CrossCfg, argv=[], env={"MYAPP_HOST": "env-host"}, env_prefix="MYAPP_", files=[path])
         assert result.url == "jdbc://env-host"
 
     def test_env_overrides_config_value_used_in_expression(self, tmp_toml) -> None:
         """Env var overrides a config-file value; expression uses the env var version."""
         path = tmp_toml('host = "file-host"\nurl = "jdbc://${host}"\nport = 5432\n')
-        result = confarg.load(CrossCfg, argv=[], env={"HOST": "env-host"}, env_prefix="", files=[path])
+        result = confarg.load(CrossCfg, argv=[], env={"MYAPP_HOST": "env-host"}, env_prefix="MYAPP_", files=[path])
         assert result.url == "jdbc://env-host"
 
     # --- CLI → config ---
@@ -754,8 +754,8 @@ class TestCrossSourceInterpolation:
         result = confarg.load(
             CrossCfg,
             argv=["--host", "cli-host"],
-            env={"URL": "jdbc://${host}", "PORT": "5432"},
-            env_prefix="",
+            env={"MYAPP_URL": "jdbc://${host}", "MYAPP_PORT": "5432"},
+            env_prefix="MYAPP_",
         )
         assert result.url == "jdbc://cli-host"
 
@@ -767,8 +767,8 @@ class TestCrossSourceInterpolation:
         result = confarg.load(
             CrossCfg,
             argv=["--host", "cli-host"],
-            env={"PORT": "9999"},
-            env_prefix="",
+            env={"MYAPP_PORT": "9999"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.url == "jdbc://cli-host:9999/db"

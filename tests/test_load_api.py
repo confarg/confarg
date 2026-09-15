@@ -98,7 +98,7 @@ class TestEnvParameter:
 
     def test_env_explicit_dict(self) -> None:
         """Explicit env dict is used for parsing."""
-        result = confarg.load(WithDefaults, argv=[], env={"NAME": "from_dict"}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"MYAPP_NAME": "from_dict"}, env_prefix="MYAPP_")
         assert result.name == "from_dict"
 
 
@@ -127,7 +127,7 @@ class TestNonDataclassTargets:
 
     def test_float_target(self) -> None:
         """Load a plain float via env."""
-        result = confarg.load(float, argv=[], env={"VALUE": "3.14"}, env_prefix="", cli_prefix="confarg")
+        result = confarg.load(float, argv=[], env={"MYAPP_VALUE": "3.14"}, env_prefix="MYAPP_", cli_prefix="confarg")
         assert result == pytest.approx(3.14)
 
 

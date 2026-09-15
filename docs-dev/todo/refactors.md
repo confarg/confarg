@@ -157,16 +157,6 @@ rewriting. See [07-expressions.md](../architecture/07-expressions.md).
 
 ## Test hygiene
 
-### REF-8 — Tests use `env_prefix=""`
-
-**Where:** `tests/` (~160 call sites) · **Filed:** 2026-09-12
-**Effort:** M · **Risk:** low
-
-An empty prefix means every environment variable in the process is a candidate field, which is
-neither what users do nor what the default (`None`, off) encourages. Use a realistic prefix
-such as `MYAPP_`, and keep `""` only where the empty prefix is the behavior under test.
-See [10-design-decisions.md#environment-variables-off-by-default](../architecture/10-design-decisions.md#environment-variables-off-by-default).
-
 ### REF-14 — A dynamic-flag test passes for the wrong reason
 
 **Where:** `tests/cli/argparse/test_gaps.py` (`test_build_dynamic_flags_exception_returns_empty`)

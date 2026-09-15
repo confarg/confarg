@@ -209,7 +209,7 @@ class TestUnionVariant:
 
     def test_union_from_env(self) -> None:
         """The env spelling reaches the namedtuple variant too."""
-        cfg = confarg.load(WithStrOrPoint, argv=[], env={"V": "[13, 42]"}, env_prefix="")
+        cfg = confarg.load(WithStrOrPoint, argv=[], env={"MYAPP_V": "[13, 42]"}, env_prefix="MYAPP_")
         assert cfg.v == Point(x=13, y=42)
 
 
@@ -351,8 +351,8 @@ class TestCLIVanilla:
         assert confarg.load(WithPoint, argv=["--pair", blob], env={}) == confarg.load(
             WithPoint,
             argv=[],
-            env={"PAIR": blob},
-            env_prefix="",
+            env={"MYAPP_PAIR": blob},
+            env_prefix="MYAPP_",
         )
 
     def test_optional_positional_form(self) -> None:
@@ -400,22 +400,32 @@ class TestEnvVars:
 
     def test_json_array(self) -> None:
         """JSON array env var → positional construction."""
-        result = confarg.load(WithPoint, argv=[], env={"PAIR": "[13, 42]"}, env_prefix="")
+        result = confarg.load(WithPoint, argv=[], env={"MYAPP_PAIR": "[13, 42]"}, env_prefix="MYAPP_")
         assert result.pair == Point(x=13, y=42)
 
     def test_json_object(self) -> None:
         """JSON object env var → field-name construction."""
-        result = confarg.load(WithPoint, argv=[], env={"PAIR": '{"x": 13, "y": 42}'}, env_prefix="")
+        result = confarg.load(WithPoint, argv=[], env={"MYAPP_PAIR": '{"x": 13, "y": 42}'}, env_prefix="MYAPP_")
         assert result.pair == Point(x=13, y=42)
 
     def test_field_name_segments(self) -> None:
         """Individual field-name segments in env vars."""
-        result = confarg.load(WithPoint, argv=[], env={"PAIR__X": "13", "PAIR__Y": "42"}, env_prefix="")
+        result = confarg.load(
+            WithPoint,
+            argv=[],
+            env={"MYAPP_PAIR__X": "13", "MYAPP_PAIR__Y": "42"},
+            env_prefix="MYAPP_",
+        )
         assert result.pair == Point(x=13, y=42)
 
     def test_index_segments(self) -> None:
         """Numeric index segments in env vars."""
-        result = confarg.load(WithPoint, argv=[], env={"PAIR__0": "13", "PAIR__1": "42"}, env_prefix="")
+        result = confarg.load(
+            WithPoint,
+            argv=[],
+            env={"MYAPP_PAIR__0": "13", "MYAPP_PAIR__1": "42"},
+            env_prefix="MYAPP_",
+        )
         assert result.pair == Point(x=13, y=42)
 
     def test_with_prefix(self) -> None:
@@ -425,7 +435,7 @@ class TestEnvVars:
 
     def test_case_insensitive_field_names(self) -> None:
         """Env var field matching is case-insensitive."""
-        result = confarg.load(WithPoint, argv=[], env={"PAIR__X": "5", "PAIR__Y": "6"}, env_prefix="")
+        result = confarg.load(WithPoint, argv=[], env={"MYAPP_PAIR__X": "5", "MYAPP_PAIR__Y": "6"}, env_prefix="MYAPP_")
         assert result.pair == Point(x=5, y=6)
 
     def test_with_defaults_partial(self) -> None:
@@ -433,15 +443,15 @@ class TestEnvVars:
         result = confarg.load(
             WithColor,
             argv=[],
-            env={"COLOR__R": "255", "COLOR__G": "0", "COLOR__B": "0"},
-            env_prefix="",
+            env={"MYAPP_COLOR__R": "255", "MYAPP_COLOR__G": "0", "MYAPP_COLOR__B": "0"},
+            env_prefix="MYAPP_",
         )
         assert result.color == Color(r=255, g=0, b=0, a=255)
 
     def test_unknown_env_field_raises(self) -> None:
         """Unknown namedtuple field in env var raises TypeCoercionError at construction."""
         with pytest.raises(TypeCoercionError, match="Unknown field"):
-            confarg.load(WithPoint, argv=[], env={"PAIR__Z": "99"}, env_prefix="")
+            confarg.load(WithPoint, argv=[], env={"MYAPP_PAIR__Z": "99"}, env_prefix="MYAPP_")
 
 
 # ---------------------------------------------------------------------------

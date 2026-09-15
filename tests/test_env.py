@@ -59,8 +59,8 @@ class TestEnvNaming:
         result = loader.load(
             AppConfig,
             argv=[],
-            env={"DB__HOST": "h", "DB__PORT": "1", "DB__NAME": "n"},
-            env_prefix="",
+            env={"MYAPP_DB__HOST": "h", "MYAPP_DB__PORT": "1", "MYAPP_DB__NAME": "n"},
+            env_prefix="MYAPP_",
         )
         assert result.db.host == "h"
 
@@ -88,8 +88,8 @@ class TestEnvCustomSeparator:
         result = loader.load(
             AppConfig,
             argv=[],
-            env={"DB_HOST": "h", "DB_PORT": "1", "DB_NAME": "n"},
-            env_prefix="",
+            env={"MYAPP_DB_HOST": "h", "MYAPP_DB_PORT": "1", "MYAPP_DB_NAME": "n"},
+            env_prefix="MYAPP_",
             env_separator="_",
         )
         assert result.db.host == "h"
@@ -99,8 +99,8 @@ class TestEnvCustomSeparator:
         result = loader.load(
             AppConfig,
             argv=[],
-            env={"DB.HOST": "h", "DB.PORT": "1", "DB.NAME": "n"},
-            env_prefix="",
+            env={"MYAPP_DB.HOST": "h", "MYAPP_DB.PORT": "1", "MYAPP_DB.NAME": "n"},
+            env_prefix="MYAPP_",
             env_separator=".",
         )
         assert result.db.host == "h"
@@ -128,17 +128,17 @@ class TestEnvCoercion:
     @pytest.mark.parametrize(
         ("env_key", "env_val", "field", "expected", "target_cls"),
         [
-            ("COUNT", "42", "count", 42, None),
-            ("RATE", "3.14", "rate", pytest.approx(3.14), None),
-            ("LOCATION", "/tmp", "location", Path("/tmp"), make_target("location", Path, default=Path())),
-            ("COLOR", "green", "color", Color.GREEN, make_target("color", Color, default=Color.RED)),
+            ("MYAPP_COUNT", "42", "count", 42, None),
+            ("MYAPP_RATE", "3.14", "rate", pytest.approx(3.14), None),
+            ("MYAPP_LOCATION", "/tmp", "location", Path("/tmp"), make_target("location", Path, default=Path())),
+            ("MYAPP_COLOR", "green", "color", Color.GREEN, make_target("color", Color, default=Color.RED)),
         ],
         ids=["int", "float", "path", "enum"],
     )
     def test_type_coercion(self, loader: ConfargLoader, env_key, env_val, field, expected, target_cls) -> None:  # noqa: PLR0913 — pytest parametrize + loader fixture
         """Env var string coerced to the target type."""
         cls = target_cls or WithDefaults
-        result = loader.load(cls, argv=[], env={env_key: env_val}, env_prefix="")
+        result = loader.load(cls, argv=[], env={env_key: env_val}, env_prefix="MYAPP_")
         actual = getattr(result, field)
         assert actual == expected
 
@@ -151,10 +151,20 @@ class TestEnvCoercion:
         ``${base}/logs``, while the same value from a config file resolved.
         """
         cls = make_dataclass("WithLeafExpr", [("base", str, "/app"), ("log", Path, Path())])
-        merged = loader.merge(cls, argv=[], env={"BASE": "/app", "LOG": "${base}/logs"}, env_prefix="")
+        merged = loader.merge(
+            cls,
+            argv=[],
+            env={"MYAPP_BASE": "/app", "MYAPP_LOG": "${base}/logs"},
+            env_prefix="MYAPP_",
+        )
         assert merged["log"] == "${base}/logs"
         assert isinstance(merged["log"], str)
-        assert loader.load(cls, argv=[], env={"BASE": "/app", "LOG": "${base}/logs"}, env_prefix="").log == Path(
+        assert loader.load(
+            cls,
+            argv=[],
+            env={"MYAPP_BASE": "/app", "MYAPP_LOG": "${base}/logs"},
+            env_prefix="MYAPP_",
+        ).log == Path(
             "/app/logs",
         )
 
@@ -165,7 +175,7 @@ class TestEnvCoercion:
     )
     def test_bool_true_values(self, loader: ConfargLoader, env_val: str) -> None:
         """Various truthy strings for bool."""
-        result = loader.load(WithDefaults, argv=[], env={"VERBOSE": env_val}, env_prefix="")
+        result = loader.load(WithDefaults, argv=[], env={"MYAPP_VERBOSE": env_val}, env_prefix="MYAPP_")
         assert result.verbose is True, f"Expected True for {env_val!r}"
 
     @pytest.mark.parametrize(
@@ -175,7 +185,7 @@ class TestEnvCoercion:
     )
     def test_bool_false_values(self, loader: ConfargLoader, env_val: str) -> None:
         """Various falsy strings for bool."""
-        result = loader.load(WithDefaults, argv=[], env={"VERBOSE": env_val}, env_prefix="")
+        result = loader.load(WithDefaults, argv=[], env={"MYAPP_VERBOSE": env_val}, env_prefix="MYAPP_")
         assert result.verbose is False, f"Expected False for {env_val!r}"
 
     @pytest.mark.parametrize(
@@ -191,7 +201,7 @@ class TestEnvCoercion:
     )
     def test_optional_coercion(self, loader: ConfargLoader, target_cls, env_val: str, expected) -> None:
         """Optional / pipe-none coercion from env var string."""
-        result = loader.load(target_cls, argv=[], env={"VALUE": env_val}, env_prefix="")
+        result = loader.load(target_cls, argv=[], env={"MYAPP_VALUE": env_val}, env_prefix="MYAPP_")
         assert result.value == expected
 
     @pytest.mark.parametrize(
@@ -205,12 +215,12 @@ class TestEnvCoercion:
     def test_optional_int_empty_env_raises(self, loader: ConfargLoader, target_cls) -> None:
         """Empty env VALUE= for int|None raises — use VALUE__NONE= to set None."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="To set this field to None"):
-            loader.load(target_cls, argv=[], env={"VALUE": ""}, env_prefix="")
+            loader.load(target_cls, argv=[], env={"MYAPP_VALUE": ""}, env_prefix="MYAPP_")
 
     def test_optional_str_empty_env_is_empty_string(self, loader: ConfargLoader) -> None:
         """Empty env VALUE= gives empty string for str | None, not None."""
         WithOptionalStr = make_target("value", str | None, default=None)
-        result = loader.load(WithOptionalStr, argv=[], env={"VALUE": ""}, env_prefix="")
+        result = loader.load(WithOptionalStr, argv=[], env={"MYAPP_VALUE": ""}, env_prefix="MYAPP_")
         assert result.value == ""
 
 
@@ -233,20 +243,20 @@ class TestEnvNoneSentinel:
     )
     def test_none_sentinel_sets_optional_to_none(self, loader: ConfargLoader, target_cls) -> None:
         """Test that 'none' env var value sets an Optional field to None."""
-        result = loader.load(target_cls, argv=[], env={"VALUE": "none"}, env_prefix="")
+        result = loader.load(target_cls, argv=[], env={"MYAPP_VALUE": "none"}, env_prefix="MYAPP_")
         assert result.value is None
 
     def test_none_sentinel_case_insensitive(self, loader: ConfargLoader) -> None:
         """Test that 'none'/'None'/'NONE'/'null'/'Null'/'NULL' all set Optional to None."""
         WithOpt = make_target("value", Optional[int], default=99)
         for val in ["none", "None", "NONE", "null", "Null", "NULL"]:
-            result = loader.load(WithOpt, argv=[], env={"VALUE": val}, env_prefix="")
+            result = loader.load(WithOpt, argv=[], env={"MYAPP_VALUE": val}, env_prefix="MYAPP_")
             assert result.value is None
 
     def test_none_sentinel_value_is_ignored(self, loader: ConfargLoader) -> None:
         """'null' is a case-insensitive alias for None alongside 'none'."""
         WithOpt = make_target("value", Optional[int], default=99)
-        result = loader.load(WithOpt, argv=[], env={"VALUE": "null"}, env_prefix="")
+        result = loader.load(WithOpt, argv=[], env={"MYAPP_VALUE": "null"}, env_prefix="MYAPP_")
         assert result.value is None
 
     def test_none_sentinel_with_prefix(self, loader: ConfargLoader) -> None:
@@ -259,7 +269,7 @@ class TestEnvNoneSentinel:
         """Test that none sentinel works for a nested optional dataclass field."""
         Inner = make_dataclass("Inner", [("x", int, field(default=1))])
         Outer = make_dataclass("Outer", [("inner", Inner | None, field(default=None))])
-        result: Any = loader.load(Outer, argv=[], env={"INNER": "none"}, env_prefix="")
+        result: Any = loader.load(Outer, argv=[], env={"MYAPP_INNER": "none"}, env_prefix="MYAPP_")
         assert result.inner is None
 
 
@@ -276,19 +286,19 @@ class TestEnvIndexedCollections:
         [
             (
                 make_target("items", list[int], default_factory=list),
-                {"ITEMS__0": "10", "ITEMS__1": "20"},
+                {"MYAPP_ITEMS__0": "10", "MYAPP_ITEMS__1": "20"},
                 "items",
                 [10, 20],
             ),
             (
                 make_target("tags", set[str], default_factory=set),
-                {"TAGS__0": "a", "TAGS__1": "b"},
+                {"MYAPP_TAGS__0": "a", "MYAPP_TAGS__1": "b"},
                 "tags",
                 {"a", "b"},
             ),
             (
                 make_target("metadata", dict[str, int], default_factory=dict),
-                {"METADATA__x": "1", "METADATA__y": "2"},
+                {"MYAPP_METADATA__x": "1", "MYAPP_METADATA__y": "2"},
                 "metadata",
                 {"x": 1, "y": 2},
             ),
@@ -297,7 +307,7 @@ class TestEnvIndexedCollections:
     )
     def test_indexed_collection(self, loader: ConfargLoader, target_cls, env, field, expected) -> None:
         """Collection items via indexed/keyed env vars."""
-        result = loader.load(target_cls, argv=[], env=env, env_prefix="")
+        result = loader.load(target_cls, argv=[], env=env, env_prefix="MYAPP_")
         assert getattr(result, field) == expected
 
     def test_list_indexed_with_prefix(self, loader: ConfargLoader) -> None:
@@ -339,7 +349,12 @@ class TestEnvUnrecognized:
         """Env vars not matching any field emit ConfargWarning and are ignored."""
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            result = loader.load(WithDefaults, argv=[], env={"UNKNOWN": "val", "NAME": "ok"}, env_prefix="")
+            result = loader.load(
+                WithDefaults,
+                argv=[],
+                env={"MYAPP_UNKNOWN": "val", "MYAPP_NAME": "ok"},
+                env_prefix="MYAPP_",
+            )
         assert result.name == "ok"
         assert len(caught) == 1
         assert issubclass(caught[0].category, confarg.exceptions.ConfargWarning)
@@ -367,7 +382,7 @@ class TestEnvEdgeCases:
 
     def test_empty_string_value(self, loader: ConfargLoader) -> None:
         """Empty string env var is treated as the value."""
-        result = loader.load(WithDefaults, argv=[], env={"NAME": ""}, env_prefix="")
+        result = loader.load(WithDefaults, argv=[], env={"MYAPP_NAME": ""}, env_prefix="MYAPP_")
         assert result.name == ""
 
     def test_all_fields_from_env(self, loader: ConfargLoader) -> None:
@@ -375,8 +390,8 @@ class TestEnvEdgeCases:
         result = loader.load(
             Flat,
             argv=[],
-            env={"NAME": "n", "COUNT": "1", "RATE": "2.0", "VERBOSE": "true"},
-            env_prefix="",
+            env={"MYAPP_NAME": "n", "MYAPP_COUNT": "1", "MYAPP_RATE": "2.0", "MYAPP_VERBOSE": "true"},
+            env_prefix="MYAPP_",
         )
         assert result.name == "n"
         assert result.count == 1
@@ -389,14 +404,14 @@ class TestEnvEdgeCases:
             AppConfig,
             argv=[],
             env={
-                "DB__HOST": "h",
-                "DB__PORT": "3306",
-                "DB__NAME": "db",
-                "CACHE__ENABLED": "false",
-                "CACHE__TTL": "60",
-                "DEBUG": "true",
+                "MYAPP_DB__HOST": "h",
+                "MYAPP_DB__PORT": "3306",
+                "MYAPP_DB__NAME": "db",
+                "MYAPP_CACHE__ENABLED": "false",
+                "MYAPP_CACHE__TTL": "60",
+                "MYAPP_DEBUG": "true",
             },
-            env_prefix="",
+            env_prefix="MYAPP_",
         )
         assert result.db.host == "h"
         assert result.db.port == 3306
@@ -416,13 +431,13 @@ class TestEnvJsonValues:
     def test_json_array_for_list(self, loader: ConfargLoader) -> None:
         """A JSON array string is decoded into a list field."""
         WithList = make_target("items", list[int])
-        result = loader.load(WithList, argv=[], env={"ITEMS": "[1, 2, 3]"}, env_prefix="")
+        result = loader.load(WithList, argv=[], env={"MYAPP_ITEMS": "[1, 2, 3]"}, env_prefix="MYAPP_")
         assert result.items == [1, 2, 3]
 
     def test_json_array_for_tuple(self, loader: ConfargLoader) -> None:
         """A JSON array string is decoded into a fixed-length tuple field."""
         WithTuple = make_target("point", tuple[float, float])
-        result = loader.load(WithTuple, argv=[], env={"POINT": "[1.5, 2.5]"}, env_prefix="")
+        result = loader.load(WithTuple, argv=[], env={"MYAPP_POINT": "[1.5, 2.5]"}, env_prefix="MYAPP_")
         assert result.point == (1.5, 2.5)
 
     def test_json_array_with_prefix(self, loader: ConfargLoader) -> None:
@@ -435,12 +450,12 @@ class TestEnvJsonValues:
         """A JSON array with wrong length raises a TypeCoercionError."""
         WithTuple = make_target("point", tuple[int, int, int])
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="expected 3 elements, got 2"):
-            loader.load(WithTuple, argv=[], env={"POINT": "[1, 2]"}, env_prefix="")
+            loader.load(WithTuple, argv=[], env={"MYAPP_POINT": "[1, 2]"}, env_prefix="MYAPP_")
 
     def test_json_array_invalid_json_falls_back_to_string(self, loader: ConfargLoader) -> None:
         """Malformed JSON starting with '[' is treated as a plain string."""
         WithStr = make_target("val", str, default="")
-        result = loader.load(WithStr, argv=[], env={"VAL": "[not json"}, env_prefix="")
+        result = loader.load(WithStr, argv=[], env={"MYAPP_VAL": "[not json"}, env_prefix="MYAPP_")
         assert result.val == "[not json"
 
     def test_json_object_for_dataclass(self, loader: ConfargLoader) -> None:
@@ -449,11 +464,11 @@ class TestEnvJsonValues:
             AppConfig,
             argv=[],
             env={
-                "DB": '{"host": "localhost", "port": 5432, "name": "mydb"}',
-                "CACHE__ENABLED": "true",
-                "CACHE__TTL": "60",
+                "MYAPP_DB": '{"host": "localhost", "port": 5432, "name": "mydb"}',
+                "MYAPP_CACHE__ENABLED": "true",
+                "MYAPP_CACHE__TTL": "60",
             },
-            env_prefix="",
+            env_prefix="MYAPP_",
         )
         assert result.db.host == "localhost"
         assert result.db.port == 5432
@@ -477,31 +492,31 @@ class TestEnvJsonValues:
     def test_json_object_for_dict(self, loader: ConfargLoader) -> None:
         """A JSON object string is decoded into a dict field."""
         WithDict = make_target("env", dict[str, str], default_factory=dict)
-        result = loader.load(WithDict, argv=[], env={"ENV": '{"a": "b"}'}, env_prefix="")
+        result = loader.load(WithDict, argv=[], env={"MYAPP_ENV": '{"a": "b"}'}, env_prefix="MYAPP_")
         assert result.env == {"a": "b"}
 
     def test_json_object_for_optional_dict(self, loader: ConfargLoader) -> None:
         """An optional dict decodes the whole mapping its non-optional peer decodes."""
         WithOptDict = make_target("env", dict[str, str] | None, default=None)
-        result = loader.load(WithOptDict, argv=[], env={"ENV": '{"a": "b"}'}, env_prefix="")
+        result = loader.load(WithOptDict, argv=[], env={"MYAPP_ENV": '{"a": "b"}'}, env_prefix="MYAPP_")
         assert result.env == {"a": "b"}
 
     def test_json_object_invalid_json_falls_back_to_string(self, loader: ConfargLoader) -> None:
         """Malformed JSON starting with '{' is treated as a plain string."""
         WithStr = make_target("val", str, default="")
-        result = loader.load(WithStr, argv=[], env={"VAL": "{not json"}, env_prefix="")
+        result = loader.load(WithStr, argv=[], env={"MYAPP_VAL": "{not json"}, env_prefix="MYAPP_")
         assert result.val == "{not json"
 
     def test_json_object_not_parsed_for_str_field(self, loader: ConfargLoader) -> None:
         """A valid JSON object string is stored verbatim in a str field."""
         WithStr = make_target("val", str, default="")
-        result = loader.load(WithStr, argv=[], env={"VAL": '{"key":"val"}'}, env_prefix="")
+        result = loader.load(WithStr, argv=[], env={"MYAPP_VAL": '{"key":"val"}'}, env_prefix="MYAPP_")
         assert result.val == '{"key":"val"}'
 
     def test_json_array_not_parsed_for_str_field(self, loader: ConfargLoader) -> None:
         """A valid JSON array string is stored verbatim in a str field."""
         WithStr = make_target("val", str, default="")
-        result = loader.load(WithStr, argv=[], env={"VAL": "[1,2,3]"}, env_prefix="")
+        result = loader.load(WithStr, argv=[], env={"MYAPP_VAL": "[1,2,3]"}, env_prefix="MYAPP_")
         assert result.val == "[1,2,3]"
 
 
@@ -696,8 +711,8 @@ class TestEnvDelete:
         result = loader.load(
             WithDefaults,
             argv=[],
-            env={"NAME-": "anything"},
-            env_prefix="",
+            env={"MYAPP_NAME-": "anything"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.name == "default"
@@ -709,8 +724,8 @@ class TestEnvDelete:
             loader.load(
                 Flat,
                 argv=[],
-                env={"NAME-": "anything"},
-                env_prefix="",
+                env={"MYAPP_NAME-": "anything"},
+                env_prefix="MYAPP_",
                 files=[path],
             )
 
@@ -721,8 +736,8 @@ class TestEnvDelete:
             loader.load(
                 AppConfig,
                 argv=[],
-                env={"DB__HOST-": "anything"},
-                env_prefix="",
+                env={"MYAPP_DB__HOST-": "anything"},
+                env_prefix="MYAPP_",
                 files=[path],
             )
 
@@ -733,8 +748,8 @@ class TestEnvDelete:
         result = loader.load(
             WithList,
             argv=[],
-            env={"ITEMS__1-": "anything"},
-            env_prefix="",
+            env={"MYAPP_ITEMS__1-": "anything"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.items == ["a", "c"]
@@ -746,8 +761,8 @@ class TestEnvDelete:
         result = loader.load(
             WithList,
             argv=[],
-            env={"ITEMS__1-": "x", "ITEMS__2-": "x"},
-            env_prefix="",
+            env={"MYAPP_ITEMS__1-": "x", "MYAPP_ITEMS__2-": "x"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.items == ["a", "d"]
@@ -760,8 +775,8 @@ class TestEnvDelete:
             loader.load(
                 WithList,
                 argv=[],
-                env={"ITEMS__1-": "x", "items__1-": "x"},
-                env_prefix="",
+                env={"MYAPP_ITEMS__1-": "x", "MYAPP_items__1-": "x"},
+                env_prefix="MYAPP_",
                 files=[path],
             )
 
@@ -773,8 +788,8 @@ class TestEnvDelete:
             loader.load(
                 WithList,
                 argv=[],
-                env={"ITEMS__5-": "x"},
-                env_prefix="",
+                env={"MYAPP_ITEMS__5-": "x"},
+                env_prefix="MYAPP_",
                 files=[path],
             )
 
@@ -785,8 +800,8 @@ class TestEnvDelete:
         result = loader.load(
             WithList,
             argv=[],
-            env={"ITEMS__-1": "99"},
-            env_prefix="",
+            env={"MYAPP_ITEMS__-1": "99"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.items == [1, 2, 99]
@@ -798,8 +813,8 @@ class TestEnvDelete:
         result = loader.load(
             WithList,
             argv=[],
-            env={"ITEMS__-1-": "x"},
-            env_prefix="",
+            env={"MYAPP_ITEMS__-1-": "x"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.items == ["a", "b"]
@@ -810,8 +825,8 @@ class TestEnvDelete:
         result = loader.load(
             WithDefaults,
             argv=[],
-            env={"NAME-": "1"},
-            env_prefix="",
+            env={"MYAPP_NAME-": "1"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.name == "default"
@@ -829,24 +844,24 @@ class TestEnvUnionSequenceStrict:
         """INPUT=hello for bool | list[str]: bool rejects it and env does not wrap to ['hello']."""
         WithUnion = make_target("input", bool | list[str], default=True)
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            loader.load(WithUnion, argv=[], env={"INPUT": "hello"}, env_prefix="")
+            loader.load(WithUnion, argv=[], env={"MYAPP_INPUT": "hello"}, env_prefix="MYAPP_")
 
     def test_indexed_builds_singleton_list(self, loader: ConfargLoader) -> None:
         """INPUT__0=hello is the explicit way to get ['hello'] from env."""
         WithUnion = make_target("input", bool | list[str], default=True)
-        result = loader.load(WithUnion, argv=[], env={"INPUT__0": "hello"}, env_prefix="")
+        result = loader.load(WithUnion, argv=[], env={"MYAPP_INPUT__0": "hello"}, env_prefix="MYAPP_")
         assert result.input == ["hello"]
 
     def test_json_builds_list(self, loader: ConfargLoader) -> None:
         """A JSON-array env value builds ['hello'] from env."""
         WithUnion = make_target("input", bool | list[str], default=True)
-        result = loader.load(WithUnion, argv=[], env={"INPUT": '["hello"]'}, env_prefix="")
+        result = loader.load(WithUnion, argv=[], env={"MYAPP_INPUT": '["hello"]'}, env_prefix="MYAPP_")
         assert result.input == ["hello"]
 
     def test_bare_scalar_still_matches_scalar_variant(self, loader: ConfargLoader) -> None:
         """INPUT=true still coerces to the bool variant."""
         WithUnion = make_target("input", bool | list[str], default=False)
-        result = loader.load(WithUnion, argv=[], env={"INPUT": "true"}, env_prefix="")
+        result = loader.load(WithUnion, argv=[], env={"MYAPP_INPUT": "true"}, env_prefix="MYAPP_")
         assert result.input is True
 
 

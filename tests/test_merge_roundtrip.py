@@ -99,7 +99,7 @@ class TestEnvRoundTrip:
     @settings(max_examples=100)
     def test_env_numeric_type_is_native(self, count):
         """Pre-coerced env var values must be native Python types, not strings."""
-        raw = confarg.merge(WithDefaults, argv=[], env={"COUNT": str(count)}, env_prefix="")
+        raw = confarg.merge(WithDefaults, argv=[], env={"MYAPP_COUNT": str(count)}, env_prefix="MYAPP_")
         assert type(raw["count"]) is int
 
 

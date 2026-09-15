@@ -322,8 +322,8 @@ class TestPlainClassEnv:
         result = confarg.load(
             TrainingConfig,
             argv=["--epochs", "2"],
-            env={"TRANSFORM__CLASS": "tests.test_plain_classes.HorizontalFlip", "TRANSFORM__P": "0.6"},
-            env_prefix="",
+            env={"MYAPP_TRANSFORM__CLASS": "tests.test_plain_classes.HorizontalFlip", "MYAPP_TRANSFORM__P": "0.6"},
+            env_prefix="MYAPP_",
         )
         assert isinstance(result.transform, HorizontalFlip)
         assert result.transform.p == pytest.approx(0.6)

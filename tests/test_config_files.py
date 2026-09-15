@@ -467,7 +467,13 @@ class TestEnvConfig:
     def test_basic(self, tmp_toml) -> None:
         """Env var pointing to a file loads that file."""
         path = tmp_toml('name = "from_env_config"\ncount = 7\nrate = 1.5\nverbose = true')
-        result = confarg.load(Flat, argv=[], env={"MY_CONFIG": str(path)}, env_prefix="", env_config="MY_CONFIG")
+        result = confarg.load(
+            Flat,
+            argv=[],
+            env={"MYAPP_MY_CONFIG": str(path)},
+            env_prefix="MYAPP_",
+            env_config="MYAPP_MY_CONFIG",
+        )
         assert result.name == "from_env_config"
         assert result.count == 7
 
@@ -511,9 +517,9 @@ class TestEnvConfig:
         result = confarg.load(
             Flat,
             argv=[],
-            env={"MY_CONFIG": str(path), "NAME": "from_env"},
-            env_prefix="",
-            env_config="MY_CONFIG",
+            env={"MYAPP_MY_CONFIG": str(path), "MYAPP_NAME": "from_env"},
+            env_prefix="MYAPP_",
+            env_config="MYAPP_MY_CONFIG",
         )
         assert result.name == "from_env"
         assert result.count == 5
@@ -524,9 +530,9 @@ class TestEnvConfig:
         result = confarg.load(
             Flat,
             argv=["--name", "from_cli"],
-            env={"MY_CONFIG": str(path)},
-            env_prefix="",
-            env_config="MY_CONFIG",
+            env={"MYAPP_MY_CONFIG": str(path)},
+            env_prefix="MYAPP_",
+            env_config="MYAPP_MY_CONFIG",
         )
         assert result.name == "from_cli"
         assert result.count == 5
@@ -538,9 +544,9 @@ class TestEnvConfig:
         result = confarg.load(
             Flat,
             argv=["--config", str(cli_file)],
-            env={"MY_CONFIG": str(env_file)},
-            env_prefix="",
-            env_config="MY_CONFIG",
+            env={"MYAPP_MY_CONFIG": str(env_file)},
+            env_prefix="MYAPP_",
+            env_config="MYAPP_MY_CONFIG",
         )
         assert result.name == "from_cli_config"
 

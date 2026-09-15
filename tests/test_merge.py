@@ -36,8 +36,8 @@ class TestMergePriority:
         result = loader.load(
             WithDefaults,
             argv=["--name", "from_cli"],
-            env={"NAME": "from_env"},
-            env_prefix="",
+            env={"MYAPP_NAME": "from_env"},
+            env_prefix="MYAPP_",
         )
         assert result.name == "from_cli"
 
@@ -47,8 +47,8 @@ class TestMergePriority:
         result = loader.load(
             WithDefaults,
             argv=[],
-            env={"NAME": "from_env"},
-            env_prefix="",
+            env={"MYAPP_NAME": "from_env"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.name == "from_env"
@@ -70,8 +70,8 @@ class TestMergePriority:
         result = loader.load(
             Flat,
             argv=["--name", "from_cli", "--count", "1", "--rate", "0", "--verbose", "true"],
-            env={"NAME": "from_env", "COUNT": "200"},
-            env_prefix="",
+            env={"MYAPP_NAME": "from_env", "MYAPP_COUNT": "200"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.name == "from_cli"  # CLI wins over env
@@ -83,8 +83,8 @@ class TestMergePriority:
         result = loader.load(
             Flat,
             argv=["--name", "cli"],
-            env={"COUNT": "20", "RATE": "2.0", "VERBOSE": "true"},
-            env_prefix="",
+            env={"MYAPP_COUNT": "20", "MYAPP_RATE": "2.0", "MYAPP_VERBOSE": "true"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.name == "cli"
@@ -112,8 +112,8 @@ class TestPartialMerge:
         result = loader.load(
             AppConfig,
             argv=["--db.host", "cli_host"],
-            env={"DB__PORT": "3306"},
-            env_prefix="",
+            env={"MYAPP_DB__PORT": "3306"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.db.host == "cli_host"  # CLI overrides config
@@ -186,8 +186,8 @@ class TestCollectionOverride:
         result = loader.load(
             WithList,
             argv=[],
-            env={"ITEMS__0": "99"},
-            env_prefix="",
+            env={"MYAPP_ITEMS__0": "99"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.items[0] == 99
@@ -280,7 +280,7 @@ class TestListAppendWithConfig:
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
         with pytest.raises(confarg.exceptions.ConfargError, match="append syntax"):
-            confarg.load(WithList, argv=[], env={"ITEMS__2": "3"}, env_prefix="", files=[path])
+            confarg.load(WithList, argv=[], env={"MYAPP_ITEMS__2": "3"}, env_prefix="MYAPP_", files=[path])
 
 
 # ---------------------------------------------------------------------------
