@@ -6,21 +6,18 @@
 
 from __future__ import annotations
 
-import contextlib
 import inspect
 import logging
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import argparse
 
 from confarg import _defaults
-from confarg._files import _load_file
 from confarg._import import _import_dotted
-from confarg._merge import _deep_merge
+from confarg._tags import _partial_config_from_argv, _tags_from_argv, _tags_from_config
 from confarg._types import (
     _final_inner,
     _is_callable,
@@ -28,11 +25,9 @@ from confarg._types import (
     _is_final,
     _is_singleton_literal,
     _is_struct,
-    _is_union,
     _resolve_struct,
     _resolve_type,
     _struct_defaults,
-    _struct_fields,
     _union_args_no_none,
     _unwrap_optional,
     _var_params,
@@ -52,120 +47,6 @@ from confarg.cli.argparse._register import (
 )
 
 _log = logging.getLogger(__name__)
-
-
-def _collect_partial_config(argv: list[str], config_flag: str) -> dict[str, Any]:
-    """Scan argv for --<config_flag> FILE tokens and return a merged dict.
-
-    Errors (missing files, parse failures) are silently ignored — this runs
-    at shell-completion time and must never crash.
-    """
-    merged: dict[str, Any] = {}
-    flag_prefix = f"--{config_flag}"
-    i = 0
-    while i < len(argv):
-        tok = argv[i]
-        # Only handle root --config / --config=FILE, not --config.subpath variants
-        if tok == flag_prefix:
-            # Space-separated form: --config file1 file2 ...
-            i += 1
-            while i < len(argv) and not argv[i].startswith("--"):
-                with contextlib.suppress(Exception):
-                    merged = _deep_merge(merged, _load_file(Path(argv[i])))
-                i += 1
-        elif tok.startswith(f"{flag_prefix}="):
-            # Equals form: --config=file
-            path_str = tok[len(flag_prefix) + 1 :]
-            if path_str:
-                with contextlib.suppress(Exception):
-                    merged = _deep_merge(merged, _load_file(Path(path_str)))
-            i += 1
-        else:
-            i += 1
-    return merged
-
-
-def _collect_partial_cli_tags(argv: list[str], union_tag: str) -> dict[str, str]:
-    """Scan argv for --<prefix>.<union_tag> VALUE tokens.
-
-    Returns {field_prefix: class_path_string}.
-    """
-    tags: dict[str, str] = {}
-    suffix = f".{union_tag}"
-    i = 0
-    while i < len(argv):
-        tok = argv[i]
-        if not tok.startswith("--"):
-            i += 1
-            continue
-        if "=" in tok:
-            flag, _, val = tok.partition("=")
-            flag = flag[2:]  # strip leading --
-            if flag.endswith(suffix):
-                prefix = flag[: -len(suffix)]
-                tags[prefix] = val
-        elif tok[2:].endswith(suffix):
-            flag = tok[2:]
-            prefix = flag[: -len(suffix)]
-            if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
-                tags[prefix] = argv[i + 1]
-                i += 2
-                continue
-        i += 1
-    return tags
-
-
-def _union_field_tags(
-    merged: dict[str, Any],
-    name: str,
-    flag: str,
-    resolved: Any,
-    union_tag: str,
-) -> dict[str, str]:
-    """Return resolved class-tag entries for one union field in the merged config."""
-    tags: dict[str, str] = {}
-    non_none = _union_args_no_none(resolved)
-    if len(non_none) > 1:
-        sub = merged.get(name)
-        if isinstance(sub, dict) and union_tag in sub:
-            val = sub[union_tag]
-            if isinstance(val, str):
-                tags[flag] = val
-    elif len(non_none) == 1:
-        sub = merged.get(name, {})
-        if isinstance(sub, dict):
-            tags.update(_resolve_tags_from_config(sub, _resolve_type(non_none[0]), flag, union_tag))
-    return tags
-
-
-def _resolve_tags_from_config(
-    merged: dict[str, Any],
-    target: Any,
-    prefix: str,
-    union_tag: str,
-) -> dict[str, str]:
-    """Walk merged config in parallel with target; return {prefix: class_path} for resolved unions."""
-    tags: dict[str, str] = {}
-    tp = _resolve_type(target)
-    if not _is_struct(tp):
-        return tags
-
-    try:
-        flds = _struct_fields(tp)
-    except (ValueError, TypeError, NameError, AttributeError):
-        return tags
-
-    for name, ft in flds.items():
-        flag = f"{prefix}.{name}" if prefix else name
-        resolved = _resolve_type(ft)
-        if _is_union(resolved):
-            tags.update(_union_field_tags(merged, name, flag, resolved, union_tag))
-        elif _is_struct(resolved):
-            sub = merged.get(name, {})
-            if isinstance(sub, dict):
-                tags.update(_resolve_tags_from_config(sub, resolved, flag, union_tag))
-
-    return tags
 
 
 @dataclass
@@ -312,9 +193,9 @@ def _pre_extend_parser_for_completion(
     try:
         cli_prefix = parser.get_default(PREFIX_ATTR) or ""
         argv = strip_argv_prefix(argv, cli_prefix)
-        config_dict = _collect_partial_config(argv, config_flag)
-        cli_tags = _collect_partial_cli_tags(argv, union_tag)
-        config_tags = _resolve_tags_from_config(config_dict, target, prefix="", union_tag=union_tag)
+        config_dict = _partial_config_from_argv(argv, config_flag)
+        cli_tags = _tags_from_argv(argv, union_tag)
+        config_tags = _tags_from_config(config_dict, target, prefix="", union_tag=union_tag)
 
         # CLI wins over config
         all_tags = {_in_prefix(flag, cli_prefix): tag for flag, tag in {**config_tags, **cli_tags}.items()}

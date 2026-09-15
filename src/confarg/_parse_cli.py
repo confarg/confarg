@@ -37,6 +37,7 @@ from confarg._merge import (
     _deep_merge,
     _set_nested,
 )
+from confarg._tags import import_tagged_classes
 from confarg._types import (
     _dataclass_subclasses,
     _dict_kv,
@@ -950,6 +951,9 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     if not patch_only:
         _check_config_flag_conflict(target, config_flag, cli_prefix)
     argv = _normalize_eq_args(argv)
+    # Before any path resolves: a subclass named by the tag is invisible to
+    # _subclass_field_type until its module has run.
+    import_tagged_classes(argv, target, union_tag=union_tag, config_flag=config_flag)
 
     # Paths resolve against the locals-grafted target; root classification keeps `target`.
     walk_target = _walk_target(target, _locals_keys(target, union_tag))

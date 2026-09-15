@@ -41,6 +41,8 @@ from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, 
 from tests.conftest import AppConfig, CacheConfig, DbConfig, make_target
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from tests._loaders import ConfargLoader
 
 # ---------------------------------------------------------------------------
@@ -2148,3 +2150,133 @@ class TestDynamicFlagFailureContract:
         assert flags is not None
         assert "host" in flags  # static registration is unaffected
         assert any(issubclass(w.category, ConfargWarning) and "deliberate boom" in str(w.message) for w in caught)
+
+
+# ---------------------------------------------------------------------------
+# Subclass named by a tag but not yet imported (BUG-6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def plugin_pair(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[Callable[[int], tuple[Any, str]]]:
+    """Build a base module plus an *un-imported* plugin subclass module on sys.path.
+
+    Returns ``make(union_tag="class") -> (base_module, plugin_module_name)`` with only the
+    base imported: the plugin is importable but absent from ``sys.modules``, so
+    ``Handler.__subclasses__()`` is empty until something imports it by name.  Each call gets
+    freshly named modules because ``__subclasses__()`` bleeds for the process lifetime
+    (tests/typedload/test_construct.py records the same constraint).
+    """
+    import importlib  # noqa: PLC0415 — only this fixture needs it
+    import sys  # noqa: PLC0415
+
+    made: list[str] = []
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    def make(n: int = 0) -> tuple[Any, str]:
+        base_name, plug_name = f"_cfg_base_{n}", f"_cfg_plug_{n}"
+        (tmp_path / f"{base_name}.py").write_text(
+            "from dataclasses import dataclass, field\n\n\n"
+            "@dataclass\nclass Handler:\n    name: str = 'base'\n\n\n"
+            "@dataclass\nclass Config:\n    handler: Handler = field(default_factory=Handler)\n",
+            newline="\n",
+        )
+        (tmp_path / f"{plug_name}.py").write_text(
+            f"from dataclasses import dataclass\nfrom {base_name} import Handler\n\n\n"
+            "@dataclass\nclass FileHandler(Handler):\n    path: str = '/var/log/a'\n",
+            newline="\n",
+        )
+        made.extend((base_name, plug_name))
+        base = importlib.import_module(base_name)
+        assert plug_name not in sys.modules  # the whole point: the plugin is not loaded
+        return base, plug_name
+
+    yield make
+
+    for name in made:
+        sys.modules.pop(name, None)
+
+
+class TestUnimportedSubclassContract:
+    """A class named by the union tag is usable before anything imports it (BUG-6).
+
+    ``build()`` resolves the tag by importing it, so the same keys in a config file already
+    work; the CLI channel has to reach the same answer in every front-end.
+    """
+
+    def test_tag_on_argv(self, loader: ConfargLoader, plugin_pair: Any) -> None:
+        """--handler.class names a subclass nobody imported, and its own flags follow."""
+        base, plug = plugin_pair(0)
+        result = loader.load(
+            base.Config,
+            argv=["--handler.class", f"{plug}.FileHandler", "--handler.path", "/x"],
+            env={},
+        )
+        assert type(result.handler).__name__ == "FileHandler"
+        assert (result.handler.name, result.handler.path) == ("base", "/x")
+
+    def test_tag_in_config_file_selects_subclass(
+        self,
+        loader: ConfargLoader,
+        plugin_pair: Any,
+        tmp_path: Path,
+    ) -> None:
+        """The tag reaches the parser from a --config file, not only from argv."""
+        base, plug = plugin_pair(1)
+        cfg = tmp_path / "app.toml"
+        cfg.write_text(f'[handler]\nclass = "{plug}.FileHandler"\n', newline="\n")
+        result = loader.load(base.Config, argv=["--config", str(cfg)], env={})
+        assert type(result.handler).__name__ == "FileHandler"
+        assert result.handler.path == "/var/log/a"
+
+    def test_tag_in_config_file_registers_subclass_flags(
+        self,
+        populating_loader: ConfargLoader,
+        plugin_pair: Any,
+        tmp_path: Path,
+    ) -> None:
+        """A tag read from a --config file makes the subclass's flags registrable too.
+
+        Whether the adapters then *collect* a subclass field whose tag came from a file is a
+        separate gap (BUG-19); this pins the registration half, which is the one BUG-6 names.
+        """
+        base, plug = plugin_pair(5)
+        cfg = tmp_path / "app.toml"
+        cfg.write_text(f'[handler]\nclass = "{plug}.FileHandler"\n', newline="\n")
+        flags = populating_loader.registered_flags(base.Config, argv=["--config", str(cfg)])
+        assert flags is not None
+        assert {"handler.class", "handler.path"} <= flags
+
+    def test_custom_union_tag(self, loader: ConfargLoader, plugin_pair: Any) -> None:
+        """The scan follows *union_tag*, not the literal 'class'."""
+        base, plug = plugin_pair(2)
+        result = loader.load(
+            base.Config,
+            argv=["--handler.kind", f"{plug}.FileHandler", "--handler.path", "/x"],
+            env={},
+            union_tag="kind",
+        )
+        assert type(result.handler).__name__ == "FileHandler"
+        assert result.handler.path == "/x"
+
+    def test_selector_and_subclass_fields_registered(
+        self,
+        populating_loader: ConfargLoader,
+        plugin_pair: Any,
+    ) -> None:
+        """populate_* accepts both the selector and the named subclass's own flags."""
+        base, plug = plugin_pair(3)
+        argv = ["--handler.class", f"{plug}.FileHandler", "--handler.path", "/x"]
+        flags = populating_loader.registered_flags(base.Config, argv=argv, config_flag="")
+        assert flags is not None
+        assert {"handler.class", "handler.path"} <= flags
+
+    def test_root_level_tag(self, loader: ConfargLoader, plugin_pair: Any) -> None:
+        """A bare --class selects an unimported subclass for a root target too."""
+        base, plug = plugin_pair(4)
+        result = loader.load(base.Handler, argv=["--class", f"{plug}.FileHandler", "--path", "/x"], env={})
+        assert type(result).__name__ == "FileHandler"
+        assert result.path == "/x"

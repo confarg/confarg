@@ -99,7 +99,9 @@ create a load-time import cycle.
 **Static flags** come from a walk of the target type (`build_static_flags`): leaves, tuples,
 namedtuples (whole, per name and per index), union tags and variant fields, plain callable
 openers (`.fn`/`.class`/`.call`), `--config` and `--config.<struct field>`, and
-`--config.<locals>` (the CLI way to declare locals).
+`--config.<locals>` (the CLI way to declare locals). `build_static_flags` takes `argv` too, but
+only to import the classes it names by `union_tag` before the walk starts; it never adds a flag
+from it, so `argv=[]` still describes exactly the declared type.
 
 **Dynamic flags** (`build_dynamic_flags`) are those whose existence depends on what the
 user typed, found by scanning argv (and config files named on argv):
@@ -211,7 +213,12 @@ help, completion and error text for real values:
   flags from different variants are merged and their `choices` unioned
   (`_merge_or_append_spec`): first-wins would drop the other variants' values.
 - A base class with subclasses registers the tag and all subclass fields (recursively for
-  completion paths).
+  completion paths). "Has subclasses" means *imported* subclasses, so the class a tag names on
+  argv or in a `--config` file is imported first, by `_tags.import_tagged_classes`
+  ([10](10-design-decisions.md#a-named-tag-is-imported-before-registration)); without that the
+  selector and the subclass's own flags exist or not depending on which modules happened to
+  load ([BUG-6](../todo/bugs.md), closed). The completer is left unset when the subclass list
+  is empty — an empty one suppresses the shell's own suggestions.
 - Force-cast flags (`--f.int`, …) are registered statically only where the stealing rule is
   non-obvious: an enum variant, or `str` next to any other variant.
 

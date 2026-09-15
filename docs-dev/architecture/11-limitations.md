@@ -32,6 +32,13 @@ the boundary moves here.
 - Index-keyed lists must be gap-free, unless the element type is Optional — a gap would
   otherwise have to invent an element of an unknown type.
 
+## Subclasses
+
+- `--help` lists a subclass's flags only once something has imported it: naming the class is
+  what makes it visible, and nothing names it on a bare `--help`
+  ([10](10-design-decisions.md#a-named-tag-is-imported-before-registration)). Import the
+  plugin module, or name the class earlier on the same command line.
+
 ## Callables and serialization
 
 - Owning-class detection for `fn: Class.method` fails for lambdas and for functions defined in

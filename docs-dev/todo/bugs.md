@@ -40,63 +40,6 @@ print("env:", confarg.load(Config, argv=[], env={"MYAPP_JSON": blob}, env_prefix
 #           env: Config(host='localhost', port=8080)
 ```
 
-### BUG-6 — The subclass selector flag is registered only for subclasses already imported
-
-**Where:** `src/confarg/cli/_build.py` (`tp.__subclasses__()`) · **Filed:** 2026-09-12
-**Effort:** L · **Risk:** medium
-
-`_collect_struct_specs` registers the `--<field>.<union_tag>` selector only when
-`tp.__subclasses__()` is non-empty at parser-build time, so a plugin subclass that has not been
-imported yet leaves the host parser with no way to name it. The subclass's own field flags do
-arrive — the argv scan imports the class named by `--<field>.class` and registers them — so the
-selector is the single missing flag, and the same keys in a config file succeed because
-`build()` imports the tagged class itself. The same import dependence is why subclass inference
-was rejected ([10-design-decisions.md#no-implicit-subclass-inference](../architecture/10-design-decisions.md#no-implicit-subclass-inference));
-here it leaks into the CLI channel.
-See [04-cli-adapters.md#union-inheritance-and-cast-flags](../architecture/04-cli-adapters.md#union-inheritance-and-cast-flags).
-
-```python
-# handlers.py
-from dataclasses import dataclass
-
-@dataclass
-class Handler:
-    name: str = "base"
-```
-
-```python
-# plugins.py — a plugin module the application does not import
-from dataclasses import dataclass
-from handlers import Handler
-
-@dataclass
-class FileHandler(Handler):
-    path: str = "/var/log/a"
-```
-
-```python
-# app.py
-import argparse
-from dataclasses import dataclass, field
-from handlers import Handler
-from confarg.cli.argparse import populate_parser, from_namespace
-
-@dataclass
-class Config:
-    handler: Handler = field(default_factory=Handler)
-
-argv = ["--handler.class", "plugins.FileHandler", "--handler.path", "/var/log/a"]
-parser = argparse.ArgumentParser()
-populate_parser(Config, parser, argv=argv)
-print(from_namespace(Config, parser.parse_args(argv), argv=argv))
-# expected: Config(handler=FileHandler(name='base', path='/var/log/a'))
-#           — what the same keys in a file already build:
-#           confarg.build(Config, {"handler": {"class": "plugins.FileHandler",
-#                                              "path": "/var/log/a"}})
-# actual:   app.py: error: unrecognized arguments: --handler.class plugins.FileHandler
-#           (--handler.path was registered; only the selector is missing)
-```
-
 ### BUG-16 — A NamedTuple takes a whole `{...}` token in the environment but not on the CLI
 
 **Where:** `src/confarg/_parse_cli.py` (`_accepts_object_value`) · **Filed:** 2026-09-14
@@ -170,6 +113,58 @@ print("opt  :", confarg.load(Opt, argv=["--fn", spec]).fn)
 #           opt  : SymbolImportError: Cannot import '{"fn": "string.capwords"}':
 #                  no importable module found in path
 # The env channel fails identically, with env={"MYAPP_FN": spec}, env_prefix="MYAPP_".
+```
+
+### BUG-19 — A subclass field is dropped when its class tag came from a config file
+
+**Where:** `src/confarg/cli/_collect.py` (`_collect_ns_inheritance`) · **Filed:** 2026-09-15
+**Effort:** M · **Risk:** medium
+
+`_collect_ns_inheritance` descends into the tagged subclass only when the tag is in the *flat
+CLI result*; a tag read from a `--config` file leaves the collector walking the base class, so
+a subclass field typed on the CLI has nowhere to go and is silently dropped. Vanilla resolves
+the same path through the type tree and keeps it. Found while fixing BUG-6, and independent of
+it — it reproduces with a subclass that was imported all along. The tag is already collected
+for registration by `_tags.collect_tags`, which is where the flat collector should read it
+from too, rather than from `flat` alone.
+See [04-cli-adapters.md#the-triad](../architecture/04-cli-adapters.md#the-triad).
+
+```python
+import argparse
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import confarg
+from confarg.cli.argparse import from_namespace, populate_parser
+
+
+@dataclass
+class Handler:
+    name: str = "base"
+
+
+@dataclass
+class FileHandler(Handler):
+    path: str = "/var/log/a"
+
+
+@dataclass
+class Config:
+    handler: Handler = field(default_factory=Handler)
+
+
+Path("app.toml").write_text('[handler]\nclass = "__main__.FileHandler"\n')
+argv = ["--config", "app.toml", "--handler.path", "/x"]
+
+print("vanilla :", confarg.load(Config, argv=argv, env={}))
+parser = argparse.ArgumentParser()
+populate_parser(Config, parser, argv=argv)
+print("argparse:", from_namespace(Config, parser.parse_args(argv), argv=argv, env={}))
+# expected: vanilla : Config(handler=FileHandler(name='base', path='/x'))
+#           argparse: Config(handler=FileHandler(name='base', path='/x'))
+# actual:   vanilla : Config(handler=FileHandler(name='base', path='/x'))
+#           argparse: Config(handler=FileHandler(name='base', path='/var/log/a'))
+# click and cyclopts drop it identically.
 ```
 
 ## Intent versus implementation

@@ -183,6 +183,7 @@ def populate_parser(  # noqa: PLR0913
         argv = sys.argv[1:]
     static = build_static_flags(
         target,
+        argv=argv,
         cli_prefix=cli_prefix,
         union_tag=union_tag,
         config_flag=config_flag,

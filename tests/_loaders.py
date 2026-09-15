@@ -117,16 +117,22 @@ class ConfargLoader(ABC):
             union_tag=union_tag,
         )
 
-    def registered_flags(
+    def registered_flags(  # noqa: PLR0913 — mirrors the populate_* keyword-only signature
         self,
         target: type | TypeAliasType | UnionType,
         *,
+        argv: Sequence[str] = (),
         cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
         union_tag: str = _defaults.UNION_TAG,
     ) -> set[str] | None:
-        """Dotted flag names that ``populate_*`` registers, or None (vanilla: no registration)."""
+        """Dotted flag names that ``populate_*`` registers, or None (vanilla: no registration).
+
+        ``argv`` is what ``populate_*`` sees: it selects the dynamic flags, and it names the
+        classes whose subclasses registration can see at all
+        (docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags).
+        """
         return None
 
     def __repr__(self) -> str:
@@ -170,10 +176,11 @@ class ArgparseLoader(ConfargLoader):
             **kw,
         )
 
-    def registered_flags(
+    def registered_flags(  # noqa: PLR0913 — mirrors the populate_* keyword-only signature
         self,
         target: type | TypeAliasType | UnionType,
         *,
+        argv: Sequence[str] = (),
         cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
@@ -185,7 +192,7 @@ class ArgparseLoader(ConfargLoader):
             config_flag=config_flag,
             config_subkeys=config_subkeys,
             union_tag=union_tag,
-            argv=[],
+            argv=list(argv),
         )
         return {s[2:] for a in parser._actions for s in a.option_strings if s.startswith("--") and s != "--help"}
 
@@ -230,10 +237,11 @@ class ClickLoader(ConfargLoader):
             raise SystemExit(result.exit_code)
         return result_holder[0]
 
-    def registered_flags(
+    def registered_flags(  # noqa: PLR0913 — mirrors the populate_* keyword-only signature
         self,
         target: type | TypeAliasType | UnionType,
         *,
+        argv: Sequence[str] = (),
         cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
@@ -247,7 +255,7 @@ class ClickLoader(ConfargLoader):
             config_flag=config_flag,
             config_subkeys=config_subkeys,
             union_tag=union_tag,
-            argv=[],
+            argv=list(argv),
         )
         return {opt[2:] for p in cmd.params for opt in p.opts if opt.startswith("--")}
 
@@ -276,10 +284,11 @@ class CycloptsLoader(ConfargLoader):
         fn = confargcyclopts.from_app if construct else confargcyclopts.merge_app
         return fn(target, app, argv=argv, config_flag=config_flag, **kw)
 
-    def registered_flags(
+    def registered_flags(  # noqa: PLR0913 — mirrors the populate_* keyword-only signature
         self,
         target: type | TypeAliasType | UnionType,
         *,
+        argv: Sequence[str] = (),
         cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
@@ -293,7 +302,7 @@ class CycloptsLoader(ConfargLoader):
             config_flag=config_flag,
             config_subkeys=config_subkeys,
             union_tag=union_tag,
-            argv=[],
+            argv=list(argv),
         )
         meta = _app_meta[id(app)]
         return set(meta["name_map"].values())

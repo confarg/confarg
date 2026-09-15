@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Literal
 
 import confarg.cli._build as build_mod
 import confarg.cli.argparse._register as reg_mod
+from confarg._tags import _tags_from_config
 from confarg._types import _resolve_struct
 from confarg.cli._build import (
     _collect_callable_bind_specs,
@@ -39,7 +40,6 @@ from confarg.cli.argparse import from_namespace, populate_parser
 from confarg.cli.argparse._completion import (
     _extend_walk,
     _pre_extend_parser_for_completion,
-    _resolve_tags_from_config,
     _WalkCtx,
 )
 from confarg.cli.argparse._completion import (
@@ -522,30 +522,30 @@ class TestCompletionGaps:
     """Uncovered branches in _completion.py."""
 
     def test_resolve_tags_from_config_non_struct(self) -> None:
-        """_resolve_tags_from_config returns {} for non-struct types."""
-        result = _resolve_tags_from_config({}, int, "", "class")
+        """_tags_from_config returns {} for non-struct types."""
+        result = _tags_from_config({}, int, "", "class")
         assert result == {}
 
     def test_resolve_tags_from_config_struct_fields_raises(self) -> None:
-        """_resolve_tags_from_config returns {} when _struct_fields raises."""
+        """_tags_from_config returns {} when _struct_fields raises."""
 
         class _BrokenStruct:
             __dataclass_fields__ = property(
                 lambda s: (_ for _ in ()).throw(ValueError("boom")),
             )
 
-        result = _resolve_tags_from_config({}, _BrokenStruct, "", "class")
+        result = _tags_from_config({}, _BrokenStruct, "", "class")
         assert result == {}
 
     def test_resolve_tags_from_config_optional_union(self) -> None:
-        """_resolve_tags_from_config handles Optional[T] (single-variant union) in config."""
+        """_tags_from_config handles Optional[T] (single-variant union) in config."""
 
         @dataclass
         class _WithOptionalSub:
             sub: _CovDCResult | None = None
 
         config = {"sub": {"result_val": "hello"}}
-        result = _resolve_tags_from_config(config, _WithOptionalSub, "", "class")
+        result = _tags_from_config(config, _WithOptionalSub, "", "class")
         # No union_tag in sub → tags is empty but shouldn't crash
         assert isinstance(result, dict)
 
@@ -574,9 +574,9 @@ class TestCompletionGaps:
 
     def test_pre_extend_parser_outer_except(self, monkeypatch) -> None:
         """_pre_extend_parser_for_completion swallows any outer exception."""
-        # Monkeypatch _collect_partial_config to raise an unexpected exception
+        # Monkeypatch _partial_config_from_argv to raise an unexpected exception
         monkeypatch.setattr(
-            "confarg.cli.argparse._completion._collect_partial_config",
+            "confarg.cli.argparse._completion._partial_config_from_argv",
             lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
         )
         parser = argparse.ArgumentParser()
