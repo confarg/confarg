@@ -468,6 +468,35 @@ class TestResolveExpressions:
         assert resolved["a"] == 42
         assert resolved["b"] == 42
 
+    def test_whole_dict_node_reference(self) -> None:
+        """A reference may denote a whole subtree, not just a leaf."""
+        data = {
+            "db": {"host": "localhost", "port": 5432},
+            "replica": "${db}",
+        }
+        resolved = resolve_expressions(data)
+        assert resolved["replica"] == {"host": "localhost", "port": 5432}
+
+    def test_whole_list_node_reference(self) -> None:
+        """A reference to a list node substitutes the whole list."""
+        data = {"primary": ["a", "b"], "backup": "${primary}"}
+        resolved = resolve_expressions(data)
+        assert resolved["backup"] == ["a", "b"]
+
+    def test_node_reference_aliases_the_source_node(self) -> None:
+        """The substituted node is the live sub-dict, not a copy.
+
+        Documented as a limitation: a caller that mutates a resolved dict in
+        place reaches every path that referenced the mutated node.  Pinned so
+        the aliasing cannot change silently.
+        """
+        data = {
+            "db": {"host": "localhost", "port": 5432},
+            "replica": "${db}",
+        }
+        resolved = resolve_expressions(data)
+        assert resolved["replica"] is resolved["db"]
+
     def test_escape(self) -> None:
         """$${...} produces literal ${...}."""
         data = {"a": "$${not_a_ref}"}

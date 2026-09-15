@@ -12,6 +12,7 @@ import pytest
 
 import confarg
 from confarg._types import _StrToken
+from confarg.exceptions import TypeCoercionError
 from tests.conftest import AppConfig, DbConfig, WithDefaults
 
 try:
@@ -113,6 +114,84 @@ class TestBuild:
         result = confarg.build(AppConfig, data)
         assert isinstance(result.db, DbConfig)
         assert result.db.host == "localhost"
+
+
+# ---------------------------------------------------------------------------
+# Whole-node references: value semantics, not identity
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Database:
+    host: str
+    port: int
+
+
+@dataclass
+class _Service:
+    database: _Database
+
+
+@dataclass
+class _NodeRefConfig:
+    database: _Database
+    service: _Service
+
+
+class TestStructNodeReference:
+    """A ${...} reference to a whole struct node copies its value, never its identity."""
+
+    def test_builds_an_equal_but_separate_object(self) -> None:
+        """Test that two fields referencing one node get two distinct instances."""
+        data = {
+            "database": {"host": "localhost", "port": 5432},
+            "service": {"database": "${database}"},
+        }
+        config = confarg.build(_NodeRefConfig, data)
+
+        assert config.service.database == config.database
+        # The point of this test: expressions are resolved over the dict, before
+        # anything is constructed, so each referencing site gets its own object.
+        # confarg offers no way to share one instance between two fields.
+        assert config.service.database is not config.database
+
+    def test_overriding_part_of_a_referenced_node(self) -> None:
+        """Test that a referenced node is a starting point, not a verbatim copy."""
+        data = {
+            "database": {"host": "localhost", "port": 5432},
+            "service": {"database": {"host": "${database.host}", "port": 5433}},
+        }
+        config = confarg.build(_NodeRefConfig, data)
+
+        assert config.service.database.host == "localhost"
+        assert config.service.database.port == 5433
+        assert config.database.port == 5432
+
+    def test_union_tag_travels_with_the_referenced_node(self) -> None:
+        """Test that a referenced struct carries its class tag to the referencing site."""
+        data = {
+            "database": {"class": f"{__name__}._Database", "host": "localhost", "port": 5432},
+            "service": {"database": "${database}"},
+        }
+        config = confarg.build(_NodeRefConfig, data)
+
+        assert isinstance(config.service.database, _Database)
+        assert config.service.database is not config.database
+
+    def test_referencing_a_struct_into_a_leaf_field_is_an_error(self) -> None:
+        """Test that the referencing field's declared type governs what is built."""
+
+        @dataclass
+        class WantsAnInt:
+            database: _Database
+            port: int
+
+        data = {
+            "database": {"host": "localhost", "port": 5432},
+            "port": "${database}",
+        }
+        with pytest.raises(TypeCoercionError):
+            confarg.build(WantsAnInt, data)
 
 
 # ---------------------------------------------------------------------------
