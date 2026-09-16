@@ -71,7 +71,7 @@ collection logic goes into `cli/_collect.py` mirroring the vanilla decision
 - Anchor-marker handling stays lexical ([07](07-expressions.md#reference-anchoring)).
 - Only graft the names `_locals_keys` returns ([08](08-locals.md#walk-target-graft)).
 - `_strip_locals` must not mutate its input ([08](08-locals.md#stripping)).
-- `_build.py` imports `_parse_cli` lazily (import cycle) and never imports argparse
+- `cli/_build.py` imports `_parse_cli` lazily (import cycle) and never imports argparse
   ([04](04-cli-adapters.md#framework-neutral-flag-model)).
 - Completion and dynamic flag registration never raise
   ([04](04-cli-adapters.md#completion)).
