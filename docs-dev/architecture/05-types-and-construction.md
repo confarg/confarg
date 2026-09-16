@@ -73,7 +73,7 @@ fixed ones); and the **scalar leaves**, whatever is left. Asking `_is_tuple` for
 bucket is the mistake it used to make: a namedtuple is a tuple subclass, not a `tuple[...]`
 generic alias, so `str | Point` landed among the scalars and refused the list
 `str | tuple[int, int]` accepts — in every channel, since this is below the parsers
-([BUG-21](../todo/bugs.md), closed;
+([BUG-21](../todo/bugs/README.md), closed;
 [10](10-design-decisions.md#a-namedtuple-is-a-fixed-length-sequence)).
 
 Coerce functions may raise `ValueError`, `TypeError` or `OSError`;
@@ -101,7 +101,7 @@ custom (registered) leaf type > Enum > [float, int, bool, None] > str
 declaration order > str`, with `None` words and the bool-vs-int case handled first in
 `_construct._coerce_scalar_variants`. Registered leaf types are not ahead of `Enum`, and the
 middle bucket has no fixed order. This deviation is recorded in
-[BUG-4](../todo/bugs.md); do not "fix" the
+[BUG-4](../todo/bugs/BUG-4-stealing-order-mismatch.md); do not "fix" the
 documentation to match the code.
 
 Details that are intended:

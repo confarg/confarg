@@ -26,7 +26,7 @@ lets the contract tests assert byte-equality across front-ends.
 
 Cost: the dict is untyped and stringly keyed, so structural mistakes surface late (in
 `build()`), and sentinel keys (`__root__`, `__cast__`, `+`, `-`, `*`, `~`, …) live in the same
-key space as user data. See [FEAT-3](../todo/features.md).
+key space as user data. See [FEAT-3](../todo/features/FEAT-3-reserved-sentinel-key-registry.md).
 
 ## Public API seams
 

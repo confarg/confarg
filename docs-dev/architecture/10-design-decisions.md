@@ -65,7 +65,7 @@ Worked example: [04](04-cli-adapters.md#whole-value-flags) -- a fixed-arity flag
 namedtuple) registers `nargs="*"` for argparse and cyclopts, which can take both the positional
 form and a single whole-value token, while click keeps its exact token count and declines the
 whole-value token, because click's only alternative (`multiple=True`) would have cost click
-users `--pair 13 42` ([BUG-20](../todo/bugs.md), closed).
+users `--pair 13 42` ([BUG-20](../todo/bugs/README.md), closed).
 
 ## union_tag defaults to "class"
 
@@ -197,7 +197,7 @@ unstructured forms compare equal to the originals.
 `_serialize_leaf` looks an instance up in `_LEAF_SERIALIZERS`. Before that, registration made
 a type a leaf only on the way in: `dump_file` handed the writers an object they could not
 represent, and `dump()` took the value for a struct and emitted its attributes — silent
-garbage no loader reads back ([BUG-11](../todo/bugs.md), closed).
+garbage no loader reads back ([BUG-11](../todo/bugs/README.md), closed).
 
 The alternative was to infer the outbound spelling as `str(value)` with no new keyword. It is
 right for types whose `str()` is their wire form — `UUID`, `Decimal`, `Path` — which is why it
@@ -217,7 +217,7 @@ confarg's concession to the common case.
 `--env '{"a": "b"}'` and `MYAPP_ENV='{"a": "b"}'` decode the same for `dict[str, str]` and for
 `dict[str, str] | None`. Optionality says what a field may be *unset* to; it is not a statement
 about its syntax, so making `| None` the difference between a decoded mapping and a raw string
-would be a spelling trap ([BUG-9](../todo/bugs.md), closed). Both predicates —
+would be a spelling trap ([BUG-9](../todo/bugs/README.md), closed). Both predicates —
 `_parse_cli._accepts_object_value` and the `accepts_obj` test in `_parse_env._store_env_value` —
 therefore ask their union arm about every type the bare arm accepts: structs, namedtuples,
 dicts and callables. In `_accepts_object_value` that is literally one test, the inner
@@ -233,7 +233,7 @@ this rule (`list[str] | None` takes a JSON array in the environment, and the CLI
 - Cost: a token that used to survive as a string now decodes, so a target with an
   `Any`-tolerant `| None` arm that was relying on the raw text sees a mapping instead. Nothing
   in the channel model ever promised that text; the raw value could not be built.
-- Callables came second, the same way ([BUG-17](../todo/bugs.md), closed). `Callable[…]`
+- Callables came second, the same way ([BUG-17](../todo/bugs/README.md), closed). `Callable[…]`
   had its own bare-arm-only test — `_is_callable` sat *beside* the union walk in
   `_accepts_object_value`, not inside it — so `Callable[…] | None` kept the spec token raw and
   handed the whole JSON blob to the importer, in both channels. Folding `_is_callable` into
@@ -243,7 +243,7 @@ this rule (`list[str] | None` takes a JSON array in the environment, and the CLI
   ([#a-namedtuple-is-a-fixed-length-sequence](#a-namedtuple-is-a-fixed-length-sequence)).
 - Decoding the blob was not yet registering the flags it implies: the adapters learned a
   callable's factory and `bind` flags from a `--<field>.class` opener on argv only, so a class
-  named inside the blob left them unregistered ([BUG-22](../todo/bugs.md), closed the same way
+  named inside the blob left them unregistered ([BUG-22](../todo/bugs/README.md), closed the same way
   — by widening an existing walk, not by adding a scan). Vanilla, which re-reads argv, was
   never affected; the divergence was in the scan, not in this predicate, which is why it
   survived the fix above and needed its own.
@@ -255,7 +255,7 @@ object its field names additionally make meaningful. Vanilla used to treat it as
 consumed one token, so `--pair 13 42` was `Unexpected positional argument: '42'`, `--pair
 '[13, 42]'` and `--pair '{"x": 13}'` were stored as raw text and died in `build()`, and the
 three adapters — which have registered the arity flag and the per-field flags all along —
-disagreed with vanilla on a field shape they all support ([BUG-16](../todo/bugs.md), closed;
+disagreed with vanilla on a field shape they all support ([BUG-16](../todo/bugs/README.md), closed;
 the ID is a duplicate, see the note below).
 
 The fix is one classification, not three special cases. A namedtuple *is* a tuple subclass of
@@ -289,7 +289,7 @@ only holdout.
   a stray positional on `str | Point`); it parses greedily like `str | tuple[int, int]` now, so
   the failure moved down to `_construct_union_leaf`, which still partitioned variants with
   `_is_tuple` and left the namedtuple among the *scalar* leaves
-  ([BUG-21](../todo/bugs.md), closed). The split asks `_fixed_seq_types` instead, and so does
+  ([BUG-21](../todo/bugs/README.md), closed). The split asks `_fixed_seq_types` instead, and so does
   the arity filter it feeds, so the one function that answers "fixed arity, of which types?"
   answers on the way in as well
   ([05](05-types-and-construction.md#leaf-coercion)).
@@ -310,7 +310,7 @@ intends.
 
 `--db` with nothing after it is an error in every front-end, exactly like `--port` with
 nothing after it. Vanilla used to make one exception: a **non-optional dataclass** field
-consumed no token and merged nothing ([BUG-8](../todo/bugs.md), closed). The exception was
+consumed no token and merged nothing ([BUG-8](../todo/bugs/README.md), closed). The exception was
 indefensible on three counts.
 
 - It bought nothing. The branch returned without calling `_set_nested`, so the flag was a
@@ -338,7 +338,7 @@ be: not by the construction and serialization dispatchers, and not by the union-
 on either side. Only an explicit tag still opens it, and that is the next section. The one
 predicate is `_is_struct_variant`
 ([05](05-types-and-construction.md#leaf-coercion)); asking `_is_struct` was the bug
-([BUG-14](../todo/bugs.md), closed).
+([BUG-14](../todo/bugs/README.md), closed).
 
 The distinction has teeth because `_is_struct` is structural: a class with any `__init__`
 parameter is a struct, and `UUID.__init__` takes seven, all with defaults. So a field typed
@@ -378,7 +378,7 @@ for a missing field, structural union disambiguation, tag emission on the way ou
 tag naming its class asks for field construction in so many words and gets it
 (`_is_taggable_leaf`). Both halves meet in `_construct_scalar`, the canonical single-value
 constructor, so the tag works wherever a leaf is addressed — a plain field, a list element, a
-union variant — and not just where the bug was noticed ([BUG-16](../todo/bugs.md), closed).
+union variant — and not just where the bug was noticed ([BUG-16](../todo/bugs/README.md), closed).
 
 An untagged dict stays an error, and the message says how to ask for fields. The rejected
 alternative — let *any* dict rebuild a registered leaf from its fields, exactly as before
@@ -398,7 +398,7 @@ class like another, and refusing to import it would be the special case.
 `__root__` — the key under which a non-struct target's value sits in the merged dict — is
 written by all three channels and read by `build()`, so the four front-ends must agree on
 the spelling; every site that spelled it inline was a place they could drift apart
-([REF-25](../todo/refactors.md), closed). It is now `_defaults.ROOT_KEY`, next to
+([REF-25](../todo/refactors/README.md), closed). It is now `_defaults.ROOT_KEY`, next to
 `LOCALS_KEYS`, which is a reserved name rather than a keyword default too: `_defaults.py` is
 the home for **any** literal the front-ends have to agree on, not only the public keyword
 defaults, and its "never repeat the literals" invariant
@@ -425,7 +425,7 @@ called from `_parse_cli` and `build_static_flags`). A subclass exists, as far as
 depend on that answer: the CLI selector spec, the subclass field specs, the completer paths,
 vanilla's `_subclass_field_type` path resolution, and completion's parser pre-extension. Each
 of them was import-order-dependent; making the import happen first fixes all five at once
-([BUG-6](../todo/bugs.md), closed).
+([BUG-6](../todo/bugs/README.md), closed).
 
 The rejected alternative was to make registration independent of `__subclasses__()` — register
 `--<field>.<union_tag>` on every struct field, since `build()` accepts the tag on any struct.
@@ -452,7 +452,7 @@ help reports `known subclasses:` from whatever is loaded — naming a class earl
 command line grows the list (verified, jsonargparse 4.52.0). It accepts the same
 import-dependent help this decision accepts, and answers discovery with a separate on-demand
 `--<field>.help CLASS_PATH` action instead of pre-registering anything
-([FEAT-15](../todo/features.md)).
+([FEAT-15](../todo/features/FEAT-15-inspect-flags-of-unnamed-class.md)).
 
 ## A whole value followed by a subkey opens rather than collides
 
