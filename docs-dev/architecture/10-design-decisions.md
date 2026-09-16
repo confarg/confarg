@@ -250,11 +250,15 @@ already treated it as one *somewhere* — the env channel accepts both JSON shap
 adapters register its arity, `construct` builds it from a list. Vanilla's argv parser was the
 only holdout.
 
-- Cost: a lone token now behaves differently on a multi-variant union with a namedtuple
-  variant. `str | Point` used to fail in the parser (`--v 3 4` was a stray positional); it now
-  parses greedily like `str | tuple[int, int]` and fails in `construct`, which does not
-  consider a namedtuple among its tuple variants ([BUG-21](../todo/bugs.md)). The shape was
-  broken before and after; it is now broken in one layer, identically in all four front-ends.
+- Follow-through: the classification had to reach `construct`'s union split too. A lone token
+  on a multi-variant union with a namedtuple variant used to fail in the parser (`--v 3 4` was
+  a stray positional on `str | Point`); it parses greedily like `str | tuple[int, int]` now, so
+  the failure moved down to `_construct_union_leaf`, which still partitioned variants with
+  `_is_tuple` and left the namedtuple among the *scalar* leaves
+  ([BUG-21](../todo/bugs.md), closed). The split asks `_fixed_seq_types` instead, and so does
+  the arity filter it feeds, so the one function that answers "fixed arity, of which types?"
+  answers on the way in as well
+  ([05](05-types-and-construction.md#leaf-coercion)).
 - Boundary: the three adapters still cannot take a whole `{...}` or `[...]` token on a
   fixed-arity flag, because the framework fixes its token count at registration. That is not a
   namedtuple property — `tuple[int, int]` refuses `--pair '[13, 42]'` in exactly the same
