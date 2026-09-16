@@ -193,6 +193,13 @@ class _ServerDB(_BaseDB):
 
 
 @dataclass
+class _NestedDB:
+    """Struct whose field is a base class with subclasses (nested inheritance dispatch)."""
+
+    db: _BaseDB = dataclasses.field(default_factory=_BaseDB)
+
+
+@dataclass
 class _RootSQLite:
     """SQLite config for union-root tests."""
 
@@ -975,6 +982,22 @@ class TestInheritanceDispatchContract:
         """A base class with subclasses but no --class raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="discriminator"):
             loader.load(_BaseDB, argv=["--dbpath", "/var/db/app.sqlite"], env={}, config_flag="")
+
+    def test_config_file_class_tag_keeps_cli_subclass_field(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A --config file's class tag still lets a subclass field typed on the CLI through."""
+        cfg = tmp_yaml(f"class: {__name__}._SQLiteDB\n")
+        result = loader.load(_BaseDB, argv=["--config", str(cfg), "--dbpath", "/var/db/app.sqlite"], env={})
+        assert result == _SQLiteDB(dbpath="/var/db/app.sqlite")
+
+    def test_nested_config_file_class_tag_keeps_cli_subclass_field(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+    ) -> None:
+        """The same holds for a tag a --config file sets on a nested field."""
+        cfg = tmp_yaml(f"db:\n  class: {__name__}._SQLiteDB\n")
+        result = loader.load(_NestedDB, argv=["--config", str(cfg), "--db.dbpath", "/var/db/app.sqlite"], env={})
+        assert result == _NestedDB(db=_SQLiteDB(dbpath="/var/db/app.sqlite"))
 
 
 # ---------------------------------------------------------------------------
@@ -2347,8 +2370,8 @@ class TestUnimportedSubclassContract:
     ) -> None:
         """A tag read from a --config file makes the subclass's flags registrable too.
 
-        Whether the adapters then *collect* a subclass field whose tag came from a file is a
-        separate gap (BUG-19); this pins the registration half, which is the one BUG-6 names.
+        The registration half, which is the one BUG-6 names; the collection half is pinned by
+        :meth:`test_tag_in_config_file_collects_subclass_field` below.
         """
         base, plug = plugin_pair(5)
         cfg = tmp_path / "app.toml"
@@ -2356,6 +2379,20 @@ class TestUnimportedSubclassContract:
         flags = populating_loader.registered_flags(base.Config, argv=["--config", str(cfg)])
         assert flags is not None
         assert {"handler.class", "handler.path"} <= flags
+
+    def test_tag_in_config_file_collects_subclass_field(
+        self,
+        loader: ConfargLoader,
+        plugin_pair: Any,
+        tmp_path: Path,
+    ) -> None:
+        """A subclass field typed on the CLI survives a tag that came from a --config file."""
+        base, plug = plugin_pair(6)
+        cfg = tmp_path / "app.toml"
+        cfg.write_text(f'[handler]\nclass = "{plug}.FileHandler"\n', newline="\n")
+        result = loader.load(base.Config, argv=["--config", str(cfg), "--handler.path", "/x"], env={})
+        assert type(result.handler).__name__ == "FileHandler"
+        assert result.handler.path == "/x"
 
     def test_custom_union_tag(self, loader: ConfargLoader, plugin_pair: Any) -> None:
         """The scan follows *union_tag*, not the literal 'class'."""

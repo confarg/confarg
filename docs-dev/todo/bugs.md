@@ -40,58 +40,6 @@ print("env:", confarg.load(Config, argv=[], env={"MYAPP_JSON": blob}, env_prefix
 #           env: Config(host='localhost', port=8080)
 ```
 
-### BUG-19 — A subclass field is dropped when its class tag came from a config file
-
-**Where:** `src/confarg/cli/_collect.py` (`_collect_ns_inheritance`) · **Filed:** 2026-09-15
-**Effort:** M · **Risk:** medium
-
-`_collect_ns_inheritance` descends into the tagged subclass only when the tag is in the *flat
-CLI result*; a tag read from a `--config` file leaves the collector walking the base class, so
-a subclass field typed on the CLI has nowhere to go and is silently dropped. Vanilla resolves
-the same path through the type tree and keeps it. Found while fixing BUG-6, and independent of
-it — it reproduces with a subclass that was imported all along. The tag is already collected
-for registration by `_tags.collect_tags`, which is where the flat collector should read it
-from too, rather than from `flat` alone.
-See [04-cli-adapters.md#the-triad](../architecture/04-cli-adapters.md#the-triad).
-
-```python
-import argparse
-from dataclasses import dataclass, field
-from pathlib import Path
-
-import confarg
-from confarg.cli.argparse import from_namespace, populate_parser
-
-
-@dataclass
-class Handler:
-    name: str = "base"
-
-
-@dataclass
-class FileHandler(Handler):
-    path: str = "/var/log/a"
-
-
-@dataclass
-class Config:
-    handler: Handler = field(default_factory=Handler)
-
-
-Path("app.toml").write_text('[handler]\nclass = "__main__.FileHandler"\n')
-argv = ["--config", "app.toml", "--handler.path", "/x"]
-
-print("vanilla :", confarg.load(Config, argv=argv, env={}))
-parser = argparse.ArgumentParser()
-populate_parser(Config, parser, argv=argv)
-print("argparse:", from_namespace(Config, parser.parse_args(argv), argv=argv, env={}))
-# expected: vanilla : Config(handler=FileHandler(name='base', path='/x'))
-#           argparse: Config(handler=FileHandler(name='base', path='/x'))
-# actual:   vanilla : Config(handler=FileHandler(name='base', path='/x'))
-#           argparse: Config(handler=FileHandler(name='base', path='/var/log/a'))
-# click and cyclopts drop it identically.
-```
-
 ### BUG-20 — A fixed-arity flag refuses in the adapters the whole-value token vanilla takes
 
 **Where:** `src/confarg/cli/_build.py` (`_build_leaf_spec`, `_collect_namedtuple_specs`)
