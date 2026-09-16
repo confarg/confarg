@@ -120,7 +120,7 @@ class TestTypeCoercionErrors:
     def test_bool_coercion_failure_from_env(self, loader: ConfargLoader) -> None:
         """Unrecognized string for bool from env raises TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            loader.load(WithDefaults, argv=[], env={"VERBOSE": "maybe"}, env_prefix="")
+            loader.load(WithDefaults, argv=[], env={"MYAPP_VERBOSE": "maybe"}, env_prefix="MYAPP_")
 
     def test_literal_invalid_value(self) -> None:
         """Invalid Literal value raises an error — vanilla only.
@@ -152,7 +152,7 @@ class TestTypeCoercionErrors:
         """TypeCoercionError for Optional[int] from env hints to use 'none' or 'null'."""
         WithOpt = make_target("value", int | None, default=None)
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"'none' or 'null'"):
-            loader.load(WithOpt, argv=[], env={"VALUE": "blah"}, env_prefix="")
+            loader.load(WithOpt, argv=[], env={"MYAPP_VALUE": "blah"}, env_prefix="MYAPP_")
 
 
 # ---------------------------------------------------------------------------

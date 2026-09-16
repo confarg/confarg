@@ -224,23 +224,33 @@ class TestCaseInsensitiveEnvMatching:
 
     def test_camel_case_field(self) -> None:
         """CamelCase field matched by uppercase env var."""
-        result = confarg.load(CamelCaseConfig, argv=[], env={"DBHOST": "prod", "DBPORT": "3306"}, env_prefix="")
+        result = confarg.load(
+            CamelCaseConfig,
+            argv=[],
+            env={"MYAPP_DBHOST": "prod", "MYAPP_DBPORT": "3306"},
+            env_prefix="MYAPP_",
+        )
         assert result.dbHost == "prod"
         assert result.dbPort == 3306
 
     def test_mixed_case_field(self) -> None:
         """MixedCase field matched by lowercase env var parts."""
-        result = confarg.load(MixedCaseConfig, argv=[], env={"MYFIELD": "overridden"}, env_prefix="")
+        result = confarg.load(MixedCaseConfig, argv=[], env={"MYAPP_MYFIELD": "overridden"}, env_prefix="MYAPP_")
         assert result.MyField == "overridden"
 
     def test_nested_camel_case_field(self) -> None:
         """Nested camelCase field matched from env."""
-        result = confarg.load(OuterCamel, argv=[], env={"INNER__SERVERNAME": "prod-server"}, env_prefix="")
+        result = confarg.load(OuterCamel, argv=[], env={"MYAPP_INNER__SERVERNAME": "prod-server"}, env_prefix="MYAPP_")
         assert result.inner.serverName == "prod-server"
 
     def test_snake_case_still_works(self) -> None:
         """Regular snake_case fields still work as before."""
-        result = confarg.load(WithDefaults, argv=[], env={"NAME": "test", "COUNT": "42"}, env_prefix="")
+        result = confarg.load(
+            WithDefaults,
+            argv=[],
+            env={"MYAPP_NAME": "test", "MYAPP_COUNT": "42"},
+            env_prefix="MYAPP_",
+        )
         assert result.name == "test"
         assert result.count == 42
 
@@ -252,7 +262,7 @@ class TestCaseInsensitiveEnvMatching:
     def test_ambiguous_fields_raises(self) -> None:
         """Fields that differ only in case raise ConfargError."""
         with pytest.raises(ConfargError, match=r"[Aa]mbiguous"):
-            confarg.load(AmbiguousFields, argv=[], env={"NAME": "val"}, env_prefix="")
+            confarg.load(AmbiguousFields, argv=[], env={"MYAPP_NAME": "val"}, env_prefix="MYAPP_")
 
 
 # ===========================================================================
@@ -357,27 +367,27 @@ class TestBoolEdgeCases:
     def test_int_2_for_bool_raises(self) -> None:
         """Integer 2 for a bool field raises TypeCoercionError (not in truthy/falsy)."""
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithDefaults, argv=[], env={"VERBOSE": "2"}, env_prefix="")
+            confarg.load(WithDefaults, argv=[], env={"MYAPP_VERBOSE": "2"}, env_prefix="MYAPP_")
 
     def test_int_0_for_bool_false(self) -> None:
         """Integer 0 for a bool field gives False."""
-        result = confarg.load(WithDefaults, argv=[], env={"VERBOSE": "0"}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"MYAPP_VERBOSE": "0"}, env_prefix="MYAPP_")
         assert result.verbose is False
 
     def test_int_1_for_bool_true(self) -> None:
         """Integer 1 for a bool field gives True."""
-        result = confarg.load(WithDefaults, argv=[], env={"VERBOSE": "1"}, env_prefix="")
+        result = confarg.load(WithDefaults, argv=[], env={"MYAPP_VERBOSE": "1"}, env_prefix="MYAPP_")
         assert result.verbose is True
 
     def test_random_string_for_bool_raises(self) -> None:
         """Random string for bool field raises TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            confarg.load(WithDefaults, argv=[], env={"VERBOSE": "yesno"}, env_prefix="")
+            confarg.load(WithDefaults, argv=[], env={"MYAPP_VERBOSE": "yesno"}, env_prefix="MYAPP_")
 
     def test_invalid_bool_error_lists_valid_values(self) -> None:
         """TypeCoercionError for an invalid bool string lists the accepted tokens."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"Valid values:.*false.*true"):
-            confarg.load(WithDefaults, argv=[], env={"VERBOSE": "enabled"}, env_prefix="")
+            confarg.load(WithDefaults, argv=[], env={"MYAPP_VERBOSE": "enabled"}, env_prefix="MYAPP_")
 
     def test_native_bool_from_toml(self, tmp_toml) -> None:
         """Native TOML boolean is passed through directly."""
@@ -419,7 +429,7 @@ class TestSparseLists:
     def test_sparse_list_from_env_optional_elem(self) -> None:
         """Sparse indices via env vars fill gaps with None for Optional element types."""
         WithList = make_target("items", list[int | None], default_factory=list)
-        result = confarg.load(WithList, argv=[], env={"ITEMS__2": "42"}, env_prefix="")
+        result = confarg.load(WithList, argv=[], env={"MYAPP_ITEMS__2": "42"}, env_prefix="MYAPP_")
         assert len(result.items) == 3
         assert result.items[2] == 42
         assert result.items[0] is None
@@ -429,21 +439,21 @@ class TestSparseLists:
         """Gaps in list[int] from env var raise TypeCoercionError naming the gap indices."""
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"gap.*\[0, 1\]"):
-            confarg.load(WithList, argv=[], env={"ITEMS__2": "42"}, env_prefix="")
+            confarg.load(WithList, argv=[], env={"MYAPP_ITEMS__2": "42"}, env_prefix="MYAPP_")
 
     def test_index_beyond_config_list_raises(self, tmp_toml) -> None:
         """Env index beyond the config list length raises ConfargError (replacement-only policy)."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
         with pytest.raises(ConfargError, match="append syntax"):
-            confarg.load(WithList, argv=[], env={"ITEMS__4": "99"}, env_prefix="", files=[path])
+            confarg.load(WithList, argv=[], env={"MYAPP_ITEMS__4": "99"}, env_prefix="MYAPP_", files=[path])
 
     def test_index_beyond_optional_list_also_raises(self, tmp_toml) -> None:
         """Index beyond list length raises even for list[int | None] — use + syntax instead."""
         WithList = make_target("items", list[int | None], default_factory=list)
         path = tmp_toml("items = [1, 2]\n")
         with pytest.raises(ConfargError, match="append syntax"):
-            confarg.load(WithList, argv=[], env={"ITEMS__4": "99"}, env_prefix="", files=[path])
+            confarg.load(WithList, argv=[], env={"MYAPP_ITEMS__4": "99"}, env_prefix="MYAPP_", files=[path])
 
 
 # ===========================================================================
@@ -582,28 +592,28 @@ class TestUnionCornerCases:
     def test_union_bool_str_with_truthy_value(self) -> None:
         """Union[bool, str]: 'true' should be coerced to bool (tried first)."""
         WithUnion = make_target("value", Union[bool, str], default=False)
-        result = confarg.load(WithUnion, argv=[], env={"VALUE": "true"}, env_prefix="")
+        result = confarg.load(WithUnion, argv=[], env={"MYAPP_VALUE": "true"}, env_prefix="MYAPP_")
         assert result.value is True
         assert isinstance(result.value, bool)
 
     def test_union_bool_str_with_non_truthy(self) -> None:
         """Union[bool, str]: 'hello' is not truthy, falls through to str."""
         WithUnion = make_target("value", Union[bool, str], default=False)
-        result = confarg.load(WithUnion, argv=[], env={"VALUE": "hello"}, env_prefix="")
+        result = confarg.load(WithUnion, argv=[], env={"MYAPP_VALUE": "hello"}, env_prefix="MYAPP_")
         assert result.value == "hello"
         assert isinstance(result.value, str)
 
     def test_union_int_str_none_empty_string(self) -> None:
         """Union[int, str, None]: empty string stays as empty string (str is in union)."""
         WithUnion = make_target("value", Union[int, str, None], default=None)
-        result = confarg.load(WithUnion, argv=[], env={"VALUE": ""}, env_prefix="")
+        result = confarg.load(WithUnion, argv=[], env={"MYAPP_VALUE": ""}, env_prefix="MYAPP_")
         assert result.value == ""
 
     def test_union_int_none_empty_string(self) -> None:
         """Union[int, None]: empty string raises TypeCoercionError (use --value.None instead)."""
         WithUnion = make_target("value", Union[int, None], default=None)
         with pytest.raises(TypeCoercionError, match="To set this field to None"):
-            confarg.load(WithUnion, argv=[], env={"VALUE": ""}, env_prefix="")
+            confarg.load(WithUnion, argv=[], env={"MYAPP_VALUE": ""}, env_prefix="MYAPP_")
 
     def test_union_none_only_variant(self) -> None:
         """Optional[int] with --value none: sets to None."""
@@ -627,7 +637,7 @@ class TestUnionCornerCases:
         """Union[int, None] with non-numeric string raises (no silent fallback to None)."""
         WithUnion = make_target("value", Union[int, None], default=None)
         with pytest.raises(TypeCoercionError):
-            confarg.load(WithUnion, argv=[], env={"VALUE": "not_a_number"}, env_prefix="")
+            confarg.load(WithUnion, argv=[], env={"MYAPP_VALUE": "not_a_number"}, env_prefix="MYAPP_")
 
     def test_union_class_tag_invalid_name(self) -> None:
         """Non-importable class tag raises TypeCoercionError."""
@@ -926,8 +936,8 @@ class TestMergePriorityEdgeCases:
         result = confarg.load(
             AppConfig,
             argv=[],
-            env={"DB__PORT": "3306"},
-            env_prefix="",
+            env={"MYAPP_DB__PORT": "3306"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.db.host == "config_host"  # from config
@@ -945,8 +955,8 @@ class TestMergePriorityEdgeCases:
         result = confarg.load(
             AppConfig,
             argv=["--db.host", "cli_host", "--debug", "true"],
-            env={"DB__PORT": "3306"},
-            env_prefix="",
+            env={"MYAPP_DB__PORT": "3306"},
+            env_prefix="MYAPP_",
             files=[path],
         )
         assert result.db.host == "cli_host"  # CLI wins
@@ -966,14 +976,14 @@ class TestEnvVarCornerCases:
     def test_env_empty_string_for_optional_str(self) -> None:
         """Empty env VALUE= for str|None gives empty string, not None."""
         WithOptionalStr = make_target("value", str | None, default=None)
-        result = confarg.load(WithOptionalStr, argv=[], env={"VALUE": ""}, env_prefix="")
+        result = confarg.load(WithOptionalStr, argv=[], env={"MYAPP_VALUE": ""}, env_prefix="MYAPP_")
         assert result.value == ""
 
     def test_env_empty_string_for_optional_int(self) -> None:
         """Empty env VALUE= for int|None raises (use VALUE__NONE= instead)."""
         WithOptionalInt = make_target("value", int | None, default=None)
         with pytest.raises(TypeCoercionError, match="To set this field to None"):
-            confarg.load(WithOptionalInt, argv=[], env={"VALUE": ""}, env_prefix="")
+            confarg.load(WithOptionalInt, argv=[], env={"MYAPP_VALUE": ""}, env_prefix="MYAPP_")
 
     def test_env_extra_vars_warn(self) -> None:
         """Extra env vars not matching fields emit ConfargWarning and are ignored."""
@@ -982,8 +992,8 @@ class TestEnvVarCornerCases:
             result = confarg.load(
                 WithDefaults,
                 argv=[],
-                env={"NAME": "ok", "NONEXISTENT_FIELD": "ignored"},
-                env_prefix="",
+                env={"MYAPP_NAME": "ok", "MYAPP_NONEXISTENT_FIELD": "ignored"},
+                env_prefix="MYAPP_",
             )
         assert result.name == "ok"
         assert any(
@@ -1008,11 +1018,11 @@ class TestEnvVarCornerCases:
             WithNestedList,
             argv=[],
             env={
-                "SERVERS__0__HOST": "a",
-                "SERVERS__0__PORT": "1",
-                "SERVERS__0__NAME": "db1",
+                "MYAPP_SERVERS__0__HOST": "a",
+                "MYAPP_SERVERS__0__PORT": "1",
+                "MYAPP_SERVERS__0__NAME": "db1",
             },
-            env_prefix="",
+            env_prefix="MYAPP_",
         )
         assert len(result.servers) == 1
         assert result.servers[0].host == "a"
@@ -1052,7 +1062,7 @@ class TestNonDataclassTargetCornerCases:
 
     def test_int_from_env(self) -> None:
         """Plain int target from env var."""
-        result = confarg.load(int, argv=[], env={"VALUE": "42"}, env_prefix="", cli_prefix="confarg")
+        result = confarg.load(int, argv=[], env={"MYAPP_VALUE": "42"}, env_prefix="MYAPP_", cli_prefix="confarg")
         assert result == 42
 
     def test_bool_from_cli_bare_flag(self) -> None:
@@ -1399,18 +1409,18 @@ class TestSilentFailureFixes:
         """Test that an uncoercible union value raises TypeCoercionError."""
         WithUnion = make_target("value", type_ann, default=None)
         with pytest.raises(TypeCoercionError, match=match):
-            confarg.load(WithUnion, argv=[], env={"VALUE": env_val}, env_prefix="")
+            confarg.load(WithUnion, argv=[], env={"MYAPP_VALUE": env_val}, env_prefix="MYAPP_")
 
     def test_union_int_float_none_empty_string_raises(self) -> None:
         """Union[int, float, None]: empty string raises (use VALUE__NONE= instead)."""
         WithUnion = make_target("value", int | float | None, default=None)
         with pytest.raises(TypeCoercionError):
-            confarg.load(WithUnion, argv=[], env={"VALUE": ""}, env_prefix="")
+            confarg.load(WithUnion, argv=[], env={"MYAPP_VALUE": ""}, env_prefix="MYAPP_")
 
     def test_union_int_float_none_valid_int_still_works(self) -> None:
         """Test that a valid int still works in a Union[int, float, None]."""
         WithUnion = make_target("value", int | float | None, default=None)
-        result = confarg.load(WithUnion, argv=[], env={"VALUE": "42"}, env_prefix="")
+        result = confarg.load(WithUnion, argv=[], env={"MYAPP_VALUE": "42"}, env_prefix="MYAPP_")
         assert result.value == 42
         assert isinstance(result.value, int)
 

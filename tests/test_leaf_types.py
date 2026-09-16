@@ -85,8 +85,8 @@ class TestInt:
         result = loader.load(
             Flat,
             argv=["--name", "x", "--rate", "1.0", "--verbose", "true"],
-            env={"COUNT": env_val},
-            env_prefix="",
+            env={"MYAPP_COUNT": env_val},
+            env_prefix="MYAPP_",
         )
         assert result.count == expected
 
@@ -122,8 +122,8 @@ class TestFloat:
         result = loader.load(
             Flat,
             argv=["--name", "x", "--count", "1", "--verbose", "true"],
-            env={"RATE": "2.718"},
-            env_prefix="",
+            env={"MYAPP_RATE": "2.718"},
+            env_prefix="MYAPP_",
         )
         assert result.rate == pytest.approx(2.718)
 
@@ -174,8 +174,8 @@ class TestFloat:
         result = loader.load(
             Flat,
             argv=["--name", "x", "--count", "1", "--verbose", "true"],
-            env={"RATE": env_val},
-            env_prefix="",
+            env={"MYAPP_RATE": env_val},
+            env_prefix="MYAPP_",
         )
         assert check(result.rate)
 
@@ -237,7 +237,7 @@ class TestBool:
     )
     def test_bool_from_env(self, loader: ConfargLoader, env_val: str, expected: bool) -> None:  # noqa: FBT001
         """Truthy/falsy env var strings set bool correctly."""
-        result = loader.load(WithDefaults, argv=[], env={"VERBOSE": env_val}, env_prefix="")
+        result = loader.load(WithDefaults, argv=[], env={"MYAPP_VERBOSE": env_val}, env_prefix="MYAPP_")
         assert result.verbose is expected
 
 
@@ -265,7 +265,7 @@ class TestStr:
 
     def test_str_from_env(self, loader: ConfargLoader) -> None:
         """Parse a string from an env var."""
-        result = loader.load(WithDefaults, argv=[], env={"NAME": "world"}, env_prefix="")
+        result = loader.load(WithDefaults, argv=[], env={"MYAPP_NAME": "world"}, env_prefix="MYAPP_")
         assert result.name == "world"
 
 
@@ -292,7 +292,7 @@ class TestNoneType:
 
     def test_none_empty_env(self, loader: ConfargLoader) -> None:
         """An empty env var (NOTHING=) sets a None-typed field to None."""
-        result = loader.load(WithNone, argv=[], env={"NOTHING": ""}, env_prefix="")
+        result = loader.load(WithNone, argv=[], env={"MYAPP_NOTHING": ""}, env_prefix="MYAPP_")
         assert result.nothing is None
 
     @pytest.mark.parametrize(
@@ -321,7 +321,7 @@ class TestNoneType:
         """Empty env VALUE= raises for int|None — use VALUE__NONE= to set None."""
         path = tmp_toml("value = 42\n")
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="To set this field to None"):
-            loader.load(target_cls, argv=[], env={"VALUE": ""}, env_prefix="", files=[path])
+            loader.load(target_cls, argv=[], env={"MYAPP_VALUE": ""}, env_prefix="MYAPP_", files=[path])
 
     def test_optional_str_none_sentinel_cli(self, loader: ConfargLoader) -> None:
         """--value none sets str | None field to Python None (steal rule)."""
@@ -342,7 +342,7 @@ class TestNoneType:
     def test_optional_str_empty_env_is_empty_string(self, loader: ConfargLoader) -> None:
         """VALUE= for str | None gives empty string, not None."""
         WithOptionalStr = make_target("value", str | None, default=None)
-        result = loader.load(WithOptionalStr, argv=[], env={"VALUE": ""}, env_prefix="")
+        result = loader.load(WithOptionalStr, argv=[], env={"MYAPP_VALUE": ""}, env_prefix="MYAPP_")
         assert result.value == ""
 
     def test_none_string_is_literal_for_non_optional(self) -> None:
@@ -373,7 +373,7 @@ class TestEnum:
     def test_enum_from_env_by_value(self) -> None:
         """Parse an enum from its value via env var."""
         WithEnum = make_target("color", Color, default=Color.RED)
-        result = confarg.load(WithEnum, argv=[], env={"COLOR": "blue"}, env_prefix="")
+        result = confarg.load(WithEnum, argv=[], env={"MYAPP_COLOR": "blue"}, env_prefix="MYAPP_")
         assert result.color is Color.BLUE
 
     def test_enum_default(self) -> None:
@@ -516,7 +516,7 @@ class TestPath:
     def test_path_from_env(self, loader: ConfargLoader) -> None:
         """Parse a Path from an env var."""
         WithPath = make_target("location", Path, default=Path())
-        result = loader.load(WithPath, argv=[], env={"LOCATION": "/var/log"}, env_prefix="")
+        result = loader.load(WithPath, argv=[], env={"MYAPP_LOCATION": "/var/log"}, env_prefix="MYAPP_")
         assert result.location == Path("/var/log")
 
 
@@ -618,8 +618,8 @@ class TestTypeAlias:
         result = loader.load(
             WithHostPort,
             argv=[],
-            env={"ENDPOINT__0": "envhost", "ENDPOINT__1": "443"},
-            env_prefix="",
+            env={"MYAPP_ENDPOINT__0": "envhost", "MYAPP_ENDPOINT__1": "443"},
+            env_prefix="MYAPP_",
         )
         assert result.endpoint == ("envhost", 443)
 
@@ -640,7 +640,7 @@ class TestTypeAlias312:
     def test_scalar_alias_from_env(self, loader: ConfargLoader) -> None:
         """Type Alias = int — field parsed from env var."""
         target = make_target("value", AliasInt)
-        result = loader.load(target, argv=[], env={"VALUE": "99"}, env_prefix="")
+        result = loader.load(target, argv=[], env={"MYAPP_VALUE": "99"}, env_prefix="MYAPP_")
         assert result.value == 99
 
     def test_scalar_alias_default(self, loader: ConfargLoader) -> None:
@@ -667,8 +667,8 @@ class TestTypeAlias312:
         result = loader.load(
             WithAliasDc,
             argv=[],
-            env={"DB__HOST": "envhost", "DB__PORT": "3306", "DB__NAME": "envdb"},
-            env_prefix="",
+            env={"MYAPP_DB__HOST": "envhost", "MYAPP_DB__PORT": "3306", "MYAPP_DB__NAME": "envdb"},
+            env_prefix="MYAPP_",
         )
         assert result.db == DbConfig(host="envhost", port=3306, name="envdb")
 
@@ -703,8 +703,8 @@ class TestTypeAlias312:
         result = loader.load(
             WithAliasUnion,
             argv=[],
-            env={"SERVICE__HOST": "db.local", "SERVICE__PORT": "5432", "SERVICE__NAME": "prod"},
-            env_prefix="",
+            env={"MYAPP_SERVICE__HOST": "db.local", "MYAPP_SERVICE__PORT": "5432", "MYAPP_SERVICE__NAME": "prod"},
+            env_prefix="MYAPP_",
         )
         assert result.service == DbConfig(host="db.local", port=5432, name="prod")
 
@@ -735,13 +735,13 @@ class TestTypeAlias312:
         union_result = loader.load(
             WithAliasUnion,
             argv=[],
-            env={"SERVICE__ENABLED": "true", "SERVICE__TTL": "300"},
-            env_prefix="",
+            env={"MYAPP_SERVICE__ENABLED": "true", "MYAPP_SERVICE__TTL": "300"},
+            env_prefix="MYAPP_",
         )
         annotated_result = loader.load(
             WithAliasAnnotated,
             argv=[],
-            env={"SERVICE__ENABLED": "true", "SERVICE__TTL": "300"},
-            env_prefix="",
+            env={"MYAPP_SERVICE__ENABLED": "true", "MYAPP_SERVICE__TTL": "300"},
+            env_prefix="MYAPP_",
         )
         assert union_result.service == annotated_result.service
