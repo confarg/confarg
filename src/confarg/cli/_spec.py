@@ -33,6 +33,17 @@ class FlagSpec:
     nargs: int | str | None = None
     """Argument count: ``None`` = scalar, ``"*"`` = zero-or-more, ``int`` = exact count."""
 
+    whole_value: bool = False
+    """The flag also accepts *one* whole-value token in place of its ``nargs`` tokens.
+
+    Set on fixed-arity flags (``tuple[X, Y]``, namedtuple), which vanilla lets a single
+    ``'[13, 42]'`` or ``'{"x": 13}'`` token fill.  An adapter grants it only if its
+    framework can vary a flag's token count at parse time; click cannot, and declines.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+    """
+
     choices: list[str] | None = None
     """Allowed values (for ``Literal`` / ``Enum`` fields)."""
 

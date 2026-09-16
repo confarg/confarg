@@ -7,8 +7,12 @@ Rules that must hold after every change. Each links to the document that argues 
 Every feature behaves identically across the four front-ends (vanilla, argparse, click,
 cyclopts) and the three channels (config files in every format, environment, CLI). A
 divergence needs a concrete reason **and** the maintainer's explicit approval before it is
-implemented. Approved divergences so far: list syntax per framework
-([04](04-cli-adapters.md#list-syntax-divergence)); file-only dunder keys
+implemented, and it leans the way
+[10](10-design-decisions.md#a-divergence-leans-towards-the-affected-backends-own-idiom) settles:
+towards the affected backend's own idiom, narrowed to the backend that imposes it. Approved
+divergences so far: list syntax per framework
+([04](04-cli-adapters.md#list-syntax-divergence)); the whole-value token on a fixed-arity flag,
+which click alone declines ([04](04-cli-adapters.md#whole-value-flags)); file-only dunder keys
 ([02](02-files-and-env.md#reserved-file-only-keys)); declaring locals only in files
 ([08](08-locals.md#declare-in-files-modify-anywhere)). Known unapproved gaps are listed in
 [../todo/bugs.md](../todo/bugs.md).

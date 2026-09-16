@@ -121,7 +121,10 @@ def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901  
         help_parts.append(spec.help)
     if help_parts:
         param_kwargs["help"] = " ".join(help_parts)
-    if spec.nargs == "*":
+    if spec.nargs == "*" or spec.whole_value:
+        # `whole_value`: consume_multiple accepts both the positional form and the single
+        # whole-value token, where n_tokens would fix the count and reject the latter
+        # (docs-dev/architecture/04-cli-adapters.md#whole-value-flags).
         param_kwargs["consume_multiple"] = True
     elif isinstance(spec.nargs, int):
         param_kwargs["n_tokens"] = spec.nargs

@@ -154,6 +154,7 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
             return FlagSpec(
                 name=flag,
                 nargs=len(tt),
+                whole_value=True,
                 metavar=metavar or "VALUE",
                 help=help_text,
                 group=group,
@@ -638,6 +639,7 @@ def _collect_namedtuple_specs(
         FlagSpec(
             name=flag,
             nargs=n,
+            whole_value=True,
             metavar="VALUE",
             help=f"Set all {n} field(s) of {core.__name__} at once (positional order: {', '.join(flds)})",
             group=group,

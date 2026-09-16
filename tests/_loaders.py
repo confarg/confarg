@@ -23,6 +23,13 @@ List-field CLI syntax differs between loaders:
 
 This difference is intentional and must be visible in tests: write separate
 test functions for each convention rather than hiding the difference.
+
+A second, independent divergence has the same membership today but is not the
+same rule: a fixed-arity flag (``tuple[X, Y]``, namedtuple) also accepts one
+whole-value token (``--pair '[13, 42]'``) on every loader except
+``ClickLoader``, whose options cannot take a variable token count
+(``WHOLE_VALUE_ARITY_LOADERS``, docs-dev/architecture/04-cli-adapters.md#whole-value-flags).
+Keep the two sets apart so a later change to one does not silently move the other.
 """
 
 from __future__ import annotations
@@ -327,6 +334,15 @@ SPACE_SEP_LOADERS: list[ConfargLoader] = [
 
 REPEATED_FLAG_LOADERS: list[ConfargLoader] = [
     ClickLoader(),
+    CycloptsLoader(),
+]
+
+# Loaders whose fixed-arity flags also accept a single whole-value token: click
+# registers its exact token count and declines it
+# (docs-dev/architecture/04-cli-adapters.md#whole-value-flags).
+WHOLE_VALUE_ARITY_LOADERS: list[ConfargLoader] = [
+    VanillaLoader(),
+    ArgparseLoader(),
     CycloptsLoader(),
 ]
 

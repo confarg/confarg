@@ -21,7 +21,13 @@ import pytest
 from hypothesis import strategies as st
 
 from confarg.typedload._coerce import _LEAF_COERCIONS, _LEAF_SERIALIZERS
-from tests._loaders import ALL_LOADERS, POPULATING_LOADERS, REPEATED_FLAG_LOADERS, SPACE_SEP_LOADERS
+from tests._loaders import (
+    ALL_LOADERS,
+    POPULATING_LOADERS,
+    REPEATED_FLAG_LOADERS,
+    SPACE_SEP_LOADERS,
+    WHOLE_VALUE_ARITY_LOADERS,
+)
 
 # ---------------------------------------------------------------------------
 # Dynamic single-field dataclass factory
@@ -588,6 +594,15 @@ def space_sep_loader(request: pytest.FixtureRequest) -> ConfargLoader:
 @pytest.fixture(params=REPEATED_FLAG_LOADERS, ids=[ldr.id for ldr in REPEATED_FLAG_LOADERS])
 def repeated_loader(request: pytest.FixtureRequest) -> ConfargLoader:
     """Loaders that accept repeated flags for lists: click, cyclopts."""
+    return request.param
+
+
+@pytest.fixture(
+    params=WHOLE_VALUE_ARITY_LOADERS,
+    ids=[ldr.id for ldr in WHOLE_VALUE_ARITY_LOADERS],
+)
+def whole_value_arity_loader(request: pytest.FixtureRequest) -> ConfargLoader:
+    """Loaders whose fixed-arity flags also take a whole-value token: vanilla, argparse, cyclopts."""
     return request.param
 
 
