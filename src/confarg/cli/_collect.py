@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._api import build
-from confarg._callable import _Directives, active_directives
+from confarg._callable import _Directives, active_directives, promote_bare_spec
 from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, resolve_forced_value
 from confarg._import import _import_dotted
 from confarg._merge import _deep_merge, _set_nested
@@ -297,10 +297,18 @@ def _collect_callable_spec(
         spec.update(_collect_factory_kwargs(flat, flag_prefix, bind_prefix, reserved))
 
     if blob is not _NO_CAST:
-        if isinstance(blob, str) and not spec:
-            _set_nested(result, flag.split("."), _StrToken(blob))
-            return
-        if isinstance(blob, dict):
+        if isinstance(blob, str):
+            if not spec:
+                _set_nested(result, flag.split("."), _StrToken(blob))
+                return
+            # The bare string is the shorthand for {fn: <string>}, so the sibling flags
+            # refine the target it names instead of erasing it.  An opener flag is not a
+            # refinement but a second spelling of that target, and still wins outright.
+            if not any(_has(opener) for opener in d.openers):
+                # Opener first, as the vanilla parser writes it: the merged dicts must
+                # match key for key, not just compare equal.
+                spec = {**promote_bare_spec(_StrToken(blob)), **spec}
+        elif isinstance(blob, dict):
             spec = _merge_blob_into_spec(blob, spec, bind, d.bind)
 
     if spec:

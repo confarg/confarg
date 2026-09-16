@@ -848,3 +848,31 @@ class TestEnvUnionSequenceStrict:
         WithUnion = make_target("input", bool | list[str], default=False)
         result = loader.load(WithUnion, argv=[], env={"INPUT": "true"}, env_prefix="")
         assert result.input is True
+
+
+class TestEnvScalarThenSubkey:
+    """A scalar env var followed by a deeper one for the same field resolves, never crashes.
+
+    The two orders disagree by design — the later variable wins — but neither escapes a
+    bare ``TypeError`` out of the merge core.
+    """
+
+    def test_struct_field_scalar_then_subkey(self, loader: ConfargLoader) -> None:
+        """A dataclass field has no scalar shorthand: the subkey opens the scalar away."""
+        result = loader.merge(
+            AppConfig,
+            argv=[],
+            env={"APP_DB": "oops", "APP_DB__HOST": "db1"},
+            env_prefix="APP_",
+        )
+        assert result == {"db": {"host": "db1"}}
+
+    def test_struct_field_subkey_then_scalar(self, loader: ConfargLoader) -> None:
+        """The reverse order is unchanged: the whole value wins, as it always has."""
+        result = loader.merge(
+            AppConfig,
+            argv=[],
+            env={"APP_DB__HOST": "db1", "APP_DB": "oops"},
+            env_prefix="APP_",
+        )
+        assert result == {"db": "oops"}

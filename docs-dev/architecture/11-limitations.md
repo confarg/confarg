@@ -27,6 +27,11 @@ the boundary moves here.
 
 ## Collections
 
+- A whole value and a deeper key for the same field resolve last-write-wins, and the loser
+  goes quietly. Only a `Callable` field's bare string survives the pair, being the shorthand
+  for `{fn: …}`; at a union like `dict[str, str] | str`, where a scalar is legitimate but
+  abbreviates nothing, `--d oops --d.c x` keeps only the subkey
+  ([10](10-design-decisions.md#a-whole-value-followed-by-a-subkey-opens-rather-than-collides)).
 - List deletion and negative indices need a base list to apply to: they are patches, and a
   patch has nothing to bite on in an empty document.
 - Index-keyed lists must be gap-free, unless the element type is Optional — a gap would

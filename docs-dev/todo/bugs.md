@@ -82,39 +82,93 @@ print("argparse:", parser.parse_args(argv))
 #                     SystemExit: 2
 ```
 
-### BUG-23 — A scalar whole value followed by a subkey crashes with a bare `TypeError`
+### BUG-24 — A delete flag drops the callable shorthand it refines in the adapters
 
-**Where:** `src/confarg/_parse_cli.py` (`_consume_collection_or_scalar` → `_merge._set_nested`)
-**Filed:** 2026-09-15
-**Effort:** S · **Risk:** medium
+**Where:** `src/confarg/cli/_collect.py` (`_collect_callable_spec`) · **Filed:** 2026-09-15
+**Effort:** M · **Risk:** low
 
-`--<field> <scalar> --<field>.<sub> <v>` stores a `_StrToken` at the field path, then asks
-`_set_nested` to descend through it, which raises Python's own `TypeError` out of the merge
-core instead of a `ConfargError` naming the flag. Not type-specific: a dict field given a
-non-JSON token and a callable field given the string shorthand fail identically, and the
-adapters never reach it because their flat collector nests the paths itself. Either reject the
-pair with a real error, or let the later subkey replace the scalar the way the adapters do
-— that choice is the ticket. Found while fixing BUG-22.
-See [03-cli-parsing.md#token-consumption](../architecture/03-cli-parsing.md#token-consumption).
+A `--<field>.<sub>-` delete is a patch op, so it reaches the merged dict through
+`_collect_cli_patch_ops`, not the flat collector. The collector therefore sees no sibling
+flag beside the bare string, stores the shorthand alone, and the patch dict then deep-merges
+over it — replacing the scalar instead of opening it, the way a whole value and its
+refinement do everywhere else. Vanilla keeps both. The shorthand needs to survive the
+deep merge with the patch ops, which is where the whole-value/patch split already bites
+([04-cli-adapters.md#collection-patch-parity](../architecture/04-cli-adapters.md#collection-patch-parity)).
+Found while fixing BUG-23; the crash it grew out of is gone, this parity gap is not.
 
 ```python
+import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import confarg
+from confarg.cli.argparse import merge_namespace, populate_parser
+
+
+def shout(name: str, punct: str = ".") -> str:
+    return f"{name.upper()}{punct}"
 
 
 @dataclass
 class Config:
-    fn: Callable[[str], str] = str.upper
+    fn: Callable[..., Any] = str.upper
 
 
-print(confarg.load(Config, argv=["--fn", "string.capwords", "--fn.bind.sep", "-"], env={}))
-# expected: Config(fn=functools.partial(<function capwords ...>, sep='-'))
-#           — what --fn.fn string.capwords --fn.bind.sep - already gives
-# actual:   TypeError: '_StrToken' object does not support item assignment
-# The same line on a dict field fails the same way:
-#   confarg.merge(D, argv=["--d", "oops", "--d.c", "x"], env={})  # D.d: dict[str, str] | None
+argv = ["--fn", "__main__.shout", "--fn.bind-"]
+print("vanilla: ", confarg.merge(Config, argv=argv, env={}))
+parser = argparse.ArgumentParser()
+populate_parser(Config, parser, argv=argv)
+print("argparse:", merge_namespace(Config, parser.parse_args(argv), argv=argv, env={}))
+# expected: vanilla:  {'fn': {'fn': '__main__.shout', 'bind': _DELETE_}}
+#           argparse: {'fn': {'fn': '__main__.shout', 'bind': _DELETE_}}
+# actual:   vanilla:  {'fn': {'fn': '__main__.shout', 'bind': _DELETE_}}
+#           argparse: {'fn': {'bind': _DELETE_}}
+```
+
+### BUG-25 — An escaped `_bind` beside a plain opener is vanilla-only
+
+**Where:** `src/confarg/cli/_build.py` (`_escaped_opener_specs`) · **Filed:** 2026-09-15
+**Effort:** S · **Risk:** low
+
+Dynamic registration adds escaped flags only for the escaped *openers* actually typed, so a
+`--<field>._bind.<param>` next to a *plain* opener is never registered and all three
+adapters reject the flag outright. Vanilla accepts it and stores `_bind` as ordinary data —
+the documented reading, since the opener's form alone selects the mode
+([06-callables.md#plain-and-escaped-directives](../architecture/06-callables.md#plain-and-escaped-directives)).
+Neither half is obviously right: the pair is very likely a user who meant `--<field>.bind`,
+so the fix may be to register it and let construction raise on the stray kwarg, or to
+reject it in vanilla too. Pre-existing, and the bare-string shorthand behaves exactly like
+the explicit opener shown here; found while fixing BUG-23.
+
+```python
+import argparse
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+import confarg
+from confarg.cli.argparse import merge_namespace, populate_parser
+
+
+def shout(name: str, punct: str = ".") -> str:
+    return f"{name.upper()}{punct}"
+
+
+@dataclass
+class Config:
+    fn: Callable[..., Any] = str.upper
+
+
+argv = ["--fn.fn", "__main__.shout", "--fn._bind.punct", "!"]
+print("vanilla: ", confarg.merge(Config, argv=argv, env={}))
+parser = argparse.ArgumentParser()
+populate_parser(Config, parser, argv=argv)
+print("argparse:", merge_namespace(Config, parser.parse_args(argv), argv=argv, env={}))
+# expected: both front-ends agree, whichever way the pair is settled
+# actual:   vanilla:  {'fn': {'fn': '__main__.shout', '_bind': {'punct': '!'}}}
+#           argparse: error: unrecognized arguments: --fn._bind.punct !
+#                     SystemExit: 2
 ```
 
 ## Intent versus implementation

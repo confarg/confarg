@@ -36,6 +36,15 @@ accepted as a dict key.
 - Leaves are coerced eagerly with `_try_coerce` so the merged dict has the same types
   whichever channel supplied them (and so CLI numbers work inside expressions).
 - Bool fields take an explicit value: `--verbose true` ([10](10-design-decisions.md#explicit-boolean-values)).
+- A whole value already stored at a field is **opened, not overwritten**, when a later
+  `--<field>.<sub>` has to descend through it. `--fn pkg.func` is the shorthand for
+  `--fn.fn pkg.func`, so `--fn pkg.func --fn.bind.sep -` refines the target the shorthand
+  named; `_open_callable_shorthand` is the one place that decides it, called by this loop and
+  by the env loop, so `FN=pkg.func` plus `FN__BIND__SEP=-` reads the same. A segment naming an
+  *opener* is a second spelling of the target rather than a refinement, so it still replaces
+  the shorthand outright — the rule that already makes an opener beat the blob beside it. A
+  field with no shorthand has nothing to open and the deeper key replaces its scalar
+  ([01](01-pipeline-and-contracts.md#scalar-intermediates)).
 
 ## Unions with sequence variants
 

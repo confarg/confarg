@@ -85,16 +85,6 @@ the parse-error → `malformed` mapping; the only difference is that the dict va
 top-level value; the dict wrappers become one-liners (`data = _read_yaml_raw(path); return data if
 isinstance(data, dict) else {}`). Removes ~30 lines of repeated error mapping.
 
-### REF-20 — `_apply_list_ops` resolves list indices twice
-
-**Where:** `src/confarg/_merge.py` (`_apply_list_ops`) · **Filed:** 2026-09-13
-**Effort:** S · **Risk:** low
-
-The negative-index wrap, range check, and "valid indices" error string are written twice: once for
-deletions (lines 166-169, via the `_check_del` closure) and once for index patches (lines 193-201,
-inline). Extract `_resolve_index(orig_idx, length, key, kind)` returning the validated index (or
-raising). Removes the `_check_del` closure and the duplicated `_rng` string construction.
-
 ### REF-21 — `_construct_sequence` / `_construct_list` / `_construct_set` are three thin wrappers
 
 **Where:** `src/confarg/typedload/_construct.py` · **Filed:** 2026-09-13

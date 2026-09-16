@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._cast import JSON_CAST_NAME
 from confarg._merge import DICT_DELETE, _accumulate_list_delete, _set_nested
-from confarg._parse_cli import _locals_segment_index, _segment_names_real_field
+from confarg._parse_cli import _locals_segment_index, _open_callable_shorthand, _segment_names_real_field
 from confarg._types import (
     _dict_kv,
     _elem_type,
@@ -405,6 +405,9 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
         if is_locals:
             ft = None
 
+        # Same rule as the CLI: a bare callable shorthand already stored at a prefix of
+        # this path is a spec this variable refines, not a scalar it replaces.
+        _open_callable_shorthand(data, parts, target, union_tag)
         _store_env_value(parts, ft, value, data)
 
     return data, env_configs

@@ -364,6 +364,30 @@ def active_directives(has_key: Callable[[str], bool]) -> _Directives:
     return _PLAIN_DIRECTIVES
 
 
+def names_an_opener(name: str) -> bool:
+    """Return whether *name* is an opener key, in either the plain or the escaped form.
+
+    An opener names the target; every other key refines it. A flag addressing one is
+    therefore a replacement for a spec already in hand, not a refinement of it.
+    """
+    return name in _PLAIN_DIRECTIVES.openers or name in _ESCAPED_DIRECTIVES.openers
+
+
+def promote_bare_spec(spec: str) -> dict[str, Any]:
+    """Return the dict spec that the bare-string shorthand *spec* is the shorthand for.
+
+    ``"pkg.func"`` and ``{fn: "pkg.func"}`` are two spellings of one spec and resolve to
+    the same object, so a bare string that a sibling key refines is opened into its dict
+    form rather than discarded. The bare string is itself a *plain* opener — it has no
+    escaped spelling — so the plain directive names are the active ones, and an escaped
+    key sitting beside it is ordinary data, exactly as it is beside a plain ``fn:``.
+
+    Dev Notes:
+        docs-dev/architecture/06-callables.md#spec-grammar
+    """
+    return {_PLAIN_DIRECTIVES.fn: spec}
+
+
 def _select_directives(spec: dict) -> _Directives:
     """Pick the active directives for a spec dict (see :func:`active_directives`)."""
     return active_directives(spec.__contains__)

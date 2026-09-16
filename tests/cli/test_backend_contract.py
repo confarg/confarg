@@ -1596,6 +1596,79 @@ class TestCallableBindContract:
 
 
 # ---------------------------------------------------------------------------
+# The bare-string shorthand refined by a sibling flag
+# ---------------------------------------------------------------------------
+
+
+def _shout(name: str, punct: str = ".") -> str:
+    """Module-level function whose second parameter is a bind target."""
+    return f"{name.upper()}{punct}"
+
+
+@dataclass
+class _ScalarThenSubkey:
+    """A dict field: it has no bare-scalar shorthand, so a scalar there means nothing."""
+
+    d: dict[str, str] | None = None
+
+
+class TestShorthandRefinementContract:
+    """A whole value followed by a sibling subkey resolves, in every channel and front-end.
+
+    ``--fn <path>`` is the documented shorthand for ``--fn.fn <path>``, so a sibling
+    ``--fn.bind.<param>`` refines it exactly as it refines the explicit opener.  A field
+    with no such shorthand keeps last-write-wins: the subkey opens the scalar away.
+    """
+
+    def test_shorthand_then_bind_via_cli(self, loader: ConfargLoader) -> None:
+        """The shorthand names the target; ``--fn.bind.<param>`` partially applies it."""
+        cfg = loader.load(
+            _CallableConfig,
+            argv=["--fn", f"{__name__}._shout", "--fn.bind.punct", "!"],
+            env={},
+        )
+        assert cfg.fn("hi") == "HI!"
+
+    def test_shorthand_matches_explicit_opener(self, loader: ConfargLoader) -> None:
+        """``--fn X`` and ``--fn.fn X`` merge to the same dict once a bind flag joins them."""
+        shorthand = loader.merge(
+            _CallableConfig,
+            argv=["--fn", f"{__name__}._shout", "--fn.bind.punct", "!"],
+            env={},
+        )
+        explicit = loader.merge(
+            _CallableConfig,
+            argv=["--fn.fn", f"{__name__}._shout", "--fn.bind.punct", "!"],
+            env={},
+        )
+        assert shorthand == explicit
+
+    def test_shorthand_then_bind_via_env(self, loader: ConfargLoader) -> None:
+        """The env channel spells the same pair and reaches the same callable."""
+        cfg = loader.load(
+            _CallableConfig,
+            argv=[],
+            env={"APP_FN": f"{__name__}._shout", "APP_FN__BIND__PUNCT": "!"},
+            env_prefix="APP_",
+        )
+        assert cfg.fn("hi") == "HI!"
+
+    def test_explicit_opener_wins_over_shorthand(self, loader: ConfargLoader) -> None:
+        """An opener flag beats the shorthand it refines, as it beats a whole-value blob."""
+        cfg = loader.load(
+            _CallableConfig,
+            argv=["--fn", f"{__name__}._shout", "--fn.fn", "str.upper"],
+            env={},
+        )
+        assert cfg.fn("hi") == "HI"
+
+    def test_subkey_opens_a_scalar_with_no_shorthand(self, loader: ConfargLoader) -> None:
+        """A dict field has no shorthand, so the later subkey replaces the scalar."""
+        merged = loader.merge(_ScalarThenSubkey, argv=["--d", "oops", "--d.c", "x"], env={})
+        assert merged == {"d": {"c": "x"}}
+
+
+# ---------------------------------------------------------------------------
 # Escaped directive mode (_fn/_class/_call/_bind) — collision escape, parity across channels
 # ---------------------------------------------------------------------------
 
