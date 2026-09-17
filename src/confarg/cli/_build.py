@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _detect_owning_class, active_directives
+from confarg._cast import SCALAR_CAST_TYPES
 from confarg._import import _import_dotted
 from confarg._merge import _peek_nested, _set_nested
 from confarg._tags import _partial_config_from_argv, import_tagged_classes
@@ -64,8 +65,6 @@ from confarg.cli._spec import FlagSpec, _build_help, _get_field_docstrings, _get
 from confarg.exceptions import ConfargWarning, SymbolImportError
 from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_registered_leaf
 
-_SCALAR_CAST_TYPES: frozenset[type] = frozenset({str, int, float, bool})
-
 
 def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
     """Return scalar types to offer as explicit cast flags for a multi-variant union.
@@ -78,7 +77,7 @@ def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
     """
     non_none = _union_args_no_none(resolved)
     types = [_resolve_type(v) for v in non_none]
-    scalars = [t for t in types if t in _SCALAR_CAST_TYPES]
+    scalars = [t for t in types if t in SCALAR_CAST_TYPES.values()]
     has_enum = any(_is_enum(t) for t in types)
     # In this branch the union always has >= 2 non-None variants, so a bare `str in
     # scalars` already means "str shares the union with at least one other variant".
