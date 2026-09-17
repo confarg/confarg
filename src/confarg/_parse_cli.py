@@ -1002,6 +1002,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     union_tag: str,
     *,
     patch_only: bool = False,
+    patch_base: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[tuple[str, Path]]]:
     """Parse CLI arguments into a nested dict and a list of config file paths.
 
@@ -1016,6 +1017,11 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             struct fields, scalar roots, force-casts, config files, and stray
             values — is skipped, and no config-file pairs are returned.  Used by
             the CLI adapters (see :func:`_collect_cli_patch_ops`).
+        patch_base: The dict the ops will be deep-merged over, or ``None``.  Only the
+            adapters pass one: their bare-string callable shorthand was collected by
+            ``cli/_collect.py``, not by this loop, so the shorthand this loop opens on
+            behalf of a patch flag has to be opened there too (BUG-24).  Modified in
+            place.
 
     Returns:
         A tuple of (data_dict, config_files) where data_dict is the parsed
@@ -1085,7 +1091,11 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
 
         # A bare callable shorthand already stored at a prefix of this path is a spec, not
         # a stale scalar: open it so this flag refines it (03-cli-parsing.md#token-consumption).
+        # *patch_base* holds the adapters' half of that dict; opening both keeps the deep
+        # merge that follows from replacing the shorthand instead of joining it.
         _open_callable_shorthand(ctx.data, path, walk_target, union_tag)
+        if patch_base is not None:
+            _open_callable_shorthand(patch_base, path, walk_target, union_tag)
 
         if delete_mode:
             _handle_delete_token(ctx, token, path, is_list_delete=is_list_delete, delete_idx=delete_idx)
@@ -1140,15 +1150,18 @@ def _collect_cli_patch_ops(
     target: Any,
     config_flag: str,
     union_tag: str,
+    patch_base: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return the collection-patch ops in *argv* as a nested merge-op dict.
 
     Thin wrapper over :func:`_parse_cli` in ``patch_only`` mode, used by the CLI
     adapters: the result is deep-merged on top of the values already collected
-    from the host framework's parse result.
+    from the host framework's parse result.  Hand those collected values in as
+    *patch_base* so a bare callable shorthand among them is opened before the
+    merge reaches it; the dict is modified in place.
 
     Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
     """
-    data, _ = _parse_cli(argv, target, "", config_flag, union_tag, patch_only=True)
+    data, _ = _parse_cli(argv, target, "", config_flag, union_tag, patch_only=True, patch_base=patch_base)
     return data
