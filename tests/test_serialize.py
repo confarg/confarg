@@ -425,6 +425,102 @@ class TestDumpStolenLeaf:
 
 
 # ---------------------------------------------------------------------------
+# Subscripted and Literal union variants
+# ---------------------------------------------------------------------------
+
+
+class TestDumpSubscriptedUnionVariant:
+    """A union variant ``isinstance`` refuses — a parameterized generic, a Literal — still dumps."""
+
+    def test_list_variant_dumps_as_a_list(self) -> None:
+        """``list[str] | str`` holding a list dumps the list, not a TypeError."""
+        WithListOrStr = make_target("tags", Union[list[str], str], default_factory=list)
+        obj = WithListOrStr(tags=["a", "b"])
+        assert confarg.dump(obj) == {"tags": ["a", "b"]}
+        assert confarg.build(WithListOrStr, confarg.dump(obj)) == obj
+
+    def test_scalar_beside_a_list_variant_dumps_as_a_scalar(self) -> None:
+        """The str side of ``list[str] | str`` is unaffected by the list variant."""
+        WithListOrStr = make_target("tags", Union[list[str], str], default_factory=list)
+        obj = WithListOrStr(tags="a")
+        assert confarg.dump(obj) == {"tags": "a"}
+        assert confarg.build(WithListOrStr, confarg.dump(obj)) == obj
+
+    def test_set_variant_dumps_as_a_sorted_list(self) -> None:
+        """``set[str] | str`` holding a set dumps the deterministic list form."""
+        WithSetOrStr = make_target("tags", Union[set[str], str], default_factory=set)
+        obj = WithSetOrStr(tags={"b", "a"})
+        assert confarg.dump(obj) == {"tags": ["a", "b"]}
+        assert confarg.build(WithSetOrStr, confarg.dump(obj)) == obj
+
+    def test_frozenset_variant_dumps_as_a_sorted_list(self) -> None:
+        """A frozenset variant is told apart from the set and list ones by its own shape."""
+        WithFrozenOrStr = make_target("tags", Union[frozenset[str], str], default_factory=frozenset)
+        obj = WithFrozenOrStr(tags=frozenset({"b", "a"}))
+        assert confarg.dump(obj) == {"tags": ["a", "b"]}
+        assert confarg.build(WithFrozenOrStr, confarg.dump(obj)) == obj
+
+    def test_variable_length_tuple_variant_dumps_as_a_list(self) -> None:
+        """``tuple[int, ...]`` takes any arity, unlike the fixed-length spelling."""
+        WithVarTupleOrStr = make_target("nums", Union[tuple[int, ...], str], default="")
+        obj = WithVarTupleOrStr(nums=(1, 2, 3))
+        assert confarg.dump(obj) == {"nums": [1, 2, 3]}
+        assert confarg.build(WithVarTupleOrStr, confarg.dump(obj)) == obj
+
+    def test_dict_variant_dumps_as_a_dict(self) -> None:
+        """``dict[str, int] | str`` holding a mapping dumps the mapping."""
+        WithDictOrStr = make_target("opts", Union[dict[str, int], str], default="")
+        obj = WithDictOrStr(opts={"a": 1})
+        assert confarg.dump(obj) == {"opts": {"a": 1}}
+        assert confarg.build(WithDictOrStr, confarg.dump(obj)) == obj
+
+    def test_tuple_variant_dumps_as_a_list(self) -> None:
+        """A fixed-length tuple variant dumps as the list a file spells it with."""
+        WithTupleOrStr = make_target("pair", Union[tuple[int, int], str], default="")
+        obj = WithTupleOrStr(pair=(1, 2))
+        assert confarg.dump(obj) == {"pair": [1, 2]}
+        assert confarg.build(WithTupleOrStr, confarg.dump(obj)) == obj
+
+    def test_literal_variant_dumps_as_a_scalar(self) -> None:
+        """A Literal member is a plain scalar, so it serializes as one."""
+        WithLiteralOrStr = make_target("speed", Union[Literal["fast", "slow"], str], default="fast")
+        obj = WithLiteralOrStr(speed="fast")
+        assert confarg.dump(obj) == {"speed": "fast"}
+        assert confarg.build(WithLiteralOrStr, confarg.dump(obj)) == obj
+
+    def test_value_outside_the_literal_dumps_as_the_other_variant(self) -> None:
+        """A value no Literal member holds belongs to the sibling variant."""
+        WithLiteralOrStr = make_target("speed", Union[Literal["fast", "slow"], str], default="fast")
+        obj = WithLiteralOrStr(speed="other")
+        assert confarg.dump(obj) == {"speed": "other"}
+        assert confarg.build(WithLiteralOrStr, confarg.dump(obj)) == obj
+
+    def test_enum_literal_variant_dumps_as_its_value(self) -> None:
+        """A Literal over Enum members dumps the member's value, like a bare Enum does.
+
+        The value does not read back — no ``__cast__`` names a Literal, and a native string
+        builds no Literal-over-Enum at all (BUG-32) — so dump warns rather than lying.
+        """
+        WithEnumLiteralOrInt = make_target("color", Union[Literal[Color.RED], int], default=0)
+        with pytest.warns(ConfargWarning, match="color"):
+            result = confarg.dump(WithEnumLiteralOrInt(color=Color.RED))
+        assert result == {"color": "red"}
+
+    def test_bool_is_not_a_member_of_an_int_literal(self) -> None:
+        """``Literal[1] | bool`` holding True is the bool variant: True is not the member 1."""
+        WithIntLiteralOrBool = make_target("flag", Union[Literal[1], bool], default=1)
+        obj = WithIntLiteralOrBool(flag=True)
+        assert confarg.dump(obj) == {"flag": True}
+        assert confarg.build(WithIntLiteralOrBool, confarg.dump(obj)) == obj
+
+    def test_list_variant_beside_a_struct_variant(self) -> None:
+        """A struct variant still wins its own instances when a generic sits beside it."""
+        WithListOrCfg = make_target("item", Union[list[str], CacheConfig], default_factory=list)
+        obj = WithListOrCfg(item=CacheConfig())
+        assert confarg.dump(obj)["item"] == confarg.dump(CacheConfig())
+
+
+# ---------------------------------------------------------------------------
 # Subclass serialization
 # ---------------------------------------------------------------------------
 

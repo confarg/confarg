@@ -18,6 +18,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-28 — A callable's sibling kwarg the signature does not name is vanilla-only](BUG-28-callable-sibling-kwarg-unregistered.md) | S | medium | config |
 | [BUG-29 — A bind subkey's delete flag is registered as if it took a value](BUG-29-bind-subkey-delete-registered-with-a-value.md) | S | medium | config |
 | [BUG-30 — The argv opener scan reads a struct field named `fn` as a callable opener](BUG-30-opener-scan-ignores-the-field-type.md) | M | medium | config |
-| [BUG-31 — `dump()` crashes on a union with a subscripted or `Literal` variant](BUG-31-dump-crashes-on-generic-union-variant.md) | M | medium | behavior |
+| [BUG-32 — A `Literal` over `Enum` members refuses the value `dump()` writes](BUG-32-literal-over-enum-refuses-a-native-value.md) | M | high | behavior |
 
 <!-- tickets:end -->

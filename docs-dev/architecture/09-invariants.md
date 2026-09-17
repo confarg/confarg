@@ -43,6 +43,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "which `__init__` parameters are `*args` / `**kwargs`?" | `_types._var_params` |
 | combine existing value with override | `_merge._merge_existing_value` |
 | how a leaf value leaves the library | `_serialize._serialize_leaf` |
+| "which union variant does this instance belong to?" | `_serialize._variant_holds` |
 | "does this serialized value read back as itself?" | `_serialize._reads_back` |
 | the `{__cast__, __value__}` spelling | `_serialize._cast_dict` |
 | "which leaf variant steals a token?" | `typedload._coerce._steal_rank` |

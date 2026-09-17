@@ -21,16 +21,20 @@ from confarg._types import (
     TagPolicy,
     _dict_kv,
     _elem_type,
+    _fixed_seq_types,
     _is_callable,
     _is_dict,
     _is_frozenset,
     _is_list,
+    _is_literal,
     _is_namedtuple,
     _is_set,
     _is_struct,
     _is_tuple,
     _is_union,
+    _literal_values,
     _namedtuple_fields,
+    _origin,
     _Pinned,
     _resolve_type,
     _StrToken,
@@ -349,13 +353,49 @@ def _cast_dict(tp: Any, value: Any) -> dict[str, Any]:
 
 
 def _find_variant_type(tp: Any, instance: Any) -> Any | None:
-    """Find which Union variant matches the instance's type."""
+    """Find which Union variant the instance belongs to, in declaration order."""
     args = _union_args_no_none(tp)
     for arg in args:
         arg_r = _resolve_type(arg)
-        if isinstance(instance, arg_r):
+        if _variant_holds(arg_r, instance):
             return arg_r
     return None
+
+
+def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one branch per shape, as in the dispatcher
+    """True if *instance* is a value of union variant *tp*.
+
+    Asks the shape functions in the order :func:`_serialize_by_type` dispatches in, so the
+    variant chosen here is the one that then serializes the value. A bare ``isinstance``
+    cannot ask: a parameterized generic and a ``Literal`` both refuse to be its second
+    argument, which left every union holding one undumpable. Each shape answers with the
+    concrete class construction builds for it -- ``list`` for ``Sequence[X]``, ``dict`` for
+    ``Mapping[K, V]`` -- and a ``Literal`` answers by membership, so ``True`` is not a value
+    of ``Literal[1]``.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#serialization
+    """
+    if _is_namedtuple(tp) or _is_struct_variant(tp):
+        return isinstance(instance, tp)
+    if _is_list(tp):
+        return isinstance(instance, list)
+    if _is_set(tp):
+        return isinstance(instance, set)
+    if _is_frozenset(tp):
+        return isinstance(instance, frozenset)
+    if _is_tuple(tp):
+        fixed = _fixed_seq_types(tp)
+        return isinstance(instance, tuple) and (fixed is None or len(instance) == len(fixed))
+    if _is_dict(tp):
+        return isinstance(instance, dict)
+    if _is_literal(tp):
+        return any(type(m) is type(instance) and m == instance for m in _literal_values(tp))
+    # What is left is a class, or is parameterized over one (``type[X]``, ``Callable[..., X]``);
+    # ``Any`` is neither, and holds nothing in particular.
+    origin = _origin(tp)
+    checkable = origin if isinstance(origin, type) else tp
+    return isinstance(checkable, type) and isinstance(instance, checkable)
 
 
 def _needs_tag(tp: Any, serialized_data: dict[str, Any], union_tag: str) -> bool:
