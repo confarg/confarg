@@ -2003,6 +2003,69 @@ class TestCallableSiblingKwargContract:
         assert merged == {"fn": {"fn": f"{__name__}._shout", "bind": {"punct": DICT_DELETE}}}
 
 
+@dataclass
+class _CallableFieldNamedFn:
+    """A struct whose callable field is spelled like a callable opener."""
+
+    fn: Callable[[str], str] | None = None
+
+
+@dataclass
+class _StructWithCallableFieldNamedFn:
+    """The opener scan must not read ``inner`` itself as a callable (BUG-30)."""
+
+    inner: _CallableFieldNamedFn = dataclasses_field(default_factory=_CallableFieldNamedFn)
+
+
+class TestOpenerScanTypeGuidedContract:
+    """The argv opener scan is type-guided: ``--<path>.fn`` opens only a callable-typed path.
+
+    ``build_dynamic_flags`` pattern-matches ``--<field>.fn/.class/.call`` against argv,
+    which a struct field literally named ``fn`` (or ``class``/``call``) trips: the scan
+    read ``--inner.fn`` as an opener for ``inner`` and registered ``inner.bind.*`` beside
+    the correct ``inner.fn.bind.*`` the type-guided blob walk already found.  The scan now
+    asks the target type whether ``<path>`` is callable-typed before treating the suffix as
+    an opener, so a plain struct field named like an opener is a value, not an opener
+    (BUG-30).
+    """
+
+    def test_spurious_opener_not_registered(self, populating_loader: ConfargLoader) -> None:
+        """``--inner.fn`` opens ``inner.fn`` (callable), not ``inner`` (a struct)."""
+        flags = populating_loader.registered_flags(
+            _StructWithCallableFieldNamedFn,
+            argv=["--inner.fn", f"{__name__}._shout"],
+            config_flag="",
+        )
+        assert flags is not None
+        assert "inner.fn.bind.name" in flags
+        assert "inner.fn.bind.punct" in flags
+        assert "inner.bind.name" not in flags
+        assert "inner.bind.punct" not in flags
+
+    def test_field_named_fn_merges_as_the_callable_shorthand(self, loader: ConfargLoader) -> None:
+        """``--inner.fn <path>`` is the shorthand for the ``inner.fn`` callable field.
+
+        The bare string stays bare until a sibling subkey joins it, exactly as
+        ``--fn <path>`` does for a root callable field (the opener opens at build, not
+        at merge, unless a bind flag forces it).
+        """
+        merged = loader.merge(
+            _StructWithCallableFieldNamedFn,
+            argv=["--inner.fn", f"{__name__}._shout"],
+            env={},
+        )
+        assert merged == {"inner": {"fn": f"{__name__}._shout"}}
+
+    def test_field_named_fn_binds(self, loader: ConfargLoader) -> None:
+        """A sibling ``--inner.fn.bind.<param>`` opens the shorthand, as for any callable."""
+        cfg = loader.load(
+            _StructWithCallableFieldNamedFn,
+            argv=["--inner.fn", f"{__name__}._shout", "--inner.fn.bind.punct", "!"],
+            env={},
+        )
+        assert cfg.inner.fn("hi") == "HI!"
+
+
 # ---------------------------------------------------------------------------
 # Explicit .json / __json force-cast
 # ---------------------------------------------------------------------------

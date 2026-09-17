@@ -201,6 +201,10 @@ class TestArgparseBranches:
 class TestBuildCallableSpecs:
     """Tests for _build.py callable spec builder functions."""
 
+    @dataclass
+    class _WithCallableOptimizer:
+        optimizer: Callable[..., int]
+
     def test_collect_callable_bind_specs_valid_fn(self) -> None:
         """_collect_callable_bind_specs returns FlagSpecs for a valid function's parameters."""
         specs = _collect_callable_bind_specs("myfn", f"{_COV_MOD}._cov_call_fn", "bind", set())
@@ -343,22 +347,26 @@ class TestBuildCallableSpecs:
 
     def test_collect_fn_paths_from_argv_equals_form(self) -> None:
         """_collect_fn_paths_from_argv handles --field.fn=path (= form)."""
-        result = _collect_fn_paths_from_argv(["--optimizer.fn=my.module.fn"])
+        result = _collect_fn_paths_from_argv(["--optimizer.fn=my.module.fn"], self._WithCallableOptimizer, "class")
         assert result == {"optimizer": ("my.module.fn", "fn", "bind")}
 
     def test_collect_fn_paths_from_argv_space_form(self) -> None:
         """_collect_fn_paths_from_argv handles --field.fn path (space form)."""
-        result = _collect_fn_paths_from_argv(["--optimizer.fn", "my.module.fn"])
+        result = _collect_fn_paths_from_argv(["--optimizer.fn", "my.module.fn"], self._WithCallableOptimizer, "class")
         assert result == {"optimizer": ("my.module.fn", "fn", "bind")}
 
     def test_collect_fn_paths_from_argv_non_flag_token(self) -> None:
         """_collect_fn_paths_from_argv skips non-flag tokens."""
-        result = _collect_fn_paths_from_argv(["value", "--optimizer.class=my.Cls"])
+        result = _collect_fn_paths_from_argv(
+            ["value", "--optimizer.class=my.Cls"],
+            self._WithCallableOptimizer,
+            "class",
+        )
         assert "optimizer" in result
 
     def test_collect_fn_paths_from_argv_space_form_no_value(self) -> None:
         """_collect_fn_paths_from_argv skips --field.fn with no following value."""
-        result = _collect_fn_paths_from_argv(["--optimizer.fn"])
+        result = _collect_fn_paths_from_argv(["--optimizer.fn"], self._WithCallableOptimizer, "class")
         assert result == {}
 
     def test_collect_fn_paths_from_config_callable_fn(self) -> None:

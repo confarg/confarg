@@ -182,7 +182,12 @@ file's openers, and the flat collector's `active_directives` probe asks the blob
 alongside the flat flags, so a blob's `class` selects the directive form and opens the sibling
 `--<field>.<param>` init kwargs the opener flag opens. Feeding the walk rather than
 pattern-matching argv is what keeps a mapping field whose value happens to carry a `class` key
-from being read as a callable spec — the walk is type-guided, the scan is not. Openers still
+from being read as a callable spec — the walk is type-guided. The opener scan
+(`_collect_fn_paths_from_argv`) pattern-matches the `.fn`/`.class`/`.call` suffix too,
+so a struct field literally named like an opener would be misread as an opener for its
+parent; it now asks the same type-guided question — does the path resolve to a
+callable-typed field? — before accepting the match, so a plain struct field named `fn`
+(or `class`/`call`) is a value, not an opener (BUG-30). Openers still
 win over the blob they refine, matching the collector's deep merge. The string shorthand `--<field> some.module.fn` buys them too: it is the
 spelling `{fn: …}` abbreviates, so the argv scan collects a bare string as a whole value
 beside a `{`-prefixed blob and hands both to the same type-guided walk, which has always read
