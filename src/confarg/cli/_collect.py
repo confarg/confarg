@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._api import build
-from confarg._callable import _Directives, active_directives, promote_bare_spec
+from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _Directives, active_directives, promote_bare_spec
 from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, resolve_forced_value
 from confarg._import import _import_dotted
 from confarg._merge import _deep_merge, _set_nested
@@ -280,6 +280,31 @@ def _collect_factory_kwargs(
     return kwargs
 
 
+def _collect_bind_sections(flat: dict[str, Any], flag: str, d: _Directives) -> dict[str, dict[str, Any]]:
+    """Nest the ``--<flag>.<bind>.<path>`` entries of the flat namespace, one dict per spelling.
+
+    Both spellings are collected: the active one is the directive, and the one the opener
+    left inactive is a kwarg, not a directive — but still a subtree, which construction
+    is the one to accept or reject.  Neither depends on an opener being present, and
+    dotted tails nest, so the sections match what the vanilla parser writes for the very
+    same flags.
+
+    Dev Notes:
+        docs-dev/architecture/06-callables.md#plain-and-escaped-directives
+    """
+    other = _PLAIN_DIRECTIVES.bind if d.bind == _ESCAPED_DIRECTIVES.bind else _ESCAPED_DIRECTIVES.bind
+    sections: dict[str, dict[str, Any]] = {}
+    for key in (d.bind, other):
+        prefix = f"{flag}.{key}."
+        subtree: dict[str, Any] = {}
+        for k, v in flat.items():
+            if k.startswith(prefix):
+                _set_nested(subtree, k[len(prefix) :].split("."), _str_token(v))
+        if subtree:
+            sections[key] = subtree
+    return sections
+
+
 def _collect_callable_spec(
     flat: dict[str, Any],
     flag: str,
@@ -308,9 +333,8 @@ def _collect_callable_spec(
 
     spec = _collect_fn_identity(flat, flag, d)
 
-    bind: dict[str, Any] = {k[len(bind_prefix) :]: _str_token(v) for k, v in flat.items() if k.startswith(bind_prefix)}
-    if bind:
-        spec[d.bind] = bind
+    spec.update(_collect_bind_sections(flat, flag, d))
+    bind: dict[str, Any] = spec.get(d.bind, {})
 
     # Sibling --<field>.<param> flags are init kwargs when a class/fn identity is given:
     # 'class:' instantiates with them; 'fn: Class.method' constructs the method's owning

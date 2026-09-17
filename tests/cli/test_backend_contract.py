@@ -1791,6 +1791,71 @@ class TestEscapedCallableContract:
         assert cfg.fn() == 15
 
 
+class TestMixedDirectiveFormContract:
+    """A directive word in the *inactive* form is ordinary data, in every front-end.
+
+    The opener alone selects the mode, so ``_bind`` beside a plain opener — and ``bind``
+    beside an escaped one — is a kwarg, not a directive.  The adapters must accept the
+    flag and let construction reject the kwarg, exactly as vanilla does (BUG-25).
+    """
+
+    def test_escaped_bind_beside_plain_opener_merges_as_data(self, loader: ConfargLoader) -> None:
+        """``--fn.fn X --fn._bind.p V`` merges with ``_bind`` left as an ordinary kwarg."""
+        merged = loader.merge(
+            _EscCallableConfig,
+            argv=["--fn.fn", f"{__name__}._shout", "--fn._bind.punct", "!"],
+            env={},
+        )
+        assert merged == {"fn": {"fn": f"{__name__}._shout", "_bind": {"punct": "!"}}}
+
+    def test_escaped_bind_beside_plain_opener_names_the_mixed_form(self, loader: ConfargLoader) -> None:
+        """Construction rejects the stray kwarg and the message names both spellings."""
+        with pytest.raises(TypeCoercionError, match="_bind") as exc_info:
+            loader.load(
+                _EscCallableConfig,
+                argv=["--fn.fn", f"{__name__}._shout", "--fn._bind.punct", "!"],
+                env={},
+            )
+        assert "'bind'" in str(exc_info.value)
+
+    def test_escaped_bind_beside_bare_shorthand(self, loader: ConfargLoader) -> None:
+        """The bare-string shorthand is a plain opener, so it reads ``_bind`` the same way."""
+        merged = loader.merge(
+            _EscCallableConfig,
+            argv=["--fn", f"{__name__}._shout", "--fn._bind.punct", "!"],
+            env={},
+        )
+        assert merged == {"fn": {"fn": f"{__name__}._shout", "_bind": {"punct": "!"}}}
+
+    def test_plain_bind_beside_escaped_opener_merges_as_data(self, loader: ConfargLoader) -> None:
+        """The mirror: ``--fn._fn X --fn.bind.p V`` merges with ``bind`` left as a kwarg."""
+        merged = loader.merge(
+            _EscCallableConfig,
+            argv=["--fn._fn", f"{__name__}._shout", "--fn.bind.punct", "!"],
+            env={},
+        )
+        assert merged == {"fn": {"_fn": f"{__name__}._shout", "bind": {"punct": "!"}}}
+
+    def test_plain_bind_beside_escaped_opener_names_the_mixed_form(self, loader: ConfargLoader) -> None:
+        """The mirror rejection names both spellings too."""
+        with pytest.raises(TypeCoercionError, match="_bind") as exc_info:
+            loader.load(
+                _EscCallableConfig,
+                argv=["--fn._fn", f"{__name__}._shout", "--fn.bind.punct", "!"],
+                env={},
+            )
+        assert "'bind'" in str(exc_info.value)
+
+    def test_active_bind_beside_escaped_opener_still_binds(self, loader: ConfargLoader) -> None:
+        """Guard rail: the *active* form keeps working and buys no mixed-form complaint."""
+        cfg = loader.load(
+            _EscCallableConfig,
+            argv=["--fn._fn", f"{__name__}._shout", "--fn._bind.punct", "!"],
+            env={},
+        )
+        assert cfg.fn("hi") == "HI!"
+
+
 # ---------------------------------------------------------------------------
 # Explicit .json / __json force-cast
 # ---------------------------------------------------------------------------

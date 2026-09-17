@@ -1,7 +1,3 @@
-| A contract: arguments, return value, errors, footguns, an example | The docstring |
-| A pointer from a function to the rationale behind it | A `Dev Notes:` section in its docstring |
-| A pointer from a function to the rationale behind it | A `Dev Notes:` section in its docstring |
-| A pointer from a function to the rationale behind it | A `Dev Notes:` section in its docstring |
 # docs-dev
 
 Reference documentation for contributors and coding agents working *on* confarg: why the code
