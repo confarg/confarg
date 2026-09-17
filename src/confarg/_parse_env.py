@@ -19,9 +19,13 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 from confarg import _defaults
-from confarg._cast import JSON_CAST_NAME
-from confarg._merge import DICT_DELETE, _accumulate_list_delete, _set_nested
-from confarg._parse_cli import _locals_segment_index, _open_callable_shorthand, _segment_names_real_field
+from confarg._cast import JSON_CAST_NAME, resolve_forced_value
+from confarg._merge import DICT_DELETE, _accumulate_list_delete, _deep_merge, _set_nested
+from confarg._parse_cli import (
+    _locals_segment_index,
+    _open_callable_shorthand,
+    detect_force_cast,
+)
 from confarg._types import (
     _dict_kv,
     _elem_type,
@@ -214,28 +218,58 @@ def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[
         _set_nested(data, del_parts, DICT_DELETE)
 
 
-def _apply_env_json_cast(orig_key: str, parts: list[str], target: Any, value: str, data: dict[str, Any]) -> bool:
-    """Apply a ``__json`` force-cast (e.g. ``FOO__DB__json``): parse ``value`` as JSON.
+def _apply_env_json_cast(  # noqa: PLR0913  # root and nested placement need distinct sinks
+    orig_key: str,
+    parts: list[str],
+    target: Any,
+    value: str,
+    data: dict[str, Any],
+    root_json: list[dict[str, Any]],
+    union_tag: str,
+) -> bool:
+    """Apply a ``json`` force-cast (``FOO__DB__json``, or ``FOO_JSON`` at the root).
 
-    Mirrors the CLI ``.json`` suffix.  Returns True when handled — i.e. when ``json`` is
-    the trailing segment and does not name a real field/key of the parent (real field
-    wins).  Hard-errors on invalid JSON, matching the CLI's explicit-intent semantics.
+    Mirrors the CLI ``.json`` suffix, including the bare root form: whether the trailing
+    segment is a cast at all is decided by the canonical
+    :func:`~confarg._parse_cli.detect_force_cast` (a real field/key named ``json`` wins).
+    A nested cast is stored at the parent path; a root cast injects the whole
+    configuration — collected into ``root_json`` and folded in as a base by
+    :func:`_parse_env`, so per-field env vars win over it.  Returns True when handled.
+    Hard-errors on invalid JSON, matching the CLI's explicit-intent semantics.
     """
     if parts[-1].lower() != JSON_CAST_NAME:
         return False
-    parent_raw = parts[:-1]
-    if not parent_raw:
-        return False  # root-level cast has no field to attach to
-    parent_parts, parent_type = _resolve_env_parts(target, parent_raw)
-    if parent_type is not None and _segment_names_real_field(parent_type, JSON_CAST_NAME, _defaults.UNION_TAG):
+    parent_parts, _ = _resolve_env_parts(target, parts[:-1]) if parts[:-1] else ([], None)
+    path, cast_name = detect_force_cast([*parent_parts, JSON_CAST_NAME], target, union_tag)
+    if cast_name is None:
         return False
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError as e:
-        msg = f"Invalid JSON for {orig_key!r}: {e}"
-        raise ConfargError(msg) from e
-    _set_nested(data, parent_parts, parsed)
+    decoded = resolve_forced_value(cast_name, value, flag=orig_key)
+    if path:
+        _set_nested(data, path, decoded)
+        return True
+    if not _is_struct_like(_resolve_type(target)):
+        # Non-struct root: the decoded value *is* the configuration, whatever its shape.
+        data.setdefault(_defaults.ROOT_KEY, decoded)
+        return True
+    if not isinstance(decoded, dict):
+        msg = f"{orig_key} for a structured target must be a JSON object, got {type(decoded).__name__}."
+        raise ConfargError(msg)
+    root_json.append(decoded)
     return True
+
+
+def _fold_root_json(data: dict[str, Any], root_json: list[dict[str, Any]], union_tag: str) -> dict[str, Any]:
+    """Fold root-level JSON casts in as a base under *data*, mirroring the CLI's root ``--json``.
+
+    Per-field env vars refine the injected object, and a later variable wins over an
+    earlier one (env has no ordering, but the merge stays deterministic per dict order).
+    """
+    if not root_json:
+        return data
+    base: dict[str, Any] = {}
+    for obj in root_json:
+        base = _deep_merge(base, obj, union_tag=union_tag)
+    return _deep_merge(base, data, union_tag=union_tag)
 
 
 def _warn_unknown_env_field(orig_key: str, parts: list[str], root_tp: Any) -> bool:
@@ -370,6 +404,7 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
     """
     data: dict[str, Any] = {}
     env_configs: list[tuple[str, Path]] = []
+    root_json: list[dict[str, Any]] = []  # objects from a root-level `json` cast, folded in below fields
     is_struct = _is_struct_like(_resolve_type(target))
 
     for orig_key, value in env.items():
@@ -389,7 +424,7 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
             _handle_env_delete(orig_key, parts, target, data)
             continue
 
-        if is_struct and _apply_env_json_cast(orig_key, parts, target, value, data):
+        if _apply_env_json_cast(orig_key, parts, target, value, data, root_json, union_tag):
             continue
 
         if not is_struct:
@@ -410,4 +445,4 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
         _open_callable_shorthand(data, parts, target, union_tag)
         _store_env_value(parts, ft, value, data)
 
-    return data, env_configs
+    return _fold_root_json(data, root_json, union_tag), env_configs

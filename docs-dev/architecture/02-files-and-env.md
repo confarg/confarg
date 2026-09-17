@@ -72,7 +72,10 @@ namespace) therefore avoids the dunder form.
   answer — `dict[str, str] | None` decodes what `dict[str, str]` decodes
   ([10](10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts)).
 - `<PREFIX>…__json` mirrors the CLI `.json` cast, including "real field wins" and a hard
-  error on invalid JSON.
+  error on invalid JSON. `<PREFIX>JSON` is the root form: it injects a whole config, folded
+  in **under** the per-field env vars exactly as root `--json` sits under the field flags
+  ([03](03-cli-parsing.md#force-casts)). Whether a trailing `json` is a cast at all is
+  decided by the canonical `detect_force_cast`, not by a second rule in `_parse_env`.
 - `FOO__BAR-` / `FOO__ITEMS__1-` are deletes, mirroring `--bar-` / `--items.1-`.
 - `<PREFIX>CONFIG[__SUBPATH]` are file pointers, collected and loaded by the pipeline. The
   variable named by `env_config` is removed from field parsing.
