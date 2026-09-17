@@ -247,19 +247,13 @@ class _NonStructSubChild(_NonStructSubBase):
 class TestToAppendList:
     """Unit tests for _merge._to_append_list."""
 
-    def test_empty_dict(self) -> None:
-        """Empty dict produces an empty list."""
-        assert _to_append_list({}) == []
+    def test_list_passthrough(self) -> None:
+        """A list is returned as a new list with the same items."""
+        assert _to_append_list(["a", "b"]) == ["a", "b"]
 
-    def test_dict_with_int_keys(self) -> None:
-        """Dict with integer string keys produces a sparse list padded with None."""
-        result = _to_append_list({"0": "a", "2": "c"})
-        assert result == ["a", None, "c"]
-
-    def test_dict_with_non_int_keys_raises(self) -> None:
-        """Dict with non-integer keys raises ConfargError."""
-        with pytest.raises(confarg.exceptions.ConfargError, match="integer indices"):
-            _to_append_list({"bad": "value"})
+    def test_set_coerced_to_list(self) -> None:
+        """A set is converted to a list."""
+        assert sorted(_to_append_list({"a", "b"})) == ["a", "b"]
 
     def test_scalar_wrapped_in_list(self) -> None:
         """A scalar value is wrapped in a single-element list."""
