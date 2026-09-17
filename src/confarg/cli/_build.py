@@ -1077,29 +1077,37 @@ def _collect_config_argv_specs(argv: Sequence[str], config_flag: str) -> list[Fl
     return specs
 
 
-def _collect_callable_bind_argv_specs(
+def _collect_callable_key_argv_specs(
     target: object,
     argv: Sequence[str],
     union_tag: str,
     existing_names: set[str],
 ) -> list[FlagSpec]:
-    """Build FlagSpecs for ``--<callable>.<bind>.<key>`` flags found in argv but not in a signature.
+    """Build FlagSpecs for ``--<callable>.<key>`` flags found in argv but not in a signature.
 
     The signature-driven specs run first and win, so this pass only catches what no
-    signature describes: the bind spelling the opener left inactive, whose keys are
-    ordinary data (BUG-25).  The vanilla parser accepts any key below a bind directive
-    (:func:`~confarg._parse_cli._addresses_callable_bind`), so registration follows the
-    same rule and hands the token to the collector as a plain string; whether the kwarg
-    is acceptable is construction's answer to give, identically in all four front-ends.
+    signature describes: a bind subkey in the spelling the opener left inactive (BUG-25),
+    and a sibling kwarg the named target does not carry — or that names no target at all,
+    the field having no opener anywhere (BUG-28).  The vanilla parser accepts any key
+    below a callable field (:func:`~confarg._parse_cli._addresses_callable_key`), so
+    registration follows the same rule and hands the token to the collector as a plain
+    string; whether the kwarg is acceptable is construction's answer to give, identically
+    in all four front-ends.
+
+    Append and delete flags are skipped: they take no value, or a variable number of them,
+    and :func:`_collect_patch_argv_specs` already registers every one of them in the shape
+    its mode demands.  Claiming ``--f.bind.<key>-`` here made all three adapters ask for an
+    argument the delete flag does not take (BUG-29).
 
     Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
     """
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import (  # noqa: PLC0415
-        _addresses_callable_bind,
+        _addresses_callable_key,
         _looks_like_flag,
         _normalize_eq_args,
+        _parse_flag_mode,
     )
 
     specs: list[FlagSpec] = []
@@ -1107,7 +1115,10 @@ def _collect_callable_bind_argv_specs(
         if not _looks_like_flag(tok):
             continue
         key = tok[2:]
-        if key in existing_names or not _addresses_callable_bind(target, key.split("."), union_tag):
+        _path, append_mode, delete_mode, _delete_idx, _is_list_delete = _parse_flag_mode(key)
+        if append_mode or delete_mode:
+            continue
+        if key in existing_names or not _addresses_callable_key(target, key.split("."), union_tag):
             continue
         existing_names.add(key)
         specs.append(FlagSpec(name=key, metavar="VALUE", help=f"Value for '{key}' in the callable spec."))
@@ -1253,7 +1264,7 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         # Opener flags beat the blob they refine, as the collector's deep merge does.
         for field_flag, (fn_path, mode, bind_key) in {**config_fns, **blob_fns, **argv_fns}.items():
             result.extend(_collect_callable_field_specs(field_flag, fn_path, mode, bind_key, existing_names))
-        result.extend(_collect_callable_bind_argv_specs(target, argv_list, union_tag, existing_names))
+        result.extend(_collect_callable_key_argv_specs(target, argv_list, union_tag, existing_names))
         if config_flag:
             result.extend(_collect_config_argv_specs(argv_list, config_flag))
         result.extend(_collect_patch_argv_specs(target, argv_list, union_tag, config_flag))

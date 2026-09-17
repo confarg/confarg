@@ -174,16 +174,17 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
     return tp
 
 
-def _addresses_callable_bind(target: Any, parts: list[str], union_tag: str) -> bool:
-    """Return True if the dotted path names something *inside* a ``Callable`` field's bind subtree.
+def _addresses_callable_key(target: Any, parts: list[str], union_tag: str) -> bool:
+    """Return True if the dotted path names a key *inside* a ``Callable`` field's spec.
 
-    The companion of :func:`_resolve_field_type`'s bind branch, for callers that need the
-    question answered about a path rather than a type.  Both spellings count: which one
-    is the directive and which is ordinary data is the opener's to decide, at
-    construction, and a path does not see the opener.  The bind key alone is excluded —
-    the subtree has to be entered, not merely named — because the adapters register a
-    flag on this answer alone, and a bare ``--<field>.bind`` is a scalar their flat
-    collector reads only as a sibling kwarg.
+    Everything below the field is one answer, because everything below it is one dict the
+    parser writes verbatim: a directive, a bind subkey in either spelling, or a sibling
+    kwarg no signature names.  Which of those a key *is* — and whether it is acceptable
+    — the opener decides at construction, and a path does not see the opener.
+
+    The adapters register a flag on this answer alone, so the caller must strip an
+    append/delete suffix first: those flags belong to the patch scan, which registers
+    them in the shape their mode demands.
 
     Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
@@ -194,9 +195,9 @@ def _addresses_callable_bind(target: Any, parts: list[str], union_tag: str) -> b
             return False
         tp = _resolve_type(tp)
         if _is_union(tp):
-            return any(_addresses_callable_bind(v, parts[idx:], union_tag) for v in _union_args_no_none(tp))
+            return any(_addresses_callable_key(v, parts[idx:], union_tag) for v in _union_args_no_none(tp))
         if _is_callable(tp):
-            return names_a_bind(part) and idx < len(parts) - 1
+            return True
         tp = _advance_field_type(tp, part)
         if tp is None:
             return False
