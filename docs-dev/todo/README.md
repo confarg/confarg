@@ -105,7 +105,6 @@ For a defect in the code, that is a **runnable snippet**:
 For a defect in the documentation itself there is no program to run, so the reproduction is the
 **broken reference and what it fails to reach**: a `console` block showing the command that
 finds it — a `grep`, a link check — and the target it lands on instead.
-[BUG-26](bugs/BUG-26-architecture-links-closed-tickets.md) is the worked example.
 
 Everything below applies to both kinds.
 

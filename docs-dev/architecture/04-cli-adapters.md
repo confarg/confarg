@@ -175,7 +175,7 @@ the things that decides this: `dict[str, str] | None` takes the mapping `dict[st
 `Callable[…] | None` takes the spec `Callable[…]` takes, and both get the same `JSON` metavar
 ([10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts)).
 A decoded callable blob buys the factory and `bind` flags its class implies, exactly as a
-`--<field>.class` opener does ([BUG-22](../todo/bugs/README.md), closed). Neither half of that is a
+`--<field>.class` opener does. Neither half of that is a
 second decision: `_blob_document_from_argv` nests argv's `{`-prefixed tokens into one
 config-file-shaped document and hands it to the *same* target walk that reads a `--config`
 file's openers, and the flat collector's `active_directives` probe asks the blob's keys
@@ -330,7 +330,7 @@ help, completion and error text for real values:
   argv or in a `--config` file is imported first, by `_tags.import_tagged_classes`
   ([10](10-design-decisions.md#a-named-tag-is-imported-before-registration)); without that the
   selector and the subclass's own flags exist or not depending on which modules happened to
-  load ([BUG-6](../todo/bugs/README.md), closed). The completer is left unset when the subclass list
+  load. The completer is left unset when the subclass list
   is empty — an empty one suppresses the shell's own suggestions.
 
   Registration and collection read the *same* answer: `merge_*` runs `_tags.collect_tags` over
@@ -338,7 +338,7 @@ help, completion and error text for real values:
   `_collect_ns_fields`, so the flat collector descends into the subclass a `--config` file names
   exactly as it descends into one a `--<path>.<union_tag>` flag names. Reading the tag from the
   flat parse result alone left a subclass field typed on the CLI with no type to hang on, and it
-  was dropped while vanilla kept it ([BUG-19](../todo/bugs/README.md), closed). Only a tag found in
+  was dropped while vanilla kept it. Only a tag found in
   *flat* is written back into the collected dict: a file's tag already reaches the merge at its
   own priority, and re-emitting it at CLI priority would replace the file's plain string with a
   `_StrToken` and break [byte-identical merged dicts](#byte-identical-merged-dicts).
