@@ -62,7 +62,6 @@ from confarg.typedload._coerce import (
     _LEAF_COERCIONS,
     _NONE_TOKENS,
     _TRUTHY,
-    _coerce_bool,
     _coerce_leaf,
     _coerce_type_ref,
     _is_struct_variant,
@@ -740,21 +739,26 @@ def _coerce_scalar_variants(
     path: str,
     union_tag: str,
 ) -> Any:
-    """Coerce data to one of the scalar leaf variants; returns _UNION_NO_MATCH on failure."""
-    if type(None) in all_args and isinstance(data, _StrToken) and data.lower() in _NONE_TOKENS:
-        return None
-    if bool in scalar_leaf_vars and int in scalar_leaf_vars:
-        if isinstance(data, bool):
-            return data
-        if isinstance(data, _StrToken) and data.lower() in (_TRUTHY | _FALSY):
-            return _coerce_bool(data)
-    ordered = _steal_order(scalar_leaf_vars, key=_resolve_type) if isinstance(data, _StrToken) else scalar_leaf_vars
+    """Coerce data to one of the scalar leaf variants; returns _UNION_NO_MATCH on failure.
+
+    A token is offered to the variants in stealing rank, ``None`` ranked among them rather than
+    taken first. ``None`` is the one variant not built by ``_construct_scalar``: only a none
+    word selects it, never the empty token ``_coerce_leaf`` accepts for a bare ``None`` target.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#stealing-rule
+    """
+    if isinstance(data, _StrToken):
+        with_none = scalar_leaf_vars + ([type(None)] if type(None) in all_args else [])
+        ordered = _steal_order(with_none, key=_resolve_type)
+    else:
+        ordered = scalar_leaf_vars
     for var in ordered:
         vr = _resolve_type(var)
-        if vr is type(None):  # pragma: no cover  # NoneType is excluded from non_none
+        if vr is type(None):
+            if str(data).lower() in _NONE_TOKENS:
+                return None
             continue
-        if vr is bool and int in scalar_leaf_vars:
-            continue  # handled above
         try:
             # Not _coerce_leaf: it cannot build type refs (`type`, `type[X]`).
             # See docs-dev/architecture/05-types-and-construction.md#stealing-rule.

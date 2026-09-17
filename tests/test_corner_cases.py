@@ -1417,12 +1417,16 @@ class TestSilentFailureFixes:
         with pytest.raises(TypeCoercionError):
             confarg.load(WithUnion, argv=[], env={"MYAPP_VALUE": ""}, env_prefix="MYAPP_")
 
-    def test_union_int_float_none_valid_int_still_works(self) -> None:
-        """Test that a valid int still works in a Union[int, float, None]."""
+    def test_union_int_float_none_valid_number_still_works(self) -> None:
+        """Test that a valid number still works in a Union[int, float, None].
+
+        float outranks int in the stealing rule, so the value is 42.0 and not 42 — the
+        point here is that a coercible token is not lost to the None variant.
+        """
         WithUnion = make_target("value", int | float | None, default=None)
         result = confarg.load(WithUnion, argv=[], env={"MYAPP_VALUE": "42"}, env_prefix="MYAPP_")
         assert result.value == 42
-        assert isinstance(result.value, int)
+        assert isinstance(result.value, float)
 
     # --- wrong data type raises TypeCoercionError ---
 
