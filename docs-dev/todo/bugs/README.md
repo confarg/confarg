@@ -14,7 +14,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 |---|---|---|---|
 | [BUG-7 — Typer integration is claimed, never tested, and currently broken](BUG-7-typer-claimed-untested-broken.md) | L | medium | behavior |
 | [BUG-26 — Architecture notes link closed tickets to a board that cannot hold them](BUG-26-architecture-links-closed-tickets.md) | S | low | none |
-| [BUG-27 — A value starting with `--` is refused by the vanilla parser](BUG-27-dash-prefixed-value-rejected.md) | M | high | config |
 | [BUG-30 — The argv opener scan reads a struct field named `fn` as a callable opener](BUG-30-opener-scan-ignores-the-field-type.md) | M | medium | config |
 | [BUG-32 — A `Literal` over `Enum` members refuses the value `dump()` writes](BUG-32-literal-over-enum-refuses-a-native-value.md) | M | high | behavior |
 

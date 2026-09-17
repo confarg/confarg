@@ -379,11 +379,28 @@ def _parse_json_arg(token: str, flag: str) -> Any:
         raise ConfargError(msg) from e
 
 
+class _EqValue(str):
+    """The value half of a ``--key=value`` token: a value whatever it looks like.
+
+    Shape alone cannot tell ``--x`` the value from ``--x`` the flag, so the one token
+    whose position already proved it is a value carries that proof forward.
+    :func:`_looks_like_flag` is the only reader; every consumption site rewraps the
+    token (``_StrToken``, ``json.loads``, ``Path``), so the marker never reaches a
+    merged dict.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
+
+    __slots__ = ()
+
+
 def _looks_like_flag(token: str) -> bool:
     """Check whether a token looks like a CLI flag (--word).
 
     A flag must start with ``--`` followed by a letter or underscore. Bare
-    ``--`` and tokens like ``--:`` or ``--3`` are not flags.
+    ``--`` and tokens like ``--:`` or ``--3`` are not flags.  A token that came from
+    the value half of ``--key=value`` is never a flag, however it is spelled.
 
     Args:
         token: The CLI token to check.
@@ -391,6 +408,8 @@ def _looks_like_flag(token: str) -> bool:
     Returns:
         True if the token looks like a CLI flag.
     """
+    if isinstance(token, _EqValue):
+        return False
     _double_dash = "--"
     return (
         token.startswith(_double_dash)
@@ -446,13 +465,22 @@ def _check_config_flag_conflict(target: Any, config_flag: str, cli_prefix: str) 
 
 
 def _normalize_eq_args(args: Sequence[str]) -> list[str]:
-    """Split --key=value tokens into --key value pairs."""
+    """Split --key=value tokens into --key value pairs.
+
+    The value half comes back as an :class:`_EqValue`, so a value that itself looks
+    like a flag (``--key=--value``) survives every later flag-check, and re-running
+    this over an already-normalized argv -- which the adapters do -- splits it no
+    further.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
     normalized: list[str] = []
     for tok in args:
-        if tok.startswith("--") and "=" in tok:
+        if not isinstance(tok, _EqValue) and tok.startswith("--") and "=" in tok:
             flag, _, val = tok.partition("=")
             normalized.append(flag)
-            normalized.append(val)
+            normalized.append(_EqValue(val))
         else:
             normalized.append(tok)
     return normalized
