@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import confarg.cli._build as build_mod
-import confarg.cli.argparse._register as reg_mod
 from confarg._tags import _tags_from_config
 from confarg._types import _resolve_struct
 from confarg.cli._build import (
@@ -45,7 +44,7 @@ from confarg.cli.argparse._completion import (
 from confarg.cli.argparse._completion import (
     setup_completion as _argparse_setup_completion,
 )
-from confarg.cli.argparse._register import _add_callable_bind_flags, _add_callable_fn_flags, _register_spec
+from confarg.cli.argparse._register import _register_spec
 from confarg.exceptions import ConfargWarning
 from tests._cov_helpers import (
     _COV_MOD,
@@ -514,22 +513,6 @@ class TestRegisterGaps:
         dests = {a.dest for a in parser._actions}
         assert "fn.bind.x" in dests
 
-    def test_add_callable_fn_flags(self) -> None:
-        """_add_callable_fn_flags registers fn/class/call flags on the parser."""
-        parser = argparse.ArgumentParser()
-        _add_callable_fn_flags(parser, "myfield")
-        dests = {a.dest for a in parser._actions}
-        assert "myfield.fn" in dests
-        assert "myfield.class" in dests
-        assert "myfield.call" in dests
-
-    def test_add_callable_bind_flags_no_existing_dests(self) -> None:
-        """_add_callable_bind_flags works without pre-computed existing_dests."""
-        parser = argparse.ArgumentParser()
-        _add_callable_bind_flags(parser, "myfn", f"{_COV_MOD}._cov_call_fn")
-        dests = {a.dest for a in parser._actions}
-        assert "myfn.bind.x" in dests
-
 
 class TestCompletionGaps:
     """Uncovered branches in _completion.py."""
@@ -674,16 +657,16 @@ class TestCompletionGaps:
         assert "val.class" in dests
 
     def test_pre_extend_parser_bind_flags_exception(self, monkeypatch) -> None:
-        """_pre_extend_parser_for_completion swallows exception from _add_callable_bind_flags."""
+        """_pre_extend_parser_for_completion swallows exception from _collect_callable_bind_specs."""
 
         def _boom(*args, **kwargs):
             msg = "deliberate bind boom"
             raise RuntimeError(msg)
 
-        monkeypatch.setattr(reg_mod, "_collect_callable_bind_specs", _boom)
+        monkeypatch.setattr("confarg.cli.argparse._completion._collect_callable_bind_specs", _boom)
         parser = argparse.ArgumentParser()
         populate_parser(_WithCovCallable, parser)
-        # Must not raise even though _add_callable_bind_flags raises
+        # Must not raise even though _collect_callable_bind_specs raises
         _pre_extend_parser_for_completion(
             parser,
             _WithCovCallable,
