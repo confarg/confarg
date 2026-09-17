@@ -259,13 +259,15 @@ The cost is one `construct()` call per leaf union value at dump time, and two wh
 emitted, since the cast is vetted the same way before it is written. `dump()` is not a hot path,
 and the alternative is a rule that can be wrong in silence.
 
-A variant `__cast__` cannot name — an unregistered `Enum` beside a `str`, a `Literal` over
-`Enum` members, a collection variant — gets a `ConfargWarning` and the bare value, rather than an
-error or a cast no reader accepts: `dump()` of a working object must not start raising, and the
-value stays correct for every consumer that does not feed it back into `build()`. Widening
-`__cast__` to dotted paths would close the `Enum` half
-([FEAT-16](../todo/features/FEAT-16-dotted-cast-names.md)); the warning outlives that, because a `Literal` member
-has no dotted name.
+A variant `__cast__` cannot name — an unregistered `Enum` beside a `str`, a collection
+variant — gets a `ConfargWarning` and the bare value, rather than an error or a cast no reader accepts:
+`dump()` of a working object must not start raising, and the value stays correct for every consumer
+that does not feed it back into `build()`. A `Literal` over `Enum` members no longer joins them: its
+bare value (the `Enum` member's value) reads back as the member, because the native branch of
+`_coerce_literal_value` matches it the way the token branch already did — one `_match_literal_member`
+answers for both channels (BUG-32, closed) — so no cast is needed. Widening `__cast__` to dotted
+paths would close the `Enum` half ([FEAT-16](../todo/features/FEAT-16-dotted-cast-names.md)); the
+warning outlives that for a collection variant, which has no dotted name.
 
 Precedents: YAML emitters tag a scalar (`!!str 5`) exactly when the plain form would resolve to
 another type, and leave it bare otherwise. pydantic warns

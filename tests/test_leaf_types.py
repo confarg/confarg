@@ -573,6 +573,31 @@ class TestLiteral:
         with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(WithLiteral, argv=["--value", "0xF"], env={})
 
+    def test_literal_over_enum_accepts_native_value(self) -> None:
+        """A Literal over an Enum member accepts the member's value from a config file.
+
+        ``dump()`` writes the Enum member's value, so a native string carrying that
+        value must build the member — the same text ``--color red`` already builds
+        on the CLI (BUG-32).
+        """
+        WithEnumLiteral = make_target("color", Literal[Color.RED], default=Color.RED)
+        result = confarg.build(WithEnumLiteral, {"color": "red"})
+        assert result.color is Color.RED
+
+    def test_literal_over_enum_accepts_native_name(self) -> None:
+        """A Literal over an Enum member also accepts the member's name from a file."""
+        WithEnumLiteral = make_target("color", Literal[Color.RED], default=Color.RED)
+        result = confarg.build(WithEnumLiteral, {"color": "RED"})
+        assert result.color is Color.RED
+
+    def test_literal_over_enum_round_trips(self) -> None:
+        """dump() then build() returns the same object for a Literal over an Enum."""
+        WithEnumLiteral = make_target("color", Literal[Color.RED], default=Color.RED)
+        obj = WithEnumLiteral(color=Color.RED)
+        dumped = confarg.dump(obj)
+        assert dumped == {"color": "red"}
+        assert confarg.build(WithEnumLiteral, dumped) == obj
+
 
 # ---------------------------------------------------------------------------
 # Annotated

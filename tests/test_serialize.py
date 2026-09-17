@@ -498,13 +498,15 @@ class TestDumpSubscriptedUnionVariant:
     def test_enum_literal_variant_dumps_as_its_value(self) -> None:
         """A Literal over Enum members dumps the member's value, like a bare Enum does.
 
-        The value does not read back — no ``__cast__`` names a Literal, and a native string
-        builds no Literal-over-Enum at all (BUG-32) — so dump warns rather than lying.
+        The value reads back as the member: a native string carrying the Enum
+        value builds the Literal-over-Enum (BUG-32), so no warning and no
+        ``__cast__`` is needed.
         """
         WithEnumLiteralOrInt = make_target("color", Union[Literal[Color.RED], int], default=0)
-        with pytest.warns(ConfargWarning, match="color"):
-            result = confarg.dump(WithEnumLiteralOrInt(color=Color.RED))
+        obj = WithEnumLiteralOrInt(color=Color.RED)
+        result = confarg.dump(obj)
         assert result == {"color": "red"}
+        assert confarg.build(WithEnumLiteralOrInt, result) == obj
 
     def test_bool_is_not_a_member_of_an_int_literal(self) -> None:
         """``Literal[1] | bool`` holding True is the bool variant: True is not the member 1."""
