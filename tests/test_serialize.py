@@ -20,6 +20,7 @@ import pytest
 import confarg
 from confarg._serialize import _serialize_leaf, _serialize_untyped
 from confarg._types import _Pinned, _StrToken, _UnionSeqToken
+from confarg.exceptions import ConfargWarning
 from tests.conftest import (
     AppConfig,
     CacheConfig,
@@ -351,6 +352,76 @@ class TestDumpUnionTagAuto:
         obj = WithUnionAmbiguousThree(shape=CircleShape(x=1, y=2, radius=5))
         result = confarg.dump(obj)
         assert result["shape"]["class"] == "tests.conftest.CircleShape"
+
+
+# ---------------------------------------------------------------------------
+# Leaf variants a sibling would steal back
+# ---------------------------------------------------------------------------
+
+
+class TestDumpStolenLeaf:
+    """A leaf value another union variant would steal back dumps with its ``__cast__``."""
+
+    def test_enum_variant_would_steal_the_string(self) -> None:
+        """A str beside an Enum that accepts it dumps cast, so it reads back as a str."""
+        WithColorOrStr = make_target("value", Union[Color, str], default="red")
+        obj = WithColorOrStr(value="red")
+        result = confarg.dump(obj)
+        assert result["value"] == {"__cast__": "str", "__value__": "red"}
+        assert confarg.build(WithColorOrStr, result) == obj
+
+    def test_registered_leaf_variant_would_steal_the_string(self) -> None:
+        """A str beside a Path variant dumps cast: Path would take the bare scalar."""
+        WithPathOrStr = make_target("value", Union[Path, str], default="")
+        obj = WithPathOrStr(value="subdir")
+        result = confarg.dump(obj)
+        assert result["value"] == {"__cast__": "str", "__value__": "subdir"}
+        assert confarg.build(WithPathOrStr, result) == obj
+
+    def test_enum_variant_would_steal_the_int(self) -> None:
+        """An int beside an IntEnum that accepts it dumps cast."""
+        WithIntColorOrInt = make_target("value", Union[IntColor, int], default=0)
+        obj = WithIntColorOrInt(value=1)
+        result = confarg.dump(obj)
+        assert result["value"] == {"__cast__": "int", "__value__": 1}
+        built = confarg.build(WithIntColorOrInt, result)
+        assert type(built.value) is int
+
+    def test_value_that_reads_back_stays_bare(self) -> None:
+        """The Enum member itself is not stolen from, so it keeps the bare form."""
+        WithColorOrStr = make_target("value", Union[Color, str], default="red")
+        obj = WithColorOrStr(value=Color.RED)
+        result = confarg.dump(obj)
+        assert result["value"] == "red"
+        assert confarg.build(WithColorOrStr, result) == obj
+
+    def test_unstealable_leaf_union_stays_bare(self) -> None:
+        """A union no variant can steal from dumps bare scalars as before."""
+        WithIntOrFloat = make_target("value", Union[int, float], default=0)
+        result = confarg.dump(WithIntOrFloat(value=math.pi))
+        assert result["value"] == pytest.approx(math.pi)
+
+    def test_inexpressible_cast_warns_and_dumps_bare(self) -> None:
+        """No __cast__ can name an unregistered Enum, so dump warns instead of lying."""
+        WithStrOrColor = make_target("value", Union[str, Color], default="plain")
+        obj = WithStrOrColor(value=Color.RED)
+        with pytest.warns(ConfargWarning, match="value"):
+            result = confarg.dump(obj)
+        assert result["value"] == "red"
+
+    def test_tag_policy_always_does_not_cast_an_unstolen_leaf(self) -> None:
+        """'always' is a class-tag policy: a leaf that reads back stays bare under it too."""
+        WithColorOrStr = make_target("value", Union[Color, str], default="red")
+        result = confarg.dump(WithColorOrStr(value=Color.RED), tag_policy="always")
+        assert result["value"] == "red"
+
+    def test_stolen_leaf_round_trips_through_a_file(self, tmp_path: Path) -> None:
+        """dump_file writes the cast form and load reads the same object back."""
+        WithColorOrStr = make_target("value", Union[Color, str], default="red")
+        obj = WithColorOrStr(value="red")
+        path = tmp_path / "out.yaml"
+        confarg.dump_file(obj, path)
+        assert confarg.load(WithColorOrStr, argv=[], env={}, files=[path]) == obj
 
 
 # ---------------------------------------------------------------------------

@@ -139,7 +139,32 @@ the built object ([10](10-design-decisions.md#dump-round-trips-at-the-built-obje
 `_serialize_untyped` is type-blind and cannot tell the two apart, so it keeps the pin in every
 case. A `__cast__` dict that came from a file is already in this form and re-dumps unchanged,
 so the emission is idempotent. Only the untyped path is affected: `dump(instance)` serializes a
-constructed object, which no longer holds a pin.
+constructed object, which no longer holds a pin — it reaches the same spelling by the typed
+route below, and both go through `_serialize._cast_dict` so the two keys are written in one
+place ([09](09-invariants.md#delegate-to-the-canonical-function)).
+
+## Casting a stolen leaf
+
+`dump()` knows the declared type, so — unlike the type-blind path above — it can tell whether a
+bare scalar comes back as the value that produced it. `_serialize_union` asks `_reads_back` for
+every **leaf** variant and, when the answer is no, writes the `{__cast__, __value__}` spelling
+instead: `Color | str` holding `"FOO"` dumps `{__cast__: str, __value__: "FOO"}`, because the
+bare `"FOO"` re-reads as `Color.FOO` (BUG-15, closed).
+
+`_reads_back` answers by **running the reader** — `construct(tp, data)`, then a
+same-type-and-equal comparison (`is` first, so a `float('nan')` that passes through unchanged
+still counts). Re-deriving the answer, by mirroring the stealing rule or the declaration order
+native values keep, would be a second model of `_construct_union` that drifts the moment the
+first one changes ([09](09-invariants.md#delegate-to-the-canonical-function)). The same function
+vets the cast before it is written, so a cast that would not read back either is never emitted.
+
+A struct variant is unaffected: it is disambiguated by the class tag (`_needs_tag`) as before,
+and `tag_policy` stays a class-tag policy — `"always"` tags structs and never casts leaves
+([10](10-design-decisions.md#a-stolen-leaf-dumps-with-its-cast)).
+
+When no cast can name the variant — an unregistered `Enum` losing its scalar to a `str` variant,
+the case `__cast__`'s vocabulary cannot spell — the bare value is written and a `ConfargWarning`
+names the path ([11](11-limitations.md#callables-and-serialization)).
 
 ## Union construction
 
@@ -201,6 +226,9 @@ through the same `_serialize_leaf` — plus the one thing only a raw dict holds,
   disambiguation of the serialized data would not select exactly one variant on the way
   back in; `"always"` tags every struct union member. A subclass of the declared type is
   always tagged.
+- A **leaf** union member is written as `{__cast__, __value__}` when the bare scalar would be
+  read back as another variant, under either policy
+  ([casting a stolen leaf](#casting-a-stolen-leaf)).
 - Enums dump as values, registered leaf types through their registered serializer (`Path`
   being the first of them, hence a string), types as dotted paths, sets sorted by
   `(type name, str)` so output is deterministic. These rules read the *value*, not the

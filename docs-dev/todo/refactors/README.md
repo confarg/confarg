@@ -30,5 +30,6 @@ different board.
 | [REF-24 — Minor cleanups in `_parse_cli` and `_coerce`](REF-24-parse-cli-and-coerce-cleanups.md) | S | low | none |
 | [REF-26 — The `--config` files named on argv are parsed three times per run](REF-26-config-files-parsed-three-times.md) | M | low | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | M | low | none |
+| [REF-28 — Three example scripts fail `ruff` on a clean tree](REF-28-examples-fail-ruff.md) | S | low | none |
 
 <!-- tickets:end -->

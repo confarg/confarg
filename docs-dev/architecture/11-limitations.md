@@ -65,3 +65,7 @@ the boundary moves here.
   does not replay constructor calls.
 - Attribute docstrings used as `--help` text require the class source, which is unavailable for
   dynamically created classes ([04](04-cli-adapters.md#framework-neutral-flag-model)).
+- A union leaf `__cast__` cannot name does not round-trip: an unregistered `Enum` beside a
+  `str` variant, a `Literal` holding `Enum` members, a collection variant a fixed-arity sibling
+  takes back. `dump()` writes the bare value and warns with the field path
+  ([10](10-design-decisions.md#a-stolen-leaf-dumps-with-its-cast)).
