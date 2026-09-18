@@ -16,7 +16,6 @@ different board.
 | [REF-9 — Review public argument names and order](REF-9-review-public-argument-names.md) | L | medium | api |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | M | high | none |
 | [REF-15 — `examples/17_removing_items/myapp.py` imports a module that does not exist](REF-15-example-imports-missing-module.md) | S | low | behavior |
-| [REF-23 — `_build_leaf_spec` repeats `group` / `group_description` on every FlagSpec](REF-23-build-leaf-spec-repeats-group.md) | S | low | none |
 | [REF-24 — Minor cleanups in `_parse_cli` and `_coerce`](REF-24-parse-cli-and-coerce-cleanups.md) | S | low | none |
 | [REF-26 — The `--config` files named on argv are parsed three times per run](REF-26-config-files-parsed-three-times.md) | M | low | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | M | low | none |
@@ -25,5 +24,6 @@ different board.
 | [REF-30 — A _resolve_struct test asserts what it does not verify](REF-30-resolve-struct-test-asserts-nothing.md) | S | low | none |
 | [REF-31 — `_missing_field_error` is defined twice](REF-31-duplicate-missing-field-error.md) | S | low | none |
 | [REF-32 — `_warn_unknown_env_field` carries a dead namedtuple branch](REF-32-dead-namedtuple-warn-branch.md) | S | low | none |
+| [REF-33 — `_build_leaf_spec` carries a dead `tuple[X, ...]` fallback branch](REF-33-dead-tuple-varlen-fallback-branch.md) | S | low | none |
 
 <!-- tickets:end -->

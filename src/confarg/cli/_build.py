@@ -15,6 +15,7 @@ Dev Notes:
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import inspect
 import json
 import warnings
@@ -126,87 +127,52 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
     """Build a FlagSpec for a single leaf field."""
     meta = _get_field_meta(raw_type)
     metavar: str | None = meta.metavar if meta is not None else None
+    base = FlagSpec(name=flag, help=help_text, group=group, group_description=group_description)
 
     if _is_bool(core):
-        return FlagSpec(
-            name=flag,
-            metavar=metavar or "true|false",
-            help=help_text,
-            group=group,
-            group_description=group_description,
-        )
+        return dataclasses.replace(base, metavar=metavar or "true|false")
 
     if _is_varlen_collection(core):
         et = _resolve_type(_elem_type(core))
-        return FlagSpec(
-            name=flag,
+        return dataclasses.replace(
+            base,
             nargs="*",
             metavar=metavar or getattr(et, "__name__", "ITEM").upper(),
-            help=help_text,
-            group=group,
-            group_description=group_description,
         )
 
     if _is_tuple(core):
         tt = _tuple_types(core)
         if tt is not None:
-            return FlagSpec(
-                name=flag,
+            return dataclasses.replace(
+                base,
                 nargs=len(tt),
                 whole_value=True,
                 metavar=metavar or "VALUE",
-                help=help_text,
-                group=group,
-                group_description=group_description,
             )
         # tuple[X, ...] — variable length (unreachable: caught by _is_varlen_collection)
         et = _resolve_type(_elem_type(core))  # pragma: no cover
-        return FlagSpec(
-            name=flag,
+        return dataclasses.replace(
+            base,
             nargs="*",
             metavar=metavar or getattr(et, "__name__", "ITEM").upper(),
-            help=help_text,
-            group=group,
-            group_description=group_description,
         )
 
     if _is_literal(core):
-        return FlagSpec(
-            name=flag,
-            choices=_literal_cli_choices(_literal_values(core)),
-            help=help_text,
-            group=group,
-            group_description=group_description,
-        )
+        return dataclasses.replace(base, choices=_literal_cli_choices(_literal_values(core)))
 
     if _is_enum(core):
-        return FlagSpec(
-            name=flag,
+        return dataclasses.replace(
+            base,
             choices=_enum_choices(core),
             metavar=metavar or flag.rsplit(".", 1)[-1].upper(),
-            help=help_text,
-            group=group,
-            group_description=group_description,
         )
 
     if _is_type_ref(core):
-        return FlagSpec(
-            name=flag,
-            metavar=metavar or "DOTTED.CLASS.PATH",
-            help=help_text,
-            group=group,
-            group_description=group_description,
-        )
+        return dataclasses.replace(base, metavar=metavar or "DOTTED.CLASS.PATH")
 
     # Generic scalar (str, int, float, Path, …)
     type_name = getattr(core, "__name__", "VALUE").upper()
-    return FlagSpec(
-        name=flag,
-        metavar=metavar or type_name,
-        help=help_text,
-        group=group,
-        group_description=group_description,
-    )
+    return dataclasses.replace(base, metavar=metavar or type_name)
 
 
 # (opener_suffix, mode, bind_key) for both the plain and escaped directive forms.
