@@ -902,7 +902,7 @@ class TestExpressionBranches:
         """Syntactically invalid expression content yields an empty reference set."""
         # Expression with invalid syntax → SyntaxError caught → silently skipped
         refs = _extract_references("${invalid syntax!!!}")
-        assert isinstance(refs, set)
+        assert refs == set()
 
     def test_collect_names_keyword_args(self) -> None:
         """Keyword argument names in function calls are collected as references."""
