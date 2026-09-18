@@ -20,9 +20,9 @@ different board.
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | M | low | none |
 | [REF-28 — Three example scripts fail `ruff` on a clean tree](REF-28-examples-fail-ruff.md) | S | low | none |
 | [REF-29 — Every file under `examples/` is stored with CRLF](REF-29-examples-stored-with-crlf.md) | S | low | none |
-| [REF-31 — `_missing_field_error` is defined twice](REF-31-duplicate-missing-field-error.md) | S | low | none |
 | [REF-32 — `_warn_unknown_env_field` carries a dead namedtuple branch](REF-32-dead-namedtuple-warn-branch.md) | S | low | none |
 | [REF-33 — `_build_leaf_spec` carries a dead `tuple[X, ...]` fallback branch](REF-33-dead-tuple-varlen-fallback-branch.md) | S | low | none |
 | [REF-34 — An _attribute_chain test asserts what it does not verify](REF-34-attribute-chain-test-asserts-nothing.md) | S | low | none |
+| [REF-35 — Ticket file committed with CRLF line endings](REF-35-ticket-file-crlf-line-endings.md) | S | low | none |
 
 <!-- tickets:end -->
