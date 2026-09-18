@@ -274,27 +274,6 @@ def _fold_root_json(data: dict[str, Any], root_json: list[dict[str, Any]], union
 
 def _warn_unknown_env_field(orig_key: str, parts: list[str], root_tp: Any) -> bool:
     """Warn and return True if the env var's first segment has no matching field."""
-    if _is_namedtuple(root_tp):
-        flds = _namedtuple_fields(root_tp)
-        part = parts[0]
-        # Accept numeric indices silently
-        try:
-            idx = int(part)
-            if 0 <= idx < len(flds):
-                return False
-        except ValueError:
-            pass
-        if part.lower() not in {f.lower() for f in flds}:
-            known = sorted(flds.keys())
-            warnings.warn(
-                f"Environment variable {orig_key!r} has no matching field"
-                f" (segment {part!r} not found in {root_tp.__name__})."
-                f" Known fields: {known}. The variable will be ignored.",
-                ConfargWarning,
-                stacklevel=4,
-            )
-            return True
-        return False
     if _is_struct(root_tp) and parts[0] not in _struct_fields(root_tp):
         known = sorted(_struct_fields(root_tp).keys())
         warnings.warn(
