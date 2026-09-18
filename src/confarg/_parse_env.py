@@ -320,10 +320,18 @@ def _warn_unknown_env_field(orig_key: str, parts: list[str], root_tp: Any) -> bo
     return False
 
 
-def _store_env_value(parts: list[str], ft: Any, value: str, data: dict[str, Any]) -> None:
-    """Parse an env var string value and store it at the resolved path in data."""
-    if value.startswith(("[", "{")):
-        accepts_obj = value.startswith("{") and (
+def _accepts_json_for(ft: Any, value: str) -> bool:
+    """Return True when a ``[``/``{``-led env value should be JSON-parsed for type ``ft``.
+
+    The opening bracket must match a shape the type can accept: ``{`` for a struct,
+    namedtuple, dict or callable; ``[`` for a namedtuple, variable-length collection
+    or tuple. A union accepts the bracket when any non-None variant does.
+
+    Dev Notes:
+        docs-dev/architecture/02-files-and-env.md#environment-parsing
+    """
+    if value.startswith("{"):
+        return (
             _is_namedtuple(ft)
             or _is_struct(ft)
             or _is_dict(ft)
@@ -339,7 +347,8 @@ def _store_env_value(parts: list[str], ft: Any, value: str, data: dict[str, Any]
                 )
             )
         )
-        accepts_arr = value.startswith("[") and (
+    if value.startswith("["):
+        return (
             _is_namedtuple(ft)
             or _is_varlen_collection(ft)
             or _is_tuple(ft)
@@ -353,14 +362,19 @@ def _store_env_value(parts: list[str], ft: Any, value: str, data: dict[str, Any]
                 )
             )
         )
-        if accepts_obj or accepts_arr:
-            try:
-                parsed = json.loads(value)
-                if isinstance(parsed, list | dict):
-                    _set_nested(data, parts, parsed)
-                    return
-            except json.JSONDecodeError:
-                pass
+    return False
+
+
+def _store_env_value(parts: list[str], ft: Any, value: str, data: dict[str, Any]) -> None:
+    """Parse an env var string value and store it at the resolved path in data."""
+    if _accepts_json_for(ft, value):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list | dict):
+                _set_nested(data, parts, parsed)
+                return
+        except json.JSONDecodeError:
+            pass
     _set_nested(data, parts, _try_coerce(ft, _StrToken(value)))
 
 
