@@ -49,6 +49,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "which leaf variant steals a token?" | `typedload._coerce._steal_rank` |
 | "does this type get taken apart into fields?" | `typedload._coerce._is_struct_variant` |
 | "may an explicit class tag still open this leaf?" | `typedload._coerce._is_taggable_leaf` |
+| "is this leaf type eager-coerced from a token?" | `typedload._coerce._is_eagerly_coercible` |
 | the error for a field no channel supplied | `typedload._construct._missing_field_error` |
 
 ## Merge stays unvalidated

@@ -83,7 +83,10 @@ reads back ([10](10-design-decisions.md#registered-leaf-types-dump-through-a-reg
 returns the token unchanged otherwise, leaving the decision to `construct`. `_coerce_leaf`
 raises. Pick deliberately: overrides of locals use `_coerce_leaf` because a failure must be
 an error there ([08](08-locals.md#declare-in-files-modify-anywhere)). Expression tokens are
-skipped by rule ([07](07-expressions.md#deferral-rule)).
+skipped by rule ([07](07-expressions.md#deferral-rule)). The two share one predicate for
+"is this leaf type coerced eagerly?" — `_is_eagerly_coercible`, the eager subset of
+`_coerce_leaf`'s domain (str and `Final` excluded) — and diverge only on raise-vs-return
+([09](09-invariants.md#delegate-to-the-canonical-function)).
 
 ## Stealing rule
 
