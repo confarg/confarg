@@ -21,6 +21,12 @@ front-end it needs the shared `loader`-fixture contract like the other three
 ([12-testing.md](../../architecture/12-testing.md)); if it is merely "click underneath, at your
 own risk", the two documentation claims must say so. Either way the claim and the test suite
 have to agree.
+The same shim surfaces as `ty check` noise: the `examples/` that pass
+`ctx: typer.Context` to `populate_command` / `from_context` produce 146
+`invalid-argument-type` diagnostics (Expected `click.core.Context`, found
+`typer.models.Context`), so the type checker cannot be used as a gate until
+this is settled.
+
 See [04-cli-adapters.md](../../architecture/04-cli-adapters.md).
 
 ```python
