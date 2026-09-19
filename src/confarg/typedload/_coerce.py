@@ -316,6 +316,22 @@ def _coerce_registered(tp: Any, value: Any, path: str) -> Any:
         raise TypeCoercionError.cannot_coerce(_src_type(value), value, tp.__name__, path) from None
 
 
+def _is_eagerly_coercible(tp: Any) -> bool:
+    """True if a string token for *tp* should be coerced before ``build()``.
+
+    The set of leaf types whose coercion is unambiguous enough to run eagerly in
+    the parsers: Literal, Enum, the scalar numbers (bool, int, float), registered
+    leaf types and None. ``str`` and ``Final`` are excluded — a ``str`` token is
+    already a str subclass and passes through, and ``Final`` is resolved to its
+    inner type first. This mirrors the branches of :func:`_coerce_leaf`; the two
+    diverge on raise-vs-return, so share only the predicate, not the behavior.
+
+    Dev Notes:
+        docs-dev/architecture/07-expressions.md#deferral-rule
+    """
+    return _is_literal(tp) or _is_enum(tp) or tp in (bool, int, float) or tp in _LEAF_COERCIONS or _is_none_type(tp)
+
+
 def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  # one branch per leaf type
     """Coerce a raw value to the target leaf type.
 
@@ -379,7 +395,7 @@ def _try_coerce(ft: Any, token: _StrToken) -> Any:
         if len(non_none) != 1:
             return token
         ft = _resolve_type(non_none[0])
-    if not (_is_literal(ft) or _is_enum(ft) or ft in (bool, int, float) or ft in _LEAF_COERCIONS or _is_none_type(ft)):
+    if not _is_eagerly_coercible(ft):
         return token
     try:
         return _coerce_leaf(ft, token)

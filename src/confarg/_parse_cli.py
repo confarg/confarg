@@ -410,12 +410,7 @@ def _looks_like_flag(token: str) -> bool:
     """
     if isinstance(token, _EqValue):
         return False
-    _double_dash = "--"
-    return (
-        token.startswith(_double_dash)
-        and len(token) > len(_double_dash)
-        and (token[len(_double_dash)].isalpha() or token[len(_double_dash)] == "_")
-    )
+    return token.startswith("--") and len(token) > 2 and (token[2].isalpha() or token[2] == "_")  # noqa: PLR2004  # length of the "--" prefix
 
 
 def _check_reserved_key_conflict(target: Any, name: str, detail: str) -> None:
