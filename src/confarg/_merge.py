@@ -14,8 +14,8 @@ from typing import Any
 
 from confarg.exceptions import ConfargError
 
-# "Append these items to the list".  The value is a list, a scalar (single-value append),
-# or a dict with integer string keys.
+# "Append these items to the list".  The value is a list or a scalar (single-value append);
+# every producer stores one of those two shapes.
 LIST_APPEND_KEY = "+"
 
 # "Delete these indices from the list".  The value is a sorted list of integers
@@ -46,18 +46,14 @@ DICT_DELETE: _DeleteSentinel = _DeleteSentinel()
 
 
 def _to_append_list(val: Any) -> list[Any]:
-    """Convert the value stored under LIST_APPEND_KEY to a flat list of items."""
+    """Convert the value stored under LIST_APPEND_KEY to a flat list of items.
+
+    Every producer stores a list (or set/tuple) or a scalar; a dict never reaches
+    here — the index-keyed dict form is a construct-time concern, handled in
+    ``typedload._construct``, not an append value.
+    """
     if isinstance(val, list | set | frozenset | tuple):
         return list(val)
-    if isinstance(val, dict):
-        if not val:
-            return []
-        try:
-            max_idx = max(int(k) for k in val)
-        except ValueError:
-            msg = f"Append dict keys must be integer indices, got: {sorted(val.keys())!r}"
-            raise ConfargError(msg) from None
-        return [val.get(str(i)) for i in range(max_idx + 1)]
     return [val]  # scalar single-value append
 
 

@@ -150,6 +150,16 @@ patch merges; `"~"` exists so an index typed after an append refers to the post-
 An index patch recurses through `_merge_existing_value`, the one "combine existing with
 override" dispatcher, so patches compose at any depth.
 
+The value stored under `"+"` is always a list or a scalar (single-value append). Every
+producer — `_apply_append_key` (file `key+:`), `_merge_append_ops` (CLI `--f+`),
+`_load_cli_config` (`--config.<f>+`) and the `_merge_existing_value` combiner — stores one
+of those two shapes. `_to_append_list` normalizes either to a flat list. An index-keyed
+dict (`{"0": …, "1": …}`) is a *construct-time* concern — `typedload._construct` reads it
+directly to build a sequence — not an append value, and the merge layer never produces one
+under `"+"`. A dict branch that once accepted that shape under `"+"` was speculative
+("for future env-var support" that never arrived) and has been dropped; env has no append
+concept, so there is no path that could reach it.
+
 ## Scalar intermediates
 
 A path can reach a key whose parent already holds a scalar — `--d oops --d.c x`, or `D=oops`
