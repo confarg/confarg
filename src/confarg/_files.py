@@ -65,20 +65,8 @@ def _load_yaml(path: Path) -> dict[str, Any]:
         InvalidConfigFileError: If PyYAML is not installed, the file is not found,
             or the file contains invalid YAML.
     """
-    try:
-        import yaml  # noqa: PLC0415
-    except ImportError:
-        msg = "PyYAML"
-        raise InvalidConfigFileError.missing_library(msg, "pyyaml", "YAML support") from None
-    try:
-        with Path(path).open(encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        return data if isinstance(data, dict) else {}
-    except FileNotFoundError:
-        raise InvalidConfigFileError.not_found(path) from None
-    except yaml.YAMLError as e:
-        msg = "YAML"
-        raise InvalidConfigFileError.malformed(msg, path, e) from e
+    data = _load_yaml_item(path)
+    return data if isinstance(data, dict) else {}
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -94,14 +82,7 @@ def _load_json(path: Path) -> dict[str, Any]:
         InvalidConfigFileError: If the file is not found, contains invalid JSON,
             or the top-level value is not a JSON object.
     """
-    try:
-        with Path(path).open(encoding="utf-8") as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        raise InvalidConfigFileError.not_found(path) from None
-    except json.JSONDecodeError as e:
-        msg = "JSON"
-        raise InvalidConfigFileError.malformed(msg, path, e) from e
+    data = _load_json_item(path)
     if not isinstance(data, dict):
         msg = f"JSON config must be an object, got {type(data).__name__}: {path}"
         raise InvalidConfigFileError(msg)
