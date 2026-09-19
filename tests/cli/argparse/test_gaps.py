@@ -430,12 +430,6 @@ class TestBuildCallableSpecs:
         names = [s.name for s in specs]
         assert "fn.bind.x" in names
 
-    def test_build_dynamic_flags_exception_returns_empty(self) -> None:
-        """build_dynamic_flags returns [] on any internal exception."""
-        # Passing a non-type target causes an internal error; result is []
-        result = build_dynamic_flags(None, [])  # deliberately passing None to exercise internal error-handling
-        assert result == []
-
     def test_resolve_struct_struct_fields_raises(self) -> None:
         """_resolve_struct returns None when _struct_fields raises for a struct-like type."""
 

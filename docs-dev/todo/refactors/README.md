@@ -15,7 +15,6 @@ different board.
 | [REF-4 — `tests/examples/_registry.py` is orphaned](REF-4-orphaned-examples-registry.md) | S | low | none |
 | [REF-9 — Review public argument names and order](REF-9-review-public-argument-names.md) | L | medium | api |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | M | high | none |
-| [REF-14 — A dynamic-flag test passes for the wrong reason](REF-14-dynamic-flag-test-passes-wrongly.md) | S | low | none |
 | [REF-15 — `examples/17_removing_items/myapp.py` imports a module that does not exist](REF-15-example-imports-missing-module.md) | S | low | behavior |
 | [REF-17 — `_var_param_names` / `_var_positional_name` / `_var_keyword_name` re-inspect the same signature](REF-17-var-param-helpers-reinspect-signature.md) | S | low | none |
 | [REF-18 — `_resolve_single` duplicates its exception-handling chain](REF-18-resolve-single-duplicate-exception-chain.md) | S | low | none |
@@ -28,5 +27,6 @@ different board.
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | M | low | none |
 | [REF-28 — Three example scripts fail `ruff` on a clean tree](REF-28-examples-fail-ruff.md) | S | low | none |
 | [REF-29 — Every file under `examples/` is stored with CRLF](REF-29-examples-stored-with-crlf.md) | S | low | none |
+| [REF-30 — A _resolve_struct test asserts what it does not verify](REF-30-resolve-struct-test-asserts-nothing.md) | S | low | none |
 
 <!-- tickets:end -->
