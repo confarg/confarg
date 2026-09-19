@@ -13,5 +13,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
 | [BUG-7 — Typer integration is claimed, never tested, and currently broken](BUG-7-typer-claimed-untested-broken.md) | L | medium | behavior |
+| [BUG-33 — REF-18 ticket on the refactor board describes work already done](BUG-33-ref18-ticket-stale-resurrected.md) | S | low | none |
 
 <!-- tickets:end -->
