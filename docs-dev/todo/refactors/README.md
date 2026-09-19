@@ -16,7 +16,6 @@ different board.
 | [REF-9 — Review public argument names and order](REF-9-review-public-argument-names.md) | L | medium | api |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | M | high | none |
 | [REF-15 — `examples/17_removing_items/myapp.py` imports a module that does not exist](REF-15-example-imports-missing-module.md) | S | low | behavior |
-| [REF-21 — `_construct_sequence` / `_construct_list` / `_construct_set` are three thin wrappers](REF-21-construct-collection-thin-wrappers.md) | S | low | none |
 | [REF-22 — `_store_env_value` buries a JSON-autodetect predicate in nested `any(...)` calls](REF-22-store-env-value-json-predicate.md) | S | low | none |
 | [REF-23 — `_build_leaf_spec` repeats `group` / `group_description` on every FlagSpec](REF-23-build-leaf-spec-repeats-group.md) | S | low | none |
 | [REF-24 — Minor cleanups in `_parse_cli` and `_coerce`](REF-24-parse-cli-and-coerce-cleanups.md) | S | low | none |
@@ -25,5 +24,6 @@ different board.
 | [REF-28 — Three example scripts fail `ruff` on a clean tree](REF-28-examples-fail-ruff.md) | S | low | none |
 | [REF-29 — Every file under `examples/` is stored with CRLF](REF-29-examples-stored-with-crlf.md) | S | low | none |
 | [REF-30 — A _resolve_struct test asserts what it does not verify](REF-30-resolve-struct-test-asserts-nothing.md) | S | low | none |
+| [REF-31 — `_missing_field_error` is defined twice](REF-31-duplicate-missing-field-error.md) | S | low | none |
 
 <!-- tickets:end -->

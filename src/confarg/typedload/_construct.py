@@ -226,11 +226,28 @@ def _construct_taggable_leaf(tp: Any, data: dict[str, Any], path: str, union_tag
     raise TypeCoercionError(msg)
 
 
-def _construct_sequence(tp: Any, data: Any, path: str, union_tag: str) -> Any:
-    """Construct a list, set, or frozenset."""
-    if _is_list(tp):
-        return _construct_list(tp, data, path, union_tag)
-    return _construct_set(tp, data, path, union_tag)
+def _construct_collection(tp: Any, data: Any, path: str, union_tag: str) -> Any:
+    """Construct a list, set, or frozenset from raw data.
+
+    Lists accept only a list or an index-keyed dict; sets and frozensets accept
+    any sequence-like value ``_build_items`` handles. The result is wrapped with
+    the constructor matching the type's origin.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#structs-collections-and-defaults
+    """
+    if _is_list(tp) and not isinstance(data, list | dict):
+        msg = (
+            f"Cannot construct list at '{path}': expected list or dict with integer keys,"
+            f" got {type(data).__name__} {data!r}"
+        )
+        raise TypeCoercionError(msg)
+    items = _build_items(_elem_type(tp), data, path, union_tag)
+    if _is_frozenset(tp):
+        return frozenset(items)
+    if _is_set(tp):
+        return set(items)
+    return items
 
 
 def _construct_scalar(tp: Any, data: Any, path: str, union_tag: str) -> Any:
@@ -255,7 +272,7 @@ def _construct_typed(tp: Any, data: Any, path: str, union_tag: str) -> Any:  # n
     if _is_struct_variant(tp):
         return _construct_struct_dispatch(tp, data, path, union_tag)
     if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
-        return _construct_sequence(tp, data, path, union_tag)
+        return _construct_collection(tp, data, path, union_tag)
     if _is_tuple(tp):
         return _construct_tuple(tp, data, path, union_tag)
     if _is_dict(tp):
@@ -416,52 +433,6 @@ def _construct_struct(tp: Any, data: dict[str, Any], path: str, union_tag: str) 
         return tp(**kwargs, **var_kw)
 
     return _call_with_var_positional(tp, kwargs, var.positional, var_kw)
-
-
-def _construct_list(tp: Any, data: Any, path: str, union_tag: str) -> list[Any]:
-    """Construct a list from raw data.
-
-    Handles both list and dict (with integer keys) input data.
-
-    Args:
-        tp: The list type (e.g. list[int]).
-        data: The raw data (list or dict with integer keys).
-        path: Dot-separated field path for error messages.
-        union_tag: The field name used as a discriminator tag in unions.
-
-    Returns:
-        The constructed list.
-
-    Raises:
-        TypeCoercionError: If data is not a list or dict with integer keys.
-    """
-    if not isinstance(data, list | dict):
-        msg = (
-            f"Cannot construct list at '{path}': expected list or dict with integer keys,"
-            f" got {type(data).__name__} {data!r}"
-        )
-        raise TypeCoercionError(msg)
-    return _build_items(_elem_type(tp), data, path, union_tag)
-
-
-def _construct_set(tp: Any, data: Any, path: str, union_tag: str) -> set[Any] | frozenset[Any]:
-    """Construct a set or frozenset from raw data.
-
-    Args:
-        tp: The set or frozenset type.
-        data: The raw data (list, set, tuple, or dict with integer keys).
-        path: Dot-separated field path for error messages.
-        union_tag: The field name used as a discriminator tag in unions.
-
-    Returns:
-        The constructed set or frozenset.
-
-    Raises:
-        TypeCoercionError: If data cannot be interpreted as a sequence.
-    """
-    et = _elem_type(tp)
-    items = _build_items(et, data, path, union_tag)
-    return frozenset(items) if _is_frozenset(tp) else set(items)
 
 
 def _build_items(et: Any, data: Any, path: str, union_tag: str) -> list[Any]:
