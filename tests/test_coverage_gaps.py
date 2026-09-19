@@ -1305,8 +1305,9 @@ class TestExpressionsBranches:
 
     def test_attribute_chain_noninteger_subscript_returns_none(self) -> None:
         """_attribute_chain returns None for string subscripts (non-integer indices)."""
-        refs = _extract_references("${servers['primary'].host}")
-        assert isinstance(refs, set)
+        node = ast.parse("servers['primary'].host", mode="eval").body
+        result = _attribute_chain(node)  # ty: ignore[invalid-argument-type]  # ast.parse returns ast.expr, but _attribute_chain expects a narrower union
+        assert result is None
 
     def test_pure_expression_unexpected_exception_wrapped(self) -> None:
         """An unexpected exception inside a pure expression is wrapped as ExpressionEvalError."""
