@@ -442,8 +442,7 @@ class TestBuildCallableSpecs:
         )
         # Should return None, not raise
         result = _resolve_struct(_BrokenStruct)
-        # It might or might not be None; important thing is it doesn't raise
-        assert result is None or isinstance(result, tuple)
+        assert result is None
 
 
 class TestNamespaceGaps:
