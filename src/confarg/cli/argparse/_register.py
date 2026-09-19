@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -16,13 +16,7 @@ if TYPE_CHECKING:
     from confarg.cli._spec import FlagSpec
 
 from confarg import _defaults
-from confarg._callable import _PLAIN_DIRECTIVES
 from confarg.cli._build import (
-    _build_callable_fn_specs,
-    _build_leaf_spec,
-    _build_union_tag_spec,
-    _collect_callable_bind_specs,
-    _whole_value_spec,
     build_dynamic_flags,
     build_static_flags,
 )
@@ -46,13 +40,6 @@ class _ExpressionTolerantChoices(list):
     def __contains__(self, value: object) -> bool:
         """Accept a declared choice, or any token expression resolution will rewrite."""
         return contains_expression(value) or super().__contains__(value)
-
-
-def _get_actions(target: argparse.ArgumentParser | argparse._ArgumentGroup) -> list[argparse.Action]:
-    """Return the action list from a parser or argument group."""
-    if hasattr(target, "_group_actions"):
-        return cast("list[argparse.Action]", target._group_actions)
-    return cast("list[argparse.Action]", target._actions)  # ty:ignore[redundant-cast]
 
 
 def _register_spec(
@@ -254,76 +241,3 @@ def make_parser(  # noqa: PLR0913  # thin pass-through: every parameter goes to 
         argv=argv,
     )
     return parser
-
-
-# ---------------------------------------------------------------------------
-# Thin wrappers used by _completion.py; they delegate to the spec builders and
-# _register_spec.  See REF-3 in docs-dev/todo/refactors/.
-# ---------------------------------------------------------------------------
-
-
-def _add_leaf_argument(
-    target: argparse.ArgumentParser | argparse._ArgumentGroup,
-    flag: str,
-    raw_type: Any,
-    core: Any,
-    help_text: str,
-) -> None:
-    """Register a single leaf field as an argparse argument."""
-    spec = _build_leaf_spec(flag, raw_type, core, help_text, None, "")
-    existing = {a.dest for a in _get_actions(target)}
-    _register_spec(spec, target, existing)
-
-
-def _add_whole_value_argument(  # noqa: PLR0913
-    target: argparse.ArgumentParser | argparse._ArgumentGroup,
-    flag: str,
-    name: str,
-    raw_type: Any,
-    resolved: Any,
-    help_text: str,
-) -> None:
-    """Register the bare ``--<flag>`` whole-value argument for a dict, struct or union field."""
-    spec = _whole_value_spec(flag, name, raw_type, resolved, None, "", {}, {})
-    spec.help = help_text
-    existing = {a.dest for a in _get_actions(target)}
-    _register_spec(spec, target, existing)
-
-
-def _add_callable_fn_flags(
-    target: argparse.ArgumentParser | argparse._ArgumentGroup,
-    flag: str,
-) -> None:
-    """Register --<flag>.fn, --<flag>.class, and --<flag>.call as discrete string flags."""
-    existing = {a.dest for a in _get_actions(target)}
-    for spec in _build_callable_fn_specs(flag, None, ""):
-        _register_spec(spec, target, existing)
-
-
-def _add_callable_bind_flags(
-    parser: argparse.ArgumentParser,
-    field_flag: str,
-    fn_path: str,
-    existing_dests: set[str] | None = None,
-    bind_key: str = _PLAIN_DIRECTIVES.bind,
-) -> None:
-    """Register --<field_flag>.<bind_key>.<param> flags by inspecting the target's signature.
-
-    ``bind_key`` is ``bind`` (plain) or ``_bind`` (escaped mode).
-    """
-    if existing_dests is None:
-        existing_dests = {a.dest for a in parser._actions}
-    specs = _collect_callable_bind_specs(field_flag, fn_path, bind_key, existing_dests)
-    load_flags_into_parser(specs, parser)
-
-
-def _add_union_tag_argument(
-    target: argparse.ArgumentParser | argparse._ArgumentGroup,
-    flag: str,
-    union_tag: str,
-    variant_types: list[Any],
-) -> None:
-    """Register --<flag>.<union_tag> for dynamic class dispatch."""
-    spec = _build_union_tag_spec(flag, union_tag, variant_types, None, "")
-    existing = {a.dest for a in _get_actions(target)}
-    _register_spec(spec, target, existing)

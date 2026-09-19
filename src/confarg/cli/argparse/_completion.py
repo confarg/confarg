@@ -33,18 +33,17 @@ from confarg._types import (
     _var_params,
 )
 from confarg.cli._build import (
+    _build_callable_fn_specs,
+    _build_leaf_spec,
+    _build_union_tag_spec,
+    _collect_callable_bind_specs,
     _collect_fn_paths_from_argv,
     _collect_fn_paths_from_config,
+    _whole_value_spec,
 )
 from confarg.cli._prefix import PREFIX_ATTR, strip_argv_prefix
-from confarg.cli._spec import _build_help, _get_field_docstrings
-from confarg.cli.argparse._register import (
-    _add_callable_bind_flags,
-    _add_callable_fn_flags,
-    _add_leaf_argument,
-    _add_union_tag_argument,
-    _add_whole_value_argument,
-)
+from confarg.cli._spec import FlagSpec, _build_help, _get_field_docstrings
+from confarg.cli.argparse._register import load_flags_into_parser
 
 _log = logging.getLogger(__name__)
 
@@ -58,114 +57,178 @@ class _WalkCtx:
     existing_dests: set[str] = field(default_factory=set)
 
 
-def _get_or_create_arg_group(
-    ctx: _WalkCtx,
-    flag: str,
-    core: Any,
-) -> argparse._ArgumentGroup:
-    """Return the existing argument group named flag, or create one."""
-    for g in ctx.parser._action_groups:
-        if g.title == flag:
-            return g
-    return ctx.parser.add_argument_group(flag, inspect.getdoc(core) or "")
-
-
-def _add_whole_value(  # noqa: PLR0913
-    group_target: argparse.ArgumentParser | argparse._ArgumentGroup,
-    ctx: _WalkCtx,
-    flag: str,
-    name: str,
-    raw_type: Any,
-    docstrings: dict[str, str],
-    defaults: dict[str, Any],
-) -> None:
-    """Register the bare ``--<flag>`` whole-value argument, once, during the completion walk."""
-    if flag in ctx.existing_dests:
-        return
-    help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
-    _add_whole_value_argument(group_target, flag, name, raw_type, _resolve_type(raw_type), help_text)
-    ctx.existing_dests.add(flag)
-
-
-def _extend_walk_field(  # noqa: PLR0913
+def _extend_walk_field(  # noqa: PLR0913, C901
     name: str,
     raw_type: Any,
     flag: str,
     core: Any,
     ctx: _WalkCtx,
-    group_target: argparse.ArgumentParser | argparse._ArgumentGroup,
     docstrings: dict[str, str],
     defaults: dict[str, Any],
     *,
     concrete: bool,
-) -> None:
-    """Register one field of a struct type into the argparse parser during completion walk."""
+    group: str | None,
+    group_description: str,
+) -> list[FlagSpec]:
+    """Build FlagSpecs for one field of a struct type during the completion walk.
+
+    Mirrors :func:`confarg.cli._build._specs_for_field` but produces only the
+    flags completion needs for a concrete union variant: the whole-value flag,
+    the union tag (without recursing into sibling variants), callable openers,
+    and plain leaves.  Singleton literal fields are skipped when *concrete* is
+    set — the class is already selected, so their value is determined.
+    """
+    specs: list[FlagSpec] = []
+
     if core is None:
-        non_none = _union_args_no_none(_resolve_type(raw_type))
         dest = f"{flag}.{ctx.union_tag}"
         if dest not in ctx.existing_dests:
+            non_none = _union_args_no_none(_resolve_type(raw_type))
             concrete_variants = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
-            _add_whole_value(group_target, ctx, flag, name, raw_type, docstrings, defaults)
-            _add_union_tag_argument(group_target, flag, ctx.union_tag, concrete_variants)
+            if flag not in ctx.existing_dests:
+                specs.append(
+                    _whole_value_spec(
+                        flag,
+                        name,
+                        raw_type,
+                        _resolve_type(raw_type),
+                        group,
+                        group_description,
+                        docstrings,
+                        defaults,
+                    ),
+                )
+                ctx.existing_dests.add(flag)
+            specs.append(_build_union_tag_spec(flag, ctx.union_tag, concrete_variants, group, group_description))
             ctx.existing_dests.add(dest)
-        return
+        return specs
 
     if _is_final(core):
         core = _final_inner(core)
 
     if concrete and _is_singleton_literal(core):
-        return  # class already selected — singleton value is determined by the class
+        return specs  # class already selected — singleton value is determined by the class
 
     if _is_callable(core):
         if flag not in ctx.existing_dests:
             help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
-            _add_leaf_argument(group_target, flag, raw_type, core, help_text)
+            specs.append(_build_leaf_spec(flag, raw_type, core, help_text, group, group_description))
             ctx.existing_dests.add(flag)
-        _add_callable_fn_flags(group_target, flag)
+        specs.extend(_build_callable_fn_specs(flag, group, group_description))
         ctx.existing_dests.update({f"{flag}.fn", f"{flag}.class"})
-        return
+        return specs
 
     if _is_struct(core):
-        _add_whole_value(group_target, ctx, flag, name, raw_type, docstrings, defaults)
-        _extend_walk(core, ctx, _get_or_create_arg_group(ctx, flag, core), flag, concrete=concrete)
-        return
+        if flag not in ctx.existing_dests:
+            specs.append(
+                _whole_value_spec(
+                    flag,
+                    name,
+                    raw_type,
+                    _resolve_type(raw_type),
+                    group,
+                    group_description,
+                    docstrings,
+                    defaults,
+                ),
+            )
+            ctx.existing_dests.add(flag)
+        specs.extend(
+            _extend_walk_specs(
+                core,
+                ctx,
+                flag,
+                concrete=concrete,
+                group=flag,
+                group_description=inspect.getdoc(core) or "",
+            ),
+        )
+        return specs
 
     if _is_dict(core):
         # No statically known keys, so the bare whole-value flag is all completion can offer.
-        _add_whole_value(group_target, ctx, flag, name, raw_type, docstrings, defaults)
-        return
+        if flag not in ctx.existing_dests:
+            specs.append(
+                _whole_value_spec(
+                    flag,
+                    name,
+                    raw_type,
+                    _resolve_type(raw_type),
+                    group,
+                    group_description,
+                    docstrings,
+                    defaults,
+                ),
+            )
+            ctx.existing_dests.add(flag)
+        return specs
 
     if flag not in ctx.existing_dests:
         help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
-        _add_leaf_argument(group_target, flag, raw_type, core, help_text)
+        specs.append(_build_leaf_spec(flag, raw_type, core, help_text, group, group_description))
         ctx.existing_dests.add(flag)
+    return specs
 
 
-def _extend_walk(
+def _extend_walk_specs(  # noqa: PLR0913
     target: Any,
     ctx: _WalkCtx,
-    group_target: argparse.ArgumentParser | argparse._ArgumentGroup,
     prefix: str,
     *,
     concrete: bool = False,
-) -> None:
-    """Register fields of target under prefix, skipping already-registered dests."""
+    group: str | None = None,
+    group_description: str = "",
+) -> list[FlagSpec]:
+    """Build FlagSpecs for all fields of a struct type during the completion walk."""
     setup = _resolve_struct(target)
     if setup is None:
-        return
+        return []
     tp, flds, hints = setup
 
     var_params = _var_params(tp).names
     docstrings = _get_field_docstrings(tp)
     defaults = _struct_defaults(tp)
 
+    specs: list[FlagSpec] = []
     for name in flds:
         if name == ctx.union_tag or name in var_params:
             continue
         raw_type = hints.get(name, Any)
         flag = f"{prefix}.{name}" if prefix else name
         core = _unwrap_optional(_resolve_type(raw_type))
-        _extend_walk_field(name, raw_type, flag, core, ctx, group_target, docstrings, defaults, concrete=concrete)
+        specs.extend(
+            _extend_walk_field(
+                name,
+                raw_type,
+                flag,
+                core,
+                ctx,
+                docstrings,
+                defaults,
+                concrete=concrete,
+                group=group,
+                group_description=group_description,
+            ),
+        )
+    return specs
+
+
+def _extend_walk(
+    target: Any,
+    ctx: _WalkCtx,
+    group_target: argparse.ArgumentParser | argparse._ArgumentGroup,  # noqa: ARG001  # kept for callers
+    prefix: str,
+    *,
+    concrete: bool = False,
+) -> None:
+    """Build FlagSpecs for the fields of *target* and register them on the parser.
+
+    Group placement is driven by ``spec.group`` (consumed by
+    :func:`load_flags_into_parser`), not by *group_target*, which is kept only
+    for callers that predate the FlagSpec refactor.
+    """
+    specs = _extend_walk_specs(target, ctx, prefix, concrete=concrete)
+    load_flags_into_parser(specs, ctx.parser)
 
 
 def _in_prefix(flag: str, cli_prefix: str) -> str:
@@ -216,13 +279,13 @@ def _pre_extend_parser_for_completion(
         argv_fns = _collect_fn_paths_from_argv(argv, target, union_tag)
         for field_flag, (fn_path, _mode, bind_key) in {**config_fns, **argv_fns}.items():
             try:
-                _add_callable_bind_flags(
-                    parser,
+                bind_specs = _collect_callable_bind_specs(
                     _in_prefix(field_flag, cli_prefix),
                     fn_path,
-                    walk_ctx.existing_dests,
                     bind_key,
+                    walk_ctx.existing_dests,
                 )
+                load_flags_into_parser(bind_specs, parser)
             except Exception:  # noqa: BLE001 — completion must never crash
                 _log.debug("callable bind flags: skipping %r", fn_path, exc_info=True)
                 continue

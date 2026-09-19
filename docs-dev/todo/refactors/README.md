@@ -12,7 +12,6 @@ different board.
 
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
-| [REF-3 — `_add_*` wrappers survive only for completion](REF-3-add-wrappers-survive-for-completion.md) | M | medium | none |
 | [REF-4 — `tests/examples/_registry.py` is orphaned](REF-4-orphaned-examples-registry.md) | S | low | none |
 | [REF-6 — `LIST_APPEND_KEY` accepts a value nothing produces](REF-6-list-append-key-unreachable-value.md) | S | high | none |
 | [REF-7 — Expression resolution repeats work](REF-7-expression-resolution-repeats-work.md) | M | medium | none |
