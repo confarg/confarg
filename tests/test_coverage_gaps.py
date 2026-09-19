@@ -914,7 +914,7 @@ class TestExpressionBranches:
         """_attribute_chain handles a subscript at the top level gracefully."""
         node = ast.parse("a[0]", mode="eval").body
         result = _attribute_chain(node)  # ty: ignore[invalid-argument-type]  # ast.parse returns ast.expr, but _attribute_chain expects a narrower union
-        assert result is None or isinstance(result, list)
+        assert result == ["a", "0"]
 
     def test_attribute_chain_non_int_subscript(self) -> None:
         """_attribute_chain returns None for non-integer subscript indices."""
