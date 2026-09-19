@@ -13,7 +13,6 @@ different board.
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
 | [REF-4 — `tests/examples/_registry.py` is orphaned](REF-4-orphaned-examples-registry.md) | S | low | none |
-| [REF-7 — Expression resolution repeats work](REF-7-expression-resolution-repeats-work.md) | M | medium | none |
 | [REF-9 — Review public argument names and order](REF-9-review-public-argument-names.md) | L | medium | api |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | M | high | none |
 | [REF-14 — A dynamic-flag test passes for the wrong reason](REF-14-dynamic-flag-test-passes-wrongly.md) | S | low | none |

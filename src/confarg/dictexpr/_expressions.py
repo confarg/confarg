@@ -19,6 +19,7 @@ import operator
 import re
 import tokenize
 from collections import deque
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -139,6 +140,21 @@ _CMPOP_MAP: dict[type, Any] = {
 }
 
 
+@lru_cache(maxsize=2048)
+def _parse_expression(content: str) -> ast.Expression:
+    """Parse one ``${...}`` body into a cached AST.
+
+    The anchor marker is stripped before parsing, so the cache is keyed by the
+    raw expression text. Every parse site in resolution — reference extraction,
+    validation and evaluation — goes through here, so a unique expression is
+    parsed however many times it appears but at most once.
+
+    Dev Notes:
+        docs-dev/architecture/07-expressions.md#resolution-algorithm
+    """
+    return ast.parse(_strip_anchor(content), mode="eval")
+
+
 def resolve_expressions(
     data: dict[str, Any],
 ) -> dict[str, Any]:
@@ -165,12 +181,13 @@ def resolve_expressions(
     data = copy.deepcopy(data)
 
     # 2. Extract references and build dependency graph
+    expr_paths = set(expr_fields.keys())
     deps: dict[str, set[str]] = {}
     for path, raw_str in expr_fields.items():
         refs = _extract_references(raw_str)
         # Filter refs to only those that are themselves expressions
         # Non-expression refs are "free" (already resolved)
-        deps[path] = refs & set(expr_fields.keys())
+        deps[path] = refs & expr_paths
 
     # 3. Topological sort
     order = _topological_sort(deps)
@@ -232,7 +249,7 @@ def _extract_references(expr_str: str) -> set[str]:
         if expr_content is None:
             continue  # escaped $${...}
         try:
-            tree = ast.parse(_strip_anchor(expr_content), mode="eval")
+            tree = _parse_expression(expr_content)
         except SyntaxError:
             continue
         _collect_names(tree, refs)
@@ -340,33 +357,33 @@ def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
     return None
 
 
-def _compute_in_degrees(deps: dict[str, set[str]]) -> dict[str, int]:
-    """Count how many deps-graph neighbours each node depends on (Kahn's algorithm setup)."""
+def _topological_sort(deps: dict[str, set[str]]) -> list[str]:
+    """Kahn's algorithm. Raises CircularReferenceError on cycles.
+
+    Linear in the graph size (``V + E``): a reverse adjacency list records, for
+    each node, who depends on it, so releasing a node touches only its direct
+    dependents rather than rescanning the whole graph.
+    """
+    if not deps:
+        return []
+
     in_degree: dict[str, int] = dict.fromkeys(deps, 0)
+    dependents: dict[str, list[str]] = {node: [] for node in deps}
     for node, node_deps in deps.items():
         for dep in node_deps:
             if dep in deps:
                 in_degree[node] += 1
-    return in_degree
+                dependents[dep].append(node)
 
-
-def _topological_sort(deps: dict[str, set[str]]) -> list[str]:
-    """Kahn's algorithm. Raises CircularReferenceError on cycles."""
-    if not deps:
-        return []
-
-    in_degree = _compute_in_degrees(deps)
     queue: deque[str] = deque(node for node, degree in in_degree.items() if degree == 0)
-
     order: list[str] = []
     while queue:
         node = queue.popleft()
         order.append(node)
-        for other, other_deps in deps.items():
-            if node in other_deps and other not in order:
-                in_degree[other] -= 1
-                if in_degree[other] == 0:
-                    queue.append(other)
+        for dependent in dependents[node]:
+            in_degree[dependent] -= 1
+            if in_degree[dependent] == 0:
+                queue.append(dependent)
 
     if len(order) != len(deps):
         remaining = set(deps.keys()) - set(order)
@@ -382,7 +399,7 @@ def _validate_ast(expr_str: str) -> None:
     Raises UnsafeExpressionError for disallowed constructs.
     """
     try:
-        tree = ast.parse(_strip_anchor(expr_str), mode="eval")
+        tree = _parse_expression(expr_str)
     except SyntaxError as exc:
         msg = f"Invalid expression syntax: {expr_str!r}"
         raise UnsafeExpressionError(msg) from exc
@@ -569,7 +586,7 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
     m = re.fullmatch(r"\$\{([^}]+)\}", stripped)
     if m and stripped == expr_str:
         # Pure expression — return typed result
-        tree = ast.parse(_strip_anchor(m.group(1)), mode="eval")
+        tree = _parse_expression(m.group(1))
         return _eval_expr(tree, namespace, expr_str)
 
     # Interpolation or escape mode: build string from parts
@@ -586,7 +603,7 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any]) -> Any:
             result_parts.append(escaped_text[1:])  # strip one $, producing "${foo}"
         else:
             # Real expression — evaluate and stringify
-            tree = ast.parse(_strip_anchor(m.group(1)), mode="eval")
+            tree = _parse_expression(m.group(1))
             value = _eval_expr(tree, namespace, m.group(0))
             result_parts.append(str(value))
 
