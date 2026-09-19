@@ -141,6 +141,9 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
         )
 
     if _is_tuple(core):
+        # _is_varlen_collection above absorbed tuple[X, ...], so a tuple
+        # reaching here is fixed-length and tt is non-None. The guard narrows
+        # the type; the None branch is unreachable.
         tt = _tuple_types(core)
         if tt is not None:
             return dataclasses.replace(
@@ -149,13 +152,6 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
                 whole_value=True,
                 metavar=metavar or "VALUE",
             )
-        # tuple[X, ...] — variable length (unreachable: caught by _is_varlen_collection)
-        et = _resolve_type(_elem_type(core))  # pragma: no cover
-        return dataclasses.replace(
-            base,
-            nargs="*",
-            metavar=metavar or getattr(et, "__name__", "ITEM").upper(),
-        )
 
     if _is_literal(core):
         return dataclasses.replace(base, choices=_literal_cli_choices(_literal_values(core)))
