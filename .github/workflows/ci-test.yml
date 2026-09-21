@@ -52,3 +52,20 @@ jobs:
       run: uv run --locked pytest
     - if: matrix.resolution == 'latest'
       run: uv run --upgrade pytest
+
+  # Gate collapsing all tests into one stable check.
+  tests-ok:
+    name: All tests passed
+    needs: [changes, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    # `needs.test.result` aggregates the matrix: `success` only if every
+    # combination passed.  Accept `skipped` only when the filter found nothing
+    # to test, and require the filter itself to have succeeded -- otherwise a
+    # matrix that never ran would merge green.
+    - if: >-
+        needs.changes.result != 'success' ||
+        (needs.test.result != 'success' &&
+        (needs.test.result != 'skipped' || needs.changes.outputs.code == 'true'))
+      run: exit 1
