@@ -8,7 +8,7 @@ live directly in `tests/`.
 
 ## Contract suite
 
-Parity is enforced by tests, not by review. `tests/_loaders.py` wraps the four front-ends
+Parity is enforced by tests, not by review. `tests/_loaders.py` wraps the five front-ends
 behind a `confarg.load()`/`merge()`-compatible interface:
 
 | Loader | Pipeline |
@@ -16,14 +16,23 @@ behind a `confarg.load()`/`merge()`-compatible interface:
 | vanilla | `confarg.load` |
 | argparse | `make_parser` → `parse_args` → `from_namespace` |
 | click | `populate_command` → `CliRunner.invoke` → `from_context` |
+| typer | `populate_command` → `TyperCommand.main` → `from_context` |
 | cyclopts | `populate_app` → `from_app` |
+
+typer has no runner that takes a pre-built command — `typer.testing.CliRunner.invoke` calls
+`get_command` on the app itself and would discard the populated one — so `TyperLoader` invokes
+`command.main` directly under a redirected stdout/stderr. Standalone mode exits on success too,
+so an empty result holder is what tells the loader typer rejected argv itself.
 
 `tests/cli/test_backend_contract.py` holds every behavior shared by the front-ends, written
 once against the parametrized `loader` fixture. Only framework-specific behavior (help text,
-registration idioms, completion) goes in the per-backend directories. Writing a shared
+registration idioms, completion) goes in the per-backend directories; what the click and typer
+adapters *share* is covered once by the contract suite, so `tests/cli/test_clicklike.py` holds
+only the shared helpers neither public surface exposes
+([04](04-cli-adapters.md#the-clicklike-seam)). Writing a shared
 behavior per backend would let the backends drift.
 
-Fixtures (`tests/conftest.py`): `loader` (all four), `space_sep_loader`, `repeated_loader`,
+Fixtures (`tests/conftest.py`): `loader` (all five), `space_sep_loader`, `repeated_loader`,
 `populating_loader` (front-ends with a `populate_*` step, exposing `registered_flags()`).
 
 Several contract classes document past divergences, one test each (`TestPipelineParity`,
@@ -34,7 +43,7 @@ Several contract classes document past divergences, one test each (`TestPipeline
 
 List syntax differs by framework ([04](04-cli-adapters.md#list-syntax-divergence)). The
 difference must stay **visible**: write separate tests per convention (`space_sep_loader`
-for vanilla/argparse/cyclopts, `repeated_loader` for click/cyclopts) instead of hiding it
+for vanilla/argparse/cyclopts, `repeated_loader` for click/typer/cyclopts) instead of hiding it
 behind a helper.
 
 ## Examples and documentation

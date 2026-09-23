@@ -18,7 +18,7 @@ adapter loader passes it to ``populate_*`` and then calls ``merge_*``/``from_*``
 List-field CLI syntax differs between loaders:
 - ``VanillaLoader``, ``ArgparseLoader``, ``CycloptsLoader``: space-separated
   (``--tags a b c``, nargs="*" style)
-- ``ClickLoader``: repeated flags (``--tags a --tags b --tags c``)
+- ``ClickLoader``, ``TyperLoader``: repeated flags (``--tags a --tags b --tags c``)
 - ``CycloptsLoader``: accepts both forms
 
 This difference is intentional and must be visible in tests: write separate
@@ -27,19 +27,23 @@ test functions for each convention rather than hiding the difference.
 A second, independent divergence has the same membership today but is not the
 same rule: a fixed-arity flag (``tuple[X, Y]``, namedtuple) also accepts one
 whole-value token (``--pair '[13, 42]'``) on every loader except
-``ClickLoader``, whose options cannot take a variable token count
+``ClickLoader`` and ``TyperLoader``, whose options cannot take a variable token count
 (``WHOLE_VALUE_ARITY_LOADERS``, docs-dev/architecture/04-cli-adapters.md#whole-value-flags).
 Keep the two sets apart so a later change to one does not silently move the other.
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 import click
 import cyclopts
+import typer
 from click.testing import CliRunner
+from typer.main import get_command
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -50,11 +54,13 @@ if TYPE_CHECKING:
 import confarg
 import confarg.cli.click as confargclick
 import confarg.cli.cyclopts as confargcyclopts
+import confarg.cli.typer as confargtyper
 from confarg import _defaults
 from confarg.cli.argparse import from_namespace, make_parser, merge_namespace
 from confarg.cli.click import populate_command
 from confarg.cli.cyclopts import populate_app
 from confarg.cli.cyclopts._register import _app_meta
+from confarg.cli.typer import populate_command as populate_typer_command
 
 
 class ConfargLoader(ABC):
@@ -267,6 +273,79 @@ class ClickLoader(ConfargLoader):
         return {opt[2:] for p in cmd.params for opt in p.opts if opt.startswith("--")}
 
 
+class TyperLoader(ConfargLoader):
+    """Wraps ``populate_command`` -> ``TyperCommand.main`` -> ``from_context`` / ``merge_context``.
+
+    Typer inherits click's repeated-flag list syntax (``--tags a --tags b``) and
+    click's inability to vary an option's token count, so it sits in the same
+    loader sets as ``ClickLoader``.
+    """
+
+    id = "typer"
+
+    def _run(self, target: type | TypeAliasType | UnionType, *, construct: bool, **kw: Any) -> Any:
+        argv = list(kw.pop("argv") or [])
+        config_flag = kw.pop("config_flag")
+        cli_prefix = kw.pop("cli_prefix")
+        result_holder: list[Any] = []
+
+        app = typer.Typer(add_completion=False)
+
+        @app.command()
+        def _inner(ctx: typer.Context) -> None:
+            fn = confargtyper.from_context if construct else confargtyper.merge_context
+            result_holder.append(fn(target, ctx, argv=argv, config_flag=config_flag, **kw))
+
+        cmd = get_command(app)
+        populate_typer_command(
+            target,
+            cmd,
+            cli_prefix=cli_prefix,
+            config_flag=config_flag,
+            union_tag=kw["union_tag"],
+            argv=argv,
+        )
+        sink = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+                cmd.main(args=argv, prog_name="cli", standalone_mode=True)
+        except SystemExit:
+            # Standalone mode exits on success too; an empty holder is the only sign
+            # that typer rejected argv itself, so that verdict is what callers see.
+            if not result_holder:
+                raise
+        if not result_holder:
+            raise SystemExit(1)
+        return result_holder[0]
+
+    def registered_flags(  # noqa: PLR0913 - mirrors the populate_* keyword-only signature
+        self,
+        target: type | TypeAliasType | UnionType,
+        *,
+        argv: Sequence[str] = (),
+        cli_prefix: str = "",
+        config_flag: str = _defaults.CONFIG_FLAG,
+        config_subkeys: bool = True,
+        union_tag: str = _defaults.UNION_TAG,
+    ) -> set[str] | None:
+        app = typer.Typer(add_completion=False)
+
+        @app.command()
+        def _inner(ctx: typer.Context) -> None: ...
+
+        cmd = get_command(app)
+        populate_typer_command(
+            target,
+            cmd,
+            cli_prefix=cli_prefix,
+            config_flag=config_flag,
+            config_subkeys=config_subkeys,
+            union_tag=union_tag,
+            argv=list(argv),
+        )
+        return {opt[2:] for p in cmd.params for opt in p.opts if opt.startswith("--")}
+
+
 class CycloptsLoader(ConfargLoader):
     """Wraps ``populate_app`` → ``from_app`` / ``merge_app``.
 
@@ -323,6 +402,7 @@ ALL_LOADERS: list[ConfargLoader] = [
     VanillaLoader(),
     ArgparseLoader(),
     ClickLoader(),
+    TyperLoader(),
     CycloptsLoader(),
 ]
 
@@ -334,11 +414,12 @@ SPACE_SEP_LOADERS: list[ConfargLoader] = [
 
 REPEATED_FLAG_LOADERS: list[ConfargLoader] = [
     ClickLoader(),
+    TyperLoader(),
     CycloptsLoader(),
 ]
 
-# Loaders whose fixed-arity flags also accept a single whole-value token: click
-# registers its exact token count and declines it
+# Loaders whose fixed-arity flags also accept a single whole-value token: click and
+# typer register their exact token count and decline it
 # (docs-dev/architecture/04-cli-adapters.md#whole-value-flags).
 WHOLE_VALUE_ARITY_LOADERS: list[ConfargLoader] = [
     VanillaLoader(),
@@ -350,5 +431,6 @@ WHOLE_VALUE_ARITY_LOADERS: list[ConfargLoader] = [
 POPULATING_LOADERS: list[ConfargLoader] = [
     ArgparseLoader(),
     ClickLoader(),
+    TyperLoader(),
     CycloptsLoader(),
 ]

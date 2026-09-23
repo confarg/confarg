@@ -40,7 +40,7 @@ deliberately (non-alphabetical, hence `noqa: RUF022`):
 | one-step | `load` | everything |
 | dump | `dump`, `dump_file` | serialization |
 
-Shared keyword defaults and reserved key names live in `_defaults.py` so the four front-ends
+Shared keyword defaults and reserved key names live in `_defaults.py` so the five front-ends
 cannot drift.
 
 **Round-trip fidelity comes from the seam, not from a reverse pass.** `merge()` keeps
@@ -109,7 +109,7 @@ name config files that must be loaded at step 3, before inline env values are ap
 ## The single merge pipeline
 
 `_pipeline._merge_sources` is the only implementation of source priority, file-loading
-order, locals checks and final reference canonicalization. `confarg.merge()` and the three
+order, locals checks and final reference canonicalization. `confarg.merge()` and the four
 adapters' `merge_*` functions each extract their CLI values and `--config` pairs their own
 way, then delegate here.
 

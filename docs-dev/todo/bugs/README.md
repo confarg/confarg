@@ -12,7 +12,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
-| [BUG-7 — Typer integration is claimed, never tested, and currently broken](BUG-7-typer-claimed-untested-broken.md) | L | medium | behavior |
+| [BUG-33 — A bare append flag is rejected by the clicklike front-ends](BUG-33-bare-append-flag-rejected-by-clicklike-front-ends.md) | M | low | behavior |
 | [BUG-34 — YAML root config file with a non-dict top-level value silently loads empty](BUG-34-yaml-non-dict-root-silent-empty.md) | S | medium | behavior |
 
 <!-- tickets:end -->

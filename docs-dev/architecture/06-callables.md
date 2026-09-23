@@ -30,7 +30,7 @@ registration (probes over the flat `{flag}.{name}` namespace), so every channel 
 without duplicating tables. On the CLI a field's escaped opener likewise beats a plain
 `--f.fn`, which is then a kwarg named `fn`.
 
-**A mixed pair is data everywhere, in all four front-ends** (BUG-25). Rejecting
+**A mixed pair is data everywhere, in all five front-ends** (BUG-25). Rejecting
 `--f.fn X --f._bind.p V` outright was considered and declined: `_bind` beside a plain opener
 is an ordinary key in a config file and in an env var, so a CLI-only rejection would trade a
 front-end parity gap for a channel one — and the target whose own parameter is named `bind`

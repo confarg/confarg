@@ -18,7 +18,7 @@ import confarg
 import confarg.cli.click as confargclick
 from confarg.cli import FieldMeta, FlagSpec
 from confarg.cli._build import build_static_flags
-from confarg.cli.click._completion import _partial_argv_from_env, setup_completion
+from confarg.cli.click._completion import setup_completion
 from confarg.cli.click._register import load_flags_into_command, populate_command
 
 # ---------------------------------------------------------------------------
@@ -269,12 +269,12 @@ class TestBoolConvention:
 
 
 # ---------------------------------------------------------------------------
-# setup_completion / _partial_argv_from_env
+# setup_completion
 # ---------------------------------------------------------------------------
 
 
 class TestSetupCompletion:
-    """Tests for setup_completion and the COMP_WORDS-based argv helper."""
+    """Tests for click's setup_completion wrapper."""
 
     def test_noop_outside_completion(self) -> None:
         """setup_completion is a no-op when _PROGNAME_COMPLETE is not set."""
@@ -282,19 +282,6 @@ class TestSetupCompletion:
         before = len(cmd.params)
         setup_completion(cmd, Simple)
         assert len(cmd.params) == before
-
-    def test_partial_argv_empty_when_no_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """_partial_argv_from_env returns [] when COMP_WORDS/COMP_CWORD are absent."""
-        monkeypatch.delenv("COMP_WORDS", raising=False)
-        monkeypatch.delenv("COMP_CWORD", raising=False)
-        assert _partial_argv_from_env() == []
-
-    def test_partial_argv_parsed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """_partial_argv_from_env strips the program name and the word being completed."""
-        monkeypatch.setenv("COMP_WORDS", "cli --host myhost --")
-        monkeypatch.setenv("COMP_CWORD", "3")
-        result = _partial_argv_from_env()
-        assert result == ["--host", "myhost"]
 
     def test_completion_mode_extends_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """When _PROGNAME_COMPLETE is set, dynamic flags are added to the command."""

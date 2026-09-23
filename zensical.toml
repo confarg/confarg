@@ -36,6 +36,7 @@ nav = [
     { "20. Factories" = "examples/20_factories/README.md" },
     { "21. Expressions" = "examples/21_expressions/README.md" },
     { "22. Variable scopes" = "examples/22_variable_scopes/README.md" },
+{ "23. Local variables" = "examples/23_local_variables/README.md" },
   ] },
   { "Reference" = "reference.md" },
 ]

@@ -2,18 +2,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Click-specific flag loading: load_flags_into_command and populate_command."""
+"""Typer-specific flag loading: load_flags_into_command and populate_command."""
 
 from __future__ import annotations
 
 import sys
 from typing import TYPE_CHECKING, Any
 
-import click
-from click.shell_completion import CompletionItem
+from typer._types import TyperChoice
+from typer.core import TyperOption
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from typer._click import Command, Context
 
     from confarg.cli._spec import FlagSpec
 
@@ -21,29 +23,31 @@ from confarg import _defaults
 from confarg.cli import _clicklike
 
 
-class _ExpressionTolerantChoice(_clicklike.ExpressionTolerantChoiceMixin, click.Choice):
-    """A ``click.Choice`` that also admits unresolved ``${...}`` tokens."""
+class _ExpressionTolerantChoice(_clicklike.ExpressionTolerantChoiceMixin, TyperChoice):
+    """A ``TyperChoice`` that also admits unresolved ``${...}`` tokens."""
 
 
-class _ConfargOption(_clicklike.DottedNameMixin, click.Option):
-    """click.Option subclass that allows dotted names (not valid Python identifiers)."""
+class _ConfargOption(_clicklike.DottedNameMixin, TyperOption):
+    """TyperOption subclass that allows dotted names (not valid Python identifiers)."""
 
 
 def _completer_kwargs(completer: Callable[[str], list[str]]) -> dict[str, Any]:
-    """Wrap a confarg completer as click's ``shell_complete`` callback."""
+    """Wrap a confarg completer as typer's ``autocompletion`` callback.
 
-    def _shell_complete(
-        _ctx: click.Context,
-        _param: click.Parameter,
-        incomplete: str,
-    ) -> list[CompletionItem]:
-        return [CompletionItem(v) for v in completer(incomplete)]
+    Typer deprecates click's ``shell_complete`` in favour of ``autocompletion``,
+    which returns bare strings and is wrapped into completion items by typer itself.
+    Typer also filters the result by ``startswith(incomplete)``, which is a no-op —
+    a confarg completer already prefix-filters.
+    """
 
-    return {"shell_complete": _shell_complete}
+    def _autocompletion(_ctx: Context, _args: list[str], incomplete: str) -> list[str]:
+        return completer(incomplete)
+
+    return {"autocompletion": _autocompletion}
 
 
-def _spec_to_option(spec: FlagSpec) -> click.Option:
-    """Convert one FlagSpec to a click.Option."""
+def _spec_to_option(spec: FlagSpec) -> TyperOption:
+    """Convert one FlagSpec to a TyperOption."""
     return _ConfargOption(
         confarg_name=spec.name,
         **_clicklike.option_kwargs(
@@ -56,26 +60,26 @@ def _spec_to_option(spec: FlagSpec) -> click.Option:
 
 def load_flags_into_command(
     flags: list[FlagSpec],
-    command: click.Command,
+    command: Command,
 ) -> None:
-    """Load a list of :class:`~confarg.cli.FlagSpec` objects into a Click command.
+    """Load a list of :class:`~confarg.cli.FlagSpec` objects into a Typer command.
 
-    Each spec becomes a :class:`click.Option` appended to ``command.params``.
-    Flags whose ``name`` is already registered are silently skipped.
-    The ``group`` field of :class:`~confarg.cli.FlagSpec` is not used —
-    Click has no argument-group concept.
+    Each spec becomes a :class:`typer.core.TyperOption` appended to
+    ``command.params``.  Flags whose ``name`` is already registered are silently
+    skipped.  The ``group`` field of :class:`~confarg.cli.FlagSpec` is not used —
+    Typer has no argument-group concept.
 
     Args:
         flags: The specs to register, typically from :func:`~confarg.cli.build_static_flags`
             or :func:`~confarg.cli.build_dynamic_flags`.
-        command: The :class:`click.Command` to populate.
+        command: The command from :func:`typer.main.get_command` to populate.
     """
     _clicklike.load_flags_into_command(flags, command, _spec_to_option)
 
 
 def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app signatures; all params are keyword-only with sensible defaults
     target: object,
-    command: click.Command,
+    command: Command,
     *,
     cli_prefix: str = "",
     union_tag: str = _defaults.UNION_TAG,
@@ -83,18 +87,32 @@ def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app s
     config_subkeys: bool = True,
     argv: Sequence[str] | None = None,
 ) -> None:
-    """Register fields of a dataclass type as options on a Click command.
+    """Register fields of a dataclass type as options on a Typer command.
 
-    Mirrors :func:`~confarg.cli.argparse.populate_parser` for the Click framework.
-    All registered options use a sentinel default so that unprovided options are
-    excluded when building the merged dict in :func:`from_context`.
+    Mirrors :func:`~confarg.cli.click.populate_command` for Typer.  Typer builds its
+    commands from a function signature, so pass the command that
+    :func:`typer.main.get_command` returns for your :class:`typer.Typer` app rather
+    than the app itself, and invoke that command::
+
+        app = typer.Typer()
+
+        @app.command()
+        def main(ctx: typer.Context) -> None:
+            print(from_context(Config, ctx))
+
+        command = typer.main.get_command(app)
+        populate_command(Config, command)
+        command()
+
+    The command function must take a :class:`typer.Context` parameter, which is how
+    :func:`from_context` reaches the parsed options.
 
     A ``--<config_flag>`` option (default ``--config``) accepting multiple file
     paths is also registered.  Pass ``config_flag=""`` to suppress it.
 
     Args:
         target: The dataclass type whose fields to register.
-        command: The :class:`click.Command` to populate.
+        command: The command from :func:`typer.main.get_command` to populate.
         cli_prefix: Namespace every confarg option lives under, so
             ``--<prefix>.<field>`` stays distinguishable from the host
             application's own options.  Defaults to ``""`` (no prefix).  The value

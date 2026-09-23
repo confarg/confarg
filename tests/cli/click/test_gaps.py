@@ -114,9 +114,9 @@ class TestClickCompletionGaps:
         """setup_completion swallows any outer exception."""
         monkeypatch.setenv("_CMD_COMPLETE", "bash_complete")
 
-        # Monkeypatch _partial_argv_from_env to raise
+        # Monkeypatch the shared partial_argv_from_env to raise
         monkeypatch.setattr(
-            "confarg.cli.click._completion._partial_argv_from_env",
+            "confarg.cli._clicklike._completion.partial_argv_from_env",
             lambda: (_ for _ in ()).throw(RuntimeError("boom")),
         )
 

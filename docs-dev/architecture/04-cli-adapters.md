@@ -1,4 +1,4 @@
-# CLI adapters (argparse, click, cyclopts)
+# CLI adapters (argparse, click, typer, cyclopts)
 
 ## Why adapters exist
 
@@ -8,25 +8,81 @@ still owns configuration semantics. They are a translation layer, never a second
 implementation: every adapter must produce exactly what `confarg.load()` would
 ([09](09-invariants.md#cross-channel-parity)).
 
-## The triad
+## The quartet
 
-| | argparse | click | cyclopts |
-|---|---|---|---|
-| register flags | `populate_parser` (+ `make_parser`) | `populate_command` | `populate_app` |
-| raw dict | `merge_namespace` | `merge_context` | `merge_app` |
-| object | `from_namespace` | `from_context` | `from_app` |
+| | argparse | click | typer | cyclopts |
+|---|---|---|---|---|
+| register flags | `populate_parser` (+ `make_parser`) | `populate_command` | `populate_command` | `populate_app` |
+| raw dict | `merge_namespace` | `merge_context` | `merge_context` | `merge_app` |
+| object | `from_namespace` | `from_context` | `from_context` | `from_app` |
 
 `merge_*` → flatten the framework's result to `{dotted.flag: value}` →
 `cli._collect._merge_from_flat`, which is the whole shared tail: strip the prefix →
 `_collect_ns_fields` → patch scan (`_collect_cli_patch_ops`) → `apply_root_json` →
 `_collect_config_file_pairs(argv)` → `_pipeline._merge_sources`. `from_*` = `merge_*` +
-`build()`. Only the flattening is per-adapter, so the three cannot drift. Keyword names and
+`build()`. Only the flattening is per-adapter, so the four cannot drift. Keyword names and
 order mirror `confarg.load` exactly. `populate_*` defaults `argv` to `sys.argv[1:]` like
 `merge_*`, so the host parser accepts every flag `merge_*` will consume; `argv=[]` registers
 only static flags.
 
 Asymmetry: cyclopts is signature-driven and has no separate parse result to hand over, so
 `merge_app`/`from_app` call `app.parse_args` themselves and `sys.exit` on `--help`/`--version`.
+Typer is signature-driven too, but it compiles the signature down to a command object, so
+`populate_command` takes what `typer.main.get_command(app)` returns and the pair is click's.
+
+## The clicklike seam
+
+Typer was once a layer over click, which is why the typer examples were written against
+`confarg.cli.click` and why no typer adapter existed. It now **vendors click**
+(`typer/_click/__init__.py`: *"Code taken and adapted from Click 8.3.1"*; verified against
+typer 0.27.2, which is the floor — the release that introduced the fork was not checked), so
+`typer._click.Context`, `.Parameter` and `.Command`, `typer.core.TyperOption` and
+`typer._types.TyperChoice` are now unrelated to the real click classes of the same shape.
+Registering a real `click.Option` on a typer command therefore fails inside click's own
+`Parameter.handle_parse_result`, which reaches for a `Context` slot typer's fork does not have
+(BUG-7); and `Context.get_parameter_source` returns a member of *typer's* `ParameterSource`,
+which is never equal to a member of click's. Neither break is in the merge path.
+
+Typer is consequently a front-end in its own right, not a click spelling — but the two
+frameworks' APIs still match almost everywhere, so `cli/_clicklike/` holds every part that
+does not name a framework class and each adapter supplies only what its framework spells
+differently:
+
+| Shared in `_clicklike` | Supplied by the adapter |
+|---|---|
+| `option_kwargs` — the whole `FlagSpec` → option-keyword mapping | the choice class, the completion keyword |
+| `DottedNameMixin` — `--db.host` is not an identifier | the option base class |
+| `ExpressionTolerantChoiceMixin` — the `${...}` bypass | the choice base class |
+| `load_flags_into_command`, `populate_command` | the option factory and class |
+| `flat_from_ctx`, `registered_prefix`, `merge_from_ctx`, `construct_from_ctx` | nothing — the Context is duck-typed |
+| `setup_completion`, `partial_argv_from_env` | the option factory |
+
+The two classes are supplied as **mixins placed ahead of the framework's own class**, not as a
+wrapper around it: each framework must keep its real base (typer inspects `TyperOption` to
+render help and to wire completion), so what is shared is the behavior, not the hierarchy.
+
+`flat_from_ctx` compares the parameter source **by member name** (`"COMMANDLINE"`) rather than
+by identity. That is the one place the fork is visible in shared code, and the alternative —
+passing each framework's enum in — buys nothing: the question "did the user type this?" has one
+answer, and the name is what both forks agree on.
+
+`_clicklike` imports neither click nor typer, so `import confarg.cli.typer` leaves click out of
+`sys.modules` and vice versa — the same property REF-1 bought for `cli/_build.py` against
+argparse ([below](#framework-neutral-flag-model)).
+
+Where the frameworks genuinely disagree, the seam widens rather than the shared code branching.
+Completion is the only such case so far: click takes a `shell_complete` callback returning its
+own `CompletionItem`s, while typer deprecates that in favour of an `autocompletion` callback
+returning bare strings which typer wraps itself. So `option_kwargs` takes a
+`completer_kwargs` builder instead of a completion-item class. Typer additionally filters the
+result by `startswith(incomplete)`, which changes nothing: a confarg completer
+(`_build._make_path_completer`) already prefix-filters.
+
+The adapter reaches into two private typer modules (`typer._types`, `typer._click`), because
+`TyperChoice` and the fork's `Context`/`Command` types have no public spelling. The exposure is
+confined to `cli/typer/_register.py`'s imports, and `cli/typer/__init__.py` probes those names
+in its availability guard so a typer too old to vendor click reports confarg's own message
+rather than an ImportError on a private module. `typer>=0.27` is therefore the floor.
 
 ## The cli_prefix boundaries
 
@@ -51,10 +107,10 @@ flag, and drops it when there is no prefix. `strip_flat_prefix` maps that key ba
 which `_collect_ns_fields` reads as `__root__`.
 
 `populate_*` records the prefix so `merge_*` can recover it, on whatever survives into the
-merge step — which differs per framework, since none of the three hands the merge step the
+merge step — which differs per framework, since none of the four hands the merge step the
 object the flags were registered on: argparse gets only a Namespace, so it rides there via
-`set_defaults`; click commands get their `params` copied onto other commands, so it rides on
-the options; cyclopts hands back the App, so it lives in `_app_meta`. `resolve_prefix` is the
+`set_defaults`; click and typer commands get their `params` copied onto other commands, so it
+rides on the options; cyclopts hands back the App, so it lives in `_app_meta`. `resolve_prefix` is the
 one place the recovered and the passed value are reconciled.
 
 ## Only user-typed values
@@ -128,7 +184,7 @@ from a flag the user mistyped. Swallowing stays the default because the alternat
 the exception escape — takes down every `populate_*` call and shell completion over a flag
 that may not even be typed; a caller who wants it fatal has
 `warnings.filterwarnings("error", ConfargWarning)`, the hatch `exceptions.py` documents. The
-warning fires from the one shared `build_dynamic_flags`, so all three adapters report
+warning fires from the one shared `build_dynamic_flags`, so all four adapters report
 identically; vanilla `load()` registers nothing and has no analogue.
 
 Escaped opener specs carry no group: sharing a group name with a different description
@@ -141,7 +197,7 @@ too. A signature cannot answer here at all: not for a bind subkey in the spellin
 left inactive, whose keys are data ([06](06-callables.md#plain-and-escaped-directives)); not
 for a sibling kwarg the named target does not carry; and not for a field with no opener
 anywhere, which names no target to inspect. Letting the framework reject those first is what
-made the four front-ends disagree — the flag is the adapter's to accept and the kwarg is
+made the five front-ends disagree — the flag is the adapter's to accept and the kwarg is
 construction's to judge, so the user hears the real complaint (`Unknown kwargs [...]`,
 `must specify one of 'fn', 'class', or 'call'`) instead of `unrecognized arguments`.
 
@@ -162,7 +218,7 @@ A bare `--<field> '{…}'` assigns an entire object in one token — the CLI pee
 channel's `PFX_ENV='{"a":"b"}'`. `_parse_cli._accepts_object_value` is the one predicate
 deciding which field types take one: dataclass, namedtuple, dict, callable, or a union with any
 of those as a variant. It answers for the vanilla parser, for static registration and for the
-collector, so the three cannot drift.
+collector, so the four cannot drift.
 
 The flags are **static**, not argv-scanned: the field is declared, so it belongs in `--help`
 next to the bare `--tags` / `--pair` flags lists and tuples already get, and completion can
@@ -211,15 +267,18 @@ grants what its framework can express (BUG-20, closed):
 | argparse | `nargs="*"` | ✅ | ✅ |
 | cyclopts | `consume_multiple=True` | ✅ | ✅ |
 | click | `nargs=<n>` | ✅ | ❌ |
+| typer | `nargs=<n>` | ✅ | ❌ |
 
-click is the exception, and it is an **approved divergence**
+click and typer are the exception, and it is an **approved divergence**
 ([09](09-invariants.md#cross-channel-parity)). A click `Option` cannot vary its token count:
 `nargs=-1` raises `nargs=-1 is not supported for options`, and the only alternative,
 `multiple=True`, would buy the whole-value token by taking `--pair 13 42` away and demanding
 `--pair 13 --pair 42` in its place. Inline JSON is not what a CLI user reaches for, so click
 keeps the readable positional form and declines the whole value, per
 [10](10-design-decisions.md#a-divergence-leans-towards-the-affected-backends-own-idiom). The
-divergence is confined to click: argparse and cyclopts, which *can* vary the count, get both.
+divergence is confined to the two clicklike front-ends — typer inherits it along with the
+option class it forked ([above](#the-clicklike-seam)); argparse and cyclopts, which *can* vary
+the count, get both.
 
 Registering `nargs="*"` hands **arity enforcement back to confarg** — the framework no longer
 counts the tokens, so `--pair 1 2 3` reaches `build()` and fails there rather than at the
@@ -358,6 +417,11 @@ help, completion and error text for real values:
 - **click**: options cannot take `nargs=-1`, so `"*"` maps to `multiple=True` — hence the
   repeated-flag list syntax; no argument groups; `_ConfargOption` allows dotted names; the
   command callback is wrapped to strip confarg parameters from its kwargs.
+- **typer**: everything click's entry says, since the option class is a fork of click's —
+  `multiple=True` for `"*"`, no argument groups, dotted names via the shared mixin. What
+  differs: `autocompletion` rather than the deprecated `shell_complete`, and
+  `populate_command` takes the command `typer.main.get_command(app)` returns, not the
+  `typer.Typer` app ([above](#the-clicklike-seam)).
 - **cyclopts**: flags become a synthetic default function whose `inspect.Signature` holds one
   keyword-only parameter per flag; `_pyname` maps dotted names to unique identifiers and a
   name map restores them; metadata is kept in module-level `_app_meta` keyed by `id(app)`
@@ -375,11 +439,14 @@ suggestions.
   command line, and with callable bind flags. Cheap no-op outside completion mode.
 - click: `setup_completion` reads `COMP_WORDS`/`COMP_CWORD` (bash, zsh) and adds dynamic
   flags. Fish is not supported yet.
+- typer: the same shared hook, wired through typer's `autocompletion` keyword
+  ([above](#the-clicklike-seam)).
 - cyclopts: no confarg completion support.
 
 ## List syntax divergence
 
 List values are space-separated for vanilla/argparse (`--tags a b`), repeated flags for click
-(`--tags a --tags b`), either for cyclopts. This is an approved divergence imposed by
-click; tests keep it visible ([12](12-testing.md#list-syntax-split)). The append/delete
+and typer (`--tags a --tags b`), either for cyclopts. This is an approved divergence imposed by
+click and inherited by typer's fork of it; tests keep it visible
+([12](12-testing.md#list-syntax-split)). The append/delete
 ordering on top is shared.

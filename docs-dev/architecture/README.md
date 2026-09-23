@@ -59,8 +59,8 @@ source modules to documents.
 ## Vocabulary
 
 - **Channel** (or input type): config files, environment variables, command-line arguments.
-- **Front-end**: vanilla `confarg.load()`/`merge()`, and the argparse, click and cyclopts
-  adapters. Four front-ends × three channels must behave identically.
+- **Front-end**: vanilla `confarg.load()`/`merge()`, and the argparse, click, typer and
+  cyclopts adapters. Five front-ends × three channels must behave identically.
 - **Merged dict / raw dict**: the plain nested `dict` produced by `merge()`, expressions
   still literal.
 - **Token**: a string from a channel that carries no types (`_StrToken`), eligible for
@@ -110,8 +110,10 @@ confarg/
     ├── _build.py      target type → FlagSpec lists (shared by all adapters)
     ├── _collect.py    flat {dotted.flag: value} → nested dict (shared by all adapters)
     ├── _prefix.py     cli_prefix recording, reconciliation and stripping
+    ├── _clicklike/    what the click and typer adapters share (imports neither)
     ├── argparse/      _register, _namespace, _completion
     ├── click/         _register, _context, _completion
+    ├── typer/         _register, _context, _completion
     └── cyclopts/      _register, _context
 ```
 
@@ -128,6 +130,7 @@ from it, build from it:
 | `confarg.cli` | `FlagSpec`, `FieldMeta`, `build_static_flags`, `build_dynamic_flags` — the neutral model every adapter shares |
 | `confarg.cli.argparse` | `populate_parser` / `merge_namespace` / `from_namespace`, plus `make_parser` |
 | `confarg.cli.click` | `populate_command` / `merge_context` / `from_context` |
+| `confarg.cli.typer` | `populate_command` / `merge_context` / `from_context` |
 | `confarg.cli.cyclopts` | `populate_app` / `merge_app` / `from_app` |
 
 Defaults for the keywords those functions share live in `_defaults.py`, together with the

@@ -28,9 +28,9 @@ This library lets you read configurations stored in classes like this
 ```python
 @dataclass
 class Config:
-  value: float
-  flag: bool
-  subconfig: SubConfig1 | SubConfig2
+    value: float
+    flag: bool
+    subconfig: SubConfig1 | SubConfig2
 ```
 
 with this kind of code
@@ -386,6 +386,58 @@ Config(db=SQLiteConfig(dbpath='db.sqlite'),
        log_level='INFO')
 ```
 
+### Local variables
+
+Sometimes the value several fields share is not itself part of the configuration — a base
+directory, a release tag, a deployment name. Adding it to the dataclass just so expressions can
+reach it pollutes the type with something the application never reads.
+
+The reserved `locals:` block is where such intermediate values go. Expressions see them as
+`${locals.<name>}`, and the block is dropped before the dataclass is built.
+
+```yaml
+# paths_config.yaml
+locals:
+  base: /srv/myapp
+
+data_dir: ${locals.base}/data
+log_dir: ${locals.base}/logs
+cache_dir: ${locals.base}/cache
+```
+
+A local variable may itself be an expression, over another local variable or over a real field, and
+`__include__` works inside the block — so a variable library can be shared between configurations.
+
+A local is also a configuration handle the dataclass never has to know about: once declared, it can
+be changed from the command line or the environment like any other value.
+
+```console
+$ myapp.py --config paths_config.yaml --locals.base /home/bob
+Config(data_dir='/home/bob/data', log_dir='/home/bob/logs', cache_dir='/home/bob/cache')
+```
+
+One flag moved three fields. The namespace has two operations, and only one is restricted:
+*declaring* a local — introducing the name, and with it its type — happens in configuration files,
+while *modifying* a declared one works from every channel. Declaring is restricted because a local
+has no field annotation, so its type is whatever declared it, and only a format that carries types
+can. Once declared the type is fixed: an override is converted to it, so `${locals.cpus * 2}` keeps
+multiplying, and a value that will not convert is rejected. Setting a name no configuration file
+declared is an error rather than a new variable, so typos are caught.
+
+To introduce a new local from outside, point at a file with `--config.locals FILE`.
+
+The namespace answers to two names, `locals` and `_locals`, and either may be used. The second
+exists so it never steals a name you wanted: if your configuration class declares a field called
+`locals`, that field keeps the name — a real field always wins, as it does over the `.json` cast —
+and local variables move to `_locals`. Nothing is configurable, so every front-end and channel
+agrees on the name without being told; declaring under both names at once is rejected as
+ambiguous.
+
+A `locals:` block is not restricted to the top level. Any configuration file may declare one, and
+it stays with that file wherever the file is loaded — so a reusable component can carry its own
+scratch values without the configuration including it knowing they exist. Such a variable is
+modified from the command line or environment by its full path, e.g. `--db.locals.base /home/bob`.
+
 ### Building large configurations from parts
 
 Large configurations are often made up of independent components, and as such, you may want to split them accordingly. It is easier to navigate, but it also makes it possible to reuse configuration parts and to build multiple complex configurations from the same set of atomic configuration components.
@@ -429,6 +481,32 @@ __include__: base_config.yaml
 db:
   __include__: ./db_config.yaml
 ```
+
+### Expressions in a configuration part
+
+A configuration file does not know where it will be loaded, and its expressions do not have to
+either: **a path is relative to the file that wrote it.** So `db_config.yaml` refers to its own
+values directly, and keeps working whether it is loaded at the root, under `db`, or deeper inside
+some larger configuration.
+
+```yaml
+# db_config.yaml — reusable, because it only ever talks about itself
+host: example.com
+port: 1234
+url: postgres://${host}:${port}/mydb
+```
+
+When a part genuinely does depend on another part, prefix the path with a dot to anchor it at the
+root of the whole configuration instead:
+
+```yaml
+# only makes sense inside a configuration that has `deploy_env` at its root
+name: mydb-${.deploy_env}
+```
+
+The dot is the visible difference between a file you can reuse anywhere and one that is a
+deliberate piece of a specific whole. In a configuration that is a single unnested file the two
+are the same thing, since that file's root *is* the configuration root.
 
 ## Next steps
 
