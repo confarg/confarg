@@ -63,6 +63,22 @@ per-block temporary directory with `cwd:${tmpdir}` and a fixture — was rejecte
 change: it needs a `conftest.py` inside the published `examples/` tree and a `UV_PROJECT`
 injection, because `uv run` outside the project root resolves no project environment.
 
+## Asserting against a front-end's internals
+
+A white-box test on a framework object asserts **what the adapter registered**, never the
+framework's normalization of it. `tests/cli/cyclopts/test_cyclopts_integration.py::test_choices`
+reads the `Literal` back off cyclopts' `Argument.hint`, and cyclopts 5.0 changed that field from
+`converter=resolve` to `converter=partial(resolve, optional=False)`: the registered
+`Literal[...] | None` used to arrive as `Literal[...]` and now arrives as
+`Optional[Literal[...]]`. The change was not a documented breaking change, because `hint`'s shape
+never was documented — 5.0's union rework (members of a union may consume different token counts,
+and `"none"` parses to `None`) needs `NoneType` to survive resolution.
+
+So the test normalizes through `_literal_of` instead of matching one version's spelling, and no
+`cyclopts` version is named in the assertion. Do not "simplify" the helper away against whichever
+version happens to be locked: the dev floor is `cyclopts>=4.11.2` and the test is expected to hold
+from there to the latest release.
+
 ## Property tests
 
 `tests/test_hypothesis.py` uses Hypothesis. Generated strings escape `${` as `$${` so random
