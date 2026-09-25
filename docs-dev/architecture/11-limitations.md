@@ -36,11 +36,16 @@ the boundary moves here.
   patch has nothing to bite on in an empty document.
 - Index-keyed lists must be gap-free, unless the element type is Optional — a gap would
   otherwise have to invent an element of an unknown type.
+- A list is extended with the `+` suffix on argv and in config files, but not from the
+  environment: an append never got an env spelling, though a delete did (FEAT-18).
 
 ## CLI front-ends
 
 - A multi-token flag is spelled per framework: space-separated for vanilla/argparse/cyclopts,
-  repeated for click/typer/cyclopts ([04](04-cli-adapters.md#list-syntax-divergence)).
+  repeated for click/typer/cyclopts ([04](04-cli-adapters.md#list-syntax-divergence)). Two gaps
+  sit beside that approved divergence and are open: a *repeated* varlen flag accumulates under
+  click/typer/cyclopts and last-wins under vanilla/argparse (BUG-37), and a bare `--<list>`,
+  which clears the list in the other three front-ends, is rejected by click and typer (BUG-38).
 - There is no end-of-options separator: a bare `--` is an ordinary token everywhere. A value
   that starts with `--` is written `--key=--value`, the form every front-end honors
   ([10](10-design-decisions.md#the--form-is-the-escape-for-a-dashed-value)).

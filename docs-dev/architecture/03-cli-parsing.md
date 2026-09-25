@@ -102,7 +102,7 @@ the adapters' `_find_json_cast`/`apply_root_json` all rely on it answering ident
 | Syntax | Effect |
 |---|---|
 | `--f.N v`, `--f.-1 v` | replace element N (negative from the end) |
-| `--f+ v…` | append |
+| `--f+ v…` | append ([10](10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling)) |
 | `--f.N-` | delete element N |
 | `--f.key v` / `--f.key-` | set / delete a dict key |
 | `--f.N.sub v` | patch inside an element |
@@ -111,6 +111,10 @@ They accumulate into the sentinel vocabulary of [01](01-pipeline-and-contracts.m
 in argv order. After `--f+ {}`, a negative index (`--f.-1.sub x`) navigates into the item
 just appended (`_navigate_append_spec`), so repeated append-then-fill sequences each patch
 their own new item.
+
+A varlen `--f` is absent from the table because it is not a patch: it replaces the whole list,
+and with no token at all it clears it — the one other flag family that stands bare
+([04](04-cli-adapters.md#a-bare-append)).
 
 `_is_collection_patch_path` answers "does this path index a list/tuple/set or key a dict?".
 It is the dividing line between what a framework's flat parse result can represent and what

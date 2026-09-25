@@ -67,6 +67,35 @@ form and a single whole-value token, while click keeps its exact token count and
 whole-value token, because click's only alternative (`multiple=True`) would have cost click
 users `--pair 13 42`.
 
+## The `+` suffix is a merge operator, not a list spelling
+
+Two independent questions hide behind a list flag, and only one of them is a framework's business:
+
+| Axis | Question | Who answers |
+|---|---|---|
+| spelling | how many tokens does one value take, and how are they written? | the host framework |
+| merge | does the lower-priority value survive, or is it replaced? | confarg |
+
+`+` names the **merge** axis alone, and names it the same way in every channel that has one:
+`--input+ 42` on argv, `input+: [42]` as a config-file key, `--config.dbs+ other.yaml` for a
+sub-configuration. Dropping it from argv to lean on a framework's own repetition instead would
+split one vocabulary across three channels to save one character.
+
+The temptation is real under click and typer, where repeating a flag is the *only* multi-token
+spelling, so `--users+ x --users+ y` looks like a longer way to write `--users x --users y`. It is
+not. Over a config file holding `users: [alice, bob]`, click reads the first as
+`[alice, bob, x, y]` and the second as `[x, y]`: repetition accumulates *within* the CLI channel,
+and the list it builds then replaces the file at CLI priority. No front-end, click included, can
+express an append by repeating a flag — which is exactly why the operator is spelled separately.
+
+The spelling axis diverges per framework and always has
+([04](04-cli-adapters.md#list-syntax-divergence)). The merge axis must not, which is what makes
+`--f x --f y` reading as `--f x y` everywhere the target rather than last-wins in two front-ends
+(BUG-37).
+
+The environment is the one channel the suffix does not reach — an append has no env spelling at
+all, though a delete does (FEAT-18).
+
 ## union_tag defaults to "class"
 
 `class` is a Python keyword, so no dataclass field can ever be named `class`: the
