@@ -7,8 +7,9 @@
 from __future__ import annotations
 
 import dataclasses
+import types
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import cyclopts
 import pytest
@@ -66,6 +67,21 @@ def _make_app() -> cyclopts.App:
 def _option_names(args: Any) -> set[str]:
     """Return the set of all CLI option name strings from an ArgumentCollection."""
     return {str(n) for a in args for n in (a.parameter.name or ())}
+
+
+def _literal_of(hint: Any) -> Any:
+    """Strip an ``Optional`` wrapper off a cyclopts ``Argument.hint``.
+
+    cyclopts < 5 resolved ``Optional`` away when storing ``Argument.hint``; 5.0 keeps
+    ``NoneType`` there so a union member can consume a different token count and parse
+    ``"none"``.  ``_spec_to_inspect_param`` registers ``Literal[...] | None`` either way,
+    so normalize before asserting on the Literal.
+    """
+    if get_origin(hint) in (Union, types.UnionType):
+        rest = [a for a in get_args(hint) if a is not type(None)]
+        if len(rest) == 1:
+            return rest[0]
+    return hint
 
 
 def _run(dc_type: type, args: list[str], **kw: Any) -> Any:
@@ -130,16 +146,15 @@ class TestLoadFlagsIntoApp:
 
     def test_choices(self) -> None:
         """FlagSpec.choices maps to a Literal type hint on the parameter."""
-        import typing  # noqa: PLC0415
-
         app = _make_app()
         flags = [FlagSpec(name="level", choices=["low", "high"])]
         load_flags_into_app(flags, app)
         args = app.assemble_argument_collection()
         opt = next(a for a in args if "--level" in (str(n) for n in (a.parameter.name or ())))
-        # cyclopts resolves Optional, so hint is Literal["low", "high"] directly.
-        assert typing.get_origin(opt.hint) is typing.Literal
-        assert set(typing.get_args(opt.hint)) == {"low", "high"}
+        # cyclopts < 5 resolves Optional away, 5.0 keeps it: see _literal_of.
+        hint = _literal_of(opt.hint)
+        assert get_origin(hint) is Literal
+        assert set(get_args(hint)) == {"low", "high"}
 
     def test_choices_get_the_expression_tolerant_converter(self) -> None:
         """A choices flag carries the converter that bypasses Literal enforcement for ``${...}``."""

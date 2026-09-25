@@ -51,47 +51,6 @@ def _load_toml(path: Path) -> dict[str, Any]:
         raise InvalidConfigFileError.malformed(msg, path, e) from e
 
 
-def _load_yaml(path: Path) -> dict[str, Any]:
-    """Load and parse a YAML config file.
-
-    Args:
-        path: Path to the YAML file.
-
-    Returns:
-        A dict of the parsed YAML contents, or an empty dict if the file
-        contains a non-dict value.
-
-    Raises:
-        InvalidConfigFileError: If PyYAML is not installed, the file is not found,
-            or the file contains invalid YAML.
-    """
-    data = _load_yaml_item(path)
-    return data if isinstance(data, dict) else {}
-
-
-def _load_json(path: Path) -> dict[str, Any]:
-    """Load and parse a JSON config file.
-
-    Args:
-        path: Path to the JSON file.
-
-    Returns:
-        A dict of the parsed JSON contents.
-
-    Raises:
-        InvalidConfigFileError: If the file is not found, contains invalid JSON,
-            or the top-level value is not a JSON object.
-    """
-    data = _load_json_item(path)
-    if not isinstance(data, dict):
-        msg = f"JSON config must be an object, got {type(data).__name__}: {path}"
-        raise InvalidConfigFileError(msg)
-    return data
-
-
-_LOADERS = {".toml": _load_toml, ".yaml": _load_yaml, ".yml": _load_yaml, ".json": _load_json}
-
-
 def _load_yaml_item(path: Path) -> Any:
     """Load YAML, returning the raw top-level value (dict, list, or scalar)."""
     try:
@@ -119,6 +78,19 @@ def _load_json_item(path: Path) -> Any:
     except json.JSONDecodeError as e:
         msg = "JSON"
         raise InvalidConfigFileError.malformed(msg, path, e) from e
+
+
+#: Formats that may sit at the root of a config file — a configuration layer, so no data
+#: format (.csv/.tsv) appears here. Every entry returns the file's raw top-level value;
+#: requiring that value to be a mapping is _load_raw's call alone, made once for all three
+#: formats and for whatever `__include__` resolves them to.
+#: See docs-dev/architecture/02-files-and-env.md#format-dispatch-and-optional-dependencies.
+_LOADERS: dict[str, Any] = {
+    ".toml": _load_toml,  # TOML root is always a dict
+    ".yaml": _load_yaml_item,
+    ".yml": _load_yaml_item,
+    ".json": _load_json_item,
+}
 
 
 def _read_rows(f: Any, delimiter: str) -> list[list[_StrToken]]:
@@ -422,15 +394,25 @@ def _load_any(path: Path, seen: frozenset[Path], *, options: dict[str, Any] | No
 
 
 def _load_raw(path: Path, seen: frozenset[Path]) -> dict[str, Any]:
-    """Load a root config file; result must be a dict."""
+    """Load a root config file; the value it resolves to must be a dict.
+
+    The one place the root-is-a-mapping rule is applied, so every format and every
+    ``__include__`` that rewrites the root answers to the same check and the same error.
+    An empty document (``None`` — an empty YAML file, or an explicit ``null``) contributes
+    nothing, matching an empty TOML file.
+
+    Dev Notes:
+        docs-dev/architecture/02-files-and-env.md#format-dispatch-and-optional-dependencies
+    """
     loader = _LOADERS.get(path.suffix.lower())
     if loader is None:
         raise InvalidConfigFileError.unsupported_format(path.suffix.lower())
     data = loader(path)
     result = _resolve_node(data, path.parent, seen)
+    if result is None:
+        return {}
     if not isinstance(result, dict):
-        msg = f"Top-level config file must resolve to a dict, got {type(result).__name__}: {path}"
-        raise ConfargError(msg)
+        raise InvalidConfigFileError.non_dict_root(path, result)
     return result
 
 
@@ -448,7 +430,8 @@ def _load_file(path: Path) -> dict[str, Any]:
 
     Raises:
         InvalidConfigFileError: If the file format is unsupported, the file is
-            not found, or the file contents are invalid.
+            not found, the file contents are invalid, or the value it resolves to
+            is not a dict (an empty document excepted).
         ConfargError: If an include value is not a string or a circular include
             is detected.
     """

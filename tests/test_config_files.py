@@ -412,6 +412,50 @@ class TestInvalidConfigFiles:
         with pytest.raises(confarg.exceptions.InvalidConfigFileError):
             loader.load(Flat, argv=[], env={}, files=[p])
 
+    @pytest.mark.parametrize(
+        ("suffix", "content"),
+        [
+            (".yaml", "- item1\n- item2\n"),
+            (".yaml", "just a scalar\n"),
+            (".yml", "- item1\n"),
+            (".json", "[1, 2]"),
+            (".json", '"just a scalar"'),
+        ],
+    )
+    def test_non_dict_root_rejected(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        suffix: str,
+        content: str,
+    ) -> None:
+        """A root config file whose top-level value is not a mapping is rejected, in every format."""
+        p = tmp_path / f"root{suffix}"
+        p.write_text(content)
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="must be a mapping"):
+            loader.load(WithDefaults, argv=[], env={}, files=[p])
+
+    def test_non_dict_root_after_include_rejected(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """A root file resolving to a non-mapping through __include__ is rejected the same way."""
+        (tmp_path / "inner.yaml").write_text("- item1\n- item2\n")
+        p = tmp_path / "root.yaml"
+        p.write_text("__include__: inner.yaml\n")
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="must be a mapping"):
+            loader.load(WithDefaults, argv=[], env={}, files=[p])
+
+    @pytest.mark.parametrize("content", ["", "null\n"])
+    def test_empty_yaml_root_is_not_rejected(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        content: str,
+    ) -> None:
+        """An empty YAML document contributes nothing rather than raising."""
+        p = tmp_path / "empty.yaml"
+        p.write_text(content)
+        result = loader.load(WithDefaults, argv=[], env={}, files=[p])
+        assert result.name == "default"
+
 
 # ---------------------------------------------------------------------------
 # Config file with collections

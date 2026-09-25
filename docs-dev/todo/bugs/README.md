@@ -12,7 +12,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
-| [BUG-33 — A bare append flag is rejected by the clicklike front-ends](BUG-33-bare-append-flag-rejected-by-clicklike-front-ends.md) | M | low | behavior |
-| [BUG-34 — YAML root config file with a non-dict top-level value silently loads empty](BUG-34-yaml-non-dict-root-silent-empty.md) | S | medium | behavior |
+| [BUG-35 — A mixed append (`--f+ v` and a bare `--f+`) is rejected by three front-ends](BUG-35-mixed-append-spelling-rejected-by-three-front-ends.md) | M | low | behavior |
+| [BUG-36 — `index.py` rewrites a board table without the ticket it just failed to parse](BUG-36-index-drops-the-row-of-a-ticket-it-cannot-parse.md) | S | low | none |
 
 <!-- tickets:end -->

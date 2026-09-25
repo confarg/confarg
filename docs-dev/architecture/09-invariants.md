@@ -26,10 +26,12 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | Decision | Function |
 |---|---|
 | merge order, file loading, locals checks | `_pipeline._merge_sources` |
+| "is this root config file a configuration layer?" | `_files._load_raw` |
 | "would resolution rewrite this value?" | `dictexpr.contains_expression` |
 | "does this segment name a real member?" | `_parse_cli._segment_names_real_field` |
 | "is this a cast, and which?" | `_parse_cli.detect_force_cast` (whether) / `_cast` (what) |
 | "does this token address a reserved name?" | `_parse_cli._addresses_key` |
+| "is this argv token a flag, or a value?" | `_parse_cli._looks_like_flag` |
 | reserved-name shadowing | `_parse_cli._check_reserved_key_conflict` |
 | locals namespace names | `_parse_cli._locals_keys_at` |
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |

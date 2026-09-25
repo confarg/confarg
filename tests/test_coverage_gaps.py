@@ -44,10 +44,8 @@ from confarg._files import (
     _dump_json,
     _load_file,
     _load_file_item,
-    _load_json,
     _load_json_item,
     _load_toml,
-    _load_yaml,
     _load_yaml_item,
 )
 from confarg._merge import (
@@ -320,14 +318,14 @@ class TestFileErrors:
             _load_toml(tmp_path / "missing.toml")
 
     def test_load_yaml_file_not_found(self, tmp_path: Path) -> None:
-        """Missing YAML file raises InvalidConfigFileError."""
+        """Missing YAML file raises InvalidConfigFileError through the root loader table."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
-            _load_yaml(tmp_path / "missing.yaml")
+            _load_file(tmp_path / "missing.yaml")
 
     def test_load_json_file_not_found(self, tmp_path: Path) -> None:
-        """Missing JSON file raises InvalidConfigFileError."""
+        """Missing JSON file raises InvalidConfigFileError through the root loader table."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
-            _load_json(tmp_path / "missing.json")
+            _load_file(tmp_path / "missing.json")
 
     def test_load_yaml_item_missing_library(self, tmp_path: Path, monkeypatch) -> None:
         """Missing PyYAML library raises InvalidConfigFileError."""
@@ -1221,7 +1219,7 @@ class TestFilesMissingLibrary:
             unittest.mock.patch.dict(sys.modules, {"yaml": None}),
             pytest.raises(confarg.exceptions.InvalidConfigFileError, match="PyYAML"),
         ):
-            _load_yaml(path)
+            _load_file(path)
 
 
 # ---------------------------------------------------------------------------
