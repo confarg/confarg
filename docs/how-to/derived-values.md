@@ -117,11 +117,13 @@ you were going to open anyway.
 What each step assumes:
 
 * `confarg.build(DbConfig, raw["db"])` is the cheap route, and it is valid as long as the
-  expressions *inside* `db` do not reach outside it. References in a merged configuration are
-  anchored at its root, so a subtree lifted out of it can no longer resolve `${elsewhere.value}`.
-  If it must, resolve the whole document instead with `confarg.resolve(raw)` and build `DbConfig`
-  from `resolved["db"]` — which in turn requires that nothing *else* in the configuration
-  references the value you have not computed yet.
+  expressions *inside* `db` do not reach outside it. Absolute references in a merged
+  configuration are anchored at its root, so a subtree lifted out of it can no longer resolve
+  `${elsewhere.value}`. A relative reference — `${.sibling}`, one level up per dot — is anchored
+  at the value that wrote it and does survive the lift, which is the reason `merge()` leaves it
+  unresolved. If an absolute one must reach out, resolve the whole document instead with
+  `confarg.resolve(raw)` and build `DbConfig` from `resolved["db"]` — which in turn requires that
+  nothing *else* in the configuration references the value you have not computed yet.
 * Inject into the **merged** dict, not the resolved one, and build from it. Re-resolving is what
   makes the injected value visible to other expressions, so `${model.num_labels * 4}` elsewhere
   works. (A resolved dict also aliases the nodes that were referenced in it, so it is meant to be

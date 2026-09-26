@@ -83,6 +83,11 @@ collection logic goes into `cli/_collect.py` mirroring the vanilla decision
 - Do not add lambdas, comprehensions or other binding constructs to `_ALLOWED_NODES`
   without reworking `_Prefixer` ([07](07-expressions.md#reference-anchoring)).
 - Anchor-marker handling stays lexical ([07](07-expressions.md#reference-anchoring)).
+- The node anchor is resolved on the AST, never by rewriting expression text: an absolute path
+  may hold a list index or a non-identifier key ([07](07-expressions.md#implementation-constraints)).
+- `canonicalize_references` must not resolve `${.x}` — preserving it through `merge()` is what
+  keeps a list element independent of its index
+  ([07](07-expressions.md#a-relative-reference-is-never-serialized-as-an-absolute-path)).
 - Only graft the names `_locals_keys` returns ([08](08-locals.md#walk-target-graft)).
 - `_strip_locals` must not mutate its input ([08](08-locals.md#stripping)).
 - `cli/_build.py` imports `_parse_cli` lazily (import cycle) and never imports argparse

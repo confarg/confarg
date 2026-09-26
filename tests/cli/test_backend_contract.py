@@ -1543,6 +1543,22 @@ class _ExprConfig:
     derived: int = 0
 
 
+@dataclass
+class _NestedExprBlock:
+    """Block whose ``derived`` reads a sibling without naming the block it sits in."""
+
+    base: int = 0
+    derived: int = 0
+
+
+@dataclass
+class _NestedExprConfig:
+    """Root carrying a same-named ``base``, so a wrong anchor gives a visibly wrong answer."""
+
+    base: int = 99
+    block: _NestedExprBlock = dataclasses_field(default_factory=_NestedExprBlock)
+
+
 class TestExpressionOverCliContract:
     """A config expression resolves against a CLI-overridden numeric field in every backend.
 
@@ -1556,6 +1572,22 @@ class TestExpressionOverCliContract:
         result = loader.load(_ExprConfig, argv=["--config", str(cfg), "--base", "8"], env={})
         assert result.base == 8
         assert result.derived == 24
+
+    def test_relative_expr_in_a_file_reads_its_own_block(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """${.base} is the block's own base, never the same-named field at the root."""
+        cfg = tmp_yaml("base: 99\nblock:\n  base: 10\n  derived: '${.base * 3}'\n")
+        result = loader.load(_NestedExprConfig, argv=["--config", str(cfg), "--block.base", "8"], env={})
+        assert result.block.derived == 24
+
+    def test_relative_expr_from_the_cli_is_anchored_where_it_lands(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A flag has no writing file, so its dots count from the path it is set at."""
+        cfg = tmp_yaml("base: 99\nblock:\n  base: 10\n  derived: 0\n")
+        result = loader.load(
+            _NestedExprConfig,
+            argv=["--config", str(cfg), "--block.derived", "${.base * 3}"],
+            env={},
+        )
+        assert result.block.derived == 30
 
 
 # ---------------------------------------------------------------------------

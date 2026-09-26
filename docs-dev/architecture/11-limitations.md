@@ -16,8 +16,15 @@ the boundary moves here.
   ([07](07-expressions.md#safety-model)).
 - A malformed expression contributes no dependency edges: it is not parseable, so nothing can
   be derived from it. The error surfaces at validation instead, with the expression text.
-- `--config.<path>+` fragments keep their references anchored at the merged root, not at the
-  mount point ([07](07-expressions.md#reference-anchoring)).
+- `--config.<path>+` fragments keep their **bare** references anchored at the merged root, not
+  at the mount point; a node-relative `${.x}` works there, because it is resolved once the
+  element has an index ([07](07-expressions.md#reference-anchoring)).
+- A node-relative reference counts *path segments*, and a list index is one: from
+  `dbs.0.url`, `${..host}` names the list rather than the mapping holding it
+  ([07](07-expressions.md#reference-anchoring)).
+- A merged dict is no longer uniformly root-anchored: `${.x}` is preserved through `merge()`
+  and `dump_file()` on purpose, so a dumped fragment stays position-independent
+  ([07](07-expressions.md#a-relative-reference-is-never-serialized-as-an-absolute-path)).
 - A reference to a whole node substitutes that node's *value*, so each referencing site is
   constructed separately: two fields referring to one struct hold equal, non-identical
   objects. There is no way to share one instance

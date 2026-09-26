@@ -119,8 +119,11 @@ the fragment stop matching, surfacing as an unknown field at `build()` rather th
 - **Interpolation as a plain dataclass default**, OmegaConf's `II("project_id")`. Defaults never
   reach the merged dict, so it cannot resolve; and a reusable sub-config cannot anchor a reference
   outside itself.
-- **A parent anchor** (`${^.x}`, OmegaConf's `${..x}`) so a component could reach its parent. It
-  makes a reusable type's meaning depend on how deep it happens to be mounted.
+- **A parent anchor** (`${^.x}`) so a component could reach its parent, *as a way of reaching
+  outside itself*. It would make a reusable type's meaning depend on how deep it is mounted.
+  Note that `${..x}` since shipped ([07](../../architecture/07-expressions.md#reference-anchoring))
+  — it is clamped at the file that wrote it, so it cannot reach outside a component, and this
+  rejection stands for the injection this ticket describes.
 - **Call-site links with a compute function**, jsonargparse's `link_arguments`. The compute function
   is a second wiring mechanism competing with the expression engine
   ([09](../../architecture/09-invariants.md#delegate-to-the-canonical-function)); without it, it is

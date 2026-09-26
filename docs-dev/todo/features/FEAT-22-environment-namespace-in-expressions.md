@@ -74,8 +74,13 @@ The whole implementation turns on these, and both are one-liners *because the na
 
 This is the same mechanism [FEAT-21](FEAT-21-app-supplied-expression-functions.md) settles on for
 application-supplied functions, and the same reason it prefers a reserved namespace to a registry:
-a fixed name keeps prefixing correct without the table being visible during `merge()`. Whichever
-lands first should build the exemption so the other reuses it.
+a fixed name keeps prefixing correct without the table being visible during `merge()`.
+
+**The exemption now exists**: relative references gave `_Prefixer.visit_Name` and
+`_AnchorResolver` a `_anchor_dot_count(node.id) is not None` test beside `_SAFE_FUNCTIONS`
+([07](../../architecture/07-expressions.md#implementation-constraints)). Reuse that shape rather
+than adding a second special case, and note that `_collect_names` needs the matching skip so the
+Kahn sort does not look for a node that is not in the document.
 
 ## Plumbing for the include path
 

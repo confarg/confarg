@@ -5,10 +5,15 @@
 """Tests for the anchoring of ``${...}`` references to the file that wrote them.
 
 A configuration file's root lands wherever the file is mounted, so a bare
-reference is anchored at that file's root and moves with it, while ``${.path}``
-names the merged document root.  The rewriting happens as files are mounted
+reference is anchored at that file's root and moves with it, while ``${::path}``
+names the configuration root.  That rewriting happens as files are mounted
 (``_files._resolve_dict``, ``_pipeline._load_cli_config``), which is the only
 point at which the file boundary is still known.
+
+``${.path}`` is a third thing again: relative to the node that wrote it, one
+level per dot.  It is resolved at evaluation time rather than at mount time,
+because only then does the node have a position — which is what lets a list
+element name its own keys without knowing its index.
 """
 
 from __future__ import annotations
@@ -103,11 +108,11 @@ class TestFragmentReadsItself:
 
 
 class TestDocumentRootReferences:
-    """``${.path}`` is the deliberate, marked way to leave your own file."""
+    """``${::path}`` is the deliberate, marked way to leave your own file."""
 
     def test_dotted_reference_reaches_the_document_root(self, tmp_path: Path) -> None:
         """A fragment names an outer value explicitly."""
-        write(tmp_path, "db.yaml", "host: ${.name}-db\nport: 1\n")
+        write(tmp_path, "db.yaml", "host: ${::name}-db\nport: 1\n")
         cfg = write(tmp_path, "app.yaml", f"name: myapp\ndb:\n  {INCLUDE_KEY}: ./db.yaml\n")
         assert confarg.load(Cfg, argv=["--config", str(cfg)], env={}).db.host == "myapp-db"
 
@@ -120,7 +125,7 @@ class TestDocumentRootReferences:
 
     def test_dotted_reference_at_the_root_is_an_ordinary_path(self, tmp_path: Path) -> None:
         """In an unnested file the two anchors coincide."""
-        cfg = write(tmp_path, "app.yaml", "name: myapp\ndb:\n  host: ${.name}-db\n  port: 1\n")
+        cfg = write(tmp_path, "app.yaml", "name: myapp\ndb:\n  host: ${::name}-db\n  port: 1\n")
         assert confarg.load(Cfg, argv=["--config", str(cfg)], env={}).db.host == "myapp-db"
 
 
@@ -147,7 +152,7 @@ class TestCanonicalForm:
 
     def test_document_root_marker_is_canonicalized_away(self, tmp_path: Path) -> None:
         """Once every file is mounted the marker has served its purpose."""
-        write(tmp_path, "db.yaml", "host: ${.name}-db\nport: 1\n")
+        write(tmp_path, "db.yaml", "host: ${::name}-db\nport: 1\n")
         cfg = write(tmp_path, "app.yaml", f"name: myapp\ndb:\n  {INCLUDE_KEY}: ./db.yaml\n")
         data = confarg.merge(Cfg, argv=["--config", str(cfg)], env={})
         assert data["db"]["host"] == "${name}-db"
@@ -190,7 +195,7 @@ class Root:
 
 
 class TestAnchorDetection:
-    """A dot marks the document root only where it begins an operand.
+    """A marker is one only where it begins an operand.
 
     These are the cases a lookbehind regex gets wrong, which is why the scan is
     lexical: a dot inside a float or after a string literal belongs to a single
@@ -203,7 +208,8 @@ class TestAnchorDetection:
             pytest.param("${'a.b'.upper()}", "A.B", id="after-string-literal"),
             pytest.param("${1.5 + n}", "3.5", id="inside-float"),
             pytest.param("${str(n)[0].upper()}", "2", id="after-closing-bracket"),
-            pytest.param("${n if .name else 0}", "2", id="after-keyword-is-a-marker"),
+            pytest.param("${n if .n else 0}", "2", id="after-keyword-is-a-marker"),
+            pytest.param("${n if ::name else 0}", "2", id="root-marker-after-keyword"),
             pytest.param("${max(n, 1)}", "2", id="whitelisted-function"),
         ],
     )
@@ -263,3 +269,134 @@ class TestAppendedFragment:
             env={},
         )
         assert result.items[0].label == "top"
+
+
+# ---------------------------------------------------------------------------
+# Node-relative references
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Server:
+    """One list element, describing itself without ever naming its index."""
+
+    name: str = ""
+    host: str = ""
+    url: str = ""
+
+
+@dataclass
+class Fleet:
+    """Root holding a list of self-describing elements."""
+
+    tier: str = ""
+    servers: list[Server] = field(default_factory=list)
+
+
+#: Two elements whose expressions are identical because neither names its position.
+FLEET = (
+    "tier: gold\n"
+    "servers:\n"
+    "  - name: web\n"
+    "    host: web.example.com\n"
+    "    url: https://${.host}/\n"
+    "  - name: api\n"
+    "    host: api.example.com\n"
+    "    url: https://${.host}/\n"
+)
+
+
+class TestNodeRelativeReferences:
+    """``${.x}`` counts upwards from the value being written, one level per dot."""
+
+    def test_single_dot_names_a_sibling(self, tmp_path: Path) -> None:
+        """One dot drops the value's own key, leaving the block that holds it."""
+        cfg = write(tmp_path, "app.yaml", "db:\n  host: base-${.port}\n  port: 5432\n")
+        assert confarg.load(Cfg, argv=["--config", str(cfg)], env={}).db.host == "base-5432"
+
+    def test_two_dots_climb_to_the_enclosing_block(self, tmp_path: Path) -> None:
+        """Each further dot drops one more segment of the value's own path."""
+        cfg = write(tmp_path, "app.yaml", "name: myapp\ndb:\n  host: ${..name}-db\n  port: 1\n")
+        assert confarg.load(Cfg, argv=["--config", str(cfg)], env={}).db.host == "myapp-db"
+
+    def test_list_element_reads_itself_without_an_index(self, tmp_path: Path) -> None:
+        """The whole point: two elements share one expression because neither is positional."""
+        cfg = write(tmp_path, "fleet.yaml", FLEET)
+        fleet = confarg.load(Fleet, argv=["--config", str(cfg)], env={})
+        assert [s.url for s in fleet.servers] == ["https://web.example.com/", "https://api.example.com/"]
+
+    def test_a_list_index_is_a_level(self, tmp_path: Path) -> None:
+        """Climbing twice from an element lands on the list, which has no such key."""
+        cfg = write(tmp_path, "fleet.yaml", "tier: gold\nservers:\n  - name: web\n    url: ${..host}\n")
+        with pytest.raises(MissingReferenceError, match=r"servers\.host"):
+            confarg.load(Fleet, argv=["--config", str(cfg)], env={})
+
+    def test_cli_expression_is_relative_to_where_it_lands(self, tmp_path: Path) -> None:
+        """A flag's value has no writing file, so its dots count from the path it lands on."""
+        cfg = write(tmp_path, "app.yaml", "db:\n  host: x\n  port: 5432\n")
+        result = confarg.load(Cfg, argv=["--config", str(cfg), "--db.host", "base-${.port}"], env={})
+        assert result.db.host == "base-5432"
+
+
+class TestDotsAreClampedToTheirFile:
+    """A fragment may look at itself with dots; reaching outside takes ``::``.
+
+    Without the clamp a fragment's meaning would depend on how deep it happens to
+    be mounted, which is exactly what anchoring a bare name to the file avoids.
+    """
+
+    def test_a_fragment_reads_itself_at_any_depth(self, tmp_path: Path) -> None:
+        """Dots inside the file mean the same however deep the file is mounted."""
+        write(tmp_path, "db.yaml", "host: base-${.port}\nport: 5432\n")
+        mounted = write(tmp_path, "app.yaml", f"db:\n  {INCLUDE_KEY}: ./db.yaml\n")
+        at_root = write(tmp_path, "root.yaml", f"{INCLUDE_KEY}: ./db.yaml\n")
+        first = confarg.load(Cfg, argv=["--config", str(mounted)], env={})
+        second = confarg.load(Db, argv=["--config", str(at_root)], env={})
+        assert first.db == second == Db(host="base-5432", port=5432)
+
+    def test_climbing_out_of_the_file_is_refused(self, tmp_path: Path) -> None:
+        """The error names the offending run and points at the root marker."""
+        cfg = write(tmp_path, "app.yaml", "db:\n  host: ${...escapes}\n  port: 1\n")
+        with pytest.raises(MissingReferenceError, match=r"above the file root"):
+            confarg.load(Cfg, argv=["--config", str(cfg)], env={})
+
+
+class TestRelativeReferencesSurviveSerialization:
+    """merge() writes a node-relative reference back out exactly as written.
+
+    Resolving it to an absolute path would pin a list element to the index it
+    happens to hold, so a dumped configuration would break on the next edit —
+    silently, because nothing about the file would look wrong.
+    """
+
+    def test_merge_keeps_the_marker_verbatim(self, tmp_path: Path) -> None:
+        """No ``${servers.0.host}`` appears anywhere in the merged dict."""
+        cfg = write(tmp_path, "fleet.yaml", FLEET)
+        data = confarg.merge(Fleet, argv=["--config", str(cfg)], env={})
+        assert [s["url"] for s in data["servers"]] == ["https://${.host}/"] * 2
+
+    def test_reordering_the_list_does_not_break_the_elements(self, tmp_path: Path) -> None:
+        """Insert ahead of them and each element still reads its own host."""
+        cfg = write(tmp_path, "fleet.yaml", FLEET)
+        data = confarg.merge(Fleet, argv=["--config", str(cfg)], env={})
+        data["servers"].insert(0, {"name": "new", "host": "new.example.com", "url": "https://${.host}/"})
+        built = confarg.build(Fleet, data)
+        assert [s.url for s in built.servers] == [
+            "https://new.example.com/",
+            "https://web.example.com/",
+            "https://api.example.com/",
+        ]
+
+    def test_dumped_merge_round_trips_through_a_mount(self, tmp_path: Path) -> None:
+        """Re-including a dump reparses and unparses every marker, so it must survive."""
+        cfg = write(tmp_path, "fleet.yaml", FLEET)
+        data = confarg.merge(Fleet, argv=["--config", str(cfg)], env={})
+        confarg.dump_file(data, str(tmp_path / "saved.yaml"))
+        outer = write(tmp_path, "outer.yaml", f"inner:\n  {INCLUDE_KEY}: ./saved.yaml\n")
+
+        @dataclass
+        class Outer:
+            inner: Fleet = field(default_factory=Fleet)
+
+        result = confarg.load(Outer, argv=["--config", str(outer)], env={})
+        assert [s.url for s in result.inner.servers] == ["https://web.example.com/", "https://api.example.com/"]

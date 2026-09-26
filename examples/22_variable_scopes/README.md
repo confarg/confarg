@@ -79,14 +79,14 @@ Config(value=5.0, values=SubConfig(value1=3.0, value2=6.0))
 
 While preserving perfect encapsulation is a desirable goal, in practice a configuration file could need to refer to values defined outside of its scope. This allows big interdependent configurations to be split into manageable components.
 
-To allow for this use case, confarg relies on dot-paths, paths with a dot prefix, to denote global path that are defined down from the top configuration.
+To allow for this use case, confarg relies on root-paths, paths with a `::` prefix, to denote global path that are defined down from the top configuration.
 
-In our example, the nested configuration can reach for the top `value` using a dot-path. Note that dot-paths and standard (local) paths can be mixed within the same expression.
+In our example, the nested configuration can reach for the top `value` using a root-path. Note that root-paths and standard (local) paths can be mixed within the same expression.
 
 ```yaml
 # config2.yaml
 value1: 3.0
-value2: ${.value + value1 * 1.5}
+value2: ${::value + value1 * 1.5}
 ```
 
 ```console
