@@ -32,5 +32,6 @@ has no design yet, so deciding whether to do it at all is the next actionable st
 | [FEAT-18 — The environment channel has no append spelling](FEAT-18-no-append-spelling-in-the-environment.md) | M | low | behavior |
 | [FEAT-19 — App-declared defaults, mounted at the type that declares them](FEAT-19-app-declared-defaults.md) | L | medium | behavior |
 | [FEAT-20 — Derived values that cannot be made inconsistent](FEAT-20-enforced-derived-values.md) | M | medium | behavior |
+| [FEAT-21 — Expression functions supplied by the application](FEAT-21-app-supplied-expression-functions.md) | L | high | behavior |
 
 <!-- tickets:end -->
