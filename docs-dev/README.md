@@ -1,16 +1,20 @@
 # docs-dev
 
 Reference documentation for contributors and coding agents working *on* confarg: why the code
-is the way it is, and what is left to do. It is internal: the published site (`docs/`) is built
-for people *using* the library, and nothing here is copied into it.
+is the way it is, what is left to do, and how anything already decided is going to be built. It is
+internal: the published site (`docs/`) is built for people *using* the library, and nothing here is
+copied into it.
 
 | Folder | Holds |
 |---|---|
 | [architecture/](architecture/README.md) | **Why** the code is the way it is: design choices, rejected alternatives, trade-offs, invariants, vocabulary, source map. The single source of truth for rationale — docstrings must not repeat it. |
 | [todo/](todo/README.md) | **What is left to do**: bugs, desirable features, refactors, and questions for the maintainer. The place to file drive-by findings instead of silently fixing or forgetting them. |
+| [plans/](plans/README.md) | **How a settled design is going to be built**, for work too large to describe on a board and not yet built. One file per design, deleted when the work lands and its rationale moves to `architecture/`. |
 
-The two are complements: a ticket describes work; closing it usually leaves a decision, and
-the decision belongs in `architecture/`.
+The three are complements, and the order is the life of a piece of work: a ticket says something is
+missing; a plan says what was decided about it and in what order to build it; and landing it leaves a
+decision, which belongs in `architecture/`. A plan is a staging area, never a destination — nothing
+cites it once the code exists.
 
 Start at [architecture/README.md](architecture/README.md) — it carries the reading guide that
 maps source modules to documents, so you can open only what your change touches.
@@ -24,6 +28,7 @@ maps source modules to documents, so you can open only what your change touches.
 | A reason, a trade-off, a rejected alternative, an invariant | `architecture/` |
 | Something broken, missing, or ugly that you are not fixing right now | `todo/` |
 | A question only the maintainer can answer | `todo/questions/` |
+| A design settled with the maintainer for work not yet built | `plans/`, with a ticket on `todo/` pointing at it |
 | Anything a *user* of confarg needs | `README.md`, `docs/`, `examples/` |
 | A standing instruction to coding agents | `AGENTS.md`, or the protocol folder it names |
 

@@ -22,7 +22,6 @@ has no design yet, so deciding whether to do it at all is the next actionable st
 | [FEAT-8 — Value provenance](FEAT-8-value-provenance.md) | M | high | behavior |
 | [FEAT-9 — A `confarg check` command to validate a configuration against a target](FEAT-9-confarg-check-command.md) | L | low | behavior |
 | [FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin](FEAT-10-confarg-explain-command.md) | XL | low | behavior |
-| [FEAT-11 — Configuration versioning and a migration registry](FEAT-11-config-versioning-and-migrations.md) | XL | high | config |
 | [FEAT-12 — Carefully scoped expression expansion](FEAT-12-scoped-expression-expansion.md) | L | high | behavior |
 | [FEAT-13 — Struct types that are generic](FEAT-13-generic-struct-types.md) | L | high | behavior |
 | [FEAT-14 — Dataclass fields that are not `__init__` parameters](FEAT-14-dataclass-fields-outside-init.md) | L | high | behavior |
@@ -34,6 +33,7 @@ has no design yet, so deciding whether to do it at all is the next actionable st
 | [FEAT-20 — Derived values that cannot be made inconsistent](FEAT-20-enforced-derived-values.md) | M | medium | behavior |
 | [FEAT-21 — Expression functions supplied by the application](FEAT-21-app-supplied-expression-functions.md) | L | high | behavior |
 | [FEAT-22 — The process environment as an expression namespace](FEAT-22-environment-namespace-in-expressions.md) | L | high | behavior |
+| [FEAT-23 — A post-resolve transform layer](FEAT-23-post-resolve-transform-layer.md) | XL | high | config |
 | [FEAT-24 — Writing a configuration back to a URL](FEAT-24-writing-a-configuration-to-a-url.md) | M | low | behavior |
 
 <!-- tickets:end -->
