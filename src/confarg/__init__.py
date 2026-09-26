@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
 from confarg import exceptions
 from confarg._api import build, dump, dump_file, from_dict, load, merge, resolve
+from confarg._sources import register_scheme as _register_scheme
+from confarg._sources import unregister_scheme as _unregister_scheme
 from confarg._types import TagPolicy
 from confarg.typedload._coerce import _LEAF_COERCIONS, _LEAF_SERIALIZERS
 
@@ -59,6 +61,70 @@ def register_leaf_type(
     _LEAF_SERIALIZERS[tp] = serialize
 
 
+def register_scheme(scheme: str, read: Callable[[str], bytes]) -> None:
+    """Register a handler that reads config sources for a URL scheme.
+
+    After registration, any location beginning ``<scheme>:`` can be used wherever a
+    configuration file path can: ``files=``, ``env_config``, ``<PREFIX>CONFIG__<SUBPATH>``,
+    ``--config[.subpath][+]`` and ``__include__``.
+
+    ``read`` is called with the full location string exactly as it was written --
+    ``"gs://bucket/path/config.yaml"`` -- and must return the document's raw ``bytes``.
+    confarg decodes them itself, so a handler never chooses an encoding: that keeps a BOM
+    working in JSON and CSV, which a decoded ``str`` would break.  Raise ``OSError`` (or
+    ``confarg.exceptions.InvalidConfigFileError``) when the document cannot be read; anything
+    else propagates unchanged.
+
+    The format is still chosen by the extension of the location's path, so a handler is not
+    asked about it and a location with no extension is rejected.  Relative ``__include__``
+    paths inside a document fetched this way resolve against its own location and may not
+    leave its scheme and host.
+
+    ``file``, ``http``, ``https`` and ``s3`` are registered already (``s3`` needs boto3:
+    ``pip install confarg[s3]``).  Registering one of those names again replaces it, which is
+    how an application adds authentication, a different timeout, or caching.
+
+    Example::
+
+        import urllib.request
+
+        def read_authenticated(location: str) -> bytes:
+            request = urllib.request.Request(location, headers={"Authorization": TOKEN})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return response.read()
+
+        confarg.register_scheme("https", read_authenticated)   # replace the built-in
+        confarg.register_scheme("gs", read_gcs)                # or add a new scheme
+    """
+    _register_scheme(scheme, read)
+
+
+def unregister_scheme(scheme: str) -> None:
+    """Remove the reader registered for a URL scheme, a built-in one included.
+
+    A location naming the scheme afterwards is refused the way any unknown scheme is, with
+    ``InvalidConfigFileError`` naming the schemes that remain -- from every channel, since the
+    registry is global.  ``unregister_scheme("http")`` and ``unregister_scheme("https")`` are
+    therefore how an application forbids loading configuration over the network at all::
+
+        confarg.unregister_scheme("http")
+        confarg.unregister_scheme("https")
+        confarg.load(Config, files=["https://cfg.example.com/app.yaml"])  # raises
+
+    The scheme name is matched case-insensitively and may be written with its separator
+    (``"HTTP"``, ``"http:"`` and ``"http://"`` all name the same entry).
+
+    Removing a scheme is not how a handler is replaced -- pass the new reader to
+    :func:`register_scheme` instead, which overwrites in place.
+
+    Raises:
+        ValueError: If no reader is registered for the scheme. Removing what is not there is a
+            mistake worth hearing about rather than a silent no-op, because the usual cause is a
+            misspelled scheme name and the silent version leaves the scheme loadable.
+    """
+    _unregister_scheme(scheme)
+
+
 __all__ = [  # noqa: RUF022
     # Two-step API
     "merge",
@@ -75,6 +141,9 @@ __all__ = [  # noqa: RUF022
     "TagPolicy",
     # Leaf-type extension
     "register_leaf_type",
+    # Config-source extension
+    "register_scheme",
+    "unregister_scheme",
     # Exceptions / warnings
     "exceptions",
 ]

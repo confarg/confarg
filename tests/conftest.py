@@ -7,7 +7,10 @@
 from __future__ import annotations
 
 import enum
+import functools
+import http.server
 import textwrap
+import threading
 from dataclasses import dataclass, field, make_dataclass
 from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
@@ -20,6 +23,7 @@ if TYPE_CHECKING:
 import pytest
 from hypothesis import strategies as st
 
+from confarg._sources import _SCHEME_READERS
 from confarg.typedload._coerce import _LEAF_COERCIONS, _LEAF_SERIALIZERS
 from tests._loaders import (
     ALL_LOADERS,
@@ -557,6 +561,45 @@ def tmp_json(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # Fixtures — leaf-type registry
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def scheme_registry():
+    """Restore the config-source scheme registry after a test that registers a handler.
+
+    ``register_scheme`` may also replace a built-in (``http``, ``s3``, …), so the whole dict is
+    snapshotted rather than only the names a test adds.
+    """
+    readers = dict(_SCHEME_READERS)
+    yield
+    _SCHEME_READERS.clear()
+    _SCHEME_READERS.update(readers)
+
+
+class _QuietHttpHandler(http.server.SimpleHTTPRequestHandler):
+    """A static file handler that does not write a request line per fetch to stderr."""
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002  # the base class names it `format`
+        """Discard the access log, to keep pytest output readable."""
+
+
+@pytest.fixture
+def tmp_http(tmp_path: Path):
+    """Serve *tmp_path* over HTTP on the loopback interface, and return its base URL.
+
+    Exercises the built-in ``http`` handler through a real socket and a real ``urlopen``, with no
+    external network: the server binds 127.0.0.1 on a port the OS picks.
+    """
+    handler = functools.partial(_QuietHttpHandler, directory=str(tmp_path))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 @pytest.fixture

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -17,6 +17,7 @@ import pytest
 
 import confarg
 from confarg._files import INCLUDE_KEY, _load_csv, _load_file
+from confarg._sources import _read_bytes
 from confarg._types import _StrToken
 from confarg.exceptions import ConfargError, InvalidConfigFileError
 
@@ -26,6 +27,11 @@ def write(tmp_path: Path, name: str, content: str) -> Path:
     p = tmp_path / name
     p.write_text(content, encoding="utf-8")
     return p
+
+
+def load_csv(path: Path, **options: Any) -> Any:
+    """Parse a CSV/TSV file the way _load_any does: read the bytes, then parse them."""
+    return _load_csv(_read_bytes(str(path)), str(path), **options)
 
 
 # ---------------------------------------------------------------------------
@@ -39,17 +45,17 @@ class TestLoadCsvRows:
     def test_single_column_returns_flat_list(self, tmp_path: Path) -> None:
         """Test that a single-column CSV returns a flat list."""
         p = write(tmp_path, "hosts.csv", "host\na.com\nb.com\n")
-        assert _load_csv(p) == ["a.com", "b.com"]
+        assert load_csv(p) == ["a.com", "b.com"]
 
     def test_single_column_no_trailing_newline(self, tmp_path: Path) -> None:
         """Test that a single-column CSV without trailing newline still works."""
         p = write(tmp_path, "hosts.csv", "host\na.com\nb.com")
-        assert _load_csv(p) == ["a.com", "b.com"]
+        assert load_csv(p) == ["a.com", "b.com"]
 
     def test_multi_column_returns_list_of_dicts(self, tmp_path: Path) -> None:
         """Test that a multi-column CSV returns a list of dicts."""
         p = write(tmp_path, "users.csv", "name,role\nalice,admin\nbob,user\n")
-        assert _load_csv(p) == [
+        assert load_csv(p) == [
             {"name": "alice", "role": "admin"},
             {"name": "bob", "role": "user"},
         ]
@@ -57,23 +63,23 @@ class TestLoadCsvRows:
     def test_empty_file_returns_empty_list(self, tmp_path: Path) -> None:
         """Test that an empty CSV file returns an empty list."""
         p = write(tmp_path, "empty.csv", "")
-        assert _load_csv(p) == []
+        assert load_csv(p) == []
 
     def test_header_only_returns_empty_list(self, tmp_path: Path) -> None:
         """Test that a CSV with only a header row returns an empty list."""
         p = write(tmp_path, "hdr.csv", "name,role\n")
-        assert _load_csv(p) == []
+        assert load_csv(p) == []
 
     def test_file_not_found(self, tmp_path: Path) -> None:
         """Test that a missing CSV file raises InvalidConfigFileError."""
         with pytest.raises(InvalidConfigFileError, match="not found"):
-            _load_csv(tmp_path / "missing.csv")
+            _read_bytes(str(tmp_path / "missing.csv"))
 
     def test_bom_stripped(self, tmp_path: Path) -> None:
         """Test that a UTF-8 BOM is stripped from the CSV header."""
         p = tmp_path / "bom.csv"
         p.write_bytes(b"\xef\xbb\xbfcol\nval\n")  # UTF-8 BOM
-        assert _load_csv(p) == ["val"]
+        assert load_csv(p) == ["val"]
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +93,7 @@ class TestLoadCsvColumns:
     def test_multi_column_returns_dict_of_lists(self, tmp_path: Path) -> None:
         """Test that a multi-column CSV returns a dict of lists."""
         p = write(tmp_path, "data.csv", "ts,value\n2024-01,1.0\n2024-02,2.0\n")
-        assert _load_csv(p, orient="columns") == {
+        assert load_csv(p, orient="columns") == {
             "ts": ["2024-01", "2024-02"],
             "value": ["1.0", "2.0"],
         }
@@ -95,17 +101,17 @@ class TestLoadCsvColumns:
     def test_single_column_returns_dict_with_one_key(self, tmp_path: Path) -> None:
         """Test that a single-column CSV with columns orient returns a dict with one key."""
         p = write(tmp_path, "tags.csv", "tag\nalpha\nbeta\n")
-        assert _load_csv(p, orient="columns") == {"tag": ["alpha", "beta"]}
+        assert load_csv(p, orient="columns") == {"tag": ["alpha", "beta"]}
 
     def test_header_only_returns_dict_empty_lists(self, tmp_path: Path) -> None:
         """Test that a header-only CSV with columns orient returns empty lists."""
         p = write(tmp_path, "hdr.csv", "a,b\n")
-        assert _load_csv(p, orient="columns") == {"a": [], "b": []}
+        assert load_csv(p, orient="columns") == {"a": [], "b": []}
 
     def test_empty_file_returns_empty_dict(self, tmp_path: Path) -> None:
         """Test that an empty CSV with columns orient returns an empty dict."""
         p = write(tmp_path, "empty.csv", "")
-        assert _load_csv(p, orient="columns") == {}
+        assert load_csv(p, orient="columns") == {}
 
 
 # ---------------------------------------------------------------------------
@@ -119,38 +125,38 @@ class TestLoadCsvNoHeader:
     def test_rows_single_column_no_header(self, tmp_path: Path) -> None:
         """Test that a single-column CSV without header returns a flat list."""
         p = write(tmp_path, "hosts.csv", "a.com\nb.com\nc.com\n")
-        assert _load_csv(p, header=False) == ["a.com", "b.com", "c.com"]
+        assert load_csv(p, header=False) == ["a.com", "b.com", "c.com"]
 
     def test_rows_multi_column_no_header_returns_list_of_lists(self, tmp_path: Path) -> None:
         """Test that a multi-column CSV without header returns a list of lists."""
         p = write(tmp_path, "data.csv", "alice,admin\nbob,user\n")
-        assert _load_csv(p, header=False) == [["alice", "admin"], ["bob", "user"]]
+        assert load_csv(p, header=False) == [["alice", "admin"], ["bob", "user"]]
 
     def test_columns_no_header_uses_positional_keys(self, tmp_path: Path) -> None:
         """Test that columns orient without header uses positional integer keys."""
         p = write(tmp_path, "data.csv", "1,2\n3,4\n")
-        assert _load_csv(p, orient="columns", header=False) == {"0": ["1", "3"], "1": ["2", "4"]}
+        assert load_csv(p, orient="columns", header=False) == {"0": ["1", "3"], "1": ["2", "4"]}
 
     def test_columns_single_column_no_header(self, tmp_path: Path) -> None:
         """Test that a single-column CSV without header uses positional key '0'."""
         p = write(tmp_path, "col.csv", "a\nb\nc\n")
-        assert _load_csv(p, orient="columns", header=False) == {"0": ["a", "b", "c"]}
+        assert load_csv(p, orient="columns", header=False) == {"0": ["a", "b", "c"]}
 
     def test_raw_ignores_header_option(self, tmp_path: Path) -> None:
         """Test that raw orient ignores the header option."""
         p = write(tmp_path, "data.csv", "x,y\n1,2\n")
-        assert _load_csv(p, orient="raw", header=False) == [["x", "y"], ["1", "2"]]
-        assert _load_csv(p, orient="raw", header=True) == [["x", "y"], ["1", "2"]]
+        assert load_csv(p, orient="raw", header=False) == [["x", "y"], ["1", "2"]]
+        assert load_csv(p, orient="raw", header=True) == [["x", "y"], ["1", "2"]]
 
     def test_empty_file_no_header_rows(self, tmp_path: Path) -> None:
         """Test that an empty file without header returns an empty list."""
         p = write(tmp_path, "empty.csv", "")
-        assert _load_csv(p, header=False) == []
+        assert load_csv(p, header=False) == []
 
     def test_empty_file_no_header_columns(self, tmp_path: Path) -> None:
         """Test that an empty file without header and columns orient returns empty dict."""
         p = write(tmp_path, "empty.csv", "")
-        assert _load_csv(p, orient="columns", header=False) == {}
+        assert load_csv(p, orient="columns", header=False) == {}
 
     def test_include_dict_form_header_false(self, tmp_path: Path) -> None:
         """Test that the __include__ dict form with header: false works correctly."""
@@ -182,24 +188,24 @@ class TestLoadCsvRaw:
     def test_raw_includes_all_rows(self, tmp_path: Path) -> None:
         """Test that raw orient includes all rows as lists."""
         p = write(tmp_path, "matrix.csv", "1,2,3\n4,5,6\n")
-        assert _load_csv(p, orient="raw") == [["1", "2", "3"], ["4", "5", "6"]]
+        assert load_csv(p, orient="raw") == [["1", "2", "3"], ["4", "5", "6"]]
 
     def test_raw_first_row_is_data_not_header(self, tmp_path: Path) -> None:
         """Test that raw orient treats the first row as data, not a header."""
         p = write(tmp_path, "data.csv", "name,age\nalice,30\n")
-        result = _load_csv(p, orient="raw")
+        result = load_csv(p, orient="raw")
         assert result[0] == ["name", "age"]
         assert result[1] == ["alice", "30"]
 
     def test_raw_single_column(self, tmp_path: Path) -> None:
         """Test that raw orient with a single column returns list of single-element lists."""
         p = write(tmp_path, "col.csv", "a\nb\nc\n")
-        assert _load_csv(p, orient="raw") == [["a"], ["b"], ["c"]]
+        assert load_csv(p, orient="raw") == [["a"], ["b"], ["c"]]
 
     def test_empty_file_returns_empty_list(self, tmp_path: Path) -> None:
         """Test that an empty file with raw orient returns an empty list."""
         p = write(tmp_path, "empty.csv", "")
-        assert _load_csv(p, orient="raw") == []
+        assert load_csv(p, orient="raw") == []
 
 
 # ---------------------------------------------------------------------------
@@ -213,12 +219,12 @@ class TestLoadTsv:
     def test_tsv_rows(self, tmp_path: Path) -> None:
         """Test that a TSV file is loaded correctly in rows orient."""
         p = write(tmp_path, "data.tsv", "name\trole\nalice\tadmin\n")
-        assert _load_csv(p, delimiter="\t") == [{"name": "alice", "role": "admin"}]
+        assert load_csv(p, delimiter="\t") == [{"name": "alice", "role": "admin"}]
 
     def test_tsv_columns(self, tmp_path: Path) -> None:
         """Test that a TSV file is loaded correctly in columns orient."""
         p = write(tmp_path, "data.tsv", "x\ty\n1\t2\n3\t4\n")
-        assert _load_csv(p, orient="columns", delimiter="\t") == {
+        assert load_csv(p, orient="columns", delimiter="\t") == {
             "x": ["1", "3"],
             "y": ["2", "4"],
         }
@@ -236,7 +242,7 @@ class TestLoadCsvBadOrient:
         """Test that an unknown orient value raises ConfargError."""
         p = write(tmp_path, "data.csv", "a,b\n1,2\n")
         with pytest.raises(ConfargError, match="orient"):
-            _load_csv(p, orient="diagonal")
+            load_csv(p, orient="diagonal")
 
 
 # ---------------------------------------------------------------------------
@@ -535,7 +541,7 @@ class TestCsvLeafCoercion:
     def test_cells_are_str_tokens(self, tmp_path: Path) -> None:
         """Test that _load_csv marks cells as _StrToken so downstream coercion can fire."""
         p = write(tmp_path, "x.csv", "a,b\n1,2\n")
-        row = _load_csv(p)[0]
+        row = load_csv(p)[0]
         assert all(isinstance(v, _StrToken) for v in row.values())
         assert all(type(k) is str for k in row)  # keys are structural, kept as plain str
 
@@ -552,46 +558,46 @@ class TestCsvStructuralValidation:
         """Test that a row with too few cells raises, naming the row and counts."""
         p = write(tmp_path, "d.csv", "a,b,c\n1,2\n")
         with pytest.raises(InvalidConfigFileError, match=r"Ragged CSV row 2.*expected 3 cells, got 2"):
-            _load_csv(p)
+            load_csv(p)
 
     def test_long_row_with_header_raises(self, tmp_path: Path) -> None:
         """Test that a row with too many cells raises."""
         p = write(tmp_path, "d.csv", "a,b\n1,2\n3,4,5\n")
         with pytest.raises(InvalidConfigFileError, match=r"Ragged CSV row 3.*expected 2 cells, got 3"):
-            _load_csv(p)
+            load_csv(p)
 
     def test_ragged_rejected_in_columns_orient_with_header(self, tmp_path: Path) -> None:
         """Test that columns orient with a header rejects ragged rows."""
         p = write(tmp_path, "d.csv", "a,b\n1\n")
         with pytest.raises(InvalidConfigFileError, match="Ragged CSV row 2"):
-            _load_csv(p, orient="columns")
+            load_csv(p, orient="columns")
 
     def test_ragged_rejected_in_columns_orient_without_header(self, tmp_path: Path) -> None:
         """Test that columns orient without a header rejects ragged rows."""
         p = write(tmp_path, "d.csv", "1\n2,3\n")
         with pytest.raises(InvalidConfigFileError, match="Ragged CSV row 2"):
-            _load_csv(p, orient="columns", header=False)
+            load_csv(p, orient="columns", header=False)
 
     def test_duplicate_header_names_raise(self, tmp_path: Path) -> None:
         """Test that a repeated column name raises instead of silently dropping data."""
         p = write(tmp_path, "d.csv", "a,a\n1,2\n")
         with pytest.raises(InvalidConfigFileError, match=r"Duplicate CSV column name\(s\).*'a'"):
-            _load_csv(p)
+            load_csv(p)
 
     def test_ragged_allowed_in_raw_orient(self, tmp_path: Path) -> None:
         """Test that raw orient still tolerates ragged rows."""
         p = write(tmp_path, "d.csv", "a\nb,c\n")
-        assert _load_csv(p, orient="raw") == [["a"], ["b", "c"]]
+        assert load_csv(p, orient="raw") == [["a"], ["b", "c"]]
 
     def test_ragged_allowed_in_rows_orient_without_header(self, tmp_path: Path) -> None:
         """Test that rows orient without a header still tolerates ragged rows."""
         p = write(tmp_path, "d.csv", "a\nb,c\n")
-        assert _load_csv(p, header=False) == [["a"], ["b", "c"]]
+        assert load_csv(p, header=False) == [["a"], ["b", "c"]]
 
     def test_blank_lines_are_ignored(self, tmp_path: Path) -> None:
         """Test that blank lines are dropped rather than counted as ragged rows."""
         p = write(tmp_path, "d.csv", "a,b\n1,2\n\n3,4\n")
-        assert _load_csv(p) == [{"a": "1", "b": "2"}, {"a": "3", "b": "4"}]
+        assert load_csv(p) == [{"a": "1", "b": "2"}, {"a": "3", "b": "4"}]
 
     def test_validation_error_surfaces_through_load(self, tmp_path: Path) -> None:
         """Test that a ragged CSV include fails loudly through confarg.load."""
@@ -599,3 +605,52 @@ class TestCsvStructuralValidation:
         cfg_file = include_yaml(tmp_path, "d.csv", "vals")
         with pytest.raises(InvalidConfigFileError, match="Ragged CSV row 2"):
             confarg.load(WithStrs, argv=[], files=[cfg_file])
+
+
+class TestCsvOverAUrl:
+    """A data file fetched over a URL keeps every rule it has on disk."""
+
+    def test_a_served_csv_include_loads_rows(self, tmp_path: Path, tmp_http: str) -> None:
+        """A CSV reached by __include__ over HTTP produces the same rows."""
+        write(tmp_path, "rows.csv", "host\na.com\nb.com\n")
+        write(tmp_path, "config.yaml", f"hosts:\n  {INCLUDE_KEY}: ./rows.csv\n")
+
+        assert _load_file(f"{tmp_http}/config.yaml") == {"hosts": ["a.com", "b.com"]}
+
+    def test_a_bom_is_stripped_over_a_url(self, tmp_path: Path) -> None:
+        """utf-8-sig decoding is confarg's, so a BOM never becomes part of a column name."""
+        (tmp_path / "rows.csv").write_bytes(b"\xef\xbb\xbfhost\na.com\n")
+        p = write(tmp_path, "config.yaml", f"hosts:\n  {INCLUDE_KEY}: ./rows.csv\n")
+
+        assert _load_file(p.as_uri()) == {"hosts": ["a.com"]}
+
+    def test_a_crlf_inside_a_quoted_field_survives_a_url(self, tmp_path: Path) -> None:
+        """newline="" is confarg's too, so an embedded CRLF is not rewritten."""
+        (tmp_path / "rows.csv").write_bytes(b'note\r\n"line1\r\nline2"\r\n')
+        p = write(tmp_path, "config.yaml", f"notes:\n  {INCLUDE_KEY}: ./rows.csv\n")
+
+        assert _load_file(p.as_uri()) == {"notes": ["line1\r\nline2"]}
+
+    def test_cells_from_a_url_are_still_untyped_tokens(self, tmp_path: Path, tmp_http: str) -> None:
+        """A served CSV carries tokens, so it coerces against the target type as a local one does."""
+        write(tmp_path, "rows.csv", "n\n1\n2\n")
+        write(tmp_path, "config.yaml", f"ints:\n  {INCLUDE_KEY}: ./rows.csv\n")
+
+        loaded = _load_file(f"{tmp_http}/config.yaml")
+        assert all(isinstance(cell, _StrToken) for cell in loaded["ints"])
+
+    def test_a_ragged_served_csv_reports_the_url(self, tmp_path: Path, tmp_http: str) -> None:
+        """A structural CSV error names the location it came from."""
+        write(tmp_path, "rows.csv", "a,b\n1\n")
+        write(tmp_path, "config.yaml", f"t:\n  {INCLUDE_KEY}: ./rows.csv\n")
+
+        with pytest.raises(InvalidConfigFileError, match="Ragged CSV row"):
+            _load_file(f"{tmp_http}/config.yaml")
+
+    def test_a_served_csv_replaces_rather_than_merges(self, tmp_path: Path, tmp_http: str) -> None:
+        """The data-versus-layer rule is decided by the suffix, so a URL behaves the same."""
+        write(tmp_path, "one.csv", "a,b\n1,2\n")
+        write(tmp_path, "two.csv", "c,d\n3,4\n")
+        write(tmp_path, "config.yaml", f"t:\n  {INCLUDE_KEY}: [./one.csv, ./two.csv]\n")
+
+        assert _load_file(f"{tmp_http}/config.yaml") == {"t": [{"c": "3", "d": "4"}]}

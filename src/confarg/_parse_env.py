@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import warnings
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -188,15 +187,15 @@ def _match_env_part(tp: Any, part: str) -> tuple[str, Any]:  # noqa: PLR0911
     return part.lower(), None
 
 
-def _handle_env_config_flag(parts: list[str], target: Any, env_configs: list[tuple[str, Path]], value: str) -> None:
-    """Append a (subpath, Path) pair to env_configs for a CONFIG[__subpath] env var."""
+def _handle_env_config_flag(parts: list[str], target: Any, env_configs: list[tuple[str, str]], value: str) -> None:
+    """Append a (subpath, location) pair to env_configs for a CONFIG[__subpath] env var."""
     subpath_parts = parts[1:]
     if subpath_parts:
         resolved_parts, _ = _resolve_env_parts(target, subpath_parts)
         subpath = ".".join(resolved_parts)
     else:
         subpath = ""
-    env_configs.append((subpath, Path(value)))
+    env_configs.append((subpath, value))
 
 
 def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[str, Any]) -> None:
@@ -364,7 +363,7 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
     target: Any,
     config_flag: str = _defaults.CONFIG_FLAG,
     union_tag: str = _defaults.UNION_TAG,
-) -> tuple[dict[str, Any], list[tuple[str, Path]]]:
+) -> tuple[dict[str, Any], list[tuple[str, str]]]:
     """Parse environment variables into a nested dict matching the target type.
 
     Variables are matched by prefix and split by separator into nested keys.
@@ -390,13 +389,13 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
 
     Returns:
         A tuple of (data_dict, env_configs) where data_dict contains inline values
-        and env_configs is a list of (subpath, Path) pairs for deferred file loading.
+        and env_configs is a list of (subpath, location) pairs for deferred loading.
 
     Raises:
         ConfargError: If an env var segment matches multiple field names.
     """
     data: dict[str, Any] = {}
-    env_configs: list[tuple[str, Path]] = []
+    env_configs: list[tuple[str, str]] = []
     root_json: list[dict[str, Any]] = []  # objects from a root-level `json` cast, folded in below fields
     is_struct = _is_struct_like(_resolve_type(target))
 

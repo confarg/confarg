@@ -14,7 +14,6 @@ Dev Notes:
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -49,14 +48,14 @@ def _partial_config_from_argv(argv: Sequence[str], config_flag: str) -> dict[str
             i += 1
             while i < len(argv) and not argv[i].startswith("--"):
                 with contextlib.suppress(Exception):
-                    merged = _deep_merge(merged, _load_file(Path(argv[i])))
+                    merged = _deep_merge(merged, _load_file(argv[i]))
                 i += 1
         elif tok.startswith(f"{flag_prefix}="):
             # Equals form: --config=file
             path_str = tok[len(flag_prefix) + 1 :]
             if path_str:
                 with contextlib.suppress(Exception):
-                    merged = _deep_merge(merged, _load_file(Path(path_str)))
+                    merged = _deep_merge(merged, _load_file(path_str))
             i += 1
         else:
             i += 1

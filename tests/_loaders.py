@@ -82,7 +82,7 @@ class ConfargLoader(ABC):
         env_separator: str = _defaults.ENV_SEPARATOR,
         cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
-        files: Sequence[Path] = (),
+        files: Sequence[str | Path] = (),
         env_config: str | None = None,
         union_tag: str = _defaults.UNION_TAG,
     ) -> Any:
@@ -111,7 +111,7 @@ class ConfargLoader(ABC):
         env_separator: str = _defaults.ENV_SEPARATOR,
         cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
-        files: Sequence[Path] = (),
+        files: Sequence[str | Path] = (),
         env_config: str | None = None,
         union_tag: str = _defaults.UNION_TAG,
     ) -> dict[str, Any]:

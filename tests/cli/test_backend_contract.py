@@ -2960,3 +2960,140 @@ class TestDashPrefixedValueContract:
         cfg = loader.load(_DashValued, argv=["--tags=--a", "--d.x=v"], env={})
         assert cfg.tags == ["--a"]
         assert cfg.d == {"x": "v"}
+
+
+class TestRemoteConfigSourceContract:
+    """A URL works wherever a config-file path works, identically on every front-end.
+
+    Every channel reaches the same loader, so these are the tests that would catch a front-end
+    that parsed a location differently or converted it to a path on the way in.
+    """
+
+    def test_config_flag_takes_a_url(self, loader: ConfargLoader, tmp_path: Path, tmp_http: str) -> None:
+        """--config accepts a URL token."""
+        (tmp_path / "app.yaml").write_text("host: served\nport: 5432\n")
+        cfg = loader.load(Simple, argv=["--config", f"{tmp_http}/app.yaml"], env={})
+        assert cfg == Simple(host="served", port=5432)
+
+    def test_config_flag_equals_form_takes_a_url(self, loader: ConfargLoader, tmp_path: Path, tmp_http: str) -> None:
+        """The --config=<url> form parses the whole URL as one value."""
+        (tmp_path / "app.yaml").write_text("host: served\nport: 5432\n")
+        cfg = loader.load(Simple, argv=[f"--config={tmp_http}/app.yaml"], env={})
+        assert cfg == Simple(host="served", port=5432)
+
+    def test_files_param_takes_a_url(self, loader: ConfargLoader, tmp_path: Path, tmp_http: str) -> None:
+        """files= accepts a URL string alongside paths."""
+        (tmp_path / "app.yaml").write_text("host: served\nport: 9999\n")
+        cfg = loader.load(Simple, argv=[], env={}, files=[f"{tmp_http}/app.yaml"])
+        assert cfg == Simple(host="served", port=9999)
+
+    def test_env_config_pointer_takes_a_url(self, loader: ConfargLoader, tmp_path: Path, tmp_http: str) -> None:
+        """An env var naming a config location may name a URL."""
+        (tmp_path / "app.yaml").write_text("host: served\nport: 7777\n")
+        cfg = loader.load(
+            Simple,
+            argv=[],
+            env={"APP_CONFIG_FILE": f"{tmp_http}/app.yaml"},
+            env_config="APP_CONFIG_FILE",
+        )
+        assert cfg == Simple(host="served", port=7777)
+
+    def test_env_config_var_takes_a_url(self, loader: ConfargLoader, tmp_path: Path, tmp_http: str) -> None:
+        """The <PREFIX>CONFIG env channel may name a URL."""
+        (tmp_path / "app.yaml").write_text("host: served\nport: 4444\n")
+        cfg = loader.load(
+            Simple,
+            argv=[],
+            env={"MYAPP_CONFIG": f"{tmp_http}/app.yaml"},
+            env_prefix="MYAPP_",
+        )
+        assert cfg == Simple(host="served", port=4444)
+
+    def test_subkey_config_flag_takes_a_url(self, loader: ConfargLoader, tmp_path: Path, tmp_http: str) -> None:
+        """--config.<subpath> mounts a served document under that key."""
+        (tmp_path / "db.yaml").write_text("host: db_host\nport: 5555\nname: db_name\n")
+        cfg = loader.load(AppConfig, argv=["--config.db", f"{tmp_http}/db.yaml"], env={})
+        assert cfg.db == DbConfig(host="db_host", port=5555, name="db_name")
+
+    def test_subkey_env_config_takes_a_url(self, loader: ConfargLoader, tmp_path: Path, tmp_http: str) -> None:
+        """CONFIG__<SUBPATH> mounts a served document under that key."""
+        (tmp_path / "db.yaml").write_text("host: db_host\nport: 5555\nname: db_name\n")
+        cfg = loader.load(
+            AppConfig,
+            argv=[],
+            env={"MYAPP_CONFIG__DB": f"{tmp_http}/db.yaml"},
+            env_prefix="MYAPP_",
+        )
+        assert cfg.db == DbConfig(host="db_host", port=5555, name="db_name")
+
+    def test_append_config_flag_takes_a_url(self, loader: ConfargLoader, tmp_path: Path, tmp_http: str) -> None:
+        """--config.<subpath>+ appends a served document to a list field."""
+        (tmp_path / "one.yaml").write_text("host: appended\nport: 1\n")
+        cfg = loader.load(WithCsvRows, argv=["--config.db+", f"{tmp_http}/one.yaml"], env={})
+        assert cfg.db == [Simple(host="appended", port=1)]
+
+    def test_a_url_and_a_path_merge_in_order(self, loader: ConfargLoader, tmp_path: Path, tmp_http: str) -> None:
+        """A URL and a local path are one priority level, applied left to right."""
+        (tmp_path / "base.yaml").write_text("host: base\nport: 1000\n")
+        override = tmp_path / "override.yaml"
+        override.write_text("port: 2000\n")
+        cfg = loader.load(
+            Simple,
+            argv=["--config", f"{tmp_http}/base.yaml", "--config", str(override)],
+            env={},
+        )
+        assert cfg == Simple(host="base", port=2000)
+
+    def test_cli_still_overrides_a_url_config(self, loader: ConfargLoader, tmp_path: Path, tmp_http: str) -> None:
+        """Source precedence is unchanged: a URL is a config file, below env and CLI."""
+        (tmp_path / "app.yaml").write_text("host: served\nport: 1111\n")
+        cfg = loader.load(Simple, argv=["--config", f"{tmp_http}/app.yaml", "--port", "2222"], env={})
+        assert cfg == Simple(host="served", port=2222)
+
+    def test_env_still_overrides_a_url_config(self, loader: ConfargLoader, tmp_path: Path, tmp_http: str) -> None:
+        """A served document loses to an inline env var, as a local file does."""
+        (tmp_path / "app.yaml").write_text("host: served\nport: 1111\n")
+        cfg = loader.load(
+            Simple,
+            argv=["--config", f"{tmp_http}/app.yaml"],
+            env={"MYAPP_PORT": "3333"},
+            env_prefix="MYAPP_",
+        )
+        assert cfg == Simple(host="served", port=3333)
+
+    def test_a_file_url_equals_the_path_it_names(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """file:// is not a second code path: it produces the same merged dict."""
+        cfg_file = tmp_yaml("host: filehost\nport: 5432\n")
+        from_path = loader.merge(Simple, argv=["--config", str(cfg_file)], env={})
+        from_url = loader.merge(Simple, argv=["--config", cfg_file.as_uri()], env={})
+        assert from_path == from_url
+
+    def test_a_class_tag_in_a_served_document_is_seen(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        tmp_http: str,
+    ) -> None:
+        """The tag pre-scan reads served documents too, so a subclass field still gets its flag."""
+        (tmp_path / "app.yaml").write_text(f"class: {__name__}._SQLiteDB\n")
+        result = loader.load(
+            _BaseDB,
+            argv=["--config", f"{tmp_http}/app.yaml", "--dbpath", "/var/db/app.sqlite"],
+            env={},
+        )
+        assert result == _SQLiteDB(dbpath="/var/db/app.sqlite")
+
+    def test_an_unregistered_scheme_is_reported(self, loader: ConfargLoader) -> None:
+        """Every front-end reports an unknown scheme the same way."""
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="No handler registered"):
+            loader.load(Simple, argv=["--config", "gs://bucket/app.yaml"], env={})
+
+    def test_a_registered_scheme_reaches_every_front_end(
+        self,
+        loader: ConfargLoader,
+        scheme_registry,
+    ) -> None:
+        """A handler registered once serves all five front-ends, through every channel."""
+        confarg.register_scheme("mem", lambda loc: b"host: from-mem\nport: 8080\n")
+        cfg = loader.load(Simple, argv=["--config", "mem://anywhere/app.yaml"], env={})
+        assert cfg == Simple(host="from-mem", port=8080)

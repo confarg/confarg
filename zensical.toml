@@ -41,6 +41,7 @@ nav = [
   { "How-to" = [
     "how-to/index.md",
     { "Derived values" = "how-to/derived-values.md" },
+    { "Configuration from a URL" = "how-to/remote-config.md" },
   ] },
   { "Reference" = "reference.md" },
 ]

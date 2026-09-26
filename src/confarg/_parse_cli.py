@@ -18,7 +18,6 @@ import dataclasses
 import functools
 import json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -534,19 +533,19 @@ def _addresses_key(key: str, reserved: str) -> bool:
     return bool(reserved) and (key == reserved or key.startswith(reserved + "."))
 
 
-def _consume_config_paths(args: list[str], i: int, key: str, config_flag: str) -> tuple[int, list[tuple[str, Path]]]:
-    """Consume file-path tokens for a --config[.subpath] flag.
+def _consume_config_paths(args: list[str], i: int, key: str, config_flag: str) -> tuple[int, list[tuple[str, str]]]:
+    """Consume config-location tokens for a --config[.subpath] flag.
 
-    Returns (new_i, [(subpath, Path)]).
+    Returns (new_i, [(subpath, location)]); a location is a local path or a URL.
     """
     subpath = key[len(config_flag) + 1 :] if key.startswith(config_flag + ".") else ""
     i += 1
     if i >= len(args) or _looks_like_flag(args[i]):
         msg = f"Missing file path after --{config_flag}. Usage: --{config_flag} /path/to/config.yaml"
         raise ConfargError(msg)
-    pairs: list[tuple[str, Path]] = []
+    pairs: list[tuple[str, str]] = []
     while i < len(args) and not _looks_like_flag(args[i]):
-        pairs.append((subpath, Path(args[i])))
+        pairs.append((subpath, args[i]))
         i += 1
     return i, pairs
 
@@ -972,8 +971,8 @@ def _consume_typed_arg(
 def _collect_config_file_pairs(
     argv: Sequence[str],
     config_flag: str,
-) -> list[tuple[str, Path]]:
-    """Return (subpath, Path) pairs for ``--config[.subpath]`` flags in command-line order.
+) -> list[tuple[str, str]]:
+    """Return (subpath, location) pairs for ``--config[.subpath]`` flags in command-line order.
 
     Lenient: silently skips ``--config`` tokens not followed by a path argument (e.g. when
     the adapter framework already consumed the paths and argv is rescanned for ordering).
@@ -988,10 +987,10 @@ def _collect_config_file_pairs(
         config_flag: The flag name used to specify config files (e.g. ``"config"``).
 
     Returns:
-        A list of ``(subpath, Path)`` pairs in the order they appear in argv.
+        A list of ``(subpath, location)`` pairs in the order they appear in argv.
     """
     normalized = _normalize_eq_args(list(argv))
-    pairs: list[tuple[str, Path]] = []
+    pairs: list[tuple[str, str]] = []
     i = 0
     while i < len(normalized):
         token = normalized[i]
@@ -1003,7 +1002,7 @@ def _collect_config_file_pairs(
             subpath = raw_key[len(config_flag) + 1 :] if raw_key.startswith(config_flag + ".") else ""
             i += 1
             while i < len(normalized) and not _looks_like_flag(normalized[i]):
-                pairs.append((subpath, Path(normalized[i])))
+                pairs.append((subpath, normalized[i]))
                 i += 1
         else:
             i += 1
@@ -1027,7 +1026,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     *,
     patch_only: bool = False,
     patch_base: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any], list[tuple[str, Path]]]:
+) -> tuple[dict[str, Any], list[tuple[str, str]]]:
     """Parse CLI arguments into a nested dict and a list of config file paths.
 
     Args:
@@ -1049,7 +1048,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
 
     Returns:
         A tuple of (data_dict, config_files) where data_dict is the parsed
-        argument data and config_files is a list of (subpath, Path) pairs
+        argument data and config_files is a list of (subpath, location) pairs
         (always empty when ``patch_only`` is True).
 
     Raises:
@@ -1066,7 +1065,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     # Paths resolve against the locals-grafted target; root classification keeps `target`.
     walk_target = _walk_target(target, _locals_keys(target, union_tag))
     ctx = _ParseCtx(argv=argv, target=walk_target, union_tag=union_tag)
-    config_files: list[tuple[str, Path]] = []
+    config_files: list[tuple[str, str]] = []
     root_json: list[dict[str, Any]] = []  # objects from root `--json`, folded in below fields
     target_r = _resolve_type(target)
     is_struct = _is_struct_like(target_r)

@@ -27,6 +27,13 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 |---|---|
 | merge order, file loading, locals checks | `_pipeline._merge_sources` |
 | "is this root config file a configuration layer?" | `_files._load_raw` |
+| "what is the parsed value of the document here?" | `_files._load_document` |
+| "which parser does this location name?" | `_files._loader_for` |
+| "which scheme does this location name?" | `_sources._scheme_of` |
+| "what are this location's bytes?" | `_sources._read_bytes` |
+| "which format does this location name?" | `_sources._suffix` |
+| "what location does this relative include name?" | `_sources._join` |
+| "are these two locations the same document?" | `_sources._identity` |
 | "would resolution rewrite this value?" | `dictexpr.contains_expression` |
 | "does this segment name a real member?" | `_parse_cli._segment_names_real_field` |
 | "is this a cast, and which?" | `_parse_cli.detect_force_cast` (whether) / `_cast` (what) |
