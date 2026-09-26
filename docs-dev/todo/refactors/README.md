@@ -40,5 +40,6 @@ different board.
 | [REF-55 — Two adjacent-pair loops written with indices instead of `itertools.pairwise`](REF-55-pairwise-for-index-window-loops.md) | S | low | none |
 | [REF-56 — Seven `[len(prefix):]` slices that are `str.removeprefix`](REF-56-removeprefix-for-guarded-slices.md) | S | low | none |
 | [REF-57 — Small stdlib swaps across the core](REF-57-small-stdlib-swaps-in-the-core.md) | S | low | none |
+| [REF-58 — The config-parallel struct walk has two owners](REF-58-config-parallel-struct-walk-has-two-owners.md) | S | medium | none |
 
 <!-- tickets:end -->
