@@ -1,3 +1,0 @@
-input:
-  42: hello
-  !!int '0x-FF': world

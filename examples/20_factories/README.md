@@ -1,7 +1,7 @@
 # Object factories
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/20_factories`](https://github.com/confarg/confarg/tree/master/examples/20_factories).
+> Code for examples on this page can be found in [`examples/20_factories`](https://github.com/confarg/confarg/tree/master/examples/20_factories).
 
 To close our tour of callables, let us look at a special but frequent case: configuring a factory — a callable that produces objects. Factories are useful when the objects to build require parameters that are only known at runtime, yet still need to be configured.
 
@@ -13,19 +13,19 @@ Say our optimizers derive from a `BaseOptimizer` that takes model parameters and
 
 ```python
 class BaseOptimizer:
-    def __init__(self, params: Iterable, lr: float) -> None:
-        ...
+    def __init__(self, params: Iterable, lr: float) -> None: ...
 ```
 
-Our configuration cannot declare a `BaseOptimizer` field, since it could not be instantiated. It can, however, declare a `BaseOptimizer` factory, like so:
+Our configuration cannot declare a `BaseOptimizer` field, since it cannot be instantiated. It can, however, declare a `BaseOptimizer` factory, like so:
 
+<!-- snippet: trainer.py#Config -->
 ```python
 @dataclass
 class Config:
     optimizer: Callable[[Iterable], BaseOptimizer]
 ```
 
-You could write a factory yourself and configure it the usual way, as for any other callable. But confarg offers a simpler route: give the fully-qualified name of the class directly as the callable. A class is, after all, a callable that produces objects of its own type.
+You could write a factory yourself and configure it the usual way, as with any other callable. But confarg offers a simpler route: give the fully-qualified name of the class directly as the callable. A class is, after all, a callable that produces objects of its own type.
 
 ```console
 $ uv run trainer.py --optimizer optimizer.Optimizer

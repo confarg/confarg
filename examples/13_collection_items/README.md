@@ -1,7 +1,7 @@
 # Collection items
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/13_collection_items`](https://github.com/confarg/confarg/tree/master/examples/13_collection_items).
+> Code for examples on this page can be found in [`examples/13_collection_items`](https://github.com/confarg/confarg/tree/master/examples/13_collection_items).
 
 You can reference an individual item in a collection by its index, which lets you modify its value.
 
@@ -34,18 +34,19 @@ Indices work at any level of the key path, not just for the leaf type.
 
 ```console
 $ # A collection of database configurations
-$ uv run myapp.py --config config.yaml
+$ uv run myapp.py --config db_list.yaml
 Config(dbs=[SQLiteConfigChild(dbpath='db.sqlite'),
             PostgreSQLConfigChild(host='example.com',
                                   port=5432,
                                   schema_name='mydb')])
 $ # Change the schema_name of the last configuration
-$ uv run myapp.py --config config.yaml --dbs.-1.schema_name other_db
+$ uv run myapp.py --config db_list.yaml --dbs.-1.schema_name other_db
 Config(dbs=[SQLiteConfigChild(dbpath='db.sqlite'),
             PostgreSQLConfigChild(host='example.com',
                                   port=5432,
                                   schema_name='other_db')])
 ```
+
 
 Indices compose at every level of nesting. When an item is itself a collection, a deeper index patches that inner item in place rather than replacing the whole inner collection.
 
@@ -63,37 +64,39 @@ Config(input=[[1, 2, 3], [42, 5]])
 
 Indexing also works from within configuration files. The same behavior as above is obtained with this configuration file:
 
-```yaml
-# partial_config.yaml
+<!-- snippet: partial_config.yaml -->
+```yaml title="partial_config.yaml"
 dbs:
   -1:
     schema_name: other_db
 ```
 
 ```console
-$ uv run myapp.py --config config.yaml partial_config.yaml
+$ uv run myapp.py --config db_list.yaml partial_config.yaml
 Config(dbs=[SQLiteConfigChild(dbpath='db.sqlite'),
             PostgreSQLConfigChild(host='example.com',
                                   port=5432,
                                   schema_name='other_db')])
 ```
 
+
 And finally, indexing also works for partial configuration files. The same behavior can be obtained with a partial PostgreSQL configuration containing only the schema name:
 
-```yaml
-# schema_name.yaml
+<!-- snippet: schema_name.yaml -->
+```yaml title="schema_name.yaml"
 schema_name: other_db
 ```
 
 This partial PostgreSQL configuration is then used to update the existing configuration by loading it at the end of the `dbs` collection:
 
 ```console
-$ uv run myapp.py --config config.yaml --config.dbs.-1 schema_name.yaml
+$ uv run myapp.py --config db_list.yaml --config.dbs.-1 schema_name.yaml
 Config(dbs=[SQLiteConfigChild(dbpath='db.sqlite'),
             PostgreSQLConfigChild(host='example.com',
                                   port=5432,
                                   schema_name='other_db')])
 ```
+
 
 ## Building a collection from its elements
 

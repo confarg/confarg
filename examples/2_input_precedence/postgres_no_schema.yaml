@@ -1,3 +1,2 @@
-# This configuration purposely omits the `schema_name` key
 host: dev.example.com
 port: 5555

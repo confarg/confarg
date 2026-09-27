@@ -1,12 +1,13 @@
 # Nested configurations
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/10_nested_configurations`](https://github.com/confarg/confarg/tree/master/examples/10_nested_configurations).
+> Code for examples on this page can be found in [`examples/10_nested_configurations`](https://github.com/confarg/confarg/tree/master/examples/10_nested_configurations).
 
 So far, our configurations consisted of a single, flat dataclass — just a set of keys. However, they need not be. Complex configurations typically consist of a hierarchy of nested, often independent, subconfigurations.
 
 Let's extend our app by adding a log level. The log level is orthogonal to the database backend, and therefore sits next to it. We translate this into this new configuration:
 
+<!-- snippet: myapp.py#Config -->
 ```python
 @dataclass
 class Config:
@@ -20,8 +21,8 @@ Our former root-level database configuration is now found at the `db` field of o
 
 As you might expect, this nesting is mirrored in configuration files. Our former database configuration is now under the `db` key instead of being at the root level.
 
-```yaml
-# config.yaml
+<!-- snippet: app_config.yaml -->
+```yaml title="app_config.yaml"
 db:
   class: configs.PostgreSQLConfigChild
   host: example.com
@@ -30,12 +31,13 @@ log_level: DEBUG
 ```
 
 ```console
-$ uv run myapp.py --config config.yaml
+$ uv run myapp.py --config app_config.yaml
 Config(db=PostgreSQLConfigChild(host='example.com',
                                 port=5432,
                                 schema_name='mydb'),
        log_level='DEBUG')
 ```
+
 
 ## In command line arguments
 
@@ -58,14 +60,13 @@ Config(db=SQLiteConfigChild(dbpath='/path/to/db.sqlite'), log_level='INFO')
 ```
 
 > [!NOTE]
-> A double underscore is used as the default separator to minimize the risk of name collisions, underscore being commonly used in python keys as per PEP8. You can change the separator if needed.
-
+> A double underscore is used as the default separator to minimize the risk of name collisions, the underscore being commonly used in python keys as per PEP8. You can change the separator if needed.
 
 ## Sub-configurations
 
-A nice feature of confarg is its ability to load a sub-configuration at any key of the configuration. This enables splitting configurations into smaller, independent parts. Also, subconfiguration files can be easily reused in different contexts. This is achieved by postfixing the `--config` flag with the path to the key where to load the configuration file provided as argument.
+A nice feature of confarg is its ability to load a sub-configuration at any key of the configuration. This enables splitting configurations into smaller, independent parts. Also, subconfiguration files can be easily reused in different contexts. This is achieved by postfixing the `--config` flag with the path to the key at which to load the configuration file provided as an argument.
 
-Let's take a concrete example. When we updated our application at the beginning of this tutorial, the database configuration became nested under the `db` key, and we wrote a new configuration file `config.yaml`. Instead, we can keep our original database configuration and load it under the `db` key by using a `--config.db` flag:
+Let's take a concrete example. When we updated our application at the beginning of this tutorial, the database configuration became nested under the `db` key, and we wrote a new configuration file `app_config.yaml`. Instead, we can keep our original database configuration and load it under the `db` key by using a `--config.db` flag:
 
 ```console
 $ # Load a sub-configuration under the `db` key
@@ -77,14 +78,15 @@ As before, we can overwrite a configuration with another configuration, as long 
 
 ```console
 $ # Overwriting the db config with a sub-config
-$ uv run myapp.py --config config.yaml --config.db sqlite.yaml
+$ uv run myapp.py --config app_config.yaml --config.db sqlite.yaml
 Config(db=SQLiteConfigChild(dbpath='/path/to/db.sqlite'), log_level='DEBUG')
 ```
 
-The same left-to-right reading order applies with subconfiguration files. Here, the full `config.yaml` overwrites the data imported from the `sqlite.yaml` subconfig.
+
+The same left-to-right reading order applies with subconfiguration files. Here, the full `app_config.yaml` overwrites the data imported from the `sqlite.yaml` subconfig.
 
 ```console
-$ uv run myapp.py --config.db sqlite.yaml --config config.yaml
+$ uv run myapp.py --config.db sqlite.yaml --config app_config.yaml
 Config(db=PostgreSQLConfigChild(host='example.com',
                                 port=5432,
                                 schema_name='mydb'),
@@ -92,10 +94,10 @@ Config(db=PostgreSQLConfigChild(host='example.com',
 ```
 
 
-Same thing for command line arguments, nothing changes except the key path.
+Same thing for command line arguments: nothing changes except the key path.
 
 ```console
 $ # Overwriting the db config with command line arguments
-$ uv run myapp.py --config config.yaml --db.class configs.SQLiteConfigChild --db.dbpath /path/to/db.sqlite
+$ uv run myapp.py --config app_config.yaml --db.class configs.SQLiteConfigChild --db.dbpath /path/to/db.sqlite
 Config(db=SQLiteConfigChild(dbpath='/path/to/db.sqlite'), log_level='DEBUG')
 ```

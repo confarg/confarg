@@ -15,12 +15,9 @@ def main() -> None:
     config = confarg.load(Config, env_prefix="MYAPP_")
     pprint(config)
 
-    # For saving purpose:
     config_dict = confarg.merge(Config)
-    # merge() returns the raw dict with ${...} strings intact — save it to preserve expressions
     confarg.dump_file(config_dict, "saved_config_uninterpolated.yaml")
     config = confarg.build(Config, config_dict)
-    # from_dict() resolves expressions; dump_file() then serializes the resolved values
     confarg.dump_file(config, "saved_config_interpolated.yaml")
 
 

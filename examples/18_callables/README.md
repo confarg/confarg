@@ -1,12 +1,13 @@
 # Callables
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/18_callables`](https://github.com/confarg/confarg/tree/master/examples/18_callables).
+> Code for examples on this page can be found in [`examples/18_callables`](https://github.com/confarg/confarg/tree/master/examples/18_callables).
 
 Callables are accepted as leaf types. They deserve their own tutorial as they are a bit more involved than the average leaf type.
 
 Take this configuration, which holds a `Callable[[str], None]` function:
 
+<!-- snippet: print_greetings.py#Config -->
 ```python
 @dataclass
 class Config:

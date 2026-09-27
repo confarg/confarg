@@ -1,13 +1,13 @@
 # Unions
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/6_unions`](https://github.com/confarg/confarg/tree/master/examples/6_unions).
-
+> Code for examples on this page can be found in [`examples/6_unions`](https://github.com/confarg/confarg/tree/master/examples/6_unions).
 
 One of the powerful features of confarg, which lies at the heart of complex configurations, is the ability to handle union types.
 
 Let's go back to our database example introduced in [Tutorial #1](https://confarg.github.io/confarg/examples/1_three_input_sources/), where our app relies on this configuration to connect to a DB server:
 
+<!-- snippet: /examples/configs/src/configs/postgres.py#PostgreSQLConfig -->
 ```python
 @dataclass(kw_only=True)
 class PostgreSQLConfig:
@@ -18,13 +18,14 @@ class PostgreSQLConfig:
 
 Say our app now needs to also support an SQLite backend. We introduce a new configuration:
 
+<!-- snippet: /examples/configs/src/configs/sqlite.py#SQLiteConfig -->
 ```python
 @dataclass
 class SQLiteConfig:
     dbpath: str
 ```
 
-The two backends are mutually exclusive. In confarg, we translate this in our configuration in the most pythonic way, using a union type. We declare our configuration to be of type
+The two backends are mutually exclusive. In confarg, we translate this into our configuration in the most pythonic way, using a union type. We declare our configuration to be of type
 
 ```python
 type Config = PostgreSQLConfig | SQLiteConfig
@@ -46,13 +47,13 @@ PostgreSQLConfig(host='example.com', port=5432, schema_name='schema')
 
 This works as well with configuration files, which could contain a configuration of either sort:
 
-* a PostgreSQLConfig configuration file:
+- a PostgreSQLConfig configuration file:
     ```console
     $ uv run myapp.py --config postgres.yaml
     PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
     ```
 
-* or, a SQLiteConfig configuration file:
+- or a SQLiteConfig configuration file:
     ```console
     $ uv run myapp.py --config sqlite.yaml
     SQLiteConfig(dbpath='/path/to/db.sqlite')

@@ -1,7 +1,7 @@
 # JSON inputs
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/14_json`](https://github.com/confarg/confarg/tree/master/examples/14_json).
+> Code for examples on this page can be found in [`examples/15_json_inputs`](https://github.com/confarg/confarg/tree/master/examples/15_json_inputs).
 
 
 JSON strings can be used in environment variables and from the command line where either a sequence or a structured input is expected.
@@ -22,6 +22,7 @@ Also, while more verbose, JSON has the merit of being unambiguous about its argu
 
 Consider the following configuration:
 
+<!-- snippet: list_of_str_or_bools.py#Config -->
 ```python
 @dataclass
 class Config:
@@ -81,7 +82,7 @@ $ # In the command prompt
 $ uv run .\list_of_strs.py --input "[\"a\", \"b\"]"
 ```
 
-In PowerShell, the situation differs between version.
+In PowerShell, the situation differs between versions.
 
 In PowerShell 5, single quotes can be used as a quoting character but double quotes still must be escaped.
 
@@ -91,7 +92,7 @@ $ # In PowerShell 5
 $ uv run .\list_of_strs.py --input '[\"a\", \"b\"]'
 ```
 
-In PowerShell 7, double quotes don't need to be escaped and inputs similar to other platforms can be used.
+In PowerShell 7, double quotes don't need to be escaped and inputs similar to those on other platforms can be used.
 
 <!-- pytest-markdown-console: notest -->
 ```

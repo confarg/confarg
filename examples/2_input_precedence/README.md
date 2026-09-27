@@ -1,19 +1,19 @@
 # Amending configurations
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/2_input_precedence`](https://github.com/confarg/confarg/tree/master/examples/2_input_precedence).
+> Code for examples on this page can be found in [`examples/2_input_precedence`](https://github.com/confarg/confarg/tree/master/examples/2_input_precedence).
 
-In the [previous tutorial](../1_three_input_sources/README.md), we saw that a configuration can be read from files, environment variables, and command line arguments. Those sources can be mixed — this is actually the intended way of working, as we will now see.
+In the [previous tutorial](../1_three_input_sources/README.md), we saw that a configuration can be read from files, environment variables, and command-line arguments. Those sources can be mixed — this is actually the intended way of working, as we will now see.
 
 ## Input precedence
 
-It is not an error to have the same configuration element defined several times across the different inputs. When confarg reads a new value for an existing entry, the new value overwrites the old one. This enables to update a configuration in a variety of ways.
+It is not an error to have the same configuration element defined several times across the different inputs. When confarg reads a new value for an existing entry, the new value overwrites the old one. This makes it possible to update a configuration in a variety of ways.
 
-Therefore, it is important to know the order in which inputs are read, knowing that later reads overwrite existing values:
+Therefore, it is important to know the order in which inputs are read, given that later reads overwrite existing values:
 
-* configuration files are read first;
-* then, values are read from environment variables;
-* and finally, values are read from command line arguments.
+- configuration files are read first;
+- then, values are read from environment variables;
+- and finally, values are read from command-line arguments.
 
 It is actually a bit more subtle than that, but this is the correct mental model.
 
@@ -55,8 +55,8 @@ The configuration is progressively built up from the various input sources. At n
 
 For example, you could have a partial configuration purposely omitting the schema name,
 
-```yaml
-# postgres_no_schema.yaml
+<!-- snippet: postgres_no_schema.yaml -->
+```yaml title="postgres_no_schema.yaml"
 host: dev.example.com
 port: 5555
 ```
@@ -70,7 +70,7 @@ PostgreSQLConfig(host='dev.example.com', port=5555, schema_name='mydb')
 
 ## Using multiple configuration files
 
-The `--config` option can take multiple arguments. The provided configuration files are read from left to right. This can be used to either amend part of an existing configuration, or build a full configuration from various parts.
+The `--config` option can take multiple arguments. The provided configuration files are read from left to right. This can be used to either amend part of an existing configuration or build a full configuration from various parts.
 
 In the example below, the data from `postgres_no_schema.yaml` overwrites the data in `postgres.yaml` — note the port number. The `schema_name` from `postgres.yaml` is kept as it is missing from `postgres_no_schema.yaml`.
 

@@ -1,7 +1,7 @@
 # Child configurations
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/9_child_configurations`](https://github.com/confarg/confarg/tree/master/examples/9_child_configurations).
+> Code for examples on this page can be found in [`examples/9_child_configurations`](https://github.com/confarg/confarg/tree/master/examples/9_child_configurations).
 
 We saw in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/) that unions bring flexibility by allowing alternative configurations. This is helpful when you can list all of the available options explicitly. However, if you want configurations to be extensible, we can turn to inheritance. In confarg, whenever a class is specified in a configuration, it allows you to build a configuration with a derived class.
 

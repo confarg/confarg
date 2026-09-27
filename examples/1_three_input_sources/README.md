@@ -1,10 +1,11 @@
 # Three input sources
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/1_three_input_sources`](https://github.com/confarg/confarg/tree/master/examples/1_three_input_sources).
+> Code for examples on this page can be found in [`examples/1_three_input_sources`](https://github.com/confarg/confarg/tree/master/examples/1_three_input_sources).
 
 Let's dive in. Suppose we have an app that needs to connect to some database server. The app relies on the following configuration:
 
+<!-- snippet: /examples/configs/src/configs/postgres.py#PostgreSQLConfig -->
 ```python
 @dataclass(kw_only=True)
 class PostgreSQLConfig:
@@ -31,11 +32,10 @@ PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
 ```
 
 > [!NOTE]
-> Names are preserved in command-line arguments. They are *not* slugified (e.g. `schema_name` does not become `--schema-name`). This consistency avoids unnecessary complications of search-and-replace operations.
+> Names are preserved in command-line arguments. They are _not_ slugified (e.g. `schema_name` does not become `--schema-name`). This consistency avoids unnecessary complications of search-and-replace operations.
 
 > [!NOTE]
 > Fields with default values are optional.
-
 
 ## From environment variables
 
@@ -56,46 +56,43 @@ Most complex configurations will generally be stored in one or several files. In
 
 Confarg supports the following formats for configurations:
 
-* **JSON**:
+- **JSON**:
 
-    ```json
-    // postgres.json
-    {
-        "host": "example.com",
-        "schema_name": "mydb"
-    }
-    ```
+  <!-- snippet: postgres.json -->
+  ```json
+  {"host": "example.com","schema_name": "mydb"}
+  ```
 
-    ```console
-    $ uv run myapp.py --config postgres.json
-    PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
-    ```
+  ```console
+  $ uv run myapp.py --config postgres.json
+  PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
+  ```
 
-* **TOML**:
+- **TOML**:
 
-    ```toml
-    # postgres.toml
-    host = "example.com"
-    schema_name = "mydb"
-    ```
+  <!-- snippet: postgres.toml -->
+  ```toml
+  host        = "example.com"
+  schema_name = "mydb"
+  ```
 
-    ```console
-    $ uv run myapp.py --config postgres.toml
-    PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
-    ```
+  ```console
+  $ uv run myapp.py --config postgres.toml
+  PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
+  ```
 
-* **YAML**, if the `pyyaml` package is installed:
+- **YAML**, if the `pyyaml` package is installed:
 
-    ```yaml
-    # postgres.yaml
-    host: example.com
-    schema_name: mydb
-    ```
+  <!-- snippet: postgres.yaml -->
+  ```yaml title="postgres.yaml"
+  host: example.com
+  schema_name: mydb
+  ```
 
-    ```console
-    $ uv run myapp.py --config postgres.yaml
-    PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
-    ```
+  ```console
+  $ uv run myapp.py --config postgres.yaml
+  PostgreSQLConfig(host='example.com', port=5432, schema_name='mydb')
+  ```
 
 
 The configuration can also be specified from the environment:

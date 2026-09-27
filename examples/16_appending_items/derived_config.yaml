@@ -1,7 +1,0 @@
-__include__: ./config.yaml
-
-dbs+:
-- class: configs.append.SQLiteConfig
-  dbpath: other.sqlite
-
-users+: [frankenstein]

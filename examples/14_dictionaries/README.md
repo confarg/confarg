@@ -1,11 +1,11 @@
 # Dictionaries
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/14_dictionaries`](https://github.com/confarg/confarg/tree/master/examples/14_dictionaries).
-
+> Code for examples on this page can be found in [`examples/14_dictionaries`](https://github.com/confarg/confarg/tree/master/examples/14_dictionaries).
 
 Configurations can contain dictionaries, whose keys can be dynamically assigned. Take the following configuration:
 
+<!-- snippet: dict_of_ints.py#Config -->
 ```python
 @dataclass
 class Config:
@@ -29,6 +29,7 @@ Config(input={42: 'hello', -15: 'world'})
 
 Just like lists, dictionaries allow for configurations with dynamic sizes, but they allow for more natural indexing. Let's take the example from [Tutorial #13](https://github.com/confarg/confarg/tree/master/examples/13_collection_items) featuring a dynamic number of database backends, and rewrite the configuration using dictionaries.
 
+<!-- snippet: myapp.py#Config -->
 ```python
 @dataclass
 class Config:
@@ -39,20 +40,19 @@ Now, each DB backend is indexed by a hand-picked key. This makes it easier to re
 
 ```console
 $ # Each configuration is added under a hand-picked key
-$ uv run myapp.py --config config.yaml
+$ uv run myapp.py --config db_dict.yaml
 Config(dbs={'postgres': PostgreSQLConfigChild(host='example.com',
                                               port=5432,
                                               schema_name='mydb'),
             'sqlite': SQLiteConfigChild(dbpath='db.sqlite')})
 $ # Pointing to the correct configuration is more readable and more robust to change
-$ uv run myapp.py --config config.yaml --dbs.postgres.schema_name otherdb
+$ uv run myapp.py --config db_dict.yaml --dbs.postgres.schema_name otherdb
 Config(dbs={'postgres': PostgreSQLConfigChild(host='example.com',
                                               port=5432,
                                               schema_name='otherdb'),
             'sqlite': SQLiteConfigChild(dbpath='db.sqlite')})
 ```
 
-The main drawback of dictionaries in this context is that keys are not checked, and typos are happily considered as new keys.
 
 ```console
 $ uv run dict_of_ints.py --config dict_of_ints.yaml

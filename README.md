@@ -496,17 +496,32 @@ port: 1234
 url: postgres://${host}:${port}/mydb
 ```
 
-When a part genuinely does depend on another part, prefix the path with a dot to anchor it at the
+When a part genuinely does depend on another part, prefix the path with `::` to anchor it at the
 root of the whole configuration instead:
 
 ```yaml
 # only makes sense inside a configuration that has `deploy_env` at its root
-name: mydb-${.deploy_env}
+name: mydb-${::deploy_env}
 ```
 
-The dot is the visible difference between a file you can reuse anywhere and one that is a
+`::` is the visible difference between a file you can reuse anywhere and one that is a
 deliberate piece of a specific whole. In a configuration that is a single unnested file the two
 are the same thing, since that file's root *is* the configuration root.
+
+A leading dot is a third thing again: it counts *upwards from the value being written*, one
+level per dot, so `${.other}` is a key beside it and `${..other}` one in the block above.
+
+```yaml
+servers:
+  - name: web
+    host: web.example.com
+    url: https://${.host}/          # this element's own host, whatever its index
+```
+
+Because such a path never names an index, the element keeps working when the list is reordered,
+appended to, or lifted into a file of its own — and `confarg.merge()` writes it back out exactly
+as written rather than resolving it to `${servers.0.host}`. Dots may not climb out of the file
+that wrote them; that is what `::` is for.
 
 ## Next steps
 

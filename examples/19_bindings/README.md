@@ -1,7 +1,7 @@
 # Binding arguments
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/19_bindings`](https://github.com/confarg/confarg/tree/master/examples/19_bindings).
+> Code for examples on this page can be found in [`examples/19_bindings`](https://github.com/confarg/confarg/tree/master/examples/19_bindings).
 
 When specifying a callable, we may want to bind some of its parameters to fixed values. This is done with the dedicated `bind` key.
 
@@ -29,16 +29,18 @@ greet_fn:
 
 > [!NOTE]
 > If the function has a `bind` argument that would conflict with the `bind` key, confarg accepts an alternative set of directives prefixed with `_`:
+>
 > ```console
 > $ uv run print_greetings.py --greet_fn._fn greetings.print_greetings --greet_fn._bind.greetings Hi
 > Hi, world!
 > ```
-> In that case, *all* directives of that callable must be drawn from the alternative set.
+>
+> In that case, _all_ directives of that callable must be drawn from the alternative set.
 
 
 ## To callable classes
 
-As for functions, binding arguments to a callable class requires an expanded dict definition, where the FQN of the class is given under the `class` key.
+As with functions, binding arguments to a callable class requires an expanded dict definition, where the FQN of the class is given under the `class` key.
 
 ```console
 $ uv run print_greetings.py --greet_fn.class greetings.Print_greetings --greet_fn.bind.adjective beautiful
@@ -75,11 +77,13 @@ greet_fn:
 
 > [!NOTE]
 > If the class has a `bind` argument in its `__init__` method that would conflict with the `bind` key, confarg accepts an alternative set of directives prefixed with `_`:
+>
 > ```console
 > $ uv run print_greetings.py --greet_fn._class greetings.Print_greetings --greet_fn.greetings Hi --greet_fn._bind.adjective beautiful
 > Hi, beautiful world!
 > ```
-> Again, *all* directives of that callable must be drawn from the alternative set.
+>
+> Again, _all_ directives of that callable must be drawn from the alternative set.
 
 
 ## To class methods

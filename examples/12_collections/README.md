@@ -1,7 +1,7 @@
 # Collections
 
 > [!TIP]
-> Code for examples in this page can be found in [`examples/12_collections`](https://github.com/confarg/confarg/tree/master/examples/12_collections).
+> Code for examples on this page can be found in [`examples/12_collections`](https://github.com/confarg/confarg/tree/master/examples/12_collections).
 
 Configuration may contain collections of items in the form of lists or tuples.
 
@@ -11,6 +11,7 @@ From the command line, items of a collection are separated by space.
 
 Take the following configuration:
 
+<!-- snippet: list_of_ints.py#Config -->
 ```python
 @dataclass
 class Config:
@@ -33,6 +34,7 @@ Config(input=[])
 
 Tuples work similarly. Take this configuration:
 
+<!-- snippet: pair_of_ints.py#Config -->
 ```python
 @dataclass
 class Config:
@@ -59,6 +61,7 @@ $ uv run pair_of_ints.py --input # Error: cannot be empty
 
 Unless the tuple is unbounded:
 
+<!-- snippet: unbound_tuple_of_ints.py#Config -->
 ```python
 @dataclass
 class Config:
@@ -81,9 +84,9 @@ Config(input=())
 
 Configuration file formats handle collections natively. For example,
 
-```yaml
-# pair_of_ints.yaml
-inputs: [1, 2]
+<!-- snippet: pair_of_ints.yaml -->
+```yaml title="pair_of_ints.yaml"
+input: [1, 0b10]
 ```
 
 ```console
@@ -99,10 +102,11 @@ We defer the discussion on how to populate collections from environment variable
 
 ## Precedence with a leaf type in a union
 
-In case of a union with a leaf type, the leaf type coercion is always preferred if successful.
+In the case of a union with a leaf type, the leaf type coercion is always preferred if successful.
 
 Take this configuration:
 
+<!-- snippet: int_or_list_of_ints.py#Config -->
 ```python
 @dataclass
 class Config:
@@ -124,6 +128,7 @@ This can be surprising, especially when it seems to go against the [stealing rul
 
 Take this configuration:
 
+<!-- snippet: str_or_list_of_bools.py#Config -->
 ```python
 @dataclass
 class Config:

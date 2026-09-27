@@ -1,0 +1,7 @@
+database:
+  host: localhost
+  port: 5432
+service:
+  database:
+    host: ${database.host}
+    port: 5433

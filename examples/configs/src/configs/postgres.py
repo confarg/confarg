@@ -17,7 +17,7 @@ class PostgreSQLConfig:
 
 @dataclass(kw_only=True)
 class PostgreSQLConfigTyped:
-    type: Literal["postgres"]
+    type: Literal["postgres"] = "postgres"
     host: str
     port: int = 5432
     schema_name: str
