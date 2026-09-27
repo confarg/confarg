@@ -13,6 +13,15 @@ in `cli/_collect.py`.
 Two helpers absorb all of them: `_value_run(args, i)` returning the tokens and the new index, and
 `_require_value(args, i, token)` raising the one canonical message.
 
+A mutation run over `src/confarg` (2026-09-26) found a second, sharper argument for the helpers:
+these hand-written `i`-advancing loops are the only place in the library where a one-token
+mutation produces an *unbounded* loop rather than a wrong answer. Turning a single `i += 1` into
+`i -= 1` makes the scan append forever — one mutant of `_parse_cli._collect_config_file_pairs`
+reached 8.6 GB of resident memory before it was killed, and four mutants of
+`cli/_prefix.strip_argv_prefix` passed 1.2 GB each. Nothing in the loops guarantees the index
+advances. A shared `_value_run` puts that guarantee in one place where it can be stated once and
+tested once.
+
 Worth stating plainly, because it is the reason the risk is **high**: *"where does this flag's
 value run end?"* is one of the core CLI decisions and it is **not** in the canonical table in
 [09-invariants.md#delegate-to-the-canonical-function](../../architecture/09-invariants.md#delegate-to-the-canonical-function),

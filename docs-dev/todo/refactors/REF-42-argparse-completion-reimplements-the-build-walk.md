@@ -14,6 +14,16 @@ and completion quietly holds a second copy of it.
 Only three things actually differ: a `_is_singleton_literal` skip, no recursion into sibling
 union variants, and the `existing_dests` guards.
 
+A mutation run over `src/confarg` (2026-09-26) measured the cost of the second copy: the two
+twinned functions are the weakest-tested in their respective modules — `_extend_walk_field` has 89
+surviving mutants and `_specs_for_field` 87, and `cli/argparse/_completion.py` scores 52% against
+`cli/_build.py`'s 64%. It also confirmed the redundancy claimed below: mutating any *single*
+`ctx.existing_dests.add(flag)` site to `add(None)` survives the whole suite, while mutating all
+seven at once fails 4 tests — each guard is individually non-load-bearing, exactly as argued.
+One caveat for whoever picks this up: 77 of `_specs_for_field`'s 87 survivors are help-text and
+`metavar` arguments, which nothing asserts anywhere, so the mutation score will stay low after the
+merge and is not the measure of success here.
+
 Take the risk-free half first — about 34 lines, no behavior change:
 
 - the seven `if flag not in ctx.existing_dests` / `.add(flag)` pairs are redundant.

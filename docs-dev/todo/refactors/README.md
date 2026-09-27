@@ -40,7 +40,10 @@ different board.
 | [REF-56 — Seven `[len(prefix):]` slices that are `str.removeprefix`](REF-56-removeprefix-for-guarded-slices.md) | S | low | none |
 | [REF-57 — Small stdlib swaps across the core](REF-57-small-stdlib-swaps-in-the-core.md) | S | low | none |
 | [REF-58 — The config-parallel struct walk has two owners](REF-58-config-parallel-struct-walk-has-two-owners.md) | S | medium | none |
+| [REF-59 — The clicklike completion tests assert that nothing was added](REF-59-completion-tests-assert-nothing-was-added.md) | S | medium | none |
 | [REF-59 — Twenty code blocks under `examples/` are still hand-copied](REF-59-example-code-blocks-not-generated.md) | M | low | none |
+| [REF-60 — Nothing asserts the bytes `dump_file` writes](REF-60-dumped-file-bytes-are-never-asserted.md) | S | medium | none |
+| [REF-61 — The index-range guards in the env part matchers decide nothing](REF-61-env-index-guards-decide-nothing.md) | S | medium | none |
 | [REF-62 — Hidden backend blocks are replayed twice per section in the example READMEs](REF-62-duplicated-hidden-backend-blocks-in-examples.md) | S | low | none |
 | [REF-63 — `13_collection_items` carries an empty section and a misplaced tuple remark](REF-63-collection-items-readme-empty-section-and-misplaced-remark.md) | S | low | none |
 
