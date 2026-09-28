@@ -1448,6 +1448,24 @@ class TestCollectionPatchContract:
         cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users+", "--users.0", "allan"], env={})
         assert cfg.users == ["allan", "bob"]
 
+    def test_append_valued_then_bare(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """One argv may spell the same append both ways; the bare occurrence appends nothing."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users+", "david", "--users+"], env={})
+        assert cfg.users == ["alice", "bob", "david"]
+
+    def test_append_bare_then_valued(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The bare occurrence is honored wherever it stands, before the valued one included."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users+", "--users+", "david"], env={})
+        assert cfg.users == ["alice", "bob", "david"]
+
+    def test_append_bare_twice(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Two bare appends append nothing twice, rather than reading as a repeated flag."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users+", "--users+"], env={})
+        assert cfg.users == ["alice", "bob"]
+
     def test_delete_index(self, loader: ConfargLoader, tmp_yaml) -> None:
         """``--field.N-`` removes the element at N."""
         base = tmp_yaml("users: [alice, bob, claire]\n")
@@ -2953,6 +2971,11 @@ class TestDashPrefixedValueContract:
     def test_list_append(self, loader: ConfargLoader) -> None:
         """``--tags+=--a`` appends a dashed element."""
         cfg = loader.load(_DashValued, argv=["--tags", "x", "--tags+=--a"], env={})
+        assert cfg.tags == ["x", "--a"]
+
+    def test_list_append_beside_a_bare_append(self, loader: ConfargLoader) -> None:
+        """A bare append next door neither eats the ``=`` escape nor costs the dashed element."""
+        cfg = loader.load(_DashValued, argv=["--tags", "x", "--tags+=--a", "--tags+"], env={})
         assert cfg.tags == ["x", "--a"]
 
     def test_only_the_eq_value_is_shielded(self, loader: ConfargLoader) -> None:

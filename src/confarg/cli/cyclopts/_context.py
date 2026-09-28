@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     import cyclopts
 
 from confarg import _defaults
+from confarg.cli._argv import drop_bare_occurrences
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 from confarg.cli.cyclopts._register import _app_meta
@@ -83,10 +84,18 @@ def merge_app(  # noqa: PLR0913
     Config file loading order:
         Same as :func:`confarg.merge`.
     """
-    # Parse CLI tokens; exits on errors (exit_on_error=True by default).
-    command, bound, _ = app.parse_args(argv)
-
     meta = _app_meta.get(id(app))
+
+    # Parse CLI tokens; exits on errors (exit_on_error=True by default).  cyclopts is
+    # handed the argv without the bare occurrences of a flag that takes zero *or* more
+    # items: it reads one as an implicit empty container and then asserts when that
+    # meets a real token.  The scans below read the argv the user typed
+    # (docs-dev/architecture/04-cli-adapters.md#a-bare-append).
+    tokens = sys.argv[1:] if argv is None else list(argv)
+    command, bound, _ = app.parse_args(
+        drop_bare_occurrences(tokens, meta["stands_bare"] if meta else ()),
+    )
+
     confarg_fn = meta["command"] if meta else None
     if command is not confarg_fn:
         # --help, --version, or another special command: execute and exit.

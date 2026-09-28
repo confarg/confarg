@@ -1,26 +1,28 @@
 # BUG-38 — A bare `--<list>` clears the list everywhere except click and typer
 
-**Where:** `src/confarg/cli/_build.py` (`_append_carries_items`, `_collect_patch_argv_specs`) · **Filed:** 2026-09-21
+**Where:** `src/confarg/cli/_build.py` (`_collect_patch_argv_specs`, `_build_leaf_spec`) · **Filed:** 2026-09-21
 **Effort:** S · **Risk:** low · **Impact:** behavior
 
 `--users` with nothing after it empties the list in vanilla, argparse and cyclopts — a varlen
 collection consumes greedily and is content with zero tokens — while click and typer answer
-`Option '--users' requires an argument.` It is the same shape problem BUG-33 solved one flag
-family over: no clicklike option can be both value-less and multi-token, so the spec has to
-follow argv ([04-cli-adapters.md#a-bare-append](../../architecture/04-cli-adapters.md#a-bare-append)).
+`Option '--users' requires an argument.` It is the same shape problem BUG-33 and BUG-35 solved
+one flag family over: no clicklike option can be both value-less and multi-token
+([04-cli-adapters.md#a-bare-append](../../architecture/04-cli-adapters.md#a-bare-append)).
 Vanilla, argparse and cyclopts take it, so it is an unapproved parity gap
 ([09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity)).
-That section's claim that an append is "the *only* flag family that stands bare" is wrong as
-written, and this ticket is why.
 
-Fix: `_append_carries_items` already answers "does any occurrence of this flag in argv carry an
-item?", and its precondition holds for **every** varlen collection flag, not only for an append.
-Lift it to a neutral `_flag_carries_items` and ask it wherever a varlen spec is built, so a flag
-argv never gives an item registers `nargs=0` exactly as a bare `--users+` does — one rule applied
-wherever it holds rather than a second special case
+Fix: the append flag already solves this, and its rule is neutral. A spec marked
+`FlagSpec.stands_bare` keeps its multi-token shape and has its bare occurrences dropped from the
+argv the framework parses (`cli._argv.drop_bare_occurrences`), so the flag is legal with zero
+items on every front-end. The precondition — "vanilla consumes greedily and is content with no
+token" — holds for **every** varlen collection flag, not only for an append, so setting
+`stands_bare` wherever a varlen spec is built applies one rule where it holds rather than adding
+a second special case
 ([09-invariants.md#delegate-to-the-canonical-function](../../architecture/09-invariants.md#delegate-to-the-canonical-function)).
-It asks with `_parse_cli._looks_like_flag`, so the frameworks keep consuming exactly the tokens
-vanilla consumes and the dashed-value escape (`--users=--a`, `--users -8`) is unaffected
+Unlike an append, a bare `--users` is not a no-op — it *clears* the list — so check that
+dropping the token still leaves the vanilla patch scan to record the clear before relying on it.
+The filter asks with `_parse_cli._looks_like_flag`, so the frameworks keep consuming exactly the
+tokens vanilla consumes and the dashed-value escape (`--users=--a`, `--users -8`) is unaffected
 ([10-design-decisions.md#the--form-is-the-escape-for-a-dashed-value](../../architecture/10-design-decisions.md#the--form-is-the-escape-for-a-dashed-value)).
 
 ```python

@@ -27,7 +27,7 @@ from confarg.cli._build import build_dynamic_flags, build_static_flags
 from confarg.cli._prefix import PREFIX_ATTR
 from confarg.dictexpr import contains_expression
 
-# Maps id(app) to confarg metadata {command, name_map}.
+# Maps id(app) to confarg metadata {command, name_map, stands_bare}.
 # Keyed by id rather than the App object because App is unhashable (attrs frozen).
 # Values hold a reference to the app itself to prevent id reuse after GC.
 _app_meta: dict[int, dict[str, Any]] = {}
@@ -153,10 +153,10 @@ def load_flags_into_app(
 
     Because cyclopts is signature-driven, this generates a synthetic default
     function whose :class:`inspect.Signature` encodes all flags and registers it
-    via ``app.default()``.  The synthetic function and a
-    ``{py_identifier: dotted_cli_name}`` name map are recorded in the module-level
-    ``_app_meta`` registry (keyed by ``id(app)``) so that :func:`from_app` can
-    extract parsed values.
+    via ``app.default()``.  The synthetic function, a
+    ``{py_identifier: dotted_cli_name}`` name map and the names of the flags that may
+    stand bare are recorded in the module-level ``_app_meta`` registry (keyed by
+    ``id(app)``) so that :func:`from_app` can extract parsed values.
 
     Args:
         flags: The specs to register, typically from
@@ -186,7 +186,14 @@ def load_flags_into_app(
     app.default(__confarg_command__)
     # Store metadata keyed by id(app); include a reference to app to prevent
     # id reuse if a different App is allocated at the same address after GC.
-    _app_meta[id(app)] = {"app_ref": app, "command": __confarg_command__, "name_map": name_map}
+    _app_meta[id(app)] = {
+        "app_ref": app,
+        "command": __confarg_command__,
+        "name_map": name_map,
+        # merge_app drops these flags' bare occurrences before cyclopts parses
+        # (docs-dev/architecture/04-cli-adapters.md#a-bare-append).
+        "stands_bare": {spec.name for spec in flags if spec.stands_bare},
+    }
 
 
 def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command signatures; all params are keyword-only with sensible defaults

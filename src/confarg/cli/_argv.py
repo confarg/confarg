@@ -1,0 +1,56 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+"""The argv a host framework parses, which is not always the argv the user typed.
+
+Vanilla reads argv itself, so it honors every spelling the CLI grammar allows.  A
+framework parses on its own terms and rejects what its option model cannot express;
+where the rejected spelling carries no information the adapters need, the token is
+dropped before the framework sees it and the scans that *do* need it keep reading the
+original argv.
+
+Dev Notes:
+    docs-dev/architecture/04-cli-adapters.md#a-bare-append
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Collection, Sequence
+
+
+def drop_bare_occurrences(argv: Sequence[str], stands_bare: Collection[str]) -> list[str]:
+    """Return *argv* without the occurrences of a stands-bare flag that carry no item.
+
+    An occurrence carries an item when a token follows it that
+    :func:`~confarg._parse_cli._looks_like_flag` calls a value -- vanilla's own split, so
+    the frameworks consume exactly the tokens vanilla consumes, a dash-prefixed item
+    (``--tags+ -8``) included.  A ``--<flag>=<value>`` token never matches a name in
+    *stands_bare*, so the ``=`` escape is never dropped.
+
+    Args:
+        argv: The tokens the user typed, in order.
+        stands_bare: Dotted flag names (no ``--``) whose specs set
+            :attr:`~confarg.cli.FlagSpec.stands_bare`.
+
+    Returns:
+        A new list of tokens for the framework to parse.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#a-bare-append
+    """
+    # Imported here: a module-level import would create a load-time import cycle.
+    from confarg._parse_cli import _looks_like_flag  # noqa: PLC0415
+
+    if not stands_bare:
+        return list(argv)
+    return [
+        tok
+        for i, tok in enumerate(argv)
+        if not (
+            _looks_like_flag(tok) and tok[2:] in stands_bare and (i + 1 == len(argv) or _looks_like_flag(argv[i + 1]))
+        )
+    ]

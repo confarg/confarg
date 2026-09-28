@@ -36,7 +36,7 @@ different board.
 | [REF-52 — Mechanical collapses in the type machinery](REF-52-mechanical-collapses-in-the-type-machinery.md) | S | low | none |
 | [REF-53 — Nine `try`/`except`/`pass` blocks that `contextlib.suppress` already spells](REF-53-contextlib-suppress-for-hand-rolled-try-except.md) | S | low | none |
 | [REF-54 — Three hand-written scan loops in `dictexpr` the stdlib writes in one line](REF-54-dictexpr-scan-loops-are-re-sub-and-accumulate.md) | S | low | none |
-| [REF-55 — Two adjacent-pair loops written with indices instead of `itertools.pairwise`](REF-55-pairwise-for-index-window-loops.md) | S | low | none |
+| [REF-55 — An adjacent-pair loop written with indices instead of `itertools.pairwise`](REF-55-pairwise-for-index-window-loops.md) | S | low | none |
 | [REF-56 — Seven `[len(prefix):]` slices that are `str.removeprefix`](REF-56-removeprefix-for-guarded-slices.md) | S | low | none |
 | [REF-57 — Small stdlib swaps across the core](REF-57-small-stdlib-swaps-in-the-core.md) | S | low | none |
 | [REF-58 — The config-parallel struct walk has two owners](REF-58-config-parallel-struct-walk-has-two-owners.md) | S | medium | none |

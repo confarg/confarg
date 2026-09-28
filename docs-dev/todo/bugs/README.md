@@ -12,7 +12,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
-| [BUG-35 — A mixed append (`--f+ v` and a bare `--f+`) is rejected by three front-ends](BUG-35-mixed-append-spelling-rejected-by-three-front-ends.md) | M | low | behavior |
 | [BUG-36 — `index.py` rewrites a board table without the ticket it just failed to parse](BUG-36-index-drops-the-row-of-a-ticket-it-cannot-parse.md) | S | low | none |
 | [BUG-37 — A repeated varlen flag accumulates in three front-ends and last-wins in two](BUG-37-repeated-varlen-flag-accumulates-in-three-front-ends.md) | M | medium | behavior |
 | [BUG-38 — A bare `--<list>` clears the list everywhere except click and typer](BUG-38-bare-varlen-flag-rejected-by-the-clicklike-front-ends.md) | S | low | behavior |
@@ -27,5 +26,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-48 — `12_collections` cites "Tutorial XX" instead of a real tutorial](BUG-48-collections-readme-defers-to-tutorial-xx.md) | S | low | none |
 | [BUG-49 — A `Dev Notes:` citation points at `#the-triad`, a heading renamed to `## The quartet`](BUG-49-stale-the-triad-citation.md) | S | low | none |
 | [BUG-50 — A `--config.<subpath>` naming no field mounts silently, and dict fields get no flag](BUG-50-config-subpath-is-never-checked-against-the-target.md) | M | medium | behavior |
+| [BUG-51 — A bare `--config.<subpath>+` is an error in vanilla and a no-op in two front-ends](BUG-51-bare-config-append-accepted-by-two-front-ends.md) | S | low | behavior |
 
 <!-- tickets:end -->

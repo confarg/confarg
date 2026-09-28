@@ -53,6 +53,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "how many positional tokens, of which types?" | `_types._fixed_seq_types` |
 | "is this variant sequence-shaped?" | `_types._is_seq_variant` |
 | reconciling a registered `cli_prefix` with one passed to `merge_*` | `cli._prefix.resolve_prefix` |
+| "which argv tokens does a host framework parse?" | `cli._argv.drop_bare_occurrences` |
 | plain vs escaped callable directives | `_callable.active_directives` |
 | single-value (scalar/type-ref) construction | `_construct._construct_scalar` |
 | "which `__init__` parameters are `*args` / `**kwargs`?" | `_types._var_params` |
