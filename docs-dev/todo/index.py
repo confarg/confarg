@@ -20,6 +20,10 @@ heading, a board holding another board's prefix, a missing or misspelled effort/
 bug ticket with no reproduction, or two tickets claiming one ID — which is not hypothetical,
 REF-26 was issued twice and went unnoticed because the duplicates sat in different sections of
 one long file.
+
+Validation *gates* the rewrite: when anything is wrong, every table is left exactly as it was
+and the run exits non-zero. A table written beside an error is a table missing the row of a
+ticket that is still open, which is the drift this script exists to prevent.
 """
 
 from __future__ import annotations
@@ -158,37 +162,57 @@ def _rewrite(readme: Path, table: str, errors: list[str]) -> str | None:
     return f"{text[: start + len(START)]}\n\n{table}\n\n{text[end:]}"
 
 
+@dataclass(frozen=True)
+class _Board:
+    """One board's README, and the text its ticket files say that README should hold."""
+
+    name: str
+    readme: Path
+    updated: str
+    count: int
+
+
+def _plan(board: str, errors: list[str]) -> _Board | None:
+    """Read one board and return what its README should hold, or None if it cannot be read."""
+    tickets = _collect(board, errors)
+    readme = TODO / board / "README.md"
+    if not readme.is_file():
+        errors.append(f"{board}/README.md: missing")
+        return None
+
+    updated = _rewrite(readme, _table(board, tickets), errors)
+    return None if updated is None else _Board(board, readme, updated, len(tickets))
+
+
 def main(argv: list[str]) -> int:
     """Regenerate every board table, or check them when ``--check`` is passed."""
-    check = "--check" in argv
+    # Every board is read and validated before anything is written.  A ticket `_parse` rejects is
+    # dropped by `_collect`, so a table generated beside an error is a table missing the row of a
+    # ticket that is still open -- the drift this script exists to prevent, produced by the script
+    # itself (BUG-36).  Validation therefore gates the rewrite instead of running beside it.
     errors: list[str] = []
+    plans = [plan for board in BOARDS for plan in (_plan(board, errors),) if plan is not None]
+    if errors:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
+        print("error: no table was rewritten; fix the error(s) above and rerun", file=sys.stderr)
+        return 1
+
+    check = "--check" in argv
     stale: list[str] = []
-
-    for board in BOARDS:
-        tickets = _collect(board, errors)
-        readme = TODO / board / "README.md"
-        if not readme.is_file():
-            errors.append(f"{board}/README.md: missing")
-            continue
-
-        updated = _rewrite(readme, _table(board, tickets), errors)
-        if updated is None:
-            continue
-        if updated == readme.read_text(encoding="utf-8"):
-            print(f"{board}/: {len(tickets)} ticket(s), table up to date")
-            continue
-        if check:
-            stale.append(board)
-            print(f"{board}/: {len(tickets)} ticket(s), TABLE STALE")
+    for plan in plans:
+        if plan.updated == plan.readme.read_text(encoding="utf-8"):
+            print(f"{plan.name}/: {plan.count} ticket(s), table up to date")
+        elif check:
+            stale.append(plan.name)
+            print(f"{plan.name}/: {plan.count} ticket(s), TABLE STALE")
         else:
-            readme.write_text(updated, encoding="utf-8", newline="\n")
-            print(f"{board}/: {len(tickets)} ticket(s), table rewritten")
+            plan.readme.write_text(plan.updated, encoding="utf-8", newline="\n")
+            print(f"{plan.name}/: {plan.count} ticket(s), table rewritten")
 
-    for error in errors:
-        print(f"error: {error}", file=sys.stderr)
     if stale:
         print(f"error: rerun 'uv run python docs-dev/todo/index.py' to refresh: {', '.join(stale)}", file=sys.stderr)
-    return 1 if errors or stale else 0
+    return 1 if stale else 0
 
 
 if __name__ == "__main__":
