@@ -764,7 +764,7 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
         A plain dict of the merged configuration, with expression strings intact.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#the-triad
+        docs-dev/architecture/04-cli-adapters.md#the-quartet
     """
     if env is None:
         env = os.environ
