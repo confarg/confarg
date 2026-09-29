@@ -324,6 +324,17 @@ Registering `nargs="*"` hands **arity enforcement back to confarg** — the fram
 counts the tokens, so whatever argv held arrives in one list and the count is the collector's
 to check. The two bounds are not the same job, and only one of them can be answered here.
 
+What a *repeat* of the flag means is the other half of the greedy registration, and the two
+frameworks that vary the count answer it in their own idiom. Argparse's plain store keeps
+only the last occurrence by construction. Cyclopts' `consume_multiple=True` accumulates the
+token runs of every occurrence into one list — a list that never existed in argv and whose
+seams the collector cannot recover — so the same setting cannot serve both jobs: it is what
+a varlen list wants (`FlagSpec.accumulates`, [below](#list-syntax-divergence)) and what a
+fixed-arity flag must not keep. A whole-value spec therefore registers a converter
+(`cli/cyclopts/_register._last_occurrence_convert`) that keeps only the last occurrence's
+run, read off the `CliToken.index` restart that survives into the converter, so `--pair 1 2
+--pair 3 4` is `(3, 4)` on cyclopts as on every other front-end (BUG-62, closed).
+
 Both are parse-time facts, so `cli/_collect._require_fixed_arity` answers both, mirroring the
 `_require_value` vanilla asks once per positional token
 ([03](03-cli-parsing.md#token-consumption)). It is asked of the field type **as resolved,

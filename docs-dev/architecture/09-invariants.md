@@ -50,6 +50,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "how long is a fixed-arity flag's token run?" | `cli/_collect._fixed_arity_whole_value` on its first token — one for a whole value, the arity otherwise |
 | "how does a sub-flag write re-key a namedtuple's positional list?" | `_parse_cli._promote_namedtuple_positional` (field names, unlike the `'*'` base `_set_nested` gives a varlen collection) |
 | "which flag at a namedtuple field is the latest writer?" | `cli/_collect._arity_flag_writes_last`, read off argv |
+| "which occurrence of a repeated fixed-arity flag reaches the collector, on cyclopts?" | `cli/cyclopts/_register._last_occurrence_convert`, read off the `CliToken` index |
 | reserved-name shadowing | `_parse_cli._check_reserved_key_conflict` |
 | locals namespace names | `_parse_cli._locals_keys_at` |
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |

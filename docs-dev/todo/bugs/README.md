@@ -18,7 +18,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-53 — a whole-field delete wins over a later flag in the adapters, not in vanilla](BUG-53-whole-field-delete-beats-a-later-flag-in-the-adapters.md) | M | medium | config |
 | [BUG-54 — A plain collection flag does not discard the patch ops before it in the adapters](BUG-54-plain-occurrence-does-not-discard-earlier-patch-ops-in-the-adapters.md) | M | medium | config |
 | [BUG-61 — A bare optional fixed-arity flag clears in the adapters and raises in vanilla](BUG-61-optional-fixed-arity-bare-flag-clears-in-the-adapters.md) | M | medium | behavior |
-| [BUG-62 — Cyclopts accumulates a repeated fixed-arity flag instead of letting the last one win](BUG-62-cyclopts-accumulates-a-repeated-fixed-arity-flag.md) | M | medium | behavior |
 | [BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four](BUG-63-bare-config-before-help-shows-help-on-argparse.md) | S | medium | behavior |
 | [BUG-65 — An index sub-flag is renamed and dropped in the adapters](BUG-65-namedtuple-index-sub-flag-renamed-and-dropped-in-the-adapters.md) | S | medium | behavior |
 | [BUG-67 — A plain fixed tuple's index patch lands as the applied value in the adapters, as a list-op dict in vanilla](BUG-67-plain-tuple-index-patch-applied-instead-of-recorded-in-the-adapters.md) | M | medium | behavior |
@@ -27,5 +26,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-70 — A union-of-structs field is a mount point with no `--config.<field>` entry](BUG-70-union-of-structs-mount-point-has-no-help-entry.md) | S | low | behavior |
 | [BUG-71 — The flat tagged-leaf hatch on a scalar root reaches no adapter](BUG-71-flat-tagged-leaf-hatch-unreachable-on-a-scalar-root.md) | S | medium | behavior |
 | [BUG-72 — Scalar force-cast flags on non-union fields reach no adapter](BUG-72-scalar-force-cast-flags-unregistered-on-plain-fields.md) | S | medium | behavior |
+| [BUG-73 — An earlier short occurrence of a fixed-arity flag vanishes on the greedy adapters](BUG-73-earlier-short-occurrence-of-a-fixed-arity-flag-vanishes-on-greedy-adapters.md) | M | medium | behavior |
+| [BUG-74 — Cyclopts asserts on a bare fixed-arity occurrence beside a valued one](BUG-74-cyclopts-asserts-on-a-bare-fixed-arity-occurrence-beside-a-valued-one.md) | S | low | behavior |
 
 <!-- tickets:end -->
