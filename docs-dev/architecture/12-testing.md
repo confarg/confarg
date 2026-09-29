@@ -71,6 +71,15 @@ drift apart in the first place (BUG-37).
 `<!-- pytest-markdown-console-file: notest -->` (the root README does, since it illustrates a
 fictitious app).
 
+That verbatim subprocess replay is the only mechanism covering the example commands. An
+in-process variant was started once — `tests/examples/_registry.py` curated, per script, the
+`confarg.load` arguments and output rendering needed to replay each README command through every
+CLI loader — but its harness never landed, and the registry was deleted rather than the harness
+rebuilt (BUG-52). The subprocess replay executes the README command exactly as a reader would, so
+there is nothing a curated second copy of it can add, only drift: a script changed without a
+matching registry entry failed the suite loudly, which is the failure mode the subprocess replay
+cannot have.
+
 `docs-dev/` is excluded from collection instead, via `norecursedirs` in `pyproject.toml`:
 internal documentation is never test material, and a board reproduction is meant to be read,
 not run — its commands are repository-root-relative, and the block runs from the ticket's own
