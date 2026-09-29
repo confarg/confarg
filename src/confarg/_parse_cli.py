@@ -1050,6 +1050,45 @@ def _open_callable_shorthand(data: dict[str, Any], path: list[str], target: Any,
             _set_nested(data, path[:n], promote_bare_spec(existing))
 
 
+def _promote_namedtuple_positional(data: dict[str, Any], path: list[str], target: Any, union_tag: str) -> None:
+    """Re-key a namedtuple field's positional list under its field names before *path* descends.
+
+    The sibling of :func:`_open_callable_shorthand`, run at the same point in the loop:
+    the arity flag stores a plain list, and ``_set_nested`` would promote it to
+    ``{LIST_REPLACE_BASE_KEY: list}`` -- the list-op shape an index patch on a *varlen*
+    collection rides on.  A namedtuple's positions are its fields, so the promotion is
+    by field name: a sub-flag that follows the arity flag joins the positions it did not
+    take, and the merged dict stays one ``build()`` can read, both shapes a namedtuple
+    accepts (BUG-66).  Write order decides: only a sub-flag descends, so the promotion
+    runs when the arity flag came first, and a later arity flag still replaces the
+    whole field.
+
+    Asked of the field as resolved, like every dispatch here: ``Optional[Point]`` is a
+    union with a sequence variant, whose own branch stores the ``'*'`` shape, so it is
+    no business of this one.
+
+    Args:
+        data: The dict being built, modified in place.
+        path: Path segments of the flag about to be stored.
+        target: The type paths resolve against (locals-grafted, where that applies).
+        union_tag: The field name used as a union discriminator.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
+    for n in range(1, len(path)):
+        existing = _peek_nested(data, path[:n])
+        if not isinstance(existing, list):
+            continue
+        ft = _resolve_field_type(target, path[:n], union_tag)
+        if ft is None:
+            continue
+        core = _resolve_type(ft)
+        if not _is_namedtuple(core):
+            continue
+        _set_nested(data, path[:n], dict(zip(_namedtuple_fields(core), existing, strict=False)))
+
+
 def _consume_typed_arg(
     ctx: _ParseCtx,
     i: int,
@@ -1230,6 +1269,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         _open_callable_shorthand(ctx.data, path, walk_target, union_tag)
         if patch_base is not None:
             _open_callable_shorthand(patch_base, path, walk_target, union_tag)
+        _promote_namedtuple_positional(ctx.data, path, walk_target, union_tag)
 
         if delete_mode:
             _handle_delete_token(ctx, token, path, is_list_delete=is_list_delete, delete_idx=delete_idx)
