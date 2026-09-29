@@ -10,7 +10,6 @@ sat in the directory unused until they were removed from the tree (recoverable f
 repository history). Finish the section — or drop the truncated sentence and the duplicate
 snippet.
 
-<!-- pytest-markdown-console: notest -->
 ```console
 $ grep -n "If the CSV contains no" examples/11_include/README.md
 180:If the CSV contains no
