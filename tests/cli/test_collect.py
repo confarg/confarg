@@ -57,7 +57,12 @@ class TestCollectNsFields:
         assert "x" in result or result == {}
 
     def test_union_tag_skipped(self) -> None:
-        """_collect_ns_fields excludes the union_tag field from the result."""
+        """The union_tag key is not collected as an ordinary field; dispatch owns it.
+
+        The field walk passes it by and the inheritance branch writes it back as the raw
+        tag string, uncoerced: vanilla keeps ``--type b`` raw and lets ``construct()``
+        raise the import error, so the tag survives even when the import fails (BUG-45).
+        """
 
         @dataclass
         class WithTypeField:
@@ -66,7 +71,7 @@ class TestCollectNsFields:
 
         result: dict[str, Any] = {}
         _collect_ns_fields({"type": "b", "value": "99"}, WithTypeField, "", union_tag="type", result=result)
-        assert "type" not in result
+        assert result == {"type": _StrToken("b"), "value": 99}
 
     def test_multi_union_collected_as_plain_value(self) -> None:
         """Scalar multi-variant union fields are collected as plain values."""

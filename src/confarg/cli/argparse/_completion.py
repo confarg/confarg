@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     import argparse
 
 from confarg import _defaults
-from confarg._import import _import_dotted
 from confarg._tags import _partial_config_from_argv, _tags_from_argv, _tags_from_config
 from confarg._types import (
     _final_inner,
@@ -41,6 +40,7 @@ from confarg.cli._build import (
     _collect_fn_paths_from_config,
     _whole_value_spec,
 )
+from confarg.cli._collect import _tag_named_struct
 from confarg.cli._prefix import PREFIX_ATTR, strip_argv_prefix
 from confarg.cli._spec import FlagSpec, _build_help, _get_field_docstrings
 from confarg.cli.argparse._register import load_flags_into_parser
@@ -267,8 +267,9 @@ def _pre_extend_parser_for_completion(
 
         for field_prefix, class_path in all_tags.items():
             try:
-                cls = _import_dotted(class_path)
-                if not isinstance(cls, type) or not _is_struct(_resolve_type(cls)):
+                cls = _tag_named_struct(class_path)
+                if cls is None:
+                    _log.debug("dynamic union flags: %r names no importable struct", class_path)
                     continue
                 _extend_walk(cls, walk_ctx, parser, field_prefix, concrete=True)
             except Exception:  # noqa: BLE001 — completion must never crash; any import/argparse failure is non-fatal

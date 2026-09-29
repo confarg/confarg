@@ -576,6 +576,14 @@ help, completion and error text for real values:
   *flat* is written back into the collected dict: a file's tag already reaches the merge at its
   own priority, and re-emitting it at CLI priority would replace the file's plain string with a
   `_StrToken` and break [byte-identical merged dicts](#byte-identical-merged-dicts).
+  The write-back happens *before* the tag's import resolves, and through one shared step —
+  `_collect._collect_named_variant` resolving with `_collect._tag_named_struct` — for the
+  union-field and the inheritance branch alike; the argparse completion pre-extend resolves its
+  tags through the same `_tag_named_struct`. Writing the tag only after a successful import (the
+  inheritance branch's old shape) dropped a tag whose import failed, while vanilla keeps
+  `--<path>.<union_tag>` as a raw string and lets `construct()` raise the import error naming the
+  bad path — so the tag must survive collection byte-identically, or the user hears a
+  "no discriminator was provided" complaint about a discriminator they did provide (BUG-45).
 - Force-cast flags (`--f.int`, …) are registered statically only where the stealing rule is
   non-obvious: an enum variant, or `str` next to any other variant.
 
