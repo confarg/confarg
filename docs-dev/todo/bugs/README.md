@@ -26,6 +26,5 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-54 — A plain collection flag does not discard the patch ops before it in the adapters](BUG-54-plain-occurrence-does-not-discard-earlier-patch-ops-in-the-adapters.md) | M | medium | config |
 | [BUG-55 — Two ticket reproductions run as tests and fail on every full suite](BUG-55-two-ticket-reproductions-run-as-tests-and-fail.md) | S | low | none |
 | [BUG-56 — The flat spelling of the tagged-leaf hatch reaches no adapter](BUG-56-flat-tagged-leaf-flags-unregistered-by-the-adapters.md) | M | medium | behavior |
-| [BUG-57 — `_StrToken` leaks into the Callable `bind` error message](BUG-57-strtoken-leaks-from-the-callable-bind-message.md) | S | low | behavior |
 
 <!-- tickets:end -->

@@ -41,6 +41,7 @@ from confarg._types import (
     _namedtuple_fields,
     _Pinned,
     _resolve_type,
+    _src_type,
     _StrToken,
     _struct_defaults,
     _struct_fields,
@@ -66,7 +67,6 @@ from confarg.typedload._coerce import (
     _coerce_type_ref,
     _is_struct_variant,
     _is_taggable_leaf,
-    _src_type,
     _steal_order,
 )
 

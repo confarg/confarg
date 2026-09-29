@@ -73,7 +73,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "is this leaf type eager-coerced from a token?" | `typedload._coerce._is_eagerly_coercible` |
 | the error for a field no channel supplied | `typedload._construct._missing_field_error` |
 | "what dotted path names this object?" | `_import.dotted_name` |
-| "what type is this value, to a reader?" | `typedload._coerce._src_type` |
+| "what type is this value, to a reader?" | `_types._src_type` |
 | the text of an error raised from more than one site | a classmethod factory on the class in `exceptions.py` |
 
 ## Merge stays unvalidated

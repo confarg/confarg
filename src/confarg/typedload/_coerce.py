@@ -20,6 +20,7 @@ from confarg._types import (
     _is_union,
     _literal_values,
     _resolve_type,
+    _src_type,
     _StrToken,
     _type_ref_constraint,
     _union_args_no_none,
@@ -32,11 +33,6 @@ _FALSY = frozenset({"false", "0", "no", "off"})
 _NONE_TOKENS = frozenset({"none", "null"})
 _LEAF_COERCIONS: dict[type, Any] = {Path: Path}
 _LEAF_SERIALIZERS: dict[type, Any] = {Path: str}
-
-
-def _src_type(value: Any) -> str:
-    """Return the user-visible type name of a value, collapsing _StrToken to 'str'."""
-    return "str" if isinstance(value, _StrToken) else type(value).__name__
 
 
 def _coerce_bool(s: str) -> bool:
