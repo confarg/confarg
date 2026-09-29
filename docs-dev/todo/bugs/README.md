@@ -12,7 +12,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
-| [BUG-44 — `_dataclass_subclasses` returns a diamond subclass twice, and is not BFS](BUG-44-dataclass-subclasses-duplicates-and-is-not-bfs.md) | S | medium | behavior |
 | [BUG-45 — An unimportable class tag silently vanishes from the adapters' merged dict](BUG-45-inheritance-tag-dropped-on-unimportable-class.md) | S | medium | behavior |
 | [BUG-46 — The `90_integration` code blocks document an API that does not exist](BUG-46-old-help-blocks-document-a-removed-api.md) | S | low | none |
 | [BUG-47 — The CSV section of `11_include` is cut off mid-sentence](BUG-47-include-readme-truncates-the-csv-header-section.md) | S | low | none |

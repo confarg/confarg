@@ -195,6 +195,17 @@ depends on what has been imported
 ([10](10-design-decisions.md#no-implicit-subclass-inference)). The tag must be a full dotted
 path so the class can be imported.
 
+Subclass discovery (`_dataclass_subclasses`) walks breadth-first and yields each class exactly
+once. Both halves are settled decisions: a diamond subclass is reachable by two inheritance
+paths and used to be offered twice in the `--<union_tag>` completer (BUG-44, closed), and the
+breadth-first order is load-bearing there — direct subclasses are offered before their
+descendants, which the contract suite asserts. The depth-first walk the code used to run was an
+accident of `list.pop()`, contradicting a docstring that had promised BFS from the start; the
+stdlib splits on the alternative (`ast.walk` is breadth-first, `pkgutil.walk_packages` is
+depth-first), and BFS was picked to honor the documented contract. The other caller,
+`_parse_cli._subclass_field_type`, only reduces the list to a common field type, so it is
+indifferent to both.
+
 ## Structs, collections and defaults
 
 - Unknown keys are errors (typo detection); missing required fields are `MissingFieldError`
