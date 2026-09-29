@@ -61,6 +61,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "how many positional tokens, of which types?" | `_types._fixed_seq_types` |
 | "is this variant sequence-shaped?" | `_types._is_seq_variant` |
 | "which struct does a class tag name, if any?" | `cli/_collect._tag_named_struct` — the collector's two tag branches and the argparse completion pre-extend |
+| "which flat tagged-leaf flags (`--<leaf>.class`, `--<leaf>.<param>`) does argv spell?" | `cli/_build._collect_leaf_tag_argv_specs`, accepting exactly what `_parse_cli._resolve_field_type` accepts |
 | "write a class tag back, then descend into the struct it names" | `cli/_collect._collect_named_variant` (the tag first, the import after) |
 | reconciling a registered `cli_prefix` with one passed to `merge_*` | `cli._prefix.resolve_prefix` |
 | "does this argv flag occurrence carry an item?" | `cli._argv._bare_occurrence` |

@@ -753,6 +753,15 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
                 _set_nested(result, flag.split("."), whole)
             elif flag in flat:
                 _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
+            # The flat spelling of the same hatch (BUG-56): the tag selector and the
+            # leaf's __init__-parameter flags sit beside the scalar, collected by the
+            # same struct-shaped walk vanilla's type walk performs. The tag is written
+            # back as a raw string, not resolved, for the BUG-45 reason: construct()
+            # raises the import error naming the bad path.
+            tag_key = f"{flag}.{union_tag}"
+            if tag_key in flat:
+                _set_nested(result, [*flag.split("."), union_tag], _str_token(flat[tag_key]))
+            _collect_ns_fields(flat, core, flag, union_tag, result, tags, argv)
             continue
 
         if _is_struct(core):

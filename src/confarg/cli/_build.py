@@ -1146,6 +1146,84 @@ def _collect_callable_key_argv_specs(
     return specs
 
 
+def _collect_leaf_tag_argv_specs(
+    target: object,
+    argv: Sequence[str],
+    union_tag: str,
+    existing_names: set[str],
+) -> list[FlagSpec]:
+    """Build FlagSpecs for the flat tagged-leaf flags (``--<leaf>.class``, ``--<leaf>.<param>``) typed in argv.
+
+    An explicit ``class`` tag opens a registered leaf and builds it from its
+    ``__init__`` parameters; the flat spelling of that hatch is what the environment
+    says with ``PFX_<FIELD>__CLASS`` / ``PFX_<FIELD>__<PARAM>``, and vanilla accepts it
+    because its type walk treats a registered leaf structurally -- the tag segment
+    through the ``union_tag`` rule, a parameter through the leaf's ``__init__`` fields.
+    Registration accepts exactly what that walk accepts: a flag naming no tag and no
+    parameter stays unregistered, for the framework to reject as vanilla's
+    ``no_such_field`` does.
+
+    Registered only when typed, like an escaped opener, and for the same reason: a
+    registered leaf's ordinary spelling is its scalar, and one flag per ``__init__``
+    parameter would clutter ``--help`` for the escape hatch
+    (docs-dev/architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in).
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
+    """
+    # Imported here: a module-level import would create an import cycle with _parse_cli.
+    from confarg._parse_cli import (  # noqa: PLC0415
+        _looks_like_flag,
+        _normalize_eq_args,
+        _parse_flag_mode,
+        _resolve_field_type,
+    )
+
+    specs: list[FlagSpec] = []
+    for tok in _normalize_eq_args(list(argv)):
+        if not _looks_like_flag(tok):
+            continue
+        key = tok[2:]
+        _path, append_mode, delete_mode, _delete_idx, _is_list_delete = _parse_flag_mode(key)
+        if append_mode or delete_mode or key in existing_names:
+            # Patch flags are registered by _collect_patch_argv_specs, in the shape
+            # their mode demands.
+            continue
+        parts = key.split(".")
+        leaf = None
+        leaf_flag = ""
+        for j in range(1, len(parts)):
+            # The longest type-guided question: which proper prefix of the path names a
+            # registered leaf field? Struct fields answer no here -- their sub-flags are
+            # registered statically.
+            at = _resolve_field_type(target, parts[:j], union_tag)
+            if at is not None and _is_registered_leaf(_resolve_type(at)):
+                leaf = _resolve_type(at)
+                leaf_flag = ".".join(parts[:j])
+                break
+        if leaf is None or _resolve_field_type(target, parts, union_tag) is None:
+            continue
+        existing_names.add(key)
+        if parts[-1] == union_tag:
+            specs.append(
+                FlagSpec(
+                    name=key,
+                    metavar="DOTTED.CLASS.PATH",
+                    help=(f"Class path opening the '{leaf_flag}' registered leaf from its __init__ parameters."),
+                    completer=_make_path_completer([dotted_name(leaf)]),
+                ),
+            )
+        else:
+            specs.append(
+                FlagSpec(
+                    name=key,
+                    metavar=parts[-1].upper(),
+                    help=f"__init__ parameter '{parts[-1]}' of the '{leaf_flag}' registered leaf.",
+                ),
+            )
+    return specs
+
+
 def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind (delete/append/collection/json cast)
     target: object,
     argv: Sequence[str],
@@ -1266,7 +1344,8 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
     by the host framework (duplicates of static flags are skipped at load time).
 
     Also registers the collection-patch flags (``--field.N``, ``--field+``,
-    ``--field.N-``, ``--field.key``) and ``.json`` casts found in ``argv``.
+    ``--field.N-``, ``--field.key``) and ``.json`` casts found in ``argv``, plus the
+    flat tagged-leaf flags (``--<leaf>.class``, ``--<leaf>.<param>``).
 
     Registration is best-effort: no exception escapes into ``populate_*``.  A failure
     returns no dynamic flag and emits a :class:`~confarg.exceptions.ConfargWarning`
@@ -1305,6 +1384,7 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         for field_flag, (fn_path, mode, bind_key) in {**config_fns, **blob_fns, **argv_fns}.items():
             result.extend(_collect_callable_field_specs(field_flag, fn_path, mode, bind_key, existing_names))
         result.extend(_collect_callable_key_argv_specs(target, argv_list, union_tag, existing_names))
+        result.extend(_collect_leaf_tag_argv_specs(target, argv_list, union_tag, existing_names))
         if config_flag:
             result.extend(_collect_config_argv_specs(argv_list, config_flag))
         result.extend(_collect_patch_argv_specs(target, argv_list, union_tag, config_flag))
