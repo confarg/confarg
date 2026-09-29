@@ -410,6 +410,23 @@ def _looks_like_flag(token: str) -> bool:
     return token.startswith("--") and len(token) > 2 and (token[2].isalpha() or token[2] == "_")  # noqa: PLR2004  # length of the "--" prefix
 
 
+def _require_value(args: Sequence[str], i: int, token: str, usage: str = "<value>") -> None:
+    """Raise unless *args* holds a value for *token* at *i*.
+
+    The one guard behind "a value-taking flag always needs its value": argv running out
+    and the next token being another flag are the same failure, so every value-consuming
+    branch asks it here instead of spelling the test again -- including the fixed-arity
+    branch, which asks it once per positional token
+    (:func:`_consume_fixed_tuple_args`).  *usage* is passed through to
+    :meth:`ConfargError.missing_value`.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
+    if i >= len(args) or _looks_like_flag(args[i]):
+        raise ConfargError.missing_value(token, usage)
+
+
 def _check_reserved_key_conflict(target: Any, name: str, detail: str) -> None:
     """Raise ConfargError if the reserved name *name* is also a top-level field of *target*.
 
@@ -714,13 +731,28 @@ def _handle_append_token(
     return i
 
 
-def _consume_fixed_tuple_args(args: Sequence[str], i: int, tt: list[Any], path: list[str], data: dict[str, Any]) -> int:
-    """Consume exactly len(tt) arguments for a fixed-length tuple field."""
+def _consume_fixed_tuple_args(  # noqa: PLR0913  # token only names the flag in the error
+    args: Sequence[str],
+    i: int,
+    token: str,
+    tt: list[Any],
+    path: list[str],
+    data: dict[str, Any],
+) -> int:
+    """Consume exactly len(tt) arguments for a fixed-length tuple field.
+
+    Every one of them is required: a fixed arity is not a shape a bare flag is reserved
+    for, so argv running short -- or reaching the next flag -- is a missing value and not
+    a shorter tuple (BUG-43).
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
     items: list[Any] = []
     for et in tt:
-        if i < len(args):
-            items.append(_try_coerce(et, _StrToken(args[i])))
-            i += 1
+        _require_value(args, i, token)
+        items.append(_try_coerce(et, _StrToken(args[i])))
+        i += 1
     _set_nested(data, path, items)
     return i
 
@@ -747,8 +779,7 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str) -> Any:
     if not tokens:
         if _union_has_varlen_variant(ft):
             return []
-        msg = f"Missing value for {token!r}. Usage: {token} <value>"
-        raise ConfargError(msg)
+        raise ConfargError.missing_value(token)
     if len(tokens) == 1 and _union_has_scalar_variant(ft):
         return _UnionSeqToken(_StrToken(tokens[0]))
     return [_StrToken(t) for t in tokens]
@@ -757,9 +788,7 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str) -> Any:
 def _handle_scalar_root(args: list[str], i: int, token: str, target_r: Any, data: dict[str, Any]) -> int:
     """Consume the single value for a non-struct scalar target. Returns new arg index."""
     i += 1
-    if i >= len(args) or _looks_like_flag(args[i]):
-        msg = f"Missing value for {token!r}. Usage: {token} <value>"
-        raise ConfargError(msg)
+    _require_value(args, i, token)
     data[_defaults.ROOT_KEY] = _try_coerce(target_r, _StrToken(args[i]))
     return i + 1
 
@@ -782,9 +811,7 @@ def _handle_root_cast(  # noqa: PLR0913  # each arg carries distinct root-placem
     ``__root__``.  Invalid JSON raises via :func:`resolve_forced_value`.
     """
     i += 1
-    if i >= len(args) or _looks_like_flag(args[i]):
-        msg = f"Missing value for {token!r}. Usage: {token} '<json>'"
-        raise ConfargError(msg)
+    _require_value(args, i, token, "'<json>'")
     value = resolve_forced_value(cast_name, args[i], flag=token)
     if is_struct:
         if not isinstance(value, dict):
@@ -808,9 +835,7 @@ def _handle_force_cast(  # noqa: PLR0913  # cast_name is a necessary discriminat
     Scalar casts store a ``_Pinned`` token; ``.json`` stores the decoded structure and
     raises ``ConfargError`` on invalid JSON (via :func:`resolve_forced_value`).
     """
-    if i >= len(args) or _looks_like_flag(args[i]):
-        msg = f"Missing value for {token!r}. Usage: {token} <value>"
-        raise ConfargError(msg)
+    _require_value(args, i, token)
     _set_nested(data, path, resolve_forced_value(cast_name, args[i], flag=token))
     return i + 1
 
@@ -933,7 +958,7 @@ def _consume_collection_or_scalar(
 
     # Fixed-length sequence (tuple[X, Y] or a namedtuple) → consume exact count
     if tt is not None:
-        return _consume_fixed_tuple_args(args, i, tt, path, ctx.data)
+        return _consume_fixed_tuple_args(args, i, token, tt, path, ctx.data)
 
     # Union with a sequence variant → consume greedily (disambiguation deferred to construct)
     if _union_has_seq_variant(ft):
@@ -942,9 +967,7 @@ def _consume_collection_or_scalar(
         return i
 
     # Default: consume one scalar value
-    if i >= len(args) or _looks_like_flag(args[i]):
-        msg = f"Missing value for {token!r}. Usage: {token} <value>"
-        raise ConfargError(msg)
+    _require_value(args, i, token)
     _set_nested(ctx.data, path, _try_coerce(ft, _StrToken(args[i])))
     return i + 1
 

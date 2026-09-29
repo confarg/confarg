@@ -44,6 +44,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "is this a cast, and which?" | `_parse_cli.detect_force_cast` (whether) / `_cast` (what) |
 | "does this token address a reserved name?" | `_parse_cli._addresses_key` |
 | "is this argv token a flag, or a value?" | `_parse_cli._looks_like_flag` |
+| "does this flag have its value here?" | `_parse_cli._require_value` |
 | reserved-name shadowing | `_parse_cli._check_reserved_key_conflict` |
 | locals namespace names | `_parse_cli._locals_keys_at` |
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |

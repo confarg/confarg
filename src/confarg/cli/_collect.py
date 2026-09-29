@@ -128,8 +128,7 @@ def _collect_union_seq_value(resolved: Any, v: Any, flag: str) -> Any:
     if isinstance(v, list):
         if not v and not _union_has_varlen_variant(resolved):
             token = f"--{flag}"
-            msg = f"Missing value for {token!r}. Usage: {token} <value>"
-            raise ConfargError(msg)
+            raise ConfargError.missing_value(token)
         if len(v) == 1 and _union_has_scalar_variant(resolved):
             return _UnionSeqToken(v[0]) if isinstance(v[0], str) else v[0]
         return [_str_token(item) for item in v]

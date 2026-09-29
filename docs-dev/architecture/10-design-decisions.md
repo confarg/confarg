@@ -621,6 +621,18 @@ shape the fourth already refused, was the worse trade. The rule is now uniform, 
 `_accepts_object_value` decides *what* a whole-value flag decodes and nothing decides
 *whether* it needs one.
 
+A **fixed arity** is the same rule counted: `--pair` on a `tuple[int, int]` needs both of its
+tokens, and a short run is `Missing value for '--pair'` rather than a one-element tuple. An
+optional *element* does not soften it — `tuple[str, int | None]` still needs two tokens — for
+the reason the paragraphs above give: click and typer register the exact count and already
+refuse the short form outright, so tolerating it in vanilla was a divergence nothing could
+reproduce. Filling the optional slot is spelled rather than inferred from where argv stopped,
+and all three spellings survive: `--pair '["hello"]'`, `--pair hello null`, and a config file's
+`pair: [hello]`. Arity is still `build()`'s to judge once the tokens are in hand:
+`--pair '[13]'` is an *arity* error, not a missing value, because the whole-value token is one
+value that happens to be short, and the parser can only prove a token missing when argv is what
+ran out.
+
 ## A registered leaf is never a struct variant
 
 A type in `_LEAF_COERCIONS` is not taken apart into fields by anything that *infers* it should

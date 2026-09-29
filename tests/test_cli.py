@@ -10,7 +10,7 @@ import json
 import math
 from dataclasses import dataclass, field, make_dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 import pytest
 
@@ -541,6 +541,43 @@ class TestCliEdgeCases:
         )
         with pytest.raises(ConfargError, match="Missing value for '--cache'"):
             confarg.load(Outer, argv=["--cache", "--debug", "true"], env={})
+
+    def test_missing_value_for_fixed_tuple_field_raises(self) -> None:
+        """A bare fixed-arity tuple flag raises rather than storing an empty list (BUG-43).
+
+        A fixed tuple is not one of the shapes a bare flag is reserved for, so it needs
+        its value like every other value-taking flag
+        (docs-dev/architecture/10-design-decisions.md#a-whole-value-flag-needs-its-value).
+        """
+        WithPair = make_target("pair", tuple[int, int], default=(0, 0))
+        with pytest.raises(ConfargError, match="Missing value for '--pair'"):
+            confarg.load(WithPair, argv=["--pair"], env={})
+
+    def test_short_fixed_tuple_field_raises(self) -> None:
+        """A fixed-arity tuple flag short of its arity raises rather than under-filling (BUG-43)."""
+        WithPair = make_target("pair", tuple[int, int], default=(0, 0))
+        with pytest.raises(ConfargError, match="Missing value for '--pair'"):
+            confarg.load(WithPair, argv=["--pair", "1"], env={})
+
+    def test_fixed_tuple_field_stops_at_the_next_flag(self) -> None:
+        """The next flag is not one of the tuple's tokens: the value is missing (BUG-43)."""
+        Both = make_dataclass(
+            "Both",
+            [("pair", tuple[int, int], field(default=(0, 0))), ("other", int, field(default=0))],
+        )
+        with pytest.raises(ConfargError, match="Missing value for '--pair'"):
+            confarg.load(Both, argv=["--pair", "1", "--other", "3"], env={})
+
+    def test_missing_value_for_namedtuple_field_raises(self) -> None:
+        """A namedtuple is a fixed-length sequence, so its flag needs its tokens too (BUG-43)."""
+
+        class Point(NamedTuple):
+            x: int
+            y: int
+
+        WithPoint = make_target("pair", Point, default=Point(0, 0))
+        with pytest.raises(ConfargError, match="Missing value for '--pair'"):
+            confarg.load(WithPoint, argv=["--pair", "1"], env={})
 
 
 # ---------------------------------------------------------------------------

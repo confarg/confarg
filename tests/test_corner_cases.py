@@ -454,18 +454,22 @@ class TestFixedTupleEdgeCases:
     """Edge cases for fixed-length tuple construction."""
 
     def test_fewer_values_than_expected_raises(self) -> None:
-        """Fewer values than fixed tuple length raises for non-optional element types."""
+        """Fewer tokens than the fixed tuple's arity is a missing value, named as one (BUG-43)."""
         WithTuple = make_target("pair", tuple[str, int], default=("", 0))
-        # Only one value provided for a 2-element tuple: missing int can't be None
-        with pytest.raises(TypeCoercionError):
+        with pytest.raises(ConfargError, match="Missing value for '--pair'"):
             confarg.load(WithTuple, argv=["--pair", "hello"], env={})
 
-    def test_fewer_values_optional_element(self) -> None:
-        """Fewer values with optional element type fills with None."""
+    def test_fewer_values_optional_element_still_needs_its_token(self) -> None:
+        """An optional element does not make its token optional: the flag needs its arity (BUG-43).
+
+        Filling the optional slot is spelled, not inferred from a short token run — as the
+        whole-value array and an explicit ``null`` token both do below.
+        """
         WithTuple = make_target("pair", tuple[str, int | None], default=("", None))
-        result = confarg.load(WithTuple, argv=["--pair", "hello"], env={})
-        assert result.pair[0] == "hello"
-        assert result.pair[1] is None
+        with pytest.raises(ConfargError, match="Missing value for '--pair'"):
+            confarg.load(WithTuple, argv=["--pair", "hello"], env={})
+        assert confarg.load(WithTuple, argv=["--pair", '["hello"]'], env={}).pair == ("hello", None)
+        assert confarg.load(WithTuple, argv=["--pair", "hello", "null"], env={}).pair == ("hello", None)
 
     def test_exact_values(self) -> None:
         """Exact number of values for fixed-length tuple."""
