@@ -178,6 +178,11 @@ class _WithIntPair:
 
 
 @dataclass
+class _WithMixedPair:
+    pair: tuple[int, str] = (0, "zero")
+
+
+@dataclass
 class _WithPoint:
     pair: _Point = dataclasses_field(default_factory=lambda: _Point(0, 0))
 
@@ -594,6 +599,23 @@ class TestFixedSequenceContract:
     def test_namedtuple_positional(self, loader: ConfargLoader) -> None:
         """--pair 13 42 fills a namedtuple field the same way."""
         assert loader.load(_WithPoint, argv=["--pair", "13", "42"], env={}).pair == _Point(x=13, y=42)
+
+    def test_tuple_positional_elements_are_coerced(self, loader: ConfargLoader) -> None:
+        """A tuple's positional tokens reach the merged dict as their element types (BUG-59).
+
+        Eager coercion is what makes a merged dict carry the same types whichever channel
+        filled it, so ``merge()`` -- not the ``load()`` that ``build()`` rescues afterwards --
+        is the contract under test.
+        """
+        assert loader.merge(_WithIntPair, argv=["--pair", "13", "42"], env={}) == {"pair": [13, 42]}
+
+    def test_mixed_tuple_positional_elements_are_coerced_per_position(self, loader: ConfargLoader) -> None:
+        """Each positional token is coerced by its own element type, not a shared one (BUG-59)."""
+        assert loader.merge(_WithMixedPair, argv=["--pair", "13", "hi"], env={}) == {"pair": [13, "hi"]}
+
+    def test_namedtuple_positional_elements_are_coerced(self, loader: ConfargLoader) -> None:
+        """A namedtuple's positional tokens reach the merged dict as its field types (BUG-59)."""
+        assert loader.merge(_WithPoint, argv=["--pair", "13", "42"], env={}) == {"pair": [13, 42]}
 
     def test_optional_namedtuple_positional(self, loader: ConfargLoader) -> None:
         """Optionality does not change the spelling (10-design-decisions.md)."""
