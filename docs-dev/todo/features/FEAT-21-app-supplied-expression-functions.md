@@ -7,7 +7,7 @@
 
 An expression can only recombine values that are already in the document, using a fixed table of
 builtins (`abs min max round ceil floor str int float bool len` and a few string methods,
-[07](../../architecture/07-expressions.md#safety-model)). A derivation whose *computation*
+[07](../../architecture/expressions/safety-model.md#safety-model)). A derivation whose *computation*
 belongs to the application has no spelling at all: the number of labels behind a database query,
 the length of a file in a format confarg does not read, a git revision, a hostname looked up per
 environment.
@@ -26,10 +26,10 @@ fixed. Three behaviors that already exist do the work:
 
 - a reference is a path, not a leaf selector, so one argument can hand the function a **whole
   node** — `${label_count(db)}` passes the credentials as a dict
-  ([07](../../architecture/07-expressions.md#referencing-a-whole-subtree));
+  ([07](../../architecture/expressions/values-and-references.md#referencing-a-whole-subtree));
 - the Kahn sort already orders evaluation by dependency, so every `${...}` *inside* `db` is
   resolved before the function runs: the dependency graph is the execution plan
-  ([07](../../architecture/07-expressions.md#resolution-algorithm));
+  ([07](../../architecture/expressions/resolution.md#resolution-algorithm));
 - `merge()` stays pure — the call text survives into `dump_file(merge(...))`, and only
   `resolve()` / `build()` / `load()` become effectful.
 
@@ -60,9 +60,9 @@ reference base, **a registered name shadows a same-named config key everywhere**
 is a small documented set; with application names it is unbounded and different per application.
 
 `locals` is the precedent for a reserved namespace derived from the target rather than
-configured ([08](../../architecture/08-locals.md#derived-name)): `_fn` when the target really has
+configured ([08](../../architecture/locals.md#derived-name)): `_fn` when the target really has
 an `fn` field, decided by the same `_segment_names_real_field` predicate
-([03](../../architecture/03-cli-parsing.md#real-field-wins)).
+([03](../../architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins)).
 
 ## Open, to record rather than settle now
 
@@ -82,7 +82,7 @@ an `fn` field, decided by the same `_segment_names_real_field` predicate
 Letting a config file name any importable path (`${myapp.labels.count(db)}`). That hands
 arbitrary code execution to whoever writes a file, before a single type has been checked. The
 contrast worth stating: a `Callable` field already lets configuration name an importable target
-([06](../../architecture/06-callables.md)), but it is called at *construction*, against a
+([06](../../architecture/callables.md)), but it is called at *construction*, against a
 declared signature, with kwargs coerced through `construct`. An application-owned table is
 strictly more restrictive than what confarg already permits, which is why this does not breach
 the safety model — the application owns the table, the configuration may only name what is in it.
@@ -103,5 +103,5 @@ Precedents: OmegaConf and Hydra's `register_new_resolver` is the global-registry
 `${name:arg}` syntax confarg does not need since calls already parse; jsonargparse answers the
 same question from the other end with `apply_on="instantiate"` links, which require the framework
 to own instantiation order — a dependency-injection container, out of scope
-([07](../../architecture/07-expressions.md#referencing-a-whole-subtree)). Bicep and CUE stay with
+([07](../../architecture/expressions/values-and-references.md#referencing-a-whole-subtree)). Bicep and CUE stay with
 a curated standard library and no extension point at all.

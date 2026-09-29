@@ -5,13 +5,13 @@
 
 In vanilla a plain `--<list>` occurrence replaces the whole list, so it discards the patch ops
 recorded before it — which is what makes `--tags --tags+ x` a reset followed by an append
-([03-cli-parsing.md#collection-patch-operations](../../architecture/03-cli-parsing.md#collection-patch-operations)). All four adapters
+([cli-parsing/collection-patches.md#collection-patch-operations](../../architecture/cli-parsing/collection-patches.md#collection-patch-operations)). All four adapters
 keep those earlier ops instead: they collect the plain occurrence's value with the flat collector
 and then deep-merge the whole patch scan over it, and the scan carries no argv position, so an
 append or an index delete standing *before* the flag survives it
-([04-cli-adapters.md#a-patch-op-joins-the-values-the-framework-collected](../../architecture/04-cli-adapters.md#a-patch-op-joins-the-values-the-framework-collected)).
+([cli-adapters/collection-patch-parity.md#a-patch-op-joins-the-values-the-framework-collected](../../architecture/cli-adapters/collection-patch-parity.md#a-patch-op-joins-the-values-the-framework-collected)).
 An unapproved parity gap
-([09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity)).
+([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity)).
 
 It is the same missing information as [BUG-53](BUG-53-whole-field-delete-beats-a-later-flag-in-the-adapters.md)
 — the patch ops reach the merge with no argv order — seen from the other side: there a delete

@@ -5,7 +5,7 @@
 """Value construction and union disambiguation.
 
 Dev Notes:
-    docs-dev/architecture/05-types-and-construction.md
+    docs-dev/architecture/types/README.md
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ def _missing_field_error(fp: str, ft: Any) -> MissingFieldError:
     """Return the error for a field of type *ft* that no channel supplied at path *fp*.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#structs-collections-and-defaults
+        docs-dev/architecture/types/construction.md#structs-collections-and-defaults
     """
     msg = (
         f"Missing required field '{fp}' of type {ft!r}. Set it via CLI (--{fp}), environment variable, or config file."
@@ -89,7 +89,7 @@ def _try_pinned_dict(data: Any) -> _Pinned | None:
     Only a dict with exactly these two keys is a cast.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#cast-pinning-in-files
+        docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
     """
     if not (isinstance(data, dict) and data.keys() == {"__cast__", "__value__"}):
         return None
@@ -200,7 +200,7 @@ def _construct_taggable_leaf(tp: Any, data: dict[str, Any], path: str, union_tag
         TypeCoercionError: If the dict carries no ``union_tag`` naming the class.
 
     Dev Notes:
-        docs-dev/architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in
+        docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in
     """
     if union_tag in data:
         return _construct_struct_dispatch(tp, data, path, union_tag)
@@ -220,7 +220,7 @@ def _construct_collection(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     the constructor matching the type's origin.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#structs-collections-and-defaults
+        docs-dev/architecture/types/construction.md#structs-collections-and-defaults
     """
     if _is_list(tp) and not isinstance(data, list | dict):
         msg = (
@@ -607,7 +607,7 @@ def _construct_union_by_tag(non_none: list[Any], data: dict[str, Any], path: str
     class to build from fields, which is the one thing a leaf stays open to.
 
     Dev Notes:
-        docs-dev/architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in
+        docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in
     """
     tag = data[union_tag]
     cls = _import_class_by_path(tag, path, union_tag)
@@ -653,7 +653,7 @@ def _try_fixed_seq_variants(fixed_vars: list[Any], data: Any, path: str, union_t
     of positional values, so both are filtered on the arity ``_fixed_seq_types`` reports.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#leaf-coercion
+        docs-dev/architecture/types/leaf-coercion.md#leaf-coercion
     """
     if not (fixed_vars and isinstance(data, list | dict)):
         return _UNION_NO_MATCH
@@ -701,7 +701,7 @@ def _coerce_scalar_variants(
     word selects it, never the empty token ``_coerce_leaf`` accepts for a bare ``None`` target.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#stealing-rule
+        docs-dev/architecture/types/stealing-rule.md#stealing-rule
     """
     if isinstance(data, _StrToken):
         with_none = scalar_leaf_vars + ([type(None)] if type(None) in all_args else [])
@@ -716,7 +716,7 @@ def _coerce_scalar_variants(
             continue
         try:
             # Not _coerce_leaf: it cannot build type refs (`type`, `type[X]`).
-            # See docs-dev/architecture/05-types-and-construction.md#stealing-rule.
+            # See docs-dev/architecture/types/stealing-rule.md#stealing-rule.
             return _construct_scalar(var, data, path, union_tag)
         except (TypeCoercionError, ValueError, TypeError):
             continue

@@ -38,7 +38,7 @@ looks:
 |---|---|---|
 | Where it can be enforced | `merge()` only — refusing a write means knowing a source wrote it, and only `_merge_sources` holds the three source dicts apart | `build()` **and** `from_dict()`: comparing two resolved values needs no provenance |
 | A hand-assembled dict | unprotected | protected |
-| `dump()` → `load()` | breaks — the dump writes the derived path, which the reload then refuses, so `dump()` would have to learn to omit derived fields ([01](../../architecture/01-pipeline-and-contracts.md#public-api-seams)) | unchanged: the dumped values agree, so the assertion passes |
+| `dump()` → `load()` | breaks — the dump writes the derived path, which the reload then refuses, so `dump()` would have to learn to omit derived fields ([01](../../architecture/pipeline/api-seams.md#public-api-seams)) | unchanged: the dumped values agree, so the assertion passes |
 | A correct but redundant value in a file | refused | kept, which is often how a configuration is meant to read |
 
 Provenance is the crux. confarg has none ([FEAT-8](FEAT-8-value-provenance.md)), so a refusal can
@@ -55,7 +55,7 @@ stricter mode if the parse-time error turns out to be worth its cost; it is not 
   for an already-resolved dict. It compares resolved values, so a whole-subtree link compares dicts.
 - A cycle (`a` derived from `b`, `b` derived from `a`) is already a `CircularReferenceError` from the
   expression engine; nothing new is needed
-  ([07](../../architecture/07-expressions.md#resolution-algorithm)).
+  ([07](../../architecture/expressions/resolution.md#resolution-algorithm)).
 - The error message has to name the source path, not just the mismatch: a user who typed
   `--model.batch_size 64` wants to be told to type `--batch_size 64`.
 - `--help` should say a field is derived, and from what.

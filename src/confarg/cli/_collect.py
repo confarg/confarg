@@ -11,7 +11,7 @@ the nested structure expected by the merge pipeline.  The result must equal what
 vanilla parser produces for the same argv.
 
 Dev Notes:
-    docs-dev/architecture/04-cli-adapters.md#byte-identical-merged-dicts
+    docs-dev/architecture/cli-adapters/parity.md#byte-identical-merged-dicts
 """
 
 from __future__ import annotations
@@ -109,7 +109,7 @@ def _coerce_leaf_value(core: Any, v: Any) -> Any:
     ``_consume_fixed_tuple_args`` coerces by), and no type at all otherwise.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     parsed = _json_array_override(v)
     if parsed is not None:
@@ -223,7 +223,7 @@ def _fixed_arity_whole_value(v: Any, core: Any, flag: str) -> Any:
     fixed-arity field cannot drift from what vanilla decodes for the same token.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
     parsed = _json_array_override(v)
     if parsed is not None:
@@ -255,7 +255,7 @@ def _require_fixed_arity(arity: int, tokens: Any, flag: str, core: Any) -> None:
     in ``--pair '[13]' 9`` is surplus rather than the token that completes it.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     if not isinstance(tokens, list):
         return
@@ -283,7 +283,7 @@ def _fixed_arity_occurrence_runs(argv: Sequence[str], flag: str) -> list[list[st
     run.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
     bare = f"--{flag}"
     runs: list[list[str]] = []
@@ -313,7 +313,7 @@ def _whole_value(flat: dict[str, Any], flag: str, resolved: Any) -> Any:
     Returns :data:`_NO_CAST` when the flag carries no whole value to decode.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
     if flag not in flat:
         return _NO_CAST
@@ -378,7 +378,7 @@ def _collect_bind_sections(flat: dict[str, Any], flag: str, d: _Directives) -> d
     same flags.
 
     Dev Notes:
-        docs-dev/architecture/06-callables.md#plain-and-escaped-directives
+        docs-dev/architecture/callables.md#plain-and-escaped-directives
     """
     other = _PLAIN_DIRECTIVES.bind if d.bind == _ESCAPED_DIRECTIVES.bind else _ESCAPED_DIRECTIVES.bind
     sections: dict[str, dict[str, Any]] = {}
@@ -488,7 +488,7 @@ def _collect_named_variant(  # noqa: PLR0913  # the type-walk context, threaded 
     is already inside; a tag naming it adds nothing, so the descent stops there.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags
+        docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
     """
     if write_tag:
         tag_path = ([*flag.split(".")] if flag else []) + [union_tag]
@@ -547,7 +547,7 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
     from vanilla's.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags
+        docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
     """
     tag_key = f"{prefix}.{union_tag}" if prefix else union_tag
     from_flat = tag_key in flat
@@ -591,7 +591,7 @@ def _namedtuple_arity_value(core: Any, nargs_value: Any, whole: Any) -> Any:
     ``_consume_fixed_tuple_args`` coerces them.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     if whole is not _NO_CAST:
         return whole
@@ -612,7 +612,7 @@ def _arity_flag_writes_last(argv: Sequence[str], flag: str) -> bool:
     ends.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
     bare = f"--{flag}"
     sub_prefix = f"--{flag}."
@@ -643,7 +643,7 @@ def _collect_ns_namedtuple(
     spells an array.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
     fields = _namedtuple_fields(core)
     field_names = list(fields)
@@ -848,7 +848,7 @@ def _restore_patch_deletes(ops: dict[str, Any], result: dict[str, Any]) -> None:
     ``"-"``/``"~"`` and are applied by the merge, exactly as vanilla applies them.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
+        docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
     """
     for key, val in ops.items():
         if isinstance(val, _DeleteSentinel):
@@ -878,7 +878,7 @@ def _bare_multi_token_flags(argv: Sequence[str], target: object, union_tag: str)
     what raises vanilla's error, in :func:`_collect_union_seq_value`.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
     """
     names: list[str] = []
     for name in sorted(bare_only_flag_names(argv)):
@@ -929,30 +929,30 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
         A plain dict of the merged configuration, with expression strings intact.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#the-quartet
+        docs-dev/architecture/cli-adapters/model.md#the-quartet
     """
     if env is None:
         env = os.environ
 
     # Strip the prefix at both inputs, so the type walk and the argv rescan below
     # resolve paths against *target* alone
-    # (docs-dev/architecture/03-cli-parsing.md#cli_prefix).
+    # (docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix).
     flat = strip_flat_prefix(flat, cli_prefix)
 
     # Patch ops, --config order and the class tags are read from argv, not the framework's
-    # parse result (docs-dev/architecture/04-cli-adapters.md#collection-patch-parity).
+    # parse result (docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity).
     argv_ = sys.argv[1:] if argv is None else list(argv)
     argv_ = strip_argv_prefix(argv_, cli_prefix)
 
     # The same scan registration uses, so a tag a --config file sets steers the type walk
     # here exactly as it steers vanilla's
-    # (docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags).
+    # (docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags).
     tags = collect_tags(argv_, target, union_tag=union_tag, config_flag=config_flag)
 
     # A bare multi-token occurrence never reaches the framework's parse result, so the
     # empty value it stores is put back where the flag's own value would have been -- and
     # only there: an occurrence that did carry items already holds them
-    # (docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare).
+    # (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
     for name in _bare_multi_token_flags(argv_, target, union_tag):
         flat.setdefault(name, [])
 
@@ -961,7 +961,7 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
 
     # cli_data goes in as the patch base: a bare callable shorthand collected above is the
     # spec a delete flag refines, and the scan opens it before this merge lands on it
-    # (docs-dev/architecture/04-cli-adapters.md#whole-value-flags).
+    # (docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).
     patch_ops = _collect_cli_patch_ops(argv_, target, config_flag, union_tag, cli_data)
     cli_data = _deep_merge(cli_data, patch_ops)
     _restore_patch_deletes(patch_ops, cli_data)

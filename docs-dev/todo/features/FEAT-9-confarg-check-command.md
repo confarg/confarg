@@ -18,4 +18,4 @@ Open before this becomes work: whether "correctly formatted" means the whole `me
 FEAT-5); how the command learns the `load()` keywords the calling program passes in code —
 `env_prefix` above all, see FEAT-10, which has the same problem; and that importing
 `module.Config` executes user code, so the command is not safe on untrusted input.
-See [01-pipeline-and-contracts.md#merge-build-contract](../../architecture/01-pipeline-and-contracts.md#merge-build-contract).
+See [pipeline/merge-build-contract.md#merge-build-contract](../../architecture/pipeline/merge-build-contract.md#merge-build-contract).

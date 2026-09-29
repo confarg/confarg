@@ -8,4 +8,4 @@ REF-1 moved `_spec.py` and `_build.py` to `cli/`, but their tests stayed where t
 genuinely argparse-specific `_register` / `_completion` ones; `test_final.py` is a topic file
 (Final support across coercion, build and completion) that resists a clean split. Extract the
 neutral halves into `tests/cli/test_build.py` / `test_spec.py`, or decide the topic layout wins
-over the mirror rule and say so in [12-testing.md](../../architecture/12-testing.md).
+over the mirror rule and say so in [testing.md](../../architecture/testing.md).

@@ -36,7 +36,7 @@ confarg.load(Cfg, argv=[], env={"MYAPP_TRIP__3": "99"}, env_prefix="MYAPP_")
 So the guard only decides whether a type hint is attached to the segment, and widening or
 narrowing it by one changes nothing a caller can see, because `build()` re-derives the same
 decision. That is the
-[delegate to the canonical function](../../architecture/09-invariants.md#delegate-to-the-canonical-function)
+[delegate to the canonical function](../../architecture/invariants.md#delegate-to-the-canonical-function)
 question in miniature: the out-of-range decision has an owner, and the env matchers hold a second
 half-hearted copy that neither rejects nor is needed.
 
@@ -44,7 +44,7 @@ Two ways to settle it, and the choice is the work:
 
 - **Drop the guard** and let the index lookup fall through to the `None` type the way a
   non-numeric segment already does, leaving `build()` the sole owner. This is what
-  [merge stays unvalidated](../../architecture/09-invariants.md#merge-stays-unvalidated) points
+  [merge stays unvalidated](../../architecture/invariants.md#merge-stays-unvalidated) points
   to. Confirm first that nothing downstream relies on the attached type for an in-range index.
 - **Keep it and pin it** with tests at both boundaries — `idx == len(...)` and `idx == 0` — in
   `tests/test_env.py`, which today has no tuple-by-index env test at all

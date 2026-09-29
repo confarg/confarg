@@ -128,7 +128,7 @@ def _strip_locals(data: dict[str, Any], target: Any, union_tag: str) -> dict[str
     returned as-is otherwise.
 
     Dev Notes:
-        docs-dev/architecture/08-locals.md#stripping
+        docs-dev/architecture/locals.md#stripping
     """
     return cast("dict[str, Any]", _strip_locals_node(data, target, union_tag, []))
 

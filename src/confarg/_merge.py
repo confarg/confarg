@@ -5,7 +5,7 @@
 """Deep merge of the intermediate dicts, and the list/dict patch sentinels it understands.
 
 Dev Notes:
-    docs-dev/architecture/01-pipeline-and-contracts.md#deep-merge-semantics
+    docs-dev/architecture/pipeline/deep-merge.md#deep-merge-semantics
 """
 
 from __future__ import annotations
@@ -215,7 +215,7 @@ def _index_patch_escapes_base(base: list[Any], ops: dict[str, Any]) -> bool:
     handles them (and raises its specific errors).
 
     Dev Notes:
-        docs-dev/architecture/01-pipeline-and-contracts.md#merge-build-contract
+        docs-dev/architecture/pipeline/merge-build-contract.md#merge-build-contract
     """
     if any(k in ops for k in (LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_POST_APPEND_DELETE_KEY)):
         return False
@@ -388,7 +388,7 @@ def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
         value: The value to set at the target path.
 
     Dev Notes:
-        docs-dev/architecture/01-pipeline-and-contracts.md#scalar-intermediates
+        docs-dev/architecture/pipeline/deep-merge.md#scalar-intermediates
     """
     for part in path[:-1]:
         # Negative index into an active append-spec: navigate directly into the

@@ -6,4 +6,4 @@
 Callable specs bind against a concrete signature. A field typed as a `Protocol` with
 `__call__`, or a target accepting `**kwargs`, has no story yet: decide whether extra keys bind
 as keyword arguments and how they are validated.
-See [06-callables.md](../../architecture/06-callables.md).
+See [callables.md](../../architecture/callables.md).

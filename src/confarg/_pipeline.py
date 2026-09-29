@@ -11,8 +11,8 @@ local-variable checks, the final ``config < env < CLI`` merge and reference
 canonicalization.
 
 Dev Notes:
-    docs-dev/architecture/01-pipeline-and-contracts.md#the-single-merge-pipeline
-    docs-dev/architecture/08-locals.md
+    docs-dev/architecture/pipeline/merge-order.md#the-single-merge-pipeline
+    docs-dev/architecture/locals.md
 """
 
 from __future__ import annotations
@@ -56,8 +56,8 @@ def _load_cli_config(value: Any, subpath: str, config_flag: str, union_tag: str 
     no index until the merge is over (11-limitations.md).
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#mounting
-        docs-dev/architecture/10-design-decisions.md#the-mount-keyword-is-spelled-per-channel
+        docs-dev/architecture/config-files/mounting.md#mounting
+        docs-dev/architecture/design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel
     """
     if subpath.endswith(_LIST_APPEND_KEY):
         real_subpath = subpath[: -len(_LIST_APPEND_KEY)]
@@ -81,7 +81,7 @@ def _check_locals_are_typed(node: Any, locals_key: str, path: str) -> None:
     ``__include__``, or ``--config.<key>[+]``.
 
     Dev Notes:
-        docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
+        docs-dev/architecture/locals.md#declare-in-files-modify-anywhere
     """
     if isinstance(node, _StrToken):
         raise InvalidConfigFileError.locals_not_self_describing(locals_key, path)
@@ -130,8 +130,8 @@ def _coerce_override(value: Any, declared: Any, path: str) -> Any:
     through untouched.
 
     Dev Notes:
-        docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
-        docs-dev/architecture/07-expressions.md#deferral-rule
+        docs-dev/architecture/locals.md#declare-in-files-modify-anywhere
+        docs-dev/architecture/expressions/deferral-rule.md#deferral-rule
     """
     if contains_expression(value) or declared is None:
         return value
@@ -163,7 +163,7 @@ def _apply_locals_overrides(  # noqa: PLR0913  # recursive walk: carries both th
     undeclared name, an add/remove operation, or a whole-namespace assignment.
 
     Dev Notes:
-        docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
+        docs-dev/architecture/locals.md#declare-in-files-modify-anywhere
     """
     if not isinstance(override, dict):
         raise LocalsError.not_assignable(locals_key, config_flag, source)
@@ -213,7 +213,7 @@ def _iter_namespace_nodes(
     namespace present in any single source is visited.
 
     Dev Notes:
-        docs-dev/architecture/08-locals.md#declare-in-files-modify-anywhere
+        docs-dev/architecture/locals.md#declare-in-files-modify-anywhere
     """
     path = path or []
     dicts = [s for s in sources if isinstance(s, dict)]
@@ -251,7 +251,7 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
     checked against it and coerced in place. Namespaces are found at every node.
 
     Dev Notes:
-        docs-dev/architecture/08-locals.md
+        docs-dev/architecture/locals.md
     """
     for path, keys in _iter_namespace_nodes([config_data, env_data, cli_data], target, union_tag):
         node = _lookup_path(config_data, path)
@@ -364,5 +364,5 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
     # Every file is mounted now: rewrite configuration-root references (${::x}) as plain
     # paths. Node-relative ones (${.x}) are deliberately left alone -- resolving them here
     # would pin a list element to its current index.
-    # See docs-dev/architecture/07-expressions.md#reference-anchoring.
+    # See docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring.
     return canonicalize_references(merged)

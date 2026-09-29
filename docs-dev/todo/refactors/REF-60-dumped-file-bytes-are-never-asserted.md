@@ -20,7 +20,8 @@ The encoding and newline pairs are spelled identically in `_dump_yaml` and `_dum
 copies survive. Two of the four are **platform-dependent**, so CI on `ubuntu-latest`
 (`.github/workflows/ci-test.yml`) structurally cannot catch them: on Linux UTF-8 is already the
 default and `newline` changes nothing. They bite only on Windows, which is where
-[REF-29](REF-29-examples-stored-with-crlf.md) says line endings already go wrong.
+[REF-29](REF-29-nothing-pins-line-endings.md) says a tool writing CRLF goes unnoticed until the
+next `--all-files` run.
 
 Fix direction: one test per writer that asserts the bytes, not the round trip — `read_bytes()`
 contains no `\r`, non-ASCII content survives, and the JSON file's indent is the declared one. That

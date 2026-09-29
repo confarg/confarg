@@ -13,7 +13,7 @@ This package imports neither click nor typer, so importing one adapter does not 
 the other's dependency in.
 
 Dev Notes:
-    docs-dev/architecture/04-cli-adapters.md#the-clicklike-seam
+    docs-dev/architecture/cli-adapters/clicklike-seam.md#the-clicklike-seam
 """
 
 from confarg.cli._clicklike._completion import partial_argv_from_env, setup_completion

@@ -41,7 +41,7 @@ class FlagSpec:
     framework can vary a flag's token count at parse time; click cannot, and declines.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
 
     stands_bare: bool = False
@@ -59,7 +59,7 @@ class FlagSpec:
     Marking a flag with no such reader loses what the user typed.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
     """
 
     accumulates: bool = False
@@ -73,7 +73,7 @@ class FlagSpec:
     flags are excluded: they take one value, and repeating them is last-wins everywhere.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#list-syntax-divergence
+        docs-dev/architecture/cli-adapters/list-syntax-divergence.md#list-syntax-divergence
     """
 
     choices: list[str] | None = None

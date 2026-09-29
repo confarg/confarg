@@ -7,7 +7,7 @@ Handling a configuration is two jobs. **Composing** one is well served: `__inclu
 subpath mounting, `locals:`, the expression engine, and the designs in FEAT-19/20/21/22.
 **Manipulating** an existing one is not. The whole vocabulary is `+`, `-`, `~`, `*`, index patches
 and `DICT_DELETE` — per-channel sigils that grew by accretion, unordered as a set, with no rename at
-all ([01](../architecture/01-pipeline-and-contracts.md#deep-merge-semantics)) and no append spelling
+all ([01](../architecture/pipeline/deep-merge.md#deep-merge-semantics)) and no append spelling
 in the environment (FEAT-18).
 
 ## What bounds the feature
@@ -15,7 +15,7 @@ in the environment (FEAT-18).
 > A mutation is in scope only where an expression at a known path cannot say it.
 
 That test is what keeps this from becoming a second mechanism competing with the expression engine —
-the shape [09](../architecture/09-invariants.md#delegate-to-the-canonical-function) forbids, and the
+the shape [09](../architecture/invariants.md#delegate-to-the-canonical-function) forbids, and the
 one that sank `link_arguments`' compute function in FEAT-19. Four things pass it:
 
 1. **Read-modify-write of a value.** The motivating case, and unreachable two ways over: a field
@@ -24,7 +24,7 @@ one that sank `link_arguments`' compute function in FEAT-19. Four things pass it
 2. **Addressing many nodes.** An expression names one path, and a list element cannot know its own
    index — deliberately, since not naming its index is the property the node anchor exists to
    provide
-   ([07](../architecture/07-expressions.md#a-relative-reference-is-never-serialized-as-an-absolute-path)).
+   ([07](../architecture/expressions/reference-anchoring.md#a-relative-reference-is-never-serialized-as-an-absolute-path)).
 3. **Changing a key** rather than a value.
 4. **Conditional absence.** `${None}` yields `None`, not an absent key, and `DICT_DELETE` is a
    merge-layer sentinel no expression can produce.
@@ -34,7 +34,7 @@ conditional**: `type: ${"truck" if length > 10 else "car"}` resolves today, live
 governs, survives `merge()` to `dump_file()` verbatim, and is still overridable by `--type car`. And
 **one guard over many sibling fields**, because a local may hold the guard —
 `locals: {big: ${length > 10}}` resolves, and `--locals.big false` overrides it from any channel
-([08](../architecture/08-locals.md#declare-in-files-modify-anywhere)).
+([08](../architecture/locals.md#declare-in-files-modify-anywhere)).
 
 The test governs the design and the documentation; it is **not enforced**. Deciding that an
 expression could have said the same thing requires knowing whether a rule's predicate reads its own
@@ -63,7 +63,7 @@ to repair every reference a move invalidates, and the hard case is undecidable: 
 node-relative `${..db.host}` pointed *into* the moved subtree, the stage must resolve the anchor,
 which depends on the node's position — the very thing the move is changing. `canonicalize_references`
 is forbidden from resolving `${.x}` at all
-([09](../architecture/09-invariants.md#fragile-couplings)), so the stage would see uninterpreted
+([09](../architecture/invariants.md#fragile-couplings)), so the stage would see uninterpreted
 dots. Refusing the move whenever a node-relative reference is in reach is the honest fallback, and it
 cripples the most-wanted op.
 
@@ -109,7 +109,7 @@ beside `--db.host` on argv is a fresh cross-channel divergence bought for nothin
 escaping is hostile in YAML. *JSON Merge Patch (RFC 7386)*: this is already confarg's deep merge.
 *JSONPath (RFC 9535)*: the right shape for a filtered selector, wrong syntax here — `$.` was already
 weighed and rejected for the root anchor in favour of `::`
-([10](../architecture/10-design-decisions.md)), and `$` or `@` would be a third sigil family beside
+([10](../architecture/design-decisions/README.md)), and `$` or `@` would be a third sigil family beside
 `${}`, `::`, `+` and `-`. *jq*: a complete transformation language and a second evaluation model.
 *CUE, Jsonnet, Nix, Dhall*: adopting a language, against a safety model that deliberately stops at a
 whitelisted AST; CUE's unification-as-assertion is already cited by FEAT-20. *Kustomize*: the hybrid
@@ -154,7 +154,7 @@ __transforms__:
 - **Declaration**, three spellings of one mechanism:
   - `__transforms__` inside the document being transformed. A dunder key, and therefore file-only by
     construction: the default env separator is also `__`
-    ([02](../architecture/02-files-and-env.md#reserved-file-only-keys)). Declarable at any node.
+    ([02](../architecture/config-files/reserved-keys.md#reserved-file-only-keys)). Declarable at any node.
   - **A rules-only file layered above the input** — a second config file carrying only
     `__transforms__`, mounted by `--config` or the env config pointer like any other. This is the
     spelling the how-to leads with.
@@ -164,7 +164,7 @@ __transforms__:
   locals; `when` and `set` value expressions are evaluated with the **match** as anchor, so `.length`
   means the matched node's.
 - **Ops**: `set`, `move`, `remove`. A rename is `move` within the same parent — one spelling only,
-  which [10](../architecture/10-design-decisions.md) already argues at length for the `+` operator.
+  which [10](../architecture/design-decisions/README.md) already argues at length for the `+` operator.
   No `test` op; that is `when`.
 - **Selector**: `[*]` over one list segment, nesting allowed, no inline predicates. This is the only
   new grammar in the feature.
@@ -174,7 +174,7 @@ __transforms__:
   `transform()` call a safe no-op.
 - **Values are file-native** — no `_StrToken`, so no coercion. `build()` validates a rule's output
   exactly as it validates a file's
-  ([09](../architecture/09-invariants.md#merge-stays-unvalidated)).
+  ([09](../architecture/invariants.md#merge-stays-unvalidated)).
 
 ## Phases
 
@@ -189,7 +189,7 @@ __transforms__:
    so collapses a rule's `when` early and against the root instead of the match. That needs a
    regression test of its own.
 3. **Wiring.** A public `transform(data, *, transforms=None)` as the fourth seam, matching
-   [01](../architecture/01-pipeline-and-contracts.md#public-api-seams), with a `trace=` list callers
+   [01](../architecture/pipeline/api-seams.md#public-api-seams), with a `trace=` list callers
    may pass to collect one record per firing: rule, selector, matched path, before, after. The shared
    helper at the two resolution call sites; strip the key after application; `TRANSFORMS_KEY` into
    `_defaults.py` beside `LOCALS_KEYS` and `ROOT_KEY`, the stated home for reserved names.
@@ -197,12 +197,12 @@ __transforms__:
    REF-40 before spelling it.
 4. **Errors and documentation.** A `TransformError` family on `LocalsError`'s classmethod-factory
    shape, messages built in the factories
-   ([10-design-decisions.md#a-user-facing-message-lives-on-the-exception-that-raises-it](../architecture/10-design-decisions.md#a-user-facing-message-lives-on-the-exception-that-raises-it)). A how-to and an `examples/` entry whose example
+   ([design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it](../architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it)). A how-to and an `examples/` entry whose example
    is one an expression cannot say.
 
 **Deferred**: `split` and `merge` ops; the grouped match form; and the approved divergences —
 file-only declaration, and a rename never reaching argv — recorded in
-[09](../architecture/09-invariants.md#cross-channel-parity) when the code lands. Plus the migration
+[09](../architecture/invariants.md#cross-channel-parity) when the code lands. Plus the migration
 half, below.
 
 ### Deferred: versioning and migrations, absorbed from FEAT-11
@@ -221,7 +221,7 @@ an old file and a new one still merge correctly — and so the rewritten documen
 produce neither. Two axes are still open: whether a single version key can honestly describe a stack
 of files of different vintages, and **parity**, the hard part — a renamed field renames its
 environment variable and its CLI flag too, so a file-only migration is exactly the silent divergence
-[09](../architecture/09-invariants.md#cross-channel-parity) forbids. Tooling: `confarg migrate` wants
+[09](../architecture/invariants.md#cross-channel-parity) forbids. Tooling: `confarg migrate` wants
 the console script FEAT-9 and FEAT-10 also want, so the packaging question is settled once for all
 three.
 
@@ -244,7 +244,7 @@ no version key.
 3. **Ordering determinism**: rules declared across two mounted files produce one specified result —
    required, because sequential semantics make order decide the outcome.
 4. **Cross-channel parity** for all five front-ends, and `merge()` still byte-identical
-   ([09](../architecture/09-invariants.md#adapter-output-equals-vanilla-output)).
+   ([09](../architecture/invariants.md#adapter-output-equals-vanilla-output)).
 5. **Fixpoint**: `load(dump_file(merge(X)))` equals `load(X)` for a configuration whose rules have
    fired, and `transform()` applied twice equals once.
 6. **Precedence**: `--type car` plus a matching rule yields the rule's value, and the trace names the

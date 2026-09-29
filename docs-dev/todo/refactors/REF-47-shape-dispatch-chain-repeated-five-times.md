@@ -20,6 +20,6 @@ sites becoming a lookup.
 
 Size this by risk, not by lines. The net saving is only about 20 lines; the value is that the
 order gains a single owner and joins
-[09-invariants.md#delegate-to-the-canonical-function](../../architecture/09-invariants.md#delegate-to-the-canonical-function).
+[invariants.md#delegate-to-the-canonical-function](../../architecture/invariants.md#delegate-to-the-canonical-function).
 Risk is **high** because it touches both engines and two channels at once, so a mistake is silent
 everywhere simultaneously. Do not file or schedule this as a footprint win.

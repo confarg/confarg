@@ -13,7 +13,7 @@ index patch rides along in one list-op dict — the shape `build()` applies. The
 the patch scan over the collected list, and `_deep_merge` applies the index patch on the spot,
 so the merged dict holds the *result* (`[5, 2]`) rather than the operation
 (`{'*': [1, 2], '0': 5}`). Both build the same tuple, so only the
-[byte-identical](../../architecture/04-cli-adapters.md#byte-identical-merged-dicts) rule is
+[byte-identical](../../architecture/cli-adapters/parity.md#byte-identical-merged-dicts) rule is
 broken — and a lower-priority source (`--config` file, env) can no longer see the base list the
 operation was meant to apply against, which is the point of the list-op shape.
 

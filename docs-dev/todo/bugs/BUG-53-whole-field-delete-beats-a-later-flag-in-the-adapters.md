@@ -7,14 +7,14 @@
 Vanilla honors argv order — the delete drops the field, the flag that follows sets it again — while
 the adapters re-assert every delete *after* the merge, so a delete anywhere in argv beats a value
 anywhere in argv
-([04-cli-adapters.md#a-patch-op-joins-the-values-the-framework-collected](../../architecture/04-cli-adapters.md#a-patch-op-joins-the-values-the-framework-collected)).
+([cli-adapters/collection-patch-parity.md#a-patch-op-joins-the-values-the-framework-collected](../../architecture/cli-adapters/collection-patch-parity.md#a-patch-op-joins-the-values-the-framework-collected)).
 
 Re-assertion is deliberate and needed: `_deep_merge` applies a delete on sight, which is wrong
 inside one channel where the sentinel is a record for `_merge_sources` to apply. The sanction for
 letting it win is the argv-order convention "whole value first, refinements after" — but
 delete-then-set *is* that useful order, and it is the order someone reaches for to clear a
 configured list and put something else in its place. So the gap is unapproved
-([09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity)).
+([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity)).
 
 `--items-` and a bare `--items` are both accepted by every front-end, and it is the *delete*
 spelling whose follow-up flag is silently dropped — which is what makes this worth fixing rather

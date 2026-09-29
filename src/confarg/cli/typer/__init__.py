@@ -8,7 +8,7 @@ try:
     # Availability check; typer is an optional dependency.  The two private names are
     # checked here rather than only where they are used, so a typer too old to vendor
     # its own click fails with this message instead of a bare ImportError on a
-    # private module (docs-dev/architecture/04-cli-adapters.md#the-clicklike-seam).
+    # private module (docs-dev/architecture/cli-adapters/clicklike-seam.md#the-clicklike-seam).
     import typer as _typer  # noqa: F401
     import typer._types  # noqa: F401
     from typer.core import TyperOption  # noqa: F401

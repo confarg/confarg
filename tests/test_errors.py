@@ -173,7 +173,7 @@ class TestTokensStayOutOfMessages:
     """A channel token is named as the ``str`` it is, never as the private wrapper.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#token-model
+        docs-dev/architecture/types/token-model.md#token-model
     """
 
     @pytest.mark.parametrize(

@@ -9,7 +9,7 @@ force-cast detection, the local-variables name derivation, the ``--config`` scan
 patch-only parse used by the adapters.
 
 Dev Notes:
-    docs-dev/architecture/03-cli-parsing.md
+    docs-dev/architecture/cli-parsing/README.md
 """
 
 from __future__ import annotations
@@ -184,7 +184,7 @@ def _addresses_callable_key(target: Any, parts: list[str], union_tag: str) -> bo
     them in the shape their mode demands.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
+        docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
     tp = _resolve_type(target)
     for idx, part in enumerate(parts):
@@ -209,7 +209,7 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
     flat collector. Pure struct-field, namedtuple, and callable paths return False.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
+        docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
     """
     tp = _resolve_type(target)
     for idx, part in enumerate(parts):
@@ -263,7 +263,7 @@ def _segment_names_real_field(pt: Any, seg: str, union_tag: str) -> bool:
     lists, sets, tuples, callables, and scalars have no named members (False).
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#real-field-wins
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
     """
     if seg == union_tag:
         return True
@@ -288,7 +288,7 @@ def _locals_keys(target: Any, union_tag: str) -> tuple[str, ...]:
     *union_tag* only.
 
     Dev Notes:
-        docs-dev/architecture/08-locals.md#derived-name
+        docs-dev/architecture/locals.md#derived-name
     """
     return tuple(key for key in _defaults.LOCALS_KEYS if not _segment_names_real_field(target, key, union_tag))
 
@@ -315,7 +315,7 @@ def _locals_keys_at(target: Any, path: list[str], union_tag: str) -> tuple[str, 
     walk, the env parser) asks at each node.
 
     Dev Notes:
-        docs-dev/architecture/08-locals.md#per-node-namespaces
+        docs-dev/architecture/locals.md#per-node-namespaces
     """
     if not path:
         return _locals_keys(target, union_tag)
@@ -386,7 +386,7 @@ class _EqValue(str):
     merged dict.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
 
     __slots__ = ()
@@ -421,7 +421,7 @@ def _require_value(args: Sequence[str], i: int, token: str, usage: str = "<value
     :meth:`ConfargError.missing_value`.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     if i >= len(args) or _looks_like_flag(args[i]):
         raise ConfargError.missing_value(token, usage)
@@ -482,7 +482,7 @@ def _normalize_eq_args(args: Sequence[str]) -> list[str]:
     further.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     normalized: list[str] = []
     for tok in args:
@@ -515,7 +515,7 @@ def _locals_walk_root(locals_keys: tuple[str, ...]) -> Any:
     resolve like a real dict field. Validation happens in the pipeline, not here.
 
     Dev Notes:
-        docs-dev/architecture/08-locals.md#walk-target-graft
+        docs-dev/architecture/locals.md#walk-target-graft
     """
     name = "_LocalsRoot_" + "_".join(locals_keys)
     return dataclasses.make_dataclass(name, [(key, dict[str, Any]) for key in locals_keys])
@@ -531,7 +531,7 @@ def _walk_target(target: Any, locals_keys: tuple[str, ...]) -> Any:
     :func:`_resolve_field_type` itself.
 
     Dev Notes:
-        docs-dev/architecture/08-locals.md#walk-target-graft
+        docs-dev/architecture/locals.md#walk-target-graft
     """
     if not locals_keys:
         return target
@@ -605,7 +605,7 @@ def _check_mount_subpath(target: Any, subpath: str, union_tag: str, spelling: st
         ConfargError: When the subpath names no field of the node it descends to.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#type-guided-parsing
+        docs-dev/architecture/cli-parsing/type-guided-parsing.md#type-guided-parsing
     """
     path = subpath.removesuffix(LIST_APPEND_KEY)
     if not path:
@@ -630,7 +630,7 @@ def _consume_config_paths(args: list[str], i: int, key: str, config_flag: str) -
 
     Returns (new_i, [(subpath, mount value)]); the value is the raw token -- a local path, a
     URL, or a JSON fragment -- read as an ``__include__`` value by the pipeline
-    (docs-dev/architecture/02-files-and-env.md#mounting).
+    (docs-dev/architecture/config-files/mounting.md#mounting).
     """
     subpath = _config_subpath(key, config_flag)
     i += 1
@@ -688,7 +688,7 @@ class _ParseCtx:
     stored value.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
 
 
@@ -803,7 +803,7 @@ def _consume_fixed_tuple_args(  # noqa: PLR0913  # token only names the flag in 
     a shorter tuple (BUG-43).
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     items: list[Any] = []
     for et in tt:
@@ -828,7 +828,7 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str) -> Any:
     missing-value error.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#unions-with-sequence-variants
+        docs-dev/architecture/cli-parsing/token-consumption.md#unions-with-sequence-variants
     """
     parsed = _lone_json_array(tokens)
     if parsed is not None:
@@ -944,7 +944,7 @@ def _lone_json_array(tokens: list[str]) -> list[Any] | None:
     expressible.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     if len(tokens) != 1 or not tokens[0].startswith("["):
         return None
@@ -959,7 +959,7 @@ def _varlen_value(ft: Any, tokens: list[str]) -> Any:
     carries the same types whichever channel supplied them.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     parsed = _lone_json_array(tokens)
     if parsed is not None:
@@ -976,7 +976,7 @@ def _consume_multi_tokens(ctx: _ParseCtx, i: int, path: list[str]) -> tuple[list
     newest replacing the rest.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     args = ctx.argv
     tokens = ctx.multi_tokens.setdefault(tuple(path), [])
@@ -1044,7 +1044,7 @@ def _accepts_object_value(ft: Any) -> bool:
     blob is taken apart into fields, and construction takes both apart the same way.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
 
     def accepts(v: Any) -> bool:
@@ -1090,7 +1090,7 @@ def _open_callable_shorthand(data: dict[str, Any], path: list[str], target: Any,
         union_tag: The field name used as a union discriminator.
 
     Dev Notes:
-        docs-dev/architecture/06-callables.md#cli
+        docs-dev/architecture/callables.md#cli
     """
     for n in range(1, len(path)):
         if names_an_opener(path[n]):
@@ -1127,7 +1127,7 @@ def _promote_namedtuple_positional(data: dict[str, Any], path: list[str], target
         union_tag: The field name used as a union discriminator.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     for n in range(1, len(path)):
         existing = _peek_nested(data, path[:n])
@@ -1155,7 +1155,7 @@ def _consume_typed_arg(
     missing-value error every other value-taking flag raises.
 
     Agent Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     args = ctx.argv
     # JSON object → dataclass / dict / callable / union-with-dc
@@ -1198,7 +1198,7 @@ def _collect_config_file_pairs(
             or a subpath that names no node of *target*.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
     """
     normalized = _normalize_eq_args(list(argv))
     pairs: list[tuple[str, str]] = []
@@ -1396,7 +1396,7 @@ def _collect_cli_patch_ops(
     merge reaches it; the dict is modified in place.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
+        docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
     """
     data, _ = _parse_cli(argv, target, "", config_flag, union_tag, patch_only=True, patch_base=patch_base)
     return data

@@ -10,7 +10,7 @@ twelve-line keyword forward to `_clicklike.merge_from_ctx` / `construct_from_ctx
 carry the identical signature. Everything else that differs is docstring wording.
 
 This is a documented invariant being broken
-([09-invariants.md#fragile-couplings](../../architecture/09-invariants.md#fragile-couplings)):
+([invariants.md#fragile-couplings](../../architecture/invariants.md#fragile-couplings)):
 *"Anything the click and typer adapters both need lives in `cli/_clicklike/`, parameterised by
 the classes the two frameworks spell differently — never duplicated into both packages."*
 Roughly 150 lines exist to carry two type annotations.

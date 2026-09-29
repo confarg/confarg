@@ -8,7 +8,7 @@
 `_collect_struct_specs` — same `_resolve_struct` / `_var_params` / `_get_field_docstrings` /
 `_struct_defaults` preamble, same `_is_final` unwrap, same callable, struct, dict and leaf
 branches in the same order. Static flag generation is supposed to have one owner
-([04-cli-adapters.md#framework-neutral-flag-model](../../architecture/04-cli-adapters.md#framework-neutral-flag-model)),
+([cli-adapters/flag-model.md#framework-neutral-flag-model](../../architecture/cli-adapters/flag-model.md#framework-neutral-flag-model)),
 and completion quietly holds a second copy of it.
 
 Only three things actually differ: a `_is_singleton_literal` skip, no recursion into sibling
@@ -39,7 +39,7 @@ do-not-recurse-into-variants switch — is a **behavior change** unless a third 
 namedtuple field currently takes completion's `_is_struct` branch and would start receiving
 `_collect_namedtuple_specs` index and name flags, i.e. more completion suggestions. Decide that
 deliberately; completion must never raise
-([04-cli-adapters.md#completion](../../architecture/04-cli-adapters.md#completion)).
+([cli-adapters/completion.md#completion](../../architecture/cli-adapters/completion.md#completion)).
 
 Verified dead in the same file, and cheap to take with it: the `group_target` parameter of
 `_extend_walk`, which already carries `noqa: ARG001 # kept for callers` and whose docstring says

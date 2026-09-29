@@ -11,7 +11,7 @@ reading the original argv.  What a dropped token meant is read back off that arg
 too, so the drop and its meaning stay one decision.
 
 Dev Notes:
-    docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+    docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ def _bare_occurrence(argv: Sequence[str], i: int) -> bool:
     flag name, so nothing acts on it.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
     """
     # Imported here: a module-level import would create a load-time import cycle.
     from confarg._parse_cli import _looks_like_flag  # noqa: PLC0415
@@ -53,7 +53,7 @@ def drop_bare_occurrences(argv: Sequence[str], stands_bare: Collection[str]) -> 
         A new list of tokens for the framework to parse.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
     """
     if not stands_bare:
         return list(argv)
@@ -75,7 +75,7 @@ def bare_only_flag_names(argv: Sequence[str]) -> set[str]:
         Dotted flag names (no ``--``), every occurrence of which stands bare.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
     """
     # Imported here: a module-level import would create a load-time import cycle.
     from confarg._parse_cli import _looks_like_flag  # noqa: PLC0415

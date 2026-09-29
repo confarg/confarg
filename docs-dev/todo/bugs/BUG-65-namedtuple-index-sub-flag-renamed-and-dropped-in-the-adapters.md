@@ -13,7 +13,7 @@ coerced while the keys still do not.
 dropped outright when `--pt.x` is also set. Vanilla stores every key as spelled, index and name
 alike (`{'0': 13, '1': 42}`, and `{'x': 13, '0': 9}` beside a name flag), and construction
 reconciles them. So the merged dicts differ key for key, breaking the
-[byte-identical](../../architecture/04-cli-adapters.md#byte-identical-merged-dicts) rule, and a
+[byte-identical](../../architecture/cli-adapters/parity.md#byte-identical-merged-dicts) rule, and a
 user's `--pt.0` silently disappears when a `--pt.x` rides along. The fix direction is to store
 the keys as spelled and leave the win to construction, as vanilla does; the "name wins over
 index" priority the docstring documents is a collection-time decision vanilla never makes.

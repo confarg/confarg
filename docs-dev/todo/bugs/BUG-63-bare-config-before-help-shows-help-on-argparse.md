@@ -8,14 +8,14 @@ BUG-51's strict rescan click, typer and cyclopts refuse it with confarg's own
 `Missing file path after --config` too. argparse's `--help` is eager — `parser.parse_args`
 prints help and exits 0 before `from_namespace`'s rescan can refuse the bare `--config` — so the
 same command line ends in help on one front-end and an error on four, an unapproved parity gap
-([09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity)).
+([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity)).
 Fixing it means validating argv before `parse_args` in `from_namespace`/`merge_namespace`; the
 alternative is deciding help-wins is argparse's own idiom and recording the divergence as
 approved.
 
 Nothing covers the corner today, so a mistake in the fix would stay silent on argparse while the
 other four stay correct — closing it means adding a test there
-([12-testing.md#examples-and-documentation](../../architecture/12-testing.md#examples-and-documentation)
+([testing.md#examples-and-documentation](../../architecture/testing.md#examples-and-documentation)
 for where parity tests live).
 
 ```python

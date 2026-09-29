@@ -19,6 +19,6 @@ but the two sets differ in **both** directions, and construction ends in `tp(**k
 Filtering `_dc_fields` and `_dc_defaults` on `f.init` closes the first half and is mechanical; the
 second needs a decision on whether `InitVar` becomes a settable key, which is what makes this `L`.
 Both bite a user who wrote an ordinary dataclass, which sits badly with
-[10-design-decisions.md#no-custom-types-required](../../architecture/10-design-decisions.md#no-custom-types-required):
+[design-decisions/no-custom-types-required.md#no-custom-types-required](../../architecture/design-decisions/no-custom-types-required.md#no-custom-types-required):
 requiring users to *avoid* a stdlib field option is a field marker in reverse.
-See [05-types-and-construction.md#structs-collections-and-defaults](../../architecture/05-types-and-construction.md#structs-collections-and-defaults).
+See [types/construction.md#structs-collections-and-defaults](../../architecture/types/construction.md#structs-collections-and-defaults).

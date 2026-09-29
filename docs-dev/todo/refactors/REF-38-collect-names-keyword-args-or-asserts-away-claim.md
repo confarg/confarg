@@ -12,4 +12,4 @@ Verified `_extract_references("${sorted(x, key=y)}")` returns `{'x', 'y'}` — b
 present, so it passes for the right reason today, but would not catch the regression
 it exists to pin. Same family as REF-34/REF-36: rewrite to `assert "y" in refs`
 (drop the `or` and the unrelated `x`). Reference collection is part of the expression
-[safety model](../../architecture/07-expressions.md#safety-model).
+[safety model](../../architecture/expressions/safety-model.md#safety-model).

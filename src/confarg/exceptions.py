@@ -33,7 +33,7 @@ class ConfargError(Exception):
         when it is not a plain value -- ``'<json>'`` for a JSON cast.
 
         Dev Notes:
-            docs-dev/architecture/10-design-decisions.md#a-whole-value-flag-needs-its-value
+            docs-dev/architecture/design-decisions/a-whole-value-flag-needs-its-value.md#a-whole-value-flag-needs-its-value
         """
         return cls(f"Missing value for {token!r}. Usage: {token} {usage}")
 
@@ -221,7 +221,7 @@ class LocalsError(ConfargError):
     namespace under both ``locals`` and ``_locals`` raises this error.
 
     Dev Notes:
-        docs-dev/architecture/08-locals.md
+        docs-dev/architecture/locals.md
     """
 
     @classmethod

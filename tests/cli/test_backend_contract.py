@@ -617,7 +617,7 @@ class TestFixedSequenceContract:
     A namedtuple is a fixed-length sequence, so every front-end consumes exactly its
     arity in positional tokens -- the same count a ``tuple[int, int]`` field consumes --
     and the per-field and per-index flags refine it
-    (docs-dev/architecture/03-cli-parsing.md#token-consumption).
+    (docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption).
     """
 
     def test_tuple_positional(self, loader: ConfargLoader) -> None:
@@ -3825,9 +3825,9 @@ class TestMountParity:
     """The three mount routes accept the same fragment and produce the same merged dict.
 
     They are spelled differently on purpose
-    (docs-dev/architecture/10-design-decisions.md#the-mount-keyword-is-spelled-per-channel), but
+    (docs-dev/architecture/design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel), but
     what they mount does not differ: each reads its value as an ``__include__`` value through
-    one resolver (docs-dev/architecture/02-files-and-env.md#mounting). Every route used to have
+    one resolver (docs-dev/architecture/config-files/mounting.md#mounting). Every route used to have
     its own loader, and they diverged -- the CLI and env routes refused non-dict roots and data
     files that ``__include__`` accepted at the same node, and had no spelling for the CSV
     options at all.
@@ -3952,7 +3952,7 @@ class TestMountParity:
 
         Both extend the list with the fragment's items: appending is the ``+`` operator's job
         and the mount has no say in it
-        (docs-dev/architecture/10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling).
+        (docs-dev/architecture/design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling).
         """
         rows = tmp_path / "rows.yaml"
         rows.write_text("- gamma\n- delta\n", encoding="utf-8")
@@ -3972,7 +3972,7 @@ class TestMountParity:
         """Test that a class tag inside an include discards the base node, as --config does.
 
         The include merges did not thread ``union_tag``, so the rule in
-        docs-dev/architecture/10-design-decisions.md#a-class-tag-replaces-not-merges held for
+        docs-dev/architecture/design-decisions/class-tag-replaces.md#a-class-tag-replaces-not-merges held for
         ``--config.db`` and not for ``db: {__include__: …}``.
         """
         sqlite = tmp_path / "sqlite.yaml"

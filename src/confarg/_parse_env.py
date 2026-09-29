@@ -5,7 +5,7 @@
 """Environment variable parsing into a nested dict shaped by the target type.
 
 Dev Notes:
-    docs-dev/architecture/02-files-and-env.md#environment-parsing
+    docs-dev/architecture/environment-parsing.md#environment-parsing
 """
 
 from __future__ import annotations
@@ -201,7 +201,7 @@ def _handle_env_config_flag(  # noqa: PLR0913  # the check needs the tag, the me
 
     The value is kept as written: the pipeline reads it as an ``__include__`` value, so a
     ``{"path": …, "orient": …}`` object is spelled here exactly as it is in a file
-    (docs-dev/architecture/02-files-and-env.md#mounting). The subpath is checked against
+    (docs-dev/architecture/config-files/mounting.md#mounting). The subpath is checked against
     *target* after it is resolved — a segment that matches no field is an error here,
     not a silent mount that surfaces much later as an unknown-field error from ``build()``.
     """
@@ -327,7 +327,7 @@ def _accepts_json_for(ft: Any, value: str) -> bool:
     environment while the CLI refused it (BUG-39).
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#environment-parsing
+        docs-dev/architecture/environment-parsing.md#environment-parsing
     """
     if value.startswith("{"):
         return _accepts_object_value(ft)
@@ -418,7 +418,7 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
 
         parts, ft = _resolve_env_parts(target, parts)
         # Locals are not target fields: skip the unknown-field warning and store the raw
-        # token; _pipeline checks and coerces them (docs-dev/architecture/08-locals.md).
+        # token; _pipeline checks and coerces them (docs-dev/architecture/locals.md).
         is_locals = _locals_segment_index(target, parts, union_tag) is not None
         if not is_locals and _warn_unknown_env_field(orig_key, parts, _resolve_type(target)):
             continue

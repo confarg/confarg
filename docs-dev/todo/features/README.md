@@ -3,7 +3,7 @@
 Missing behavior worth having, and ideas not yet vetted. One ticket per file; see
 [../README.md](../README.md) for the format. Anything accepted or rejected here leaves a
 decision in
-[../../architecture/10-design-decisions.md](../../architecture/10-design-decisions.md).
+[../../architecture/design-decisions/README.md](../../architecture/design-decisions/README.md).
 
 An entry whose effort reads *(design pass; implementation not sized)* is an unvetted idea: it
 has no design yet, so deciding whether to do it at all is the next actionable step.

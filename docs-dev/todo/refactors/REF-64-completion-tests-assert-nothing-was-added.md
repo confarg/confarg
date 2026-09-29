@@ -17,7 +17,7 @@ Mutation testing makes the consequence measurable: 63 of the 81 mutants of
 `cli/_clicklike/_completion.py` survive (22% mutation score, the lowest in the library), 56 of
 them in `setup_completion` alone. `cli/click/_completion.py` and `cli/typer/_completion.py` score
 30% each. The `try: … except Exception: _log.debug(…)` wrapper that keeps completion from ever
-crashing the shell ([04-cli-adapters.md#completion](../../architecture/04-cli-adapters.md#completion))
+crashing the shell ([cli-adapters/completion.md#completion](../../architecture/cli-adapters/completion.md#completion))
 is what makes this invisible: every mutation degrades silently to fewer suggestions, so only a
 test that asserts the *positive* outcome can catch one.
 
@@ -38,5 +38,5 @@ assert "items.0" in [p.name for p in cmd.params]   # observed: added
 ```
 
 Keep `test_completion_exception_is_swallowed` as it is — it pins the never-crash contract, which
-is a separate claim. Per [cross-channel parity](../../architecture/09-invariants.md#cross-channel-parity)
+is a separate claim. Per [cross-channel parity](../../architecture/invariants.md#cross-channel-parity)
 the same assertion belongs in the typer copy of the class, which has the identical gap.

@@ -51,7 +51,7 @@ def _expression_tolerant_convert(type_: Any, tokens: Any) -> Any:
     own error.  ``build()`` validates the resolved expression.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#expression-tolerant-choice-gates
+        docs-dev/architecture/cli-adapters/parity.md#expression-tolerant-choice-gates
     """
     if any(contains_expression(t.value) for t in tokens):
         return tokens[0].value if len(tokens) == 1 else [t.value for t in tokens]
@@ -73,7 +73,7 @@ def _last_occurrence_convert(type_: Any, tokens: Any) -> Any:
     :func:`_expression_tolerant_convert`.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
     last: list[Any] = []
     prev = -1
@@ -152,7 +152,7 @@ def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901  
     if spec.nargs == "*" or spec.whole_value:
         # `whole_value`: consume_multiple accepts both the positional form and the single
         # whole-value token, where n_tokens would fix the count and reject the latter
-        # (docs-dev/architecture/04-cli-adapters.md#whole-value-flags).  It also
+        # (docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).  It also
         # accumulates across occurrences, which is what a varlen list (`nargs == "*"`,
         # `accumulates=True`) wants and what a fixed-arity flag must not keep: the
         # converter below lets the last occurrence win instead (BUG-62).
@@ -224,7 +224,7 @@ def load_flags_into_app(
         "command": __confarg_command__,
         "name_map": name_map,
         # merge_app drops these flags' bare occurrences before cyclopts parses
-        # (docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare).
+        # (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
         "stands_bare": {spec.name for spec in flags if spec.stands_bare},
     }
 

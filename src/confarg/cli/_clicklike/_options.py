@@ -9,7 +9,7 @@ Both frameworks expose the same option-construction keywords, so the mapping fro
 three classes its framework spells differently.
 
 Dev Notes:
-    docs-dev/architecture/04-cli-adapters.md#the-clicklike-seam
+    docs-dev/architecture/cli-adapters/clicklike-seam.md#the-clicklike-seam
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def _install_bare_filter(parser: Any, name: str) -> None:
     the wrapper reads it.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
     """
     names: set[str] | None = getattr(parser, _BARE_ATTR, None)
     if names is None:
@@ -61,7 +61,7 @@ class StandsBareMixin:
     multi-token shape; the bare occurrences are dropped from the argv the parser sees.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
     """
 
     def __init__(self, *, stands_bare: bool = False, **kwargs: Any) -> None:
@@ -103,7 +103,7 @@ class ExpressionTolerantChoiceMixin:
     ``build()`` validates the resolved expression.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#expression-tolerant-choice-gates
+        docs-dev/architecture/cli-adapters/parity.md#expression-tolerant-choice-gates
     """
 
     def convert(self, value: Any, param: Any, ctx: Any) -> Any:

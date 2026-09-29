@@ -13,7 +13,7 @@ vanilla, which has no registration step).
 ``cli_prefix`` reaches the adapters through their registration step: each
 adapter loader passes it to ``populate_*`` and then calls ``merge_*``/``from_*``
 *without* it, so every parity test also exercises the prefix recovery path
-(docs-dev/architecture/03-cli-parsing.md#cli_prefix).
+(docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix).
 
 List-field CLI syntax differs between loaders:
 - ``VanillaLoader``, ``ArgparseLoader``, ``CycloptsLoader``: space-separated
@@ -25,13 +25,13 @@ This difference is intentional and must be visible in tests: write separate
 test functions for each convention rather than hiding the difference. It is a
 difference of *spelling* only -- repeating such a flag accumulates its tokens on
 every loader, so that belongs to ``loader`` and not to ``REPEATED_FLAG_LOADERS``
-(docs-dev/architecture/12-testing.md#list-syntax-split).
+(docs-dev/architecture/testing.md#list-syntax-split).
 
 A second, independent divergence has the same membership today but is not the
 same rule: a fixed-arity flag (``tuple[X, Y]``, namedtuple) also accepts one
 whole-value token (``--pair '[13, 42]'``) on every loader except
 ``ClickLoader`` and ``TyperLoader``, whose options cannot take a variable token count
-(``WHOLE_VALUE_ARITY_LOADERS``, docs-dev/architecture/04-cli-adapters.md#whole-value-flags).
+(``WHOLE_VALUE_ARITY_LOADERS``, docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).
 Keep the two sets apart so a later change to one does not silently move the other.
 """
 
@@ -147,7 +147,7 @@ class ConfargLoader(ABC):
 
         ``argv`` is what ``populate_*`` sees: it selects the dynamic flags, and it names the
         classes whose subclasses registration can see at all
-        (docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags).
+        (docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags).
         """
         return None
 
@@ -423,7 +423,7 @@ REPEATED_FLAG_LOADERS: list[ConfargLoader] = [
 
 # Loaders whose fixed-arity flags also accept a single whole-value token: click and
 # typer register their exact token count and decline it
-# (docs-dev/architecture/04-cli-adapters.md#whole-value-flags).
+# (docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).
 WHOLE_VALUE_ARITY_LOADERS: list[ConfargLoader] = [
     VanillaLoader(),
     ArgparseLoader(),

@@ -14,7 +14,7 @@ level deep (`_namedtuple_sub_flags` looks at `--<flag>.<name>` and `--<flag>.<in
 the dynamic registration scan does not add the deeper path, so all four reject the flag the
 host framework's own way — argparse, click and typer exit with their usage error, cyclopts prints
 `Unknown option: --pt.inner.a. Did you mean --pt.inner?`. Not an approved divergence
-([09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity)).
+([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity)).
 
 The fix direction: the static walk should recurse into a namedtuple's struct-shaped fields (as
 it already recurses into a struct's), and `_collect_ns_namedtuple` should hand those deeper

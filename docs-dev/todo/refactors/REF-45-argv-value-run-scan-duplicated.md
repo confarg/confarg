@@ -25,11 +25,11 @@ tested once.
 
 Worth stating plainly, because it is the reason the risk is **high**: *"where does this flag's
 value run end?"* is one of the core CLI decisions and it is **not** in the canonical table in
-[09-invariants.md#delegate-to-the-canonical-function](../../architecture/09-invariants.md#delegate-to-the-canonical-function),
+[invariants.md#delegate-to-the-canonical-function](../../architecture/invariants.md#delegate-to-the-canonical-function),
 even though `_looks_like_flag` — the sole flag/value discriminator it is built on — is. Adding it
 there is part of closing this.
 
 BUG-43 is what the duplication already cost: the fixed-arity tuple branch was the one place the
 guard had never been copied to, so that flag under-filled instead of reporting a missing value.
-It is closed, and the adapters' half of the same gap is
-[BUG-58](../bugs/BUG-58-adapters-underfill-a-fixed-arity-flag.md).
+It is closed, and so is the adapters' half of the same gap, BUG-58 (no link: the board holds
+open work only).

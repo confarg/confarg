@@ -26,7 +26,7 @@ the reason to do it: the others are boilerplate, that one is a decision made fou
   value-less test in three places, and the `nargs == "*"` / `isinstance(nargs, int)` split in three
   more, each expressed in its framework's own vocabulary. The neutral model is supposed to be the
   contract
-  ([04-cli-adapters.md#framework-neutral-flag-model](../../architecture/04-cli-adapters.md#framework-neutral-flag-model)),
+  ([cli-adapters/flag-model.md#framework-neutral-flag-model](../../architecture/cli-adapters/flag-model.md#framework-neutral-flag-model)),
   so the *classification* belongs on `FlagSpec` in `cli/_spec.py` and only the *expression* of it
   belongs in each adapter. This is where the four will drift, and it already shows: cyclopts
   silently honours no `FlagSpec.completer` at all.

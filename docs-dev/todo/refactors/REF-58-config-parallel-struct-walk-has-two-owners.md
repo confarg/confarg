@@ -13,7 +13,7 @@ tags, the other callable openers; what each adds on top is a per-field predicate
 
 Both answer the same question — *what does this config name?* — and both feed
 `build_dynamic_flags` and shell completion
-([04-cli-adapters.md#static-and-dynamic-flags](../../architecture/04-cli-adapters.md#static-and-dynamic-flags)),
+([cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags](../../architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags)),
 so a node one walk visits and the other does not registers bind flags for a class whose tag
 the other half cannot see. Fix direction: one shared generator in `_tags.py` yielding every
 reachable `(path, struct_type, node_dict)` — `_build.py` already imports from `_tags`, so no

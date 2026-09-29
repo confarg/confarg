@@ -6,7 +6,7 @@
 Vanilla treats the value half of `--pair=1` as the first positional of its occurrence's run
 and consumes what follows, and the cyclopts, click and typer adapters read the same run back
 off argv
-([04-cli-adapters.md#whole-value-flags](../../architecture/04-cli-adapters.md#whole-value-flags)),
+([cli-adapters/whole-value-flags.md#whole-value-flags](../../architecture/cli-adapters/whole-value-flags.md#whole-value-flags)),
 so `--pair=1 2` is `{'pair': [1, 2]}` on four of the five front-ends. Argparse's own parser
 is the exception: `--pair=1` binds one token to the flag and leaves `2` a stray positional
 with no destination, so it exits with its own usage error instead of the value every other

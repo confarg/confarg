@@ -16,7 +16,7 @@ trailing segment is a cast at all (vs. a real field of the same name) is decided
 :func:`confarg._parse_cli.detect_force_cast`.
 
 Dev Notes:
-    docs-dev/architecture/03-cli-parsing.md#force-casts
+    docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#force-casts
 """
 
 from __future__ import annotations
@@ -80,6 +80,6 @@ def cast_name_for_type(tp: type) -> str:
         The cast name that reads the same value back.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#cast-pinning-in-files
+        docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
     """
     return _SCALAR_CAST_NAMES.get(tp) or tp.__name__

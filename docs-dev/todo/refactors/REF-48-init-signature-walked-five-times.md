@@ -12,7 +12,7 @@ fifth just to ask whether any parameter other than `self` exists. One
 `_init_params(tp)` record — fields, defaults, var-positional, var-keyword, positional names —
 replaces all of them, and `_var_params` is already canonical for "which `__init__` parameters are
 `*args` / `**kwargs`?"
-([09-invariants.md](../../architecture/09-invariants.md)), so the record is where that answer
+([invariants.md](../../architecture/invariants.md)), so the record is where that answer
 belongs.
 
 The same pass should add `lru_cache` to `_dc_fields`, `_init_fields`, `_namedtuple_fields` and
@@ -37,7 +37,7 @@ Two hard exclusions, to be written into the code as comments:
   would be shared between constructed objects;
 - nothing that reads `_LEAF_COERCIONS` may be cached (`_is_registered_leaf`, `_is_struct_variant`,
   `_is_eagerly_coercible`), because `register_leaf_type` mutates it at runtime
-  ([05-types-and-construction.md#leaf-coercion](../../architecture/05-types-and-construction.md#leaf-coercion)).
+  ([types/leaf-coercion.md#leaf-coercion](../../architecture/types/leaf-coercion.md#leaf-coercion)).
 
 Risk is **high**: this is the introspection every channel and front-end builds on, and a caching
 mistake is silent until someone registers a leaf type or mutates a default.

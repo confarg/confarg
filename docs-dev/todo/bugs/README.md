@@ -5,7 +5,7 @@ the documented intent. One ticket per file; see [../README.md](../README.md) for
 including the [reproduction](../README.md#reproduction) every entry here carries.
 
 Cross-channel parity is mandatory
-([09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity)),
+([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity)),
 so a parity entry here is a violation nobody has approved, not a design choice.
 
 <!-- tickets:start -->

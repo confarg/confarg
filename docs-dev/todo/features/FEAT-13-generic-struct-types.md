@@ -16,6 +16,6 @@ Fix direction: unwrap `get_origin()` for *user* generics before struct detection
 subclass test. It cannot go into `_resolve_type` unconditionally — `_is_list`, `_is_dict` and
 `_is_union` read `get_origin` themselves, so the ordering is the design question, and
 `_resolve_type` sits under every channel
-([09-invariants.md#fragile-couplings](../../architecture/09-invariants.md#fragile-couplings)).
-See [05-types-and-construction.md#type-introspection](../../architecture/05-types-and-construction.md#type-introspection)
-and [#inheritance](../../architecture/05-types-and-construction.md#inheritance).
+([invariants.md#fragile-couplings](../../architecture/invariants.md#fragile-couplings)).
+See [types/introspection.md#type-introspection](../../architecture/types/introspection.md#type-introspection)
+and [#inheritance](../../architecture/types/construction.md#inheritance).

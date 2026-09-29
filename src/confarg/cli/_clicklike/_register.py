@@ -9,7 +9,7 @@ Both frameworks model a command as an object carrying a ``params`` list and a
 factory is supplied.
 
 Dev Notes:
-    docs-dev/architecture/04-cli-adapters.md#the-clicklike-seam
+    docs-dev/architecture/cli-adapters/clicklike-seam.md#the-clicklike-seam
 """
 
 from __future__ import annotations

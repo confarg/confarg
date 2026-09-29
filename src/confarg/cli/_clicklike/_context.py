@@ -5,7 +5,7 @@
 """Context flattening and the merge tail, shared by the click and typer adapters.
 
 Dev Notes:
-    docs-dev/architecture/04-cli-adapters.md#the-clicklike-seam
+    docs-dev/architecture/cli-adapters/clicklike-seam.md#the-clicklike-seam
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 #: Name of the ``ParameterSource`` member meaning "the user typed it on argv".
 #: Compared by name rather than by identity because typer ships its own copy of the
 #: enum, and a member of one is never a member of the other
-#: (docs-dev/architecture/04-cli-adapters.md#the-clicklike-seam).
+#: (docs-dev/architecture/cli-adapters/clicklike-seam.md#the-clicklike-seam).
 _COMMANDLINE = "COMMANDLINE"
 
 
@@ -36,7 +36,7 @@ def flat_from_ctx(ctx: Any) -> dict[str, Any]:
     (from ``multiple=True`` options) are converted to lists.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#only-user-typed-values
+        docs-dev/architecture/cli-adapters/model.md#only-user-typed-values
     """
     result: dict[str, Any] = {}
     for k, v in ctx.params.items():
