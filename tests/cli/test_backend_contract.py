@@ -2577,6 +2577,21 @@ class _WholeValue:
     u: _WholeSqlite | _WholeServer | None = None
 
 
+class _WholePlain:
+    """Plain class, not a dataclass: a struct everywhere else in construction."""
+
+    def __init__(self, host: str = "h", port: int = 1) -> None:
+        """Initialize with a host and a port."""
+        self.host, self.port = host, port
+
+
+@dataclass
+class _WholePlainConfig:
+    """Target whose struct field is a plain class rather than a dataclass."""
+
+    db: _WholePlain = dataclasses.field(default_factory=_WholePlain)
+
+
 # Vanilla raises its own ConfargError; argparse, click and cyclopts reject the flag in
 # their own parsers and exit.  Both are "the front-end refused it", which is the contract.
 _REJECTS_BARE_FLAG = (ConfargError, SystemExit)
@@ -2627,6 +2642,42 @@ class TestWholeValueFlagContract:
         """--sub '{...}' assigns a whole nested struct."""
         cfg = loader.load(_WholeValue, argv=["--sub", '{"a": 2}'], env={})
         assert cfg.sub == _WholeInner(a=2)
+
+    def test_whole_plain_class_from_json(self, loader: ConfargLoader) -> None:
+        """A plain-class field takes the blob its dataclass peer takes (BUG-39)."""
+        cfg = loader.load(_WholePlainConfig, argv=["--db", '{"host": "x", "port": 9}'], env={})
+        assert (cfg.db.host, cfg.db.port) == ("x", 9)
+
+    def test_whole_plain_class_merges_with_subkey(self, loader: ConfargLoader) -> None:
+        """A later --db.<param> refines the plain-class object assigned as a whole (BUG-39)."""
+        cfg = loader.load(_WholePlainConfig, argv=["--db", '{"host": "x"}', "--db.port", "9"], env={})
+        assert (cfg.db.host, cfg.db.port) == ("x", 9)
+
+    def test_whole_plain_class_matches_env_channel(self, loader: ConfargLoader) -> None:
+        """The CLI and env spellings of a whole plain-class value merge alike (BUG-39)."""
+        blob = '{"host": "x", "port": 9}'
+        cli = loader.merge(_WholePlainConfig, argv=["--db", blob], env={})
+        env = loader.merge(_WholePlainConfig, argv=[], env={"MYAPP_DB": blob}, env_prefix="MYAPP_")
+        assert cli["db"] == env["db"] == {"host": "x", "port": 9}
+
+    def test_tagged_registered_leaf_takes_the_whole_value(
+        self,
+        loader: ConfargLoader,
+        leaf_registry: None,
+    ) -> None:
+        """A tag naming a registered leaf's class opens it from the CLI too (BUG-39).
+
+        A registered leaf is opaque to every implicit decision, but an explicit tag builds
+        it from its ``__init__`` parameters -- the hatch the coercion error points at.  The
+        whole-value predicate therefore asks ``_is_struct``, not the narrower
+        ``_is_struct_variant``: the token has to be decoded before the tag inside it can be
+        seen.  Env and files honoured the hatch all along; the CLI used to keep the blob as
+        a string and build a leaf out of the JSON text.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        blob = f'{{"class": "uuid.UUID", "hex": "{_UUID_TEXT.replace("-", "")}"}}'
+        cfg = loader.load(_RegisteredLeaf, argv=["--id", blob], env={})
+        assert cfg.id == UUID(_UUID_TEXT)
 
     def test_whole_struct_union_from_json(self, loader: ConfargLoader) -> None:
         """--u '{...}' carries its own discriminator and builds the variant."""

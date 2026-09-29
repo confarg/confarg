@@ -627,7 +627,9 @@ A type in `_LEAF_COERCIONS` is not taken apart into fields by anything that *inf
 be: not by the construction and serialization dispatchers, and not by the union-variant filters
 on either side. Only an explicit tag still opens it, and that is the next section. The one
 predicate is `_is_struct_variant`
-([05](05-types-and-construction.md#leaf-coercion)); asking `_is_struct` was the bug.
+([05](05-types-and-construction.md#leaf-coercion)); asking `_is_struct` was the bug. The
+exception is the whole-value predicate, which runs *before* construction and must ask
+`_is_struct` — see the [next section](#an-explicit-tag-opts-a-leaf-back-in).
 
 The distinction has teeth because `_is_struct` is structural: a class with any `__init__`
 parameter is a struct, and `UUID.__init__` takes seven, all with defaults. So a field typed
@@ -668,6 +670,15 @@ tag naming its class asks for field construction in so many words and gets it
 (`_is_taggable_leaf`). Both halves meet in `_construct_scalar`, the canonical single-value
 constructor, so the tag works wherever a leaf is addressed — a plain field, a list element, a
 union variant — and not just where the bug was noticed.
+
+It reaches every *channel* too, which took a second step. Construction saw the tag wherever a
+dict arrived, but on the CLI no dict arrived: the whole-value predicate asked `_is_dc`, so
+`--id '{"class": "uuid.UUID", …}'` stayed a string and the JSON text was coerced into a leaf,
+while the same blob in a file or an environment variable opened the class. Widening that
+predicate to `_is_struct` for BUG-39 closed it — deliberately the *structural* test and not
+`_is_struct_variant`, because whether the token is decoded is asked before the tag inside it
+can be read ([04](04-cli-adapters.md#whole-value-flags)). `_is_struct_variant` still owns
+every question construction asks afterwards; the two are not in competition.
 
 An untagged dict stays an error, and the message says how to ask for fields. The rejected
 alternative — let *any* dict rebuild a registered leaf from its fields, exactly as before

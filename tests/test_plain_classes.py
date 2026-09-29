@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import enum
 from collections.abc import Iterable, Mapping, MutableMapping, MutableSequence, Sequence  # noqa: TC003
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -327,6 +327,47 @@ class TestPlainClassEnv:
         )
         assert isinstance(result.transform, HorizontalFlip)
         assert result.transform.p == pytest.approx(0.6)
+
+
+# ---------------------------------------------------------------------------
+# The whole-value token, across the three channels
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class WholeValueConfig:
+    """Dataclass whose plain-class field takes a whole object in one token."""
+
+    transform: HorizontalFlip = field(default_factory=HorizontalFlip)
+
+
+class TestPlainClassWholeValue:
+    """A plain class takes a whole ``{...}`` value from every channel (BUG-39)."""
+
+    BLOB = '{"p": 0.25}'
+
+    def test_env_takes_the_whole_value(self) -> None:
+        """The env channel JSON-decodes the blob into the plain class's parameters."""
+        cfg = confarg.load(WholeValueConfig, argv=[], env={"P_TRANSFORM": self.BLOB}, env_prefix="P_")
+        assert cfg.transform.p == pytest.approx(0.25)
+
+    def test_file_takes_the_whole_value(self, tmp_path: Path) -> None:
+        """A config file mapping builds the same object."""
+        path = tmp_path / "c.json"
+        path.write_text('{"transform": {"p": 0.25}}', encoding="utf-8")
+        cfg = confarg.load(WholeValueConfig, argv=[], env={}, files=[path])
+        assert cfg.transform.p == pytest.approx(0.25)
+
+    def test_cli_takes_the_whole_value(self) -> None:
+        """The CLI spelling of the same blob is not the one channel that refuses it."""
+        cfg = confarg.load(WholeValueConfig, argv=["--transform", self.BLOB], env={})
+        assert cfg.transform.p == pytest.approx(0.25)
+
+    def test_the_three_channels_merge_alike(self) -> None:
+        """All three spellings produce the identical merged dict."""
+        cli = confarg.merge(WholeValueConfig, argv=["--transform", self.BLOB], env={})
+        env = confarg.merge(WholeValueConfig, argv=[], env={"P_TRANSFORM": self.BLOB}, env_prefix="P_")
+        assert cli == env == {"transform": {"p": 0.25}}
 
 
 # ---------------------------------------------------------------------------
