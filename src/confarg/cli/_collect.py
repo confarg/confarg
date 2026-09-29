@@ -35,6 +35,7 @@ from confarg._parse_cli import (
     _accepts_object_value,
     _collect_cli_patch_ops,
     _collect_config_file_pairs,
+    _looks_like_flag,
     _parse_json_arg,
     _resolve_field_type,
     _segment_names_real_field,
@@ -266,6 +267,42 @@ def _require_fixed_arity(arity: int, tokens: Any, flag: str, core: Any) -> None:
         raise ConfargError.missing_value(token)
     if len(tokens) > consumed:
         raise UnknownArgumentError.unexpected_positional(tokens[consumed])
+
+
+def _fixed_arity_occurrence_runs(argv: Sequence[str], flag: str) -> list[list[str]]:
+    """Return every ``--<flag>`` occurrence's token run, in argv order.
+
+    The argv half of the fixed-arity guard: a greedy registration hands the collector
+    only the *surviving* occurrence's run -- argparse's plain store keeps the last,
+    cyclopts' converter the last too (BUG-62) -- so whether every occurrence had its
+    tokens is read off the argv the user typed, as the latest-writer question is
+    (:func:`_arity_flag_writes_last`).  A run ends where vanilla's own consumption
+    ends, at the next token that looks like a flag or at the end of argv; the value
+    half of ``--flag=value`` opens the run as its first token, however it is spelled,
+    and the tokens after it complete it exactly as they complete a bare occurrence's
+    run.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+    """
+    bare = f"--{flag}"
+    runs: list[list[str]] = []
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        if token == bare:
+            run: list[str] = []
+        elif token.startswith(f"{bare}="):
+            run = [token[len(bare) + 1 :]]
+        else:
+            i += 1
+            continue
+        i += 1
+        while i < len(argv) and not _looks_like_flag(argv[i]):
+            run.append(argv[i])
+            i += 1
+        runs.append(run)
+    return runs
 
 
 def _whole_value(flat: dict[str, Any], flag: str, resolved: Any) -> Any:
@@ -739,7 +776,12 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
         # `tuple[int, int] | None` is a union with a sequence variant there, so it consumes
         # greedily and owes nothing (BUG-58).
         if (fixed := _fixed_seq_types(resolved)) is not None and flag in flat:
-            _require_fixed_arity(len(fixed), flat[flag], flag, core)
+            # A greedy registration keeps only the surviving occurrence's run, so the
+            # bounds are asked of every occurrence's run, read off argv; a parse result
+            # argv cannot account for falls back to the run the framework handed over.
+            runs = _fixed_arity_occurrence_runs(argv, flag)
+            for run in runs or [flat[flag]]:
+                _require_fixed_arity(len(fixed), run, flag, core)
 
         if _is_namedtuple(core):
             _collect_ns_namedtuple(flat, core, flag, result, argv)

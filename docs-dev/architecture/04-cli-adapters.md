@@ -335,6 +335,18 @@ fixed-arity flag must not keep. A whole-value spec therefore registers a convert
 run, read off the `CliToken.index` restart that survives into the converter, so `--pair 1 2
 --pair 3 4` is `(3, 4)` on cyclopts as on every other front-end (BUG-62, closed).
 
+Keeping only the last occurrence's run also *hides* the earlier ones: `--pair 1 --pair 3 4`
+hands the collector the surviving run `['3', '4']`, both bounds answered, while vanilla
+refuses the first occurrence the moment its run stops short. So the bounds are asked of
+**every** occurrence's run, read off the argv the user typed by
+`cli/_collect._fixed_arity_occurrence_runs` — the same read-back the latest-writer question
+performs (`cli/_collect._arity_flag_writes_last`, below) — and a parse result argv cannot
+account for falls back to the run the framework handed over. A run ends where vanilla's own
+consumption ends, at the next flag-looking token; the value half of `--pair=1` opens its
+occurrence's run, and the tokens after it complete it, exactly as vanilla consumes them.
+Click and typer count the tokens themselves, so a short occurrence never reaches the
+collector there (BUG-73, closed).
+
 Both are parse-time facts, so `cli/_collect._require_fixed_arity` answers both, mirroring the
 `_require_value` vanilla asks once per positional token
 ([03](03-cli-parsing.md#token-consumption)). It is asked of the field type **as resolved,

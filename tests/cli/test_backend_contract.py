@@ -41,7 +41,7 @@ from confarg._files import INCLUDE_KEY
 from confarg._merge import DICT_DELETE
 from confarg.cli._build import build_static_flags
 from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError
-from tests._loaders import ClickLoader
+from tests._loaders import ArgparseLoader, ClickLoader
 from tests.conftest import AppConfig, CacheConfig, DbConfig, WithCollections, make_target
 
 if TYPE_CHECKING:
@@ -784,6 +784,57 @@ class TestFixedSequenceContract:
         assert loader.merge(_WithPoint, argv=["--pair", "1", "2", "--pair.y", "7", "--pair", "3", "4"], env={}) == {
             "pair": [3, 4],
         }
+
+    def test_repeated_short_first_occurrence_is_a_missing_value(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """An earlier occurrence's short run is refused, not silently overwritten (BUG-73).
+
+        Vanilla refuses the incomplete occurrence the moment it meets it, so ``--pair 1
+        --pair 3 4`` never reaches the second occurrence. A greedy registration keeps
+        only the last occurrence's run, so every occurrence's run is read back off
+        argv, as the latest-writer question already is (BUG-66).
+        """
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithIntPair, argv=["--pair", "1", "--pair", "3", "4"], env={})
+
+    def test_repeated_short_first_occurrence_on_a_namedtuple_is_a_missing_value(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """A namedtuple is a fixed-length sequence, so its earlier short run vanishes the same way (BUG-73)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithPoint, argv=["--pair", "1", "--pair", "3", "4"], env={})
+
+    def test_repeated_equals_spelled_short_first_occurrence_is_a_missing_value(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """The ``--pair=1`` spelling opens its occurrence's run, which the next flag ends short (BUG-73)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithIntPair, argv=["--pair=1", "--pair", "3", "4"], env={})
+
+    def test_repeated_bare_first_occurrence_is_a_missing_value(self) -> None:
+        """A bare occurrence beside a valued one is the same short run on argparse (BUG-73).
+
+        Argparse alone here: cyclopts asserts on this argv instead
+        (BUG-74), and the clicklike front-ends refuse it through their exact-count
+        parsers.
+        """
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            ArgparseLoader().merge(_WithIntPair, argv=["--pair", "--pair", "3", "4"], env={})
+
+    def test_click_refuses_the_short_first_occurrence_in_its_own_parser(self) -> None:
+        """Click registers the exact count, so the short first occurrence never lands (BUG-73).
+
+        The same approved divergence as the whole-value token
+        (10-design-decisions.md#a-divergence-leans-towards-the-affected-backends-own-idiom):
+        click's refusal is its own usage error rather than confarg's, and typer
+        inherits it along with the option class it forked.
+        """
+        with pytest.raises(SystemExit):
+            ClickLoader().merge(_WithIntPair, argv=["--pair", "1", "--pair", "3", "4"], env={})
 
     def test_tuple_too_many_tokens_raises(self, whole_value_arity_loader: ConfargLoader) -> None:
         """A token past the arity is the surplus positional vanilla names, not a longer tuple.
