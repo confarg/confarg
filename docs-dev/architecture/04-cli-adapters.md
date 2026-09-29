@@ -383,6 +383,16 @@ for nothing, so "zero or more" belongs to the multi-token *shape* rather than to
 everywhere: `--config` and `--config.<path>+` carry the same `nargs="*"` and still report
 `Missing value` when vanilla finds no token.
 
+The config flags stay outside the family on every front-end (BUG-51). A bare field flag has a
+job of its own — a bare `--users` *clears* the list — while a bare `--config.<path>+` would mount
+nothing and reset nothing, so the bare form spells nothing worth accepting, and refusing it is
+what vanilla always did. The adapters' re-scan (`_parse_cli._collect_config_file_pairs`) raises
+vanilla's message now, built by the one `_missing_config_path_msg` both scans share, so
+argparse's `nargs="*"` — which takes zero tokens — and cyclopts' implicit empty container no
+longer swallow the occurrence; cyclopts validates before its own parse, where an implicit token
+meeting a real one trips a framework assertion. click and typer refuse the bare form in their own
+parser, with the framework's "requires an argument", as they refuse the whole-value flags.
+
 A subkey or element flag (`--f.key`, `--f.N`) has whatever shape the type it addresses has, so it
 answers the same predicate: `--map.k` on a `dict[str, list[int]]` and `--grid.0` on a
 `list[list[int]]` stand bare and store the empty collection, while the same flags over a scalar

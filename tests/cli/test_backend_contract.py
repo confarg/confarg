@@ -1028,6 +1028,34 @@ class TestConfigFilesContract:
         cfg = loader.load(AppConfig, argv=["--config", str(root_cfg), "--config.db", str(db_cfg)], env={})
         assert cfg.db == DbConfig(host="db_host", port=5555, name="db_db")
 
+    def test_bare_config_flag_refused(self, loader: ConfargLoader) -> None:
+        """A bare --config is an error in every front-end, never a silent no-op (BUG-51)."""
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(Simple, argv=["--config"], env={})
+
+    def test_bare_config_error_names_the_flag(self, loader: ConfargLoader) -> None:
+        """Where confarg raises the refusal itself, its message names the config flag (BUG-51)."""
+        with pytest.raises(_REJECTS_BARE_FLAG) as excinfo:
+            loader.load(Simple, argv=["--config"], env={})
+        if isinstance(excinfo.value, ConfargError):
+            assert "Missing file path after --config" in str(excinfo.value)
+
+    def test_bare_config_subpath_flag_refused(self, loader: ConfargLoader) -> None:
+        """A bare --config.<subpath> is refused like the root flag (BUG-51)."""
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(AppConfig, argv=["--config.db"], env={})
+
+    def test_bare_config_append_flag_refused(self, loader: ConfargLoader) -> None:
+        """A bare --config.<subpath>+ mounts nothing on no front-end (BUG-51)."""
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(WithList, argv=["--config.tags+"], env={})
+
+    def test_bare_config_append_after_a_file_refused(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A bare --config.<subpath>+ tailing a carried one is an error, not a dropped tail (BUG-51)."""
+        tags_file = tmp_yaml("- a\n- b\n", filename="tags.yaml")
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(WithList, argv=["--config.tags+", str(tags_file), "--config.tags+"], env={})
+
     def test_config_flag_registered_by_default(self, populating_loader: ConfargLoader) -> None:
         """populate_* registers the --config flag (and subkey flags) by default."""
         flags = populating_loader.registered_flags(AppConfig)
