@@ -915,7 +915,7 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
     cli_data = _deep_merge(cli_data, patch_ops)
     _restore_patch_deletes(patch_ops, cli_data)
     apply_root_json(flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
-    cli_configs = _collect_config_file_pairs(argv_, config_flag) if config_flag else []
+    cli_configs = _collect_config_file_pairs(argv_, config_flag, target, union_tag) if config_flag else []
 
     return _merge_sources(
         target,

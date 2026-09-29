@@ -15,6 +15,16 @@ eagerly. Env parsing walks the same type tree ([02](02-files-and-env.md#environm
 An unknown flag is an error (`UnknownArgumentError`); an unresolvable path under a dict is
 accepted as a dict key.
 
+The one path not resolved *while* it is parsed is the config flag's subpath: the flag is
+intercepted before field lookup
+([10](10-design-decisions.md#the-mount-keyword-is-spelled-per-channel)), so the check runs
+once the interception is over (`_check_mount_subpath`, one walk shared with the environment
+channel and the adapters' rescan). A subpath that names no node — a misspelled field, or a
+descent through a scalar — is an error at parse time, not a silent mount at an invented key
+that surfaces much later as an unknown-field error from `build()` (BUG-50, closed). What the
+node *holds* is still not the scan's question: a path is accepted at any depth it resolves to,
+because whether the fragment fits is the mount's call.
+
 ## Token consumption
 
 - `--key=value` is normalized to `--key value`. The value half comes back wrapped in

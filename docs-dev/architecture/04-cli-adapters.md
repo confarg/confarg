@@ -157,7 +157,9 @@ create a load-time import cycle.
 
 **Static flags** come from a walk of the target type (`build_static_flags`): leaves, tuples,
 namedtuples (whole, per name and per index), union tags and variant fields, plain callable
-openers (`.fn`/`.class`/`.call`), `--config` and `--config.<struct field>`, and
+openers (`.fn`/`.class`/`.call`), `--config` and `--config.<mount point>` (a struct field, or
+a dict field — where a fragment of unknown keys belongs; a union of structs is still skipped,
+BUG-70), and
 `--config.<locals>` (the CLI way to declare locals). `build_static_flags` takes `argv` too, but
 only to import the classes it names by `union_tag` before the walk starts; it never adds a flag
 from it, so `argv=[]` still describes exactly the declared type.
@@ -403,6 +405,11 @@ argparse's `nargs="*"` — which takes zero tokens — and cyclopts' implicit em
 longer swallow the occurrence; cyclopts validates before its own parse, where an implicit token
 meeting a real one trips a framework assertion. click and typer refuse the bare form in their own
 parser, with the framework's "requires an argument", as they refuse the whole-value flags.
+
+The same re-scan runs vanilla's subpath check too (`_parse_cli._check_mount_subpath`): a
+`--config.<subpath>` naming no node of the target is refused on every front-end at parse time
+(BUG-50, closed), not mounted silently to surface later as an unknown-field error from
+`build()`.
 
 A subkey or element flag (`--f.key`, `--f.N`) has whatever shape the type it addresses has, so it
 answers the same predicate: `--map.k` on a `dict[str, list[int]]` and `--grid.0` on a

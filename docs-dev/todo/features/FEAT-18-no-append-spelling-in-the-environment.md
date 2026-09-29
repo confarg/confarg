@@ -8,6 +8,12 @@ Argv and config files both extend a list with the same `+` suffix — `--input+ 
 an append: it is treated as an unknown first segment, warned about and dropped
 ([02-files-and-env.md#environment-parsing](../../architecture/02-files-and-env.md#environment-parsing)).
 
+The config-flag route is worse than dropped: `MYAPP_CONFIG__DBS+` is intercepted before the
+field walk, so the `+` never reaches that warning — it survives as a literal key segment and
+the fragment is mounted at `dbs+`, silently producing `{"dbs": {"+": [...]}}` and surfacing at
+`build()` as an unknown field. Whatever spelling this ticket settles on should reach the
+config-flag interception too (observed 2026-09-29, while fixing BUG-50).
+
 Portability does not explain the gap, which is why it is filed rather than recorded as a
 limitation and closed: the *delete* suffix made the crossing (`MYAPP_USERS-` empties the list,
 `MYAPP_USERS__0-` drops an element), and `-` is no more exportable from a POSIX shell than `+` is.

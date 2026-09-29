@@ -42,7 +42,7 @@ from confarg._merge import DICT_DELETE
 from confarg.cli._build import build_static_flags
 from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError
 from tests._loaders import ClickLoader
-from tests.conftest import AppConfig, CacheConfig, DbConfig, make_target
+from tests.conftest import AppConfig, CacheConfig, DbConfig, WithCollections, make_target
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -1153,6 +1153,21 @@ class TestConfigFilesContract:
         with pytest.raises(_REJECTS_BARE_FLAG):
             loader.load(WithList, argv=["--config.tags+", str(tags_file), "--config.tags+"], env={})
 
+    def test_unknown_subpath_rejected_on_every_frontend(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """--config.<subpath> naming no field is an error everywhere, not a silent mount (BUG-50)."""
+        db_cfg = tmp_yaml("host: h\nport: 1\nname: n\n", filename="db.yaml")
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(AppConfig, argv=["--config.dbb", str(db_cfg)], env={})
+
+    def test_unknown_subpath_error_names_the_field(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Where confarg raises the refusal itself, its message names the flag (BUG-50)."""
+        db_cfg = tmp_yaml("host: h\nport: 1\nname: n\n", filename="db.yaml")
+        with pytest.raises(_REJECTS_BARE_FLAG) as excinfo:
+            loader.load(AppConfig, argv=["--config.dbb", str(db_cfg)], env={})
+        if isinstance(excinfo.value, ConfargError):
+            assert "--config.dbb" in str(excinfo.value)
+            assert "names no field" in str(excinfo.value)
+
     def test_config_flag_registered_by_default(self, populating_loader: ConfargLoader) -> None:
         """populate_* registers the --config flag (and subkey flags) by default."""
         flags = populating_loader.registered_flags(AppConfig)
@@ -1172,6 +1187,12 @@ class TestConfigFilesContract:
         assert flags is not None
         assert "cfg" in flags
         assert "config" not in flags
+
+    def test_dict_field_gets_a_subkey_flag(self, populating_loader: ConfargLoader) -> None:
+        """A dict field is a mount point too, so its --config.<name> flag is registered (BUG-50)."""
+        flags = populating_loader.registered_flags(WithCollections)
+        assert flags is not None
+        assert "config.mapping" in flags
 
     def test_config_subkeys_false_root_only(self, populating_loader: ConfargLoader) -> None:
         """config_subkeys=False registers only the root --config flag."""
@@ -3671,6 +3692,28 @@ class TestMountParity:
         assert from_cli == {"node": expected}
         assert from_env == from_cli
         assert from_file == from_cli
+
+    def test_a_subpath_naming_no_field_is_refused_by_the_flag_routes(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+    ) -> None:
+        """The two routes that intercept a flag check their subpath; the file route cannot (BUG-50).
+
+        A file's mount key is a node the file author wrote, so the same typo is data there
+        and surfaces at ``build()`` as an unknown field instead.
+        """
+        frag = tmp_path / "frag.yaml"
+        frag.write_text("host: h\n", encoding="utf-8")
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.merge(_MountHost, argv=["--config.nodee", str(frag)], env={})
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.merge(
+                _MountHost,
+                argv=[],
+                env={"MYAPP_CONFIG__NODEE": str(frag)},
+                env_prefix="MYAPP_",
+            )
 
     def test_every_route_takes_the_options_object(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """Test that the {path, orient, header} include form is spelled in every channel."""
