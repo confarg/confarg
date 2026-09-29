@@ -631,7 +631,10 @@ and all three spellings survive: `--pair '["hello"]'`, `--pair hello null`, and 
 `pair: [hello]`. Arity is still `build()`'s to judge once the tokens are in hand:
 `--pair '[13]'` is an *arity* error, not a missing value, because the whole-value token is one
 value that happens to be short, and the parser can only prove a token missing when argv is what
-ran out.
+ran out. The adapters count the same lower bound on the token list their framework hands over,
+in `cli/_collect._require_fixed_arity`
+([04](04-cli-adapters.md#whole-value-flags)) — the rule is one rule, so it applies wherever a
+front-end learns how many tokens a fixed-arity flag got (BUG-58).
 
 ## A registered leaf is never a struct variant
 

@@ -25,7 +25,8 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-54 — A plain collection flag does not discard the patch ops before it in the adapters](BUG-54-plain-occurrence-does-not-discard-earlier-patch-ops-in-the-adapters.md) | M | medium | config |
 | [BUG-55 — Two ticket reproductions run as tests and fail on every full suite](BUG-55-two-ticket-reproductions-run-as-tests-and-fail.md) | S | low | none |
 | [BUG-56 — The flat spelling of the tagged-leaf hatch reaches no adapter](BUG-56-flat-tagged-leaf-flags-unregistered-by-the-adapters.md) | M | medium | behavior |
-| [BUG-58 — The argparse and cyclopts adapters still under-fill a fixed-arity flag](BUG-58-adapters-underfill-a-fixed-arity-flag.md) | M | medium | behavior |
 | [BUG-59 — A fixed-arity flag's elements are not eagerly coerced in any adapter](BUG-59-fixed-arity-elements-not-eagerly-coerced-in-the-adapters.md) | S | medium | behavior |
+| [BUG-60 — The argparse and cyclopts adapters over-fill a fixed-arity flag](BUG-60-adapters-overfill-a-fixed-arity-flag.md) | S | low | behavior |
+| [BUG-61 — A bare optional fixed-arity flag clears in the adapters and raises in vanilla](BUG-61-optional-fixed-arity-bare-flag-clears-in-the-adapters.md) | M | medium | behavior |
 
 <!-- tickets:end -->
