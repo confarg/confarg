@@ -152,6 +152,21 @@ The guard is deliberately *not* extended to a union with a sequence variant (`st
 str]`): that field consumes greedily in vanilla too, so `build()` judging its arity is parity,
 not a gap.
 
+The same rule shapes what the guard's absence leaves in the dict. An `Optional[<sequence>]`
+field is a union with a sequence variant to the collector as well, so its flag's tokens go
+through `_collect_union_seq_value` — `cli/_collect._collect_ns_optional_seq` routes them there
+before the fixed-arity and namedtuple branches the unwrapped core would pick (BUG-61). A bare
+occurrence stores the empty run the shaper refuses — `Missing value for '--pair'`, vanilla's
+own error, on the front-ends that store it at all (click and typer register the exact count
+and refuse the bare form in their own parser, as they do for the plain spelling) — and a valued
+run is stored raw, its per-position coercion deferred to `build()` exactly as vanilla's
+`_union_seq_value` defers it. A namedtuple's sub-flags keep their spelling across the move,
+merged in argv order as on the plain spelling; what differs is the shape a sub-flag written
+last descends into: the generic `_set_nested` `'*'` base, because vanilla's by-field-name
+promotion asks the field as resolved and finds the union there — so `--pt 1 2 --pt.y 9` under
+`Point | None` is `{'*': ['1', '2'], 'y': 9}` on all five front-ends, and `build()` rejects it
+on all five alike.
+
 For the namedtuple, `cli/_collect.py` decodes the lone token through
 `_fixed_arity_whole_value`, which delegates to the same two decoders the other branches use
 (`_json_array_override` for `[…]`, `_accepts_object_value` + `_parse_json_arg` for `{…}`), so

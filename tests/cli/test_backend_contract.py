@@ -201,6 +201,16 @@ class _WithOptionalPoint:
 
 
 @dataclass
+class _WithOptionalIntPair:
+    pair: tuple[int, int] | None = None
+
+
+@dataclass
+class _WithOptionalIntList:
+    input: list[int] | None = None
+
+
+@dataclass
 class _WithStrTuple:
     input: str | tuple[str, str]
 
@@ -549,6 +559,11 @@ class TestBareVarlenFlagContract:
         cfg = loader.load(_WithIntList, argv=["--input"], env={})
         assert cfg.input == []
 
+    def test_bare_optional_varlen_flag_yields_the_empty_list(self, loader: ConfargLoader) -> None:
+        """``list[int] | None`` takes the bare form as the empty list too (BUG-61)."""
+        cfg = loader.load(_WithOptionalIntList, argv=["--input"], env={})
+        assert cfg.input == []
+
     def test_bare_union_without_a_varlen_variant_is_rejected(self, loader: ConfargLoader) -> None:
         """``str | tuple[str, str]`` has no empty value to store, so the bare form is an error.
 
@@ -678,6 +693,77 @@ class TestFixedSequenceContract:
         """Optionality does not change what the whole value accepts (10-design-decisions.md)."""
         cfg = whole_value_arity_loader.load(_WithOptionalPoint, argv=["--pair", '{"x": 13, "y": 42}'], env={})
         assert cfg.pair == _Point(x=13, y=42)
+
+    def test_optional_tuple_bare_flag_is_a_missing_value(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """A bare --pair on tuple[int, int] | None is the union's missing value (BUG-61).
+
+        To the vanilla parser the field is a union with a sequence variant and no
+        varlen one, so the empty token run can build nothing. The adapters' collector
+        routes the optional field through the same shaper instead of storing ``[]``.
+        """
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithOptionalIntPair, argv=["--pair"], env={})
+
+    def test_optional_namedtuple_bare_flag_is_a_missing_value(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """A bare --pair on _Point | None is refused the same way (BUG-61)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithOptionalPoint, argv=["--pair"], env={})
+
+    def test_optional_tuple_token_run_is_stored_raw(self, loader: ConfargLoader) -> None:
+        """The union branch stores the run as raw tokens; build() judges the arity (BUG-61)."""
+        assert loader.merge(_WithOptionalIntPair, argv=["--pair", "13", "42"], env={}) == {"pair": ["13", "42"]}
+
+    def test_optional_tuple_short_run_is_stored_raw(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """A one-token run stays a one-element list, an arity error build() owns (BUG-61)."""
+        assert whole_value_arity_loader.merge(_WithOptionalIntPair, argv=["--pair", "13"], env={}) == {"pair": ["13"]}
+
+    def test_optional_namedtuple_token_run_is_stored_raw(self, loader: ConfargLoader) -> None:
+        """The optional spelling keeps the run raw, coercing nothing per position (BUG-61)."""
+        assert loader.merge(_WithOptionalPoint, argv=["--pair", "13", "42"], env={}) == {"pair": ["13", "42"]}
+
+    def test_optional_namedtuple_field_flags_alone(self, loader: ConfargLoader) -> None:
+        """A sub-flag under Optional still writes its own field, coerced (BUG-61)."""
+        assert loader.merge(_WithOptionalPoint, argv=["--pair.x", "13", "--pair.y", "42"], env={}) == {
+            "pair": {"x": 13, "y": 42},
+        }
+
+    def test_optional_namedtuple_arity_then_sub_flag_rides_the_star_shape(self, loader: ConfargLoader) -> None:
+        """A sub-flag after the arity flag descends into the raw run, '*' shape and all (BUG-61).
+
+        The optional spelling is a union to vanilla too, so its positional promotion
+        is the generic ``_set_nested`` one -- the list-op ``'*'`` base -- and not the
+        by-field-name re-keying a plain namedtuple's positions get (BUG-66). Both
+        sides store the same dict, and both refuse to build it.
+        """
+        assert loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={}) == {
+            "pair": {"*": ["1", "2"], "y": 9},
+        }
+        with pytest.raises(TypeCoercionError, match="Cannot coerce"):
+            loader.load(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={})
+
+    def test_optional_namedtuple_sub_flag_then_arity_replaces_wholesale(self, loader: ConfargLoader) -> None:
+        """The arity flag typed last replaces the field wholesale, as on the plain spelling (BUG-61)."""
+        assert loader.merge(_WithOptionalPoint, argv=["--pair.y", "9", "--pair", "13", "42"], env={}) == {
+            "pair": ["13", "42"],
+        }
+        assert loader.load(_WithOptionalPoint, argv=["--pair.y", "9", "--pair", "13", "42"], env={}).pair == _Point(
+            x=13,
+            y=42,
+        )
+
+    def test_optional_tuple_whole_value_array(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """The lone JSON array still decodes under Optional (BUG-61)."""
+        assert whole_value_arity_loader.merge(_WithOptionalIntPair, argv=["--pair", "[13, 42]"], env={}) == {
+            "pair": [13, 42],
+        }
+
+    def test_optional_namedtuple_whole_value_object_merge(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """The whole-value object blob still decodes under Optional (BUG-61)."""
+        assert whole_value_arity_loader.merge(
+            _WithOptionalPoint,
+            argv=["--pair", '{"x": 13, "y": 42}'],
+            env={},
+        ) == {"pair": {"x": 13, "y": 42}}
 
     def test_whole_value_refined_by_field_flag(self, whole_value_arity_loader: ConfargLoader) -> None:
         """A sibling --pair.y refines the whole value, as it does for a struct field."""
@@ -1063,6 +1149,14 @@ class TestUnionWithSequenceContract:
         """--input with no token is rejected for str | tuple[str, str] (no varlen variant)."""
         with pytest.raises(ConfargError):
             space_sep_loader.load(_WithStrTuple, argv=["--input"], env={})
+
+    def test_optional_varlen_tokens_are_stored_raw(self, loader: ConfargLoader) -> None:
+        """``list[int] | None`` stores raw tokens, as the union branch does (BUG-61).
+
+        Vanilla dispatches the *resolved* union, so it never coerces per element
+        either; the merged dict carries the text and ``build()`` coerces it.
+        """
+        assert loader.merge(_WithOptionalIntList, argv=["--input", "5"], env={}) == {"input": ["5"]}
 
     def test_flag_registered(self, populating_loader: ConfargLoader) -> None:
         """The union-with-sequence field flag is registered on every adapter."""

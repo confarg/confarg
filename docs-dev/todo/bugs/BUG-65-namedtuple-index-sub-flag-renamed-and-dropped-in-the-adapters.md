@@ -18,6 +18,14 @@ user's `--pt.0` silently disappears when a `--pt.x` rides along. The fix directi
 the keys as spelled and leave the win to construction, as vanilla does; the "name wins over
 index" priority the docstring documents is a collection-time decision vanilla never makes.
 
+Detail added while fixing BUG-61 (closed): the renaming bites under `Optional` too, and there
+the two sides refuse differently. On the plain spelling `--pt 1 2 --pt.0 9` gives vanilla
+`{'x': 1, 'y': 2, '0': 9}`, which `build()` rejects (`Unknown field(s) ['0']`), while the
+adapters' re-keyed `{'x': 9, 'y': 2}` builds `Pt(x=9, y=2)`. Under `Pt | None` — routed through
+the union shaper since BUG-61 — the adapters produce `{'pt': {'*': ['1', '2'], 'x': 9}}` against
+vanilla's `{'pt': {'*': ['1', '2'], '0': 9}}`: the same `'*'` base on both sides, the index key
+renamed on one.
+
 ```python
 from dataclasses import dataclass
 from typing import NamedTuple

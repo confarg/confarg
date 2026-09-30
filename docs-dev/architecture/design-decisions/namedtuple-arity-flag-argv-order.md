@@ -40,3 +40,14 @@ The alternatives, and why not:
 - **Store the sub-flag's token raw**, as the adapters did. Rejected: the merged dict
   would carry types no other channel produces, and an expression over the field would
   read the text.
+
+The optional spelling keeps the generic promotion on both sides. `Point | None` is a union
+with a sequence variant to the vanilla scan, so `_promote_namedtuple_positional` — which asks
+the field as resolved — never fires for it: a sub-flag descends through the plain
+`_set_nested`, giving the `'*'` list-op base a *varlen* collection's index patches ride on.
+BUG-61 routed the adapters' collector through the same union shaper
+([whole-value flags](../cli-adapters/whole-value-flags.md#whole-value-flags)), so the adapters
+store that shape too, and the arity-plus-sub-flag merge that used to build on the adapters
+alone (`{'x': 1, 'y': 9}`) now fails in `build()` on all five front-ends identically.
+Re-keying the optional spelling by field name as well was rejected: it is not what vanilla
+produces, and the plain spelling is the only one whose promotion vanilla performs.
