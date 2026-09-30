@@ -16,7 +16,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-47 — The CSV section of `11_include` is cut off mid-sentence](BUG-47-include-readme-truncates-the-csv-header-section.md) | S | low | none |
 | [BUG-48 — `12_collections` cites "Tutorial XX" instead of a real tutorial](BUG-48-collections-readme-defers-to-tutorial-xx.md) | S | low | none |
 | [BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four](BUG-63-bare-config-before-help-shows-help-on-argparse.md) | S | medium | behavior |
-| [BUG-71 — The flat tagged-leaf hatch on a scalar root reaches no adapter](BUG-71-flat-tagged-leaf-hatch-unreachable-on-a-scalar-root.md) | S | medium | behavior |
 | [BUG-72 — Scalar force-cast flags on non-union fields reach no adapter](BUG-72-scalar-force-cast-flags-unregistered-on-plain-fields.md) | S | medium | behavior |
 | [BUG-74 — Cyclopts asserts on a bare fixed-arity occurrence beside a valued one](BUG-74-cyclopts-asserts-on-a-bare-fixed-arity-occurrence-beside-a-valued-one.md) | S | low | behavior |
 | [BUG-75 — Argparse alone refuses the tokens that complete a `=`-spelled fixed-arity run](BUG-75-argparse-alone-refuses-the-tokens-completing-an-equals-spelled-fixed-arity-run.md) | S | medium | behavior |
@@ -30,5 +29,8 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-87 — The adapters' merged dict orders keys by the walk, not by argv, so a dump differs byte for byte](BUG-87-merged-dict-key-order-follows-the-walk-not-argv.md) | M | medium | behavior |
 | [BUG-88 — A mount point below a direct root field has no `--config.<path>` entry](BUG-88-a-mount-point-below-a-direct-root-field-has-no-config-entry.md) | L | medium | behavior |
 | [BUG-89 — `test_str_round_trip` draws dashed values the space form refuses by design](BUG-89-test-str-round-trip-draws-dashed-values-the-space-form-refuses.md) | S | low | none |
+| [BUG-90 — The env channel drops a root-level CLASS variable on a struct-walked root](BUG-90-env-channel-drops-a-root-level-class-variable.md) | S | medium | behavior |
+| [BUG-91 — Vanilla silently drops the bare prefix flag's value on a struct-like root](BUG-91-vanilla-drops-the-bare-prefix-flag-value-on-a-struct-root.md) | S | medium | behavior |
+| [BUG-92 — The adapters reject a root tag on a subclass-less struct root that vanilla accepts](BUG-92-adapters-reject-a-root-tag-on-a-subclass-less-struct-root.md) | S | medium | behavior |
 
 <!-- tickets:end -->

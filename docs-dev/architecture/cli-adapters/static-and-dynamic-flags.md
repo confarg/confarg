@@ -23,9 +23,13 @@ user typed, found by scanning argv (and config files named on argv):
 - `--config.<any.depth>[+]`;
 - collection patches (`--f.N`, `--f+`, `--f.N-`, `--f.key`) and `.json` casts;
 - the flat tagged-leaf flags typed below a registered leaf field (`--id.class`,
-  `--id.hex`, BUG-56) — registered only when typed, on the same help-noise ground as the
+  `--id.hex`, BUG-56), or below a registered leaf that *is* the target — the root, with
+  no field to descend from, is the leaf at the empty prefix of the path (BUG-71) —
+  registered only when typed, on the same help-noise ground as the
   escaped openers: a registered leaf's ordinary spelling is its scalar, and one flag per
-  `__init__` parameter would clutter `--help` for the escape hatch.
+  `__init__` parameter would clutter `--help` for the escape hatch. A root's parameters
+  are an exception the *static* walk already owns: the root is walked structurally, as a
+  union holding the same leaf is, so only its tag flag is argv-scanned.
 
 Why dynamic: the framework must accept every token the user types, but registering every
 possible index, key or bind parameter statically is impossible, and registering rarely used

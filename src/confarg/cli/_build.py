@@ -1194,7 +1194,9 @@ def _collect_leaf_tag_argv_specs(
     through the ``union_tag`` rule, a parameter through the leaf's ``__init__`` fields.
     Registration accepts exactly what that walk accepts: a flag naming no tag and no
     parameter stays unregistered, for the framework to reject as vanilla's
-    ``no_such_field`` does.
+    ``no_such_field`` does.  A registered leaf that *is* the target answers too, at the
+    empty prefix (BUG-71): the root has no field to descend from, and its tag flag's
+    only segment is the tag -- the walk answers that segment whatever the target.
 
     Registered only when typed, like an escaped opener, and for the same reason: a
     registered leaf's ordinary spelling is its scalar, and one flag per ``__init__``
@@ -1225,10 +1227,10 @@ def _collect_leaf_tag_argv_specs(
         parts = key.split(".")
         leaf = None
         leaf_flag = ""
-        for j in range(1, len(parts)):
-            # The longest type-guided question: which proper prefix of the path names a
-            # registered leaf field? Struct fields answer no here -- their sub-flags are
-            # registered statically.
+        for j in range(len(parts)):
+            # The longest type-guided question: which prefix of the path names a
+            # registered leaf? The empty prefix is the root target itself (BUG-71).
+            # Struct fields answer no here -- their sub-flags are registered statically.
             at = _resolve_field_type(target, parts[:j], union_tag)
             if at is not None and _is_registered_leaf(_resolve_type(at)):
                 leaf = _resolve_type(at)
@@ -1237,12 +1239,13 @@ def _collect_leaf_tag_argv_specs(
         if leaf is None or _resolve_field_type(target, parts, union_tag) is None:
             continue
         existing_names.add(key)
+        leaf_desc = f"the '{leaf_flag}' registered leaf" if leaf_flag else "the registered leaf target"
         if parts[-1] == union_tag:
             specs.append(
                 FlagSpec(
                     name=key,
                     metavar="DOTTED.CLASS.PATH",
-                    help=(f"Class path opening the '{leaf_flag}' registered leaf from its __init__ parameters."),
+                    help=f"Class path opening {leaf_desc} from its __init__ parameters.",
                     completer=_make_path_completer([dotted_name(leaf)]),
                 ),
             )
@@ -1251,7 +1254,7 @@ def _collect_leaf_tag_argv_specs(
                 FlagSpec(
                     name=key,
                     metavar=parts[-1].upper(),
-                    help=f"__init__ parameter '{parts[-1]}' of the '{leaf_flag}' registered leaf.",
+                    help=f"__init__ parameter '{parts[-1]}' of {leaf_desc}.",
                 ),
             )
     return specs

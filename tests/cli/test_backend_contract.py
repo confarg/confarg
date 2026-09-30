@@ -3936,6 +3936,67 @@ class TestWholeValueFlagContract:
         with pytest.raises(_REJECTS_BARE_FLAG):
             loader.load(_RegisteredLeaf, argv=["--id.class", "uuid.UUID", "--id.bogus", "x"], env={})
 
+    def test_flat_tagged_registered_leaf_root_builds_on_every_frontend(
+        self,
+        loader: ConfargLoader,
+        leaf_registry: None,
+    ) -> None:
+        """The flat tagged-leaf hatch reaches a registered leaf as the *root* target (BUG-71).
+
+        The root has no field to descend from: the tag flag's only segment is the tag,
+        so the scan found no leaf at a proper prefix of the path and registered nothing,
+        while vanilla's type walk answers the tag segment whatever the target.  The
+        ``__init__`` parameters were already registered statically (the root is walked
+        structurally, as the union holding the same leaf is), so the tag flag alone was
+        missing.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        hex_text = _UUID_TEXT.replace("-", "")
+        cfg = loader.load(UUID, argv=["--app.class", "uuid.UUID", "--app.hex", hex_text], env={}, cli_prefix="app")
+        assert cfg == UUID(_UUID_TEXT)
+
+    def test_flat_tagged_registered_leaf_root_merges_like_the_file_channel(
+        self,
+        loader: ConfargLoader,
+        leaf_registry: None,
+        tmp_yaml,
+    ) -> None:
+        """A root-leaf tag merges at the top level, as the file channel's ``class:`` key does (BUG-71).
+
+        The file channel is the witness: the env channel drops a root-level ``CLASS``
+        variable with a warning (filed as BUG-90 on the way).
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        hex_text = _UUID_TEXT.replace("-", "")
+        cli = loader.merge(UUID, argv=["--app.class", "uuid.UUID", "--app.hex", hex_text], env={}, cli_prefix="app")
+        cfg = tmp_yaml(f'class: uuid.UUID\nhex: "{hex_text}"\n')
+        file = loader.merge(UUID, argv=[], env={}, files=[cfg])
+        assert cli == file == {"class": "uuid.UUID", "hex": hex_text}
+
+    def test_flat_leaf_root_tag_registers_only_when_typed(
+        self,
+        populating_loader: ConfargLoader,
+        leaf_registry: None,
+    ) -> None:
+        """The root-leaf tag flag registers when typed; an empty argv keeps it off --help (BUG-71).
+
+        Like a field's flat leaf flags, the tag is registered only when typed -- but the
+        root's ``__init__`` parameters are static, so the quiet run still shows them.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        typed = populating_loader.registered_flags(UUID, argv=["--app.class", "uuid.UUID"], cli_prefix="app")
+        assert typed is not None
+        assert "app.class" in typed
+        quiet = populating_loader.registered_flags(UUID, cli_prefix="app")
+        assert quiet is not None
+        assert "app.class" not in quiet
+
+    def test_flat_leaf_root_unknown_param_refused(self, loader: ConfargLoader, leaf_registry: None) -> None:
+        """--app.bogus names no __init__ parameter of the root leaf, so every front-end refuses it (BUG-71)."""
+        confarg.register_leaf_type(UUID, UUID)
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(UUID, argv=["--app.class", "uuid.UUID", "--app.bogus", "x"], env={}, cli_prefix="app")
+
     def test_whole_struct_union_from_json(self, loader: ConfargLoader) -> None:
         """--u '{...}' carries its own discriminator and builds the variant."""
         cfg = loader.load(
