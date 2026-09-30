@@ -9,6 +9,8 @@ Questions carry no effort, risk or impact — a question is answered, not implem
 
 <!-- tickets:start -->
 
-*No open tickets.*
+| Ticket |
+|---|
+| [Q-1 — Should a mixed name/index spelling of a namedtuple build?](Q-1-should-a-mixed-name-index-spelling-of-a-namedtuple-build.md) |
 
 <!-- tickets:end -->

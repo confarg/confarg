@@ -175,6 +175,18 @@ refine a struct's whole value — by name over a decoded object, by position oth
 their values are coerced to their field's type as vanilla's own dispatch coerces them, so a
 sub-flag feeds an expression the number it spelled and not its text (BUG-66).
 
+A sub-flag is stored under the key the user spelled, name and index alike (BUG-65): vanilla
+writes each flag at its own key and leaves construction to reconcile them, so
+`--pt.x 13 --pt.0 9` reaches the merged dict as `{'x': 13, '0': 9}` — and `build()` owns the
+win, constructing an all-index dict positionally and refusing a mixed one with
+`Unknown field(s)`. The collector once re-keyed an index flag under its field name, a
+collection-time priority vanilla never makes, which rewrote keys vanilla keeps and dropped a
+`--pt.0` a `--pt.x` rode with. The join with the arity flag's positions keeps that half
+vanilla's shape too: the positions are re-keyed by field name, as
+`_parse_cli._promote_namedtuple_positional` re-keys them, and the sub-flags are laid on top
+at their own keys — `--pt 1 2 --pt.0 9` is `{'x': 1, 'y': 2, '0': 9}`, the mixed spelling
+`build()` refuses, on all five front-ends alike.
+
 The *order* the two halves arrived in is read back off argv, where a framework's parse
 result cannot carry it: the arity flag is the latest writer exactly when its last
 occurrence follows the last sub-flag's (`cli/_collect._arity_flag_writes_last`, the

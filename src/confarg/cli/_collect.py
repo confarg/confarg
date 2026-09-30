@@ -621,19 +621,22 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
 
 
 def _namedtuple_sub_flags(flat: dict[str, Any], flag: str, fields: Mapping[str, Any]) -> dict[str, Any]:
-    """Collect a namedtuple's per-name and per-index sub-flags, name winning over index.
+    """Collect a namedtuple's per-name and per-index sub-flags, keys as spelled.
 
-    Each value is coerced to its field's type, as the vanilla parser's own dispatch
+    Both spellings of one field are stored, name and index alike: vanilla writes
+    each flag at the key the user spelled and leaves construction to reconcile
+    them, so a ``--pt.0`` beside ``--pt.x`` reaches the merged dict as
+    ``{'x': 13, '0': 9}`` and ``build()`` owns the refusal (BUG-65).  Each value
+    is coerced to its field's type, as the vanilla parser's own dispatch
     coerces the same flag: a raw token here would put a str in the merged dict where
     vanilla puts the number, and an expression over the field would read the token
     (BUG-66).
     """
     sub: dict[str, Any] = {}
     for i, (fname, ftype) in enumerate(fields.items()):
-        for key in (f"{flag}.{fname}", f"{flag}.{i}"):
+        for key, spelled in ((f"{flag}.{fname}", fname), (f"{flag}.{i}", str(i))):
             if flat.get(key) is not None:
-                sub[fname] = _coerce_leaf_value(ftype, flat[key])
-                break
+                sub[spelled] = _coerce_leaf_value(ftype, flat[key])
     return sub
 
 
@@ -687,13 +690,16 @@ def _collect_ns_namedtuple(
 ) -> None:
     """Collect a namedtuple field from the flat namespace.
 
-    Priority per field: field-name sub-flag > index sub-flag > arity-flag position.
-    When sub-flags and the arity flag are both set, sub-flags override specific
-    positions and the arity value fills the rest — they are merged, not exclusive —
-    unless the arity flag is the latest writer, in which case it overwrites the field
-    wholesale, as the vanilla scan's own last write does.  A lone whole-value token
-    refines the same way, by name when it spells an object and by position when it
-    spells an array.
+    Sub-flags are stored under the keys the user spelled, name and index alike,
+    and construction reconciles them — a collection-time priority would rewrite
+    keys vanilla keeps, and drop a ``--pt.0`` a ``--pt.x`` rides with (BUG-65).
+    When sub-flags and the arity flag are both set, the arity value is re-keyed
+    by field name, as vanilla's own promotion does, and the sub-flags join it at
+    their own keys — they are merged, not exclusive — unless the arity flag is
+    the latest writer, in which case it overwrites the field wholesale, as the
+    vanilla scan's own last write does.  A lone whole-value token refines the
+    same way, by name when it spells an object and by position when it spells an
+    array.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
@@ -729,12 +735,8 @@ def _collect_ns_namedtuple(
 
     value = _namedtuple_arity_value(core, nargs_value, whole)
     base = value if isinstance(value, list) else [value]
-    merged: dict[str, Any] = {}
-    for i, fname in enumerate(field_names):
-        if fname in sub:
-            merged[fname] = sub[fname]
-        elif i < len(base):
-            merged[fname] = base[i]
+    merged: dict[str, Any] = {fname: base[i] for i, fname in enumerate(field_names) if i < len(base)}
+    merged.update(sub)
     _set_nested(result, path, merged)
 
 
