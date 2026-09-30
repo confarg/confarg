@@ -122,6 +122,10 @@ def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901, 
         # Value-less flag (e.g. a list/dict delete --field.N-): a boolean switch.
         if spec.help:
             param_kwargs["help"] = spec.help
+        # A delete repeated is the same delete, and its value never reaches a parse
+        # result the collector reads, so cyclopts may keep only the last occurrence
+        # (docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity).
+        param_kwargs["allow_repeating"] = True
         cyclopts_param = CycloptsParam(**param_kwargs)
         return inspect.Parameter(
             name=py_name,
