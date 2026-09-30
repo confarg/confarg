@@ -11,6 +11,10 @@ bypassing the type-directed coercion (notably the stealing rule,
   trailing segment is a cast, because that needs the type walk.
 - Scalar casts store a `_Pinned` (deferred single-type coercion). `.json` decodes eagerly and
   hard-errors on invalid JSON: an explicit request deserves a loud failure, not a fallback.
+- Occurrences write sequentially, so of the plain flag and its cast spellings at one field the
+  last typed wins — and the pinning being deferred, only the survivor's coercion runs, so a
+  cast a later occurrence replaced never errors. The adapters read that order back off argv
+  (`cli/_collect._last_leaf_cast_spelling`).
 - JSON-decoded values are stored raw (not tokens), so their elements are exempt from the
   stealing rule (`"yes"` stays a string) and `null` becomes expressible inside a list.
 - Root `--json` injects a whole config. It is folded in **under** the per-field flags (field

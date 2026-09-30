@@ -165,6 +165,26 @@ class _WithIntDecimal:
     value: int | Decimal = 0
 
 
+@dataclass
+class _PlainCastScalars:
+    """Scalar leaf fields of each castable type, for plain-field force-cast tests (BUG-72)."""
+
+    host: str = "h"
+    port: int = 1
+    ratio: float = 0.5
+    enabled: bool = False
+
+
+@dataclass
+class _OptionalScalar:
+    note: str | None = None
+
+
+@dataclass
+class _NestedPlainCast:
+    inner: _PlainCastScalars = dataclasses_field(default_factory=_PlainCastScalars)
+
+
 class _Point(NamedTuple):
     """Fixed-length sequence with named fields."""
 
@@ -1293,6 +1313,98 @@ class TestStealingContract:
         cfg = loader.load(_WithIntDecimal, argv=["--value", "5"], env={})
         assert cfg.value == Decimal(5)
         assert type(cfg.value) is Decimal
+
+
+# ---------------------------------------------------------------------------
+# Scalar force-cast flags on plain (non-union) leaf fields
+# ---------------------------------------------------------------------------
+
+
+class TestPlainFieldCastContract:
+    """Scalar force-cast flags on plain leaf fields, in every front-end (BUG-72).
+
+    Vanilla's ``detect_force_cast`` accepts a scalar cast wherever the trailing
+    segment names no real member of the field's type, and a plain leaf has no
+    members — so ``--host.str`` reaches ``build()`` and pins the value there. The
+    adapters register the cast flags only on multi-variant unions, so the host
+    frameworks refused them; the registration now covers plain leaf fields too,
+    and the last spelling typed wins, as vanilla's sequential writes decide it.
+    """
+
+    def test_matching_cast_on_str_and_int_fields(self, loader: ConfargLoader) -> None:
+        """--host.str myhost --port.int 42 build, as vanilla does (the filed repro)."""
+        cfg = loader.load(_PlainCastScalars, argv=["--host.str", "myhost", "--port.int", "42"], env={})
+        assert cfg.host == "myhost"
+        assert cfg.port == 42
+
+    def test_cross_cast_pins_the_named_scalar_type(self, loader: ConfargLoader) -> None:
+        """--host.int 5 and --port.str 42 pin the cast's type, not the field's."""
+        cfg = loader.load(_PlainCastScalars, argv=["--host.int", "5"], env={})
+        assert cfg.host == 5
+        assert type(cfg.host) is int
+        cfg = loader.load(_PlainCastScalars, argv=["--port.str", "42"], env={})
+        assert cfg.port == "42"
+        assert type(cfg.port) is str
+
+    def test_float_and_bool_casts(self, loader: ConfargLoader) -> None:
+        """--ratio.float 2 and --enabled.bool yes pin float and bool."""
+        cfg = loader.load(_PlainCastScalars, argv=["--ratio.float", "2"], env={})
+        assert cfg.ratio == 2.0
+        assert type(cfg.ratio) is float
+        cfg = loader.load(_PlainCastScalars, argv=["--enabled.bool", "yes"], env={})
+        assert cfg.enabled is True
+
+    def test_cast_on_optional_scalar(self, loader: ConfargLoader) -> None:
+        """--note.str hi pins the str of a `str | None` field."""
+        cfg = loader.load(_OptionalScalar, argv=["--note.str", "hi"], env={})
+        assert cfg.note == "hi"
+
+    def test_cast_on_enum_leaf(self, loader: ConfargLoader) -> None:
+        """--color.str red pins the str, which build() then leaves as the field value."""
+        cfg = loader.load(WithEnum, argv=["--color.str", "red"], env={})
+        assert cfg.color == "red"
+        assert type(cfg.color) is str
+
+    def test_cast_on_nested_leaf(self, loader: ConfargLoader) -> None:
+        """--inner.host.str x pins the leaf two levels down, not only at the root."""
+        cfg = loader.load(_NestedPlainCast, argv=["--inner.host.str", "x"], env={})
+        assert cfg.inner.host == "x"
+
+    def test_plain_flag_typed_after_the_cast_wins(self, loader: ConfargLoader) -> None:
+        """--host.str a --host b: vanilla's sequential writes leave the plain value."""
+        cfg = loader.load(_PlainCastScalars, argv=["--host.str", "a", "--host", "b"], env={})
+        assert cfg.host == "b"
+
+    def test_cast_typed_after_the_plain_flag_wins(self, loader: ConfargLoader) -> None:
+        """--host b --host.str a: the cast occurrence is the later write."""
+        cfg = loader.load(_PlainCastScalars, argv=["--host", "b", "--host.str", "a"], env={})
+        assert cfg.host == "a"
+
+    def test_last_cast_of_several_wins(self, loader: ConfargLoader) -> None:
+        """Several cast spellings: argv order decides, not the cast name."""
+        cfg = loader.load(_PlainCastScalars, argv=["--host.int", "5", "--host.str", "a"], env={})
+        assert cfg.host == "a"
+        cfg = loader.load(_PlainCastScalars, argv=["--host.str", "a", "--host.int", "5"], env={})
+        assert cfg.host == 5
+
+    def test_replaced_bad_cast_does_not_error(self, loader: ConfargLoader) -> None:
+        """The pinning is deferred, so a cast a later write replaced never coerces."""
+        cfg = loader.load(_PlainCastScalars, argv=["--host.int", "abc", "--host.str", "a"], env={})
+        assert cfg.host == "a"
+
+    def test_surviving_bad_cast_raises_at_build(self, loader: ConfargLoader) -> None:
+        """The surviving cast is coerced at build(), naming the field like vanilla."""
+        with pytest.raises(TypeCoercionError):
+            loader.load(_PlainCastScalars, argv=["--host.str", "a", "--host.int", "abc"], env={})
+
+    def test_typed_cast_flag_is_registered(self, populating_loader: ConfargLoader) -> None:
+        """The cast flag registers only when typed, like `.json` and the escaped openers."""
+        flags = populating_loader.registered_flags(_PlainCastScalars, argv=["--host.str", "a"])
+        assert flags is not None
+        assert "host.str" in flags
+        flags = populating_loader.registered_flags(_PlainCastScalars, argv=[])
+        assert flags is not None
+        assert "host.str" not in flags
 
 
 # ---------------------------------------------------------------------------

@@ -131,6 +131,38 @@ def _takes_multi_tokens(tp: Any) -> bool:
     return _is_varlen_collection(tp) or _union_has_seq_variant(tp)
 
 
+def _scalar_cast_parent_is_leaf(parent: Any) -> bool:
+    """Return whether a scalar force-cast lands on a plain leaf field (BUG-72).
+
+    The registration half of the plain-field cast contract: vanilla's
+    :func:`~confarg._parse_cli.detect_force_cast` accepts a scalar cast wherever the
+    trailing segment names no real member of the parent type, and a plain leaf has
+    no members, so the cast flags are the leaf's to take.  The predicate mirrors the
+    collector's dispatch — the leaf branch is the one that honours the cast override —
+    so every flag the framework accepts is one the collector reads.  The parents that
+    answer False keep their own spellings: a struct's or namedtuple's sub-flags, a
+    collection's element indices, a dict's keys, a callable's openers, a registered
+    leaf's tag hatch, and a multi-variant union, whose cast flags are registered
+    statically where the stealing rule is non-obvious.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
+        docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
+    """
+    core = _unwrap_optional(_resolve_type(parent))
+    if core is None:
+        return False
+    return not (
+        _is_struct(core)
+        or _is_namedtuple(core)
+        or _is_dict(core)
+        or _is_callable(core)
+        or _is_registered_leaf(core)
+        or _is_varlen_collection(core)
+        or _is_tuple(core)
+    )
+
+
 def _build_leaf_spec(  # noqa: PLR0911 PLR0913
     flag: str,
     raw_type: Any,
@@ -1320,7 +1352,23 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
                 )
                 continue
             if force_cast and not _is_collection_patch_path(target, path, union_tag):
-                continue  # scalar-union cast on a plain field (--field.int): registered statically
+                # A scalar cast on a plain leaf field (--host.str): registered only
+                # when typed, like `.json`, so `--help` stays clean (BUG-72). The
+                # leaf answer mirrors the collector's dispatch, so the value the
+                # framework hands over is one the collector reads. Struct,
+                # collection, dict, callable and registered-leaf parents keep their
+                # own spellings, and their cast spelling stays refused.
+                at = _resolve_field_type(target, path, union_tag)
+                if at is not None and _scalar_cast_parent_is_leaf(at):
+                    seen.add(key)
+                    specs.append(
+                        FlagSpec(
+                            name=key,
+                            metavar=SCALAR_CAST_TYPES[force_cast].__name__.upper(),
+                            help=f"Force {force_cast!r} type for '{'.'.join(path)}'.",
+                        ),
+                    )
+                continue
             # else: cast on a collection element (--field.N.str) falls through to
             # dynamic collection-patch registration below.
         if not (delete_mode or append_mode or _is_collection_patch_path(target, path, union_tag)):

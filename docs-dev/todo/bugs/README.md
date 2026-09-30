@@ -16,7 +16,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-47 — The CSV section of `11_include` is cut off mid-sentence](BUG-47-include-readme-truncates-the-csv-header-section.md) | S | low | none |
 | [BUG-48 — `12_collections` cites "Tutorial XX" instead of a real tutorial](BUG-48-collections-readme-defers-to-tutorial-xx.md) | S | low | none |
 | [BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four](BUG-63-bare-config-before-help-shows-help-on-argparse.md) | S | medium | behavior |
-| [BUG-72 — Scalar force-cast flags on non-union fields reach no adapter](BUG-72-scalar-force-cast-flags-unregistered-on-plain-fields.md) | S | medium | behavior |
 | [BUG-74 — Cyclopts asserts on a bare fixed-arity occurrence beside a valued one](BUG-74-cyclopts-asserts-on-a-bare-fixed-arity-occurrence-beside-a-valued-one.md) | S | low | behavior |
 | [BUG-75 — Argparse alone refuses the tokens that complete a `=`-spelled fixed-arity run](BUG-75-argparse-alone-refuses-the-tokens-completing-an-equals-spelled-fixed-arity-run.md) | S | medium | behavior |
 | [BUG-77 — An index delete below a whole-field delete crashes the patch scan](BUG-77-an-index-delete-below-a-whole-field-delete-crashes-the-patch-scan.md) | S | high | behavior |
@@ -32,5 +31,8 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-90 — The env channel drops a root-level CLASS variable on a struct-walked root](BUG-90-env-channel-drops-a-root-level-class-variable.md) | S | medium | behavior |
 | [BUG-91 — Vanilla silently drops the bare prefix flag's value on a struct-like root](BUG-91-vanilla-drops-the-bare-prefix-flag-value-on-a-struct-root.md) | S | medium | behavior |
 | [BUG-92 — The adapters reject a root tag on a subclass-less struct root that vanilla accepts](BUG-92-adapters-reject-a-root-tag-on-a-subclass-less-struct-root.md) | S | medium | behavior |
+| [BUG-93 — Scalar cast flags stay refused on struct, collection and registered-leaf fields](BUG-93-scalar-cast-flags-stay-refused-on-struct-collection-and-leaf-fields.md) | M | medium | behavior |
+| [BUG-94 — Multi-variant unions refuse the scalar casts beyond the union's own scalars](BUG-94-multi-variant-unions-refuse-casts-beyond-their-own-scalars.md) | S | medium | behavior |
+| [BUG-95 — A union's cast flag beats its plain flag whatever order they were typed in](BUG-95-a-union-cast-flag-beats-its-plain-flag-whatever-the-argv-order.md) | S | medium | behavior |
 
 <!-- tickets:end -->

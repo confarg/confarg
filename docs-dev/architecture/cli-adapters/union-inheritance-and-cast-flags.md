@@ -61,4 +61,6 @@
   flat namespace never reached the merged dict while vanilla coerced it by the owning
   subclass's field type and let `build()` raise the missing-discriminator complaint (BUG-83).
 - Force-cast flags (`--f.int`, …) are registered statically only where the stealing rule is
-  non-obvious: an enum variant, or `str` next to any other variant.
+  non-obvious: an enum variant, or `str` next to any other variant. On a plain leaf field the
+  same flags register dynamically, only when typed (BUG-72) — the leaf has no stealing rule
+  to be non-obvious, so static registration would be pure `--help` noise.
