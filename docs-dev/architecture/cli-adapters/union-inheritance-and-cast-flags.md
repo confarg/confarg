@@ -31,19 +31,34 @@
 - With a tag present, the collector descends into the **other** variants at the path too, not
   only the named one: the union's remaining struct variants, or the base's remaining subclasses
   (`_dataclass_subclasses`, the same set vanilla's `_subclass_field_type` searches). Vanilla
-  keeps every argv flag at the path, coerced by whichever variant owns the name
-  (`_resolve_union_field_type` / `_subclass_field_type`), and leaves the ones the named variant
-  does not know for `build()` to reject; descending only into the named variant dropped them
-  silently — a mistyped `--<field>` was ignored instead of refused, and a tag whose import
+  keeps every argv flag at the path, coerced once by the common type of the variants that own
+  the name (`_resolve_union_field_type` / `_subclass_field_type`), and leaves the ones the named
+  variant does not know for `build()` to reject; descending only into the named variant dropped
+  them silently — a mistyped `--<field>` was ignored instead of refused, and a tag whose import
   failed cost the sibling flags their place in the merged dict (BUG-69). Each variant is
   descended into in its own guard, so one variant's failed import costs no other variant its
   flags.
+- A flag several variants own is coerced once, by vanilla's common-or-`str` answer, never by
+  the last walk: the common type when every owner resolves the path alike, the raw token —
+  `str`, deferring the choice to `build()` — when they do not. The tag does not change the
+  answer: vanilla resolves a path through *all* the variants whether or not one is named, so
+  with a tag the adapters used to keep the named variant's coercion standing, and without one
+  the last variant's (BUG-84). A per-variant walk cannot reproduce that answer, each coercing
+  by its own field type, so the shared descent computes the disagreeing paths up front
+  (`_collect._disagreeing_owner_flags`, vanilla's own per-variant `_resolve_field_type`
+  composition, so a path several levels down answers as vanilla answers it), collects each of
+  them once as the raw token, and hides them from the walks that follow — the flag's sub-flags
+  keep their owners' walks, each answering the same question at its own path. A first segment
+  the base class declares is never a conflict: the base's own walk collects it by the base's
+  type, which is vanilla's answer for it (a subclass's *override* of a base-declared field
+  diverging is BUG-86, open).
 - The descent itself is one shared walk — `_collect._collect_variant_fields` — for every
   spelling: a tag's named variant and its siblings, a union field's variants without a tag,
   the union root's, and a base class's subclasses without a tag (`_dataclass_subclasses`, the
-  same set vanilla's `_subclass_field_type` searches). The no-tag inheritance branch once
-  returned before any descent, so a subclass's flag registered in the flat namespace never
-  reached the merged dict while vanilla coerced it by the owning subclass's field type and
-  let `build()` raise the missing-discriminator complaint (BUG-83).
+  same set vanilla's `_subclass_field_type` searches); the two no-tag union loops were plain
+  per-variant loops until BUG-84 consolidated them into the shared one. The no-tag
+  inheritance branch once returned before any descent, so a subclass's flag registered in the
+  flat namespace never reached the merged dict while vanilla coerced it by the owning
+  subclass's field type and let `build()` raise the missing-discriminator complaint (BUG-83).
 - Force-cast flags (`--f.int`, …) are registered statically only where the stealing rule is
   non-obvious: an enum variant, or `str` next to any other variant.

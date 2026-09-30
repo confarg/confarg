@@ -2040,6 +2040,235 @@ class TestUnionFieldTagContract:
 
 
 # ---------------------------------------------------------------------------
+# A flag owned by several variants: vanilla coerces it once, by the common type
+# when every owner agrees and by str when they disagree (BUG-84)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _OwnerInt:
+    """Union variant owning ``a`` as ``int``."""
+
+    a: int = 1
+
+
+@dataclass
+class _OwnerFloat:
+    """Union variant owning ``a`` as ``float``, and ``only`` alone."""
+
+    a: float = 2.0
+    only: int = 0
+
+
+@dataclass
+class _OwnersDisagree:
+    """Union field whose variants own ``a`` with disagreeing types."""
+
+    u: _OwnerInt | _OwnerFloat | None = None
+
+
+@dataclass
+class _OwnerInt2:
+    """Union variant owning ``a`` as ``int``, like ``_OwnerInt``."""
+
+    a: int = 1
+
+
+@dataclass
+class _OwnersAgree:
+    """Union field whose variants own ``a`` with the same type."""
+
+    u: _OwnerInt | _OwnerInt2 | None = None
+
+
+@dataclass
+class _InnerInt:
+    """Nested struct owning ``b`` as ``int``."""
+
+    b: int = 0
+
+
+@dataclass
+class _InnerFloat:
+    """Nested struct owning ``b`` as ``float``."""
+
+    b: float = 0.0
+
+
+@dataclass
+class _NestedOwnerInt:
+    """Union variant owning ``a`` as a struct with ``b: int``."""
+
+    a: _InnerInt | None = None
+
+
+@dataclass
+class _NestedOwnerFloat:
+    """Union variant owning ``a`` as a struct with ``b: float``."""
+
+    a: _InnerFloat | None = None
+
+
+@dataclass
+class _NestedOwnersDisagree:
+    """Union field whose variants own ``a`` as disagreeing structs."""
+
+    u: _NestedOwnerInt | _NestedOwnerFloat | None = None
+
+
+@dataclass
+class _NestedOwnerInt2:
+    """Union variant owning ``a`` as the same struct ``_NestedOwnerInt`` has."""
+
+    a: _InnerInt | None = None
+
+
+@dataclass
+class _NestedOwnersAgree:
+    """Union field whose variants own ``a`` as the same struct type."""
+
+    u: _NestedOwnerInt | _NestedOwnerInt2 | None = None
+
+
+@dataclass
+class _ExtraBase:
+    """Base class whose subclasses own ``extra`` with disagreeing types."""
+
+    name: str = ""
+
+
+@dataclass
+class _ExtraInt(_ExtraBase):
+    """Subclass owning the subclass-only field ``extra`` as ``int``."""
+
+    extra: int = 0
+
+
+@dataclass
+class _ExtraFloat(_ExtraBase):
+    """Subclass owning the subclass-only field ``extra`` as ``float``."""
+
+    extra: float = 0.0
+
+
+@dataclass
+class _ExtraHolder:
+    """Holder field typed as the base of the disagreeing subclasses."""
+
+    x: _ExtraBase | None = None
+
+
+_OwnersRoot: Any = _OwnerInt | _OwnerFloat
+
+
+class TestVariantOwnerConflictContract:
+    """A flag several variants own is coerced once, identically in every integration."""
+
+    def test_disagreeing_owners_raw_without_tag(self, loader: ConfargLoader) -> None:
+        """Vanilla returns the raw token when the variants disagree about a field's type.
+
+        The adapters' collector walked each variant in turn and let the last write
+        win, so the merged dict held that variant's coercion — ``7.0`` here —
+        instead of the token ``build()`` resolves (BUG-84).
+        """
+        merged = loader.merge(_OwnersDisagree, argv=["--u.a", "7"], env={}, config_flag="")
+        assert merged == {"u": {"a": "7"}}
+
+    def test_disagreeing_owners_raw_with_tag(self, loader: ConfargLoader) -> None:
+        """A tag does not change it: vanilla still coerces by all the variants' answer.
+
+        With a tag the re-dispatch inside each sibling walk left the *named*
+        variant's coercion standing — ``7`` here — while vanilla returns the raw
+        token (BUG-84).
+        """
+        merged = loader.merge(
+            _OwnersDisagree,
+            argv=["--u.class", f"{__name__}._OwnerInt", "--u.a", "7"],
+            env={},
+            config_flag="",
+        )
+        assert merged == {"u": {"class": f"{__name__}._OwnerInt", "a": "7"}}
+
+    def test_disagreeing_owners_build_defers_to_tagged_variant(self, loader: ConfargLoader) -> None:
+        """The raw token still builds: ``build()`` coerces it by the variant the tag names."""
+        result = loader.load(
+            _OwnersDisagree,
+            argv=["--u.class", f"{__name__}._OwnerFloat", "--u.a", "7"],
+            env={},
+            config_flag="",
+        )
+        assert result == _OwnersDisagree(u=_OwnerFloat(a=7.0))
+
+    def test_single_owner_keeps_own_coercion(self, loader: ConfargLoader) -> None:
+        """A flag only one variant owns keeps that variant's coercion.
+
+        Guards the fix against over-firing: the conflict rule applies only where
+        several owners disagree about the type.
+        """
+        merged = loader.merge(_OwnersDisagree, argv=["--u.only", "5"], env={}, config_flag="")
+        assert merged == {"u": {"only": 5}}
+
+    def test_agreeing_owners_keep_common_coercion(self, loader: ConfargLoader) -> None:
+        """Owners that agree on the type are coerced by it, on every front-end."""
+        merged = loader.merge(_OwnersAgree, argv=["--u.a", "7"], env={}, config_flag="")
+        assert merged == {"u": {"a": 7}}
+
+    def test_disagreeing_struct_owners_whole_value_raw(self, loader: ConfargLoader) -> None:
+        """A whole-value token at a disagreeing struct flag stays the raw token.
+
+        Vanilla resolves the flag to ``str``, so it decodes no object at all; the
+        adapters' per-variant walks decoded the blob instead (BUG-84).
+        """
+        merged = loader.merge(_NestedOwnersDisagree, argv=["--u.a", '{"b": 7}'], env={}, config_flag="")
+        assert merged == {"u": {"a": '{"b": 7}'}}
+
+    def test_disagreeing_struct_owners_subflag_raw(self, loader: ConfargLoader) -> None:
+        """A sub-flag two disagreeing structs own resolves to ``str`` as well."""
+        merged = loader.merge(_NestedOwnersDisagree, argv=["--u.a.b", "7"], env={}, config_flag="")
+        assert merged == {"u": {"a": {"b": "7"}}}
+
+    def test_agreeing_struct_owners_subflag_kept(self, loader: ConfargLoader) -> None:
+        """A sub-flag the structs agree on keeps the common coercion, at depth too."""
+        merged = loader.merge(_NestedOwnersAgree, argv=["--u.a.b", "7"], env={}, config_flag="")
+        assert merged == {"u": {"a": {"b": 7}}}
+
+    def test_disagreeing_subclasses_raw_without_tag(self, loader: ConfargLoader) -> None:
+        """Subclasses disagreeing about a subclass-only field hit the same rule.
+
+        Vanilla's ``_subclass_field_type`` answers ``str`` when the subclasses
+        disagree; the adapters' subclass walks each coerced by their own field,
+        the last one standing (BUG-84).
+        """
+        merged = loader.merge(_ExtraHolder, argv=["--x.extra", "7"], env={}, config_flag="")
+        assert merged == {"x": {"extra": "7"}}
+
+    def test_disagreeing_subclasses_raw_with_tag(self, loader: ConfargLoader) -> None:
+        """A tag on the base does not change the disagreeing-subclass answer."""
+        merged = loader.merge(
+            _ExtraHolder,
+            argv=["--x.class", f"{__name__}._ExtraInt", "--x.extra", "7"],
+            env={},
+            config_flag="",
+        )
+        assert merged == {"x": {"class": f"{__name__}._ExtraInt", "extra": "7"}}
+
+    def test_disagreeing_owners_raw_at_union_root(self, loader: ConfargLoader) -> None:
+        """A union root's variants own the flag together, the same rule included."""
+        merged = loader.merge(_OwnersRoot, argv=["--a", "7"], env={}, config_flag="")
+        assert merged == {"a": "7"}
+
+    def test_disagreeing_owners_build_at_union_root(self, loader: ConfargLoader) -> None:
+        """The union root's raw token still builds, coerced by the variant the tag names."""
+        result = loader.load(
+            _OwnersRoot,
+            argv=["--class", f"{__name__}._OwnerInt", "--a", "7"],
+            env={},
+            config_flag="",
+        )
+        assert result == _OwnerInt(a=7)
+
+
+# ---------------------------------------------------------------------------
 # Root-level union target (target IS a union, not a struct containing one)
 # ---------------------------------------------------------------------------
 

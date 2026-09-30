@@ -26,6 +26,8 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-79 — A repeated arity flag on an Optional fixed-arity field keeps only the last occurrence in the adapters](BUG-79-a-repeated-arity-flag-under-optional-does-not-accumulate-in-the-adapters.md) | M | medium | behavior |
 | [BUG-80 — A namedtuple's negative index sub-flags are unreachable on the adapters](BUG-80-namedtuple-negative-index-sub-flags-are-unreachable-on-the-adapters.md) | S | medium | behavior |
 | [BUG-81 — The click and typer blocks of `16_appending_items` splice `--dbs+` into their JSON](BUG-81-the-click-and-typer-blocks-of-16_appending_items-splice-dbs-into-their-json.md) | S | low | none |
-| [BUG-84 — A flag owned by disagreeing variants is coerced by the last walk, not by vanilla's rule](BUG-84-disagreeing-variant-types-coerced-by-last-walk.md) | M | medium | behavior |
+| [BUG-85 — A struct field's bare flag typed after its sub-flag loses to the sub-flag on the adapters](BUG-85-bare-flag-typed-after-its-subflag-loses-on-the-adapters.md) | M | medium | behavior |
+| [BUG-86 — A subclass's override of a base-declared field is coerced by the last subclass walk](BUG-86-a-subclass-override-of-a-base-field-is-coerced-by-the-last-walk.md) | M | medium | behavior |
+| [BUG-87 — The adapters' merged dict orders keys by the walk, not by argv, so a dump differs byte for byte](BUG-87-merged-dict-key-order-follows-the-walk-not-argv.md) | M | medium | behavior |
 
 <!-- tickets:end -->
