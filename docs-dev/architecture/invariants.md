@@ -48,6 +48,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "does this flag have its value here?" | `_parse_cli._require_value` |
 | "is this fixed-arity flag's token run exactly its run?" | `cli/_collect._require_fixed_arity` (the adapters' peer of the `_require_value` loop, which counts argv one token at a time; answers both bounds) |
 | "which token runs did argv spell for a repeated fixed-arity flag?" | `cli/_collect._fixed_arity_occurrence_runs`, read off argv — a greedy registration keeps only the surviving run |
+| "which plain-occurrence tokens survive the last whole-field delete at a path?" | `cli/_collect._tokens_past_whole_field_delete`, read off argv — a framework's parse result has the pre-delete ones folded into the value after it |
 | "how long is a fixed-arity flag's token run?" | `cli/_collect._fixed_arity_whole_value` on its first token — one for a whole value, the arity otherwise |
 | "how does a sub-flag write re-key a namedtuple's positional list?" | `_parse_cli._promote_namedtuple_positional` (field names, unlike the `'*'` base `_set_nested` gives a varlen collection) |
 | "which flag at a namedtuple field is the latest writer?" | `cli/_collect._arity_flag_writes_last`, read off argv |
