@@ -89,13 +89,17 @@ the single whole-value token vanilla takes (`--pair '[13, 42]'` for the tuple, `
 '{"x": 13}'` for the namedtuple). `FlagSpec.whole_value` marks those specs, and each adapter
 grants what its framework can express (BUG-20, closed):
 
-| Front-end | Registration | `--pair 13 42` | `--pair '[13, 42]'` |
-|---|---|---|---|
-| vanilla | — | ✅ | ✅ |
-| argparse | `nargs="*"` | ✅ | ✅ |
-| cyclopts | `consume_multiple=True` | ✅ | ✅ |
-| click | `nargs=<n>` | ✅ | ❌ |
-| typer | `nargs=<n>` | ✅ | ❌ |
+| Front-end | Registration | `--pair 13 42` | `--pair '[13, 42]'` | `--pair=1 2` |
+|---|---|---|---|---|
+| vanilla | — | ✅ | ✅ | ✅ |
+| argparse | `nargs="*"` | ✅ | ✅ | ❌ |
+| cyclopts | `consume_multiple=True` | ✅ | ✅ | ✅ |
+| click | `nargs=<n>` | ✅ | ❌ | ✅ |
+| typer | `nargs=<n>` | ✅ | ❌ | ✅ |
+
+Each ✅/❌ pair marks an approved divergence of its own: click and typer decline the
+whole-value token (below), and argparse alone declines the `=`-spelled run continued by
+bare tokens — the BUG-75 paragraph below names it.
 
 click and typer are the exception, and it is an **approved divergence**
 ([invariants](../invariants.md#cross-channel-parity)). A click `Option` cannot vary its token count:
@@ -150,6 +154,21 @@ stops consuming at the declared count and meets the next token in its argv scan 
 positional. The two errors have one owner each — `ConfargError.missing_value` and
 `UnknownArgumentError.unexpected_positional` — so the adapters raise what the vanilla scan
 raises rather than a lookalike (BUG-58, BUG-60).
+
+The `=`-spelled run's *continuation* is the one spelling argparse cannot take, and it is an **approved
+divergence** narrowed to it (BUG-75, closed): argparse's `=` binds exactly the text after
+it, so the tokens that would complete the run arrive as unrecognized arguments and its
+parser exits with its own usage error before any confarg code runs — no registration can
+express "continue my `=` run on the next token", where vanilla simply normalizes
+`--key=value` to `--key value` before parsing
+([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)). The decline keeps
+argparse's native behavior, so confarg's arguments blend with the host application's own
+([design decisions](../design-decisions/divergence-leans-to-the-backend.md#a-divergence-leans-towards-the-affected-backends-own-idiom)),
+and it is every `=`-spelled run's, not the fixed-arity family's: `--tags=a b` and
+`--config=a.yaml b.yaml` exit the same way, while their space forms parse. On the clicklike
+front-ends the continuation survives exactly where the space run does — a fixed-arity
+flag's exact-count parser takes `--pair=1 2` natively, and their varlen flags decline the
+space form itself ([list syntax divergence](list-syntax-divergence.md#list-syntax-divergence)).
 
 What sets the run's length is `_fixed_arity_whole_value`, asked of the **first token alone**: a
 whole value is one token whatever arity it spells, a positional run is the full arity. That one

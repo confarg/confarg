@@ -13,6 +13,9 @@ towards the affected backend's own idiom, narrowed to the backend that imposes i
 divergences so far: list syntax per framework
 ([CLI adapters](cli-adapters/list-syntax-divergence.md#list-syntax-divergence)); the whole-value token on a fixed-arity flag,
 which only the two clicklike front-ends decline
+([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)); the `=`-spelled run
+continued by bare tokens, which argparse alone declines — its `=` binds the one token after
+it and its parser exits on the rest
 ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)); file-only dunder keys
 ([config files](config-files/reserved-keys.md#reserved-file-only-keys)); declaring locals only in files
 ([locals](locals.md#declare-in-files-modify-anywhere)); the mount keyword and the form its path

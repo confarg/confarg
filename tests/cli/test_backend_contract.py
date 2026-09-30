@@ -41,7 +41,7 @@ from confarg._files import INCLUDE_KEY
 from confarg._merge import DICT_DELETE
 from confarg.cli._build import build_static_flags
 from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError, UnknownArgumentError
-from tests._loaders import ClickLoader
+from tests._loaders import ArgparseLoader, ClickLoader, CycloptsLoader, TyperLoader, VanillaLoader
 from tests.conftest import AppConfig, CacheConfig, DbConfig, WithCollections, make_target
 
 if TYPE_CHECKING:
@@ -1459,6 +1459,61 @@ class TestFixedSequenceContract:
         """
         with pytest.raises(SystemExit):
             ClickLoader().load(_WithIntPair, argv=["--pair", "[13, 42]"], env={})
+
+
+# ---------------------------------------------------------------------------
+# The `=`-spelled run continued by bare tokens -- argparse alone declines it
+# ---------------------------------------------------------------------------
+
+
+class TestEqualsSpelledRunContinuation:
+    """The value half of ``--flag=value`` opens its occurrence's run; bare tokens complete it (BUG-75)."""
+
+    def test_fixed_arity_run_completed_by_bare_tokens(self) -> None:
+        """``--pair=1 2`` is ``[1, 2]`` on every front-end but argparse, the namedtuple's flag too."""
+        for loader in (VanillaLoader(), ClickLoader(), TyperLoader(), CycloptsLoader()):
+            assert loader.merge(_WithIntPair, argv=["--pair=1", "2"], env={}) == {"pair": [1, 2]}
+            assert loader.merge(_WithPoint, argv=["--pair=1", "2"], env={}) == {"pair": [1, 2]}
+
+    def test_argparse_declines_the_continued_run(self) -> None:
+        """Argparse has no spelling for continuing an ``=``-spelled run, so its parser exits.
+
+        The approved divergence (docs-dev/architecture/invariants.md#cross-channel-parity):
+        the ``=`` half binds exactly the text after it, the tokens that would complete the
+        run are unrecognized arguments, and argparse exits with its own usage error --
+        its native behavior kept, so confarg's arguments blend with the host application's
+        own. The decline is every multi-token flag's: a fixed-arity flag and a varlen list
+        alike, the config flag included below.
+        """
+        with pytest.raises(SystemExit):
+            ArgparseLoader().merge(_WithIntPair, argv=["--pair=1", "2"], env={})
+        with pytest.raises(SystemExit):
+            ArgparseLoader().merge(WithList, argv=["--tags=a", "b"], env={})
+
+    def test_argparse_declines_the_continued_config_run(self, tmp_yaml) -> None:
+        """``--config=base.yaml extra.yaml`` exits on argparse, where the space form reads both."""
+        base = tmp_yaml("host: base\nport: 1000\n", filename="base.yaml")
+        with pytest.raises(SystemExit):
+            ArgparseLoader().merge(Simple, argv=[f"--config={base}", "extra.yaml"], env={})
+
+    def test_varlen_run_completed_by_bare_tokens(self) -> None:
+        """``--tags=a b`` is ``['a', 'b']`` where the space form is taken: vanilla and cyclopts.
+
+        The clicklike front-ends decline the space form itself (list syntax divergence);
+        argparse declines only the ``=`` opener (above).
+        """
+        for loader in (VanillaLoader(), CycloptsLoader()):
+            assert loader.merge(WithList, argv=["--tags=a", "b"], env={}) == {"tags": ["a", "b"]}
+
+    def test_config_run_completed_by_bare_tokens(self, tmp_yaml) -> None:
+        """``--config=base.yaml override.yaml`` reads both files where the space form is taken."""
+        base = tmp_yaml("host: base\nport: 1000\n", filename="base.yaml")
+        override = tmp_yaml("port: 2000\n", filename="override.yaml")
+        for loader in (VanillaLoader(), CycloptsLoader()):
+            assert loader.merge(Simple, argv=[f"--config={base}", str(override)], env={}) == {
+                "host": "base",
+                "port": 2000,
+            }
 
 
 # ---------------------------------------------------------------------------

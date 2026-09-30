@@ -8,3 +8,8 @@ namespace", shared by the config flag and the locals namespace across CLI and en
 
 `_collect_config_file_pairs` is a lenient re-scan used by the adapters to recover argv
 order after the framework already consumed the paths; it never raises.
+
+The first path may carry the `=` spelling (`--config=a.yaml b.yaml` reads both) on vanilla and
+cyclopts; argparse's `=` binds the one path after it and its parser exits on the rest, the
+approved divergence BUG-75 recorded
+([whole-value flags](../cli-adapters/whole-value-flags.md#whole-value-flags)).

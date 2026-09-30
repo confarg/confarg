@@ -14,7 +14,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 |---|---|---|---|
 | [BUG-46 — The `90_integration` code blocks document an API that does not exist](BUG-46-old-help-blocks-document-a-removed-api.md) | S | low | none |
 | [BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four](BUG-63-bare-config-before-help-shows-help-on-argparse.md) | S | medium | behavior |
-| [BUG-75 — Argparse alone refuses the tokens that complete a `=`-spelled fixed-arity run](BUG-75-argparse-alone-refuses-the-tokens-completing-an-equals-spelled-fixed-arity-run.md) | S | medium | behavior |
 | [BUG-77 — An index delete below a whole-field delete crashes the patch scan](BUG-77-an-index-delete-below-a-whole-field-delete-crashes-the-patch-scan.md) | S | high | behavior |
 | [BUG-85 — A struct field's bare flag typed after its sub-flag loses to the sub-flag on the adapters](BUG-85-bare-flag-typed-after-its-subflag-loses-on-the-adapters.md) | M | medium | behavior |
 | [BUG-86 — A subclass's override of a base-declared field is coerced by the last subclass walk](BUG-86-a-subclass-override-of-a-base-field-is-coerced-by-the-last-walk.md) | M | medium | behavior |
@@ -30,5 +29,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | M | low | behavior |
 | [BUG-97 — A namedtuple's -0 and +0 index spellings diverge across the front-ends](BUG-97-a-namedtuples-minus-zero-and-plus-zero-index-spellings-diverge.md) | S | low | behavior |
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | S | low | behavior |
+| [BUG-99 — The config flag's space-separated multi-file spelling is declined on click and typer, undocumented](BUG-99-the-config-flags-space-separated-multi-file-spelling-is-declined-on-click-and-typer-undocumented.md) | S | low | none |
 
 <!-- tickets:end -->

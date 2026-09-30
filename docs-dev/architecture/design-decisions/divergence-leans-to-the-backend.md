@@ -13,6 +13,15 @@ spelling is not worth making a click user type something click would never ask t
 Concretely: the backend that cannot express the shared spelling declines it, rather than every
 backend being dragged down to the narrowest common form.
 
+What the maintainer's approval itself leans on is that the divergence goes *towards the
+backend's native behavior*: the flag keeps answering as the host framework's own arguments
+answer, so confarg's arguments blend in with the host application's own and a user cannot tell
+them apart. The approved divergences lean that way — list syntax keeps each framework's own
+multi-value spelling, click keeps the exact token count its own options register, and argparse
+keeps its `=` form, which binds the one token after it and exits on the tokens that would
+continue the run ([CLI adapters](../cli-adapters/whole-value-flags.md#whole-value-flags), BUG-75) — so the refusal a user meets is the one
+their host framework raises at its own arguments.
+
 The tie breaks towards the **CLI-oriented** backend, not towards confarg's config-oriented
 philosophy. Command-line parameters are first and foremost user-friendly knobs for tweaking a
 configuration at the last minute; they are not a configuration-file format that happens to live
@@ -30,4 +39,6 @@ Worked example: [CLI adapters](../cli-adapters/whole-value-flags.md#whole-value-
 namedtuple) registers `nargs="*"` for argparse and cyclopts, which can take both the positional
 form and a single whole-value token, while click keeps its exact token count and declines the
 whole-value token, because click's only alternative (`multiple=True`) would have cost click
-users `--pair 13 42`.
+users `--pair 13 42`. A second: argparse declines an `=`-spelled run continued by bare tokens
+(`--pair=1 2`) with its own usage error, because no registration can express the continuation
+-- the decline is argparse's native binding of `--pair=1` to exactly one token.
