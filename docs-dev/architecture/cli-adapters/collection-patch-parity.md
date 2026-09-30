@@ -45,6 +45,24 @@ the sentinels the patch scan recorded are written back over the merged dict. Wit
 dict-key deletes carry a sentinel; a list index delete travels as an index list under
 `"-"`/`"~"` and *is* an operation the merge applies, exactly as vanilla applies it.
 
-Re-asserting means the delete wins wherever both spellings touch one key, which is the
-[argv-order convention](whole-value-flags.md#whole-value-flags) the adapters already follow — whole value first,
-refinements after.
+Re-asserting means the delete wins wherever both spellings touch one key — but only for a
+delete that *survives the argv-order replay*: a plain flag the scan skips erases the ops
+recorded before it
+([a plain occurrence erases the ops before it](#a-plain-occurrence-erases-the-ops-before-it)).
+
+## A plain occurrence erases the ops before it
+
+Vanilla writes plain values and patch ops into one `ctx.data` in argv order, so a plain
+occurrence replaces the node at its path and every earlier op at that path or below dies
+with it. The scan sees the same argv but *skips* the plain occurrences (they belong to the
+flat collector), and a skip that wrote nothing would let the ops recorded before it win the
+deep merge — a delete anywhere in argv beating a value anywhere in argv (BUG-53), an append
+before a plain occurrence surviving it (BUG-54).
+
+So the skip replays the write's destructive half: `_pop_nested(ctx.data, path)`, at both skip
+sites (plain field and plain force-cast). Only the erase, not the value — the value comes
+from the flat collector via the merge, and the surviving ops (those after the last plain
+occurrence above them) apply over it exactly as vanilla applies them over the plain write.
+The erase descends like `_set_nested` and stops at the first non-dict intermediate, popping
+it: a delete sentinel on the way down is replaced wholesale by the write that follows, so it
+dies too, as it does in vanilla (`--db- --db.host x` keeps only the `host` write).

@@ -31,9 +31,9 @@ Three spellings therefore clear a list, and they are not interchangeable:
 `--f-` is the only one every front-end spells, because a delete registers value-less. It also ends
 the list being built, so it resets the token accumulation: `--f x --f- --f a` is `['a']`, not
 `['x', 'a']`. An *index* delete (`--f.1-`) is a patch inside the list and leaves the accumulation
-alone. The adapters re-assert a delete after the merge, so there `--f- --f a` is `[]` and not
-`['a']` ([CLI adapters](../cli-adapters/collection-patch-parity.md#a-patch-op-joins-the-values-the-framework-collected)) — an open
-gap, not this rule.
+alone. The adapters honor the same order: their scan erases the ops a plain occurrence supersedes
+([CLI adapters](../cli-adapters/collection-patch-parity.md#a-plain-occurrence-erases-the-ops-before-it)), so there too
+`--f- --f a` is `['a']`.
 
 `_is_collection_patch_path` answers "does this path index a list/tuple/set or key a dict?".
 It is the dividing line between what a framework's flat parse result can represent and what

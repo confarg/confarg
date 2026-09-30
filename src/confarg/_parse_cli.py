@@ -35,6 +35,7 @@ from confarg._merge import (
     _accumulate_list_delete,
     _deep_merge,
     _peek_nested,
+    _pop_nested,
     _set_nested,
 )
 from confarg._tags import import_tagged_classes
@@ -1253,7 +1254,10 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             delete and dict-subkey) are processed; every other token — normal
             struct fields, scalar roots, force-casts, config files, and stray
             values — is skipped, and no config-file pairs are returned.  Used by
-            the CLI adapters (see :func:`_collect_cli_patch_ops`).
+            the CLI adapters (see :func:`_collect_cli_patch_ops`).  A skipped
+            plain flag still erases the ops this scan recorded at its path before
+            it: the flat collector's write replaces that node in vanilla's own
+            loop, so the ops die with it here too.
         patch_base: The dict the ops will be deep-merged over, or ``None``.  Only the
             adapters pass one: their bare-string callable shorthand was collected by
             ``cli/_collect.py``, not by this loop, so the shorthand this loop opens on
@@ -1311,6 +1315,9 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             path, force_cast = detect_force_cast(path, walk_target, union_tag)
 
         if patch_only and force_cast is not None and not _is_collection_patch_path(walk_target, path, union_tag):
+            # The cast's write lands at its plain path, so the ops recorded before
+            # it there die with the node the write replaces, as they do in vanilla.
+            _pop_nested(ctx.data, path)
             i += 1  # cast on a plain field: owned by the flat collector; its value is a stray token
             continue
 
@@ -1320,6 +1327,9 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             and not append_mode
             and not _is_collection_patch_path(walk_target, path, union_tag)
         ):
+            # Same replay for every plain flag: its whole-value write is what the
+            # flat collector will supply, and it ends the ops recorded before it.
+            _pop_nested(ctx.data, path)
             i += 1  # normal field / scalar root: owned by the flat collector
             continue
 

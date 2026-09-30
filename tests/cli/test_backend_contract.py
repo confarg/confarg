@@ -2043,6 +2043,45 @@ class TestCollectionPatchContract:
         cfg = loader.load(_WithMap, argv=["--config", str(base), "--data.a-"], env={})
         assert cfg.data == {"b": 2}
 
+    def test_whole_field_delete_then_set(self, loader: ConfargLoader) -> None:
+        """A whole-field delete loses to the plain flag that follows it (BUG-53).
+
+        The delete drops the field and the later flag sets it again — the argv order
+        vanilla honors, and the order that clears a configured list to put something
+        else in its place.
+        """
+        cfg = loader.load(_WithUsers, argv=["--users-", "--users", "carol"], env={})
+        assert cfg.users == ["carol"]
+
+    def test_whole_field_delete_then_set_over_config(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The delete-then-set order holds with a config file below it (BUG-53)."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users-", "--users", "carol"], env={})
+        assert cfg.users == ["carol"]
+
+    def test_set_then_whole_field_delete(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The reverse order keeps the delete: the earlier set is ended by it."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users", "carol", "--users-"], env={})
+        assert cfg.users == []
+
+    def test_append_before_plain_set_discarded(self, loader: ConfargLoader) -> None:
+        """A plain occurrence replaces the whole list, discarding the append before it (BUG-54)."""
+        cfg = loader.load(_WithUsers, argv=["--users+", "billy", "--users", "carol"], env={})
+        assert cfg.users == ["carol"]
+
+    def test_index_delete_before_plain_set_discarded(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """An index delete before a plain occurrence dies with the list it patched (BUG-54)."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users.0-", "--users", "carol"], env={})
+        assert cfg.users == ["carol"]
+
+    def test_index_set_before_plain_set_discarded(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """An index set before a plain occurrence dies with the list it patched (BUG-54)."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users.0", "zed", "--users", "carol"], env={})
+        assert cfg.users == ["carol"]
+
     def test_interleaved_append_and_patch_newest(self, loader: ConfargLoader) -> None:
         """Append-empty-then-fill-by-(-1) repeats resolve in command order.
 
