@@ -1904,6 +1904,125 @@ class TestInheritanceDispatchContract:
         merged = loader.merge(_NestedDB, argv=["--db.class", "no.such.module.Class"], env={}, config_flag="")
         assert merged == {"db": {"class": "no.such.module.Class"}}
 
+    def test_valid_tag_keeps_other_subclass_flags_in_merged_dict(self, loader: ConfargLoader) -> None:
+        """A valid tag keeps a sibling subclass's flags beside it, coerced by their own type.
+
+        Vanilla coerces a flag by whichever subclass owns the name and lets ``build()``
+        refuse it as unknown for the tagged subclass; an adapter that descended only into
+        the named subclass dropped the flag silently instead (BUG-69).
+        """
+        merged = loader.merge(
+            _BaseDB,
+            argv=["--class", f"{__name__}._SQLiteDB", "--host", "db.example.com", "--port", "5432"],
+            env={},
+            config_flag="",
+        )
+        assert merged == {"class": f"{__name__}._SQLiteDB", "host": "db.example.com", "port": 5432}
+
+    def test_valid_tag_other_subclass_flag_refused_by_build(self, loader: ConfargLoader) -> None:
+        """A mistyped ``--<field>`` under a valid tag is an error, not a silent ignore.
+
+        The loud case of BUG-69: the wrong-subclass flag reaches ``build()``, which raises
+        ``Unknown field(s)`` naming it, exactly as the vanilla front-end does.
+        """
+        with pytest.raises(TypeCoercionError, match="Unknown field"):
+            loader.load(
+                _BaseDB,
+                argv=["--class", f"{__name__}._SQLiteDB", "--host", "db.example.com"],
+                env={},
+                config_flag="",
+            )
+
+    def test_unimportable_tag_keeps_sibling_flags(self, loader: ConfargLoader) -> None:
+        """A tag whose import fails leaves the sibling flags in the dict ``merge()`` returns.
+
+        The quiet case of BUG-69: the named subclass cannot be descended into, but the
+        other subclasses' flags still reach the merged dict next to the raw tag, as in
+        vanilla.
+        """
+        merged = loader.merge(
+            _BaseDB,
+            argv=["--class", "no.such.module.Class", "--dbpath", "/var/db/app.sqlite"],
+            env={},
+            config_flag="",
+        )
+        assert merged == {"class": "no.such.module.Class", "dbpath": "/var/db/app.sqlite"}
+
+    def test_nested_valid_tag_keeps_other_subclass_flags(self, loader: ConfargLoader) -> None:
+        """The nested inheritance path keeps a sibling subclass's flag too (BUG-69)."""
+        merged = loader.merge(
+            _NestedDB,
+            argv=["--db.class", f"{__name__}._SQLiteDB", "--db.host", "db.example.com"],
+            env={},
+            config_flag="",
+        )
+        assert merged == {"db": {"class": f"{__name__}._SQLiteDB", "host": "db.example.com"}}
+
+
+# ---------------------------------------------------------------------------
+# Struct field whose type is a union (tag dispatch on a non-root union field)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _FieldSqlite:
+    """Struct-union variant for field-level tag tests."""
+
+    dbpath: str = ""
+
+
+@dataclass
+class _FieldServer:
+    """Struct-union variant for field-level tag tests."""
+
+    host: str = ""
+    port: int = 0
+
+
+@dataclass
+class _FieldTagged:
+    """Struct whose field is a union of structs (tag dispatch below the root)."""
+
+    u: _FieldSqlite | _FieldServer | None = None
+
+
+class TestUnionFieldTagContract:
+    """A struct field whose type is a union dispatches on its tag identically everywhere."""
+
+    def test_tag_keeps_other_variants_flags_in_merged_dict(self, loader: ConfargLoader) -> None:
+        """A tag on a union field keeps the other variants' flags beside it (BUG-69).
+
+        Vanilla coerces ``--u.<field>`` by whichever variant owns the name; descending
+        only into the named variant dropped the rest from the adapters' merged dict.
+        """
+        merged = loader.merge(
+            _FieldTagged,
+            argv=["--u.class", f"{__name__}._FieldSqlite", "--u.host", "db.example.com", "--u.port", "5432"],
+            env={},
+            config_flag="",
+        )
+        assert merged == {"u": {"class": f"{__name__}._FieldSqlite", "host": "db.example.com", "port": 5432}}
+
+    def test_tag_other_variants_flag_refused_by_build(self, loader: ConfargLoader) -> None:
+        """A wrong-variant flag on a union field is an error, not a silent ignore (BUG-69)."""
+        with pytest.raises(TypeCoercionError, match="Unknown field"):
+            loader.load(
+                _FieldTagged,
+                argv=["--u.class", f"{__name__}._FieldSqlite", "--u.host", "db.example.com"],
+                env={},
+                config_flag="",
+            )
+
+    def test_unimportable_tag_keeps_other_variants_flags(self, loader: ConfargLoader) -> None:
+        """An unimportable tag on a union field keeps the variants' flags next to it (BUG-69)."""
+        merged = loader.merge(
+            _FieldTagged,
+            argv=["--u.class", "no.such.module.Class", "--u.dbpath", "/var/db/app.sqlite"],
+            env={},
+            config_flag="",
+        )
+        assert merged == {"u": {"class": "no.such.module.Class", "dbpath": "/var/db/app.sqlite"}}
+
 
 # ---------------------------------------------------------------------------
 # Root-level union target (target IS a union, not a struct containing one)

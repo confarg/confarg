@@ -16,6 +16,7 @@ Dev Notes:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from types import MappingProxyType
@@ -44,6 +45,7 @@ from confarg._parse_cli import (
 from confarg._pipeline import _merge_sources
 from confarg._tags import collect_tags
 from confarg._types import (
+    _dataclass_subclasses,
     _elem_type,
     _fixed_seq_types,
     _is_callable,
@@ -529,8 +531,9 @@ def _collect_named_variant(  # noqa: PLR0913  # the type-walk context, threaded 
     *,
     base: Any = None,
     write_tag: bool = True,
+    siblings: Sequence[Any] = (),
 ) -> None:
-    """Write a class tag back, then descend into the struct it names.
+    """Write a class tag back, then descend into the struct it names — and its siblings.
 
     The tag is written before the import resolves: vanilla keeps
     ``--<path>.<union_tag>`` as a raw string and lets ``construct()`` raise the import
@@ -540,6 +543,14 @@ def _collect_named_variant(  # noqa: PLR0913  # the type-walk context, threaded 
     would make the merged dict differ from vanilla's.  *base* names the class the walk
     is already inside; a tag naming it adds nothing, so the descent stops there.
 
+    *siblings* names the other variants the path holds — a union field's struct
+    variants, or a base class's subclasses — and each is descended into after the named
+    one, in its own guard: vanilla keeps every argv flag, coerced by whichever variant
+    owns the name, and leaves ``build()`` to reject the ones the tagged variant does not
+    know, so descending only into the named variant dropped the rest silently (BUG-69).
+    A tag whose import fails names no struct, so the siblings are all that is walked,
+    and one variant's failure costs no other variant its flags.
+
     Dev Notes:
         docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
     """
@@ -547,11 +558,13 @@ def _collect_named_variant(  # noqa: PLR0913  # the type-walk context, threaded 
         tag_path = ([*flag.split(".")] if flag else []) + [union_tag]
         _set_nested(result, tag_path, _str_token(class_tag))
     cls = _tag_named_struct(class_tag)
-    try:
-        if cls is not None and cls is not base:
-            _collect_ns_fields(flat, cls, flag, union_tag, result, tags, argv)
-    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
-        pass
+    walked: set[Any] = set()
+    for variant in (cls, *siblings):
+        if variant is None or variant is base or variant in walked:
+            continue
+        walked.add(variant)
+        with contextlib.suppress(SymbolImportError, TypeError, ValueError, NameError, AttributeError):
+            _collect_ns_fields(flat, variant, flag, union_tag, result, tags, argv)
 
 
 def _collect_ns_union_field(  # noqa: PLR0913  # the type-walk context, threaded whole
@@ -565,9 +578,11 @@ def _collect_ns_union_field(  # noqa: PLR0913  # the type-walk context, threaded
 ) -> None:
     """Handle a multi-variant union field.
 
-    When the class-tag is present, recurse only into the named variant.
-    When it is absent, collect all struct variant fields so structural inference
-    in typedload can select the right one.
+    When the class-tag is present, descend into the named variant and then the others:
+    a flag of another variant reaches the merged dict as it does in vanilla, and
+    ``build()`` rejects it for the named one (BUG-69).  When the tag is absent,
+    collect all struct variant fields so structural inference in typedload can select
+    the right one.
     """
     non_none = _union_args_no_none(resolved)
     concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
@@ -575,7 +590,7 @@ def _collect_ns_union_field(  # noqa: PLR0913  # the type-walk context, threaded
         return
     tag_key = f"{flag}.{union_tag}"
     if tag_key in flat:
-        _collect_named_variant(flat, flag, flat[tag_key], union_tag, result, tags, argv)
+        _collect_named_variant(flat, flag, flat[tag_key], union_tag, result, tags, argv, siblings=concrete)
     else:
         for variant in concrete:
             _collect_ns_fields(flat, variant, flag, union_tag, result, tags, argv)
@@ -617,6 +632,7 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
         argv,
         base=tp,
         write_tag=from_flat,
+        siblings=_dataclass_subclasses(tp),
     )
 
 
