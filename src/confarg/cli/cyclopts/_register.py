@@ -226,6 +226,9 @@ def load_flags_into_app(
         # merge_app drops these flags' bare occurrences before cyclopts parses
         # (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
         "stands_bare": {spec.name for spec in flags if spec.stands_bare},
+        # and refuses these ones' bare occurrence before cyclopts parses
+        # (docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).
+        "refuses_bare": {spec.name for spec in flags if spec.refuses_bare},
     }
 
 

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._parse_cli import _collect_config_file_pairs
-from confarg.cli._argv import drop_bare_occurrences
+from confarg.cli._argv import drop_bare_occurrences, refuse_bare_occurrences
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix, strip_argv_prefix
 from confarg.cli.cyclopts._register import _app_meta
@@ -90,14 +90,17 @@ def merge_app(  # noqa: PLR0913
     # Parse CLI tokens; exits on errors (exit_on_error=True by default).  cyclopts is
     # handed the argv without the bare occurrences of a flag that takes zero *or* more
     # items: it reads one as an implicit empty container and then asserts when that
-    # meets a real token.  The scans below read the argv the user typed
-    # (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
+    # meets a real token.  A fixed-arity flag cannot drop its bare occurrence -- the
+    # occurrence is a missing value, not a no-op -- so it is refused instead, before
+    # cyclopts parses, with confarg's own error.  Both scans read the argv the user
+    # typed (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
     prefix = resolve_prefix(meta.get(PREFIX_ATTR) if meta else None, cli_prefix)
     tokens = sys.argv[1:] if argv is None else list(argv)
     if config_flag:
         # A bare --config[.subpath] must be refused before cyclopts parses it, with
         # confarg's own error rather than the framework's implicit-token assertion.
         _collect_config_file_pairs(strip_argv_prefix(tokens, prefix), config_flag, target, union_tag)
+    refuse_bare_occurrences(tokens, meta["refuses_bare"] if meta else ())
     command, bound, _ = app.parse_args(
         drop_bare_occurrences(tokens, meta["stands_bare"] if meta else ()),
     )

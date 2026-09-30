@@ -20,6 +20,18 @@ and a short run parses, deferring its arity error to `build()`. Two visible gaps
   but there vanilla enforces at parse too; under `Optional` it does not, so the two sides
   refuse at different stages.
 
+Found while fixing BUG-74 (closed): the *bare* spelling diverges the same way, by argv order.
+Vanilla accumulates the occurrences (`_consume_multi_tokens`) and shapes the run at each
+occurrence, so `--pair --pair 3 4` is a missing value — the shaper meets the still-empty run at
+the first occurrence — while `--pair 1 2 --pair` is accepted as `{'pair': ['1', '2']}`. The
+adapters keep only the last occurrence's run: argparse answers `{'pair': ['3', '4']}` for the
+first argv and a missing value for the second, and cyclopts asserts inside its own parse on
+both. BUG-74's pre-parse refusal deliberately does not fire here — `refuses_bare` is asked of
+the resolved type and stays off the `Optional` spelling, because vanilla accepts the trailing
+bare occurrence — so the fix needs the argv-order read: refuse a bare occurrence whose
+accumulated run is still empty, which neither the drop (`stands_bare`) nor the bare-only
+read-back answers today.
+
 Fix direction: register the arity flag of an `Optional[<sequence>]` field the way the
 multi-variant union branch registers its seq spec (`nargs="*"`, `accumulates=True`,
 `stands_bare=True`), keeping the namedtuple sub-flag specs — the collector side already

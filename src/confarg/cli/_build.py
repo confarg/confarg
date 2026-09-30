@@ -34,6 +34,7 @@ from confarg._types import (
     _dataclass_subclasses,
     _elem_type,
     _final_inner,
+    _fixed_seq_types,
     _init_defaults,
     _init_fields,
     _is_bool,
@@ -860,7 +861,13 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
         return specs
 
     if _is_namedtuple(core):
-        return _collect_namedtuple_specs(core, flag, union_tag, group, group_description)
+        specs = _collect_namedtuple_specs(core, flag, union_tag, group, group_description)
+        # The combined arity flag is first.  A bare occurrence of it is a missing
+        # value -- unless Optional wraps the field: `Pt | None` is a union with a
+        # sequence variant as resolved, which consumes greedily and is content with
+        # no token (BUG-79 tracks that spelling's registration).
+        specs[0].refuses_bare = _fixed_seq_types(resolved) is not None
+        return specs
 
     if _is_registered_leaf(core):
         help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
@@ -876,7 +883,12 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
         return [_whole_value_spec(flag, name, raw_type, resolved, group, group_description, docstrings, defaults)]
 
     help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
-    return [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
+    spec = _build_leaf_spec(flag, raw_type, core, help_text, group, group_description)
+    # Only the fixed-arity spelling reaches here with a fixed type: a plain
+    # `tuple[X, Y]` whose bare occurrence is a missing value.  Under Optional the
+    # resolved type is a union with a sequence variant, which stands bare instead.
+    spec.refuses_bare = _fixed_seq_types(resolved) is not None
+    return [spec]
 
 
 def _collect_union_root_specs(
@@ -1393,7 +1405,8 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
             )
         else:
             # A subkey or element flag has the shape of the type it addresses, so it stands
-            # bare exactly when a field flag of that type would
+            # bare exactly when a field flag of that type would, and refuses its bare
+            # occurrence exactly when a field flag of that type would too
             # (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
             at = _resolve_field_type(target, path, union_tag)
             specs.append(
@@ -1402,6 +1415,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
                     nargs="*",
                     metavar="VALUE",
                     stands_bare=at is not None and _takes_multi_tokens(at),
+                    refuses_bare=at is not None and _fixed_seq_types(at) is not None,
                     help=f"Set the collection element at '{target_path}'.",
                 ),
             )

@@ -62,6 +62,21 @@ class FlagSpec:
         docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
     """
 
+    refuses_bare: bool = False
+    """:attr:`stands_bare`'s opposite: a bare occurrence of this flag is a missing value.
+
+    Set on a fixed-arity flag -- a ``tuple[X, Y]`` or namedtuple field, and a
+    collection element flag addressing one -- asked of the field type *as resolved,
+    without unwrapping* ``Optional``: an ``Optional[<fixed-arity>]`` field is a union
+    with a sequence variant there, which consumes greedily and is content with no
+    token. A framework that reads a bare occurrence as an implicit value asserts the
+    moment it meets a real token, so a front-end whose parse cannot tolerate the bare
+    occurrence refuses it before parsing, with the missing-value error vanilla raises.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
+    """
+
     accumulates: bool = False
     """Repeating the flag extends what the earlier occurrences gave, rather than replacing it.
 
