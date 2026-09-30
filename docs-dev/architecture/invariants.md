@@ -59,6 +59,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | locals namespace names | `_parse_cli._locals_keys_at` |
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |
 | "which patch ops does a plain flag occurrence supersede?" | `_merge._pop_nested`, replayed at the patch scan's skip sites |
+| "what does a collected list meet when a patch op addresses it?" | `cli/_collect._promote_patched_lists` — the `'*'` base of the op dict, the promotion vanilla's own descent makes |
 | "does this field take a whole `{…}` token?" | `_parse_cli._accepts_object_value` |
 | "is this a whole-value inline JSON array?" | `_parse_cli._lone_json_array` |
 | what a multi-token flag's accumulated tokens hold | `_parse_cli._varlen_value` / `_union_seq_value` |
