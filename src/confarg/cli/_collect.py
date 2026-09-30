@@ -558,8 +558,34 @@ def _collect_named_variant(  # noqa: PLR0913  # the type-walk context, threaded 
         tag_path = ([*flag.split(".")] if flag else []) + [union_tag]
         _set_nested(result, tag_path, _str_token(class_tag))
     cls = _tag_named_struct(class_tag)
+    _collect_variant_fields(flat, (cls, *siblings), flag, union_tag, result, tags, argv, base=base)
+
+
+def _collect_variant_fields(  # noqa: PLR0913  # the type-walk context, threaded whole
+    flat: dict[str, Any],
+    variants: Sequence[Any],
+    flag: str,
+    union_tag: str,
+    result: dict[str, Any],
+    tags: Mapping[str, str],
+    argv: Sequence[str],
+    *,
+    base: Any = None,
+) -> None:
+    """Descend into every variant the path holds, each in its own guard.
+
+    Vanilla keeps every argv flag at the path, coerced by whichever variant owns
+    the name, and leaves ``build()`` to reject the ones it does not know, so a
+    walk that stops at the first variant drops the rest silently.  *base* names a
+    class the walk is already inside; a variant naming it adds nothing, so the
+    descent stops there.  A variant whose import fails costs no other variant its
+    flags.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
+    """
     walked: set[Any] = set()
-    for variant in (cls, *siblings):
+    for variant in variants:
         if variant is None or variant is base or variant in walked:
             continue
         walked.add(variant)
@@ -612,7 +638,11 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
     *tags* carries.  Both go through :func:`_collect_named_variant`, which writes only
     the flag's tag back into *result*: a file's tag already reaches the merge at its
     own priority, and re-emitting it at CLI priority would make the merged dict differ
-    from vanilla's.
+    from vanilla's.  Without a tag anywhere, every subclass is descended into all the
+    same (:func:`_collect_variant_fields` over ``_dataclass_subclasses``), the answer the
+    union-field branch gives without a tag: vanilla coerces a flag by whichever
+    subclass owns the name and leaves ``build()`` to raise the missing-discriminator
+    complaint, so an early return dropped the flags outright (BUG-83).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
@@ -621,6 +651,7 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
     from_flat = tag_key in flat
     class_tag = flat[tag_key] if from_flat else tags.get(prefix)
     if class_tag is None:
+        _collect_variant_fields(flat, _dataclass_subclasses(tp), prefix, union_tag, result, tags, argv)
         return
     _collect_named_variant(
         flat,

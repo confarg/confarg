@@ -1958,6 +1958,21 @@ class TestInheritanceDispatchContract:
         )
         assert merged == {"db": {"class": f"{__name__}._SQLiteDB", "host": "db.example.com"}}
 
+    def test_no_tag_keeps_subclass_flags_in_merged_dict(self, loader: ConfargLoader) -> None:
+        """Without a tag anywhere, a subclass's flag still reaches the merged dict.
+
+        Vanilla coerces the flag by the subclass's own field type and leaves ``build()``
+        to raise the missing-discriminator complaint; the inheritance branch alone
+        returned before any descent and dropped the flag outright (BUG-83).
+        """
+        merged = loader.merge(_BaseDB, argv=["--host", "db.example.com", "--port", "5432"], env={}, config_flag="")
+        assert merged == {"host": "db.example.com", "port": 5432}
+
+    def test_no_tag_nested_keeps_subclass_flags(self, loader: ConfargLoader) -> None:
+        """The nested inheritance path keeps a subclass's flag without a tag too (BUG-83)."""
+        merged = loader.merge(_NestedDB, argv=["--db.host", "db.example.com"], env={}, config_flag="")
+        assert merged == {"db": {"host": "db.example.com"}}
+
 
 # ---------------------------------------------------------------------------
 # Struct field whose type is a union (tag dispatch on a non-root union field)
