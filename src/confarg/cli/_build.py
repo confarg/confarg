@@ -965,24 +965,35 @@ def _collect_subconfig_specs(
         subpath = f"{prefix}.{name}" if prefix else name
 
         core = _unwrap_optional(resolved)
+        variants: list[Any] = []
         if core is None:
+            # A multi-variant union is a mount point only when every variant is a struct:
+            # the fragment then names its variant with the union tag, so it needs one
+            # the way a struct fragment needs its keys.
+            variants = _union_args_no_none(resolved)
+            if not all(_is_struct(_resolve_type(v)) for v in variants):
+                continue
+        elif not (_is_struct(core) or _is_dict(core)):
+            # A mount point is a struct field (a fragment of known keys) or a dict field
+            # (a fragment of unknown keys); everything else holds no fragment.
             continue
 
-        # A mount point is a struct field (a fragment of known keys) or a dict field
-        # (a fragment of unknown keys); everything else holds no fragment.
-        if not (_is_struct(core) or _is_dict(core)):
-            continue
+        help_text = (
+            f"Config file(s) whose contents are merged under the '{subpath}' field. "
+            f"Equivalent to a root config file with a top-level '{subpath}' key. "
+            "Supports TOML, YAML, and JSON."
+        )
+        if variants:
+            # The field's own flags are per-variant, so the reader cannot guess the tag
+            # from --help without this line.
+            help_text += f" Its top level must name the chosen variant with the '{union_tag}' key."
 
         result.append(
             FlagSpec(
                 name=f"{config_flag}.{subpath}",
                 nargs="*",
                 metavar="FILE",
-                help=(
-                    f"Config file(s) whose contents are merged under the '{subpath}' field. "
-                    f"Equivalent to a root config file with a top-level '{subpath}' key. "
-                    "Supports TOML, YAML, and JSON."
-                ),
+                help=help_text,
             ),
         )
 

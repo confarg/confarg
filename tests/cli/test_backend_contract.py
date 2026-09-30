@@ -1598,6 +1598,24 @@ class TestConfigFilesContract:
         assert flags is not None
         assert "config.mapping" in flags
 
+    def test_union_of_structs_field_gets_a_subkey_flag(self, populating_loader: ConfargLoader) -> None:
+        """A union-of-structs field is a mount point too, so its --config.<name> flag is registered (BUG-70).
+
+        Like a struct or a dict field's entry (BUG-50), on the adapters that register flags.
+        """
+        flags = populating_loader.registered_flags(_FieldTagged)
+        assert flags is not None
+        assert "config.u" in flags
+
+    def test_union_mount_entry_help_names_the_tag(self) -> None:
+        """The union mount entry's help says the file must name its variant with the tag (BUG-70).
+
+        The field's own flags are per-variant, so without this line the reader cannot
+        learn that the fragment's top level carries the tag.
+        """
+        specs = {s.name: s for s in build_static_flags(_FieldTagged)}
+        assert "'class'" in specs["config.u"].help
+
     def test_config_subkeys_false_root_only(self, populating_loader: ConfargLoader) -> None:
         """config_subkeys=False registers only the root --config flag."""
         flags = populating_loader.registered_flags(AppConfig, config_subkeys=False)
