@@ -40,7 +40,7 @@ import confarg.cli._build as build_mod
 from confarg._files import INCLUDE_KEY
 from confarg._merge import DICT_DELETE
 from confarg.cli._build import build_static_flags
-from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError
+from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError, UnknownArgumentError
 from tests._loaders import ClickLoader
 from tests.conftest import AppConfig, CacheConfig, DbConfig, WithCollections, make_target
 
@@ -742,9 +742,18 @@ class TestFixedSequenceContract:
         """A namedtuple's positional tokens reach the merged dict as its field types (BUG-59)."""
         assert loader.merge(_WithPoint, argv=["--pair", "13", "42"], env={}) == {"pair": [13, 42]}
 
-    def test_optional_namedtuple_positional(self, loader: ConfargLoader) -> None:
+    def test_optional_namedtuple_positional(self, space_sep_loader: ConfargLoader) -> None:
         """Optionality does not change the spelling (10-design-decisions.md)."""
-        assert loader.load(_WithOptionalPoint, argv=["--pair", "13", "42"], env={}).pair == _Point(x=13, y=42)
+        assert space_sep_loader.load(_WithOptionalPoint, argv=["--pair", "13", "42"], env={}).pair == _Point(x=13, y=42)
+
+    def test_optional_namedtuple_positional_repeated(self, loader: ConfargLoader) -> None:
+        """The click idiom spells the same run one token per occurrence (BUG-79).
+
+        Under Optional the field is a union with a sequence variant, so its flag is a
+        multi-token one and joins the list-syntax divergence: click and typer take the
+        repeated spelling, exactly as they already do for ``list[str] | None``.
+        """
+        assert loader.load(_WithOptionalPoint, argv=["--pair", "13", "--pair", "42"], env={}).pair == _Point(x=13, y=42)
 
     def test_namedtuple_field_flags(self, loader: ConfargLoader) -> None:
         """--pair.x / --pair.y address the fields by name."""
@@ -771,37 +780,54 @@ class TestFixedSequenceContract:
         cfg = whole_value_arity_loader.load(_WithPoint, argv=["--pair", "[13, 42]"], env={})
         assert cfg.pair == _Point(x=13, y=42)
 
-    def test_optional_namedtuple_whole_value(self, whole_value_arity_loader: ConfargLoader) -> None:
-        """Optionality does not change what the whole value accepts (10-design-decisions.md)."""
-        cfg = whole_value_arity_loader.load(_WithOptionalPoint, argv=["--pair", '{"x": 13, "y": 42}'], env={})
+    def test_optional_namedtuple_whole_value(self, loader: ConfargLoader) -> None:
+        """Optionality does not change what the whole value accepts (10-design-decisions.md).
+
+        The optional spelling rides the union's multi-token registration, so the
+        clicklike front-ends take the lone token too: their repeated-flag idiom holds
+        the one token, and the collector decodes it exactly as vanilla does (BUG-79).
+        """
+        cfg = loader.load(_WithOptionalPoint, argv=["--pair", '{"x": 13, "y": 42}'], env={})
         assert cfg.pair == _Point(x=13, y=42)
 
-    def test_optional_tuple_bare_flag_is_a_missing_value(self, whole_value_arity_loader: ConfargLoader) -> None:
+    def test_optional_tuple_bare_flag_is_a_missing_value(self, loader: ConfargLoader) -> None:
         """A bare --pair on tuple[int, int] | None is the union's missing value (BUG-61).
 
         To the vanilla parser the field is a union with a sequence variant and no
         varlen one, so the empty token run can build nothing. The adapters' collector
-        routes the optional field through the same shaper instead of storing ``[]``.
+        routes the optional field through the same shaper instead of storing ``[]``,
+        and the bare occurrence now stands bare, so the clicklike parsers drop it for
+        the collector to refuse rather than exiting with their own error (BUG-79).
         """
         with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
-            whole_value_arity_loader.merge(_WithOptionalIntPair, argv=["--pair"], env={})
+            loader.merge(_WithOptionalIntPair, argv=["--pair"], env={})
 
-    def test_optional_namedtuple_bare_flag_is_a_missing_value(self, whole_value_arity_loader: ConfargLoader) -> None:
+    def test_optional_namedtuple_bare_flag_is_a_missing_value(self, loader: ConfargLoader) -> None:
         """A bare --pair on _Point | None is refused the same way (BUG-61)."""
         with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
-            whole_value_arity_loader.merge(_WithOptionalPoint, argv=["--pair"], env={})
+            loader.merge(_WithOptionalPoint, argv=["--pair"], env={})
 
-    def test_optional_tuple_token_run_is_stored_raw(self, loader: ConfargLoader) -> None:
+    def test_optional_tuple_token_run_is_stored_raw(self, space_sep_loader: ConfargLoader) -> None:
         """The union branch stores the run as raw tokens; build() judges the arity (BUG-61)."""
-        assert loader.merge(_WithOptionalIntPair, argv=["--pair", "13", "42"], env={}) == {"pair": ["13", "42"]}
+        assert space_sep_loader.merge(_WithOptionalIntPair, argv=["--pair", "13", "42"], env={}) == {
+            "pair": ["13", "42"],
+        }
 
-    def test_optional_tuple_short_run_is_stored_raw(self, whole_value_arity_loader: ConfargLoader) -> None:
-        """A one-token run stays a one-element list, an arity error build() owns (BUG-61)."""
-        assert whole_value_arity_loader.merge(_WithOptionalIntPair, argv=["--pair", "13"], env={}) == {"pair": ["13"]}
+    def test_optional_tuple_short_run_is_deferred_to_build(self, loader: ConfargLoader) -> None:
+        """A one-token run stays a one-element list, an arity error build() owns (BUG-61, BUG-79).
 
-    def test_optional_namedtuple_token_run_is_stored_raw(self, loader: ConfargLoader) -> None:
+        The plain spelling's count enforcement at the framework's own parse is the
+        approved divergence; under Optional vanilla defers to build(), so the
+        clicklike front-ends parse ``--pair 13`` and let ``build()`` refuse rather
+        than exiting with their own usage error.
+        """
+        assert loader.merge(_WithOptionalIntPair, argv=["--pair", "13"], env={}) == {"pair": ["13"]}
+        with pytest.raises(TypeCoercionError, match="Cannot coerce"):
+            loader.load(_WithOptionalIntPair, argv=["--pair", "13"], env={})
+
+    def test_optional_namedtuple_token_run_is_stored_raw(self, space_sep_loader: ConfargLoader) -> None:
         """The optional spelling keeps the run raw, coercing nothing per position (BUG-61)."""
-        assert loader.merge(_WithOptionalPoint, argv=["--pair", "13", "42"], env={}) == {"pair": ["13", "42"]}
+        assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", "13", "42"], env={}) == {"pair": ["13", "42"]}
 
     def test_optional_namedtuple_field_flags_alone(self, loader: ConfargLoader) -> None:
         """A sub-flag under Optional still writes its own field, coerced (BUG-61)."""
@@ -809,7 +835,10 @@ class TestFixedSequenceContract:
             "pair": {"x": 13, "y": 42},
         }
 
-    def test_optional_namedtuple_arity_then_sub_flag_rides_the_star_shape(self, loader: ConfargLoader) -> None:
+    def test_optional_namedtuple_arity_then_sub_flag_rides_the_star_shape(
+        self,
+        space_sep_loader: ConfargLoader,
+    ) -> None:
         """A sub-flag after the arity flag descends into the raw run, '*' shape and all (BUG-61).
 
         The optional spelling is a union to vanilla too, so its positional promotion
@@ -817,35 +846,157 @@ class TestFixedSequenceContract:
         by-field-name re-keying a plain namedtuple's positions get (BUG-66). Both
         sides store the same dict, and both refuse to build it.
         """
-        assert loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={}) == {
+        assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={}) == {
             "pair": {"*": ["1", "2"], "y": 9},
         }
         with pytest.raises(TypeCoercionError, match="Cannot coerce"):
-            loader.load(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={})
+            space_sep_loader.load(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={})
 
-    def test_optional_namedtuple_sub_flag_then_arity_replaces_wholesale(self, loader: ConfargLoader) -> None:
+    def test_optional_namedtuple_sub_flag_then_arity_replaces_wholesale(self, space_sep_loader: ConfargLoader) -> None:
         """The arity flag typed last replaces the field wholesale, as on the plain spelling (BUG-61)."""
-        assert loader.merge(_WithOptionalPoint, argv=["--pair.y", "9", "--pair", "13", "42"], env={}) == {
+        assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair.y", "9", "--pair", "13", "42"], env={}) == {
             "pair": ["13", "42"],
         }
-        assert loader.load(_WithOptionalPoint, argv=["--pair.y", "9", "--pair", "13", "42"], env={}).pair == _Point(
+        assert space_sep_loader.load(
+            _WithOptionalPoint,
+            argv=["--pair.y", "9", "--pair", "13", "42"],
+            env={},
+        ).pair == _Point(
             x=13,
             y=42,
         )
 
-    def test_optional_tuple_whole_value_array(self, whole_value_arity_loader: ConfargLoader) -> None:
-        """The lone JSON array still decodes under Optional (BUG-61)."""
-        assert whole_value_arity_loader.merge(_WithOptionalIntPair, argv=["--pair", "[13, 42]"], env={}) == {
+    def test_optional_tuple_whole_value_array(self, loader: ConfargLoader) -> None:
+        """The lone JSON array still decodes under Optional, on every front-end (BUG-61, BUG-79)."""
+        assert loader.merge(_WithOptionalIntPair, argv=["--pair", "[13, 42]"], env={}) == {
             "pair": [13, 42],
         }
 
-    def test_optional_namedtuple_whole_value_object_merge(self, whole_value_arity_loader: ConfargLoader) -> None:
+    def test_optional_namedtuple_whole_value_object_merge(self, loader: ConfargLoader) -> None:
         """The whole-value object blob still decodes under Optional (BUG-61)."""
-        assert whole_value_arity_loader.merge(
+        assert loader.merge(
             _WithOptionalPoint,
             argv=["--pair", '{"x": 13, "y": 42}'],
             env={},
         ) == {"pair": {"x": 13, "y": 42}}
+
+    def test_optional_tuple_repeated_occurrences_accumulate(self, loader: ConfargLoader) -> None:
+        """--pair 1 --pair 2 joins the runs, as every multi-token flag does (BUG-79).
+
+        The resolved union consumes greedily in vanilla, so a repeated occurrence is a
+        second spelling of one run of tokens, not a competitor: the adapters kept only
+        the last occurrence's tokens and built ``(2,)``'s arity error where vanilla
+        builds ``(1, 2)``.
+        """
+        assert loader.merge(_WithOptionalIntPair, argv=["--pair", "1", "--pair", "2"], env={}) == {"pair": ["1", "2"]}
+        assert loader.load(_WithOptionalIntPair, argv=["--pair", "1", "--pair", "2"], env={}).pair == (1, 2)
+
+    def test_optional_tuple_repeated_space_runs_join(self, space_sep_loader: ConfargLoader) -> None:
+        """--pair 1 2 --pair 3 4 is one four-token run, an arity error build() owns (BUG-79)."""
+        assert space_sep_loader.merge(_WithOptionalIntPair, argv=["--pair", "1", "2", "--pair", "3", "4"], env={}) == {
+            "pair": ["1", "2", "3", "4"],
+        }
+        with pytest.raises(TypeCoercionError, match="Cannot coerce"):
+            space_sep_loader.load(_WithOptionalIntPair, argv=["--pair", "1", "2", "--pair", "3", "4"], env={})
+
+    def test_optional_namedtuple_repeated_occurrences_accumulate(self, loader: ConfargLoader) -> None:
+        """A namedtuple's arity flag accumulates under Optional too, not last-wins (BUG-79)."""
+        assert loader.merge(_WithOptionalPoint, argv=["--pair", "1", "--pair", "2"], env={}) == {"pair": ["1", "2"]}
+        assert loader.load(_WithOptionalPoint, argv=["--pair", "1", "--pair", "2"], env={}).pair == _Point(x=1, y=2)
+
+    def test_optional_namedtuple_repeated_space_runs_join(self, space_sep_loader: ConfargLoader) -> None:
+        """The space-run form of the same join, refused by build() on every front-end (BUG-79)."""
+        assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair", "3", "4"], env={}) == {
+            "pair": ["1", "2", "3", "4"],
+        }
+        with pytest.raises(TypeCoercionError, match="Cannot coerce"):
+            space_sep_loader.load(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair", "3", "4"], env={})
+
+    def test_optional_tuple_leading_bare_occurrence_is_a_missing_value(self, loader: ConfargLoader) -> None:
+        """--pair --pair 3 meets the shaper with the still-empty run at the first occurrence (BUG-79).
+
+        Vanilla shapes the accumulation at every occurrence, so the leading bare
+        occurrence is refused before the valued one is ever read; the adapters kept
+        only the surviving run and answered as though the bare occurrence had not
+        happened. The bare occurrence stands bare, so the clicklike parsers drop it
+        and the collector reads the order off the argv the user typed.
+        """
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            loader.merge(_WithOptionalIntPair, argv=["--pair", "--pair", "3"], env={})
+
+    def test_optional_tuple_leading_bare_beside_a_space_run(self, space_sep_loader: ConfargLoader) -> None:
+        """The space-run form of the same leading-bare refusal (BUG-79)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            space_sep_loader.merge(_WithOptionalIntPair, argv=["--pair", "--pair", "3", "4"], env={})
+
+    def test_optional_tuple_trailing_bare_occurrence_keeps_the_run(self, loader: ConfargLoader) -> None:
+        """--pair 1 --pair 2 --pair keeps the run: a non-empty accumulation makes the bare occurrence a no-op (BUG-79).
+
+        A bare occurrence joins whatever the earlier occurrences accumulated, so once
+        the run is non-empty it adds nothing rather than colliding with it.
+        """
+        assert loader.merge(_WithOptionalIntPair, argv=["--pair", "1", "--pair", "2", "--pair"], env={}) == {
+            "pair": ["1", "2"],
+        }
+
+    def test_optional_tuple_trailing_bare_after_a_space_run(self, space_sep_loader: ConfargLoader) -> None:
+        """--pair 1 2 --pair is accepted, the space-run form of the same trailing bare (BUG-79)."""
+        assert space_sep_loader.merge(_WithOptionalIntPair, argv=["--pair", "1", "2", "--pair"], env={}) == {
+            "pair": ["1", "2"],
+        }
+
+    def test_optional_namedtuple_leading_bare_occurrence_is_a_missing_value(self, loader: ConfargLoader) -> None:
+        """A namedtuple's arity flag under Optional refuses its leading bare occurrence too (BUG-79)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            loader.merge(_WithOptionalPoint, argv=["--pair", "--pair", "3"], env={})
+
+    def test_optional_namedtuple_trailing_bare_occurrence_keeps_the_run(self, loader: ConfargLoader) -> None:
+        """A trailing bare occurrence on a namedtuple's arity flag adds nothing (BUG-79)."""
+        assert loader.merge(_WithOptionalPoint, argv=["--pair", "1", "--pair", "2", "--pair"], env={}) == {
+            "pair": ["1", "2"],
+        }
+
+    def test_optional_namedtuple_blob_never_joins_the_token_accumulation(self, space_sep_loader: ConfargLoader) -> None:
+        """--pair '{"x": 13}' --pair 1 2 leaves the run, and --pair 1 2 --pair '{"x": 13}' the blob (BUG-79).
+
+        A whole-value blob is its own write in vanilla; it never enters the token
+        accumulation. With the runs joined, only the argv order says which occurrence
+        wrote last.
+        """
+        assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", '{"x": 13}', "--pair", "1", "2"], env={}) == {
+            "pair": ["1", "2"],
+        }
+        assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair", '{"x": 13}'], env={}) == {
+            "pair": {"x": 13},
+        }
+
+    def test_optional_namedtuple_blob_then_bare_occurrence_is_a_missing_value(self, loader: ConfargLoader) -> None:
+        """A bare occurrence after a blob meets an empty accumulation, blob or no blob (BUG-79)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            loader.merge(_WithOptionalPoint, argv=["--pair", '{"x": 13}', "--pair"], env={})
+
+    def test_optional_namedtuple_blob_beside_a_surplus_token_raises(self, space_sep_loader: ConfargLoader) -> None:
+        """A blob is one token, so the one after it is the stray positional vanilla names (BUG-79).
+
+        The upper bound the plain spelling's guard already spells
+        (``test_namedtuple_whole_value_beside_a_surplus_token_raises``); under Optional
+        the adapters stored both tokens as an ordinary run instead.
+        """
+        with pytest.raises(UnknownArgumentError, match=re.escape("Unexpected positional argument: '9'")):
+            space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", '{"x": 1, "y": 2}', "9"], env={})
+
+    def test_optional_tuple_delete_then_bare_occurrence_is_a_missing_value(self, loader: ConfargLoader) -> None:
+        """The whole-field delete ends the accumulation, so the bare occurrence after it is empty (BUG-79)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            loader.merge(_WithOptionalIntPair, argv=["--pair", "1", "--pair", "2", "--pair-", "--pair"], env={})
+
+    def test_optional_tuple_delete_then_run_starts_over(self, loader: ConfargLoader) -> None:
+        """Only the tokens after the delete reach the value, on every front-end (BUG-79)."""
+        assert loader.merge(
+            _WithOptionalIntPair,
+            argv=["--pair", "1", "--pair", "2", "--pair-", "--pair", "5", "--pair", "6"],
+            env={},
+        ) == {"pair": ["5", "6"]}
 
     def test_whole_value_refined_by_field_flag(self, whole_value_arity_loader: ConfargLoader) -> None:
         """A sibling --pair.y refines the whole value, as it does for a struct field."""
@@ -947,9 +1098,9 @@ class TestFixedSequenceContract:
         assert loader.merge(_WithOptionalPoint, argv=["--pair.0", "13"], env={}) == {"pair": {"0": 13}}
         assert loader.load(_WithOptionalPoint, argv=["--pair.0", "13", "--pair.1", "42"], env={}).pair == _Point(13, 42)
 
-    def test_optional_namedtuple_arity_then_index_sub_flag_keeps_both(self, loader: ConfargLoader) -> None:
+    def test_optional_namedtuple_arity_then_index_sub_flag_keeps_both(self, space_sep_loader: ConfargLoader) -> None:
         """The union shape keeps the index key beside the ``'*'`` base, as vanilla does (BUG-65)."""
-        assert loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}) == {
+        assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}) == {
             "pair": {"*": ["1", "2"], "0": 9},
         }
 
@@ -1507,6 +1658,28 @@ class TestUnionWithSequenceContract:
             flags = populating_loader.registered_flags(target)
             assert flags is not None
             assert "input" in flags
+
+    def test_leading_bare_occurrence_beside_a_valued_one_is_a_missing_value(self, loader: ConfargLoader) -> None:
+        """--input --input a is refused at the first occurrence, whose run is still empty (BUG-79).
+
+        The same argv-order read the Optional fixed-arity spelling needs: vanilla
+        shapes the accumulation at every occurrence, and the union with no varlen
+        variant has no empty value to store, so the leading bare occurrence is a
+        missing value even though a valued one follows.
+        """
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--input'")):
+            loader.merge(_WithStrTuple, argv=["--input", "--input", "a"], env={})
+
+    def test_leading_bare_occurrence_beside_a_space_run(self, space_sep_loader: ConfargLoader) -> None:
+        """--input --input a b is the space-run form of the same refusal (BUG-79)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--input'")):
+            space_sep_loader.merge(_WithStrTuple, argv=["--input", "--input", "a", "b"], env={})
+
+    def test_trailing_bare_occurrence_keeps_the_run(self, loader: ConfargLoader) -> None:
+        """A trailing bare occurrence adds nothing once the run is non-empty (BUG-79)."""
+        assert loader.merge(_WithStrTuple, argv=["--input", "a", "--input", "b", "--input"], env={}) == {
+            "input": ["a", "b"],
+        }
 
 
 # ---------------------------------------------------------------------------

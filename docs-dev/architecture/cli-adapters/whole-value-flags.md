@@ -175,20 +175,41 @@ The guard is deliberately *not* extended to a union with a sequence variant (`st
 str]`): that field consumes greedily in vanilla too, so `build()` judging its arity is parity,
 not a gap.
 
-The same rule shapes what the guard's absence leaves in the dict. An `Optional[<sequence>]`
-field is a union with a sequence variant to the collector as well, so its flag's tokens go
-through `_collect_union_seq_value` — `cli/_collect._collect_ns_optional_seq` routes them there
-before the fixed-arity and namedtuple branches the unwrapped core would pick (BUG-61). A bare
-occurrence stores the empty run the shaper refuses — `Missing value for '--pair'`, vanilla's
-own error, on the front-ends that store it at all (click and typer register the exact count
-and refuse the bare form in their own parser, as they do for the plain spelling) — and a valued
-run is stored raw, its per-position coercion deferred to `build()` exactly as vanilla's
-`_union_seq_value` defers it. A namedtuple's sub-flags keep their spelling across the move,
-merged in argv order as on the plain spelling; what differs is the shape a sub-flag written
-last descends into: the generic `_set_nested` `'*'` base, because vanilla's by-field-name
-promotion asks the field as resolved and finds the union there — so `--pt 1 2 --pt.y 9` under
-`Point | None` is `{'*': ['1', '2'], 'y': 9}` on all five front-ends, and `build()` rejects it
-on all five alike.
+The same rule shapes what the guard's absence leaves in the dict — and how the flag registers. An
+`Optional[<sequence>]` field is a union with a sequence variant to the collector *and* to
+registration, so its flag registers the way that union's own flag does: `nargs="*"`,
+`accumulates=True`, `stands_bare=True`, no `whole_value` (BUG-79). Until it did, the unwrapped
+core's fixed-arity spec was registered instead, so a repeated occurrence kept only its own run —
+argparse's plain store and cyclopts' last-occurrence converter answered `--pair 1 2 --pair 3 4`
+with `(3, 4)` where vanilla joins the runs and defers the arity to `build()` — and the clicklike
+front-ends answered `--pair 1` at their own parse where vanilla defers to `build()`. On the
+clicklike front-ends the flag now joins the
+[list syntax divergence](list-syntax-divergence.md#list-syntax-divergence) — `--pair 1 --pair 2` is
+their spelling of `--pair 1 2`, as `list[int] | None`'s flag always was — and the lone whole-value
+token reaches them too, decoded from the one item their repeated idiom holds.
+
+The flag's tokens still go through `_collect_union_seq_value` —
+`cli/_collect._collect_ns_optional_seq` routes them there before the fixed-arity and namedtuple
+branches the unwrapped core would pick (BUG-61) — and a valued run is stored raw, its per-position
+coercion deferred to `build()` exactly as vanilla's `_union_seq_value` defers it. A bare
+occurrence stores the empty run the shaper refuses — `Missing value for '--pair'`, vanilla's own
+error, on every front-end: `stands_bare` holds, so the clicklike parsers drop the occurrence and
+the merge step's read-back restores the empty value the shaper raises on. Which occurrence wrote
+what is read back off argv as well, because accumulation makes a parse result join what argv kept
+apart: `cli/_collect._union_seq_occurrence_writes` replays the occurrences in order — a bare
+occurrence that meets an empty accumulation is the shaper's own refusal (`--pair --pair 3 4`), a
+trailing one joins whatever the earlier occurrences left (`--pair 1 2 --pair` is `['1', '2']`), a
+whole-field delete ends the accumulation as vanilla's `multi_tokens` pop does, and a whole-value
+object blob is a write of its own that never joins it, so the later of a blob and a run wins
+(`--pt {"x": 13} --pt 1 2` is `['1', '2']`, the reverse order the blob). The same replay answers
+the union-seq spelling itself (`str | tuple[str, str]`), whose leading bare occurrence met the
+same silent acceptance (BUG-79).
+
+A namedtuple's sub-flags keep their spelling across the move, merged in argv order as on the plain
+spelling; what differs is the shape a sub-flag written last descends into: the generic `_set_nested`
+`'*'` base, because vanilla's by-field-name promotion asks the field as resolved and finds the union
+there — so `--pt 1 2 --pt.y 9` under `Point | None` is `{'*': ['1', '2'], 'y': 9}` on all five
+front-ends, and `build()` rejects it on all five alike.
 
 For the namedtuple, `cli/_collect.py` decodes the lone token through
 `_fixed_arity_whole_value`, which delegates to the same two decoders the other branches use

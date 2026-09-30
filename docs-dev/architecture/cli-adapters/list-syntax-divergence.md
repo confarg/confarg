@@ -19,9 +19,11 @@ second spelling of `--f x y` in all five front-ends, and mixing the two spelling
 
 The rule holds for the multi-token **field** flags: a varlen collection, and a union with a
 sequence variant (`int | list[int]`, `str | tuple[str, str]` — the clicklike front-ends already
-accumulated on both). It stops at a fixed-arity flag (`tuple[X, Y]`, namedtuple), which takes one
-value and is last-wins on repetition everywhere
-([design decisions](../design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence)), and it is not the `+`
+accumulated on both). It stops at a fixed-arity flag on its *plain* spelling (`tuple[X, Y]`,
+namedtuple), which takes one value and is last-wins on repetition everywhere — under `Optional`
+the resolved type is a union with a sequence variant, so the flag belongs to the family above and
+accumulates, its arity deferred to `build()` (BUG-79;
+[design decisions](../design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence)) — and it is not the `+`
 suffix, which is a merge operator rather than a spelling (below).
 
 Two consequences follow from the accumulation being over **tokens**, not over shaped values:
