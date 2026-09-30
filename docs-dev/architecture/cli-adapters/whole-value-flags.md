@@ -195,6 +195,20 @@ field wholesale — `--pair.y 7 --pair 13 42` is `[13, 42]`, the sub-flag gone, 
 reverse order joins the two halves by field name. Latest arguments overwrite earlier
 ones ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#a-namedtuples-arity-flag-and-its-sub-flags-merge-in-argv-order)).
 
+A sub-flag one level below a struct-shaped field — a struct, or another namedtuple,
+however wrapped — is not a scalar, and the two spellings of such a field take what that
+field type takes at any other depth (BUG-68): the static walk recurses into them as it
+recurses into a struct's fields, so `--pt.inner.a` registers next to `--pt.inner`, under
+the index spelling too. The collector routes both spellings through the one per-field
+dispatch a struct's own fields go through (`cli/_collect._collect_field`), with
+`_namedtuple_deep_fields` naming which fields count as deep, and the writes land on the
+paths the flags spell — so a deep sub-flag refines a whole value's decoded object key by
+key, as a struct's sibling flags do, rather than replacing the sibling dict a pre-merged
+value would. The priority above is unchanged a level down: the arity flag typed last
+takes the field wholesale, its own arity flag included, and a deep sub-flag typed last
+descends into whatever the arity flag left — the by-field-name promotion first, then the
+deep write.
+
 Everything else about a namedtuple is shared — the arity flag, the per-field and per-index
 flags, and the vanilla positional form
 ([design decisions](../design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence)).

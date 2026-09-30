@@ -205,6 +205,68 @@ class _WithOptionalIntPair:
     pair: tuple[int, int] | None = None
 
 
+class _Inner(NamedTuple):
+    """A namedtuple nested inside another namedtuple's field."""
+
+    a: int = 0
+    b: str = "x"
+
+
+@dataclass
+class _InnerStruct:
+    """A struct nested inside a namedtuple's field."""
+
+    a: int = 0
+
+
+class _PtNested(NamedTuple):
+    """A namedtuple one of whose fields is itself structured (BUG-68)."""
+
+    inner: _Inner | None = None
+    x: int = 0
+
+
+@dataclass
+class _WithNestedPoint:
+    pt: _PtNested = dataclasses_field(default_factory=_PtNested)
+
+
+class _PtPlainNested(NamedTuple):
+    """The same shape without Optional, whose field's flag is a fixed-arity one (BUG-68)."""
+
+    inner: _Inner = _Inner(0, "w")
+    x: int = 0
+
+
+@dataclass
+class _WithPlainNestedPoint:
+    pt: _PtPlainNested = dataclasses_field(default_factory=_PtPlainNested)
+
+
+class _PtStructField(NamedTuple):
+    """A namedtuple whose structured field is a struct, not a namedtuple (BUG-68)."""
+
+    inner: _InnerStruct = _InnerStruct()
+    x: int = 0
+
+
+@dataclass
+class _WithStructFieldPoint:
+    pt: _PtStructField = dataclasses_field(default_factory=_PtStructField)
+
+
+class _PtOptionalStructField(NamedTuple):
+    """The same struct field under Optional, whose union has no sequence variant (BUG-68)."""
+
+    inner: _InnerStruct | None = None
+    x: int = 0
+
+
+@dataclass
+class _WithOptionalStructFieldPoint:
+    pt: _PtOptionalStructField = dataclasses_field(default_factory=_PtOptionalStructField)
+
+
 @dataclass
 class _WithOptionalIntList:
     input: list[int] | None = None
@@ -869,6 +931,103 @@ class TestFixedSequenceContract:
         """The union shape keeps the index key beside the ``'*'`` base, as vanilla does (BUG-65)."""
         assert loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}) == {
             "pair": {"*": ["1", "2"], "0": 9},
+        }
+
+    def test_namedtuple_deep_sub_flag_below_a_namedtuple_field(self, loader: ConfargLoader) -> None:
+        """--pt.inner.a reaches a namedtuple field of a namedtuple, as vanilla does (BUG-68).
+
+        The adapters registered and collected a namedtuple's sub-flags one level
+        deep only, so a path through a struct-shaped field was refused by the host
+        framework's own parser while vanilla resolved it.
+        """
+        assert loader.merge(_WithNestedPoint, argv=["--pt.inner.a", "5"], env={}) == {"pt": {"inner": {"a": 5}}}
+
+    def test_namedtuple_deep_sub_flag_below_a_struct_field(self, loader: ConfargLoader) -> None:
+        """A struct field of a namedtuple takes the same deep path (BUG-68)."""
+        assert loader.merge(_WithStructFieldPoint, argv=["--pt.inner.a", "5"], env={}) == {"pt": {"inner": {"a": 5}}}
+
+    def test_namedtuple_deep_sub_flag_by_index(self, loader: ConfargLoader) -> None:
+        """The index spelling descends a level too, keeping its own key (BUG-68)."""
+        assert loader.merge(_WithNestedPoint, argv=["--pt.0.a", "5"], env={}) == {"pt": {"0": {"a": 5}}}
+
+    def test_namedtuple_deep_sub_flags_keep_their_spelled_keys(self, loader: ConfargLoader) -> None:
+        """Name and index spellings each keep their own key one level deeper (BUG-68)."""
+        assert loader.merge(_WithNestedPoint, argv=["--pt.0.a", "5", "--pt.inner.b", "y"], env={}) == {
+            "pt": {"0": {"a": 5}, "inner": {"b": "y"}},
+        }
+
+    def test_namedtuple_deep_sub_flag_builds(self, loader: ConfargLoader) -> None:
+        """The collected deep dict is one construction reconciles, as vanilla's is (BUG-68)."""
+        assert loader.load(_WithNestedPoint, argv=["--pt.inner.a", "5"], env={}).pt == _PtNested(
+            inner=_Inner(a=5),
+            x=0,
+        )
+
+    def test_namedtuple_struct_field_whole_value_object_decodes(self, loader: ConfargLoader) -> None:
+        """A whole-value token on the namedtuple's struct field decodes (BUG-68).
+
+        The collector used to coerce the token as a scalar leaf, so the blob reached
+        the merged dict as a raw string where vanilla had the object it spells.
+        """
+        assert loader.merge(_WithStructFieldPoint, argv=["--pt.inner", '{"a": 7}'], env={}) == {
+            "pt": {"inner": {"a": 7}},
+        }
+
+    def test_namedtuple_optional_struct_field_whole_value_object_decodes(self, loader: ConfargLoader) -> None:
+        """The Optional spelling of the struct field decodes the same blob (BUG-68)."""
+        assert loader.merge(_WithOptionalStructFieldPoint, argv=["--pt.inner", '{"a": 7}'], env={}) == {
+            "pt": {"inner": {"a": 7}},
+        }
+
+    def test_namedtuple_optional_namedtuple_field_whole_value_object_decodes(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """A whole-value token on the Optional namedtuple field decodes (BUG-68).
+
+        The field is a union with a sequence variant, so the whole-value token
+        keeps the clicklike front-ends' own list syntax (list-syntax-divergence.md).
+        """
+        assert whole_value_arity_loader.merge(_WithNestedPoint, argv=["--pt.inner", '{"a": 7}'], env={}) == {
+            "pt": {"inner": {"a": 7}},
+        }
+
+    def test_namedtuple_deep_whole_value_object_decodes(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """A whole-value token on the plain namedtuple's field decodes (BUG-68)."""
+        assert whole_value_arity_loader.merge(
+            _WithPlainNestedPoint,
+            argv=["--pt.inner", '{"a": 1, "b": "z"}'],
+            env={},
+        ) == {"pt": {"inner": {"a": 1, "b": "z"}}}
+
+    def test_namedtuple_arity_then_deep_sub_flag_merges(self, loader: ConfargLoader) -> None:
+        """A deep sub-flag after the arity flag descends into the positions it left (BUG-68).
+
+        The same priority one level up applies: the arity value is re-keyed by field
+        name and the sub-flag replaces the key it names, here with the dict the
+        deeper level collected.
+        """
+        assert loader.merge(_WithNestedPoint, argv=["--pt", "1", "2", "--pt.inner.b", "y"], env={}) == {
+            "pt": {"inner": {"b": "y"}, "x": 2},
+        }
+
+    def test_namedtuple_deep_sub_flag_then_arity_replaces_wholesale(self, loader: ConfargLoader) -> None:
+        """The arity flag typed after every deep sub-flag takes the whole field (BUG-68)."""
+        assert loader.merge(_WithNestedPoint, argv=["--pt.inner.b", "y", "--pt", "1", "2"], env={}) == {"pt": ["1", 2]}
+
+    def test_namedtuple_deep_arity_then_deep_sub_flag_merges(self, loader: ConfargLoader) -> None:
+        """The same priority holds at the deeper level, on the field's own arity flag (BUG-68)."""
+        assert loader.merge(_WithPlainNestedPoint, argv=["--pt.inner", "7", "8", "--pt.inner.a", "5"], env={}) == {
+            "pt": {"inner": {"a": 5, "b": "8"}},
+        }
+
+    def test_namedtuple_deep_sub_flag_then_deep_arity_replaces(self, loader: ConfargLoader) -> None:
+        """A deep arity flag after its own sub-flags replaces the field wholesale (BUG-68)."""
+        assert loader.merge(_WithPlainNestedPoint, argv=["--pt.inner.a", "5", "--pt.inner", "7", "8"], env={}) == {
+            "pt": {"inner": [7, "8"]},
         }
 
     def test_repeated_flag_last_occurrence_wins(self, loader: ConfargLoader) -> None:

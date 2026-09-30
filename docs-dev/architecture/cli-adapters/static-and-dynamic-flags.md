@@ -1,7 +1,8 @@
 # Static and dynamic flags
 
 **Static flags** come from a walk of the target type (`build_static_flags`): leaves, tuples,
-namedtuples (whole, per name and per index), union tags and variant fields, plain callable
+namedtuples (whole, per name and per index — and, below a struct-shaped field, whatever that
+field type takes, recursively: BUG-68), union tags and variant fields, plain callable
 openers (`.fn`/`.class`/`.call`), `--config` and `--config.<mount point>` (a struct field, or
 a dict field — where a fragment of unknown keys belongs; a union of structs is still skipped,
 BUG-70), and

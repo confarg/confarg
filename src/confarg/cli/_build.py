@@ -50,6 +50,7 @@ from confarg._types import (
     _is_union,
     _is_varlen_collection,
     _literal_values,
+    _namedtuple_defaults,
     _namedtuple_fields,
     _resolve_struct,
     _resolve_type,
@@ -638,12 +639,24 @@ def _collect_fn_paths_from_config(
 def _collect_namedtuple_specs(
     core: Any,
     flag: str,
+    union_tag: str,
     group: str | None,
     group_description: str,
 ) -> list[FlagSpec]:
-    """Build FlagSpecs for a namedtuple field: nargs leaf + per-field-name + per-index flags."""
+    """Build FlagSpecs for a namedtuple field: nargs leaf + per-field-name + per-index flags.
+
+    A struct-shaped field (a struct, or another namedtuple, each however wrapped)
+    takes the flags that field type takes at any other nesting depth, spelled under
+    both of its own keys — the name and the index — because vanilla resolves a path
+    through a namedtuple's fields as through a struct's (BUG-68).
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
+    """
     flds = _namedtuple_fields(core)
     n = len(flds)
+    docstrings = _get_field_docstrings(core)
+    defaults = _namedtuple_defaults(core)
     result: list[FlagSpec] = []
     # Combined nargs flag (like a regular tuple)
     result.append(
@@ -660,25 +673,34 @@ def _collect_namedtuple_specs(
     # Individual flags by field name and by index
     for i, (fname, ft) in enumerate(flds.items()):
         field_help = f"Field {fname!r} of {core.__name__} (index {i})"
-        # By field name
-        result.append(
+        fcore = _unwrap_optional(_resolve_type(ft))
+        if _is_struct(fcore) or _is_namedtuple(fcore):
+            # The field is itself structured, so its two spellings take what that
+            # field type takes — the whole-value/arity flag and the flags below it.
+            for sub_flag in (f"{flag}.{fname}", f"{flag}.{i}"):
+                result.extend(
+                    _specs_for_field(
+                        sub_flag,
+                        fname,
+                        ft,
+                        _resolve_type(ft),
+                        union_tag,
+                        group,
+                        group_description,
+                        docstrings,
+                        defaults,
+                    ),
+                )
+            continue
+        result.extend(
             FlagSpec(
-                name=f"{flag}.{fname}",
+                name=sub_flag,
                 metavar=getattr(ft, "__name__", "VALUE").upper(),
                 help=field_help,
                 group=group,
                 group_description=group_description,
-            ),
-        )
-        # By index
-        result.append(
-            FlagSpec(
-                name=f"{flag}.{i}",
-                metavar=getattr(ft, "__name__", "VALUE").upper(),
-                help=field_help,
-                group=group,
-                group_description=group_description,
-            ),
+            )
+            for sub_flag in (f"{flag}.{fname}", f"{flag}.{i}")
         )
     return result
 
@@ -806,7 +828,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
         return specs
 
     if _is_namedtuple(core):
-        return _collect_namedtuple_specs(core, flag, group, group_description)
+        return _collect_namedtuple_specs(core, flag, union_tag, group, group_description)
 
     if _is_registered_leaf(core):
         help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)

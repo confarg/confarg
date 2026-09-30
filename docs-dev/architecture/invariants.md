@@ -53,6 +53,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "how is an `Optional[<sequence>]` field's flag value shaped?" | `cli/_collect._collect_ns_optional_seq` — the union shaper `_collect_union_seq_value`, asked of the resolved union as vanilla's `_union_seq_value` is |
 | "how does a sub-flag write re-key a namedtuple's positional list?" | `_parse_cli._promote_namedtuple_positional` (field names, unlike the `'*'` base `_set_nested` gives a varlen collection) |
 | "which keys does a namedtuple's sub-flag collection keep?" | `cli/_collect._namedtuple_sub_flags` — the keys as spelled, name and index alike; the win belongs to construction |
+| "which of a namedtuple's fields does a deep path reach, and who collects it?" | `cli/_collect._namedtuple_deep_fields` (which — a struct-shaped field, however wrapped) / `cli/_collect._collect_field` (the collector — the one per-field dispatch, shared with a struct's own fields) |
 | "which flag at a namedtuple field is the latest writer?" | `cli/_collect._arity_flag_writes_last`, read off argv |
 | "which occurrence of a repeated fixed-arity flag reaches the collector, on cyclopts?" | `cli/cyclopts/_register._last_occurrence_convert`, read off the `CliToken` index |
 | reserved-name shadowing | `_parse_cli._check_reserved_key_conflict` |
