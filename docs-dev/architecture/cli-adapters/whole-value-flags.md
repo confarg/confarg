@@ -19,7 +19,12 @@ seen until the token is decoded. Refusing the token here would put that hatch ou
 CLI's reach while leaving it open to env and files, and would silently coerce the JSON
 *text* into a leaf instead. `cli/_collect.py` therefore honors the decoded whole value in
 its registered-leaf branch before falling back to scalar coercion, the order vanilla's
-`_consume_value` already has. The `--help` metavar stays `VALUE` there: the rule is that
+`_consume_value` already has. A token no blob decodes is kept raw, not dropped: vanilla's
+`_consume_value` stores it for `build()` to refuse (`--inner 7` → `{'inner': '7'}` →
+`expected dict, got str '7'`), and the collector's struct branch stores the same
+`_str_token`, as its dict and union branches already did — the token once vanished there,
+and a typo'd CLI value silently built the field's default on four of the five front-ends
+(BUG-82, closed). The `--help` metavar stays `VALUE` there: the rule is that
 `JSON` implies the token is decoded, not the converse, and a registered leaf's ordinary
 spelling is its scalar, with the tagged blob an escape hatch rather than the syntax to
 advertise.

@@ -3436,6 +3436,30 @@ class TestWholeValueFlagContract:
         env = loader.merge(_WholePlainConfig, argv=[], env={"MYAPP_DB": blob}, env_prefix="MYAPP_")
         assert cli["db"] == env["db"] == {"host": "x", "port": 9}
 
+    def test_struct_non_object_token_is_kept_raw(self, loader: ConfargLoader) -> None:
+        """merge() keeps a struct flag's non-object token verbatim, as the dict flag's (BUG-82).
+
+        Vanilla's ``_consume_value`` leaves the token raw for ``build()`` to refuse, so
+        the collector must store it too: dropping it swallowed a typo'd CLI value on
+        four of the five front-ends, silently building the field's default.
+        """
+        data = loader.merge(_WholeValue, argv=["--sub", "oops"], env={})
+        assert data["sub"] == "oops"
+
+    def test_struct_non_object_token_fails_to_build(self, loader: ConfargLoader) -> None:
+        """build() is what rejects it, loudly on every front-end (BUG-82)."""
+        with pytest.raises(TypeCoercionError, match="expected dict"):
+            loader.load(_WholeValue, argv=["--sub", "oops"], env={})
+
+    def test_struct_non_object_token_below_a_namedtuple_is_kept_raw(self, loader: ConfargLoader) -> None:
+        """The same token at a namedtuple's struct field is kept too (BUG-82, via BUG-68).
+
+        A struct field below a namedtuple reaches the same struct branch of the
+        per-field dispatch, so the drop occurred at that depth as well.
+        """
+        data = loader.merge(_WithStructFieldPoint, argv=["--pt.inner", "oops"], env={})
+        assert data["pt"]["inner"] == "oops"
+
     def test_tagged_registered_leaf_takes_the_whole_value(
         self,
         loader: ConfargLoader,
