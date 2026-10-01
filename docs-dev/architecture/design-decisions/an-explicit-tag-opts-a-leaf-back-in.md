@@ -33,9 +33,9 @@ A third step reached the hatch's *flat* spelling (BUG-56): `--id.class uuid.UUID
 all along — its type walk treats a registered leaf structurally, so the tag segment
 resolves through the `union_tag` rule and a parameter through the leaf's `__init__`
 fields — while the adapters took their `_is_registered_leaf` branch first and no flag
-below the field was ever registered. The adapters now mirror the walk from both sides:
-registration is argv-scanned, and the collector descends into the leaf as it descends
-into a struct ([CLI adapters](../cli-adapters/whole-value-flags.md#whole-value-flags)). Argv-scanned rather than
+below the field was ever registered. The adapters' registration now mirrors the walk, argv-scanned,
+and their CLI channel is the walk's own loop
+([CLI adapters](../cli-adapters/whole-value-flags.md#whole-value-flags)). Argv-scanned rather than
 static, unlike the whole-value flag, is the maintainer's call: a registered leaf's
 ordinary spelling is its scalar, and one `--help` line per `__init__` parameter would
 advertise the escape hatch at the expense of the syntax actually used — the same ground

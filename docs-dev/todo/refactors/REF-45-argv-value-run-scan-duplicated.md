@@ -1,7 +1,6 @@
 # REF-45 — The argv value-run scan is written seven times
 
-**Where:** `src/confarg/_parse_cli.py`, `src/confarg/cli/_prefix.py`,
-`src/confarg/cli/_collect.py` · **Filed:** 2026-09-24
+**Where:** `src/confarg/_parse_cli.py`, `src/confarg/cli/_prefix.py` · **Filed:** 2026-09-24
 **Effort:** M · **Risk:** high · **Impact:** none
 
 `while i < len(args) and not _looks_like_flag(args[i])` appears at six places in `_parse_cli.py`
@@ -11,7 +10,8 @@ One helper absorbs all of them: `_value_run(args, i)`, returning the tokens and 
 
 The guard half is **done**: BUG-43 extracted `_parse_cli._require_value` and
 `ConfargError.missing_value`, and every site that raised the message by hand — four in
-`_parse_cli.py`, one with the `'<json>'` wording, one in `cli/_collect.py` — goes through them.
+`_parse_cli.py`, one with the `'<json>'` wording, one in the adapters' since-deleted collector —
+goes through them.
 `_require_value` is now in the canonical table; `_value_run` is what is left.
 
 A mutation run over `src/confarg` (2026-09-26) found a second, sharper argument for the helpers:
@@ -34,7 +34,7 @@ guard had never been copied to, so that flag under-filled instead of reporting a
 It is closed, and so is the adapters' half of the same gap, BUG-58 (no link: the board holds
 open work only).
 
-One pair is a duplicated *consumer* rather than a duplicated loop: the adapters' rescan
+One pair is a duplicated *consumer* rather than a duplicated loop: cyclopts' pre-parse refusal
 `_parse_cli._collect_config_file_pairs` repeats `_consume_config_paths` token for token.
 BUG-50/51 moved the message builder (`_missing_config_path_msg`) and the subpath check
 (`_check_mount_subpath`) into shared functions, but the consumption is still written twice. The

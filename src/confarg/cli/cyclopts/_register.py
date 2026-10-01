@@ -58,34 +58,6 @@ def _expression_tolerant_convert(type_: Any, tokens: Any) -> Any:
     return cyclopts_convert(type_, tokens)
 
 
-def _last_occurrence_convert(type_: Any, tokens: Any) -> Any:
-    """Convert a fixed-arity flag's tokens, keeping only its last occurrence.
-
-    ``consume_multiple=True`` buys the variable token count a whole-value flag needs,
-    and with it cyclopts gathers the token runs of *all* occurrences into one list —
-    a run that never existed in argv, whose seams the collector cannot recover. The
-    ``CliToken.index`` cyclopts hands over restarts at each occurrence, so the
-    boundaries survive: the tokens after the last restart are the last occurrence's
-    run, and a flag that takes one value keeps only that, the way the argparse peer's
-    plain store action does by construction.  A lone occurrence sees no restart, so
-    it converts exactly as :func:`cyclopts.convert` would.  A whole-value spec never
-    carries ``choices``, so this never has to compose with
-    :func:`_expression_tolerant_convert`.
-
-    Dev Notes:
-        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
-    """
-    last: list[Any] = []
-    prev = -1
-    for token in tokens:
-        if token.index <= prev:
-            # A new occurrence: cyclopts numbers each occurrence's tokens from 0.
-            last = []
-        last.append(token)
-        prev = token.index
-    return cyclopts_convert(type_, last)
-
-
 def _pyname(name: str) -> str:
     """Map a dotted CLI flag name to a valid, unique Python identifier.
 
@@ -101,7 +73,7 @@ def _pyname(name: str) -> str:
     return out
 
 
-def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901, PLR0912  # one branch per nargs shape (flag / choices / multi / scalar), the hidden flag adding one
+def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901  # one branch per nargs shape (flag / choices / multi / scalar), the hidden flag adding one
     """Convert one FlagSpec to a keyword-only inspect.Parameter."""
     py_name = _pyname(spec.name)
 
@@ -159,13 +131,9 @@ def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901, 
     if spec.nargs == "*" or spec.whole_value:
         # `whole_value`: consume_multiple accepts both the positional form and the single
         # whole-value token, where n_tokens would fix the count and reject the latter
-        # (docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).  It also
-        # accumulates across occurrences, which is what a varlen list (`nargs == "*"`,
-        # `accumulates=True`) wants and what a fixed-arity flag must not keep: the
-        # converter below lets the last occurrence win instead (BUG-62).
+        # (docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).  What
+        # a repeat means is read off argv by vanilla's loop, not off what cyclopts binds.
         param_kwargs["consume_multiple"] = True
-        if spec.whole_value:
-            param_kwargs["converter"] = _last_occurrence_convert
     elif isinstance(spec.nargs, int):
         param_kwargs["n_tokens"] = spec.nargs
     if spec.group:

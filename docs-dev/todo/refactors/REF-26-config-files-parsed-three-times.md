@@ -17,9 +17,9 @@ three when BUG-6 closed.
 
 **Argv itself is scanned as often, which is the other half.** Four passes per `_parse_cli` call:
 `_normalize_eq_args`, then `_tags._partial_config_from_argv`, then `_tags._tags_from_argv`, then
-the main loop. The adapters add `cli/_prefix.strip_argv_prefix`, `_collect_config_file_pairs` and
-two more scans in `cli/_build.py`, then repeat all four inside the `patch_only` re-parse — six or
-more passes for one command line.
+the main loop. The adapters add `cli/_prefix.strip_argv_prefix`, two more scans in
+`cli/_build.py` (and cyclopts `_collect_config_file_pairs`), then run all four again in the loop
+that writes their CLI channel — six or more passes for one command line.
 
 Both `_tags` scans run on **un-normalized** argv, so each re-implements `--flag=value` splitting
 and flag detection by hand rather than using `_normalize_eq_args` and `_looks_like_flag`, the sole

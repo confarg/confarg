@@ -282,7 +282,8 @@ class TestArgparseIntegration:
         """Parsing --worker via argparse then calling build() resolves the class."""
         parser = argparse.ArgumentParser()
         confarg_ap.populate_parser(ConfigWithTypeRef, parser)
-        ns = parser.parse_args(["--worker", _DERIVED_PATH])
+        argv = ["--worker", _DERIVED_PATH]
+        ns = parser.parse_args(argv)
         # Simulate what confarg.load does: namespace → nested dict → build()
-        result = confarg_ap.from_namespace(ConfigWithTypeRef, ns, env_prefix=None)
+        result = confarg_ap.from_namespace(ConfigWithTypeRef, ns, argv=argv, env_prefix=None)
         assert result.worker is Derived

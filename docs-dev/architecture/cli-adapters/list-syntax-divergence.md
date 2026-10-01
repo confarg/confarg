@@ -38,12 +38,13 @@ Two consequences follow from the accumulation being over **tokens**, not over sh
 - vanilla joins the occurrences and shapes the result once, in `_parse_cli._varlen_value` /
   `_union_seq_value`. A whole-value inline JSON array is therefore a *single-token* spelling
   (`_lone_json_array`): `--tags '["a","b"]'` decodes, while `--tags '["a","b"]' --tags '["c"]'`
-  and `--tags '["a","b"]' z` are two ordinary items. The adapters were already answering it that
-  way, since `_collect._json_array_override` is handed everything a framework collected for the
-  flag and asks the same "is it alone?" question of that whole list.
+  and `--tags '["a","b"]' z` are two ordinary items, on the adapters too, whose CLI channel is
+  the same loop ([argv is the only writer](model.md#argv-is-the-only-writer)).
 - argparse keeps only the last occurrence under a plain store, so a spec that accumulates asks for
   `action="extend"` (`FlagSpec.accumulates`, set on those two field families alone —
-  `nargs="*"` is shared by seven flag families here and says nothing about repetition).
+  `nargs="*"` is shared by seven flag families here and says nothing about repetition). Since
+  the parse result no longer carries values into the merge, this only keeps the Namespace an
+  honest picture of what was typed.
   `default=argparse.SUPPRESS` survives it: a flag nobody typed stays off the Namespace, and a
   first occurrence with no token still yields `[]`. click and typer accumulate already through
   `multiple=True`, cyclopts through `consume_multiple`.

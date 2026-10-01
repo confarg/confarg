@@ -43,9 +43,12 @@ def merge_context(  # noqa: PLR0913
         target: The dataclass type to construct.
         ctx: The :class:`typer.Context` Typer passes to the command function.
             Declare it as a parameter of the command to receive it.
-        argv: CLI argument list used to determine config-file loading order.
+        argv: The argument list the command was invoked with: the CLI values,
+            patches and ``--config`` files are read from it, in its order.
             Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
-            command was invoked with a custom argv (e.g. in tests).
+            command was invoked with a custom argv (e.g. in tests); a context
+            holding a confarg option *argv* does not spell raises
+            :class:`~confarg.exceptions.ConfargError`.
         env: Environment variable mapping.  Defaults to ``os.environ``.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
@@ -115,9 +118,12 @@ def from_context(  # noqa: PLR0913
         target: The dataclass type to construct.
         ctx: The :class:`typer.Context` Typer passes to the command function.
             Declare it as a parameter of the command to receive it.
-        argv: CLI argument list used to determine config-file loading order.
+        argv: The argument list the command was invoked with: the CLI values,
+            patches and ``--config`` files are read from it, in its order.
             Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
-            command was invoked with a custom argv (e.g. in tests).
+            command was invoked with a custom argv (e.g. in tests); a context
+            holding a confarg option *argv* does not spell raises
+            :class:`~confarg.exceptions.ConfargError`.
         env: Environment variable mapping.  Defaults to ``os.environ``.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,

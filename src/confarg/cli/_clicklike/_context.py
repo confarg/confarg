@@ -87,6 +87,7 @@ def merge_from_ctx(  # noqa: PLR0913  # mirrors the public merge_context signatu
         files=files,
         env_config=env_config,
         union_tag=union_tag,
+        binds_runs=False,
     )
 
 

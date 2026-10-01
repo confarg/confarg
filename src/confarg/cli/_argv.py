@@ -87,30 +87,19 @@ def refuse_bare_occurrences(argv: Sequence[str], refuses_bare: Collection[str]) 
             raise ConfargError.missing_value(tok)
 
 
-def bare_only_flag_names(argv: Sequence[str]) -> set[str]:
-    """Return the names of the flags in *argv* whose every occurrence carries no item.
-
-    The other half of :func:`drop_bare_occurrences`: what the frameworks never see, the
-    merge step reads back here from the argv the user typed.  A name is left out as soon
-    as one occurrence carries an item, because the framework then collected that
-    occurrence's items and its parse result is what says so.
+def spelled_flag_names(argv: Sequence[str]) -> set[str]:
+    """Return the names of the flags *argv* spells, ``--k=v`` and ``--k v`` alike.
 
     Args:
         argv: The tokens the user typed, in order.
 
     Returns:
-        Dotted flag names (no ``--``), every occurrence of which stands bare.
+        Dotted flag names (no ``--``), each spelled at least once.
 
     Dev Notes:
-        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
+        docs-dev/architecture/cli-adapters/model.md#argv-is-the-only-writer
     """
     # Imported here: a module-level import would create a load-time import cycle.
-    from confarg._parse_cli import _looks_like_flag  # noqa: PLC0415
+    from confarg._parse_cli import _looks_like_flag, _normalize_eq_args  # noqa: PLC0415
 
-    bare: set[str] = set()
-    valued: set[str] = set()
-    for i, tok in enumerate(argv):
-        if not _looks_like_flag(tok):
-            continue
-        (bare if _bare_occurrence(argv, i) else valued).add(tok[2:])
-    return bare - valued
+    return {tok[2:] for tok in _normalize_eq_args(argv) if _looks_like_flag(tok)}

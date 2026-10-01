@@ -19,13 +19,14 @@ Vanilla gets both from its sequential scan plus one promotion:
 `_parse_cli._promote_namedtuple_positional` re-keys the positional list by field name
 before a sub-flag descends, the namedtuple counterpart of the `'*'` base `_set_nested`
 gives a *varlen* collection's index patches — a plain `tuple[int, int]` keeps the `'*'`
-shape, which builds there. The adapters, whose parse result carries no order, read the
-order back off argv (`cli/_collect._arity_flag_writes_last`), as the patch and
-`--config` scans already do, so the same argv produces byte-identical dicts on all
-five front-ends.
+shape, which builds there. The adapters' CLI channel is the same sequential scan over the
+same argv ([CLI adapters](../cli-adapters/model.md#argv-is-the-only-writer)), so the same argv
+produces byte-identical dicts on all five front-ends — interleavings included
+(`--pt.x 1 --pt 7 8 --pt.y 2`), which the per-flag argv read-back the adapters first used
+(`_arity_flag_writes_last`) could not describe (BUG-111).
 
-The sub-flag's value is eagerly coerced, like every other leaf token. The adapters used
-to store it raw, which put a `str` where vanilla stored the number and made
+The sub-flag's value is eagerly coerced, like every other leaf token. The adapters' former
+collector used to store it raw, which put a `str` where vanilla stored the number and made
 `--pt.y 9 --double '${pt.y * 2}'` fail on the four adapters (`'9' * 2` is `'99'`)
 while vanilla said 18 — the gap PR #99 closed for the other leaves.
 
@@ -45,9 +46,9 @@ The optional spelling keeps the generic promotion on both sides. `Point | None` 
 with a sequence variant to the vanilla scan, so `_promote_namedtuple_positional` — which asks
 the field as resolved — never fires for it: a sub-flag descends through the plain
 `_set_nested`, giving the `'*'` list-op base a *varlen* collection's index patches ride on.
-BUG-61 routed the adapters' collector through the same union shaper
-([whole-value flags](../cli-adapters/whole-value-flags.md#whole-value-flags)), so the adapters
-store that shape too, and the arity-plus-sub-flag merge that used to build on the adapters
+The adapters run the same scan
+([whole-value flags](../cli-adapters/whole-value-flags.md#whole-value-flags)), so they store
+that shape too, and the arity-plus-sub-flag merge that used to build on the adapters
 alone (`{'x': 1, 'y': 9}`) now fails in `build()` on all five front-ends identically.
 Re-keying the optional spelling by field name as well was rejected: it is not what vanilla
 produces, and the plain spelling is the only one whose promotion vanilla performs.

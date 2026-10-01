@@ -65,14 +65,15 @@ the boundary moves here.
   user reaches for, and decline the JSON one
   ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)). Use a config file, an environment variable or
   the per-field flags (`--pair.x 13`) to set it whole under those two.
-- The latest-writer read-back off argv judges *per flag*: the last `--<field>` occurrence
-  against the last `--<field>.<sub>` one, for a namedtuple's arity flag, for a struct,
-  registered-leaf or union field's bare value and for the disagreeing-owner stores alike
-  ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)). Interleave the
-  occurrences — `--pair 1 2 --pair.y 9 --pair 5 6 --pair.x 7`, or `--sub.a 3 --sub 9
-  --sub.d 4` — and a sub-flag typed before the final bare occurrence rides along, where
-  vanilla's sequential scan had already overwritten it. Up to one occurrence of each, the
-  two agree.
+- The adapters read the CLI channel off the `argv` passed to `merge_*` / `from_*`, so it must
+  be the list the framework parsed: `parser.parse_args(custom)` or `CliRunner().invoke(cmd,
+  custom)` needs `argv=custom` too, since the default is `sys.argv[1:]`. A confarg flag the
+  parse result holds and that argv does not spell raises `ConfargError`; a mismatch the parse
+  result cannot show (argv spelling *more* than the framework parsed) is read as typed
+  ([CLI adapters](cli-adapters/model.md#argv-is-the-only-writer)).
+- A flag the adapters register and vanilla refuses (BUG-112, BUG-113) passes the framework's
+  parse and is refused at merge, with vanilla's error, rather than at parse time with the
+  framework's ([CLI adapters](cli-adapters/model.md#argv-is-the-only-writer)).
 - The typer adapter needs `typer>=0.27` and reads two of its private modules
   (`typer._types`, `typer._click`): the option, choice and context classes it must subclass
   have no public spelling since typer forked click, so a typer release that moves them breaks

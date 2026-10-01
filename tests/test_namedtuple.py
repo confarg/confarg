@@ -284,32 +284,36 @@ class TestCLIArgparse:
         """--pair 13 42 sets x=13, y=42."""
         parser = argparse.ArgumentParser()
         populate_parser(WithPoint, parser)
-        ns = parser.parse_args(["--pair", "13", "42"])
-        result = from_namespace(WithPoint, ns)
+        argv = ["--pair", "13", "42"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(WithPoint, ns, argv=argv)
         assert result.pair == Point(x=13, y=42)
 
     def test_field_name_form(self) -> None:
         """--pair.x 13 --pair.y 42 sets x=13, y=42."""
         parser = argparse.ArgumentParser()
         populate_parser(WithPoint, parser)
-        ns = parser.parse_args(["--pair.x", "13", "--pair.y", "42"])
-        result = from_namespace(WithPoint, ns)
+        argv = ["--pair.x", "13", "--pair.y", "42"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(WithPoint, ns, argv=argv)
         assert result.pair == Point(x=13, y=42)
 
     def test_index_form(self) -> None:
         """--pair.0 13 --pair.1 42 sets x=13, y=42."""
         parser = argparse.ArgumentParser()
         populate_parser(WithPoint, parser)
-        ns = parser.parse_args(["--pair.0", "13", "--pair.1", "42"])
-        result = from_namespace(WithPoint, ns)
+        argv = ["--pair.0", "13", "--pair.1", "42"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(WithPoint, ns, argv=argv)
         assert result.pair == Point(x=13, y=42)
 
     def test_field_name_overrides_nargs(self) -> None:
         """Sub-flag overrides that field's position; nargs fills the rest."""
         parser = argparse.ArgumentParser()
         populate_parser(WithPoint, parser)
-        ns = parser.parse_args(["--pair", "1", "2", "--pair.x", "99"])
-        result = from_namespace(WithPoint, ns)
+        argv = ["--pair", "1", "2", "--pair.x", "99"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(WithPoint, ns, argv=argv)
         # x=99 from sub-flag; y=2 from nargs position 1
         assert result.pair == Point(x=99, y=2)
 
@@ -323,24 +327,27 @@ class TestCLIArgparse:
         """
         parser = argparse.ArgumentParser()
         populate_parser(WithPoint, parser)
-        ns = parser.parse_args(["--pair.0", "1", "--pair.x", "99", "--pair.y", "2"])
+        argv = ["--pair.0", "1", "--pair.x", "99", "--pair.y", "2"]
+        ns = parser.parse_args(argv)
         with pytest.raises(TypeCoercionError, match="Unknown field"):
-            from_namespace(WithPoint, ns)
+            from_namespace(WithPoint, ns, argv=argv)
 
     def test_all_sub_flags_no_nargs(self) -> None:
         """All fields set via sub-flags without the combined nargs flag."""
         parser = argparse.ArgumentParser()
         populate_parser(WithPoint, parser)
-        ns = parser.parse_args(["--pair.x", "5", "--pair.y", "6"])
-        result = from_namespace(WithPoint, ns)
+        argv = ["--pair.x", "5", "--pair.y", "6"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(WithPoint, ns, argv=argv)
         assert result.pair == Point(x=5, y=6)
 
     def test_with_defaults(self) -> None:
         """Fields with defaults don't need to be set on CLI."""
         parser = argparse.ArgumentParser()
         populate_parser(WithColor, parser)
-        ns = parser.parse_args(["--color.r", "200", "--color.g", "100", "--color.b", "50"])
-        result = from_namespace(WithColor, ns)
+        argv = ["--color.r", "200", "--color.g", "100", "--color.b", "50"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(WithColor, ns, argv=argv)
         assert result.color == Color(r=200, g=100, b=50, a=255)
 
 

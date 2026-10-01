@@ -13,14 +13,14 @@ everywhere: `--config` and `--config.<path>+` carry the same `nargs="*"` and sti
 The config flags stay outside the family on every front-end (BUG-51). A bare field flag has a
 job of its own — a bare `--users` *clears* the list — while a bare `--config.<path>+` would mount
 nothing and reset nothing, so the bare form spells nothing worth accepting, and refusing it is
-what vanilla always did. The adapters' re-scan (`_parse_cli._collect_config_file_pairs`) raises
-vanilla's message now, built by the one `_missing_config_path_msg` both scans share, so
-argparse's `nargs="*"` — which takes zero tokens — and cyclopts' implicit empty container no
-longer swallow the occurrence; cyclopts validates before its own parse, where an implicit token
-meeting a real one trips a framework assertion. click and typer refuse the bare form in their own
+what vanilla always did. Vanilla's loop raises its own message on every front-end, so argparse's
+`nargs="*"` — which takes zero tokens — no longer swallows the occurrence; cyclopts validates
+before its own parse (`_parse_cli._collect_config_file_pairs`, off the one
+`_missing_config_path_msg` both share), where an implicit token meeting a real one trips a
+framework assertion. click and typer refuse the bare form in their own
 parser, with the framework's "requires an argument", as they refuse the whole-value flags.
 
-The same re-scan runs vanilla's subpath check too (`_parse_cli._check_mount_subpath`): a
+The loop runs vanilla's subpath check too (`_parse_cli._check_mount_subpath`): a
 `--config.<subpath>` naming no node of the target is refused on every front-end at parse time
 (BUG-50, closed), not mounted silently to surface later as an unknown-field error from
 `build()`.
@@ -47,46 +47,31 @@ occurrences** (`cli._argv.drop_bare_occurrences`). So the no-op is honored rathe
 one argv may spell the same append both ways (`--users+ billy --users+`), and every front-end
 answers alike (BUG-35).
 
-Dropping a token is only safe where nothing is lost, and that is where the families differ:
+Dropping a token is safe because nothing reads the framework's parse result for a value: the
+adapters' CLI channel is vanilla's loop over the argv the user typed
+([argv is the only writer](model.md#argv-is-the-only-writer)), and that argv still holds every
+bare occurrence. A bare append, subkey or element flag, a bare field flag's clear, and the
+union shaper's missing value on a bare occurrence that meets an empty accumulation are all read
+exactly where vanilla reads them, by the same code. Before REF-72 the parse result *was* the
+writer for field flags, and each family needed a reader of its own to put back what the drop
+took (`_bare_multi_token_flags`, `bare_only_flag_names`, `_union_seq_occurrence_writes`).
 
-- A bare **append**, and a bare **subkey or element flag**, are read back by the patch scan,
-  which reads the argv the user typed rather than the framework's parse result. What a framework
-  collected for them is discarded anyway — `_collect_ns_fields` walks the target type, where
-  `users+`, `map.k` and `grid.0` name no field — so the drop costs nothing.
-- A bare **field flag** is different: the empty value it stores is the *field's own*, so the flat
-  collector owns it and the patch scan never sees it. Dropping the token alone lost the clear on
-  all three filtered front-ends. It is read back in the merge step instead, from the same argv:
-  `_collect._bare_multi_token_flags` names the bare-only flags whose type takes many tokens, and
-  `_merge_from_flat` puts an empty value under each, leaving the collector branches to shape it
-  exactly as they shape argparse's. With `setdefault`, so an occurrence that did carry items
-  keeps what the framework collected (`--users x --users`, and `--users=--a --users` too, where
-  the `=` token names `users=--a` rather than `users`).
+The predicate reads the opposite family too: a plain fixed-arity flag's bare occurrence is a
+missing value, not a no-op, so nothing drops it — `refuse_bare_occurrences` raises vanilla's
+error for one off the argv the user typed, before a framework that would assert on it parses
+([whole-value flags](whole-value-flags.md#whole-value-flags)). `drop_bare_occurrences` and
+`refuse_bare_occurrences` ask one `_bare_occurrence` predicate, so they cannot disagree about
+which occurrences are bare.
 
-One marker, two readers: `drop_bare_occurrences` decides which tokens a framework parses and
-`bare_only_flag_names` decides what a dropped token meant, both off one `_bare_occurrence`
-predicate so they cannot disagree about which occurrences are bare. The predicate reads the
-opposite family too: a plain fixed-arity flag's bare occurrence is a missing value, not a no-op,
-so nothing drops it — `refuse_bare_occurrences` raises vanilla's error for one off the argv the
-user typed, before a framework that would assert on it parses
-([whole-value flags](whole-value-flags.md#whole-value-flags)).
-
-`_takes_multi_tokens` is the whole gate, asked once where the specs are built and again on the
-merge side, so registration and read-back cannot disagree about which flags stand bare. It is the
-multi-token *shape* and not "is there something to clear": a union with a sequence variant but no
-varlen one (`str | tuple[str, str]`) is therefore included, and the empty value it stores is what
-raises vanilla's error in `_collect_union_seq_value` — so the bare form is refused with confarg's
-own message everywhere instead of the framework's. The optional spelling of a fixed-arity
-field answers the predicate the same way — `tuple[int, int] | None` and a namedtuple under
-`Optional` are unions with a sequence variant — so its flag registers `stands_bare` like the rest
-of the family (BUG-79; until then the clicklike parsers answered its bare occurrence with their
-own usage error), the collector routes its tokens through the same shaper (BUG-61), and
-`_collect._union_seq_occurrence_writes` is the order-aware half of the read-back: a bare
-occurrence that meets an empty accumulation is the shaper's missing value, while one after a
-valued occurrence adds nothing — a question `_bare_multi_token_flags` cannot answer, since it
-sees only the flags whose *every* occurrence is bare
-([whole-value flags](whole-value-flags.md#whole-value-flags)). `stands_bare` is set on what that predicate
-names plus the append; marking anything else needs a reader for what the dropped token meant, or
-the information is gone.
+`_takes_multi_tokens` is the gate registration asks. It is the multi-token *shape* and not "is
+there something to clear": a union with a sequence variant but no varlen one
+(`str | tuple[str, str]`) is therefore included, and the empty value it stores is what raises
+vanilla's error in `_parse_cli._union_seq_value` — so the bare form is refused with confarg's own
+message everywhere instead of the framework's. The optional spelling of a fixed-arity field
+answers the predicate the same way — `tuple[int, int] | None` and a namedtuple under `Optional`
+are unions with a sequence variant — so its flag registers `stands_bare` like the rest of the
+family (BUG-79; until then the clicklike parsers answered its bare occurrence with their own
+usage error) ([whole-value flags](whole-value-flags.md#whole-value-flags)).
 
 It is one rule with one decision-maker and two application points, because the seam at which a
 framework receives argv differs — as it does for
@@ -97,8 +82,7 @@ on the options (`_clicklike.StandsBareMixin`): `add_to_parser` arms a filter on 
 instance, which both frameworks build fresh per parse. A hook on the command would not survive
 the `params` copying that groups and decorators do routinely. argparse and vanilla are exempt:
 `nargs="*"` already takes zero tokens and accepts a second occurrence, so they parse the argv as
-typed — which is the other reason the merge-side read-back is a `setdefault` over what argparse
-already collected rather than an override of it.
+typed.
 
 "Carries an item" is asked with `_parse_cli._looks_like_flag`, the same value/flag split vanilla
 consumes by, so the frameworks take exactly the tokens vanilla takes. That matters for
