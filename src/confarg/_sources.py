@@ -238,7 +238,7 @@ def _join(base: str | None, relative: str) -> str:
     *base* is ``None`` for the channel routes -- ``--config``, ``CONFIG__<PATH>`` and ``files=``
     -- which have no including document and resolve against the process working directory
     instead. That is the one difference between them and ``__include__``
-    (02-files-and-env.md#mounting).
+    (docs-dev/architecture/config-files/mounting.md#mounting).
 
     Raises:
         InvalidConfigFileError: If a remote document names a location outside its own origin.

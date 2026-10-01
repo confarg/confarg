@@ -303,8 +303,9 @@ def _load_includes(
 
     Two dicts deep-merge under *union_tag*, so a class tag in a later entry discards the
     earlier node exactly as it does across ``--config`` files
-    (10-design-decisions.md#a-class-tag-replaces-not-merges). Anything else is replaced by the
-    later entry, and so is a CSV/TSV entry even when it loads as a dict. ``seen`` grows per
+    (docs-dev/architecture/design-decisions/class-tag-replaces.md#a-class-tag-replaces-not-merges).
+    Anything else is replaced by the later entry, and so is a CSV/TSV entry even when it
+    loads as a dict. ``seen`` grows per
     entry, not across the list: naming the same document twice is legal, a genuine cycle raises.
 
     *base* is the location of the including document, which each entry resolves against; it is
@@ -427,9 +428,9 @@ def _resolve_list(
     A list item that is a pure ``{INCLUDE_KEY: path}`` dict is replaced by the included
     content as **one** element, whatever type that content has: an include contributes a
     value, and extending a list is the ``+`` merge operator's job
-    (10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling). A list of
-    paths is layered into a single value first, as in a dict node. Items with sibling keys
-    follow the same rules as dict nodes.
+    (docs-dev/architecture/design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling).
+    A list of paths is layered into a single value first, as in a dict node. Items with
+    sibling keys follow the same rules as dict nodes.
 
     Each item's references are prefixed by the index it lands on.
 
@@ -466,7 +467,7 @@ def _load_any(
 
     The single loader: every mount route reaches a document through here, so the accepted
     formats, the CSV options and the include resolution are one rule rather than three
-    (02-files-and-env.md#mounting). Whether the result is allowed to be a *document root* is
+    (docs-dev/architecture/config-files/mounting.md#mounting). Whether the result is allowed to be a *document root* is
     the separate question :func:`_require_layer` asks.
 
     For CSV/TSV, *options* may contain 'orient' and 'header'.
@@ -562,7 +563,8 @@ def _decode_mount_value(value: Any) -> Any:
     A ``Path`` or a plain string is a location. A string starting with ``{`` or ``[`` is the
     JSON spelling of the dict and list forms, so a ``--config.users`` token can say on argv what
     a file says with a mapping; invalid JSON is a hard error there, as it is for the ``.json``
-    cast (03-cli-parsing.md#force-casts). Anything else is already in the include grammar -- a
+    cast (docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#force-casts).
+    Anything else is already in the include grammar -- a
     ``files=`` caller may pass the dict or list form directly -- and passes through.
 
     Dev Notes:

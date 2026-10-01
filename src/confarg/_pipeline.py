@@ -53,7 +53,7 @@ def _load_cli_config(value: Any, subpath: str, config_flag: str, union_tag: str 
     The ``+`` form appends instead of replacing, and appending is the one thing that spreads a
     fragment over several elements: a list extends the target list, anything else lands as one
     item. References in an appended fragment stay unanchored, because an appended element has
-    no index until the merge is over (11-limitations.md).
+    no index until the merge is over (docs-dev/architecture/limitations.md#expressions).
 
     Dev Notes:
         docs-dev/architecture/config-files/mounting.md#mounting

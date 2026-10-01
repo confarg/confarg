@@ -1318,7 +1318,8 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             continue
 
         # A bare callable shorthand already stored at a prefix of this path is a spec, not
-        # a stale scalar: open it so this flag refines it (03-cli-parsing.md#token-consumption).
+        # a stale scalar: open it so this flag refines it
+        # (docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption).
         # *patch_base* holds the adapters' half of that dict; opening both keeps the deep
         # merge that follows from replacing the shorthand instead of joining it.
         _open_callable_shorthand(ctx.data, path, walk_target, union_tag)
