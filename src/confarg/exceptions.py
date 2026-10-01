@@ -199,6 +199,19 @@ class UnknownArgumentError(ConfargError):
         return cls(f"Unknown argument: {token!r}. Expected arguments to start with --{cli_prefix}.")
 
     @classmethod
+    def bare_prefix_on_struct_root(cls, token: str, cli_prefix: str) -> UnknownArgumentError:
+        """Return an error for the bare prefix flag spelled against a struct-like root.
+
+        The bare ``--<cli_prefix>`` flag is a scalar root's only CLI spelling; a
+        struct-like root has fields to address instead, so the flag names nothing.
+        """
+        return cls(
+            f"Unknown argument: {token!r}. The bare --{cli_prefix} flag carries a value only"
+            f" for a scalar root; this target is structured. Address one of its fields"
+            f" (--{cli_prefix}.<field>) instead.",
+        )
+
+    @classmethod
     def unexpected_positional(cls, token: str) -> UnknownArgumentError:
         """Return an error for an argv token no flag consumed.
 

@@ -1139,7 +1139,7 @@ def _consume_typed_arg(
     A whole-value flag needs its value: the bare ``--<struct>`` form falls through to the
     missing-value error every other value-taking flag raises.
 
-    Agent Notes:
+    Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     args = ctx.argv
@@ -1347,6 +1347,11 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         if not is_struct and not path:
             i = _handle_scalar_root(argv, i, token, target_r, ctx.data)
             continue
+
+        if is_struct and not path:
+            # The bare --<prefix> flag is a scalar root's only CLI spelling; on a
+            # struct-like root its value would be written at the empty path, a no-op.
+            raise UnknownArgumentError.bare_prefix_on_struct_root(token, cli_prefix)
 
         ft = _resolve_field_type(walk_target, path, union_tag)
         if ft is None:

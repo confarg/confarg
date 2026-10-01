@@ -2238,6 +2238,27 @@ class TestCliPrefixContract:
         """The ``none`` token resolves to None for an optional scalar root."""
         assert loader.load(str | None, argv=["--app", "none"], env={}, cli_prefix="app", config_flag="") is None
 
+    def test_bare_prefix_flag_on_struct_root_refused(self, loader: ConfargLoader) -> None:
+        """The bare ``--<prefix>`` flag names no field of a struct-like root (BUG-91).
+
+        Vanilla used to accept its value and then drop it — the empty path made the
+        write a no-op, so the merged dict simply lacked it — while every adapter
+        rejected the flag in its own parser.  The loud refusal is the contract.
+        """
+        target = make_target("name", str)
+        with pytest.raises((ConfargError, SystemExit)):
+            loader.merge(target, argv=["--app", "val"], env={}, cli_prefix="app")
+
+    def test_bare_prefix_flag_on_leaf_root_refused(self, loader: ConfargLoader, leaf_registry: None) -> None:
+        """A registered leaf as the root refuses the bare ``--<prefix>`` flag too (BUG-91).
+
+        The scalar root's only CLI spelling has no reader on a leaf root: the flat
+        tagged form (``--app.class uuid.UUID --app.hex …``) is how it is spelled.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        with pytest.raises((ConfargError, SystemExit)):
+            loader.merge(UUID, argv=["--app", _UUID_TEXT], env={}, cli_prefix="app")
+
     def test_prefixed_flat_field(self, loader: ConfargLoader) -> None:
         """A flat field is addressed as ``--<prefix>.<field>``."""
         target = make_target("name", str)
@@ -4331,7 +4352,7 @@ class _WholePlainConfig:
     db: _WholePlain = dataclasses.field(default_factory=_WholePlain)
 
 
-# Vanilla raises its own ConfargError; argparse, click and cyclopts reject the flag in
+# Vanilla raises its own ConfargError; argparse, click, typer and cyclopts reject the flag in
 # their own parsers and exit.  Both are "the front-end refused it", which is the contract.
 _REJECTS_BARE_FLAG = (ConfargError, SystemExit)
 

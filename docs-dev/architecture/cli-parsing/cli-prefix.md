@@ -19,3 +19,11 @@ CLI spelling, handled by `_handle_scalar_root` and mirrored for the adapters in
 `cli/_collect.py`. Without a prefix it has no CLI spelling at all, in any front-end.
 `--<prefix>.json` reaches the same root through the
 [root cast](casts-and-reserved-words.md#force-casts).
+
+A **struct-like** root (dataclass, plain class — a registered leaf included) refuses the bare
+flag instead (BUG-91): nothing about `--<prefix> VALUE` names a field, and a value consumed
+for the empty path would be silently dropped — the adapters had refused it at parse time all
+along, so vanilla's `UnknownArgumentError` is the refusal the five front-ends share. A
+registered leaf as the root keeps its flat tagged spelling
+(`--<prefix>.class uuid.UUID --<prefix>.hex …`), the one
+[a registered leaf is opted back in with](../design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in).
