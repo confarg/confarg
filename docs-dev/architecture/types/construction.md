@@ -9,10 +9,10 @@
    of exactly one variant that `_is_struct` accepts — registered leaves included, since a tag is
    an explicit request to build from fields
    ([design decisions](../design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in)).
-   The key is the tag only when no struct variant owns its spelling as a field; a field that
-   does owns the key, the union falls through to structural matching, and the key counts as
-   provided data there (BUG-102,
-   [CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins));
+   The key is the tag only when no member — no variant's own field, nor a variant's
+   subclass-only field — owns its spelling; a member that does owns the key, the union falls
+   through to structural matching, and the key counts as provided data there (BUG-102,
+   BUG-103, [CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins));
 3. **structural** matching for struct variants: required fields ⊆ provided keys ⊆ fields,
    refined by value/type compatibility; more than one match is an `AmbiguousUnionError`
    whose message lists each variant's fields and suggests the tag; zero matches falls back
@@ -29,7 +29,10 @@ depends on what has been imported
 path so the class can be imported. One of the struct's own fields may take the tag's
 spelling away — the field owns the key, and the base then builds from its fields, with no
 tag able to dispatch to a subclass (BUG-102,
-[CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins)).
+[CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins)). A subclass-only
+field may take it too (BUG-103): the key is then field data, and the subclass that owns the
+spelling is selected structurally, the union's answer — several matches or none fail loudly,
+never a silent pick or a stripped value.
 
 Subclass discovery (`_dataclass_subclasses`) walks breadth-first and yields each class exactly
 once. Both halves are settled decisions: a diamond subclass is reachable by two inheritance
@@ -39,7 +42,7 @@ descendants, which the contract suite asserts. The depth-first walk the code use
 accident of `list.pop()`, contradicting a docstring that had promised BFS from the start; the
 stdlib splits on the alternative (`ast.walk` is breadth-first, `pkgutil.walk_packages` is
 depth-first), and BFS was picked to honor the documented contract. The other caller,
-`_parse_cli._subclass_field_type`, only reduces the list to a common field type, so it is
+`_types._subclass_field_type`, only reduces the list to a common field type, so it is
 indifferent to both.
 
 ## Structs, collections and defaults

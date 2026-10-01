@@ -59,7 +59,6 @@ from confarg._types import (
     _resolve_struct,
     _resolve_type,
     _StrToken,
-    _struct_fields,
     _union_args_no_none,
     _union_has_scalar_variant,
     _union_has_seq_variant,
@@ -1313,7 +1312,7 @@ def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915  # one bra
         # back as a raw string, not resolved, for the BUG-45 reason: construct()
         # raises the import error naming the bad path.
         tag_key = f"{flag}.{union_tag}"
-        if tag_key in flat and union_tag not in _struct_fields(core):
+        if tag_key in flat and not _union_tag_shadowed(core, union_tag):
             _set_nested(result, [*flag.split("."), union_tag], _str_token(flat[tag_key]))
         _collect_ns_fields(flat, core, flag, union_tag, result, tags, argv)
         return

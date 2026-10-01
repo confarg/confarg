@@ -1528,6 +1528,16 @@ class _TagCaseSub(_TagCaseBase):
     extra: str = "e"
 
 
+@dataclass
+class _TagOnlySubBase:
+    pass
+
+
+@dataclass
+class _TagOnlySub(_TagOnlySubBase):
+    Kind: str
+
+
 class TestUnionTagFieldCollision:
     """A field whose exact spelling equals union_tag is reachable on the CLI channel.
 
@@ -1552,6 +1562,22 @@ class TestUnionTagFieldCollision:
         """A base with subclasses still builds from its own field named like the tag."""
         result = confarg.load(_TagShadowBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
         assert result == _TagShadowBase(Kind="v")
+
+    def test_subclass_only_field_on_dispatch_struct(self) -> None:
+        """The ticket's repro: a subclass-only field keeps its value, nothing is imported.
+
+        The walk already answered "member" for a subclass-only field, but construction's
+        shadowing predicate asked the base's own fields only, so it read the merged key
+        as the tag, imported the field's value as a class path and stripped it — the
+        field the user set was then reported missing (BUG-103).
+        """
+        result = confarg.load(_TagOnlySubBase, argv=["--Kind", f"{__name__}._TagOnlySub"], env={}, union_tag="Kind")
+        assert result == _TagOnlySub(Kind=f"{__name__}._TagOnlySub")
+
+    def test_subclass_only_field_takes_plain_value(self) -> None:
+        """A value that names no class is the field's value, not a failed tag import."""
+        result = confarg.load(_TagOnlySubBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
+        assert result == _TagOnlySub(Kind="v")
 
     def test_shadowing_variant_field_on_union_root(self) -> None:
         """A union whose variant owns the colliding field builds that variant structurally."""

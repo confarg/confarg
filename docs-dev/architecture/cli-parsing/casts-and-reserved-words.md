@@ -36,8 +36,15 @@ env channel's unknown-field warning (BUG-90) and the adapters' `_find_json_cast`
 
 The union tag yields the same way (BUG-102): a field whose exact spelling equals `union_tag`
 is that field, and the tag applies only where no member of that spelling exists — the
-previously unsettled tag counterpart of this rule. The walk asks it as "member first, tag
-fallback" (`_resolve_field_type` advances before it falls back to the tag; its two mirrors,
+previously unsettled tag counterpart of this rule. A subclass-only field is such a member
+too (BUG-103): the walk had always answered it so (`_subclass_field_type`), while the
+predicate asked the base's own fields only, so construction read the merged key as the tag,
+imported the field's value as a class path and stripped it — the field the user had set was
+then reported missing. The predicate now answers with the walk, and construction, holding a
+key a subclass-only field owns, selects the subclass structurally the way the union's
+fallback selects a variant (`_construct_shadowed_subclass`): several matches are a loud
+ambiguity, none a loud refusal. The walk asks it as "member first, tag fallback"
+(`_resolve_field_type` advances before it falls back to the tag; its two mirrors,
 `_addresses_callable_key` and `_is_collection_patch_path`, follow), and every site that has
 only the type and the key — construction's struct, union and taggable-leaf dispatches, the
 tag collectors in `_tags.py`, the adapters' tag flags — asks `_union_tag_shadowed`
@@ -47,9 +54,10 @@ answers it so), and the CLI keeps a case-differing field distinguishable, exact 
 being what it is: `--Kind` the tag, `--kind` the field.
 
 The trade-off is accepted the way the casts rule accepts its own: a member that shadows the
-tag makes the tag unreachable at that position, silently — a variant field shadowing a
-union, a base field shadowing subclass dispatch, a leaf parameter shadowing the only hatch
-into a registered leaf. The alternatives were refused: refusing the collision loudly would
+tag makes the tag's class-path dispatch unreachable at that position, silently — a variant
+field shadowing a union, a base field shadowing subclass dispatch, a subclass-only field
+turning subclass dispatch structural, a leaf parameter shadowing the only hatch into a
+registered leaf. The alternatives were refused: refusing the collision loudly would
 break plain structs that never use a union and contradict the env channel's settled
 member-wins (BUG-101), and letting the tag win everywhere is the unreachable-field bug
 itself. The remedy for a shadowed tag is to rename the field or pass a different

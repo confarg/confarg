@@ -713,6 +713,16 @@ class _EnvTagSub(_EnvTagBase):
     extra: str = "e"
 
 
+@_dc
+class _EnvKindOnlyBase:
+    pass
+
+
+@_dc
+class _EnvKindOnlySub(_EnvKindOnlyBase):
+    Kind: str
+
+
 class TestEnvRootTagSegment:
     """A root-level tag segment names a real member, as the CLI and file channels accept it (BUG-90).
 
@@ -867,6 +877,27 @@ class TestEnvCustomTagCasing:
             )
         assert merged == {"kind": "v"}
         assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
+
+
+class TestEnvSubclassOnlyTagCollision:
+    """A subclass-only field spelled exactly like the tag is the field on the env channel too.
+
+    The env walk already resolved the segment to the tag's spelling, and the merged key
+    is the same either way — the defect lived in construction, which read the key as a
+    class path and stripped the value (BUG-103). The field wins instead, so the env
+    variable's value builds the subclass that owns the field.
+    """
+
+    def test_tag_shaped_env_var_builds_owning_subclass(self, loader: ConfargLoader) -> None:
+        """KIND=v builds the subclass owning the field, as the CLI channel's --Kind does."""
+        cfg = loader.load(
+            _EnvKindOnlyBase,
+            argv=[],
+            env={"APP_KIND": "v"},
+            env_prefix="APP_",
+            union_tag="Kind",
+        )
+        assert cfg == _EnvKindOnlySub(Kind="v")
 
 
 # ---------------------------------------------------------------------------

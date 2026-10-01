@@ -316,6 +316,69 @@ class _OtherVariant:
 
 
 @dataclass
+class _KindOnlyBase:
+    """Base whose subclass alone owns the tag's spelling (BUG-103)."""
+
+
+@dataclass
+class _KindOnlySub(_KindOnlyBase):
+    Kind: str
+
+
+@dataclass
+class _KindOnlyRichBase:
+    """Base with its own field beside the subclass-only tag-shaped one."""
+
+
+@dataclass
+class _KindOnlyRichSub(_KindOnlyRichBase):
+    host: str
+
+    Kind: str
+
+
+@dataclass
+class _KindOnlyAmbBase:
+    """Base whose two subclasses both own the tag's spelling."""
+
+
+@dataclass
+class _KindOnlyAmbA(_KindOnlyAmbBase):
+    Kind: str
+
+
+@dataclass
+class _KindOnlyAmbB(_KindOnlyAmbBase):
+    Kind: str
+
+
+@dataclass
+class _KindOnlyNeedyBase:
+    """Base whose subclass owns the spelling plus a further required field."""
+
+
+@dataclass
+class _KindOnlyNeedySub(_KindOnlyNeedyBase):
+    Kind: str
+    other: str
+
+
+@dataclass
+class _KindOnlyUnionVariant:
+    """Union variant whose subclass alone owns the tag's spelling."""
+
+
+@dataclass
+class _KindOnlyUnionSub(_KindOnlyUnionVariant):
+    Kind: str
+
+
+@dataclass
+class _KindOnlyUnionOther:
+    other: str = "o"
+
+
+@dataclass
 class _KindLeaf:
     Kind: str = "k"
 
@@ -352,6 +415,56 @@ class TestTagFieldCollision:
         """A base with subclasses still builds from its own colliding field."""
         result = _construct_struct_dispatch(_KindBase, {"Kind": _StrToken("v")}, "", "Kind")
         assert result == _KindBase(Kind="v")
+
+    def test_subclass_only_field_wins(self) -> None:
+        """A subclass-only field spelled like the tag is the field, not a class path.
+
+        The shadowing predicate once asked the base's own fields only, so construction
+        read the key as the tag and imported the field's value as a class path, stripping
+        it from the data — the very field the user had set then went missing (BUG-103).
+        """
+        result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken("v")}, "", "Kind")
+        assert result == _KindOnlySub(Kind="v")
+
+    def test_subclass_only_field_value_is_never_a_class_path(self) -> None:
+        """A class-path-looking value stays the field's value; nothing is imported."""
+        path = f"{__name__}._KindOnlySub"
+        result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken(path)}, "", "Kind")
+        assert result == _KindOnlySub(Kind=path)
+
+    def test_subclass_only_field_with_base_fields(self) -> None:
+        """The owning subclass builds from the tag-shaped key beside the base's fields."""
+        result = _construct_struct_dispatch(
+            _KindOnlyRichBase,
+            {"host": "h", "Kind": _StrToken("v")},
+            "",
+            "Kind",
+        )
+        assert result == _KindOnlyRichSub(host="h", Kind="v")
+
+    def test_ambiguous_subclass_only_field_raises(self) -> None:
+        """Two structurally matching subclasses are a loud ambiguity, not a silent pick."""
+        with pytest.raises(TypeCoercionError, match="Ambiguous subclasses"):
+            _construct_struct_dispatch(_KindOnlyAmbBase, {"Kind": _StrToken("v")}, "", "Kind")
+
+    def test_subclass_only_field_no_match_raises(self) -> None:
+        """A subclass needing more than the tag-shaped key refuses the data loudly."""
+        with pytest.raises(TypeCoercionError, match="no subclass accepts"):
+            _construct_struct_dispatch(_KindOnlyNeedyBase, {"Kind": _StrToken("v")}, "", "Kind")
+
+    def test_union_variants_subclass_only_field_wins(self) -> None:
+        """A union whose variant's subclass owns the colliding field builds that subclass.
+
+        The union's structural fallback tries the variant, and the variant's own
+        dispatch selects the subclass structurally — the same fix reached through
+        the union route, so no second special case exists to drift.
+        """
+        result = construct(
+            _KindOnlyUnionVariant | _KindOnlyUnionOther,
+            {"Kind": _StrToken("v")},
+            union_tag="Kind",
+        )
+        assert result == _KindOnlyUnionSub(Kind="v")
 
     def test_unshadowed_tag_still_dispatches(self) -> None:
         """A struct without the colliding field keeps importing the tag's class path."""
