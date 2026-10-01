@@ -1063,3 +1063,34 @@ class TestEnvScalarThenSubkey:
             env_prefix="APP_",
         )
         assert result == {"db": "oops"}
+
+
+# ---------------------------------------------------------------------------
+# A field named exactly like the union tag is a field, on env too (BUG-102)
+# ---------------------------------------------------------------------------
+
+
+@_dc
+class _EnvExactKindField:
+    Kind: str = "field"
+
+
+class TestEnvExactTagFieldCollision:
+    """A field whose exact spelling equals union_tag builds from the environment.
+
+    The env resolution walk already settles the collision on the field (BUG-101),
+    but construction read the merged key back as the tag and tried to import the
+    value as a class path. The field wins there too now, so the channel that
+    resolves the collision must also be the channel whose value survives.
+    """
+
+    def test_exact_collision_field_builds(self, loader: ConfargLoader) -> None:
+        """KIND sets the field, with no class-path import attempted."""
+        cfg = loader.load(
+            _EnvExactKindField,
+            argv=[],
+            env={"APP_KIND": "v"},
+            env_prefix="APP_",
+            union_tag="Kind",
+        )
+        assert cfg == _EnvExactKindField(Kind="v")

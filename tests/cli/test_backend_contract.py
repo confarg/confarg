@@ -5518,3 +5518,94 @@ class TestMountParity:
 
         assert "host" not in from_cli["db"]  # the tag replaced the server config outright
         assert from_file == from_cli
+
+
+# ---------------------------------------------------------------------------
+# A field named exactly like the union tag is a field on every front-end (BUG-102)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _KindFieldTarget:
+    Kind: str = "field"
+
+
+@dataclass
+class _KindDispatchBase:
+    Kind: str = "field"
+
+
+@dataclass
+class _KindDispatchSub(_KindDispatchBase):
+    extra: str = "e"
+
+
+@dataclass
+class _KindUnionVariant:
+    Kind: str
+
+
+@dataclass
+class _KindOtherVariant:
+    other: str = "o"
+
+
+class TestUnionTagFieldCollision:
+    """The exact tag/field collision settles on the field, identically on all front-ends.
+
+    The registration builders skipped a field named like the tag and registered the
+    tag flag on its spelling, so the adapters rejected the field outright while
+    vanilla imported its value as a class path. The field flag owns the spelling
+    now; the tag flag is registered only where no field bears its name.
+    """
+
+    def test_shadowed_field_flag_sets_field(self, loader: ConfargLoader) -> None:
+        """--Kind v builds the field on every front-end."""
+        result = loader.load(_KindFieldTarget, argv=["--Kind", "v"], env={}, union_tag="Kind")
+        assert result == _KindFieldTarget(Kind="v")
+
+    def test_shadowed_field_on_dispatch_struct(self, loader: ConfargLoader) -> None:
+        """A subclassed base with the colliding field still builds from its own field."""
+        result = loader.load(_KindDispatchBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
+        assert result == _KindDispatchBase(Kind="v")
+
+    def test_shadowed_variant_field_on_union(self, loader: ConfargLoader) -> None:
+        """A union whose variant owns the colliding field builds that variant."""
+        result = loader.load(
+            _KindUnionVariant | _KindOtherVariant,
+            argv=["--Kind", "v"],
+            env={},
+            union_tag="Kind",
+        )
+        assert result == _KindUnionVariant(Kind="v")
+
+    def test_merge_matches_vanilla(self, loader: ConfargLoader) -> None:
+        """The merged dict carries the field's value, byte-identical to vanilla's."""
+        merged = loader.merge(_KindFieldTarget, argv=["--Kind", "v"], env={}, union_tag="Kind")
+        assert merged == {"Kind": "v"}
+
+    def test_registration_field_flag_wins(
+        self,
+    ) -> None:
+        """The colliding field is registered as a field flag; no tag flag takes its spelling."""
+        flags = build_static_flags(_KindDispatchBase, union_tag="Kind", config_flag="")
+        by_name = {f.name: f for f in flags}
+        assert "Kind" in by_name
+        assert by_name["Kind"].metavar != "DOTTED.CLASS.PATH"
+
+    def test_registration_union_root_field_flag_wins(
+        self,
+    ) -> None:
+        """A union root registers the colliding variant field, not the tag flag."""
+        flags = build_static_flags(_KindUnionVariant | _KindOtherVariant, union_tag="Kind", config_flag="")
+        by_name = {f.name: f for f in flags}
+        assert "Kind" in by_name
+        assert by_name["Kind"].metavar != "DOTTED.CLASS.PATH"
+
+    def test_unshadowed_tag_flag_still_registered(
+        self,
+    ) -> None:
+        """Without the colliding field, the tag flag keeps its spelling."""
+        flags = build_static_flags(_KindOtherVariant | int, union_tag="Kind", config_flag="")
+        by_name = {f.name: f for f in flags}
+        assert by_name["Kind"].metavar == "DOTTED.CLASS.PATH"

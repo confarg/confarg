@@ -61,6 +61,7 @@ from confarg._types import (
     _tuple_types,
     _union_args_no_none,
     _union_has_seq_variant,
+    _union_tag_shadowed,
     _unwrap_optional,
     _var_params,
 )
@@ -969,8 +970,12 @@ def _collect_union_root_specs(
     """Build FlagSpecs for a union target (variants are the concrete struct types)."""
     tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
     paths = [dotted_name(v) for v in variants]
-    result: list[FlagSpec] = [
-        FlagSpec(
+    result: list[FlagSpec] = []
+    by_name: dict[str, FlagSpec] = {}
+    # A variant field owning the tag's spelling wins it, so the tag flag that
+    # would collide is not registered at all.
+    if not any(_union_tag_shadowed(v, union_tag) for v in variants):
+        tag_spec = FlagSpec(
             name=tag_name,
             metavar="DOTTED.CLASS.PATH",
             help=(
@@ -979,9 +984,9 @@ def _collect_union_root_specs(
                 "Once set, use the variant's field flags."
             ),
             completer=_make_path_completer(paths),
-        ),
-    ]
-    by_name: dict[str, FlagSpec] = {result[0].name: result[0]}
+        )
+        result.append(tag_spec)
+        by_name[tag_spec.name] = tag_spec
     for variant in variants:
         for spec in _collect_struct_specs(
             variant,
@@ -1018,7 +1023,7 @@ def _collect_struct_specs(  # union-root branch added one more conditional
 
     result: list[FlagSpec] = []
     for name in flds:
-        if name == union_tag or name in var_params:
+        if name in var_params:
             continue
         raw_type = hints.get(name, Any)
         resolved = _resolve_type(raw_type)
@@ -1072,9 +1077,6 @@ def _collect_subconfig_specs(
 
     result: list[FlagSpec] = []
     for name in flds:
-        if name == union_tag:
-            continue
-
         resolved = _resolve_type(hints.get(name, Any))
         subpath = f"{prefix}.{name}" if prefix else name
 
@@ -1354,7 +1356,7 @@ def _collect_leaf_tag_argv_specs(
             continue
         existing_names.add(key)
         leaf_desc = f"the '{leaf_flag}' registered leaf" if leaf_flag else "the registered leaf target"
-        if parts[-1] == union_tag:
+        if parts[-1] == union_tag and union_tag not in _struct_fields(leaf):
             specs.append(
                 FlagSpec(
                     name=key,

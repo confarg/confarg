@@ -141,7 +141,9 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
     """Walk the type tree following dot-separated path parts.
 
     Resolves the type at the end of the path by traversing dataclass fields,
-    collections, dicts, and unions.
+    collections, dicts, and unions. A segment names the union tag only when no real
+    member of that exact spelling exists at its position; a field named like the tag
+    is that field.
 
     Args:
         target: The root type to start resolution from.
@@ -153,8 +155,6 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
     """
     tp = _resolve_type(target)
     for idx, part in enumerate(parts):
-        if part == union_tag:
-            return str
         tp = _resolve_type(tp)
         if _is_union(tp):
             return _resolve_union_field_type(tp, parts[idx:], union_tag)
@@ -168,6 +168,10 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
             continue
         tp = _advance_field_type(tp, part)
         if tp is None:
+            if part == union_tag:
+                # The tag is the fallback, so it resolves only at a position no member
+                # of its exact spelling reaches.
+                return str
             return None
     return tp
 
@@ -189,8 +193,6 @@ def _addresses_callable_key(target: Any, parts: list[str], union_tag: str) -> bo
     """
     tp = _resolve_type(target)
     for idx, part in enumerate(parts):
-        if part == union_tag:
-            return False
         tp = _resolve_type(tp)
         if _is_union(tp):
             return any(_addresses_callable_key(v, parts[idx:], union_tag) for v in _union_args_no_none(tp))
@@ -214,8 +216,6 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
     """
     tp = _resolve_type(target)
     for idx, part in enumerate(parts):
-        if part == union_tag:
-            return False
         tp = _resolve_type(tp)
         if _is_union(tp):
             return any(

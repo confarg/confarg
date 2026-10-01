@@ -27,6 +27,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-97 — A namedtuple's -0 and +0 index spellings diverge across the front-ends](BUG-97-a-namedtuples-minus-zero-and-plus-zero-index-spellings-diverge.md) | S | low | behavior |
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | S | low | behavior |
 | [BUG-99 — The config flag's space-separated multi-file spelling is declined on click and typer, undocumented](BUG-99-the-config-flags-space-separated-multi-file-spelling-is-declined-on-click-and-typer-undocumented.md) | S | low | none |
-| [BUG-102 — A field named exactly like the union tag is unreachable on every channel](BUG-102-a-field-named-exactly-like-the-union-tag-is-unreachable.md) | L | high | config |
+| [BUG-103 — A subclass-only field named like the tag loses its value to the tag at construction](BUG-103-a-subclass-only-field-named-like-the-tag-loses-its-value-to-the-tag-at-construction.md) | S | low | config |
 
 <!-- tickets:end -->

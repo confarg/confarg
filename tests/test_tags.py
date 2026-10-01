@@ -257,3 +257,32 @@ class TestImportTaggedClasses:
     def test_no_tags_is_a_no_op(self) -> None:
         """Argv naming no class imports nothing."""
         import_tagged_classes(["--host", "localhost"], _AppConfig, union_tag="class", config_flag="config")
+
+
+# ---------------------------------------------------------------------------
+# A field named exactly like the union tag is not a tag (BUG-102)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _KindFieldTarget:
+    Kind: str = "field"
+
+
+class TestCollectTagsShadowedField:
+    """collect_tags drops a tag-shaped flag that a real field owns.
+
+    The argv scan is lexical: a --Kind VALUE occurrence went into the tag map even
+    when a field named Kind consumed the spelling, steering the adapters' walk and
+    the pre-registration import from a field's value.
+    """
+
+    def test_shadowed_flag_not_collected(self) -> None:
+        """A --Kind occurrence on a struct that owns a Kind field is no tag."""
+        tags = collect_tags(["--Kind", "v"], _KindFieldTarget, union_tag="Kind", config_flag="")
+        assert tags == {}
+
+    def test_shadowed_config_key_not_collected(self) -> None:
+        """A config file's Kind key on a struct that owns a Kind field is no tag."""
+        tags = _tags_from_config({"Kind": "v"}, _KindFieldTarget, "", "Kind")
+        assert tags == {}

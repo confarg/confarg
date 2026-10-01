@@ -59,10 +59,12 @@ from confarg._types import (
     _resolve_struct,
     _resolve_type,
     _StrToken,
+    _struct_fields,
     _union_args_no_none,
     _union_has_scalar_variant,
     _union_has_seq_variant,
     _union_has_varlen_variant,
+    _union_tag_shadowed,
     _UnionSeqToken,
     _unwrap_optional,
 )
@@ -756,7 +758,7 @@ def _collect_ns_union_field(  # noqa: PLR0913  # the type-walk context, threaded
     if not concrete:
         return
     tag_key = f"{flag}.{union_tag}"
-    if tag_key in flat:
+    if tag_key in flat and not _union_tag_shadowed(resolved, union_tag):
         _collect_named_variant(flat, flag, flat[tag_key], union_tag, result, tags, argv, siblings=concrete)
     else:
         _collect_variant_fields(flat, concrete, flag, union_tag, result, tags, argv)
@@ -822,7 +824,7 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
     tag_key = f"{prefix}.{union_tag}" if prefix else union_tag
     from_flat = tag_key in flat
     class_tag = flat[tag_key] if from_flat else tags.get(prefix)
-    if class_tag is None:
+    if class_tag is None or _union_tag_shadowed(tp, union_tag):
         _collect_variant_fields(flat, _dataclass_subclasses(tp), prefix, union_tag, result, tags, argv, base=tp)
         return
     _collect_named_variant(
@@ -1200,9 +1202,6 @@ def _collect_ns_fields(  # noqa: PLR0913  # one branch per type case
     _tp, flds, hints = setup
 
     for name in flds:
-        if name == union_tag:
-            continue
-
         raw_type = hints.get(name, Any)
         resolved = _resolve_type(raw_type)
         flag = f"{prefix}.{name}" if prefix else name
@@ -1314,7 +1313,7 @@ def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915  # one bra
         # back as a raw string, not resolved, for the BUG-45 reason: construct()
         # raises the import error naming the bad path.
         tag_key = f"{flag}.{union_tag}"
-        if tag_key in flat:
+        if tag_key in flat and union_tag not in _struct_fields(core):
             _set_nested(result, [*flag.split("."), union_tag], _str_token(flat[tag_key]))
         _collect_ns_fields(flat, core, flag, union_tag, result, tags, argv)
         return

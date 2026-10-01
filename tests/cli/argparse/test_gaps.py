@@ -100,8 +100,8 @@ class TestArgparseBranches:
 
         _collect_struct_specs(BrokenClassAnnot, "", "class")
 
-    def test_walk_struct_union_tag_field_skipped(self) -> None:
-        """The union_tag field is not registered as a CLI flag by populate_parser."""
+    def test_walk_struct_union_tag_field_registered(self) -> None:
+        """A field named exactly like union_tag is registered as its own CLI flag (BUG-102)."""
 
         @dataclass
         class WithTypeField:
@@ -111,7 +111,7 @@ class TestArgparseBranches:
         parser = argparse.ArgumentParser()
         populate_parser(WithTypeField, parser, union_tag="type")
         flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--type" not in flags
+        assert "--type" in flags
         assert "--value" in flags
 
     def test_walk_struct_callable_field_registered(self) -> None:

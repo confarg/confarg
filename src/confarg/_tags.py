@@ -28,6 +28,7 @@ from confarg._types import (
     _resolve_type,
     _struct_fields,
     _union_args_no_none,
+    _union_tag_shadowed,
 )
 
 
@@ -113,7 +114,7 @@ def _union_field_tags(
     non_none = _union_args_no_none(resolved)
     if len(non_none) > 1:
         sub = merged.get(name)
-        if isinstance(sub, dict) and union_tag in sub:
+        if isinstance(sub, dict) and union_tag in sub and not _union_tag_shadowed(resolved, union_tag):
             val = sub[union_tag]
             if isinstance(val, str):
                 tags[flag] = val
@@ -136,7 +137,7 @@ def _tags_from_config(
     if not _is_struct(tp):
         return tags
 
-    if isinstance(merged.get(union_tag), str):
+    if isinstance(merged.get(union_tag), str) and not _union_tag_shadowed(tp, union_tag):
         tags[prefix] = merged[union_tag]  # a tag on this struct itself, root included
 
     try:
@@ -173,7 +174,27 @@ def collect_tags(
         config_dict = _partial_config_from_argv(argv, config_flag)
         if config_dict:
             config_tags = _tags_from_config(config_dict, target, "", union_tag)
-    return {**config_tags, **_tags_from_argv(argv, union_tag)}
+    argv_tags = {
+        field_path: class_path
+        for field_path, class_path in _tags_from_argv(argv, union_tag).items()
+        if not _argv_tag_names_member(target, field_path, union_tag)
+    }
+    return {**config_tags, **argv_tags}
+
+
+def _argv_tag_names_member(target: Any, field_path: str, union_tag: str) -> bool:
+    """Return True if the tag-shaped flag at *field_path* names a real member instead.
+
+    The argv scan is lexical, so it cannot tell a tag from a field that owns the
+    tag's spelling; the type walk can, and a field's value must never steer the
+    walk or the pre-registration import the way a class path does.
+    """
+    # Imported here: _parse_cli imports this module.
+    from confarg._parse_cli import _resolve_field_type  # noqa: PLC0415  # import cycle: _parse_cli imports this module
+
+    parts = field_path.split(".") if field_path else []
+    at = _resolve_field_type(target, parts, union_tag)
+    return at is not None and _union_tag_shadowed(at, union_tag)
 
 
 def import_tagged_classes(
