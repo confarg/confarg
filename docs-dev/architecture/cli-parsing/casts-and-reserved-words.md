@@ -26,9 +26,10 @@ bypassing the type-directed coercion (notably the stealing rule,
 
 A reserved word never shadows a real member: a field named `json` beats the `.json` cast, a
 field named `locals` beats the locals namespace. One predicate decides it everywhere,
-`_segment_names_real_field`: structs, namedtuples and (recursively) union variants are
+`_segment_names_real_field`: the union tag, structs (a subclass-only field included),
+namedtuples and (recursively) union variants are
 checked for the name; dicts accept any key so the name is always real there; lists, sets,
 tuples, callables and scalars have no named members, so the word is reserved.
 
-Keep this predicate canonical: casts, the locals name derivation, the env `__json` cast and
-the adapters' `_find_json_cast`/`apply_root_json` all rely on it answering identically.
+Keep this predicate canonical: casts, the locals name derivation, the env `__json` cast, the
+env channel's unknown-field warning (BUG-90) and the adapters' `_find_json_cast`/`apply_root_json` all rely on it answering identically.

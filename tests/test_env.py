@@ -11,6 +11,7 @@ from dataclasses import dataclass as _dc
 from dataclasses import field, make_dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
+from uuid import UUID
 
 if TYPE_CHECKING:
     from tests._loaders import ConfargLoader
@@ -695,6 +696,177 @@ class TestConfargWarningUnionWithPlainVariant:
         assert len(warns) == 1
         msg = str(warns[0].message)
         assert "APP_Z" in msg
+
+
+# ---------------------------------------------------------------------------
+# A root-level tag segment is a real member, whatever the root shape
+# ---------------------------------------------------------------------------
+
+
+@_dc
+class _EnvTagBase:
+    host: str = "localhost"
+
+
+@_dc
+class _EnvTagSub(_EnvTagBase):
+    extra: str = "e"
+
+
+class TestEnvRootTagSegment:
+    """A root-level tag segment names a real member, as the CLI and file channels accept it (BUG-90).
+
+    The env channel's first-segment check asked only ``parts[0] in _struct_fields(root)``,
+    so the tag — not a field — was warned away and dropped on every struct-walked root,
+    while the same configuration built from argv or a file.
+    """
+
+    def test_tag_on_registered_leaf_root(
+        self,
+        loader: ConfargLoader,
+        leaf_registry: None,
+    ) -> None:
+        """CLASS and HEX build a registered leaf as the root target, with no warning."""
+        confarg.register_leaf_type(UUID, UUID)
+        hex_text = "12345678123456781234567812345678"
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cfg = loader.load(
+                UUID,
+                argv=[],
+                env={"APP_CLASS": "uuid.UUID", "APP_HEX": hex_text},
+                env_prefix="APP_",
+            )
+        assert cfg == UUID(hex_text)
+        assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
+
+    def test_tag_on_registered_leaf_root_merges_like_the_repro(
+        self,
+        loader: ConfargLoader,
+        leaf_registry: None,
+    ) -> None:
+        """The ticket's repro: env merges to the same dict the CLI channel gives (BUG-90)."""
+        confarg.register_leaf_type(UUID, UUID)
+        hex_text = "12345678123456781234567812345678"
+        merged = loader.merge(
+            UUID,
+            argv=[],
+            env={"APP_CLASS": "uuid.UUID", "APP_HEX": hex_text},
+            env_prefix="APP_",
+        )
+        assert merged == {"class": "uuid.UUID", "hex": hex_text}
+
+    def test_tag_on_union_root(self, loader: ConfargLoader) -> None:
+        """CLASS reaches the merged dict on a union root, with a variant field beside it."""
+        merged = loader.merge(
+            Union[_DCVariant, _PlainVariant],
+            argv=[],
+            env={"APP_CLASS": f"{__name__}._PlainVariant", "APP_Y": "hello"},
+            env_prefix="APP_",
+        )
+        assert merged == {"class": f"{__name__}._PlainVariant", "y": "hello"}
+
+    def test_tag_on_inheritance_dispatch_root(self, loader: ConfargLoader) -> None:
+        """CLASS naming a subclass builds the subclass on an inheritance-dispatch root."""
+        cfg = loader.load(
+            _EnvTagBase,
+            argv=[],
+            env={"APP_CLASS": f"{__name__}._EnvTagSub", "APP_EXTRA": "x"},
+            env_prefix="APP_",
+        )
+        assert cfg == _EnvTagSub(host="localhost", extra="x")
+
+    def test_subclass_field_on_inheritance_dispatch_root(self, loader: ConfargLoader) -> None:
+        """A subclass-only field merges without the unknown-field warning, as the CLI accepts it."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            merged = loader.merge(
+                _EnvTagBase,
+                argv=[],
+                env={"APP_EXTRA": "x"},
+                env_prefix="APP_",
+            )
+        assert merged == {"extra": "x"}
+        assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
+
+
+# ---------------------------------------------------------------------------
+# A custom mixed-case tag keeps its casing through the resolution walk
+# ---------------------------------------------------------------------------
+
+
+@_dc
+class _EnvTagHost:
+    db: _EnvTagBase
+
+
+@_dc
+class _EnvKindField:
+    kind: str = "k"
+
+
+class TestEnvCustomTagCasing:
+    """A custom mixed-case union tag survives the env walk, as the CLI channel accepts it (BUG-101).
+
+    The env channel resolves segments case-insensitively by lowercasing what does not match a
+    field, so a ``union_tag`` spelled with uppercase letters never survived to be recognized:
+    the segment was warned away as an unknown field and dropped, while the CLI channel's
+    exact-case ``--Kind`` merged. The resolution walk is tag-aware instead: a segment that
+    names no member but names the tag keeps the tag's exact spelling, and a real field still
+    wins over the tag — the rule the default lowercase ``class`` tag already follows.
+    """
+
+    def test_custom_tag_merges_like_cli(self, loader: ConfargLoader) -> None:
+        """The ticket's repro: KIND merges to the same dict the CLI channel's --Kind gives."""
+        tag_val = f"{__name__}._EnvTagSub"
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            merged = loader.merge(
+                _EnvTagBase,
+                argv=[],
+                env={"APP_KIND": tag_val},
+                env_prefix="APP_",
+                union_tag="Kind",
+            )
+        assert merged == {"Kind": tag_val}
+        assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
+
+    def test_custom_tag_builds_subclass(self, loader: ConfargLoader) -> None:
+        """KIND plus a subclass field builds the named subclass, as the CLI channel does."""
+        cfg = loader.load(
+            _EnvTagBase,
+            argv=[],
+            env={"APP_KIND": f"{__name__}._EnvTagSub", "APP_EXTRA": "x"},
+            env_prefix="APP_",
+            union_tag="Kind",
+        )
+        assert cfg == _EnvTagSub(host="localhost", extra="x")
+
+    def test_custom_tag_on_nested_field(self, loader: ConfargLoader) -> None:
+        """DB__KIND keeps the tag's casing below the root, as the CLI channel's --db.Kind."""
+        tag_val = f"{__name__}._EnvTagSub"
+        merged = loader.merge(
+            _EnvTagHost,
+            argv=[],
+            env={"APP_DB__KIND": tag_val, "APP_DB__EXTRA": "x"},
+            env_prefix="APP_",
+            union_tag="Kind",
+        )
+        assert merged == {"db": {"Kind": tag_val, "extra": "x"}}
+
+    def test_field_named_like_the_tag_wins(self, loader: ConfargLoader) -> None:
+        """A field whose lowercase spelling equals the tag is the field, as under the default tag."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            merged = loader.merge(
+                _EnvKindField,
+                argv=[],
+                env={"APP_KIND": "v"},
+                env_prefix="APP_",
+                union_tag="Kind",
+            )
+        assert merged == {"kind": "v"}
+        assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
 
 
 # ---------------------------------------------------------------------------
