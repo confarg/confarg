@@ -17,5 +17,11 @@ can delegate instead
 ends of the token run vanilla counts one `_require_value` at a time, plus the surplus its argv
 scan reports, so it is the fourth mirror and belongs in the same move.
 
+BUG-73 and BUG-79 added two more mirrors. `_fixed_arity_occurrence_runs` re-scans where each
+occurrence's token run ends, and `_union_seq_occurrence_writes` replays
+`_consume_multi_tokens` + `_union_seq_value` occurrence by occurrence, including its own
+whole-value blob check and surplus-token refusal. Both are argv-order readers as well, so REF-72
+removes them along with this ticket's mirrors.
+
 The contract suite is what catches a drift today, which is why this is medium rather than low: a
 mistake stays silent in the four adapters while vanilla stays right.

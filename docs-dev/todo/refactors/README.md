@@ -49,5 +49,8 @@ different board.
 | [REF-69 — Two construction-error sentences are still spelled at every call site in `typedload/`](REF-69-typedload-construction-messages-still-at-their-call-sites.md) | S | low | none |
 | [REF-70 — `_dataclass_subclasses` is named for dataclasses but returns plain-class structs](REF-70-dataclass-subclasses-is-a-misnomer.md) | M | low | none |
 | [REF-71 — Three functions answer "does this segment name a member?", and they disagree at the edges](REF-71-three-answers-to-is-this-a-member.md) | M | medium | none |
+| [REF-72 — The adapters re-derive vanilla's argv order one flag kind at a time](REF-72-the-adapters-re-derive-vanillas-argv-order-one-flag-kind-at-a-time.md) | XL | high | none |
+| [REF-73 — The env channel walks the type tree with its own copy](REF-73-the-env-channel-walks-the-type-tree-with-its-own-copy.md) | L | high | none |
+| [REF-74 — Scalar-cast registration mirrors the collector's dispatch by hand](REF-74-scalar-cast-registration-mirrors-the-collectors-dispatch-by-hand.md) | S | medium | none |
 
 <!-- tickets:end -->

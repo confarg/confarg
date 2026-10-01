@@ -20,6 +20,10 @@ families in `typedload/` are the next ones to have earned it, both already route
   and once in `_construct._construct_by_class_path`. The three name `X` differently and that is
   the only reason they were written out separately; the factory takes the already-formatted name.
 
+A third, filed after the other two: BUG-103 added `_construct._ambiguous_subclass_msg` as a
+near-copy of `_ambiguous_union_msg`. The per-variant breakdown loop is the same, and only the
+header and the remedy line differ. One builder parametrized by those two lines serves both.
+
 No behavior change is intended: every message keeps its current text. Both sentences are still
 formatted at the call site because `exceptions.py` may import nothing from `confarg`
 ([invariants.md#fragile-couplings](../../architecture/invariants.md#fragile-couplings)):

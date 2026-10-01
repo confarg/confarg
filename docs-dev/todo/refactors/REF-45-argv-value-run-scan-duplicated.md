@@ -33,3 +33,10 @@ BUG-43 is what the duplication already cost: the fixed-arity tuple branch was th
 guard had never been copied to, so that flag under-filled instead of reporting a missing value.
 It is closed, and so is the adapters' half of the same gap, BUG-58 (no link: the board holds
 open work only).
+
+One pair is a duplicated *consumer* rather than a duplicated loop: the adapters' rescan
+`_parse_cli._collect_config_file_pairs` repeats `_consume_config_paths` token for token.
+BUG-50/51 moved the message builder (`_missing_config_path_msg`) and the subpath check
+(`_check_mount_subpath`) into shared functions, but the consumption is still written twice. The
+rescan should call `_consume_config_paths` instead, which leaves one loop for `_value_run` to
+absorb.
