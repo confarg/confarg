@@ -63,6 +63,39 @@ class InvalidConfigFileError(ConfargError):
         )
 
     @classmethod
+    def unreachable(cls, loc: Any, exc: Any) -> InvalidConfigFileError:
+        """Return an error for a config location whose scheme handler could not read it."""
+        return cls(f"Cannot read config source {loc}: {exc}")
+
+    @classmethod
+    def unknown_scheme(cls, scheme: str, known: list[str]) -> InvalidConfigFileError:
+        """Return an error for a location naming a scheme no handler is registered for."""
+        listed = ", ".join(sorted(known))
+        return cls(
+            f"No handler registered for config source scheme {scheme + '://'!r}."
+            f" Registered schemes: {listed}. Add one with confarg.register_scheme({scheme!r}, ...)."
+            f" If you meant a local file whose name contains a colon, write it as ./{scheme}:...",
+        )
+
+    @classmethod
+    def no_format(cls, loc: Any) -> InvalidConfigFileError:
+        """Return an error for a location carrying no file extension to dispatch on."""
+        return cls(
+            f"Cannot tell the format of {loc}: it has no file extension."
+            f" confarg chooses the parser by extension (.yaml/.yml, .toml, .json) and does not"
+            f" inspect content or a Content-Type header.",
+        )
+
+    @classmethod
+    def cross_origin_include(cls, base: Any, target: Any) -> InvalidConfigFileError:
+        """Return an error for a remote document including a location outside its own origin."""
+        return cls(
+            f"Config source {base} may not include {target}: a document loaded over the network"
+            f" can only include locations on its own scheme and host. Move the file next to it,"
+            f" or name it from a local configuration file instead.",
+        )
+
+    @classmethod
     def unsupported_format(cls, ext: str) -> InvalidConfigFileError:
         """Return an error for a config file extension that confarg cannot load."""
         return cls(f"Unsupported config file format: {ext!r}. Supported formats: .yaml/.yml, .toml, .json")

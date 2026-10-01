@@ -45,7 +45,6 @@ from confarg._files import (
     _load_file,
     _load_file_item,
     _load_json_item,
-    _load_toml,
     _load_yaml_item,
 )
 from confarg._merge import (
@@ -315,7 +314,7 @@ class TestFileErrors:
     def test_load_toml_file_not_found(self, tmp_path: Path) -> None:
         """Missing TOML file raises InvalidConfigFileError."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
-            _load_toml(tmp_path / "missing.toml")
+            _load_file_item(tmp_path / "missing.toml")
 
     def test_load_yaml_file_not_found(self, tmp_path: Path) -> None:
         """Missing YAML file raises InvalidConfigFileError through the root loader table."""
@@ -333,31 +332,31 @@ class TestFileErrors:
         p.write_text("key: value")
         monkeypatch.setitem(sys.modules, "yaml", None)
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="PyYAML"):
-            _load_yaml_item(p)
+            _load_yaml_item(p.read_bytes(), str(p))
 
     def test_load_yaml_item_file_not_found(self, tmp_path: Path) -> None:
         """Missing YAML item file raises InvalidConfigFileError."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
-            _load_yaml_item(tmp_path / "missing.yaml")
+            _load_file_item(tmp_path / "missing.yaml")
 
     def test_load_yaml_item_malformed(self, tmp_path: Path) -> None:
         """Malformed YAML content raises InvalidConfigFileError."""
         p = tmp_path / "bad.yaml"
         p.write_text("key: :\n  - bad: [unclosed")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="malformed"):
-            _load_yaml_item(p)
+            _load_yaml_item(p.read_bytes(), str(p))
 
     def test_load_json_item_file_not_found(self, tmp_path: Path) -> None:
         """Missing JSON item file raises InvalidConfigFileError."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
-            _load_json_item(tmp_path / "missing.json")
+            _load_file_item(tmp_path / "missing.json")
 
     def test_load_json_item_malformed(self, tmp_path: Path) -> None:
         """Malformed JSON content raises InvalidConfigFileError."""
         p = tmp_path / "bad.json"
         p.write_text("{bad json")
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="malformed"):
-            _load_json_item(p)
+            _load_json_item(p.read_bytes(), str(p))
 
     def test_load_file_item_unsupported_format(self, tmp_path: Path) -> None:
         """Unsupported file extension raises InvalidConfigFileError."""

@@ -26,5 +26,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-46 — The `90_integration` code blocks document an API that does not exist](BUG-46-old-help-blocks-document-a-removed-api.md) | S | low | none |
 | [BUG-47 — The CSV section of `11_include` is cut off mid-sentence](BUG-47-include-readme-truncates-the-csv-header-section.md) | S | low | none |
 | [BUG-48 — `12_collections` cites "Tutorial XX" instead of a real tutorial](BUG-48-collections-readme-defers-to-tutorial-xx.md) | S | low | none |
+| [BUG-49 — A `Dev Notes:` citation points at `#the-triad`, a heading renamed to `## The quartet`](BUG-49-stale-the-triad-citation.md) | S | low | none |
 
 <!-- tickets:end -->

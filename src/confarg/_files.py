@@ -4,6 +4,10 @@
 
 """Config file loading and dumping, dispatched by extension; ``__include__`` resolution.
 
+A config source is named by a location string -- a local path or a URL -- and every question
+that location implies is answered by :mod:`confarg._sources`, so nothing here branches on
+whether a document is local or remote. Loaders receive the document's bytes and parse them.
+
 Files are mounted at a path of the merged document (``__include__``, ``--config.<path>``,
 ``CONFIG__<PATH>``); expression references are prefixed accordingly while mounting.
 
@@ -15,12 +19,17 @@ Dev Notes:
 from __future__ import annotations
 
 import csv
+import io
 import json
 import tomllib
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+from confarg import _sources
 from confarg._merge import _deep_merge
 from confarg._types import _StrToken
 from confarg.dictexpr._expressions import check_anchor_depth, contains_expression, prefix_references
@@ -29,61 +38,56 @@ from confarg.exceptions import ConfargError, InvalidConfigFileError
 INCLUDE_KEY = "__include__"
 
 
-def _load_toml(path: Path) -> dict[str, Any]:
-    """Load and parse a TOML config file.
+def _load_toml(data: bytes, loc: str) -> dict[str, Any]:
+    """Parse TOML bytes into a dict.
 
     Args:
-        path: Path to the TOML file.
+        data: The document's raw bytes.
+        loc: The location they came from, for error messages.
 
     Returns:
         A dict of the parsed TOML contents.
 
     Raises:
-        InvalidConfigFileError: If the file is not found or contains invalid TOML.
+        InvalidConfigFileError: If the bytes are not valid UTF-8 TOML.
     """
     try:
-        with Path(path).open("rb") as f:
-            return tomllib.load(f)
-    except FileNotFoundError:
-        raise InvalidConfigFileError.not_found(path) from None
-    except tomllib.TOMLDecodeError as e:
+        # tomllib.loads takes str and tomllib.load takes binary: neither takes bytes, and TOML
+        # is specified as UTF-8, so the decode is the format's rule rather than a choice.
+        return tomllib.loads(data.decode("utf-8"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as e:
         msg = "TOML"
-        raise InvalidConfigFileError.malformed(msg, path, e) from e
+        raise InvalidConfigFileError.malformed(msg, loc, e) from e
 
 
-def _load_yaml_item(path: Path) -> Any:
-    """Load YAML, returning the raw top-level value (dict, list, or scalar)."""
+def _load_yaml_item(data: bytes, loc: str) -> Any:
+    """Parse YAML bytes, returning the raw top-level value (dict, list, or scalar)."""
     try:
         import yaml  # noqa: PLC0415
     except ImportError:
         msg = "PyYAML"
         raise InvalidConfigFileError.missing_library(msg, "pyyaml", "YAML support") from None
     try:
-        with Path(path).open(encoding="utf-8") as f:
-            return yaml.safe_load(f)
-    except FileNotFoundError:
-        raise InvalidConfigFileError.not_found(path) from None
+        return yaml.safe_load(data)  # PyYAML decodes, honouring a BOM
     except yaml.YAMLError as e:
         msg = "YAML"
-        raise InvalidConfigFileError.malformed(msg, path, e) from e
+        raise InvalidConfigFileError.malformed(msg, loc, e) from e
 
 
-def _load_json_item(path: Path) -> Any:
-    """Load JSON, returning the raw top-level value (dict, list, or scalar)."""
+def _load_json_item(data: bytes, loc: str) -> Any:
+    """Parse JSON bytes, returning the raw top-level value (dict, list, or scalar)."""
     try:
-        with Path(path).open(encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        raise InvalidConfigFileError.not_found(path) from None
-    except json.JSONDecodeError as e:
+        return json.loads(data)  # json.loads on bytes tolerates a BOM; on str it would not
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
         msg = "JSON"
-        raise InvalidConfigFileError.malformed(msg, path, e) from e
+        raise InvalidConfigFileError.malformed(msg, loc, e) from e
 
 
-#: Formats that may sit at the root of a config file — a configuration layer, so no data
-#: format (.csv/.tsv) appears here. Every entry returns the file's raw top-level value;
-#: requiring that value to be a mapping is _load_raw's call alone, made once for all three
-#: formats and for whatever `__include__` resolves them to.
+#: Parsers for the configuration-layer formats, by extension — no data format (.csv/.tsv)
+#: appears here, because data is a value rather than a layer and `_load_document` routes it to
+#: `_load_csv` instead. Every entry returns the document's raw top-level value; requiring that
+#: value to be a mapping is _load_raw's call alone, made once for all three formats and for
+#: whatever `__include__` resolves them to.
 #: See docs-dev/architecture/02-files-and-env.md#format-dispatch-and-optional-dependencies.
 _LOADERS: dict[str, Any] = {
     ".toml": _load_toml,  # TOML root is always a dict
@@ -102,13 +106,13 @@ def _read_rows(f: Any, delimiter: str) -> list[list[_StrToken]]:
     return [[_StrToken(cell) for cell in row] for row in csv.reader(f, delimiter=delimiter) if row]
 
 
-def _check_rectangular(rows: list[list[_StrToken]], ncols: int, path: Path, *, offset: int) -> None:
+def _check_rectangular(rows: list[list[_StrToken]], ncols: int, path: str, *, offset: int) -> None:
     """Raise if any row's cell count differs from ncols.
 
     Args:
         rows: The data rows to check.
         ncols: The expected cell count.
-        path: The source file, for the error message.
+        path: The source location, for the error message.
         offset: Rows consumed before these (1 when a header row was split off), so the
             reported row number is 1-based over the whole file.
     """
@@ -117,7 +121,7 @@ def _check_rectangular(rows: list[list[_StrToken]], ncols: int, path: Path, *, o
             raise InvalidConfigFileError.ragged_csv_row(path, i + 1 + offset, ncols, len(row))
 
 
-def _load_csv_no_header(all_rows: list[list[_StrToken]], orient: str, path: Path) -> Any:
+def _load_csv_no_header(all_rows: list[list[_StrToken]], orient: str, path: str) -> Any:
     """Build the result for CSV loaded without a header row."""
     if not all_rows:
         return [] if orient == "rows" else {}
@@ -128,7 +132,7 @@ def _load_csv_no_header(all_rows: list[list[_StrToken]], orient: str, path: Path
     return [row[0] for row in all_rows] if all(len(row) == 1 for row in all_rows) else all_rows
 
 
-def _load_csv_with_header(all_rows: list[list[_StrToken]], orient: str, path: Path) -> Any:
+def _load_csv_with_header(all_rows: list[list[_StrToken]], orient: str, path: str) -> Any:
     """Build the result for CSV loaded with a header row."""
     if not all_rows:
         return [] if orient == "rows" else {}
@@ -145,8 +149,8 @@ def _load_csv_with_header(all_rows: list[list[_StrToken]], orient: str, path: Pa
     return [dict(zip(names, row, strict=True)) for row in rows]
 
 
-def _load_csv(path: Path, *, orient: str = "rows", delimiter: str = ",", header: bool = True) -> Any:
-    """Load a CSV/TSV file, returning a Python structure determined by orient and header.
+def _load_csv(data: bytes, loc: str, *, orient: str = "rows", delimiter: str = ",", header: bool = True) -> Any:
+    """Parse CSV/TSV bytes, returning a Python structure determined by orient and header.
 
     Every cell is a _StrToken, so CSV values coerce to the target leaf type (int, float,
     bool, Enum, …) exactly like CLI arguments and environment variables do.
@@ -167,26 +171,16 @@ def _load_csv(path: Path, *, orient: str = "rows", delimiter: str = ",", header:
     if orient not in ("rows", "columns", "raw"):
         msg = f"Invalid CSV orient {orient!r}. Must be 'rows', 'columns', or 'raw'."
         raise ConfargError(msg)
-    try:
-        with path.open(newline="", encoding="utf-8-sig") as f:
-            all_rows = _read_rows(f, delimiter)
-    except FileNotFoundError:
-        raise InvalidConfigFileError.not_found(path) from None
+    # utf-8-sig drops a BOM that would otherwise become part of the first header name, and
+    # newline="" keeps a CRLF inside a quoted field intact -- the two rules csv.reader needs.
+    text = data.decode("utf-8-sig")
+    all_rows = _read_rows(io.StringIO(text, newline=""), delimiter)
     if orient == "raw":
         return all_rows
     if not header:
-        return _load_csv_no_header(all_rows, orient, path)
-    return _load_csv_with_header(all_rows, orient, path)
+        return _load_csv_no_header(all_rows, orient, loc)
+    return _load_csv_with_header(all_rows, orient, loc)
 
-
-_ITEM_LOADERS: dict[str, Any] = {
-    ".toml": _load_toml,  # TOML root is always a dict
-    ".yaml": _load_yaml_item,
-    ".yml": _load_yaml_item,
-    ".json": _load_json_item,
-    ".csv": lambda path: _load_csv(path, orient="rows"),
-    ".tsv": lambda path: _load_csv(path, orient="rows", delimiter="\t"),
-}
 
 #: Extensions whose content is data rather than a configuration layer. An include of one
 #: replaces whatever earlier entries produced instead of merging key-wise into it.
@@ -194,27 +188,78 @@ _ITEM_LOADERS: dict[str, Any] = {
 _DATA_SUFFIXES = frozenset({".csv", ".tsv"})
 
 
-def _load_file_item(path: Path) -> Any:
-    """Load a config file for append mode, returning the raw top-level value.
+def _loader_for(loc: str, table: dict[str, Any]) -> Any:
+    """Return the loader *table* holds for the format *loc* names.
 
-    Unlike _load_file(), accepts top-level lists (YAML/JSON) so that a file
+    The one place a location is turned into a parser, so an unsupported extension and a missing
+    one produce their own error once, for every table and every channel.
+
+    Raises:
+        InvalidConfigFileError: If the location carries no extension, or one no loader handles.
+
+    Dev Notes:
+        docs-dev/architecture/02-files-and-env.md#format-dispatch-and-optional-dependencies
+    """
+    ext = _sources._suffix(loc)
+    if not ext:
+        raise InvalidConfigFileError.no_format(loc)
+    loader = table.get(ext)
+    if loader is None:
+        raise InvalidConfigFileError.unsupported_format(ext)
+    return loader
+
+
+def _load_document(loc: str, options: dict[str, Any] | None = None) -> Any:
+    """Read the document at *loc* and parse it, returning its raw top-level value.
+
+    The one place a location becomes a parsed value, for every channel and both kinds of format:
+    a data format (.csv/.tsv) is read with *options* (``orient``, ``header``), a configuration
+    layer by the parser `_loader_for` picks. The root-is-a-mapping rule is not applied here --
+    that is `_load_raw`'s alone -- and neither is ``__include__`` resolution, `_resolve_node`'s.
+
+    Raises:
+        InvalidConfigFileError: If the location carries no extension or one no parser handles,
+            it cannot be read, or its contents are invalid.
+        ConfargError: If the ``header`` option is not a boolean.
+
+    Dev Notes:
+        docs-dev/architecture/02-files-and-env.md#format-dispatch-and-optional-dependencies
+    """
+    ext = _sources._suffix(loc)
+    if ext in _DATA_SUFFIXES:
+        opts = options or {}
+        header_opt = opts.get("header", True)
+        if not isinstance(header_opt, bool):
+            msg = f"'header' option must be a boolean (true/false), got {header_opt!r}"
+            raise ConfargError(msg)
+        return _load_csv(
+            _sources._read_bytes(loc),
+            loc,
+            orient=opts.get("orient", "rows"),
+            delimiter="\t" if ext == ".tsv" else ",",
+            header=header_opt,
+        )
+    loader = _loader_for(loc, _LOADERS)
+    return loader(_sources._read_bytes(loc), loc)
+
+
+def _load_file_item(loc: str | Path) -> Any:
+    """Load a config source for append mode, returning the raw top-level value.
+
+    Unlike _load_file(), accepts top-level lists (YAML/JSON) so that a document
     whose root is a list is treated as the single element to append.
 
     Args:
-        path: Path to the config file.
+        loc: Location of the config source -- a local path, a ``Path``, or a URL.
 
     Returns:
         The raw top-level value: a dict, list, or scalar.
 
     Raises:
-        InvalidConfigFileError: If the file format is unsupported, the file is
-            not found, or the file contents are invalid.
+        InvalidConfigFileError: If the format is unsupported, the source cannot be
+            read, or its contents are invalid.
     """
-    path = Path(path)
-    loader = _ITEM_LOADERS.get(path.suffix.lower())
-    if loader is None:
-        raise InvalidConfigFileError.unsupported_format(path.suffix.lower())
-    return loader(path)
+    return _load_document(_sources._location(loc))
 
 
 def _parse_include_entry(val: Any) -> tuple[str, dict[str, Any]]:
@@ -246,24 +291,27 @@ def _parse_include_val(val: Any) -> list[tuple[str, dict[str, Any]]]:
     return [_parse_include_entry(val)]
 
 
-def _load_includes(entries: list[tuple[str, dict[str, Any]]], base_dir: Path, seen: frozenset[Path]) -> Any:
+def _load_includes(entries: list[tuple[str, dict[str, Any]]], base: str, seen: frozenset[str]) -> Any:
     """Load every include entry and layer them left to right, later entries winning.
 
     Two dicts deep-merge. Anything else is replaced by the later entry, and so is a
     CSV/TSV entry even when it loads as a dict. ``seen`` grows per entry, not across
-    the list: naming the same file twice is legal, a genuine cycle raises.
+    the list: naming the same document twice is legal, a genuine cycle raises.
+
+    *base* is the location of the including document; each entry resolves against it.
 
     Dev Notes:
         docs-dev/architecture/02-files-and-env.md#include-semantics
     """
     result: Any = None
     for i, (path_str, options) in enumerate(entries):
-        inc_path = (base_dir / path_str).resolve()
-        if inc_path in seen:
-            msg = f"Circular include detected: {inc_path}"
+        inc_loc = _sources._join(base, path_str)
+        key = _sources._identity(inc_loc)
+        if key in seen:
+            msg = f"Circular include detected: {inc_loc}"
             raise ConfargError(msg)
-        loaded = _load_any(inc_path, seen | {inc_path}, options=options)
-        is_data = inc_path.suffix.lower() in _DATA_SUFFIXES
+        loaded = _load_any(inc_loc, seen | {key}, options=options)
+        is_data = _sources._suffix(inc_loc) in _DATA_SUFFIXES
         if i == 0 or is_data or not (isinstance(result, dict) and isinstance(loaded, dict)):
             result = loaded
         else:
@@ -276,7 +324,7 @@ def _join_path(prefix: str, seg: str) -> str:
     return f"{prefix}.{seg}" if prefix else seg
 
 
-def _resolve_node(data: Any, base_dir: Path, seen: frozenset[Path], path_in_file: str = "") -> Any:
+def _resolve_node(data: Any, base: str, seen: frozenset[str], path_in_file: str = "") -> Any:
     """Dispatch include resolution by node type.
 
     *path_in_file* is the position of *data* relative to the root of the file
@@ -289,15 +337,15 @@ def _resolve_node(data: Any, base_dir: Path, seen: frozenset[Path], path_in_file
         docs-dev/architecture/07-expressions.md#reference-anchoring
     """
     if isinstance(data, dict):
-        return _resolve_dict(data, base_dir, seen, path_in_file)
+        return _resolve_dict(data, base, seen, path_in_file)
     if isinstance(data, list):
-        return _resolve_list(data, base_dir, seen, path_in_file)
+        return _resolve_list(data, base, seen, path_in_file)
     if contains_expression(data):
         check_anchor_depth(data, path_in_file)
     return data
 
 
-def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path], path_in_file: str = "") -> Any:
+def _resolve_dict(data: dict[str, Any], base: str, seen: frozenset[str], path_in_file: str = "") -> Any:
     """Resolve INCLUDE_KEY in a dict node.
 
     INCLUDE_KEY may name one file or a list of them; a list is layered left to
@@ -314,7 +362,7 @@ def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path], p
     include_val = data.get(INCLUDE_KEY)
     if include_val is not None:
         included = prefix_references(
-            _load_includes(_parse_include_val(include_val), base_dir, seen),
+            _load_includes(_parse_include_val(include_val), base, seen),
             path_in_file,
         )
         siblings = {k: v for k, v in data.items() if k != INCLUDE_KEY}
@@ -331,12 +379,12 @@ def _resolve_dict(data: dict[str, Any], base_dir: Path, seen: frozenset[Path], p
         result = dict(data)
 
     for k, v in result.items():
-        result[k] = _resolve_node(v, base_dir, seen, _join_path(path_in_file, k))
+        result[k] = _resolve_node(v, base, seen, _join_path(path_in_file, k))
 
     return result
 
 
-def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path], path_in_file: str = "") -> list[Any]:
+def _resolve_list(data: list[Any], base: str, seen: frozenset[str], path_in_file: str = "") -> list[Any]:
     """Resolve INCLUDE_KEY in list items.
 
     A list item that is a pure {INCLUDE_KEY: path} dict is replaced by the
@@ -352,7 +400,7 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path], path_i
     result: list[Any] = []
     for item in data:
         if isinstance(item, dict) and INCLUDE_KEY in item:
-            included = _load_includes(_parse_include_val(item[INCLUDE_KEY]), base_dir, seen)
+            included = _load_includes(_parse_include_val(item[INCLUDE_KEY]), base, seen)
             siblings = {k: v for k, v in item.items() if k != INCLUDE_KEY}
             if not siblings:
                 parts = included if isinstance(included, list) else [included]
@@ -361,7 +409,7 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path], path_i
             elif isinstance(included, dict):
                 here = _join_path(path_in_file, str(len(result)))
                 merged = _deep_merge(prefix_references(included, here), siblings)
-                result.append(_resolve_node(merged, base_dir, seen, here))
+                result.append(_resolve_node(merged, base, seen, here))
             else:
                 msg = (
                     f"{INCLUDE_KEY} produced {type(included).__name__} but sibling keys are"
@@ -369,39 +417,20 @@ def _resolve_list(data: list[Any], base_dir: Path, seen: frozenset[Path], path_i
                 )
                 raise ConfargError(msg)
         else:
-            result.append(_resolve_node(item, base_dir, seen, _join_path(path_in_file, str(len(result)))))
+            result.append(_resolve_node(item, base, seen, _join_path(path_in_file, str(len(result)))))
     return result
 
 
-def _load_any(path: Path, seen: frozenset[Path], *, options: dict[str, Any] | None = None) -> Any:
-    """Load an included file as any type (dict, list, or scalar).
+def _load_any(loc: str, seen: frozenset[str], *, options: dict[str, Any] | None = None) -> Any:
+    """Load an included config source as any type (dict, list, or scalar).
 
     For CSV/TSV, options may contain 'orient' and 'header'.
     """
-    ext = path.suffix.lower()
-    opts = options or {}
-    if ext in (".csv", ".tsv"):
-        delimiter = "\t" if ext == ".tsv" else ","
-        header_opt = opts.get("header", True)
-        if not isinstance(header_opt, bool):
-            msg = f"'header' option must be a boolean (true/false), got {header_opt!r}"
-            raise ConfargError(msg)
-        data = _load_csv(
-            path,
-            orient=opts.get("orient", "rows"),
-            delimiter=delimiter,
-            header=header_opt,
-        )
-    else:
-        loader = _ITEM_LOADERS.get(ext)
-        if loader is None:
-            raise InvalidConfigFileError.unsupported_format(ext)
-        data = loader(path)
-    return _resolve_node(data, path.parent, seen)
+    return _resolve_node(_load_document(loc, options), loc, seen)
 
 
-def _load_raw(path: Path, seen: frozenset[Path]) -> dict[str, Any]:
-    """Load a root config file; the value it resolves to must be a dict.
+def _load_raw(loc: str, seen: frozenset[str]) -> dict[str, Any]:
+    """Load a root config source; the value it resolves to must be a dict.
 
     The one place the root-is-a-mapping rule is applied, so every format and every
     ``__include__`` that rewrites the root answers to the same check and the same error.
@@ -411,46 +440,43 @@ def _load_raw(path: Path, seen: frozenset[Path]) -> dict[str, Any]:
     Dev Notes:
         docs-dev/architecture/02-files-and-env.md#format-dispatch-and-optional-dependencies
     """
-    loader = _LOADERS.get(path.suffix.lower())
-    if loader is None:
-        raise InvalidConfigFileError.unsupported_format(path.suffix.lower())
-    data = loader(path)
-    result = _resolve_node(data, path.parent, seen)
+    _loader_for(loc, _LOADERS)  # a root is a layer: .csv/.tsv is unsupported here, not data
+    result = _resolve_node(_load_document(loc), loc, seen)
     if result is None:
         return {}
     if not isinstance(result, dict):
-        raise InvalidConfigFileError.non_dict_root(path, result)
+        raise InvalidConfigFileError.non_dict_root(loc, result)
     return result
 
 
-def _load_file(path: Path) -> dict[str, Any]:
-    """Load a config file, dispatching by extension.
+def _load_file(loc: str | Path) -> dict[str, Any]:
+    """Load a config source, dispatching by extension.
 
-    Supports .toml, .yaml, .yml, and .json files. INCLUDE_KEY entries are
-    resolved recursively after loading.
+    Supports .toml, .yaml, .yml, and .json documents, local or remote. INCLUDE_KEY
+    entries are resolved recursively after loading.
 
     Args:
-        path: Path to the config file.
+        loc: Location of the config source -- a local path, a ``Path``, or a URL.
 
     Returns:
-        A dict of the parsed file contents with all includes resolved.
+        A dict of the parsed contents with all includes resolved.
 
     Raises:
-        InvalidConfigFileError: If the file format is unsupported, the file is
-            not found, the file contents are invalid, or the value it resolves to
-            is not a dict (an empty document excepted).
+        InvalidConfigFileError: If the format is unsupported, the source cannot be
+            read, its contents are invalid, or the value it resolves to is not a
+            dict (an empty document excepted).
         ConfargError: If an include value is not a string or a circular include
             is detected.
     """
-    path = Path(path)
-    return _load_raw(path, frozenset({path.resolve()}))
+    loc = _sources._location(loc)
+    return _load_raw(loc, frozenset({_sources._identity(loc)}))
 
 
-def _load_subpath_files(entries: list[tuple[str, Path]], union_tag: str) -> dict[str, Any]:
-    """Load and merge a sequence of (subpath, file-path) pairs into a single dict.
+def _load_subpath_files(entries: Sequence[tuple[str, str]], union_tag: str) -> dict[str, Any]:
+    """Load and merge a sequence of (subpath, location) pairs into a single dict.
 
-    Each file is nested under its dot-separated subpath before merging.
-    An empty subpath means the file is merged at the root. Later entries win
+    Each document is nested under its dot-separated subpath before merging.
+    An empty subpath means it is merged at the root. Later entries win
     on conflict.
     """
     result: dict[str, Any] = {}

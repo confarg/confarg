@@ -88,3 +88,26 @@ the boundary moves here.
   `str` variant, a `Literal` holding `Enum` members, a collection variant a fixed-arity sibling
   takes back. `dump()` writes the bare value and warns with the field path
   ([10](10-design-decisions.md#a-stolen-leaf-dumps-with-its-cast)).
+
+## Remote sources
+
+- **Nothing is cached.** A root `--config` location is read twice per run — once by the union-tag
+  pre-scan in `_tags.py`, once by the pipeline — as local files already are (REF-26). Over the
+  network that is two fetches. A caching handler is three lines through
+  `register_scheme`, which is why no cache is built in.
+- **No retries, no timeouts you can configure, no authentication.** The built-in `http`/`https`
+  reader is `urlopen` with a fixed timeout; anything more — a proxy, a bearer token, a retry
+  policy — is a handler the application registers over the built-in one.
+- **Writing stays local.** `dump_file()` takes a filesystem path; there is no scheme registry for
+  output.
+- **No content sniffing.** The format comes from the location's suffix only, so an extension-less
+  endpoint (`https://h/api/config?env=prod`) cannot be loaded even when it answers with a
+  `Content-Type`.
+- **A URL in `files=` must be a `str`.** `Path("https://h/x.yaml")` collapses the `//`, so
+  passing a `Path` there cannot work.
+- **A relative filename whose first segment holds a colon** (`weird:name.yaml`) reads as a
+  scheme and must be written `./weird:name.yaml`
+  ([02](02-files-and-env.md#locations-and-schemes)).
+- **`file://` path translation is platform-dependent**, as `urllib.request.url2pathname` is: on
+  Windows `file:/home/bob/c.yaml` names `\home\bob\c.yaml` on the current drive. A `file://` URL
+  with a host other than `localhost` is refused rather than silently reinterpreted.

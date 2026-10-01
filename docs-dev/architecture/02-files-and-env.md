@@ -1,5 +1,72 @@
 # Config files and environment variables
 
+## Locations and schemes
+
+A configuration source is named by a **location string**, not a `pathlib.Path`: a local path as
+before, or a URL — `file:/home/bob/config.yaml`, `https://cfg.example.com/app.yaml`,
+`s3://bucket/path/config.yaml`. Every channel names one the same way (`files=`, `env_config`,
+`<PREFIX>CONFIG__<SUBPATH>`, `--config[.subpath][+]`, `__include__`), because they all reach
+`_files` through one funnel: the scheme is orthogonal to the channel, so nothing had to be
+spelled per channel.
+
+`_sources.py` owns the five decisions a location implies, one function each
+([09](09-invariants.md#delegate-to-the-canonical-function)), so `_files.py` never branches on
+whether a document is local or remote:
+
+| Decision | Function | Local | Remote |
+|---|---|---|---|
+| which scheme? | `_scheme_of` | `""` | the registered scheme name |
+| what bytes? | `_read_bytes` | `Path.read_bytes` | the registered reader |
+| which format? | `_suffix` | `Path.suffix` | suffix of the URL path |
+| what does a relative include name? | `_join` | `(parent / rel).resolve()` | same origin, path joined |
+| the same document? | `_identity` | `Path.resolve()` | the location, fragment stripped |
+
+**A scheme needs two characters.** `C:\Users\bob\config.yaml` is a Windows path, but `urlsplit`
+reads its drive letter as a scheme, so a location counts as a URL only when at least two
+characters precede the colon. The cost is that a *relative* filename whose first segment contains
+a colon (`weird:name.yaml`) reads as a scheme and must be written `./weird:name.yaml`.
+
+**An unregistered scheme is an error, not a path.** `gs://bucket/app.yaml` with no `gs` handler
+raises `InvalidConfigFileError.unknown_scheme`, naming what is registered. Falling back to a
+filename would report "Config file not found: gs://bucket/app.yaml", sending the reader after a
+typo instead of a missing handler.
+
+**The registry is writable both ways.** `register_scheme` adds a reader or replaces one, and
+`unregister_scheme` removes one, built-ins included; both normalize the scheme name through
+`_normalize_scheme`, so `"HTTP"`, `"http:"` and `"http://"` name one entry wherever they
+arrive. Removal exists because a registry that only grows offers no way to say "this program
+never reads configuration off the network": dropping `http` and `https` says it once, for every
+channel, and a location naming them afterwards takes the unregistered-scheme path above.
+Removing an absent scheme raises `ValueError` rather than passing silently, since the usual
+cause is a misspelling and silence would leave the real scheme loadable
+([10](10-design-decisions.md#a-scheme-handler-returns-bytes)).
+
+**Handlers return `bytes`**, so decoding is one decision per format instead of one per handler
+([10](10-design-decisions.md#a-scheme-handler-returns-bytes)). Reading is also the single place a
+failure becomes an `InvalidConfigFileError`, so no loader carries its own `FileNotFoundError`
+branch any more.
+
+**Format still comes from the suffix**, with query and fragment stripped first, so
+`https://h/app.yaml?env=prod` is YAML. A location with no suffix raises; nothing sniffs content
+or reads a `Content-Type`, so every scheme answers the format question identically
+([11](11-limitations.md#remote-sources)).
+
+### Relative includes resolve within one origin
+
+A relative `__include__` in a remote document resolves against that document's own location,
+keeping scheme and netloc and joining the path with `posixpath`. **Not** `urljoin`: it resolves
+relatives only for the schemes in `urllib.parse.uses_relative`, so
+`urljoin("s3://bucket/env/app.yaml", "db.yaml")` returns `"db.yaml"` with the base silently
+discarded. A `posixpath` join gives answers identical to `urljoin` for `http`/`https` and correct
+ones for `s3` and for any scheme a user registers.
+
+A remote document may reach only its **own origin**: an include naming another scheme or host —
+a local path included — raises `InvalidConfigFileError.cross_origin_include`. Joining by path
+makes that structural rather than a check to remember, so a config URL is not a primitive for
+reading local files or probing an internal network. The reverse is allowed: a local file may
+include any registered location, because whoever wrote it is whoever runs the program
+([10](10-design-decisions.md#a-remote-document-reaches-only-its-own-origin)).
+
 ## Format dispatch and optional dependencies
 
 Formats are chosen by file extension: `.yaml`/`.yml` (PyYAML), `.toml` (stdlib `tomllib`
@@ -8,12 +75,14 @@ below). Parser libraries are imported lazily and a missing one becomes
 `InvalidConfigFileError.missing_library`, keeping confarg zero-dependency
 ([10-design-decisions.md](10-design-decisions.md#zero-runtime-dependencies)).
 
-Two loader tables exist: `_LOADERS` (a root configuration layer, must be a dict) and
-`_ITEM_LOADERS` (any top-level value, used by `__include__` and `--config.<path>+`, where a
-list or scalar root is meaningful). `_LOADERS` is the smaller table — no `.csv`/`.tsv`, since
-data is a value and not a layer.
+One loader table exists: `_LOADERS`, holding a parser per configuration-layer format. Data
+formats (`.csv`/`.tsv`) are not in it — data is a value, not a layer — and `_load_document`
+routes them to `_load_csv` with their `orient`/`header` options instead. `_load_document` is
+the single owner of "read this location and parse it", so `__include__`, `--config.<path>+`
+and a root file all reach one function; a root additionally answers `_loader_for(loc,
+_LOADERS)` first, which is what makes a `.csv` root `unsupported_format` rather than data.
 
-Both tables return the file's **raw** top-level value; neither format knows the root rule.
+The table returns the file's **raw** top-level value; no format knows the root rule.
 `_load_raw` is the single place that requires a root to be a mapping, so all three formats and
 anything `__include__` rewrites the root to produce one error
 ([09](09-invariants.md#delegate-to-the-canonical-function)). Enforcing it after include
@@ -46,7 +115,8 @@ and it deep-merges. A CSV/TSV file is **data**: it contributes one value.
 
 `__include__` accepts a path, a `{path: …, <format options>}` dict, or a list of either.
 
-- Paths are relative to the including file's directory.
+- Paths are relative to the including document's own location, local or remote
+  ([above](#relative-includes-resolve-within-one-origin)).
 - A list is layered left to right into one value first, so the list form means the same in a
   dict node and in a list item. Dict entries deep-merge, mirroring repeated `--config`.
 - A pure include (no sibling keys) may yield any type; with siblings the include must yield a

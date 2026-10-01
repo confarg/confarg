@@ -17,12 +17,13 @@ Dev Notes:
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
+    from pathlib import Path
 
+from confarg import _sources
 from confarg._files import _load_file, _load_file_item, _load_subpath_files
 from confarg._merge import (
     DICT_DELETE,
@@ -41,8 +42,8 @@ from confarg.exceptions import ConfargError, InvalidConfigFileError, LocalsError
 from confarg.typedload._coerce import _coerce_leaf
 
 
-def _load_cli_config(fpath: Path, subpath: str, config_flag: str) -> dict[str, Any]:
-    """Load one CLI config file (--config[.subpath][+] fpath) into a nested dict."""
+def _load_cli_config(fpath: str, subpath: str, config_flag: str) -> dict[str, Any]:
+    """Load one CLI config source (--config[.subpath][+] fpath) into a nested dict."""
     if subpath.endswith("+"):
         real_subpath = subpath[:-1].rstrip(".")
         if not real_subpath:
@@ -268,7 +269,7 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
 def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s parameter surface
     target: Any,
     cli_data: dict[str, Any],
-    cli_configs: Sequence[tuple[str, Path]],
+    cli_configs: Sequence[tuple[str, str]],
     *,
     env: Mapping[str, str],
     env_prefix: str | None,
@@ -291,7 +292,7 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
         env_separator: Separator used to split env var names into nested keys.
         config_flag: Name of the config-file flag; the env segment with this name
             marks a sub-config file pointer. ``""`` disables env config pointers.
-        files: Paths of config files to load first (lowest priority).
+        files: Locations of config sources to load first (lowest priority).
         env_config: Name of an env var whose value is a config file path to load
             after ``files`` but before env- and CLI-specified config files.
         union_tag: Field name used as a discriminator tag in union types.
@@ -320,7 +321,7 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
     # 1. Parse env vars (done here so env-specified config files are loaded in order)
     if env_prefix is None:
         env_data: dict[str, Any] = {}
-        env_configs: list[tuple[str, Path]] = []
+        env_configs: list[tuple[str, str]] = []
     else:
         # Exclude the env_config key so it is not mistakenly treated as a field.
         env_for_fields = {k: v for k, v in env.items() if k != env_config} if env_config else env
@@ -334,9 +335,9 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
         )
 
     # 2. Load config files in priority order (all become config-level, below inline env/CLI)
-    file_entries: list[tuple[str, Path]] = [("", Path(f)) for f in files]
+    file_entries: list[tuple[str, str]] = [("", _sources._location(f)) for f in files]
     if env_config and (env_config_path := env.get(env_config)):
-        file_entries.append(("", Path(env_config_path)))
+        file_entries.append(("", env_config_path))
     env_configs.sort(key=lambda ec: ec[0])
     config_data = _load_subpath_files(file_entries + env_configs, union_tag)
     for subpath, fpath in cli_configs:

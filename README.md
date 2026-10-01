@@ -21,6 +21,8 @@ pip install confarg
 
 `confarg` comes with no dependency, but installing additional libraries such as `pyyaml` unlocks the support of extra configuration file formats.
 
+Reading configuration from an object store needs one extra: `pip install confarg[s3]`.
+
 ## TL;DR
 
 This library lets you read configurations stored in classes like this
@@ -445,6 +447,8 @@ Large configurations are often made up of independent components, and as such, y
 Some configuration components may even be generated automatically, in which case being able to isolate those parts from the rest is a must.
 
 `confarg` lets you do this in different ways.
+
+Every place that takes a configuration file path also takes a URL, so a part can live somewhere else entirely: `--config https://cfg.example.com/app.yaml`, `--config.db s3://my-bucket/db.yaml`, or an `__include__` naming either. `file`, `http`, `https` and `s3` ship with the library, `confarg.register_scheme()` adds your own, and `confarg.unregister_scheme()` takes one away — removing `http` and `https` is how a program refuses to read its configuration off the network at all.
 
 From the command line, the `--config` flag can be suffixed with a key path to load configurations there. For example,
 

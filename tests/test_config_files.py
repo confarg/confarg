@@ -770,3 +770,110 @@ class TestEnvVarSubConfig:
             env_prefix="CONFARG_",
         )
         assert result.db.host == "db_host"  # deeper path wins
+
+
+# ---------------------------------------------------------------------------
+# Remote config sources
+# ---------------------------------------------------------------------------
+
+
+class TestRemoteConfigSources:
+    """Every format loads over a URL exactly as it does from a path."""
+
+    @pytest.mark.parametrize(
+        ("name", "content"),
+        [
+            ("app.yaml", "name: served\ncount: 7\n"),
+            ("app.yml", "name: served\ncount: 7\n"),
+            ("app.json", '{"name": "served", "count": 7}'),
+            ("app.toml", 'name = "served"\ncount = 7\n'),
+        ],
+    )
+    def test_every_format_loads_over_http(self, tmp_path: Path, tmp_http: str, name: str, content: str) -> None:
+        """The format is chosen by the URL's extension, for each supported format."""
+        (tmp_path / name).write_text(content, encoding="utf-8")
+        cfg = confarg.load(WithDefaults, files=[f"{tmp_http}/{name}"], argv=[])
+        assert (cfg.name, cfg.count) == ("served", 7)
+
+    @pytest.mark.parametrize(
+        ("name", "content"),
+        [
+            ("app.yaml", "name: from-file-url\ncount: 2\n"),
+            ("app.json", '{"name": "from-file-url", "count": 2}'),
+            ("app.toml", 'name = "from-file-url"\ncount = 2\n'),
+        ],
+    )
+    def test_every_format_loads_over_a_file_url(self, tmp_path: Path, name: str, content: str) -> None:
+        """A file:// URL reaches the same loaders, with no network involved."""
+        p = tmp_path / name
+        p.write_text(content, encoding="utf-8")
+        cfg = confarg.load(WithDefaults, files=[p.as_uri()], argv=[])
+        assert (cfg.name, cfg.count) == ("from-file-url", 2)
+
+    def test_a_url_and_its_path_produce_the_same_merged_dict(self, tmp_path: Path) -> None:
+        """file:// is not a second code path."""
+        p = tmp_path / "app.yaml"
+        p.write_text("name: same\ncount: 1\n", encoding="utf-8")
+        assert confarg.merge(WithDefaults, files=[str(p)], argv=[]) == confarg.merge(
+            WithDefaults,
+            files=[p.as_uri()],
+            argv=[],
+        )
+
+    def test_a_query_string_does_not_confuse_the_format(self, tmp_path: Path, tmp_http: str) -> None:
+        """An extension followed by a query string still dispatches on the extension."""
+        (tmp_path / "app.yaml").write_text("name: served\n", encoding="utf-8")
+        cfg = confarg.load(WithDefaults, files=[f"{tmp_http}/app.yaml?env=prod"], argv=[])
+        assert cfg.name == "served"
+
+    def test_an_extensionless_url_is_refused(self, tmp_http: str) -> None:
+        """Nothing sniffs content, so a URL with no extension cannot be loaded."""
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="no file extension"):
+            confarg.load(WithDefaults, files=[f"{tmp_http}/api/config"], argv=[])
+
+    def test_an_unsupported_extension_is_refused(self, tmp_path: Path, tmp_http: str) -> None:
+        """An unsupported extension over HTTP gets the same verdict as on disk."""
+        (tmp_path / "app.xyz").write_text("nope", encoding="utf-8")
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="Unsupported"):
+            confarg.load(WithDefaults, files=[f"{tmp_http}/app.xyz"], argv=[])
+
+    def test_a_malformed_served_document_names_the_url(self, tmp_path: Path, tmp_http: str) -> None:
+        """A parse failure reports the location it came from."""
+        (tmp_path / "app.json").write_text("{bad json", encoding="utf-8")
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match=r"Malformed JSON.*app\.json"):
+            confarg.load(WithDefaults, files=[f"{tmp_http}/app.json"], argv=[])
+
+    def test_a_non_dict_root_over_http_is_refused(self, tmp_path: Path, tmp_http: str) -> None:
+        """The root-is-a-mapping rule applies to a served document too."""
+        (tmp_path / "app.yaml").write_text("- one\n- two\n", encoding="utf-8")
+        with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="must be a mapping"):
+            confarg.load(WithDefaults, files=[f"{tmp_http}/app.yaml"], argv=[])
+
+    def test_an_empty_served_document_contributes_nothing(self, tmp_path: Path, tmp_http: str) -> None:
+        """An empty document is the one non-dict root that passes, over HTTP as on disk."""
+        (tmp_path / "app.yaml").write_text("", encoding="utf-8")
+        cfg = confarg.load(WithDefaults, files=[f"{tmp_http}/app.yaml"], argv=[])
+        assert cfg == WithDefaults()
+
+    def test_urls_layer_left_to_right(self, tmp_path: Path, tmp_http: str) -> None:
+        """Two URLs in files= are one priority level, later winning."""
+        (tmp_path / "base.yaml").write_text("name: base\ncount: 1\n", encoding="utf-8")
+        (tmp_path / "over.yaml").write_text("count: 2\n", encoding="utf-8")
+        cfg = confarg.load(
+            WithDefaults,
+            files=[f"{tmp_http}/base.yaml", f"{tmp_http}/over.yaml"],
+            argv=[],
+        )
+        assert (cfg.name, cfg.count) == ("base", 2)
+
+    def test_expressions_in_a_served_document_resolve(self, tmp_path: Path, tmp_http: str) -> None:
+        """A served document is a configuration layer like any other, expressions included."""
+        (tmp_path / "app.yaml").write_text("name: served\nrate: ${count * 1.5}\ncount: 4\n", encoding="utf-8")
+        cfg = confarg.load(WithDefaults, files=[f"{tmp_http}/app.yaml"], argv=[])
+        assert cfg.rate == 6.0
+
+    def test_a_served_document_is_mounted_under_a_subpath(self, tmp_path: Path, tmp_http: str) -> None:
+        """A URL mounts under --config.<subpath> as a path does."""
+        (tmp_path / "db.yaml").write_text("host: h\nport: 1\nname: n\n", encoding="utf-8")
+        cfg = confarg.load(AppConfig, argv=["--config.db", f"{tmp_http}/db.yaml"], env={})
+        assert (cfg.db.host, cfg.db.port, cfg.db.name) == ("h", 1, "n")

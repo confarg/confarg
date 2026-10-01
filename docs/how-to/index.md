@@ -14,3 +14,5 @@ stops.
 * [Derive a value the configuration does not contain](derived-values.md) — one value computed
   from another, read out of a data file, shared between two sub-configurations, or produced at
   runtime by your own code.
+* [Load configuration from a URL](remote-config.md) — a configuration file served over
+  HTTP, held in an object store, or fetched by a handler you register yourself.

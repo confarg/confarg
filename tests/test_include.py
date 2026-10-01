@@ -511,6 +511,21 @@ class TestIncludeList:
         with pytest.raises(ConfargError, match="Circular include"):
             _load_file(tmp_path / "c1.yaml")
 
+    def test_the_cycle_error_names_the_resolved_file(self, tmp_path: Path) -> None:
+        """The reported location is the absolute file, not the path the includes walked to it.
+
+        A relative entry reached through a parent step would otherwise read as
+        ``.../env/../c1.yaml``, and each further level of nesting would add another step.
+        """
+        (tmp_path / "env").mkdir()
+        write(tmp_path, "c1.yaml", f"{INCLUDE_KEY}: ./env/c2.yaml")
+        write(tmp_path, "env/c2.yaml", f"{INCLUDE_KEY}: ../c1.yaml")
+
+        with pytest.raises(ConfargError, match="Circular include") as excinfo:
+            _load_file(tmp_path / "c1.yaml")
+        reported = str(excinfo.value).removeprefix("Circular include detected: ")
+        assert reported == str(tmp_path / "c1.yaml")
+
     def test_missing_entry_reports_the_file(self, tmp_path: Path) -> None:
         """Test that a missing file in the list raises with its path."""
         write(tmp_path, "a.yaml", "host: a_host\n")
@@ -665,3 +680,93 @@ class TestIncludeListErrors:
 
         with pytest.raises(ConfargError, match="sibling"):
             _load_file(tmp_path / "config.yaml")
+
+
+# ---------------------------------------------------------------------------
+# Remote documents
+# ---------------------------------------------------------------------------
+
+
+class TestRemoteIncludes:
+    """A document loaded over a URL resolves its includes inside its own origin."""
+
+    def test_relative_include_resolves_against_the_served_url(self, tmp_path: Path, tmp_http: str) -> None:
+        """A sibling name in a served document is fetched from the same directory."""
+        write(tmp_path, "db.yaml", "db:\n  host: served-db\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: ./db.yaml\n")
+
+        assert _load_file(f"{tmp_http}/config.yaml") == {"db": {"host": "served-db"}}
+
+    def test_relative_include_climbs_with_dot_dot(self, tmp_path: Path, tmp_http: str) -> None:
+        """A parent step inside the origin is resolved, not refused."""
+        write(tmp_path, "base.yaml", "name: from-base\n")
+        (tmp_path / "env").mkdir()
+        write(tmp_path, "env/config.yaml", f"{INCLUDE_KEY}: ../base.yaml\n")
+
+        assert _load_file(f"{tmp_http}/env/config.yaml") == {"name": "from-base"}
+
+    def test_a_served_document_may_not_include_a_local_path(self, tmp_path: Path, tmp_http: str) -> None:
+        """An absolute local location from a remote document is refused."""
+        secret = write(tmp_path, "secret.yaml", "password: hunter2\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: {secret.as_uri()}\n")
+
+        with pytest.raises(InvalidConfigFileError, match="may not include"):
+            _load_file(f"{tmp_http}/config.yaml")
+
+    def test_a_served_document_may_not_include_another_host(self, tmp_path: Path, tmp_http: str) -> None:
+        """Leaving the origin for another host is refused."""
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: http://evil.test/x.yaml\n")
+
+        with pytest.raises(InvalidConfigFileError, match="may not include"):
+            _load_file(f"{tmp_http}/config.yaml")
+
+    def test_a_local_file_may_include_a_served_document(self, tmp_path: Path, tmp_http: str) -> None:
+        """The reverse direction is allowed: a local author names any location."""
+        write(tmp_path, "db.yaml", "db:\n  host: served-db\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: {tmp_http}/db.yaml\n")
+
+        assert _load_file(tmp_path / "config.yaml") == {"db": {"host": "served-db"}}
+
+    def test_a_cycle_between_served_documents_raises(self, tmp_path: Path, tmp_http: str) -> None:
+        """Cycle detection works on URL identity as it does on resolved paths."""
+        write(tmp_path, "c1.yaml", f"{INCLUDE_KEY}: ./c2.yaml\n")
+        write(tmp_path, "c2.yaml", f"{INCLUDE_KEY}: ./c1.yaml\n")
+
+        with pytest.raises(ConfargError, match="Circular include"):
+            _load_file(f"{tmp_http}/c1.yaml")
+
+    def test_naming_one_served_document_twice_is_not_a_cycle(self, tmp_path: Path, tmp_http: str) -> None:
+        """Sibling entries are layers, not nesting, over URLs too."""
+        write(tmp_path, "one.yaml", "a: 1\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: [./one.yaml, ./one.yaml]\n")
+
+        assert _load_file(f"{tmp_http}/config.yaml") == {"a": 1}
+
+    def test_a_missing_served_include_reports_the_url(self, tmp_path: Path, tmp_http: str) -> None:
+        """The error names the location that could not be read."""
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: ./missing.yaml\n")
+
+        with pytest.raises(InvalidConfigFileError, match=r"missing\.yaml"):
+            _load_file(f"{tmp_http}/config.yaml")
+
+    def test_an_extensionless_include_is_rejected(self, tmp_path: Path, tmp_http: str) -> None:
+        """Format comes from the suffix, so an endpoint without one cannot be included."""
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: ./endpoint\n")
+
+        with pytest.raises(InvalidConfigFileError, match="no file extension"):
+            _load_file(f"{tmp_http}/config.yaml")
+
+    def test_a_served_csv_include_still_replaces(self, tmp_path: Path, tmp_http: str) -> None:
+        """A data file over the wire keeps its replace-rather-than-merge semantics."""
+        write(tmp_path, "rows.csv", "host\na.com\nb.com\n")
+        write(tmp_path, "config.yaml", f"hosts:\n  {INCLUDE_KEY}: ./rows.csv\n")
+
+        assert _load_file(f"{tmp_http}/config.yaml") == {"hosts": ["a.com", "b.com"]}
+
+    def test_a_file_url_document_includes_relatively(self, tmp_path: Path) -> None:
+        """file:// is a scheme like any other, and resolves relatives the same way."""
+        write(tmp_path, "db.yaml", "db:\n  host: via-file-url\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: ./db.yaml\n")
+
+        url = (tmp_path / "config.yaml").as_uri()
+        assert _load_file(url) == {"db": {"host": "via-file-url"}}

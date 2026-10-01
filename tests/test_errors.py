@@ -191,3 +191,59 @@ class TestNonDataclassErrors:
         """Non-dataclass target without prefix raises or handles gracefully."""
         with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(int, argv=["42"], env={})
+
+
+class TestRemoteSourceErrors:
+    """Messages for the failures only a remote config source can have."""
+
+    def test_unknown_scheme_lists_what_is_registered(self) -> None:
+        """The message names the registered schemes and how to add one."""
+        error = confarg.exceptions.InvalidConfigFileError.unknown_scheme("gs", ["file", "http", "s3"])
+        text = str(error)
+        assert "gs://" in text
+        assert "file, http, s3" in text
+        assert "confarg.register_scheme('gs', ...)" in text
+
+    def test_unknown_scheme_hints_the_local_file_escape(self) -> None:
+        """A filename with a colon in it has a documented spelling, and the error gives it."""
+        error = confarg.exceptions.InvalidConfigFileError.unknown_scheme("weird", ["file"])
+        assert "./weird:" in str(error)
+
+    def test_unreachable_names_the_location_and_the_cause(self) -> None:
+        """A read failure reports both what could not be read and why."""
+        error = confarg.exceptions.InvalidConfigFileError.unreachable(
+            "https://h/app.yaml",
+            OSError("connection reset"),
+        )
+        text = str(error)
+        assert "https://h/app.yaml" in text
+        assert "connection reset" in text
+
+    def test_no_format_explains_the_extension_rule(self) -> None:
+        """An extensionless location is told why it cannot be loaded."""
+        text = str(confarg.exceptions.InvalidConfigFileError.no_format("https://h/api/config"))
+        assert "https://h/api/config" in text
+        assert "no file extension" in text
+        assert "Content-Type" in text
+
+    def test_cross_origin_include_names_both_locations(self) -> None:
+        """The refusal says which document tried to reach what."""
+        text = str(
+            confarg.exceptions.InvalidConfigFileError.cross_origin_include(
+                "https://h/app.yaml",
+                "file:///etc/shadow",
+            ),
+        )
+        assert "https://h/app.yaml" in text
+        assert "file:///etc/shadow" in text
+        assert "own scheme and host" in text
+
+    def test_every_new_error_is_an_invalid_config_file_error(self) -> None:
+        """The new failures join the existing config-file error class, not a new one."""
+        for error in (
+            confarg.exceptions.InvalidConfigFileError.unreachable("x", OSError("e")),
+            confarg.exceptions.InvalidConfigFileError.unknown_scheme("gs", ["file"]),
+            confarg.exceptions.InvalidConfigFileError.no_format("x"),
+            confarg.exceptions.InvalidConfigFileError.cross_origin_include("a", "b"),
+        ):
+            assert isinstance(error, confarg.exceptions.ConfargError)
