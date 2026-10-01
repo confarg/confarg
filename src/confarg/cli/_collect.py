@@ -47,6 +47,7 @@ from confarg._parse_cli import (
 from confarg._pipeline import _merge_sources
 from confarg._tags import collect_tags
 from confarg._types import (
+    _base_declares_path,
     _dataclass_subclasses,
     _elem_type,
     _fixed_seq_types,
@@ -662,9 +663,7 @@ def _disagreeing_owner_flags(
     The resolution is vanilla's own per-variant composition
     (:func:`~confarg._parse_cli._resolve_field_type` over each variant), so a
     path several levels under *flag* answers here exactly as vanilla answers it
-    on the CLI.  A first segment *base* declares names a field the base's own
-    walk collects by the base's type — vanilla's answer for it — so such keys
-    are never conflicts here.
+    on the CLI.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
@@ -672,17 +671,12 @@ def _disagreeing_owner_flags(
     owners = [v for v in variants if v is not None and v is not base]
     if len(owners) <= 1:
         return frozenset()
-    base_fields: set[str] = set()
-    if base is not None and (setup := _resolve_struct(base)) is not None:
-        base_fields = set(setup[1])
     prefix = f"{flag}." if flag else ""
     conflicts: set[str] = set()
     for key, value in flat.items():
         if value is None or not key.startswith(prefix):
             continue
         rest = key[len(prefix) :].split(".")
-        if rest[0] in base_fields:
-            continue
         found: list[Any] = []
         for variant in dict.fromkeys(owners):
             resolved: Any = None
@@ -728,9 +722,17 @@ def _collect_variant_fields(  # noqa: PLR0913  # the type-walk context, threaded
     replaced the whole subtree: the sub-flags are hidden from the walks too,
     not resurrected by them (BUG-85).
 
+    Under a *base*, a flag whose first segment the base declares is hidden from
+    the walks as well: the base's own walk collected it by the base's
+    annotation, which is vanilla's answer however a subclass overrides the
+    field (:func:`~confarg._types._base_declares_path`), so a subclass's
+    walk re-collecting it by its own type would overwrite that answer (BUG-86).
+
     Dev Notes:
         docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
     """
+    if base is not None:
+        flat = {k: v for k, v in flat.items() if not _base_declares_path(base, flag, k)}
     conflicts = _disagreeing_owner_flags(flat, variants, flag, union_tag, base=base)
     if conflicts:
         superseded: set[str] = set()

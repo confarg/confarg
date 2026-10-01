@@ -39,6 +39,7 @@ from confarg._merge import (
 )
 from confarg._tags import import_tagged_classes
 from confarg._types import (
+    _answered_by_subclasses,
     _dict_kv,
     _elem_type,
     _fixed_seq_types,
@@ -133,8 +134,7 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911
             return list(flds.values())[spellings[part]]
         return None
     if _is_struct(tp):
-        flds = _struct_fields(tp)
-        return flds[part] if part in flds else _subclass_field_type(tp, part)
+        return _subclass_field_type(tp, part) if _answered_by_subclasses(tp, part) else _struct_fields(tp)[part]
     if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
         return _elem_type(tp)
     if _is_tuple(tp):

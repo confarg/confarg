@@ -3052,6 +3052,84 @@ class TestVariantOwnerConflictContract:
 
 
 # ---------------------------------------------------------------------------
+# A subclass's override of a base-declared field: vanilla answers the flag by
+# the base's own annotation, never the subclasses' (BUG-86)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _OverInner:
+    """Struct the base declares for ``n``: owns ``v`` as ``int``."""
+
+    v: int = 0
+
+
+@dataclass
+class _OverInnerWide:
+    """Struct a subclass overrides ``n`` with: ``v`` as ``float``, plus ``w``."""
+
+    v: float = 0.0
+    w: int = 0
+
+
+@dataclass
+class _OverBase:
+    """Base class declaring ``a`` as ``int`` and ``n`` as ``_OverInner``."""
+
+    a: int = 1
+    n: _OverInner = dataclasses_field(default_factory=_OverInner)
+
+
+@dataclass
+class _OverSame(_OverBase):
+    """Subclass inheriting the base's fields unchanged."""
+
+
+@dataclass
+class _OverOverride(_OverBase):
+    """Subclass overriding both base-declared fields with other types."""
+
+    a: float = 2.0  # type: ignore[assignment]  # the override under test
+    n: _OverInnerWide = dataclasses_field(default_factory=_OverInnerWide)  # type: ignore[assignment]  # the override under test
+
+
+@dataclass
+class _OverHolder:
+    """Holder of the base whose subclass overrides its fields."""
+
+    x: _OverBase = dataclasses_field(default_factory=_OverBase)
+
+
+class TestSubclassOverrideContract:
+    """A base-declared field is answered by the base's annotation in every front-end."""
+
+    def test_overridden_field_coerced_by_base(self, loader: ConfargLoader) -> None:
+        """The base's ``int`` coerces the flag, not the last subclass walk's ``float`` (BUG-86)."""
+        merged = loader.merge(_OverHolder, argv=["--x.a", "7"], env={}, config_flag="")
+        assert merged == {"x": {"a": 7}}
+        assert type(merged["x"]["a"]) is int
+
+    def test_overridden_field_coerced_by_base_with_tag(self, loader: ConfargLoader) -> None:
+        """A tag naming the overriding subclass does not change the answer either."""
+        tag = f"{__name__}._OverOverride"
+        merged = loader.merge(_OverHolder, argv=["--x.class", tag, "--x.a", "7"], env={}, config_flag="")
+        assert merged == {"x": {"class": tag, "a": 7}}
+        assert type(merged["x"]["a"]) is int
+
+    def test_overridden_struct_subflag_coerced_by_base(self, loader: ConfargLoader) -> None:
+        """A sub-flag under an overridden struct field is resolved through the base's struct."""
+        merged = loader.merge(_OverHolder, argv=["--x.n.v", "3"], env={}, config_flag="")
+        assert merged == {"x": {"n": {"v": 3}}}
+        assert type(merged["x"]["n"]["v"]) is int
+
+    def test_overriding_struct_only_subflag_refused(self, loader: ConfargLoader) -> None:
+        """A sub-flag only the override's struct owns names nothing the base's walk reaches."""
+        # Vanilla raises UnknownArgumentError; adapters raise SystemExit or their equivalent.
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_OverHolder, argv=["--x.n.w", "3"], env={}, config_flag="")
+
+
+# ---------------------------------------------------------------------------
 # Root-level union target (target IS a union, not a struct containing one)
 # ---------------------------------------------------------------------------
 
