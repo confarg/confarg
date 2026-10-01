@@ -19,9 +19,9 @@ these leaves the whole suite green (4197 passed, 1 skipped), verified one at a t
 The encoding and newline pairs are spelled identically in `_dump_yaml` and `_dump_json`, and both
 copies survive. Two of the four are **platform-dependent**, so CI on `ubuntu-latest`
 (`.github/workflows/ci-test.yml`) structurally cannot catch them: on Linux UTF-8 is already the
-default and `newline` changes nothing. They bite only on Windows, which is where
-[REF-29](REF-29-nothing-pins-line-endings.md) says a tool writing CRLF goes unnoticed until the
-next `--all-files` run.
+default and `newline` changes nothing. They bite only on Windows, which is where a tool writing
+CRLF goes unnoticed until the next `--all-files` run — the concern of REF-29, recorded in
+[the decision that pinned line endings](../../architecture/design-decisions/line-endings-pinned-in-gitattributes.md).
 
 Fix direction: one test per writer that asserts the bytes, not the round trip — `read_bytes()`
 contains no `\r`, non-ASCII content survives, and the JSON file's indent is the declared one. That

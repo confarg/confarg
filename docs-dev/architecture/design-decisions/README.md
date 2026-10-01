@@ -90,3 +90,9 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 |---|---|
 | [Shared reserved key names live in `_defaults.py`](shared-reserved-key-names.md) | any literal the five front-ends must agree on, not only the keyword defaults |
 | [A user-facing message lives on the exception that raises it](messages-live-on-exceptions.md) | a message raised from more than one site is a classmethod factory |
+
+## Repository
+
+| Decision | In one line |
+|---|---|
+| [Line endings are pinned in `.gitattributes`](line-endings-pinned-in-gitattributes.md) | LF for text, `-text` for the PNGs — and the pre-commit hook stays the enforcement, because jj ignores attributes |
