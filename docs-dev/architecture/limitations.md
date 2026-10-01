@@ -49,7 +49,10 @@ the boundary moves here.
 ## CLI front-ends
 
 - A multi-token flag is spelled per framework: space-separated for vanilla/argparse/cyclopts,
-  repeated for click/typer/cyclopts ([CLI adapters](cli-adapters/list-syntax-divergence.md#list-syntax-divergence)). Only the
+  repeated for click/typer/cyclopts ([CLI adapters](cli-adapters/list-syntax-divergence.md#list-syntax-divergence)). The
+  `--<config_flag>` flag is spelled the same way, so its multi-file run declines on click and
+  typer and repetition is the spelling to use there
+  ([CLI parsing](cli-parsing/config-file-flags.md#config-file-flags)). Only the
   spelling diverges: repeating such a flag accumulates in every front-end, and a bare
   `--<list>` clears the collection in every front-end
   ([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)).

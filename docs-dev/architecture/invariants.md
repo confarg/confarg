@@ -16,7 +16,11 @@ which only the two clicklike front-ends decline
 ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)); the `=`-spelled run
 continued by bare tokens, which argparse alone declines — its `=` binds the one token after
 it and its parser exits on the rest
-([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)); file-only dunder keys
+([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)); the config flag's
+space-separated multi-file run, which only the two clicklike front-ends decline — their
+`multiple=True` registration binds one path per occurrence, so repetition is their only
+multi-file spelling
+([CLI parsing](cli-parsing/config-file-flags.md#config-file-flags)); file-only dunder keys
 ([config files](config-files/reserved-keys.md#reserved-file-only-keys)); declaring locals only in files
 ([locals](locals.md#declare-in-files-modify-anywhere)); the mount keyword and the form its path
 takes, spelled per channel
