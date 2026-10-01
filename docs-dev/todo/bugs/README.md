@@ -33,5 +33,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-112 — A namedtuple's non-struct field takes scalar flags on the adapters](BUG-112-a-namedtuples-non-struct-field-takes-scalar-flags-on-the-adapters.md) | M | medium | behavior |
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | M | medium | behavior |
 | [BUG-114 — Cyclopts cannot register subclasses that share a struct field name](BUG-114-cyclopts-cannot-register-subclasses-that-share-a-struct-field-name.md) | S | medium | behavior |
+| [BUG-115 — Every prefixed environment variable overwrites a scalar root](BUG-115-every-prefixed-env-var-overwrites-a-scalar-root.md) | S | low | behavior |
 
 <!-- tickets:end -->

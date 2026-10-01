@@ -39,6 +39,11 @@ between the two other channels in priority: above
   in **under** the per-field env vars exactly as root `--json` sits under the field flags
   ([CLI parsing](cli-parsing/casts-and-reserved-words.md#force-casts)). Whether a trailing `json` is a cast at all is
   decided by the canonical `detect_force_cast`, not by a second rule in `_parse_env`.
+  On a scalar root the plain `<PREFIX>` variable wins over `<PREFIX>JSON`, whatever the
+  mapping's order (REF-44). The CLI's rule there is "last typed wins", and the environment
+  has no typing order: a mapping's iteration order is an accident of how it was built,
+  not something the user chose. So the plain value refines the cast, as a per-field
+  variable does on a struct root.
 - `FOO__BAR-` / `FOO__ITEMS__1-` are deletes, mirroring `--bar-` / `--items.1-`.
 - `<PREFIX>CONFIG[__SUBPATH]` are file pointers, collected and loaded by the pipeline. Their
   value is read as an `__include__` value, so `<PREFIX>CONFIG__USERS={"path": "users.csv",

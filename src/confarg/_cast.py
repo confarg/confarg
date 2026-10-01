@@ -11,9 +11,10 @@ following value is interpreted, bypassing the type-directed "magic":
   union "stealing rule").
 - ``.json`` — parse the value as JSON, storing the decoded structure raw.
 
-This module defines *which* names are casts and *what value* each produces.  Whether a
-trailing segment is a cast at all (vs. a real field of the same name) is decided by
-:func:`confarg._parse_cli.detect_force_cast`.
+This module defines *which* names are casts, *what value* each produces, and how the
+objects a root ``json`` cast decodes fold in under the fields (:func:`fold_root_json`).
+Whether a trailing segment is a cast at all (vs. a real field of the same name) is decided
+by :func:`confarg._parse_cli.detect_force_cast`.
 
 Dev Notes:
     docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#force-casts
@@ -24,6 +25,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from confarg._merge import _deep_merge
 from confarg._types import _Pinned, _StrToken
 from confarg.exceptions import ConfargError
 
@@ -63,6 +65,33 @@ def resolve_forced_value(cast_name: str, raw: str, *, flag: str = "") -> Any:
             msg = f"Invalid JSON for {label}: {e}"
             raise ConfargError(msg) from e
     return _Pinned(SCALAR_CAST_TYPES[cast_name], _StrToken(raw))
+
+
+def fold_root_json(data: dict[str, Any], root_json: list[dict[str, Any]], union_tag: str) -> dict[str, Any]:
+    """Fold the objects root ``json`` casts decoded in as a base under *data*.
+
+    The one fold every channel's root cast goes through -- vanilla's ``--json``, the
+    adapters' and the environment's ``<PREFIX>JSON``: the fields *data* holds refine the
+    injected objects, and of several objects the later wins.  Only a struct-like root
+    folds; a scalar root's cast writes the value itself, by each channel's own rule.
+
+    Args:
+        data: The values the channel collected at fields.
+        root_json: The decoded root objects, earliest first.
+        union_tag: Field name used as a discriminator tag in unions.
+
+    Returns:
+        *data* when there is nothing to fold, otherwise a new merged dict.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#force-casts
+    """
+    if not root_json:
+        return data
+    base: dict[str, Any] = {}
+    for obj in root_json:
+        base = _deep_merge(base, obj, union_tag=union_tag)
+    return _deep_merge(base, data, union_tag=union_tag)
 
 
 def cast_name_for_type(tp: type) -> str:

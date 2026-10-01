@@ -18,8 +18,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 from confarg import _defaults
-from confarg._cast import JSON_CAST_NAME, resolve_forced_value
-from confarg._merge import DICT_DELETE, _accumulate_list_delete, _deep_merge, _set_nested
+from confarg._cast import JSON_CAST_NAME, fold_root_json, resolve_forced_value
+from confarg._merge import DICT_DELETE, _accumulate_list_delete, _set_nested
 from confarg._parse_cli import (
     _accepts_object_value,
     _check_mount_subpath,
@@ -266,8 +266,9 @@ def _apply_env_json_cast(  # noqa: PLR0913  # root and nested placement need dis
     :func:`~confarg._parse_cli.detect_force_cast` (a real field/key named ``json`` wins).
     A nested cast is stored at the parent path; a root cast injects the whole
     configuration — collected into ``root_json`` and folded in as a base by
-    :func:`_parse_env`, so per-field env vars win over it.  Returns True when handled.
-    Hard-errors on invalid JSON, matching the CLI's explicit-intent semantics.
+    :func:`~confarg._cast.fold_root_json`, so per-field env vars win over it.  Returns
+    True when handled.  Hard-errors on invalid JSON, matching the CLI's explicit-intent
+    semantics.
     """
     if parts[-1].lower() != JSON_CAST_NAME:
         return False
@@ -281,26 +282,14 @@ def _apply_env_json_cast(  # noqa: PLR0913  # root and nested placement need dis
         return True
     if not _is_struct_like(_resolve_type(target)):
         # Non-struct root: the decoded value *is* the configuration, whatever its shape.
+        # The environment has no order for "last typed wins" to read, so the plain
+        # variable refines the cast, as a per-field one does on a struct root.
         data.setdefault(_defaults.ROOT_KEY, decoded)
         return True
     if not isinstance(decoded, dict):
         raise ConfargError.root_cast_not_object(orig_key, decoded)
     root_json.append(decoded)
     return True
-
-
-def _fold_root_json(data: dict[str, Any], root_json: list[dict[str, Any]], union_tag: str) -> dict[str, Any]:
-    """Fold root-level JSON casts in as a base under *data*, mirroring the CLI's root ``--json``.
-
-    Per-field env vars refine the injected object, and a later variable wins over an
-    earlier one (env has no ordering, but the merge stays deterministic per dict order).
-    """
-    if not root_json:
-        return data
-    base: dict[str, Any] = {}
-    for obj in root_json:
-        base = _deep_merge(base, obj, union_tag=union_tag)
-    return _deep_merge(base, data, union_tag=union_tag)
 
 
 def _warn_unknown_env_field(orig_key: str, parts: list[str], root_tp: Any, union_tag: str) -> bool:
@@ -452,4 +441,4 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
         _open_callable_shorthand(data, parts, target, union_tag)
         _store_env_value(parts, ft, value, data)
 
-    return _fold_root_json(data, root_json, union_tag), env_configs
+    return fold_root_json(data, root_json, union_tag), env_configs

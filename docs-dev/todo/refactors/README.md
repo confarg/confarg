@@ -22,7 +22,6 @@ different board.
 | [REF-41 — `cli/click/_context.py` and `cli/typer/_context.py` are the same file](REF-41-click-and-typer-context-are-the-same-file.md) | S | low | none |
 | [REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk](REF-42-argparse-completion-reimplements-the-build-walk.md) | M | medium | none |
 | [REF-43 — Four copies of the type-tree path walk in `_parse_cli.py`](REF-43-parse-cli-path-walk-copies.md) | M | high | none |
-| [REF-44 — The CLI root `--json` fold duplicates `_parse_env._fold_root_json`](REF-44-cli-root-json-fold-duplicates-the-env-one.md) | S | low | none |
 | [REF-45 — The argv value-run scan is written seven times](REF-45-argv-value-run-scan-duplicated.md) | M | high | none |
 | [REF-46 — Near-duplicate helper pairs in the merge core](REF-46-near-duplicate-helpers-in-the-merge-core.md) | S | low | none |
 | [REF-47 — The shape-dispatch chain is repeated five times](REF-47-shape-dispatch-chain-repeated-five-times.md) | L | high | none |

@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._api import build
 from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _Directives, active_directives, promote_bare_spec
-from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, resolve_forced_value
+from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, fold_root_json, resolve_forced_value
 from confarg._import import _import_dotted
 from confarg._merge import LIST_REPLACE_BASE_KEY, _deep_merge, _DeleteSentinel, _set_nested
 from confarg._parse_cli import (
@@ -247,16 +247,28 @@ def _find_json_cast(flat: dict[str, Any], flag: str, field_type: Any, union_tag:
     return resolve_forced_value(JSON_CAST_NAME, raw, flag=f"--{flag}.{JSON_CAST_NAME}")
 
 
-def apply_root_json(flat: dict[str, Any], target: Any, union_tag: str, result: dict[str, Any]) -> None:
+def apply_root_json(  # noqa: PLR0913  # the raw argv and its prefix answer the scalar root's order
+    flat: dict[str, Any],
+    target: Any,
+    union_tag: str,
+    result: dict[str, Any],
+    argv: Sequence[str],
+    cli_prefix: str,
+) -> None:
     """Fold a root-level ``--json`` object into ``result`` as a base, in place.
 
-    The mirror of the vanilla ``_handle_root_cast`` root fold: a bare ``--json`` injects
-    the whole config, but per-field CLI flags (already collected into ``result``) win, so
-    the decoded object is deep-merged *underneath* ``result``.  A real root field named
-    ``json`` wins over the cast (same rule as :func:`_find_json_cast`).  The decoded value
-    must be a JSON object for a structured target; for a non-struct (scalar) root it
-    becomes ``__root__`` whatever its shape.  Called once at the top level by each
-    adapter's context builder.
+    The adapters' half of vanilla's root cast: a bare ``--json`` injects the whole config,
+    folded under the per-field flags already collected into ``result`` by the canonical
+    :func:`~confarg._cast.fold_root_json`.  A real root field named ``json`` wins over the
+    cast (same rule as :func:`_find_json_cast`).  The decoded value must be a JSON object
+    for a structured target; for a non-struct (scalar) root it becomes ``__root__``
+    whatever its shape, unless the bare ``--<cli_prefix>`` flag was typed after it: of the
+    root's two spellings the last typed wins, as vanilla writes them in argv order.  That
+    order is read off the raw *argv*, which still spells the prefix the bare flag is.
+    Called once at the top level by each adapter's context builder.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#force-casts
     """
     raw = flat.get(JSON_CAST_NAME)
     if raw is None or _segment_names_real_field(target, JSON_CAST_NAME, union_tag):
@@ -264,15 +276,15 @@ def apply_root_json(flat: dict[str, Any], target: Any, union_tag: str, result: d
     flag = f"--{JSON_CAST_NAME}"
     decoded = resolve_forced_value(JSON_CAST_NAME, raw, flag=flag)
     if not _is_struct_like(_resolve_type(target)):
-        # Non-struct root: the decoded value *is* the configuration, whatever its
-        # shape, as in vanilla's _handle_root_cast. setdefault keeps the bare
-        # `--<cli_prefix>` flag winning, the same way the deep merge below lets
-        # per-field flags win over the injected object.
-        result.setdefault(_defaults.ROOT_KEY, decoded)
+        # Non-struct root: the decoded value *is* the configuration, whatever its shape.
+        # A collected bare flag implies a non-empty prefix: only then does it exist.
+        cast_at = _last_flag_occurrence(argv, f"{cli_prefix}.{JSON_CAST_NAME}")
+        if _defaults.ROOT_KEY not in result or cast_at > _last_flag_occurrence(argv, cli_prefix):
+            result[_defaults.ROOT_KEY] = decoded
         return
     if not isinstance(decoded, dict):
         raise ConfargError.root_cast_not_object(flag, decoded)
-    merged = _deep_merge(decoded, result, union_tag=union_tag)
+    merged = fold_root_json(result, [decoded], union_tag)
     result.clear()
     result.update(merged)
 
@@ -1544,8 +1556,8 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
 
     # Patch ops, --config order and the class tags are read from argv, not the framework's
     # parse result (docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity).
-    argv_ = sys.argv[1:] if argv is None else list(argv)
-    argv_ = strip_argv_prefix(argv_, cli_prefix)
+    raw_argv = sys.argv[1:] if argv is None else list(argv)
+    argv_ = strip_argv_prefix(raw_argv, cli_prefix)
 
     # The same scan registration uses, so a tag a --config file sets steers the type walk
     # here exactly as it steers vanilla's
@@ -1571,7 +1583,14 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
     _promote_patched_lists(patch_ops, cli_data, target, union_tag)
     cli_data = _deep_merge(cli_data, patch_ops)
     _restore_patch_deletes(patch_ops, cli_data)
-    apply_root_json(flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
+    apply_root_json(
+        flat,
+        target,
+        union_tag,
+        cli_data,
+        raw_argv,
+        cli_prefix,
+    )  # fold root `--json` under collected fields
     cli_configs = _collect_config_file_pairs(argv_, config_flag, target, union_tag) if config_flag else []
 
     return _merge_sources(
