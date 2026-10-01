@@ -3257,6 +3257,20 @@ class _WithUsers:
 
 
 @dataclass
+class _TaggedItem:
+    """List-element struct holding a list of its own."""
+
+    tags: list[str] = dataclasses.field(default_factory=list)
+
+
+@dataclass
+class _WithTaggedItems:
+    """List of structs whose elements carry a list — patched through an append."""
+
+    items: list[_TaggedItem] = dataclasses.field(default_factory=list)
+
+
+@dataclass
 class _WithLang:
     """Fixed-length tuple field."""
 
@@ -3542,6 +3556,30 @@ class TestCollectionPatchContract:
         argv = ["--users", "alice", "--users", "bob", "--users.0-"]
         assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {"*": ["alice", "bob"], "-": [0]}}
         assert loader.load(_WithUsers, argv=argv, env={}).users == ["bob"]
+
+    def test_index_delete_after_a_whole_field_delete_replaces_it(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """An index delete after a whole-field delete is the later writer at the path (BUG-77).
+
+        Every other op below a whole delete replaces the sentinel it finds there — an index
+        set does — so the index delete records like a lone ``--users.0-`` and applies
+        against what the lower sources hold.  Its descent read the sentinel as a dict.
+        """
+        argv = ["--users-", "--users.0-"]
+        assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {"-": [0]}}
+        base = tmp_yaml("users: [alice, bob]\n")
+        assert loader.load(_WithUsers, argv=["--config", str(base), *argv], env={}).users == ["bob"]
+
+    def test_index_delete_into_an_appended_item_records_inside_it(self, loader: ConfargLoader) -> None:
+        """An index delete below ``-1`` after an append lands in the appended item (BUG-77).
+
+        The index set there already did; the index delete had a descent of its own that
+        skipped the append-spec and recorded under a stray ``'-1'`` key beside the ``'+'``.
+        """
+        argv = ["--items+", '{"tags": ["a", "b"]}', "--items.-1.tags.0-"]
+        assert loader.merge(_WithTaggedItems, argv=argv, env={}) == {
+            "items": {"+": [{"tags": {"*": ["a", "b"], "-": [0]}}]},
+        }
+        assert loader.load(_WithTaggedItems, argv=argv, env={}).items == [_TaggedItem(tags=["b"])]
 
     def test_dict_subkey_set(self, loader: ConfargLoader, tmp_yaml) -> None:
         """``--field.key value`` adds/overrides a dict entry (coerced to the value type)."""

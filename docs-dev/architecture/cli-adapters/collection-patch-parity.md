@@ -68,8 +68,8 @@ recorded before it
 
 The delete rule above generalizes: within one channel, *every* list op is a record, not an
 application. Vanilla writes a plain occurrence and the patch after it into one `ctx.data`,
-and its own descent — `_set_nested`'s intermediate promotion, `_accumulate_list_delete`'s
-walk, `_merge_append_ops` — turns the stored list into the `'*'` base and records the op
+and its own descent — `_descend_creating`'s intermediate promotion, shared by `_set_nested`
+and `_accumulate_list_delete`, and `_merge_append_ops` — turns the stored list into the `'*'` base and records the op
 beside it, for `build()` to apply: `--users a --users.0-` holds
 `{'users': {'*': ['a'], '-': [0]}}`, and a fixed tuple's `--pair 1 2 --pair.0 5` holds
 `{'pair': {'*': [1, 2], '0': 5}}`.

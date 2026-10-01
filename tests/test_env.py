@@ -983,6 +983,23 @@ class TestEnvDelete:
                 files=[path],
             )
 
+    def test_delete_list_index_after_whole_field_delete(self, loader: ConfargLoader, tmp_toml) -> None:
+        """An index delete met after a whole-field delete replaces it, as on the CLI (BUG-77).
+
+        Its descent read the delete sentinel as a dict.  Which of the two variables the
+        mapping yields first is the open question of BUG-116.
+        """
+        WithList = make_target("items", list[str], default_factory=list)
+        path = tmp_toml('items = ["a", "b", "c"]\n')
+        result = loader.load(
+            WithList,
+            argv=[],
+            env={"MYAPP_ITEMS-": "x", "MYAPP_ITEMS__0-": "x"},
+            env_prefix="MYAPP_",
+            files=[path],
+        )
+        assert result.items == ["b", "c"]
+
     def test_delete_out_of_range_raises(self, loader: ConfargLoader, tmp_toml) -> None:
         """Deleting an out-of-range list index raises ConfargError."""
         WithList = make_target("items", list[str], default_factory=list)
