@@ -32,7 +32,9 @@ tag able to dispatch to a subclass (BUG-102,
 [CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins)). A subclass-only
 field may take it too (BUG-103): the key is then field data, and the subclass that owns the
 spelling is selected structurally, the union's answer — several matches or none fail loudly,
-never a silent pick or a stripped value.
+never a silent pick or a stripped value. Where a tag could have dispatched, consuming a
+shadowed tag-shaped key emits a `ConfargWarning` naming that
+([design decisions](../design-decisions/a-shadowed-tag-warns-on-use.md#a-shadowed-tag-warns-on-use)).
 
 Subclass discovery (`_dataclass_subclasses`) walks breadth-first and yields each class exactly
 once. Both halves are settled decisions: a diamond subclass is reachable by two inheritance

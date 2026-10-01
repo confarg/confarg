@@ -5,6 +5,7 @@
 """Unit tests for _construct: struct dispatch, union fallbacks and the all-default shortcut."""
 
 import enum
+import warnings
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Literal
@@ -14,7 +15,7 @@ import pytest
 
 import confarg
 from confarg._types import _StrToken, _UnionSeqToken
-from confarg.exceptions import MissingFieldError, TypeCoercionError
+from confarg.exceptions import ConfargWarning, MissingFieldError, TypeCoercionError
 from confarg.typedload._construct import _construct_struct_dispatch, construct
 
 # Each scenario uses its own base class so __subclasses__() does not bleed across tests.
@@ -515,3 +516,74 @@ class TestTagFieldCollision:
             union_tag="Kind",
         )
         assert result == _PlainLeafHolder(lf=_PlainLeaf(a=5))
+
+
+class TestShadowedTagWarning:
+    """A shadowed tag-shaped key warns on use, at positions where the tag could have dispatched.
+
+    The collision is accepted silently in the architecture note's trade-off only for
+    positions that never could dispatch; where a class-path tag was a real alternative,
+    ``build()`` emits a ``ConfargWarning`` naming the field path and the remedy, so the
+    structural selection the member's value forces is never a surprise.
+    """
+
+    def test_subclass_only_field_use_warns(self) -> None:
+        """The BUG-103 shape: setting the field warns that no class-path tag dispatches."""
+        with pytest.warns(ConfargWarning, match="selected structurally"):
+            result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken("v")}, "", "Kind")
+        assert result == _KindOnlySub(Kind="v")
+
+    def test_base_field_use_on_dispatch_struct_warns(self) -> None:
+        """The BUG-102 shape: the base's own field warns where subclasses could dispatch."""
+        with pytest.warns(ConfargWarning, match="Rename the field"):
+            result = _construct_struct_dispatch(_KindBase, {"Kind": _StrToken("v")}, "", "Kind")
+        assert result == _KindBase(Kind="v")
+
+    def test_plain_struct_use_does_not_warn(self) -> None:
+        """A struct without subclasses never dispatches, so its own field needs no apology."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = _construct_struct_dispatch(_KindPlain, {"Kind": _StrToken("v")}, "", "Kind")
+        assert result == _KindPlain(Kind="v")
+        assert not any(issubclass(w.category, ConfargWarning) for w in caught)
+
+    def test_unshadowed_tag_dispatch_does_not_warn(self) -> None:
+        """A tag that still dispatches by class path is the intended route, not a collision."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = _construct_struct_dispatch(
+                _KindBase,
+                {"class": f"{__name__}._KindSub", "extra": "e"},
+                "",
+                "class",
+            )
+        assert result == _KindSub(Kind="field", extra="e")
+        assert not any(issubclass(w.category, ConfargWarning) for w in caught)
+
+    def test_union_variant_field_use_warns(self) -> None:
+        """A union whose variant owns the spelling warns: the variant is chosen structurally."""
+        with pytest.warns(ConfargWarning, match="no class-path tag can dispatch"):
+            result = construct(_KindVariant | _OtherVariant, {"Kind": _StrToken("v")}, union_tag="Kind")
+        assert result == _KindVariant(Kind="v")
+
+    def test_union_unshadowed_tag_dispatch_does_not_warn(self) -> None:
+        """A union tag that still names its class is the intended route."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = construct(
+                _KindVariant | _OtherVariant,
+                {"class": f"{__name__}._KindVariant", "Kind": _StrToken("v")},
+                union_tag="class",
+            )
+        assert result == _KindVariant(Kind="v")
+        assert not any(issubclass(w.category, ConfargWarning) for w in caught)
+
+    def test_union_variants_subclass_only_field_use_warns(self) -> None:
+        """The union route through a variant's subclass warns at the union position."""
+        with pytest.warns(ConfargWarning, match="selected structurally"):
+            result = construct(
+                _KindOnlyUnionVariant | _KindOnlyUnionOther,
+                {"Kind": _StrToken("v")},
+                union_tag="Kind",
+            )
+        assert result == _KindOnlyUnionSub(Kind="v")
