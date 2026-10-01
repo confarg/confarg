@@ -119,3 +119,16 @@ from there to the latest release.
 
 `tests/test_hypothesis.py` uses Hypothesis. Generated strings escape `${` as `$${` so random
 text is not mistaken for an expression.
+
+A property that feeds arbitrary strings to the CLI spells the flag with the `=` form
+(`--name=<value>`): the space form refuses a value that starts with `--` by design, so a
+property over unfiltered strings goes red the moment Hypothesis draws one (BUG-89, closed).
+The refusal and the `=` escape are pinned per front-end by the contract suite, so the `=` form
+costs the property nothing ([The `=` form is the escape for a dashed
+value](design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value)).
+An explicit `@example("--A")` keeps the dashed draw in the test whatever the random seed and
+the example database replay; when a property only needs CLI-safe strings, it draws
+`cli_safe_strs` from `tests/conftest.py` instead. A multi-value collection spells one
+`--tags=<value>` occurrence per element rather than filtering its strategy: repeated
+occurrences accumulate, so empty and dashed elements both stay in the property (BUG-100,
+closed).
