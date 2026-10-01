@@ -70,12 +70,18 @@ from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce
 
 
-def _resolve_union_field_type(tp: Any, remaining: list[str], union_tag: str) -> Any | None:
+def _resolve_union_field_type(
+    tp: Any,
+    remaining: list[str],
+    union_tag: str,
+    *,
+    tag_fallback: bool = True,
+) -> Any | None:
     """Resolve the field type through a Union by trying all non-None variants."""
     resolved = []
     for variant in _union_args_no_none(tp):
         v = _resolve_type(variant)
-        result = _resolve_field_type(v, remaining, union_tag)
+        result = _resolve_field_type(v, remaining, union_tag, tag_fallback=tag_fallback)
         if result is not None:
             resolved.append(result)
     if not resolved:
@@ -95,16 +101,38 @@ def _step_tuple_type(tp: Any, part: str) -> Any | None:
         return None
 
 
+def _namedtuple_index_spellings(n: int) -> dict[str, int]:
+    """Return every canonical index spelling for an n-field namedtuple, by position.
+
+    The one source for "which index spellings exist" — str(i) and the negative str(i - n)
+    that counts from the end (BUG-80) — so the type walk accepts exactly what
+    cli/_build._collect_namedtuple_specs registers as flags (BUG-97).
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md
+    """
+    return {**{str(i): i for i in range(n)}, **{str(i - n): i for i in range(n)}}
+
+
+def _namedtuple_position_spellings(n: int, i: int) -> list[str]:
+    """Return the index spellings of position i in an n-field namedtuple, str(i) first.
+
+    The per-field view of :func:`_namedtuple_index_spellings`, for the registration and
+    collection sites that list a field's keys rather than look one up.
+    """
+    return [spelled for spelled, pos in _namedtuple_index_spellings(n).items() if pos == i]
+
+
 def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911
     """Advance one step into tp along path segment part. Returns new type or None."""
     if _is_namedtuple(tp):
         flds = _namedtuple_fields(tp)
         if part in flds:
             return flds[part]
-        try:
-            return list(flds.values())[int(part)]
-        except (ValueError, IndexError):
-            return None
+        spellings = _namedtuple_index_spellings(len(flds))
+        if part in spellings:
+            return list(flds.values())[spellings[part]]
+        return None
     if _is_struct(tp):
         flds = _struct_fields(tp)
         return flds[part] if part in flds else _subclass_field_type(tp, part)
@@ -121,7 +149,7 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911
     return None
 
 
-def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | None:
+def _resolve_field_type(target: Any, parts: list[str], union_tag: str, *, tag_fallback: bool = True) -> Any | None:
     """Walk the type tree following dot-separated path parts.
 
     Resolves the type at the end of the path by traversing dataclass fields,
@@ -133,6 +161,9 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
         target: The root type to start resolution from.
         parts: A list of path segments to follow.
         union_tag: The field name used as a discriminator tag in unions.
+        tag_fallback: Whether a segment no member reaches may still name the union tag.
+            Off, the walk answers members only, which is how
+            :func:`_names_tag_by_fallback` tells the two apart.
 
     Returns:
         The resolved type at the end of the path, or None if the path is invalid.
@@ -141,7 +172,7 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
     for idx, part in enumerate(parts):
         tp = _resolve_type(tp)
         if _is_union(tp):
-            return _resolve_union_field_type(tp, parts[idx:], union_tag)
+            return _resolve_union_field_type(tp, parts[idx:], union_tag, tag_fallback=tag_fallback)
         if _is_callable(tp) and names_a_bind(part):
             # A callable's bind key is addressable as a str-leaf subtree (--field.bind.key)
             # and, in escaped mode, as a plain scalar init-kwarg (--field.bind 5). Whether the
@@ -152,12 +183,27 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str) -> Any | 
             continue
         tp = _advance_field_type(tp, part)
         if tp is None:
-            if part == union_tag:
+            if tag_fallback and part == union_tag:
                 # The tag is the fallback, so it resolves only at a position no member
                 # of its exact spelling reaches.
                 return str
             return None
     return tp
+
+
+def _names_tag_by_fallback(target: Any, parts: list[str], union_tag: str) -> bool:
+    """Return True if the path's last segment is the union tag, reached by the walk's fallback.
+
+    The walk's own answer: the path resolves with the tag rule and does not without it,
+    so a member spelled like the tag -- a field, a subclass-only field, a callable's
+    directive -- is never mistaken for the tag.
+    """
+    return (
+        bool(parts)
+        and parts[-1] == union_tag
+        and _resolve_field_type(target, parts, union_tag) is not None
+        and _resolve_field_type(target, parts, union_tag, tag_fallback=False) is None
+    )
 
 
 def _addresses_callable_key(target: Any, parts: list[str], union_tag: str) -> bool:
@@ -219,6 +265,21 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
         if tp is None:
             return False
     return False
+
+
+def _is_replayed_path(target: Any, parts: list[str], union_tag: str) -> bool:
+    """Return True if the adapters write this path through the argv-order patch scan.
+
+    A collection patch (:func:`_is_collection_patch_path`), or a union tag the walk
+    reaches by its fallback (:func:`_names_tag_by_fallback`) -- whatever the parent, as
+    vanilla's tag rule answers whatever the parent. The registration of dynamic patch
+    flags and the ``patch_only`` scan both ask it, so a flag the frameworks accept is a
+    write the scan replays, in the order argv spells it.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
+    """
+    return _is_collection_patch_path(target, parts, union_tag) or _names_tag_by_fallback(target, parts, union_tag)
 
 
 def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
@@ -1298,19 +1359,14 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         if not append_mode and not delete_mode:
             path, force_cast = detect_force_cast(path, walk_target, union_tag)
 
-        if patch_only and force_cast is not None and not _is_collection_patch_path(walk_target, path, union_tag):
+        if patch_only and force_cast is not None and not _is_replayed_path(walk_target, path, union_tag):
             # The cast's write lands at its plain path, so the ops recorded before
             # it there die with the node the write replaces, as they do in vanilla.
             _pop_nested(ctx.data, path)
             i += 1  # cast on a plain field: owned by the flat collector; its value is a stray token
             continue
 
-        if (
-            patch_only
-            and not delete_mode
-            and not append_mode
-            and not _is_collection_patch_path(walk_target, path, union_tag)
-        ):
+        if patch_only and not delete_mode and not append_mode and not _is_replayed_path(walk_target, path, union_tag):
             # Same replay for every plain flag: its whole-value write is what the
             # flat collector will supply, and it ends the ops recorded before it.
             _pop_nested(ctx.data, path)

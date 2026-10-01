@@ -820,6 +820,24 @@ class TestFixedSequenceContract:
         cfg = loader.load(_WithNestedPoint, argv=["--pt.0.-1", "hi"], env={})
         assert cfg.pt.inner == _Inner(a=0, b="hi")
 
+    def test_namedtuple_odd_index_spellings_refused(self, loader: ConfargLoader) -> None:
+        """Odd namedtuple index spellings (-0, +0, +1, 007) are rejected by all front-ends (BUG-97).
+
+        The canonical spellings are str(i) and str(i-n) from range(n); parsing rules of
+        int() like leading + sign or leading zeros must be refused at parse time, not
+        deferred to build() where different front-ends diverge.
+        All adapters reject at parse time; vanilla's walk now does too.
+        """
+        # Vanilla raises UnknownArgumentError; adapters raise SystemExit or their equivalent.
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_WithPoint, argv=["--pair.-0", "5"], env={})
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_WithPoint, argv=["--pair.+0", "5"], env={})
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_WithPoint, argv=["--pair.+1", "5"], env={})
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_WithPoint, argv=["--pair.007", "5"], env={})
+
     def test_tuple_whole_value(self, whole_value_arity_loader: ConfargLoader) -> None:
         """--pair '[13, 42]' fills a tuple[int, int] in one token (click declines it)."""
         cfg = whole_value_arity_loader.load(_WithIntPair, argv=["--pair", "[13, 42]"], env={})
@@ -2475,6 +2493,177 @@ class TestInheritanceDispatchContract:
         """The nested inheritance path keeps a subclass's flag without a tag too (BUG-83)."""
         merged = loader.merge(_NestedDB, argv=["--db.host", "db.example.com"], env={}, config_flag="")
         assert merged == {"db": {"host": "db.example.com"}}
+
+
+# ---------------------------------------------------------------------------
+# A tag on a subclass-less struct path (the walk registered no tag flag)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _TaglessRoot:
+    """Struct root with no subclasses, so the static walk registers no tag flag."""
+
+    a: int = 0
+
+
+@dataclass
+class _TaglessNested:
+    """Struct whose field is a subclass-less struct (the nested flavor of BUG-92)."""
+
+    inner: _TaglessRoot = dataclasses.field(default_factory=_TaglessRoot)
+
+
+@dataclass
+class _TaglessOptional:
+    """Struct whose field is an optional subclass-less struct (BUG-92)."""
+
+    inner: _TaglessRoot | None = None
+
+
+class TestSubclasslessStructTagContract:
+    """A tag on a subclass-less struct path reaches ``build()`` on every front-end."""
+
+    def test_root_tag_named_complaint_on_every_frontend(self, loader: ConfargLoader) -> None:
+        """A --class tag on a subclass-less struct root raises build()'s complaint (BUG-92).
+
+        Vanilla's tag rule answers the tag segment whatever the target, so the tag
+        reaches ``build()``, which raises the subclass complaint naming the class; the
+        adapters registered no tag flag for a subclass-less struct root, so their
+        frameworks rejected the flag at parse time with ``unrecognized arguments``.
+        """
+        with pytest.raises(TypeCoercionError, match="is not a subclass of"):
+            loader.load(_TaglessRoot, argv=["--class", "decimal.Decimal"], env={}, config_flag="")
+
+    def test_prefixed_root_tag_named_complaint(self, loader: ConfargLoader) -> None:
+        """The ticket's own shape: ``--<prefix>.class`` under a ``cli_prefix`` (BUG-92)."""
+        with pytest.raises(TypeCoercionError, match="is not a subclass of"):
+            loader.load(_TaglessRoot, argv=["--v.class", "decimal.Decimal"], env={}, cli_prefix="v", config_flag="")
+
+    def test_root_tag_merges_like_vanilla(self, loader: ConfargLoader) -> None:
+        """The tag reaches the merged dict as a raw string, in either spelling (BUG-92)."""
+        merged = loader.merge(_TaglessRoot, argv=["--class", "decimal.Decimal"], env={}, config_flag="")
+        assert merged == {"class": "decimal.Decimal"}
+        merged_eq = loader.merge(_TaglessRoot, argv=["--class=decimal.Decimal"], env={}, config_flag="")
+        assert merged_eq == {"class": "decimal.Decimal"}
+
+    def test_nested_struct_tag_named_complaint(self, loader: ConfargLoader) -> None:
+        """A ``--inner.class`` tag on a nested subclass-less struct behaves the same (BUG-92)."""
+        with pytest.raises(TypeCoercionError, match="is not a subclass of"):
+            loader.load(_TaglessNested, argv=["--inner.class", "decimal.Decimal"], env={}, config_flag="")
+
+    def test_nested_struct_tag_merges_like_vanilla(self, loader: ConfargLoader) -> None:
+        """The nested tag merges at its own path, as vanilla's does (BUG-92)."""
+        merged = loader.merge(_TaglessNested, argv=["--inner.class", "decimal.Decimal"], env={}, config_flag="")
+        assert merged == {"inner": {"class": "decimal.Decimal"}}
+
+    def test_optional_struct_tag_named_complaint(self, loader: ConfargLoader) -> None:
+        """An ``Optional[<subclass-less struct>]`` field takes the tag too (BUG-92).
+
+        The tag dict matches no union variant, so the complaint is the coercion error
+        vanilla raises -- not the parse-time rejection the adapters answered with.
+        """
+        with pytest.raises(TypeCoercionError, match="Cannot coerce dict"):
+            loader.load(_TaglessOptional, argv=["--inner.class", "decimal.Decimal"], env={}, config_flag="")
+
+    def test_tag_registers_only_when_typed(self, populating_loader: ConfargLoader) -> None:
+        """The tag flag registers when typed; an empty argv keeps it off --help (BUG-92).
+
+        The registration is argv-scanned, like the tagged-leaf flags: a subclass-less
+        struct's ordinary spelling is its own fields, and a tag flag per struct path
+        would clutter ``--help`` for a hatch that names no subclass the walk can see.
+        """
+        typed = populating_loader.registered_flags(_TaglessRoot, argv=["--class", "decimal.Decimal"], config_flag="")
+        assert typed is not None
+        assert "class" in typed
+        quiet = populating_loader.registered_flags(_TaglessRoot, config_flag="")
+        assert quiet is not None
+        assert "class" not in quiet
+
+
+class _TagPt(NamedTuple):
+    """Namedtuple with defaults, so a positional run promotes to its field names."""
+
+    x: int = 0
+    y: int = 0
+
+
+class _TagColor(Enum):
+    """Enum leaf a tag can be typed against."""
+
+    RED = 1
+
+
+@dataclass
+class _TagAnywhere:
+    """One field per non-struct kind the walk answers a tag at by its fallback (BUG-106)."""
+
+    leaf: int = 0
+    opt: int | None = None
+    pt: _TagPt = dataclasses_field(default_factory=_TagPt)
+    lit: Literal["a", "b"] = "a"
+    color: _TagColor = _TagColor.RED
+    either: str | int = 0
+
+
+class TestTagAtAnyPathContract:
+    """A tag the walk reaches by its fallback merges as vanilla's scan writes it, at any path.
+
+    Vanilla's ``union_tag`` rule answers the tag segment whatever the parent, so the
+    tag reaches the merged dict and ``build()`` judges it. The adapters write it through
+    the same argv-order replay as a collection patch, so the latest writer at the path
+    is argv's to answer here too (BUG-106).
+    """
+
+    @pytest.mark.parametrize("name", ["leaf", "opt", "pt", "lit", "color", "either"])
+    def test_tag_merges_like_vanilla(self, loader: ConfargLoader, name: str) -> None:
+        """``--<field>.class`` merges as ``{<field>: {'class': ...}}`` on every front-end."""
+        merged = loader.merge(_TagAnywhere, argv=[f"--{name}.class", "decimal.Decimal"], env={}, config_flag="")
+        assert merged == {name: {"class": "decimal.Decimal"}}
+
+    def test_tag_after_plain_flag_wins(self, loader: ConfargLoader) -> None:
+        """The tag typed after the plain flag replaces its value, as vanilla's second write does."""
+        merged = loader.merge(_TagAnywhere, argv=["--leaf", "5", "--leaf.class", "X"], env={}, config_flag="")
+        assert merged == {"leaf": {"class": "X"}}
+
+    def test_plain_flag_after_tag_wins(self, loader: ConfargLoader) -> None:
+        """The plain flag typed after the tag replaces it, as vanilla's second write does."""
+        merged = loader.merge(_TagAnywhere, argv=["--leaf.class", "X", "--leaf", "5"], env={}, config_flag="")
+        assert merged == {"leaf": 5}
+
+    def test_tag_joins_namedtuple_sub_flags(self, loader: ConfargLoader) -> None:
+        """A tag beside a namedtuple's field flag lands in the same dict."""
+        merged = loader.merge(_TagAnywhere, argv=["--pt.x", "1", "--pt.class", "X"], env={}, config_flag="")
+        assert merged == {"pt": {"x": 1, "class": "X"}}
+
+    def test_tag_after_namedtuple_positional_run(self, loader: ConfargLoader) -> None:
+        """A tag after the arity flag joins the promoted field names, as vanilla's does."""
+        merged = loader.merge(_TagAnywhere, argv=["--pt", "1", "2", "--pt.class", "X"], env={}, config_flag="")
+        assert merged == {"pt": {"x": 1, "y": 2, "class": "X"}}
+
+    def test_namedtuple_positional_run_after_tag(self, loader: ConfargLoader) -> None:
+        """The arity flag typed after the tag replaces it."""
+        merged = loader.merge(_TagAnywhere, argv=["--pt.class", "X", "--pt", "1", "2"], env={}, config_flag="")
+        assert merged == {"pt": [1, 2]}
+
+    def test_leaf_tag_named_complaint(self, loader: ConfargLoader) -> None:
+        """``build()`` raises its own complaint on every front-end, not a parse-time rejection."""
+        with pytest.raises(TypeCoercionError, match="Cannot coerce dict"):
+            loader.load(_TagAnywhere, argv=["--leaf.class", "decimal.Decimal"], env={}, config_flag="")
+
+    def test_scalar_root_tag_merges_like_vanilla(self, loader: ConfargLoader) -> None:
+        """A tag on a scalar root under a ``cli_prefix`` merges as vanilla's does."""
+        merged = loader.merge(int, argv=["--v.class", "X"], env={}, cli_prefix="v", config_flag="")
+        assert merged == {"class": "X"}
+
+    def test_tag_registers_only_when_typed(self, populating_loader: ConfargLoader) -> None:
+        """The tag flag registers when typed and stays off --help otherwise."""
+        typed = populating_loader.registered_flags(_TagAnywhere, argv=["--leaf.class", "X"], config_flag="")
+        assert typed is not None
+        assert "leaf.class" in typed
+        quiet = populating_loader.registered_flags(_TagAnywhere, config_flag="")
+        assert quiet is not None
+        assert "leaf.class" not in quiet
 
 
 # ---------------------------------------------------------------------------

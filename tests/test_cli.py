@@ -642,6 +642,31 @@ class TestCliEdgeCases:
         with pytest.raises(ConfargError, match="Missing value for '--pair'"):
             confarg.load(WithPoint, argv=["--pair", "1"], env={})
 
+    @pytest.mark.parametrize("spelled", ["-0", "+0", "+1", "01", "007", "2", "-3"])
+    def test_namedtuple_odd_index_spellings_at_parse_time(self, spelled: str) -> None:
+        """Only str(i) and str(i - n) address a namedtuple position; int() leniency does not (BUG-97)."""
+
+        class Point(NamedTuple):
+            x: int
+            y: int
+
+        WithPoint = make_target("pt", Point, default=Point(0, 0))
+        with pytest.raises(confarg.exceptions.UnknownArgumentError, match=f"'--pt.{spelled}'"):
+            confarg.merge(WithPoint, argv=[f"--pt.{spelled}", "5"], env={})
+
+    def test_namedtuple_canonical_index_spellings(self) -> None:
+        """The positive and negative index spellings both address their position (BUG-97)."""
+
+        class Point(NamedTuple):
+            x: int
+            y: int
+
+        WithPoint = make_target("pt", Point, default=Point(0, 0))
+        result = confarg.load(WithPoint, argv=["--pt.0", "5", "--pt.1", "6"], env={})
+        assert result.pt == Point(x=5, y=6)
+        result = confarg.load(WithPoint, argv=["--pt.-1", "9", "--pt.-2", "8"], env={})
+        assert result.pt == Point(x=8, y=9)
+
 
 # ---------------------------------------------------------------------------
 # None via value token (--field none / --field null)

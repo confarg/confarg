@@ -28,6 +28,14 @@
   `--<path>.<union_tag>` as a raw string and lets `construct()` raise the import error naming the
   bad path — so the tag must survive collection byte-identically, or the user hears a
   "no discriminator was provided" complaint about a discriminator they did provide (BUG-45).
+- A path whose type shows no subclass accepts the tag too, and so does any other path the
+  walk reaches the tag at: a struct with no subclasses, a leaf field, a namedtuple, a
+  scalar root. Vanilla's tag rule answers the segment whatever the parent, and `build()`
+  raises its own complaint for a class path that selects nothing. The static walk registers
+  the tag only where it can see subclasses. Everywhere else the tag is a replayed write: it
+  is registered when typed and written by the patch scan in argv order
+  ([a tag is a replayed write](collection-patch-parity.md#a-tag-is-a-replayed-write);
+  BUG-92, BUG-106).
 - With a tag present, the collector descends into the **other** variants at the path too, not
   only the named one: the union's remaining struct variants, or the base's remaining subclasses
   (`_dataclass_subclasses`, the same set vanilla's `_subclass_field_type` searches). Vanilla
