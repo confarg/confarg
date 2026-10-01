@@ -282,8 +282,14 @@ A dict field's bare flag is its *only* static flag (its keys are unknown until a
 subkeys arrive as patch flags and are deep-merged over the whole value, so
 `--env '{"a":"b"}' --env.c d` yields `{"a": "b", "c": "d"}` as in vanilla.
 
-Limitation, shared with [collection patches](collection-patch-parity.md#collection-patch-parity): a framework's parse
-result carries no argv order, and only the namedtuple's arity flag reads the order back off
-argv (above). A struct or dict whole value is always refined by its sibling
-`--<field>.<sub>` flags, so `--sub.a 3 --sub '{"a":2}'` disagrees with vanilla, which honors
-argv order. The useful order — whole value first, refinements after — agrees.
+A framework's parse result carries no argv order, so which of a field's bare flag and its
+sub-flags is the latest writer is read back off argv, exactly as the namedtuple's arity
+flag's is (above): a bare value — the whole blob or the raw token — typed after the
+sub-flags takes the field whole, and a sub-flag typed after it descends into whatever it
+left, on the struct, the registered leaf and the union alike (BUG-85; the disagreeing-owner
+stores of BUG-84 answer it too, their sub-flags hidden from the walks when the bare flag
+wins). The read-back judges the latest writer per flag, as the arity flag's does, so the
+interleaving boundary it has is this reader's too. The one spelling this note leaves to
+another reader is a dict field's key flags, which are patch flags: the patch scan's skip
+already replays the plain occurrence's erase
+([collection patches](collection-patch-parity.md#a-plain-occurrence-erases-the-ops-before-it)).

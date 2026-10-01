@@ -1,26 +1,28 @@
-# BUG-95 — A union's cast flag beats its plain flag whatever order they were typed in
+# BUG-95 — A union's cast flag beats its plain flag whatever the argv order
 
-**Where:** `src/confarg/cli/_collect.py` (`_collect_field` union branch,
-`_find_scalar_cast_override`, `_collect_ns_optional_seq`) · **Filed:** 2026-09-30 ·
-**Effort:** S · **Risk:** medium · **Impact:** behavior
+**Where:** `src/confarg/cli/_collect.py` (`_find_json_cast`'s write, ahead of the type
+dispatch; the union branch's and `_collect_ns_optional_seq`'s scalar-cast sites, which
+BUG-94's refusal gates) · **Filed:** 2026-09-30 · **Effort:** S · **Risk:** medium ·
+**Impact:** behavior
 
-Vanilla writes flag occurrences sequentially, so on a multi-variant union the *last* of
-`--b.str` and `--b` wins; the adapters' union branch consults
-`_find_scalar_cast_override` unconditionally, so the cast always wins. `--b.str yes --b no`
-builds `b=False` in vanilla (the plain `no`, stolen to bool) and `b='yes'` on argparse,
-click, typer and cyclopts. Reversed, the two agree. BUG-72 added the argv-order reader for
-plain leaf fields (`_last_leaf_cast_spelling`, read off argv as
-`_arity_flag_writes_last` is); the union branch and `_collect_ns_optional_seq` need the same
-reader. *(inferred)* `.json` beside a scalar cast at one field should disagree the same way
-— `_find_json_cast` runs before the dispatch, so the adapters always let the json cast win —
-but that spelling pair is untested.
+Vanilla writes flag occurrences sequentially, so on a union the *last* of a cast spelling
+and the plain flag wins. BUG-85's argv-order reader (`_arity_flag_writes_last`) settled the
+scalar-cast pair: `--b.str yes --b no` keeps `{'b': 'no'}` on every front-end, and the
+reverse order agreed all along. What still inverts is the `.json` cast, the pair this
+ticket once marked *(inferred)* and has now observed: `_find_json_cast` runs before the
+type dispatch, writes and returns, so it never asks the reader — `--b.json 5 --b no` keeps
+`{'b': 5}` on the adapters where vanilla keeps the plain token (the reverse order agrees).
+The scalar casts at `_collect_ns_optional_seq` and the union branch's struct variants are
+unreachable today — BUG-94's refusal exits the framework's parse before the collector runs
+— so their order question reopens with BUG-94's fix.
 Rationale: [cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags](../../architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags),
 [cli-parsing/casts-and-reserved-words.md#force-casts](../../architecture/cli-parsing/casts-and-reserved-words.md#force-casts).
 
 ```python
 from dataclasses import dataclass
+
 import confarg
-from confarg.cli.argparse import make_parser, from_namespace
+from confarg.cli.argparse import make_parser, merge_namespace
 
 
 @dataclass
@@ -28,14 +30,15 @@ class Cfg:
     b: "str | bool" = None
 
 
-argv = ["--b.str", "yes", "--b", "no"]
-print("vanilla :", confarg.load(Cfg, argv=argv, env={}))
-parser = make_parser(Cfg, argv=argv)
-print("argparse:", from_namespace(Cfg, parser.parse_args(argv), argv=argv))
+argv = ["--b.json", "5", "--b", "no"]
+van = confarg.merge(Cfg, argv=argv, env={})
+ns = make_parser(Cfg, argv=argv).parse_args(argv)
+arg = merge_namespace(Cfg, ns, argv=argv, env={})
+print(f"vanilla : {van!r}")
+print(f"argparse: {arg!r}")
 
-# expected: both halves build Cfg(b=False)
-# actual:
-#   vanilla : Cfg(b=False)
-#   argparse: Cfg(b='yes')
-#             (click, typer and cyclopts build Cfg(b='yes') the same way)
+# expected (vanilla, last write in argv order):
+#   vanilla : {'b': 'no'}
+# actual (argparse; the reversed argv spelling agrees on both):
+#   argparse: {'b': 5}
 ```
