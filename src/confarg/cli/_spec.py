@@ -58,6 +58,20 @@ class FlagSpec:
         docs-dev/architecture/04-cli-adapters.md#a-bare-append
     """
 
+    accumulates: bool = False
+    """Repeating the flag extends what the earlier occurrences gave, rather than replacing it.
+
+    Set on the multi-token *field* flags — a varlen collection, and a union with a
+    sequence variant — because ``--tags x --tags y`` is a second spelling of
+    ``--tags x y``.  Which spelling a framework accepts is its own business; what
+    repetition *means* is not, so an adapter whose framework keeps only the last
+    occurrence has to ask for accumulation (argparse: ``action="extend"``).  Fixed-arity
+    flags are excluded: they take one value, and repeating them is last-wins everywhere.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#list-syntax-divergence
+    """
+
     choices: list[str] | None = None
     """Allowed values (for ``Literal`` / ``Enum`` fields)."""
 

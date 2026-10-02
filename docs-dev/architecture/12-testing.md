@@ -52,6 +52,12 @@ difference must stay **visible**: write separate tests per convention (`space_se
 for vanilla/argparse/cyclopts, `repeated_loader` for click/typer/cyclopts) instead of hiding it
 behind a helper.
 
+Only the *spelling* is split that way. What repeating a multi-token flag **means** is shared, so it
+is a `loader` contract (`TestRepeatedFlagAccumulationContract`), written in the repeated form every
+front-end accepts — and a case only the space-separated form can express keeps `space_sep_loader`.
+Reaching for `repeated_loader` for anything but a spelling is the mistake that let the two answers
+drift apart in the first place (BUG-37).
+
 ## Examples and documentation
 
 `examples/*/README.md` console blocks are executed as subprocess tests by the

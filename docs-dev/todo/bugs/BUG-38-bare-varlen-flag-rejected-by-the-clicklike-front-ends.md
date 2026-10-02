@@ -55,3 +55,11 @@ main(ARGV, standalone_mode=False)
 Typer fails identically. With a lower-priority source to clear the divergence is louder still:
 over a config file holding `users: ['alice', 'bob']`, vanilla, argparse and cyclopts print
 `Config(users=[])` while click and typer refuse the command line.
+
+cyclopts is a third answer once a bare occurrence sits *beside* a valued one: `--users x --users`
+aborts with a bare, message-less `AssertionError` from its own argument layer ("implicit value, yet
+more than one token"), where vanilla and argparse read `['x']` — the first occurrence sets, the
+second adds nothing
+([04-cli-adapters.md#list-syntax-divergence](../../architecture/04-cli-adapters.md#list-syntax-divergence)).
+The fix above cures that too: with the bare occurrences dropped from the argv cyclopts parses,
+there is no implicit token left to collide.

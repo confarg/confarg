@@ -936,6 +936,26 @@ class TestCliListAppend:
         )
         assert result.items == ["foo", "baz"]
 
+    def test_whole_field_delete_starts_the_list_over(self, tmp_path) -> None:
+        """--items x --items- --items a: the delete ends the list, so x does not come back.
+
+        A repeated --items accumulates its tokens, but a whole-field delete between two
+        occurrences discards the list being built as well as the config file's.
+        """
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('items = ["alice", "bob"]\n')
+        WithList = make_target("items", list[str], default_factory=list)
+        result = confarg.load(WithList, argv=["--items", "x", "--items-", "--items", "a"], env={}, files=[cfg])
+        assert result.items == ["a"]
+
+    def test_whole_field_delete_after_a_valued_occurrence_clears(self, tmp_path) -> None:
+        """--items x --items- leaves the field at its default, discarding x and the file."""
+        cfg = tmp_path / "cfg.toml"
+        cfg.write_text('items = ["alice", "bob"]\n')
+        WithList = make_target("items", list[str], default_factory=list)
+        result = confarg.load(WithList, argv=["--items", "x", "--items-"], env={}, files=[cfg])
+        assert result.items == []
+
     def test_double_append_accumulates(self, tmp_path) -> None:
         """--items+ foo --items+ bar appends both to the config list."""
         cfg = tmp_path / "cfg.toml"

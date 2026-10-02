@@ -153,11 +153,11 @@ class TestCollectionOverride:
         )
         assert result.items == [10, 20]
 
-    def test_cli_list_overrides_config_list_repeated(self, repeated_loader: ConfargLoader, tmp_toml) -> None:
-        """CLI list (repeated flags) replaces the entire config list."""
+    def test_cli_list_overrides_config_list_repeated(self, loader: ConfargLoader, tmp_toml) -> None:
+        """CLI list (repeated flags) replaces the entire config list, in every front-end."""
         WithList = make_target("items", list[int], default_factory=list)
         path = tmp_toml("items = [1, 2, 3]\n")
-        result = repeated_loader.load(
+        result = loader.load(
             WithList,
             argv=["--items", "10", "--items", "20"],
             env={},

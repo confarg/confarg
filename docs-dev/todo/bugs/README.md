@@ -12,7 +12,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
-| [BUG-37 — A repeated varlen flag accumulates in three front-ends and last-wins in two](BUG-37-repeated-varlen-flag-accumulates-in-three-front-ends.md) | M | medium | behavior |
 | [BUG-38 — A bare `--<list>` clears the list everywhere except click and typer](BUG-38-bare-varlen-flag-rejected-by-the-clicklike-front-ends.md) | S | low | behavior |
 | [BUG-39 — A plain class takes a whole `{…}` value from env and files, but not from the CLI](BUG-39-plain-class-whole-value-cli-only.md) | S | high | config |
 | [BUG-40 — `_StrToken` leaks into user-facing error messages](BUG-40-strtoken-leaks-into-error-messages.md) | S | low | behavior |
@@ -26,5 +25,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-49 — A `Dev Notes:` citation points at `#the-triad`, a heading renamed to `## The quartet`](BUG-49-stale-the-triad-citation.md) | S | low | none |
 | [BUG-50 — A `--config.<subpath>` naming no field mounts silently, and dict fields get no flag](BUG-50-config-subpath-is-never-checked-against-the-target.md) | M | medium | behavior |
 | [BUG-51 — A bare `--config.<subpath>+` is an error in vanilla and a no-op in two front-ends](BUG-51-bare-config-append-accepted-by-two-front-ends.md) | S | low | behavior |
+| [BUG-52 — `tests/examples/_registry.py` imports a harness that is not in the tree](BUG-52-examples-registry-imports-a-missing-harness.md) | S | low | none |
+| [BUG-53 — a whole-field delete wins over a later flag in the adapters, not in vanilla](BUG-53-whole-field-delete-beats-a-later-flag-in-the-adapters.md) | M | medium | config |
 
 <!-- tickets:end -->

@@ -137,6 +137,7 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
         return dataclasses.replace(
             base,
             nargs="*",
+            accumulates=True,
             metavar=metavar or getattr(et, "__name__", "ITEM").upper(),
         )
 
@@ -756,6 +757,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
                 FlagSpec(
                     name=flag,
                     nargs="*",
+                    accumulates=True,
                     metavar="VALUE",
                     help=help_text,
                     group=group,
@@ -955,7 +957,8 @@ def _scalar_root_spec(target: Any) -> FlagSpec:
     ``nargs`` is forced to a single token because vanilla's
     :func:`~confarg._parse_cli._handle_scalar_root` consumes exactly one: a
     ``list[int]`` root must not pick up the greedy ``nargs="*"`` that
-    :func:`_build_leaf_spec` gives a collection *field*.
+    :func:`_build_leaf_spec` gives a collection *field*.  ``accumulates`` goes with it,
+    since one token is all this flag ever takes.
 
     Dev Notes:
         docs-dev/architecture/03-cli-parsing.md#cli_prefix
@@ -964,6 +967,7 @@ def _scalar_root_spec(target: Any) -> FlagSpec:
     core = _unwrap_optional(resolved)
     spec = _build_leaf_spec("", target, resolved if core is None else core, "The configuration value.", None, "")
     spec.nargs = None
+    spec.accumulates = False
     return spec
 
 

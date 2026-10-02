@@ -175,6 +175,11 @@ class _WithStrList:
 
 
 @dataclass
+class _WithIntList:
+    input: int | list[int]
+
+
+@dataclass
 class _WithBoolList:
     input: bool | list[str]
 
@@ -389,6 +394,63 @@ class TestListRepeatedFlags:
 
 
 # ---------------------------------------------------------------------------
+# Repeating a multi-token flag means the same thing everywhere
+# ---------------------------------------------------------------------------
+
+
+class TestRepeatedFlagAccumulationContract:
+    """A repeated multi-token flag accumulates its tokens, in every front-end.
+
+    Which *spelling* a framework accepts diverges; what repeating a flag *means* does
+    not. ``--tags x --tags y`` is a second spelling of ``--tags x y`` everywhere, so
+    these cases use the repeated form every front-end accepts. Regression guard: the
+    two answers drifted apart unnoticed, vanilla and argparse keeping only the last
+    occurrence (BUG-37).
+    """
+
+    def test_varlen_list_repeated(self, loader: ConfargLoader) -> None:
+        """--tags x --tags y accumulates into ['x', 'y']."""
+        cfg = loader.load(WithList, argv=["--tags", "x", "--tags", "y"], env={})
+        assert cfg.tags == ["x", "y"]
+
+    def test_varlen_list_repeated_three_times(self, loader: ConfargLoader) -> None:
+        """Every occurrence contributes, in argv order."""
+        cfg = loader.load(WithList, argv=["--tags", "x", "--tags", "y", "--tags", "z"], env={})
+        assert cfg.tags == ["x", "y", "z"]
+
+    def test_union_seq_repeated_builds_the_sequence(self, loader: ConfargLoader) -> None:
+        """--input 1 --input 2 fills the list variant of int | list[int]."""
+        cfg = loader.load(_WithIntList, argv=["--input", "1", "--input", "2"], env={})
+        assert cfg.input == [1, 2]
+
+    def test_repeated_json_array_tokens_are_items(self, loader: ConfargLoader) -> None:
+        """An inline JSON array is a single-token spelling: repeated, the tokens are items."""
+        cfg = loader.load(WithList, argv=["--tags", '["a","b"]', "--tags", '["c"]'], env={})
+        assert cfg.tags == ['["a","b"]', '["c"]']
+
+    def test_repetition_replaces_the_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Repetition accumulates within the CLI channel; the list it builds replaces the file."""
+        base = tmp_yaml("tags: [alice, bob]\n")
+        cfg = loader.load(WithList, argv=["--config", str(base), "--tags", "x", "--tags", "y"], env={})
+        assert cfg.tags == ["x", "y"]
+
+    def test_merged_dict_matches_vanilla(self, loader: ConfargLoader) -> None:
+        """The raw merged dict is byte-identical across every front-end."""
+        merged = loader.merge(WithList, argv=["--tags", "x", "--tags", "y"], env={})
+        assert merged == {"tags": ["x", "y"]}
+
+    def test_mixed_spellings_accumulate(self, space_sep_loader: ConfargLoader) -> None:
+        """A space-separated occurrence and a repeated one add up (vanilla, argparse, cyclopts)."""
+        cfg = space_sep_loader.load(WithList, argv=["--tags", "x", "y", "--tags", "z"], env={})
+        assert cfg.tags == ["x", "y", "z"]
+
+    def test_json_array_token_beside_a_plain_one(self, space_sep_loader: ConfargLoader) -> None:
+        """Two tokens are two items, so the '[' one is not decoded (vanilla, argparse, cyclopts)."""
+        cfg = space_sep_loader.load(WithList, argv=["--tags", '["a","b"]', "z"], env={})
+        assert cfg.tags == ['["a","b"]', "z"]
+
+
+# ---------------------------------------------------------------------------
 # Fixed-length sequences: tuple and namedtuple spell alike
 # ---------------------------------------------------------------------------
 
@@ -563,8 +625,9 @@ class TestUnionWithSequenceContract:
     """A union mixing a scalar with a sequence variant accepts one or many tokens.
 
     One token stays a bare scalar; two-or-more tokens form the sequence. The
-    multi-token CLI syntax follows the established per-convention split, so those
-    cases use the space_sep / repeated fixtures.
+    space-separated spelling is not available everywhere, so it uses the space_sep
+    fixture; the repeated spelling every front-end accepts, and means the same thing in
+    each -- see TestRepeatedFlagAccumulationContract.
     """
 
     def test_str_tuple_single_value_is_scalar(self, loader: ConfargLoader) -> None:
@@ -592,9 +655,9 @@ class TestUnionWithSequenceContract:
         cfg = space_sep_loader.load(_WithStrTuple, argv=["--input", "foo", "bar"], env={})
         assert cfg.input == ("foo", "bar")
 
-    def test_str_tuple_two_values_repeated(self, repeated_loader: ConfargLoader) -> None:
-        """--input foo --input bar builds the tuple (click, cyclopts)."""
-        cfg = repeated_loader.load(_WithStrTuple, argv=["--input", "foo", "--input", "bar"], env={})
+    def test_str_tuple_two_values_repeated(self, loader: ConfargLoader) -> None:
+        """--input foo --input bar builds the tuple, in every front-end."""
+        cfg = loader.load(_WithStrTuple, argv=["--input", "foo", "--input", "bar"], env={})
         assert cfg.input == ("foo", "bar")
 
     def test_str_list_two_values_space_sep(self, space_sep_loader: ConfargLoader) -> None:
@@ -602,9 +665,9 @@ class TestUnionWithSequenceContract:
         cfg = space_sep_loader.load(_WithStrList, argv=["--input", "foo", "bar"], env={})
         assert cfg.input == ["foo", "bar"]
 
-    def test_str_list_two_values_repeated(self, repeated_loader: ConfargLoader) -> None:
-        """--input foo --input bar builds the list (click, cyclopts)."""
-        cfg = repeated_loader.load(_WithStrList, argv=["--input", "foo", "--input", "bar"], env={})
+    def test_str_list_two_values_repeated(self, loader: ConfargLoader) -> None:
+        """--input foo --input bar builds the list, in every front-end."""
+        cfg = loader.load(_WithStrList, argv=["--input", "foo", "--input", "bar"], env={})
         assert cfg.input == ["foo", "bar"]
 
     def test_str_list_empty_builds_empty_list_space_sep(self, space_sep_loader: ConfargLoader) -> None:
