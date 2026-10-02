@@ -21,6 +21,7 @@ from confarg import _defaults
 from confarg._cast import JSON_CAST_NAME, resolve_forced_value
 from confarg._merge import DICT_DELETE, _accumulate_list_delete, _deep_merge, _set_nested
 from confarg._parse_cli import (
+    _accepts_object_value,
     _locals_segment_index,
     _open_callable_shorthand,
     detect_force_cast,
@@ -28,23 +29,23 @@ from confarg._parse_cli import (
 from confarg._types import (
     _dict_kv,
     _elem_type,
-    _is_callable,
     _is_dict,
     _is_frozenset,
     _is_list,
     _is_namedtuple,
+    _is_seq_variant,
     _is_set,
     _is_struct,
     _is_struct_like,
     _is_tuple,
     _is_union,
-    _is_varlen_collection,
     _namedtuple_fields,
     _resolve_type,
     _StrToken,
     _struct_fields,
     _tuple_types,
     _union_args_no_none,
+    _union_has_seq_variant,
 )
 from confarg.exceptions import ConfargError, ConfargWarning
 from confarg.typedload._coerce import _try_coerce
@@ -306,45 +307,20 @@ def _warn_unknown_env_field(orig_key: str, parts: list[str], root_tp: Any) -> bo
 def _accepts_json_for(ft: Any, value: str) -> bool:
     """Return True when a ``[``/``{``-led env value should be JSON-parsed for type ``ft``.
 
-    The opening bracket must match a shape the type can accept: ``{`` for a struct,
-    namedtuple, dict or callable; ``[`` for a namedtuple, variable-length collection
-    or tuple. A union accepts the bracket when any non-None variant does.
+    The opening bracket must match a shape the type can accept, and the shape is not this
+    channel's question to answer: ``{`` defers to
+    :func:`~confarg._parse_cli._accepts_object_value`, the predicate the CLI whole-value
+    flag already consults, and ``[`` to :func:`~confarg._types._is_seq_variant` and its
+    union arm.  Asking here again is what let a plain class take the blob from the
+    environment while the CLI refused it (BUG-39).
 
     Dev Notes:
         docs-dev/architecture/02-files-and-env.md#environment-parsing
     """
     if value.startswith("{"):
-        return (
-            _is_namedtuple(ft)
-            or _is_struct(ft)
-            or _is_dict(ft)
-            or _is_callable(ft)
-            or (
-                _is_union(ft)
-                and any(
-                    _is_namedtuple(_resolve_type(v))
-                    or _is_struct(_resolve_type(v))
-                    or _is_dict(_resolve_type(v))
-                    or _is_callable(_resolve_type(v))
-                    for v in _union_args_no_none(ft)
-                )
-            )
-        )
+        return _accepts_object_value(ft)
     if value.startswith("["):
-        return (
-            _is_namedtuple(ft)
-            or _is_varlen_collection(ft)
-            or _is_tuple(ft)
-            or (
-                _is_union(ft)
-                and any(
-                    _is_namedtuple(_resolve_type(v))
-                    or _is_varlen_collection(_resolve_type(v))
-                    or _is_tuple(_resolve_type(v))
-                    for v in _union_args_no_none(ft)
-                )
-            )
-        )
+        return _is_seq_variant(ft) or _union_has_seq_variant(ft)
     return False
 
 

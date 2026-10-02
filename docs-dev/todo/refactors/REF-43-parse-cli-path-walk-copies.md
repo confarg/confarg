@@ -19,9 +19,10 @@ Risk is **high** deliberately: three of these four are named canonical decision-
 address a callable key?" — and a mistake in the shared walk is silent in every channel and every
 front-end at once. Closing this means extending the cross-channel contract suite.
 
-Related, same family, and best done in the same pass: `_parse_env._accepts_json_for` re-derives
-`_accepts_object_value` and `_types._is_seq_variant` instead of calling them, which is how
-[BUG-39](../bugs/BUG-39-plain-class-whole-value-cli-only.md) came about.
+The same family, one member already closed: `_parse_env._accepts_json_for` used to re-derive
+`_accepts_object_value` and `_types._is_seq_variant` instead of calling them, which is how BUG-39
+came about; closing that bug reduced it to the two calls. Nothing is left of it to fold into this
+pass — it is here as the precedent for what the walk should end up looking like.
 
 The walk in `_parse_env._match_env_part` is **not** in scope. Env adds case-insensitive matching
 and two ambiguity errors, and its struct branch lacks the `_subclass_field_type` fallback the CLI

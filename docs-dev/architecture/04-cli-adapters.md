@@ -219,9 +219,27 @@ argument (BUG-29).
 
 A bare `--<field> '{…}'` assigns an entire object in one token — the CLI peer of the env
 channel's `PFX_ENV='{"a":"b"}'`. `_parse_cli._accepts_object_value` is the one predicate
-deciding which field types take one: dataclass, namedtuple, dict, callable, or a union with any
-of those as a variant. It answers for the vanilla parser, for static registration and for the
-collector, so the four cannot drift.
+deciding which field types take one: struct (dataclass *or* plain class), namedtuple, dict,
+callable, or a union with any of those as a variant. It answers for the vanilla parser, for
+static registration, for the collector and for the env channel's `{`-led value, so the five
+cannot drift. A plain class counts because the blob is taken apart into fields and
+construction takes both spellings of a struct apart the same way; env and files accepted it
+while the CLI alone refused until BUG-39 deleted the env channel's second answer.
+
+The struct arm asks `_is_struct`, **not** the narrower
+`typedload._coerce._is_struct_variant` that construction's dispatchers ask
+([05](05-types-and-construction.md#leaf-coercion)). The two disagree on a registered leaf
+with an `__init__` — `UUID`, say — and this question comes first: an explicit tag naming
+such a class still builds it from its fields
+([10](10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in)), and the tag cannot be
+seen until the token is decoded. Refusing the token here would put that hatch out of the
+CLI's reach while leaving it open to env and files, and would silently coerce the JSON
+*text* into a leaf instead. `cli/_collect.py` therefore honors the decoded whole value in
+its registered-leaf branch before falling back to scalar coercion, the order vanilla's
+`_consume_value` already has. The `--help` metavar stays `VALUE` there: the rule is that
+`JSON` implies the token is decoded, not the converse, and a registered leaf's ordinary
+spelling is its scalar, with the tagged blob an escape hatch rather than the syntax to
+advertise.
 
 The flags are **static**, not argv-scanned: the field is declared, so it belongs in `--help`
 next to the bare `--tags` / `--pair` flags lists and tuples already get, and completion can

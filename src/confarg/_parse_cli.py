@@ -44,7 +44,6 @@ from confarg._types import (
     _elem_type,
     _fixed_seq_types,
     _is_callable,
-    _is_dc,
     _is_dict,
     _is_frozenset,
     _is_list,
@@ -959,12 +958,16 @@ def _consume_collection_or_scalar(
 def _accepts_object_value(ft: Any) -> bool:
     """Return whether a field of type *ft* takes a whole ``{...}`` JSON token as its value.
 
-    The one test behind every whole-value flag: it decides both what the vanilla parser
-    decodes and which bare ``--<field>`` flags the CLI adapters register and decode, so the
-    two can never disagree.  Pass the field type as resolved, *without* unwrapping
+    The one test behind every whole-value flag, and behind the env channel's ``{``-led
+    value: it decides what the vanilla parser decodes, which bare ``--<field>`` flags the
+    CLI adapters register and decode, and which environment variable holds a blob, so the
+    four can never disagree.  Pass the field type as resolved, *without* unwrapping
     ``Optional``: the union arm answers for the optional spellings, so ``dict[str, str]``
     and ``dict[str, str] | None`` take the same token, and so do ``Callable[..., T]``
     and ``Callable[..., T] | None``.
+
+    A *struct* is either spelling of one -- a dataclass or a plain class -- because the
+    blob is taken apart into fields, and construction takes both apart the same way.
 
     Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#whole-value-flags
@@ -972,7 +975,7 @@ def _accepts_object_value(ft: Any) -> bool:
 
     def accepts(v: Any) -> bool:
         v = _resolve_type(v)
-        return _is_dc(v) or _is_namedtuple(v) or _is_dict(v) or _is_callable(v)
+        return _is_struct(v) or _is_namedtuple(v) or _is_dict(v) or _is_callable(v)
 
     return accepts(ft) or (_is_union(ft) and any(accepts(v) for v in _union_args_no_none(ft)))
 

@@ -590,7 +590,12 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
             continue
 
         if _is_registered_leaf(core):
-            if flag in flat:
+            # A registered leaf is opaque to implicit decisions, but a tag inside a whole
+            # value still opens it -- and the tag can only be seen once the token is
+            # decoded, so the blob is honored before the scalar coercion, as in vanilla.
+            if whole is not _NO_CAST:
+                _set_nested(result, flag.split("."), whole)
+            elif flag in flat:
                 _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
             continue
 

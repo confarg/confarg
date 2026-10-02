@@ -203,8 +203,14 @@ namespace) therefore avoids the dunder form.
 - Segments are matched **case-insensitively** against the target type tree, because env
   names are conventionally upper-case; a segment matching several fields is an error.
 - Values starting with `[` or `{` are parsed as JSON only when the target type can accept a
-  list or an object; otherwise they are ordinary tokens. Optionality does not change the
-  answer — `dict[str, str] | None` decodes what `dict[str, str]` decodes
+  list or an object; otherwise they are ordinary tokens. Which types those are is not this
+  channel's question: `{` defers to `_parse_cli._accepts_object_value`, the one predicate the
+  CLI whole-value flag consults ([04](04-cli-adapters.md#whole-value-flags)), and `[` to
+  `_types._is_seq_variant` plus `_union_has_seq_variant`. Asking again here is what let a
+  plain class take the blob from the environment while the CLI refused it (BUG-39, closed):
+  a *struct* is either spelling of one, because construction takes a dataclass and a plain
+  class apart the same way. Optionality does not change the answer either —
+  `dict[str, str] | None` decodes what `dict[str, str]` decodes
   ([10](10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts)).
 - `<PREFIX>…__json` mirrors the CLI `.json` cast, including "real field wins" and a hard
   error on invalid JSON. `<PREFIX>JSON` is the root form: it injects a whole config, folded

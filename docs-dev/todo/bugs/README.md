@@ -12,7 +12,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
-| [BUG-39 — A plain class takes a whole `{…}` value from env and files, but not from the CLI](BUG-39-plain-class-whole-value-cli-only.md) | S | high | config |
 | [BUG-40 — `_StrToken` leaks into user-facing error messages](BUG-40-strtoken-leaks-into-error-messages.md) | S | low | behavior |
 | [BUG-41 — A class nested inside a class does not round-trip its union tag](BUG-41-nested-class-tag-dumps-name-not-qualname.md) | S | medium | config |
 | [BUG-43 — A fixed-arity tuple flag under-fills instead of reporting a missing value](BUG-43-fixed-tuple-flag-skips-the-missing-value-check.md) | S | medium | behavior |
@@ -28,5 +27,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-53 — a whole-field delete wins over a later flag in the adapters, not in vanilla](BUG-53-whole-field-delete-beats-a-later-flag-in-the-adapters.md) | M | medium | config |
 | [BUG-54 — A plain collection flag does not discard the patch ops before it in the adapters](BUG-54-plain-occurrence-does-not-discard-earlier-patch-ops-in-the-adapters.md) | M | medium | config |
 | [BUG-55 — Two ticket reproductions run as tests and fail on every full suite](BUG-55-two-ticket-reproductions-run-as-tests-and-fail.md) | S | low | none |
+| [BUG-56 — The flat spelling of the tagged-leaf hatch reaches no adapter](BUG-56-flat-tagged-leaf-flags-unregistered-by-the-adapters.md) | M | medium | behavior |
 
 <!-- tickets:end -->
