@@ -257,8 +257,7 @@ def _apply_env_json_cast(  # noqa: PLR0913  # root and nested placement need dis
         data.setdefault(_defaults.ROOT_KEY, decoded)
         return True
     if not isinstance(decoded, dict):
-        msg = f"{orig_key} for a structured target must be a JSON object, got {type(decoded).__name__}."
-        raise ConfargError(msg)
+        raise ConfargError.root_cast_not_object(orig_key, decoded)
     root_json.append(decoded)
     return True
 

@@ -177,7 +177,8 @@ def apply_root_json(flat: dict[str, Any], target: Any, union_tag: str, result: d
     raw = flat.get(JSON_CAST_NAME)
     if raw is None or _segment_names_real_field(target, JSON_CAST_NAME, union_tag):
         return
-    decoded = resolve_forced_value(JSON_CAST_NAME, raw, flag=f"--{JSON_CAST_NAME}")
+    flag = f"--{JSON_CAST_NAME}"
+    decoded = resolve_forced_value(JSON_CAST_NAME, raw, flag=flag)
     if not _is_struct_like(_resolve_type(target)):
         # Non-struct root: the decoded value *is* the configuration, whatever its
         # shape, as in vanilla's _handle_root_cast. setdefault keeps the bare
@@ -186,8 +187,7 @@ def apply_root_json(flat: dict[str, Any], target: Any, union_tag: str, result: d
         result.setdefault(_defaults.ROOT_KEY, decoded)
         return
     if not isinstance(decoded, dict):
-        msg = f"--{JSON_CAST_NAME} for a structured target must be a JSON object, got {type(decoded).__name__}."
-        raise ConfargError(msg)
+        raise ConfargError.root_cast_not_object(flag, decoded)
     merged = _deep_merge(decoded, result, union_tag=union_tag)
     result.clear()
     result.update(merged)

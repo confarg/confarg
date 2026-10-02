@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 if TYPE_CHECKING:
     from tests._loaders import ConfargLoader
@@ -21,6 +21,14 @@ from tests.conftest import (
     WithDefaults,
     make_target,
 )
+
+
+class Point(NamedTuple):
+    """Two-field namedtuple, for the container-rejects-a-token messages."""
+
+    x: int
+    y: int
+
 
 # ---------------------------------------------------------------------------
 # Exception hierarchy
@@ -153,6 +161,49 @@ class TestTypeCoercionErrors:
         WithOpt = make_target("value", int | None, default=None)
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"'none' or 'null'"):
             loader.load(WithOpt, argv=[], env={"MYAPP_VALUE": "blah"}, env_prefix="MYAPP_")
+
+
+class TestTokensStayOutOfMessages:
+    """A channel token is named as the ``str`` it is, never as the private wrapper.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#token-model
+    """
+
+    @pytest.mark.parametrize(
+        ("annotation", "default_factory", "expected"),
+        [
+            (Point, None, "Cannot construct Point at 'value': expected list, tuple, or dict, got str 'abc'"),
+            (
+                list[int],
+                list,
+                "Cannot construct list at 'value': expected list or dict with integer keys, got str 'abc'",
+            ),
+            (
+                set[int],
+                set,
+                "Cannot construct collection at 'value': expected sequence or dict with integer keys, got str 'abc'",
+            ),
+            (
+                tuple[int, str],
+                None,
+                "Cannot construct tuple at 'value': expected list, tuple, or dict with integer keys, got str 'abc'",
+            ),
+        ],
+        ids=["namedtuple", "list", "set", "tuple"],
+    )
+    def test_container_rejecting_a_token_names_it_str(
+        self,
+        annotation: object,
+        default_factory: object,
+        expected: str,
+    ) -> None:
+        """A scalar token handed to a container prints as ``str``, not ``_StrToken``."""
+        kwargs = {"default_factory": default_factory} if default_factory else {"default": None}
+        Target = make_target("value", annotation, **kwargs)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+            confarg.load(Target, argv=[], env={"MYAPP_VALUE": "abc"}, env_prefix="MYAPP_")
+        assert str(excinfo.value) == expected
 
 
 # ---------------------------------------------------------------------------

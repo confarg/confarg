@@ -542,8 +542,29 @@ class _SubWrapper:
     item: _SubBase
 
 
+class _SubOuter:
+    """Holder whose nested subclass is only reachable through its own qualified name."""
+
+    @_dc
+    class Nested(_SubBase):
+        value: float = 0.0
+
+
 class TestDumpSubclass:
     """Serialization of dataclass subclasses held via a base-class field."""
+
+    def test_nested_class_tag_is_the_qualified_name(self) -> None:
+        """A class nested inside a class is tagged with the path that imports it back."""
+        obj = _SubWrapper(item=_SubOuter.Nested(value=1.0))
+        result = confarg.dump(obj)
+        assert result["item"]["class"] == "tests.test_serialize._SubOuter.Nested"
+
+    def test_nested_class_tag_round_trips(self) -> None:
+        """The tag dump() writes for a nested class is one from_dict() can read back."""
+        obj = _SubWrapper(item=_SubOuter.Nested(value=2.5))
+        loaded = confarg.from_dict(_SubWrapper, confarg.dump(obj))
+        assert isinstance(loaded.item, _SubOuter.Nested)
+        assert loaded.item.value == pytest.approx(2.5)
 
     def test_subclass_fields_and_tag_emitted(self) -> None:
         """When a field typed Foo holds a Bar(Foo) instance, Bar's fields and a type tag are serialized."""

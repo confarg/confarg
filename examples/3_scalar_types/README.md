@@ -113,7 +113,7 @@ confarg.exceptions.ConfargError: Missing value for '--value1'. Usage: --value1 <
 $ # Error: The `--no-flag` syntax does not work either, this parameter is unknown to confarg.
 $ uv run bool_value.py --no-value1
 ...
-confarg.exceptions.UnknownArgumentError: Unknown argument: --no-value1 (field 'no-value1' not found)
+confarg.exceptions.UnknownArgumentError: Unknown argument: '--no-value1' (field 'no-value1' not found)
 ```
 
 > [!IMPORTANT]

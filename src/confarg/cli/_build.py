@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _detect_owning_class, active_directives
 from confarg._cast import SCALAR_CAST_TYPES
-from confarg._import import _import_dotted
+from confarg._import import _import_dotted, dotted_name
 from confarg._merge import _peek_nested, _set_nested
 from confarg._tags import _partial_config_from_argv, import_tagged_classes
 from confarg._types import (
@@ -277,7 +277,7 @@ def _build_union_tag_spec(
     """Build a FlagSpec for ``--<flag>.<union_tag>`` with an optional path completer."""
     completer = None
     if variant_types:
-        paths = [f"{v.__module__}.{v.__qualname__}" for v in variant_types]
+        paths = [dotted_name(v) for v in variant_types]
         completer = _make_path_completer(paths)
     return FlagSpec(
         name=f"{flag}.{union_tag}",
@@ -832,7 +832,7 @@ def _collect_union_root_specs(
 ) -> list[FlagSpec]:
     """Build FlagSpecs for a union target (variants are the concrete struct types)."""
     tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
-    paths = [f"{v.__module__}.{v.__qualname__}" for v in variants]
+    paths = [dotted_name(v) for v in variants]
     result: list[FlagSpec] = [
         FlagSpec(
             name=tag_name,
@@ -899,7 +899,7 @@ def _collect_struct_specs(  # union-root branch added one more conditional
         tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
         by_name: dict[str, FlagSpec] = {s.name: s for s in result}
         if tag_name not in by_name:
-            paths = [f"{v.__module__}.{v.__qualname__}" for v in all_subs]
+            paths = [dotted_name(v) for v in all_subs]
             # An empty completer would suppress the shell's own suggestions, so leave it unset.
             tag_spec = FlagSpec(
                 name=tag_name,

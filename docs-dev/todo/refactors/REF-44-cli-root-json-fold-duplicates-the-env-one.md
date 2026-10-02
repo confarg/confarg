@@ -12,9 +12,10 @@ parser should simply call it. The root cast is one rule shared by two channels
 `_cast.py` already owns what the cast names are and what value each produces, so the *fold* is
 the one piece left with two implementations.
 
-The "structured target" error message that goes with it is triplicated verbatim across
-`_parse_cli.py`, `_parse_env.py` and `cli/_collect.py` — that half belongs to
-[REF-51](REF-51-error-messages-outside-the-factories.md).
+The "structured target" error message that went with it is done: the three call sites now build
+it through `ConfargError.root_cast_not_object`
+([10-design-decisions.md#a-user-facing-message-lives-on-the-exception-that-raises-it](../../architecture/10-design-decisions.md#a-user-facing-message-lives-on-the-exception-that-raises-it)).
+The *fold* is what is left.
 
 Open part, to settle before the three collapse: the scalar-root sink is a plain assignment to
 `ROOT_KEY` in the vanilla CLI parser and `setdefault` in the other two. Whether a later root

@@ -487,8 +487,7 @@ def _strip_cli_prefix(raw_key: str, cli_prefix: str, token: str) -> str:
         return raw_key[len(dot_pfx) :]
     if raw_key == cli_prefix:
         return ""
-    msg = f"Unknown argument: {token!r}. Expected arguments to start with --{cli_prefix}."
-    raise UnknownArgumentError(msg)
+    raise UnknownArgumentError.wrong_prefix(token, cli_prefix)
 
 
 @functools.cache
@@ -632,8 +631,7 @@ def _handle_delete_token(
         parent_path = path[:-1]
         ft_check = _resolve_field_type(ctx.target, path, ctx.union_tag)
         if ft_check is None and not _is_dict_at_path(ctx.target, path, ctx.union_tag):
-            msg = f"Unknown argument: {token!r} (field '{'.'.join(parent_path)}' not found or not indexable)"
-            raise UnknownArgumentError(msg)
+            raise UnknownArgumentError.not_indexable(token, parent_path)
         node: Any = ctx.data
         for _p in parent_path:
             node = node[_p] if isinstance(node, dict) and _p in node else {}
@@ -642,8 +640,7 @@ def _handle_delete_token(
     else:
         ft_check = _resolve_field_type(ctx.target, path, ctx.union_tag)
         if ft_check is None and not _is_dict_at_path(ctx.target, path, ctx.union_tag):
-            msg = f"Unknown argument: {token!r} (field '{'.'.join(path)}' not found)"
-            raise UnknownArgumentError(msg)
+            raise UnknownArgumentError.no_such_field(token, path)
         # A whole-field delete ends the value at this path, so a later multi-token occurrence
         # starts a new list rather than extending the one the delete just discarded. An index
         # delete is a patch *within* the list and leaves the accumulation alone.
@@ -791,8 +788,7 @@ def _handle_root_cast(  # noqa: PLR0913  # each arg carries distinct root-placem
     value = resolve_forced_value(cast_name, args[i], flag=token)
     if is_struct:
         if not isinstance(value, dict):
-            msg = f"{token} for a structured target must be a JSON object, got {type(value).__name__}."
-            raise ConfargError(msg)
+            raise ConfargError.root_cast_not_object(token, value)
         root_json.append(value)
     else:
         data[_defaults.ROOT_KEY] = value
@@ -833,8 +829,7 @@ def _handle_unknown_field(
     Otherwise always raises UnknownArgumentError.
     """
     if append_mode:
-        msg = f"Unknown argument: {token} (field '{'.'.join(path)}' not found)"
-        raise UnknownArgumentError(msg)
+        raise UnknownArgumentError.no_such_field(token, path)
     if _is_dict_at_path(ctx.target, path, ctx.union_tag):
         i += 1
         if i < len(ctx.argv) and not _looks_like_flag(ctx.argv[i]):
@@ -845,8 +840,7 @@ def _handle_unknown_field(
         dot_pos = token.rfind(".")
         msg = f"Missing field name after '{token[: dot_pos + 1]}'"
         raise UnknownArgumentError(msg)
-    msg = f"Unknown argument: {token} (field '{'.'.join(path)}' not found)"
-    raise UnknownArgumentError(msg)
+    raise UnknownArgumentError.no_such_field(token, path)
 
 
 def _try_parse_json_list(arg: str) -> list[Any] | None:

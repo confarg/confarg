@@ -72,6 +72,9 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "may an explicit class tag still open this leaf?" | `typedload._coerce._is_taggable_leaf` |
 | "is this leaf type eager-coerced from a token?" | `typedload._coerce._is_eagerly_coercible` |
 | the error for a field no channel supplied | `typedload._construct._missing_field_error` |
+| "what dotted path names this object?" | `_import.dotted_name` |
+| "what type is this value, to a reader?" | `typedload._coerce._src_type` |
+| the text of an error raised from more than one site | a classmethod factory on the class in `exceptions.py` |
 
 ## Merge stays unvalidated
 
@@ -127,6 +130,11 @@ collection logic goes into `cli/_collect.py` mirroring the vanilla decision
 - Defaults and shared reserved key names (`ROOT_KEY`, `LOCALS_KEYS`) live in
   `_defaults.py`; never repeat the literals
   ([10](10-design-decisions.md#shared-reserved-key-names-live-in-_defaultspy)).
+- `exceptions.py` imports nothing from `confarg`. It is the whole of what `dictexpr` is allowed
+  to depend on, so an import there would drag the rest of the library into `dictexpr`'s closure.
+  A message factory that needs `_src_type` or `dotted_name` therefore cannot have them: either
+  the caller passes the text in, or the factory's own argument provably cannot be a token
+  ([10](10-design-decisions.md#a-user-facing-message-lives-on-the-exception-that-raises-it)).
 - A type in `_LEAF_COERCIONS` must also be in `_LEAF_SERIALIZERS`: registration makes a type
   a leaf in both directions, and only `register_leaf_type` writes them
   ([05](05-types-and-construction.md#leaf-coercion)).

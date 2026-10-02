@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, cast, get_args, get_type_hints
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
-from confarg._import import _import_dotted
+from confarg._import import _import_dotted, dotted_name
 from confarg._types import (
     _callable_param_types,
     _is_callable,
@@ -65,7 +65,7 @@ def _maybe_bind_method(func: Any, path: str) -> Any:
     try:
         instance = cls()
     except TypeError as e:
-        fn_path = f"{func.__module__}.{func.__qualname__}"
+        fn_path = dotted_name(func)
         msg = (
             f"Cannot instantiate {cls.__qualname__!r} with no arguments at '{path}': {e}.\n"
             f"Use the dict form and supply {cls.__qualname__}'s constructor arguments as sibling keys:\n"
@@ -697,15 +697,13 @@ def _serialize_callable(value: Any) -> str | dict:
 
     if isinstance(value, functools.partial):
         func = value.func
-        path = f"{func.__module__}.{func.__qualname__}"
+        path = dotted_name(func)
         if value.keywords:
             return {"fn": path, "bind": dict(value.keywords)}
         return path
 
-    module = getattr(value, "__module__", None)
-    qualname = getattr(value, "__qualname__", None)
-    if module and qualname:
-        return f"{module}.{qualname}"
+    if getattr(value, "__module__", None) and getattr(value, "__qualname__", None):
+        return dotted_name(value)
 
     msg = (
         f"Cannot serialize callable {value!r}: no __module__/__qualname__ available."
