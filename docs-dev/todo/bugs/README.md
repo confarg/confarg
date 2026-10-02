@@ -22,9 +22,11 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-53 — a whole-field delete wins over a later flag in the adapters, not in vanilla](BUG-53-whole-field-delete-beats-a-later-flag-in-the-adapters.md) | M | medium | config |
 | [BUG-54 — A plain collection flag does not discard the patch ops before it in the adapters](BUG-54-plain-occurrence-does-not-discard-earlier-patch-ops-in-the-adapters.md) | M | medium | config |
 | [BUG-56 — The flat spelling of the tagged-leaf hatch reaches no adapter](BUG-56-flat-tagged-leaf-flags-unregistered-by-the-adapters.md) | M | medium | behavior |
-| [BUG-59 — A fixed-arity flag's elements are not eagerly coerced in any adapter](BUG-59-fixed-arity-elements-not-eagerly-coerced-in-the-adapters.md) | S | medium | behavior |
 | [BUG-61 — A bare optional fixed-arity flag clears in the adapters and raises in vanilla](BUG-61-optional-fixed-arity-bare-flag-clears-in-the-adapters.md) | M | medium | behavior |
 | [BUG-62 — Cyclopts accumulates a repeated fixed-arity flag instead of letting the last one win](BUG-62-cyclopts-accumulates-a-repeated-fixed-arity-flag.md) | M | medium | behavior |
 | [BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four](BUG-63-bare-config-before-help-shows-help-on-argparse.md) | S | medium | behavior |
+| [BUG-64 — A namedtuple's sub-flag values are not eagerly coerced in any adapter](BUG-64-namedtuple-sub-flag-values-not-eagerly-coerced-in-the-adapters.md) | S | medium | behavior |
+| [BUG-65 — An index sub-flag is renamed and dropped in the adapters](BUG-65-namedtuple-index-sub-flag-renamed-and-dropped-in-the-adapters.md) | S | medium | behavior |
+| [BUG-66 — A namedtuple's arity flag and sub-flags merge differently in the adapters and vanilla](BUG-66-namedtuple-arity-and-sub-flag-merge-shapes-diverge.md) | M | medium | behavior |
 
 <!-- tickets:end -->

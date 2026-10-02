@@ -100,13 +100,27 @@ def _json_array_override(v: Any) -> list[Any] | None:
 
 
 def _coerce_leaf_value(core: Any, v: Any) -> Any:
-    """Eagerly coerce a CLI leaf value (scalar or list) to its field type, as vanilla does."""
+    """Eagerly coerce a CLI leaf value (scalar or list) to its field type, as vanilla does.
+
+    A list owes its element type to whichever shape owns it: the one element type of a
+    varlen collection, the per-position types of a fixed-length sequence
+    (:func:`~confarg._types._fixed_seq_types`, the same answer vanilla's
+    ``_consume_fixed_tuple_args`` coerces by), and no type at all otherwise.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
     parsed = _json_array_override(v)
     if parsed is not None:
         return parsed
     if isinstance(v, list):
-        et = _elem_type(core) if _is_varlen_collection(core) else None
-        return [_coerce_scalar(et, item) for item in v]
+        if _is_varlen_collection(core):
+            et = _elem_type(core)
+            return [_coerce_scalar(et, item) for item in v]
+        fixed = _fixed_seq_types(core)
+        if fixed is not None:
+            return [_coerce_scalar(fixed[i] if i < len(fixed) else None, item) for i, item in enumerate(v)]
+        return [_coerce_scalar(None, item) for item in v]
     return _coerce_scalar(core, v)
 
 
@@ -478,12 +492,20 @@ def _namedtuple_sub_flags(flat: dict[str, Any], flag: str, field_names: list[str
     return sub
 
 
-def _namedtuple_arity_value(nargs_value: Any, whole: Any) -> Any:
-    """Return what the arity flag alone supplies: the decoded whole value, or its tokens."""
+def _namedtuple_arity_value(core: Any, nargs_value: Any, whole: Any) -> Any:
+    """Return what the arity flag alone supplies: the decoded whole value, or its tokens.
+
+    Positional tokens are coerced to their per-field types, as vanilla's
+    ``_consume_fixed_tuple_args`` coerces them.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
     if whole is not _NO_CAST:
         return whole
     if isinstance(nargs_value, list):
-        return [_str_token(item) for item in nargs_value]
+        fixed = _fixed_seq_types(core) or []
+        return [_coerce_scalar(fixed[i] if i < len(fixed) else None, item) for i, item in enumerate(nargs_value)]
     return _str_token(nargs_value)
 
 
@@ -519,14 +541,14 @@ def _collect_ns_namedtuple(
     if not sub:
         # Store what the flag spelled and let build() judge its arity, as the same-arity
         # tuple field does — the framework no longer counts the tokens for us.
-        _set_nested(result, path, _namedtuple_arity_value(nargs_value, whole))
+        _set_nested(result, path, _namedtuple_arity_value(core, nargs_value, whole))
         return
 
     if isinstance(whole, dict):
         _set_nested(result, path, {**whole, **sub})
         return
 
-    value = _namedtuple_arity_value(nargs_value, whole)
+    value = _namedtuple_arity_value(core, nargs_value, whole)
     base = value if isinstance(value, list) else [value]
     merged: dict[str, Any] = {}
     for i, fname in enumerate(field_names):
