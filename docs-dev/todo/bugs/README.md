@@ -12,7 +12,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
-| [BUG-36 — `index.py` rewrites a board table without the ticket it just failed to parse](BUG-36-index-drops-the-row-of-a-ticket-it-cannot-parse.md) | S | low | none |
 | [BUG-37 — A repeated varlen flag accumulates in three front-ends and last-wins in two](BUG-37-repeated-varlen-flag-accumulates-in-three-front-ends.md) | M | medium | behavior |
 | [BUG-38 — A bare `--<list>` clears the list everywhere except click and typer](BUG-38-bare-varlen-flag-rejected-by-the-clicklike-front-ends.md) | S | low | behavior |
 | [BUG-39 — A plain class takes a whole `{…}` value from env and files, but not from the CLI](BUG-39-plain-class-whole-value-cli-only.md) | S | high | config |

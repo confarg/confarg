@@ -13,11 +13,11 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 import confarg
-from confarg._parse_cli import _looks_like_flag
 from confarg.dictexpr._expressions import _EXPR_RE
 from tests.conftest import (
     Color,
     WithDefaults,
+    cli_safe_strs,
     env_prefixes,
     leaf_bools,
     leaf_floats,
@@ -66,9 +66,14 @@ class TestRoundTripCoercion:
         result = confarg.load(WithDefaults, argv=[], env={"MYAPP_VERBOSE": str(value).lower()}, env_prefix="MYAPP_")
         assert result.verbose is value
 
-    @given(value=leaf_strs)
+    @given(value=cli_safe_strs)
     def test_str_round_trip(self, value: str) -> None:
-        """Str survives round-trip via CLI (expression syntax escaped with $${...})."""
+        """Str survives round-trip via CLI (expression syntax escaped with $${...}).
+
+        The value must be CLI-safe — a token starting with ``-`` reads as a flag,
+        never as the value of the preceding ``--name`` (the parser matches argparse
+        and click here; ``--name=-x`` is the escape hatch).
+        """
         result = confarg.load(WithDefaults, argv=["--name", _escape_expressions(value)], env={})
         assert result.name == value
 
@@ -126,7 +131,7 @@ class TestEnvNameConstruction:
 class TestMergePriorityInvariant:
     """Property: CLI always overrides env, env always overrides config."""
 
-    @given(cli_val=leaf_strs, env_val=leaf_strs)
+    @given(cli_val=cli_safe_strs, env_val=leaf_strs)
     def test_cli_beats_env(self, cli_val: str, env_val: str) -> None:
         """CLI value always wins over env value for the same field."""
         result = confarg.load(
@@ -163,7 +168,7 @@ class TestMergePriorityInvariant:
         )
         assert result.name == env_val
 
-    @given(cli_val=leaf_strs, env_val=leaf_strs)
+    @given(cli_val=cli_safe_strs, env_val=leaf_strs)
     @settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_cli_beats_config(self, cli_val: str, env_val: str, tmp_path) -> None:
         """CLI value always wins over config file value."""
@@ -243,7 +248,7 @@ class TestCollectionRoundTrip:
 
     @given(
         values=st.frozensets(
-            leaf_strs.filter(lambda s: len(s) > 0 and not _looks_like_flag(s)),
+            cli_safe_strs.filter(lambda s: len(s) > 0),
             min_size=0,
             max_size=10,
         ),

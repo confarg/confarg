@@ -36,8 +36,11 @@ uv run python docs-dev/todo/index.py
 It rewrites the table between the `tickets:start` and `tickets:end` markers, leaving the prose
 around them alone, and checks what it reads on the way past: a filename that disagrees with its
 heading, a board holding another board's prefix, a missing or misspelled effort, risk or
-impact, a bug ticket with no reproduction, and two tickets claiming one ID. `--check` writes
-nothing and exits non-zero instead, which is the form for CI.
+impact, a bug ticket with no reproduction, and two tickets claiming one ID. Validation gates the
+rewrite: one error anywhere leaves **every** table exactly as it was, because a table written
+beside an error is a table missing the row of a ticket that is still open. Fix what it reports,
+then run it again. `--check` writes nothing either way and exits non-zero on a stale table, which
+is the form for CI.
 
 Documentation defects go on these same boards, sorted the same way: documentation wrong about
 itself is a bug, documentation that is missing is a feature, documentation merely untidy is a

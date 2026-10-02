@@ -6,6 +6,12 @@ Tests mirror `src/confarg/` — `tests/cli/` for `src/confarg/cli/`, `tests/type
 `src/confarg/typedload/`, `tests/dictexpr/` for `src/confarg/dictexpr/`; cross-cutting tests
 live directly in `tests/`.
 
+`tests/tooling/` mirrors nothing, because what it covers ships with nobody: the repository's own
+scripts, `docs-dev/todo/index.py` first. They sit under `tests/` rather than beside the scripts
+so that one suite runs everything and the test files inherit the `tests/**` lint profile. A
+script there is imported by path — `docs-dev` is not a legal package name — and has its module
+level `TODO` root monkeypatched at a `tmp_path` tree, so a test never touches the real boards.
+
 ## Contract suite
 
 Parity is enforced by tests, not by review. `tests/_loaders.py` wraps the five front-ends
