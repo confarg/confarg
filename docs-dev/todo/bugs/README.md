@@ -18,7 +18,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-47 — The CSV section of `11_include` is cut off mid-sentence](BUG-47-include-readme-truncates-the-csv-header-section.md) | S | low | none |
 | [BUG-48 — `12_collections` cites "Tutorial XX" instead of a real tutorial](BUG-48-collections-readme-defers-to-tutorial-xx.md) | S | low | none |
 | [BUG-50 — A `--config.<subpath>` naming no field mounts silently, and dict fields get no flag](BUG-50-config-subpath-is-never-checked-against-the-target.md) | M | medium | behavior |
-| [BUG-51 — A bare `--config.<subpath>+` is an error in vanilla and a no-op in two front-ends](BUG-51-bare-config-append-accepted-by-two-front-ends.md) | S | low | behavior |
 | [BUG-52 — `tests/examples/_registry.py` imports a harness that is not in the tree](BUG-52-examples-registry-imports-a-missing-harness.md) | S | low | none |
 | [BUG-53 — a whole-field delete wins over a later flag in the adapters, not in vanilla](BUG-53-whole-field-delete-beats-a-later-flag-in-the-adapters.md) | M | medium | config |
 | [BUG-54 — A plain collection flag does not discard the patch ops before it in the adapters](BUG-54-plain-occurrence-does-not-discard-earlier-patch-ops-in-the-adapters.md) | M | medium | config |
@@ -27,5 +26,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-59 — A fixed-arity flag's elements are not eagerly coerced in any adapter](BUG-59-fixed-arity-elements-not-eagerly-coerced-in-the-adapters.md) | S | medium | behavior |
 | [BUG-61 — A bare optional fixed-arity flag clears in the adapters and raises in vanilla](BUG-61-optional-fixed-arity-bare-flag-clears-in-the-adapters.md) | M | medium | behavior |
 | [BUG-62 — Cyclopts accumulates a repeated fixed-arity flag instead of letting the last one win](BUG-62-cyclopts-accumulates-a-repeated-fixed-arity-flag.md) | M | medium | behavior |
+| [BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four](BUG-63-bare-config-before-help-shows-help-on-argparse.md) | S | medium | behavior |
 
 <!-- tickets:end -->

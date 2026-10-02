@@ -559,12 +559,17 @@ def _config_subpath(key: str, config_flag: str) -> str:
     ``config`` and ``config+`` address the root (``""`` and ``"+"``), ``config.db`` addresses
     ``db``, ``config.dbs+`` addresses ``dbs+``. A trailing merge suffix is carried through
     rather than stripped, because what appending means is the pipeline's call, not the scan's.
-    Both the strict scan and the adapters' lenient re-scan read it from here, so they cannot
+    Both vanilla's scan and the adapters' re-scan read it from here, so they cannot
     disagree by accident.
     """
     if key.startswith(config_flag + "."):
         return key[len(config_flag) + 1 :]
     return key[len(config_flag) :]
+
+
+def _missing_config_path_msg(config_flag: str) -> str:
+    """Build the error a --config[.subpath] occurrence with no path token after it raises."""
+    return f"Missing file path after --{config_flag}. Usage: --{config_flag} /path/to/config.yaml"
 
 
 def _consume_config_paths(args: list[str], i: int, key: str, config_flag: str) -> tuple[int, list[tuple[str, str]]]:
@@ -577,8 +582,7 @@ def _consume_config_paths(args: list[str], i: int, key: str, config_flag: str) -
     subpath = _config_subpath(key, config_flag)
     i += 1
     if i >= len(args) or _looks_like_flag(args[i]):
-        msg = f"Missing file path after --{config_flag}. Usage: --{config_flag} /path/to/config.yaml"
-        raise ConfargError(msg)
+        raise ConfargError(_missing_config_path_msg(config_flag))
     pairs: list[tuple[str, str]] = []
     while i < len(args) and not _looks_like_flag(args[i]):
         pairs.append((subpath, args[i]))
@@ -1076,9 +1080,10 @@ def _collect_config_file_pairs(
 ) -> list[tuple[str, str]]:
     """Return (subpath, mount value) pairs for ``--config[.subpath]`` flags in command-line order.
 
-    Lenient: silently skips ``--config`` tokens not followed by a path argument (e.g. when
-    the adapter framework already consumed the paths and argv is rescanned for ordering).
-    Does not raise on missing paths; use ``_parse_cli`` when strict validation is needed.
+    Strict about a flag whose occurrence carries no path: the frameworks argparse and
+    cyclopts take a ``nargs="*"`` flag with zero tokens, so the rescan is the only place
+    their silent nothing gets refused. Raises exactly what vanilla's parse raises, off
+    the same message builder.
 
     Takes argv with any ``cli_prefix`` already removed: the adapters strip it with
     :func:`~confarg.cli._prefix.strip_argv_prefix` before rescanning, so this scan
@@ -1090,6 +1095,12 @@ def _collect_config_file_pairs(
 
     Returns:
         A list of ``(subpath, mount value)`` pairs in the order they appear in argv.
+
+    Raises:
+        ConfargError: A ``--config[.subpath]`` occurrence with no path token after it.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
     """
     normalized = _normalize_eq_args(list(argv))
     pairs: list[tuple[str, str]] = []
@@ -1103,6 +1114,8 @@ def _collect_config_file_pairs(
         if _addresses_key(raw_key, config_flag):
             subpath = _config_subpath(raw_key, config_flag)
             i += 1
+            if i >= len(normalized) or _looks_like_flag(normalized[i]):
+                raise ConfargError(_missing_config_path_msg(config_flag))
             while i < len(normalized) and not _looks_like_flag(normalized[i]):
                 pairs.append((subpath, normalized[i]))
                 i += 1
