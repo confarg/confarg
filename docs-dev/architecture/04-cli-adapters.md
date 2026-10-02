@@ -302,13 +302,30 @@ option class it forked ([above](#the-clicklike-seam)); argparse and cyclopts, wh
 the count, get both.
 
 Registering `nargs="*"` hands **arity enforcement back to confarg** — the framework no longer
-counts the tokens, so `--pair 1 2 3` reaches `build()` and fails there rather than at the
-parser. That is not new machinery: a union with a sequence variant (`str | tuple[str, str]`)
-has registered `nargs="*"` and let `build()` judge the arity since it was first written, so a
-fixed-arity flag now behaves the way the union-wrapped one already did. The error text differs
-from vanilla's, which consumes exactly the declared count and reports the surplus token as
-`Unexpected positional argument: '3'`; both are `ConfargError`, which is the level the contract
-suite asserts.
+counts the tokens, so whatever argv held arrives in one list and the count is the collector's
+to check. The two bounds are not the same job, and only one of them can be answered here.
+
+The **lower** bound is a parse-time fact, so `cli/_collect._require_fixed_arity` answers it,
+mirroring the `_require_value` vanilla asks once per positional token
+([03](03-cli-parsing.md#token-consumption)): a short token run is `Missing value for '--pair'`
+and not a shorter tuple, because a fixed arity is not one of the shapes a bare flag is reserved
+for ([10](10-design-decisions.md#a-whole-value-flag-needs-its-value)). It is asked of the field
+type **as resolved, without unwrapping `Optional`** — the type vanilla dispatches on: `tuple[X,
+Y] | None` is a union with a sequence variant there, consumes greedily, and owes nothing, so
+unwrapping first would make the adapters refuse `--pair 1` where vanilla accepts it. The token
+run is also the only thing counted: a flag carrying a *whole value* is exempt, and
+`_require_fixed_arity` asks `_fixed_arity_whole_value` rather than re-testing the token, so
+`--pair '[13]'` stays one value that happens to be short. Click and typer register the exact
+count and refuse the short form in their own parsers, so the guard is dead weight there and
+live for argparse and cyclopts (BUG-58).
+
+The **upper** bound is not reproducible here: vanilla stops consuming at the declared count and
+reports the surplus token as `Unexpected positional argument: '3'`, a diagnosis that names a
+token the collector never sees as surplus. `--pair 1 2 3` therefore still reaches `build()` in
+argparse and cyclopts and fails there instead, which is the remaining gap
+([BUG-60](../todo/bugs/BUG-60-adapters-overfill-a-fixed-arity-flag.md)). That half is not new
+machinery either: a union with a sequence variant (`str | tuple[str, str]`) has registered
+`nargs="*"` and let `build()` judge the arity since it was first written.
 
 For the namedtuple, `cli/_collect.py` decodes the lone token through
 `_fixed_arity_whole_value`, which delegates to the same two decoders the other branches use

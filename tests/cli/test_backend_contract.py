@@ -20,6 +20,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import math
+import re
 import warnings
 from collections.abc import (
     Callable,  # noqa: TC003  # used in a runtime dataclass annotation confarg resolves via get_type_hints
@@ -643,9 +644,40 @@ class TestFixedSequenceContract:
             whole_value_arity_loader.load(_WithIntPair, argv=["--pair", "1", "2", "3"], env={})
 
     def test_tuple_too_few_tokens_raises(self, whole_value_arity_loader: ConfargLoader) -> None:
-        """A short whole value is rejected by build(), not by the framework."""
-        with pytest.raises(ConfargError):
+        """A short whole value is rejected by build(), not by the framework.
+
+        The counterpart of ``test_tuple_short_token_run_is_a_missing_value``: one token
+        that *spells* the whole value is not a short token run, so it is an arity error
+        and not a missing value, whichever front-end read it.
+        """
+        with pytest.raises(ConfargError, match="expected 2 elements, got 1"):
             whole_value_arity_loader.load(_WithIntPair, argv=["--pair", "[13]"], env={})
+
+    def test_tuple_short_token_run_is_a_missing_value(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """--pair 1 is a missing value everywhere, not a one-element tuple (BUG-58)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithIntPair, argv=["--pair", "1"], env={})
+
+    def test_tuple_bare_flag_is_a_missing_value(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """A fixed arity is not a shape a bare flag is reserved for (BUG-58)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithIntPair, argv=["--pair"], env={})
+
+    def test_namedtuple_short_token_run_is_a_missing_value(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """A namedtuple is a fixed-length sequence, so it needs every token too (BUG-58)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithPoint, argv=["--pair", "1"], env={})
+
+    def test_namedtuple_short_token_run_beside_a_field_flag_is_a_missing_value(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """A sibling --pair.y refines the arity flag; it does not excuse its short run (BUG-58)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithPoint, argv=["--pair", "1", "--pair.y", "5"], env={})
 
     def test_click_declines_the_whole_value_token(self) -> None:
         """Click registers the exact token count, so it rejects the whole-value token.

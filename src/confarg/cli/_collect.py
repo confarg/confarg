@@ -44,6 +44,7 @@ from confarg._pipeline import _merge_sources
 from confarg._tags import collect_tags
 from confarg._types import (
     _elem_type,
+    _fixed_seq_types,
     _is_callable,
     _is_dict,
     _is_namedtuple,
@@ -217,6 +218,33 @@ def _fixed_arity_whole_value(v: Any, core: Any, flag: str) -> Any:
         if token.startswith("{") and _accepts_object_value(core):
             return _parse_json_arg(token, f"--{flag}")
     return _NO_CAST
+
+
+def _require_fixed_arity(arity: int, tokens: Any, flag: str, core: Any) -> None:
+    """Raise ``Missing value`` unless *tokens* fills a fixed-arity flag's token run.
+
+    The adapters' half of the guard vanilla spells as one
+    :func:`~confarg._parse_cli._require_value` per positional token
+    (:func:`~confarg._parse_cli._consume_fixed_tuple_args`): a fixed arity is not one of the
+    shapes a bare flag is reserved for, so a token run that stops short -- argv running out, or
+    the next flag arriving -- is a missing value and not a shorter tuple.  Argparse and cyclopts
+    register such a flag greedily, because ``FlagSpec.whole_value`` needs a variable token count,
+    so the framework hands over however many tokens it found and the arity is nobody else's to
+    check; click and typer register the exact count and reject the short form themselves.
+
+    Only a *token run* is counted.  A flag carrying a whole value is exempt, and
+    :func:`_fixed_arity_whole_value` is asked rather than re-tested here, so that
+    ``--pair '[13]'`` stays the arity error ``build()`` owns rather than becoming a flag left
+    without a value.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#token-consumption
+    """
+    if _fixed_arity_whole_value(tokens, core, flag) is not _NO_CAST:
+        return
+    if isinstance(tokens, list) and len(tokens) < arity:
+        token = f"--{flag}"
+        raise ConfargError.missing_value(token)
 
 
 def _whole_value(flat: dict[str, Any], flag: str, resolved: Any) -> Any:
@@ -583,6 +611,14 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
             elif flag in flat and whole is _NO_CAST:
                 _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, flat[flag], flag))
             continue
+
+        # A fixed-length sequence -- tuple[X, Y] or a namedtuple -- owes every one of its
+        # tokens, for the leaf branch below and the namedtuple branch alike.  Asked of
+        # *resolved* rather than of `core`, because that is the type vanilla dispatches on:
+        # `tuple[int, int] | None` is a union with a sequence variant there, so it consumes
+        # greedily and owes nothing (BUG-58).
+        if (fixed := _fixed_seq_types(resolved)) is not None and flag in flat:
+            _require_fixed_arity(len(fixed), flat[flag], flag, core)
 
         if _is_namedtuple(core):
             _collect_ns_namedtuple(flat, core, flag, result)
