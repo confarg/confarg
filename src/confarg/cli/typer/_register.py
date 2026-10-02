@@ -27,8 +27,8 @@ class _ExpressionTolerantChoice(_clicklike.ExpressionTolerantChoiceMixin, TyperC
     """A ``TyperChoice`` that also admits unresolved ``${...}`` tokens."""
 
 
-class _ConfargOption(_clicklike.DottedNameMixin, TyperOption):
-    """TyperOption subclass that allows dotted names (not valid Python identifiers)."""
+class _ConfargOption(_clicklike.DottedNameMixin, _clicklike.StandsBareMixin, TyperOption):
+    """TyperOption subclass taking a dotted name, and a flag that may stand bare."""
 
 
 def _completer_kwargs(completer: Callable[[str], list[str]]) -> dict[str, Any]:
@@ -50,6 +50,7 @@ def _spec_to_option(spec: FlagSpec) -> TyperOption:
     """Convert one FlagSpec to a TyperOption."""
     return _ConfargOption(
         confarg_name=spec.name,
+        stands_bare=spec.stands_bare,
         **_clicklike.option_kwargs(
             spec,
             choice_cls=_ExpressionTolerantChoice,

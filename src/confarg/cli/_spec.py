@@ -44,6 +44,20 @@ class FlagSpec:
         docs-dev/architecture/04-cli-adapters.md#whole-value-flags
     """
 
+    stands_bare: bool = False
+    """The flag is legal with no value token at all.
+
+    Set on a collection append (``--<list>+``), the one flag family vanilla lets stand
+    bare: it appends nothing and leaves the lower-priority sources alone.  A framework
+    that cannot express a flag taking zero *or* more tokens parses an argv with this
+    flag's bare occurrences removed
+    (:func:`~confarg.cli._argv.drop_bare_occurrences`); the patch scan still reads the
+    original argv, so the no-op occurrence is honored rather than rejected.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#a-bare-append
+    """
+
     choices: list[str] | None = None
     """Allowed values (for ``Literal`` / ``Enum`` fields)."""
 

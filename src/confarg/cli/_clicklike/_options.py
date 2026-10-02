@@ -21,7 +21,58 @@ if TYPE_CHECKING:
 
     from confarg.cli._spec import FlagSpec
 
+from confarg.cli._argv import drop_bare_occurrences
 from confarg.dictexpr import contains_expression
+
+#: Attribute under which a parser instance carries the stands-bare flag names its
+#: options installed, and which marks its ``parse_args`` as already wrapped.
+_BARE_ATTR = "__confarg_stands_bare__"
+
+
+def _install_bare_filter(parser: Any, name: str) -> None:
+    """Record *name* as standing bare on *parser*, wrapping its ``parse_args`` once.
+
+    Both frameworks build a fresh parser per parse and hand it the raw argv, so this is
+    where the bare occurrences an option cannot express are dropped.  ``make_parser``
+    adds every parameter before the parse runs, so the name set is complete by the time
+    the wrapper reads it.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#a-bare-append
+    """
+    names: set[str] | None = getattr(parser, _BARE_ATTR, None)
+    if names is None:
+        names = set()
+        setattr(parser, _BARE_ATTR, names)
+        original = parser.parse_args
+
+        def parse_args(args: Sequence[str]) -> Any:
+            # Read back off the parser, so every option that armed it is accounted for.
+            return original(args=drop_bare_occurrences(args, getattr(parser, _BARE_ATTR)))
+
+        parser.parse_args = parse_args
+    names.add(name)
+
+
+class StandsBareMixin:
+    """Let an option's flag stand with no value token, whatever its ``nargs`` says.
+
+    Mixed in ahead of the framework's own option class.  The option keeps its
+    multi-token shape; the bare occurrences are dropped from the argv the parser sees.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#a-bare-append
+    """
+
+    def __init__(self, *, stands_bare: bool = False, **kwargs: Any) -> None:
+        self._stands_bare = stands_bare
+        super().__init__(**kwargs)
+
+    def add_to_parser(self, parser: Any, ctx: Any) -> None:
+        """Register the option as usual, then arm the parser's bare-occurrence filter."""
+        super().add_to_parser(parser, ctx)  # ty: ignore[unresolved-attribute]  # the option base's
+        if self._stands_bare:
+            _install_bare_filter(parser, self._confarg_name)  # ty: ignore[unresolved-attribute]  # DottedNameMixin's
 
 
 class DottedNameMixin:

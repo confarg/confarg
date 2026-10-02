@@ -26,6 +26,7 @@ from confarg.cli._clicklike._context import (
 from confarg.cli._clicklike._options import (
     DottedNameMixin,
     ExpressionTolerantChoiceMixin,
+    StandsBareMixin,
     option_kwargs,
 )
 from confarg.cli._clicklike._register import load_flags_into_command, populate_command
@@ -33,6 +34,7 @@ from confarg.cli._clicklike._register import load_flags_into_command, populate_c
 __all__ = [
     "DottedNameMixin",
     "ExpressionTolerantChoiceMixin",
+    "StandsBareMixin",
     "construct_from_ctx",
     "flat_from_ctx",
     "load_flags_into_command",

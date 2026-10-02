@@ -53,13 +53,14 @@ differently:
 | `option_kwargs` — the whole `FlagSpec` → option-keyword mapping | the choice class, the completion keyword |
 | `DottedNameMixin` — `--db.host` is not an identifier | the option base class |
 | `ExpressionTolerantChoiceMixin` — the `${...}` bypass | the choice base class |
+| `StandsBareMixin` — a flag that may carry no value ([below](#a-bare-append)) | the option base class |
 | `load_flags_into_command`, `populate_command` | the option factory and class |
 | `flat_from_ctx`, `registered_prefix`, `merge_from_ctx`, `construct_from_ctx` | nothing — the Context is duck-typed |
 | `setup_completion`, `partial_argv_from_env` | the option factory |
 
-The two classes are supplied as **mixins placed ahead of the framework's own class**, not as a
-wrapper around it: each framework must keep its real base (typer inspects `TyperOption` to
-render help and to wire completion), so what is shared is the behavior, not the hierarchy.
+These are supplied as **mixins placed ahead of the framework's own class**, not as a wrapper
+around it: each framework must keep its real base (typer inspects `TyperOption` to render help
+and to wire completion), so what is shared is the behavior, not the hierarchy.
 
 `flat_from_ctx` compares the parameter source **by member name** (`"COMMANDLINE"`) rather than
 by identity. That is the one place the fork is visible in shared code, and the alternative —
@@ -129,7 +130,9 @@ env at the highest priority. Each framework needs its own mechanism:
 spec generation and the adapters. `nargs`: `None` = one value, `"*"` = zero or more,
 `int` = exact count, `0` = value-less switch (deletes). Each adapter re-expresses it
 (argparse `nargs`/`store_true`; click `multiple=True`/`is_flag`; cyclopts
-`consume_multiple`/`n_tokens`/`bool`).
+`consume_multiple`/`n_tokens`/`bool`). Two flags qualify what `nargs` alone cannot say:
+`whole_value` ([below](#whole-value-flags)) and `stands_bare` ([below](#a-bare-append)), each
+honored by the adapters whose framework can.
 
 `FieldMeta` (via `Annotated`) adds help and metavar without a custom field type. Help text
 priority: `FieldMeta.help` > attribute docstring (read from source with `ast`; unavailable
@@ -344,19 +347,39 @@ Neither clicklike framework can express a flag that takes zero *or* more tokens:
 typer fix an option's token count when the option is built, and the `multiple=True` the
 adapters map `"*"` to always demands one. So a bare `--input+` was rejected with `Option
 '--input+' requires an argument.` on both, while vanilla, argparse and cyclopts accepted it
-(BUG-33).
+(BUG-33). cyclopts reads a bare occurrence as an implicit empty container and needs no help
+with it alone — but asserts (`argument/_argument.py`, "implicit value, yet more than one
+token") the moment that implicit token meets a real one, and rejects a second bare occurrence
+as a repeat.
 
-The shape therefore follows **argv**, which is where an append spec comes from in the first
-place: `_build._append_carries_items` asks whether any occurrence of the flag in argv is
-followed by an item, and the spec registers `nargs="*"` if one is and value-less (`nargs=0`,
-the shape a delete already uses) if none is. Every front-end gets the same neutral spec, so
-this is one rule rather than a clicklike special case, and nothing framework-specific is
-relied on.
+So the spec keeps the multi-token shape and says, in `FlagSpec.stands_bare`, that the flag is
+*also* legal with nothing after it; **the framework is handed an argv without the bare
+occurrences** (`cli._argv.drop_bare_occurrences`). Nothing is lost by dropping them: a bare
+append appends nothing, and what a framework collects for an append flag is discarded anyway —
+`_collect_ns_fields` walks the target type, where `users+` names no field, and the values come
+from the patch scan, which reads the argv the user typed. So the no-op is honored rather than
+rejected, one argv may spell the same append both ways (`--users+ billy --users+`), and every
+front-end answers alike (BUG-35).
 
-The question is asked with `_parse_cli._looks_like_flag`, the same value/flag split vanilla
+It is one rule with one decision-maker and two application points, because the seam at which a
+framework receives argv differs — as it does for
+[`cli_prefix`](03-cli-parsing.md#cli_prefix), recorded per framework on whatever survives into
+the merge step. cyclopts hands confarg the parse itself, so `merge_app` filters the tokens it
+passes to `App.parse_args`. In click and typer the *host* calls the command, so the hook rides
+on the options (`_clicklike.StandsBareMixin`): `add_to_parser` arms a filter on the parser
+instance, which both frameworks build fresh per parse. A hook on the command would not survive
+the `params` copying that groups and decorators do routinely. argparse and vanilla are exempt:
+`nargs="*"` already takes zero tokens and repeats, so they parse the argv as typed.
+
+"Carries an item" is asked with `_parse_cli._looks_like_flag`, the same value/flag split vanilla
 consumes by, so the frameworks take exactly the tokens vanilla takes. That matters for
-dash-prefixed items in particular: `--input+ -8` and `--input+=--a` carry items by vanilla's
-reckoning, so they keep the `nargs="*"` registration that lets click consume them.
+dash-prefixed items in particular: `--input+ -8` carries an item by vanilla's reckoning and is
+kept, and `--input+=--a` carries its item by construction — a `=` token never matches a bare
+occurrence.
+
+Only a flag whose spec sets `stands_bare` is filtered, which is why the rule is a marker rather
+than a syntax rule about trailing `+`: vanilla *rejects* a bare `--config.<path>+`
+(`Missing file path after --config`), so the config-file append flags must not inherit it.
 
 Rejected: click's own optional-value spelling (`is_flag=False` plus a `flag_value`). It fits
 click alone — typer's vendored parser dropped the feature, so typer would have stayed red —
@@ -366,9 +389,10 @@ escape requires
 ([10](10-design-decisions.md#the--form-is-the-escape-for-a-dashed-value),
 `TestDashPrefixedValueContract`).
 
-One argv can still spell the same append both ways (`--users+ billy --users+`), and a single
-spec cannot be both shapes: the valued form wins and the bare occurrence is rejected by click,
-typer and cyclopts (BUG-35, open).
+Also rejected: letting the spec shape follow argv — registering a value-less `nargs=0` when no
+occurrence carries an item (how BUG-33 was first fixed). It answers the same question the
+filter answers, and only for the homogeneous half of it, so the mixed argv stayed broken and
+the two rules would have had to agree forever.
 
 ### A patch op joins the values the framework collected
 
