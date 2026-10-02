@@ -10,6 +10,7 @@ import dataclasses
 import enum
 import inspect
 import types
+from collections import deque
 from collections.abc import (
     Callable as CallableABC,
 )
@@ -694,9 +695,13 @@ def _is_struct(tp: Any) -> bool:
 def _dataclass_subclasses(tp: type) -> list[type]:
     """Return all struct subclasses of tp, recursively (BFS order)."""
     found: list[type] = []
-    queue = list(tp.__subclasses__())
+    seen: set[type] = set()
+    queue: deque[type] = deque(tp.__subclasses__())
     while queue:
-        sub = queue.pop()
+        sub = queue.popleft()
+        if sub in seen:
+            continue
+        seen.add(sub)
         queue.extend(sub.__subclasses__())
         if _is_struct(sub):
             found.append(sub)

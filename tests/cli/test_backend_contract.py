@@ -254,6 +254,26 @@ class _NestedDB:
 
 
 @dataclass
+class _DiamondBase:
+    """Base whose subclasses form a diamond: _DiamondJoin inherits two paths to it."""
+
+
+@dataclass
+class _DiamondLeft(_DiamondBase):
+    left: int = 0
+
+
+@dataclass
+class _DiamondRight(_DiamondBase):
+    right: int = 1
+
+
+@dataclass
+class _DiamondJoin(_DiamondLeft, _DiamondRight):
+    join: int = 2
+
+
+@dataclass
 class _RootSQLite:
     """SQLite config for union-root tests."""
 
@@ -1383,6 +1403,18 @@ class TestInheritanceDispatchContract:
         flags = populating_loader.registered_flags(_BaseDB, config_flag="")
         assert flags is not None
         assert {"dbpath", "host", "port"} <= flags
+
+    def test_class_completer_offers_each_subclass_once_nearest_first(self) -> None:
+        """The --class completer lists every subclass exactly once, breadth-first.
+
+        A diamond subclass is reachable by two inheritance paths and must not be
+        offered twice; direct subclasses come before their own descendants.
+        """
+        flags = build_static_flags(_DiamondBase, union_tag="class", config_flag="")
+        class_spec = next(f for f in flags if f.name == "class")
+        assert class_spec.completer is not None
+        expected = [f"{__name__}._Diamond{name}" for name in ("Left", "Right", "Join")]
+        assert class_spec.completer("") == expected
 
     def test_dispatch_sqlite(self, loader: ConfargLoader) -> None:
         """--class selects and constructs the SQLite subclass."""
