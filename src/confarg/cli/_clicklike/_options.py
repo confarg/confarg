@@ -38,7 +38,7 @@ def _install_bare_filter(parser: Any, name: str) -> None:
     the wrapper reads it.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-bare-append
+        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
     """
     names: set[str] | None = getattr(parser, _BARE_ATTR, None)
     if names is None:
@@ -61,7 +61,7 @@ class StandsBareMixin:
     multi-token shape; the bare occurrences are dropped from the argv the parser sees.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-bare-append
+        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
     """
 
     def __init__(self, *, stands_bare: bool = False, **kwargs: Any) -> None:

@@ -16,7 +16,7 @@ and the decision in
 The failure still happens, in `build()`, with an arity message that names neither the flag nor
 the missing token. Note `--pair` with nothing after it is *not* the bare-flag case: that is
 reserved for varlen collections and the bare append
-([04-cli-adapters.md#a-bare-append](../../architecture/04-cli-adapters.md#a-bare-append)), and a
+([04-cli-adapters.md#a-flag-that-stands-bare](../../architecture/04-cli-adapters.md#a-flag-that-stands-bare)), and a
 fixed tuple is neither.
 
 Fix direction: the guard belongs to the shared `_require_value` helper in

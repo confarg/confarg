@@ -116,6 +116,20 @@ def _merge_or_append_spec(result: list[FlagSpec], by_name: dict[str, FlagSpec], 
         existing.choices.extend(c for c in spec.choices if c not in existing.choices)
 
 
+def _takes_multi_tokens(tp: Any) -> bool:
+    """Return whether a flag for a field of type *tp* consumes tokens until the next flag.
+
+    The two families vanilla's :func:`~confarg._parse_cli._consume_collection_or_scalar`
+    consumes greedily for, and the two it is therefore content with no token at all in: a
+    varlen collection, and a union with a sequence variant.  Asked of a *resolved* type, so
+    ``list[str] | None`` answers through its union.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+    """
+    return _is_varlen_collection(tp) or _union_has_seq_variant(tp)
+
+
 def _build_leaf_spec(  # noqa: PLR0911 PLR0913
     flag: str,
     raw_type: Any,
@@ -133,11 +147,13 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
         return dataclasses.replace(base, metavar=metavar or "true|false")
 
     if _is_varlen_collection(core):
+        # One of _takes_multi_tokens' two disjuncts, so stands_bare holds here by that rule.
         et = _resolve_type(_elem_type(core))
         return dataclasses.replace(
             base,
             nargs="*",
             accumulates=True,
+            stands_bare=True,
             metavar=metavar or getattr(et, "__name__", "ITEM").upper(),
         )
 
@@ -752,12 +768,14 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
         # Union with a sequence variant (str | tuple[...], str | list[str]) →
         # a multi-token flag; vanilla consumes greedily, so register nargs="*".
         if _union_has_seq_variant(resolved):
+            # The other _takes_multi_tokens disjunct: greedy, and legal with no token.
             help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
             seq_specs: list[FlagSpec] = [
                 FlagSpec(
                     name=flag,
                     nargs="*",
                     accumulates=True,
+                    stands_bare=True,
                     metavar="VALUE",
                     help=help_text,
                     group=group,
@@ -957,8 +975,10 @@ def _scalar_root_spec(target: Any) -> FlagSpec:
     ``nargs`` is forced to a single token because vanilla's
     :func:`~confarg._parse_cli._handle_scalar_root` consumes exactly one: a
     ``list[int]`` root must not pick up the greedy ``nargs="*"`` that
-    :func:`_build_leaf_spec` gives a collection *field*.  ``accumulates`` goes with it,
-    since one token is all this flag ever takes.
+    :func:`_build_leaf_spec` gives a collection *field*.  ``accumulates`` and
+    ``stands_bare`` go with it -- one token is all this flag ever takes, so it neither
+    extends across occurrences nor stands with none (REF-68 would make that one reset
+    rather than a field per attribute).
 
     Dev Notes:
         docs-dev/architecture/03-cli-parsing.md#cli_prefix
@@ -968,6 +988,7 @@ def _scalar_root_spec(target: Any) -> FlagSpec:
     spec = _build_leaf_spec("", target, resolved if core is None else core, "The configuration value.", None, "")
     spec.nargs = None
     spec.accumulates = False
+    spec.stands_bare = False
     return spec
 
 
@@ -1136,7 +1157,9 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
     path the *target* type confirms reaches a list, tuple, set, or dict, plus ``.json``
     casts.  Their values are read later from argv by ``_parse_cli`` in ``patch_only``
     mode.  Delete flags register value-less (``nargs=0``); an append registers
-    ``nargs="*"`` and ``stands_bare``, since it takes zero *or* more items.
+    ``nargs="*"`` and ``stands_bare``, since it takes zero *or* more items, and a subkey or
+    element flag inherits ``stands_bare`` from the type it addresses -- multi-token when a
+    field flag of that type would be (``--map.k`` on a ``dict[str, list[int]]``).
 
     Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
@@ -1149,6 +1172,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
         _looks_like_flag,
         _normalize_eq_args,
         _parse_flag_mode,
+        _resolve_field_type,
         _walk_target,
         detect_force_cast,
     )
@@ -1193,7 +1217,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
             # nargs="*" and yet legal with no item at all: the shape no clicklike option
             # can express, so `stands_bare` tells the adapters to drop the bare
             # occurrences from the argv their framework parses
-            # (docs-dev/architecture/04-cli-adapters.md#a-bare-append).
+            # (docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare).
             specs.append(
                 FlagSpec(
                     name=key,
@@ -1204,8 +1228,18 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
                 ),
             )
         else:
+            # A subkey or element flag has the shape of the type it addresses, so it stands
+            # bare exactly when a field flag of that type would
+            # (docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare).
+            at = _resolve_field_type(target, path, union_tag)
             specs.append(
-                FlagSpec(name=key, nargs="*", metavar="VALUE", help=f"Set the collection element at '{target_path}'."),
+                FlagSpec(
+                    name=key,
+                    nargs="*",
+                    metavar="VALUE",
+                    stands_bare=at is not None and _takes_multi_tokens(at),
+                    help=f"Set the collection element at '{target_path}'.",
+                ),
             )
     return specs
 

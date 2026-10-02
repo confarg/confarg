@@ -53,7 +53,7 @@ differently:
 | `option_kwargs` — the whole `FlagSpec` → option-keyword mapping | the choice class, the completion keyword |
 | `DottedNameMixin` — `--db.host` is not an identifier | the option base class |
 | `ExpressionTolerantChoiceMixin` — the `${...}` bypass | the choice base class |
-| `StandsBareMixin` — a flag that may carry no value ([below](#a-bare-append)) | the option base class |
+| `StandsBareMixin` — a flag that may carry no value ([below](#a-flag-that-stands-bare)) | the option base class |
 | `load_flags_into_command`, `populate_command` | the option factory and class |
 | `flat_from_ctx`, `registered_prefix`, `merge_from_ctx`, `construct_from_ctx` | nothing — the Context is duck-typed |
 | `setup_completion`, `partial_argv_from_env` | the option factory |
@@ -131,7 +131,7 @@ spec generation and the adapters. `nargs`: `None` = one value, `"*"` = zero or m
 `int` = exact count, `0` = value-less switch (deletes). Each adapter re-expresses it
 (argparse `nargs`/`store_true`; click `multiple=True`/`is_flag`; cyclopts
 `consume_multiple`/`n_tokens`/`bool`). Two flags qualify what `nargs` alone cannot say:
-`whole_value` ([below](#whole-value-flags)) and `stands_bare` ([below](#a-bare-append)), each
+`whole_value` ([below](#whole-value-flags)) and `stands_bare` ([below](#a-flag-that-stands-bare)), each
 honored by the adapters whose framework can.
 
 `FieldMeta` (via `Annotated`) adds help and metavar without a custom field type. Help text
@@ -330,36 +330,67 @@ Argv (not the namespace) is also what preserves the left-to-right order of inter
 History: patches, dict subkeys, bind-on-`__call__` and expressions over CLI numbers were
 vanilla-only until PR #72.
 
-### A bare append
+### A flag that stands bare
 
-`--<list>+` with nothing after it is a legal, meaningful command: it appends no items and
-leaves whatever the lower-priority sources put in the list
-(`_parse_cli._handle_append_token`, which consumes tokens until the next flag and is content
-with none). It is not quite the *only* flag family that stands bare: a varlen list's own
-`--<list>` takes zero tokens too, and clears the list. What the two share is the collection —
-every other `nargs="*"` spec (`--config`, `--config.<path>+`, a collection element `--f.N`)
-still reports `Missing value` when vanilla finds no token, so "zero or more" belongs to the
-varlen collection flags rather than to what `"*"` means everywhere. The rule below was applied
-to the append alone, so the clicklike front-ends now accept a bare `--input+` and still reject a
-bare `--input` (BUG-38).
+Some flags are legal with nothing after them. `--<list>+` appends no items and leaves whatever
+the lower-priority sources put in the list (`_parse_cli._handle_append_token`, which consumes
+tokens until the next flag and is content with none). A varlen collection's own `--<list>` takes
+zero tokens too and *clears* the collection, as does a union with a sequence variant — the two
+multi-token branches of `_consume_collection_or_scalar`, named together in
+`_build._takes_multi_tokens`. What they share is that vanilla consumes greedily there and asks
+for nothing, so "zero or more" belongs to the multi-token *shape* rather than to what `"*"` means
+everywhere: `--config` and `--config.<path>+` carry the same `nargs="*"` and still report
+`Missing value` when vanilla finds no token.
+
+A subkey or element flag (`--f.key`, `--f.N`) has whatever shape the type it addresses has, so it
+answers the same predicate: `--map.k` on a `dict[str, list[int]]` and `--grid.0` on a
+`list[list[int]]` stand bare and store the empty collection, while the same flags over a scalar
+value type take exactly one token. Asking the predicate rather than the syntax is what keeps that
+half in: click and typer refused those two spellings while the other three front-ends took them,
+the same gap the field flag had (BUG-38).
 
 Neither clicklike framework can express a flag that takes zero *or* more tokens: click and
 typer fix an option's token count when the option is built, and the `multiple=True` the
 adapters map `"*"` to always demands one. So a bare `--input+` was rejected with `Option
 '--input+' requires an argument.` on both, while vanilla, argparse and cyclopts accepted it
-(BUG-33). cyclopts reads a bare occurrence as an implicit empty container and needs no help
-with it alone — but asserts (`argument/_argument.py`, "implicit value, yet more than one
-token") the moment that implicit token meets a real one, and rejects a second bare occurrence
-as a repeat.
+(BUG-33), and a bare `--input` was rejected the same way (BUG-38). cyclopts reads a bare
+occurrence as an implicit empty container and needs no help with it alone — but asserts
+(`argument/_argument.py`, "implicit value, yet more than one token") the moment that implicit
+token meets a real one, and rejects a second bare occurrence as a repeat.
 
 So the spec keeps the multi-token shape and says, in `FlagSpec.stands_bare`, that the flag is
 *also* legal with nothing after it; **the framework is handed an argv without the bare
-occurrences** (`cli._argv.drop_bare_occurrences`). Nothing is lost by dropping them: a bare
-append appends nothing, and what a framework collects for an append flag is discarded anyway —
-`_collect_ns_fields` walks the target type, where `users+` names no field, and the values come
-from the patch scan, which reads the argv the user typed. So the no-op is honored rather than
-rejected, one argv may spell the same append both ways (`--users+ billy --users+`), and every
-front-end answers alike (BUG-35).
+occurrences** (`cli._argv.drop_bare_occurrences`). So the no-op is honored rather than rejected,
+one argv may spell the same append both ways (`--users+ billy --users+`), and every front-end
+answers alike (BUG-35).
+
+Dropping a token is only safe where nothing is lost, and that is where the families differ:
+
+- A bare **append**, and a bare **subkey or element flag**, are read back by the patch scan,
+  which reads the argv the user typed rather than the framework's parse result. What a framework
+  collected for them is discarded anyway — `_collect_ns_fields` walks the target type, where
+  `users+`, `map.k` and `grid.0` name no field — so the drop costs nothing.
+- A bare **field flag** is different: the empty value it stores is the *field's own*, so the flat
+  collector owns it and the patch scan never sees it. Dropping the token alone lost the clear on
+  all three filtered front-ends. It is read back in the merge step instead, from the same argv:
+  `_collect._bare_multi_token_flags` names the bare-only flags whose type takes many tokens, and
+  `_merge_from_flat` puts an empty value under each, leaving the collector branches to shape it
+  exactly as they shape argparse's. With `setdefault`, so an occurrence that did carry items
+  keeps what the framework collected (`--users x --users`, and `--users=--a --users` too, where
+  the `=` token names `users=--a` rather than `users`).
+
+One marker, two readers: `drop_bare_occurrences` decides which tokens a framework parses and
+`bare_only_flag_names` decides what a dropped token meant, both off one `_bare_occurrence`
+predicate so they cannot disagree about which occurrences are bare.
+
+`_takes_multi_tokens` is the whole gate, asked once where the specs are built and again on the
+merge side, so registration and read-back cannot disagree about which flags stand bare. It is the
+multi-token *shape* and not "is there something to clear": a union with a sequence variant but no
+varlen one (`str | tuple[str, str]`) is therefore included, and the empty value it stores is what
+raises vanilla's error in `_collect_union_seq_value` — so the bare form is refused with confarg's
+own message everywhere instead of the framework's. `stands_bare` is set on what that predicate
+names plus the append; marking anything else needs a reader for what the dropped token meant, or
+the information is gone.
 
 It is one rule with one decision-maker and two application points, because the seam at which a
 framework receives argv differs — as it does for
@@ -370,7 +401,8 @@ on the options (`_clicklike.StandsBareMixin`): `add_to_parser` arms a filter on 
 instance, which both frameworks build fresh per parse. A hook on the command would not survive
 the `params` copying that groups and decorators do routinely. argparse and vanilla are exempt:
 `nargs="*"` already takes zero tokens and accepts a second occurrence, so they parse the argv as
-typed.
+typed — which is the other reason the merge-side read-back is a `setdefault` over what argparse
+already collected rather than an override of it.
 
 "Carries an item" is asked with `_parse_cli._looks_like_flag`, the same value/flag split vanilla
 consumes by, so the frameworks take exactly the tokens vanilla takes. That matters for
@@ -380,7 +412,10 @@ occurrence.
 
 Only a flag whose spec sets `stands_bare` is filtered, which is why the rule is a marker rather
 than a syntax rule about trailing `+`: vanilla *rejects* a bare `--config.<path>+`
-(`Missing file path after --config`), so the config-file append flags must not inherit it.
+(`Missing file path after --config`), so the config-file append flags must not inherit it. The
+scalar root flag clears the marker along with the rest of the multi-token shape, since
+`_handle_scalar_root` consumes exactly one token whatever the root type is
+([03](03-cli-parsing.md#cli_prefix)).
 
 Rejected: click's own optional-value spelling (`is_flag=False` plus a `flag_value`). It fits
 click alone — typer's vendored parser dropped the feature, so typer would have stayed red —
@@ -394,6 +429,11 @@ Also rejected: letting the spec shape follow argv — registering a value-less `
 occurrence carries an item (how BUG-33 was first fixed). It answers the same question the
 filter answers, and only for the homogeneous half of it, so the mixed argv stayed broken and
 the two rules would have had to agree forever.
+
+Also rejected for the collection flag: putting the empty value into the flat dict for *every*
+bare occurrence, with no field-type gate. It needs no type walk, but it would quietly accept the
+bare forms vanilla refuses — `--db` on a struct field, `--map` on a dict — wherever a framework
+happened not to reject them first.
 
 ### A patch op joins the values the framework collected
 

@@ -36,6 +36,7 @@ from confarg._parse_cli import (
     _collect_cli_patch_ops,
     _collect_config_file_pairs,
     _parse_json_arg,
+    _resolve_field_type,
     _segment_names_real_field,
     _try_parse_json_list,
 )
@@ -60,6 +61,8 @@ from confarg._types import (
     _UnionSeqToken,
     _unwrap_optional,
 )
+from confarg.cli._argv import bare_only_flag_names
+from confarg.cli._build import _takes_multi_tokens
 from confarg.cli._prefix import strip_argv_prefix, strip_flat_prefix
 from confarg.exceptions import ConfargError, SymbolImportError
 from confarg.typedload._coerce import _is_registered_leaf, _try_coerce
@@ -642,6 +645,37 @@ def _restore_patch_deletes(ops: dict[str, Any], result: dict[str, Any]) -> None:
             _restore_patch_deletes(val, node)
 
 
+def _bare_multi_token_flags(argv: Sequence[str], target: object, union_tag: str) -> list[str]:
+    """Return the flag names in *argv* standing bare on a path whose flag takes many tokens.
+
+    A multi-token flag consumes greedily and is content with no token at all, so
+    ``--users`` with nothing after it is a legal command that *clears* the collection.
+    No clicklike option can express "zero or more", so those occurrences are dropped from
+    the argv the framework parses (:func:`~confarg.cli._argv.drop_bare_occurrences`) and
+    the clear reaches no parse result; it is read back here instead, from the argv the
+    user typed.  A patch path (``map.k``, ``grid.0``) answers the predicate too and is
+    returned with the rest: the flat collector walks declared fields and passes it by, and
+    the patch scan has already read it off the same argv, so the entry is inert -- and it
+    matches what argparse, which parses the argv as typed, collected for itself.
+
+    The gate is :func:`~confarg.cli._build._takes_multi_tokens`, the same predicate the specs
+    set ``stands_bare`` from, so a field that would report ``Missing value`` in vanilla is
+    left for the framework to reject here.  It is the multi-token *shape*, not "is there
+    something to clear": a union with a sequence variant but no varlen one
+    (``str | tuple[str, str]``) is included on purpose, since the empty value it stores is
+    what raises vanilla's error, in :func:`_collect_union_seq_value`.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+    """
+    names: list[str] = []
+    for name in sorted(bare_only_flag_names(argv)):
+        ft = _resolve_field_type(target, name.split("."), union_tag)
+        if ft is not None and _takes_multi_tokens(ft):
+            names.append(name)
+    return names
+
+
 def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only signature
     flat: dict[str, Any],
     target: object,
@@ -702,6 +736,13 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
     # here exactly as it steers vanilla's
     # (docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags).
     tags = collect_tags(argv_, target, union_tag=union_tag, config_flag=config_flag)
+
+    # A bare multi-token occurrence never reaches the framework's parse result, so the
+    # empty value it stores is put back where the flag's own value would have been -- and
+    # only there: an occurrence that did carry items already holds them
+    # (docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare).
+    for name in _bare_multi_token_flags(argv_, target, union_tag):
+        flat.setdefault(name, [])
 
     cli_data: dict[str, Any] = {}
     _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data, tags=tags)

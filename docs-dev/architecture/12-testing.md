@@ -45,6 +45,12 @@ Several contract classes document past divergences, one test each (`TestPipeline
 `TestCollectionPatchContract`, `TestExpressionOverCliContract`,
 `TestExpressionIntoRestrictedFieldContract`). Keep them as regression guards.
 
+`TestBareVarlenFlagContract` is one of them and carries a second job: it is what pins
+`FlagSpec.stands_bare` to the flags the merge step knows how to read a dropped token back for
+([04](04-cli-adapters.md#a-flag-that-stands-bare)). A case per multi-token type, plus the union
+that has no empty value to store and must still be refused; the dict-subkey and element spellings
+of the same rule sit with the rest of their family in `TestCollectionPatchContract`.
+
 ## List syntax split
 
 List syntax differs by framework ([04](04-cli-adapters.md#list-syntax-divergence)). The

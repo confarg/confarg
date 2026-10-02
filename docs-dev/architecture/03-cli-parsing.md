@@ -124,8 +124,8 @@ just appended (`_navigate_append_spec`), so repeated append-then-fill sequences 
 their own new item.
 
 A varlen `--f` is absent from the table because it is not a patch: it replaces the whole list,
-and with no token at all it clears it — the one other flag family that stands bare
-([04](04-cli-adapters.md#a-bare-append)). Repeating it extends the list it is building rather than
+and with no token at all it clears it — the other flag family that stands bare
+([04](04-cli-adapters.md#a-flag-that-stands-bare)). Repeating it extends the list it is building rather than
 appending to the lower-priority sources, so it is still exactly one replacement however many
 occurrences spell it; a plain occurrence therefore discards the patch ops recorded before it, which
 is what makes `--f --f+ x` a reset followed by an append.
@@ -135,7 +135,7 @@ Three spellings therefore clear a list, and they are not interchangeable:
 | Spelling | What it does |
 |---|---|
 | `--f a b` | replaces the lower-priority list outright — the ordinary "start over" |
-| `--f` | replaces it with `[]`; rejected by click and typer, which cannot express a value-less multi-token option (BUG-38) |
+| `--f` | replaces it with `[]` |
 | `--f-` | drops the key, so the field falls back to its **default** rather than to `[]` |
 
 `--f-` is the only one every front-end spells, because a delete registers value-less. It also ends
