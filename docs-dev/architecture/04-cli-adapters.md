@@ -305,27 +305,33 @@ Registering `nargs="*"` hands **arity enforcement back to confarg** — the fram
 counts the tokens, so whatever argv held arrives in one list and the count is the collector's
 to check. The two bounds are not the same job, and only one of them can be answered here.
 
-The **lower** bound is a parse-time fact, so `cli/_collect._require_fixed_arity` answers it,
-mirroring the `_require_value` vanilla asks once per positional token
-([03](03-cli-parsing.md#token-consumption)): a short token run is `Missing value for '--pair'`
-and not a shorter tuple, because a fixed arity is not one of the shapes a bare flag is reserved
-for ([10](10-design-decisions.md#a-whole-value-flag-needs-its-value)). It is asked of the field
-type **as resolved, without unwrapping `Optional`** — the type vanilla dispatches on: `tuple[X,
-Y] | None` is a union with a sequence variant there, consumes greedily, and owes nothing, so
-unwrapping first would make the adapters refuse `--pair 1` where vanilla accepts it. The token
-run is also the only thing counted: a flag carrying a *whole value* is exempt, and
-`_require_fixed_arity` asks `_fixed_arity_whole_value` rather than re-testing the token, so
-`--pair '[13]'` stays one value that happens to be short. Click and typer register the exact
-count and refuse the short form in their own parsers, so the guard is dead weight there and
-live for argparse and cyclopts (BUG-58).
+Both are parse-time facts, so `cli/_collect._require_fixed_arity` answers both, mirroring the
+`_require_value` vanilla asks once per positional token
+([03](03-cli-parsing.md#token-consumption)). It is asked of the field type **as resolved,
+without unwrapping `Optional`** — the type vanilla dispatches on: `tuple[X, Y] | None` is a
+union with a sequence variant there, consumes greedily, and owes neither bound, so unwrapping
+first would make the adapters refuse `--pair 1` where vanilla accepts it.
 
-The **upper** bound is not reproducible here: vanilla stops consuming at the declared count and
-reports the surplus token as `Unexpected positional argument: '3'`, a diagnosis that names a
-token the collector never sees as surplus. `--pair 1 2 3` therefore still reaches `build()` in
-argparse and cyclopts and fails there instead, which is the remaining gap
-([BUG-60](../todo/bugs/BUG-60-adapters-overfill-a-fixed-arity-flag.md)). That half is not new
-machinery either: a union with a sequence variant (`str | tuple[str, str]`) has registered
-`nargs="*"` and let `build()` judge the arity since it was first written.
+The **lower** bound: a short token run is `Missing value for '--pair'` and not a shorter tuple,
+because a fixed arity is not one of the shapes a bare flag is reserved for
+([10](10-design-decisions.md#a-whole-value-flag-needs-its-value)). The **upper** bound: a token
+past the run is `Unexpected positional argument: '3'` and not a longer tuple, because vanilla
+stops consuming at the declared count and meets the next token in its argv scan as a stray
+positional. The two errors have one owner each — `ConfargError.missing_value` and
+`UnknownArgumentError.unexpected_positional` — so the adapters raise what the vanilla scan
+raises rather than a lookalike (BUG-58, BUG-60).
+
+What sets the run's length is `_fixed_arity_whole_value`, asked of the **first token alone**: a
+whole value is one token whatever arity it spells, a positional run is the full arity. That one
+question settles both ends at once. `--pair '[13]'` is a complete run, so it stays the arity
+error `build()` owns rather than becoming a flag left without a value; the `9` in
+`--pair '[13]' 9` is past a run that already ended, so it is surplus rather than the token that
+completes the pair. Click and typer register the exact count and enforce both bounds in their
+own parsers, so the guard is dead weight there and live for argparse and cyclopts.
+
+The guard is deliberately *not* extended to a union with a sequence variant (`str | tuple[str,
+str]`): that field consumes greedily in vanilla too, so `build()` judging its arity is parity,
+not a gap.
 
 For the namedtuple, `cli/_collect.py` decodes the lone token through
 `_fixed_arity_whole_value`, which delegates to the same two decoders the other branches use

@@ -631,10 +631,18 @@ and all three spellings survive: `--pair '["hello"]'`, `--pair hello null`, and 
 `pair: [hello]`. Arity is still `build()`'s to judge once the tokens are in hand:
 `--pair '[13]'` is an *arity* error, not a missing value, because the whole-value token is one
 value that happens to be short, and the parser can only prove a token missing when argv is what
-ran out. The adapters count the same lower bound on the token list their framework hands over,
+ran out. The adapters count the same bounds on the token list their framework hands over,
 in `cli/_collect._require_fixed_arity`
 ([04](04-cli-adapters.md#whole-value-flags)) — the rule is one rule, so it applies wherever a
 front-end learns how many tokens a fixed-arity flag got (BUG-58).
+
+The upper bound is the same decision read from the other end, and it lands on the *scan* rather
+than on the field: `--pair 1 2 3` does not grow the tuple, because vanilla stops consuming at
+the declared count and then meets `3` as a bare word in argv. So the surplus is reported as
+`Unexpected positional argument: '3'` — the argv-level diagnosis that names the offending
+token — and not as an arity error naming the flag, which is what `build()` would have said had
+the over-long list reached it. Keeping the flag out of the message is the point: the pair was
+filled, and what is wrong is the word after it (BUG-60).
 
 ## A registered leaf is never a struct variant
 

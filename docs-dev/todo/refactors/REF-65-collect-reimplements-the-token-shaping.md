@@ -13,8 +13,9 @@ but the signatures now line up exactly and `_collect.py` already imports from `_
 can delegate instead
 ([09-invariants.md#delegate-to-the-canonical-function](../../architecture/09-invariants.md#delegate-to-the-canonical-function)).
 
-`_require_fixed_arity` joined them with BUG-58: it counts the token run vanilla counts one
-`_require_value` at a time, so it is the fourth mirror and belongs in the same move.
+`_require_fixed_arity` joined them with BUG-58 and grew with BUG-60: it now reproduces both
+ends of the token run vanilla counts one `_require_value` at a time, plus the surplus its argv
+scan reports, so it is the fourth mirror and belongs in the same move.
 
 The contract suite is what catches a drift today, which is why this is medium rather than low: a
 mistake stays silent in the four adapters while vanilla stays right.

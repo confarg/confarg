@@ -65,7 +65,7 @@ from confarg._types import (
 from confarg.cli._argv import bare_only_flag_names
 from confarg.cli._build import _takes_multi_tokens
 from confarg.cli._prefix import strip_argv_prefix, strip_flat_prefix
-from confarg.exceptions import ConfargError, SymbolImportError
+from confarg.exceptions import ConfargError, SymbolImportError, UnknownArgumentError
 from confarg.typedload._coerce import _is_registered_leaf, _try_coerce
 
 #: Sentinel distinguishing "no cast flag present" from a cast that legitimately
@@ -221,30 +221,37 @@ def _fixed_arity_whole_value(v: Any, core: Any, flag: str) -> Any:
 
 
 def _require_fixed_arity(arity: int, tokens: Any, flag: str, core: Any) -> None:
-    """Raise ``Missing value`` unless *tokens* fills a fixed-arity flag's token run.
+    """Raise unless *tokens* is exactly the token run a fixed-arity flag consumes.
 
     The adapters' half of the guard vanilla spells as one
     :func:`~confarg._parse_cli._require_value` per positional token
     (:func:`~confarg._parse_cli._consume_fixed_tuple_args`): a fixed arity is not one of the
     shapes a bare flag is reserved for, so a token run that stops short -- argv running out, or
-    the next flag arriving -- is a missing value and not a shorter tuple.  Argparse and cyclopts
-    register such a flag greedily, because ``FlagSpec.whole_value`` needs a variable token count,
-    so the framework hands over however many tokens it found and the arity is nobody else's to
-    check; click and typer register the exact count and reject the short form themselves.
+    the next flag arriving -- is a missing value and not a shorter tuple, and a token run that
+    overshoots does not grow the tuple either, because vanilla stops consuming at the arity and
+    meets the next token as a stray positional.  Argparse and cyclopts register such a flag
+    greedily, because ``FlagSpec.whole_value`` needs a variable token count, so the framework
+    hands over however many tokens it found and both bounds are nobody else's to check; click
+    and typer register the exact count and enforce both themselves.
 
-    Only a *token run* is counted.  A flag carrying a whole value is exempt, and
-    :func:`_fixed_arity_whole_value` is asked rather than re-tested here, so that
-    ``--pair '[13]'`` stays the arity error ``build()`` owns rather than becoming a flag left
-    without a value.
+    How many tokens the run takes is what :func:`_fixed_arity_whole_value` answers, asked of the
+    *first* token alone: a whole value is one token whatever its arity, so ``--pair '[13]'``
+    stays the arity error ``build()`` owns rather than a flag left without a value, and the ``9``
+    in ``--pair '[13]' 9`` is surplus rather than the token that completes it.
 
     Dev Notes:
         docs-dev/architecture/03-cli-parsing.md#token-consumption
     """
-    if _fixed_arity_whole_value(tokens, core, flag) is not _NO_CAST:
+    if not isinstance(tokens, list):
         return
-    if isinstance(tokens, list) and len(tokens) < arity:
+    # A whole value is one token; a positional run is the full arity.  Asked of `tokens[:1]`
+    # because the decoder wants the lone token it decodes, and here the run may be longer.
+    consumed = 1 if _fixed_arity_whole_value(tokens[:1], core, flag) is not _NO_CAST else arity
+    if len(tokens) < consumed:
         token = f"--{flag}"
         raise ConfargError.missing_value(token)
+    if len(tokens) > consumed:
+        raise UnknownArgumentError.unexpected_positional(tokens[consumed])
 
 
 def _whole_value(flat: dict[str, Any], flag: str, resolved: Any) -> Any:

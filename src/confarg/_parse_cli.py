@@ -1179,11 +1179,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             if patch_only:
                 i += 1  # stray value of a skipped non-patch flag
                 continue
-            msg = (
-                f"Unexpected positional argument: {token!r}."
-                " All arguments must be named flags (e.g. --fieldname value)."
-            )
-            raise UnknownArgumentError(msg)
+            raise UnknownArgumentError.unexpected_positional(token)
 
         key = _strip_cli_prefix(token[2:], cli_prefix, token)
 
