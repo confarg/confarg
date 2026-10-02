@@ -15,8 +15,10 @@ divergences so far: list syntax per framework
 which only the two clicklike front-ends decline
 ([04](04-cli-adapters.md#whole-value-flags)); file-only dunder keys
 ([02](02-files-and-env.md#reserved-file-only-keys)); declaring locals only in files
-([08](08-locals.md#declare-in-files-modify-anywhere)). Known unapproved gaps are listed in
-[../todo/bugs/](../todo/bugs/README.md).
+([08](08-locals.md#declare-in-files-modify-anywhere)); the mount keyword and the form its path
+takes, spelled per channel
+([10](10-design-decisions.md#the-mount-keyword-is-spelled-per-channel)). Known unapproved gaps
+are listed in [../todo/bugs/](../todo/bugs/README.md).
 
 ## Delegate to the canonical function
 
@@ -26,9 +28,12 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | Decision | Function |
 |---|---|
 | merge order, file loading, locals checks | `_pipeline._merge_sources` |
-| "is this root config file a configuration layer?" | `_files._load_raw` |
+| "is this root config file a configuration layer?" | `_files._require_layer` |
 | "what is the parsed value of the document here?" | `_files._load_document` |
+| reading one document, whatever route mounts it | `_files._load_any` |
 | "which parser does this location name?" | `_files._loader_for` |
+| reading a channel value as an include value | `_files._parse_mount_value` |
+| placing a loaded value at a subpath | `_files._mount` |
 | "which scheme does this location name?" | `_sources._scheme_of` |
 | "what are this location's bytes?" | `_sources._read_bytes` |
 | "which format does this location name?" | `_sources._suffix` |

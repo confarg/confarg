@@ -229,11 +229,16 @@ def _identity(loc: str) -> str:
     return urlunsplit((scheme, netloc, path, query, ""))
 
 
-def _join(base: str, relative: str) -> str:
+def _join(base: str | None, relative: str) -> str:
     """Return the absolute location a *relative* include names inside the document at *base*.
 
     A *relative* carrying its own registered scheme is already absolute and is returned as-is --
     unless *base* is remote, where leaving its origin is refused.
+
+    *base* is ``None`` for the channel routes -- ``--config``, ``CONFIG__<PATH>`` and ``files=``
+    -- which have no including document and resolve against the process working directory
+    instead. That is the one difference between them and ``__include__``
+    (02-files-and-env.md#mounting).
 
     Raises:
         InvalidConfigFileError: If a remote document names a location outside its own origin.
@@ -241,11 +246,15 @@ def _join(base: str, relative: str) -> str:
     Dev Notes:
         docs-dev/architecture/02-files-and-env.md#relative-includes-resolve-within-one-origin
     """
+    if base is None or not _scheme_of(base):
+        # A local document may name any registered location, or a path relative to its own, and
+        # a channel route starts from the process working directory. The join resolves, so an
+        # error or a cycle names the absolute file, not `a/../b/c.yaml`.
+        if _scheme_of(relative):
+            return relative
+        directory = Path.cwd() if base is None else Path(base).parent
+        return str((directory / relative).resolve())
     base_scheme = _scheme_of(base)
-    if not base_scheme:
-        # A local document may name any registered location, or a path relative to its own. The
-        # join resolves, so an error or a cycle names the absolute file, not `a/../b/c.yaml`.
-        return relative if _scheme_of(relative) else str((Path(base).parent / relative).resolve())
     if _SCHEME_RE.match(relative) is not None:
         # Scheme-bearing, so absolute: another origin by construction, registered or not.
         raise InvalidConfigFileError.cross_origin_include(base, relative)

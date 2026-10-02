@@ -188,7 +188,12 @@ def _match_env_part(tp: Any, part: str) -> tuple[str, Any]:  # noqa: PLR0911
 
 
 def _handle_env_config_flag(parts: list[str], target: Any, env_configs: list[tuple[str, str]], value: str) -> None:
-    """Append a (subpath, location) pair to env_configs for a CONFIG[__subpath] env var."""
+    """Append a (subpath, mount value) pair to env_configs for a CONFIG[__subpath] env var.
+
+    The value is kept as written: the pipeline reads it as an ``__include__`` value, so a
+    ``{"path": …, "orient": …}`` object is spelled here exactly as it is in a file
+    (docs-dev/architecture/02-files-and-env.md#mounting).
+    """
     subpath_parts = parts[1:]
     if subpath_parts:
         resolved_parts, _ = _resolve_env_parts(target, subpath_parts)
@@ -389,7 +394,7 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
 
     Returns:
         A tuple of (data_dict, env_configs) where data_dict contains inline values
-        and env_configs is a list of (subpath, location) pairs for deferred loading.
+        and env_configs is a list of (subpath, mount value) pairs for deferred file loading.
 
     Raises:
         ConfargError: If an env var segment matches multiple field names.

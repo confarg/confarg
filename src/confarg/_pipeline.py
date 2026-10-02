@@ -23,51 +23,55 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
     from pathlib import Path
 
-from confarg import _sources
-from confarg._files import _load_file, _load_file_item, _load_subpath_files
+from confarg._files import _load_mount, _load_mount_value, _load_subpath_files, _nest
 from confarg._merge import (
     DICT_DELETE,
     LIST_DELETE_KEY,
     LIST_POST_APPEND_DELETE_KEY,
     LIST_REPLACE_BASE_KEY,
     _deep_merge,
+    _to_append_list,
 )
 from confarg._merge import LIST_APPEND_KEY as _LIST_APPEND_KEY
 from confarg._parse_cli import _locals_keys, _locals_keys_at
 from confarg._parse_env import _parse_env
 from confarg._types import _StrToken
 from confarg.dictexpr import contains_expression
-from confarg.dictexpr._expressions import canonicalize_references, prefix_references
+from confarg.dictexpr._expressions import canonicalize_references
 from confarg.exceptions import ConfargError, InvalidConfigFileError, LocalsError, TypeCoercionError
 from confarg.typedload._coerce import _coerce_leaf
 
 
-def _load_cli_config(fpath: str, subpath: str, config_flag: str) -> dict[str, Any]:
-    """Load one CLI config source (--config[.subpath][+] fpath) into a nested dict."""
-    if subpath.endswith("+"):
-        real_subpath = subpath[:-1].rstrip(".")
-        if not real_subpath:
-            msg = f"--{config_flag}+ requires a field path. Use --{config_flag}.fieldname+ /path/to/file."
-            raise ConfargError(msg)
-        last_key = real_subpath.rsplit(".", 1)[-1]
-        fitem = _load_file_item(fpath)
-        if isinstance(fitem, list):
-            append_items: list[Any] = [fitem]
-        elif isinstance(fitem, dict) and len(fitem) == 1 and last_key in fitem and isinstance(fitem[last_key], list):
-            append_items = fitem[last_key]
-        else:
-            append_items = [fitem]
-        fdata: dict[str, Any] = {_LIST_APPEND_KEY: append_items}
-        for part in reversed(real_subpath.split(".")):
-            fdata = {part: fdata}
-        return fdata
+def _load_cli_config(value: Any, subpath: str, config_flag: str, union_tag: str | None = None) -> dict[str, Any]:
+    """Load one CLI config source (``--config[.subpath][+] VALUE``) into a nested dict.
 
-    fdata = _load_file(fpath)
-    if subpath:
-        fdata = prefix_references(fdata, subpath)
-        for part in reversed(subpath.split(".")):
-            fdata = {part: fdata}
-    return fdata
+    *value* is read as an ``__include__`` value and mounted at *subpath*, so this route
+    accepts exactly the fragment shapes and per-format options a document's ``__include__``
+    accepts; only the base a relative location resolves against differs, being the process
+    working directory here.
+
+    The ``+`` form appends instead of replacing, and appending is the one thing that spreads a
+    fragment over several elements: a list extends the target list, anything else lands as one
+    item. References in an appended fragment stay unanchored, because an appended element has
+    no index until the merge is over (11-limitations.md).
+
+    Dev Notes:
+        docs-dev/architecture/02-files-and-env.md#mounting
+        docs-dev/architecture/10-design-decisions.md#the-mount-keyword-is-spelled-per-channel
+    """
+    if subpath.endswith(_LIST_APPEND_KEY):
+        real_subpath = subpath[: -len(_LIST_APPEND_KEY)]
+        if not real_subpath or real_subpath.endswith("."):
+            msg = (
+                f"--{config_flag}{'.' + real_subpath if real_subpath else ''}{_LIST_APPEND_KEY}"
+                f" requires a field path to append to."
+                f" Use --{config_flag}.fieldname{_LIST_APPEND_KEY} /path/to/file."
+            )
+            raise ConfargError(msg)
+        loaded = _load_mount_value(value, union_tag=union_tag)
+        return _nest({_LIST_APPEND_KEY: _to_append_list(loaded)}, real_subpath)
+
+    return _load_mount(value, subpath, union_tag=union_tag)
 
 
 def _check_locals_are_typed(node: Any, locals_key: str, path: str) -> None:
@@ -284,7 +288,7 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
     Args:
         target: The target type, guiding env-var parsing.
         cli_data: Nested dict of CLI-provided field values (highest priority).
-        cli_configs: (subpath, path) pairs from ``--config[.subpath][+]`` flags,
+        cli_configs: (subpath, mount value) pairs from ``--config[.subpath][+]`` flags,
             in left-to-right CLI order.
         env: Environment variable mapping to scan.
         env_prefix: Prefix that env vars must start with; ``None`` disables
@@ -335,13 +339,13 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
         )
 
     # 2. Load config files in priority order (all become config-level, below inline env/CLI)
-    file_entries: list[tuple[str, str]] = [("", _sources._location(f)) for f in files]
+    file_entries: list[tuple[str, Any]] = [("", f) for f in files]
     if env_config and (env_config_path := env.get(env_config)):
         file_entries.append(("", env_config_path))
     env_configs.sort(key=lambda ec: ec[0])
     config_data = _load_subpath_files(file_entries + env_configs, union_tag)
-    for subpath, fpath in cli_configs:
-        fdata = _load_cli_config(fpath, subpath, config_flag)
+    for subpath, value in cli_configs:
+        fdata = _load_cli_config(value, subpath, config_flag, union_tag)
         config_data = _deep_merge(config_data, fdata, union_tag=union_tag)
 
     _apply_locals_layer(

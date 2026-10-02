@@ -527,18 +527,40 @@ def _walk_target(target: Any, locals_keys: tuple[str, ...]) -> Any:
 def _addresses_key(key: str, reserved: str) -> bool:
     """Return True when a dotted flag/env path addresses the reserved name *reserved*.
 
-    That is, the bare name or any dotted path beneath it. A falsy *reserved* never
-    matches.
+    That is, the bare name or any dotted path beneath it, with or without a trailing merge
+    suffix: ``--config``, ``--config.db``, ``--config.dbs+`` and a bare ``--config+`` all
+    address the config flag. The last of them is a mistake, but it is a mistake *about this
+    flag*, so it is intercepted here and reported by the one error that explains it rather
+    than looking like an unknown flag. A falsy *reserved* never matches.
     """
-    return bool(reserved) and (key == reserved or key.startswith(reserved + "."))
+    if not reserved:
+        return False
+    key = key.removesuffix(LIST_APPEND_KEY)
+    return key == reserved or key.startswith(reserved + ".")
+
+
+def _config_subpath(key: str, config_flag: str) -> str:
+    """Return the mount subpath a ``--<config_flag>…`` flag key addresses.
+
+    ``config`` and ``config+`` address the root (``""`` and ``"+"``), ``config.db`` addresses
+    ``db``, ``config.dbs+`` addresses ``dbs+``. A trailing merge suffix is carried through
+    rather than stripped, because what appending means is the pipeline's call, not the scan's.
+    Both the strict scan and the adapters' lenient re-scan read it from here, so they cannot
+    disagree by accident.
+    """
+    if key.startswith(config_flag + "."):
+        return key[len(config_flag) + 1 :]
+    return key[len(config_flag) :]
 
 
 def _consume_config_paths(args: list[str], i: int, key: str, config_flag: str) -> tuple[int, list[tuple[str, str]]]:
     """Consume config-location tokens for a --config[.subpath] flag.
 
-    Returns (new_i, [(subpath, location)]); a location is a local path or a URL.
+    Returns (new_i, [(subpath, mount value)]); the value is the raw token -- a local path, a
+    URL, or a JSON fragment -- read as an ``__include__`` value by the pipeline
+    (docs-dev/architecture/02-files-and-env.md#mounting).
     """
-    subpath = key[len(config_flag) + 1 :] if key.startswith(config_flag + ".") else ""
+    subpath = _config_subpath(key, config_flag)
     i += 1
     if i >= len(args) or _looks_like_flag(args[i]):
         msg = f"Missing file path after --{config_flag}. Usage: --{config_flag} /path/to/config.yaml"
@@ -972,7 +994,7 @@ def _collect_config_file_pairs(
     argv: Sequence[str],
     config_flag: str,
 ) -> list[tuple[str, str]]:
-    """Return (subpath, location) pairs for ``--config[.subpath]`` flags in command-line order.
+    """Return (subpath, mount value) pairs for ``--config[.subpath]`` flags in command-line order.
 
     Lenient: silently skips ``--config`` tokens not followed by a path argument (e.g. when
     the adapter framework already consumed the paths and argv is rescanned for ordering).
@@ -987,7 +1009,7 @@ def _collect_config_file_pairs(
         config_flag: The flag name used to specify config files (e.g. ``"config"``).
 
     Returns:
-        A list of ``(subpath, location)`` pairs in the order they appear in argv.
+        A list of ``(subpath, mount value)`` pairs in the order they appear in argv.
     """
     normalized = _normalize_eq_args(list(argv))
     pairs: list[tuple[str, str]] = []
@@ -999,7 +1021,7 @@ def _collect_config_file_pairs(
             continue
         raw_key = token[2:]
         if _addresses_key(raw_key, config_flag):
-            subpath = raw_key[len(config_flag) + 1 :] if raw_key.startswith(config_flag + ".") else ""
+            subpath = _config_subpath(raw_key, config_flag)
             i += 1
             while i < len(normalized) and not _looks_like_flag(normalized[i]):
                 pairs.append((subpath, normalized[i]))
@@ -1048,7 +1070,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
 
     Returns:
         A tuple of (data_dict, config_files) where data_dict is the parsed
-        argument data and config_files is a list of (subpath, location) pairs
+        argument data and config_files is a list of (subpath, mount value) pairs
         (always empty when ``patch_only`` is True).
 
     Raises:

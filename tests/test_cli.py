@@ -1068,7 +1068,13 @@ class TestCliListAppend:
 
 
 class TestConfigFileAppend:
-    """Tests for the --config.field+ syntax that appends file contents to a list."""
+    """Tests for the --config.field+ syntax that appends file contents to a list.
+
+    Appending is the one thing that spreads a fragment over several elements, and it is the
+    ``+`` operator doing it rather than the mount: the fragment's value is the list of items
+    to add, and anything that is not a list lands as one item.  See
+    docs-dev/architecture/10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling.
+    """
 
     def test_single_dict_element_appended(self, tmp_yaml) -> None:
         """File with a single dict is appended as one element."""
@@ -1084,11 +1090,11 @@ class TestConfigFileAppend:
         assert result.servers[1].host == "b"
         assert result.servers[1].port == 2
 
-    def test_wrapped_multi_element_appended(self, tmp_yaml) -> None:
-        """File with a single key matching the field name and list value appends all items."""
+    def test_list_root_file_appends_all_items(self, tmp_yaml) -> None:
+        """A file whose root is a list appends every item it holds."""
         base = tmp_yaml("servers:\n  - host: a\n    port: 1\n    name: db1\n")
         extra = tmp_yaml(
-            "servers:\n  - host: b\n    port: 2\n    name: db2\n  - host: c\n    port: 3\n    name: db3\n",
+            "- host: b\n  port: 2\n  name: db2\n- host: c\n  port: 3\n  name: db3\n",
             "extra.yaml",
         )
         result = confarg.load(
@@ -1100,17 +1106,37 @@ class TestConfigFileAppend:
         assert result.servers[1].host == "b"
         assert result.servers[2].host == "c"
 
-    def test_yaml_list_is_single_list_element(self, tmp_yaml) -> None:
-        """File whose root is a YAML list is appended as one element (for list[list[...]])."""
+    def test_wrapped_file_is_one_element(self, tmp_yaml) -> None:
+        """A file that wraps its items under the field name is one element, not its items.
+
+        It used to be spliced, by matching its single key against the mounted key -- which
+        made a fragment depend on where it was mounted, against the promise in
+        docs-dev/architecture/02-files-and-env.md#mounting.
+        """
+        WithRows = make_target("rows", list[str], default_factory=list)
+        extra = tmp_yaml("rows:\n  - a\n  - b\n", "extra.yaml")
+        merged = confarg.merge(WithRows, argv=["--config.rows+", str(extra)], env={})
+        assert merged == {"rows": {"+": [{"rows": ["a", "b"]}]}}
+
+    def test_list_root_file_appends_its_items(self, tmp_yaml) -> None:
+        """For a list of lists, the appended fragment is the list of rows to add."""
         WithListOfLists = make_target("matrix", list[list[int]], default_factory=list)
         base = tmp_yaml("matrix:\n  - [1, 2]\n  - [3, 4]\n")
-        extra = tmp_yaml("- 5\n- 6\n", "extra.yaml")
+        extra = tmp_yaml("- [5, 6]\n", "extra.yaml")
         result = confarg.load(
             WithListOfLists,
             argv=["--config", str(base), "--config.matrix+", str(extra)],
             env={},
         )
         assert result.matrix == [[1, 2], [3, 4], [5, 6]]
+
+    def test_root_key_carries_a_list_fragment_from_toml(self, tmp_path) -> None:
+        """A TOML fragment names its list content under __root__, since TOML has no list root."""
+        WithListOfLists = make_target("matrix", list[list[int]], default_factory=list)
+        extra = tmp_path / "extra.toml"
+        extra.write_text("__root__ = [[5, 6]]\n", encoding="utf-8")
+        result = confarg.load(WithListOfLists, argv=["--config.matrix+", str(extra)], env={})
+        assert result.matrix == [[5, 6]]
 
     def test_append_without_base_config(self, tmp_yaml) -> None:
         """--config.field+ creates the list when no base config provides one."""
@@ -1171,10 +1197,10 @@ class TestConfigFileAppend:
         assert result.servers[2].host == "c"
 
     def test_scalar_list_append_from_file(self, tmp_yaml) -> None:
-        """Appending scalars: file wrapped under field name."""
+        """Appending scalars: the file's root is the list of items to add."""
         WithTags = make_target("tags", list[str], default_factory=list)
         base = tmp_yaml("tags:\n  - alpha\n  - beta\n")
-        extra = tmp_yaml("tags:\n  - gamma\n  - delta\n", "extra.yaml")
+        extra = tmp_yaml("- gamma\n- delta\n", "extra.yaml")
         result = confarg.load(
             WithTags,
             argv=["--config", str(base), "--config.tags+", str(extra)],
@@ -1195,12 +1221,16 @@ class TestConfigFileAppend:
         assert result.servers[1].host == "b"
 
     def test_append_without_subpath_raises(self, tmp_yaml) -> None:
-        """--config+ without a field path raises ConfargError."""
-        # --config+ is not currently recognized by _parse_cli (doesn't start with "config.")
-        # so it raises UnknownArgumentError rather than the config-specific error.
+        """--config+ has no field path to append to, and says so.
+
+        ``--config+`` used to fall through to field lookup and report an unknown argument,
+        while ``--config.+`` reported the specific error: two spellings of one mistake with
+        two different errors.
+        """
         extra = tmp_yaml("host: a\nport: 1\nname: db1\n", "extra.yaml")
-        with pytest.raises((confarg.exceptions.ConfargError, confarg.exceptions.UnknownArgumentError)):
-            confarg.load(WithNestedList, argv=["--config+", str(extra)], env={})
+        for flag in ("--config+", "--config.+"):
+            with pytest.raises(confarg.exceptions.ConfargError, match="requires a field path"):
+                confarg.load(WithNestedList, argv=[flag, str(extra)], env={})
 
 
 # ---------------------------------------------------------------------------
