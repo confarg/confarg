@@ -1460,6 +1460,25 @@ class TestInheritanceDispatchContract:
         result = loader.load(_NestedDB, argv=["--config", str(cfg), "--db.dbpath", "/var/db/app.sqlite"], env={})
         assert result == _NestedDB(db=_SQLiteDB(dbpath="/var/db/app.sqlite"))
 
+    def test_unimportable_class_tag_reaches_merged_dict(self, loader: ConfargLoader) -> None:
+        """A --class tag naming no importable class still reaches the merged dict.
+
+        Vanilla stores the raw string and lets ``build()`` raise the import error naming the
+        path; an adapter that dropped the tag when the import failed answered instead with a
+        misleading "no discriminator was provided" complaint (BUG-45).
+        """
+        merged = loader.merge(_BaseDB, argv=["--class", "no.such.module.Class"], env={}, config_flag="")
+        assert merged == {"class": "no.such.module.Class"}
+
+    def test_unimportable_field_class_tag_reaches_merged_dict(self, loader: ConfargLoader) -> None:
+        """A nested path keeps its tag, not silence, when the named class does not import.
+
+        The field-level shape loses more than the tag when it regresses: the recursion into
+        the subclass fields is skipped along with it, so the whole ``db`` key vanishes.
+        """
+        merged = loader.merge(_NestedDB, argv=["--db.class", "no.such.module.Class"], env={}, config_flag="")
+        assert merged == {"db": {"class": "no.such.module.Class"}}
+
 
 # ---------------------------------------------------------------------------
 # Root-level union target (target IS a union, not a struct containing one)

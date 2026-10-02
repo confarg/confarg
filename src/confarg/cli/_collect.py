@@ -413,6 +413,57 @@ def _collect_callable_spec(
         _set_nested(result, flag.split("."), spec)
 
 
+def _tag_named_struct(class_tag: Any) -> Any:
+    """Return the struct type a class tag names, or ``None`` when it names none.
+
+    ``None`` covers both failure modes -- the import fails, or the class is not a struct
+    -- because every caller's response is the same: leave the tag where its channel put
+    it and move on.  Vanilla stores the raw string and lets ``construct()`` raise the
+    import error, so no caller reports the failure itself.
+    """
+    try:
+        cls = _import_dotted(str(class_tag))
+    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
+        return None
+    return cls if isinstance(cls, type) and _is_struct(_resolve_type(cls)) else None
+
+
+def _collect_named_variant(  # noqa: PLR0913  # the type-walk context, threaded whole
+    flat: dict[str, Any],
+    flag: str,
+    class_tag: Any,
+    union_tag: str,
+    result: dict[str, Any],
+    tags: Mapping[str, str],
+    argv: Sequence[str],
+    *,
+    base: Any = None,
+    write_tag: bool = True,
+) -> None:
+    """Write a class tag back, then descend into the struct it names.
+
+    The tag is written before the import resolves: vanilla keeps
+    ``--<path>.<union_tag>`` as a raw string and lets ``construct()`` raise the import
+    error naming the bad path, so a tag whose import fails must still reach the merged
+    dict (BUG-45).  *write_tag* is off only for a tag a ``--config`` file set: it
+    already reaches the merge at its own priority, and re-emitting it at CLI priority
+    would make the merged dict differ from vanilla's.  *base* names the class the walk
+    is already inside; a tag naming it adds nothing, so the descent stops there.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags
+    """
+    if write_tag:
+        tag_path = ([*flag.split(".")] if flag else []) + [union_tag]
+        _set_nested(result, tag_path, _str_token(class_tag))
+    cls = _tag_named_struct(class_tag)
+    try:
+        if cls is not None and cls is not base:
+            _collect_ns_fields(flat, cls, flag, union_tag, result, tags, argv)
+    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
+        pass
+
+
 def _collect_ns_union_field(  # noqa: PLR0913  # the type-walk context, threaded whole
     flat: dict[str, Any],
     flag: str,
@@ -434,14 +485,7 @@ def _collect_ns_union_field(  # noqa: PLR0913  # the type-walk context, threaded
         return
     tag_key = f"{flag}.{union_tag}"
     if tag_key in flat:
-        class_tag = flat[tag_key]
-        _set_nested(result, [*flag.split("."), union_tag], _str_token(class_tag))
-        try:
-            cls = _import_dotted(str(class_tag))
-            if isinstance(cls, type) and _is_struct(_resolve_type(cls)):
-                _collect_ns_fields(flat, cls, flag, union_tag, result, tags, argv)
-        except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
-            pass
+        _collect_named_variant(flat, flag, flat[tag_key], union_tag, result, tags, argv)
     else:
         for variant in concrete:
             _collect_ns_fields(flat, variant, flag, union_tag, result, tags, argv)
@@ -460,9 +504,10 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
 
     The subclass to descend into is whichever the configuration names at this path -- a
     ``--<path>.<union_tag>`` flag in *flat*, or a tag a ``--config`` file sets, which
-    *tags* carries (`cls is not tp` then stops the recursion).  Only the flag is written
-    back into *result*: a file's tag already reaches the merge at its own priority, and
-    re-emitting it at CLI priority would make the merged dict differ from vanilla's.
+    *tags* carries.  Both go through :func:`_collect_named_variant`, which writes only
+    the flag's tag back into *result*: a file's tag already reaches the merge at its
+    own priority, and re-emitting it at CLI priority would make the merged dict differ
+    from vanilla's.
 
     Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags
@@ -472,15 +517,17 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
     class_tag = flat[tag_key] if from_flat else tags.get(prefix)
     if class_tag is None:
         return
-    try:
-        cls = _import_dotted(str(class_tag))
-        if isinstance(cls, type) and _is_struct(_resolve_type(cls)) and cls is not tp:
-            if from_flat:
-                tag_path = ([*prefix.split(".")] if prefix else []) + [union_tag]
-                _set_nested(result, tag_path, _str_token(class_tag))
-            _collect_ns_fields(flat, cls, prefix, union_tag, result, tags, argv)
-    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
-        pass
+    _collect_named_variant(
+        flat,
+        prefix,
+        class_tag,
+        union_tag,
+        result,
+        tags,
+        argv,
+        base=tp,
+        write_tag=from_flat,
+    )
 
 
 def _namedtuple_sub_flags(flat: dict[str, Any], flag: str, fields: Mapping[str, Any]) -> dict[str, Any]:
