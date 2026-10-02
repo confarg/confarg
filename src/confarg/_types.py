@@ -77,6 +77,15 @@ class _Pinned:
     value: Any
 
 
+def _src_type(value: Any) -> str:
+    """Return the user-visible type name of a value, collapsing _StrToken to 'str'.
+
+    Dev Notes:
+        docs-dev/architecture/05-types-and-construction.md#token-model
+    """
+    return "str" if isinstance(value, _StrToken) else type(value).__name__
+
+
 def _resolve_type(tp: Any) -> Any:
     """Unwrap TypeAliasType and Annotated wrappers.
 

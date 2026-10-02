@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 if TYPE_CHECKING:
     from tests._loaders import ConfargLoader
@@ -28,6 +29,11 @@ class Point(NamedTuple):
 
     x: int
     y: int
+
+
+def shout(text: str = "hi") -> str:
+    """Callable target, for the bind-rejects-a-token message."""
+    return text.upper()
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +210,14 @@ class TestTokensStayOutOfMessages:
         with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
             confarg.load(Target, argv=[], env={"MYAPP_VALUE": "abc"}, env_prefix="MYAPP_")
         assert str(excinfo.value) == expected
+
+    def test_callable_bind_rejecting_a_token_names_it_str(self) -> None:
+        """A scalar token at ``bind:`` prints as ``str``, not ``_StrToken`` (BUG-57)."""
+        Target = make_target("fn", Callable[..., Any], default=shout)
+        env = {"MYAPP_FN__FN": f"{__name__}.shout", "MYAPP_FN__BIND": "notadict"}
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+            confarg.load(Target, argv=[], env=env, env_prefix="MYAPP_")
+        assert str(excinfo.value) == "'bind' in Callable dict at 'fn' must be a dict, got str"
 
 
 # ---------------------------------------------------------------------------

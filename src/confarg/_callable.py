@@ -25,6 +25,7 @@ from confarg._types import (
     _callable_param_types,
     _is_callable,
     _resolve_type,
+    _src_type,
 )
 from confarg.exceptions import ConfargError, TypeCoercionError
 
@@ -493,7 +494,7 @@ def _resolve_dict_spec(spec: dict, path: str, union_tag: str, construct_fn: Any)
         raise TypeCoercionError(msg)
     bind_raw = spec.get(d.bind, {})
     if not isinstance(bind_raw, dict):
-        msg = f"{d.bind!r} in Callable dict at '{path}' must be a dict, got {type(bind_raw).__name__}"
+        msg = f"{d.bind!r} in Callable dict at '{path}' must be a dict, got {_src_type(bind_raw)}"
         raise TypeCoercionError(msg)
     init_kwargs = {k: v for k, v in spec.items() if k not in d.reserved}
 

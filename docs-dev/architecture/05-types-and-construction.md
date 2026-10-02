@@ -27,7 +27,10 @@ confarg requires no base class, decorator or field marker
   alone may fall back to a one-element list ([03](03-cli-parsing.md#unions-with-sequence-variants)).
 - `_Pinned(tp, value)` carries an explicitly cast value through the merge dict; `construct`
   honors it before anything else, including `None` handling.
-- Tokens must never leak out: error messages print them as `str` (`_src_type`), the dump path
+- Tokens must never leak out: error messages print them as `str` (`_src_type`, which lives in
+  `_types.py` beside `_StrToken` rather than in `typedload/`, so every module that formats a
+  channel value can reach it without importing an engine — BUG-57 was the fifth site to print
+  `type(value).__name__` instead), the dump path
   unwraps them in `_serialize_leaf` with `isinstance(v, _StrToken)`, and `dictexpr._map_strings`
   preserves the subclass when rewriting expressions. The test is `isinstance`, not an exact
   type test, so it covers the whole token hierarchy — `_UnionSeqToken` included, and any token

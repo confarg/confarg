@@ -2225,8 +2225,8 @@ class TestCallableSiblingKwargContract:
         assert merged == {"fn": {"fn": f"{__name__}._shout", "bind": "5"}}
 
     def test_active_bind_word_as_a_scalar_is_rejected_by_construction(self, loader: ConfargLoader) -> None:
-        """``bind`` must be a dict — construction says so, in every front-end."""
-        with pytest.raises(TypeCoercionError, match="must be a dict"):
+        """``bind`` must be a dict — construction says so, naming the token's type, in every front-end."""
+        with pytest.raises(TypeCoercionError, match=r"must be a dict, got str$"):
             loader.load(_CallableConfig, argv=["--fn.fn", f"{__name__}._shout", "--fn.bind", "5"], env={})
 
     def test_sibling_kwarg_without_an_opener_merges(self, loader: ConfargLoader) -> None:

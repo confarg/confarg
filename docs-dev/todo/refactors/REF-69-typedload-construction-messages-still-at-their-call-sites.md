@@ -20,8 +20,8 @@ families in `typedload/` are the next ones to have earned it, both already route
   and once in `_construct._construct_by_class_path`. The three name `X` differently and that is
   the only reason they were written out separately; the factory takes the already-formatted name.
 
-No behavior change is intended: every message keeps its current text. Sequence this after
-[BUG-57](../bugs/BUG-57-strtoken-leaks-from-the-callable-bind-message.md), which moves
-`_src_type` out of `_coerce.py` into `_types.py` — a factory that needs it would otherwise be
-stuck, since `exceptions.py` may import nothing from `confarg`
-([09-invariants.md#fragile-couplings](../../architecture/09-invariants.md#fragile-couplings)).
+No behavior change is intended: every message keeps its current text. Both sentences are still
+formatted at the call site because `exceptions.py` may import nothing from `confarg`
+([09-invariants.md#fragile-couplings](../../architecture/09-invariants.md#fragile-couplings)):
+the caller has to pass `_src_type(data)` and `dotted_name(...)` in as text, which is what the
+factory signatures sketched above do.
