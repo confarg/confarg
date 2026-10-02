@@ -107,7 +107,10 @@ For a defect in the code, that is a **runnable snippet**:
 
 For a defect in the documentation itself there is no program to run, so the reproduction is the
 **broken reference and what it fails to reach**: a `console` block showing the command that
-finds it — a `grep`, a link check — and the target it lands on instead.
+finds it — a `grep`, a link check — and the target it lands on instead. That block never
+executes: `docs-dev/` is excluded from pytest collection
+([12-testing.md#examples-and-documentation](../architecture/12-testing.md#examples-and-documentation)),
+so paste the real output rather than expecting a run to replay it.
 
 Everything below applies to both kinds.
 

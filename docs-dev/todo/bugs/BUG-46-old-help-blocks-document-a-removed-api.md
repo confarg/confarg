@@ -18,7 +18,6 @@ and annotate them with `<!-- snippet: myapp_click.py#run -->` and friends, so th
 `markdown-code-snippet` hook keeps them honest. The remaining unannotated blocks are tracked in
 [../refactors/REF-59-example-code-blocks-not-generated.md](../refactors/REF-59-example-code-blocks-not-generated.md).
 
-<!-- pytest-markdown-console: notest -->
 ```console
 $ uv run python -c "import confarg; confarg.populate_parser"
 AttributeError: module 'confarg' has no attribute 'populate_parser'

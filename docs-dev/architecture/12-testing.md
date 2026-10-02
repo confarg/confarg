@@ -71,6 +71,15 @@ drift apart in the first place (BUG-37).
 `<!-- pytest-markdown-console-file: notest -->` (the root README does, since it illustrates a
 fictitious app).
 
+`docs-dev/` is excluded from collection instead, via `norecursedirs` in `pyproject.toml`:
+internal documentation is never test material, and a board reproduction is meant to be read,
+not run — its commands are repository-root-relative, and the block runs from the ticket's own
+directory, so a replay can only fail (BUG-55). The first fix was the per-block
+`<!-- pytest-markdown-console: notest -->` directive, one decision left to each filer; the
+exclusion makes the decision once, at collection time. One caveat: explicitly naming a
+`docs-dev` path on the command line still replays it, because pytest's ignore mechanisms do
+not apply to arguments passed explicitly — that is the invoker asking for documentation.
+
 Each block runs with the README's own directory as its working directory, so a script that
 writes a file writes it there — `21_expressions` and `22_variable_scopes` end their scripts
 with `dump_file()` and leave `saved_config_*.yaml` behind on every run. Those artifacts are
