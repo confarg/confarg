@@ -36,7 +36,8 @@ The section is hidden on the documentation site by `docs/assets/stylesheets/extr
 (mkdocstrings renders it as `<details class="dev-notes">`), so it is written for whoever works
 on confarg rather than for whoever uses it. A citation names one document and one `##` heading
 anchor; headings in these files are kept stable for that reason, and renaming one means fixing
-the citations that name it (`grep -rn "<old-anchor>" src/`).
+the citations that name it — `uv run python docs-dev/todo/anchors.py` lists every citation
+whose anchor no longer resolves.
 
 Open the topic documents that match the code you are touching; the reading guide below maps
 source modules to documents.
