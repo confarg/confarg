@@ -15,7 +15,7 @@ import pytest
 
 import confarg
 from confarg.cli.argparse import from_namespace, populate_parser
-from confarg.exceptions import MissingFieldError, TypeCoercionError
+from confarg.exceptions import ConfargError, MissingFieldError, TypeCoercionError
 from confarg.typedload import construct
 
 # ---------------------------------------------------------------------------
@@ -371,10 +371,14 @@ class TestCLIVanilla:
         assert cfg.pair == Point(x=13, y=42)
 
     def test_bare_flag_is_rejected(self) -> None:
-        """--pair with no token is rejected, exactly as a same-arity tuple field is."""
-        with pytest.raises(TypeCoercionError):
+        """--pair with no token is rejected, exactly as a same-arity tuple field is.
+
+        The parser names the flag rather than leaving ``build()`` to report an arity it
+        cannot attribute to a token (BUG-43).
+        """
+        with pytest.raises(ConfargError, match="Missing value for '--pair'"):
             confarg.load(WithIntPair, argv=["--pair"], env={})
-        with pytest.raises(TypeCoercionError):
+        with pytest.raises(ConfargError, match="Missing value for '--pair'"):
             confarg.load(WithPoint, argv=["--pair"], env={})
 
     def test_spellings_match_a_same_arity_tuple(self) -> None:

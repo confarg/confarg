@@ -24,6 +24,20 @@ class ConfargError(Exception):
     """Base exception for all confarg errors."""
 
     @classmethod
+    def missing_value(cls, token: str, usage: str = "<value>") -> ConfargError:
+        """Return the error for a value-taking flag that argv left without its value.
+
+        The one spelling of the message, for the six sites that raise it: every
+        value-consuming branch of the vanilla parser, and the adapters' own check for a
+        multi-token flag the framework never saw. *usage* names the shape the flag wants
+        when it is not a plain value -- ``'<json>'`` for a JSON cast.
+
+        Dev Notes:
+            docs-dev/architecture/10-design-decisions.md#a-whole-value-flag-needs-its-value
+        """
+        return cls(f"Missing value for {token!r}. Usage: {token} {usage}")
+
+    @classmethod
     def root_cast_not_object(cls, flag: str, value: Any) -> ConfargError:
         """Return an error for a whole-configuration JSON cast that decoded to a non-mapping.
 

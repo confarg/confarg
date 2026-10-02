@@ -30,7 +30,10 @@ accepted as a dict key.
 - Values run until the next flag: variable-length collections consume greedily and
   fixed-length ones consume exactly their arity. A value-taking flag always needs its value,
   struct flags included: `--db` with nothing after it is `Missing value for '--db'`
-  ([10](10-design-decisions.md#a-whole-value-flag-needs-its-value)).
+  ([10](10-design-decisions.md#a-whole-value-flag-needs-its-value)). `_require_value` is the
+  single guard: argv running out and the next token being another flag are one failure, and
+  the fixed-arity branch asks it once per positional token, so a short token run is a missing
+  value rather than a shorter tuple.
 - **Repeating** a multi-token flag extends it rather than replacing it: `--f x --f y` is a second
   spelling of `--f x y`, which is what the clicklike front-ends have no other way to write
   ([04](04-cli-adapters.md#list-syntax-divergence)). The occurrences are joined as *tokens*
