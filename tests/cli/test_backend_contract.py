@@ -188,6 +188,14 @@ class _WithPoint:
 
 
 @dataclass
+class _PointScale:
+    """A namedtuple field beside a scalar an expression over it fills."""
+
+    pair: _Point = dataclasses_field(default_factory=lambda: _Point(0, 0))
+    scale: int = 0
+
+
+@dataclass
 class _WithOptionalPoint:
     pair: _Point | None = None
 
@@ -659,6 +667,53 @@ class TestFixedSequenceContract:
             env={},
         )
         assert cfg.pair == _Point(x=13, y=7)
+
+    def test_namedtuple_arity_then_sub_flag_merges_by_field_name(self, loader: ConfargLoader) -> None:
+        """A sub-flag after the arity flag rides on its positions, keyed by field name (BUG-66).
+
+        The latest arguments overwrite earlier ones, per path: a sub-flag writes at
+        ``pair.y``, so it joins the arity flag's positional value instead of replacing
+        it -- and the positions it did not take keep their field names, the shape
+        ``build()`` reads, rather than vanilla's former list-op ``'*'`` base, which a
+        namedtuple cannot build.
+        """
+        assert loader.merge(_WithPoint, argv=["--pair", "13", "42", "--pair.y", "7"], env={}) == {
+            "pair": {"x": 13, "y": 7},
+        }
+
+    def test_namedtuple_sub_flag_then_arity_flag_replaces_wholesale(self, loader: ConfargLoader) -> None:
+        """An arity flag after every sub-flag overwrites the field, as any later write does (BUG-66).
+
+        The adapters used to merge the two halves order-independently, so a
+        ``--pair.y`` the later ``--pair`` had already overwritten came back.
+        """
+        assert loader.merge(_WithPoint, argv=["--pair.y", "7", "--pair", "13", "42"], env={}) == {"pair": [13, 42]}
+
+    def test_namedtuple_sub_flag_then_whole_value_replaces(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """A whole value after a sub-flag overwrites the field the same way (BUG-66)."""
+        assert whole_value_arity_loader.merge(
+            _WithPoint,
+            argv=["--pair.y", "7", "--pair", '{"x": 13, "y": 42}'],
+            env={},
+        ) == {"pair": {"x": 13, "y": 42}}
+
+    def test_namedtuple_sub_flag_value_is_coerced(self, loader: ConfargLoader) -> None:
+        """A sub-flag's token reaches the merged dict as its field type (BUG-66).
+
+        Eager coercion is what lets an expression read the value: a raw token made
+        ``${pair.y * 2}`` evaluate to ``'99'`` on the adapters while vanilla said 18.
+        """
+        assert loader.merge(_WithPoint, argv=["--pair.y", "7"], env={}) == {"pair": {"y": 7}}
+
+    def test_namedtuple_sub_flag_feeds_expressions(self, loader: ConfargLoader) -> None:
+        """The coerced sub-flag value is what a ``${...}`` over it sees (BUG-66)."""
+        cfg = loader.load(
+            _PointScale,
+            argv=["--pair.x", "1", "--pair.y", "9", "--scale", "${pair.y * 2}"],
+            env={},
+        )
+        assert cfg.pair == _Point(x=1, y=9)
+        assert cfg.scale == 18
 
     def test_tuple_too_many_tokens_raises(self, whole_value_arity_loader: ConfargLoader) -> None:
         """A token past the arity is the surplus positional vanilla names, not a longer tuple.

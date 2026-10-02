@@ -337,7 +337,17 @@ For the namedtuple, `cli/_collect.py` decodes the lone token through
 `_fixed_arity_whole_value`, which delegates to the same two decoders the other branches use
 (`_json_array_override` for `[…]`, `_accepts_object_value` + `_parse_json_arg` for `{…}`), so
 the object form cannot drift from what vanilla decodes. Sub-flags refine it exactly as they
-refine a struct's whole value — by name over a decoded object, by position otherwise.
+refine a struct's whole value — by name over a decoded object, by position otherwise — and
+their values are coerced to their field's type as vanilla's own dispatch coerces them, so a
+sub-flag feeds an expression the number it spelled and not its text (BUG-66).
+
+The *order* the two halves arrived in is read back off argv, where a framework's parse
+result cannot carry it: the arity flag is the latest writer exactly when its last
+occurrence follows the last sub-flag's (`cli/_collect._arity_flag_writes_last`, the
+read-back the patch and `--config` scans already perform), and then it overwrites the
+field wholesale — `--pair.y 7 --pair 13 42` is `[13, 42]`, the sub-flag gone, while the
+reverse order joins the two halves by field name. Latest arguments overwrite earlier
+ones ([10](10-design-decisions.md#a-namedtuples-arity-flag-and-its-sub-flags-merge-in-argv-order)).
 
 Everything else about a namedtuple is shared — the arity flag, the per-field and per-index
 flags, and the vanilla positional form
@@ -348,9 +358,10 @@ subkeys arrive as patch flags and are deep-merged over the whole value, so
 `--env '{"a":"b"}' --env.c d` yields `{"a": "b", "c": "d"}` as in vanilla.
 
 Limitation, shared with [collection patches](#collection-patch-parity): a framework's parse
-result carries no argv order, so the adapters always let a sibling `--<field>.<sub>` refine
-the whole value. Vanilla honors argv order, so `--sub.a 3 --sub '{"a":2}'` disagrees. The
-useful order — whole value first, refinements after — agrees.
+result carries no argv order, and only the namedtuple's arity flag reads the order back off
+argv (above). A struct or dict whole value is always refined by its sibling
+`--<field>.<sub>` flags, so `--sub.a 3 --sub '{"a":2}'` disagrees with vanilla, which honors
+argv order. The useful order — whole value first, refinements after — agrees.
 
 ## Collection patch parity
 

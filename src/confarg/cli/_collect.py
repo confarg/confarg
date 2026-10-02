@@ -420,6 +420,7 @@ def _collect_ns_union_field(  # noqa: PLR0913  # the type-walk context, threaded
     union_tag: str,
     result: dict[str, Any],
     tags: Mapping[str, str],
+    argv: Sequence[str],
 ) -> None:
     """Handle a multi-variant union field.
 
@@ -438,12 +439,12 @@ def _collect_ns_union_field(  # noqa: PLR0913  # the type-walk context, threaded
         try:
             cls = _import_dotted(str(class_tag))
             if isinstance(cls, type) and _is_struct(_resolve_type(cls)):
-                _collect_ns_fields(flat, cls, flag, union_tag, result, tags)
+                _collect_ns_fields(flat, cls, flag, union_tag, result, tags, argv)
         except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
             pass
     else:
         for variant in concrete:
-            _collect_ns_fields(flat, variant, flag, union_tag, result, tags)
+            _collect_ns_fields(flat, variant, flag, union_tag, result, tags, argv)
 
 
 def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded whole
@@ -453,6 +454,7 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
     union_tag: str,
     result: dict[str, Any],
     tags: Mapping[str, str],
+    argv: Sequence[str],
 ) -> None:
     """Handle inheritance dispatch for a base class with subclasses.
 
@@ -476,18 +478,24 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
             if from_flat:
                 tag_path = ([*prefix.split(".")] if prefix else []) + [union_tag]
                 _set_nested(result, tag_path, _str_token(class_tag))
-            _collect_ns_fields(flat, cls, prefix, union_tag, result, tags)
+            _collect_ns_fields(flat, cls, prefix, union_tag, result, tags, argv)
     except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
         pass
 
 
-def _namedtuple_sub_flags(flat: dict[str, Any], flag: str, field_names: list[str]) -> dict[str, Any]:
-    """Collect a namedtuple's per-name and per-index sub-flags, name winning over index."""
+def _namedtuple_sub_flags(flat: dict[str, Any], flag: str, fields: Mapping[str, Any]) -> dict[str, Any]:
+    """Collect a namedtuple's per-name and per-index sub-flags, name winning over index.
+
+    Each value is coerced to its field's type, as the vanilla parser's own dispatch
+    coerces the same flag: a raw token here would put a str in the merged dict where
+    vanilla puts the number, and an expression over the field would read the token
+    (BUG-66).
+    """
     sub: dict[str, Any] = {}
-    for i, fname in enumerate(field_names):
+    for i, (fname, ftype) in enumerate(fields.items()):
         for key in (f"{flag}.{fname}", f"{flag}.{i}"):
             if flat.get(key) is not None:
-                sub[fname] = _str_token(flat[key])
+                sub[fname] = _coerce_leaf_value(ftype, flat[key])
                 break
     return sub
 
@@ -509,25 +517,53 @@ def _namedtuple_arity_value(core: Any, nargs_value: Any, whole: Any) -> Any:
     return _str_token(nargs_value)
 
 
+def _arity_flag_writes_last(argv: Sequence[str], flag: str) -> bool:
+    """Return whether the last ``--<flag>`` occurrence follows every ``--<flag>.<sub>`` one.
+
+    The argv-order half of the namedtuple contract (BUG-66): a framework's parse result
+    carries no command-line order, so which flag at a namedtuple field is the latest
+    writer is read off the argv the user typed, as the patch and ``--config`` scans
+    are.  A token that looks like a flag is one here for the same reason it is one in
+    the vanilla scan, so the two readers cannot disagree about where an occurrence
+    ends.
+
+    Dev Notes:
+        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+    """
+    bare = f"--{flag}"
+    sub_prefix = f"--{flag}."
+    last_bare = last_sub = -1
+    for i, token in enumerate(argv):
+        if token == bare or token.startswith(f"{bare}="):
+            last_bare = i
+        elif token.startswith(sub_prefix):
+            last_sub = i
+    return last_bare > last_sub
+
+
 def _collect_ns_namedtuple(
     flat: dict[str, Any],
     core: Any,
     flag: str,
     result: dict[str, Any],
+    argv: Sequence[str],
 ) -> None:
     """Collect a namedtuple field from the flat namespace.
 
     Priority per field: field-name sub-flag > index sub-flag > arity-flag position.
     When sub-flags and the arity flag are both set, sub-flags override specific
-    positions and the arity value fills the rest — they are merged, not exclusive.
-    A lone whole-value token refines the same way, by name when it spells an object
-    and by position when it spells an array.
+    positions and the arity value fills the rest — they are merged, not exclusive —
+    unless the arity flag is the latest writer, in which case it overwrites the field
+    wholesale, as the vanilla scan's own last write does.  A lone whole-value token
+    refines the same way, by name when it spells an object and by position when it
+    spells an array.
 
     Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#whole-value-flags
     """
-    field_names = list(_namedtuple_fields(core))
-    sub = _namedtuple_sub_flags(flat, flag, field_names)
+    fields = _namedtuple_fields(core)
+    field_names = list(fields)
+    sub = _namedtuple_sub_flags(flat, flag, fields)
     nargs_value = flat.get(flag)
     path = flag.split(".")
 
@@ -541,6 +577,12 @@ def _collect_ns_namedtuple(
     if not sub:
         # Store what the flag spelled and let build() judge its arity, as the same-arity
         # tuple field does — the framework no longer counts the tokens for us.
+        _set_nested(result, path, _namedtuple_arity_value(core, nargs_value, whole))
+        return
+
+    if _arity_flag_writes_last(argv, flag):
+        # The latest arguments overwrite the earlier ones: the arity flag superseded
+        # every sub-flag before it, so its value is the whole field.
         _set_nested(result, path, _namedtuple_arity_value(core, nargs_value, whole))
         return
 
@@ -566,6 +608,7 @@ def _collect_ns_union_root(  # noqa: PLR0913  # the type-walk context, threaded 
     union_tag: str,
     result: dict[str, Any],
     tags: Mapping[str, str],
+    argv: Sequence[str],
 ) -> None:
     """Collect CLI values for a root-level union target (variants are concrete struct types)."""
     tag_key = f"{prefix}.{union_tag}" if prefix else union_tag
@@ -573,7 +616,7 @@ def _collect_ns_union_root(  # noqa: PLR0913  # the type-walk context, threaded 
         tag_path = ([*prefix.split(".")] if prefix else []) + [union_tag]
         _set_nested(result, tag_path, _str_token(flat[tag_key]))
     for variant in variants:
-        _collect_ns_fields(flat, variant, prefix, union_tag, result, tags)
+        _collect_ns_fields(flat, variant, prefix, union_tag, result, tags, argv)
 
 
 def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch per type case
@@ -583,12 +626,14 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
     union_tag: str,
     result: dict[str, Any],
     tags: Mapping[str, str] = MappingProxyType({}),
+    argv: Sequence[str] = (),
 ) -> None:
     """Walk target and copy matching flat-namespace entries into nested dict.
 
     *tags* is ``{field_path: class_path}`` for every class tag the configuration names
     outside *flat* -- a ``--config`` file's, typically -- so inheritance dispatch sees the
-    same subclass the vanilla type walk does.
+    same subclass the vanilla type walk does.  *argv* is the prefix-stripped command
+    line, read back wherever a decision needs the order the user typed the flags in.
     """
     setup = _resolve_struct(target)
     if setup is None:
@@ -597,7 +642,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
             non_none = _union_args_no_none(tp)
             concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
             if concrete:
-                _collect_ns_union_root(flat, concrete, prefix, union_tag, result, tags)
+                _collect_ns_union_root(flat, concrete, prefix, union_tag, result, tags, argv)
                 return
         if "" in flat:
             # Non-struct root: the empty key is the bare `--<cli_prefix>` flag, left
@@ -632,7 +677,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
             # Struct unions: the whole object carries its own class-tag; variant fields refine it
             if whole is not _NO_CAST:
                 _set_nested(result, flag.split("."), whole)
-            _collect_ns_union_field(flat, flag, resolved, union_tag, result, tags)
+            _collect_ns_union_field(flat, flag, resolved, union_tag, result, tags, argv)
             # Scalar unions: collect plain value or explicit scalar cast
             cast_val = _find_scalar_cast_override(flat, flag)
             if cast_val is not _NO_CAST:
@@ -650,7 +695,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
             _require_fixed_arity(len(fixed), flat[flag], flag, core)
 
         if _is_namedtuple(core):
-            _collect_ns_namedtuple(flat, core, flag, result)
+            _collect_ns_namedtuple(flat, core, flag, result, argv)
             continue
 
         if _is_registered_leaf(core):
@@ -666,7 +711,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
         if _is_struct(core):
             if whole is not _NO_CAST:
                 _set_nested(result, flag.split("."), whole)
-            _collect_ns_fields(flat, core, flag, union_tag, result, tags)
+            _collect_ns_fields(flat, core, flag, union_tag, result, tags, argv)
             continue
 
         if _is_dict(core):
@@ -687,7 +732,7 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
         elif flag in flat:
             _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
 
-    _collect_ns_inheritance(flat, _tp, prefix, union_tag, result, tags)
+    _collect_ns_inheritance(flat, _tp, prefix, union_tag, result, tags, argv)
 
 
 def _restore_patch_deletes(ops: dict[str, Any], result: dict[str, Any]) -> None:
@@ -814,7 +859,7 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
         flat.setdefault(name, [])
 
     cli_data: dict[str, Any] = {}
-    _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data, tags=tags)
+    _collect_ns_fields(flat, target, prefix="", union_tag=union_tag, result=cli_data, tags=tags, argv=argv_)
 
     # cli_data goes in as the patch base: a bare callable shorthand collected above is the
     # spec a delete flag refines, and the scan opens it before this merge lands on it

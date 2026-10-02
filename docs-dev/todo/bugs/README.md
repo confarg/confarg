@@ -24,8 +24,8 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-61 — A bare optional fixed-arity flag clears in the adapters and raises in vanilla](BUG-61-optional-fixed-arity-bare-flag-clears-in-the-adapters.md) | M | medium | behavior |
 | [BUG-62 — Cyclopts accumulates a repeated fixed-arity flag instead of letting the last one win](BUG-62-cyclopts-accumulates-a-repeated-fixed-arity-flag.md) | M | medium | behavior |
 | [BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four](BUG-63-bare-config-before-help-shows-help-on-argparse.md) | S | medium | behavior |
-| [BUG-64 — A namedtuple's sub-flag values are not eagerly coerced in any adapter](BUG-64-namedtuple-sub-flag-values-not-eagerly-coerced-in-the-adapters.md) | S | medium | behavior |
 | [BUG-65 — An index sub-flag is renamed and dropped in the adapters](BUG-65-namedtuple-index-sub-flag-renamed-and-dropped-in-the-adapters.md) | S | medium | behavior |
-| [BUG-66 — A namedtuple's arity flag and sub-flags merge differently in the adapters and vanilla](BUG-66-namedtuple-arity-and-sub-flag-merge-shapes-diverge.md) | M | medium | behavior |
+| [BUG-67 — A plain fixed tuple's index patch lands as the applied value in the adapters, as a list-op dict in vanilla](BUG-67-plain-tuple-index-patch-applied-instead-of-recorded-in-the-adapters.md) | M | medium | behavior |
+| [BUG-68 — A sub-flag more than one level below a namedtuple field is accepted only by vanilla](BUG-68-deep-sub-flags-below-a-namedtuple-reach-no-adapter.md) | M | medium | behavior |
 
 <!-- tickets:end -->

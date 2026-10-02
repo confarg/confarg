@@ -15,8 +15,14 @@ fixed-arity/namedtuple branch instead and the empty list is stored — the check
 counts on is never reached. Not an approved divergence
 ([09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity)).
 
-Only the *bare* spelling diverges: `--pair 1` and `--pair 1 2` already agree, because the
-adapters store the raw token run and vanilla does too. So the fix is not "require the arity
+Only the *bare* spelling diverges for `tuple[X, Y] | None`: `--pair 1` and `--pair 1 2` already
+agree, because the adapters store the raw token run and vanilla does too. A *namedtuple* under
+`Optional` diverges further (found while fixing BUG-66, closed): vanilla's union branch keeps
+the run raw (`--pt 1 2` is `{'pt': ['1', '2']}`), while the adapters' namedtuple branch coerces
+it (`{'pt': [1, 2]}`), and the arity-plus-sub-flag merge takes the shapes of
+[BUG-66](../../architecture/10-design-decisions.md#a-namedtuples-arity-flag-and-its-sub-flags-merge-in-argv-order)
+on one side and the `'*'` list-op shape on the other. Routing the optional field through
+`_collect_union_seq_value` settles all of it at once. So the fix is not "require the arity
 here" — that would reject `--pair 1`, which vanilla accepts — but routing an optional fixed-arity
 field through `_collect_union_seq_value`, the way vanilla routes it through `_union_seq_value`.
 Note that the namedtuple sub-flags (`--pair.x`, `--pair.0`) must keep working across that move.

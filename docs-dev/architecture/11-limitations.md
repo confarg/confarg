@@ -62,6 +62,15 @@ the boundary moves here.
   user reaches for, and decline the JSON one
   ([04](04-cli-adapters.md#whole-value-flags)). Use a config file, an environment variable or
   the per-field flags (`--pair.x 13`) to set it whole under those two.
+- The adapters always let a sibling `--<field>.<sub>` refine a struct or dict field's whole
+  value, whatever order the two arrived in, while vanilla honors argv order — so
+  `--sub.a 3 --sub '{"a":2}'` disagrees between them. The useful order — whole value first,
+  refinements after — agrees. A namedtuple's arity flag is the one that reads the order back
+  off argv ([04](04-cli-adapters.md#whole-value-flags)).
+- That read-back judges the latest writer *per flag*: the last `--pair` occurrence against
+  the last `--pair.<sub>` one. Interleave them — `--pair 1 2 --pair.y 9 --pair 5 6 --pair.x
+  7` — and a sub-flag typed before the final arity occurrence rides along, where vanilla's
+  sequential scan had already overwritten it. Up to one occurrence of each, the two agree.
 - The typer adapter needs `typer>=0.27` and reads two of its private modules
   (`typer._types`, `typer._click`): the option, choice and context classes it must subclass
   have no public spelling since typer forked click, so a typer release that moves them breaks
