@@ -1,4 +1,4 @@
-# BUG-138 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result
+# BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result
 
 **Where:** `src/confarg/cli/argparse/_namespace.py` (`from_namespace`) ·
 `src/confarg/cli/click/_context.py` / `src/confarg/cli/typer/_context.py` (`from_context`) ·

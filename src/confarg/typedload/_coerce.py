@@ -73,8 +73,7 @@ def _coerce_type_ref(tp: Any, value: Any, path: str = "") -> type:
     if isinstance(value, type):
         constraint = _type_ref_constraint(tp)
         if constraint is not object and not issubclass(value, constraint):
-            msg = f"Class {dotted_name(value)!r} at '{path}' is not a subclass of {dotted_name(constraint)}."
-            raise TypeCoercionError(msg)
+            raise TypeCoercionError.not_a_subclass(dotted_name(value), dotted_name(constraint), path)
         return value
     if not isinstance(value, _StrToken):
         raise TypeCoercionError.cannot_coerce(_src_type(value), value, "type", path)
@@ -91,8 +90,7 @@ def _coerce_type_ref(tp: Any, value: Any, path: str = "") -> type:
         raise TypeCoercionError(msg)
     constraint = _type_ref_constraint(tp)
     if constraint is not object and not issubclass(obj, constraint):
-        msg = f"Class {str(value)!r} at '{path}' is not a subclass of {dotted_name(constraint)}."
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.not_a_subclass(str(value), dotted_name(constraint), path)
     return obj
 
 

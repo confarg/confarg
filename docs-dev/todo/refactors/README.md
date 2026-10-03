@@ -37,9 +37,9 @@ different board.
 | [REF-64 — The clicklike completion tests assert that nothing was added](REF-64-completion-tests-assert-nothing-was-added.md) | S | medium | none |
 | [REF-66 — the pinned ruff and the project's own ruff disagree](REF-66-pinned-ruff-disagrees-with-the-project-ruff.md) | S | low | none |
 | [REF-68 — the scalar root spec undoes the multi-token shape one attribute at a time](REF-68-scalar-root-undoes-the-multi-token-shape-one-field-at-a-time.md) | S | low | none |
-| [REF-69 — Two construction-error sentences are still spelled at every call site in `typedload/`](REF-69-typedload-construction-messages-still-at-their-call-sites.md) | S | low | none |
 | [REF-70 — `_dataclass_subclasses` is named for dataclasses but returns plain-class structs](REF-70-dataclass-subclasses-is-a-misnomer.md) | M | low | none |
 | [REF-71 — Three functions answer "does this segment name a member?", and they disagree at the edges](REF-71-three-answers-to-is-this-a-member.md) | M | medium | none |
 | [REF-75 — `cli/_collect.py` no longer collects, and `_merge_from_flat` no longer merges from the flat result](REF-75-cli-collect-module-no-longer-collects.md) | S | low | none |
+| [REF-77 — The four "expected N elements" refusals have drifted on the type's name](REF-77-expected-elements-refusals-have-drifted.md) | S | medium | none |
 
 <!-- tickets:end -->
