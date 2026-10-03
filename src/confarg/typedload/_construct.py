@@ -11,6 +11,7 @@ Dev Notes:
 from __future__ import annotations
 
 import inspect
+import types
 import warnings
 from typing import Any
 
@@ -710,12 +711,12 @@ def _construct_single_variant_union(
     union_tag: str,
 ) -> Any:
     """Construct a union that has exactly one non-None variant."""
-    if type(None) in all_args and isinstance(data, _StrToken) and data.lower() in _NONE_TOKENS:
+    if types.NoneType in all_args and isinstance(data, _StrToken) and data.lower() in _NONE_TOKENS:
         return None
     try:
         return construct(non_none[0], data, path=path, union_tag=union_tag)
     except (TypeCoercionError, MissingFieldError):
-        if type(None) in all_args:
+        if types.NoneType in all_args:
             name = getattr(_resolve_type(non_none[0]), "__name__", repr(non_none[0]))
             raise TypeCoercionError.cannot_coerce(_src_type(data), data, name, path, none_sentinel=True) from None
         raise  # pragma: no cover  # len(non_none)==1 without NoneType is impossible via normal Union typing
@@ -825,13 +826,13 @@ def _coerce_scalar_variants(
         docs-dev/architecture/types/stealing-rule.md#stealing-rule
     """
     if isinstance(data, _StrToken):
-        with_none = scalar_leaf_vars + ([type(None)] if type(None) in all_args else [])
+        with_none = scalar_leaf_vars + ([types.NoneType] if types.NoneType in all_args else [])
         ordered = _steal_order(with_none, key=_resolve_type)
     else:
         ordered = scalar_leaf_vars
     for var in ordered:
         vr = _resolve_type(var)
-        if vr is type(None):
+        if vr is types.NoneType:
             if str(data).lower() in _NONE_TOKENS:
                 return None
             continue
@@ -875,14 +876,14 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
             return result
 
     variant_names = " | ".join(
-        "None" if v is type(None) else getattr(_resolve_type(v), "__name__", repr(v)) for v in all_args
+        "None" if v is types.NoneType else getattr(_resolve_type(v), "__name__", repr(v)) for v in all_args
     )
     raise TypeCoercionError.cannot_coerce(
         _src_type(data),
         data,
         variant_names,
         path,
-        none_sentinel=type(None) in all_args,
+        none_sentinel=types.NoneType in all_args,
     )
 
 

@@ -58,6 +58,11 @@ def _expression_tolerant_convert(type_: Any, tokens: Any) -> Any:
     return cyclopts_convert(type_, tokens)
 
 
+#: One single-pass mapping, so a reserved token's spelling can never collide with a later
+#: search character the way chained `.replace()` calls can.
+_PYNAME_TRANS = str.maketrans({".": "__", "+": "__append_", "-": "__delete_"})
+
+
 def _pyname(name: str) -> str:
     """Map a dotted CLI flag name to a valid, unique Python identifier.
 
@@ -65,7 +70,7 @@ def _pyname(name: str) -> str:
     not identifier characters; each maps to a reserved token.  The name_map
     restores the original CLI name, so only validity and uniqueness matter here.
     """
-    out = name.replace(".", "__").replace("+", "__append_").replace("-", "__delete_")
+    out = name.translate(_PYNAME_TRANS)
     if out and out[0].isdigit():
         out = f"_{out}"
     if iskeyword(out):

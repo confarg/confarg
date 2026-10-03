@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import enum
+import types
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -134,7 +135,11 @@ def _coerce_str_value(value: Any, path: str) -> str:
     raise TypeCoercionError.cannot_coerce(_src_type(value), value, "str", path)
 
 
-_RANKED_LEAF_TYPES: tuple[type, ...] = (float, int, bool, type(None), str)
+_RANKED_LEAF_TYPES: tuple[type, ...] = (float, int, bool, types.NoneType, str)
+
+#: Rank of each ranked leaf type. Dict lookup on a type object is identity-based: ``bool`` is
+#: a subclass of ``int`` and ranks on its own.
+_LEAF_TYPE_RANKS: dict[type, int] = {tp: 3 + i for i, tp in enumerate(_RANKED_LEAF_TYPES)}
 
 
 def _steal_rank(tp: Any) -> int:
@@ -151,10 +156,7 @@ def _steal_rank(tp: Any) -> int:
         return 0
     if _is_enum(tp):
         return 1
-    for i, ranked in enumerate(_RANKED_LEAF_TYPES):
-        if tp is ranked:  # identity: bool is a subclass of int and ranks on its own
-            return 3 + i
-    return 2
+    return _LEAF_TYPE_RANKS.get(tp, 2)
 
 
 def _steal_order(variants: list[Any], *, key: Any) -> list[Any]:
