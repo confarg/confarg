@@ -5,7 +5,7 @@
 Vanilla and the adapters agree on collection patches because the adapters re-run the vanilla
 parse loop in `patch_only` mode. An ordered stream of patch operations, produced once and
 consumed by both, would make that parity structural instead of behavioral.
-See [04-cli-adapters.md#collection-patch-parity](../../architecture/04-cli-adapters.md#collection-patch-parity).
+See [cli-adapters/collection-patch-parity.md#collection-patch-parity](../../architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity).
 
 [FEAT-23](FEAT-23-post-resolve-transform-layer.md) introduces an op record of its own for declared
 transforms. Whether one stream can serve both — user-facing transforms and vanilla/adapter collection

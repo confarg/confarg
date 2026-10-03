@@ -14,7 +14,7 @@ all mechanical enough for one revision. Roughly 30 lines.
   taking `names: list[str] | None` covers both.
 - `_parse_cli._parse_json_arg` produces the same message as the `json` branch of
   `_cast.resolve_forced_value`. `_cast.py` is the canonical owner of what each cast produces
-  ([03-cli-parsing.md#force-casts](../../architecture/03-cli-parsing.md#force-casts)), so the
+  ([cli-parsing/casts-and-reserved-words.md#force-casts](../../architecture/cli-parsing/casts-and-reserved-words.md#force-casts)), so the
   parser should call it. Two inline `try: json.loads(...) except JSONDecodeError` blocks in
   `_collect_append_items` and `_try_parse_json_list` are two further parse-or-None variants.
 - Two token handlers in `_parse_cli.py` hand-roll a nested descent that `_merge._peek_nested` was
@@ -24,4 +24,4 @@ all mechanical enough for one revision. Roughly 30 lines.
 Three of the original six are closed: the `_LOADERS`/`_ITEM_LOADERS` pair, the
 `_load_file_item`/`_load_any` pair (with BUG-42), and the dotted-subpath nesting loop, which now
 has an owner in `_files._nest`/`_mount`
-([02-files-and-env.md#mounting](../../architecture/02-files-and-env.md#mounting)).
+([config-files/mounting.md#mounting](../../architecture/config-files/mounting.md#mounting)).

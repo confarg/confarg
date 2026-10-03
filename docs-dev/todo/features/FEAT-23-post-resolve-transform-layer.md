@@ -37,5 +37,5 @@ Related: [FEAT-3](FEAT-3-reserved-sentinel-key-registry.md) gains a reserved key
 load-bearing rather than optional, because a rule is the last word over an explicitly supplied value
 and so must be traceable; [FEAT-19](FEAT-19-app-declared-defaults.md) is the composition half of the
 same story. See
-[01-pipeline-and-contracts.md#the-pipeline](../../architecture/01-pipeline-and-contracts.md#the-pipeline)
-and [07-expressions.md#reference-anchoring](../../architecture/07-expressions.md#reference-anchoring).
+[pipeline/stages.md#the-pipeline](../../architecture/pipeline/stages.md#the-pipeline)
+and [expressions/reference-anchoring.md#reference-anchoring](../../architecture/expressions/reference-anchoring.md#reference-anchoring).

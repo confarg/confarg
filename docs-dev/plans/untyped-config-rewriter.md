@@ -16,7 +16,7 @@ Three findings shape the design:
 1. **confarg already documents this workflow.** `_api.py:199` (`resolve()`) has it in its own
    docstring: `merge()` → `resolve()` → `dump_file()`. The architecture states the split
    explicitly: *"The merge layer is type-unaware; `build()` is type-aware"*
-   (`docs-dev/architecture/01-pipeline-and-contracts.md:81`), with plain dicts at every seam.
+   (`docs-dev/architecture/pipeline/README.md:81`), with plain dicts at every seam.
 2. **The reusable core is already import-isolated.** `_merge.py` (445 lines) imports nothing but
    `exceptions`; `dictexpr/_expressions.py` (1081) likewise; `_files.py` (534 — format dispatch,
    `__include__`, mounting) depends only on `_merge`, `dictexpr` and the `_StrToken` class. With
@@ -25,7 +25,7 @@ Three findings shape the design:
 3. **A model-less override subsystem already exists: the `locals:` layer.**
    `_pipeline._apply_locals_overrides` / `_coerce_override` (`_pipeline.py:120-179`) take env and
    CLI overrides and coerce each to *the runtime type of the value the file declared*, with full
-   env/CLI parity and typo detection (`docs-dev/architecture/08-locals.md:50`). This tool is that
+   env/CLI parity and typo detection (`docs-dev/architecture/locals.md:50`). This tool is that
    idea generalised: **the composed document is the model.**
 
 Model-awareness is concentrated in exactly two places this tool cannot reuse — `_parse_env.py`
@@ -43,7 +43,7 @@ container-vs-scalar and leaf coercion — plus `typedload/`, `_serialize.py`, `_
 | Unknown keys | Strict by default (error, as `LocalsError.not_declared` does), `--allow-new` to opt in. |
 
 Why one distribution rather than a separate library: the composition semantics must not fork
-(`docs-dev/architecture/01-pipeline-and-contracts.md:116` — "fix merge-order or file-loading
+(`docs-dev/architecture/pipeline/README.md:116` — "fix merge-order or file-loading
 behavior in this module only"), the shared surface is most of what the tool needs, confarg is at
 0.0.4 with **no `[project.scripts]` at all**, and FEAT-9/FEAT-10 already plan
 `confarg check` / `confarg explain` on one console script. Extracting `confarg-core` stays
@@ -69,7 +69,7 @@ possible later — but the core's true boundary is unknowable until a model-less
 ## The one real architectural change: load files *first*
 
 confarg parses env before loading files, because env vars can name config files
-(`_pipeline.py:320-334`, rationale at `docs-dev/architecture/02-files-and-env.md` and
+(`_pipeline.py:320-334`, rationale at `docs-dev/architecture/config-files/README.md` and
 `01-pipeline-and-contracts.md:106`). This tool needs the opposite: the document must exist before
 env/CLI parsing, because the document *is* the source of key casing and types.
 
@@ -171,7 +171,7 @@ the seam `01-pipeline-and-contracts.md:46` describes).
 ### Phase 6 — the console script
 
 `[project.scripts] confarg = "confarg.__main__:main"`, subcommand `merge`, argparse-only so the
-zero-dependency stance (`docs-dev/architecture/10-design-decisions.md:126`) holds.
+zero-dependency stance (`docs-dev/architecture/design-decisions/README.md:126`) holds.
 
 **Flag-collision resolution** — the exact problem FEAT-10 flags: a user path could be named
 `--output`. Tool options go before a `--` separator, overrides after it:
@@ -199,7 +199,7 @@ New extra: `roundtrip = ["ruamel.yaml>=0.18", "tomlkit>=0.13"]`.
 | `pyproject.toml` | +`[project.scripts]`, +`roundtrip` extra |
 | `tests/untyped/` | new suite |
 | `examples/101_rewrite/` + `docs/examples/101_rewrite/README.md` | new tutorial |
-| `docs-dev/architecture/13-untyped-rewriting.md` | new; cross-link from `01` and `11-limitations.md` |
+| `docs-dev/architecture/untyped-rewriting.md` | new topic; cross-link from `pipeline/` and `limitations.md` |
 
 Reused as-is, not reimplemented: `_files` (formats, `__include__`, mounting, dumpers), `_merge`
 (the whole patch vocabulary), `dictexpr` (expressions and anchoring), `_cast`, `_defaults`,

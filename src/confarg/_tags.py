@@ -8,7 +8,7 @@ The scans are framework-neutral: they read argv and the config files argv points
 parse result, so vanilla, every adapter and shell completion share one answer.
 
 Dev Notes:
-    docs-dev/architecture/10-design-decisions.md#a-named-tag-is-imported-before-registration
+    docs-dev/architecture/design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration
 """
 
 from __future__ import annotations
@@ -192,7 +192,7 @@ def import_tagged_classes(
     :class:`~confarg.exceptions.SymbolImportError` naming it.
 
     Dev Notes:
-        docs-dev/architecture/10-design-decisions.md#a-named-tag-is-imported-before-registration
+        docs-dev/architecture/design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration
     """
     for class_path in collect_tags(argv, target, union_tag=union_tag, config_flag=config_flag).values():
         # Importing an arbitrary module runs its top level, which can raise anything at all.

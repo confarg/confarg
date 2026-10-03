@@ -6,14 +6,14 @@
 
 Vanilla's `detect_force_cast` accepts a scalar cast (`--f.str`, `.int`, `.float`, `.bool`)
 on *any* field: the cast applies whenever the trailing segment names no real member of the
-type ([03-cli-parsing.md#real-field-wins](../../architecture/03-cli-parsing.md#real-field-wins)),
+type ([cli-parsing/casts-and-reserved-words.md#real-field-wins](../../architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins)),
 and a plain scalar field has no members. The adapters register cast flags only where the
 stealing rule is non-obvious — statically on enum/str unions
-([04-cli-adapters.md#union-inheritance-and-cast-flags](../../architecture/04-cli-adapters.md#union-inheritance-and-cast-flags)),
+([cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags](../../architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags)),
 dynamically when the cast lands on a collection element — so the same flags on a plain
 field are refused by the framework at parse time. `.json` is registered for every field
 already, so the gap is the four scalar casts alone. An unapproved gap in
-[09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity).
+[invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity).
 
 Fix direction: either the argv scan registers the typed scalar cast flags on plain fields
 (the BUG-56 route, accepting exactly what vanilla's `detect_force_cast` accepts), or vanilla

@@ -4,4 +4,4 @@
 
 Errors would surface earlier and closer to their source, without changing the
 merge/build contract (`merge()` stays unvalidated by default).
-See [01-pipeline-and-contracts.md#merge-build-contract](../../architecture/01-pipeline-and-contracts.md#merge-build-contract).
+See [pipeline/merge-build-contract.md#merge-build-contract](../../architecture/pipeline/merge-build-contract.md#merge-build-contract).

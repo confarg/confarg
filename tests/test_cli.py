@@ -585,7 +585,7 @@ class TestCliEdgeCases:
 
         A fixed tuple is not one of the shapes a bare flag is reserved for, so it needs
         its value like every other value-taking flag
-        (docs-dev/architecture/10-design-decisions.md#a-whole-value-flag-needs-its-value).
+        (docs-dev/architecture/design-decisions/a-whole-value-flag-needs-its-value.md#a-whole-value-flag-needs-its-value).
         """
         WithPair = make_target("pair", tuple[int, int], default=(0, 0))
         with pytest.raises(ConfargError, match="Missing value for '--pair'"):
@@ -1168,7 +1168,7 @@ class TestConfigFileAppend:
     Appending is the one thing that spreads a fragment over several elements, and it is the
     ``+`` operator doing it rather than the mount: the fragment's value is the list of items
     to add, and anything that is not a list lands as one item.  See
-    docs-dev/architecture/10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling.
+    docs-dev/architecture/design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling.
     """
 
     def test_single_dict_element_appended(self, tmp_yaml) -> None:
@@ -1206,7 +1206,7 @@ class TestConfigFileAppend:
 
         It used to be spliced, by matching its single key against the mounted key -- which
         made a fragment depend on where it was mounted, against the promise in
-        docs-dev/architecture/02-files-and-env.md#mounting.
+        docs-dev/architecture/config-files/mounting.md#mounting.
         """
         WithRows = make_target("rows", list[str], default_factory=list)
         extra = tmp_yaml("rows:\n  - a\n  - b\n", "extra.yaml")

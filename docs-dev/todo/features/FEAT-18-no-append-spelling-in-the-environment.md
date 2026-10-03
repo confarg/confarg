@@ -6,7 +6,7 @@
 Argv and config files both extend a list with the same `+` suffix — `--input+ 42`, `input+: [42]`,
 `--config.dbs+ other.yaml`. The environment can only replace one. `MYAPP_USERS+` is not matched as
 an append: it is treated as an unknown first segment, warned about and dropped
-([02-files-and-env.md#environment-parsing](../../architecture/02-files-and-env.md#environment-parsing)).
+([environment-parsing.md#environment-parsing](../../architecture/environment-parsing.md#environment-parsing)).
 
 The config-flag route is worse than dropped: `MYAPP_CONFIG__DBS+` is intercepted before the
 field walk, so the `+` never reaches that warning — it survives as a literal key segment and
@@ -23,7 +23,7 @@ delete gets away with an append could get away with too. Appends were simply nev
 Two shapes to weigh, neither obviously right:
 
 - **Keep the `+` suffix**, `MYAPP_USERS+`, for one vocabulary across all three channels
-  ([10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling](../../architecture/10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling)).
+  ([design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling](../../architecture/design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling)).
   Consistent with the delete already there, and awkward to set from a shell — as the delete
   already is.
 - **A value-side marker**, `MYAPP_USERS='@merge ["x"]'`, the shape dynaconf chose. It keeps
@@ -33,5 +33,5 @@ Two shapes to weigh, neither obviously right:
 
 The prior question is whether this is worth closing at all: the environment is where a whole value
 is spelled comfortably, and the CLI is where a configuration is tweaked
-([10-design-decisions.md#a-divergence-leans-towards-the-affected-backends-own-idiom](../../architecture/10-design-decisions.md#a-divergence-leans-towards-the-affected-backends-own-idiom)).
+([design-decisions/divergence-leans-to-the-backend.md#a-divergence-leans-towards-the-affected-backends-own-idiom](../../architecture/design-decisions/divergence-leans-to-the-backend.md#a-divergence-leans-towards-the-affected-backends-own-idiom)).
 Recording the gap as a limitation and declining it is a legitimate outcome.

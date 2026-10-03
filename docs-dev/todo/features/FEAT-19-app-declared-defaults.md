@@ -10,7 +10,7 @@ none of the composed types know. A pipeline whose `prepare` and `eval` nodes are
 a reusable type carrying `project_id` knows the two are one knob; a training run whose `data` and
 `model` both carry `batch_size` knows the same. confarg has no way for the app to say so.
 
-The only factorization on offer is `locals:` ([08-locals.md](../../architecture/08-locals.md)), and
+The only factorization on offer is `locals:` ([locals.md](../../architecture/locals.md)), and
 declaring a local is deliberately a config-file privilege — it is the tool for a link the app does
 *not* know about, introduced by whoever writes the file. Using it here inverts the ownership: the
 app has to ask its users to write the app's own invariant, in their file, and a user who omits it
@@ -37,7 +37,7 @@ class Config:
 | Aspect | Rule |
 |---|---|
 | Marker value | a scalar on a leaf field, a fragment on a struct field |
-| Path spelling | nested dicts **and** dotted keys, resolved by walking the target with the *real field wins* rule the CLI already uses ([03](../../architecture/03-cli-parsing.md#real-field-wins)); nesting is the escape for a literal dotted key |
+| Path spelling | nested dicts **and** dotted keys, resolved by walking the target with the *real field wins* rule the CLI already uses ([03](../../architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins)); nesting is the escape for a literal dotted key |
 | Mount point | the node that declares it — the marked field, or the class |
 | Anchoring | bare references resolve **in the class that wrote them**, one level above a field marker's mount, applied with `dictexpr.prefix_references` |
 | Priority | below every source, below `files=`: any file, env or CLI value wins |
@@ -48,7 +48,7 @@ class Config:
 | Required-ness | a field with a declared default is no longer required |
 
 The anchoring rule is the whole design in one line: it is
-[07-expressions.md#reference-anchoring](../../architecture/07-expressions.md#reference-anchoring)'s
+[expressions/reference-anchoring.md#reference-anchoring](../../architecture/expressions/reference-anchoring.md#reference-anchoring)'s
 "a bare reference means what it means in the file that wrote it", transposed from files to classes.
 Ownership is transitive, so `Config` may wire anything in its subtree at any depth — and a reused
 `Project` still cannot reach the root, because it does not know where it is mounted. **You can only
@@ -85,16 +85,16 @@ every channel, with no new syntax.
 - **`resolve()` is type-blind** — it takes a dict and no target — so an app-supplied `${...}` has to
   be in the dict before it runs, i.e. injected by `merge()`. Injecting in `build()` alone breaks the
   three-step seam `merge → resolve → from_dict`
-  ([01](../../architecture/01-pipeline-and-contracts.md#public-api-seams)). `build()` applies the
+  ([01](../../architecture/pipeline/api-seams.md#public-api-seams)). `build()` applies the
   same pass for a hand-assembled dict; over `merge()`'s output it is idempotent.
 - The pass belongs beside `_apply_locals_layer` in `_pipeline._merge_sources`, which is the
   precedent for a target-guided walk over the three source dicts and the one place all five
   front-ends delegate to — so cross-channel parity is free
-  ([09](../../architecture/09-invariants.md#cross-channel-parity)).
+  ([09](../../architecture/invariants.md#cross-channel-parity)).
 - It has to be *computed* after the sources are merged, so a union's variant is known, and *merged*
   underneath them.
 - `Annotated` is the sanctioned channel for per-field extras
-  ([10](../../architecture/10-design-decisions.md#no-custom-types-required)), which is what keeps
+  ([10](../../architecture/design-decisions/no-custom-types-required.md#no-custom-types-required)), which is what keeps
   this out of the "no custom types" budget; the ticket is an instance of the umbrella
   [FEAT-6](FEAT-6-annotated-field-metadata.md). The class-level form is an unannotated class
   attribute, so it is not a dataclass field and needs no import at the declaration site — and it is
@@ -104,7 +104,7 @@ every channel, with no new syntax.
 
 `merge()` would no longer return the input "exactly as written": it also carries the app's declared
 defaults, and its docstring and
-[01-pipeline-and-contracts.md](../../architecture/01-pipeline-and-contracts.md) say otherwise today.
+[pipeline/README.md](../../architecture/pipeline/README.md) say otherwise today.
 The trade is deliberate — it is what lets `dump_file(merge(...))` capture the *effective*
 configuration with `${...}` intact, as a fragment that can be mounted elsewhere — but it is a
 documented contract, and changing it is part of accepting this.
@@ -121,12 +121,12 @@ the fragment stop matching, surfacing as an unknown field at `build()` rather th
   outside itself.
 - **A parent anchor** (`${^.x}`) so a component could reach its parent, *as a way of reaching
   outside itself*. It would make a reusable type's meaning depend on how deep it is mounted.
-  Note that `${..x}` since shipped ([07](../../architecture/07-expressions.md#reference-anchoring))
+  Note that `${..x}` since shipped ([07](../../architecture/expressions/reference-anchoring.md#reference-anchoring))
   — it is clamped at the file that wrote it, so it cannot reach outside a component, and this
   rejection stands for the injection this ticket describes.
 - **Call-site links with a compute function**, jsonargparse's `link_arguments`. The compute function
   is a second wiring mechanism competing with the expression engine
-  ([09](../../architecture/09-invariants.md#delegate-to-the-canonical-function)); without it, it is
+  ([09](../../architecture/invariants.md#delegate-to-the-canonical-function)); without it, it is
   this injection with the keys reversed and no anchoring.
 - **Broadcast from the knob** (`Annotated[int, Broadcast("prepare.project_id", …)]`, the shape of
   Kustomize's `replacements`). Sugar over the same injection, but as a push it has to restate the

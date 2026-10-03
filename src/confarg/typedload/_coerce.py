@@ -136,7 +136,7 @@ def _steal_rank(tp: Any) -> int:
     and str. Types sharing a rank keep their declaration order, ``_steal_order`` being stable.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#stealing-rule
+        docs-dev/architecture/types/stealing-rule.md#stealing-rule
     """
     if _is_registered_leaf(tp):
         return 0
@@ -152,7 +152,7 @@ def _steal_order(variants: list[Any], *, key: Any) -> list[Any]:
     """Sort variants into stealing priority, declaration order breaking ties.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#stealing-rule
+        docs-dev/architecture/types/stealing-rule.md#stealing-rule
 
     Args:
         variants: The list to order.
@@ -171,7 +171,7 @@ def _match_literal_member(v: Any, value: Any, path: str) -> bool:  # noqa: PLR09
     is a CLI affordance: a plain file string is never re-read as a repr.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#stealing-rule
+        docs-dev/architecture/types/stealing-rule.md#stealing-rule
     """
     tp_v = type(v)
     if _is_enum(tp_v):
@@ -221,7 +221,7 @@ def _coerce_literal_value(tp: Any, value: Any, path: str) -> Any:
     ``Literal`` over ``Enum`` accepts the same text in both channels.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#stealing-rule
+        docs-dev/architecture/types/stealing-rule.md#stealing-rule
     """
     vals = _literal_values(tp)
     if isinstance(value, _StrToken):
@@ -274,7 +274,7 @@ def _is_struct_variant(tp: Any) -> bool:
     both refuses unions that are not ambiguous and tags dumps that need no tag.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#leaf-coercion
+        docs-dev/architecture/types/leaf-coercion.md#leaf-coercion
     """
     return _is_struct(tp) and not _is_registered_leaf(tp)
 
@@ -286,7 +286,7 @@ def _is_taggable_leaf(tp: Any) -> bool:
     decision, but a tag naming its class builds it from its ``__init__`` parameters.
 
     Dev Notes:
-        docs-dev/architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in
+        docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in
     """
     return _is_registered_leaf(tp) and _is_struct(tp)
 
@@ -320,7 +320,7 @@ def _is_eagerly_coercible(tp: Any) -> bool:
     diverge on raise-vs-return, so share only the predicate, not the behavior.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#deferral-rule
+        docs-dev/architecture/expressions/deferral-rule.md#deferral-rule
     """
     return _is_literal(tp) or _is_enum(tp) or tp in (bool, int, float) or tp in _LEAF_COERCIONS or _is_none_type(tp)
 
@@ -376,7 +376,7 @@ def _try_coerce(ft: Any, token: _StrToken) -> Any:
     returns the token.  Expression tokens are always returned unchanged.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#deferral-rule
+        docs-dev/architecture/expressions/deferral-rule.md#deferral-rule
     """
     if ft is None:
         return token

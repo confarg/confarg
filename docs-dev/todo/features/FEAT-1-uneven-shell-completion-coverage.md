@@ -7,4 +7,4 @@
 argparse (argcomplete) and click have completion helpers; cyclopts has none. Click completion
 covers bash and zsh, not fish. Completion is the one place where per-framework divergence may
 turn out to be acceptable — decide that explicitly rather than by omission.
-See [04-cli-adapters.md](../../architecture/04-cli-adapters.md).
+See [cli-adapters/README.md](../../architecture/cli-adapters/README.md).

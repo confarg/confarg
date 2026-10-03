@@ -8,7 +8,7 @@ When a tag names a variant, `_collect_named_variant` descends only into the name
 flag of a *different* variant or subclass at the same path vanishes from the adapters' merged
 dict. Vanilla keeps every argv flag — coerced by whichever variant owns the name — and lets
 `build()` reject the stray one, so
-[byte-identity](../../architecture/04-cli-adapters.md#byte-identical-merged-dicts) is broken;
+[byte-identity](../../architecture/cli-adapters/parity.md#byte-identical-merged-dicts) is broken;
 a union-root target is unaffected, because its collector descends into all variants whatever
 the tag says. The loud case: with a *valid* tag, a mistyped `--<field>` is silently ignored and
 the wrong-variant field never reaches the user, where vanilla raises

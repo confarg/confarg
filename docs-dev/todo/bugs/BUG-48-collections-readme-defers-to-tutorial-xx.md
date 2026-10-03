@@ -4,7 +4,7 @@
 **Effort:** S · **Risk:** low · **Impact:** none
 
 The deferral to the environment-variable discussion names its target as "Tutorial XX", an
-unfilled placeholder. [Tutorial #15](../../examples/15_json_inputs/README.md) is the likely
+unfilled placeholder. [Tutorial #15](../../../examples/15_json_inputs/README.md) is the likely
 intended target — verify, then link it (or whatever tutorial actually covers JSON arguments
 from the environment) and renumber the link.
 

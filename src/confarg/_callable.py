@@ -5,7 +5,7 @@
 """Callable resolution and serialization.
 
 Dev Notes:
-    docs-dev/architecture/06-callables.md
+    docs-dev/architecture/callables.md
 """
 
 from __future__ import annotations
@@ -258,7 +258,7 @@ def _coerce_kwargs(  # noqa: PLR0913
     but the annotations live on ``cls.__init__``.
 
     Dev Notes:
-        docs-dev/architecture/06-callables.md#one-coercion-route
+        docs-dev/architecture/callables.md#one-coercion-route
     """
     try:
         sig = inspect.signature(sig_obj)
@@ -334,7 +334,7 @@ class _Directives:
     plain word as an ordinary kwarg. The opener's form selects the mode for the whole spec.
 
     Dev Notes:
-        docs-dev/architecture/06-callables.md#plain-and-escaped-directives
+        docs-dev/architecture/callables.md#plain-and-escaped-directives
     """
 
     fn: str
@@ -367,7 +367,7 @@ def active_directives(has_key: Callable[[str], bool]) -> _Directives:
     data: a plain opener with a stray ``_bind`` leaves that ``_bind`` a kwarg.
 
     Dev Notes:
-        docs-dev/architecture/06-callables.md#plain-and-escaped-directives
+        docs-dev/architecture/callables.md#plain-and-escaped-directives
     """
     if any(has_key(opener) for opener in _ESCAPED_DIRECTIVES.openers):
         return _ESCAPED_DIRECTIVES
@@ -391,7 +391,7 @@ def names_a_bind(name: str) -> bool:
     the opener's to decide, at construction.
 
     Dev Notes:
-        docs-dev/architecture/06-callables.md#plain-and-escaped-directives
+        docs-dev/architecture/callables.md#plain-and-escaped-directives
     """
     return name in (_PLAIN_DIRECTIVES.bind, _ESCAPED_DIRECTIVES.bind)
 
@@ -416,7 +416,7 @@ def _mixed_form_hint(names: Iterable[str]) -> str:
     when no name is a directive word.
 
     Dev Notes:
-        docs-dev/architecture/06-callables.md#plain-and-escaped-directives
+        docs-dev/architecture/callables.md#plain-and-escaped-directives
     """
     clauses = []
     for name in sorted(set(names) & set(_DIRECTIVE_COUNTERPARTS)):
@@ -465,7 +465,7 @@ def promote_bare_spec(spec: str) -> dict[str, Any]:
     key sitting beside it is ordinary data, exactly as it is beside a plain ``fn:``.
 
     Dev Notes:
-        docs-dev/architecture/06-callables.md#spec-grammar
+        docs-dev/architecture/callables.md#spec-grammar
     """
     return {_PLAIN_DIRECTIVES.fn: spec}
 

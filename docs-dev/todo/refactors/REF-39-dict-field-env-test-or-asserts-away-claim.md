@@ -17,4 +17,4 @@ to pin. Same family as REF-38: rewrite to `assert result.mapping.get("key") == 4
 (drop the `or` and the unrelated key-presence check), or strengthen to
 `assert result.mapping == {"key": 42}`. The double-underscore separator is the
 design decision at
-[10-design-decisions.md#double-underscore-separator](../../architecture/10-design-decisions.md#double-underscore-separator).
+[design-decisions/double-underscore-separator.md#double-underscore-separator](../../architecture/design-decisions/double-underscore-separator.md#double-underscore-separator).

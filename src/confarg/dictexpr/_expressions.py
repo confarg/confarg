@@ -5,7 +5,7 @@
 """Expression resolution for ${...} field references and computations.
 
 Dev Notes:
-    docs-dev/architecture/07-expressions.md
+    docs-dev/architecture/expressions/README.md
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def contains_expression(value: object) -> bool:
     ``build()`` must use this predicate to leave such values untouched.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#deferral-rule
+        docs-dev/architecture/expressions/deferral-rule.md#deferral-rule
     """
     return isinstance(value, str) and _EXPR_RE.search(value) is not None
 
@@ -155,7 +155,7 @@ def _parse_expression(content: str) -> ast.Expression:
     on the way in.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#resolution-algorithm
+        docs-dev/architecture/expressions/resolution.md#resolution-algorithm
     """
     return ast.parse(_strip_anchor(content), mode="eval")
 
@@ -777,7 +777,7 @@ def _anchor_markers(expr_content: str) -> list[tuple[int, int, int]]:
     there with ``items[(::step)]``.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     try:
         toks = _significant_tokens(expr_content)
@@ -893,7 +893,7 @@ def _anchor_prefix(node_path: str, levels: int) -> str:
         MissingReferenceError: If the run climbs above the root of the document.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     segments = node_path.split(".") if node_path else []
     if levels > len(segments):
@@ -915,7 +915,7 @@ def check_anchor_depth(value: str, node_path: str, scope: str = "file") -> None:
         MissingReferenceError: If a dot run climbs past the root of *scope*.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     depth = len(node_path.split(".")) if node_path else 0
     for match in _EXPR_RE.finditer(value):
@@ -935,7 +935,7 @@ def name_anchors(value: str) -> str:
     :class:`_AnchorResolver` that turns it into a path, once the node is known.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     return _map_expressions(value, _name_anchor)
 
@@ -949,7 +949,7 @@ class _AnchorResolver(ast.NodeTransformer):
     not as Python anyone could parse.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
 
     def __init__(self, node_path: str) -> None:
@@ -999,7 +999,7 @@ class _Prefixer(ast.NodeTransformer):
     that binds names (lambdas, comprehensions).
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
 
     def __init__(self, prefix: str) -> None:
@@ -1057,7 +1057,7 @@ def prefix_references(data: Any, prefix: str) -> Any:
     *prefix* returns *data* itself, unchanged.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     if not prefix:
         return data
@@ -1076,6 +1076,6 @@ def canonicalize_references(data: Any) -> Any:
     it silently.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#a-relative-reference-is-never-serialized-as-an-absolute-path
+        docs-dev/architecture/expressions/reference-anchoring.md#a-relative-reference-is-never-serialized-as-an-absolute-path
     """
     return _map_strings(data, _strip_anchor)

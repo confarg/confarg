@@ -50,7 +50,7 @@ class _StrToken(str):
     """Untyped text from CLI args, env vars or CSV cells — eligible for coercion to the target type.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#token-model
+        docs-dev/architecture/types/token-model.md#token-model
     """
 
     __slots__ = ()
@@ -64,7 +64,7 @@ class _UnionSeqToken(_StrToken):
     ``bool | list[str]`` → ``['hello']``). A plain ``_StrToken`` gets no such fallback.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#unions-with-sequence-variants
+        docs-dev/architecture/cli-parsing/token-consumption.md#unions-with-sequence-variants
     """
 
     __slots__ = ()
@@ -82,7 +82,7 @@ def _src_type(value: Any) -> str:
     """Return the user-visible type name of a value, collapsing _StrToken to 'str'.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#token-model
+        docs-dev/architecture/types/token-model.md#token-model
     """
     return "str" if isinstance(value, _StrToken) else type(value).__name__
 
@@ -390,7 +390,7 @@ def _is_seq_variant(tp: Any) -> bool:
     the CLI and file spellings a same-arity ``tuple`` takes.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     tp = _resolve_type(tp)
     return _is_tuple(tp) or _is_namedtuple(tp) or _is_varlen_collection(tp)
@@ -405,7 +405,7 @@ def _fixed_seq_types(tp: Any) -> list[Any] | None:
     collection, or no sequence at all.
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     tp = _resolve_type(tp)
     if _is_namedtuple(tp):

@@ -5,7 +5,7 @@
 """Deep merge of the intermediate dicts, and the list/dict patch sentinels it understands.
 
 Dev Notes:
-    docs-dev/architecture/01-pipeline-and-contracts.md#deep-merge-semantics
+    docs-dev/architecture/pipeline/deep-merge.md#deep-merge-semantics
 """
 
 from __future__ import annotations
@@ -215,7 +215,7 @@ def _index_patch_escapes_base(base: list[Any], ops: dict[str, Any]) -> bool:
     handles them (and raises its specific errors).
 
     Dev Notes:
-        docs-dev/architecture/01-pipeline-and-contracts.md#merge-build-contract
+        docs-dev/architecture/pipeline/merge-build-contract.md#merge-build-contract
     """
     if any(k in ops for k in (LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_POST_APPEND_DELETE_KEY)):
         return False
@@ -388,7 +388,7 @@ def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
         value: The value to set at the target path.
 
     Dev Notes:
-        docs-dev/architecture/01-pipeline-and-contracts.md#scalar-intermediates
+        docs-dev/architecture/pipeline/deep-merge.md#scalar-intermediates
     """
     for part in path[:-1]:
         # Negative index into an active append-spec: navigate directly into the
@@ -406,6 +406,41 @@ def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
         d = d[part]
     if path:
         d[path[-1]] = value
+
+
+def _pop_nested(d: dict[str, Any], path: list[str]) -> None:
+    """Remove the node *path* names, as the whole-value write that replaces it does.
+
+    The destructive twin of :func:`_set_nested`'s last-write-wins: a plain CLI flag
+    replaces the node at its path outright, so whatever an argv-order scan
+    accumulated at that path and below stops with it.  The descent stops at the
+    first segment whose node is missing or not a dict, popping that node: a
+    non-dict intermediate is replaced wholesale by the write that follows, so every
+    op recorded under it is gone whether or not the descent ran deeper.
+
+    Args:
+        d: The root dict to modify in place.
+        path: A list of keys forming the path to the node to remove.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#scalar-intermediates
+    """
+    if not path:
+        return
+    node: Any = d
+    for part in path[:-1]:
+        if not isinstance(node, dict):
+            return
+        if (target := _navigate_append_spec(node, part)) is not None:
+            node = target
+            continue
+        child = node.get(part)
+        if not isinstance(child, dict):
+            node.pop(part, None)
+            return
+        node = child
+    if isinstance(node, dict):
+        node.pop(path[-1], None)
 
 
 def _accumulate_list_delete(

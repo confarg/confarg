@@ -5,7 +5,7 @@ the documented intent. One ticket per file; see [../README.md](../README.md) for
 including the [reproduction](../README.md#reproduction) every entry here carries.
 
 Cross-channel parity is mandatory
-([09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity)),
+([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity)),
 so a parity entry here is a violation nobody has approved, not a design choice.
 
 <!-- tickets:start -->
@@ -15,8 +15,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-46 — The `90_integration` code blocks document an API that does not exist](BUG-46-old-help-blocks-document-a-removed-api.md) | S | low | none |
 | [BUG-47 — The CSV section of `11_include` is cut off mid-sentence](BUG-47-include-readme-truncates-the-csv-header-section.md) | S | low | none |
 | [BUG-48 — `12_collections` cites "Tutorial XX" instead of a real tutorial](BUG-48-collections-readme-defers-to-tutorial-xx.md) | S | low | none |
-| [BUG-53 — a whole-field delete wins over a later flag in the adapters, not in vanilla](BUG-53-whole-field-delete-beats-a-later-flag-in-the-adapters.md) | M | medium | config |
-| [BUG-54 — A plain collection flag does not discard the patch ops before it in the adapters](BUG-54-plain-occurrence-does-not-discard-earlier-patch-ops-in-the-adapters.md) | M | medium | config |
 | [BUG-61 — A bare optional fixed-arity flag clears in the adapters and raises in vanilla](BUG-61-optional-fixed-arity-bare-flag-clears-in-the-adapters.md) | M | medium | behavior |
 | [BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four](BUG-63-bare-config-before-help-shows-help-on-argparse.md) | S | medium | behavior |
 | [BUG-65 — An index sub-flag is renamed and dropped in the adapters](BUG-65-namedtuple-index-sub-flag-renamed-and-dropped-in-the-adapters.md) | S | medium | behavior |
@@ -28,5 +26,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-72 — Scalar force-cast flags on non-union fields reach no adapter](BUG-72-scalar-force-cast-flags-unregistered-on-plain-fields.md) | S | medium | behavior |
 | [BUG-74 — Cyclopts asserts on a bare fixed-arity occurrence beside a valued one](BUG-74-cyclopts-asserts-on-a-bare-fixed-arity-occurrence-beside-a-valued-one.md) | S | low | behavior |
 | [BUG-75 — Argparse alone refuses the tokens that complete a `=`-spelled fixed-arity run](BUG-75-argparse-alone-refuses-the-tokens-completing-an-equals-spelled-fixed-arity-run.md) | S | medium | behavior |
+| [BUG-76 — A whole-field delete does not end the adapters' token accumulation](BUG-76-a-whole-field-delete-does-not-end-token-accumulation-in-the-adapters.md) | M | medium | config |
 
 <!-- tickets:end -->

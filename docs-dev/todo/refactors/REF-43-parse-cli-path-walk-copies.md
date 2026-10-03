@@ -14,7 +14,7 @@ Fix direction: one `_walk_path(target, parts, union_tag)` generator carrying the
 contract, with each predicate reduced to five or eight lines over it.
 
 Risk is **high** deliberately: three of these four are named canonical decision-makers in
-[09-invariants.md#delegate-to-the-canonical-function](../../architecture/09-invariants.md#delegate-to-the-canonical-function)
+[invariants.md#delegate-to-the-canonical-function](../../architecture/invariants.md#delegate-to-the-canonical-function)
 — "does this segment name a real member?", "is this path a collection patch?", "does this token
 address a callable key?" — and a mistake in the shared walk is silent in every channel and every
 front-end at once. Closing this means extending the cross-channel contract suite.

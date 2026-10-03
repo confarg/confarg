@@ -5,14 +5,14 @@
 **Effort:** S · **Risk:** medium · **Impact:** behavior
 
 BUG-56 taught the adapters the flat spelling of the tagged-leaf hatch
-([10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in](../../architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in))
+([design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in](../../architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in))
 for a *field*, by scanning argv for a flag whose path descends below a registered leaf.
 A registered leaf as the **root** target has no field to descend from: with `cli_prefix="v"`
 the tag flag is `--v.class`, whose only segment is the tag, so the scan finds no leaf at a
 proper prefix of the path and registers nothing — while vanilla accepts it, because its
 type walk answers the tag segment through the `union_tag` rule whatever the target. An
 unapproved gap in
-[09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity).
+[invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity).
 
 Two side observations for whoever picks this up:
 

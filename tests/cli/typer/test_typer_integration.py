@@ -8,7 +8,7 @@ Behavior shared with the other front-ends is asserted once in
 ``tests/cli/test_backend_contract.py`` against the ``loader`` fixture.  What is left
 here is typer-specific: the registration idioms, the help text, the completion hook,
 and the fact that typer's vendored click fork is what the adapter registers onto
-(docs-dev/architecture/04-cli-adapters.md#the-clicklike-seam).
+(docs-dev/architecture/cli-adapters/clicklike-seam.md#the-clicklike-seam).
 """
 
 from __future__ import annotations
@@ -344,7 +344,7 @@ def test_neither_adapter_drags_in_the_other(adapter: str, absent: str) -> None:
 
     Checked in a subprocess: this test session has already imported both, so only a
     fresh interpreter can answer what a single adapter costs
-    (docs-dev/architecture/04-cli-adapters.md#the-clicklike-seam).
+    (docs-dev/architecture/cli-adapters/clicklike-seam.md#the-clicklike-seam).
     """
     code = f"import sys, {adapter}; print({absent!r} in sys.modules)"
     out = subprocess.run(  # fixed argv, no shell, interpreter is sys.executable

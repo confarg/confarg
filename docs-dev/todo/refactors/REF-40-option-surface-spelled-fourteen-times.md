@@ -23,7 +23,7 @@ It has already drifted, which is what makes this more than tidiness: `env_prefix
 **five different ways**. `_api.py` says `""` reads every variable; `cli/cyclopts/_context.py`
 does not mention it; `cli/_collect.py` is a single clause; `_pipeline.py` another. The invariant
 that defaults live in `_defaults.py` and the literals are never repeated
-([10-design-decisions.md#shared-reserved-key-names-live-in-_defaultspy](../../architecture/10-design-decisions.md#shared-reserved-key-names-live-in-_defaultspy))
+([design-decisions/shared-reserved-key-names.md#shared-reserved-key-names-live-in-_defaultspy](../../architecture/design-decisions/shared-reserved-key-names.md#shared-reserved-key-names-live-in-_defaultspy))
 holds for the *values* while the *documentation* of those values diverges.
 
 Fix direction: a `MergeOptions(TypedDict, total=False)` in `_defaults.py`, consumed as
@@ -34,6 +34,6 @@ cross-references first (low risk, ~240 lines), then the signatures.
 Why **behavior** and not **none**: mkdocstrings renders `**opts`, so the published parameter
 table moves to the `MergeOptions` page. A user changes nothing, but the documentation they read
 changes shape. Settle that before starting, and record it in
-[01-pipeline-and-contracts.md#public-api-seams](../../architecture/01-pipeline-and-contracts.md#public-api-seams).
+[pipeline/api-seams.md#public-api-seams](../../architecture/pipeline/api-seams.md#public-api-seams).
 Overlaps [REF-9](REF-9-review-public-argument-names.md), which reviews the *names* in this same
 set — do that review first or in the same pass, since both rewrite these signatures.

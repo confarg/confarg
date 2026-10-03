@@ -792,7 +792,7 @@ class TestDumpRawDictTokens:
 
     A lone CLI token for a scalar+sequence union is a ``_UnionSeqToken``, a *subclass*
     of ``_StrToken``, so the unwrap has to recognise the whole token hierarchy and not
-    just its root — see docs-dev/architecture/09-invariants.md#tokens-mean-untyped-text.
+    just its root — see docs-dev/architecture/invariants.md#tokens-mean-untyped-text.
     """
 
     @pytest.mark.parametrize("suffix", [".toml", ".yaml", ".json"])
@@ -867,7 +867,7 @@ class TestDumpRawDictForceCasts:
 
         ``__value__`` holds a ``_StrToken``, which the writers accept as a ``str``
         subclass without complaint, so only the serializer can see the leak.
-        See docs-dev/architecture/09-invariants.md#tokens-mean-untyped-text.
+        See docs-dev/architecture/invariants.md#tokens-mean-untyped-text.
         """
         out = _serialize_untyped({"count": _Pinned(int, _StrToken("5"))})
         assert type(out["count"]["__value__"]) is str

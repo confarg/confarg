@@ -14,7 +14,7 @@ are **lenient**: a flag outside the prefix belongs to the host framework, not to
 user typo, so it is skipped rather than reported as unknown.
 
 Dev Notes:
-    docs-dev/architecture/03-cli-parsing.md#cli_prefix
+    docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix
 """
 
 from __future__ import annotations

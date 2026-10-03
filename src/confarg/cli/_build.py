@@ -8,8 +8,8 @@ Must not import argparse (it is shared by all adapters) and imports ``_parse_cli
 inside functions only.
 
 Dev Notes:
-    docs-dev/architecture/04-cli-adapters.md#framework-neutral-flag-model
-    docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
+    docs-dev/architecture/cli-adapters/flag-model.md#framework-neutral-flag-model
+    docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
     alongside any other variant, scalar or not (``str | type``, ``str | Path``).
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#union-inheritance-and-cast-flags
+        docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
     """
     non_none = _union_args_no_none(resolved)
     types = [_resolve_type(v) for v in non_none]
@@ -125,7 +125,7 @@ def _takes_multi_tokens(tp: Any) -> bool:
     ``list[str] | None`` answers through its union.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
     """
     return _is_varlen_collection(tp) or _union_has_seq_variant(tp)
 
@@ -217,7 +217,7 @@ def _escaped_opener_specs(
     with the same name and different descriptions).
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
+        docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
     result: list[FlagSpec] = []
     for field_flag, (_fn_path, mode, bind_key) in argv_fns.items():
@@ -474,7 +474,7 @@ def _path_is_callable_field(target: object, field_flag: str, union_tag: str) -> 
     answer.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
+        docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
     from confarg._parse_cli import _resolve_field_type  # noqa: PLC0415  # import cycle
 
@@ -551,7 +551,7 @@ def _blob_document_from_argv(argv: Sequence[str]) -> dict[str, Any]:
     shorthand already collected is skipped too: it is the refinement, not a competitor.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
     doc: dict[str, Any] = {}
     i = 0
@@ -720,7 +720,7 @@ def _whole_value_spec(  # noqa: PLR0913
     a syntax it will not honour.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#whole-value-flags
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import _accepts_object_value  # noqa: PLC0415
@@ -983,7 +983,7 @@ def _scalar_root_spec(target: Any) -> FlagSpec:
     rather than a field per attribute).
 
     Dev Notes:
-        docs-dev/architecture/03-cli-parsing.md#cli_prefix
+        docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix
     """
     resolved = _resolve_type(target)
     core = _unwrap_optional(resolved)
@@ -1121,7 +1121,7 @@ def _collect_callable_key_argv_specs(
     argument the delete flag does not take (BUG-29).
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
+        docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import (  # noqa: PLC0415
@@ -1166,10 +1166,10 @@ def _collect_leaf_tag_argv_specs(
     Registered only when typed, like an escaped opener, and for the same reason: a
     registered leaf's ordinary spelling is its scalar, and one flag per ``__init__``
     parameter would clutter ``--help`` for the escape hatch
-    (docs-dev/architecture/10-design-decisions.md#an-explicit-tag-opts-a-leaf-back-in).
+    (docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in).
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
+        docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import (  # noqa: PLC0415
@@ -1242,7 +1242,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
     field flag of that type would be (``--map.k`` on a ``dict[str, list[int]]``).
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#collection-patch-parity
+        docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
     """
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import (  # noqa: PLC0415
@@ -1297,7 +1297,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
             # nargs="*" and yet legal with no item at all: the shape no clicklike option
             # can express, so `stands_bare` tells the adapters to drop the bare
             # occurrences from the argv their framework parses
-            # (docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare).
+            # (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
             specs.append(
                 FlagSpec(
                     name=key,
@@ -1310,7 +1310,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
         else:
             # A subkey or element flag has the shape of the type it addresses, so it stands
             # bare exactly when a field flag of that type would
-            # (docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare).
+            # (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
             at = _resolve_field_type(target, path, union_tag)
             specs.append(
                 FlagSpec(
@@ -1367,11 +1367,11 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         A list of additional :class:`~confarg.cli.argparse.FlagSpec` objects.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#static-and-dynamic-flags
+        docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
     try:
         # Strip first: the scans below resolve dotted paths against *target*, which
-        # knows nothing of the prefix (docs-dev/architecture/03-cli-parsing.md#cli_prefix).
+        # knows nothing of the prefix (docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix).
         argv_list = strip_argv_prefix(argv, cli_prefix)
         config_dict = _partial_config_from_argv(argv_list, config_flag) if config_flag else {}
 

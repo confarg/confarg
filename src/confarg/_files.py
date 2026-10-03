@@ -12,9 +12,9 @@ Files are mounted at a path of the merged document (``__include__``, ``--config.
 ``CONFIG__<PATH>``); expression references are prefixed accordingly while mounting.
 
 Dev Notes:
-    docs-dev/architecture/02-files-and-env.md
-    docs-dev/architecture/07-expressions.md#reference-anchoring
-    docs-dev/architecture/10-design-decisions.md#the-mount-keyword-is-spelled-per-channel
+    docs-dev/architecture/config-files/README.md
+    docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
+    docs-dev/architecture/design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ def _load_json_item(data: bytes, loc: str) -> Any:
 #: `_load_csv` instead. Every entry returns the document's raw top-level value; requiring that
 #: value to be a mapping is _require_layer's call alone, made once for all three formats, for
 #: whatever `__include__` resolves them to and for every mount route.
-#: See docs-dev/architecture/02-files-and-env.md#format-dispatch-and-optional-dependencies.
+#: See docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies.
 _LOADERS: dict[str, Any] = {
     ".toml": _load_toml,  # TOML root is always a dict
     ".yaml": _load_yaml_item,
@@ -102,7 +102,7 @@ def _read_rows(f: Any, delimiter: str) -> list[list[_StrToken]]:
     """Read all CSV rows, wrapping every cell in _StrToken and dropping blank lines.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#data-files-versus-configuration-layers
+        docs-dev/architecture/config-files/formats.md#data-files-versus-configuration-layers
     """
     return [[_StrToken(cell) for cell in row] for row in csv.reader(f, delimiter=delimiter) if row]
 
@@ -185,7 +185,7 @@ def _load_csv(data: bytes, loc: str, *, orient: str = "rows", delimiter: str = "
 
 #: Extensions whose content is data rather than a configuration layer. An include of one
 #: replaces whatever earlier entries produced instead of merging key-wise into it.
-#: See docs-dev/architecture/02-files-and-env.md#data-files-versus-configuration-layers.
+#: See docs-dev/architecture/config-files/formats.md#data-files-versus-configuration-layers.
 _DATA_SUFFIXES = frozenset({".csv", ".tsv"})
 
 
@@ -199,7 +199,7 @@ def _loader_for(loc: str, table: dict[str, Any]) -> Any:
         InvalidConfigFileError: If the location carries no extension, or one no loader handles.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#format-dispatch-and-optional-dependencies
+        docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies
     """
     ext = _sources._suffix(loc)
     if not ext:
@@ -224,7 +224,7 @@ def _load_document(loc: str, options: dict[str, Any] | None = None) -> Any:
         ConfargError: If the ``header`` option is not a boolean.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#format-dispatch-and-optional-dependencies
+        docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies
     """
     ext = _sources._suffix(loc)
     if ext in _DATA_SUFFIXES:
@@ -286,7 +286,7 @@ def _unwrap_root_key(value: Any) -> Any:
     in :func:`_load_any`.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#reserved-file-only-keys
+        docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
     """
     if isinstance(value, dict) and len(value) == 1 and _defaults.ROOT_KEY in value:
         return value[_defaults.ROOT_KEY]
@@ -312,8 +312,8 @@ def _load_includes(
     process working directory instead.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#include-semantics
-        docs-dev/architecture/02-files-and-env.md#mounting
+        docs-dev/architecture/config-files/include-semantics.md#include-semantics
+        docs-dev/architecture/config-files/mounting.md#mounting
     """
     result: Any = None
     for i, (path_str, options) in enumerate(entries):
@@ -363,7 +363,7 @@ def _resolve_node(
     check below sits on this walk rather than on the mounting pass.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     if isinstance(data, dict):
         return _resolve_dict(data, base, seen, path_in_file, union_tag)
@@ -395,7 +395,7 @@ def _resolve_dict(
     list item: it is the same key in the same document, so one rule reads it.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     if INCLUDE_KEY in data:
         included = prefix_references(
@@ -434,7 +434,7 @@ def _resolve_list(
     Each item's references are prefixed by the index it lands on.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     result: list[Any] = []
     for item in data:
@@ -472,7 +472,7 @@ def _load_any(
     For CSV/TSV, *options* may contain 'orient' and 'header'.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#format-dispatch-and-optional-dependencies
+        docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies
     """
     return _resolve_node(_load_document(loc, options), loc, seen, "", union_tag)
 
@@ -486,7 +486,7 @@ def _require_layer(value: Any, loc: str) -> dict[str, Any]:
     ``null``) contributes nothing, matching an empty TOML file.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#format-dispatch-and-optional-dependencies
+        docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies
     """
     if value is None:
         return {}
@@ -502,7 +502,7 @@ def _load_raw(loc: str, seen: frozenset[str], union_tag: str | None = None) -> d
     :func:`_load_any` can read it.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#data-files-versus-configuration-layers
+        docs-dev/architecture/config-files/formats.md#data-files-versus-configuration-layers
     """
     _loader_for(loc, _LOADERS)  # a root is a layer: .csv/.tsv is unsupported here, not data
     return _require_layer(_load_any(loc, seen, union_tag=union_tag), loc)
@@ -548,8 +548,8 @@ def _mount(value: Any, subpath: str) -> Any:
     ``CONFIG__<PATH>`` reach it here. An empty *subpath* is the root, and the identity.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#mounting
-        docs-dev/architecture/07-expressions.md#reference-anchoring
+        docs-dev/architecture/config-files/mounting.md#mounting
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     if not subpath:
         return value
@@ -566,7 +566,7 @@ def _decode_mount_value(value: Any) -> Any:
     ``files=`` caller may pass the dict or list form directly -- and passes through.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#mounting
+        docs-dev/architecture/config-files/mounting.md#mounting
     """
     if isinstance(value, Path):
         return str(value)
@@ -587,7 +587,7 @@ def _parse_mount_value(value: Any) -> list[tuple[str, dict[str, Any]]]:
     ``__include__``.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#mounting
+        docs-dev/architecture/config-files/mounting.md#mounting
     """
     return _parse_include_val(_decode_mount_value(value))
 
@@ -601,8 +601,8 @@ def _load_mount_value(value: Any, base: str | None = None, union_tag: str | None
     default ``None`` names and the one difference between them.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#mounting
-        docs-dev/architecture/10-design-decisions.md#the-mount-keyword-is-spelled-per-channel
+        docs-dev/architecture/config-files/mounting.md#mounting
+        docs-dev/architecture/design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel
     """
     return _load_includes(_parse_mount_value(value), base, frozenset(), union_tag)
 
@@ -615,7 +615,7 @@ def _load_mount(value: Any, subpath: str, base: str | None = None, union_tag: st
     -- as for a pure ``__include__`` -- the result may be any type.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#mounting
+        docs-dev/architecture/config-files/mounting.md#mounting
     """
     if subpath:
         return _mount(_load_mount_value(value, base, union_tag), subpath)

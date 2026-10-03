@@ -23,7 +23,7 @@ def dotted_name(obj: Any) -> str:
     as ``Outer.Inner``, and the tag confarg writes has to be one it can import.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#dotted-imports
+        docs-dev/architecture/types/dotted-imports.md#dotted-imports
     """
     return f"{obj.__module__}.{obj.__qualname__}"
 
@@ -56,7 +56,7 @@ def _import_dotted(path: str) -> Any:
     dependency, a failed ``from x import y``, a circular import — comes from a
     module that does exist and is surfaced as
     :class:`~confarg.exceptions.SymbolImportError` rather than masked as a
-    typo'd path. See docs-dev/architecture/05-types-and-construction.md#dotted-imports.
+    typo'd path. See docs-dev/architecture/types/dotted-imports.md#dotted-imports.
     """
     parts = path.split(".")
     for i in range(len(parts), 0, -1):
@@ -89,7 +89,7 @@ def _import_dotted(path: str) -> Any:
         else:
             return obj
     # No importable module prefix matched; fall back to builtins so a bare
-    # name like "int" resolves.  See docs-dev/architecture/05-types-and-construction.md#dotted-imports.
+    # name like "int" resolves.  See docs-dev/architecture/types/dotted-imports.md#dotted-imports.
     obj = _resolve_builtin(parts)
     if obj is not _NOT_FOUND:
         return obj

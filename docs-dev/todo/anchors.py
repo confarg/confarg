@@ -1,7 +1,7 @@
 """Check that every architecture anchor cited in the code names a heading that exists.
 
-A ``Dev Notes:`` section or a comment cites one document and one ``##`` heading
-(``docs-dev/architecture/04-cli-adapters.md#the-quartet``), and the cited headings are kept
+A ``Dev Notes:`` section or a comment cites one document and one heading
+(``docs-dev/architecture/cli-adapters/model.md#the-quartet``), and the cited headings are kept
 stable *because* of those citations. A rename that forgets one leaves a citation that resolves
 to the document and then to nothing — a reader following it lands at the top of the note and
 has to guess which section was meant. This script is the sweep that convention asks for
@@ -33,7 +33,8 @@ ARCHITECTURE = ROOT / "docs-dev" / "architecture"
 SRC = ROOT / "src"
 
 #: A citation as the ``Dev Notes:`` convention writes it: repo-root path, ``.md``, one anchor.
-_CITATION = re.compile(r"docs-dev/architecture/([\w.-]+\.md)#([\w-]+)")
+#: The path may name a subtopic inside a topic folder, so it carries ``/`` segments.
+_CITATION = re.compile(r"docs-dev/architecture/([\w.-]+(?:/[\w.-]+)*\.md)#([\w-]+)")
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 
 

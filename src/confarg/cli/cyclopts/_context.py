@@ -91,7 +91,7 @@ def merge_app(  # noqa: PLR0913
     # handed the argv without the bare occurrences of a flag that takes zero *or* more
     # items: it reads one as an implicit empty container and then asserts when that
     # meets a real token.  The scans below read the argv the user typed
-    # (docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare).
+    # (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
     prefix = resolve_prefix(meta.get(PREFIX_ATTR) if meta else None, cli_prefix)
     tokens = sys.argv[1:] if argv is None else list(argv)
     if config_flag:

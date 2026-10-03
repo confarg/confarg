@@ -54,7 +54,7 @@ confarg-example-configs = { workspace = true }
 
 # The pytest defaults, plus `docs-dev`: internal documentation is never test material, and a
 # board reproduction is meant to be read, not run
-# (docs-dev/architecture/12-testing.md#examples-and-documentation).
+# (docs-dev/architecture/testing.md#examples-and-documentation).
 [tool.pytest.ini_options]
 norecursedirs = [
     "*.egg",

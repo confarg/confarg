@@ -19,7 +19,7 @@ Two things that look separate and are not:
 
 Includes are resolved in `_files._resolve_dict` while a file is being *loaded*, which is step 2 of
 `_pipeline._merge_sources`; expressions are resolved after step 3, against the merged document
-([01](../../architecture/01-pipeline-and-contracts.md#the-pipeline)). A document cannot choose its
+([01](../../architecture/pipeline/stages.md#the-pipeline)). A document cannot choose its
 own inputs: the content depends on the include, and the include would depend on the content.
 
 So an include path can only reference something known *before any file is read*. Several
@@ -45,20 +45,20 @@ error naming the restriction — never a silent miss.
 `os.environ` (`_api.py:107`) and is a parameter of `merge()`, `load()` and all five adapters'
 context helpers. Never read `os.environ` inside the engine: the mapping is what makes this
 testable, and it is what lets an application pass a filtered environment
-([09](../../architecture/09-invariants.md#delegate-to-the-canonical-function)).
+([09](../../architecture/invariants.md#delegate-to-the-canonical-function)).
 
 **Nothing is materialized.** Do not inject the environment as a node into the merged dict. If it
 were data, `merge()` would carry every variable and `dump_file(merge(...))` would write the whole
 environment to disk, secrets included. Resolve it lazily instead — the engine takes the mapping as
 a namespace — so only referenced names are read, and a dumped merged config keeps `${env.X}`
 verbatim and stays portable across environments. This is where `env` differs from `locals`
-([08](../../architecture/08-locals.md)): a local *is* data in the document and is stripped at
+([08](../../architecture/locals.md)): a local *is* data in the document and is stripped at
 `build()`; `env` is not data and never enters.
 
 **The name is reserved and derived from the target**, exactly as the locals namespace is: `env`
 unless the target owns a real `env` field, in which case `_env`; a target owning both has no
 namespace; writing both spellings is an error. Same predicate, same helper shape
-([08](../../architecture/08-locals.md#derived-name), `_segment_names_real_field`).
+([08](../../architecture/locals.md#derived-name), `_segment_names_real_field`).
 
 ## Two exemptions, both static
 
@@ -66,11 +66,11 @@ The whole implementation turns on these, and both are one-liners *because the na
 
 - `_collect_names` must not emit `env.X` as a dependency edge. There is no such node in the
   document, so the Kahn sort would fail looking for it
-  ([07](../../architecture/07-expressions.md#resolution-algorithm)).
+  ([07](../../architecture/expressions/resolution.md#resolution-algorithm)).
 - `_Prefixer.visit_Name` must leave `env` alone, beside `_ROOT_ANCHOR`, or a mounted fragment's
   `${env.X}` becomes `${sub.env.X}`
-  ([07](../../architecture/07-expressions.md#reference-anchoring),
-  [09](../../architecture/09-invariants.md#fragile-couplings)).
+  ([07](../../architecture/expressions/reference-anchoring.md#reference-anchoring),
+  [09](../../architecture/invariants.md#fragile-couplings)).
 
 This is the same mechanism [FEAT-21](FEAT-21-app-supplied-expression-functions.md) settles on for
 application-supplied functions, and the same reason it prefers a reserved namespace to a registry:
@@ -78,7 +78,7 @@ a fixed name keeps prefixing correct without the table being visible during `mer
 
 **The exemption now exists**: relative references gave `_Prefixer.visit_Name` and
 `_AnchorResolver` a `_anchor_dot_count(node.id) is not None` test beside `_SAFE_FUNCTIONS`
-([07](../../architecture/07-expressions.md#implementation-constraints)). Reuse that shape rather
+([07](../../architecture/expressions/reference-anchoring.md#implementation-constraints)). Reuse that shape rather
 than adding a second special case, and note that `_collect_names` needs the matching skip so the
 Kahn sort does not look for a node that is not in the document.
 
@@ -133,6 +133,6 @@ document is parsed; none lets the document choose its own inputs.
 
 Relations: [FEAT-21](FEAT-21-app-supplied-expression-functions.md) shares the reserved-namespace
 exemptions; [FEAT-3](FEAT-3-reserved-sentinel-key-registry.md) gains another reserved name;
-accepting this removes a line from [11-limitations.md](../../architecture/11-limitations.md) and
+accepting this removes a line from [limitations.md](../../architecture/limitations.md) and
 changes the caveat in `docs/how-to/derived-values.md` that says an include path cannot be an
 expression.

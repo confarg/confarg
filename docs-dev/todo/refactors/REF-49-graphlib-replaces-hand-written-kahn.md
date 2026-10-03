@@ -18,7 +18,7 @@ print(list(TopologicalSorter(g).static_order()))     # ['c', 'd', 'b', 'a']
 ```
 
 `dictexpr` may import it: `graphlib` is the standard library, so engine independence
-([07-expressions.md#engine-independence](../../architecture/07-expressions.md#engine-independence))
+([expressions/resolution.md#engine-independence](../../architecture/expressions/resolution.md#engine-independence))
 holds — the rule is stdlib plus `confarg.exceptions`, nothing about which stdlib modules.
 
 Why **behavior**: `CycleError` is raised by `prepare()` before anything is yielded, so the
@@ -27,7 +27,7 @@ expression node in the graph. Nothing asserts that text today — a grep over `t
 `docs-dev/` for the message finds nothing, and the cycle tests in
 `tests/dictexpr/test_expressions.py` check only the exception type — but it is user-visible, so
 the resolution algorithm note
-([07-expressions.md#resolution-algorithm](../../architecture/07-expressions.md#resolution-algorithm))
+([expressions/resolution.md#resolution-algorithm](../../architecture/expressions/resolution.md#resolution-algorithm))
 needs a line saying which nodes the message names. If naming only the unreleasable nodes is worth
 keeping, `prepare()` plus `get_ready()` in a loop preserves it and still deletes the in-degree
 bookkeeping.

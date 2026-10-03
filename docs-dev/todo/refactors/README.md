@@ -5,20 +5,18 @@ hygiene, performance. One ticket per file; see [../README.md](../README.md) for 
 
 A refactor whose impact is anything but `none` is not really a refactor — it reaches users, and
 wants either a decision in
-[../../architecture/10-design-decisions.md](../../architecture/10-design-decisions.md) or a
+[../../architecture/design-decisions/README.md](../../architecture/design-decisions/README.md) or a
 different board.
 
 <!-- tickets:start -->
 
 | Ticket | Effort | Risk | Impact |
 |---|---|---|---|
-| [REF-4 — `tests/examples/_registry.py` is orphaned](REF-4-orphaned-examples-registry.md) | S | low | none |
 | [REF-9 — Review public argument names and order](REF-9-review-public-argument-names.md) | L | medium | api |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | M | high | none |
-| [REF-15 — `examples/17_removing_items/myapp.py` imports a module that does not exist](REF-15-example-imports-missing-module.md) | S | low | behavior |
 | [REF-26 — The `--config` files named on argv are parsed three times per run](REF-26-config-files-parsed-three-times.md) | M | low | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | M | low | none |
-| [REF-29 — Every file under `examples/` is stored with CRLF](REF-29-examples-stored-with-crlf.md) | S | low | none |
+| [REF-29 — Nothing pins line endings, so the CRLF conversion can come back](REF-29-nothing-pins-line-endings.md) | S | low | none |
 | [REF-38 — `test_collect_names_keyword_args` or-asserts away its own claim](REF-38-collect-names-keyword-args-or-asserts-away-claim.md) | S | low | none |
 | [REF-39 — `test_dict_field_from_env` or-asserts away its own claim](REF-39-dict-field-env-test-or-asserts-away-claim.md) | S | low | none |
 | [REF-40 — The nine-keyword option surface is spelled out fourteen times](REF-40-option-surface-spelled-fourteen-times.md) | L | medium | behavior |

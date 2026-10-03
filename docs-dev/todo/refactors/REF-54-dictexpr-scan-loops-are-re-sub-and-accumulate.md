@@ -20,7 +20,7 @@
   both give `[0]`.
 
 `itertools` and `re` are stdlib, so engine independence
-([07-expressions.md#engine-independence](../../architecture/07-expressions.md#engine-independence))
+([expressions/resolution.md#engine-independence](../../architecture/expressions/resolution.md#engine-independence))
 holds, as it does for [REF-49](REF-49-graphlib-replaces-hand-written-kahn.md).
 
 This sharpens one bullet of [REF-52](REF-52-mechanical-collapses-in-the-type-machinery.md),

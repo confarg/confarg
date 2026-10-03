@@ -6,7 +6,7 @@
 `_scalar_root_spec` builds the root flag through `_build_leaf_spec` and then clears, by hand, each
 attribute the collection branch set: `nargs`, then `accumulates` (BUG-37), then `stands_bare`
 (BUG-38). A `list[int]` root takes exactly one token
-([03-cli-parsing.md#cli_prefix](../../architecture/03-cli-parsing.md#cli_prefix)), so every
+([cli-parsing/cli-prefix.md#cli_prefix](../../architecture/cli-parsing/cli-prefix.md#cli_prefix)), so every
 attribute qualifying the multi-token shape has to be reset there — and the next one added to
 `FlagSpec` will be forgotten, silently, because nothing ties the reset to the shape it undoes.
 

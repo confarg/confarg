@@ -9,7 +9,7 @@ cyclopts still reaches that error: `consume_multiple` reads the bare occurrence 
 empty container, the guard sees `[]` and raises. But a bare occurrence *beside a valued one*
 asserts inside cyclopts first, with no message of its own: the implicit empty container meets a
 real token, the same framework assertion
-[04-cli-adapters.md#a-flag-that-stands-bare](../../architecture/04-cli-adapters.md#a-flag-that-stands-bare)
+[cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare](../../architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)
 describes for the flags that do stand bare. A whole-value flag is not one of them, so
 `drop_bare_occurrences` leaves the bare occurrence in the argv cyclopts parses, and nothing
 refuses it before cyclopts does. Both orders assert (`--pair --pair 3 4` and

@@ -8,7 +8,7 @@ A location is a string -- a local path, or a URL whose scheme names a registered
 module answers every question a location implies, so no caller branches on local versus remote.
 
 Dev Notes:
-    docs-dev/architecture/02-files-and-env.md#locations-and-schemes
+    docs-dev/architecture/config-files/locations-and-schemes.md#locations-and-schemes
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 from confarg.exceptions import InvalidConfigFileError
 
 #: A location is a URL only when at least two characters precede the colon, so a Windows drive
-#: letter stays a path. See docs-dev/architecture/02-files-and-env.md#locations-and-schemes.
+#: letter stays a path. See docs-dev/architecture/config-files/locations-and-schemes.md#locations-and-schemes.
 _SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]+:")
 
 #: Seconds the built-in HTTP reader waits. An application needing another value registers its
@@ -173,7 +173,7 @@ def _scheme_of(loc: str) -> str:
         InvalidConfigFileError: If *loc* names a scheme no handler is registered for.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#locations-and-schemes
+        docs-dev/architecture/config-files/locations-and-schemes.md#locations-and-schemes
     """
     match = _SCHEME_RE.match(loc)
     if match is None:
@@ -191,7 +191,7 @@ def _read_bytes(loc: str) -> bytes:
     every channel, so no loader carries its own not-found branch.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#locations-and-schemes
+        docs-dev/architecture/config-files/locations-and-schemes.md#locations-and-schemes
     """
     scheme = _scheme_of(loc)
     reader = _SCHEME_READERS[scheme] if scheme else _read_local
@@ -211,7 +211,7 @@ def _suffix(loc: str) -> str:
     A URL's query and fragment are stripped first, so ``https://h/app.yaml?env=prod`` is YAML.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#locations-and-schemes
+        docs-dev/architecture/config-files/locations-and-schemes.md#locations-and-schemes
     """
     inner = urlsplit(loc).path if _scheme_of(loc) else loc
     return Path(inner).suffix.lower()
@@ -244,7 +244,7 @@ def _join(base: str | None, relative: str) -> str:
         InvalidConfigFileError: If a remote document names a location outside its own origin.
 
     Dev Notes:
-        docs-dev/architecture/02-files-and-env.md#relative-includes-resolve-within-one-origin
+        docs-dev/architecture/config-files/locations-and-schemes.md#relative-includes-resolve-within-one-origin
     """
     if base is None or not _scheme_of(base):
         # A local document may name any registered location, or a path relative to its own, and

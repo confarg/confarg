@@ -5,7 +5,7 @@
 
 `--help` lists a subclass's flags only once something has imported it, so a user who does not
 already know a plugin's options cannot discover them
-([11-limitations.md](../../architecture/11-limitations.md)). A dedicated opener would close the
+([limitations.md](../../architecture/limitations.md)). A dedicated opener would close the
 gap without putting every struct's selector into `--help`: `--<field>.<union_tag>.help
 <dotted.path>` imports that one class and prints its flags, the way `--<field>.<union_tag>`
 already imports it to register them.

@@ -617,7 +617,7 @@ class TestFixedSequenceContract:
     A namedtuple is a fixed-length sequence, so every front-end consumes exactly its
     arity in positional tokens -- the same count a ``tuple[int, int]`` field consumes --
     and the per-field and per-index flags refine it
-    (docs-dev/architecture/03-cli-parsing.md#token-consumption).
+    (docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption).
     """
 
     def test_tuple_positional(self, loader: ConfargLoader) -> None:
@@ -2042,6 +2042,45 @@ class TestCollectionPatchContract:
         base = tmp_yaml("data: {a: 1, b: 2}\n")
         cfg = loader.load(_WithMap, argv=["--config", str(base), "--data.a-"], env={})
         assert cfg.data == {"b": 2}
+
+    def test_whole_field_delete_then_set(self, loader: ConfargLoader) -> None:
+        """A whole-field delete loses to the plain flag that follows it (BUG-53).
+
+        The delete drops the field and the later flag sets it again — the argv order
+        vanilla honors, and the order that clears a configured list to put something
+        else in its place.
+        """
+        cfg = loader.load(_WithUsers, argv=["--users-", "--users", "carol"], env={})
+        assert cfg.users == ["carol"]
+
+    def test_whole_field_delete_then_set_over_config(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The delete-then-set order holds with a config file below it (BUG-53)."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users-", "--users", "carol"], env={})
+        assert cfg.users == ["carol"]
+
+    def test_set_then_whole_field_delete(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The reverse order keeps the delete: the earlier set is ended by it."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users", "carol", "--users-"], env={})
+        assert cfg.users == []
+
+    def test_append_before_plain_set_discarded(self, loader: ConfargLoader) -> None:
+        """A plain occurrence replaces the whole list, discarding the append before it (BUG-54)."""
+        cfg = loader.load(_WithUsers, argv=["--users+", "billy", "--users", "carol"], env={})
+        assert cfg.users == ["carol"]
+
+    def test_index_delete_before_plain_set_discarded(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """An index delete before a plain occurrence dies with the list it patched (BUG-54)."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users.0-", "--users", "carol"], env={})
+        assert cfg.users == ["carol"]
+
+    def test_index_set_before_plain_set_discarded(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """An index set before a plain occurrence dies with the list it patched (BUG-54)."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users.0", "zed", "--users", "carol"], env={})
+        assert cfg.users == ["carol"]
 
     def test_interleaved_append_and_patch_newest(self, loader: ConfargLoader) -> None:
         """Append-empty-then-fill-by-(-1) repeats resolve in command order.
@@ -3825,9 +3864,9 @@ class TestMountParity:
     """The three mount routes accept the same fragment and produce the same merged dict.
 
     They are spelled differently on purpose
-    (docs-dev/architecture/10-design-decisions.md#the-mount-keyword-is-spelled-per-channel), but
+    (docs-dev/architecture/design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel), but
     what they mount does not differ: each reads its value as an ``__include__`` value through
-    one resolver (docs-dev/architecture/02-files-and-env.md#mounting). Every route used to have
+    one resolver (docs-dev/architecture/config-files/mounting.md#mounting). Every route used to have
     its own loader, and they diverged -- the CLI and env routes refused non-dict roots and data
     files that ``__include__`` accepted at the same node, and had no spelling for the CSV
     options at all.
@@ -3952,7 +3991,7 @@ class TestMountParity:
 
         Both extend the list with the fragment's items: appending is the ``+`` operator's job
         and the mount has no say in it
-        (docs-dev/architecture/10-design-decisions.md#the--suffix-is-a-merge-operator-not-a-list-spelling).
+        (docs-dev/architecture/design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling).
         """
         rows = tmp_path / "rows.yaml"
         rows.write_text("- gamma\n- delta\n", encoding="utf-8")
@@ -3972,7 +4011,7 @@ class TestMountParity:
         """Test that a class tag inside an include discards the base node, as --config does.
 
         The include merges did not thread ``union_tag``, so the rule in
-        docs-dev/architecture/10-design-decisions.md#a-class-tag-replaces-not-merges held for
+        docs-dev/architecture/design-decisions/class-tag-replaces.md#a-class-tag-replaces-not-merges held for
         ``--config.db`` and not for ``db: {__include__: …}``.
         """
         sqlite = tmp_path / "sqlite.yaml"

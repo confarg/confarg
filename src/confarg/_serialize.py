@@ -5,7 +5,7 @@
 """Serialization of dataclass instances to plain dicts (the inverse of construction).
 
 Dev Notes:
-    docs-dev/architecture/05-types-and-construction.md#serialization
+    docs-dev/architecture/types/serialization.md#serialization
 """
 
 from __future__ import annotations
@@ -174,7 +174,7 @@ def _serialize_union(
     warns when no cast can name it.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#casting-a-stolen-leaf
+        docs-dev/architecture/types/stealing-rule.md#casting-a-stolen-leaf
     """
     variant_tp = _find_variant_type(tp, instance)
     if variant_tp is None:
@@ -205,7 +205,7 @@ def _warn_unpinnable_leaf(variant_tp: Any, serialized: Any, path: str) -> None:
         path: Dot-separated field path for diagnostics.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#casting-a-stolen-leaf
+        docs-dev/architecture/types/stealing-rule.md#casting-a-stolen-leaf
     """
     warnings.warn(
         f"Value at '{path or _defaults.ROOT_KEY}' will not read back as"
@@ -233,7 +233,7 @@ def _reads_back(tp: Any, instance: Any, data: Any, union_tag: str) -> bool:
         True if construction yields a value of the same type that compares equal.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#casting-a-stolen-leaf
+        docs-dev/architecture/types/stealing-rule.md#casting-a-stolen-leaf
     """
     try:
         back = construct(tp, data, union_tag=union_tag)
@@ -280,14 +280,14 @@ def _serialize_leaf(tp: Any, value: Any) -> Any:
     """Serialize a leaf value: Enum → .value, registered leaf → its serializer, else passthrough.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#serialization
+        docs-dev/architecture/types/serialization.md#serialization
     """
     if isinstance(value, enum.Enum):
         return value.value
     # Before the registry loop: a token is a str subclass, and registering ``str`` must not
     # let one leak out. isinstance, so a token subclass (_UnionSeqToken) is caught too; it
     # still spares a caller's own str subclass, which cannot inherit from a private type.
-    # See docs-dev/architecture/09-invariants.md#tokens-mean-untyped-text.
+    # See docs-dev/architecture/invariants.md#tokens-mean-untyped-text.
     if isinstance(value, _StrToken):
         return str(value)
     for leaf_tp, serialize in _LEAF_SERIALIZERS.items():
@@ -314,7 +314,7 @@ def _serialize_untyped(value: Any) -> Any:
     bare scalar is re-read by declaration order.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#serialization
+        docs-dev/architecture/types/serialization.md#serialization
     """
     if isinstance(value, _Pinned):
         return _serialize_pinned(value)
@@ -332,7 +332,7 @@ def _serialize_pinned(pin: _Pinned) -> dict[str, Any]:
     ``_StrToken`` a CLI cast pins and walks a container a file cast may hold.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#cast-pinning-in-files
+        docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
     """
     return _cast_dict(pin.tp, _serialize_untyped(pin.value))
 
@@ -348,7 +348,7 @@ def _cast_dict(tp: Any, value: Any) -> dict[str, Any]:
         The two-key cast dict.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#cast-pinning-in-files
+        docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
     """
     return {"__cast__": cast_name_for_type(tp), "__value__": value}
 
@@ -375,7 +375,7 @@ def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one bran
     of ``Literal[1]``.
 
     Dev Notes:
-        docs-dev/architecture/05-types-and-construction.md#serialization
+        docs-dev/architecture/types/serialization.md#serialization
     """
     if _is_namedtuple(tp) or _is_struct_variant(tp):
         return isinstance(instance, tp)

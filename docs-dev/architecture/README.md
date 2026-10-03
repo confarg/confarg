@@ -28,34 +28,44 @@ def _try_coerce(ft, token):
     """Coerce a string token to the target type if unambiguous.
 
     Dev Notes:
-        docs-dev/architecture/07-expressions.md#deferral-rule
+        docs-dev/architecture/expressions/deferral-rule.md#deferral-rule
     """
 ```
 
 The section is hidden on the documentation site by `docs/assets/stylesheets/extra.css`
 (mkdocstrings renders it as `<details class="dev-notes">`), so it is written for whoever works
-on confarg rather than for whoever uses it. A citation names one document and one `##` heading
+on confarg rather than for whoever uses it. A citation names one document and one heading
 anchor; headings in these files are kept stable for that reason, and renaming one means fixing
 the citations that name it — `uv run python docs-dev/todo/anchors.py` lists every citation
 whose anchor no longer resolves.
 
-Open the topic documents that match the code you are touching; the reading guide below maps
-source modules to documents.
+## Layout
+
+A topic is one file while it stays cohesive, and a folder of subtopic files once it does not:
+splitting is what keeps a note small enough to be read whole. A folder's `README.md` routes
+to its subtopics and holds nothing else, so the rationale always lives in exactly one place.
+
+The notes are **not numbered**. Order is not part of what they say — a reader arrives from a
+`Dev Notes:` citation or from the reading guide below, never at "the first one".
+
+Open the topics that match the code you are touching; the reading guide maps source modules
+to notes.
 
 ## Reading guide
 
 | If you touch… | Read |
 |---|---|
-| `_api.py`, `_pipeline.py`, `_merge.py` | [01-pipeline-and-contracts.md](01-pipeline-and-contracts.md) |
-| `_files.py`, `_parse_env.py` | [02-files-and-env.md](02-files-and-env.md) |
-| `_parse_cli.py`, `_cast.py` | [03-cli-parsing.md](03-cli-parsing.md) |
-| `cli/**` | [04-cli-adapters.md](04-cli-adapters.md) (and 03) |
-| `_types.py`, `typedload/**`, `_serialize.py`, `_import.py` | [05-types-and-construction.md](05-types-and-construction.md) |
-| `_callable.py`, anything `Callable`-typed | [06-callables.md](06-callables.md) |
-| `dictexpr/**`, any value gate that runs before `build()` | [07-expressions.md](07-expressions.md) |
-| anything mentioning `locals` / `_locals` | [08-locals.md](08-locals.md) |
-| a new feature or public behavior | [10-design-decisions.md](10-design-decisions.md), [11-limitations.md](11-limitations.md), and the boards in [../todo/](../todo/README.md) |
-| tests | [12-testing.md](12-testing.md) |
+| `_api.py`, `_pipeline.py`, `_merge.py` | [pipeline](pipeline/README.md) |
+| `_files.py`, `_sources.py` | [config files](config-files/README.md) |
+| `_parse_env.py` | [environment parsing](environment-parsing.md) |
+| `_parse_cli.py`, `_cast.py` | [CLI parsing](cli-parsing/README.md) |
+| `cli/**` | [CLI adapters](cli-adapters/README.md), and [CLI parsing](cli-parsing/README.md) |
+| `_types.py`, `typedload/**`, `_serialize.py`, `_import.py` | [types](types/README.md) |
+| `_callable.py`, anything `Callable`-typed | [callables](callables.md) |
+| `dictexpr/**`, any value gate that runs before `build()` | [expressions](expressions/README.md) |
+| anything mentioning `locals` / `_locals` | [locals](locals.md) |
+| a new feature or public behavior | [design decisions](design-decisions/README.md), [limitations](limitations.md), and the boards in [../todo/](../todo/README.md) |
+| tests | [testing](testing.md) |
 
 ## Vocabulary
 
@@ -91,6 +101,7 @@ confarg/
 ├── _parse_cli.py      argv → nested dict (type-guided); --config scan; patch-only mode
 ├── _parse_env.py      env → nested dict; CONFIG__* pointers
 ├── _files.py          load/dump by extension; __include__; CSV/TSV
+├── _sources.py        what a location string implies: scheme, bytes, suffix, join, identity
 ├── _cast.py           force-cast table (.str/.int/.float/.bool/.json)
 │
 │   merge core
@@ -136,4 +147,4 @@ from it, build from it:
 
 Defaults for the keywords those functions share live in `_defaults.py`, together with the
 reserved key names every front-end must spell alike (`ROOT_KEY`, `LOCALS_KEYS`). Reference
-them; never repeat the literals ([09-invariants.md](09-invariants.md)).
+them; never repeat the literals ([invariants](invariants.md)).

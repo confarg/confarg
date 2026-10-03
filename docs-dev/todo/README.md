@@ -58,7 +58,7 @@ reading, no test covers it)*
 
 Two or three lines: what is wrong, when it bites, and what the fix direction looks like.
 Link the rationale it touches:
-[07-expressions.md#deferral-rule](../../architecture/07-expressions.md#deferral-rule).
+[expressions/deferral-rule.md#deferral-rule](../architecture/expressions/deferral-rule.md#deferral-rule).
 
 ```python
 @dataclass
@@ -109,7 +109,7 @@ For a defect in the documentation itself there is no program to run, so the repr
 **broken reference and what it fails to reach**: a `console` block showing the command that
 finds it — a `grep`, a link check — and the target it lands on instead. That block never
 executes: `docs-dev/` is excluded from pytest collection
-([12-testing.md#examples-and-documentation](../architecture/12-testing.md#examples-and-documentation)),
+([testing.md#examples-and-documentation](../architecture/testing.md#examples-and-documentation)),
 so paste the real output rather than expecting a run to replay it.
 
 Everything below applies to both kinds.
@@ -156,7 +156,7 @@ wrong?
 |---|---|
 | `low` | An existing test fails. The suite catches you before you commit. |
 | `medium` | Nothing covers it yet, and a mistake stays silent in **one** channel or front-end while the others stay correct. Closing it means adding a test there. |
-| `high` | Nothing covers it yet, and a mistake stays silent in **every** channel and front-end at once — the merge core, the coercion rules, the expression engine, anything under [09-invariants.md](../architecture/09-invariants.md), the [fragile couplings](../architecture/09-invariants.md#fragile-couplings) above all. Closing it means extending the cross-channel contract suite, which is what [cross-channel parity](../architecture/09-invariants.md#cross-channel-parity) demands. |
+| `high` | Nothing covers it yet, and a mistake stays silent in **every** channel and front-end at once — the merge core, the coercion rules, the expression engine, anything under [invariants.md](../architecture/invariants.md), the [fragile couplings](../architecture/invariants.md#fragile-couplings) above all. Closing it means extending the cross-channel contract suite, which is what [cross-channel parity](../architecture/invariants.md#cross-channel-parity) demands. |
 
 Risk and effort are independent: REF-6 is a small, obvious deletion in the merge core that
 nothing covers (`S`, high), while REF-27 is a wide mechanical move of test files that the

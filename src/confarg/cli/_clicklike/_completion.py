@@ -5,7 +5,7 @@
 """Dynamic completion hook shared by the click and typer adapters.
 
 Dev Notes:
-    docs-dev/architecture/04-cli-adapters.md#the-clicklike-seam
+    docs-dev/architecture/cli-adapters/clicklike-seam.md#the-clicklike-seam
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def setup_completion(
     crash the shell, so a failure degrades to fewer suggestions.
 
     Dev Notes:
-        docs-dev/architecture/04-cli-adapters.md#completion
+        docs-dev/architecture/cli-adapters/completion.md#completion
     """
     try:
         prog_name: Any = getattr(command, "name", None) or ""

@@ -7,20 +7,20 @@
 `tuple[X, Y] | None` and `NamedTuple | None` are *unions with a sequence variant* to vanilla, so
 `_consume_collection_or_scalar` consumes them greedily and `_union_seq_value` rejects an empty
 token run: the union has no varlen variant, so `[]` can build nothing and a bare `--pair` is
-`Missing value` ([03-cli-parsing.md#unions-with-sequence-variants](../../architecture/03-cli-parsing.md#unions-with-sequence-variants)).
+`Missing value` ([cli-parsing/token-consumption.md#unions-with-sequence-variants](../../architecture/cli-parsing/token-consumption.md#unions-with-sequence-variants)).
 `_collect_ns_fields` unwraps `Optional` before dispatching, so the same field reaches the
 fixed-arity/namedtuple branch instead and the empty list is stored — the check in
 `_collect_union_seq_value` that
-[04-cli-adapters.md#a-flag-that-stands-bare](../../architecture/04-cli-adapters.md#a-flag-that-stands-bare)
+[cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare](../../architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)
 counts on is never reached. Not an approved divergence
-([09-invariants.md#cross-channel-parity](../../architecture/09-invariants.md#cross-channel-parity)).
+([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity)).
 
 Only the *bare* spelling diverges for `tuple[X, Y] | None`: `--pair 1` and `--pair 1 2` already
 agree, because the adapters store the raw token run and vanilla does too. A *namedtuple* under
 `Optional` diverges further (found while fixing BUG-66, closed): vanilla's union branch keeps
 the run raw (`--pt 1 2` is `{'pt': ['1', '2']}`), while the adapters' namedtuple branch coerces
 it (`{'pt': [1, 2]}`), and the arity-plus-sub-flag merge takes the shapes of
-[BUG-66](../../architecture/10-design-decisions.md#a-namedtuples-arity-flag-and-its-sub-flags-merge-in-argv-order)
+[BUG-66](../../architecture/design-decisions/namedtuple-arity-flag-argv-order.md#a-namedtuples-arity-flag-and-its-sub-flags-merge-in-argv-order)
 on one side and the `'*'` list-op shape on the other. Routing the optional field through
 `_collect_union_seq_value` settles all of it at once. So the fix is not "require the arity
 here" — that would reject `--pair 1`, which vanilla accepts — but routing an optional fixed-arity

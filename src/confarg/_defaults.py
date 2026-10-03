@@ -8,7 +8,7 @@ Always reference these constants instead of repeating the literals, so the four 
 cannot drift apart.
 
 Dev Notes:
-    docs-dev/architecture/10-design-decisions.md
+    docs-dev/architecture/design-decisions/README.md
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ UNION_TAG: Final[str] = "class"
 """Default discriminator field name for union variants.
 
 Dev Notes:
-    docs-dev/architecture/10-design-decisions.md#union_tag-defaults-to-class
+    docs-dev/architecture/design-decisions/union-tag-defaults-to-class.md#union_tag-defaults-to-class
 """
 
 ENV_PREFIX: Final[str | None] = None
@@ -29,7 +29,7 @@ ENV_PREFIX: Final[str | None] = None
 to enable it, or ``""`` to read every variable.
 
 Dev Notes:
-    docs-dev/architecture/10-design-decisions.md#environment-variables-off-by-default
+    docs-dev/architecture/design-decisions/environment-variables-off-by-default.md#environment-variables-off-by-default
 """
 
 ENV_SEPARATOR: Final[str] = "__"
@@ -54,7 +54,7 @@ which case the other spelling is used; a target owning both names has no namespa
 See ``confarg._parse_cli._locals_keys_at``.
 
 Dev Notes:
-    docs-dev/architecture/08-locals.md
+    docs-dev/architecture/locals.md
 """
 
 ROOT_KEY: Final[str] = "__root__"
@@ -64,5 +64,5 @@ Every channel writes it and ``build`` reads it, so all four front-ends have to a
 spelling.
 
 Dev Notes:
-    docs-dev/architecture/02-files-and-env.md#reserved-file-only-keys
+    docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
 """
