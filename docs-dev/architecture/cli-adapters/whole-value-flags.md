@@ -50,7 +50,13 @@ registration is argv-scanned
 framework's rejection stands in for vanilla's `no_such_field` — and the collector descends
 into the leaf as it descends into a struct, writing the tag back raw, before the import
 resolves, for the [BUG-45](union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags) reason. A registered leaf
-as the *root* target keeps the gap (BUG-71).
+as the *root* target crossed the same seam one step later (BUG-71): it has no field to
+descend from, so the scan's leaf is the target itself, at the empty prefix of the path —
+and the tag flag, whose only segment is the tag, registers exactly as a field's does. The
+root's `__init__` parameters were static all along — the root is walked structurally,
+exactly as a union holding the same leaf is — so the tag is the one flag the scan adds;
+and the collector needs no new branch, because the inheritance walk already writes a root
+tag back and stops at the base the tag names.
 
 A decoded callable blob buys the factory and `bind` flags its class implies, exactly as a
 `--<field>.class` opener does. Neither half of that is a
