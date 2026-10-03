@@ -144,6 +144,15 @@ class TestAMalformedExpressionInAMountedFile:
         with pytest.raises(UnsafeExpressionError, match=r"^Invalid expression syntax: 'p \+'$"):
             confarg.resolve(merged)
 
+    def test_a_body_too_deep_to_parse_is_carried_as_written(self, tmp_path: Path) -> None:
+        """The parser's own give-up is a body that does not parse, not a crash of ``merge()`` (BUG-137)."""
+        body = "-" * 100_000 + "p"
+        frag = write(tmp_path, "frag.yaml", f"p: 1\nq: ${{{body}}}\n")
+        merged = confarg.merge(dict[str, Any], argv=["--config.db", str(frag)], env={})
+        assert merged == {"db": {"p": 1, "q": "${" + body + "}"}}
+        with pytest.raises(UnsafeExpressionError, match=r"^Expression nests too deeply to parse: '---"):
+            confarg.resolve(merged)
+
 
 # ---------------------------------------------------------------------------
 # Reaching out of the file

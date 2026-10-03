@@ -29,6 +29,17 @@ adjacency list records who depends on each node, so releasing a node touches onl
 dependents. Both matter only for large configurations — a config with thousands of chained
 expressions is the only case that felt the old quadratic sort and triple parse.
 
+**A body too deep for the parser does not parse.** On a deeply nested body (`${------…a}`)
+Python's parser gives up without a `SyntaxError`: a `RecursionError` while it builds the tree, or
+a `MemoryError` when its own stack overflows, the depth and the Python version deciding which
+(3.14 raises only the second on a unary chain). `_parse_body` reports both as `_TooDeepError`, a
+`SyntaxError`, so every parse site treats the body as one that does not parse: reference
+extraction skips it, mounting leaves it as written, and validation refuses it as
+`Expression nests too deeply to parse`, quoting it (BUG-137). Before, it escaped `resolve()` and
+a mounting `merge()` as a raw interpreter error. Python itself only documents the crash, for
+`compile()` and `ast.literal_eval`; Go's `regexp/syntax` is the precedent for reporting it as the
+parser's own error (`ErrNestingDepth`, "expression nests too deeply").
+
 Resolution happens **after** all sources are merged. That is the point of the design:
 overriding `resources.memory_gb` on the CLI recomputes a `${resources.memory_gb * 0.8}`
 written in a file.
