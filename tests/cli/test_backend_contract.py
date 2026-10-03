@@ -2034,6 +2034,20 @@ class TestCollectionPatchContract:
         cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users.-1", "billy"], env={})
         assert cfg.users == ["alice", "bob", "billy"]
 
+    def test_index_set_beside_a_plain_occurrence_records_the_op(self, loader: ConfargLoader) -> None:
+        """An index patch over a list the same channel collected records, not applies (BUG-67).
+
+        Within one channel the op is a *record*: vanilla's ``_set_nested`` promotes the
+        stored list into the ``'*'`` base and sets the index key beside it, leaving
+        ``build()`` to apply it. The adapters' join deep-merged the patch scan over the
+        collected value, and ``_deep_merge`` applied the op on the spot — the same list
+        built, but a merged dict that is not byte-identical, with the base list hidden
+        from no one but the op that consumed it.
+        """
+        argv = ["--users", "alice", "--users", "bob", "--users.0", "allan"]
+        assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {"*": ["alice", "bob"], "0": "allan"}}
+        assert loader.load(_WithUsers, argv=argv, env={}).users == ["allan", "bob"]
+
     def test_nested_index_set(self, loader: ConfargLoader, tmp_yaml) -> None:
         """Indices compose with sub-field paths (``--dbs.1.dbpath``)."""
         base = tmp_yaml("dbs:\n  - dbpath: a\n  - dbpath: b\n")
@@ -2081,6 +2095,17 @@ class TestCollectionPatchContract:
         """A negative index resolves against the fixed tuple length (``-1`` → last slot)."""
         cfg = loader.load(_WithLang, argv=["--lang.-1", "FR"], env={})
         assert cfg.lang == ("en", "FR")
+
+    def test_tuple_index_patch_beside_a_plain_occurrence_records_the_op(self, loader: ConfargLoader) -> None:
+        """A fixed tuple's index patch rides the collected tokens as the ``'*'`` base (BUG-67).
+
+        Same defect as the varlen spelling: the join applied the op to the collected
+        list instead of recording it, so the adapters held ``[en, FR]`` where vanilla
+        holds the operation ``{'*': [fr, FR], '0': en}``.
+        """
+        argv = ["--lang", "fr", "FR", "--lang.0", "en"]
+        assert loader.merge(_WithLang, argv=argv, env={}) == {"lang": {"*": ["fr", "FR"], "0": "en"}}
+        assert loader.load(_WithLang, argv=argv, env={}).lang == ("en", "FR")
 
     def test_tuple_build_with_mixed_indices_no_base(self, loader: ConfargLoader) -> None:
         """A fixed tuple builds element-by-element from mixed positive/negative indices."""
@@ -2138,6 +2163,17 @@ class TestCollectionPatchContract:
         cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users+", "--users+", "david"], env={})
         assert cfg.users == ["alice", "bob", "david"]
 
+    def test_append_beside_a_plain_occurrence_records_the_op(self, loader: ConfargLoader) -> None:
+        """An append over a list the same channel collected records, not applies (BUG-67).
+
+        Vanilla's ``_merge_append_ops`` wraps the stored list as the ``'*'`` base and
+        carries the appended items under ``'+'`` beside it; the adapters' join applied
+        the append on the spot.
+        """
+        argv = ["--users", "alice", "--users", "bob", "--users+", "carol"]
+        assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {"*": ["alice", "bob"], "+": ["carol"]}}
+        assert loader.load(_WithUsers, argv=argv, env={}).users == ["alice", "bob", "carol"]
+
     def test_append_bare_twice(self, loader: ConfargLoader, tmp_yaml) -> None:
         """Two bare appends append nothing twice, rather than reading as a repeated flag."""
         base = tmp_yaml("users: [alice, bob]\n")
@@ -2174,6 +2210,17 @@ class TestCollectionPatchContract:
         base = tmp_yaml("users: [alice, bob, claire]\n")
         cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users.-2-"], env={})
         assert cfg.users == ["alice", "claire"]
+
+    def test_index_delete_beside_a_plain_occurrence_records_the_op(self, loader: ConfargLoader) -> None:
+        """An index delete over a list the same channel collected records, not applies (BUG-67).
+
+        Vanilla's ``_accumulate_list_delete`` promotes the stored list into the
+        ``'*'`` base and accumulates the index under ``'-'``; the adapters' join deleted
+        the element from the collected list on the spot.
+        """
+        argv = ["--users", "alice", "--users", "bob", "--users.0-"]
+        assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {"*": ["alice", "bob"], "-": [0]}}
+        assert loader.load(_WithUsers, argv=argv, env={}).users == ["bob"]
 
     def test_dict_subkey_set(self, loader: ConfargLoader, tmp_yaml) -> None:
         """``--field.key value`` adds/overrides a dict entry (coerced to the value type)."""

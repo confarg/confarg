@@ -43,12 +43,40 @@ it on sight, which is right for its usual job of joining two priorities and wron
 the sentinels the patch scan recorded are written back over the merged dict. Without that,
 `--fn.fn X --fn.bind-` silently kept a config file's `bind` that vanilla deletes. Only
 dict-key deletes carry a sentinel; a list index delete travels as an index list under
-`"-"`/`"~"` and *is* an operation the merge applies, exactly as vanilla applies it.
+`"-"`/`"~"`, and with no collected list at its path it *is* an operation the merge
+applies against the lower-priority sources, exactly as vanilla applies it — a collected
+list under it is the one case that records instead
+([a patch op records against a list the channel collected](#a-patch-op-records-against-a-list-the-channel-collected)).
 
 Re-asserting means the delete wins wherever both spellings touch one key — but only for a
 delete that *survives the argv-order replay*: a plain flag the scan skips erases the ops
 recorded before it
 ([a plain occurrence erases the ops before it](#a-plain-occurrence-erases-the-ops-before-it)).
+
+## A patch op records against a list the channel collected
+
+The delete rule above generalizes: within one channel, *every* list op is a record, not an
+application. Vanilla writes a plain occurrence and the patch after it into one `ctx.data`,
+and its own descent — `_set_nested`'s intermediate promotion, `_accumulate_list_delete`'s
+walk, `_merge_append_ops` — turns the stored list into the `'*'` base and records the op
+beside it, for `build()` to apply: `--users a --users.0-` holds
+`{'users': {'*': ['a'], '-': [0]}}`, and a fixed tuple's `--pair 1 2 --pair.0 5` holds
+`{'pair': {'*': [1, 2], '0': 5}}`.
+
+The adapters' join deep-merges the scan's ops over the collected values, and
+`_deep_merge` applies list ops on sight (`_merge_list_base` → `_apply_list_ops`) — right
+for its usual job of joining two priorities, wrong within one channel. The applied shape
+built the same object, but the merged dict was not byte-identical, and it read as one
+priority too many: the base list had become the op's private operand (BUG-67).
+
+So the join's list-op half is repaired before it, as the delete half is repaired after it:
+`cli/_collect._promote_patched_lists` walks the scan's op tree in step with the collected
+dict and promotes every plain list an op dict addresses into `{'*': list}`, and the deep
+merge that follows only lays the op keys beside the base. The promotion is unconditional —
+any op dict over a collected list takes the recorded shape, whatever op kind it holds —
+because vanilla's descent promotes unconditionally too. A lower-priority source still
+sees the applied result: `_merge_list_base` applies a `'*'`-bearing dict on sight, so
+`{'*': [1, 2], '0': 5}` over a config file's list is `[5, 2]`, on both sides of the seam.
 
 ## A plain occurrence erases the ops before it
 

@@ -30,7 +30,7 @@ from confarg._api import build
 from confarg._callable import _ESCAPED_DIRECTIVES, _PLAIN_DIRECTIVES, _Directives, active_directives, promote_bare_spec
 from confarg._cast import JSON_CAST_NAME, SCALAR_CAST_TYPES, resolve_forced_value
 from confarg._import import _import_dotted
-from confarg._merge import _deep_merge, _DeleteSentinel, _set_nested
+from confarg._merge import LIST_REPLACE_BASE_KEY, _deep_merge, _DeleteSentinel, _set_nested
 from confarg._parse_cli import (
     _accepts_object_value,
     _collect_cli_patch_ops,
@@ -952,6 +952,36 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
     _collect_ns_inheritance(flat, _tp, prefix, union_tag, result, tags, argv)
 
 
+def _promote_patched_lists(ops: Mapping[str, Any], collected: dict[str, Any]) -> None:
+    """Promote every collected plain list an op dict addresses into its ``'*'`` base.
+
+    The list-op half of the channel split: vanilla stores a plain occurrence and the
+    patch after it in one ``ctx.data``, where its own descent
+    (:func:`~confarg._merge._set_nested`, ``_accumulate_list_delete``,
+    ``_merge_append_ops``) promotes the stored list into the ``'*'`` base and records
+    the op beside it, for ``build()`` to apply.  The adapters deep-merge the scan's ops
+    over the collected values, and ``_deep_merge`` applies list ops on sight -- right
+    for its usual job of joining two priorities, wrong within one channel -- so the
+    collected lists the ops address are promoted into the recorded shape first, and
+    the merge that follows only lays the op keys beside the base.
+
+    Args:
+        ops: The patch scan's op tree, read but never modified.
+        collected: The flat collector's dict, promoted in place.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/collection-patch-parity.md#a-patch-op-records-against-a-list-the-channel-collected
+    """
+    for key, val in ops.items():
+        if not isinstance(val, dict):
+            continue
+        node = collected.get(key)
+        if isinstance(node, list):
+            collected[key] = {LIST_REPLACE_BASE_KEY: node}
+        elif isinstance(node, dict):
+            _promote_patched_lists(val, node)
+
+
 def _restore_patch_deletes(ops: dict[str, Any], result: dict[str, Any]) -> None:
     """Put back every key delete *ops* recorded that the merge into *result* consumed.
 
@@ -1082,6 +1112,9 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
     # spec a delete flag refines, and the scan opens it before this merge lands on it
     # (docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).
     patch_ops = _collect_cli_patch_ops(argv_, target, config_flag, union_tag, cli_data)
+    # A collected list the ops address is their recorded base, not the list they apply
+    # to (BUG-67), exactly as the deletes below are re-asserted as records.
+    _promote_patched_lists(patch_ops, cli_data)
     cli_data = _deep_merge(cli_data, patch_ops)
     _restore_patch_deletes(patch_ops, cli_data)
     apply_root_json(flat, target, union_tag, cli_data)  # fold root `--json` under collected fields
