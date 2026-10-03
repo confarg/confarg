@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -1276,9 +1278,13 @@ class TestSubscriptPaths:
         assert resolve_expressions(data)["v"] == expected
 
     def test_a_node_anchored_subscript_stays_a_subscript(self) -> None:
-        """Anchoring never turns ``['__class__']`` into an attribute the evaluator could ``getattr``."""
+        """Anchoring keeps ``['__class__']`` an item lookup, which misses like any other key."""
         with pytest.raises(MissingReferenceError, match=r"Field 'svc\.a\.__class__' not found"):
             resolve_expressions({"svc": {"a": {}, "v": "${.a['__class__'].mro}"}})
+
+    def test_a_node_anchored_subscript_keeps_its_integer_key(self) -> None:
+        """Anchoring never rebuilds ``[0]`` as an attribute, whose fallback could only key by ``"0"``."""
+        assert resolve_expressions({"svc": {"m": {0: "x"}, "v": "${.m[0]}"}})["svc"]["v"] == "x"
 
     def test_a_node_anchored_subscript_reads_the_config(self) -> None:
         """A relative path may continue with subscripts like any other."""
@@ -1324,6 +1330,47 @@ class TestMethodCalls:
     def test_a_method_off_a_computed_string_runs(self) -> None:
         """The receiver may be any expression whose value is a string."""
         assert resolve_expressions({"n": 7, "v": "${(str(n) + 'a').upper()}"})["v"] == "7A"
+
+
+class TestAttributeIsAKey:
+    """A dot reads a key, never a Python attribute, so ``.x`` is ``['x']`` even off a path (BUG-125)."""
+
+    @pytest.mark.parametrize(
+        ("expression", "receiver"),
+        [("${n.upper}", "n"), ("x=${n.upper}", "n"), ("${svc['web-1'].strip}", "svc['web-1']")],
+    )
+    def test_a_method_named_without_a_call_is_missing(self, expression: str, receiver: str) -> None:
+        """A bound method never leaks into a value; the miss says how to call it."""
+        data = {"n": "abc", "svc": {"web-1": " a "}, "v": expression}
+        hint = rf"is a method only when called, as in {re.escape(receiver)}\."
+        with pytest.raises(MissingReferenceError, match=hint):
+            resolve_expressions(data)
+
+    @pytest.mark.parametrize(
+        ("value", "attribute"),
+        [
+            pytest.param(Path("a.txt"), "unlink", id="path-method"),
+            pytest.param(date(2024, 1, 1), "year", id="date-field"),
+            pytest.param(3, "real", id="int-field"),
+        ],
+    )
+    def test_no_attribute_of_a_value_is_reachable(self, value: object, attribute: str) -> None:
+        """Only the data's keys are; a host-language attribute is a missing field like any other."""
+        with pytest.raises(MissingReferenceError, match=rf"Field 'x\.{attribute}' not found"):
+            resolve_expressions({"x": value, "v": "${x." + attribute + "}"})
+
+    @pytest.mark.parametrize(
+        ("data", "dotted", "subscripted"),
+        [
+            pytest.param({"svc": {"web": {"h": 1}}, "k": "web"}, "svc[k].h", "svc[k]['h']", id="computed-subscript"),
+            pytest.param({"a": {"h": 1}, "c": True}, "(a if c else a).h", "(a if c else a)['h']", id="conditional"),
+            pytest.param({"m": {0: {"h": 1}}}, "m[0].h", "m[0]['h']", id="int-key"),
+        ],
+    )
+    def test_a_dot_off_a_computed_base_reads_the_key(self, data: dict, dotted: str, subscripted: str) -> None:
+        """What no path answers, a dot reads as the constant subscript spelling the same segment."""
+        assert resolve_expressions({**data, "v": "${" + dotted + "}"})["v"] == 1
+        assert resolve_expressions({**data, "v": "${" + subscripted + "}"})["v"] == 1
 
 
 class TestReferenceDependencies:

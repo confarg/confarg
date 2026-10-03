@@ -32,8 +32,8 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-117 — A union with an `Any` variant refuses to load and crashes `dump()`](BUG-117-a-union-with-an-any-variant-refuses-to-load-and-crashes-dump.md) | M | high | behavior |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | S | low | behavior |
 | [BUG-119 — `_defaults.py` says four front-ends must agree; there are five](BUG-119-defaults-module-counts-four-front-ends.md) | S | low | none |
-| [BUG-125 — A method named without a call yields the bound method](BUG-125-a-method-named-without-a-call-yields-the-bound-method.md) | S | medium | behavior |
 | [BUG-126 — An anchor marker cannot be followed by a subscript](BUG-126-an-anchor-marker-cannot-be-followed-by-a-subscript.md) | M | medium | behavior |
 | [BUG-127 — A reference included under a list item or a non-identifier key cannot parse](BUG-127-a-reference-included-under-a-list-item-or-a-non-identifier-key-cannot-parse.md) | M | high | behavior |
+| [BUG-128 — A computed subscript's miss is a bare `KeyError`](BUG-128-a-computed-subscript-miss-is-a-bare-keyerror.md) | S | low | api |
 
 <!-- tickets:end -->

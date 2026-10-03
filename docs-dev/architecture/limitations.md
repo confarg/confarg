@@ -13,6 +13,9 @@ the boundary moves here.
 
 - The grammar cannot express collection literals, slices, comprehensions or lambdas. The whitelist is the safety model, not an unfinished parser
   ([expressions](expressions/safety-model.md#safety-model)).
+- No attribute of a value is reachable, only keys and indices: `${d.year}` on a YAML date or
+  `${n.real}` on a number is a missing field, and no whitelisted function reads it instead
+  ([expressions](expressions/safety-model.md#a-dot-reads-a-key-never-an-attribute)).
 - A malformed expression contributes no dependency edges: it is not parseable, so nothing can
   be derived from it. The error surfaces at validation instead, with the expression text.
 - `--config.<path>+` fragments keep their **bare** references anchored at the merged root, not

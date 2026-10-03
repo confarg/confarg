@@ -299,6 +299,15 @@ class MissingReferenceError(ConfargError):
         return cls(f"{base}: {detail}") if detail is not None else cls(f"{base} in configuration")
 
     @classmethod
+    def uncalled(cls, path: str, kind: str, name: str, callee: str) -> MissingReferenceError:
+        """Return an error for a missing field spelled like a whitelisted *kind* named without a call.
+
+        *kind* is ``"function"`` or ``"method"``; *callee* is the text the call would put
+        before ``(...)``.
+        """
+        return cls.field_not_found(path, f"'{name}' is a {kind} only when called, as in {callee}(...)")
+
+    @classmethod
     def anchor_above_root(cls, path: str, depth: int, dots: int, scope: str = "document") -> MissingReferenceError:
         """Return an error for a relative reference that climbs past the root of its scope.
 

@@ -27,7 +27,7 @@ different board.
 | [REF-49 — `graphlib.TopologicalSorter` replaces the hand-written Kahn loop](REF-49-graphlib-replaces-hand-written-kahn.md) | S | low | behavior |
 | [REF-50 — Adapter registration and completion boilerplate](REF-50-adapter-registration-boilerplate.md) | M | low | none |
 | [REF-52 — Mechanical collapses in the type machinery](REF-52-mechanical-collapses-in-the-type-machinery.md) | S | low | none |
-| [REF-53 — Five `try`/`except`/`pass` blocks that `contextlib.suppress` already spells](REF-53-contextlib-suppress-for-hand-rolled-try-except.md) | S | low | none |
+| [REF-53 — Four `try`/`except`/`pass` blocks that `contextlib.suppress` already spells](REF-53-contextlib-suppress-for-hand-rolled-try-except.md) | S | low | none |
 | [REF-54 — Three hand-written scan loops in `dictexpr` the stdlib writes in one line](REF-54-dictexpr-scan-loops-are-re-sub-and-accumulate.md) | S | low | none |
 | [REF-55 — An adjacent-pair loop written with indices instead of `itertools.pairwise`](REF-55-pairwise-for-index-window-loops.md) | S | low | none |
 | [REF-56 — Four `[len(prefix):]` slices that are `str.removeprefix`](REF-56-removeprefix-for-guarded-slices.md) | S | low | none |
