@@ -56,6 +56,20 @@ class ConfargError(Exception):
             f" also present; can only merge sibling keys into a dict include",
         )
 
+    @classmethod
+    def no_such_mount_point(cls, spelling: str, owner: str, valid: Sequence[str] | None) -> ConfargError:
+        """Return the error for a mount flag whose subpath names no field of the target.
+
+        The one spelling for the sites that intercept a mount flag — vanilla's scan, the
+        adapters' rescan and the environment's config handler — which differ only in
+        *spelling*: ``--config.dbb`` on argv, ``CONFARG_CONFIG__DBB`` in the environment.
+        *valid* lists the field names the subpath could have named, or ``None`` when the node
+        it descends to holds none.
+        """
+        if valid is None:
+            return cls(f"{spelling} names no field of {owner} to mount a config file at: it holds no nested fields.")
+        return cls(f"{spelling} names no field of {owner} to mount a config file at. Valid fields: {list(valid)}.")
+
 
 class MissingFieldError(ConfargError):
     """Raised when a required field is not provided by any source."""

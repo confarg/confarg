@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 import pytest
 
 import confarg
+from confarg.exceptions import ConfargError
 from tests.conftest import (
     AppConfig,
     Color,
@@ -624,6 +625,30 @@ class TestEnvVarSubConfig:
         )
         assert result.db.host == "dbhost"
         assert result.db.port == 5432
+
+    def test_unknown_subpath_rejected(self, tmp_toml) -> None:
+        """CONFARG_CONFIG__DBB is an error naming the variable, not a silent mount (BUG-50)."""
+        db_file = tmp_toml("host = 'h'\nport = 1\nname = 'n'\n", "db.toml")
+        with pytest.raises(ConfargError, match="names no field") as excinfo:
+            confarg.load(
+                AppConfig,
+                argv=[],
+                env={"CONFARG_CONFIG__DBB": str(db_file)},
+                env_prefix="CONFARG_",
+            )
+        assert "CONFARG_CONFIG__DBB" in str(excinfo.value)
+        assert "Valid fields" in str(excinfo.value)
+
+    def test_lowercase_subpath_still_mounts(self, tmp_toml) -> None:
+        """A case-insensitive match on a real field stays accepted (BUG-50)."""
+        db_file = tmp_toml("host = 'h'\nport = 1\nname = 'n'\n", "db.toml")
+        result = confarg.load(
+            AppConfig,
+            argv=[],
+            env={"CONFARG_CONFIG__db": str(db_file)},
+            env_prefix="CONFARG_",
+        )
+        assert result.db.host == "h"
 
     def test_root_load(self, tmp_toml) -> None:
         """CONFARG_CONFIG=file.toml (no subpath) loads the file at root."""

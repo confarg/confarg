@@ -97,7 +97,7 @@ def merge_app(  # noqa: PLR0913
     if config_flag:
         # A bare --config[.subpath] must be refused before cyclopts parses it, with
         # confarg's own error rather than the framework's implicit-token assertion.
-        _collect_config_file_pairs(strip_argv_prefix(tokens, prefix), config_flag)
+        _collect_config_file_pairs(strip_argv_prefix(tokens, prefix), config_flag, target, union_tag)
     command, bound, _ = app.parse_args(
         drop_bare_occurrences(tokens, meta["stands_bare"] if meta else ()),
     )

@@ -41,6 +41,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "are these two locations the same document?" | `_sources._identity` |
 | "would resolution rewrite this value?" | `dictexpr.contains_expression` |
 | "does this segment name a real member?" | `_parse_cli._segment_names_real_field` |
+| "does this mount subpath name a node of the target?" | `_parse_cli._check_mount_subpath` |
 | "is this a cast, and which?" | `_parse_cli.detect_force_cast` (whether) / `_cast` (what) |
 | "does this token address a reserved name?" | `_parse_cli._addresses_key` |
 | "is this argv token a flag, or a value?" | `_parse_cli._looks_like_flag` |

@@ -22,6 +22,7 @@ from confarg._cast import JSON_CAST_NAME, resolve_forced_value
 from confarg._merge import DICT_DELETE, _accumulate_list_delete, _deep_merge, _set_nested
 from confarg._parse_cli import (
     _accepts_object_value,
+    _check_mount_subpath,
     _locals_segment_index,
     _open_callable_shorthand,
     detect_force_cast,
@@ -188,17 +189,29 @@ def _match_env_part(tp: Any, part: str) -> tuple[str, Any]:  # noqa: PLR0911
     return part.lower(), None
 
 
-def _handle_env_config_flag(parts: list[str], target: Any, env_configs: list[tuple[str, str]], value: str) -> None:
+def _handle_env_config_flag(  # noqa: PLR0913  # the check needs the tag, the message the spelling the user typed
+    parts: list[str],
+    target: Any,
+    env_configs: list[tuple[str, str]],
+    value: str,
+    union_tag: str,
+    orig_key: str,
+) -> None:
     """Append a (subpath, mount value) pair to env_configs for a CONFIG[__subpath] env var.
 
     The value is kept as written: the pipeline reads it as an ``__include__`` value, so a
     ``{"path": …, "orient": …}`` object is spelled here exactly as it is in a file
-    (docs-dev/architecture/02-files-and-env.md#mounting).
+    (docs-dev/architecture/02-files-and-env.md#mounting). The subpath is checked against
+    *target* after it is resolved — a segment that matches no field is an error here,
+    not a silent mount that surfaces much later as an unknown-field error from ``build()``.
     """
     subpath_parts = parts[1:]
     if subpath_parts:
         resolved_parts, _ = _resolve_env_parts(target, subpath_parts)
         subpath = ".".join(resolved_parts)
+        # Resolved parts, because the env match is case-insensitive and the walk the
+        # check runs is exact.
+        _check_mount_subpath(target, subpath, union_tag, orig_key)
     else:
         subpath = ""
     env_configs.append((subpath, value))
@@ -389,7 +402,7 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
         parts = key.split(separator) if separator in key else [key]
 
         if config_flag and parts[0].lower() == config_flag.lower():
-            _handle_env_config_flag(parts, target, env_configs, value)
+            _handle_env_config_flag(parts, target, env_configs, value, union_tag, orig_key)
             continue
 
         if parts[-1].endswith("-") and len(parts[-1]) > 1:

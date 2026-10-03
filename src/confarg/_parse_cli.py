@@ -567,6 +567,59 @@ def _config_subpath(key: str, config_flag: str) -> str:
     return key[len(config_flag) :]
 
 
+def _mount_owner(tp: Any) -> tuple[str, Sequence[str] | None]:
+    """Return the type name and field names of the node a mount check fails in.
+
+    A union gathers the field names of its struct-like variants, so a subpath that misses
+    every variant at once is told what any of them would have accepted; ``None`` means the
+    node holds no named fields at all (a scalar, a collection).
+    """
+    tp = _resolve_type(tp)
+    if _is_struct(tp):
+        return tp.__name__, tuple(_struct_fields(tp))
+    if _is_namedtuple(tp):
+        return tp.__name__, tuple(_namedtuple_fields(tp))
+    if _is_union(tp):
+        names = sorted({n for v in _union_args_no_none(tp) for n in (_mount_owner(v)[1] or ())})
+        return str(tp), tuple(names) or None
+    return getattr(tp, "__name__", str(tp)), None
+
+
+def _check_mount_subpath(target: Any, subpath: str, union_tag: str, spelling: str) -> None:
+    """Raise when a config-flag mount subpath names no node of *target*.
+
+    The check the flag's interception runs once the type walk is available: the flag is
+    intercepted *before* field lookup, so a misspelled subpath would otherwise mount a whole
+    file at a key nobody declared and surface much later as an unknown-field error from
+    ``build()``. A trailing merge suffix is stripped first; the empty subpath is the root and
+    always valid. A path is accepted at whatever depth it resolves — dict keys and sequence
+    indices included — because whether the node it names can hold the fragment is the mount's
+    call, not the scan's.
+
+    *spelling* is the flag as its own channel writes it (``--config.dbb``,
+    ``CONFARG_CONFIG__DBB``), passed in because the walk that decides cannot know it. The
+    environment passes an already-resolved subpath, because its match is case-insensitive
+    and this walk is exact.
+
+    Raises:
+        ConfargError: When the subpath names no field of the node it descends to.
+
+    Dev Notes:
+        docs-dev/architecture/03-cli-parsing.md#type-guided-parsing
+    """
+    path = subpath.removesuffix(LIST_APPEND_KEY)
+    if not path:
+        return
+    walk_target = _walk_target(target, _locals_keys(target, union_tag))
+    parts = path.split(".")
+    for j in range(1, len(parts) + 1):
+        if _resolve_field_type(walk_target, parts[:j], union_tag) is not None:
+            continue
+        owner = _resolve_field_type(target, parts[: j - 1], union_tag)
+        name, valid = _mount_owner(owner)
+        raise ConfargError.no_such_mount_point(spelling, name, valid)
+
+
 def _missing_config_path_msg(config_flag: str) -> str:
     """Build the error a --config[.subpath] occurrence with no path token after it raises."""
     return f"Missing file path after --{config_flag}. Usage: --{config_flag} /path/to/config.yaml"
@@ -1116,13 +1169,16 @@ def _consume_typed_arg(
 def _collect_config_file_pairs(
     argv: Sequence[str],
     config_flag: str,
+    target: Any,
+    union_tag: str,
 ) -> list[tuple[str, str]]:
     """Return (subpath, mount value) pairs for ``--config[.subpath]`` flags in command-line order.
 
     Strict about a flag whose occurrence carries no path: the frameworks argparse and
     cyclopts take a ``nargs="*"`` flag with zero tokens, so the rescan is the only place
     their silent nothing gets refused. Raises exactly what vanilla's parse raises, off
-    the same message builder.
+    the same message builders — including the check that a subpath names a node of
+    *target*, which vanilla runs at its own interception.
 
     Takes argv with any ``cli_prefix`` already removed: the adapters strip it with
     :func:`~confarg.cli._prefix.strip_argv_prefix` before rescanning, so this scan
@@ -1131,12 +1187,15 @@ def _collect_config_file_pairs(
     Args:
         argv: The CLI argument sequence to scan, free of any ``cli_prefix``.
         config_flag: The flag name used to specify config files (e.g. ``"config"``).
+        target: The target type the subpaths are checked against.
+        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         A list of ``(subpath, mount value)`` pairs in the order they appear in argv.
 
     Raises:
-        ConfargError: A ``--config[.subpath]`` occurrence with no path token after it.
+        ConfargError: A ``--config[.subpath]`` occurrence with no path token after it,
+            or a subpath that names no node of *target*.
 
     Dev Notes:
         docs-dev/architecture/04-cli-adapters.md#a-flag-that-stands-bare
@@ -1152,6 +1211,7 @@ def _collect_config_file_pairs(
         raw_key = token[2:]
         if _addresses_key(raw_key, config_flag):
             subpath = _config_subpath(raw_key, config_flag)
+            _check_mount_subpath(target, subpath, union_tag, token)
             i += 1
             if i >= len(normalized) or _looks_like_flag(normalized[i]):
                 raise ConfargError(_missing_config_path_msg(config_flag))
@@ -1239,6 +1299,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             if patch_only:
                 i = _skip_flag_values(argv, i)  # config files handled by the pipeline, not the patch scan
                 continue
+            _check_mount_subpath(target, _config_subpath(key, config_flag), union_tag, token)
             i, new_cfgs = _consume_config_paths(argv, i, key, config_flag)
             config_files.extend(new_cfgs)
             continue

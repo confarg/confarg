@@ -946,7 +946,9 @@ def _collect_subconfig_specs(
         if core is None:
             continue
 
-        if not _is_struct(core):
+        # A mount point is a struct field (a fragment of known keys) or a dict field
+        # (a fragment of unknown keys); everything else holds no fragment.
+        if not (_is_struct(core) or _is_dict(core)):
             continue
 
         result.append(

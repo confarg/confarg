@@ -179,6 +179,14 @@ Two things do differ, both on purpose:
   layer, so `_require_layer` applies and a data file is refused there. A non-empty subpath is a
   node, where — exactly as for a pure `__include__` — the value may be a list, a scalar or a
   CSV.
+- **Whether the subpath is checked.** The two flag routes name a node from *outside* the
+  document, so each checks its subpath against the target at interception
+  (`_parse_cli._check_mount_subpath`, one canonical walk for vanilla's scan, the adapters'
+  rescan and the environment's config handler): a subpath that names no node is an error at
+  parse time, not a silent mount at an invented key that surfaces much later as an
+  unknown-field error from `build()` (BUG-50, closed). A file's mount key is a node the file
+  author wrote, so the file route has nothing to intercept — the same mistake there is data,
+  and `build()` is what reports it.
 
 One consequence is not yet handled: an appended fragment (`--config.<path>+`) keeps its bare
 references anchored at the merged root rather than at the element it lands on, because that

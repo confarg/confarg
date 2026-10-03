@@ -359,6 +359,44 @@ class TestCliConfigFlag:
         assert result.db.host == "confighost"
         assert result.db.port == 9999
 
+    def test_config_subpath_unknown_field_rejected(self, tmp_toml) -> None:
+        """--config.dbb is an error naming the miss, not a silent mount at 'dbb' (BUG-50)."""
+        path = tmp_toml("host = 'h'\nport = 1\nname = 'n'\n", "db.toml")
+        with pytest.raises(ConfargError, match="names no field") as excinfo:
+            confarg.load(AppConfig, argv=["--config.dbb", str(path)], env={})
+        assert "--config.dbb" in str(excinfo.value)
+        assert "Valid fields" in str(excinfo.value)
+
+    def test_config_subpath_nested_unknown_field_rejected(self, tmp_toml) -> None:
+        """A deeper miss names the struct it fails in, not the root (BUG-50)."""
+        path = tmp_toml("host = 'h'\n", "db.toml")
+        with pytest.raises(ConfargError, match="names no field of DbConfig") as excinfo:
+            confarg.load(AppConfig, argv=["--config.db.dbb", str(path)], env={})
+        assert "--config.db.dbb" in str(excinfo.value)
+
+    def test_config_subpath_through_a_scalar_rejected(self, tmp_toml) -> None:
+        """A subpath descending through a scalar is an error at parse time (BUG-50)."""
+        path = tmp_toml("a = 1\n", "x.toml")
+        with pytest.raises(ConfargError, match="names no field"):
+            confarg.load(AppConfig, argv=["--config.db.port.x", str(path)], env={})
+
+    def test_config_subpath_append_unknown_field_rejected(self, tmp_toml) -> None:
+        """The + form checks its field too (BUG-50)."""
+        path = tmp_toml("- a\n", "l.yaml")
+        with pytest.raises(ConfargError, match="names no field"):
+            confarg.load(AppConfig, argv=["--config.dbb+", str(path)], env={})
+
+    def test_config_subpath_dict_field_mounts(self, tmp_toml) -> None:
+        """Mounting at a dict field works; a fragment of unknown keys belongs there (BUG-50)."""
+        path = tmp_toml("one = '1'\ntwo = '2'\n", "plugins.toml")
+
+        @dataclass
+        class WithPlugins:
+            plugins: dict[str, str] = field(default_factory=dict)
+
+        result = confarg.load(WithPlugins, argv=["--config.plugins", str(path)], env={})
+        assert result.plugins == {"one": "1", "two": "2"}
+
     def test_custom_config_flag_name(self, tmp_toml) -> None:
         """Custom config flag name via config_flag parameter."""
         path = tmp_toml("""\
