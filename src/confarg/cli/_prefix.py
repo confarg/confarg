@@ -99,7 +99,7 @@ def strip_flat_prefix(flat: dict[str, Any], cli_prefix: str) -> dict[str, Any]:
         if key == cli_prefix:
             stripped[""] = value
         elif key.startswith(dot_pfx):
-            stripped[key[len(dot_pfx) :]] = value
+            stripped[key.removeprefix(dot_pfx)] = value
     return stripped
 
 
@@ -128,7 +128,7 @@ def strip_argv_prefix(argv: Sequence[str], cli_prefix: str) -> list[str]:
         if not _looks_like_flag(token) or not token[2:].startswith(dot_pfx):
             i = _skip_flag_values(args, i) if _looks_like_flag(token) else i + 1
             continue
-        out.append(f"--{token[2 + len(dot_pfx) :]}")
+        out.append(f"--{token[2:].removeprefix(dot_pfx)}")
         i += 1
         while i < len(args) and not _looks_like_flag(args[i]):
             out.append(args[i])

@@ -1238,7 +1238,7 @@ def _collect_config_argv_specs(argv: Sequence[str], config_flag: str) -> list[Fl
         if name in seen:
             continue
         seen.add(name)
-        subpath = name[len(config_flag) + 1 :]
+        subpath = name.removeprefix(f"{config_flag}.")
         action = "appended to" if subpath.endswith("+") else "merged under"
         specs.append(
             FlagSpec(
