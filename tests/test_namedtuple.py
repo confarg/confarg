@@ -293,13 +293,19 @@ class TestCLIArgparse:
         # x=99 from sub-flag; y=2 from nargs position 1
         assert result.pair == Point(x=99, y=2)
 
-    def test_field_name_overrides_index(self) -> None:
-        """Field-name sub-flag takes precedence over index sub-flag for same position."""
+    def test_index_beside_name_sub_flag_is_refused_as_vanilla(self) -> None:
+        """A --pair.0 beside --pair.x keeps both keys, and build() refuses the mix.
+
+        The collector used to re-key the index flag under its field name — name
+        winning over index, a collection-time priority vanilla never makes.
+        Vanilla stores both keys as spelled and lets construction refuse the mixed
+        spelling (BUG-65).
+        """
         parser = argparse.ArgumentParser()
         populate_parser(WithPoint, parser)
         ns = parser.parse_args(["--pair.0", "1", "--pair.x", "99", "--pair.y", "2"])
-        result = from_namespace(WithPoint, ns)
-        assert result.pair == Point(x=99, y=2)
+        with pytest.raises(TypeCoercionError, match="Unknown field"):
+            from_namespace(WithPoint, ns)
 
     def test_all_sub_flags_no_nargs(self) -> None:
         """All fields set via sub-flags without the combined nargs flag."""

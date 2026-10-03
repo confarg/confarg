@@ -821,6 +821,56 @@ class TestFixedSequenceContract:
         assert cfg.pair == _Point(x=1, y=9)
         assert cfg.scale == 18
 
+    def test_namedtuple_index_sub_flags_stay_index_keys(self, loader: ConfargLoader) -> None:
+        """An index sub-flag keeps the key the user spelled, as vanilla does (BUG-65).
+
+        The collector re-keyed ``--pair.0`` to ``x``, a collection-time priority
+        vanilla never makes: construction reconciles index keys itself, and the
+        re-keyed dict could not match vanilla's key for key.
+        """
+        assert loader.merge(_WithPoint, argv=["--pair.0", "13", "--pair.1", "42"], env={}) == {
+            "pair": {"0": 13, "1": 42},
+        }
+        assert loader.load(_WithPoint, argv=["--pair.0", "13", "--pair.1", "42"], env={}).pair == _Point(13, 42)
+
+    def test_namedtuple_index_sub_flag_beside_a_name_keeps_both(self, loader: ConfargLoader) -> None:
+        """A ``--pair.0`` beside ``--pair.x`` is not dropped, and both refuse alike (BUG-65).
+
+        The re-keying made the index flag vanish under the name flag on the
+        adapters, while vanilla stores both keys and lets ``build()`` refuse the
+        mixed spelling.
+        """
+        assert loader.merge(_WithPoint, argv=["--pair.x", "13", "--pair.0", "9"], env={}) == {
+            "pair": {"x": 13, "0": 9},
+        }
+        with pytest.raises(TypeCoercionError, match=re.escape("Unknown field(s) ['0'] for _Point")):
+            loader.load(_WithPoint, argv=["--pair.x", "13", "--pair.0", "9"], env={})
+
+    def test_namedtuple_arity_then_index_sub_flag_keeps_both(self, loader: ConfargLoader) -> None:
+        """An index sub-flag after the arity flag rides the positions as its own key (BUG-65).
+
+        The positional base is re-keyed by field name, as vanilla's promotion does,
+        and the index sub-flag keeps its index key on top of it — the dict
+        ``build()`` refuses on both sides, not the ``x`` overwrite the re-keying
+        invented.
+        """
+        assert loader.merge(_WithPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}) == {
+            "pair": {"x": 1, "y": 2, "0": 9},
+        }
+        with pytest.raises(TypeCoercionError, match=re.escape("Unknown field(s) ['0'] for _Point")):
+            loader.load(_WithPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={})
+
+    def test_optional_namedtuple_index_sub_flag_stays_index_key(self, loader: ConfargLoader) -> None:
+        """An index sub-flag under Optional keeps its key too (BUG-65)."""
+        assert loader.merge(_WithOptionalPoint, argv=["--pair.0", "13"], env={}) == {"pair": {"0": 13}}
+        assert loader.load(_WithOptionalPoint, argv=["--pair.0", "13", "--pair.1", "42"], env={}).pair == _Point(13, 42)
+
+    def test_optional_namedtuple_arity_then_index_sub_flag_keeps_both(self, loader: ConfargLoader) -> None:
+        """The union shape keeps the index key beside the ``'*'`` base, as vanilla does (BUG-65)."""
+        assert loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}) == {
+            "pair": {"*": ["1", "2"], "0": 9},
+        }
+
     def test_repeated_flag_last_occurrence_wins(self, loader: ConfargLoader) -> None:
         """A fixed-arity flag takes one value, so a repeat replaces it (BUG-62).
 
