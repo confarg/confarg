@@ -21,6 +21,7 @@ import tokenize
 import unicodedata
 from collections import deque
 from functools import lru_cache
+from itertools import accumulate
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 if TYPE_CHECKING:
@@ -1055,14 +1056,6 @@ def _is_colon(text: str) -> bool:
     return text == ":"
 
 
-def _line_starts(text: str) -> list[int]:
-    """Absolute offset at which each line of *text* begins."""
-    starts = [0]
-    for line in text.splitlines(keepends=True):
-        starts.append(starts[-1] + len(line))
-    return starts
-
-
 def _replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
     """Apply (start, end, replacement) edits to *text*, rightmost first."""
     for begin, finish, repl in sorted(edits, reverse=True):
@@ -1071,14 +1064,20 @@ def _replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
 
 
 def _significant_tokens(expr_content: str) -> list[tuple[int, str, int, int]]:
-    """``(type, string, start, end)`` per token that carries operand meaning.
+    r"""``(type, string, start, end)`` per token that carries operand meaning.
 
     Offsets are absolute within *expr_content*, which is what :func:`_replace_spans` edits.
+    A token's row is one of the lines the tokenizer was handed, so the offset each row
+    begins at is summed over those same lines, each ending at a ``\n`` and only there.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/reference-anchoring.md#implementation-constraints
     """
-    starts = _line_starts(expr_content)
+    lines = io.StringIO(expr_content).readlines()
+    starts = list(accumulate(map(len, lines), initial=0))
     return [
         (tok.type, tok.string, starts[tok.start[0] - 1] + tok.start[1], starts[tok.end[0] - 1] + tok.end[1])
-        for tok in tokenize.generate_tokens(io.StringIO(expr_content).readline)
+        for tok in tokenize.generate_tokens(iter(lines).__next__)
         if tok.type not in _IGNORED_TOKENS
     ]
 

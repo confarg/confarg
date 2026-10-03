@@ -30,6 +30,7 @@ from confarg.dictexpr._expressions import (
     _topological_sort,
     _unparse,
     _validate_ast,
+    canonicalize_references,
     contains_expression,
     prefix_references,
     resolve_expressions,
@@ -1645,6 +1646,37 @@ class TestARootMarkerInASubscriptKeepsItsParentheses:
         assert prefixed == "::['web-1'].items[(::)['web-1'].k]"
         data = {"web-1": {"k": "a", "items": {"a": 7}, "p": "${" + prefixed + "}"}}
         assert resolve_expressions(data)["web-1"]["p"] == 7
+
+
+class TestAMarkerCountsRowsAsTheTokenizerDoes:
+    r"""A marker's offset counts rows only at a ``\n``, where the tokenizer does (BUG-139).
+
+    ``str.splitlines`` also splits at a form feed, a lone ``\r``, ``\x85``, U+2028 and more,
+    which Python reads as whitespace or, inside a string, as its text, so splitting there
+    edited every marker on a later row at the wrong offset.
+    """
+
+    BODIES = (
+        pytest.param("(.y +\x0c\n .x)", id="form-feed"),
+        pytest.param("(.y +\r .y - .y +\n .x)", id="lone-carriage-return"),
+        pytest.param("(len('\x85') +\n .x)", id="next-line-in-a-string"),
+        pytest.param("(len('\u2028') +\n .x)", id="line-separator-in-a-string"),
+    )
+
+    @pytest.mark.parametrize("body", BODIES)
+    def test_a_marker_on_a_later_row_is_found_where_it_is(self, body: str) -> None:
+        """The last marker is the ``.`` of ``.x``, wherever the line breaks fall."""
+        assert _anchor_markers(body)[-1] == (body.index(".x"), 1, 1, True)
+
+    @pytest.mark.parametrize("body", BODIES)
+    def test_a_marker_on_a_later_row_resolves(self, body: str) -> None:
+        r"""The body resolves as the one with a plain ``\n`` does, as Python reads it."""
+        resolved = resolve_expressions({"a": {"x": 1, "y": 2, "p": "${" + body + "}"}})
+        assert resolved["a"]["p"] == eval(body.replace(".", ""), {"x": 1, "y": 2})
+
+    def test_merge_drops_the_root_marker_it_wrote(self) -> None:
+        """``canonicalize_references`` cuts the ``::`` on the later row, not the characters before it."""
+        assert canonicalize_references({"p": "${(::y +\x0c\n ::x)}"}) == {"p": "${(y +\x0c\n x)}"}
 
 
 class TestAnchorDepthArithmetic:

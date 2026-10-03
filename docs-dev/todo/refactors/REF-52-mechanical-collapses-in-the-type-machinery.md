@@ -42,10 +42,10 @@ any turns out to be bigger than it looks.
   union of the three operator-map key sets, so no public path reaches them. They survive only
   because a coverage test calls `_evaluate_ast` directly, bypassing validation — worth naming as a
   pattern, since a test written to cover a branch is now what keeps the branch alive.
-- `dictexpr`'s `_strip_anchor` / `_name_anchor` / `_unname_anchor` are three
-  `_replace_spans(_anchor_markers(...))` rewrites differing only in the per-level replacement;
-  `_resolve_single` and `_map_expressions` are the same `finditer` accumulate loop differing only
-  in escape handling.
+- `dictexpr`'s `_strip_anchor` / `_name_anchor` are two `_replace_spans(_anchor_markers(...))`
+  rewrites differing in the per-marker replacement (a third, `_unname_anchor`, went with BUG-129);
+  `_resolve_single` and `_map_expressions` are the same accumulate loop over `_find_expressions`'
+  spans, differing only in escape handling ([REF-54](REF-54-dictexpr-span-loops-share-one-helper.md)).
 
 Not in scope, and deliberately so: the bracket tracking in `_anchor_markers` looks like it guards
 an unreachable feature, because `ast.Slice` is not whitelisted and `${items[::2]}` raises

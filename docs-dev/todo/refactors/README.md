@@ -25,7 +25,7 @@ different board.
 | [REF-49 — `graphlib.TopologicalSorter` replaces the hand-written Kahn loop](REF-49-graphlib-replaces-hand-written-kahn.md) | S | low | behavior |
 | [REF-50 — Adapter registration and completion boilerplate](REF-50-adapter-registration-boilerplate.md) | M | low | none |
 | [REF-52 — Mechanical collapses in the type machinery](REF-52-mechanical-collapses-in-the-type-machinery.md) | S | low | none |
-| [REF-54 — Three hand-written scan loops in `dictexpr` the stdlib writes in one line](REF-54-dictexpr-scan-loops-are-re-sub-and-accumulate.md) | S | low | none |
+| [REF-54 — Two span loops in `dictexpr` that one helper writes](REF-54-dictexpr-span-loops-share-one-helper.md) | S | low | none |
 | [REF-55 — An adjacent-pair loop written with indices instead of `itertools.pairwise`](REF-55-pairwise-for-index-window-loops.md) | S | low | none |
 | [REF-58 — The config-parallel struct walk has two owners](REF-58-config-parallel-struct-walk-has-two-owners.md) | S | medium | none |
 | [REF-59 — Two `type` blocks under `examples/` wait on the hook; the rest is generated](REF-59-example-code-blocks-not-generated.md) | S | low | none |
