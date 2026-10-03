@@ -64,7 +64,8 @@ distinguishes the two either: the prefix form runs the same walk *after* its int
 (`_parse_cli._check_mount_subpath`, one walk for vanilla, the adapters' rescan and the
 environment's handler), so an invented mount key is refused at parse time rather than surfacing
 much later as an unknown-field error from `build()` (BUG-50, closed). A union-of-structs mount
-point still gets no `--help` entry (BUG-70).
+point gets a `--help` entry too, whose text says the fragment must name its variant with the tag
+(BUG-70, closed).
 
 What makes the prefix form principled rather than merely incumbent is that `--config.<path>` is not
 a namespace with members of its own but a **projection of the configuration tree onto filenames**:
