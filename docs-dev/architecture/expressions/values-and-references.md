@@ -70,6 +70,24 @@ Rejected: **runtime subscript first, path second.** `${m[0]}` would then mean th
 while the dependency graph, which only sees syntax, recorded the path `m.0` — two answers to one
 spelling. Path-first is also the order an attribute already used.
 
+## A position is a sequence of segments
+
+Inside resolution a position — where an expression sits, what a reference reads, how far a dot
+run climbs — is a tuple of segments (`_Path`), never a dotted string. The scan names each
+expression by one, the dependency graph keys its nodes by them, `_anchor_prefix` drops segments
+from one, and the write-back walks one with `_step`, the walk evaluation reads with. The file
+loader holds a node's position within its file the same way, for the clamp on dot runs
+([reference anchoring](reference-anchoring.md#dots-are-clamped-at-the-file-root)). A key
+holding a dot (`example.com`, which every format can spell as a quoted key) is then one segment
+like any other: `{"a.b": …}` and `{"a": {"b": …}}` are `("a.b",)` and `("a", "b")`, two nodes
+that cannot collide. Joining to a dotted string and splitting it again made them one node, wrote
+a result back to the wrong key, and climbed one level too many from inside such a key (BUG-124).
+
+The dotted form survives only in messages, `Field 'a.b' not found`, which a person reads and
+nothing parses back. Precedents keep paths structured for the same reason: jq's `path()`,
+`getpath` and `setpath` work on arrays of keys (`["a.b"]`), and JSON Pointer (RFC 6901)
+escapes its separator inside a segment rather than let a key hold it.
+
 ## Referencing a whole subtree
 
 A reference is a path, not a leaf selector: `_get_nested` returns whatever sits at that path,

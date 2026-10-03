@@ -32,6 +32,10 @@ from confarg.exceptions import (
     UnsafeExpressionError,
 )
 
+#: A position in the data, one segment per key or list index. Segments are never joined
+#: into a dotted string, which a key holding a dot (``example.com``) would make ambiguous.
+_Path = tuple[str, ...]
+
 #: A Python string literal, triple-quoted or not. A backslash escapes the next
 #: character whatever the prefix (``r'\''`` is one literal), so a prefix never moves
 #: where a literal ends, which is all delimiting needs to know.
@@ -286,35 +290,36 @@ def resolve_expressions(
     return data
 
 
-def _scan_expressions(
-    data: dict[str, Any],
-    prefix: str = "",
-) -> dict[str, str]:
+def _scan_expressions(data: dict[str, Any]) -> dict[_Path, str]:
     """Walk merged dict, find string values containing ${...}.
 
     Returns:
-        Dict mapping dotted paths to raw expression strings.
+        Dict mapping each expression's position, one segment per key or list index, to its
+        raw string: ``{"a.b": "${x}"}`` is at ``("a.b",)``, ``{"a": {"b": "${x}"}}`` at
+        ``("a", "b")``.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#a-position-is-a-sequence-of-segments
     """
-    result: dict[str, str] = {}
+    result: dict[_Path, str] = {}
     for key, value in data.items():
-        full_path = f"{prefix}.{key}" if prefix else key
-        _collect_expressions(value, full_path, result)
+        _collect_expressions(value, (key,), result)
     return result
 
 
-def _collect_expressions(value: Any, path: str, out: dict[str, str]) -> None:
+def _collect_expressions(value: Any, path: _Path, out: dict[_Path, str]) -> None:
     """Recursively collect expression strings from a value into *out*."""
     if isinstance(value, dict):
         for k, v in value.items():
-            _collect_expressions(v, f"{path}.{k}", out)
+            _collect_expressions(v, (*path, k), out)
     elif isinstance(value, list):
         for i, item in enumerate(value):
-            _collect_expressions(item, f"{path}.{i}", out)
+            _collect_expressions(item, (*path, str(i)), out)
     elif contains_expression(value):
         out[path] = value
 
 
-def _dependency_graph(data: dict[str, Any], expr_fields: dict[str, str]) -> dict[str, set[str]]:
+def _dependency_graph(data: dict[str, Any], expr_fields: dict[_Path, str]) -> dict[_Path, set[_Path]]:
     """Map each expression's path to the paths of the expressions it reads, which resolve first.
 
     A reference reads every expression its path reaches, not just one sitting exactly there:
@@ -327,23 +332,22 @@ def _dependency_graph(data: dict[str, Any], expr_fields: dict[str, str]) -> dict
     Dev Notes:
         docs-dev/architecture/expressions/resolution.md#a-reference-reads-everything-its-path-reaches
     """
-    below: dict[str, list[str]] = {}
+    below: dict[_Path, list[_Path]] = {}
     for path in expr_fields:
-        segments = path.split(".")
-        for depth in range(1, len(segments) + 1):
-            below.setdefault(".".join(segments[:depth]), []).append(path)
-    deps: dict[str, set[str]] = {}
+        for depth in range(1, len(path) + 1):
+            below.setdefault(path[:depth], []).append(path)
+    deps: dict[_Path, set[_Path]] = {}
     for path, raw_str in expr_fields.items():
-        read: set[str] = set()
+        read: set[_Path] = set()
         for ref in _extract_references(raw_str, path):
             segments = _scan_path(data, ref)
-            read.update(below.get(".".join(segments), ()))
-            read.update(a for depth in range(1, len(segments)) if (a := ".".join(segments[:depth])) in expr_fields)
+            read.update(below.get(segments, ()))
+            read.update(segments[:depth] for depth in range(1, len(segments)) if segments[:depth] in expr_fields)
         deps[path] = read
     return deps
 
 
-def _scan_path(data: dict[str, Any], parts: Sequence[str]) -> list[str]:
+def _scan_path(data: dict[str, Any], parts: Sequence[str]) -> _Path:
     """Return the path *parts* reads in *data*, named as :func:`_scan_expressions` names it.
 
     Each segment is taken by :func:`_step`, the walk evaluation reads the value with, so the
@@ -357,12 +361,12 @@ def _scan_path(data: dict[str, Any], parts: Sequence[str]) -> list[str]:
         try:
             segment, current = _step(current, part, parts)
         except MissingReferenceError:
-            return [*named, *parts[depth:]]
+            return (*named, *parts[depth:])
         named.append(segment)
-    return named
+    return tuple(named)
 
 
-def _extract_references(expr_str: str, node_path: str = "") -> set[tuple[str, ...]]:
+def _extract_references(expr_str: str, node_path: _Path = ()) -> set[_Path]:
     """Extract the field paths referenced in expression string, one segment per key or index.
 
     *node_path* is where the expression sits, which is what an anchor stand-in is
@@ -372,7 +376,7 @@ def _extract_references(expr_str: str, node_path: str = "") -> set[tuple[str, ..
     Returns:
         Set of paths (e.g. ``{("db", "host"), ("db", "port")}``).
     """
-    refs: set[tuple[str, ...]] = set()
+    refs: set[_Path] = set()
     for span in _find_expressions(expr_str):
         if span.body is None:
             continue  # escaped $${...}
@@ -501,7 +505,7 @@ def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
     return parts
 
 
-def _topological_sort(deps: dict[str, set[str]]) -> list[str]:
+def _topological_sort(deps: dict[_Path, set[_Path]]) -> list[_Path]:
     """Kahn's algorithm. Raises CircularReferenceError on cycles.
 
     Linear in the graph size (``V + E``): a reverse adjacency list records, for
@@ -511,16 +515,16 @@ def _topological_sort(deps: dict[str, set[str]]) -> list[str]:
     if not deps:
         return []
 
-    in_degree: dict[str, int] = dict.fromkeys(deps, 0)
-    dependents: dict[str, list[str]] = {node: [] for node in deps}
+    in_degree: dict[_Path, int] = dict.fromkeys(deps, 0)
+    dependents: dict[_Path, list[_Path]] = {node: [] for node in deps}
     for node, node_deps in deps.items():
         for dep in node_deps:
             if dep in deps:
                 in_degree[node] += 1
                 dependents[dep].append(node)
 
-    queue: deque[str] = deque(node for node, degree in in_degree.items() if degree == 0)
-    order: list[str] = []
+    queue: deque[_Path] = deque(node for node, degree in in_degree.items() if degree == 0)
+    order: list[_Path] = []
     while queue:
         node = queue.popleft()
         order.append(node)
@@ -531,7 +535,7 @@ def _topological_sort(deps: dict[str, set[str]]) -> list[str]:
 
     if len(order) != len(deps):
         remaining = set(deps.keys()) - set(order)
-        msg = f"Circular reference detected among: {', '.join(sorted(remaining))}"
+        msg = f"Circular reference detected among: {', '.join(sorted('.'.join(path) for path in remaining))}"
         raise CircularReferenceError(msg)
 
     return order
@@ -751,7 +755,7 @@ def _eval_expr(tree: ast.Expression, namespace: dict[str, Any], context: str) ->
         raise ExpressionEvalError(msg) from exc
 
 
-def _resolve_single(expr_str: str, namespace: dict[str, Any], node_path: str = "") -> Any:
+def _resolve_single(expr_str: str, namespace: dict[str, Any], node_path: _Path = ()) -> Any:
     """Resolve a single expression string.
 
     Handles three cases:
@@ -832,26 +836,15 @@ def _step(node: Any, part: str, path: Sequence[str]) -> tuple[str, Any]:
     raise MissingReferenceError.field_not_found(".".join(path), f"cannot traverse into {type(node).__name__}")
 
 
-def _set_nested_by_path(data: dict[str, Any], path: str, value: Any) -> None:
-    """Set value in nested dict by dotted path."""
-    parts = path.split(".")
-    current: Any = data
-    for part in parts[:-1]:
-        if isinstance(current, dict):
-            current = current[part]
-        elif isinstance(current, list | tuple):
-            current = current[int(part)]
-        else:
-            msg = f"Cannot set path '{path}': cannot traverse into {type(current).__name__}"
-            raise MissingReferenceError(msg)
-    last = parts[-1]
-    if isinstance(current, dict):
-        current[last] = value
-    elif isinstance(current, list):
-        current[int(last)] = value
-    else:
-        msg = f"Cannot set path '{path}'"
-        raise MissingReferenceError(msg)
+def _set_nested_by_path(data: dict[str, Any], path: _Path, value: Any) -> None:
+    """Replace the value at *path*, a position :func:`_scan_expressions` named, by *value*.
+
+    The container is reached by :func:`_get_nested`, the one walk over the data. The scan
+    only descends into dicts and lists, so the container is one of the two, and a list
+    element is named by its position.
+    """
+    container = _get_nested(data, path[:-1])
+    container[path[-1] if isinstance(container, dict) else int(path[-1])] = value
 
 
 # ---------------------------------------------------------------------------
@@ -1062,34 +1055,34 @@ def _unname_anchor(expr_content: str) -> str:
     return _replace_spans(expr_content, edits)
 
 
-def _anchor_prefix(node_path: str, levels: int) -> str:
-    """Dotted prefix a run of *levels* dots stands for at *node_path*.
+def _anchor_prefix(node_path: _Path, levels: int, scope: str = "document") -> _Path:
+    """Path a run of *levels* dots stands for at *node_path*.
 
     One dot is the container holding the expression, so *levels* segments are dropped
-    from the node's own path and the result is ``""`` at the root of the document.  A
-    list index is an ordinary segment, the same path model :func:`_get_nested` uses.
+    from the node's own path and the result is ``()`` at the root of *scope*.  A list
+    index is an ordinary segment, the same path model :func:`_get_nested` uses, and so is
+    a key holding a dot. The one answer to "does this run climb above the root?", for
+    resolution and for the clamp a file is loaded under (:func:`check_anchor_depth`).
 
     Raises:
-        MissingReferenceError: If the run climbs above the root of the document.
+        MissingReferenceError: If the run climbs above the root of *scope*.
 
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
-    segments = node_path.split(".") if node_path else []
-    if levels > len(segments):
-        raise MissingReferenceError.anchor_above_root(node_path, levels)
-    kept = segments[: len(segments) - levels]
-    return ".".join(kept) + "." if kept else ""
+    if levels > len(node_path):
+        raise MissingReferenceError.anchor_above_root(".".join(node_path), len(node_path), levels, scope)
+    return node_path[: len(node_path) - levels]
 
 
-def check_anchor_depth(value: str, node_path: str, scope: str = "file") -> None:
+def check_anchor_depth(value: str, node_path: _Path, scope: str = "file") -> None:
     """Raise if a relative reference in *value* climbs above the root of its scope.
 
     Called while a file is loaded, where *node_path* is the position within *that
-    file*: a fragment may look at itself with dots, but reaching outside takes
-    ``::``, so what the fragment means cannot depend on how deep it is mounted.
-    Checking here needs no mount prefix, which is why it also holds for a fragment
-    appended by ``--config.<path>+``, whose index is not knowable yet.
+    file*, one segment per key or list index: a fragment may look at itself with dots,
+    but reaching outside takes ``::``, so what the fragment means cannot depend on how
+    deep it is mounted. Checking here needs no mount prefix, which is why it also holds
+    for a fragment appended by ``--config.<path>+``, whose index is not knowable yet.
 
     Raises:
         MissingReferenceError: If a dot run climbs past the root of *scope*.
@@ -1097,13 +1090,11 @@ def check_anchor_depth(value: str, node_path: str, scope: str = "file") -> None:
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
-    depth = len(node_path.split(".")) if node_path else 0
     for span in _find_expressions(value):
         if span.body is None:
             continue  # escaped $${...}
         for _, _, levels in _anchor_markers(span.body):
-            if levels > depth:
-                raise MissingReferenceError.anchor_above_root(node_path, levels, scope)
+            _anchor_prefix(node_path, levels, scope)
 
 
 def name_anchors(value: str) -> str:
@@ -1135,7 +1126,7 @@ class _AnchorResolver(ast.NodeTransformer):
         docs-dev/architecture/expressions/reference-anchoring.md#implementation-constraints
     """
 
-    def __init__(self, node_path: str) -> None:
+    def __init__(self, node_path: _Path) -> None:
         self._node_path = node_path
 
     def _absolute(self, parts: list[str]) -> list[str] | None:
@@ -1143,8 +1134,8 @@ class _AnchorResolver(ast.NodeTransformer):
         levels = _anchor_dot_count(parts[0])
         if levels is None:
             return None
-        prefix = "" if levels == 0 else _anchor_prefix(self._node_path, levels)
-        return [segment for segment in prefix.split(".") if segment] + parts[1:]
+        prefix = () if levels == 0 else _anchor_prefix(self._node_path, levels)
+        return [*prefix, *parts[1:]]
 
     def visit_Attribute(self, node: ast.Attribute) -> ast.AST:  # NodeTransformer dispatches on the class name
         """Rewrite ``<stand-in>.name`` into the absolute path to ``name``, else recurse."""
@@ -1159,7 +1150,7 @@ class _AnchorResolver(ast.NodeTransformer):
         return ast.copy_location(_path_to_ast(absolute), node) if absolute else node
 
 
-def _parse_anchored(expr_content: str, node_path: str) -> ast.Expression:
+def _parse_anchored(expr_content: str, node_path: _Path) -> ast.Expression:
     """Parse one ``${...}`` body, resolving any anchor stand-in against *node_path*.
 
     The parse cache is shared, so the tree is copied before it is rewritten.
