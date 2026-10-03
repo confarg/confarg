@@ -79,22 +79,6 @@ class FlagSpec:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
 
-    accumulates: bool = False
-    """Repeating the flag extends what the earlier occurrences gave, rather than replacing it.
-
-    Set on the multi-token *field* flags — a varlen collection, and a union with a
-    sequence variant (an ``Optional[<fixed-arity>]`` field's flag included, since that
-    is its resolved type) — because ``--tags x --tags y`` is a second spelling of
-    ``--tags x y``.  Which spelling a framework accepts is its own business; what
-    repetition *means* is not, so an adapter whose framework keeps only the last
-    occurrence has to ask for accumulation (argparse: ``action="extend"``).  A plain
-    fixed-arity flag is excluded: it takes one value, and repeating it is last-wins
-    everywhere.
-
-    Dev Notes:
-        docs-dev/architecture/cli-adapters/list-syntax-divergence.md#list-syntax-divergence
-    """
-
     choices: list[str] | None = None
     """Allowed values (for ``Literal`` / ``Enum`` fields)."""
 

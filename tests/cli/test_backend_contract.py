@@ -1279,9 +1279,9 @@ class TestFixedSequenceContract:
     def test_repeated_flag_last_occurrence_wins(self, loader: ConfargLoader) -> None:
         """A fixed-arity flag takes one value, so a repeat replaces it (BUG-62).
 
-        ``FlagSpec.accumulates`` is False on a fixed-arity flag: vanilla's
-        ``_consume_fixed_tuple_args`` ``_set_nested``s the second occurrence over
-        the first, and the frameworks that keep one value per flag overwrite too.
+        Vanilla's ``_consume_fixed_tuple_args`` ``_set_nested``s the second
+        occurrence over the first, and the frameworks that keep one value per
+        flag overwrite too.
         """
         assert loader.merge(_WithIntPair, argv=["--pair", "1", "2", "--pair", "3", "4"], env={}) == {"pair": [3, 4]}
 

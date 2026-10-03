@@ -88,6 +88,11 @@ the boundary moves here.
   parse result holds and that argv does not spell raises `ConfargError`; a mismatch the parse
   result cannot show (argv spelling *more* than the framework parsed) is read as typed
   ([CLI adapters](cli-adapters/model.md#argv-is-the-only-writer)).
+- The adapters shape nothing in the framework's parse result beyond accepting the flags argv
+  spells: the values it holds are never read, so a host application reading the framework's own
+  result sees the framework's native semantics. Under argparse a repeated multi-token flag
+  (`--tags x --tags y`) leaves only the last occurrence in the Namespace, while the merge
+  accumulates both ([CLI adapters](cli-adapters/model.md#argv-is-the-only-writer)).
 - A flag the adapters register and vanilla refuses (BUG-112, BUG-113) passes the framework's
   parse and is refused at merge, with vanilla's error, rather than at parse time with the
   framework's ([CLI adapters](cli-adapters/model.md#argv-is-the-only-writer)).

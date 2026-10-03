@@ -54,7 +54,12 @@ The parse result is only *checked*: a confarg flag it holds that argv does not s
 two are not one command line — typically `parse_args(custom)` merged with `argv` left to default
 to `sys.argv[1:]` — and is refused (`_require_argv_spells`) rather than lost without a word. A
 key the target does not resolve is the host's own parameter and is left alone. Precedent: the
-`cli_prefix` mismatch, which `resolve_prefix` refuses rather than matching no flag.
+`cli_prefix` mismatch, which `resolve_prefix` refuses rather than matching no flag. Nor does
+confarg shape the *values* the parse result holds: they are never read, so a rule over them
+would be a second writer. `FlagSpec.accumulates` once asked argparse for `action="extend"`
+(BUG-37) to keep the Namespace an honest picture of what was typed; it was dropped (REF-76), so
+a host application reading the framework's own result sees the framework's native semantics —
+argparse's last-wins on a repeated multi-token flag — while the merge accumulates off argv.
 
 Superseded: a flat collector walking the target type over the parse result, with the patch scan
 replaying vanilla's loop for patches only (`patch_only`) and the two halves joined by

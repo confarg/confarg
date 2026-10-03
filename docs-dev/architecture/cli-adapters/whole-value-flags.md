@@ -156,7 +156,7 @@ A union with a sequence variant (`str | tuple[str, str]`) owes neither bound: th
 consumes greedily in vanilla, so `build()` judging its arity is parity, not a gap. An
 `Optional[<sequence>]` field is such a union to vanilla's dispatch *and* to registration, so
 its flag registers the way that union's own flag does: `nargs="*"`,
-`accumulates=True`, `stands_bare=True`, no `whole_value` (BUG-79). Until it did, the unwrapped
+`stands_bare=True`, no `whole_value` (BUG-79). Until it did, the unwrapped
 core's fixed-arity spec was registered instead, so a repeated occurrence kept only its own run —
 argparse's plain store and cyclopts' last-occurrence converter answered `--pair 1 2 --pair 3 4`
 with `(3, 4)` where vanilla joins the runs and defers the arity to `build()` — and the clicklike
