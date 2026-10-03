@@ -38,9 +38,10 @@ Keep the two sets apart so a later change to one does not silently move the othe
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import io
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 import click
 import cyclopts
@@ -50,7 +51,6 @@ from typer.main import get_command
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from pathlib import Path
     from types import UnionType
     from typing import TypeAliasType
 
@@ -59,11 +59,23 @@ import confarg.cli.click as confargclick
 import confarg.cli.cyclopts as confargcyclopts
 import confarg.cli.typer as confargtyper
 from confarg import _defaults
+from confarg._defaults import _resolve_options
 from confarg.cli.argparse import from_namespace, make_parser, merge_namespace
 from confarg.cli.click import populate_command
 from confarg.cli.cyclopts import populate_app
 from confarg.cli.cyclopts._register import _app_meta
 from confarg.cli.typer import populate_command as populate_typer_command
+
+
+def _resolved(caller: str, opts: Mapping[str, Any]) -> dict[str, Any]:
+    """Return *opts* with every default applied, as keywords every ``_run`` can pop.
+
+    ``cli_prefix`` comes back as the string ``populate_*`` takes, ``""`` when omitted.
+    """
+    options = _resolve_options(caller, opts)
+    kw = {f.name: getattr(options, f.name) for f in dataclasses.fields(options)}
+    kw["cli_prefix"] = kw["cli_prefix"] or ""
+    return kw
 
 
 class ConfargLoader(ABC):
@@ -75,63 +87,13 @@ class ConfargLoader(ABC):
     def _run(self, target: type | TypeAliasType | UnionType, *, construct: bool, **kw: Any) -> Any:
         """Run the integration's full pipeline; construct the target or return the raw dict."""
 
-    def load(  # noqa: PLR0913 — mirrors confarg.load's keyword-only signature
-        self,
-        target: type | TypeAliasType | UnionType,
-        *,
-        argv: Sequence[str] | None = None,
-        env: Mapping[str, str] | None = None,
-        env_prefix: str | None = _defaults.ENV_PREFIX,
-        env_separator: str = _defaults.ENV_SEPARATOR,
-        cli_prefix: str = "",
-        config_flag: str = _defaults.CONFIG_FLAG,
-        files: Sequence[str | Path] = (),
-        env_config: str | None = None,
-        union_tag: str = _defaults.UNION_TAG,
-    ) -> Any:
+    def load(self, target: type | TypeAliasType | UnionType, **opts: Unpack[confarg.MergeOptions]) -> Any:
         """Load *target* using this integration's CLI parser (mirrors ``confarg.load``)."""
-        return self._run(
-            target,
-            construct=True,
-            argv=argv,
-            env=env,
-            env_prefix=env_prefix,
-            env_separator=env_separator,
-            cli_prefix=cli_prefix,
-            config_flag=config_flag,
-            files=files,
-            env_config=env_config,
-            union_tag=union_tag,
-        )
+        return self._run(target, construct=True, **_resolved("load", opts))
 
-    def merge(  # noqa: PLR0913 — mirrors confarg.merge's keyword-only signature
-        self,
-        target: type | TypeAliasType | UnionType,
-        *,
-        argv: Sequence[str] | None = None,
-        env: Mapping[str, str] | None = None,
-        env_prefix: str | None = _defaults.ENV_PREFIX,
-        env_separator: str = _defaults.ENV_SEPARATOR,
-        cli_prefix: str = "",
-        config_flag: str = _defaults.CONFIG_FLAG,
-        files: Sequence[str | Path] = (),
-        env_config: str | None = None,
-        union_tag: str = _defaults.UNION_TAG,
-    ) -> dict[str, Any]:
+    def merge(self, target: type | TypeAliasType | UnionType, **opts: Unpack[confarg.MergeOptions]) -> dict[str, Any]:
         """Merge all sources into a raw dict (mirrors ``confarg.merge``)."""
-        return self._run(
-            target,
-            construct=False,
-            argv=argv,
-            env=env,
-            env_prefix=env_prefix,
-            env_separator=env_separator,
-            cli_prefix=cli_prefix,
-            config_flag=config_flag,
-            files=files,
-            env_config=env_config,
-            union_tag=union_tag,
-        )
+        return self._run(target, construct=False, **_resolved("merge", opts))
 
     def registered_flags(  # noqa: PLR0913 — mirrors the populate_* keyword-only signature
         self,

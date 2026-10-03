@@ -6,32 +6,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-    from pathlib import Path
-
     import typer
 
-from confarg import _defaults
+    from confarg._defaults import MergeOptions
+
+from confarg._defaults import _resolve_options
 from confarg.cli import _clicklike
 
 
-def merge_context(  # noqa: PLR0913
-    target: object,
-    ctx: typer.Context,
-    *,
-    argv: Sequence[str] | None = None,
-    env: Mapping[str, str] | None = None,
-    env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = _defaults.ENV_SEPARATOR,
-    cli_prefix: str | None = None,
-    config_flag: str = _defaults.CONFIG_FLAG,
-    files: Sequence[str | Path] = (),
-    env_config: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-) -> dict[str, Any]:
+def merge_context(target: object, ctx: typer.Context, **opts: Unpack[MergeOptions]) -> dict[str, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
     Same as :func:`from_context` but returns the raw merged dict instead of a
@@ -43,30 +29,9 @@ def merge_context(  # noqa: PLR0913
         target: The dataclass type to construct.
         ctx: The :class:`typer.Context` Typer passes to the command function.
             Declare it as a parameter of the command to receive it.
-        argv: The argument list the command was invoked with: the CLI values,
-            patches and ``--config`` files are read from it, in its order.
-            Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
-            command was invoked with a custom argv (e.g. in tests); a context
-            holding a confarg option *argv* does not spell raises
-            :class:`~confarg.exceptions.ConfargError`.
-        env: Environment variable mapping.  Defaults to ``os.environ``.
-            Pass ``{}`` to disable env-var reading.
-        env_prefix: Prefix that env vars must start with. Defaults to ``None``,
-            which disables environment variable parsing entirely.
-        env_separator: Separator used to split env var names into nested keys.
-        cli_prefix: Namespace the confarg flags live under.  Omit it (the
-            default) to reuse the value passed to :func:`populate_command`, which
-            is the normal case; passing one that disagrees with what was
-            registered raises :class:`~confarg.exceptions.ConfargError`
-            rather than silently matching no flags.
-        config_flag: Name of the config-file option on ``ctx`` (default
-            ``"config"``).  Must match the ``config_flag`` passed to
-            :func:`populate_command`.  Set to ``""`` to ignore all config-file
-            options.
-        files: Additional root-level config file paths to load (lowest priority).
-        env_config: Name of an env var whose value is a config file path to load.
-            Loaded after ``files`` but before CLI ``--config`` files.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
+        **opts: The sources to read and how to read them, as for :func:`confarg.merge`;
+            see :class:`confarg.MergeOptions`.  ``argv`` is the list the command was
+            invoked with.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
@@ -74,35 +39,10 @@ def merge_context(  # noqa: PLR0913
     Config file loading order:
         Same as :func:`confarg.merge`.
     """
-    return _clicklike.merge_from_ctx(
-        target,
-        ctx,
-        argv=argv,
-        env=env,
-        env_prefix=env_prefix,
-        env_separator=env_separator,
-        cli_prefix=cli_prefix,
-        config_flag=config_flag,
-        files=files,
-        env_config=env_config,
-        union_tag=union_tag,
-    )
+    return _clicklike.merge_from_ctx(target, ctx, _resolve_options("merge_context", opts))
 
 
-def from_context(  # noqa: PLR0913
-    target: object,
-    ctx: typer.Context,
-    *,
-    argv: Sequence[str] | None = None,
-    env: Mapping[str, str] | None = None,
-    env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = _defaults.ENV_SEPARATOR,
-    cli_prefix: str | None = None,
-    config_flag: str = _defaults.CONFIG_FLAG,
-    files: Sequence[str | Path] = (),
-    env_config: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-) -> Any:
+def from_context(target: object, ctx: typer.Context, **opts: Unpack[MergeOptions]) -> Any:
     """Construct a dataclass instance from a :class:`typer.Context`.
 
     Merges three sources in ascending priority order: config files, environment
@@ -118,47 +58,14 @@ def from_context(  # noqa: PLR0913
         target: The dataclass type to construct.
         ctx: The :class:`typer.Context` Typer passes to the command function.
             Declare it as a parameter of the command to receive it.
-        argv: The argument list the command was invoked with: the CLI values,
-            patches and ``--config`` files are read from it, in its order.
-            Defaults to ``sys.argv[1:]``.  Pass an explicit list when the
-            command was invoked with a custom argv (e.g. in tests); a context
-            holding a confarg option *argv* does not spell raises
-            :class:`~confarg.exceptions.ConfargError`.
-        env: Environment variable mapping.  Defaults to ``os.environ``.
-            Pass ``{}`` to disable env-var reading.
-        env_prefix: Prefix that env vars must start with. Defaults to ``None``,
-            which disables environment variable parsing entirely.
-        env_separator: Separator used to split env var names into nested keys.
-        cli_prefix: Namespace the confarg flags live under.  Omit it (the
-            default) to reuse the value passed to :func:`populate_command`, which
-            is the normal case; passing one that disagrees with what was
-            registered raises :class:`~confarg.exceptions.ConfargError`
-            rather than silently matching no flags.
-        config_flag: Name of the config-file option on ``ctx`` (default
-            ``"config"``).  Must match the ``config_flag`` passed to
-            :func:`populate_command`.  Set to ``""`` to ignore all config-file
-            options.
-        files: Additional root-level config file paths to load (lowest priority).
-        env_config: Name of an env var whose value is a config file path to load.
-            Loaded after ``files`` but before CLI ``--config`` files.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
+        **opts: The sources to read and how to read them, as for :func:`confarg.load`;
+            see :class:`confarg.MergeOptions`.  ``argv`` is the list the command was
+            invoked with.
 
     Returns:
         An instance of ``target`` populated from all sources.
     """
-    return _clicklike.construct_from_ctx(
-        target,
-        ctx,
-        argv=argv,
-        env=env,
-        env_prefix=env_prefix,
-        env_separator=env_separator,
-        cli_prefix=cli_prefix,
-        config_flag=config_flag,
-        files=files,
-        env_config=env_config,
-        union_tag=union_tag,
-    )
+    return _clicklike.construct_from_ctx(target, ctx, _resolve_options("from_context", opts))
 
 
 __all__ = ["from_context", "merge_context"]

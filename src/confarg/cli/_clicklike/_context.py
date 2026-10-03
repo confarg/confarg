@@ -13,10 +13,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-    from pathlib import Path
+    from confarg._defaults import _Options
 
-from confarg import _defaults
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 
@@ -60,63 +58,12 @@ def registered_prefix(ctx: Any) -> str | None:
     return None
 
 
-def merge_from_ctx(  # noqa: PLR0913  # mirrors the public merge_context signature
-    target: object,
-    ctx: Any,
-    *,
-    argv: Sequence[str] | None = None,
-    env: Mapping[str, str] | None = None,
-    env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = _defaults.ENV_SEPARATOR,
-    cli_prefix: str | None = None,
-    config_flag: str = _defaults.CONFIG_FLAG,
-    files: Sequence[str | Path] = (),
-    env_config: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-) -> dict[str, Any]:
+def merge_from_ctx(target: object, ctx: Any, options: _Options) -> dict[str, Any]:
     """Flatten ``ctx`` and run the shared merge tail; see the adapters' merge_context."""
-    return _merge_from_flat(
-        flat_from_ctx(ctx),
-        target,
-        argv=argv,
-        cli_prefix=resolve_prefix(registered_prefix(ctx), cli_prefix),
-        env=env,
-        env_prefix=env_prefix,
-        env_separator=env_separator,
-        config_flag=config_flag,
-        files=files,
-        env_config=env_config,
-        union_tag=union_tag,
-        binds_runs=False,
-    )
+    cli_prefix = resolve_prefix(registered_prefix(ctx), options.cli_prefix)
+    return _merge_from_flat(flat_from_ctx(ctx), target, options, cli_prefix=cli_prefix, binds_runs=False)
 
 
-def construct_from_ctx(  # noqa: PLR0913  # mirrors the public from_context signature
-    target: object,
-    ctx: Any,
-    *,
-    argv: Sequence[str] | None = None,
-    env: Mapping[str, str] | None = None,
-    env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = _defaults.ENV_SEPARATOR,
-    cli_prefix: str | None = None,
-    config_flag: str = _defaults.CONFIG_FLAG,
-    files: Sequence[str | Path] = (),
-    env_config: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-) -> Any:
+def construct_from_ctx(target: object, ctx: Any, options: _Options) -> Any:
     """Merge ``ctx`` and construct ``target``; see the adapters' from_context."""
-    merged = merge_from_ctx(
-        target,
-        ctx,
-        argv=argv,
-        env=env,
-        env_prefix=env_prefix,
-        env_separator=env_separator,
-        cli_prefix=cli_prefix,
-        config_flag=config_flag,
-        files=files,
-        env_config=env_config,
-        union_tag=union_tag,
-    )
-    return _construct_from_merged(target, merged, union_tag)
+    return _construct_from_merged(target, merge_from_ctx(target, ctx, options), options.union_tag)

@@ -6,32 +6,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 if TYPE_CHECKING:
     import argparse
-    from collections.abc import Mapping, Sequence
-    from pathlib import Path
 
-from confarg import _defaults
+    from confarg._defaults import MergeOptions, _Options
+
+from confarg._defaults import _resolve_options
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 
 
-def merge_namespace(  # noqa: PLR0913
-    target: object,
-    ns: argparse.Namespace,
-    *,
-    argv: Sequence[str] | None = None,
-    env: Mapping[str, str] | None = None,
-    env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = _defaults.ENV_SEPARATOR,
-    cli_prefix: str | None = None,
-    config_flag: str = _defaults.CONFIG_FLAG,
-    files: Sequence[str | Path] = (),
-    env_config: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-) -> dict[str, Any]:
+def merge_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeOptions]) -> dict[str, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
     Same as :func:`from_namespace` but returns the raw merged dict instead of a
@@ -42,33 +29,9 @@ def merge_namespace(  # noqa: PLR0913
     Args:
         target: The dataclass type to construct.
         ns: The Namespace returned by ``ArgumentParser.parse_args()``.
-        argv: The argument list ``parse_args()`` parsed: the CLI values,
-            patches and ``--config`` files are read from it, in its order.
-            Defaults to ``sys.argv[1:]``.  Pass an explicit list when
-            ``parse_args()`` was called with a custom argv; a namespace holding a
-            confarg flag *argv* does not spell raises
-            :class:`~confarg.exceptions.ConfargError`.
-        env: Environment variable mapping.  Defaults to ``os.environ``.
-            Pass ``{}`` to disable env-var reading.
-        env_prefix: Prefix that env vars must start with. Defaults to ``None``,
-            which disables environment variable parsing entirely. Set to ``""``
-            to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
-            read only vars with that prefix.
-        env_separator: Separator used to split env var names into nested keys.
-        cli_prefix: Namespace the confarg flags live under.  Omit it (the
-            default) to reuse the value passed to :func:`populate_parser`, which
-            is the normal case; passing one that disagrees with what was
-            registered raises :class:`~confarg.exceptions.ConfargError`
-            rather than silently matching no flags.
-        config_flag: Name of the config-file attribute on ``ns`` (default
-            ``"config"``).  Must match the ``config_flag`` passed to
-            :func:`populate_parser`.  Subkey flags ``--config.<subpath>``
-            (registered automatically by :func:`populate_parser`) are also
-            consumed.  Set to ``""`` to ignore all config-file attributes.
-        files: Additional root-level config file paths to load (lowest priority).
-        env_config: Name of an env var whose value is a config file path to load.
-            Loaded after ``files`` but before CLI ``--config`` files.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
+        **opts: The sources to read and how to read them, as for :func:`confarg.merge`;
+            see :class:`confarg.MergeOptions`.  ``argv`` is the list ``parse_args()``
+            parsed.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
@@ -76,39 +39,19 @@ def merge_namespace(  # noqa: PLR0913
     Config file loading order:
         Same as :func:`confarg.merge`.
     """
+    return _merge_namespace(target, ns, _resolve_options("merge_namespace", opts))
+
+
+def _merge_namespace(target: object, ns: argparse.Namespace, options: _Options) -> dict[str, Any]:
+    """Merge every source into a raw dict; :func:`merge_namespace` with its options resolved."""
     flat = vars(ns)
     # argparse hands us no reference to the parser, so populate_parser left the prefix
     # it registered with on the Namespace itself.
-    return _merge_from_flat(
-        flat,
-        target,
-        argv=argv,
-        cli_prefix=resolve_prefix(flat.get(PREFIX_ATTR), cli_prefix),
-        env=env,
-        env_prefix=env_prefix,
-        env_separator=env_separator,
-        config_flag=config_flag,
-        files=files,
-        env_config=env_config,
-        union_tag=union_tag,
-        binds_runs=True,
-    )
+    cli_prefix = resolve_prefix(flat.get(PREFIX_ATTR), options.cli_prefix)
+    return _merge_from_flat(flat, target, options, cli_prefix=cli_prefix, binds_runs=True)
 
 
-def from_namespace(  # noqa: PLR0913
-    target: object,
-    ns: argparse.Namespace,
-    *,
-    argv: Sequence[str] | None = None,
-    env: Mapping[str, str] | None = None,
-    env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = _defaults.ENV_SEPARATOR,
-    cli_prefix: str | None = None,
-    config_flag: str = _defaults.CONFIG_FLAG,
-    files: Sequence[str | Path] = (),
-    env_config: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-) -> Any:
+def from_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeOptions]) -> Any:
     """Construct a dataclass instance from an argparse :class:`~argparse.Namespace`.
 
     Merges three sources in ascending priority order: config files, environment
@@ -123,48 +66,12 @@ def from_namespace(  # noqa: PLR0913
     Args:
         target: The dataclass type to construct.
         ns: The Namespace returned by ``ArgumentParser.parse_args()``.
-        argv: The argument list ``parse_args()`` parsed: the CLI values,
-            patches and ``--config`` files are read from it, in its order.
-            Defaults to ``sys.argv[1:]``.  Pass an explicit list when
-            ``parse_args()`` was called with a custom argv; a namespace holding a
-            confarg flag *argv* does not spell raises
-            :class:`~confarg.exceptions.ConfargError`.
-        env: Environment variable mapping.  Defaults to ``os.environ``.
-            Pass ``{}`` to disable env-var reading.
-        env_prefix: Prefix that env vars must start with. Defaults to ``None``,
-            which disables environment variable parsing entirely. Set to ``""``
-            to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
-            read only vars with that prefix.
-        env_separator: Separator used to split env var names into nested keys.
-        cli_prefix: Namespace the confarg flags live under.  Omit it (the
-            default) to reuse the value passed to :func:`populate_parser`, which
-            is the normal case; passing one that disagrees with what was
-            registered raises :class:`~confarg.exceptions.ConfargError`
-            rather than silently matching no flags.
-        config_flag: Name of the config-file attribute on ``ns`` (default
-            ``"config"``).  Must match the ``config_flag`` passed to
-            :func:`populate_parser`.  Subkey flags ``--config.<subpath>``
-            (registered automatically by :func:`populate_parser`) are also
-            consumed.  Set to ``""`` to ignore all config-file attributes.
-        files: Additional root-level config file paths to load (lowest priority).
-        env_config: Name of an env var whose value is a config file path to load.
-            Loaded after ``files`` but before CLI ``--config`` files.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
+        **opts: The sources to read and how to read them, as for :func:`confarg.load`;
+            see :class:`confarg.MergeOptions`.  ``argv`` is the list ``parse_args()``
+            parsed.
 
     Returns:
         An instance of ``target`` populated from all sources.
     """
-    merged = merge_namespace(
-        target,
-        ns,
-        argv=argv,
-        env=env,
-        env_prefix=env_prefix,
-        env_separator=env_separator,
-        cli_prefix=cli_prefix,
-        config_flag=config_flag,
-        files=files,
-        env_config=env_config,
-        union_tag=union_tag,
-    )
-    return _construct_from_merged(target, merged, union_tag)
+    options = _resolve_options("from_namespace", opts)
+    return _construct_from_merged(target, _merge_namespace(target, ns, options), options.union_tag)

@@ -20,8 +20,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
-    from pathlib import Path
+    from collections.abc import Iterator, Sequence
+
+    from confarg._defaults import _Options
 
 from confarg._files import _load_mount, _load_mount_value, _load_subpath_files, _nest
 from confarg._merge import (
@@ -270,18 +271,11 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
                     _apply_locals_overrides(declared, sub[key], where, config_flag, source)
 
 
-def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s parameter surface
+def _merge_sources(
     target: Any,
     cli_data: dict[str, Any],
     cli_configs: Sequence[tuple[str, str]],
-    *,
-    env: Mapping[str, str],
-    env_prefix: str | None,
-    env_separator: str,
-    config_flag: str,
-    files: Sequence[str | Path],
-    env_config: str | None,
-    union_tag: str,
+    options: _Options,
 ) -> dict[str, Any]:
     """Merge pre-collected CLI data with env vars and config files in priority order.
 
@@ -290,16 +284,8 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
         cli_data: Nested dict of CLI-provided field values (highest priority).
         cli_configs: (subpath, mount value) pairs from ``--config[.subpath][+]`` flags,
             in left-to-right CLI order.
-        env: Environment variable mapping to scan.
-        env_prefix: Prefix that env vars must start with; ``None`` disables
-            env-var parsing entirely.
-        env_separator: Separator used to split env var names into nested keys.
-        config_flag: Name of the config-file flag; the env segment with this name
-            marks a sub-config file pointer. ``""`` disables env config pointers.
-        files: Locations of config sources to load first (lowest priority).
-        env_config: Name of an env var whose value is a config file path to load
-            after ``files`` but before env- and CLI-specified config files.
-        union_tag: Field name used as a discriminator tag in union types.
+        options: The caller's resolved options; ``argv`` and ``cli_prefix`` are not
+            read, the CLI having been parsed into *cli_data* and *cli_configs* already.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
@@ -312,6 +298,8 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
            subpath depth (shallower paths first).
         4. ``cli_configs`` — in left-to-right CLI order.
     """
+    env, env_config = options.env, options.env_config
+    config_flag, union_tag = options.config_flag, options.union_tag
     locals_keys = _locals_keys(target, union_tag)
     if config_flag in locals_keys:
         msg = (
@@ -323,7 +311,7 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
         raise ConfargError(msg)
 
     # 1. Parse env vars (done here so env-specified config files are loaded in order)
-    if env_prefix is None:
+    if options.env_prefix is None:
         env_data: dict[str, Any] = {}
         env_configs: list[tuple[str, str]] = []
     else:
@@ -331,15 +319,15 @@ def _merge_sources(  # noqa: PLR0913  # internal pipeline; mirrors merge()'s par
         env_for_fields = {k: v for k, v in env.items() if k != env_config} if env_config else env
         env_data, env_configs = _parse_env(
             env_for_fields,
-            env_prefix,
-            env_separator,
+            options.env_prefix,
+            options.env_separator,
             target,
             config_flag,
             union_tag,
         )
 
     # 2. Load config files in priority order (all become config-level, below inline env/CLI)
-    file_entries: list[tuple[str, Any]] = [("", f) for f in files]
+    file_entries: list[tuple[str, Any]] = [("", f) for f in options.files]
     if env_config and (env_config_path := env.get(env_config)):
         file_entries.append(("", env_config_path))
     env_configs.sort(key=lambda ec: ec[0])

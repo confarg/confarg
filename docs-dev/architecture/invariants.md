@@ -35,6 +35,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | Decision | Function |
 |---|---|
 | merge order, file loading, locals checks | `_pipeline._merge_sources` |
+| the merge options' defaults, `argv` and `env` included, and "is this keyword a merge option?" | `_defaults._resolve_options` — every `**opts: Unpack[MergeOptions]` front-end resolves through it ([pipeline](pipeline/api-seams.md#one-option-set)) |
 | "is this root config file a configuration layer?" | `_files._require_layer` |
 | "what is the parsed value of the document here?" | `_files._load_document` |
 | reading one document, whatever route mounts it | `_files._load_any` |

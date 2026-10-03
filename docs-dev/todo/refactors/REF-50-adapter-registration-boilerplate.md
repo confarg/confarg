@@ -14,7 +14,8 @@ the reason to do it: the others are boilerplate, that one is a decision made fou
   loaders dedupe by name and create groups lazily, so one pass over the concatenation equals two
   passes.
 - `if argv is None: argv = sys.argv[1:]` is written out in four `_register.py` modules; letting
-  `_clicklike.populate_command` accept `None` removes two of them.
+  `_clicklike.populate_command` accept `None` removes two of them. The merge side makes the
+  same decision once, in `_defaults._resolve_options` (REF-40); registration can ask it too.
 - `cli/click/_completion.py` and `cli/typer/_completion.py` differ in 23 of 53 and 52 lines, and
   the only real difference is the option factory passed through — which
   `_clicklike.setup_completion` already takes as a parameter. Same case as
