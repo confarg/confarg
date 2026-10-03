@@ -17,7 +17,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-48 — `12_collections` cites "Tutorial XX" instead of a real tutorial](BUG-48-collections-readme-defers-to-tutorial-xx.md) | S | low | none |
 | [BUG-53 — a whole-field delete wins over a later flag in the adapters, not in vanilla](BUG-53-whole-field-delete-beats-a-later-flag-in-the-adapters.md) | M | medium | config |
 | [BUG-54 — A plain collection flag does not discard the patch ops before it in the adapters](BUG-54-plain-occurrence-does-not-discard-earlier-patch-ops-in-the-adapters.md) | M | medium | config |
-| [BUG-56 — The flat spelling of the tagged-leaf hatch reaches no adapter](BUG-56-flat-tagged-leaf-flags-unregistered-by-the-adapters.md) | M | medium | behavior |
 | [BUG-61 — A bare optional fixed-arity flag clears in the adapters and raises in vanilla](BUG-61-optional-fixed-arity-bare-flag-clears-in-the-adapters.md) | M | medium | behavior |
 | [BUG-62 — Cyclopts accumulates a repeated fixed-arity flag instead of letting the last one win](BUG-62-cyclopts-accumulates-a-repeated-fixed-arity-flag.md) | M | medium | behavior |
 | [BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four](BUG-63-bare-config-before-help-shows-help-on-argparse.md) | S | medium | behavior |
@@ -26,5 +25,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-68 — A sub-flag more than one level below a namedtuple field is accepted only by vanilla](BUG-68-deep-sub-flags-below-a-namedtuple-reach-no-adapter.md) | M | medium | behavior |
 | [BUG-69 — With a class tag present, the adapters drop the other variants' flags](BUG-69-tag-present-drops-other-variants-flags.md) | M | medium | behavior |
 | [BUG-70 — A union-of-structs field is a mount point with no `--config.<field>` entry](BUG-70-union-of-structs-mount-point-has-no-help-entry.md) | S | low | behavior |
+| [BUG-71 — The flat tagged-leaf hatch on a scalar root reaches no adapter](BUG-71-flat-tagged-leaf-hatch-unreachable-on-a-scalar-root.md) | S | medium | behavior |
+| [BUG-72 — Scalar force-cast flags on non-union fields reach no adapter](BUG-72-scalar-force-cast-flags-unregistered-on-plain-fields.md) | S | medium | behavior |
 
 <!-- tickets:end -->

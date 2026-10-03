@@ -174,7 +174,11 @@ user typed, found by scanning argv (and config files named on argv):
   one the opener left inactive, whose keys are ordinary data and so describe no signature
   ([06](06-callables.md#plain-and-escaped-directives));
 - `--config.<any.depth>[+]`;
-- collection patches (`--f.N`, `--f+`, `--f.N-`, `--f.key`) and `.json` casts.
+- collection patches (`--f.N`, `--f+`, `--f.N-`, `--f.key`) and `.json` casts;
+- the flat tagged-leaf flags typed below a registered leaf field (`--id.class`,
+  `--id.hex`, BUG-56) — registered only when typed, on the same help-noise ground as the
+  escaped openers: a registered leaf's ordinary spelling is its scalar, and one flag per
+  `__init__` parameter would clutter `--help` for the escape hatch.
 
 Why dynamic: the framework must accept every token the user types, but registering every
 possible index, key or bind parameter statically is impossible, and registering rarely used
@@ -253,6 +257,19 @@ keeps its token raw does not advertise a syntax it will not honour. Optionality 
 the things that decides this: `dict[str, str] | None` takes the mapping `dict[str, str]` takes,
 `Callable[…] | None` takes the spec `Callable[…]` takes, and both get the same `JSON` metavar
 ([10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts](10-design-decisions.md#optionality-does-not-change-what-a-whole-value-accepts)).
+The hatch's *flat* spelling crossed the same seam one step later (BUG-56):
+`--id.class uuid.UUID --id.hex …` is what the environment says with `ID__CLASS` /
+`ID__HEX`, and vanilla accepted it all along because its type walk treats a registered
+leaf structurally — the tag segment resolves through the `union_tag` rule, a parameter
+through the leaf's `__init__` fields. The adapters now mirror that walk from both sides:
+registration is argv-scanned
+([above](#static-and-dynamic-flags)), accepting exactly what
+`_parse_cli._resolve_field_type` accepts — so `--id.bogus` stays unregistered and the
+framework's rejection stands in for vanilla's `no_such_field` — and the collector descends
+into the leaf as it descends into a struct, writing the tag back raw, before the import
+resolves, for the [BUG-45](#union-inheritance-and-cast-flags) reason. A registered leaf
+as the *root* target keeps the gap (BUG-71).
+
 A decoded callable blob buys the factory and `bind` flags its class implies, exactly as a
 `--<field>.class` opener does. Neither half of that is a
 second decision: `_blob_document_from_argv` nests argv's `{`-prefixed tokens into one

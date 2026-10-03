@@ -2920,6 +2920,82 @@ class TestWholeValueFlagContract:
         cfg = loader.load(_RegisteredLeaf, argv=["--id", blob], env={})
         assert cfg.id == UUID(_UUID_TEXT)
 
+    def test_flat_tagged_registered_leaf_builds_on_every_frontend(
+        self,
+        loader: ConfargLoader,
+        leaf_registry: None,
+    ) -> None:
+        """The flat spelling of the tagged-leaf hatch crosses the adapter seam (BUG-56).
+
+        ``--id.class`` / ``--id.hex`` is what ``ID__CLASS`` / ``ID__HEX`` says in the
+        environment, and vanilla accepted it all along because its type walk treats a
+        registered leaf structurally. The adapters took their registered-leaf branch
+        first, so no such flag was ever registered and the four frameworks rejected the
+        tokens at parse time.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        hex_text = _UUID_TEXT.replace("-", "")
+        cfg = loader.load(_RegisteredLeaf, argv=["--id.class", "uuid.UUID", "--id.hex", hex_text], env={})
+        assert cfg.id == UUID(_UUID_TEXT)
+
+    def test_flat_tagged_registered_leaf_matches_env_channel(
+        self,
+        loader: ConfargLoader,
+        leaf_registry: None,
+    ) -> None:
+        """The flat CLI spelling merges exactly what ID__CLASS / ID__HEX merges (BUG-56)."""
+        confarg.register_leaf_type(UUID, UUID)
+        hex_text = _UUID_TEXT.replace("-", "")
+        cli = loader.merge(
+            _RegisteredLeaf,
+            argv=["--id.class", "uuid.UUID", "--id.hex", hex_text],
+            env={},
+        )
+        env = loader.merge(
+            _RegisteredLeaf,
+            argv=[],
+            env={"MYAPP_ID__CLASS": "uuid.UUID", "MYAPP_ID__HEX": hex_text},
+            env_prefix="MYAPP_",
+        )
+        assert cli == env == {"id": {"class": "uuid.UUID", "hex": hex_text}}
+
+    def test_flat_leaf_param_refines_whole_value(self, loader: ConfargLoader, leaf_registry: None) -> None:
+        """A --id.<param> beside a tagged blob refines it, as a struct's sub-flag does (BUG-56)."""
+        confarg.register_leaf_type(UUID, UUID)
+        hex_text = _UUID_TEXT.replace("-", "")
+        blob = '{"class": "uuid.UUID"}'
+        cfg = loader.load(_RegisteredLeaf, argv=["--id", blob, "--id.hex", hex_text], env={})
+        assert cfg.id == UUID(_UUID_TEXT)
+
+    def test_flat_leaf_flags_register_only_when_typed(
+        self,
+        populating_loader: ConfargLoader,
+        leaf_registry: None,
+    ) -> None:
+        """Typed flat leaf flags register; an empty argv keeps them off --help (BUG-56).
+
+        The registration is argv-scanned, like an escaped opener: a registered leaf's
+        ordinary spelling is its scalar, and one flag per ``__init__`` parameter would
+        clutter ``--help`` for the escape hatch.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        hex_text = _UUID_TEXT.replace("-", "")
+        typed = populating_loader.registered_flags(
+            _RegisteredLeaf,
+            argv=["--id.class", "uuid.UUID", "--id.hex", hex_text],
+        )
+        assert typed is not None
+        assert {"id.class", "id.hex"} <= typed
+        quiet = populating_loader.registered_flags(_RegisteredLeaf)
+        assert quiet is not None
+        assert not {f for f in quiet if f.startswith("id.")}
+
+    def test_flat_leaf_unknown_param_refused(self, loader: ConfargLoader, leaf_registry: None) -> None:
+        """--id.bogus names no __init__ parameter, so every front-end refuses it (BUG-56)."""
+        confarg.register_leaf_type(UUID, UUID)
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(_RegisteredLeaf, argv=["--id.class", "uuid.UUID", "--id.bogus", "x"], env={})
+
     def test_whole_struct_union_from_json(self, loader: ConfargLoader) -> None:
         """--u '{...}' carries its own discriminator and builds the variant."""
         cfg = loader.load(

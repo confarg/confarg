@@ -752,6 +752,20 @@ predicate to `_is_struct` for BUG-39 closed it — deliberately the *structural*
 can be read ([04](04-cli-adapters.md#whole-value-flags)). `_is_struct_variant` still owns
 every question construction asks afterwards; the two are not in competition.
 
+A third step reached the hatch's *flat* spelling (BUG-56): `--id.class uuid.UUID
+--id.hex …`, what the environment says with `ID__CLASS` / `ID__HEX`. Vanilla accepted it
+all along — its type walk treats a registered leaf structurally, so the tag segment
+resolves through the `union_tag` rule and a parameter through the leaf's `__init__`
+fields — while the adapters took their `_is_registered_leaf` branch first and no flag
+below the field was ever registered. The adapters now mirror the walk from both sides:
+registration is argv-scanned, and the collector descends into the leaf as it descends
+into a struct ([04](04-cli-adapters.md#whole-value-flags)). Argv-scanned rather than
+static, unlike the whole-value flag, is the maintainer's call: a registered leaf's
+ordinary spelling is its scalar, and one `--help` line per `__init__` parameter would
+advertise the escape hatch at the expense of the syntax actually used — the same ground
+the escaped openers are registered on. A flag naming no tag and no parameter stays
+unregistered, so the framework's rejection stands in for vanilla's `no_such_field`.
+
 An untagged dict stays an error, and the message says how to ask for fields. The rejected
 alternative — let *any* dict rebuild a registered leaf from its fields, exactly as before
 registration — keeps more old configurations working, but it leaves registration meaning nothing
