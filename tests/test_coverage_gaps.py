@@ -904,9 +904,8 @@ class TestExpressionBranches:
 
     def test_collect_names_keyword_args(self) -> None:
         """Keyword argument names in function calls are collected as references."""
-        # keyword arg 'y' should be collected as a reference
         refs = _extract_references("${sorted(x, key=y)}")
-        assert ("x",) in refs or ("y",) in refs
+        assert ("y",) in refs
 
     def test_attribute_chain_subscript_at_top(self) -> None:
         """_attribute_chain handles a subscript at the top level gracefully."""
