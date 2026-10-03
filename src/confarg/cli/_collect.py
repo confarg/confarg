@@ -620,6 +620,60 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
     )
 
 
+def _namedtuple_deep_fields(fields: Mapping[str, Any]) -> list[tuple[Any, list[str]]]:
+    """Return ``[(field_type, [spelled keys])]`` for a namedtuple's struct-shaped fields.
+
+    A struct-shaped field — a struct, or another namedtuple, however wrapped — is
+    collected by the per-field dispatch rather than as a scalar sub-flag, at each of
+    its own spellings, the name and the index alike (BUG-68).  One helper answers the
+    question for every caller: the scalar sub-flag collector (which skips them), the
+    presence scan and the deep dispatch itself.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
+    """
+    result: list[tuple[Any, list[str]]] = []
+    for i, (fname, ftype) in enumerate(fields.items()):
+        fcore = _unwrap_optional(ftype)
+        if _is_struct(fcore) or _is_namedtuple(fcore):
+            result.append((ftype, [fname, str(i)]))
+    return result
+
+
+def _deep_flag_present(flat: dict[str, Any], flag: str, deep_fields: list[tuple[Any, list[str]]]) -> bool:
+    """Return whether argv's flat parse result holds any entry under a deep sub-flag."""
+    for _ftype, spellings in deep_fields:
+        for spelled in spellings:
+            sub_flag = f"{flag}.{spelled}"
+            if flat.get(sub_flag) is not None:
+                return True
+            prefix = f"{sub_flag}."
+            if any(key.startswith(prefix) and value is not None for key, value in flat.items()):
+                return True
+    return False
+
+
+def _collect_deep_sub_flags(  # noqa: PLR0913  # the type-walk context, threaded whole
+    flat: dict[str, Any],
+    flag: str,
+    deep_fields: list[tuple[Any, list[str]]],
+    union_tag: str,
+    result: dict[str, Any],
+    tags: Mapping[str, Any],
+    argv: Sequence[str],
+) -> None:
+    """Collect a namedtuple's struct-shaped fields, at each of their spellings, into *result*.
+
+    The writes land at the paths the flags spell, as vanilla's own writes do, so a
+    deep sub-flag refines whatever is already at its path — a whole value's decoded
+    object, or the arity flag's promoted positions — rather than replacing the
+    sibling dict a pre-merged value would (BUG-68).
+    """
+    for ftype, spellings in deep_fields:
+        for spelled in spellings:
+            _collect_field(flat, ftype, f"{flag}.{spelled}", union_tag, result, tags, argv)
+
+
 def _namedtuple_sub_flags(flat: dict[str, Any], flag: str, fields: Mapping[str, Any]) -> dict[str, Any]:
     """Collect a namedtuple's per-name and per-index sub-flags, keys as spelled.
 
@@ -630,11 +684,15 @@ def _namedtuple_sub_flags(flat: dict[str, Any], flag: str, fields: Mapping[str, 
     is coerced to its field's type, as the vanilla parser's own dispatch
     coerces the same flag: a raw token here would put a str in the merged dict where
     vanilla puts the number, and an expression over the field would read the token
-    (BUG-66).
+    (BUG-66).  A struct-shaped field is not a scalar and is skipped: its spellings
+    belong to the deep dispatch (BUG-68).
     """
+    deep = {spelled for _ftype, spellings in _namedtuple_deep_fields(fields) for spelled in spellings}
     sub: dict[str, Any] = {}
     for i, (fname, ftype) in enumerate(fields.items()):
         for key, spelled in ((f"{flag}.{fname}", fname), (f"{flag}.{i}", str(i))):
+            if spelled in deep:
+                continue
             if flat.get(key) is not None:
                 sub[spelled] = _coerce_leaf_value(ftype, flat[key])
     return sub
@@ -681,11 +739,13 @@ def _arity_flag_writes_last(argv: Sequence[str], flag: str) -> bool:
     return last_bare > last_sub
 
 
-def _collect_ns_namedtuple(
+def _collect_ns_namedtuple(  # noqa: PLR0913  # the type-walk context, threaded whole
     flat: dict[str, Any],
     core: Any,
     flag: str,
+    union_tag: str,
     result: dict[str, Any],
+    tags: Mapping[str, Any],
     argv: Sequence[str],
 ) -> None:
     """Collect a namedtuple field from the flat namespace.
@@ -699,13 +759,17 @@ def _collect_ns_namedtuple(
     the latest writer, in which case it overwrites the field wholesale, as the
     vanilla scan's own last write does.  A lone whole-value token refines the
     same way, by name when it spells an object and by position when it spells an
-    array.
+    array.  A struct-shaped field's spellings take the per-field dispatch, at
+    whatever depth they sit (BUG-68): the same priority holds a level down, the
+    writes land on the paths the flags spell, and a deep sub-flag typed after
+    the arity flag joins it while an arity flag typed last takes the field.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
     fields = _namedtuple_fields(core)
     field_names = list(fields)
+    deep_fields = _namedtuple_deep_fields(fields)
     sub = _namedtuple_sub_flags(flat, flag, fields)
     nargs_value = flat.get(flag)
     path = flag.split(".")
@@ -713,11 +777,12 @@ def _collect_ns_namedtuple(
     if nargs_value is None:
         if sub:
             _set_nested(result, path, sub)
+        _collect_deep_sub_flags(flat, flag, deep_fields, union_tag, result, tags, argv)
         return
 
     whole = _fixed_arity_whole_value(nargs_value, core, flag)
 
-    if not sub:
+    if not sub and not _deep_flag_present(flat, flag, deep_fields):
         # Store what the flag spelled and let build() judge its arity, as the same-arity
         # tuple field does — the framework no longer counts the tokens for us.
         _set_nested(result, path, _namedtuple_arity_value(core, nargs_value, whole))
@@ -731,6 +796,7 @@ def _collect_ns_namedtuple(
 
     if isinstance(whole, dict):
         _set_nested(result, path, {**whole, **sub})
+        _collect_deep_sub_flags(flat, flag, deep_fields, union_tag, result, tags, argv)
         return
 
     value = _namedtuple_arity_value(core, nargs_value, whole)
@@ -738,6 +804,7 @@ def _collect_ns_namedtuple(
     merged: dict[str, Any] = {fname: base[i] for i, fname in enumerate(field_names) if i < len(base)}
     merged.update(sub)
     _set_nested(result, path, merged)
+    _collect_deep_sub_flags(flat, flag, deep_fields, union_tag, result, tags, argv)
 
 
 def _collect_ns_optional_seq(  # noqa: PLR0913  # the type-walk context, threaded whole
@@ -745,7 +812,9 @@ def _collect_ns_optional_seq(  # noqa: PLR0913  # the type-walk context, threade
     resolved: Any,
     core: Any,
     flag: str,
+    union_tag: str,
     result: dict[str, Any],
+    tags: Mapping[str, Any],
     argv: Sequence[str],
     whole: Any,
 ) -> None:
@@ -776,10 +845,13 @@ def _collect_ns_optional_seq(  # noqa: PLR0913  # the type-walk context, threade
     if cast_val is not _NO_CAST:
         _set_nested(result, path, cast_val)
         return
-    sub = _namedtuple_sub_flags(flat, flag, _namedtuple_fields(core)) if _is_namedtuple(core) else {}
+    fields = _namedtuple_fields(core) if _is_namedtuple(core) else {}
+    deep_fields = _namedtuple_deep_fields(fields)
+    sub = _namedtuple_sub_flags(flat, flag, fields) if fields else {}
     if flag not in flat:
         if sub:
             _set_nested(result, path, sub)
+        _collect_deep_sub_flags(flat, flag, deep_fields, union_tag, result, tags, argv)
         return
     v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
     if whole is _NO_CAST:
@@ -788,9 +860,10 @@ def _collect_ns_optional_seq(  # noqa: PLR0913  # the type-walk context, threade
         whole = _fixed_arity_whole_value(v, core, flag)
     value = whole if whole is not _NO_CAST else _collect_union_seq_value(resolved, v, flag)
     _set_nested(result, path, value)
-    if sub and not _arity_flag_writes_last(argv, flag):
+    if not _arity_flag_writes_last(argv, flag):
         for fname, fval in sub.items():
             _set_nested(result, [*path, fname], fval)
+        _collect_deep_sub_flags(flat, flag, deep_fields, union_tag, result, tags, argv)
 
 
 def _collect_ns_union_root(  # noqa: PLR0913  # the type-walk context, threaded whole
@@ -811,7 +884,7 @@ def _collect_ns_union_root(  # noqa: PLR0913  # the type-walk context, threaded 
         _collect_ns_fields(flat, variant, prefix, union_tag, result, tags, argv)
 
 
-def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch per type case
+def _collect_ns_fields(  # noqa: PLR0913  # one branch per type case
     flat: dict[str, Any],
     target: Any,
     prefix: str,
@@ -851,105 +924,125 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
         resolved = _resolve_type(raw_type)
         flag = f"{prefix}.{name}" if prefix else name
 
-        core = _unwrap_optional(resolved)
+        _collect_field(flat, resolved, flag, union_tag, result, tags, argv)
 
-        # `--flag.json` forces a raw-JSON value for any field type, unless `json` names a
-        # real member of the field (real field wins). Handled before the type dispatch so
-        # struct/namedtuple/callable/collection fields honour it too.
-        json_val = _find_json_cast(flat, flag, core if core is not None else resolved, union_tag)
-        if json_val is not _NO_CAST:
-            _set_nested(result, flag.split("."), json_val)
-            continue
+    _collect_ns_inheritance(flat, _tp, prefix, union_tag, result, tags, argv)
 
-        # A bare `--<flag> '{...}'` assigns the whole field; sibling `--<flag>.<sub>`
-        # entries are collected on top of it below, as they refine it in vanilla.
-        whole = _whole_value(flat, flag, resolved)
 
-        if core is None:
-            # Struct unions: the whole object carries its own class-tag; variant fields refine it
-            if whole is not _NO_CAST:
-                _set_nested(result, flag.split("."), whole)
-            _collect_ns_union_field(flat, flag, resolved, union_tag, result, tags, argv)
-            # Scalar unions: collect plain value or explicit scalar cast
-            cast_val = _find_scalar_cast_override(flat, flag)
-            if cast_val is not _NO_CAST:
-                _set_nested(result, flag.split("."), cast_val)
-            elif flag in flat and whole is _NO_CAST:
-                v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
-                _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, v, flag))
-            continue
+def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per type case
+    flat: dict[str, Any],
+    resolved: Any,
+    flag: str,
+    union_tag: str,
+    result: dict[str, Any],
+    tags: Mapping[str, Any],
+    argv: Sequence[str],
+) -> None:
+    """Collect one declared field of a struct, at *flag*, into *result*.
 
-        # Optional[<sequence>]: the union is the type vanilla dispatches, so the flag's
-        # tokens take the union's shaping, not the branches the unwrapped core picks
-        # (BUG-61).
-        if _union_has_seq_variant(resolved):
-            _collect_ns_optional_seq(flat, resolved, core, flag, result, argv, whole)
-            continue
+    The one per-field dispatch: every path the walk reaches a declared field by --
+    a struct's field, or a namedtuple's reached through either of its sub-flag
+    spellings (BUG-68) -- hands the field to this same decision-maker, so a field
+    behaves the same at every depth.  *resolved* names the field's type as the
+    caller's walk resolved it; *result* is written at ``flag.split(".")``.
+    """
+    core = _unwrap_optional(resolved)
 
-        # A fixed-length sequence -- tuple[X, Y] or a namedtuple -- owes every one of its
-        # tokens, for the leaf branch below and the namedtuple branch alike.  Asked of
-        # *resolved* rather than of `core`, because that is the type vanilla dispatches on:
-        # `tuple[int, int] | None` is a union with a sequence variant there, so it consumes
-        # greedily and owes nothing (BUG-58).
-        if (fixed := _fixed_seq_types(resolved)) is not None and flag in flat:
-            # A greedy registration keeps only the surviving occurrence's run, so the
-            # bounds are asked of every occurrence's run, read off argv; a parse result
-            # argv cannot account for falls back to the run the framework handed over.
-            runs = _fixed_arity_occurrence_runs(argv, flag)
-            for run in runs or [flat[flag]]:
-                _require_fixed_arity(len(fixed), run, flag, core)
+    # `--flag.json` forces a raw-JSON value for any field type, unless `json` names a
+    # real member of the field (real field wins). Handled before the type dispatch so
+    # struct/namedtuple/callable/collection fields honour it too.
+    json_val = _find_json_cast(flat, flag, core if core is not None else resolved, union_tag)
+    if json_val is not _NO_CAST:
+        _set_nested(result, flag.split("."), json_val)
+        return
 
-        if _is_namedtuple(core):
-            _collect_ns_namedtuple(flat, core, flag, result, argv)
-            continue
+    # A bare `--<flag> '{...}'` assigns the whole field; sibling `--<flag>.<sub>`
+    # entries are collected on top of it below, as they refine it in vanilla.
+    whole = _whole_value(flat, flag, resolved)
 
-        if _is_registered_leaf(core):
-            # A registered leaf is opaque to implicit decisions, but a tag inside a whole
-            # value still opens it -- and the tag can only be seen once the token is
-            # decoded, so the blob is honored before the scalar coercion, as in vanilla.
-            if whole is not _NO_CAST:
-                _set_nested(result, flag.split("."), whole)
-            elif flag in flat:
-                _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
-            # The flat spelling of the same hatch (BUG-56): the tag selector and the
-            # leaf's __init__-parameter flags sit beside the scalar, collected by the
-            # same struct-shaped walk vanilla's type walk performs. The tag is written
-            # back as a raw string, not resolved, for the BUG-45 reason: construct()
-            # raises the import error naming the bad path.
-            tag_key = f"{flag}.{union_tag}"
-            if tag_key in flat:
-                _set_nested(result, [*flag.split("."), union_tag], _str_token(flat[tag_key]))
-            _collect_ns_fields(flat, core, flag, union_tag, result, tags, argv)
-            continue
-
-        if _is_struct(core):
-            if whole is not _NO_CAST:
-                _set_nested(result, flag.split("."), whole)
-            _collect_ns_fields(flat, core, flag, union_tag, result, tags, argv)
-            continue
-
-        if _is_dict(core):
-            # Keys are collected by the argv patch scan and deep-merged over this value.
-            if whole is not _NO_CAST:
-                _set_nested(result, flag.split("."), whole)
-            elif flag in flat:
-                _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
-            continue
-
-        if _is_callable(core):
-            _collect_callable_spec(flat, flag, result, whole)
-            continue
-
+    if core is None:
+        # Struct unions: the whole object carries its own class-tag; variant fields refine it
+        if whole is not _NO_CAST:
+            _set_nested(result, flag.split("."), whole)
+        _collect_ns_union_field(flat, flag, resolved, union_tag, result, tags, argv)
+        # Scalar unions: collect plain value or explicit scalar cast
         cast_val = _find_scalar_cast_override(flat, flag)
         if cast_val is not _NO_CAST:
             _set_nested(result, flag.split("."), cast_val)
-        elif flag in flat:
-            # The one accumulation site for a varlen collection's tokens: the only flat
-            # value a whole-field delete can span.
+        elif flag in flat and whole is _NO_CAST:
             v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
-            _set_nested(result, flag.split("."), _coerce_leaf_value(core, v))
+            _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, v, flag))
+        return
 
-    _collect_ns_inheritance(flat, _tp, prefix, union_tag, result, tags, argv)
+    # Optional[<sequence>]: the union is the type vanilla dispatches, so the flag's
+    # tokens take the union's shaping, not the branches the unwrapped core picks
+    # (BUG-61).
+    if _union_has_seq_variant(resolved):
+        _collect_ns_optional_seq(flat, resolved, core, flag, union_tag, result, tags, argv, whole)
+        return
+
+    # A fixed-length sequence -- tuple[X, Y] or a namedtuple -- owes every one of its
+    # tokens, for the leaf branch below and the namedtuple branch alike.  Asked of
+    # *resolved* rather than of `core`, because that is the type vanilla dispatches on:
+    # `tuple[int, int] | None` is a union with a sequence variant there, so it consumes
+    # greedily and owes nothing (BUG-58).
+    if (fixed := _fixed_seq_types(resolved)) is not None and flag in flat:
+        # A greedy registration keeps only the surviving occurrence's run, so the
+        # bounds are asked of every occurrence's run, read off argv; a parse result
+        # argv cannot account for falls back to the run the framework handed over.
+        runs = _fixed_arity_occurrence_runs(argv, flag)
+        for run in runs or [flat[flag]]:
+            _require_fixed_arity(len(fixed), run, flag, core)
+
+    if _is_namedtuple(core):
+        _collect_ns_namedtuple(flat, core, flag, union_tag, result, tags, argv)
+        return
+
+    if _is_registered_leaf(core):
+        # A registered leaf is opaque to implicit decisions, but a tag inside a whole
+        # value still opens it -- and the tag can only be seen once the token is
+        # decoded, so the blob is honored before the scalar coercion, as in vanilla.
+        if whole is not _NO_CAST:
+            _set_nested(result, flag.split("."), whole)
+        elif flag in flat:
+            _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
+        # The flat spelling of the same hatch (BUG-56): the tag selector and the
+        # leaf's __init__-parameter flags sit beside the scalar, collected by the
+        # same struct-shaped walk vanilla's type walk performs. The tag is written
+        # back as a raw string, not resolved, for the BUG-45 reason: construct()
+        # raises the import error naming the bad path.
+        tag_key = f"{flag}.{union_tag}"
+        if tag_key in flat:
+            _set_nested(result, [*flag.split("."), union_tag], _str_token(flat[tag_key]))
+        _collect_ns_fields(flat, core, flag, union_tag, result, tags, argv)
+        return
+
+    if _is_struct(core):
+        if whole is not _NO_CAST:
+            _set_nested(result, flag.split("."), whole)
+        _collect_ns_fields(flat, core, flag, union_tag, result, tags, argv)
+        return
+
+    if _is_dict(core):
+        # Keys are collected by the argv patch scan and deep-merged over this value.
+        if whole is not _NO_CAST:
+            _set_nested(result, flag.split("."), whole)
+        elif flag in flat:
+            _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
+        return
+
+    if _is_callable(core):
+        _collect_callable_spec(flat, flag, result, whole)
+        return
+
+    cast_val = _find_scalar_cast_override(flat, flag)
+    if cast_val is not _NO_CAST:
+        _set_nested(result, flag.split("."), cast_val)
+    elif flag in flat:
+        # The one accumulation site for a varlen collection's tokens: the only flat
+        # value a whole-field delete can span.
+        v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
+        _set_nested(result, flag.split("."), _coerce_leaf_value(core, v))
 
 
 def _promote_patched_lists(ops: Mapping[str, Any], collected: dict[str, Any]) -> None:
