@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -1281,6 +1283,42 @@ class TestSubscriptPaths:
     def test_mounting_prefixes_the_base_and_keeps_the_subscript(self) -> None:
         """Only the base name is file-anchored, so only it takes the prefix."""
         assert prefix_references({"v": "${svc['web-1'].host}"}, "db") == {"v": "${db.svc['web-1'].host}"}
+
+
+class TestMethodCalls:
+    """A method is whitelisted by its name among the string methods, and runs on a string only (BUG-122)."""
+
+    @pytest.mark.parametrize("name", ["max", "round", "int", "len"])
+    def test_a_function_name_is_no_method(self, name: str) -> None:
+        """Only a string method's name passes validation as a method."""
+        with pytest.raises(UnsafeExpressionError, match=rf"Method '{name}' is not allowed"):
+            _validate_ast(f"x.{name}(5)")
+
+    def test_a_function_name_called_off_a_decimal_is_refused(self) -> None:
+        """``Decimal.max`` is not reachable through the whitelist's ``max``."""
+        with pytest.raises(UnsafeExpressionError, match=r"Method 'max' is not allowed"):
+            resolve_expressions({"d": Decimal(1), "m": "${d.max(5)}"})
+
+    @pytest.mark.parametrize(
+        ("receiver", "call", "type_name"),
+        [
+            pytest.param(date(2024, 1, 1), "x.replace(2000)", "date", id="date"),
+            pytest.param(b"ab", "x.upper()", "bytes", id="bytes"),
+            pytest.param({"upper": lambda: "called"}, "x.upper()", "dict", id="dict-holding-the-method-name"),
+        ],
+    )
+    def test_a_method_off_anything_but_a_string_is_refused(self, receiver: object, call: str, type_name: str) -> None:
+        """The receiver must be a string; a key spelled like the method is never what is called."""
+        with pytest.raises(UnsafeExpressionError, match=rf"Method '\w+' is called on a {type_name}"):
+            resolve_expressions({"x": receiver, "v": "${" + call + "}"})
+
+    def test_a_method_off_a_string_subclass_runs(self) -> None:
+        """A CLI or env token is a ``str`` subclass, and a string like any other."""
+        assert resolve_expressions({"x": _StrToken("ab"), "v": "${x.upper()}"})["v"] == "AB"
+
+    def test_a_method_off_a_computed_string_runs(self) -> None:
+        """The receiver may be any expression whose value is a string."""
+        assert resolve_expressions({"n": 7, "v": "${(str(n) + 'a').upper()}"})["v"] == "7A"
 
 
 # ---------------------------------------------------------------------------

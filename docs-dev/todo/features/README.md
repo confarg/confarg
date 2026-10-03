@@ -36,5 +36,6 @@ has no design yet, so deciding whether to do it at all is the next actionable st
 | [FEAT-23 — A post-resolve transform layer](FEAT-23-post-resolve-transform-layer.md) | XL | high | config |
 | [FEAT-24 — Writing a configuration back to a URL](FEAT-24-writing-a-configuration-to-a-url.md) | M | low | behavior |
 | [FEAT-25 — Nothing in CI runs the board and anchor checks](FEAT-25-nothing-in-ci-runs-the-board-and-anchor-checks.md) | S | low | none |
+| [FEAT-26 — The expression whitelist is not documented for users](FEAT-26-the-expression-whitelist-is-not-documented-for-users.md) | S | low | none |
 
 <!-- tickets:end -->

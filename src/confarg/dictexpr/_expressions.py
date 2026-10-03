@@ -356,17 +356,28 @@ def _function_name(node: ast.Call) -> str | None:
     return node.func.id if isinstance(node.func, ast.Name) else None
 
 
+def _method_name(node: ast.Call) -> str | None:
+    """Return the name of the method *node* calls, or ``None`` when its callee is no attribute.
+
+    The one place a call is read as a method call: ``<receiver>.<name>(...)``. Its callee is
+    never a config path, so ``x.upper()`` reads ``x`` and calls ``upper`` on it, even when
+    ``x`` holds a key ``upper``; validation checks the name, evaluation the receiver.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/safety-model.md#a-method-is-a-string-method
+    """
+    return node.func.attr if isinstance(node.func, ast.Attribute) else None
+
+
 def _collect_names_from_call(node: ast.Call, refs: set[str]) -> None:
-    """Collect field references from a Call node: its arguments, and its callee unless that names a function."""
-    _min_attribute_parts = 2
-    if _function_name(node) is None:
-        parts = _attribute_chain(node.func) if isinstance(node.func, ast.Attribute) else None
-        if parts is not None and len(parts) >= _min_attribute_parts and parts[-1] in _SAFE_METHODS:
-            # Method call like x.upper(): add the receiver path, not the method name.
-            refs.add(".".join(parts[:-1]))
-        else:
-            # Indirect call — descend into the func expression.
-            _collect_names(node.func, refs)
+    """Collect field references from a Call node: its arguments, and its callee unless that names a function.
+
+    A method call depends on its receiver, never on the path its callee spells.
+    """
+    if _method_name(node) is not None:
+        _collect_names(cast("ast.Attribute", node.func).value, refs)
+    elif _function_name(node) is None:
+        _collect_names(node.func, refs)
     for arg in node.args:
         _collect_names(arg, refs)
     for kw in node.keywords:
@@ -514,13 +525,12 @@ def _validate_call(node: ast.Call) -> None:
         if function not in _SAFE_FUNCTIONS:
             msg = f"Function '{function}' is not allowed"
             raise UnsafeExpressionError(msg)
-    elif isinstance(node.func, ast.Attribute):
-        if node.func.attr not in _SAFE_METHODS and node.func.attr not in _SAFE_FUNCTIONS:
-            msg = f"Method '{node.func.attr}' is not allowed"
+    elif (method := _method_name(node)) is not None:
+        if method not in _SAFE_METHODS:
+            msg = f"Method '{method}' is not allowed"
             raise UnsafeExpressionError(msg)
     else:
-        msg = "Indirect function calls are not allowed"
-        raise UnsafeExpressionError(msg)
+        raise UnsafeExpressionError.indirect_call()
 
 
 def _eval_name(node: ast.Name, namespace: dict[str, Any]) -> Any:
@@ -624,9 +634,29 @@ def _eval_ifexp(node: ast.IfExp, namespace: dict[str, Any]) -> Any:
     return _evaluate_ast(node.orelse, namespace)
 
 
+def _eval_method(node: ast.Call, method: str, namespace: dict[str, Any]) -> Any:
+    """Return the bound string method *node* calls, refusing any receiver that is no string.
+
+    The receiver is evaluated, never the callee's path, and its type is known only now: a
+    date's ``replace`` or a dict holding a key ``upper`` is refused here, as unsafe.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/safety-model.md#a-method-is-a-string-method
+    """
+    receiver = _evaluate_ast(cast("ast.Attribute", node.func).value, namespace)
+    if not isinstance(receiver, str):
+        msg = f"Method '{method}' is called on a {type(receiver).__name__}; it is allowed only on a string"
+        raise UnsafeExpressionError(msg)
+    return getattr(receiver, method)
+
+
 def _eval_call(node: ast.Call, namespace: dict[str, Any]) -> Any:
-    function = _function_name(node)
-    func = _SAFE_FUNCTIONS[function] if function is not None else _evaluate_ast(node.func, namespace)
+    if (function := _function_name(node)) is not None:
+        func = _SAFE_FUNCTIONS[function]
+    elif (method := _method_name(node)) is not None:
+        func = _eval_method(node, method, namespace)
+    else:
+        raise UnsafeExpressionError.indirect_call()
     args = [_evaluate_ast(a, namespace) for a in node.args]
     kwargs = {cast("str", kw.arg): _evaluate_ast(kw.value, namespace) for kw in node.keywords}
     try:
