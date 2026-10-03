@@ -735,6 +735,56 @@ class TestFixedSequenceContract:
         assert cfg.pair == _Point(x=1, y=9)
         assert cfg.scale == 18
 
+    def test_repeated_flag_last_occurrence_wins(self, loader: ConfargLoader) -> None:
+        """A fixed-arity flag takes one value, so a repeat replaces it (BUG-62).
+
+        ``FlagSpec.accumulates`` is False on a fixed-arity flag: vanilla's
+        ``_consume_fixed_tuple_args`` ``_set_nested``s the second occurrence over
+        the first, and the frameworks that keep one value per flag overwrite too.
+        """
+        assert loader.merge(_WithIntPair, argv=["--pair", "1", "2", "--pair", "3", "4"], env={}) == {"pair": [3, 4]}
+
+    def test_repeated_whole_value_last_occurrence_wins(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """A repeated whole-value token replaces the earlier one too (BUG-62)."""
+        assert whole_value_arity_loader.merge(_WithIntPair, argv=["--pair", "[1, 2]", "--pair", "[3, 4]"], env={}) == {
+            "pair": [3, 4],
+        }
+
+    def test_repeated_whole_value_then_positional_last_occurrence_wins(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """The two spellings of one flag are occurrences of the same flag (BUG-62)."""
+        assert whole_value_arity_loader.merge(_WithIntPair, argv=["--pair", "[1, 2]", "--pair", "3", "4"], env={}) == {
+            "pair": [3, 4],
+        }
+
+    def test_repeated_namedtuple_flag_last_occurrence_wins(self, loader: ConfargLoader) -> None:
+        """A namedtuple's arity flag replaces on a repeat, as the same-arity tuple does (BUG-62)."""
+        assert loader.load(_WithPoint, argv=["--pair", "1", "2", "--pair", "3", "4"], env={}).pair == _Point(x=3, y=4)
+
+    def test_repeated_namedtuple_whole_value_last_occurrence_wins(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """A repeated object whole value replaces the earlier one too (BUG-62)."""
+        assert whole_value_arity_loader.merge(
+            _WithPoint,
+            argv=["--pair", '{"x": 1, "y": 2}', "--pair", '{"x": 13, "y": 42}'],
+            env={},
+        ) == {"pair": {"x": 13, "y": 42}}
+
+    def test_repeated_flag_after_sub_flag_replaces_wholesale(self, loader: ConfargLoader) -> None:
+        """The last occurrence is also the latest writer, so it takes the whole field (BUG-62).
+
+        The repeat rides the read-back ``_arity_flag_writes_last`` already performs: the
+        last ``--pair`` follows the ``--pair.y`` it supersedes, exactly as a lone arity
+        flag does (BUG-66).
+        """
+        assert loader.merge(_WithPoint, argv=["--pair", "1", "2", "--pair.y", "7", "--pair", "3", "4"], env={}) == {
+            "pair": [3, 4],
+        }
+
     def test_tuple_too_many_tokens_raises(self, whole_value_arity_loader: ConfargLoader) -> None:
         """A token past the arity is the surplus positional vanilla names, not a longer tuple.
 
