@@ -16,7 +16,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-47 — The CSV section of `11_include` is cut off mid-sentence](BUG-47-include-readme-truncates-the-csv-header-section.md) | S | low | none |
 | [BUG-48 — `12_collections` cites "Tutorial XX" instead of a real tutorial](BUG-48-collections-readme-defers-to-tutorial-xx.md) | S | low | none |
 | [BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four](BUG-63-bare-config-before-help-shows-help-on-argparse.md) | S | medium | behavior |
-| [BUG-69 — With a class tag present, the adapters drop the other variants' flags](BUG-69-tag-present-drops-other-variants-flags.md) | M | medium | behavior |
 | [BUG-70 — A union-of-structs field is a mount point with no `--config.<field>` entry](BUG-70-union-of-structs-mount-point-has-no-help-entry.md) | S | low | behavior |
 | [BUG-71 — The flat tagged-leaf hatch on a scalar root reaches no adapter](BUG-71-flat-tagged-leaf-hatch-unreachable-on-a-scalar-root.md) | S | medium | behavior |
 | [BUG-72 — Scalar force-cast flags on non-union fields reach no adapter](BUG-72-scalar-force-cast-flags-unregistered-on-plain-fields.md) | S | medium | behavior |
@@ -27,5 +26,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-79 — A repeated arity flag on an Optional fixed-arity field keeps only the last occurrence in the adapters](BUG-79-a-repeated-arity-flag-under-optional-does-not-accumulate-in-the-adapters.md) | M | medium | behavior |
 | [BUG-80 — A namedtuple's negative index sub-flags are unreachable on the adapters](BUG-80-namedtuple-negative-index-sub-flags-are-unreachable-on-the-adapters.md) | S | medium | behavior |
 | [BUG-81 — The click and typer blocks of `16_appending_items` splice `--dbs+` into their JSON](BUG-81-the-click-and-typer-blocks-of-16_appending_items-splice-dbs-into-their-json.md) | S | low | none |
+| [BUG-83 — Without a class tag, the adapters drop a subclass's flags outright](BUG-83-no-tag-inheritance-drops-subclass-flags.md) | S | medium | behavior |
+| [BUG-84 — A flag owned by disagreeing variants is coerced by the last walk, not by vanilla's rule](BUG-84-disagreeing-variant-types-coerced-by-last-walk.md) | M | medium | behavior |
 
 <!-- tickets:end -->

@@ -28,5 +28,15 @@
   `--<path>.<union_tag>` as a raw string and lets `construct()` raise the import error naming the
   bad path — so the tag must survive collection byte-identically, or the user hears a
   "no discriminator was provided" complaint about a discriminator they did provide (BUG-45).
+- With a tag present, the collector descends into the **other** variants at the path too, not
+  only the named one: the union's remaining struct variants, or the base's remaining subclasses
+  (`_dataclass_subclasses`, the same set vanilla's `_subclass_field_type` searches). Vanilla
+  keeps every argv flag at the path, coerced by whichever variant owns the name
+  (`_resolve_union_field_type` / `_subclass_field_type`), and leaves the ones the named variant
+  does not know for `build()` to reject; descending only into the named variant dropped them
+  silently — a mistyped `--<field>` was ignored instead of refused, and a tag whose import
+  failed cost the sibling flags their place in the merged dict (BUG-69). Each variant is
+  descended into in its own guard, so one variant's failed import costs no other variant its
+  flags.
 - Force-cast flags (`--f.int`, …) are registered statically only where the stealing rule is
   non-obvious: an enum variant, or `str` next to any other variant.
