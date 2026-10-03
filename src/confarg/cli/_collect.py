@@ -59,6 +59,7 @@ from confarg._types import (
     _StrToken,
     _union_args_no_none,
     _union_has_scalar_variant,
+    _union_has_seq_variant,
     _union_has_varlen_variant,
     _UnionSeqToken,
     _unwrap_optional,
@@ -737,6 +738,59 @@ def _collect_ns_namedtuple(
     _set_nested(result, path, merged)
 
 
+def _collect_ns_optional_seq(  # noqa: PLR0913  # the type-walk context, threaded whole
+    flat: dict[str, Any],
+    resolved: Any,
+    core: Any,
+    flag: str,
+    result: dict[str, Any],
+    argv: Sequence[str],
+    whole: Any,
+) -> None:
+    """Collect an ``Optional[<sequence>]`` field, shaping its flag as vanilla shapes the union.
+
+    The resolved type is the one vanilla dispatches -- ``tuple[int, int] | None`` is a
+    union with a sequence variant there, consumed greedily and shaped by
+    ``_union_seq_value`` -- so the flag's tokens go through
+    :func:`_collect_union_seq_value` rather than through the fixed-arity and
+    namedtuple branches the unwrapped *core* would pick: a bare occurrence owes its
+    value, and the run is stored raw, its per-position coercion deferred to
+    ``build()`` (BUG-61).
+
+    A namedtuple's sub-flags keep their own spelling, collected and coerced by
+    :func:`_namedtuple_sub_flags` and merged in argv order, as on the plain spelling
+    (:func:`_arity_flag_writes_last` decides): the arity flag written last replaces
+    the field wholesale, a sub-flag written last descends into whatever the arity
+    flag left -- which ``_set_nested`` promotes to the ``'*'`` shape, the same
+    promotion vanilla's own descent gives the optional spelling.  An explicit
+    scalar cast flag wins over the flag's own value, as in the multi-variant union
+    branch.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#unions-with-sequence-variants
+    """
+    path = flag.split(".")
+    cast_val = _find_scalar_cast_override(flat, flag)
+    if cast_val is not _NO_CAST:
+        _set_nested(result, path, cast_val)
+        return
+    sub = _namedtuple_sub_flags(flat, flag, _namedtuple_fields(core)) if _is_namedtuple(core) else {}
+    if flag not in flat:
+        if sub:
+            _set_nested(result, path, sub)
+        return
+    v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
+    if whole is _NO_CAST:
+        # The list spelling of the decode _whole_value does for the str one: a
+        # `{...}` a namedtuple accepts is the object it spells, not an ordinary token.
+        whole = _fixed_arity_whole_value(v, core, flag)
+    value = whole if whole is not _NO_CAST else _collect_union_seq_value(resolved, v, flag)
+    _set_nested(result, path, value)
+    if sub and not _arity_flag_writes_last(argv, flag):
+        for fname, fval in sub.items():
+            _set_nested(result, [*path, fname], fval)
+
+
 def _collect_ns_union_root(  # noqa: PLR0913  # the type-walk context, threaded whole
     flat: dict[str, Any],
     variants: list[Any],
@@ -821,6 +875,13 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
             elif flag in flat and whole is _NO_CAST:
                 v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
                 _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, v, flag))
+            continue
+
+        # Optional[<sequence>]: the union is the type vanilla dispatches, so the flag's
+        # tokens take the union's shaping, not the branches the unwrapped core picks
+        # (BUG-61).
+        if _union_has_seq_variant(resolved):
+            _collect_ns_optional_seq(flat, resolved, core, flag, result, argv, whole)
             continue
 
         # A fixed-length sequence -- tuple[X, Y] or a namedtuple -- owes every one of its

@@ -71,7 +71,11 @@ merge side, so registration and read-back cannot disagree about which flags stan
 multi-token *shape* and not "is there something to clear": a union with a sequence variant but no
 varlen one (`str | tuple[str, str]`) is therefore included, and the empty value it stores is what
 raises vanilla's error in `_collect_union_seq_value` — so the bare form is refused with confarg's
-own message everywhere instead of the framework's. `stands_bare` is set on what that predicate
+own message everywhere instead of the framework's. The optional spelling of a fixed-arity
+field answers the predicate the same way — `tuple[int, int] | None` and a namedtuple under
+`Optional` are unions with a sequence variant — and since BUG-61 the collector routes their
+flag through the same shaper, so a bare occurrence raises the same error instead of clearing the
+field ([whole-value flags](whole-value-flags.md#whole-value-flags)). `stands_bare` is set on what that predicate
 names plus the append; marking anything else needs a reader for what the dropped token meant, or
 the information is gone.
 

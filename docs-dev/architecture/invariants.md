@@ -50,6 +50,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "which token runs did argv spell for a repeated fixed-arity flag?" | `cli/_collect._fixed_arity_occurrence_runs`, read off argv — a greedy registration keeps only the surviving run |
 | "which plain-occurrence tokens survive the last whole-field delete at a path?" | `cli/_collect._tokens_past_whole_field_delete`, read off argv — a framework's parse result has the pre-delete ones folded into the value after it |
 | "how long is a fixed-arity flag's token run?" | `cli/_collect._fixed_arity_whole_value` on its first token — one for a whole value, the arity otherwise |
+| "how is an `Optional[<sequence>]` field's flag value shaped?" | `cli/_collect._collect_ns_optional_seq` — the union shaper `_collect_union_seq_value`, asked of the resolved union as vanilla's `_union_seq_value` is |
 | "how does a sub-flag write re-key a namedtuple's positional list?" | `_parse_cli._promote_namedtuple_positional` (field names, unlike the `'*'` base `_set_nested` gives a varlen collection) |
 | "which flag at a namedtuple field is the latest writer?" | `cli/_collect._arity_flag_writes_last`, read off argv |
 | "which occurrence of a repeated fixed-arity flag reaches the collector, on cyclopts?" | `cli/cyclopts/_register._last_occurrence_convert`, read off the `CliToken` index |
