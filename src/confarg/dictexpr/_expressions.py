@@ -374,11 +374,11 @@ def _collect_names_from_call(node: ast.Call, refs: set[str]) -> None:
 
 
 def _collect_names(node: ast.AST, refs: set[str]) -> None:
-    """Collect Name nodes and dotted Attribute chains from AST as field references."""
+    """Collect Name nodes and the config paths of Attribute/Subscript chains as field references."""
     if isinstance(node, ast.Name):
         refs.add(node.id)
         return
-    if isinstance(node, ast.Attribute):
+    if isinstance(node, ast.Attribute | ast.Subscript):
         parts = _attribute_chain(node)
         if parts is not None:
             refs.add(".".join(parts))
@@ -394,56 +394,57 @@ def _collect_names(node: ast.AST, refs: set[str]) -> None:
 
 
 def _ast_int_value(node: ast.AST) -> int | None:
-    """Return the integer value of an AST node if it is an int literal or -int literal."""
-    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+    """Return the integer value of an AST node if it is an int literal or -int literal (a bool is neither)."""
+    if isinstance(node, ast.Constant) and type(node.value) is int:
         return node.value
     if (
         isinstance(node, ast.UnaryOp)
         and isinstance(node.op, ast.USub)
         and isinstance(node.operand, ast.Constant)
-        and isinstance(node.operand.value, int)
+        and type(node.operand.value) is int
     ):
         return -node.operand.value
     return None
 
 
-def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
-    """Extract dotted name chain from nested Attribute/Subscript nodes.
+def _subscript_segment(index: ast.expr) -> str | None:
+    """Return the path segment a subscript's *index* spells, or ``None`` for a computed one.
 
-    Returns e.g. ["db", "host"] for ``db.host``, ["servers", "0", "host"] for
-    ``servers[0].host``, ["servers", "-1", "host"] for ``servers[-1].host``,
-    or None if base is not a Name.
+    A string constant is the key itself (``['web-1']``), an integer constant the list index
+    (``[0]``, ``[-1]``).
+    """
+    if isinstance(index, ast.Constant) and isinstance(index.value, str):
+        return index.value
+    number = _ast_int_value(index)
+    return None if number is None else str(number)
+
+
+def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
+    """Return the config path *node* reads, segment by segment, or ``None`` when it reads none.
+
+    The one answer to "which config path does this node read?": a dot and a constant
+    subscript each spell one segment, so ``db.host``, ``db['host']`` and ``db["host"]`` are
+    ``["db", "host"]``, ``servers[0].host`` is ``["servers", "0", "host"]`` and
+    ``svc['web-1']`` is ``["svc", "web-1"]``. ``None`` when a subscript is computed
+    (``svc[k]``) or the chain is not rooted at a name (``f(x).a``). Reference collection and
+    evaluation both ask it.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
     """
     parts: list[str] = []
-    if isinstance(node, ast.Attribute):
-        parts.append(node.attr)
-        current: ast.AST = node.value
-    else:
-        # Subscript at top (shouldn't be called directly, but handle it)
-        idx = _ast_int_value(node.slice)
-        if idx is not None:
-            parts.append(str(idx))
-        else:
+    current: ast.expr = node
+    while isinstance(current, ast.Attribute | ast.Subscript):
+        segment = current.attr if isinstance(current, ast.Attribute) else _subscript_segment(current.slice)
+        if segment is None:
             return None
-        current = node.value
-    while True:
-        if isinstance(current, ast.Attribute):
-            parts.append(current.attr)
-            current = current.value
-        elif isinstance(current, ast.Subscript):
-            idx = _ast_int_value(current.slice)
-            if idx is not None:
-                parts.append(str(idx))
-                current = current.value
-            else:
-                return None
-        else:
-            break
-    if isinstance(current, ast.Name):
-        parts.append(current.id)
-        parts.reverse()
-        return parts
-    return None
+        parts.append(segment)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return None
+    parts.append(current.id)
+    parts.reverse()
+    return parts
 
 
 def _topological_sort(deps: dict[str, set[str]]) -> list[str]:
@@ -527,30 +528,41 @@ def _eval_name(node: ast.Name, namespace: dict[str, Any]) -> Any:
     if node.id in _SAFE_FUNCTIONS and node.id not in namespace:
         detail = f"'{node.id}' is a function only when called, as in {node.id}(...)"
         raise MissingReferenceError.field_not_found(node.id, detail)
-    return _get_nested(namespace, node.id)
+    return _get_nested(namespace, [node.id])
+
+
+def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any], access: Callable[[Any], Any]) -> Any:
+    """Read the config path *node* spells; failing that, apply *access* to its evaluated base.
+
+    The path comes first, so ``svc['web'].host`` reads what ``svc.web.host`` reads. What no
+    path answers is Python's own access: a method off a string (``name.upper``), an index into
+    one (``name[0]``), a computed key (``svc[k]``), a key that is no string. When that fails
+    too, the path's own miss is reported rather than ``'dict' object has no attribute ...``.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
+    """
+    parts = _attribute_chain(node)
+    missing: MissingReferenceError | None = None
+    if parts is not None:
+        try:
+            return _get_nested(namespace, parts)
+        except MissingReferenceError as exc:
+            missing = exc
+    try:
+        return access(_evaluate_ast(node.value, namespace))
+    except (AttributeError, LookupError, TypeError):
+        if missing is None:
+            raise
+        raise missing from None
 
 
 def _eval_attribute(node: ast.Attribute, namespace: dict[str, Any]) -> Any:
-    parts = _attribute_chain(node)
-    if parts is not None:
-        try:
-            return _get_nested(namespace, ".".join(parts))
-        except MissingReferenceError:
-            pass
-    try:
-        # Not a config path: a genuine attribute access, e.g. the receiver of a
-        # whitelisted string method.
-        return getattr(_evaluate_ast(node.value, namespace), node.attr)
-    except AttributeError:
-        if parts is None:
-            raise
-        # It looked like a config path after all, so report the missing field
-        # rather than leaking "'dict' object has no attribute ...".
-        raise MissingReferenceError.field_not_found(".".join(parts)) from None
+    return _eval_path_or(node, namespace, lambda base: getattr(base, node.attr))
 
 
 def _eval_subscript(node: ast.Subscript, namespace: dict[str, Any]) -> Any:
-    return _evaluate_ast(node.value, namespace)[_evaluate_ast(node.slice, namespace)]
+    return _eval_path_or(node, namespace, lambda base: base[_evaluate_ast(node.slice, namespace)])
 
 
 def _eval_binop(node: ast.BinOp, namespace: dict[str, Any]) -> Any:
@@ -707,9 +719,13 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any], node_path: str = "
     return "".join(result_parts)
 
 
-def _get_nested(data: dict[str, Any], path: str) -> Any:
-    """Retrieve value from nested dict/list by dotted path."""
-    parts = path.split(".")
+def _get_nested(data: dict[str, Any], parts: list[str]) -> Any:
+    """Retrieve the value at the path *parts* from a nested dict/list, one segment per key or index.
+
+    Segments are taken as given, never re-split, so a key holding a dot (``['example.com']``)
+    is one segment.
+    """
+    path = ".".join(parts)
     current: Any = data
     for part in parts:
         if isinstance(current, dict):
@@ -1025,8 +1041,12 @@ class _AnchorResolver(ast.NodeTransformer):
     ``ast.Attribute`` chain, which :func:`_attribute_chain` reads straight back, but
     not as Python anyone could parse.
 
+    Only the stand-in and the segment it owns are rewritten; whatever the expression
+    spells after them keeps its own node, so ``.a['__class__']`` stays a subscript and
+    never becomes an attribute the evaluator would ``getattr``.
+
     Dev Notes:
-        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
+        docs-dev/architecture/expressions/reference-anchoring.md#implementation-constraints
     """
 
     def __init__(self, node_path: str) -> None:
@@ -1041,9 +1061,8 @@ class _AnchorResolver(ast.NodeTransformer):
         return [segment for segment in prefix.split(".") if segment] + parts[1:]
 
     def visit_Attribute(self, node: ast.Attribute) -> ast.AST:  # NodeTransformer dispatches on the class name
-        """Rewrite a dotted chain rooted at a stand-in, else recurse."""
-        parts = _attribute_chain(node)
-        absolute = self._absolute(parts) if parts is not None else None
+        """Rewrite ``<stand-in>.name`` into the absolute path to ``name``, else recurse."""
+        absolute = self._absolute([node.value.id, node.attr]) if isinstance(node.value, ast.Name) else None
         if absolute:
             return ast.copy_location(_path_to_ast(absolute), node)
         return self.generic_visit(node)

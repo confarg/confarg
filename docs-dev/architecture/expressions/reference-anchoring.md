@@ -60,6 +60,11 @@ node anchor is preserved.
   path may hold a list index or a key that is no identifier — `dbs.0.host`, `svc.web-1.host` —
   which is a fine `ast.Attribute` chain for `_attribute_chain` to read back but not Python anyone
   could parse. Rewriting the text instead would miscompile `web-1.host` into a subtraction.
+- **`_AnchorResolver` rewrites only the stand-in and the segment it owns** (`__UP1__.a`), never the
+  rest of the chain. Rebuilding the whole chain as attributes would turn `${.a['__class__'].mro}`
+  into `a.__class__.mro`: the path read misses, evaluation falls back on `getattr`, and the
+  dunder ban — which validation applies to attributes as written — is bypassed. Each segment the
+  expression spells keeps its own node, so a subscript stays an item lookup.
 - `_Prefixer` rewrites only `ast.Name` bases. That is correct only because lambdas and
   comprehensions are not in `_ALLOWED_NODES`, so every non-function `Name` is a reference
   base. **Adding a binding construct to the whitelist breaks prefixing.**

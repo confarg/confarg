@@ -953,12 +953,12 @@ class TestExpressionBranches:
     def test_get_nested_list_invalid_index_type(self) -> None:
         """Non-integer path segment into a list raises MissingReferenceError."""
         with pytest.raises(confarg.exceptions.MissingReferenceError):
-            _get_nested({"items": [1, 2, 3]}, "items.notanint")
+            _get_nested({"items": [1, 2, 3]}, ["items", "notanint"])
 
     def test_get_nested_list_out_of_range(self) -> None:
         """Out-of-range index into a list raises MissingReferenceError."""
         with pytest.raises(confarg.exceptions.MissingReferenceError):
-            _get_nested({"items": [1, 2]}, "items.99")
+            _get_nested({"items": [1, 2]}, ["items", "99"])
 
     def test_set_nested_traverse_error(self) -> None:
         """_set_nested_by_path raises MissingReferenceError when traversal encounters a non-container."""
@@ -1301,11 +1301,11 @@ class TestExpressionsBranches:
         assert "x" in refs
         assert "b" in refs
 
-    def test_attribute_chain_noninteger_subscript_returns_none(self) -> None:
-        """_attribute_chain returns None for string subscripts (non-integer indices)."""
+    def test_attribute_chain_string_subscript_is_a_segment(self) -> None:
+        """_attribute_chain reads a string subscript as the key it names (BUG-121)."""
         node = ast.parse("servers['primary'].host", mode="eval").body
         result = _attribute_chain(node)  # ty: ignore[invalid-argument-type]  # ast.parse returns ast.expr, but _attribute_chain expects a narrower union
-        assert result is None
+        assert result == ["servers", "primary", "host"]
 
     def test_pure_expression_unexpected_exception_wrapped(self) -> None:
         """An unexpected exception inside a pure expression is wrapped as ExpressionEvalError."""

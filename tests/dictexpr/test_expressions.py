@@ -1215,6 +1215,74 @@ class TestReservedNamesInExpressions:
         assert prefix_references({"lim": "${max(max, a)}"}, "sub") == {"lim": "${max(sub.max, sub.a)}"}
 
 
+class TestSubscriptPaths:
+    """A constant subscript spells a path segment, as a dot does (BUG-121)."""
+
+    @pytest.mark.parametrize("spelling", ["svc['web']['host']", 'svc["web"].host', "svc.web['host']"])
+    def test_a_string_subscript_is_a_dependency(self, spelling: str) -> None:
+        """The referenced expression resolves first, whichever way the path is spelled."""
+        data = {"v": "${" + spelling + "}", "svc": {"web": {"host": "${base}.x"}}, "base": "b"}
+        assert _extract_references(data["v"]) == {"svc.web.host"}
+        assert resolve_expressions(data)["v"] == "b.x"
+
+    def test_a_top_level_index_is_a_dependency(self) -> None:
+        """``servers[0]`` alone is a path too, not just as the base of a longer one."""
+        data = {"v": "${servers[0]}", "servers": ["${base}"], "base": "b"}
+        assert resolve_expressions(data)["v"] == "b"
+
+    def test_a_method_receiver_spelled_with_a_subscript_is_a_dependency(self) -> None:
+        """The receiver's path is the dependency, as for ``svc.web.upper()``."""
+        data = {"v": "${svc['web'].upper()}", "svc": {"web": "${base}"}, "base": "b"}
+        assert resolve_expressions(data)["v"] == "B"
+
+    def test_an_attribute_after_a_string_subscript_reads_the_config(self) -> None:
+        """``svc['web'].host`` is the path ``svc.web.host``, not ``getattr`` on a dict."""
+        assert resolve_expressions({"svc": {"web": {"host": "h"}}, "v": "${svc['web'].host}"})["v"] == "h"
+
+    @pytest.mark.parametrize("key", ["web-1", "example.com", "a b"])
+    def test_a_key_that_is_no_identifier_is_reachable(self, key: str) -> None:
+        """A subscript is the spelling for a key the dotted form cannot write."""
+        data = {"svc": {key: {"port": 80}}, "v": "${svc['" + key + "'].port + 1}"}
+        assert resolve_expressions(data)["v"] == 81
+
+    def test_a_missing_subscripted_key_is_a_missing_field(self) -> None:
+        """A miss reads like the dotted spelling's, not like a ``KeyError``."""
+        with pytest.raises(MissingReferenceError, match=r"Field 'svc\.nope' not found"):
+            resolve_expressions({"svc": {"web": 1}, "v": "${svc['nope']}"})
+
+    def test_an_index_past_the_end_names_the_index(self) -> None:
+        """The path read's own detail survives the runtime fallback."""
+        with pytest.raises(MissingReferenceError, match=r"index 5 out of range"):
+            resolve_expressions({"xs": [1], "v": "${xs[5]}"})
+
+    @pytest.mark.parametrize(
+        ("data", "expected"),
+        [
+            pytest.param({"m": {"0": "x"}, "v": "${m[0]}"}, "x", id="digit-string-key"),
+            pytest.param({"m": {0: "x"}, "v": "${m[0]}"}, "x", id="int-key"),
+            pytest.param({"s": "abc", "v": "${s[0]}"}, "a", id="index-into-a-string"),
+            pytest.param({"svc": {"web": 1}, "k": "web", "v": "${svc[k]}"}, 1, id="computed-subscript"),
+        ],
+    )
+    def test_what_no_path_reaches_is_indexed_at_runtime(self, data: dict, expected: object) -> None:
+        """The path is tried first; a subscript it cannot answer is Python's own."""
+        assert resolve_expressions(data)["v"] == expected
+
+    def test_a_node_anchored_subscript_stays_a_subscript(self) -> None:
+        """Anchoring never turns ``['__class__']`` into an attribute the evaluator could ``getattr``."""
+        with pytest.raises(MissingReferenceError, match=r"Field 'svc\.a\.__class__' not found"):
+            resolve_expressions({"svc": {"a": {}, "v": "${.a['__class__'].mro}"}})
+
+    def test_a_node_anchored_subscript_reads_the_config(self) -> None:
+        """A relative path may continue with subscripts like any other."""
+        data = {"svc": {"web-1": {"host": "h"}, "v": "${..svc['web-1'].host}"}}
+        assert resolve_expressions(data)["svc"]["v"] == "h"
+
+    def test_mounting_prefixes_the_base_and_keeps_the_subscript(self) -> None:
+        """Only the base name is file-anchored, so only it takes the prefix."""
+        assert prefix_references({"v": "${svc['web-1'].host}"}, "db") == {"v": "${db.svc['web-1'].host}"}
+
+
 # ---------------------------------------------------------------------------
 # Anchor marker lexing
 # ---------------------------------------------------------------------------

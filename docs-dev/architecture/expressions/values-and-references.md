@@ -40,6 +40,33 @@ its spans, so no two of them can disagree on where an expression stops.
   ([safety model](safety-model.md#safety-model)), and the mis-delimited body still fails to
   parse or to validate.
 
+## Spelling a path
+
+A dot and a constant subscript each spell one path segment: `${svc.web.host}`,
+`${svc['web']['host']}` and `${svc["web"].host}` read the same key and are the same dependency.
+An integer subscript is a list index, `${servers[0].host}` or `${servers[-1].host}`. The
+subscript is the only way to write a key that is no identifier: `${svc['web-1'].port}`,
+`${hosts['example.com']}`. Precedents agree: in JavaScript `a.b` is `a['b']`, in jq `.foo` is
+shorthand for `.["foo"]`, and Jinja2 documents `foo.bar` and `foo['bar']` as the same lookup.
+
+`_expressions._attribute_chain` is the one answer to "which config path does this node read?".
+Reference collection asks it for the dependency graph and evaluation asks it for the value, so a
+spelling can never be a dependency on one path and read another. A computed subscript
+(`${svc[k]}`) spells no path: its key is only known once `k` is evaluated, so it is Python's own
+subscript, and it is no dependency beyond the names it is computed from.
+
+Evaluation reads the path first and falls back on Python's access only when the path is missing
+(`_eval_path_or`): that is what lets `${name.upper()}` call a method and `${name[0]}` index a
+string, and keeps a dict with a non-string key (`{0: x}`, which YAML can produce) reachable as
+`${m[0]}`. The path model's segments are strings, as everywhere else in `dictexpr`, so `${m[0]}`
+reads a key `"0"` before an integer key `0`. When the fallback fails too, the path's own miss is
+reported — `Field 'svc.nope' not found`, or `index 5 out of range` — rather than a `KeyError` or
+an `AttributeError` on `dict`.
+
+Rejected: **runtime subscript first, path second.** `${m[0]}` would then mean the integer key
+while the dependency graph, which only sees syntax, recorded the path `m.0` — two answers to one
+spelling. Path-first is also the order an attribute already used.
+
 ## Referencing a whole subtree
 
 A reference is a path, not a leaf selector: `_get_nested` returns whatever sits at that path,
