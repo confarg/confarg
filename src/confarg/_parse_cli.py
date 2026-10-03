@@ -647,7 +647,7 @@ def _config_subpath(key: str, config_flag: str) -> str:
     disagree by accident.
     """
     if key.startswith(config_flag + "."):
-        return key[len(config_flag) + 1 :]
+        return key.removeprefix(f"{config_flag}.")
     return key[len(config_flag) :]
 
 

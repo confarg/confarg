@@ -13,5 +13,6 @@ Questions carry no effort, risk or impact — a question is answered, not implem
 |---|
 | [Q-1 — Should a mixed name/index spelling of a namedtuple build?](Q-1-should-a-mixed-name-index-spelling-of-a-namedtuple-build.md) |
 | [Q-2 — Should a varlen collection's element index flags be hidden from help too?](Q-2-should-a-varlen-collections-element-index-flags-be-hidden-from-help-too.md) |
+| [Q-3 — How should an agent run the hooks from a jj workspace, where pre-commit cannot?](Q-3-how-should-an-agent-run-the-hooks-from-a-jj-workspace.md) |
 
 <!-- tickets:end -->

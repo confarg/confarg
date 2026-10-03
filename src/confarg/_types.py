@@ -735,7 +735,7 @@ def _base_declares_path(tp: Any, prefix: str, path: str) -> bool:
     (BUG-86).
     """
     head = f"{prefix}." if prefix else ""
-    return path.startswith(head) and not _answered_by_subclasses(tp, path[len(head) :].split(".", maxsplit=1)[0])
+    return path.startswith(head) and not _answered_by_subclasses(tp, path.removeprefix(head).split(".", maxsplit=1)[0])
 
 
 def _subclass_field_type(tp: type, field: str) -> Any | None:

@@ -40,6 +40,5 @@ different board.
 | [REF-75 — `cli/_collect.py` no longer collects, and `_merge_from_flat` no longer merges from the flat result](REF-75-cli-collect-module-no-longer-collects.md) | S | low | none |
 | [REF-77 — The four "expected N elements" refusals have drifted on the type's name](REF-77-expected-elements-refusals-have-drifted.md) | S | medium | none |
 | [REF-78 — `.ruff.toml` selects "PL" twice](REF-78-ruff-toml-selects-pl-twice.md) | S | low | none |
-| [REF-79 — Three guarded `[len(prefix):]` slices REF-56's sweep missed](REF-79-three-guarded-slices-ref-56s-sweep-missed.md) | S | low | none |
 
 <!-- tickets:end -->
