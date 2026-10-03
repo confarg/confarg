@@ -1469,7 +1469,7 @@ class TestKeysHoldingADot:
 
 
 class TestAnchorMarkerLexing:
-    """``(offset, length, levels)`` for each marker that begins an operand.
+    """``(offset, length, levels, before_name)`` for each marker that begins an operand.
 
     The scan is lexical rather than a regex because a dot belongs to whatever token
     the tokenizer put it in.  Two details bite: Python tokenizes ``...`` as one
@@ -1480,20 +1480,25 @@ class TestAnchorMarkerLexing:
     @pytest.mark.parametrize(
         ("expr", "expected"),
         [
-            pytest.param(".host", [(0, 1, 1)], id="one-dot"),
-            pytest.param("..host", [(0, 2, 2)], id="two-dots"),
-            pytest.param("...host", [(0, 3, 3)], id="three-dots-is-one-ellipsis-token"),
-            pytest.param("....host", [(0, 4, 4)], id="four-dots-spans-both"),
-            pytest.param("::name", [(0, 2, 0)], id="root"),
+            pytest.param(".host", [(0, 1, 1, True)], id="one-dot"),
+            pytest.param("..host", [(0, 2, 2, True)], id="two-dots"),
+            pytest.param("...host", [(0, 3, 3, True)], id="three-dots-is-one-ellipsis-token"),
+            pytest.param("....host", [(0, 4, 4, True)], id="four-dots-spans-both"),
+            pytest.param("::name", [(0, 2, 0, True)], id="root"),
+            pytest.param(".[0]", [(0, 1, 1, False)], id="before-a-subscript"),
+            pytest.param("::['web-1']", [(0, 2, 0, False)], id="root-before-a-subscript"),
+            pytest.param(". + 1", [(0, 1, 1, False)], id="bare"),
+            pytest.param(". if c else d", [(0, 1, 1, False)], id="before-a-keyword"),
+            pytest.param(". host", [(0, 1, 1, True)], id="before-a-name-after-a-blank"),
             pytest.param("a.b", [], id="ordinary-attribute"),
             pytest.param("1.5 + n", [], id="inside-float"),
             pytest.param("'a.b'.upper()", [], id="after-string-literal"),
             pytest.param("str(n)[0].upper()", [], id="after-closing-bracket"),
-            pytest.param("n if .name else 0", [(5, 1, 1)], id="after-keyword"),
-            pytest.param("min(.a, ::b)", [(4, 1, 1), (8, 2, 0)], id="both-inside-a-call"),
+            pytest.param("n if .name else 0", [(5, 1, 1, True)], id="after-keyword"),
+            pytest.param("min(.a, ::b)", [(4, 1, 1, True), (8, 2, 0, True)], id="both-inside-a-call"),
         ],
     )
-    def test_markers(self, expr: str, expected: list[tuple[int, int, int]]) -> None:
+    def test_markers(self, expr: str, expected: list[tuple[int, int, int, bool]]) -> None:
         """Each case pins one way a marker is or is not spelled."""
         assert _anchor_markers(expr) == expected
 
@@ -1503,7 +1508,7 @@ class TestAnchorMarkerLexing:
 
     def test_parentheses_reopen_the_root_marker_inside_a_subscript(self) -> None:
         """The documented escape hatch: parenthesise to reach the root within brackets."""
-        assert _anchor_markers("items[(::step)]") == [(7, 2, 0)]
+        assert _anchor_markers("items[(::step)]") == [(7, 2, 0, True)]
 
     def test_a_slice_is_still_refused(self) -> None:
         """Nothing here makes slices legal; they remain outside the whitelist."""
@@ -1560,3 +1565,68 @@ class TestAnchorDepthArithmetic:
         """The absolute path is built as a tree, so ``web-1`` never has to parse."""
         data = {"svc": {"web-1": {"host": "h", "url": "x://${.host}"}}}
         assert resolve_expressions(data)["svc"]["web-1"]["url"] == "x://h"
+
+
+class TestAnchorFollowedByASubscript:
+    """A subscript spells a segment after an anchor marker as it does after a name (BUG-126)."""
+
+    @pytest.mark.parametrize(
+        ("data", "expected"),
+        [
+            pytest.param(
+                {"svc": {"web-1": 5, "p": "${.['web-1']}"}},
+                {"svc": {"web-1": 5, "p": 5}},
+                id="sibling-key-no-identifier",
+            ),
+            pytest.param({"xs": [1, "${.[0]}"]}, {"xs": [1, 1]}, id="sibling-list-element"),
+            pytest.param({"xs": [1, "${.[-2]}"]}, {"xs": [1, 1]}, id="negative-index"),
+            pytest.param(
+                {"a": {"b": {"c": 1, "d": "${..['b'].c}"}}},
+                {"a": {"b": {"c": 1, "d": 1}}},
+                id="two-dots-then-a-dot",
+            ),
+            pytest.param({"web-1": 5, "p": "${::['web-1']}"}, {"web-1": 5, "p": 5}, id="configuration-root"),
+            pytest.param(
+                {"web-1": 5, "a": {"p": "${..['web-1'] + 1}"}},
+                {"web-1": 5, "a": {"p": 6}},
+                id="dots-up-to-the-root",
+            ),
+            pytest.param({"xs": [[1, 2], "${::xs[0][1]}"]}, {"xs": [[1, 2], 2]}, id="root-name-then-subscripts"),
+        ],
+    )
+    def test_the_subscript_reads_the_segment(self, data: dict, expected: dict) -> None:
+        """``.['web-1']`` reads the sibling ``web-1``, as ``svc['web-1']`` reads it from the root."""
+        assert resolve_expressions(data) == expected
+
+    def test_the_subscript_keeps_its_integer_key(self) -> None:
+        """The segment after the marker stays a subscript, so its fallback keys by the integer."""
+        assert resolve_expressions({"m": {0: "x", "v": "${.[0]}"}})["m"]["v"] == "x"
+
+    def test_the_subscript_is_a_dependency(self) -> None:
+        """The element read resolves first, as for any other spelling of its path."""
+        data = {"xs": ["${base}", "${.[0]}"], "base": "b"}
+        assert resolve_expressions(data)["xs"] == ["b", "b"]
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            pytest.param({"xs": [1, "${.}"]}, id="bare-dot"),
+            pytest.param({"p": "${::}"}, id="bare-root"),
+            pytest.param({"a": {"p": "${..}"}}, id="dots-up-to-the-root"),
+            pytest.param({"k": "p", "p": "${::[k]}"}, id="computed-subscript-on-the-root"),
+        ],
+    )
+    def test_a_marker_naming_an_ancestor_whole_is_a_cycle(self, data: dict) -> None:
+        """The node a marker names holds the expression, so reading it reads the expression itself."""
+        with pytest.raises(CircularReferenceError):
+            resolve_expressions(data)
+
+    @pytest.mark.parametrize("expr", [".[0]", "..['web-1'].host", "::['web-1']", ".", "::", "min(.[0], ::[1])"])
+    def test_round_trip(self, expr: str) -> None:
+        """Naming the markers and unnaming them is the identity."""
+        assert _unname_anchor(_name_anchor(expr)) == expr
+
+    @pytest.mark.parametrize("expr", [".[0]", "::['web-1']"])
+    def test_mounting_leaves_it_alone(self, expr: str) -> None:
+        """An anchored reference takes no prefix, whatever spells its first segment."""
+        assert _prefix_content(expr, "db") == expr

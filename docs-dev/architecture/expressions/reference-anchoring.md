@@ -46,6 +46,11 @@ the moment it would be lost. The cost, accepted: the merged dict is *not* unifor
 any more, so "canonical form" now means the file and configuration anchors are resolved and the
 node anchor is preserved.
 
+A `::` is dropped only before a name: `${::name}` becomes `${name}`, but `${::['web-1']}` stays as
+written (BUG-126). No plain path reads a root key that is no identifier — `${['web-1']}` is a list
+literal — so the marker is the only spelling it has, and `resolve_expressions` reads it as it
+reads any other.
+
 ## Implementation constraints
 
 - Marker detection (`_anchor_markers`) is **lexical, not a regex**: a tokenizer distinguishes the
@@ -62,14 +67,34 @@ node anchor is preserved.
   ([values and references](values-and-references.md#a-position-is-a-sequence-of-segments)),
   which is a fine `ast.Attribute` chain for `_attribute_chain` to read back but not Python anyone
   could parse. Rewriting the text instead would miscompile `web-1.host` into a subtraction.
-- **`_AnchorResolver` rewrites only the stand-in and the segment it owns** (`__UP1__.a`), never the
-  rest of the chain. Each segment the expression spells keeps its own node, so a subscript stays
-  a subscript: when the path read misses, its fallback indexes by the key it spells, the integer
-  `0` of `${.m[0]}` on a YAML `{0: x}`, where a rebuilt attribute could only index by the string
-  `"0"` ([values and references](values-and-references.md#spelling-a-path)). Before BUG-125 this
-  was a safety rule too: the attribute fallback was `getattr`, so `${.a['__class__'].mro}`
-  rebuilt as `a.__class__.mro` would have bypassed the dunder ban, which validation applies to
-  attributes as written.
+- **The stand-in owns a dot only before a name.** A marker is followed by a name (`.host`), a
+  subscript (`.['web-1']`, `.[0]`) or nothing (`.`), and the subscript is the only spelling of a
+  sibling key that is no identifier or of a sibling list element
+  ([values and references](values-and-references.md#spelling-a-path)). So `_name_anchor` writes
+  `__UP1__.host` but `__UP1__['web-1']` and `__UP1__`, each a path `_attribute_chain` reads as it
+  reads `x.host`, `x['web-1']` and `x`. `_anchor_markers` is the one answer to "does a name
+  follow this marker?", and the same answer decides whether `canonicalize_references` may drop a
+  `::` ([below](#a-relative-reference-is-never-serialized-as-an-absolute-path)). jq spells it
+  the same way — `.foo` is shorthand for `.["foo"]`, and `.[0]` indexes the input — as does
+  JSONPath with `$['web-1']`. Before BUG-126 the stand-in always took the dot, and
+  `__UP1__.[0]` did not parse.
+- **`_AnchorResolver` rewrites only the stand-in** (`__UP1__` → `svc`), never the chain after it.
+  Each segment the expression spells keeps its own node, so a subscript stays a subscript: when
+  the path read misses, its fallback indexes by the key it spells, the integer `0` of
+  `${.m[0]}` or `${.[0]}` on a YAML `{0: x}`, where a rebuilt attribute could only index by the
+  string `"0"` ([values and references](values-and-references.md#spelling-a-path)). Before
+  BUG-125 this was a safety rule too: the attribute fallback was `getattr`, so
+  `${.a['__class__'].mro}` rebuilt as `a.__class__.mro` would have bypassed the dunder ban,
+  which validation applies to attributes as written.
+- **The configuration root has no node to stand for.** A path is a `Name` and the links after it,
+  and the empty path has no `Name`. So where the stand-in names the root — `::`, or a dot run that
+  climbs all the way up — the first segment after it becomes the base name instead (`_segment`,
+  the one reading of a single link that `_attribute_chain` also asks): `${::['web-1']}` reads the
+  key `web-1`. The base name is a string, so a non-string key at the root is not reachable
+  ([limitations](../limitations.md#expressions)). A stand-in still in the tree after that names
+  the root whole (`${::}`, `${..}` from one level down, `${::[k]}`); `_collect_names` reads it as
+  the empty path, and since the root holds every expression, it is the cycle any reference to an
+  ancestor is ([resolution](resolution.md#a-reference-reads-everything-its-path-reaches)).
 - `_Prefixer` rewrites only `ast.Name` bases. That is correct only because lambdas and
   comprehensions are not in `_ALLOWED_NODES`, so every non-function `Name` is a reference
   base. **Adding a binding construct to the whitelist breaks prefixing.**
