@@ -52,6 +52,16 @@ An anchor marker takes either spelling too, so `${.['web-1']}`, `${.[0]}` and `$
 read a sibling key, a sibling element and a root key
 ([reference anchoring](reference-anchoring.md#implementation-constraints)).
 
+**A list index has one spelling** (BUG-133). A segment is a string, so a string subscript reads
+an element too: `${xs['1']}` is `${xs[1]}`. But only the spelling `str()` gives an integer is an
+index — `0`, `1`, `-1` — and `_list_index` is the one answer to "does this segment spell an
+index?". `${xs['+1']}`, `${xs[' 1']}`, `${xs['1_0']}`, `${xs['01']}` and `${xs['-0']}` are
+`'+1' is not a valid index`, however the key is spelled, constant or computed, though `int()`
+parses each one. `_step`, the one walk, asks it on a list, and `_segment_link` asks it to write
+an index as the integer subscript (`xs[-1]`, not `xs['-1']`). The CLI's namedtuple positions
+draw the same line (BUG-97). Precedents: JSON Pointer (RFC 6901) takes only `0|[1-9][0-9]*` as an
+array index, and jq refuses any string index into an array.
+
 **A name reads the key it is written as, or is refused** (BUG-132). Python NFKC-normalizes every
 identifier it parses (PEP 3131), so `${ﬁle}` (with the `ﬁ` ligature) or `${svc.ﬁle}` would read
 the key `file`, silently, even when the configuration holds both; a string is never normalized,
