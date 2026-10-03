@@ -1914,3 +1914,44 @@ class TestAListIndexHasOneSpelling:
         """The relative spelling walks the same step."""
         with pytest.raises(MissingReferenceError, match=r"'\+1' is not a valid index"):
             resolve_expressions({"xs": ["a", "b"], "c": {"v": "${..xs['+1']}"}})
+
+
+class TestAMissOffAValueNoPathNames:
+    """A subscript no config path answers misses with the key it looked for (BUG-134).
+
+    A base not rooted at a name, or a key that spells no segment, has no field to name, so
+    the miss stays an ``ExpressionEvalError`` quoting the expression as written.
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "expr", "detail"),
+        [
+            pytest.param("${(a if c else a)['x']}", "${(a if c else a)['x']}", "key 'x' not found", id="subscript"),
+            pytest.param("${(a if c else a).x}", "${(a if c else a).x}", "key 'x' not found", id="dot"),
+            pytest.param("${m[f]}", "${m[f]}", "key False not found", id="key-that-spells-no-segment"),
+            pytest.param("${(xs if c else xs)[5]}", "${(xs if c else xs)[5]}", "index 5 out of range", id="index"),
+            pytest.param("<${(a if c else a).x}>", "${(a if c else a).x}", "key 'x' not found", id="interpolated"),
+        ],
+    )
+    def test_the_miss_names_the_key(self, value: str, expr: str, detail: str) -> None:
+        """The message says what was not found, not Python's bare ``KeyError`` repr."""
+        data = {"a": {"y": 1}, "c": True, "m": {True: 1}, "f": False, "xs": [1], "v": value}
+        with pytest.raises(ExpressionEvalError, match=re.escape(f"Error in expression {expr!r}: {detail}") + "$"):
+            resolve_expressions(data)
+
+    @pytest.mark.parametrize(
+        ("data", "message"),
+        [
+            pytest.param({"n": 3, "v": "${(n if c else n)[0]}"}, "is not subscriptable", id="not-subscriptable"),
+            pytest.param({"s": "ab", "v": "${(s if c else s)['x']}"}, "indices must be integers", id="wrong-key-type"),
+        ],
+    )
+    def test_any_other_failure_keeps_python_s_message(self, data: dict, message: str) -> None:
+        """Only a miss is reworded: a value that cannot be indexed so says."""
+        with pytest.raises(ExpressionEvalError, match=message):
+            resolve_expressions({"c": True, **data})
+
+    def test_a_miss_inside_the_base_is_still_the_field_it_names(self) -> None:
+        """A path inside the base misses as that path, before the subscript is tried."""
+        with pytest.raises(MissingReferenceError, match=r"Field 'b' not found in configuration"):
+            resolve_expressions({"c": True, "v": "${(b if c else b)['x']}"})

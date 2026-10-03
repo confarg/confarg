@@ -108,6 +108,16 @@ are strings, as everywhere else in `dictexpr`, so `${m[0]}` reads a key `"0"` be
 key `0`. When the fallback fails too, the path's own miss is reported — `Field 'svc.nope' not
 found`, or `index 5 out of range` — rather than a `KeyError`.
 
+Some nodes spell no path at all: a base not rooted at a name (`${(a if c else b)['x']}`), or a
+key that is no segment (`${m[flag]}` with `flag: false`). Their miss has no field to name, so it
+stays an `ExpressionEvalError`, worded the way a path's detail is: `Error in expression
+"${(a if c else b)['x']}": key 'x' not found`, or `index 5 out of range` (BUG-134). Before, the
+message ended with Python's bare `KeyError` repr, `'x'` or `False`. The expression is quoted as
+written, by `_eval_expr`, rather than by unparsing the base, whose tree has had its anchors
+resolved to absolute paths ([reference anchoring](reference-anchoring.md#implementation-constraints)).
+Only a miss is reworded: a value that cannot be indexed keeps Python's own message
+(`'int' object is not subscriptable`), which already says what went wrong.
+
 The callee of a method call is no path at all: `${name.upper()}` evaluates `name` and calls the
 method on it, never reading a key `name.upper`
 ([safety model](safety-model.md#a-method-is-a-string-method)).
