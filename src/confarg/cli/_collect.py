@@ -855,6 +855,41 @@ def _arity_flag_writes_last(argv: Sequence[str], flag: str) -> bool:
     return last_bare > last_sub
 
 
+def _last_leaf_cast_spelling(argv: Sequence[str], flag: str) -> str | None:
+    """Return which scalar spelling of *flag* argv writes last: ``"plain"``, a cast name.
+
+    The argv-order half of the plain-field cast contract (BUG-72): vanilla writes each
+    occurrence in argv order and only the last write survives, and a scalar cast's
+    pinning is deferred, so a cast a later occurrence replaced never coerces.  A
+    framework's parse result carries no order, so which of the plain flag and its cast
+    spellings wrote last is read off the argv the user typed, as the other
+    latest-writer questions are (:func:`_arity_flag_writes_last` is the precedent for
+    a reader of this shape).  Returns ``None`` when argv spells neither, for the same
+    fallback the arity guards keep: a value argv cannot account for is not this
+    reader's to rewrite.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#force-casts
+    """
+    bare = f"--{flag}"
+    sub_prefix = f"--{flag}."
+    last_plain = last_cast = -1
+    last_name = ""
+    for i, token in enumerate(argv):
+        if token == bare or token.startswith(f"{bare}="):
+            last_plain = i
+            continue
+        if not token.startswith(sub_prefix):
+            continue
+        name = token[len(sub_prefix) :].split("=", 1)[0]
+        if name in SCALAR_CAST_TYPES:
+            last_cast = i
+            last_name = name
+    if last_plain < 0 and last_cast < 0:
+        return None
+    return last_name if last_cast > last_plain else "plain"
+
+
 def _collect_ns_namedtuple(  # noqa: PLR0913  # the type-walk context, threaded whole
     flat: dict[str, Any],
     core: Any,
@@ -1158,7 +1193,23 @@ def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915  # one bra
 
     cast_val = _find_scalar_cast_override(flat, flag)
     if cast_val is not _NO_CAST:
-        _set_nested(result, flag.split("."), cast_val)
+        # Which of the cast spellings and the plain flag wrote last is argv's to
+        # answer, and only the survivor coerces (vanilla's sequential writes, with
+        # the pinning deferred) — so a cast a later occurrence replaced never errors.
+        winner = _last_leaf_cast_spelling(argv, flag)
+        if winner == "plain" and flag in flat:
+            v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
+            _set_nested(result, flag.split("."), _coerce_leaf_value(core, v))
+        elif winner is not None and winner != "plain":
+            _set_nested(
+                result,
+                flag.split("."),
+                resolve_forced_value(winner, flat[f"{flag}.{winner}"], flag=f"--{flag}.{winner}"),
+            )
+        else:
+            # argv spells neither spelling: keep the cast the framework reported,
+            # as the arity guards keep the flat value.
+            _set_nested(result, flag.split("."), cast_val)
     elif flag in flat:
         # The one accumulation site for a varlen collection's tokens: the only flat
         # value a whole-field delete can span.

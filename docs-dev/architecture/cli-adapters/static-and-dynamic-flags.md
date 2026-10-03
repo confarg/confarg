@@ -22,6 +22,15 @@ user typed, found by scanning argv (and config files named on argv):
   ([callables](../callables.md#plain-and-escaped-directives));
 - `--config.<any.depth>[+]`;
 - collection patches (`--f.N`, `--f+`, `--f.N-`, `--f.key`) and `.json` casts;
+- the typed scalar cast flags on plain leaf fields (`--host.str`, BUG-72), registered only
+  when typed on the same help-noise ground as `.json`: the leaf's own flag is the ordinary
+  spelling, and one flag per castable type would clutter `--help` for an escape hatch. The
+  leaf answer (`_scalar_cast_parent_is_leaf`) mirrors the collector's dispatch, so the host
+  framework never accepts a cast flag the collector drops — struct, collection, dict,
+  callable and registered-leaf parents keep their own spellings and their cast spelling stays
+  refused. Which spelling wrote last, the plain flag or a cast, is read off argv
+  (`_last_leaf_cast_spelling`), because vanilla writes the occurrences sequentially and only
+  the survivor's pin coerces;
 - the flat tagged-leaf flags typed below a registered leaf field (`--id.class`,
   `--id.hex`, BUG-56), or below a registered leaf that *is* the target — the root, with
   no field to descend from, is the leaf at the empty prefix of the path (BUG-71) —

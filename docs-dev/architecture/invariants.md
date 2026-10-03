@@ -55,6 +55,8 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "which keys does a namedtuple's sub-flag collection keep?" | `cli/_collect._namedtuple_sub_flags` — the keys as spelled, name and index alike; the win belongs to construction |
 | "which of a namedtuple's fields does a deep path reach, and who collects it?" | `cli/_collect._namedtuple_deep_fields` (which — a struct-shaped field, however wrapped) / `cli/_collect._collect_field` (the collector — the one per-field dispatch, shared with a struct's own fields) |
 | "which flag at a namedtuple field is the latest writer?" | `cli/_collect._arity_flag_writes_last`, read off argv |
+| "does a scalar cast land on a plain leaf field (registration)?" | `cli/_build._scalar_cast_parent_is_leaf` — the leaf answer mirrors the collector's dispatch, so the frameworks never accept a cast flag the collector drops |
+| "which scalar spelling of a leaf field wrote last — the plain flag or a cast?" | `cli/_collect._last_leaf_cast_spelling`, read off argv — vanilla writes the occurrences sequentially and only the survivor's pin coerces |
 | "which occurrence of a repeated fixed-arity flag reaches the collector, on cyclopts?" | `cli/cyclopts/_register._last_occurrence_convert`, read off the `CliToken` index |
 | reserved-name shadowing | `_parse_cli._check_reserved_key_conflict` |
 | locals namespace names | `_parse_cli._locals_keys_at` |
