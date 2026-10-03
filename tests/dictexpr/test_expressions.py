@@ -1759,11 +1759,6 @@ class TestAWrittenNameIsNeverAStandIn:
                 {"__UP1__": {"x": 1}, "a": {"x": 2, "p": 3}},
                 id="beside-a-dot-marker",
             ),
-            pytest.param(
-                {"__ROOT__": {"x": 1}, "x": 2, "p": "${__\uff32\uff2f\uff2f\uff34__.x + ::x}"},
-                {"__ROOT__": {"x": 1}, "x": 2, "p": 3},
-                id="nfkc-spelling-beside-a-marker",
-            ),
         ],
     )
     def test_a_written_name_reads_its_key(self, data: dict, expected: dict) -> None:
@@ -1808,3 +1803,63 @@ class TestAWrittenNameIsNeverAStandIn:
     def test_mounting_prefixes_a_written_name(self, body: str, prefixed: str) -> None:
         """A written name is file-anchored like any other, so it takes the prefix."""
         assert _prefix_content(body, ("db",)) == prefixed
+
+
+class TestANameIsReadAsWritten:
+    """A name Python would normalize into another is refused, never read as that other (BUG-132).
+
+    Python NFKC-normalizes every identifier (PEP 3131), so ``ﬁle`` parses as ``file``; the
+    subscript spelling, a string, is the one that reads the key as written.
+    """
+
+    @pytest.mark.parametrize(
+        ("expr", "read"),
+        [
+            pytest.param("${ﬁle}", "file", id="name"),
+            pytest.param("${svc.ﬁle}", "file", id="dotted-segment"),
+            pytest.param("${::ﬁle}", "file", id="off-a-root-marker"),
+            pytest.param("${svc.ﬁle + 1}", "file", id="in-an-operation"),
+            pytest.param("${\uff4dax(svc.file, 1)}", "max", id="callee"),
+            pytest.param("${name.\uff55pper()}", "upper", id="method"),
+        ],
+    )
+    def test_a_name_python_normalizes_is_refused(self, expr: str, read: str) -> None:
+        """The refusal names what Python reads and points at the subscript, whichever key exists."""
+        data = {"file": "plain", "ﬁle": "ligature", "svc": {"file": 1, "ﬁle": 2}, "name": "n", "v": expr}
+        with pytest.raises(UnsafeExpressionError, match=rf"Name '\S+' reads as '{read}'.*subscript"):
+            resolve_expressions(data)
+
+    def test_a_node_anchored_name_python_normalizes_is_refused(self) -> None:
+        """A name after a dot marker is a name too."""
+        with pytest.raises(UnsafeExpressionError, match=r"Name 'ﬁle' reads as 'file'"):
+            resolve_expressions({"svc": {"file": 1, "ﬁle": 2, "v": "${.ﬁle}"}})
+
+    def test_a_refused_name_is_no_cycle(self) -> None:
+        """``${ﬁle}`` under the key ``file`` is refused for its spelling, not read as itself."""
+        with pytest.raises(UnsafeExpressionError, match=r"Name 'ﬁle' reads as 'file'"):
+            resolve_expressions({"file": "${ﬁle}"})
+
+    def test_a_stand_in_spelled_as_python_reads_it_is_refused(self) -> None:
+        """A written name Python reads as ``__ROOT__`` is refused like any other, beside a marker or not."""
+        with pytest.raises(UnsafeExpressionError, match=r"reads as '__ROOT__'"):
+            resolve_expressions({"__ROOT__": {"x": 1}, "x": 2, "p": "${__\uff32\uff2f\uff2f\uff34__.x + ::x}"})
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            pytest.param("${::['ﬁle']}", "ligature", id="root-subscript"),
+            pytest.param("${svc['ﬁle']}", 2, id="subscript"),
+            pytest.param("${'ﬁle' + file}", "ﬁleplain", id="string-literal"),
+        ],
+    )
+    def test_the_subscript_reads_the_key_as_written(self, expr: str, expected: object) -> None:
+        """A string is never normalized, so a subscript reaches the key the name could not."""
+        data = {"file": "plain", "ﬁle": "ligature", "svc": {"file": 1, "ﬁle": 2}, "v": expr}
+        assert resolve_expressions(data)["v"] == expected
+
+    def test_mounting_leaves_the_body_for_validation_to_refuse(self) -> None:
+        """Mounting parses through the same cache, so it never unparses ``ﬁle`` as ``file``."""
+        assert prefix_references({"v": "${ﬁle}", "w": "${a} ${svc.ﬁle}"}, ("db",)) == {
+            "v": "${ﬁle}",
+            "w": "${db.a} ${svc.ﬁle}",
+        }

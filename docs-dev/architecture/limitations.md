@@ -35,6 +35,9 @@ the boundary moves here.
   that `::` still names the configuration root, so the dump does not re-anchor the way one
   holding `${db.p}` does
   ([expressions](expressions/reference-anchoring.md#a-document-is-prefixed-once-by-its-whole-mount-path)).
+- A key Python would normalize as a name (`ﬁle`, `ｘ`) is read only through a subscript,
+  `${svc['ﬁle']}` or `${::['ﬁle']}`: written as a name, `${ﬁle}` or `${svc.ﬁle}`, it is refused
+  ([expressions](expressions/values-and-references.md#spelling-a-path)).
 - A non-string key at the document root is not reachable: `${::[0]}` reads the root key `"0"`.
   Below the root the subscript's fallback indexes by the integer, but the root has no node to
   index ([expressions](expressions/reference-anchoring.md#implementation-constraints)).
