@@ -1397,6 +1397,43 @@ class TestAttributeIsAKey:
         assert resolve_expressions({**data, "v": "${" + subscripted + "}"})["v"] == 1
 
 
+class TestComputedSubscriptPaths:
+    """A computed key spells a path segment once evaluated, as a constant one does (BUG-128)."""
+
+    @pytest.mark.parametrize(
+        ("data", "spelling", "message"),
+        [
+            pytest.param({"k": "nope"}, "svc[k]", r"Field 'svc\.nope' not found in configuration", id="key"),
+            pytest.param({"k": "web"}, "svc[k].nope", r"Field 'svc\.web\.nope' not found", id="dot-off-it"),
+            pytest.param({"k": "web", "j": "nope"}, "svc[k][j]", r"Field 'svc\.web\.nope' not found", id="two"),
+            pytest.param({"k": 5}, "xs[k]", r"Field 'xs\.5' not found: index 5 out of range", id="index"),
+        ],
+    )
+    def test_a_miss_is_a_missing_field(self, data: dict, spelling: str, message: str) -> None:
+        """The miss names the path the evaluated key spells, as the constant spelling's does."""
+        data = {"svc": {"web": {"host": "h"}}, "xs": [1], **data, "v": "${" + spelling + "}"}
+        with pytest.raises(MissingReferenceError, match=message):
+            resolve_expressions(data)
+
+    def test_a_method_named_without_a_call_is_missing(self) -> None:
+        """A dot off a computed base names a string method the way it does off a path."""
+        data = {"svc": {"web": "abc"}, "k": "web", "v": "${svc[k].upper}"}
+        with pytest.raises(MissingReferenceError, match=r"is a method only when called, as in svc\[k\]\.upper\("):
+            resolve_expressions(data)
+
+    @pytest.mark.parametrize(
+        ("data", "key", "constant", "computed"),
+        [
+            pytest.param({"m": {"0": "s", 0: "i"}}, 0, "m[0]", "m[k]", id="digit-string-key-first"),
+            pytest.param({"xs": ["a", "b"]}, "1", "xs['1']", "xs[k]", id="digit-string-index"),
+        ],
+    )
+    def test_a_key_reads_as_its_constant_spelling(self, data: dict, key: object, constant: str, computed: str) -> None:
+        """The path comes first whichever way the key is spelled, so one segment has one answer."""
+        expected = resolve_expressions({**data, "v": "${" + constant + "}"})["v"]
+        assert resolve_expressions({**data, "k": key, "v": "${" + computed + "}"})["v"] == expected
+
+
 class TestReferenceDependencies:
     """A reference waits for every expression its path reads, not just one at that exact path (BUG-123)."""
 
