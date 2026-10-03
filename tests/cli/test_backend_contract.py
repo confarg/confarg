@@ -2082,6 +2082,51 @@ class TestCollectionPatchContract:
         cfg = loader.load(_WithUsers, argv=["--config", str(base), "--users.0", "zed", "--users", "carol"], env={})
         assert cfg.users == ["carol"]
 
+    def test_set_delete_then_set_starts_new_list(self, loader: ConfargLoader) -> None:
+        """A whole-field delete ends the list being built, so the next occurrence starts over (BUG-76).
+
+        A framework's parse result has accumulated every plain occurrence into one
+        value, so the token spelled before the delete survives *inside* the value of
+        the occurrence after it unless the collector reads the occurrences back off
+        argv, where the delete still stands between them.
+        """
+        cfg = loader.load(_WithUsers, argv=["--users", "y", "--users-", "--users", "b"], env={})
+        assert cfg.users == ["b"]
+
+    def test_set_delete_then_two_sets_start_new_list(self, loader: ConfargLoader) -> None:
+        """Every occurrence after the delete accumulates together, none from before it (BUG-76)."""
+        cfg = loader.load(
+            _WithUsers,
+            argv=["--users", "y", "--users-", "--users", "b", "--users", "c"],
+            env={},
+        )
+        assert cfg.users == ["b", "c"]
+
+    def test_set_delete_then_set_over_config(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The new list the post-delete occurrence starts replaces the configured one too (BUG-76)."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        cfg = loader.load(
+            _WithUsers,
+            argv=["--config", str(base), "--users", "y", "--users-", "--users", "b"],
+            env={},
+        )
+        assert cfg.users == ["b"]
+
+    def test_set_delete_then_bare_occurrence_clears(self, loader: ConfargLoader) -> None:
+        """A bare occurrence after the delete clears the list, not resurrects the old tokens (BUG-76).
+
+        The bare occurrence contributes no token, so the flat value still holds the
+        pre-delete tokens alone; only argv says the user retyped the flag after the
+        delete.
+        """
+        cfg = loader.load(_WithUsers, argv=["--users", "y", "--users-", "--users"], env={})
+        assert cfg.users == []
+
+    def test_union_set_delete_then_set_starts_new_list(self, loader: ConfargLoader) -> None:
+        """The reset holds on a union's sequence variant, where one token is the scalar (BUG-76)."""
+        cfg = loader.load(_WithStrList, argv=["--input", "y", "--input-", "--input", "b"], env={})
+        assert cfg.input == "b"
+
     def test_interleaved_append_and_patch_newest(self, loader: ConfargLoader) -> None:
         """Append-empty-then-fill-by-(-1) repeats resolve in command order.
 

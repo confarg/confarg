@@ -66,3 +66,25 @@ occurrence above them) apply over it exactly as vanilla applies them over the pl
 The erase descends like `_set_nested` and stops at the first non-dict intermediate, popping
 it: a delete sentinel on the way down is replaced wholesale by the write that follows, so it
 dies too, as it does in vanilla (`--db- --db.host x` keeps only the `host` write).
+
+## A whole-field delete ends the token accumulation
+
+Vanilla's whole-field delete pops the token accumulation at its path, so `--f x --f- --f a`
+is `['a']` — the occurrence after the delete starts a new list
+([collection patches](../cli-parsing/collection-patches.md#collection-patch-operations)).
+The flat collector cannot see that on its own: the repeated-flag convention hands it every
+plain occurrence's tokens in one list
+([list syntax](list-syntax-divergence.md#list-syntax-divergence)), so the tokens spelled
+before the delete survive *inside* the value of the occurrence after it. Nor can the patch
+scan settle it, because the delete the scan records is popped by the very plain occurrence
+whose value spans it — the order is real in argv and invisible in both halves (BUG-76).
+
+The collector therefore reads the occurrence runs off argv itself
+(`cli/_collect._tokens_past_whole_field_delete`, the reader shape of
+`_fixed_arity_occurrence_runs`), keeping only the tokens of the runs that follow the last
+whole-field delete at the path — and only when the flat value's length adds up to the runs
+argv spells, so a value argv cannot account for is left to the shapers as it arrived. The
+two call sites are the two shapes whose flags accumulate tokens: a varlen collection's leaf
+branch, and a union's `_collect_union_seq_value`. A bare occurrence after the delete is a
+run of its own — an empty one — so the clear it spells survives the same read, where before
+the fix the flat value kept the pre-delete tokens of an occurrence the delete had ended.

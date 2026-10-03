@@ -305,6 +305,58 @@ def _fixed_arity_occurrence_runs(argv: Sequence[str], flag: str) -> list[list[st
     return runs
 
 
+def _tokens_past_whole_field_delete(argv: Sequence[str], flag: str, value: Any) -> Any:
+    """Return *value* with the plain-occurrence tokens a whole-field delete ended dropped.
+
+    The adapters' half of the reset vanilla's ``_handle_delete_token`` owns: there the
+    delete pops the token accumulation at its path, so the occurrence after it starts a
+    new list.  A framework's parse result carries no order, so the repeated-flag
+    convention hands the collector every plain occurrence's tokens in one list -- the
+    ones spelled before the delete end up *inside* the value of the occurrence after
+    it.  The surviving tokens are read off argv, as the other argv-order questions are
+    (:func:`_fixed_arity_occurrence_runs` is the precedent for a reader of this shape).
+
+    Returns *value* unchanged when argv does not spell ``--<flag>-`` at all, when no
+    plain occurrence follows it (the delete survives the patch scan and wins on its
+    own), or when *value* is not the accumulated plain tokens -- its length does not
+    add up to the occurrence runs argv spells -- because a value argv cannot account
+    for is not this reader's to rewrite.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/collection-patch-parity.md#a-whole-field-delete-ends-the-token-accumulation
+    """
+    if not isinstance(value, list):
+        return value
+    bare = f"--{flag}"
+    delete = f"--{flag}-"
+    total = 0
+    kept: list[str] | None = None  # becomes the accumulator at the first delete
+    followed_by_occurrence = False
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        if token == delete:
+            kept = []
+            followed_by_occurrence = False
+            i += 1
+            continue
+        if token != bare and not token.startswith(f"{bare}="):
+            i += 1
+            continue
+        run: list[str] = [] if token == bare else [token[len(bare) + 1 :]]
+        i += 1
+        while i < len(argv) and not _looks_like_flag(argv[i]):
+            run.append(argv[i])
+            i += 1
+        total += len(run)
+        if kept is not None:
+            kept.extend(run)
+            followed_by_occurrence = True
+    if kept is None or not followed_by_occurrence or len(value) != total:
+        return value
+    return kept
+
+
 def _whole_value(flat: dict[str, Any], flag: str, resolved: Any) -> Any:
     """Return the bare ``--<flag>`` value decoded the way the vanilla parser decodes it.
 
@@ -767,7 +819,8 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
             if cast_val is not _NO_CAST:
                 _set_nested(result, flag.split("."), cast_val)
             elif flag in flat and whole is _NO_CAST:
-                _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, flat[flag], flag))
+                v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
+                _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, v, flag))
             continue
 
         # A fixed-length sequence -- tuple[X, Y] or a namedtuple -- owes every one of its
@@ -828,7 +881,10 @@ def _collect_ns_fields(  # noqa: C901, PLR0912, PLR0913, PLR0915  # one branch p
         if cast_val is not _NO_CAST:
             _set_nested(result, flag.split("."), cast_val)
         elif flag in flat:
-            _set_nested(result, flag.split("."), _coerce_leaf_value(core, flat[flag]))
+            # The one accumulation site for a varlen collection's tokens: the only flat
+            # value a whole-field delete can span.
+            v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
+            _set_nested(result, flag.split("."), _coerce_leaf_value(core, v))
 
     _collect_ns_inheritance(flat, _tp, prefix, union_tag, result, tags, argv)
 
