@@ -1729,6 +1729,32 @@ class TestAnchoredExpressionQuotedAsWritten:
         with pytest.raises(ExpressionEvalError, match=f"^Error in expression {re.escape(repr(quoted))}: "):
             resolve_expressions(data)
 
+    @pytest.mark.parametrize(
+        ("data", "field", "callee"),
+        [
+            pytest.param({"xs": [{"n": "s", "p": "${.n.upper}"}]}, "xs.0.n.upper", ".n.upper", id="node-anchor"),
+            pytest.param({"a": {"n": "s", "b": {"p": "${..n.upper}"}}}, "a.n.upper", "..n.upper", id="two-dots"),
+            pytest.param({"xs": ["s", "${.[0].upper}"]}, "xs.0.upper", ".[0].upper", id="anchor-then-subscript"),
+            pytest.param({"n": "s", "p": "${::n.upper}"}, "n.upper", "::n.upper", id="root-anchor"),
+            pytest.param(
+                {"web-1": "s", "p": "${::['web-1'].upper}"},
+                "web-1.upper",
+                "::['web-1'].upper",
+                id="root-key",
+            ),
+            pytest.param({"a": {"n": "s", "p": "v=${.n.upper}"}}, "a.n.upper", ".n.upper", id="interpolated"),
+        ],
+    )
+    def test_an_uncalled_method_hint(self, data: dict, field: str, callee: str) -> None:
+        """The field is named by its absolute path, the call it hints at as written (BUG-136).
+
+        Spelled absolute, the hint would pin a list element to its index, which is what a
+        relative reference exists to avoid.
+        """
+        message = f"^Field {re.escape(repr(field))} not found: .* as in {re.escape(callee)}\\(\\.\\.\\.\\)$"
+        with pytest.raises(MissingReferenceError, match=message):
+            resolve_expressions(data)
+
 
 class TestAWrittenNameIsNeverAStandIn:
     """A name the body writes reads the key it spells, whatever its spelling (BUG-131).
