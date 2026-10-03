@@ -49,9 +49,9 @@ jobs:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
     - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86   # v5.4.2
     - if: matrix.resolution == 'locked'
-      run: uv run --locked pytest
+      run: uv run --locked pytest -n auto
     - if: matrix.resolution == 'latest'
-      run: uv run --upgrade pytest
+      run: uv run --upgrade pytest -n auto
 
   # Gate collapsing all tests into one stable check.
   tests-ok:
