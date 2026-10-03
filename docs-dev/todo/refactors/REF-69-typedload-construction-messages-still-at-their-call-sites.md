@@ -24,6 +24,17 @@ A third, filed after the other two: BUG-103 added `_construct._ambiguous_subclas
 near-copy of `_ambiguous_union_msg`. The per-variant breakdown loop is the same, and only the
 header and the remedy line differ. One builder parametrized by those two lines serves both.
 
+A fourth, filed while closing REF-79: the none-sentinel remedy line
+**"To set this field to None, pass 'none' or 'null'."** is spelled at two sites in
+`_construct.py` — appended to the single-non-None-variant message (line 719) and to the union
+no-match message (line 883, reached e.g. by `Union[int, bool, None]` refusing `notanint`).
+Only the first is pinned to the full spelling: `tests/test_errors.py`
+(`test_optional_int_null_string_hints_none_sentinel_cli`/`_env`) matches `'none' or 'null'`,
+while every test reaching the second matches only `To set this field to None`
+(`tests/test_corner_cases.py`, `tests/test_env.py`), so its sentinel spelling can drift
+invisibly — the same drift REF-79 closed on the help side. One shared builder for the sentence
+keeps the two sites single-sourced.
+
 No behavior change is intended: every message keeps its current text. Both sentences are still
 formatted at the call site because `exceptions.py` may import nothing from `confarg`
 ([invariants.md#fragile-couplings](../../architecture/invariants.md#fragile-couplings)):

@@ -64,7 +64,7 @@ class TestRoundTripCoercion:
         """Float survives string round-trip via CLI."""
         result = confarg.load(WithDefaults, argv=["--rate", str(value)], env={})
         # Use approximate comparison for floats
-        assert abs(result.rate - value) < 1e-6 or result.rate == value
+        assert abs(result.rate - value) < 1e-6
 
     @given(value=leaf_bools)
     def test_bool_round_trip(self, value: bool) -> None:  # noqa: FBT001
@@ -93,7 +93,7 @@ class TestRoundTripCoercion:
     def test_float_round_trip_env(self, value: float) -> None:
         """Float survives string round-trip via env."""
         result = confarg.load(WithDefaults, argv=[], env={"MYAPP_RATE": str(value)}, env_prefix="MYAPP_")
-        assert abs(result.rate - value) < 1e-6 or result.rate == value
+        assert abs(result.rate - value) < 1e-6
 
 
 # ---------------------------------------------------------------------------

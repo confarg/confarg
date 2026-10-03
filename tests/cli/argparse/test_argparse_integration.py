@@ -428,14 +428,15 @@ class TestHelpText:
         assert isinstance(h, str)
 
     def test_optional_field_help_includes_none_sentinel(self) -> None:
-        """Help text for Optional[X] fields mentions 'none' or 'null'."""
+        """Help text for Optional[X] fields mentions 'none' and 'null'."""
 
         @dataclass
         class WithOpt:
             value: int | None = None
 
         h = self._help(WithOpt, "--value")
-        assert "none" in h.lower() or "null" in h.lower()
+        assert "none" in h.lower()
+        assert "null" in h.lower()
 
 
 # ---------------------------------------------------------------------------

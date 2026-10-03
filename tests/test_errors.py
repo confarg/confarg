@@ -100,8 +100,8 @@ class TestMissingFields:
             confarg.build(int, {})
         msg = str(exc_info.value)
         assert "positional" not in msg
-        assert "CLI" in msg or "cli" in msg.lower()
-        assert "environment" in msg or "env" in msg.lower()
+        assert "cli" in msg.lower()
+        assert "env" in msg.lower()
         assert "config" in msg
 
 

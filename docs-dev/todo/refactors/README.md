@@ -45,6 +45,5 @@ different board.
 | [REF-75 — `cli/_collect.py` no longer collects, and `_merge_from_flat` no longer merges from the flat result](REF-75-cli-collect-module-no-longer-collects.md) | S | low | none |
 | [REF-76 — `FlagSpec.accumulates` has no reader left in the merge](REF-76-flagspec-accumulates-has-no-reader-left.md) | S | low | none |
 | [REF-77 — `_parse_expression` strips a root marker that no body reaching it still holds](REF-77-parse-expression-strips-a-root-marker-no-body-still-holds.md) | S | low | none |
-| [REF-78 — Subsumed `or`-disjuncts in tests read like the or-asserts-away family](REF-78-subsumed-or-disjuncts-read-like-or-asserts-away.md) | S | low | none |
 
 <!-- tickets:end -->
