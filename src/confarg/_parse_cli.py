@@ -43,13 +43,9 @@ from confarg._types import (
     _fixed_seq_types,
     _is_callable,
     _is_dict,
-    _is_frozenset,
-    _is_list,
     _is_namedtuple,
-    _is_set,
     _is_struct,
     _is_struct_like,
-    _is_tuple,
     _is_union,
     _is_varlen_collection,
     _namedtuple_fields,
@@ -66,7 +62,7 @@ from confarg._types import (
     _UnionSeqToken,
 )
 from confarg.exceptions import ConfargError, UnknownArgumentError
-from confarg.typedload._coerce import _try_coerce
+from confarg.typedload._coerce import _try_coerce, _type_kind, _TypeKind
 
 
 def _step_tuple_type(tp: Any, part: str) -> Any | None:
@@ -102,29 +98,34 @@ def _namedtuple_position_spellings(n: int, i: int) -> list[str]:
     return [spelled for spelled, pos in _namedtuple_index_spellings(n).items() if pos == i]
 
 
-def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911
-    """Advance one step into tp along path segment part. Returns new type or None."""
-    if _is_namedtuple(tp):
-        flds = _namedtuple_fields(tp)
-        if part in flds:
-            return flds[part]
-        spellings = _namedtuple_index_spellings(len(flds))
-        if part in spellings:
-            return list(flds.values())[spellings[part]]
-        return None
-    if _is_struct(tp):
-        return _struct_member_type(tp, part)
-    if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
-        return _elem_type(tp)
-    if _is_tuple(tp):
-        return _step_tuple_type(tp, part)
-    if _is_dict(tp):
-        _, vt = _dict_kv(tp)
-        return vt
-    if _is_callable(tp):
-        # "fn"/"class"/"call" are recognized sub-keys; flat kwargs also accepted
-        return str
-    return None
+def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911  # one return per kind
+    """Advance one step into tp along path segment part. Returns new type or None.
+
+    Dispatches on :func:`~confarg.typedload._coerce._type_kind`, as construction does. A
+    registered leaf with ``__init__`` parameters is walked as a struct: an explicit class
+    tag may still open it.
+    """
+    match _type_kind(tp):
+        case _TypeKind.NAMEDTUPLE:
+            flds = _namedtuple_fields(tp)
+            if part in flds:
+                return flds[part]
+            spellings = _namedtuple_index_spellings(len(flds))
+            return list(flds.values())[spellings[part]] if part in spellings else None
+        case _TypeKind.STRUCT | _TypeKind.TAGGABLE_LEAF:
+            return _struct_member_type(tp, part)
+        case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET:
+            return _elem_type(tp)
+        case _TypeKind.TUPLE:
+            return _step_tuple_type(tp, part)
+        case _TypeKind.DICT:
+            _, vt = _dict_kv(tp)
+            return vt
+        case _TypeKind.CALLABLE:
+            # "fn"/"class"/"call" are recognized sub-keys; flat kwargs also accepted
+            return str
+        case _TypeKind.ANY | _TypeKind.UNION | _TypeKind.LEAF:
+            return None
 
 
 def _field_types(target: Any, parts: list[str], union_tag: str, *, tag_fallback: bool = True) -> list[Any]:
@@ -242,7 +243,7 @@ def _addresses_callable_key(target: Any, parts: list[str], union_tag: str) -> bo
     return False
 
 
-def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> bool:  # noqa: PLR0911  # one early return per type case, mirroring _advance_field_type
+def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> bool:
     """Return True if the dotted path indexes a list/tuple/set or keys a dict.
 
     Such paths (e.g. ``users.0``, ``dbs.1.port``, ``foo.bar``) are open-ended, so no
@@ -255,18 +256,15 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
     tp = _resolve_type(target)
     for idx, part in enumerate(parts):
         tp = _resolve_type(tp)
-        if _is_union(tp):
-            return any(
-                _is_collection_patch_path(_resolve_type(v), parts[idx:], union_tag) for v in _union_args_no_none(tp)
-            )
-        if _is_callable(tp):
-            return False
-        if _is_namedtuple(tp):
-            return False
-        if _is_list(tp) or _is_set(tp) or _is_frozenset(tp) or _is_tuple(tp):
-            return True
-        if _is_dict(tp):
-            return True
+        match _type_kind(tp):
+            case _TypeKind.UNION:
+                return any(
+                    _is_collection_patch_path(_resolve_type(v), parts[idx:], union_tag) for v in _union_args_no_none(tp)
+                )
+            case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET | _TypeKind.TUPLE | _TypeKind.DICT:
+                return True
+            case _TypeKind.NAMEDTUPLE | _TypeKind.CALLABLE:
+                return False
         if part in _locals_keys_nested(tp, union_tag):
             return True  # a nested namespace is a dict[str, Any]
         tp = _advance_field_type(tp, part)

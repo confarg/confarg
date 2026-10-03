@@ -23,16 +23,9 @@ from confarg._types import (
     _dict_kv,
     _elem_type,
     _fixed_seq_types,
-    _is_callable,
-    _is_dict,
-    _is_frozenset,
     _is_list,
     _is_literal,
-    _is_namedtuple,
-    _is_set,
     _is_struct,
-    _is_tuple,
-    _is_union,
     _literal_values,
     _namedtuple_fields,
     _origin,
@@ -44,7 +37,7 @@ from confarg._types import (
     _union_args_no_none,
 )
 from confarg.exceptions import ConfargError, ConfargWarning
-from confarg.typedload._coerce import _LEAF_SERIALIZERS, _is_struct_variant
+from confarg.typedload._coerce import _LEAF_SERIALIZERS, _is_struct_variant, _type_kind, _TypeKind
 from confarg.typedload._construct import _disambiguate_struct, construct
 
 
@@ -70,32 +63,34 @@ def _serialize(
     tp = _resolve_type(tp)
     if instance is None:
         return None
-    if _is_callable(tp):
-        return _serialize_callable(instance)
     return _serialize_by_type(tp, instance, path, union_tag, tag_policy)
 
 
-def _serialize_by_type(  # noqa: PLR0911
+def _serialize_by_type(  # noqa: PLR0911  # one return per kind
     tp: Any,
     instance: Any,
     path: str,
     union_tag: str,
     tag_policy: TagPolicy,
 ) -> Any:
-    """Dispatch serialization by type after None and callable are handled."""
-    if _is_union(tp):
-        return _serialize_union(tp, instance, path, union_tag, tag_policy)
-    if _is_namedtuple(tp):
-        return _serialize_namedtuple(tp, instance, path, union_tag, tag_policy)
-    if _is_struct_variant(tp):
-        return _serialize_struct(tp, instance, path, union_tag, tag_policy)
-    if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
-        return _serialize_collection(tp, instance, path, union_tag, tag_policy)
-    if _is_tuple(tp):
-        return _serialize_tuple(tp, instance, path, union_tag, tag_policy)
-    if _is_dict(tp):
-        return _serialize_dict(tp, instance, path, union_tag, tag_policy)
-    return _serialize_leaf(tp, instance)
+    """Dispatch serialization on the shape :func:`_type_kind` names, after None is handled."""
+    match _type_kind(tp):
+        case _TypeKind.UNION:
+            return _serialize_union(tp, instance, path, union_tag, tag_policy)
+        case _TypeKind.NAMEDTUPLE:
+            return _serialize_namedtuple(tp, instance, path, union_tag, tag_policy)
+        case _TypeKind.STRUCT:
+            return _serialize_struct(tp, instance, path, union_tag, tag_policy)
+        case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET:
+            return _serialize_collection(tp, instance, path, union_tag, tag_policy)
+        case _TypeKind.TUPLE:
+            return _serialize_tuple(tp, instance, path, union_tag, tag_policy)
+        case _TypeKind.DICT:
+            return _serialize_dict(tp, instance, path, union_tag, tag_policy)
+        case _TypeKind.CALLABLE:
+            return _serialize_callable(instance)
+        case _TypeKind.ANY | _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
+            return _serialize_leaf(tp, instance)
 
 
 def _serialize_collection(
@@ -363,11 +358,11 @@ def _find_variant_type(tp: Any, instance: Any) -> Any | None:
     return None
 
 
-def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one branch per shape, as in the dispatcher
+def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one return per kind
     """True if *instance* is a value of union variant *tp*.
 
-    Asks the shape functions in the order :func:`_serialize_by_type` dispatches in, so the
-    variant chosen here is the one that then serializes the value. A bare ``isinstance``
+    Dispatches on :func:`_type_kind`, as :func:`_serialize_by_type` does, so the variant
+    chosen here is the one that then serializes the value. A bare ``isinstance``
     cannot ask: a parameterized generic and a ``Literal`` both refuse to be its second
     argument, which left every union holding one undumpable. Each shape answers with the
     concrete class construction builds for it -- ``list`` for ``Sequence[X]``, ``dict`` for
@@ -377,26 +372,28 @@ def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one bran
     Dev Notes:
         docs-dev/architecture/types/serialization.md#serialization
     """
-    if _is_namedtuple(tp) or _is_struct_variant(tp):
-        return isinstance(instance, tp)
-    if _is_list(tp):
-        return isinstance(instance, list)
-    if _is_set(tp):
-        return isinstance(instance, set)
-    if _is_frozenset(tp):
-        return isinstance(instance, frozenset)
-    if _is_tuple(tp):
-        fixed = _fixed_seq_types(tp)
-        return isinstance(instance, tuple) and (fixed is None or len(instance) == len(fixed))
-    if _is_dict(tp):
-        return isinstance(instance, dict)
-    if _is_literal(tp):
-        return any(type(m) is type(instance) and m == instance for m in _literal_values(tp))
-    # What is left is a class, or is parameterized over one (``type[X]``, ``Callable[..., X]``);
-    # ``Any`` is neither, and holds nothing in particular.
-    origin = _origin(tp)
-    checkable = origin if isinstance(origin, type) else tp
-    return isinstance(checkable, type) and isinstance(instance, checkable)
+    match _type_kind(tp):
+        case _TypeKind.NAMEDTUPLE | _TypeKind.STRUCT:
+            return isinstance(instance, tp)
+        case _TypeKind.LIST:
+            return isinstance(instance, list)
+        case _TypeKind.SET:
+            return isinstance(instance, set)
+        case _TypeKind.FROZENSET:
+            return isinstance(instance, frozenset)
+        case _TypeKind.TUPLE:
+            fixed = _fixed_seq_types(tp)
+            return isinstance(instance, tuple) and (fixed is None or len(instance) == len(fixed))
+        case _TypeKind.DICT:
+            return isinstance(instance, dict)
+        case _TypeKind.LEAF if _is_literal(tp):
+            return any(type(m) is type(instance) and m == instance for m in _literal_values(tp))
+        case _TypeKind.ANY | _TypeKind.UNION | _TypeKind.TAGGABLE_LEAF | _TypeKind.CALLABLE | _TypeKind.LEAF:
+            # What is left is a class, or is parameterized over one (``type[X]``,
+            # ``Callable[..., X]``); ``Any`` is neither, and holds nothing in particular.
+            origin = _origin(tp)
+            checkable = origin if isinstance(origin, type) else tp
+            return isinstance(checkable, type) and isinstance(instance, checkable)
 
 
 def _needs_tag(tp: Any, serialized_data: dict[str, Any], union_tag: str) -> bool:

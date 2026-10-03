@@ -19,7 +19,9 @@ construction skips the struct branch for it (`_construct_typed`) and so does ser
 struct-shaped registered type, and `_construct_scalar` hands a dict carrying the tag to
 `_construct_struct_dispatch` and rejects one without it
 ([design decisions](../design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in)). `_is_struct_variant` is the one function that answers "does this type
-get taken apart into fields?" — `_is_struct` minus the registry — and both dispatchers and both
+get taken apart into fields?" — `_is_struct` minus the registry — and both dispatchers (through
+`_type_kind`, which names such a type `TAGGABLE_LEAF`, see
+[shape dispatch](introspection.md#shape-dispatch)) and both
 union-variant filters (`_construct_union`'s `dc_vars` and its complement in
 `_construct_union_leaf`, `_serialize._needs_tag`) go through it
 ([invariants](../invariants.md#delegate-to-the-canonical-function)). Asking `_is_struct` directly is

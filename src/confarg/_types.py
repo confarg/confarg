@@ -586,7 +586,7 @@ def _is_plain_class(tp: Any) -> bool:
     tp = _resolve_type(tp)
     # Since Python 3.11 ``typing.Any`` is a subclassable class in module "typing", so it passes
     # ``isinstance(tp, type)`` and the signature check below and would masquerade as a plain class.
-    # It is not a struct; construction already guards it (_construct_typed).
+    # It is not a struct; _type_kind names it ANY before asking any shape.
     if tp is Any or not isinstance(tp, type):
         return False
     if _is_dc(tp):

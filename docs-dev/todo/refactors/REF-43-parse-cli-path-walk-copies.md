@@ -6,9 +6,10 @@
 
 Three of these are the same loop with a one-line question in the middle: `_resolve_type`, the
 `union_tag` check, union recursion over `_union_args_no_none`, `_advance_field_type`, bail on
-`None`. The `noqa` comment on `_is_collection_patch_path` already admits it is "mirroring
-`_advance_field_type`". `_is_dict_at_path` is a fourth variant that re-runs `_resolve_field_type`
-once per prefix, so it walks the type tree O(n²) times per token.
+`None`. `_is_collection_patch_path` matches on `_type_kind` as `_advance_field_type` does
+(REF-47), so the shape order is no longer what they share; the loop around it still is.
+`_is_dict_at_path` is a fourth variant that re-runs `_resolve_field_type` once per prefix, so it
+walks the type tree O(n²) times per token.
 
 Fix direction: one `_walk_path(target, parts, union_tag)` generator carrying the union-recursion
 contract, with each predicate reduced to five or eight lines over it.

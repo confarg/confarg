@@ -10,8 +10,9 @@ through the same `_serialize_leaf` — plus the one thing only a raw dict holds,
   back in; `"always"` tags every struct union member. A subclass of the declared type is
   always tagged.
 - Which union variant an instance belongs to is `_variant_holds`, asked once per variant in
-  declaration order. It asks the **shape** functions in the order `_serialize_by_type`
-  dispatches in, so the variant it picks is the one that then serializes the value, and each
+  declaration order. It dispatches on the same `_type_kind` as `_serialize_by_type`
+  ([shape dispatch](introspection.md#shape-dispatch)), so the variant it picks is the one that
+  then serializes the value, and each
   shape answers with the concrete class construction builds for it — `list` for `Sequence[X]`,
   `dict` for `Mapping[K, V]`. A bare `isinstance` cannot ask the question at all: a
   parameterized generic and a `Literal` both refuse to be its second argument, so every union

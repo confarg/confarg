@@ -35,11 +35,28 @@ Take the risk-free half first — about 34 lines, no behavior change:
   eleven-argument call each time.
 
 The full merge — route through `_specs_for_field` with a `concrete` switch and a
-do-not-recurse-into-variants switch — is a **behavior change** unless a third switch is added: a
-namedtuple field currently takes completion's `_is_struct` branch and would start receiving
-`_collect_namedtuple_specs` index and name flags, i.e. more completion suggestions. Decide that
-deliberately; completion must never raise
+do-not-recurse-into-variants switch — is a **behavior change** in two places, because the two
+walks ask the shape predicates differently. Completion has no namedtuple branch: `_is_struct` is
+False for a tuple subclass, so a namedtuple field falls through to the leaf branch and gets only
+its whole-value flag, while registration adds `_collect_namedtuple_specs`' index and name flags.
+Completion also has no registered-leaf branch before `_is_struct`, so it opens a registered leaf
+with `__init__` parameters as a struct and offers one flag per parameter. Registration gives such
+a leaf only its scalar flag, and its parameter flags exist only once typed
+([static-and-dynamic-flags.md](../../architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags)).
+Observed 2026-10-03, with `UUID` registered and a variant `Cat` holding `id: UUID` and
+`pos: Pt` (a two-field namedtuple):
+
+```text
+completion  : ['pet.id', 'pet.id.bytes', 'pet.id.bytes_le', 'pet.id.fields', 'pet.id.hex', 'pet.id.int', 'pet.id.is_safe', 'pet.id.version', 'pet.pos']
+registration: [..., 'pet.id', 'pet.pos', 'pet.pos.-1', 'pet.pos.-2', 'pet.pos.0', 'pet.pos.1', 'pet.pos.x', 'pet.pos.y']
+```
+
+Decide both deliberately; completion must never raise
 ([cli-adapters/completion.md#completion](../../architecture/cli-adapters/completion.md#completion)).
+Whichever way it goes, the merged walk should dispatch on `typedload._coerce._type_kind`, as
+construction, serialization and the CLI walk do since REF-47, rather than keep a chain of its own
+([types/introspection.md#shape-dispatch](../../architecture/types/introspection.md#shape-dispatch)).
+`_specs_for_field` and `_extend_walk_field` are the two full shape dispatches that do not yet.
 
 Verified dead in the same file, and cheap to take with it: the `group_target` parameter of
 `_extend_walk`, which already carries `noqa: ARG001 # kept for callers` and whose docstring says

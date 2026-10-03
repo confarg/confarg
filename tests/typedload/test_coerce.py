@@ -6,7 +6,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Annotated, Any, Literal, NamedTuple
 from uuid import UUID
 
 import pytest
@@ -14,7 +17,14 @@ import pytest
 import confarg
 from confarg._types import _StrToken
 from confarg.exceptions import MissingFieldError, TypeCoercionError
-from confarg.typedload._coerce import _LEAF_COERCIONS, _LEAF_SERIALIZERS, _coerce_leaf, _try_coerce
+from confarg.typedload._coerce import (
+    _LEAF_COERCIONS,
+    _LEAF_SERIALIZERS,
+    _coerce_leaf,
+    _try_coerce,
+    _type_kind,
+    _TypeKind,
+)
 from confarg.typedload._construct import construct
 from tests.conftest import Release
 
@@ -456,3 +466,51 @@ class TestNoneTypeCoercion:
 
         with pytest.raises(TypeCoercionError):
             confarg.load(Config, argv=["--value", "x"], env={})
+
+
+# ---------------------------------------------------------------------------
+# TestTypeKind — the one order every shape dispatch asks in
+# ---------------------------------------------------------------------------
+
+
+class _Point(NamedTuple):
+    x: int
+    y: int
+
+
+type _Alias = list[int]
+
+
+class TestTypeKind:
+    """_type_kind names one shape per type, where the shape predicates overlap or nest."""
+
+    @pytest.mark.parametrize(
+        ("tp", "kind"),
+        [
+            (Any, _TypeKind.ANY),
+            (int | str, _TypeKind.UNION),
+            (_Point, _TypeKind.NAMEDTUPLE),
+            (tuple[int, int], _TypeKind.TUPLE),
+            (_Config, _TypeKind.STRUCT),
+            (list[int], _TypeKind.LIST),
+            (Sequence[int], _TypeKind.LIST),
+            (set[int], _TypeKind.SET),
+            (frozenset[int], _TypeKind.FROZENSET),
+            (Mapping[str, int], _TypeKind.DICT),
+            (Callable[..., int], _TypeKind.CALLABLE),
+            (Path, _TypeKind.LEAF),
+            (UUID, _TypeKind.STRUCT),
+            (Literal["a"], _TypeKind.LEAF),
+            (type[int], _TypeKind.LEAF),
+            (_Alias, _TypeKind.LIST),
+            (Annotated[_Point, "doc"], _TypeKind.NAMEDTUPLE),
+        ],
+    )
+    def test_kind(self, tp: Any, kind: _TypeKind) -> None:
+        """Each type takes exactly the branch its outermost shape names, its wrappers unwrapped."""
+        assert _type_kind(tp) is kind
+
+    def test_registered_leaf_with_init_params_is_a_taggable_leaf(self) -> None:
+        """Registration moves a class with __init__ parameters from STRUCT to TAGGABLE_LEAF."""
+        confarg.register_leaf_type(UUID, UUID)
+        assert _type_kind(UUID) is _TypeKind.TAGGABLE_LEAF
