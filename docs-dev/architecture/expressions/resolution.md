@@ -83,3 +83,30 @@ Rejected:
 - **Subtree nodes in the graph** (`svc` depending on everything below it). Fewer edges when many
   references read one large subtree — the index adds one edge per expression in it, per
   reference — but a cycle message would then list dicts that are no expression.
+
+## An evaluation failure names its expression
+
+A configuration may hold hundreds of expressions, so a runtime failure that says only
+`division by zero` leaves the user to find which one divided. Every failure step 5 meets, other
+than the two typed refusals, is therefore an `ExpressionEvalError` that quotes the expression as
+written, followed by Python's own text: `Error in expression '${b / 0}': division by zero`. The
+quote is the whole value for a pure expression and the `${...}` fragment alone for one inside an
+interpolation, so `<${b / 0}>` reports `'${b / 0}'`.
+
+One function words it, `_eval_expr`, the wrapper around the evaluation of one `${...}`. The
+evaluators raise Python's exception as it comes — an operator's `TypeError`, a whitelisted
+function's or a string method's `ValueError`, a miss off a value no path names
+([values and references](values-and-references.md#spelling-a-path)) — and none of them builds an
+`ExpressionEvalError` of its own from it. Before BUG-135, `_eval_binop` and `_eval_call` did, with
+no context, and `_eval_expr` let an `ExpressionEvalError` through unchanged, so `${b / 0}` and
+`${s.strip(1)}` named no expression while `${-s}` and `${s < 1}`, which nobody wrapped early, did.
+`MissingReferenceError` and `UnsafeExpressionError` pass through as they are, worded where they
+are raised. The original exception stays the `__cause__`.
+
+OmegaConf draws the same line: a resolver's failure is re-raised once, by the interpolation
+machinery, as an `InterpolationResolutionError` that names the key, never by the resolver.
+
+Rejected: **`_eval_expr` rewording an `ExpressionEvalError` that has no context.** It keeps the
+early wraps but needs a way to tell a worded error from a bare one — a flag on the exception, or
+a match on its text — so two sites still decide the wording and a third evaluator that wraps
+early would silently opt out.

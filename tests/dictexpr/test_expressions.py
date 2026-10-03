@@ -1955,3 +1955,32 @@ class TestAMissOffAValueNoPathNames:
         """A path inside the base misses as that path, before the subscript is tried."""
         with pytest.raises(MissingReferenceError, match=r"Field 'b' not found in configuration"):
             resolve_expressions({"c": True, "v": "${(b if c else b)['x']}"})
+
+
+class TestAnEvaluationFailureNamesItsExpression:
+    """Every failure evaluation raises quotes the expression that failed (BUG-135).
+
+    An operator and a call used to raise Python's bare text, while a unary operator and a
+    comparison named the expression: one wrapper, ``_eval_expr``, now words them all.
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "expr", "detail"),
+        [
+            pytest.param("${b / 0}", "${b / 0}", "division by zero", id="binary-operator"),
+            pytest.param("${s.strip(1)}", "${s.strip(1)}", "strip arg must be None or str", id="method-call"),
+            pytest.param("${int(s)}", "${int(s)}", "invalid literal for int() with base 10: 'x'", id="function-call"),
+            pytest.param("${-s}", "${-s}", "bad operand type for unary -: 'str'", id="unary-operator"),
+            pytest.param("<${b / 0}>", "${b / 0}", "division by zero", id="interpolated"),
+        ],
+    )
+    def test_the_message_quotes_the_expression(self, value: str, expr: str, detail: str) -> None:
+        """The detail is Python's own, prefixed by the expression as written."""
+        with pytest.raises(ExpressionEvalError, match=re.escape(f"Error in expression {expr!r}: {detail}") + "$"):
+            resolve_expressions({"b": 1, "s": "x", "v": value})
+
+    def test_the_failure_is_chained_to_python_s_own(self) -> None:
+        """The original exception stays reachable as the cause."""
+        with pytest.raises(ExpressionEvalError) as info:
+            resolve_expressions({"b": 1, "v": "${b / 0}"})
+        assert isinstance(info.value.__cause__, ZeroDivisionError)

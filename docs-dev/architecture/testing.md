@@ -89,6 +89,12 @@ exclusion makes the decision once, at collection time. One caveat: explicitly na
 `docs-dev` path on the command line still replays it, because pytest's ignore mechanisms do
 not apply to arguments passed explicitly — that is the invoker asking for documentation.
 
+An HTML comment hides a block from the rendered page, not from the replay: hidden backend
+blocks cost a subprocess each, exactly like the visible ones. Each backend therefore appears
+once per section — a duplicate set replays the same command for no new coverage and only
+lengthens the run (REF-62, closed). A block that must not run at all takes the `notest`
+directive, never duplication.
+
 Each block runs with the README's own directory as its working directory, so a script that
 writes a file writes it there — `21_expressions` and `22_variable_scopes` end their scripts
 with `dump_file()` and leave `saved_config_*.yaml` behind on every run. Those artifacts are

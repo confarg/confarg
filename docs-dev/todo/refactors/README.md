@@ -30,7 +30,6 @@ different board.
 | [REF-58 — The config-parallel struct walk has two owners](REF-58-config-parallel-struct-walk-has-two-owners.md) | S | medium | none |
 | [REF-59 — Twenty code blocks under `examples/` are still hand-copied](REF-59-example-code-blocks-not-generated.md) | M | low | none |
 | [REF-60 — Nothing asserts the bytes `dump_file` writes](REF-60-dumped-file-bytes-are-never-asserted.md) | S | medium | none |
-| [REF-62 — Hidden backend blocks are replayed twice per section in the example READMEs](REF-62-duplicated-hidden-backend-blocks-in-examples.md) | S | low | none |
 | [REF-63 — `13_collection_items` carries an empty section and a misplaced tuple remark](REF-63-collection-items-readme-empty-section-and-misplaced-remark.md) | S | low | none |
 | [REF-64 — The clicklike completion tests assert that nothing was added](REF-64-completion-tests-assert-nothing-was-added.md) | S | medium | none |
 | [REF-66 — the pinned ruff and the project's own ruff disagree](REF-66-pinned-ruff-disagrees-with-the-project-ruff.md) | S | low | none |
@@ -40,5 +39,6 @@ different board.
 | [REF-75 — `cli/_collect.py` no longer collects, and `_merge_from_flat` no longer merges from the flat result](REF-75-cli-collect-module-no-longer-collects.md) | S | low | none |
 | [REF-77 — The four "expected N elements" refusals have drifted on the type's name](REF-77-expected-elements-refusals-have-drifted.md) | S | medium | none |
 | [REF-78 — `.ruff.toml` selects "PL" twice](REF-78-ruff-toml-selects-pl-twice.md) | S | low | none |
+| [REF-81 — `90_integration/README.md` opens at h3 and sandwiches a lone h2 between h3 sections](REF-81-integration-readme-heading-structure.md) | S | low | none |
 
 <!-- tickets:end -->

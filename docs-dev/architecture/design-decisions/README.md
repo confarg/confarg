@@ -97,3 +97,4 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 |---|---|
 | [Line endings are pinned in `.gitattributes`](line-endings-pinned-in-gitattributes.md) | LF for text, `-text` for the PNGs — and the pre-commit hook stays the enforcement, because jj ignores attributes |
 | [A lint rule is enabled, not hand-fixed](lint-holds-the-line.md) | banning a pattern is a config edit; `FURB118` and `PLW0717` stay selected, wholesale best-effort blocks carry a `noqa` |
+| [Quoted code keeps the formatter's spacing](quoted-code-keeps-formatter-spacing.md) | one blank line between blocks in prose, the formatter's spacing inside a fenced code block |
