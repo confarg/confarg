@@ -150,32 +150,32 @@ class TestScanExpressions:
 
 
 class TestExtractReferences:
-    """Extracting dotted field paths from expression strings."""
+    """Extracting field paths, segment by segment, from expression strings."""
 
     def test_simple_name(self) -> None:
         """A simple field name reference is extracted correctly."""
         refs = _extract_references("${name}")
-        assert refs == {"name"}
+        assert refs == {("name",)}
 
     def test_dotted_path(self) -> None:
         """A dotted-path reference is extracted correctly."""
         refs = _extract_references("${db.host}")
-        assert refs == {"db.host"}
+        assert refs == {("db", "host")}
 
     def test_multiple_refs(self) -> None:
         """Multiple references in one string are all extracted."""
         refs = _extract_references("jdbc://${db.host}:${db.port}/mydb")
-        assert refs == {"db.host", "db.port"}
+        assert refs == {("db", "host"), ("db", "port")}
 
     def test_arithmetic_expr(self) -> None:
         """An arithmetic expression yields the variable references."""
         refs = _extract_references("${db.port + 1000}")
-        assert refs == {"db.port"}
+        assert refs == {("db", "port")}
 
     def test_function_call(self) -> None:
         """Function call arguments are extracted as references."""
         refs = _extract_references("${max(a, b)}")
-        assert refs == {"a", "b"}
+        assert refs == {("a",), ("b",)}
 
     def test_no_refs_in_escaped(self) -> None:
         """An escaped expression yields no references."""
@@ -185,17 +185,17 @@ class TestExtractReferences:
     def test_mixed_escaped_and_real(self) -> None:
         """Only the real reference is extracted when mixed with an escaped one."""
         refs = _extract_references("$${escape}${real}")
-        assert refs == {"real"}
+        assert refs == {("real",)}
 
     def test_string_literal_not_a_ref(self) -> None:
         """A string literal inside an expression is not extracted as a reference."""
         refs = _extract_references('${db.host + ":"}')
-        assert refs == {"db.host"}
+        assert refs == {("db", "host")}
 
     def test_list_index_ref(self) -> None:
-        """A list index reference is normalized to a dotted path."""
+        """A list index is one segment of the path."""
         refs = _extract_references("${servers[0].host}")
-        assert refs == {"servers.0.host"}
+        assert refs == {("servers", "0", "host")}
 
 
 # ---------------------------------------------------------------------------
@@ -1119,7 +1119,7 @@ class TestExpressionDelimiting:
 
     def test_references_ignore_braced_literals(self) -> None:
         """Only the names outside the literal become dependencies."""
-        assert _extract_references("${a + '{b}'}") == {"a"}
+        assert _extract_references("${a + '{b}'}") == {("a",)}
 
     def test_predicate_spans_the_whole_expression(self) -> None:
         """``contains_expression`` and the resolver scan agree on a braced literal."""
@@ -1203,7 +1203,7 @@ class TestReservedNamesInExpressions:
 
     def test_a_path_rooted_at_a_function_name_is_a_reference(self) -> None:
         """``len.a`` is a dependency, so the expression it names resolves first."""
-        assert _extract_references("${len.a}") == {"len.a"}
+        assert _extract_references("${len.a}") == {("len", "a")}
         assert resolve_expressions({"limit": "${len.a}", "len": {"a": "${b}"}, "b": 4})["limit"] == 4
 
     def test_a_bare_function_name_with_no_key_is_missing(self) -> None:
@@ -1224,7 +1224,7 @@ class TestSubscriptPaths:
     def test_a_string_subscript_is_a_dependency(self, spelling: str) -> None:
         """The referenced expression resolves first, whichever way the path is spelled."""
         data = {"v": "${" + spelling + "}", "svc": {"web": {"host": "${base}.x"}}, "base": "b"}
-        assert _extract_references(data["v"]) == {"svc.web.host"}
+        assert _extract_references(data["v"]) == {("svc", "web", "host")}
         assert resolve_expressions(data)["v"] == "b.x"
 
     def test_a_top_level_index_is_a_dependency(self) -> None:
@@ -1319,6 +1319,60 @@ class TestMethodCalls:
     def test_a_method_off_a_computed_string_runs(self) -> None:
         """The receiver may be any expression whose value is a string."""
         assert resolve_expressions({"n": 7, "v": "${(str(n) + 'a').upper()}"})["v"] == "7A"
+
+
+class TestReferenceDependencies:
+    """A reference waits for every expression its path reads, not just one at that exact path (BUG-123)."""
+
+    def test_an_interpolated_subtree_waits_for_the_expressions_inside_it(self) -> None:
+        """The subtree is stringified on the spot, so what it holds must be resolved by then."""
+        data = {"v": "s=${svc}", "svc": {"h": "${base}"}, "base": 1}
+        assert resolve_expressions(data)["v"] == "s={'h': 1}"
+
+    def test_a_referenced_list_waits_for_its_elements(self) -> None:
+        """A list is a subtree too."""
+        data = {"v": "n=${xs}", "xs": ["${base}", 2], "base": 1}
+        assert resolve_expressions(data)["v"] == "n=[1, 2]"
+
+    def test_a_subtree_passed_to_a_function_waits_for_the_expressions_inside_it(self) -> None:
+        """What a function reads of the subtree is not known, so all of it resolves first."""
+        data = {"v": "${max(xs)}", "xs": ["${b}", "a"], "b": "c"}
+        assert resolve_expressions(data)["v"] == "c"
+
+    @pytest.mark.parametrize(
+        ("spelling", "expected"),
+        [("xs[-1]", "b"), ("xs[-2]", 0), ("ys[-1][-1]", "b"), ("svc['xs'][-1]", "b")],
+    )
+    def test_a_negative_index_waits_for_the_element_it_names(self, spelling: str, expected: object) -> None:
+        """``xs[-1]`` names the element the scan calls ``xs.1``."""
+        data = {"v": "${" + spelling + "}", "xs": [0, "${base}"], "ys": [[0, "${base}"]], "svc": {"xs": [0, "${base}"]}}
+        assert resolve_expressions({**data, "base": "b"})["v"] == expected
+
+    def test_a_path_through_an_expression_waits_for_it(self) -> None:
+        """``a.b.c`` reads into the value ``a.b`` resolves to."""
+        data = {"v": "${a.b.c}", "a": {"b": "${d}"}, "d": {"c": 1}}
+        assert resolve_expressions(data)["v"] == 1
+
+    def test_a_negative_index_through_an_expression_waits_for_it(self) -> None:
+        """The list ``xs`` resolves to is not there to count yet; the dependency is on ``xs`` itself."""
+        data = {"v": "${xs[-1]}", "xs": "${ys}", "ys": [1, 2]}
+        assert resolve_expressions(data)["v"] == 2
+
+    def test_an_index_into_an_expression_string_waits_for_it(self) -> None:
+        """``name[0]`` indexes the resolved string, never the raw ``${...}``."""
+        data = {"v": "${name[0]}", "name": "${base}", "base": "xyz"}
+        assert resolve_expressions(data)["v"] == "x"
+
+    @pytest.mark.parametrize("reference", ["${svc}", "s=${svc}", "${..svc}", "${len(svc)}", "${svc[k]}"])
+    def test_a_reference_to_an_ancestor_from_inside_it_is_a_cycle(self, reference: str) -> None:
+        """``svc`` holds ``svc.a`` itself, so its value is not known before ``svc.a``'s."""
+        with pytest.raises(CircularReferenceError, match=r"svc\.a"):
+            resolve_expressions({"svc": {"a": reference, "b": 1}, "k": "b"})
+
+    def test_a_reference_to_a_sibling_is_no_cycle(self) -> None:
+        """Only the expression's own ancestors hold it."""
+        data = {"svc": {"a": "${svc.b}", "b": "${base}"}, "base": 1}
+        assert resolve_expressions(data)["svc"] == {"a": 1, "b": 1}
 
 
 # ---------------------------------------------------------------------------

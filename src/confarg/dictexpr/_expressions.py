@@ -23,7 +23,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Sequence
 
 from confarg.exceptions import (
     CircularReferenceError,
@@ -266,13 +266,7 @@ def resolve_expressions(
     data = copy.deepcopy(data)
 
     # 3. Extract references and build dependency graph
-    expr_paths = set(expr_fields.keys())
-    deps: dict[str, set[str]] = {}
-    for path, raw_str in expr_fields.items():
-        refs = _extract_references(raw_str, path)
-        # Filter refs to only those that are themselves expressions
-        # Non-expression refs are "free" (already resolved)
-        deps[path] = refs & expr_paths
+    deps = _dependency_graph(data, expr_fields)
 
     # 4. Topological sort
     order = _topological_sort(deps)
@@ -320,16 +314,65 @@ def _collect_expressions(value: Any, path: str, out: dict[str, str]) -> None:
         out[path] = value
 
 
-def _extract_references(expr_str: str, node_path: str = "") -> set[str]:
-    """Extract dotted field paths referenced in expression string.
+def _dependency_graph(data: dict[str, Any], expr_fields: dict[str, str]) -> dict[str, set[str]]:
+    """Map each expression's path to the paths of the expressions it reads, which resolve first.
+
+    A reference reads every expression its path reaches, not just one sitting exactly there:
+    any below it, since ``${svc}`` hands on or stringifies the whole subtree, and one above
+    it, since ``${a.b.c}`` reads into what ``a.b`` resolves to. A reference to an ancestor
+    of the expression that makes it therefore reads that expression itself, the cycle it is.
+    The reference is first named as the scan names it (:func:`_scan_path`), so ``xs[-1]``
+    reaches the element the scan calls ``xs.1``.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/resolution.md#a-reference-reads-everything-its-path-reaches
+    """
+    below: dict[str, list[str]] = {}
+    for path in expr_fields:
+        segments = path.split(".")
+        for depth in range(1, len(segments) + 1):
+            below.setdefault(".".join(segments[:depth]), []).append(path)
+    deps: dict[str, set[str]] = {}
+    for path, raw_str in expr_fields.items():
+        read: set[str] = set()
+        for ref in _extract_references(raw_str, path):
+            segments = _scan_path(data, ref)
+            read.update(below.get(".".join(segments), ()))
+            read.update(a for depth in range(1, len(segments)) if (a := ".".join(segments[:depth])) in expr_fields)
+        deps[path] = read
+    return deps
+
+
+def _scan_path(data: dict[str, Any], parts: Sequence[str]) -> list[str]:
+    """Return the path *parts* reads in *data*, named as :func:`_scan_expressions` names it.
+
+    Each segment is taken by :func:`_step`, the walk evaluation reads the value with, so the
+    name is that of the node evaluation will reach: ``xs[-1]`` is ``xs.1`` in a two-item list.
+    From the first segment *data* does not answer on — a missing key, or one inside an
+    expression's value, unknown until it resolves — the path is kept as written.
+    """
+    named: list[str] = []
+    current: Any = data
+    for depth, part in enumerate(parts):
+        try:
+            segment, current = _step(current, part, parts)
+        except MissingReferenceError:
+            return [*named, *parts[depth:]]
+        named.append(segment)
+    return named
+
+
+def _extract_references(expr_str: str, node_path: str = "") -> set[tuple[str, ...]]:
+    """Extract the field paths referenced in expression string, one segment per key or index.
 
     *node_path* is where the expression sits, which is what an anchor stand-in is
-    resolved against, so the paths returned are absolute either way.
+    resolved against, so the paths returned are absolute either way. A path is kept as
+    spelled: naming it as the data does is :func:`_scan_path`'s business.
 
     Returns:
-        Set of dotted paths (e.g. {"db.host", "db.port"}).
+        Set of paths (e.g. ``{("db", "host"), ("db", "port")}``).
     """
-    refs: set[str] = set()
+    refs: set[tuple[str, ...]] = set()
     for span in _find_expressions(expr_str):
         if span.body is None:
             continue  # escaped $${...}
@@ -369,7 +412,7 @@ def _method_name(node: ast.Call) -> str | None:
     return node.func.attr if isinstance(node.func, ast.Attribute) else None
 
 
-def _collect_names_from_call(node: ast.Call, refs: set[str]) -> None:
+def _collect_names_from_call(node: ast.Call, refs: set[tuple[str, ...]]) -> None:
     """Collect field references from a Call node: its arguments, and its callee unless that names a function.
 
     A method call depends on its receiver, never on the path its callee spells.
@@ -384,15 +427,15 @@ def _collect_names_from_call(node: ast.Call, refs: set[str]) -> None:
         _collect_names(kw.value, refs)
 
 
-def _collect_names(node: ast.AST, refs: set[str]) -> None:
+def _collect_names(node: ast.AST, refs: set[tuple[str, ...]]) -> None:
     """Collect Name nodes and the config paths of Attribute/Subscript chains as field references."""
     if isinstance(node, ast.Name):
-        refs.add(node.id)
+        refs.add((node.id,))
         return
     if isinstance(node, ast.Attribute | ast.Subscript):
         parts = _attribute_chain(node)
         if parts is not None:
-            refs.add(".".join(parts))
+            refs.add(tuple(parts))
         else:
             for child in ast.iter_child_nodes(node):
                 _collect_names(child, refs)
@@ -749,31 +792,44 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any], node_path: str = "
     return "".join(result_parts)
 
 
-def _get_nested(data: dict[str, Any], parts: list[str]) -> Any:
+def _get_nested(data: dict[str, Any], parts: Sequence[str]) -> Any:
     """Retrieve the value at the path *parts* from a nested dict/list, one segment per key or index.
 
     Segments are taken as given, never re-split, so a key holding a dot (``['example.com']``)
     is one segment.
     """
-    path = ".".join(parts)
     current: Any = data
     for part in parts:
-        if isinstance(current, dict):
-            if part not in current:
-                raise MissingReferenceError.field_not_found(path)
-            current = current[part]
-        elif isinstance(current, list | tuple):
-            try:
-                idx = int(part)
-            except ValueError:
-                raise MissingReferenceError.field_not_found(path, f"'{part}' is not a valid index") from None
-            try:
-                current = current[idx]
-            except IndexError:
-                raise MissingReferenceError.field_not_found(path, f"index {idx} out of range") from None
-        else:
-            raise MissingReferenceError.field_not_found(path, f"cannot traverse into {type(current).__name__}")
+        _, current = _step(current, part, parts)
     return current
+
+
+def _step(node: Any, part: str, path: Sequence[str]) -> tuple[str, Any]:
+    """Take the segment *part* of *path* down from *node*: return how the scan names it, and what it reaches.
+
+    The one walk over the data: evaluation reads a value with it (:func:`_get_nested`) and
+    the dependency graph names a reference with it (:func:`_scan_path`), so a reference can
+    never depend on one node and read another. A dict key names itself; a list index is
+    named by its position, as :func:`_collect_expressions` names an element, so ``-1`` of a
+    two-item list is ``1``.
+
+    Raises:
+        MissingReferenceError: If *part* reaches nothing from *node*; the message names *path*.
+    """
+    if isinstance(node, dict):
+        if part not in node:
+            raise MissingReferenceError.field_not_found(".".join(path))
+        return part, node[part]
+    if isinstance(node, list | tuple):
+        try:
+            idx = int(part)
+        except ValueError:
+            raise MissingReferenceError.field_not_found(".".join(path), f"'{part}' is not a valid index") from None
+        if not -len(node) <= idx < len(node):
+            raise MissingReferenceError.field_not_found(".".join(path), f"index {idx} out of range")
+        position = idx + len(node) if idx < 0 else idx
+        return str(position), node[position]
+    raise MissingReferenceError.field_not_found(".".join(path), f"cannot traverse into {type(node).__name__}")
 
 
 def _set_nested_by_path(data: dict[str, Any], path: str, value: Any) -> None:

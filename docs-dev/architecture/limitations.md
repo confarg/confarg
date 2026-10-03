@@ -30,6 +30,10 @@ the boundary moves here.
   ([expressions](expressions/values-and-references.md#referencing-a-whole-subtree)).
 - In a `resolve()`d dict those paths do alias one sub-dict, so mutating it in place reaches
   every site that referenced it. Inspect and dump the resolved dict; do not edit it.
+- An expression may not read a node that holds it, even through a function that would not need
+  its own value: inside `svc`, `${len(svc)}` and `${svc[k]}` are cycles. The dependency graph is
+  built from syntax and cannot see what a function reads or which key `k` names
+  ([expressions](expressions/resolution.md#a-reference-reads-everything-its-path-reaches)).
 
 ## Collections
 
