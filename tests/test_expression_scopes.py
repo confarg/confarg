@@ -28,7 +28,7 @@ import pytest
 
 import confarg
 from confarg._files import INCLUDE_KEY
-from confarg.exceptions import MissingReferenceError
+from confarg.exceptions import MissingReferenceError, UnsafeExpressionError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -122,6 +122,27 @@ class TestFragmentReadsItself:
         write(tmp_path, "limits.yaml", "max: 10\nlimit: ${max}\n")
         cfg = write(tmp_path, "app.yaml", f"limits:\n  {INCLUDE_KEY}: ./limits.yaml\n")
         assert confarg.load(Bounded, argv=["--config", str(cfg)], env={}).limits.limit == 10
+
+
+class TestAMalformedExpressionInAMountedFile:
+    """A body that does not parse is carried through ``merge()`` from every route, as at the root (BUG-130)."""
+
+    @pytest.mark.parametrize("route", ["root", "include", "config-flag", "env-pointer"])
+    def test_resolution_refuses_it_as_written(self, tmp_path: Path, route: str) -> None:
+        """Mounting leaves the body unprefixed, and ``resolve()`` quotes it as the file wrote it."""
+        frag = write(tmp_path, "frag.yaml", "p: 1\nq: ${p +}\nr: ${p} and ${p +}\n")
+        main = write(tmp_path, "main.yaml", f"db:\n  {INCLUDE_KEY}: ./frag.yaml\n")
+        argv, env = {
+            "root": (["--config", str(frag)], {}),
+            "include": (["--config", str(main)], {}),
+            "config-flag": (["--config.db", str(frag)], {}),
+            "env-pointer": ([], {"MYAPP_CONFIG__DB": str(frag)}),
+        }[route]
+        merged = confarg.merge(dict[str, Any], argv=argv, env=env, env_prefix="MYAPP_")
+        node, prefix = (merged, "") if route == "root" else (merged["db"], "db.")
+        assert node == {"p": 1, "q": "${p +}", "r": "${" + prefix + "p} and ${p +}"}
+        with pytest.raises(UnsafeExpressionError, match=r"^Invalid expression syntax: 'p \+'$"):
+            confarg.resolve(merged)
 
 
 # ---------------------------------------------------------------------------
