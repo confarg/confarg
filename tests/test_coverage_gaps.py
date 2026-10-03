@@ -60,7 +60,7 @@ from confarg._merge import (
     _set_nested,
     _to_append_list,
 )
-from confarg._parse_cli import _handle_append_token, _ParseCtx, _resolve_field_type, _subclass_field_type
+from confarg._parse_cli import _handle_append_token, _ParseCtx, _resolve_field_type
 from confarg._types import (
     _all_have_defaults,
     _allows_none,
@@ -68,6 +68,7 @@ from confarg._types import (
     _is_collection,
     _is_plain_class,
     _StrToken,
+    _subclass_field_type,
     _unwrap_optional,
     _var_params,
 )
