@@ -17,8 +17,8 @@ refuses it before cyclopts does. Both orders assert (`--pair --pair 3 4` and
 
 The fix direction is the pre-parse refusal pattern of `--config` (BUG-51, closed): scan argv
 for a bare occurrence of a whole-value flag and raise `ConfargError.missing_value` before
-cyclopts parses. Argparse's store makes the same argv silently accepted instead — that
-divergence is [BUG-73](BUG-73-earlier-short-occurrence-of-a-fixed-arity-flag-vanishes-on-greedy-adapters.md).
+cyclopts parses. Argparse makes the same argv reach the same `Missing value` since BUG-73
+closed; only cyclopts still crashes.
 
 ```python
 from dataclasses import dataclass
