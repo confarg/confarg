@@ -84,8 +84,7 @@ reads any other.
 
 - Marker detection (`_anchor_markers`) is **lexical, not a regex**: a tokenizer distinguishes the
   dot of `1.5` (one NUMBER) or `','.join(x)` (a STRING first) from a marker, while a keyword
-  before a dot (`a if .b else c`) still starts an operand. `_unname_anchor` is lexical for the
-  same reason (never touch string literals). Two details it must keep honouring: Python tokenizes
+  before a dot (`a if .b else c`) still starts an operand. Two details it must keep honouring: Python tokenizes
   `...` as a single ellipsis token while `..` arrives as two dots, and a `::` is a root marker
   only when the innermost enclosing bracket is not `[` — inside a subscript it is a slice step,
   which is what keeps `items[::2]` available to [FEAT-12](../../todo/features/FEAT-12-scoped-expression-expansion.md).
@@ -99,6 +98,24 @@ reads any other.
   every value up front and handed the named text on; un-naming it again for each message would
   have been a second, lossy inverse of the same rewrite. Jinja2 makes the same split: its lexer
   rewrites the template for the parser, while a `TemplateSyntaxError` reports the source as written.
+- **A stand-in is told by its type, never by its spelling** (BUG-131). Once parsed, each stand-in's
+  id is a `_StandIn`, a `str` spelled as the marker it stands for (`::`, `..`); `_anchor_dot_count`
+  answers for it alone. A parsed body yields plain strings only, so `${__ROOT__.x}` reads the key
+  `__ROOT__`, as `${__foo__.x}` reads `__foo__`. Telling them apart by text would not do, for any
+  text: `_AnchorResolver` makes the first segment after a root stand-in the base name, and a
+  segment is any key, so `${::['__ROOT__']}` or `${::['..']}` would be read as the root whole.
+  Two steps keep the type in place. Before parsing, `_name_anchor` spells each marker as a name the
+  body writes nowhere, as Python reads it (NFKC): `__ROOT__`, or `___ROOT__` when the body writes
+  `__ROOT__`. After it, `_parse_expression` swaps those names for `_StandIn` ids. On the way back
+  out, `_unparse` prints a stand-in as its own text, and folds a dot read off one into it (`..host`,
+  not `...host`). This works on the tree, so a string literal cannot be touched.
+  Rejected: **reserve the stand-in spellings** and refuse them in a body, the way `__include__`
+  is reserved in a file. A key so named would still be unreachable through `${::['__ROOT__']}`,
+  and the user would get a reserved name that no documentation can justify. Jinja2 takes the same
+  route for the same reason: its compiler turns a template variable `x` into the Python name
+  `l_0_x`, so no template can spell a name the generated code relies on. The type marks where a
+  string came from, as `_StrToken` marks text that came from a channel
+  ([types](../types/token-model.md#token-model)).
 - **The node anchor is resolved on the tree, never on source** (`_AnchorResolver`). An absolute
   path may hold a list index, a key that is no identifier or a key holding a dot — `dbs.0.host`,
   `svc.web-1.host`, `hosts['example.com'].port` — each one segment of the node's position
@@ -116,7 +133,7 @@ reads any other.
   the same way — `.foo` is shorthand for `.["foo"]`, and `.[0]` indexes the input — as does
   JSONPath with `$['web-1']`. Before BUG-126 the stand-in always took the dot, and
   `__UP1__.[0]` did not parse.
-- **`_AnchorResolver` rewrites only the stand-in** (`__UP1__` → `svc`), never the chain after it.
+- **`_AnchorResolver` rewrites only the stand-in** (`.` → `svc`), never the chain after it.
   Each segment the expression spells keeps its own node, so a subscript stays a subscript: when
   the path read misses, its fallback indexes by the key it spells, the integer `0` of
   `${.m[0]}` or `${.[0]}` on a YAML `{0: x}`, where a rebuilt attribute could only index by the
@@ -142,8 +159,7 @@ reads any other.
 - `_Prefixer` rewrites only `ast.Name` bases. That is correct only because lambdas and
   comprehensions are not in `_ALLOWED_NODES`, so every non-function `Name` is a reference
   base. **Adding a binding construct to the whitelist breaks prefixing.**
-- `_Prefixer` and `_AnchorResolver` both exempt the stand-in names (`__ROOT__`, `__UP<n>__`),
-  which is the same static exemption [FEAT-21](../../todo/features/FEAT-21-app-supplied-expression-functions.md)
+- `_Prefixer` and `_AnchorResolver` both exempt the stand-ins, which is the same static exemption [FEAT-21](../../todo/features/FEAT-21-app-supplied-expression-functions.md)
   and [FEAT-22](../../todo/features/FEAT-22-environment-namespace-in-expressions.md) need for `fn`
   and `env`.
 

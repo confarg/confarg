@@ -22,11 +22,11 @@ from confarg.dictexpr._expressions import (
     _anchor_markers,
     _anchor_prefix,
     _extract_references,
-    _name_anchor,
+    _parse_expression,
     _prefix_content,
     _scan_expressions,
     _topological_sort,
-    _unname_anchor,
+    _unparse,
     _validate_ast,
     contains_expression,
     prefix_references,
@@ -1582,7 +1582,7 @@ class TestAnchorMarkerLexing:
 
 
 class TestAnchorNameRoundTrip:
-    """Markers become stand-in names to parse, and must come back out unchanged.
+    """Markers become stand-ins to parse, and must unparse as written.
 
     ``prefix_references`` unparses a rewritten tree, so a dumped configuration that
     still carries ``${.host}`` only survives being re-included if this round-trips.
@@ -1593,8 +1593,8 @@ class TestAnchorNameRoundTrip:
         [".host", "..host", "...host", "::name", "min(.a, ::b) + n", "x.upper()"],
     )
     def test_round_trip(self, expr: str) -> None:
-        """Naming the markers and unnaming them is the identity."""
-        assert _unname_anchor(_name_anchor(expr)) == expr
+        """Parsing the markers and unparsing them is the identity."""
+        assert _unparse(_parse_expression(expr)) == expr
 
     def test_mounting_leaves_anchored_references_alone(self) -> None:
         """Only a bare name is file-anchored, so only a bare name takes the prefix."""
@@ -1688,8 +1688,8 @@ class TestAnchorFollowedByASubscript:
 
     @pytest.mark.parametrize("expr", [".[0]", "..['web-1'].host", "::['web-1']", ".", "::", "min(.[0], ::[1])"])
     def test_round_trip(self, expr: str) -> None:
-        """Naming the markers and unnaming them is the identity."""
-        assert _unname_anchor(_name_anchor(expr)) == expr
+        """Parsing the markers and unparsing them is the identity."""
+        assert _unparse(_parse_expression(expr)) == expr
 
     @pytest.mark.parametrize("expr", [".[0]", "::['web-1']"])
     def test_mounting_leaves_it_alone(self, expr: str) -> None:
@@ -1726,3 +1726,85 @@ class TestAnchoredExpressionQuotedAsWritten:
         """``Error in expression`` quotes the expression with its anchor markers."""
         with pytest.raises(ExpressionEvalError, match=f"^Error in expression {re.escape(repr(quoted))}: "):
             resolve_expressions(data)
+
+
+class TestAWrittenNameIsNeverAStandIn:
+    """A name the body writes reads the key it spells, whatever its spelling (BUG-131).
+
+    Anchor markers parse as stand-in names, so a stand-in is told apart by what made it,
+    never by a spelling a body could also write.
+    """
+
+    @pytest.mark.parametrize(
+        ("data", "expected"),
+        [
+            pytest.param(
+                {"__ROOT__": {"x": 1}, "a": {"p": "${__ROOT__.x}"}, "x": 2},
+                {"__ROOT__": {"x": 1}, "a": {"p": 1}, "x": 2},
+                id="root-spelling",
+            ),
+            pytest.param(
+                {"__UP1__": {"x": 1}, "a": {"x": 2, "p": "${__UP1__.x}"}},
+                {"__UP1__": {"x": 1}, "a": {"x": 2, "p": 1}},
+                id="up-spelling",
+            ),
+            pytest.param({"__ROOT__": 1, "p": "${__ROOT__}"}, {"__ROOT__": 1, "p": 1}, id="bare"),
+            pytest.param(
+                {"__ROOT__": {"x": 1}, "x": 2, "p": "${__ROOT__.x + ::x}"},
+                {"__ROOT__": {"x": 1}, "x": 2, "p": 3},
+                id="beside-a-root-marker",
+            ),
+            pytest.param(
+                {"__UP1__": {"x": 1}, "a": {"x": 2, "p": "${__UP1__.x + .x}"}},
+                {"__UP1__": {"x": 1}, "a": {"x": 2, "p": 3}},
+                id="beside-a-dot-marker",
+            ),
+            pytest.param(
+                {"__ROOT__": {"x": 1}, "x": 2, "p": "${__\uff32\uff2f\uff2f\uff34__.x + ::x}"},
+                {"__ROOT__": {"x": 1}, "x": 2, "p": 3},
+                id="nfkc-spelling-beside-a-marker",
+            ),
+        ],
+    )
+    def test_a_written_name_reads_its_key(self, data: dict, expected: dict) -> None:
+        """``${__ROOT__.x}`` reads the key ``__ROOT__``, not the configuration root."""
+        assert resolve_expressions(data) == expected
+
+    @pytest.mark.parametrize(
+        ("data", "expected"),
+        [
+            pytest.param({"__ROOT__": 1, "p": "${::['__ROOT__']}"}, {"__ROOT__": 1, "p": 1}, id="root-marker"),
+            pytest.param(
+                {"__UP1__": 1, "a": {"p": "${..['__UP1__']}"}},
+                {"__UP1__": 1, "a": {"p": 1}},
+                id="dots-up-to-the-root",
+            ),
+            pytest.param({"::": 1, "p": "${::['::']}"}, {"::": 1, "p": 1}, id="key-spelled-as-a-root-marker"),
+            pytest.param({"..": 1, "p": "${::['..']}"}, {"..": 1, "p": 1}, id="key-spelled-as-a-dot-marker"),
+        ],
+    )
+    def test_a_root_key_spelled_off_a_marker_reads_the_key(self, data: dict, expected: dict) -> None:
+        """The first segment after a marker for the root becomes the base name, and stays a key."""
+        assert resolve_expressions(data) == expected
+
+    def test_a_written_name_is_a_reference(self) -> None:
+        """The graph depends on the key the name spells."""
+        assert _extract_references("${__ROOT__.x}") == {("__ROOT__", "x")}
+        assert _extract_references("${__UP1__}", ("a", "p")) == {("__UP1__",)}
+
+    @pytest.mark.parametrize("expr", ["__ROOT__.x + ::x", "__UP1__ + .[0]", "___ROOT__ + __ROOT__ + ::x"])
+    def test_round_trip(self, expr: str) -> None:
+        """A written name beside a marker unparses as written, and so does the marker."""
+        assert _unparse(_parse_expression(expr)) == expr
+
+    @pytest.mark.parametrize(
+        ("body", "prefixed"),
+        [
+            pytest.param("__ROOT__.x", "db['__ROOT__'].x", id="root-spelling"),
+            pytest.param("__UP1__.x", "db['__UP1__'].x", id="up-spelling"),
+            pytest.param("__UP1__.x + .x", "db['__UP1__'].x + .x", id="beside-a-marker"),
+        ],
+    )
+    def test_mounting_prefixes_a_written_name(self, body: str, prefixed: str) -> None:
+        """A written name is file-anchored like any other, so it takes the prefix."""
+        assert _prefix_content(body, ("db",)) == prefixed
