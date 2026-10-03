@@ -25,6 +25,7 @@ from confarg.dictexpr._expressions import (
     _unname_anchor,
     _validate_ast,
     contains_expression,
+    prefix_references,
     resolve_expressions,
 )
 from confarg.exceptions import (
@@ -1075,6 +1076,100 @@ class TestExpressionBugFixes:
         assert result.endpoints[1] == "other"
 
 
+class TestExpressionDelimiting:
+    """Where a ``${...}`` ends: the first ``}`` outside string literals and nested braces."""
+
+    def test_braces_inside_a_string_literal_stay_in_the_expression(self) -> None:
+        """A ``str.format``-style template concatenated in an expression keeps its braces."""
+        data = {"root_dir": "/data/", "path": '${root_dir + "{city}/{city}_{sequence_id}_{frame_idx}.png"}'}
+        resolved = resolve_expressions(data)
+        assert resolved["path"] == "/data/{city}/{city}_{sequence_id}_{frame_idx}.png"
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            pytest.param("${a + '}'}", "x}", id="single-quoted"),
+            pytest.param('${a + "}"}', "x}", id="double-quoted"),
+            pytest.param("${a + '''}'''}", "x}", id="triple-quoted"),
+            pytest.param("${a + '\\'}'}", "x'}", id="escaped-quote"),
+            pytest.param("${a + r'\\'}'}", "x\\'}", id="escaped-quote-in-raw-string"),
+            pytest.param('${a + "\'}"}', "x'}", id="other-quote-inside"),
+            pytest.param("${'{}'.join(a)}", "x", id="string-method-receiver"),
+        ],
+    )
+    def test_closing_brace_in_a_literal_does_not_end_the_expression(self, expr: str, expected: str) -> None:
+        """Quoting rules match Python's: a backslash escapes the quote, even in a raw string."""
+        assert resolve_expressions({"a": "x", "v": expr})["v"] == expected
+
+    def test_interpolation_around_a_literal_brace(self) -> None:
+        """Text after the expression is literal text, whatever quote it holds."""
+        resolved = resolve_expressions({"a": "x", "v": "<${a + '}'}>'s ${a}"})
+        assert resolved["v"] == "<x}>'s x"
+
+    def test_pure_expression_keeps_its_type(self) -> None:
+        """A whole-string expression holding a brace literal is still a typed result."""
+        assert resolve_expressions({"n": 2, "v": "${len('{}') * n}"})["v"] == 4
+
+    def test_escape_is_delimited_like_an_expression(self) -> None:
+        """``$${...}`` is unescaped to the literal ``${...}`` it would otherwise evaluate."""
+        resolved = resolve_expressions({"a": "x", "v": "$${a + '}'} ${a}"})
+        assert resolved["v"] == "${a + '}'} x"
+
+    def test_references_ignore_braced_literals(self) -> None:
+        """Only the names outside the literal become dependencies."""
+        assert _extract_references("${a + '{b}'}") == {"a"}
+
+    def test_predicate_spans_the_whole_expression(self) -> None:
+        """``contains_expression`` and the resolver scan agree on a braced literal."""
+        assert contains_expression("${a + '}'}") is True
+        assert _scan_expressions({"v": "${a + '}'}"}) == {"v": "${a + '}'}"}
+
+    def test_nested_braces_belong_to_the_expression(self) -> None:
+        """A brace pair inside the body is balanced, so the whole set literal is rejected."""
+        with pytest.raises(UnsafeExpressionError, match="Set"):
+            resolve_expressions({"v": "${len({1})}"})
+
+    @pytest.mark.parametrize("value", ["${a", "${'a}", '${a + "}'])
+    def test_unclosed_expression_is_literal_text(self, value: str) -> None:
+        """A ``${`` with no closing brace outside a literal is no expression, as before."""
+        assert contains_expression(value) is False
+        assert resolve_expressions({"a": "x", "v": value})["v"] == value
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            pytest.param("${ a }", 2, id="pure"),
+            pytest.param("${  a * 2\t}", 4, id="tab"),
+            pytest.param("<${ a }>", "<2>", id="interpolated"),
+            pytest.param("${ ::a }", 2, id="root-anchored"),
+        ],
+    )
+    def test_whitespace_around_the_body_is_ignored(self, expr: str, expected: object) -> None:
+        """Padding inside the braces is layout, as in an f-string field or ``eval()``."""
+        assert resolve_expressions({"a": 2, "v": expr})["v"] == expected
+
+    def test_prefixing_a_padded_body(self) -> None:
+        """Mounting a file whose expression is padded rewrites it rather than failing."""
+        assert prefix_references({"v": "${ a }"}, "db") == {"v": "${db.a}"}
+
+    def test_prefixing_keeps_the_literal(self) -> None:
+        """Mounting a file rewrites the references, not the braces of the literal."""
+        assert _prefix_content("root + '{x}'", "db") == "db.root + '{x}'"
+        assert prefix_references({"v": "${root + '{x}'}"}, "db") == {"v": "${db.root + '{x}'}"}
+
+    def test_end_to_end_from_the_command_line(self) -> None:
+        """``load()`` resolves the expression however the argument spells its braces."""
+
+        @dataclass
+        class Cfg:
+            root_dir: str = ""
+            pattern: str = ""
+
+        argv = ["--root_dir", "/data/", "--pattern", '${root_dir + "{city}_{frame_idx}.png"}']
+        result = confarg.load(Cfg, argv=argv, env={})
+        assert result.pattern == "/data/{city}_{frame_idx}.png"
+
+
 class TestReservedNamesInExpressions:
     """Names the expression engine must resolve from the config, not from Python."""
 
@@ -1086,6 +1181,38 @@ class TestReservedNamesInExpressions:
         """${locals.k} reads the reserved namespace rather than Python's locals()."""
         result = resolve_expressions({"locals": {"k": 3}, "n": "${locals.k * 2}"})
         assert result["n"] == 6
+
+    @pytest.mark.parametrize(
+        ("expression", "expected"),
+        [
+            ("${max}", 3),
+            ("n=${max}", "n=3"),
+            ("${max + 1}", 4),
+            ("${max(max, 5)}", 5),
+        ],
+    )
+    def test_a_function_name_off_a_call_is_a_key(self, expression: str, expected: object) -> None:
+        """A whitelisted name is a function only as a callee; anywhere else it is a config key (BUG-120)."""
+        assert resolve_expressions({"max": 3, "limit": expression})["limit"] == expected
+
+    def test_a_function_name_as_a_receiver_is_a_key(self) -> None:
+        """``str.upper()`` calls the method on the key ``str``, not on the builtin type."""
+        assert resolve_expressions({"str": "abc", "u": "${str.upper()}"})["u"] == "ABC"
+
+    def test_a_path_rooted_at_a_function_name_is_a_reference(self) -> None:
+        """``len.a`` is a dependency, so the expression it names resolves first."""
+        assert _extract_references("${len.a}") == {"len.a"}
+        assert resolve_expressions({"limit": "${len.a}", "len": {"a": "${b}"}, "b": 4})["limit"] == 4
+
+    def test_a_bare_function_name_with_no_key_is_missing(self) -> None:
+        """With no such key, a bare function name is a missing field, not the function object."""
+        with pytest.raises(MissingReferenceError, match=r"Field 'max' not found.*max\(\.\.\.\)"):
+            resolve_expressions({"limit": "${max}"})
+
+    def test_a_mounted_function_name_off_a_call_follows_the_file(self) -> None:
+        """Prefixing rewrites a bare function name as any key, and leaves a callee alone."""
+        assert prefix_references({"lim": "${max}"}, "sub") == {"lim": "${sub.max}"}
+        assert prefix_references({"lim": "${max(max, a)}"}, "sub") == {"lim": "${max(sub.max, sub.a)}"}
 
 
 # ---------------------------------------------------------------------------

@@ -4,8 +4,8 @@
 **Filed:** 2026-09-12
 **Effort:** L *(list literals alone; XL with dict and set literals)* · **Risk:** high · **Impact:** behavior
 
-The safety model forbids list/dict/set literals, slices, comprehensions, lambdas, f-strings
-and `}` inside an expression
+The safety model forbids list/dict/set literals, slices, comprehensions, lambdas and
+f-strings
 ([expressions/safety-model.md#safety-model](../../architecture/expressions/safety-model.md#safety-model)). That is a
 sound default, but it leaves expressions unable to say ordinary things —
 `${[host, backup_host]}`, `${list(hosts) + [fallback]}`, `${sorted(ports)}`. A conservative
@@ -20,11 +20,11 @@ non-function `Name` is a reference base; **adding a binding construct — a comp
 lambda — breaks reference prefixing** and requires reworking `_Prefixer` to carry a scope
 ([expressions/reference-anchoring.md#reference-anchoring](../../architecture/expressions/reference-anchoring.md#reference-anchoring),
 [invariants.md#fragile-couplings](../../architecture/invariants.md#fragile-couplings)). List
-literals bind nothing, so they are the safer first step and can land on their own. Two further
-constraints: dict and set literals need `}` inside the expression, which the `${...}` regex
-forbids, so they additionally require brace-balanced or lexical delimiter scanning — another
-reason lists come first; and `sorted(key=...)` is off the table for as long as lambdas are,
-so the added builtins take no callable arguments.
+literals bind nothing, so they are the safer first step and can land on their own. Dict and
+set literals need no delimiter work: an expression already ends at the first `}` that closes no
+brace of its own ([expressions/values-and-references.md#delimiting-an-expression](../../architecture/expressions/values-and-references.md#delimiting-an-expression)).
+A further constraint: `sorted(key=...)` is off the table for as long as lambdas are, so the
+added builtins take no callable arguments.
 
 **Slices are already spoken for in part.** `::` is the configuration-root marker, and the rule
 that keeps both readings available is that it is a marker only when the innermost enclosing
