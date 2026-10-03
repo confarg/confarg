@@ -14,6 +14,11 @@ fields by `apply_root_json`. Without eager coercion, CLI numbers stayed strings 
 When no union tag is given, the collector collects the fields of **all** struct variants so
 structural inference in `construct` can pick one.
 
+A flag several variants own with different types is collected once, as vanilla collects it —
+the common type when every owner agrees, the raw token when they disagree, never one variant's
+coercion (BUG-84)
+([unions](union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags)).
+
 ## Expression-tolerant choice gates
 
 Frameworks validate `Literal`/`Enum` choices at parse time, which would reject `${name}` on

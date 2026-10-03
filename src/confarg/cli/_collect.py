@@ -545,11 +545,12 @@ def _collect_named_variant(  # noqa: PLR0913  # the type-walk context, threaded 
 
     *siblings* names the other variants the path holds — a union field's struct
     variants, or a base class's subclasses — and each is descended into after the named
-    one, in its own guard: vanilla keeps every argv flag, coerced by whichever variant
-    owns the name, and leaves ``build()`` to reject the ones the tagged variant does not
-    know, so descending only into the named variant dropped the rest silently (BUG-69).
-    A tag whose import fails names no struct, so the siblings are all that is walked,
-    and one variant's failure costs no other variant its flags.
+    one, in its own guard: vanilla keeps every argv flag, coerced by the common type
+    of the variants that own the name, and leaves ``build()`` to reject the ones the
+    tagged variant does not know, so descending only into the named variant dropped
+    the rest silently (BUG-69). A tag whose import fails names no struct, so the
+    siblings are all that is walked, and one variant's failure costs no other variant
+    its flags.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
@@ -559,6 +560,61 @@ def _collect_named_variant(  # noqa: PLR0913  # the type-walk context, threaded 
         _set_nested(result, tag_path, _str_token(class_tag))
     cls = _tag_named_struct(class_tag)
     _collect_variant_fields(flat, (cls, *siblings), flag, union_tag, result, tags, argv, base=base)
+
+
+def _disagreeing_owner_flags(
+    flat: dict[str, Any],
+    variants: Sequence[Any],
+    flag: str,
+    union_tag: str,
+    *,
+    base: Any = None,
+) -> frozenset[str]:
+    """Return the flag paths under *flag* whose owners among *variants* disagree.
+
+    Vanilla coerces a flag several variants own once, by the common type when
+    every owner resolves the path alike and by ``str`` when they do not
+    (:func:`~confarg._parse_cli._resolve_union_field_type` /
+    :func:`~confarg._parse_cli._subclass_field_type`); a per-variant walk
+    cannot reproduce that, each coercing by its own field type with the last
+    write standing (BUG-84).  Every key here is instead collected once, as
+    vanilla's ``str`` answer — the raw token, deferring the choice to
+    ``build()`` — by the caller, and hidden from the walks that follow.
+
+    The resolution is vanilla's own per-variant composition
+    (:func:`~confarg._parse_cli._resolve_field_type` over each variant), so a
+    path several levels under *flag* answers here exactly as vanilla answers it
+    on the CLI.  A first segment *base* declares names a field the base's own
+    walk collects by the base's type — vanilla's answer for it — so such keys
+    are never conflicts here.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
+    """
+    owners = [v for v in variants if v is not None and v is not base]
+    if len(owners) <= 1:
+        return frozenset()
+    base_fields: set[str] = set()
+    if base is not None and (setup := _resolve_struct(base)) is not None:
+        base_fields = set(setup[1])
+    prefix = f"{flag}." if flag else ""
+    conflicts: set[str] = set()
+    for key, value in flat.items():
+        if value is None or not key.startswith(prefix):
+            continue
+        rest = key[len(prefix) :].split(".")
+        if rest[0] in base_fields:
+            continue
+        found: list[Any] = []
+        for variant in dict.fromkeys(owners):
+            resolved: Any = None
+            with contextlib.suppress(SymbolImportError, TypeError, ValueError, NameError, AttributeError):
+                resolved = _resolve_field_type(variant, rest, union_tag)
+            if resolved is not None:
+                found.append(resolved)
+        if len(found) > 1 and any(t != found[0] for t in found[1:]):
+            conflicts.add(key)
+    return frozenset(conflicts)
 
 
 def _collect_variant_fields(  # noqa: PLR0913  # the type-walk context, threaded whole
@@ -574,16 +630,29 @@ def _collect_variant_fields(  # noqa: PLR0913  # the type-walk context, threaded
 ) -> None:
     """Descend into every variant the path holds, each in its own guard.
 
-    Vanilla keeps every argv flag at the path, coerced by whichever variant owns
-    the name, and leaves ``build()`` to reject the ones it does not know, so a
-    walk that stops at the first variant drops the rest silently.  *base* names a
-    class the walk is already inside; a variant naming it adds nothing, so the
-    descent stops there.  A variant whose import fails costs no other variant its
-    flags.
+    Vanilla keeps every argv flag at the path and coerces it once, by the
+    common type when every variant that owns the name resolves it alike and by
+    ``str`` when they do not, leaving ``build()`` to reject the ones the chosen
+    variant does not know, so a walk that stops at the first variant drops the
+    rest silently.  *base* names a class the walk is already inside; a variant
+    naming it adds nothing, so the descent stops there.  A variant whose import
+    fails costs no other variant its flags.
+
+    A flag the variants own with disagreeing types is collected before the
+    walks, once, as vanilla collects it — the raw token its ``str`` answer
+    names (:func:`_disagreeing_owner_flags`) — and hidden from them, so no
+    walk's own coercion can overwrite it; the flag's sub-flags keep their
+    owners' walks, each answering the same question at its own path (BUG-84).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
     """
+    conflicts = _disagreeing_owner_flags(flat, variants, flag, union_tag, base=base)
+    if conflicts:
+        for key in conflicts:
+            v = _tokens_past_whole_field_delete(argv, key, flat[key])
+            _set_nested(result, key.split("."), _coerce_leaf_value(str, v))
+        flat = {k: v for k, v in flat.items() if k not in conflicts}
     walked: set[Any] = set()
     for variant in variants:
         if variant is None or variant is base or variant in walked:
@@ -618,8 +687,7 @@ def _collect_ns_union_field(  # noqa: PLR0913  # the type-walk context, threaded
     if tag_key in flat:
         _collect_named_variant(flat, flag, flat[tag_key], union_tag, result, tags, argv, siblings=concrete)
     else:
-        for variant in concrete:
-            _collect_ns_fields(flat, variant, flag, union_tag, result, tags, argv)
+        _collect_variant_fields(flat, concrete, flag, union_tag, result, tags, argv)
 
 
 def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded whole
@@ -640,9 +708,10 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
     own priority, and re-emitting it at CLI priority would make the merged dict differ
     from vanilla's.  Without a tag anywhere, every subclass is descended into all the
     same (:func:`_collect_variant_fields` over ``_dataclass_subclasses``), the answer the
-    union-field branch gives without a tag: vanilla coerces a flag by whichever
-    subclass owns the name and leaves ``build()`` to raise the missing-discriminator
-    complaint, so an early return dropped the flags outright (BUG-83).
+    union-field branch gives without a tag: vanilla coerces a flag by the common type of
+    the subclasses that own the name and leaves ``build()`` to raise the
+    missing-discriminator complaint, so an early return dropped the flags outright
+    (BUG-83).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
@@ -651,7 +720,7 @@ def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded
     from_flat = tag_key in flat
     class_tag = flat[tag_key] if from_flat else tags.get(prefix)
     if class_tag is None:
-        _collect_variant_fields(flat, _dataclass_subclasses(tp), prefix, union_tag, result, tags, argv)
+        _collect_variant_fields(flat, _dataclass_subclasses(tp), prefix, union_tag, result, tags, argv, base=tp)
         return
     _collect_named_variant(
         flat,
@@ -927,8 +996,7 @@ def _collect_ns_union_root(  # noqa: PLR0913  # the type-walk context, threaded 
     if tag_key in flat:
         tag_path = ([*prefix.split(".")] if prefix else []) + [union_tag]
         _set_nested(result, tag_path, _str_token(flat[tag_key]))
-    for variant in variants:
-        _collect_ns_fields(flat, variant, prefix, union_tag, result, tags, argv)
+    _collect_variant_fields(flat, variants, prefix, union_tag, result, tags, argv)
 
 
 def _collect_ns_fields(  # noqa: PLR0913  # one branch per type case
