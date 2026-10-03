@@ -4,7 +4,7 @@
 (`_segment_names_real_field`, `_advance_field_type`) · **Filed:** 2026-10-01
 **Effort:** M · **Risk:** medium · **Impact:** none
 
-The walk's step, `_advance_field_type` (with `_resolve_union_field_type` for unions), is what
+The walk's step, `_advance_field_type` (with `_field_types` recursing into unions), is what
 decides whether a segment reaches a member. Two predicates restate that decision instead of
 asking it:
 

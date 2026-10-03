@@ -34,7 +34,7 @@
   (BUG-45); every flag at the path, whichever variant owns it, for `build()` to reject the ones
   the named variant does not know (BUG-69, BUG-83); a flag several variants own coerced once,
   by the common type when every owner resolves it alike and the raw token when they do not
-  (`_resolve_union_field_type` / `_subclass_field_type`, BUG-84); a base-declared field by the
+  (`_resolve_field_type` / `_subclass_field_type`, BUG-84); a base-declared field by the
   base's annotation (BUG-86); each occurrence where argv puts it (BUG-85, BUG-87). Each of
   those was a bug while the adapters collected the CLI channel with a walk of their own over
   the framework's parse result, descending into each variant and subclass in turn

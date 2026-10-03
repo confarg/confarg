@@ -49,7 +49,9 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "would resolution rewrite this value?" | `dictexpr.contains_expression` |
 | "does this segment name a real member?" | `_parse_cli._segment_names_real_field` |
 | "does a real field own the union tag's spelling?" | `_types._union_tag_shadowed` |
-| "what exact spelling does an env segment resolve to?" | `_parse_env._match_env_part` — a member case-insensitively, then the union tag by its own spelling, lowercase otherwise |
+| "what exact spelling does an env segment resolve to?" | `_parse_env._env_spelling` — a member case-insensitively, among the `_parse_cli._member_names` of every type `_parse_cli._field_types` reaches at the spelled prefix, then the union tag by its own spelling, lowercase otherwise. The spelling is the env channel's only rule: the spelled path is typed by `_parse_cli._resolve_field_type`, as a flag's is (REF-73) |
+| "which type does each union branch reach at this path?" | `_parse_cli._field_types` — the one type walk; `_resolve_field_type` is its fold (the common type, `str` when the branches disagree) |
+| "which names does this node declare?" | `_parse_cli._member_names` — a struct's `_types._struct_member_names` (the listing view of `_struct_member_type`, subclass-only names included), a namedtuple's fields, either across a union's variants |
 | "does this mount subpath name a node of the target?" | `_parse_cli._check_mount_subpath` |
 | "is this a cast, and which?" | `_parse_cli.detect_force_cast` (whether) / `_cast` (what) |
 | "how do the objects a root `json` cast decoded meet the fields?" | `_cast.fold_root_json` — vanilla's `--json`, the adapters' `apply_root_json` and the environment's `<PREFIX>JSON` (REF-44) |

@@ -771,6 +771,17 @@ def _struct_member_type(tp: Any, name: str) -> Any | None:
     return _subclass_field_type(tp, name) if _answered_by_subclasses(tp, name) else _struct_fields(tp)[name]
 
 
+def _struct_member_names(tp: Any) -> list[str]:
+    """Return every name :func:`_struct_member_type` answers for struct ``tp``, its own first.
+
+    The listing view of the same member rule, for a caller that matches a spelling against
+    the members rather than looks one up: ``tp``'s declared fields, then each subclass-only
+    name in the order :func:`_dataclass_subclasses` meets it.
+    """
+    inherited = (n for sub in _dataclass_subclasses(tp) for n in _struct_fields(sub) if _answered_by_subclasses(tp, n))
+    return list(dict.fromkeys([*_struct_fields(tp), *inherited]))
+
+
 def _union_tag_shadowed(tp: Any, union_tag: str) -> bool:
     """Return True if a struct-shaped ``tp`` owns a member spelled exactly like the tag.
 
