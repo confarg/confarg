@@ -929,7 +929,7 @@ def _collect_ns_fields(  # noqa: PLR0913  # one branch per type case
     _collect_ns_inheritance(flat, _tp, prefix, union_tag, result, tags, argv)
 
 
-def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per type case
+def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915  # one branch per type case
     flat: dict[str, Any],
     resolved: Any,
     flag: str,
@@ -1020,6 +1020,12 @@ def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per t
     if _is_struct(core):
         if whole is not _NO_CAST:
             _set_nested(result, flag.split("."), whole)
+        elif flag in flat:
+            # A token no blob decoded is the one vanilla's own _consume_value
+            # leaves behind: stored raw, for build() to refuse loudly as it does
+            # for the dict field -- dropping it silently built the field's
+            # default instead (BUG-82).
+            _set_nested(result, flag.split("."), _str_token(flat[flag]))
         _collect_ns_fields(flat, core, flag, union_tag, result, tags, argv)
         return
 
