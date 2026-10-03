@@ -50,12 +50,17 @@ class FlagSpec:
     Set on a collection append (``--<list>+``), which appends nothing and leaves the
     lower-priority sources alone, and on every flag whose type
     :func:`~confarg.cli._build._takes_multi_tokens` calls multi-token -- a field, a dict
-    subkey or a collection element -- whose empty value clears the collection.  A framework
-    that cannot express a flag taking zero *or* more tokens parses an argv with this flag's
-    bare occurrences removed (:func:`~confarg.cli._argv.drop_bare_occurrences`), so what a
-    dropped occurrence meant is read back off the original argv: the patch scan honors the
-    append, the subkey and the element, and
-    :func:`~confarg.cli._collect._bare_multi_token_flags` restores a field flag's clear.
+    subkey or a collection element -- whether the empty value that leaves clears the
+    collection or is the union shaper's missing value to raise (an ``Optional``
+    fixed-arity field's flag is the second kind, since its resolved type is a union
+    with a sequence variant).  A framework that cannot express a flag taking zero *or*
+    more tokens parses an argv with this flag's bare occurrences removed
+    (:func:`~confarg.cli._argv.drop_bare_occurrences`), so what a dropped occurrence
+    meant is read back off the original argv: the patch scan honors the append, the
+    subkey and the element, :func:`~confarg.cli._collect._bare_multi_token_flags`
+    restores a field flag's clear, and
+    :func:`~confarg.cli._collect._union_seq_occurrence_writes` replays a multi-token
+    union flag's occurrences, refusing the bare one that met an empty accumulation.
     Marking a flag with no such reader loses what the user typed.
 
     Dev Notes:
@@ -81,11 +86,13 @@ class FlagSpec:
     """Repeating the flag extends what the earlier occurrences gave, rather than replacing it.
 
     Set on the multi-token *field* flags — a varlen collection, and a union with a
-    sequence variant — because ``--tags x --tags y`` is a second spelling of
+    sequence variant (an ``Optional[<fixed-arity>]`` field's flag included, since that
+    is its resolved type) — because ``--tags x --tags y`` is a second spelling of
     ``--tags x y``.  Which spelling a framework accepts is its own business; what
     repetition *means* is not, so an adapter whose framework keeps only the last
-    occurrence has to ask for accumulation (argparse: ``action="extend"``).  Fixed-arity
-    flags are excluded: they take one value, and repeating them is last-wins everywhere.
+    occurrence has to ask for accumulation (argparse: ``action="extend"``).  A plain
+    fixed-arity flag is excluded: it takes one value, and repeating it is last-wins
+    everywhere.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/list-syntax-divergence.md#list-syntax-divergence

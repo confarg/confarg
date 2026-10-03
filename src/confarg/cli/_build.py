@@ -789,7 +789,7 @@ def _whole_value_spec(  # noqa: PLR0913
     )
 
 
-def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
+def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per type case
     flag: str,
     name: str,
     raw_type: Any,
@@ -864,9 +864,19 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
         specs = _collect_namedtuple_specs(core, flag, union_tag, group, group_description)
         # The combined arity flag is first.  A bare occurrence of it is a missing
         # value -- unless Optional wraps the field: `Pt | None` is a union with a
-        # sequence variant as resolved, which consumes greedily and is content with
-        # no token (BUG-79 tracks that spelling's registration).
-        specs[0].refuses_bare = _fixed_seq_types(resolved) is not None
+        # sequence variant as resolved, which consumes greedily, stands bare and
+        # accumulates across occurrences, so the flag registers the way that
+        # union's own flag does and its arity is build()'s to judge (BUG-79).
+        if _union_has_seq_variant(resolved):
+            specs[0] = dataclasses.replace(
+                specs[0],
+                nargs="*",
+                whole_value=False,
+                accumulates=True,
+                stands_bare=True,
+            )
+        else:
+            specs[0].refuses_bare = _fixed_seq_types(resolved) is not None
         return specs
 
     if _is_registered_leaf(core):
@@ -884,9 +894,22 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913
 
     help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
     spec = _build_leaf_spec(flag, raw_type, core, help_text, group, group_description)
+    # `tuple[X, Y] | None` is a union with a sequence variant as resolved, so its
+    # flag registers the way that union's own flag does: greedy, bare-legal,
+    # accumulating, with the arity deferred to build() exactly as vanilla's
+    # `_union_seq_value` defers it (BUG-79).
+    if _union_has_seq_variant(resolved):
+        return [
+            dataclasses.replace(
+                spec,
+                nargs="*",
+                whole_value=False,
+                accumulates=True,
+                stands_bare=True,
+            ),
+        ]
     # Only the fixed-arity spelling reaches here with a fixed type: a plain
-    # `tuple[X, Y]` whose bare occurrence is a missing value.  Under Optional the
-    # resolved type is a union with a sequence variant, which stands bare instead.
+    # `tuple[X, Y]` whose bare occurrence is a missing value.
     spec.refuses_bare = _fixed_seq_types(resolved) is not None
     return [spec]
 

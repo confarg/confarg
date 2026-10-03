@@ -154,6 +154,69 @@ def _collect_union_seq_value(resolved: Any, v: Any, flag: str) -> Any:
     return _str_token(v)
 
 
+def _union_seq_occurrence_writes(argv: Sequence[str], flag: str, resolved: Any) -> Any:
+    """Replay argv's ``--<flag>`` occurrences as vanilla's sequential parse writes them.
+
+    A multi-token union flag accumulates: every occurrence's tokens join one list,
+    which vanilla shapes at each occurrence, so the order the occurrences arrived in
+    decides two things a framework's parse result cannot carry.  Which bare
+    occurrence is a missing value: the shaper meets the still-empty accumulation at
+    a leading bare one and raises, while a trailing one -- or one after a whole-field
+    delete, which ends the accumulation the way vanilla's ``multi_tokens`` pop does --
+    joins whatever the earlier occurrences left.  And which occurrence wrote last:
+    a whole-value object blob is a write of its own that never enters the
+    accumulation, so a token run after it overwrites it and a token run before it is
+    overwritten.  Both are read off the argv the user typed, as the other argv-order
+    questions are (:func:`_fixed_arity_occurrence_runs` is the precedent for the
+    walker); the empty run's refusal is the shaper's own, asked once per occurrence,
+    and a blob occurrence whose run carries a token past it is the surplus positional
+    vanilla's own scan names -- :func:`_require_fixed_arity`'s upper bound at the
+    other end.
+
+    Returns :data:`_NO_CAST` when argv spells no occurrence, so the caller falls
+    back to the run the framework handed over -- a parse result argv cannot account
+    for is not this reader's to rewrite.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#unions-with-sequence-variants
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
+    """
+    bare = f"--{flag}"
+    delete = f"--{flag}-"
+    acc: list[str] = []
+    write: Any = _NO_CAST
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        if token == delete:
+            # The patch scan honors the delete itself; only the accumulation it
+            # ends is this reader's to track.
+            acc = []
+            i += 1
+            continue
+        if token == bare:
+            run: list[str] = []
+        elif token.startswith(f"{bare}="):
+            run = [token[len(bare) + 1 :]]
+        else:
+            i += 1
+            continue
+        i += 1
+        while i < len(argv) and not _looks_like_flag(argv[i]):
+            run.append(argv[i])
+            i += 1
+        if run and isinstance(run[0], str) and run[0].startswith("{") and _accepts_object_value(resolved):
+            # The blob is one token whatever follows it, so a token past it is the
+            # stray positional vanilla's own scan meets there.
+            if len(run) > 1:
+                raise UnknownArgumentError.unexpected_positional(run[1])
+            write = _parse_json_arg(run[0], bare)
+            continue
+        acc.extend(run)
+        write = _collect_union_seq_value(resolved, list(acc), flag)
+    return write
+
+
 def _find_scalar_cast_override(flat: dict[str, Any], flag: str) -> Any:
     """Return the pinned value for an explicit scalar cast flag, or ``_NO_CAST`` if absent.
 
@@ -975,9 +1038,12 @@ def _collect_ns_optional_seq(  # noqa: PLR0913  # the type-walk context, threade
     union with a sequence variant there, consumed greedily and shaped by
     ``_union_seq_value`` -- so the flag's tokens go through
     :func:`_collect_union_seq_value` rather than through the fixed-arity and
-    namedtuple branches the unwrapped *core* would pick: a bare occurrence owes its
-    value, and the run is stored raw, its per-position coercion deferred to
-    ``build()`` (BUG-61).
+    namedtuple branches the unwrapped *core* would pick: the run is stored raw, its
+    per-position coercion deferred to ``build()`` (BUG-61), and the occurrences
+    accumulate, their order replayed off argv by
+    :func:`_union_seq_occurrence_writes` -- a leading bare occurrence is the shaper's
+    missing value, a trailing one adds nothing, and a whole-value blob is a write of
+    its own that never joins the token accumulation (BUG-79).
 
     A namedtuple's sub-flags keep their own spelling, collected and coerced by
     :func:`_namedtuple_sub_flags` and merged in argv order, as on the plain spelling
@@ -1005,11 +1071,15 @@ def _collect_ns_optional_seq(  # noqa: PLR0913  # the type-walk context, threade
         _collect_deep_sub_flags(flat, flag, deep_fields, union_tag, result, tags, argv)
         return
     v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
-    if whole is _NO_CAST:
-        # The list spelling of the decode _whole_value does for the str one: a
-        # `{...}` a namedtuple accepts is the object it spells, not an ordinary token.
-        whole = _fixed_arity_whole_value(v, core, flag)
-    value = whole if whole is not _NO_CAST else _collect_union_seq_value(resolved, v, flag)
+    # The occurrences' order is read off argv: which bare one met an empty
+    # accumulation, and whether a blob or a token run wrote last (BUG-79).
+    value = _union_seq_occurrence_writes(argv, flag, resolved)
+    if value is _NO_CAST:
+        if whole is _NO_CAST:
+            # The list spelling of the decode _whole_value does for the str one: a
+            # `{...}` a namedtuple accepts is the object it spells, not an ordinary token.
+            whole = _fixed_arity_whole_value(v, core, flag)
+        value = whole if whole is not _NO_CAST else _collect_union_seq_value(resolved, v, flag)
     _set_nested(result, path, value)
     if not _arity_flag_writes_last(argv, flag):
         for fname, fval in sub.items():
@@ -1120,8 +1190,16 @@ def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915  # one bra
         if cast_val is not _NO_CAST:
             _set_nested(result, flag.split("."), cast_val)
         elif flag in flat and whole is _NO_CAST:
-            v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
-            _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, v, flag))
+            # A union with a sequence variant accumulates, so the occurrences' order
+            # is argv's to answer, exactly as for the Optional spelling (BUG-79).
+            replayed = (
+                _union_seq_occurrence_writes(argv, flag, resolved) if _union_has_seq_variant(resolved) else _NO_CAST
+            )
+            if replayed is not _NO_CAST:
+                _set_nested(result, flag.split("."), replayed)
+            else:
+                v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
+                _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, v, flag))
         return
 
     # Optional[<sequence>]: the union is the type vanilla dispatches, so the flag's

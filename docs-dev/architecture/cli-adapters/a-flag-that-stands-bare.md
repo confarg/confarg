@@ -65,8 +65,8 @@ Dropping a token is only safe where nothing is lost, and that is where the famil
 One marker, two readers: `drop_bare_occurrences` decides which tokens a framework parses and
 `bare_only_flag_names` decides what a dropped token meant, both off one `_bare_occurrence`
 predicate so they cannot disagree about which occurrences are bare. The predicate reads the
-opposite family too: a fixed-arity flag's bare occurrence is a missing value, not a no-op, so
-nothing drops it — `refuse_bare_occurrences` raises vanilla's error for one off the argv the
+opposite family too: a plain fixed-arity flag's bare occurrence is a missing value, not a no-op,
+so nothing drops it — `refuse_bare_occurrences` raises vanilla's error for one off the argv the
 user typed, before a framework that would assert on it parses
 ([whole-value flags](whole-value-flags.md#whole-value-flags)).
 
@@ -77,9 +77,14 @@ varlen one (`str | tuple[str, str]`) is therefore included, and the empty value 
 raises vanilla's error in `_collect_union_seq_value` — so the bare form is refused with confarg's
 own message everywhere instead of the framework's. The optional spelling of a fixed-arity
 field answers the predicate the same way — `tuple[int, int] | None` and a namedtuple under
-`Optional` are unions with a sequence variant — and since BUG-61 the collector routes their
-flag through the same shaper, so a bare occurrence raises the same error instead of clearing the
-field ([whole-value flags](whole-value-flags.md#whole-value-flags)). `stands_bare` is set on what that predicate
+`Optional` are unions with a sequence variant — so its flag registers `stands_bare` like the rest
+of the family (BUG-79; until then the clicklike parsers answered its bare occurrence with their
+own usage error), the collector routes its tokens through the same shaper (BUG-61), and
+`_collect._union_seq_occurrence_writes` is the order-aware half of the read-back: a bare
+occurrence that meets an empty accumulation is the shaper's missing value, while one after a
+valued occurrence adds nothing — a question `_bare_multi_token_flags` cannot answer, since it
+sees only the flags whose *every* occurrence is bare
+([whole-value flags](whole-value-flags.md#whole-value-flags)). `stands_bare` is set on what that predicate
 names plus the append; marking anything else needs a reader for what the dropped token meant, or
 the information is gone.
 

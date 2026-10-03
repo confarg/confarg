@@ -19,7 +19,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-75 — Argparse alone refuses the tokens that complete a `=`-spelled fixed-arity run](BUG-75-argparse-alone-refuses-the-tokens-completing-an-equals-spelled-fixed-arity-run.md) | S | medium | behavior |
 | [BUG-77 — An index delete below a whole-field delete crashes the patch scan](BUG-77-an-index-delete-below-a-whole-field-delete-crashes-the-patch-scan.md) | S | high | behavior |
 | [BUG-78 — Cyclopts refuses a delete flag spelled twice](BUG-78-cyclopts-refuses-a-delete-flag-spelled-twice.md) | S | low | behavior |
-| [BUG-79 — A repeated arity flag on an Optional fixed-arity field keeps only the last occurrence in the adapters](BUG-79-a-repeated-arity-flag-under-optional-does-not-accumulate-in-the-adapters.md) | M | medium | behavior |
 | [BUG-80 — A namedtuple's negative index sub-flags are unreachable on the adapters](BUG-80-namedtuple-negative-index-sub-flags-are-unreachable-on-the-adapters.md) | S | medium | behavior |
 | [BUG-81 — The click and typer blocks of `16_appending_items` splice `--dbs+` into their JSON](BUG-81-the-click-and-typer-blocks-of-16_appending_items-splice-dbs-into-their-json.md) | S | low | none |
 | [BUG-85 — A struct field's bare flag typed after its sub-flag loses to the sub-flag on the adapters](BUG-85-bare-flag-typed-after-its-subflag-loses-on-the-adapters.md) | M | medium | behavior |
