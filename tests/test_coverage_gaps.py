@@ -1140,7 +1140,7 @@ class TestParseEnvDictAndFallthrough:
             env={"MYAPP_MAPPING__KEY": "42"},
             env_prefix="MYAPP_",
         )
-        assert result.mapping.get("key") == 42 or "key" in result.mapping
+        assert result.mapping == {"key": 42}
 
     def test_tuple_out_of_range_from_env(self) -> None:
         """Out-of-range env var index for a fixed-length tuple raises TypeCoercionError."""

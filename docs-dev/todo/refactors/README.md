@@ -16,7 +16,6 @@ different board.
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | M | high | none |
 | [REF-26 — The `--config` files named on argv are parsed three times per run](REF-26-config-files-parsed-three-times.md) | M | low | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | M | low | none |
-| [REF-39 — `test_dict_field_from_env` or-asserts away its own claim](REF-39-dict-field-env-test-or-asserts-away-claim.md) | S | low | none |
 | [REF-41 — `cli/click/_context.py` and `cli/typer/_context.py` are the same file](REF-41-click-and-typer-context-are-the-same-file.md) | S | low | none |
 | [REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk](REF-42-argparse-completion-reimplements-the-build-walk.md) | M | medium | none |
 | [REF-43 — Four copies of the type-tree path walk in `_parse_cli.py`](REF-43-parse-cli-path-walk-copies.md) | M | high | none |
