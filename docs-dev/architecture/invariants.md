@@ -80,6 +80,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "which argv tokens does a host framework parse?" | `cli._argv.drop_bare_occurrences` |
 | "does this field's flag consume many tokens, and so stand bare?" | `cli._build._takes_multi_tokens` |
 | "which flags did the framework never see, and what did they mean?" | `cli._argv.bare_only_flag_names` (which) / `cli._collect._bare_multi_token_flags` (what) |
+| "which bare occurrence is a missing value, refused before the framework parses?" | `cli._argv.refuse_bare_occurrences`, off `FlagSpec.refuses_bare` — set by the same `_fixed_seq_types(resolved)` gate that arms the fixed-arity guard |
 | plain vs escaped callable directives | `_callable.active_directives` |
 | single-value (scalar/type-ref) construction | `_construct._construct_scalar` |
 | "which `__init__` parameters are `*args` / `**kwargs`?" | `_types._var_params` |
@@ -145,6 +146,10 @@ collection logic goes into `cli/_collect.py` mirroring the vanilla decision
   append flag. A bare occurrence of such a flag never reaches the framework's parse result, so
   marking anything else needs a reader for what the dropped token meant — or the information
   is gone ([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)).
+- `FlagSpec.refuses_bare` is set by the same `_fixed_seq_types(resolved)` gate that arms
+  `cli/_collect._require_fixed_arity`, asked without unwrapping `Optional`, so the pre-parse
+  refusal and the collector's guard cannot disagree about which flags are fixed-arity
+  ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)).
 - `import_tagged_classes` runs before anything reads `__subclasses__()` — before the static
   type walk in `build_static_flags`, and before path resolution in `_parse_cli`
   ([design decisions](design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration)).

@@ -64,7 +64,11 @@ Dropping a token is only safe where nothing is lost, and that is where the famil
 
 One marker, two readers: `drop_bare_occurrences` decides which tokens a framework parses and
 `bare_only_flag_names` decides what a dropped token meant, both off one `_bare_occurrence`
-predicate so they cannot disagree about which occurrences are bare.
+predicate so they cannot disagree about which occurrences are bare. The predicate reads the
+opposite family too: a fixed-arity flag's bare occurrence is a missing value, not a no-op, so
+nothing drops it — `refuse_bare_occurrences` raises vanilla's error for one off the argv the
+user typed, before a framework that would assert on it parses
+([whole-value flags](whole-value-flags.md#whole-value-flags)).
 
 `_takes_multi_tokens` is the whole gate, asked once where the specs are built and again on the
 merge side, so registration and read-back cannot disagree about which flags stand bare. It is the

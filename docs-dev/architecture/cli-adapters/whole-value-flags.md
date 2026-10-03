@@ -159,6 +159,18 @@ error `build()` owns rather than becoming a flag left without a value; the `9` i
 completes the pair. Click and typer register the exact count and enforce both bounds in their
 own parsers, so the guard is dead weight there and live for argparse and cyclopts.
 
+A bare occurrence is the lower bound at zero, and on cyclopts it never reaches the guard:
+`consume_multiple` reads one as an implicit empty container, which survives a lone occurrence
+(the guard sees `[]` and raises) but asserts inside cyclopts' own parse the moment it meets a
+real token — so `--pair --pair 3 4` and `--pair 1 2 --pair` both crash with no message of
+confarg's own (BUG-74, closed). `FlagSpec.refuses_bare` marks the same specs the guard arms —
+the `_fixed_seq_types(resolved)` gate, asked without unwrapping `Optional` — and
+`cli._argv.refuse_bare_occurrences` raises vanilla's missing-value error off the argv the user
+typed before cyclopts parses, the pre-parse refusal pattern of the `--config` scan (BUG-51,
+closed). A dynamic element flag addressing a fixed-arity type carries the marker too, so
+`--pairs.0 --pairs.0 3 4` answers the same way; the patch scan would have refused the bare
+occurrence anyway, but the framework's parse never gets far enough to ask it.
+
 The guard is deliberately *not* extended to a union with a sequence variant (`str | tuple[str,
 str]`): that field consumes greedily in vanilla too, so `build()` judging its arity is parity,
 not a gap.

@@ -41,7 +41,7 @@ from confarg._files import INCLUDE_KEY
 from confarg._merge import DICT_DELETE
 from confarg.cli._build import build_static_flags
 from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError
-from tests._loaders import ArgparseLoader, ClickLoader
+from tests._loaders import ClickLoader
 from tests.conftest import AppConfig, CacheConfig, DbConfig, WithCollections, make_target
 
 if TYPE_CHECKING:
@@ -1130,15 +1130,37 @@ class TestFixedSequenceContract:
         with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
             whole_value_arity_loader.merge(_WithIntPair, argv=["--pair=1", "--pair", "3", "4"], env={})
 
-    def test_repeated_bare_first_occurrence_is_a_missing_value(self) -> None:
-        """A bare occurrence beside a valued one is the same short run on argparse (BUG-73).
+    def test_repeated_bare_first_occurrence_is_a_missing_value(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """A bare occurrence beside a valued one is the same short run (BUG-73, BUG-74).
 
-        Argparse alone here: cyclopts asserts on this argv instead
-        (BUG-74), and the clicklike front-ends refuse it through their exact-count
-        parsers.
+        Argparse answers through the guard's argv read-back; cyclopts asserts inside
+        its own parse on this argv, so there the refusal runs before the parse, as the
+        ``--config`` scan already does (BUG-51). The clicklike front-ends refuse the
+        bare form through their exact-count parsers.
         """
         with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
-            ArgparseLoader().merge(_WithIntPair, argv=["--pair", "--pair", "3", "4"], env={})
+            whole_value_arity_loader.merge(_WithIntPair, argv=["--pair", "--pair", "3", "4"], env={})
+
+    def test_repeated_bare_last_occurrence_is_a_missing_value(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """A trailing bare occurrence is refused as well, so both orders answer alike (BUG-74)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithIntPair, argv=["--pair", "1", "2", "--pair"], env={})
+
+    def test_repeated_bare_occurrence_on_a_namedtuple_is_a_missing_value(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """A namedtuple's arity flag is a fixed-arity flag, bare occurrence and all (BUG-74)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithPoint, argv=["--pair", "--pair", "3", "4"], env={})
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
+            whole_value_arity_loader.merge(_WithPoint, argv=["--pair", "1", "2", "--pair"], env={})
 
     def test_click_refuses_the_short_first_occurrence_in_its_own_parser(self) -> None:
         """Click registers the exact count, so the short first occurrence never lands (BUG-73).
@@ -2737,6 +2759,22 @@ class TestCollectionPatchContract:
         base = tmp_yaml("pairs:\n  - [1, 2]\n  - [3, 4]\n")
         cfg = loader.load(_WithPairs, argv=["--config", str(base), "--pairs.0.1", "9"], env={})
         assert cfg.pairs == [(1, 9), (3, 4)]
+
+    def test_fixed_arity_element_bare_occurrence_is_a_missing_value(
+        self,
+        space_sep_loader: ConfargLoader,
+    ) -> None:
+        """A fixed-arity element flag refuses its bare occurrence, beside a valued one too (BUG-74).
+
+        The patch scan replays vanilla's consumption off argv, so the refusal the
+        scan would raise never has to be reached: cyclopts asserts inside its own
+        parse on this argv first, and the pre-parse refusal is what keeps the five
+        front-ends on vanilla's answer.
+        """
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pairs.0'")):
+            space_sep_loader.merge(_WithPairs, argv=["--pairs.0", "--pairs.0", "3", "4"], env={})
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pairs.0'")):
+            space_sep_loader.merge(_WithPairs, argv=["--pairs.0", "1", "2", "--pairs.0"], env={})
 
     def test_tuple_index_set(self, loader: ConfargLoader) -> None:
         """Tuple elements are patchable by index."""
