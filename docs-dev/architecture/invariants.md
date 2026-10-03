@@ -41,7 +41,8 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | reading one document, whatever route mounts it | `_files._load_any` |
 | "which parser does this location name?" | `_files._loader_for` |
 | reading a channel value as an include value | `_files._parse_mount_value` |
-| placing a loaded value at a subpath | `_files._mount` |
+| mounting a channel value at a subpath | `_files._load_mount` — `--config.<path>` and the env pointers; `__include__` reaches the same outcome through `_files._resolve_dict` |
+| "which prefix anchors this document's bare references?" | `_files._load_any`'s *mount* — the whole path from the configuration root, a tuple of segments, applied once by `_files._resolve_node` to the document's own nodes and never to what an include brought in (BUG-127, [expressions](expressions/reference-anchoring.md#a-document-is-prefixed-once-by-its-whole-mount-path)) |
 | "which scheme does this location name?" | `_sources._scheme_of` |
 | "what are this location's bytes?" | `_sources._read_bytes` |
 | "which format does this location name?" | `_sources._suffix` |
@@ -49,6 +50,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "are these two locations the same document?" | `_sources._identity` |
 | "would resolution rewrite this value?" | `dictexpr.contains_expression` |
 | "where does each `${...}` of this string begin and end?" | `dictexpr._expressions._find_expressions` ([expressions](expressions/values-and-references.md#delimiting-an-expression)) |
+| "which expression reads this path?" | `dictexpr._expressions._path_to_ast` — a dot only where the segment parses back as a name (`_spells_as_name`), a constant subscript elsewhere, a first segment that is no name off `::`; `_Prefixer` and `_AnchorResolver` both spell a path with it (BUG-127, [expressions](expressions/values-and-references.md#spelling-a-path)) |
 | "which config path does this node read?" | `dictexpr._expressions._attribute_chain` — a dot and a constant subscript each spell one segment, which `_segment` reads off one link; reference collection (`_collect_names`, a method's receiver) and evaluation (`_eval_path_or`, the one evaluator of an attribute and of a subscript) ask it (BUG-121, [expressions](expressions/values-and-references.md#spelling-a-path)) |
 | "what does a dot or a subscript read when no path answers it?" | `dictexpr._expressions._eval_path_or` — the evaluated base indexed by the key the node spells, a dot's name as a string key; never `getattr`, so no attribute of a value, bound methods included, is reachable (BUG-125, [expressions](expressions/safety-model.md#a-dot-reads-a-key-never-an-attribute)) |
 | "which expressions must resolve before this one?" | `dictexpr._expressions._dependency_graph` — every expression a reference's path reaches: at it, below it, or above it, so a reference to an ancestor from inside it is a cycle (BUG-123, [expressions](expressions/resolution.md#a-reference-reads-everything-its-path-reaches)) |

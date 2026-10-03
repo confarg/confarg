@@ -15,13 +15,14 @@ never rewritten and survives `merge()` → `dump_file()` verbatim.
 
 ## Why the node anchor resolves late
 
-The file anchor is a *rewrite*, applied while files are mounted, because `build()` takes a plain
+The file anchor is a *rewrite*, applied while files are loaded, because `build()` takes a plain
 dict with no side channel:
 
 | Stage | Action |
 |---|---|
-| `_files._resolve_dict` / `_resolve_list` | thread the path within the file; `prefix_references` each included document by it *before* merging siblings (siblings belong to the including file); `check_anchor_depth` each expression against that same path |
-| `_files._load_subpath_files`, `_pipeline._load_cli_config` | prefix by the mount subpath (env pointers and `--config.<path>`) |
+| `_files._load_mount` | turn the mount subpath of `--config.<path>` and the env pointers into the *mount*, a tuple of segments (`()` at the root) |
+| `_files._load_any` | carry the *mount* of the document it loads: where that document's root lands, from the configuration root |
+| `_files._resolve_node` | walk the document's own nodes, threading the path within the file; `prefix_references` each expression by the document's *mount* and `check_anchor_depth` it against the path within the file; an include lands at *mount* + path within the file, and its siblings are walked before they merge on top, so the walk never reaches what was included |
 | end of `_merge_sources` | `canonicalize_references` turns remaining `${::x}` into `${x}` |
 
 The prefix is uniform per file, **not per position**, which is what lets one fragment be
@@ -32,6 +33,34 @@ an element appended by `--config.<path>+` is not true until the merge is over.
 So the dot markers are carried through the merge untouched and interpreted once, in
 `resolve_expressions`. That is also what makes them the only spelling available to an appended
 fragment, whose bare names are still anchored at the merged root by default.
+
+## A document is prefixed once, by its whole mount path
+
+The prefix is a tuple of segments, and `_path_to_ast` spells it
+([values and references](values-and-references.md#spelling-a-path)): a segment that is no name
+becomes a constant subscript, so an include in a list item reads `${xs[0].p}` and one under a
+key holding a dot `${svc['h.com'].p}`. A **first** segment that is no name has one spelling
+only, off the root marker, `${::['web-1'].p}`: `${['web-1'].p}` is a list literal.
+
+That is why the prefix is the whole path from the configuration root, applied once, when the
+document itself is walked (BUG-127). Before, each level prefixed what its includes returned by
+its own position, and the outer levels prefixed it again. That composes as long as every prefix
+is a name chain, but `_Prefixer` leaves `::` alone, as it must for a `::` the user wrote, so a
+`::['web-1']` written at an inner level would never have been extended by an outer one. A
+`mid.yaml` holding `web-1: {__include__: frag.yaml}` and mounted at `a` would have read the
+root's `web-1`, not `a`'s. Prefixed once, by `('a', 'web-1')`, it reads `${a['web-1'].p}`.
+
+Walking only the document's own nodes is also what puts siblings in their place: they are
+resolved before they merge onto what was included, so a sibling that includes a file is the
+including document's word and wins, as a plain sibling value does
+([config files](../config-files/include-semantics.md#include-semantics)).
+
+Rejected: **spell a non-identifier first segment as a dot run** up to the included document's
+root (`${.p}`). Correct at any depth, because a dot run moves with its node, but it needs each
+expression's position inside `prefix_references`, and it makes a bare reference come out as
+`${a.w.p}` or `${.p}` depending on the keys it happens to be mounted under. Hydra's packaged
+configs, whose absolute interpolations do not follow a package, lean on relative interpolation
+for this; confarg's file anchor exists to spare the fragment that choice.
 
 ## A relative reference is never serialized as an absolute path
 
@@ -95,6 +124,12 @@ reads any other.
   the root whole (`${::}`, `${..}` from one level down, `${::[k]}`); `_collect_names` reads it as
   the empty path, and since the root holds every expression, it is the cycle any reference to an
   ancestor is ([resolution](resolution.md#a-reference-reads-everything-its-path-reaches)).
+- **A spelled path parses back as itself.** `_path_to_ast` writes a segment with a dot only
+  when it is an identifier that is no keyword, no dunder and NFKC-stable (`ﬁle` would read back
+  as `file`); everything else is a subscript, by the integer when the segment spells an index
+  (`[0]`, which also reaches a YAML integer key below the root), else by the string. It is what
+  `_Prefixer` unparses, and what `_AnchorResolver` builds the path of a dot run with, so the two
+  agree with `_attribute_chain` on every segment.
 - `_Prefixer` rewrites only `ast.Name` bases. That is correct only because lambdas and
   comprehensions are not in `_ALLOWED_NODES`, so every non-function `Name` is a reference
   base. **Adding a binding construct to the whitelist breaks prefixing.**

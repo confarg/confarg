@@ -97,6 +97,22 @@ class TestSiblingOverride:
         assert result["port"] == 9999
         assert result["host"] == "base_host"
 
+    def test_a_sibling_include_wins_over_included(self, tmp_path: Path) -> None:
+        """A sibling that includes a file is the including file's word too, so it wins."""
+        write(tmp_path, "base.yaml", "db: {host: base_host, port: 5432}\n")
+        write(tmp_path, "db.yaml", "host: db_host\n")
+        write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: ./base.yaml\ndb: {{{INCLUDE_KEY}: ./db.yaml}}\n")
+
+        assert _load_file(tmp_path / "config.yaml") == {"db": {"host": "db_host", "port": 5432}}
+
+    def test_a_sibling_include_in_a_list_item_wins_over_included(self, tmp_path: Path) -> None:
+        """The same holds for an include with siblings that sits in a list item."""
+        write(tmp_path, "base.yaml", "db: {host: base_host, port: 5432}\n")
+        write(tmp_path, "db.yaml", "host: db_host\n")
+        write(tmp_path, "config.yaml", f"xs:\n  - {INCLUDE_KEY}: ./base.yaml\n    db: {{{INCLUDE_KEY}: ./db.yaml}}\n")
+
+        assert _load_file(tmp_path / "config.yaml") == {"xs": [{"db": {"host": "db_host", "port": 5432}}]}
+
 
 # ---------------------------------------------------------------------------
 # Relative path resolution

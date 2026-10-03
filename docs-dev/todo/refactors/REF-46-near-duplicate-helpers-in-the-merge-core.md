@@ -23,5 +23,5 @@ all mechanical enough for one revision. Roughly 30 lines.
 
 Three of the original six are closed: the `_LOADERS`/`_ITEM_LOADERS` pair, the
 `_load_file_item`/`_load_any` pair (with BUG-42), and the dotted-subpath nesting loop, which now
-has an owner in `_files._nest`/`_mount`
+has an owner in `_files._nest`/`_load_mount`
 ([config-files/mounting.md#mounting](../../architecture/config-files/mounting.md#mounting)).

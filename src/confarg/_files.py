@@ -9,7 +9,8 @@ that location implies is answered by :mod:`confarg._sources`, so nothing here br
 whether a document is local or remote. Loaders receive the document's bytes and parse them.
 
 Files are mounted at a path of the merged document (``__include__``, ``--config.<path>``,
-``CONFIG__<PATH>``); expression references are prefixed accordingly while mounting.
+``CONFIG__<PATH>``); each document's expression references are prefixed by that path while it
+is loaded.
 
 Dev Notes:
     docs-dev/architecture/config-files/README.md
@@ -298,6 +299,7 @@ def _load_includes(
     base: str | None,
     seen: frozenset[str],
     union_tag: str | None = None,
+    mount: tuple[str, ...] = (),
 ) -> Any:
     """Load every include entry and layer them left to right, later entries winning.
 
@@ -310,7 +312,8 @@ def _load_includes(
 
     *base* is the location of the including document, which each entry resolves against; it is
     ``None`` for the channel routes, which have no including document and resolve against the
-    process working directory instead.
+    process working directory instead. *mount* is where the result lands in the configuration
+    (see :func:`_load_any`).
 
     Dev Notes:
         docs-dev/architecture/config-files/include-semantics.md#include-semantics
@@ -323,7 +326,7 @@ def _load_includes(
         if key in seen:
             msg = f"Circular include detected: {inc_loc}"
             raise ConfargError(msg)
-        loaded = _unwrap_root_key(_load_any(inc_loc, seen | {key}, options=options, union_tag=union_tag))
+        loaded = _unwrap_root_key(_load_any(inc_loc, seen | {key}, options=options, union_tag=union_tag, mount=mount))
         is_data = _sources._suffix(inc_loc) in _DATA_SUFFIXES
         if i == 0 or is_data or not (isinstance(result, dict) and isinstance(loaded, dict)):
             result = loaded
@@ -343,112 +346,75 @@ def _include_with_siblings(included: Any, siblings: dict[str, Any], union_tag: s
     return _deep_merge(included, siblings, union_tag=union_tag)
 
 
-def _resolve_node(
+def _resolve_node(  # noqa: PLR0913  # the walk's state: document, cycle guard, position, tag, mount
     data: Any,
     base: str,
     seen: frozenset[str],
     path_in_file: tuple[str, ...] = (),
     union_tag: str | None = None,
+    mount: tuple[str, ...] = (),
 ) -> Any:
-    """Dispatch include resolution by node type.
+    """Resolve the includes of one document's own nodes, and anchor its own references.
 
     *path_in_file* is the position of *data* relative to the root of the document
-    currently being resolved, one segment per key or list index; it is what an included
-    document gets prefixed by, and it resets to ``()`` on entry to each document (see
-    :func:`_load_any`).  It is also the depth a node-relative reference is clamped to,
-    which is why the check below sits on this walk rather than on the mounting pass.
+    currently being resolved, one segment per key or list index, and it resets to ``()`` on
+    entry to each document (see :func:`_load_any`). It is the depth a node-relative reference
+    is clamped to, which is why the check sits on this walk rather than on the mounting pass.
+    *mount* is where that document's root lands in the configuration: each of its bare
+    references is prefixed by it, here and only here, since the walk visits the document's
+    own nodes and nothing an include brought in.
+
+    A dict holding INCLUDE_KEY may name one document or a list of them; a list is layered left
+    to right by :func:`_load_includes` first. A pure include (no siblings) may yield any type,
+    in a dict node and in a list item alike: an include contributes a value, and extending a
+    list is the ``+`` merge operator's job
+    (docs-dev/architecture/design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling).
+    With sibling keys it must yield a dict, and the siblings, resolved as this document's own
+    nodes, merge on top. A present but unusable value (``__include__: null``) raises.
 
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
+        docs-dev/architecture/config-files/include-semantics.md#include-semantics
     """
     if isinstance(data, dict):
-        return _resolve_dict(data, base, seen, path_in_file, union_tag)
+        return _resolve_dict(data, base, seen, path_in_file, union_tag, mount)
     if isinstance(data, list):
-        return _resolve_list(data, base, seen, path_in_file, union_tag)
+        return [
+            _resolve_node(item, base, seen, (*path_in_file, str(index)), union_tag, mount)
+            for index, item in enumerate(data)
+        ]
     if contains_expression(data):
         check_anchor_depth(data, path_in_file)
+        return prefix_references(data, mount)
     return data
 
 
-def _resolve_dict(
-    data: dict[str, Any],
+def _resolve_dict(  # noqa: PLR0913  # the walk's state: document, cycle guard, position, tag, mount
+    data: dict[Any, Any],
     base: str,
     seen: frozenset[str],
-    path_in_file: tuple[str, ...] = (),
-    union_tag: str | None = None,
+    path_in_file: tuple[str, ...],
+    union_tag: str | None,
+    mount: tuple[str, ...],
 ) -> Any:
-    """Resolve INCLUDE_KEY in a dict node.
+    """Resolve a dict node, the one place INCLUDE_KEY is read (see :func:`_resolve_node`).
 
-    INCLUDE_KEY may name one document or a list of them; a list is layered left to
-    right by _load_includes before anything else happens. A pure include (no
-    siblings) may return any type. An include with sibling keys requires the
-    layered result to be a dict (for deep-merge).
-
-    The included document's references are prefixed by *path_in_file* before the
-    sibling keys (which keep this document's anchoring) are merged on top.
-
-    A present but unusable value (``__include__: null``) raises here exactly as it does in a
-    list item: it is the same key in the same document, so one rule reads it.
-
-    Dev Notes:
-        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
+    The included documents land at ``mount + path_in_file``, which their own walk prefixes
+    them by; the siblings are resolved before they are merged on top, so that walk never
+    visits what was included. A key that is no string (a YAML integer) is one segment.
     """
-    if INCLUDE_KEY in data:
-        included = prefix_references(
-            _load_includes(_parse_include_val(data[INCLUDE_KEY]), base, seen, union_tag),
-            ".".join(path_in_file),  # a dotted prefix until prefix_references takes segments (BUG-127)
-        )
-        siblings = {k: v for k, v in data.items() if k != INCLUDE_KEY}
-        if not siblings:
-            return included
-        result: dict[str, Any] = _include_with_siblings(included, siblings, union_tag)
-    else:
-        result = dict(data)
-
-    for k, v in result.items():
-        result[k] = _resolve_node(v, base, seen, (*path_in_file, k), union_tag)
-
-    return result
-
-
-def _resolve_list(
-    data: list[Any],
-    base: str,
-    seen: frozenset[str],
-    path_in_file: tuple[str, ...] = (),
-    union_tag: str | None = None,
-) -> list[Any]:
-    """Resolve INCLUDE_KEY in list items.
-
-    A list item that is a pure ``{INCLUDE_KEY: path}`` dict is replaced by the included
-    content as **one** element, whatever type that content has: an include contributes a
-    value, and extending a list is the ``+`` merge operator's job
-    (docs-dev/architecture/design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling).
-    A list of paths is layered into a single value first, as in a dict node. Items with
-    sibling keys follow the same rules as dict nodes.
-
-    Each item's references are prefixed by the index it lands on.
-
-    Dev Notes:
-        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
-    """
-    result: list[Any] = []
-    for item in data:
-        here = (*path_in_file, str(len(result)))
-        if isinstance(item, dict) and INCLUDE_KEY in item:
-            included = prefix_references(
-                _load_includes(_parse_include_val(item[INCLUDE_KEY]), base, seen, union_tag),
-                ".".join(here),
-            )
-            siblings = {k: v for k, v in item.items() if k != INCLUDE_KEY}
-            if not siblings:
-                result.append(included)
-            else:
-                merged = _include_with_siblings(included, siblings, union_tag)
-                result.append(_resolve_node(merged, base, seen, here, union_tag))
-        else:
-            result.append(_resolve_node(item, base, seen, here, union_tag))
-    return result
+    if INCLUDE_KEY not in data:
+        return {k: _resolve_node(v, base, seen, (*path_in_file, str(k)), union_tag, mount) for k, v in data.items()}
+    entries = _parse_include_val(data[INCLUDE_KEY])
+    included = _load_includes(entries, base, seen, union_tag, (*mount, *path_in_file))
+    siblings = {k: v for k, v in data.items() if k != INCLUDE_KEY}
+    if not siblings:
+        return included
+    return _include_with_siblings(
+        included,
+        _resolve_dict(siblings, base, seen, path_in_file, union_tag, mount),
+        union_tag,
+    )
 
 
 def _load_any(
@@ -457,6 +423,7 @@ def _load_any(
     *,
     options: dict[str, Any] | None = None,
     union_tag: str | None = None,
+    mount: tuple[str, ...] = (),
 ) -> Any:
     """Load one config source as any type (dict, list, or scalar), with its includes resolved.
 
@@ -467,10 +434,17 @@ def _load_any(
 
     For CSV/TSV, *options* may contain 'orient' and 'header'.
 
+    *mount* is the path the document's root lands at, from the configuration root, one
+    segment per key or list index: an include's is the including document's own plus the
+    position it sits at, so each document's bare references are prefixed once, by the whole
+    path, and a first segment that only ``::`` can spell (``::['web-1'].p``) is never
+    prefixed again by an outer mount.
+
     Dev Notes:
         docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies
+        docs-dev/architecture/expressions/reference-anchoring.md#why-the-node-anchor-resolves-late
     """
-    return _resolve_node(_load_document(loc, options), loc, seen, (), union_tag)
+    return _resolve_node(_load_document(loc, options), loc, seen, (), union_tag, mount)
 
 
 def _require_layer(value: Any, loc: str) -> dict[str, Any]:
@@ -536,22 +510,6 @@ def _nest(value: Any, subpath: str) -> Any:
     return value
 
 
-def _mount(value: Any, subpath: str) -> Any:
-    """Place *value* at *subpath* of a fresh document, re-anchoring its references.
-
-    The one implementation of mounting a loaded value: ``__include__`` under a key reaches the
-    same outcome through :func:`_resolve_dict`'s *path_in_file*, and ``--config.<path>`` and
-    ``CONFIG__<PATH>`` reach it here. An empty *subpath* is the root, and the identity.
-
-    Dev Notes:
-        docs-dev/architecture/config-files/mounting.md#mounting
-        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
-    """
-    if not subpath:
-        return value
-    return _nest(prefix_references(value, subpath), subpath)
-
-
 def _decode_mount_value(value: Any) -> Any:
     """Read one channel-supplied mount value as an ``__include__`` value.
 
@@ -589,23 +547,34 @@ def _parse_mount_value(value: Any) -> list[tuple[str, dict[str, Any]]]:
     return _parse_include_val(_decode_mount_value(value))
 
 
-def _load_mount_value(value: Any, base: str | None = None, union_tag: str | None = None) -> Any:
+def _load_mount_value(
+    value: Any,
+    base: str | None = None,
+    union_tag: str | None = None,
+    mount: tuple[str, ...] = (),
+) -> Any:
     """Resolve one channel-supplied mount value to the value it contributes.
 
     The shared half of every non-file mount route: read *value* as an ``__include__`` value and
     layer its entries. Relative locations resolve against *base* -- the including document for
     ``__include__`` and, for these routes, the process working directory, which is what the
-    default ``None`` names and the one difference between them.
+    default ``None`` names and the one difference between them. *mount* is where the value
+    lands (see :func:`_load_any`).
 
     Dev Notes:
         docs-dev/architecture/config-files/mounting.md#mounting
         docs-dev/architecture/design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel
     """
-    return _load_includes(_parse_mount_value(value), base, frozenset(), union_tag)
+    return _load_includes(_parse_mount_value(value), base, frozenset(), union_tag, mount)
 
 
 def _load_mount(value: Any, subpath: str, base: str | None = None, union_tag: str | None = None) -> dict[str, Any]:
-    """Load one mount and return it nested at *subpath*.
+    """Load one mount and return it nested at the dot-separated *subpath*.
+
+    The one implementation of mounting a channel value: ``--config.<path>`` and
+    ``CONFIG__<PATH>`` reach it, and ``__include__`` under a key reaches the same outcome
+    through :func:`_resolve_dict`. The loaded documents are anchored at *subpath* as they load
+    (see :func:`_load_any`).
 
     An empty *subpath* mounts at the document root, where the result must be a configuration
     layer and a data file has nothing to contribute. A non-empty one mounts at a node, where
@@ -613,9 +582,10 @@ def _load_mount(value: Any, subpath: str, base: str | None = None, union_tag: st
 
     Dev Notes:
         docs-dev/architecture/config-files/mounting.md#mounting
+        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     if subpath:
-        return _mount(_load_mount_value(value, base, union_tag), subpath)
+        return _nest(_load_mount_value(value, base, union_tag, tuple(subpath.split("."))), subpath)
     locations = [_sources._join(base, path_str) for path_str, _ in _parse_mount_value(value)]
     for loc in locations:
         _loader_for(loc, _LOADERS)  # a root is a layer: .csv/.tsv is unsupported here, not data

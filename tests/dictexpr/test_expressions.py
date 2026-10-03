@@ -1159,12 +1159,12 @@ class TestExpressionDelimiting:
 
     def test_prefixing_a_padded_body(self) -> None:
         """Mounting a file whose expression is padded rewrites it rather than failing."""
-        assert prefix_references({"v": "${ a }"}, "db") == {"v": "${db.a}"}
+        assert prefix_references({"v": "${ a }"}, ("db",)) == {"v": "${db.a}"}
 
     def test_prefixing_keeps_the_literal(self) -> None:
         """Mounting a file rewrites the references, not the braces of the literal."""
-        assert _prefix_content("root + '{x}'", "db") == "db.root + '{x}'"
-        assert prefix_references({"v": "${root + '{x}'}"}, "db") == {"v": "${db.root + '{x}'}"}
+        assert _prefix_content("root + '{x}'", ("db",)) == "db.root + '{x}'"
+        assert prefix_references({"v": "${root + '{x}'}"}, ("db",)) == {"v": "${db.root + '{x}'}"}
 
     def test_end_to_end_from_the_command_line(self) -> None:
         """``load()`` resolves the expression however the argument spells its braces."""
@@ -1220,8 +1220,8 @@ class TestReservedNamesInExpressions:
 
     def test_a_mounted_function_name_off_a_call_follows_the_file(self) -> None:
         """Prefixing rewrites a bare function name as any key, and leaves a callee alone."""
-        assert prefix_references({"lim": "${max}"}, "sub") == {"lim": "${sub.max}"}
-        assert prefix_references({"lim": "${max(max, a)}"}, "sub") == {"lim": "${max(sub.max, sub.a)}"}
+        assert prefix_references({"lim": "${max}"}, ("sub",)) == {"lim": "${sub.max}"}
+        assert prefix_references({"lim": "${max(max, a)}"}, ("sub",)) == {"lim": "${max(sub.max, sub.a)}"}
 
 
 class TestSubscriptPaths:
@@ -1293,7 +1293,31 @@ class TestSubscriptPaths:
 
     def test_mounting_prefixes_the_base_and_keeps_the_subscript(self) -> None:
         """Only the base name is file-anchored, so only it takes the prefix."""
-        assert prefix_references({"v": "${svc['web-1'].host}"}, "db") == {"v": "${db.svc['web-1'].host}"}
+        assert prefix_references({"v": "${svc['web-1'].host}"}, ("db",)) == {"v": "${db.svc['web-1'].host}"}
+
+    @pytest.mark.parametrize(
+        ("prefix", "spelled"),
+        [
+            pytest.param(("xs", "0"), "xs[0].p", id="list-index"),
+            pytest.param(("svc", "web-1"), "svc['web-1'].p", id="hyphen"),
+            pytest.param(("svc", "h.com"), "svc['h.com'].p", id="dot-in-key"),
+            pytest.param(("svc", "import"), "svc['import'].p", id="keyword"),
+            pytest.param(("svc", "__x__"), "svc['__x__'].p", id="dunder"),
+            pytest.param(("svc", "ﬁle"), "svc['ﬁle'].p", id="nfkc"),
+            pytest.param(("svc", "007"), "svc['007'].p", id="padded-digits"),
+            pytest.param(("web-1",), "::['web-1'].p", id="root-hyphen"),
+            pytest.param(("0", "a"), "::[0].a.p", id="root-index"),
+            pytest.param(("__UP1__",), "::['__UP1__'].p", id="root-stand-in"),
+        ],
+    )
+    def test_mounting_spells_each_prefix_segment_so_it_parses_back(self, prefix: tuple[str, ...], spelled: str) -> None:
+        """A segment no dot can spell is a constant subscript, and a first one hangs off ``::`` (BUG-127)."""
+        assert prefix_references({"q": "${p}"}, prefix) == {"q": "${" + spelled + "}"}
+
+    def test_a_node_anchor_reaches_a_root_key_that_is_no_identifier(self) -> None:
+        """The path a dot run stands for is spelled the same way, so ``web-1`` is one root key."""
+        data = {"web-1": {"a": {"v": "${..p}"}, "p": 2}}
+        assert resolve_expressions(data)["web-1"]["a"]["v"] == 2
 
 
 class TestMethodCalls:
@@ -1533,10 +1557,10 @@ class TestAnchorNameRoundTrip:
 
     def test_mounting_leaves_anchored_references_alone(self) -> None:
         """Only a bare name is file-anchored, so only a bare name takes the prefix."""
-        assert _prefix_content("host", "db") == "db.host"
-        assert _prefix_content(".host", "db") == ".host"
-        assert _prefix_content("..host", "db") == "..host"
-        assert _prefix_content("::name", "db") == "::name"
+        assert _prefix_content("host", ("db",)) == "db.host"
+        assert _prefix_content(".host", ("db",)) == ".host"
+        assert _prefix_content("..host", ("db",)) == "..host"
+        assert _prefix_content("::name", ("db",)) == "::name"
 
 
 class TestAnchorDepthArithmetic:
@@ -1629,4 +1653,4 @@ class TestAnchorFollowedByASubscript:
     @pytest.mark.parametrize("expr", [".[0]", "::['web-1']"])
     def test_mounting_leaves_it_alone(self, expr: str) -> None:
         """An anchored reference takes no prefix, whatever spells its first segment."""
-        assert _prefix_content(expr, "db") == expr
+        assert _prefix_content(expr, ("db",)) == expr

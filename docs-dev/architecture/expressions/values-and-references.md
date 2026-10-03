@@ -54,7 +54,11 @@ read a sibling key, a sibling element and a root key
 
 `_expressions._attribute_chain` is the one answer to "which config path does this node read?".
 Reference collection asks it for the dependency graph and evaluation asks it for the value, so a
-spelling can never be a dependency on one path and read another. A computed subscript
+spelling can never be a dependency on one path and read another. `_expressions._path_to_ast` is
+the converse, "which expression reads this path?": a dot where the segment is a name, a constant
+subscript elsewhere, and a first segment that is no name off the root marker (`::['web-1']`). It
+spells the prefix of a mounted file and the path a dot run stands for
+([reference anchoring](reference-anchoring.md#a-document-is-prefixed-once-by-its-whole-mount-path)). A computed subscript
 (`${svc[k]}`) spells no path: its key is only known once `k` is evaluated, so it is Python's own
 subscript, and it is no dependency beyond the names it is computed from.
 

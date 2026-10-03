@@ -88,7 +88,7 @@ Kahn sort does not look for a node that is not in the document.
 The namespace has to reach file loading, which currently takes paths and nothing else:
 
 `_merge_sources` → `_load_subpath_files` → `_load_file` → `_load_raw` → `_resolve_node` →
-`_resolve_dict` / `_resolve_list`, where the path string is evaluated before `_load_includes`.
+`_resolve_dict`, where the path string is evaluated before `_load_includes`.
 `_load_cli_config` (`_pipeline.py:64`) reaches `_load_file` too.
 
 One more caller is easy to miss: `_tags.py:52` pre-loads `--config` files straight from argv to
