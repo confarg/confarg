@@ -31,8 +31,9 @@ question attached to any of them. Split across revisions if one turns out bigger
 
 **A lint question to settle in the same pass.** Two of these patterns are already known to ruff,
 in preview only: `FURB118` reports `_pipeline.py:340`'s `lambda ec: ec[0]` as
-`operator.itemgetter(0)`, and `PLW0717` flags four of the try clauses in
-[REF-53](REF-53-contextlib-suppress-for-hand-rolled-try-except.md). Enabling them in
+`operator.itemgetter(0)`, and `PLW0717` flagged the multi-statement try clauses that
+REF-53 closed — they are `with contextlib.suppress(...)` blocks now, but the rule is what
+would catch the pattern coming back. Enabling them in
 [`.ruff.toml`](../../../.ruff.toml) makes lint hold the line afterwards; hand-fixing without
 enabling them means the pattern comes back. Decide which — the itemgetter site is deliberately
 *not* listed above, because it should be fixed by whichever answer wins.
