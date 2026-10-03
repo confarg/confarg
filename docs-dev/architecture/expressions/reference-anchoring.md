@@ -90,6 +90,15 @@ reads any other.
   only when the innermost enclosing bracket is not `[` — inside a subscript it is a slice step,
   which is what keeps `items[::2]` available to [FEAT-12](../../todo/features/FEAT-12-scoped-expression-expansion.md).
   Parentheses reopen the marker: `items[(::step)]`.
+- **The stand-ins never leave the parse.** A marker is not Python, so it is swapped for a name
+  that is (`.x` → `__UP1__.x`, `::x` → `__ROOT__.x`), and that swap happens in one place:
+  `_parse_expression`, the cache every parse site goes through. Everything else — the graph,
+  validation, evaluation — carries the text the user wrote, so a message that quotes an
+  expression (`Invalid expression syntax: '.x +'`, `Error in expression '${-.x}'`) quotes it as
+  written, never a name no documentation mentions. Before BUG-129 `resolve_expressions` named
+  every value up front and handed the named text on; un-naming it again for each message would
+  have been a second, lossy inverse of the same rewrite. Jinja2 makes the same split: its lexer
+  rewrites the template for the parser, while a `TemplateSyntaxError` reports the source as written.
 - **The node anchor is resolved on the tree, never on source** (`_AnchorResolver`). An absolute
   path may hold a list index, a key that is no identifier or a key holding a dot — `dbs.0.host`,
   `svc.web-1.host`, `hosts['example.com'].port` — each one segment of the node's position

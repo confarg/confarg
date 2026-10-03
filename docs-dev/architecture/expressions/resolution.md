@@ -22,8 +22,9 @@ values already resolved, and is no edge. Which expressions a reference does reac
 section.
 
 Steps 2, 4 and 5 each need a parsed AST, but a unique expression text is parsed once: every
-parse site goes through the module-level `_parse_expression` cache (keyed by the raw `${...}`
-body after anchor stripping). The Kahn sort is linear in the graph size (`V + E`): a reverse
+parse site goes through the module-level `_parse_expression` cache (keyed by the `${...}` body
+as written, whose anchor markers it names itself —
+[reference anchoring](reference-anchoring.md#implementation-constraints)). The Kahn sort is linear in the graph size (`V + E`): a reverse
 adjacency list records who depends on each node, so releasing a node touches only its direct
 dependents. Both matter only for large configurations — a config with thousands of chained
 expressions is the only case that felt the old quadratic sort and triple parse.

@@ -223,22 +223,22 @@ def _parse_body(body: str) -> ast.Expression:
 
 @lru_cache(maxsize=2048)
 def _parse_expression(content: str) -> ast.Expression:
-    """Parse one ``${...}`` body into a cached AST.
+    """Parse one ``${...}`` body, as written, into a cached AST.
 
-    The root marker is stripped before parsing, so the cache is keyed by the raw
-    expression text. Every parse site in resolution — reference extraction,
-    validation and evaluation — goes through here, so a unique expression is
-    parsed however many times it appears but at most once.
+    Every parse site in resolution — reference extraction, validation and evaluation —
+    goes through here, so a unique expression is parsed however many times it appears
+    but at most once, and is the only place anchor markers are swapped for the stand-in
+    names that let them parse (:func:`_name_anchor`). The text anywhere else is the text
+    the user wrote, so a message quoting it never shows a stand-in.
 
-    A node-relative reference reaches here as a stand-in name, which parses and so
-    caches like anything else; what it *denotes* differs per node, which is why
-    :func:`_parse_anchored` rewrites the tree on the way out rather than the text
-    on the way in.
+    A stand-in parses and so caches like anything else; what it *denotes* differs per
+    node, which is why :func:`_parse_anchored` rewrites the tree on the way out rather
+    than the text on the way in.
 
     Dev Notes:
         docs-dev/architecture/expressions/resolution.md#resolution-algorithm
     """
-    return _parse_body(_strip_anchor(content))
+    return _parse_body(_name_anchor(content))
 
 
 def resolve_expressions(
@@ -264,25 +264,21 @@ def resolve_expressions(
     if not expr_fields:
         return data
 
-    # 2. Swap anchor markers for stand-in names so every body parses; what each one
-    #    denotes is settled per node by _parse_anchored, below.
-    expr_fields = {path: name_anchors(raw_str) for path, raw_str in expr_fields.items()}
-
     data = copy.deepcopy(data)
 
-    # 3. Extract references and build dependency graph
+    # 2. Extract references and build dependency graph
     deps = _dependency_graph(data, expr_fields)
 
-    # 4. Topological sort
+    # 3. Topological sort
     order = _topological_sort(deps)
 
-    # 5. Validate AST for all expressions
+    # 4. Validate AST for all expressions
     for path in order:
         for span in _find_expressions(expr_fields[path]):
             if span.body is not None:  # not escaped
                 _validate_ast(span.body)
 
-    # 6. Resolve in order, building namespace incrementally
+    # 5. Resolve in order, building namespace incrementally
     for path in order:
         raw_str = expr_fields[path]
         result = _resolve_single(raw_str, data, path)
@@ -896,9 +892,6 @@ _ROOT_ANCHOR = "__ROOT__"
 #: Transient stand-in for a node-relative anchor: a run of *n* dots becomes ``__UP<n>__``.
 _UP_ANCHOR_RE = re.compile(r"^__UP(\d+)__$")
 
-#: Cheap test for a stand-in anywhere in an expression body, to skip the rewrite.
-_ANCHOR_NAME_RE = re.compile(r"__(?:ROOT|UP\d+)__")
-
 #: Adjacent colons that spell the configuration root.
 _ROOT_MARKER_COLONS = 2
 
@@ -1105,15 +1098,15 @@ def _marker_text(levels: int) -> str:
 def _strip_anchor(expr_content: str) -> str:
     """Rewrite configuration-root references as plain paths (``::foo.bar`` -> ``foo.bar``).
 
-    In a standalone dict the configuration root *is* the dict root, so dropping the
-    marker is exactly what a root reference means there.  Every parse site goes
-    through this, so ``build()`` and ``resolve()`` accept the marker even though
-    :func:`confarg.merge` normally canonicalizes it away first.
+    Once every file is mounted the configuration root *is* the dict root, so dropping
+    the marker is exactly what a root reference means there; this is
+    :func:`canonicalize_references`' rewrite. Parsing needs none of it: a body is parsed
+    as written, its markers named (:func:`_parse_expression`), which is how ``build()``
+    and ``resolve()`` accept a ``::`` that never went through :func:`confarg.merge`.
 
     Node-relative markers are left alone: they mean nothing without the path of the
-    node that wrote them, and :func:`resolve_expressions` has already replaced them
-    by the time any parse site runs. So is a root marker no name follows: no plain path
-    reads a root key that is no identifier (``::['web-1']``), or the root itself.
+    node that wrote them. So is a root marker no name follows: no plain path reads a
+    root key that is no identifier (``::['web-1']``), or the root itself.
 
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#a-relative-reference-is-never-serialized-as-an-absolute-path
@@ -1216,19 +1209,6 @@ def check_anchor_depth(value: str, node_path: _Path, scope: str = "file") -> Non
             _anchor_prefix(node_path, marker.levels, scope)
 
 
-def name_anchors(value: str) -> str:
-    """Return *value* with each expression's anchor markers swapped for stand-in names.
-
-    ``${.x}`` becomes ``${__UP1__.x}`` and ``${::x}`` becomes ``${__ROOT__.x}``, which
-    parse.  What each stand-in denotes depends on where the expression sits, so it is
-    :class:`_AnchorResolver` that turns it into a path, once the node is known.
-
-    Dev Notes:
-        docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
-    """
-    return _map_expressions(value, _name_anchor)
-
-
 class _AnchorResolver(ast.NodeTransformer):
     """Replace each anchor stand-in by the absolute path it denotes at *node_path*.
 
@@ -1284,7 +1264,7 @@ def _parse_anchored(expr_content: str, node_path: _Path) -> ast.Expression:
     The parse cache is shared, so the tree is copied before it is rewritten.
     """
     tree = _parse_expression(expr_content)
-    if not _ANCHOR_NAME_RE.search(expr_content):
+    if not any(isinstance(node, ast.Name) and _anchor_dot_count(node.id) is not None for node in ast.walk(tree)):
         return tree
     rewritten = _AnchorResolver(node_path).visit(copy.deepcopy(tree))
     ast.fix_missing_locations(rewritten)

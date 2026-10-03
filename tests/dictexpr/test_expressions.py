@@ -1691,3 +1691,34 @@ class TestAnchorFollowedByASubscript:
     def test_mounting_leaves_it_alone(self, expr: str) -> None:
         """An anchored reference takes no prefix, whatever spells its first segment."""
         assert _prefix_content(expr, ("db",)) == expr
+
+
+class TestAnchoredExpressionQuotedAsWritten:
+    """A message quotes an anchored expression as the user wrote it, never its stand-in names (BUG-129)."""
+
+    @pytest.mark.parametrize(
+        ("data", "quoted"),
+        [
+            pytest.param({"a": {"x": 1, "p": "${.x +}"}}, ".x +", id="node-anchor"),
+            pytest.param({"x": 1, "p": "${::x +}"}, "::x +", id="root-anchor"),
+            pytest.param({"a": {"x": 1, "p": "pre ${..a.x +} post"}}, "..a.x +", id="interpolated"),
+            pytest.param({"xs": [1, "${.[0] +}"]}, ".[0] +", id="anchor-then-subscript"),
+        ],
+    )
+    def test_a_syntax_error(self, data: dict, quoted: str) -> None:
+        """``Invalid expression syntax`` quotes the body with its anchor markers."""
+        with pytest.raises(UnsafeExpressionError, match=f"^Invalid expression syntax: {re.escape(repr(quoted))}$"):
+            resolve_expressions(data)
+
+    @pytest.mark.parametrize(
+        ("data", "quoted"),
+        [
+            pytest.param({"a": {"x": "s", "p": "${-.x}"}}, "${-.x}", id="node-anchor"),
+            pytest.param({"x": "s", "p": "${::x < 1}"}, "${::x < 1}", id="root-anchor"),
+            pytest.param({"a": {"x": "s", "p": "v=${.x < 1}"}}, "${.x < 1}", id="interpolated"),
+        ],
+    )
+    def test_an_evaluation_error(self, data: dict, quoted: str) -> None:
+        """``Error in expression`` quotes the expression with its anchor markers."""
+        with pytest.raises(ExpressionEvalError, match=f"^Error in expression {re.escape(repr(quoted))}: "):
+            resolve_expressions(data)
