@@ -38,5 +38,12 @@
   failed cost the sibling flags their place in the merged dict (BUG-69). Each variant is
   descended into in its own guard, so one variant's failed import costs no other variant its
   flags.
+- The descent itself is one shared walk — `_collect._collect_variant_fields` — for every
+  spelling: a tag's named variant and its siblings, a union field's variants without a tag,
+  the union root's, and a base class's subclasses without a tag (`_dataclass_subclasses`, the
+  same set vanilla's `_subclass_field_type` searches). The no-tag inheritance branch once
+  returned before any descent, so a subclass's flag registered in the flat namespace never
+  reached the merged dict while vanilla coerced it by the owning subclass's field type and
+  let `build()` raise the missing-discriminator complaint (BUG-83).
 - Force-cast flags (`--f.int`, …) are registered statically only where the stealing rule is
   non-obvious: an enum variant, or `str` next to any other variant.

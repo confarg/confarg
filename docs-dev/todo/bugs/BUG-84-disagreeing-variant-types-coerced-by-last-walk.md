@@ -1,7 +1,8 @@
 # BUG-84 — A flag owned by disagreeing variants is coerced by the last walk, not by vanilla's rule
 
 **Where:** `src/confarg/cli/_collect.py` (the per-variant walks: `_collect_ns_union_field`'s
-loop and `_collect_named_variant`'s sibling loop); the vanilla rule is
+loop and `_collect_variant_fields`, the shared walk every tag and no-tag branch descends
+through); the vanilla rule is
 `src/confarg/_parse_cli.py` (`_resolve_union_field_type`, `_subclass_field_type`) ·
 **Filed:** 2026-09-30
 **Effort:** M · **Risk:** medium · **Impact:** behavior
