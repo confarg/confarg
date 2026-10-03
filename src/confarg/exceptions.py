@@ -20,6 +20,20 @@ def _locals_file_flag(config_flag: str, locals_key: str) -> str | None:
     return f"--{config_flag}.{locals_key} FILE" if config_flag else None
 
 
+def _in_expression(expression: str, reason: object) -> str:
+    """Return the text of an expression's refusal or runtime failure: the expression as written, then why.
+
+    *expression* is the ``${...}`` as written, the whole value for a pure expression and the
+    fragment alone for one inside an interpolation; *reason* is what was refused, or
+    Python's own exception for a runtime failure.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/resolution.md#an-evaluation-failure-names-its-expression
+        docs-dev/architecture/expressions/resolution.md#a-refusal-names-its-expression
+    """
+    return f"Error in expression {expression!r}: {reason}"
+
+
 class ConfargError(Exception):
     """Base exception for all confarg errors."""
 
@@ -367,13 +381,18 @@ class UnsafeExpressionError(ConfargError):
     """Raised when an expression contains disallowed AST nodes or function calls."""
 
     @classmethod
-    def indirect_call(cls) -> UnsafeExpressionError:
-        """Return an error for a call whose callee is neither a function name nor a method."""
-        return cls("Indirect function calls are not allowed")
+    def refused(cls, expression: str, reason: str) -> UnsafeExpressionError:
+        """Return the refusal of *expression*, as written, for *reason*."""
+        return cls(_in_expression(expression, reason))
 
 
 class ExpressionEvalError(ConfargError):
     """Raised for runtime errors during expression evaluation."""
+
+    @classmethod
+    def failed(cls, expression: str, exc: Exception) -> ExpressionEvalError:
+        """Return the runtime failure of *expression*, as written, with Python's own *exc* as the reason."""
+        return cls(_in_expression(expression, exc))
 
 
 class ConfargWarning(UserWarning):

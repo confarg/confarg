@@ -35,7 +35,7 @@ a `MemoryError` when its own stack overflows, the depth and the Python version d
 (3.14 raises only the second on a unary chain). `_parse_body` reports both as `_TooDeepError`, a
 `SyntaxError`, so every parse site treats the body as one that does not parse: reference
 extraction skips it, mounting leaves it as written, and validation refuses it as
-`Expression nests too deeply to parse`, quoting it (BUG-137). Before, it escaped `resolve()` and
+`Too deeply nested to parse`, quoting it (BUG-137). Before, it escaped `resolve()` and
 a mounting `merge()` as a raw interpreter error. Python itself only documents the crash, for
 `compile()` and `ast.literal_eval`; Go's `regexp/syntax` is the precedent for reporting it as the
 parser's own error (`ErrNestingDepth`, "expression nests too deeply").
@@ -102,7 +102,9 @@ A configuration may hold hundreds of expressions, so a runtime failure that says
 than the two typed refusals, is therefore an `ExpressionEvalError` that quotes the expression as
 written, followed by Python's own text: `Error in expression '${b / 0}': division by zero`. The
 quote is the whole value for a pure expression and the `${...}` fragment alone for one inside an
-interpolation, so `<${b / 0}>` reports `'${b / 0}'`.
+interpolation, so `<${b / 0}>` reports `'${b / 0}'`. A refusal reads the same way
+([below](#a-refusal-names-its-expression)), and `exceptions._in_expression` is the one spelling
+of both.
 
 One function words it, `_eval_expr`, the wrapper around the evaluation of one `${...}`. The
 evaluators raise Python's exception as it comes — an operator's `TypeError`, a whitelisted
@@ -111,8 +113,9 @@ function's or a string method's `ValueError`, a miss off a value no path names
 `ExpressionEvalError` of its own from it. Before BUG-135, `_eval_binop` and `_eval_call` did, with
 no context, and `_eval_expr` let an `ExpressionEvalError` through unchanged, so `${b / 0}` and
 `${s.strip(1)}` named no expression while `${-s}` and `${s < 1}`, which nobody wrapped early, did.
-`MissingReferenceError` and `UnsafeExpressionError` pass through as they are, worded where they
-are raised. The original exception stays the `__cause__`.
+`MissingReferenceError` passes through as it is, worded where it is raised, and so does the
+field it names; an `UnsafeExpressionError` is quoted here too
+([below](#a-refusal-names-its-expression)). The original exception stays the `__cause__`.
 
 OmegaConf draws the same line: a resolver's failure is re-raised once, by the interpolation
 machinery, as an `InterpolationResolutionError` that names the key, never by the resolver.
@@ -121,3 +124,39 @@ Rejected: **`_eval_expr` rewording an `ExpressionEvalError` that has no context.
 early wraps but needs a way to tell a worded error from a bare one — a flag on the exception, or
 a match on its text — so two sites still decide the wording and a third evaluator that wraps
 early would silently opt out.
+
+## A refusal names its expression
+
+What the safety model refuses is quoted as a runtime failure is, with the same lead, and the
+exception's type says which it was: `UnsafeExpressionError: Error in expression
+'${s.upper() + eval('1')}': Function 'eval' is not allowed`. That holds for every refusal: a body
+that does not parse, nests too deeply or writes a name Python normalizes, a disallowed construct,
+function, method or dunder, an indirect call, and a method called off a value that is no string.
+Before BUG-143 only the three that do not parse quoted anything, and then the bare body
+(`Invalid expression syntax: 's.upper('`); the rest named the construct alone, which says nothing
+about where it is in a configuration holding many expressions.
+
+The refusal is raised bare, as a private `_RefusedError` holding the reason alone, and two sites
+quote it, the two that know which `${...}` was refused: the validation loop in
+`resolve_expressions` (step 4) for what the syntax shows, and `_eval_expr` for the receiver, whose
+type is known only at evaluation ([safety model](safety-model.md#a-method-is-a-string-method)).
+`UnsafeExpressionError.refused` and `ExpressionEvalError.failed` both word their message with
+`exceptions._in_expression`. Being private, the bare refusal cannot reach a user unquoted: no
+caller outside those two sites catches it. The quote is the `${...}` as written, as for a runtime
+failure, so a syntax refusal quotes `'${.x +}'` where it used to quote the body `'.x +'`; a
+refusal that does not parse keeps the parser's `SyntaxError` as its `__cause__`.
+
+Precedents name the expression too: simpleeval appends it (`Function 'x' not defined, for
+expression 'x(1)'`), OmegaConf's `GrammarParseError` reports the key and its text, and Jinja2's
+`TemplateSyntaxError` the template and line. The lead is confarg's own runtime one, so every error
+an expression raises reads the same way.
+
+Rejected:
+
+- **Each refusal site quoting its expression.** The receiver check sits deep in evaluation and
+  would need the quote threaded through every evaluator, and five sites would spell the quote.
+- **Rewording a public `UnsafeExpressionError` at the two sites.** The same opt-out the runtime
+  section rejects: nothing would tell a worded refusal from a bare one, so one raised anywhere else
+  would pass through unquoted.
+- **The reason first, the quote after it** (simpleeval). It reads the reason first, but a refusal
+  and a runtime failure would then read in two shapes (maintainer-chosen).

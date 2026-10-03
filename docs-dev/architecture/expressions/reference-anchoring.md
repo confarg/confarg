@@ -107,7 +107,7 @@ reads any other.
   that is (`.x` → `__UP1__.x`, `::x` → `__ROOT__.x`), and that swap happens in one place:
   `_parse_expression`, the cache every parse site goes through. Everything else — the graph,
   validation, evaluation — carries the text the user wrote, so a message that quotes an
-  expression (`Invalid expression syntax: '.x +'`, `Error in expression '${-.x}'`) quotes it as
+  expression (`Error in expression '${.x +}': Invalid syntax`, `Error in expression '${-.x}'`) quotes it as
   written, never a name no documentation mentions. Before BUG-129 `resolve_expressions` named
   every value up front and handed the named text on; un-naming it again for each message would
   have been a second, lossy inverse of the same rewrite. Jinja2 makes the same split: its lexer

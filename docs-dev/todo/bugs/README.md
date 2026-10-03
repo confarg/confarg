@@ -35,7 +35,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | S | low | behavior |
 | [BUG-141 — The protocols link the architecture notes by their old numbered filenames](BUG-141-the-protocols-link-the-architecture-notes-by-their-old-numbered-filenames.md) | S | medium | none |
 | [BUG-142 — A namedtuple built from a dict accepts index keys the CLI refuses](BUG-142-a-namedtuple-built-from-a-dict-accepts-index-keys-the-cli-refuses.md) | S | medium | config |
-| [BUG-143 — An unsafe-expression refusal names no expression](BUG-143-an-unsafe-expression-refusal-names-no-expression.md) | S | high | behavior |
 | [BUG-144 — The refusal of a method on a non-string reads "a int"](BUG-144-a-method-on-a-non-string-reads-a-int.md) | S | low | behavior |
 | [BUG-145 — An expression that parses but nests past the recursion limit crashes the walkers](BUG-145-an-expression-that-parses-but-nests-past-the-recursion-limit-crashes-the-walkers.md) | M | high | behavior |
 | [BUG-146 — The alternative-directive notes in `19_bindings` exercise two of the five front-ends](BUG-146-alternative-directive-notes-cover-two-front-ends.md) | S | low | none |

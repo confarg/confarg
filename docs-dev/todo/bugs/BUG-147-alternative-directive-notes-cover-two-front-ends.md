@@ -1,4 +1,4 @@
-# BUG-146 — The alternative-directive notes in `19_bindings` exercise two of the five front-ends
+# BUG-147 — The alternative-directive notes in `19_bindings` exercise two of the five front-ends
 
 **Where:** `examples/19_bindings/README.md` · **Filed:** 2026-10-03
 **Effort:** S · **Risk:** low · **Impact:** none
