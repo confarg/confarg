@@ -1309,6 +1309,8 @@ class TestSubscriptPaths:
             pytest.param(("svc", "__x__"), "svc['__x__'].p", id="dunder"),
             pytest.param(("svc", "ﬁle"), "svc['ﬁle'].p", id="nfkc"),
             pytest.param(("svc", "007"), "svc['007'].p", id="padded-digits"),
+            pytest.param(("xs", "-1"), "xs[-1].p", id="negative-index"),
+            pytest.param(("xs", "+1"), "xs['+1'].p", id="signed-digits"),
             pytest.param(("web-1",), "::['web-1'].p", id="root-hyphen"),
             pytest.param(("0", "a"), "::[0].a.p", id="root-index"),
             pytest.param(("__UP1__",), "::['__UP1__'].p", id="root-stand-in"),
@@ -1863,3 +1865,52 @@ class TestANameIsReadAsWritten:
             "v": "${ﬁle}",
             "w": "${db.a} ${svc.ﬁle}",
         }
+
+
+class TestAListIndexHasOneSpelling:
+    """A segment addresses a list element only in the spelling an integer subscript gives (BUG-133).
+
+    A string subscript is an index because a path segment is a string, so ``'1'`` reads
+    ``xs[1]``; nothing else ``int()`` happens to parse does.
+    """
+
+    @pytest.mark.parametrize(
+        ("spelling", "expected"),
+        [
+            pytest.param("xs[1]", "b", id="int"),
+            pytest.param("xs['1']", "b", id="string"),
+            pytest.param("xs[0]", "a", id="zero"),
+            pytest.param("xs['0']", "a", id="zero-string"),
+            pytest.param("xs[-1]", "k", id="negative"),
+            pytest.param("xs['-1']", "k", id="negative-string"),
+            pytest.param("xs['10']", "k", id="two-digits"),
+        ],
+    )
+    def test_a_canonical_spelling_reads_the_element(self, spelling: str, expected: str) -> None:
+        """What ``str()`` of an integer writes is an index, signed or not."""
+        assert resolve_expressions({"xs": list("abcdefghijk"), "v": "${" + spelling + "}"})["v"] == expected
+
+    @pytest.mark.parametrize(
+        "segment",
+        [
+            pytest.param("+1", id="plus"),
+            pytest.param(" 1", id="leading-space"),
+            pytest.param("1 ", id="trailing-space"),
+            pytest.param("1_0", id="underscore"),
+            pytest.param("01", id="leading-zero"),
+            pytest.param("-0", id="negative-zero"),
+            pytest.param("\u0661", id="non-ascii-digit"),
+        ],
+    )
+    def test_any_other_spelling_is_no_index(self, segment: str) -> None:
+        """The miss names the segment as written, a constant subscript or a computed one."""
+        message = rf"Field 'xs\.{re.escape(segment)}' not found: '{re.escape(segment)}' is not a valid index"
+        with pytest.raises(MissingReferenceError, match=message):
+            resolve_expressions({"xs": list("abcdefghijk"), "v": "${xs['" + segment + "']}"})
+        with pytest.raises(MissingReferenceError, match=message):
+            resolve_expressions({"xs": list("abcdefghijk"), "k": segment, "v": "${xs[k]}"})
+
+    def test_a_node_anchor_reads_no_other_spelling(self) -> None:
+        """The relative spelling walks the same step."""
+        with pytest.raises(MissingReferenceError, match=r"'\+1' is not a valid index"):
+            resolve_expressions({"xs": ["a", "b"], "c": {"v": "${..xs['+1']}"}})

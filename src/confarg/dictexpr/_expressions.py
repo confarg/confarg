@@ -896,6 +896,25 @@ def _get_nested(data: dict[str, Any], parts: Sequence[str]) -> Any:
     return current
 
 
+def _list_index(segment: str) -> int | None:
+    """Return the list index *segment* spells, or ``None`` when it spells none.
+
+    Only the spelling ``str()`` gives an integer is an index — ``0``, ``1``, ``-1`` — so a
+    string subscript ``['1']`` reads what the integer subscript ``[1]`` does, and nothing
+    else :func:`int` happens to parse does: ``+1``, `` 1``, ``1_0``, ``01``, ``-0`` or a
+    non-ASCII digit spell no index. The one answer for the walk (:func:`_step`) and for the
+    spelling of a path (:func:`_segment_link`), which writes an index as the integer.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
+    """
+    try:
+        index = int(segment)
+    except ValueError:
+        return None
+    return index if str(index) == segment else None
+
+
 def _step(node: Any, part: str, path: Sequence[str]) -> tuple[str, Any]:
     """Take the segment *part* of *path* down from *node*: return how the scan names it, and what it reaches.
 
@@ -903,7 +922,7 @@ def _step(node: Any, part: str, path: Sequence[str]) -> tuple[str, Any]:
     the dependency graph names a reference with it (:func:`_scan_path`), so a reference can
     never depend on one node and read another. A dict key names itself; a list index is
     named by its position, as :func:`_collect_expressions` names an element, so ``-1`` of a
-    two-item list is ``1``.
+    two-item list is ``1``; only a segment :func:`_list_index` reads is one.
 
     Raises:
         MissingReferenceError: If *part* reaches nothing from *node*; the message names *path*.
@@ -913,10 +932,9 @@ def _step(node: Any, part: str, path: Sequence[str]) -> tuple[str, Any]:
             raise MissingReferenceError.field_not_found(".".join(path))
         return part, node[part]
     if isinstance(node, list | tuple):
-        try:
-            idx = int(part)
-        except ValueError:
-            raise MissingReferenceError.field_not_found(".".join(path), f"'{part}' is not a valid index") from None
+        idx = _list_index(part)
+        if idx is None:
+            raise MissingReferenceError.field_not_found(".".join(path), f"'{part}' is not a valid index")
         if not -len(node) <= idx < len(node):
             raise MissingReferenceError.field_not_found(".".join(path), f"index {idx} out of range")
         position = idx + len(node) if idx < 0 else idx
@@ -1122,16 +1140,15 @@ def _spells_as_name(segment: str) -> bool:
 def _segment_link(base: ast.expr, segment: str) -> ast.Attribute | ast.Subscript:
     """Read *segment* off *base*: a dot when it spells as a name, else a constant subscript.
 
-    A segment that spells a list index (``0``) is subscripted by the integer, the others
-    by the string, so ``xs[0]`` and ``svc['web-1']`` read what ``xs.0`` and ``svc.web-1``
-    name, and a YAML integer key stays reachable when the path read misses.
+    A segment that spells a list index (``0``, ``-1``: :func:`_list_index`) is subscripted
+    by the integer, the others by the string, so ``xs[0]`` and ``svc['web-1']`` read what
+    ``xs.0`` and ``svc.web-1`` name, and a YAML integer key stays reachable when the path
+    read misses.
     """
     if _spells_as_name(segment):
         return ast.Attribute(value=base, attr=segment, ctx=ast.Load())
-    index: int | str = segment
-    if segment.isascii() and segment.isdecimal() and str(int(segment)) == segment:
-        index = int(segment)
-    return ast.Subscript(value=base, slice=ast.Constant(index), ctx=ast.Load())
+    index = _list_index(segment)
+    return ast.Subscript(value=base, slice=ast.Constant(segment if index is None else index), ctx=ast.Load())
 
 
 def _path_to_ast(parts: Sequence[str]) -> ast.expr:
