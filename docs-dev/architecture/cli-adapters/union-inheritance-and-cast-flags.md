@@ -48,7 +48,12 @@
   (`_collect._disagreeing_owner_flags`, vanilla's own per-variant `_resolve_field_type`
   composition, so a path several levels down answers as vanilla answers it), collects each of
   them once as the raw token, and hides them from the walks that follow — the flag's sub-flags
-  keep their owners' walks, each answering the same question at its own path. A first segment
+  keep their owners' walks, each answering the same question at its own path. The stores
+  themselves are written in the order argv spells the flags, so an ancestor/descendant pair
+  of conflicts answers the latest-writer question the way vanilla's sequential writes do,
+  and a conflicting flag typed after its own sub-flags hides them too: vanilla's own last
+  write replaced the whole subtree, and the walks must not resurrect it (BUG-85). A first
+  segment
   the base class declares is never a conflict: the base's own walk collects it by the base's
   type, which is vanilla's answer for it (a subclass's *override* of a base-declared field
   diverging is BUG-86, open).

@@ -2563,6 +2563,27 @@ class _NestedOwnersAgree:
 
 
 @dataclass
+class _StructOwner:
+    """Union variant owning ``a`` as a struct whose ``b`` is an ``int``."""
+
+    a: _InnerInt | None = None
+
+
+@dataclass
+class _ScalarOwner:
+    """Union variant owning ``a`` as a scalar ``int``."""
+
+    a: int = 0
+
+
+@dataclass
+class _StructScalarDisagree:
+    """Union field whose variants own ``a`` as a struct and as a scalar (BUG-85)."""
+
+    u: _StructOwner | _ScalarOwner | None = None
+
+
+@dataclass
 class _ExtraBase:
     """Base class whose subclasses own ``extra`` with disagreeing types."""
 
@@ -2658,6 +2679,55 @@ class TestVariantOwnerConflictContract:
         """A sub-flag two disagreeing structs own resolves to ``str`` as well."""
         merged = loader.merge(_NestedOwnersDisagree, argv=["--u.a.b", "7"], env={}, config_flag="")
         assert merged == {"u": {"a": {"b": "7"}}}
+
+    def test_disagreeing_owner_raw_after_its_subflag_wins(self, loader: ConfargLoader) -> None:
+        """A disagreeing-owner flag typed after its own sub-flag keeps the raw token (BUG-85).
+
+        The conflict store is written before the variant walks, so a ``--u.a.b``
+        the later ``--u.a`` had already overwritten came back on the adapters:
+        the store is ``str`` here (a struct versus a scalar own ``a``), while
+        its sub-flag stays a single owner's and is walked.
+        """
+        merged = loader.merge(_StructScalarDisagree, argv=["--u.a.b", "7", "--u.a", "9"], env={}, config_flag="")
+        assert merged == {"u": {"a": "9"}}
+
+    def test_disagreeing_owner_raw_before_its_subflag_is_walked(self, loader: ConfargLoader) -> None:
+        """A disagreeing-owner flag typed first is descended into by its sub-flag (BUG-85).
+
+        Guards the fix against over-firing: the walk's write lands on top of
+        the raw store, as vanilla's later write does.
+        """
+        merged = loader.merge(_StructScalarDisagree, argv=["--u.a", "9", "--u.a.b", "7"], env={}, config_flag="")
+        assert merged == {"u": {"a": {"b": 7}}}
+
+    def test_disagreeing_struct_owners_nested_stores_in_argv_order(self, loader: ConfargLoader) -> None:
+        """Two disagreeing paths, one below the other, are stored in argv order (BUG-85).
+
+        ``a`` and ``a.b`` disagree between the variants here, so both are raw
+        stores; the collector wrote them in walk order, so the deeper store
+        covered the shallower one whatever argv spelled.
+        """
+        merged = loader.merge(_NestedOwnersDisagree, argv=["--u.a.b", "7", "--u.a", "9"], env={}, config_flag="")
+        assert merged == {"u": {"a": "9"}}
+
+    def test_disagreeing_struct_owners_nested_stores_reversed(self, loader: ConfargLoader) -> None:
+        """The reverse argv order keeps the deeper store, the guard of the one above.
+
+        Vanilla writes the deeper flag last, so it replaces the raw token the
+        shallower one left.
+        """
+        merged = loader.merge(_NestedOwnersDisagree, argv=["--u.a", "9", "--u.a.b", "7"], env={}, config_flag="")
+        assert merged == {"u": {"a": {"b": "7"}}}
+
+    def test_disagreeing_struct_owners_nested_store_after_blob_raw(self, loader: ConfargLoader) -> None:
+        """A raw whole-value token typed after its own sub-flag takes the path too (BUG-85)."""
+        merged = loader.merge(
+            _NestedOwnersDisagree,
+            argv=["--u.a.b", "7", "--u.a", '{"b": 9}'],
+            env={},
+            config_flag="",
+        )
+        assert merged == {"u": {"a": '{"b": 9}'}}
 
     def test_agreeing_struct_owners_subflag_kept(self, loader: ConfargLoader) -> None:
         """A sub-flag the structs agree on keeps the common coercion, at depth too."""
@@ -4182,6 +4252,20 @@ class _WholeValue:
     u: _WholeSqlite | _WholeServer | None = None
 
 
+@dataclass
+class _WholeMid:
+    """Struct whose own field is a struct: two levels for bare-flag order tests (BUG-85)."""
+
+    inner: _WholeInner = dataclasses.field(default_factory=_WholeInner)
+
+
+@dataclass
+class _WholeMidHolder:
+    """Holder whose struct field holds a struct (BUG-85)."""
+
+    x: _WholeMid = dataclasses.field(default_factory=_WholeMid)
+
+
 class _WholePlain:
     """Plain class, not a dataclass: a struct everywhere else in construction."""
 
@@ -4288,6 +4372,96 @@ class TestWholeValueFlagContract:
         """
         data = loader.merge(_WithStructFieldPoint, argv=["--pt.inner", "oops"], env={})
         assert data["pt"]["inner"] == "oops"
+
+    def test_struct_bare_flag_after_subflag_takes_the_field(self, loader: ConfargLoader) -> None:
+        """A bare --<field> typed after its sub-flags replaces the subtree, as any later write does (BUG-85).
+
+        Vanilla writes the flags in the order argv spells them, so a bare
+        ``--x.inner 9`` overwrites the ``--x.inner.a`` write before it. The
+        adapters' collector stored the bare value ahead of its descent into the
+        sub-flags, so the sub-flag's write landed on top of it whatever argv
+        spelled.
+        """
+        assert loader.merge(_WholeMidHolder, argv=["--x.inner.a", "7", "--x.inner", "9"], env={}) == {
+            "x": {"inner": "9"},
+        }
+
+    def test_struct_bare_flag_after_subflag_fails_to_build(self, loader: ConfargLoader) -> None:
+        """build() is what rejects the raw token, loudly on every front-end (BUG-85, via BUG-82)."""
+        with pytest.raises(TypeCoercionError, match="expected dict"):
+            loader.load(_WholeMidHolder, argv=["--x.inner.a", "7", "--x.inner", "9"], env={})
+
+    def test_struct_bare_flag_before_subflag_stays_refined(self, loader: ConfargLoader) -> None:
+        """A bare --<field> typed first is descended into by the sub-flag typed after it (BUG-85).
+
+        Guards the fix against over-firing: only the bare flag typed after its
+        sub-flags replaces the subtree.
+        """
+        assert loader.merge(_WholeMidHolder, argv=["--x.inner", "9", "--x.inner.a", "7"], env={}) == {
+            "x": {"inner": {"a": 7}},
+        }
+
+    def test_struct_whole_value_after_subflag_takes_the_field(self, loader: ConfargLoader) -> None:
+        """A whole value typed after a sub-flag replaces it, the blob spelling of BUG-85."""
+        assert loader.merge(
+            _WholeMidHolder,
+            argv=["--x.inner.a", "7", "--x.inner", '{"a": 2}'],
+            env={},
+        ) == {"x": {"inner": {"a": 2}}}
+
+    def test_union_plain_flag_before_variant_flag_is_descended_into(self, loader: ConfargLoader) -> None:
+        """A bare union flag typed first is refined by the variant flag typed after it (BUG-85).
+
+        The collector's union branch wrote the plain value after the variant
+        walks, so the plain token won whatever argv spelled -- the inversion of
+        the struct branch.
+        """
+        assert loader.merge(_WholeValue, argv=["--u", "9", "--u.dbpath", "x"], env={}) == {
+            "u": {"dbpath": "x"},
+        }
+
+    def test_union_plain_flag_after_variant_flag_takes_the_field(self, loader: ConfargLoader) -> None:
+        """A bare union flag typed after the variant flags replaces the subtree (BUG-85).
+
+        Guards the fix against over-firing: this order already agreed, because
+        the plain write followed the walks.
+        """
+        assert loader.merge(_WholeValue, argv=["--u.dbpath", "x", "--u", "9"], env={}) == {"u": "9"}
+
+    def test_union_whole_value_after_variant_flag_takes_the_field(self, loader: ConfargLoader) -> None:
+        """A whole value typed after a variant flag replaces it, the union spelling of BUG-85."""
+        assert loader.merge(
+            _WholeValue,
+            argv=["--u.dbpath", "x", "--u", '{"host": "h"}'],
+            env={},
+        ) == {"u": {"host": "h"}}
+
+    def test_registered_leaf_scalar_after_param_flag_takes_the_field(
+        self,
+        loader: ConfargLoader,
+        leaf_registry: None,
+    ) -> None:
+        """A registered leaf's scalar typed after its ``__init__`` parameter flags replaces them (BUG-85).
+
+        The registered-leaf branch stored the scalar before the structural walk,
+        so a ``--id.hex`` the later ``--id`` had already overwritten came back.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        assert loader.merge(_RegisteredLeaf, argv=["--id.hex", "ab", "--id", "7"], env={}) == {"id": "7"}
+
+    def test_registered_leaf_scalar_before_param_flag_stays_refined(
+        self,
+        loader: ConfargLoader,
+        leaf_registry: None,
+    ) -> None:
+        """A scalar typed before the parameter flags keeps the walk's answer (BUG-85).
+
+        Guards the fix against over-firing.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        assert loader.merge(_RegisteredLeaf, argv=["--id", "7", "--id.hex", "ab"], env={}) == {
+            "id": {"hex": "ab"},
+        }
 
     def test_tagged_registered_leaf_takes_the_whole_value(
         self,

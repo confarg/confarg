@@ -706,16 +706,25 @@ def _collect_variant_fields(  # noqa: PLR0913  # the type-walk context, threaded
     names (:func:`_disagreeing_owner_flags`) — and hidden from them, so no
     walk's own coercion can overwrite it; the flag's sub-flags keep their
     owners' walks, each answering the same question at its own path (BUG-84).
+    Their stores are written in the order argv spells the flags, so an
+    ancestor/descendant pair of conflicts answers the latest-writer question
+    the way vanilla's sequential writes do; a conflicting flag typed after its
+    own sub-flags is the latest writer at its path, so vanilla's own last write
+    replaced the whole subtree: the sub-flags are hidden from the walks too,
+    not resurrected by them (BUG-85).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
     """
     conflicts = _disagreeing_owner_flags(flat, variants, flag, union_tag, base=base)
     if conflicts:
-        for key in conflicts:
+        superseded: set[str] = set()
+        for key in sorted(conflicts, key=lambda key: _last_flag_occurrence(argv, key)):
             v = _tokens_past_whole_field_delete(argv, key, flat[key])
             _set_nested(result, key.split("."), _coerce_leaf_value(str, v))
-        flat = {k: v for k, v in flat.items() if k not in conflicts}
+            if _arity_flag_writes_last(argv, key):
+                superseded.update(k for k in flat if k.startswith(f"{key}."))
+        flat = {k: v for k, v in flat.items() if k not in conflicts and k not in superseded}
     walked: set[Any] = set()
     for variant in variants:
         if variant is None or variant is base or variant in walked:
@@ -751,6 +760,37 @@ def _collect_ns_union_field(  # noqa: PLR0913  # the type-walk context, threaded
         _collect_named_variant(flat, flag, flat[tag_key], union_tag, result, tags, argv, siblings=concrete)
     else:
         _collect_variant_fields(flat, concrete, flag, union_tag, result, tags, argv)
+
+
+def _collect_ns_union_bare(  # noqa: PLR0913  # the union branch's context, threaded whole
+    flat: dict[str, Any],
+    flag: str,
+    resolved: Any,
+    argv: Sequence[str],
+    result: dict[str, Any],
+    whole: Any,
+) -> None:
+    """Store a union field's bare value at its path: the whole blob, or the shaped tokens.
+
+    Both spellings of the bare flag write what the vanilla scan writes: the decoded
+    object for a ``{``-prefixed token, and the plain tokens shaped as the union shapes
+    them -- the accumulation replay for a union with a sequence variant (BUG-79), the
+    delete filter and the union-seq shaper otherwise.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#unions-with-sequence-variants
+    """
+    if whole is not _NO_CAST:
+        _set_nested(result, flag.split("."), whole)
+    elif flag in flat:
+        # A union with a sequence variant accumulates, so the occurrences' order
+        # is argv's to answer, exactly as for the Optional spelling (BUG-79).
+        replayed = _union_seq_occurrence_writes(argv, flag, resolved) if _union_has_seq_variant(resolved) else _NO_CAST
+        if replayed is not _NO_CAST:
+            _set_nested(result, flag.split("."), replayed)
+        else:
+            v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
+            _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, v, flag))
 
 
 def _collect_ns_inheritance(  # noqa: PLR0913  # the type-walk context, threaded whole
@@ -898,26 +938,45 @@ def _namedtuple_arity_value(core: Any, nargs_value: Any, whole: Any) -> Any:
     return _str_token(nargs_value)
 
 
-def _arity_flag_writes_last(argv: Sequence[str], flag: str) -> bool:
-    """Return whether the last ``--<flag>`` occurrence follows every ``--<flag>.<sub>`` one.
+def _last_flag_occurrence(argv: Sequence[str], flag: str) -> int:
+    """Return the index of the last ``--<flag>`` occurrence in *argv*, or ``-1``.
 
-    The argv-order half of the namedtuple contract (BUG-66): a framework's parse result
-    carries no command-line order, so which flag at a namedtuple field is the latest
-    writer is read off the argv the user typed, as the patch and ``--config`` scans
-    are.  A token that looks like a flag is one here for the same reason it is one in
-    the vanilla scan, so the two readers cannot disagree about where an occurrence
-    ends.
+    The one occurrence-index reader both argv-order questions at a flag descend
+    from, so they cannot disagree about what an occurrence is: the bare spelling
+    and its ``=`` form count, and a sub-flag's spelled path never does.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
     bare = f"--{flag}"
-    sub_prefix = f"--{flag}."
-    last_bare = last_sub = -1
+    last = -1
     for i, token in enumerate(argv):
         if token == bare or token.startswith(f"{bare}="):
-            last_bare = i
-        elif token.startswith(sub_prefix):
+            last = i
+    return last
+
+
+def _arity_flag_writes_last(argv: Sequence[str], flag: str) -> bool:
+    """Return whether the last ``--<flag>`` occurrence follows every ``--<flag>.<sub>`` one.
+
+    The argv-order half of every related-write pair the collector makes: a framework's
+    parse result carries no command-line order, so which of a bare flag and the writes
+    below it is the latest writer is read off the argv the user typed, as the patch and
+    ``--config`` scans are.  The namedtuple contract named it first (BUG-66); the
+    struct, registered-leaf and union branches ask the same question of their own bare
+    value (BUG-85).  A token that looks like a flag is one here for the same reason it
+    is one in the vanilla scan, so the two readers cannot disagree about where an
+    occurrence ends.  Returns ``False`` when argv spells neither spelling, so a parse
+    result argv cannot account for keeps the order the caller already writes in.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
+    """
+    sub_prefix = f"--{flag}."
+    last_bare = _last_flag_occurrence(argv, flag)
+    last_sub = -1
+    for i, token in enumerate(argv):
+        if token.startswith(sub_prefix):
             last_sub = i
     return last_bare > last_sub
 
@@ -1185,25 +1244,26 @@ def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915  # one bra
     whole = _whole_value(flat, flag, resolved)
 
     if core is None:
+        # The bare flag and the walks below it are related writes at one path, and
+        # which of them is the latest writer is argv's to answer, as the other
+        # latest-writer questions are: a bare flag typed after its sub-flags replaces
+        # the whole subtree, and a sub-flag typed after it descends into whatever it
+        # left (BUG-85).
+        bare_present = whole is not _NO_CAST or flag in flat
+        if bare_present and _arity_flag_writes_last(argv, flag):
+            # The bare write superseded every sub-flag before it -- an explicit scalar
+            # cast among them, when one was typed before it -- so the walks below are
+            # skipped, and the cast spelling it outlived is not re-collected (BUG-95
+            # keeps its own reader for the plain-flag-then-cast order).
+            _collect_ns_union_bare(flat, flag, resolved, argv, result, whole)
+            return
+        _collect_ns_union_bare(flat, flag, resolved, argv, result, whole)
         # Struct unions: the whole object carries its own class-tag; variant fields refine it
-        if whole is not _NO_CAST:
-            _set_nested(result, flag.split("."), whole)
         _collect_ns_union_field(flat, flag, resolved, union_tag, result, tags, argv)
         # Scalar unions: collect plain value or explicit scalar cast
         cast_val = _find_scalar_cast_override(flat, flag)
         if cast_val is not _NO_CAST:
             _set_nested(result, flag.split("."), cast_val)
-        elif flag in flat and whole is _NO_CAST:
-            # A union with a sequence variant accumulates, so the occurrences' order
-            # is argv's to answer, exactly as for the Optional spelling (BUG-79).
-            replayed = (
-                _union_seq_occurrence_writes(argv, flag, resolved) if _union_has_seq_variant(resolved) else _NO_CAST
-            )
-            if replayed is not _NO_CAST:
-                _set_nested(result, flag.split("."), replayed)
-            else:
-                v = _tokens_past_whole_field_delete(argv, flag, flat[flag])
-                _set_nested(result, flag.split("."), _collect_union_seq_value(resolved, v, flag))
         return
 
     # Optional[<sequence>]: the union is the type vanilla dispatches, so the flag's
@@ -1234,6 +1294,16 @@ def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915  # one bra
         # A registered leaf is opaque to implicit decisions, but a tag inside a whole
         # value still opens it -- and the tag can only be seen once the token is
         # decoded, so the blob is honored before the scalar coercion, as in vanilla.
+        if (whole is not _NO_CAST or flag in flat) and _arity_flag_writes_last(argv, flag):
+            # The bare spelling is the latest writer over every tag or parameter
+            # flag before it: vanilla's own last write replaced the whole subtree,
+            # so the structural walk below is skipped (BUG-85).
+            _set_nested(
+                result,
+                flag.split("."),
+                whole if whole is not _NO_CAST else _coerce_leaf_value(core, flat[flag]),
+            )
+            return
         if whole is not _NO_CAST:
             _set_nested(result, flag.split("."), whole)
         elif flag in flat:
@@ -1250,6 +1320,17 @@ def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915  # one bra
         return
 
     if _is_struct(core):
+        if (whole is not _NO_CAST or flag in flat) and _arity_flag_writes_last(argv, flag):
+            # The bare flag is the latest writer over every sub-flag before it:
+            # vanilla's own last write replaced the whole subtree, so the descent
+            # below is skipped -- storing the bare value ahead of it let the
+            # sub-flags come back whatever argv spelled (BUG-85).
+            _set_nested(
+                result,
+                flag.split("."),
+                whole if whole is not _NO_CAST else _str_token(flat[flag]),
+            )
+            return
         if whole is not _NO_CAST:
             _set_nested(result, flag.split("."), whole)
         elif flag in flat:
