@@ -471,37 +471,57 @@ def _ast_int_value(node: ast.AST) -> int | None:
     return None
 
 
+def _key_segment(key: object) -> str | None:
+    """Return the path segment the subscript key *key* spells, or ``None`` when it spells none.
+
+    A string is the key itself (``'web-1'``), an integer the list index (``0``, ``-1``); a
+    bool, a float or any other key is no segment. Asked of a constant key by
+    :func:`_subscript_segment` and of an evaluated one by :func:`_segment`, so ``svc[k]``
+    spells the segment ``svc['web']`` does once ``k`` is ``'web'``.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
+    """
+    return str(key) if isinstance(key, str) or type(key) is int else None
+
+
 def _subscript_segment(index: ast.expr) -> str | None:
     """Return the path segment a subscript's *index* spells, or ``None`` for a computed one.
 
     A string constant is the key itself (``['web-1']``), an integer constant the list index
     (``[0]``, ``[-1]``).
     """
-    if isinstance(index, ast.Constant) and isinstance(index.value, str):
-        return index.value
-    number = _ast_int_value(index)
-    return None if number is None else str(number)
+    return _key_segment(index.value if isinstance(index, ast.Constant) else _ast_int_value(index))
 
 
-def _segment(node: ast.Attribute | ast.Subscript) -> str | None:
-    """Return the one path segment *node* adds to its base, or ``None`` for a computed subscript.
+def _segment(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any] | None = None) -> str | None:
+    """Return the one path segment *node* adds to its base, or ``None`` when it spells none.
 
-    A dot's name, or what :func:`_subscript_segment` reads in a subscript's index. Asked of
-    each link by :func:`_attribute_chain`, and of the first segment after a root stand-in by
+    A dot's name, or what :func:`_subscript_segment` reads in a subscript's index. A computed
+    index spells no segment, unless *namespace* is given: it is then evaluated against it and
+    spells what :func:`_key_segment` reads in its value. Asked of each link by
+    :func:`_attribute_chain`, and of the first segment after a root stand-in by
     :class:`_AnchorResolver`.
     """
-    return node.attr if isinstance(node, ast.Attribute) else _subscript_segment(node.slice)
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    segment = _subscript_segment(node.slice)
+    if segment is None and namespace is not None:
+        return _key_segment(_evaluate_ast(node.slice, namespace))
+    return segment
 
 
-def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
+def _attribute_chain(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any] | None = None) -> list[str] | None:
     """Return the config path *node* reads, segment by segment, or ``None`` when it reads none.
 
     The one answer to "which config path does this node read?": a dot and a constant
     subscript each spell one segment, so ``db.host``, ``db['host']`` and ``db["host"]`` are
     ``["db", "host"]``, ``servers[0].host`` is ``["servers", "0", "host"]`` and
-    ``svc['web-1']`` is ``["svc", "web-1"]``. ``None`` when a subscript is computed
-    (``svc[k]``) or the chain is not rooted at a name (``f(x).a``). Reference collection and
-    evaluation both ask it.
+    ``svc['web-1']`` is ``["svc", "web-1"]``. ``None`` when the chain is not rooted at a name
+    (``f(x).a``), or when a subscript is computed (``svc[k]``) and no *namespace* is given.
+    Reference collection asks it of the syntax alone; evaluation passes its *namespace*, so
+    a computed key spells the segment its value does (``["svc", "web"]`` once ``k`` is
+    ``'web'``), and ``None`` only when that value is no segment.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
@@ -509,7 +529,7 @@ def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
     parts: list[str] = []
     current: ast.expr = node
     while isinstance(current, ast.Attribute | ast.Subscript):
-        segment = _segment(current)
+        segment = _segment(current, namespace)
         if segment is None:
             return None
         parts.append(segment)
@@ -606,19 +626,21 @@ def _eval_name(node: ast.Name, namespace: dict[str, Any]) -> Any:
 def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any]) -> Any:
     """Read the config path *node* spells; failing that, index its evaluated base by the key it spells.
 
-    The path comes first, so ``svc['web'].host`` reads what ``svc.web.host`` reads. What no
-    path answers is Python's own subscript: an index into a string (``name[0]``), a computed
-    key (``svc[k]``), a key that is no string (``m[0]`` on ``{0: ...}``). A dot is that
-    subscript with its name as the key, so ``svc[k].host`` reads what ``svc[k]['host']``
-    reads; it is never ``getattr``, so no attribute of a value — a bound method above all —
-    is reachable. When the subscript fails too, the path's own miss is reported rather than a
-    ``KeyError``, with how to call a string method a dot named.
+    The path comes first, so ``svc['web'].host`` reads what ``svc.web.host`` reads, and a
+    computed key spells its path once evaluated, so ``svc[k]`` reads what ``svc['web']``
+    reads when ``k`` is ``'web'``. What no path answers is Python's own subscript: an index
+    into a string (``name[0]``), a key that is no string (``m[0]`` on ``{0: ...}``), a key
+    that spells no segment (``m[flag]``). A dot is that subscript with its name as the key,
+    so ``svc[k].host`` reads what ``svc[k]['host']`` reads; it is never ``getattr``, so no
+    attribute of a value — a bound method above all — is reachable. When the subscript fails
+    too, the path's own miss is reported rather than a ``KeyError``, with how to call a
+    string method a dot named.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
         docs-dev/architecture/expressions/safety-model.md#a-dot-reads-a-key-never-an-attribute
     """
-    parts = _attribute_chain(node)
+    parts = _attribute_chain(node, namespace)
     missing: MissingReferenceError | None = None
     if parts is not None:
         try:

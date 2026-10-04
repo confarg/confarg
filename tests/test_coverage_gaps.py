@@ -1316,7 +1316,7 @@ class TestExpressionsBranches:
             result: str = ""
 
         with pytest.raises(confarg.exceptions.ExpressionEvalError):
-            confarg.build(DC, {"a": [1, 2, 3], "b": "key", "result": "${a[b]}"})
+            confarg.build(DC, {"a": [1, 2, 3], "b": "key", "result": "${-b}"})
 
     def test_interpolation_missing_ref_reraises(self) -> None:
         """A missing field reference inside a string interpolation raises MissingReferenceError."""
@@ -1334,7 +1334,7 @@ class TestExpressionsBranches:
             result: str = ""
 
         with pytest.raises(confarg.exceptions.ExpressionEvalError):
-            confarg.build(DC, {"a": [1, 2, 3], "b": "key", "result": "prefix_${a[b]}_suffix"})
+            confarg.build(DC, {"a": [1, 2, 3], "b": "key", "result": "prefix_${-b}_suffix"})
 
 
 # ---------------------------------------------------------------------------

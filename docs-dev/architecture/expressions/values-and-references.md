@@ -58,9 +58,16 @@ spelling can never be a dependency on one path and read another. `_expressions._
 the converse, "which expression reads this path?": a dot where the segment is a name, a constant
 subscript elsewhere, and a first segment that is no name off the root marker (`::['web-1']`). It
 spells the prefix of a mounted file and the path a dot run stands for
-([reference anchoring](reference-anchoring.md#a-document-is-prefixed-once-by-its-whole-mount-path)). A computed subscript
-(`${svc[k]}`) spells no path: its key is only known once `k` is evaluated, so it is Python's own
-subscript, and it is no dependency beyond the names it is computed from.
+([reference anchoring](reference-anchoring.md#a-document-is-prefixed-once-by-its-whole-mount-path)).
+
+A computed subscript (`${svc[k]}`) spells no path to the dependency graph: its key is only known
+once `k` is evaluated, so it is no dependency beyond the names it is computed from. Evaluation
+knows the key, and reads it as the segment its constant spelling would be (`_key_segment`): a
+string is the key, an integer the list index, so with `k: web`, `${svc[k]}` is `${svc['web']}`
+— the same value, the same `Field 'svc.nope' not found` when it misses, the same
+`index 5 out of range`. Evaluation asks `_attribute_chain` with its namespace, and the
+dependency graph without, so the two differ only in what syntax alone cannot know. A key that
+spells no segment (a bool, a float) is Python's subscript alone.
 
 Evaluation reads the path first and falls back on Python's subscript only when the path is
 missing (`_eval_path_or`): that is what lets `${name[0]}` index a string, and keeps a dict with a
@@ -79,6 +86,17 @@ method on it, never reading a key `name.upper`
 Rejected: **runtime subscript first, path second.** `${m[0]}` would then mean the integer key
 while the dependency graph, which only sees syntax, recorded the path `m.0` — two answers to one
 spelling. Path-first is also the order an attribute already used.
+
+Rejected, for a computed key (BUG-128): **Python's subscript first, the path only to word its
+miss.** Before BUG-128 `${svc[k]}` was Python's subscript alone and its miss surfaced as an
+`ExpressionEvalError` quoting the bare `KeyError` (`'nope'`), so the error a caller caught
+depended on how the key was spelled. Keeping that order and naming the path only on a miss
+would still give one segment two answers: with `k: 0`, `${m[k]}` read the integer key of
+`{"0": a, 0: b}` while `${m[0]}` reads the string one, and `${xs[k]}` with `k: "1"` failed on
+an element `${xs['1']}` reads — a miss reported as `Field 'xs.1' not found` on a path that
+exists. Precedents give a key one meaning however it is written: jq's `.[$k]` is `.["web"]`
+once `$k` is `"web"`, JavaScript's `a[k]` is `a["web"]`, and Jinja2's `StrictUndefined` raises
+the same `UndefinedError` for `foo[k]` as for `foo.bar`.
 
 ## A position is a sequence of segments
 
