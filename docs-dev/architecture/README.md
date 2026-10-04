@@ -39,6 +39,14 @@ anchor; headings in these files are kept stable for that reason, and renaming on
 the citations that name it — `uv run python docs-dev/todo/anchors.py` lists every citation
 whose anchor no longer resolves.
 
+A citation in `src/` or `tests/` is spelled from the repository root,
+`docs-dev/architecture/<note>.md#<anchor>`, whatever folder holds the file citing it. That one
+spelling is what lets a plain `grep -rn "<note>.md#<anchor>"` list everything that relies on a
+section before it is changed, and what lets the sweep check every citation: it reports a note's
+bare file name or a short-form `<name>.md#<anchor>` as an error rather than skipping it, since
+a numbered short form is how twelve citations went stale unseen when these notes lost their
+numbers. A citation without an anchor names the whole note.
+
 ## Layout
 
 A topic is one file while it stays cohesive, and a folder of subtopic files once it does not:

@@ -1232,7 +1232,8 @@ class TestFixedSequenceContract:
         """A whole-value token on the Optional namedtuple field decodes (BUG-68).
 
         The field is a union with a sequence variant, so the whole-value token
-        keeps the clicklike front-ends' own list syntax (list-syntax-divergence.md).
+        keeps the clicklike front-ends' own list syntax
+        (docs-dev/architecture/cli-adapters/list-syntax-divergence.md#list-syntax-divergence).
         """
         assert whole_value_arity_loader.merge(_WithNestedPoint, argv=["--pt.inner", '{"a": 7}'], env={}) == {
             "pt": {"inner": {"a": 7}},
