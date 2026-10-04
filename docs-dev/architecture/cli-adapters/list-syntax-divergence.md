@@ -4,7 +4,10 @@ List values are space-separated for vanilla/argparse (`--tags a b`), repeated fl
 and typer (`--tags a --tags b`), either for cyclopts. This is an approved divergence imposed by
 click and inherited by typer's fork of it; tests keep it visible
 ([testing](../testing.md#list-syntax-split)). The append/delete
-ordering on top is shared.
+ordering on top is shared. The first item of a space-separated run may carry the `=` spelling
+(`--tags=a b` is `['a', 'b']`) on vanilla and cyclopts; argparse's `=` binds the one token after
+it and its parser exits on the rest, the approved divergence BUG-75 recorded
+([whole-value flags](whole-value-flags.md#whole-value-flags)).
 
 What the approval covers is the **spelling** — which of the two forms a framework accepts — and
 not what a repeated flag *means*. The two once came apart unnoticed: `--tags a --tags b` built
