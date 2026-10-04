@@ -40,14 +40,16 @@ Two consequences follow from the accumulation being over **tokens**, not over sh
   (`_lone_json_array`): `--tags '["a","b"]'` decodes, while `--tags '["a","b"]' --tags '["c"]'`
   and `--tags '["a","b"]' z` are two ordinary items, on the adapters too, whose CLI channel is
   the same loop ([argv is the only writer](model.md#argv-is-the-only-writer)).
-- argparse keeps only the last occurrence under a plain store, so a spec that accumulates asks for
-  `action="extend"` (`FlagSpec.accumulates`, set on those two field families alone —
-  `nargs="*"` is shared by seven flag families here and says nothing about repetition). Since
-  the parse result no longer carries values into the merge, this only keeps the Namespace an
-  honest picture of what was typed.
-  `default=argparse.SUPPRESS` survives it: a flag nobody typed stays off the Namespace, and a
-  first occurrence with no token still yields `[]`. click and typer accumulate already through
-  `multiple=True`, cyclopts through `consume_multiple`.
+- argparse keeps only the last occurrence under its plain store, and confarg does not shape
+  that: the parse result's values are never read, so a rule over them would be a second writer
+  over the parse result ([argv is the only writer](model.md#argv-is-the-only-writer)). A
+  spec's `action="extend"` (`FlagSpec.accumulates`, BUG-37) once kept the Namespace an honest
+  picture of what was typed; it was dropped because the merge needs no such promise, and a host
+  reading the Namespace itself now sees argparse's own last-wins, not the accumulation the
+  merge builds. `default=argparse.SUPPRESS` still keeps a flag nobody typed off the Namespace,
+  and a first occurrence with no token still yields `[]`. click and typer accumulate through
+  `multiple=True`, cyclopts through `consume_multiple` — the frameworks' own mechanisms for
+  their repetition spelling, not a confarg rule over their results.
 
 Neither axis is the `+` suffix, which names the merge axis instead and is shared by all three
 channels ([design decisions](../design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling)).

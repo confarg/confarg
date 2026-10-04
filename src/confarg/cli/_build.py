@@ -202,7 +202,6 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913
         return dataclasses.replace(
             base,
             nargs="*",
-            accumulates=True,
             stands_bare=True,
             metavar=metavar or getattr(et, "__name__", "ITEM").upper(),
         )
@@ -886,7 +885,6 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per
                 FlagSpec(
                     name=flag,
                     nargs="*",
-                    accumulates=True,
                     stands_bare=True,
                     metavar="VALUE",
                     help=help_text,
@@ -921,15 +919,14 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per
         specs = _collect_namedtuple_specs(core, flag, union_tag, group, group_description)
         # The combined arity flag is first.  A bare occurrence of it is a missing
         # value -- unless Optional wraps the field: `Pt | None` is a union with a
-        # sequence variant as resolved, which consumes greedily, stands bare and
-        # accumulates across occurrences, so the flag registers the way that
-        # union's own flag does and its arity is build()'s to judge (BUG-79).
+        # sequence variant as resolved, which consumes greedily and stands bare,
+        # so the flag registers the way that union's own flag does and its arity
+        # is build()'s to judge (BUG-79).
         if _union_has_seq_variant(resolved):
             specs[0] = dataclasses.replace(
                 specs[0],
                 nargs="*",
                 whole_value=False,
-                accumulates=True,
                 stands_bare=True,
             )
         else:
@@ -952,16 +949,15 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per
     help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
     spec = _build_leaf_spec(flag, raw_type, core, help_text, group, group_description)
     # `tuple[X, Y] | None` is a union with a sequence variant as resolved, so its
-    # flag registers the way that union's own flag does: greedy, bare-legal,
-    # accumulating, with the arity deferred to build() exactly as vanilla's
-    # `_union_seq_value` defers it (BUG-79).
+    # flag registers the way that union's own flag does: greedy, bare-legal, with
+    # the arity deferred to build() exactly as vanilla's `_union_seq_value`
+    # defers it (BUG-79).
     if _union_has_seq_variant(resolved):
         return [
             dataclasses.replace(
                 spec,
                 nargs="*",
                 whole_value=False,
-                accumulates=True,
                 stands_bare=True,
             ),
         ]
@@ -1136,10 +1132,9 @@ def _scalar_root_spec(target: Any) -> FlagSpec:
     ``nargs`` is forced to a single token because vanilla's
     :func:`~confarg._parse_cli._handle_scalar_root` consumes exactly one: a
     ``list[int]`` root must not pick up the greedy ``nargs="*"`` that
-    :func:`_build_leaf_spec` gives a collection *field*.  ``accumulates`` and
-    ``stands_bare`` go with it -- one token is all this flag ever takes, so it neither
-    extends across occurrences nor stands with none (REF-68 would make that one reset
-    rather than a field per attribute).
+    :func:`_build_leaf_spec` gives a collection *field*.  ``stands_bare`` goes
+    with it -- one token is all this flag ever takes, so it never stands with
+    none (REF-68 would make that one reset rather than a field per attribute).
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix
@@ -1148,7 +1143,6 @@ def _scalar_root_spec(target: Any) -> FlagSpec:
     core = _unwrap_optional(resolved)
     spec = _build_leaf_spec("", target, resolved if core is None else core, "The configuration value.", None, "")
     spec.nargs = None
-    spec.accumulates = False
     spec.stands_bare = False
     return spec
 
