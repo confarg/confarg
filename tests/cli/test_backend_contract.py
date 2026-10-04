@@ -5604,6 +5604,17 @@ class TestUnionTagFieldCollision:
         merged = loader.merge(_KindOnlySubBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
         assert merged == {"Kind": "v"}
 
+    def test_shadowed_tag_use_warns_on_every_frontend(self, loader: ConfargLoader) -> None:
+        """Setting the colliding field warns that no class-path tag dispatches.
+
+        The warning is a build()-time one, so all five front-ends and every channel
+        inherit it from the one construction site; the assertion runs per front-end
+        to pin the parity, not to restate the behavior five times.
+        """
+        with pytest.warns(ConfargWarning, match="selected structurally"):
+            result = loader.load(_KindOnlySubBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
+        assert result == _KindOnlySub(Kind="v")
+
     def test_registration_subclass_only_field_flag_wins(self) -> None:
         """The subclass-only field takes the spelling; no tag flag is registered on it."""
         flags = build_static_flags(_KindOnlySubBase, union_tag="Kind", config_flag="")

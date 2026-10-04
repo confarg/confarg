@@ -84,7 +84,8 @@ the boundary moves here.
 - A subclass-only field spelled exactly like `union_tag` turns subclass dispatch structural:
   the tag's class-path route is unreachable at that position, so the subclass is selected by
   its fields, several matches are an error, and a subclass needing more fields than provided
-  is refused ([CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)).
+  is refused — a build-time `ConfargWarning` names the substitution when the spelling is used
+  ([CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)).
 
 ## Callables and serialization
 

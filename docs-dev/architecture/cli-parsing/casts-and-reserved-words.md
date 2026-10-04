@@ -54,11 +54,15 @@ answers it so), and the CLI keeps a case-differing field distinguishable, exact 
 being what it is: `--Kind` the tag, `--kind` the field.
 
 The trade-off is accepted the way the casts rule accepts its own: a member that shadows the
-tag makes the tag's class-path dispatch unreachable at that position, silently — a variant
-field shadowing a union, a base field shadowing subclass dispatch, a subclass-only field
+tag makes the tag's class-path dispatch unreachable at that position — a variant field
+shadowing a union, a base field shadowing subclass dispatch, a subclass-only field
 turning subclass dispatch structural, a leaf parameter shadowing the only hatch into a
-registered leaf. The alternatives were refused: refusing the collision loudly would
-break plain structs that never use a union and contradict the env channel's settled
-member-wins (BUG-101), and letting the tag win everywhere is the unreachable-field bug
-itself. The remedy for a shadowed tag is to rename the field or pass a different
-`union_tag`.
+registered leaf. Where the tag was a real alternative, the surprise is named instead of
+stayed silent: consuming a shadowed tag-shaped key at a dispatch position emits a
+`ConfargWarning`, once per position, on use
+([design decisions](../design-decisions/a-shadowed-tag-warns-on-use.md#a-shadowed-tag-warns-on-use));
+a position that never could dispatch stays quiet. The alternatives were refused: refusing
+the collision loudly would break plain structs that never use a union and contradict the
+env channel's settled member-wins (BUG-101), and letting the tag win everywhere is the
+unreachable-field bug itself. The remedy for a shadowed tag is to rename the field or pass
+a different `union_tag`.

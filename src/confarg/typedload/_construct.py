@@ -11,6 +11,7 @@ Dev Notes:
 from __future__ import annotations
 
 import inspect
+import warnings
 from typing import Any
 
 from confarg import _defaults
@@ -56,6 +57,7 @@ from confarg._types import (
 from confarg.exceptions import (
     AmbiguousUnionError,
     ConfargError,
+    ConfargWarning,
     MissingFieldError,
     SymbolImportError,
     TypeCoercionError,
@@ -187,6 +189,22 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     raise TypeCoercionError(msg)
 
 
+def _warn_shadowed_tag_key(path: str, union_tag: str, what: str) -> None:
+    """Emit the on-use warning for a tag-shaped key a member owns at a dispatch position.
+
+    *what* names what the fields select at this position, "variant" or "subclass", so
+    a key consumed at two positions (a union into a variant that itself dispatches)
+    says two true things instead of one twice.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+    """
+    warnings.warn(
+        ConfargWarning.tag_shadowed_by_member(path or _defaults.ROOT_KEY, union_tag, what),
+        stacklevel=2,
+    )
+
+
 def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     """Dispatch struct construction, handling the union_tag class-path variant.
 
@@ -201,13 +219,17 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) ->
     if not isinstance(data, dict):
         msg = f"Cannot construct {tp.__name__} at '{path}': expected dict, got {_src_type(data)} {data!r}"
         raise TypeCoercionError(msg)
+    direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
     if union_tag in data:
         if not _union_tag_shadowed(tp, union_tag):
             return _construct_by_class_path(tp, data, path, union_tag)
+        if direct_subs:
+            # The tag could have dispatched here; the member's value forces the
+            # structural route instead, so say so once, on use.
+            _warn_shadowed_tag_key(path, union_tag, "subclass")
         if union_tag in _struct_fields(tp):
             return _construct_struct(tp, data, path, union_tag)
         return _construct_shadowed_subclass(tp, data, path, union_tag)
-    direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
     if direct_subs:
         sub_names = ", ".join(dotted_name(s) for s in direct_subs)
         if _union_tag_shadowed(tp, union_tag):
@@ -891,8 +913,12 @@ def _construct_union(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     if len(non_none) == 1:
         return _construct_single_variant_union(all_args, non_none, data, path, union_tag)
 
-    if isinstance(data, dict) and union_tag in data and not _union_tag_shadowed(tp, union_tag):
-        return _construct_union_by_tag(non_none, data, path, union_tag)
+    if isinstance(data, dict) and union_tag in data:
+        if not _union_tag_shadowed(tp, union_tag):
+            return _construct_union_by_tag(non_none, data, path, union_tag)
+        # The tag route was a real alternative; the member's value forces the
+        # structural route instead, so say so once, on use.
+        _warn_shadowed_tag_key(path, union_tag, "variant")
 
     dc_vars = [v for v in non_none if _is_struct_variant(_resolve_type(v))]
     if isinstance(data, dict) and dc_vars:

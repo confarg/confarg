@@ -34,6 +34,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [Double underscore separator](double-underscore-separator.md) | `__` splits nesting so single underscores stay usable in names |
 | [Explicit boolean values](explicit-boolean-values.md) | `--verbose true`, not `--verbose`/`--no-verbose` |
 | [Real field wins over reserved words](real-field-wins.md) | a reserved name is reserved only where it shadows nothing |
+| [A shadowed tag warns on use](a-shadowed-tag-warns-on-use.md) | the structural selection is named where the tag could have dispatched, and nowhere else |
 | [Strict CLI, lenient environment](strict-cli-lenient-environment.md) | an unknown flag is an error, an unknown variable a warning |
 
 ## Where a document comes from

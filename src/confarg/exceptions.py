@@ -308,9 +308,31 @@ class ConfargWarning(UserWarning):
     """Emitted for non-fatal configuration issues.
 
     Currently raised when an environment variable matches the configured prefix
-    but does not correspond to any known field on the target type, and when
-    dynamic CLI flag registration fails (the flags are skipped, not the parse).
-    Convert to errors in your test-suite via::
+    but does not correspond to any known field on the target type, when dynamic
+    CLI flag registration fails (the flags are skipped, not the parse), when a
+    dumped value will not read back as its own variant, and when a tag-shaped
+    key is a member's value at a position where a class-path tag could have
+    dispatched. Convert to errors in your test-suite via::
 
         warnings.filterwarnings("error", category=confarg.exceptions.ConfargWarning)
     """
+
+    @classmethod
+    def tag_shadowed_by_member(cls, path: str, union_tag: str, what: str) -> ConfargWarning:
+        """Return the warning for a tag-shaped key a member owns at a dispatch position.
+
+        Emitted on use only, where a class-path tag was a real alternative, so the
+        structural selection the member's value forces is never a surprise; *what*
+        names what the fields select there ("variant" or "subclass"). The caller
+        passes the display path (the root spelled as its own key), because this
+        module imports nothing from confarg.
+
+        Dev Notes:
+            docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+        """
+        return cls(
+            f"The {union_tag!r} key at '{path}' is a field's value, not the tag:"
+            " a member owns the tag's spelling there, so no class-path tag can dispatch"
+            f" and the {what} is selected structurally. Rename the field or pass"
+            " a different union_tag to keep the tag's spelling available.",
+        )
