@@ -5,14 +5,14 @@
 """Contract tests: every CLI integration must behave exactly like ``confarg.load()``.
 
 All tests here run against the parametrised ``loader`` fixture (vanilla,
-argparse, click, cyclopts) or one of its subsets.  Behavior shared by the
+argparse, click, typer, cyclopts) or one of its subsets.  Behavior shared by the
 integrations belongs here, written once; only genuinely framework-specific
 behavior (help text, registration idioms, completion) stays in the per-backend
 test directories.
 
 List-field CLI syntax intentionally differs between integrations and stays
 visible: ``TestListSpaceSeparated`` runs on vanilla/argparse/cyclopts and
-``TestListRepeatedFlags`` on click/cyclopts.
+``TestListRepeatedFlags`` on click/typer/cyclopts.
 """
 
 from __future__ import annotations
@@ -545,7 +545,7 @@ class TestListSpaceSeparated:
 
 
 class TestListRepeatedFlags:
-    """Repeated-flag list values (click, cyclopts)."""
+    """Repeated-flag list values (click, typer, cyclopts)."""
 
     def test_list_field(self, repeated_loader: ConfargLoader) -> None:
         """--tags a --tags b collects into a list."""
@@ -755,7 +755,10 @@ class TestFixedSequenceContract:
         assert loader.merge(_WithPoint, argv=["--pair", "13", "42"], env={}) == {"pair": [13, 42]}
 
     def test_optional_namedtuple_positional(self, space_sep_loader: ConfargLoader) -> None:
-        """Optionality does not change the spelling (10-design-decisions.md)."""
+        """Optionality does not change the spelling.
+
+        (docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).
+        """
         assert space_sep_loader.load(_WithOptionalPoint, argv=["--pair", "13", "42"], env={}).pair == _Point(x=13, y=42)
 
     def test_optional_namedtuple_positional_repeated(self, loader: ConfargLoader) -> None:
@@ -833,7 +836,9 @@ class TestFixedSequenceContract:
         assert cfg.pair == _Point(x=13, y=42)
 
     def test_optional_namedtuple_whole_value(self, loader: ConfargLoader) -> None:
-        """Optionality does not change what the whole value accepts (10-design-decisions.md).
+        """Optionality does not change what the whole value accepts.
+
+        (docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).
 
         The optional spelling rides the union's multi-token registration, so the
         clicklike front-ends take the lone token too: their repeated-flag idiom holds
@@ -1369,7 +1374,7 @@ class TestFixedSequenceContract:
         """Click registers the exact count, so the short first occurrence never lands (BUG-73).
 
         The same approved divergence as the whole-value token
-        (10-design-decisions.md#a-divergence-leans-towards-the-affected-backends-own-idiom):
+        (docs-dev/architecture/design-decisions/divergence-leans-to-the-backend.md#a-divergence-leans-towards-the-affected-backends-own-idiom):
         click's refusal is its own usage error rather than confarg's, and typer
         inherits it along with the option class it forked.
         """
@@ -1452,10 +1457,10 @@ class TestFixedSequenceContract:
     def test_click_declines_the_whole_value_token(self) -> None:
         """Click registers the exact token count, so it rejects the whole-value token.
 
-        The approved divergence (09-invariants.md#cross-channel-parity): click's options
+        The approved divergence (docs-dev/architecture/invariants.md#cross-channel-parity): click's options
         cannot take a variable token count, and ``multiple=True`` -- its only alternative --
         would cost click users ``--pair 13 42``, the spelling a CLI user expects
-        (10-design-decisions.md#a-divergence-leans-towards-the-affected-backends-own-idiom).
+        (docs-dev/architecture/design-decisions/divergence-leans-to-the-backend.md#a-divergence-leans-towards-the-affected-backends-own-idiom).
         """
         with pytest.raises(SystemExit):
             ClickLoader().load(_WithIntPair, argv=["--pair", "[13, 42]"], env={})

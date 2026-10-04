@@ -636,7 +636,7 @@ def space_sep_loader(request: pytest.FixtureRequest) -> ConfargLoader:
 
 @pytest.fixture(params=REPEATED_FLAG_LOADERS, ids=[ldr.id for ldr in REPEATED_FLAG_LOADERS])
 def repeated_loader(request: pytest.FixtureRequest) -> ConfargLoader:
-    """Loaders that accept repeated flags for lists: click, cyclopts."""
+    """Loaders that accept repeated flags for lists: click, typer, cyclopts."""
     return request.param
 
 

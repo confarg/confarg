@@ -27,5 +27,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-97 — A namedtuple's -0 and +0 index spellings diverge across the front-ends](BUG-97-a-namedtuples-minus-zero-and-plus-zero-index-spellings-diverge.md) | S | low | behavior |
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | S | low | behavior |
 | [BUG-104 — The env walk cannot see a subclass-only field, so the tag wins a case-differing spelling](BUG-104-the-env-walk-cannot-see-a-subclass-only-field-so-the-tag-wins-a-case-differing-spelling.md) | S | medium | config |
+| [BUG-105 — The anchor sweep cannot see citations under `tests/`, nor short-form spellings](BUG-105-the-anchor-sweep-cannot-see-citations-under-tests-or-short-form-spellings.md) | S | medium | none |
 
 <!-- tickets:end -->
