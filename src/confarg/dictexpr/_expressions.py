@@ -229,7 +229,8 @@ def _parse_expression(content: str) -> ast.Expression:
     goes through here, so a unique expression is parsed however many times it appears
     but at most once, and is the only place anchor markers are swapped for the stand-in
     names that let them parse (:func:`_name_anchor`). The text anywhere else is the text
-    the user wrote, so a message quoting it never shows a stand-in.
+    the user wrote, so a message quoting it never shows a stand-in. Once parsed, each
+    stand-in's id becomes a :class:`_StandIn`, which no name the body writes is.
 
     A stand-in parses and so caches like anything else; what it *denotes* differs per
     node, which is why :func:`_parse_anchored` rewrites the tree on the way out rather
@@ -238,7 +239,12 @@ def _parse_expression(content: str) -> ast.Expression:
     Dev Notes:
         docs-dev/architecture/expressions/resolution.md#resolution-algorithm
     """
-    return _parse_body(_name_anchor(content))
+    named, stand_ins = _name_anchor(content)
+    tree = _parse_body(named)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in stand_ins:
+            node.id = _StandIn(_marker_text(stand_ins[node.id]))
+    return tree
 
 
 def resolve_expressions(
@@ -796,8 +802,8 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any], node_path: _Path =
     2. Interpolation (text around ${...}) — string result
     3. Escaped $${...} — literal ${...}
 
-    *node_path* is where the expression sits, which is what an anchor stand-in
-    (``__UP1__``, ``__ROOT__``) is resolved against.
+    *node_path* is where the expression sits, which is what an anchor marker
+    (``.``, ``::``) is resolved against.
     """
     spans = list(_find_expressions(expr_str))
     # Check if the entire string is a single ${expr}
@@ -884,14 +890,6 @@ def _set_nested_by_path(data: dict[str, Any], path: _Path, value: Any) -> None:
 # Reference anchoring
 # ---------------------------------------------------------------------------
 
-#: Transient stand-in for a configuration-root anchor while an expression is parsed.
-#: ``::`` is not valid Python, so it is swapped for this name before
-#: :func:`ast.parse` and swapped back on the way out.
-_ROOT_ANCHOR = "__ROOT__"
-
-#: Transient stand-in for a node-relative anchor: a run of *n* dots becomes ``__UP<n>__``.
-_UP_ANCHOR_RE = re.compile(r"^__UP(\d+)__$")
-
 #: Adjacent colons that spell the configuration root.
 _ROOT_MARKER_COLONS = 2
 
@@ -909,17 +907,37 @@ _OPEN_BRACKETS = frozenset({"(", "[", "{"})
 _CLOSE_BRACKETS = frozenset({")", "]", "}"})
 
 
-def _up_anchor(dots: int) -> str:
-    """Return the transient stand-in name for a run of *dots* dots."""
-    return f"__UP{dots}__"
+def _marker_text(levels: int) -> str:
+    """Spell the marker *levels* stands for: ``::`` at the root, else that many dots."""
+    return "::" if levels == 0 else "." * levels
+
+
+class _StandIn(str):
+    """The id of a name standing for an anchor marker in a parsed tree, spelled as that marker.
+
+    Told apart by its type, never by its text: a parsed body yields plain strings only, and
+    so does a path segment, so neither a name the user writes (``__ROOT__``) nor a key
+    spelled like a marker (``::['..']``) is ever read as an anchor.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/reference-anchoring.md#implementation-constraints
+    """
+
+    __slots__ = ()
+
+    @property
+    def levels(self) -> int:
+        """How far the marker climbs: one per dot, and ``0`` for ``::``, the configuration root."""
+        return 0 if self == _marker_text(0) else len(self)
+
+
+#: The stand-in for the configuration root, which :func:`_path_to_ast` hangs a root key off.
+_ROOT_ANCHOR = _StandIn(_marker_text(0))
 
 
 def _anchor_dot_count(name: str) -> int | None:
-    """Return the level count *name* anchors to, or ``None`` when it is not an anchor name."""
-    if name == _ROOT_ANCHOR:
-        return 0
-    match = _UP_ANCHOR_RE.match(name)
-    return int(match.group(1)) if match else None
+    """Return the level count *name* anchors to, or ``None`` when it is no stand-in."""
+    return name.levels if isinstance(name, _StandIn) else None
 
 
 def _is_dot_run(text: str) -> bool:
@@ -1042,8 +1060,7 @@ def _spells_as_name(segment: str) -> bool:
 
     It must parse back as itself: an identifier that is no keyword (``import``) and that
     Python's NFKC normalization leaves alone (``ﬁle`` would read ``file``). A dunder is
-    excluded too, because validation refuses it after a dot and a stand-in (``__UP1__``) is
-    one.
+    excluded too, because validation refuses it after a dot.
     """
     return (
         segment.isidentifier()
@@ -1090,11 +1107,6 @@ def _path_to_ast(parts: Sequence[str]) -> ast.expr:
     return built
 
 
-def _marker_text(levels: int) -> str:
-    """Spell the marker *levels* stands for: ``::`` at the root, else that many dots."""
-    return "::" if levels == 0 else "." * levels
-
-
 def _strip_anchor(expr_content: str) -> str:
     """Rewrite configuration-root references as plain paths (``::foo.bar`` -> ``foo.bar``).
 
@@ -1121,8 +1133,18 @@ def _strip_anchor(expr_content: str) -> str:
     )
 
 
-def _name_anchor(expr_content: str) -> str:
+def _stand_in_spelling(levels: int, pad: str) -> str:
+    """Spell the stand-in for a marker climbing *levels* as a name, *pad* lengthening its underscores."""
+    return f"__{pad}ROOT__" if levels == 0 else f"__{pad}UP{levels}__"
+
+
+def _name_anchor(expr_content: str) -> tuple[str, dict[str, int]]:
     """Swap each anchor marker for a parseable name (``..foo`` -> ``__UP2__.foo``).
+
+    Return the named text, and the level count each name it wrote stands for. The name is
+    one the body spells nowhere, as Python reads it (NFKC-normalized): a body that writes
+    ``__ROOT__`` has its root marker named ``___ROOT__``, so :func:`_parse_expression` tells
+    each stand-in from a written name by its spelling alone.
 
     The stand-in owns a dot only when a name follows the marker: ``.[0]`` becomes
     ``__UP1__[0]`` and a bare ``.`` becomes ``__UP1__``, each a path to
@@ -1131,40 +1153,50 @@ def _name_anchor(expr_content: str) -> str:
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#implementation-constraints
     """
-    return _replace_spans(
-        expr_content,
-        [
-            (
-                marker.offset,
-                marker.offset + marker.length,
-                (_ROOT_ANCHOR if marker.levels == 0 else _up_anchor(marker.levels))
-                + ("." if marker.before_name else ""),
-            )
-            for marker in _anchor_markers(expr_content)
-        ],
-    )
+    markers = _anchor_markers(expr_content)
+    if not markers:
+        return expr_content, {}
+    written = {
+        unicodedata.normalize("NFKC", tstr)
+        for ttype, tstr, _, _ in _significant_tokens(expr_content)
+        if ttype == tokenize.NAME
+    }
+    pad = ""
+    while any(_stand_in_spelling(marker.levels, pad) in written for marker in markers):
+        pad += "_"
+    edits = [
+        (
+            marker.offset,
+            marker.offset + marker.length,
+            _stand_in_spelling(marker.levels, pad) + ("." if marker.before_name else ""),
+        )
+        for marker in markers
+    ]
+    return _replace_spans(expr_content, edits), {
+        _stand_in_spelling(marker.levels, pad): marker.levels for marker in markers
+    }
 
 
-def _unname_anchor(expr_content: str) -> str:
-    """Turn ``__UP2__.foo`` back into ``..foo`` after unparsing.
+class _Unnamer(ast.NodeTransformer):
+    """Fold a dot read off a stand-in into one name, the marker then the segment (``..host``).
 
-    Token-based, so a string literal containing the name is left intact.  The dot a
-    stand-in owns is consumed with it, because the marker it restores carries its own;
-    before a subscript (``__UP1__[0]``) it owns none.
+    The marker carries its own dot, so the attribute's would be one too many: ``...host``.
     """
-    try:
-        toks = _significant_tokens(expr_content)
-    except (tokenize.TokenError, IndentationError, SyntaxError):
-        return expr_content
-    edits: list[tuple[int, int, str]] = []
-    for index, (ttype, tstr, begin, finish) in enumerate(toks):
-        levels = _anchor_dot_count(tstr) if ttype == tokenize.NAME else None
-        if levels is None:
-            continue
-        nxt = toks[index + 1] if index + 1 < len(toks) else None
-        end = nxt[3] if nxt is not None and nxt[1] == "." and nxt[2] == finish else finish
-        edits.append((begin, end, _marker_text(levels)))
-    return _replace_spans(expr_content, edits)
+
+    def visit_Attribute(self, node: ast.Attribute) -> ast.AST:  # NodeTransformer dispatches on the class name
+        """Spell ``<stand-in>.<attr>`` as the name ``<marker><attr>``, else recurse."""
+        if isinstance(node.value, ast.Name) and _anchor_dot_count(node.value.id) is not None:
+            return ast.copy_location(ast.Name(id=node.value.id + node.attr, ctx=node.ctx), node)
+        return self.generic_visit(node)
+
+
+def _unparse(tree: ast.AST) -> str:
+    """Unparse *tree* as a ``${...}`` body, each stand-in written as the marker it stands for.
+
+    A stand-in's text is its marker already (:class:`_StandIn`), so only the dot read off
+    one is folded into it; *tree* itself is left as it is.
+    """
+    return ast.unparse(_Unnamer().visit(copy.deepcopy(tree)))
 
 
 def _anchor_prefix(node_path: _Path, levels: int, scope: str = "document") -> _Path:
@@ -1320,8 +1352,7 @@ def _prefix_content(expr_content: str, prefix: _Path) -> str:
         return expr_content
     # The parse cache is shared, and _Prefixer rewrites the tree in place.
     tree = _Prefixer(prefix).visit(copy.deepcopy(tree))
-    ast.fix_missing_locations(tree)
-    return _unname_anchor(ast.unparse(tree))
+    return _unparse(tree)
 
 
 def _map_expressions(value: str, fn: Callable[[str], str]) -> str:
