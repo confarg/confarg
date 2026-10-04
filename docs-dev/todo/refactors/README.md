@@ -24,7 +24,6 @@ different board.
 | [REF-43 — Four copies of the type-tree path walk in `_parse_cli.py`](REF-43-parse-cli-path-walk-copies.md) | M | high | none |
 | [REF-45 — The argv value-run scan is written seven times](REF-45-argv-value-run-scan-duplicated.md) | M | high | none |
 | [REF-46 — Near-duplicate helper pairs in the merge core](REF-46-near-duplicate-helpers-in-the-merge-core.md) | S | low | none |
-| [REF-47 — The shape-dispatch chain is repeated four times](REF-47-shape-dispatch-chain-repeated-four-times.md) | L | high | none |
 | [REF-48 — `inspect.signature` is walked four or five times per struct](REF-48-init-signature-walked-five-times.md) | M | high | none |
 | [REF-49 — `graphlib.TopologicalSorter` replaces the hand-written Kahn loop](REF-49-graphlib-replaces-hand-written-kahn.md) | S | low | behavior |
 | [REF-50 — Adapter registration and completion boilerplate](REF-50-adapter-registration-boilerplate.md) | M | low | none |

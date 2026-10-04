@@ -26,12 +26,10 @@ from confarg._types import (
     _dict_kv,
     _elem_type,
     _fixed_seq_types,
-    _is_callable,
     _is_dict,
     _is_frozenset,
     _is_list,
     _is_literal,
-    _is_namedtuple,
     _is_set,
     _is_struct,
     _is_tuple,
@@ -72,6 +70,8 @@ from confarg.typedload._coerce import (
     _is_struct_variant,
     _is_taggable_leaf,
     _steal_order,
+    _type_kind,
+    _TypeKind,
 )
 
 
@@ -367,24 +367,27 @@ def _construct_scalar(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     return _coerce_leaf(tp, data, path)
 
 
-def _construct_typed(tp: Any, data: Any, path: str, union_tag: str) -> Any:  # noqa: PLR0911
-    """Dispatch construction by type after None and callable are handled."""
-    if tp is Any:
-        # typing.Any is a real (subclassable) class since Python 3.11; pass data through unchanged.
-        return data
-    if _is_union(tp):
-        return _construct_union(tp, data, path, union_tag)
-    if _is_namedtuple(tp):
-        return _construct_namedtuple(tp, data, path, union_tag)
-    if _is_struct_variant(tp):
-        return _construct_struct_dispatch(tp, data, path, union_tag)
-    if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
-        return _construct_collection(tp, data, path, union_tag)
-    if _is_tuple(tp):
-        return _construct_tuple(tp, data, path, union_tag)
-    if _is_dict(tp):
-        return _construct_dict(tp, data, path, union_tag)
-    return _construct_scalar(tp, data, path, union_tag)
+def _construct_typed(tp: Any, data: Any, path: str, union_tag: str) -> Any:  # noqa: PLR0911  # one return per kind
+    """Dispatch construction on the shape :func:`_type_kind` names, after a pin and None are handled."""
+    match _type_kind(tp):
+        case _TypeKind.ANY:
+            return data
+        case _TypeKind.UNION:
+            return _construct_union(tp, data, path, union_tag)
+        case _TypeKind.NAMEDTUPLE:
+            return _construct_namedtuple(tp, data, path, union_tag)
+        case _TypeKind.STRUCT:
+            return _construct_struct_dispatch(tp, data, path, union_tag)
+        case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET:
+            return _construct_collection(tp, data, path, union_tag)
+        case _TypeKind.TUPLE:
+            return _construct_tuple(tp, data, path, union_tag)
+        case _TypeKind.DICT:
+            return _construct_dict(tp, data, path, union_tag)
+        case _TypeKind.CALLABLE:
+            return _resolve_callable_spec(data, tp, path=path, union_tag=union_tag, construct_fn=construct)
+        case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
+            return _construct_scalar(tp, data, path, union_tag)
 
 
 def construct(tp: Any, data: Any, *, path: str = "", union_tag: str = _defaults.UNION_TAG) -> Any:
@@ -413,8 +416,6 @@ def construct(tp: Any, data: Any, *, path: str = "", union_tag: str = _defaults.
         return _coerce_leaf(pinned.tp, pinned.value, path)
     if data is None and _allows_none(tp):
         return None
-    if _is_callable(tp):
-        return _resolve_callable_spec(data, tp, path=path, union_tag=union_tag, construct_fn=construct)
     return _construct_typed(tp, data, path, union_tag)
 
 

@@ -6,17 +6,28 @@
 
 from __future__ import annotations
 
+import enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from confarg._import import _import_dotted, dotted_name
 from confarg._types import (
     _final_inner,
+    _is_callable,
+    _is_dict,
     _is_enum,
     _is_final,
+    _is_frozenset,
+    _is_list,
     _is_literal,
+    _is_namedtuple,
     _is_none_type,
+    _is_set,
     _is_struct,
+    _is_tuple,
     _is_union,
     _literal_values,
     _resolve_type,
@@ -289,6 +300,54 @@ def _is_taggable_leaf(tp: Any) -> bool:
         docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in
     """
     return _is_registered_leaf(tp) and _is_struct(tp)
+
+
+class _TypeKind(enum.Enum):
+    """The shape a type dispatches as: one member per branch of a shape dispatch."""
+
+    ANY = enum.auto()
+    UNION = enum.auto()
+    NAMEDTUPLE = enum.auto()
+    STRUCT = enum.auto()
+    TAGGABLE_LEAF = enum.auto()
+    LIST = enum.auto()
+    SET = enum.auto()
+    FROZENSET = enum.auto()
+    TUPLE = enum.auto()
+    DICT = enum.auto()
+    CALLABLE = enum.auto()
+    LEAF = enum.auto()
+
+
+# The order the shape predicates are asked in, first match winning; a type none of them
+# names is a LEAF. Every shape dispatch reads it through _type_kind, so none restates it.
+_KIND_ORDER: tuple[tuple[Callable[[Any], bool], _TypeKind], ...] = (
+    (lambda tp: tp is Any, _TypeKind.ANY),
+    (_is_union, _TypeKind.UNION),
+    (_is_namedtuple, _TypeKind.NAMEDTUPLE),
+    (_is_struct_variant, _TypeKind.STRUCT),
+    (_is_taggable_leaf, _TypeKind.TAGGABLE_LEAF),
+    (_is_list, _TypeKind.LIST),
+    (_is_set, _TypeKind.SET),
+    (_is_frozenset, _TypeKind.FROZENSET),
+    (_is_tuple, _TypeKind.TUPLE),
+    (_is_dict, _TypeKind.DICT),
+    (_is_callable, _TypeKind.CALLABLE),
+)
+
+
+def _type_kind(tp: Any) -> _TypeKind:
+    """Return the shape *tp* dispatches as, its wrappers unwrapped.
+
+    The one answer construction, serialization, the union-variant test and the CLI type
+    walk dispatch on, so every type takes the same branch in each. A struct is ``STRUCT`` by
+    :func:`_is_struct_variant` and ``TAGGABLE_LEAF`` by :func:`_is_taggable_leaf`.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#shape-dispatch
+    """
+    tp = _resolve_type(tp)
+    return next((kind for holds, kind in _KIND_ORDER if holds(tp)), _TypeKind.LEAF)
 
 
 _SCALAR_COERCIONS: dict[type, Any] = {
