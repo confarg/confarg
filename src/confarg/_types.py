@@ -713,6 +713,31 @@ def _struct_fields(tp: Any) -> dict[str, Any]:
     return _dc_fields(tp) if _is_dc(tp) else _init_fields(tp)
 
 
+def _answered_by_subclasses(tp: Any, field: str) -> bool:
+    """Return whether the type walk answers struct ``tp``'s member *field* from its subclasses.
+
+    Only a name ``tp`` does not declare itself is: a declared field is answered by ``tp``'s
+    own annotation however a subclass overrides it, so the subclasses own nothing at ``tp``
+    but their subclass-only names (BUG-86).
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
+    """
+    return field not in _struct_fields(tp)
+
+
+def _base_declares_path(tp: Any, prefix: str, path: str) -> bool:
+    """Return whether dotted *path* lies under *prefix* through a member struct ``tp`` declares.
+
+    The path form of :func:`_answered_by_subclasses`, for the adapters' subclass walks, which
+    see flag paths rather than segments: such a path is the base's to answer, never a
+    subclass's, so the collector hides it from the subclass walks and registration from the
+    subclass recursion (BUG-86).
+    """
+    head = f"{prefix}." if prefix else ""
+    return path.startswith(head) and not _answered_by_subclasses(tp, path[len(head) :].split(".", maxsplit=1)[0])
+
+
 def _subclass_field_type(tp: type, field: str) -> Any | None:
     """Search all struct subclasses of tp for a field, returning its type.
 

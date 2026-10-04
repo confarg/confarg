@@ -60,11 +60,20 @@
   themselves are written in the order argv spells the flags, so an ancestor/descendant pair
   of conflicts answers the latest-writer question the way vanilla's sequential writes do,
   and a conflicting flag typed after its own sub-flags hides them too: vanilla's own last
-  write replaced the whole subtree, and the walks must not resurrect it (BUG-85). A first
-  segment
-  the base class declares is never a conflict: the base's own walk collects it by the base's
-  type, which is vanilla's answer for it (a subclass's *override* of a base-declared field
-  diverging is BUG-86, open).
+  write replaced the whole subtree, and the walks must not resurrect it (BUG-85).
+- A field the base class declares is answered by the **base's own** annotation, however a
+  subclass overrides it: vanilla's walk consults the subclasses only for a name the base does
+  not declare. The one predicate is `_types._answered_by_subclasses`, and all three walks
+  consult it — vanilla's `_parse_cli._advance_field_type` of a segment, and through its path
+  form `_types._base_declares_path` the collector's subclass walks
+  (`_collect._collect_variant_fields` hides a base-declared first segment from them under a
+  *base*, since the base's own walk already collected it) and registration's subclass recursion (`_build._collect_struct_specs` drops a subclass
+  spec under a base-declared field). So a base-declared field is never a disagreeing-owner
+  conflict either, and an overriding subclass registers no flag below it: a sub-flag only the
+  override's struct owns is refused at parse time, as vanilla refuses it, rather than
+  collected. Each subclass walk re-collecting the field by its own type let the last one's
+  coercion stand (`--x.a 7` arrived as `7.0` under a `float` override of an `int` field), and
+  registering the override's subtree accepted flags vanilla refuses (BUG-86).
 - The descent itself is one shared walk — `_collect._collect_variant_fields` — for every
   spelling: a tag's named variant and its siblings, a union field's variants without a tag,
   the union root's, and a base class's subclasses without a tag (`_dataclass_subclasses`, the

@@ -32,6 +32,7 @@ from confarg._import import _import_dotted, dotted_name
 from confarg._merge import _peek_nested, _set_nested
 from confarg._tags import _partial_config_from_argv, import_tagged_classes
 from confarg._types import (
+    _base_declares_path,
     _dataclass_subclasses,
     _elem_type,
     _final_inner,
@@ -1056,7 +1057,8 @@ def _collect_struct_specs(  # union-root branch added one more conditional
             result.append(tag_spec)
             by_name[tag_name] = tag_spec
         for sub in direct_subs:
-            for spec in _collect_struct_specs(sub, prefix, union_tag, group, group_description):
+            specs = _collect_struct_specs(sub, prefix, union_tag, group, group_description)
+            for spec in (s for s in specs if not _base_declares_path(tp, prefix, s.name)):
                 _merge_or_append_spec(result, by_name, spec)
 
     return result
