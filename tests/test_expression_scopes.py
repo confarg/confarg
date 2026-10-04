@@ -141,7 +141,7 @@ class TestAMalformedExpressionInAMountedFile:
         merged = confarg.merge(dict[str, Any], argv=argv, env=env, env_prefix="MYAPP_")
         node, prefix = (merged, "") if route == "root" else (merged["db"], "db.")
         assert node == {"p": 1, "q": "${p +}", "r": "${" + prefix + "p} and ${p +}"}
-        with pytest.raises(UnsafeExpressionError, match=r"^Invalid expression syntax: 'p \+'$"):
+        with pytest.raises(UnsafeExpressionError, match=r"^Error in expression '\$\{p \+\}': Invalid syntax$"):
             confarg.resolve(merged)
 
     def test_a_body_too_deep_to_parse_is_carried_as_written(self, tmp_path: Path) -> None:
@@ -150,7 +150,10 @@ class TestAMalformedExpressionInAMountedFile:
         frag = write(tmp_path, "frag.yaml", f"p: 1\nq: ${{{body}}}\n")
         merged = confarg.merge(dict[str, Any], argv=["--config.db", str(frag)], env={})
         assert merged == {"db": {"p": 1, "q": "${" + body + "}"}}
-        with pytest.raises(UnsafeExpressionError, match=r"^Expression nests too deeply to parse: '---"):
+        with pytest.raises(
+            UnsafeExpressionError,
+            match=r"^Error in expression '\$\{---.*: Too deeply nested to parse$",
+        ):
             confarg.resolve(merged)
 
 

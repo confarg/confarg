@@ -341,9 +341,13 @@ def resolve_expressions(
 
     # 4. Validate AST for all expressions
     for path in order:
-        for span in _find_expressions(expr_fields[path]):
+        raw_str = expr_fields[path]
+        for span in _find_expressions(raw_str):
             if span.body is not None:  # not escaped
-                _validate_ast(span.body)
+                try:
+                    _validate_ast(span.body)
+                except _RefusedError as exc:
+                    raise UnsafeExpressionError.refused(raw_str[span.start : span.end], str(exc)) from exc.__cause__
 
     # 5. Resolve in order, building namespace incrementally
     for path in order:
@@ -640,35 +644,53 @@ def _topological_sort(deps: dict[_Path, set[_Path]]) -> list[_Path]:
     return order
 
 
-def _validate_ast(expr_str: str) -> None:
-    """Parse expression and validate AST contains only allowed nodes.
+class _RefusedError(Exception):
+    """What the safety model refuses in one ``${...}``, worded without the expression.
 
-    Raises UnsafeExpressionError for disallowed constructs.
+    Only the validation loop in :func:`resolve_expressions` and :func:`_eval_expr` catch it,
+    and each raises it as an :class:`~confarg.exceptions.UnsafeExpressionError` quoting the
+    expression as written, so no refusal reaches the user without its expression.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/resolution.md#a-refusal-names-its-expression
+    """
+
+    @classmethod
+    def indirect_call(cls) -> _RefusedError:
+        """Return the refusal of a call whose callee is neither a function name nor a method."""
+        return cls("Indirect function calls are not allowed")
+
+
+def _validate_ast(body: str) -> None:
+    """Parse the ``${...}`` *body* and check its AST holds only allowed nodes and calls.
+
+    Raises :class:`_RefusedError` for a body that does not parse, the parser's own error as
+    its cause, and for a disallowed construct.
     """
     try:
-        tree = _parse_expression(expr_str)
+        tree = _parse_expression(body)
     except _NormalizedNameError as exc:
         msg = (
-            f"Name {exc.written!r} reads as {exc.read!r} in expression {expr_str!r}, as Python normalizes"
-            f" names (NFKC): write {exc.read!r}, or read the key as written with a subscript,"
-            f" [{exc.written!r}] or ::[{exc.written!r}] at the root"
+            f"Name {exc.written!r} reads as {exc.read!r}, as Python normalizes names (NFKC): write"
+            f" {exc.read!r}, or read the key as written with a subscript, [{exc.written!r}] or"
+            f" ::[{exc.written!r}] at the root"
         )
-        raise UnsafeExpressionError(msg) from exc
+        raise _RefusedError(msg) from exc
     except _TooDeepError as exc:
-        msg = f"Expression nests too deeply to parse: {expr_str!r}"
-        raise UnsafeExpressionError(msg) from exc
+        msg = "Too deeply nested to parse"
+        raise _RefusedError(msg) from exc
     except SyntaxError as exc:
-        msg = f"Invalid expression syntax: {expr_str!r}"
-        raise UnsafeExpressionError(msg) from exc
+        msg = "Invalid syntax"
+        raise _RefusedError(msg) from exc
 
     for node in ast.walk(tree):
         if type(node) not in _ALLOWED_NODES:
-            msg = f"Disallowed construct in expression: {type(node).__name__}"
-            raise UnsafeExpressionError(msg)
+            msg = f"Disallowed construct: {type(node).__name__}"
+            raise _RefusedError(msg)
         # Check for dunder attribute access
         if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
             msg = f"Access to dunder attribute '{node.attr}' is not allowed"
-            raise UnsafeExpressionError(msg)
+            raise _RefusedError(msg)
         # Check function calls are whitelisted
         if isinstance(node, ast.Call):
             _validate_call(node)
@@ -680,13 +702,13 @@ def _validate_call(node: ast.Call) -> None:
     if function is not None:
         if function not in _SAFE_FUNCTIONS:
             msg = f"Function '{function}' is not allowed"
-            raise UnsafeExpressionError(msg)
+            raise _RefusedError(msg)
     elif (method := _method_name(node)) is not None:
         if method not in _SAFE_METHODS:
             msg = f"Method '{method}' is not allowed"
-            raise UnsafeExpressionError(msg)
+            raise _RefusedError(msg)
     else:
-        raise UnsafeExpressionError.indirect_call()
+        raise _RefusedError.indirect_call()
 
 
 def _eval_name(node: ast.Name, namespace: dict[str, Any]) -> Any:
@@ -811,7 +833,8 @@ def _eval_method(node: ast.Call, method: str, namespace: dict[str, Any]) -> Any:
     """Return the bound string method *node* calls, refusing any receiver that is no string.
 
     The receiver is evaluated, never the callee's path, and its type is known only now: a
-    date's ``replace`` or a dict holding a key ``upper`` is refused here, as unsafe.
+    date's ``replace`` or a dict holding a key ``upper`` is refused here, as unsafe, by a
+    :class:`_RefusedError` that :func:`_eval_expr` quotes the expression around.
 
     Dev Notes:
         docs-dev/architecture/expressions/safety-model.md#a-method-is-a-string-method
@@ -819,7 +842,7 @@ def _eval_method(node: ast.Call, method: str, namespace: dict[str, Any]) -> Any:
     receiver = _evaluate_ast(cast("ast.Attribute", node.func).value, namespace)
     if not isinstance(receiver, str):
         msg = f"Method '{method}' is called on a {type(receiver).__name__}; it is allowed only on a string"
-        raise UnsafeExpressionError(msg)
+        raise _RefusedError(msg)
     return getattr(receiver, method)
 
 
@@ -829,7 +852,7 @@ def _eval_call(node: ast.Call, namespace: dict[str, Any]) -> Any:
     elif (method := _method_name(node)) is not None:
         func = _eval_method(node, method, namespace)
     else:
-        raise UnsafeExpressionError.indirect_call()
+        raise _RefusedError.indirect_call()
     args = [_evaluate_ast(a, namespace) for a in node.args]
     kwargs = {cast("str", kw.arg): _evaluate_ast(kw.value, namespace) for kw in node.keywords}
     return func(*args, **kwargs)
@@ -862,24 +885,27 @@ def _evaluate_ast(node: ast.AST, namespace: dict[str, Any]) -> Any:
 def _eval_expr(tree: ast.Expression, namespace: dict[str, Any], context: str) -> Any:
     """Evaluate a parsed expression, wrapping any runtime failure in ``ExpressionEvalError``.
 
-    ``MissingReferenceError`` and ``UnsafeExpressionError`` propagate unchanged. Anything else
-    — an operator's ``TypeError``, a whitelisted function's or a string method's
-    ``ValueError``, a miss off a value no path names — becomes an ``ExpressionEvalError``
-    quoting *context*: the whole string for a pure expression, the ``${...}`` fragment alone
-    for one embedded in an interpolation. This is the one site that words it, so the
-    evaluators let Python's exception through rather than wrap it themselves.
+    ``MissingReferenceError`` propagates unchanged. A :class:`_RefusedError` — a method off
+    a value that is no string — becomes an ``UnsafeExpressionError``, and anything else — an
+    operator's ``TypeError``, a whitelisted function's or a string method's ``ValueError``, a
+    miss off a value no path names — an ``ExpressionEvalError``, both quoting *context*: the
+    whole string for a pure expression, the ``${...}`` fragment alone for one embedded in an
+    interpolation. This is the one site that words them, so the evaluators let Python's
+    exception through rather than wrap it themselves.
 
     Dev Notes:
         docs-dev/architecture/expressions/resolution.md#an-evaluation-failure-names-its-expression
+        docs-dev/architecture/expressions/resolution.md#a-refusal-names-its-expression
     """
     try:
         return _evaluate_ast(tree, namespace)
-    # Load-bearing: without it the catch-all below would re-wrap the typed errors.
-    except (MissingReferenceError, UnsafeExpressionError):
+    # Load-bearing: without it the catch-all below would re-wrap the typed error.
+    except MissingReferenceError:
         raise
+    except _RefusedError as exc:
+        raise UnsafeExpressionError.refused(context, str(exc)) from None
     except Exception as exc:
-        msg = f"Error in expression {context!r}: {exc}"
-        raise ExpressionEvalError(msg) from exc
+        raise ExpressionEvalError.failed(context, exc) from exc
 
 
 def _resolve_single(expr_str: str, namespace: dict[str, Any], node_path: _Path = ()) -> Any:

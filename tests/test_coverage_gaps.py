@@ -74,6 +74,7 @@ from confarg._types import (
 )
 from confarg.dictexpr._expressions import (
     _attribute_chain,
+    _eval_expr,
     _evaluate_ast,
     _extract_references,
     _get_nested,
@@ -984,9 +985,10 @@ class TestExpressionBranches:
 
     def test_indirect_call_is_refused_at_evaluation(self) -> None:
         """Evaluation refuses an indirect call itself, rather than call whatever the callee yields."""
-        node = ast.parse("f[0]()", mode="eval").body
-        with pytest.raises(confarg.exceptions.UnsafeExpressionError, match="Indirect function calls"):
-            _evaluate_ast(node, {"f": [print]})
+        tree = ast.parse("f[0]()", mode="eval")
+        message = r"^Error in expression '\$\{f\[0\]\(\)\}': Indirect function calls are not allowed$"
+        with pytest.raises(confarg.exceptions.UnsafeExpressionError, match=message):
+            _eval_expr(tree, {"f": [print]}, "${f[0]()}")
 
 
 # ---------------------------------------------------------------------------

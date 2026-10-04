@@ -26,6 +26,7 @@ from confarg.dictexpr._expressions import (
     _extract_references,
     _parse_expression,
     _prefix_content,
+    _RefusedError,
     _scan_expressions,
     _topological_sort,
     _unparse,
@@ -348,8 +349,8 @@ class TestAstValidation:
         ],
     )
     def test_unsafe_rejected(self, expr: str) -> None:
-        """Unsafe expression constructs raise UnsafeExpressionError."""
-        with pytest.raises(UnsafeExpressionError):
+        """Unsafe expression constructs are refused, for resolution to quote the expression around."""
+        with pytest.raises(_RefusedError):
             _validate_ast(expr)
 
 
@@ -1335,7 +1336,7 @@ class TestMethodCalls:
     @pytest.mark.parametrize("name", ["max", "round", "int", "len"])
     def test_a_function_name_is_no_method(self, name: str) -> None:
         """Only a string method's name passes validation as a method."""
-        with pytest.raises(UnsafeExpressionError, match=rf"Method '{name}' is not allowed"):
+        with pytest.raises(_RefusedError, match=rf"^Method '{name}' is not allowed$"):
             _validate_ast(f"x.{name}(5)")
 
     def test_a_function_name_called_off_a_decimal_is_refused(self) -> None:
@@ -1778,15 +1779,18 @@ class TestAnchoredExpressionQuotedAsWritten:
     @pytest.mark.parametrize(
         ("data", "quoted"),
         [
-            pytest.param({"a": {"x": 1, "p": "${.x +}"}}, ".x +", id="node-anchor"),
-            pytest.param({"x": 1, "p": "${::x +}"}, "::x +", id="root-anchor"),
-            pytest.param({"a": {"x": 1, "p": "pre ${..a.x +} post"}}, "..a.x +", id="interpolated"),
-            pytest.param({"xs": [1, "${.[0] +}"]}, ".[0] +", id="anchor-then-subscript"),
+            pytest.param({"a": {"x": 1, "p": "${.x +}"}}, "${.x +}", id="node-anchor"),
+            pytest.param({"x": 1, "p": "${::x +}"}, "${::x +}", id="root-anchor"),
+            pytest.param({"a": {"x": 1, "p": "pre ${..a.x +} post"}}, "${..a.x +}", id="interpolated"),
+            pytest.param({"xs": [1, "${.[0] +}"]}, "${.[0] +}", id="anchor-then-subscript"),
         ],
     )
     def test_a_syntax_error(self, data: dict, quoted: str) -> None:
-        """``Invalid expression syntax`` quotes the body with its anchor markers."""
-        with pytest.raises(UnsafeExpressionError, match=f"^Invalid expression syntax: {re.escape(repr(quoted))}$"):
+        """A syntax refusal quotes the expression with its anchor markers."""
+        with pytest.raises(
+            UnsafeExpressionError,
+            match=f"^Error in expression {re.escape(repr(quoted))}: Invalid syntax$",
+        ):
             resolve_expressions(data)
 
     @pytest.mark.parametrize(
@@ -2085,6 +2089,71 @@ class TestAnEvaluationFailureNamesItsExpression:
         assert isinstance(info.value.__cause__, ZeroDivisionError)
 
 
+class TestARefusalNamesItsExpression:
+    """Every refusal quotes the expression it refuses, as a runtime failure does (BUG-143).
+
+    Only a body that did not parse used to quote anything, and then its bare body: a
+    disallowed construct or call named the construct alone, and so did a method off a value
+    that is no string.
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "expr", "reason"),
+        [
+            pytest.param("${s[0:1]}", "${s[0:1]}", "Disallowed construct: Slice", id="construct"),
+            pytest.param(
+                "${s.upper() + eval('1')}",
+                "${s.upper() + eval('1')}",
+                "Function 'eval' is not allowed",
+                id="function",
+            ),
+            pytest.param("${s.title()}", "${s.title()}", "Method 'title' is not allowed", id="method-name"),
+            pytest.param("${s[0]()}", "${s[0]()}", "Indirect function calls are not allowed", id="indirect-call"),
+            pytest.param(
+                "${s.__class__}",
+                "${s.__class__}",
+                "Access to dunder attribute '__class__' is not allowed",
+                id="dunder",
+            ),
+            pytest.param("${s.upper(}", "${s.upper(}", "Invalid syntax", id="syntax"),
+            pytest.param("<${s} ${s[0:1]}>", "${s[0:1]}", "Disallowed construct: Slice", id="interpolated"),
+            pytest.param(
+                "${n.upper()}",
+                "${n.upper()}",
+                "Method 'upper' is called on a int; it is allowed only on a string",
+                id="receiver",
+            ),
+            pytest.param(
+                "<${n.upper()}>",
+                "${n.upper()}",
+                "Method 'upper' is called on a int; it is allowed only on a string",
+                id="interpolated-receiver",
+            ),
+        ],
+    )
+    def test_the_message_quotes_the_expression(self, value: str, expr: str, reason: str) -> None:
+        """The reason follows the expression as written, worded as a runtime failure is."""
+        with pytest.raises(
+            UnsafeExpressionError,
+            match="^" + re.escape(f"Error in expression {expr!r}: {reason}") + "$",
+        ):
+            resolve_expressions({"n": 1, "s": "x", "v": value})
+
+    def test_a_normalized_name_quotes_the_expression(self) -> None:
+        """The NFKC refusal quotes the ``${...}`` it sits in, not its bare body."""
+        with pytest.raises(
+            UnsafeExpressionError,
+            match=r"^Error in expression '\$\{ﬁle\}': Name 'ﬁle' reads as 'file', as Python",
+        ):
+            resolve_expressions({"file": 1, "v": "<${ﬁle}>"})
+
+    def test_a_syntax_refusal_is_chained_to_python_s_own(self) -> None:
+        """The parser's ``SyntaxError`` stays reachable as the cause."""
+        with pytest.raises(UnsafeExpressionError) as info:
+            resolve_expressions({"v": "${s.upper(}"})
+        assert isinstance(info.value.__cause__, SyntaxError)
+
+
 class TestABodyTooDeepToParse:
     """A body Python's parser gives up on is refused as one that does not parse (BUG-137).
 
@@ -2095,10 +2164,10 @@ class TestABodyTooDeepToParse:
     TOO_DEEP = "-" * 100_000 + "a"
 
     def test_validation_refuses_it_as_written(self) -> None:
-        """``resolve()`` raises the library's own error, quoting the body."""
-        with pytest.raises(UnsafeExpressionError, match=r"^Expression nests too deeply to parse: '---") as info:
+        """``resolve()`` raises the library's own error, quoting the expression."""
+        with pytest.raises(UnsafeExpressionError, match=r"^Error in expression '\$\{---") as info:
             resolve_expressions({"a": 1, "v": "${" + self.TOO_DEEP + "}"})
-        assert str(info.value).endswith("-a'")
+        assert str(info.value).endswith("-a}': Too deeply nested to parse")
 
     def test_it_contributes_no_reference(self) -> None:
         """Reference extraction skips it, as any body that does not parse."""
