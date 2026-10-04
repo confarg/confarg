@@ -101,3 +101,108 @@ class TestValidCitationsAreNotReported:
         """Fixture file names and a topic ``README.md`` are not citations of a note."""
         text = '_write(boards / "bugs" / "BUG-1-good.md", "")\n_write(boards / "README.md", "")\n'
         assert _errors(tree, "tests/tooling/test_x.py", text) == []
+
+
+class TestFencedLinesAreNotHeadings:
+    """A ``#`` line inside a fenced block is code, so it generates no anchor (BUG-148)."""
+
+    def test_a_comment_in_a_fence_generates_no_anchor(self, tmp_path):
+        """A console block's ``# expected:`` line is output, not a heading."""
+        note = tmp_path / "note.md"
+        _write(note, "# Note\n\n```console\n# expected: one line\n```\n\n````md\n```\n# Inner\n```\n````\n")
+        assert anchors._anchors(note) == ["note"]
+
+    def test_a_fenced_twin_does_not_suffix_the_real_heading(self, tmp_path):
+        """GitHub suffixes a repeated heading, and a fenced line is no repeat."""
+        note = tmp_path / "note.md"
+        _write(note, "~~~python\n# Setup\n~~~\n\n## Setup\n")
+        assert anchors._anchors(note) == ["setup"]
+
+
+def _note_errors(tree: Path, relative: str, text: str) -> list[str]:
+    """Write one Markdown file under ``tree`` and return what the sweep of the notes reports."""
+    _write(tree / relative, text)
+    errors, _ = anchors._sweep_notes(tree)
+    return errors
+
+
+class TestStaleLinksBetweenNotesAreReported:
+    """A link between the internal notes that cannot be followed is an error (BUG-148)."""
+
+    def test_a_link_to_a_missing_file(self, tree):
+        """A closed ticket's file is gone, and so is every link to it."""
+        text = "# REF-1 — x\n\nSame family as [REF-38](REF-38-closed.md).\n"
+        errors = _note_errors(tree, "docs-dev/todo/refactors/REF-1-x.md", text)
+        assert len(errors) == 1
+        assert errors[0].startswith("docs-dev/todo/refactors/REF-1-x.md:3:")
+        assert "REF-38-closed.md" in errors[0]
+
+    def test_a_link_to_a_missing_anchor(self, tree):
+        """The file resolves, the heading does not."""
+        text = "See [parity](../architecture/invariants.md#gone).\n"
+        errors = _note_errors(tree, "docs-dev/plans/p.md", text)
+        assert len(errors) == 1
+        assert "#gone" in errors[0]
+
+    def test_a_link_to_a_missing_anchor_in_the_same_note(self, tree):
+        """An anchor-only link names a heading of the note it sits in."""
+        errors = _note_errors(tree, "docs-dev/plans/p.md", "# Plan\n\nSee [below](#gone).\n")
+        assert len(errors) == 1
+        assert "#gone" in errors[0]
+
+    def test_an_anchor_only_a_fenced_line_generates(self, tree):
+        """A link to a fenced ``#`` line resolves to nothing on GitHub."""
+        text = "# Plan\n\n```console\n# expected: x\n```\n\nSee [it](#expected-x).\n"
+        errors = _note_errors(tree, "docs-dev/plans/p.md", text)
+        assert len(errors) == 1
+        assert "#expected-x" in errors[0]
+
+    def test_a_stale_link_in_the_protocols(self, tree):
+        """``docs-agents/`` links into ``docs-dev/`` and goes stale with it (BUG-141)."""
+        text = "Read [invariants](../docs-dev/architecture/09-invariants.md).\n"
+        errors = _note_errors(tree, "docs-agents/bug-fixing.md", text)
+        assert len(errors) == 1
+        assert errors[0].startswith("docs-agents/bug-fixing.md:1:")
+
+    def test_a_stale_link_in_agents_md(self, tree):
+        """``AGENTS.md`` routes to the protocols, so its links are checked with theirs."""
+        errors = _note_errors(tree, "AGENTS.md", "Open [the protocol](docs-agents/gone.md).\n")
+        assert len(errors) == 1
+        assert "docs-agents/gone.md" in errors[0]
+
+    def test_a_note_cited_by_line_number(self, tree):
+        """A line number never survives an edit of the note, so it is never a citation."""
+        text = "Env is parsed first (`01-pipeline-and-contracts.md:106`).\n"
+        errors = _note_errors(tree, "docs-dev/plans/p.md", text)
+        assert len(errors) == 1
+        assert "01-pipeline-and-contracts.md:106" in errors[0]
+
+    def test_a_link_from_docs_dev_into_the_protocols(self, tree):
+        """The dependency is one-way: ``docs-dev/`` never links to ``docs-agents/``."""
+        _write(tree / "docs-agents" / "boards.md", "# Boards\n")
+        errors = _note_errors(tree, "docs-dev/todo/README.md", "See [boards](../../docs-agents/boards.md).\n")
+        assert len(errors) == 1
+        assert "docs-agents" in errors[0]
+
+
+class TestValidLinksBetweenNotesAreNotReported:
+    """The sweep of the notes must stay quiet on a clean tree, or nobody runs it."""
+
+    def test_a_link_with_an_anchor_that_resolves(self, tree):
+        """The common shape: a relative path and a heading that exists."""
+        text = "See [parity](../architecture/invariants.md#cross-channel-parity).\n"
+        assert _note_errors(tree, "docs-dev/plans/p.md", text) == []
+
+    def test_links_to_a_folder_a_heading_here_and_the_web(self, tree):
+        """A folder exists without an anchor, and a URL is not this sweep's to follow."""
+        text = "# Plan\n\n[a](../architecture/cli-adapters/) [b](#plan) [c](https://example.com/x.md#y)\n"
+        assert _note_errors(tree, "docs-dev/plans/p.md", text) == []
+
+    def test_links_in_code_are_not_links(self, tree):
+        """A fence or a code span shows Markdown, it does not render it."""
+        text = "`[x](gone.md)`\n\n````markdown\n[y](../architecture/gone.md#z)\n````\n"
+        assert _note_errors(tree, "docs-dev/todo/README.md", text) == []
+
+    def test_a_python_file_cited_by_line_number(self, tree):
+        """Only a note's line numbers are banned: a plan points into code by them."""
+        assert _note_errors(tree, "docs-dev/plans/p.md", "Env first (`_pipeline.py:320-334`).\n") == []
