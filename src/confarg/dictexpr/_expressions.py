@@ -674,6 +674,18 @@ def _eval_name(node: ast.Name, namespace: dict[str, Any]) -> Any:
     return _get_nested(namespace, [node.id])
 
 
+class _ValueMissError(LookupError):
+    """A subscript no config path answers that misses in the value it indexes, too.
+
+    There is no field to name, so the message names the key or the index looked for, and
+    :func:`_eval_expr` wraps it in an :class:`ExpressionEvalError` that quotes the
+    expression as written.
+    """
+
+    def __init__(self, miss: LookupError, key: object) -> None:
+        super().__init__(f"index {key!r} out of range" if isinstance(miss, IndexError) else f"key {key!r} not found")
+
+
 def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any]) -> Any:
     """Read the config path *node* spells; failing that, index its evaluated base by the key it spells.
 
@@ -685,7 +697,9 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any]
     so ``svc[k].host`` reads what ``svc[k]['host']`` reads; it is never ``getattr``, so no
     attribute of a value — a bound method above all — is reachable. When the subscript fails
     too, the path's own miss is reported rather than a ``KeyError``, with how to call a
-    string method a dot named.
+    string method a dot named. With no path to report, a miss names the key or the index it
+    looked for, which :func:`_eval_expr` quotes the expression as written around; any other
+    failure (``'int' object is not subscriptable``) keeps Python's own message.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
@@ -698,14 +712,17 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any]
             return _get_nested(namespace, parts)
         except MissingReferenceError as exc:
             missing = exc
+    base = _evaluate_ast(node.value, namespace)
+    key = node.attr if isinstance(node, ast.Attribute) else _evaluate_ast(node.slice, namespace)
     try:
-        base = _evaluate_ast(node.value, namespace)
-        return base[node.attr if isinstance(node, ast.Attribute) else _evaluate_ast(node.slice, namespace)]
-    except (AttributeError, LookupError, TypeError):
-        if missing is None or parts is None:
+        return base[key]
+    except (AttributeError, LookupError, TypeError) as exc:
+        if missing is None:
+            if isinstance(exc, LookupError):
+                raise _ValueMissError(exc, key) from None
             raise
         if isinstance(node, ast.Attribute) and node.attr in _SAFE_METHODS:
-            path = ".".join(parts)
+            path = ".".join(cast("list[str]", parts))
             raise MissingReferenceError.uncalled(path, "method", node.attr, ast.unparse(node)) from None
         raise missing from None
 
