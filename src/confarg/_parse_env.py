@@ -309,7 +309,7 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
         if prefix:
             if not key.startswith(prefix):
                 continue
-            key = key[len(prefix) :].removeprefix(separator)
+            key = key.removeprefix(prefix).removeprefix(separator)
 
         parts = key.split(separator) if separator in key else [key]
 
