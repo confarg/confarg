@@ -91,16 +91,16 @@ def strip_flat_prefix(flat: dict[str, Any], cli_prefix: str) -> dict[str, Any]:
     The bare prefix key becomes ``""``, the empty path of the scalar root.  Keys
     outside the namespace are the host framework's own parameters and are dropped.
     """
+    # Imported here: a module-level import would create a load-time import cycle.
+    from confarg._parse_cli import _in_cli_prefix  # noqa: PLC0415
+
     if not cli_prefix:
         return {k: v for k, v in flat.items() if k != PREFIX_ATTR}
-    dot_pfx = f"{cli_prefix}."
-    stripped: dict[str, Any] = {}
-    for key, value in flat.items():
-        if key == cli_prefix:
-            stripped[""] = value
-        elif key.startswith(dot_pfx):
-            stripped[key.removeprefix(dot_pfx)] = value
-    return stripped
+    return {
+        "" if key == cli_prefix else key.removeprefix(f"{cli_prefix}."): value
+        for key, value in flat.items()
+        if _in_cli_prefix(key, cli_prefix)
+    }
 
 
 def strip_argv_prefix(argv: Sequence[str], cli_prefix: str) -> list[str]:
