@@ -48,6 +48,7 @@ from confarg._types import (
     _tuple_types,
     _union_args,
     _union_args_no_none,
+    _union_tag_shadowed,
     _UnionSeqToken,
     _var_params,
 )
@@ -186,11 +187,20 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
 
 
 def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) -> Any:
-    """Dispatch struct construction, handling the union_tag class-path variant."""
+    """Dispatch struct construction, handling the union_tag class-path variant.
+
+    A tag-shaped key is the class path only when no field of ``tp`` bears the tag's
+    spelling; a field that does owns the key, and the struct builds from its fields.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+    """
     if not isinstance(data, dict):
         msg = f"Cannot construct {tp.__name__} at '{path}': expected dict, got {_src_type(data)} {data!r}"
         raise TypeCoercionError(msg)
     if union_tag in data:
+        if union_tag in _struct_fields(tp):
+            return _construct_struct(tp, data, path, union_tag)
         return _construct_by_class_path(tp, data, path, union_tag)
     direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
     if direct_subs:
@@ -213,8 +223,16 @@ def _construct_taggable_leaf(tp: Any, data: dict[str, Any], path: str, union_tag
     Dev Notes:
         docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in
     """
-    if union_tag in data:
+    if union_tag in data and union_tag not in _struct_fields(tp):
         return _construct_struct_dispatch(tp, data, path, union_tag)
+    if union_tag in _struct_fields(tp):
+        msg = (
+            f"Cannot coerce dict {data!r} to {tp.__name__} at '{path}'."
+            f" {tp.__name__} is a registered leaf type and its {union_tag!r} parameter"
+            f" consumes the tag's spelling, so no tag can open it:"
+            f" rename the parameter or pass a different union_tag."
+        )
+        raise TypeCoercionError(msg)
     msg = (
         f"Cannot coerce dict {data!r} to {tp.__name__} at '{path}'."
         f" {tp.__name__} is a registered leaf type: pass a value it coerces from, or add a"
@@ -778,6 +796,8 @@ def _construct_union(tp: Any, data: Any, path: str, union_tag: str) -> Any:
 
     Tries tag-based disambiguation, structural disambiguation for struct
     (dataclass or plain-class) variants, and finally leaf coercion in order.
+    A tag-shaped key is the tag only when no struct variant owns its spelling
+    as a field.
 
     Args:
         tp: The Union type.
@@ -801,7 +821,7 @@ def _construct_union(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     if len(non_none) == 1:
         return _construct_single_variant_union(all_args, non_none, data, path, union_tag)
 
-    if isinstance(data, dict) and union_tag in data:
+    if isinstance(data, dict) and union_tag in data and not _union_tag_shadowed(tp, union_tag):
         return _construct_union_by_tag(non_none, data, path, union_tag)
 
     dc_vars = [v for v in non_none if _is_struct_variant(_resolve_type(v))]
@@ -943,7 +963,10 @@ def _type_compatible(var: Any, data: dict[str, Any], keys: set[str], union_tag: 
 
 def _disambiguate_struct(variants: list[Any], data: dict[str, Any], union_tag: str) -> list[Any]:
     """Filter struct union variants to those matching data structurally."""
-    keys = {k for k in data if k != union_tag}
+    keys = set(data)
+    if not any(_union_tag_shadowed(var, union_tag) for var in variants):
+        # A tag-shaped key no variant owns as a field is the tag, not data.
+        keys.discard(union_tag)
     candidates = [_resolve_type(var) for var in variants if _structurally_matches(_resolve_type(var), keys)]
 
     if len(candidates) <= 1:

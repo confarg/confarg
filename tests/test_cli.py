@@ -1471,3 +1471,129 @@ class TestCliDelete:
         path = tmp_toml('items = ["a", "b", "c"]\n')
         result = confarg.load(WithList, argv=["--items.1-", "--items+", "d"], env={}, files=[path])
         assert result.items == ["a", "c", "d"]
+
+
+# ---------------------------------------------------------------------------
+# A field named exactly like the union tag is a field, not the tag (BUG-102)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _TagKindHolder:
+    Kind: str = "field"
+
+
+@dataclass
+class _TagKindNested:
+    inner: _TagKindHolder = field(default_factory=_TagKindHolder)
+
+
+@dataclass
+class _TagShadowBase:
+    Kind: str = "field"
+
+
+@dataclass
+class _TagShadowSub(_TagShadowBase):
+    extra: str = "e"
+
+
+@dataclass
+class _TagKindVariant:
+    Kind: str
+
+
+@dataclass
+class _TagOtherVariant:
+    other: str = "o"
+
+
+@dataclass
+class _TagKindUnionHolder:
+    pet: _TagKindVariant | _TagOtherVariant | None = None
+
+
+@dataclass
+class _TagCaseField:
+    kind: str = "field"
+
+
+@dataclass
+class _TagCaseBase:
+    kind: str = "field"
+
+
+@dataclass
+class _TagCaseSub(_TagCaseBase):
+    extra: str = "e"
+
+
+class TestUnionTagFieldCollision:
+    """A field whose exact spelling equals union_tag is reachable on the CLI channel.
+
+    The tag check in the type walk fired before the field lookup, so a field named
+    exactly like a custom tag was always answered ``str`` — the tag — and its value
+    was imported as a class path. The real field wins instead, the settled
+    tag counterpart of the casts rule; the tag applies where no member of that
+    exact name exists.
+    """
+
+    def test_root_field_reachable(self) -> None:
+        """The ticket's repro: --Kind v sets the field, not a class-path import."""
+        result = confarg.load(_TagKindHolder, argv=["--Kind", "v"], env={}, union_tag="Kind")
+        assert result == _TagKindHolder(Kind="v")
+
+    def test_nested_field_reachable(self) -> None:
+        """A field colliding with the tag is a field at any depth."""
+        result = confarg.load(_TagKindNested, argv=["--inner.Kind", "v"], env={}, union_tag="Kind")
+        assert result == _TagKindNested(inner=_TagKindHolder(Kind="v"))
+
+    def test_shadowing_field_on_dispatch_struct(self) -> None:
+        """A base with subclasses still builds from its own field named like the tag."""
+        result = confarg.load(_TagShadowBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
+        assert result == _TagShadowBase(Kind="v")
+
+    def test_shadowing_variant_field_on_union_root(self) -> None:
+        """A union whose variant owns the colliding field builds that variant structurally."""
+        result = confarg.load(
+            _TagKindVariant | _TagOtherVariant,
+            argv=["--Kind", "v"],
+            env={},
+            union_tag="Kind",
+        )
+        assert result == _TagKindVariant(Kind="v")
+
+    def test_shadowing_variant_field_on_union_field(self) -> None:
+        """The same collision one level down, on a field typed as the union."""
+        result = confarg.load(
+            _TagKindUnionHolder,
+            argv=["--pet.Kind", "v"],
+            env={},
+            union_tag="Kind",
+        )
+        assert result == _TagKindUnionHolder(pet=_TagKindVariant(Kind="v"))
+
+    def test_case_differing_tag_still_wins(self) -> None:
+        """--Kind with only a lowercase kind field remains the tag."""
+        result = confarg.load(
+            _TagCaseBase,
+            argv=["--Kind", f"{__name__}._TagCaseSub", "--extra", "x"],
+            env={},
+            union_tag="Kind",
+        )
+        assert result == _TagCaseSub(kind="field", extra="x")
+
+    def test_case_differing_field_still_wins(self) -> None:
+        """--kind with the tag Kind still names the lowercase field."""
+        result = confarg.load(_TagCaseField, argv=["--kind", "v"], env={}, union_tag="Kind")
+        assert result == _TagCaseField(kind="v")
+
+    def test_unshadowed_tag_still_selects_subclass(self) -> None:
+        """A dispatch struct without the colliding field keeps its tag."""
+        result = confarg.load(
+            _TagCaseBase,
+            argv=["--Kind", f"{__name__}._TagCaseSub", "--extra", "x"],
+            env={},
+            union_tag="Kind",
+        )
+        assert result == _TagCaseSub(kind="field", extra="x")

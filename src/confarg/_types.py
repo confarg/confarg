@@ -713,6 +713,23 @@ def _struct_fields(tp: Any) -> dict[str, Any]:
     return _dc_fields(tp) if _is_dc(tp) else _init_fields(tp)
 
 
+def _union_tag_shadowed(tp: Any, union_tag: str) -> bool:
+    """Return True if a struct-shaped ``tp`` owns a member spelled exactly like the tag.
+
+    Answers "is this tag-shaped key a field's value instead?" wherever only the type and
+    the key are at hand. A union is shadowed by any struct variant that owns the name;
+    a subclass-only field does not shadow, because the base itself cannot consume the
+    key as one of its fields.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+    """
+    tp = _resolve_type(tp)
+    if _is_union(tp):
+        return any(_union_tag_shadowed(v, union_tag) for v in _union_args_no_none(tp))
+    return _is_struct(tp) and union_tag in _struct_fields(tp)
+
+
 def _struct_defaults(tp: Any) -> dict[str, Any]:
     """Return {name: default} for fields/parameters that have defaults."""
     return _dc_defaults(tp) if _is_dc(tp) else _init_defaults(tp)

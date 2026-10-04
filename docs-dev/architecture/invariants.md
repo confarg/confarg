@@ -44,6 +44,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "are these two locations the same document?" | `_sources._identity` |
 | "would resolution rewrite this value?" | `dictexpr.contains_expression` |
 | "does this segment name a real member?" | `_parse_cli._segment_names_real_field` |
+| "does a real field own the union tag's spelling?" | `_types._union_tag_shadowed` |
 | "what exact spelling does an env segment resolve to?" | `_parse_env._match_env_part` — a member case-insensitively, then the union tag by its own spelling, lowercase otherwise |
 | "does this mount subpath name a node of the target?" | `_parse_cli._check_mount_subpath` |
 | "is this a cast, and which?" | `_parse_cli.detect_force_cast` (whether) / `_cast` (what) |

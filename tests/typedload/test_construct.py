@@ -283,3 +283,122 @@ class TestStealOrder:
         """The rank orders tokens only: a native value from a file is never re-interpreted."""
         assert type(construct(tp, 5)) is int
         assert type(construct(tp, 5.0)) is float
+
+
+# ---------------------------------------------------------------------------
+# A field named exactly like the union tag is a field (BUG-102)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _KindPlain:
+    Kind: str = "field"
+
+
+@dataclass
+class _KindBase:
+    Kind: str = "field"
+
+
+@dataclass
+class _KindSub(_KindBase):
+    extra: str = "e"
+
+
+@dataclass
+class _KindVariant:
+    Kind: str
+
+
+@dataclass
+class _OtherVariant:
+    other: str = "o"
+
+
+@dataclass
+class _KindLeaf:
+    Kind: str = "k"
+
+
+@dataclass
+class _PlainLeaf:
+    a: int = 0
+
+
+@dataclass
+class _LeafHolder:
+    lf: _KindLeaf
+
+
+@dataclass
+class _PlainLeafHolder:
+    lf: _PlainLeaf | None = None
+
+
+class TestTagFieldCollision:
+    """The tag key in data is a real field's value whenever the struct owns the name.
+
+    Construction read the tag before the fields, so a struct with a field named
+    exactly like union_tag tried to import the field's value as a class path. The
+    field wins instead; the tag is read only where no field bears its name.
+    """
+
+    def test_plain_struct_field_wins(self) -> None:
+        """A subclass-less struct builds the colliding field from the tag-shaped key."""
+        result = _construct_struct_dispatch(_KindPlain, {"Kind": "v"}, "", "Kind")
+        assert result == _KindPlain(Kind="v")
+
+    def test_dispatch_struct_field_wins(self) -> None:
+        """A base with subclasses still builds from its own colliding field."""
+        result = _construct_struct_dispatch(_KindBase, {"Kind": _StrToken("v")}, "", "Kind")
+        assert result == _KindBase(Kind="v")
+
+    def test_unshadowed_tag_still_dispatches(self) -> None:
+        """A struct without the colliding field keeps importing the tag's class path."""
+        result = _construct_struct_dispatch(
+            _KindBase,
+            {"class": f"{__name__}._KindSub", "extra": "e"},
+            "",
+            "class",
+        )
+        assert result == _KindSub(Kind="field", extra="e")
+
+    def test_union_variant_field_wins(self) -> None:
+        """A union whose variant owns the colliding field builds that variant structurally."""
+        result = construct(_KindVariant | _OtherVariant, {"Kind": "v"}, union_tag="Kind")
+        assert result == _KindVariant(Kind="v")
+
+    def test_unshadowed_union_tag_still_dispatches(self) -> None:
+        """A union without the colliding field keeps building the named class."""
+        result = construct(
+            _KindVariant | _OtherVariant,
+            {"class": f"{__name__}._KindVariant", "Kind": "v"},
+            union_tag="class",
+        )
+        assert result == _KindVariant(Kind="v")
+
+    def test_taggable_leaf_param_shadows_tag(
+        self,
+        leaf_registry: None,
+    ) -> None:
+        """A registered leaf whose parameter shadows the tag stays closed.
+
+        The tag is the only thing that opts a leaf back into field construction, so
+        a parameter consuming its spelling leaves nothing that can open the leaf.
+        """
+        confarg.register_leaf_type(_KindLeaf, lambda v: _KindLeaf(str(v)))
+        with pytest.raises(TypeCoercionError, match="consumes the tag's spelling"):
+            construct(_LeafHolder, {"lf": {"Kind": "v"}}, union_tag="Kind")
+
+    def test_taggable_leaf_without_shadow_still_opens(
+        self,
+        leaf_registry: None,
+    ) -> None:
+        """A registered leaf without the colliding parameter keeps opening by tag."""
+        confarg.register_leaf_type(_PlainLeaf, lambda v: _PlainLeaf(int(v)))
+        result = construct(
+            _PlainLeafHolder,
+            {"lf": {"Kind": f"{__name__}._PlainLeaf", "a": 5}},
+            union_tag="Kind",
+        )
+        assert result == _PlainLeafHolder(lf=_PlainLeaf(a=5))

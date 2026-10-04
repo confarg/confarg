@@ -18,7 +18,11 @@ between the two other channels in priority: above
   A member that matched case-insensitively always wins over the tag, which is what the
   default lowercase `class` tag already did; the CLI can tell `--Kind` (tag) from
   `--kind` (field) by case, and the env channel — where every spelling collapses to one —
-  settles that collision on the field. The one decision-maker is `_match_env_part`, so the
+  settles that collision on the field. The exact collision settles on the field on every
+  channel now, the walk and construction reading the key as the field's value rather than a
+  class path (BUG-102,
+  [CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)).
+  The one decision-maker is `_match_env_part`, so the
   field variables, deletes, casts and config subpaths all resolve through it.
 - Values starting with `[` or `{` are parsed as JSON only when the target type can accept a
   list or an object; otherwise they are ordinary tokens. Which types those are is not this

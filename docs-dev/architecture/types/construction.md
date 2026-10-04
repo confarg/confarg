@@ -8,7 +8,11 @@
 2. the **union tag** (`class` by default): a full dotted class path, which must be a subclass
    of exactly one variant that `_is_struct` accepts — registered leaves included, since a tag is
    an explicit request to build from fields
-   ([design decisions](../design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in));
+   ([design decisions](../design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in)).
+   The key is the tag only when no struct variant owns its spelling as a field; a field that
+   does owns the key, the union falls through to structural matching, and the key counts as
+   provided data there (BUG-102,
+   [CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins));
 3. **structural** matching for struct variants: required fields ⊆ provided keys ⊆ fields,
    refined by value/type compatibility; more than one match is an `AmbiguousUnionError`
    whose message lists each variant's fields and suggests the tag; zero matches falls back
@@ -22,7 +26,10 @@ A struct field whose class has subclasses requires the union tag naming the conc
 without it construction fails rather than guessing, because the set of visible subclasses
 depends on what has been imported
 ([design decisions](../design-decisions/no-implicit-subclass-inference.md#no-implicit-subclass-inference)). The tag must be a full dotted
-path so the class can be imported.
+path so the class can be imported. One of the struct's own fields may take the tag's
+spelling away — the field owns the key, and the base then builds from its fields, with no
+tag able to dispatch to a subclass (BUG-102,
+[CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins)).
 
 Subclass discovery (`_dataclass_subclasses`) walks breadth-first and yields each class exactly
 once. Both halves are settled decisions: a diamond subclass is reachable by two inheritance
