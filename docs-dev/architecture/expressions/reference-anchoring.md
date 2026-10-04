@@ -57,7 +57,9 @@ node anchor is preserved.
   which is what keeps `items[::2]` available to [FEAT-12](../../todo/features/FEAT-12-scoped-expression-expansion.md).
   Parentheses reopen the marker: `items[(::step)]`.
 - **The node anchor is resolved on the tree, never on source** (`_AnchorResolver`). An absolute
-  path may hold a list index or a key that is no identifier — `dbs.0.host`, `svc.web-1.host` —
+  path may hold a list index, a key that is no identifier or a key holding a dot — `dbs.0.host`,
+  `svc.web-1.host`, `hosts['example.com'].port` — each one segment of the node's position
+  ([values and references](values-and-references.md#a-position-is-a-sequence-of-segments)),
   which is a fine `ast.Attribute` chain for `_attribute_chain` to read back but not Python anyone
   could parse. Rewriting the text instead would miscompile `web-1.host` into a subtraction.
 - **`_AnchorResolver` rewrites only the stand-in and the segment it owns** (`__UP1__.a`), never the
@@ -76,7 +78,9 @@ node anchor is preserved.
 ## Dots are clamped at the file root
 
 `check_anchor_depth` refuses a dot run that climbs past the root of the file that wrote it,
-while the file is being loaded and its own `path_in_file` is still known. Without it a fragment
+while the file is being loaded and its own `path_in_file` is still known. It asks
+`_anchor_prefix`, the question resolution asks of the same run, with the position held as
+segments, so a key holding a dot is one level to both. Without it a fragment
 using `..` would mean different things at different mount depths, which is the property the file
 anchor exists to prevent; `::` is the marked way out. The check needs no mount prefix, which is
 why it holds for an appended fragment too.

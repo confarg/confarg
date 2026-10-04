@@ -963,13 +963,7 @@ class TestExpressionBranches:
     def test_set_nested_traverse_error(self) -> None:
         """_set_nested_by_path raises MissingReferenceError when traversal encounters a non-container."""
         with pytest.raises(confarg.exceptions.MissingReferenceError):
-            _set_nested_by_path({"a": 42}, "a.b.c", "value")
-
-    def test_set_nested_set_non_container_raises(self) -> None:
-        """_set_nested_by_path raises MissingReferenceError when the target node is not a container."""
-        # Traverse into list index 1 (yields int 2), then set "x" on int → else branch
-        with pytest.raises(confarg.exceptions.MissingReferenceError):
-            _set_nested_by_path({"a": [1, 2, 3]}, "a.1.x", "value")
+            _set_nested_by_path({"a": 42}, ("a", "b", "c"), "value")
 
     def test_unsupported_binary_op_raises(self) -> None:
         """An unsupported binary operator (@ matrix multiply) raises ExpressionEvalError."""

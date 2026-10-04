@@ -19,7 +19,7 @@ element name its own keys without knowing its index.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -381,6 +381,13 @@ class TestDotsAreClampedToTheirFile:
         cfg = write(tmp_path, "app.yaml", "db:\n  host: ${...escapes}\n  port: 1\n")
         with pytest.raises(MissingReferenceError, match=r"above the file root"):
             confarg.load(Cfg, argv=["--config", str(cfg)], env={})
+
+    def test_a_key_holding_a_dot_is_one_level(self, tmp_path: Path) -> None:
+        """``h.com`` is one level of the file, so three dots from inside it climb out (BUG-124)."""
+        write(tmp_path, "frag.yaml", "'h.com':\n  q: ${...x}\n")
+        cfg = write(tmp_path, "app.yaml", f"x: 1\nsub:\n  x: 2\n  inner:\n    {INCLUDE_KEY}: ./frag.yaml\n")
+        with pytest.raises(MissingReferenceError, match=r"above the file root"):
+            confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
 
 
 class TestRelativeReferencesSurviveSerialization:

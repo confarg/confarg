@@ -299,9 +299,12 @@ class MissingReferenceError(ConfargError):
         return cls(f"{base}: {detail}") if detail is not None else cls(f"{base} in configuration")
 
     @classmethod
-    def anchor_above_root(cls, path: str, dots: int, scope: str = "document") -> MissingReferenceError:
-        """Return an error for a relative reference that climbs past the root of its scope."""
-        depth = len(path.split(".")) if path else 0
+    def anchor_above_root(cls, path: str, depth: int, dots: int, scope: str = "document") -> MissingReferenceError:
+        """Return an error for a relative reference that climbs past the root of its scope.
+
+        *depth* is the number of segments in *path*, given apart because a key holding a dot
+        makes the dotted *path* ambiguous to count.
+        """
         where = f"'{path}'" if path else "the root"
         return cls(
             f"Relative reference '{'.' * dots}' at {where} climbs {dots} level(s) from a depth"

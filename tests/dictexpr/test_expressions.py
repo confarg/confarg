@@ -82,8 +82,8 @@ class TestContainsExpression:
         """Every leaf the predicate accepts is a leaf ``_scan_expressions`` collects."""
         data = {"real": "${a}", "escaped": "$${a}", "embedded": "x${a}y", "plain": "a", "open": "${"}
         scanned = set(_scan_expressions(data))
-        predicted = {k for k, v in data.items() if contains_expression(v)}
-        assert scanned == predicted == {"real", "escaped", "embedded"}
+        predicted = {(k,) for k, v in data.items() if contains_expression(v)}
+        assert scanned == predicted == {("real",), ("escaped",), ("embedded",)}
 
 
 # ---------------------------------------------------------------------------
@@ -98,13 +98,13 @@ class TestScanExpressions:
         """A simple ${b} reference is detected."""
         data = {"a": "${b}", "b": "hello"}
         result = _scan_expressions(data)
-        assert result == {"a": "${b}"}
+        assert result == {("a",): "${b}"}
 
     def test_nested_dict(self) -> None:
-        """Expressions in nested dicts are detected with dotted paths."""
+        """Expressions in nested dicts are detected with their path, one segment per key."""
         data = {"db": {"url": "jdbc://${db.host}:${db.port}/mydb", "host": "localhost", "port": 5432}}
         result = _scan_expressions(data)
-        assert result == {"db.url": "jdbc://${db.host}:${db.port}/mydb"}
+        assert result == {("db", "url"): "jdbc://${db.host}:${db.port}/mydb"}
 
     def test_non_string_ignored(self) -> None:
         """Non-string values are ignored in expression scanning."""
@@ -123,25 +123,25 @@ class TestScanExpressions:
         data = {"a": "$${not_a_ref}"}
         result = _scan_expressions(data)
         # Escaped expressions ARE detected for processing (to unescape them)
-        assert result == {"a": "$${not_a_ref}"}
+        assert result == {("a",): "$${not_a_ref}"}
 
     def test_list_values_scanned(self) -> None:
-        """Expressions inside list elements are detected with integer-index paths."""
+        """Expressions inside list elements are detected with their index as a segment."""
         data = {"items": ["${a}", "plain"]}
         result = _scan_expressions(data)
-        assert result == {"items.0": "${a}"}
+        assert result == {("items", "0"): "${a}"}
 
     def test_deeply_nested(self) -> None:
-        """Deeply nested expressions are detected with their full dotted path."""
+        """Deeply nested expressions are detected with their full path."""
         data = {"a": {"b": {"c": {"d": "${x}"}}}}
         result = _scan_expressions(data)
-        assert result == {"a.b.c.d": "${x}"}
+        assert result == {("a", "b", "c", "d"): "${x}"}
 
     def test_multiple_expressions(self) -> None:
         """Multiple expression fields are all detected."""
         data = {"a": "${x}", "b": "${y}", "c": "plain"}
         result = _scan_expressions(data)
-        assert result == {"a": "${x}", "b": "${y}"}
+        assert result == {("a",): "${x}", ("b",): "${y}"}
 
 
 # ---------------------------------------------------------------------------
@@ -204,45 +204,50 @@ class TestExtractReferences:
 
 
 class TestTopologicalSort:
-    """Dependency ordering and circular detection."""
+    """Dependency ordering and circular detection, over positions held as segment tuples."""
 
     def test_simple_chain(self) -> None:
         """A simple dependency chain is sorted topologically."""
-        deps = {"c": {"b"}, "b": {"a"}, "a": set()}
+        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {("c",): {("b",)}, ("b",): {("a",)}, ("a",): set()}
         order = _topological_sort(deps)
-        assert order.index("a") < order.index("b")
-        assert order.index("b") < order.index("c")
+        assert order.index(("a",)) < order.index(("b",))
+        assert order.index(("b",)) < order.index(("c",))
 
     def test_independent(self) -> None:
         """Independent nodes all appear in the sorted result."""
-        deps = {"a": set(), "b": set()}
+        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {("a",): set(), ("b",): set()}
         order = _topological_sort(deps)
-        assert set(order) == {"a", "b"}
+        assert set(order) == {("a",), ("b",)}
 
     def test_diamond(self) -> None:
         """A diamond dependency graph is sorted correctly."""
-        deps = {"d": {"b", "c"}, "b": {"a"}, "c": {"a"}, "a": set()}
+        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {
+            ("d",): {("b",), ("c",)},
+            ("b",): {("a",)},
+            ("c",): {("a",)},
+            ("a",): set(),
+        }
         order = _topological_sort(deps)
-        assert order.index("a") < order.index("b")
-        assert order.index("a") < order.index("c")
-        assert order.index("b") < order.index("d")
-        assert order.index("c") < order.index("d")
+        assert order.index(("a",)) < order.index(("b",))
+        assert order.index(("a",)) < order.index(("c",))
+        assert order.index(("b",)) < order.index(("d",))
+        assert order.index(("c",)) < order.index(("d",))
 
     def test_circular_raises(self) -> None:
         """A two-node cycle raises CircularReferenceError."""
-        deps = {"a": {"b"}, "b": {"a"}}
+        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {("a",): {("b",)}, ("b",): {("a",)}}
         with pytest.raises(CircularReferenceError):
             _topological_sort(deps)
 
     def test_self_reference_raises(self) -> None:
         """A self-referencing node raises CircularReferenceError."""
-        deps = {"a": {"a"}}
+        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {("a",): {("a",)}}
         with pytest.raises(CircularReferenceError):
             _topological_sort(deps)
 
     def test_circular_three(self) -> None:
         """A three-node cycle raises CircularReferenceError."""
-        deps = {"a": {"c"}, "b": {"a"}, "c": {"b"}}
+        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {("a",): {("c",)}, ("b",): {("a",)}, ("c",): {("b",)}}
         with pytest.raises(CircularReferenceError):
             _topological_sort(deps)
 
@@ -1124,7 +1129,7 @@ class TestExpressionDelimiting:
     def test_predicate_spans_the_whole_expression(self) -> None:
         """``contains_expression`` and the resolver scan agree on a braced literal."""
         assert contains_expression("${a + '}'}") is True
-        assert _scan_expressions({"v": "${a + '}'}"}) == {"v": "${a + '}'}"}
+        assert _scan_expressions({"v": "${a + '}'}"}) == {("v",): "${a + '}'}"}
 
     def test_nested_braces_belong_to_the_expression(self) -> None:
         """A brace pair inside the body is balanced, so the whole set literal is rejected."""
@@ -1375,6 +1380,42 @@ class TestReferenceDependencies:
         assert resolve_expressions(data)["svc"] == {"a": 1, "b": 1}
 
 
+class TestKeysHoldingADot:
+    """An expression's position is a sequence of segments, so a key holding a dot is one segment (BUG-124)."""
+
+    def test_an_expression_under_a_key_holding_a_dot_resolves(self) -> None:
+        """The result is written back to the key that held the expression."""
+        assert resolve_expressions({"a.b": "${x}", "x": 1}) == {"a.b": 1, "x": 1}
+
+    def test_a_key_holding_a_dot_is_not_the_nested_path_it_spells(self) -> None:
+        """``a.b`` the key and ``a`` → ``b`` the nesting are two positions, each resolved in place."""
+        data = {"a.b": "${x}", "a": {"b": "${y}"}, "x": 1, "y": 2}
+        assert resolve_expressions(data) == {"a.b": 1, "a": {"b": 2}, "x": 1, "y": 2}
+
+    def test_a_key_holding_a_dot_is_not_below_its_first_segment(self) -> None:
+        """``${a}`` reads the key ``a``, which does not hold the key ``a.b``: no cycle."""
+        assert resolve_expressions({"a.b": "${a}", "a": 1}) == {"a.b": 1, "a": 1}
+
+    def test_the_nested_path_a_key_holding_a_dot_spells_is_no_cycle(self) -> None:
+        """``${a.b}`` reads ``a`` → ``b``, not the key ``a.b`` that holds it."""
+        data = {"a.b": "${a.b}", "a": {"b": 1}}
+        assert resolve_expressions(data) == {"a.b": 1, "a": {"b": 1}}
+
+    def test_a_reference_into_a_key_holding_a_dot_waits_for_it(self) -> None:
+        """The dependency is on the segment the subscript spells."""
+        data = {"v": "${hosts['example.com']}", "hosts": {"example.com": "${base}"}, "base": 80}
+        assert resolve_expressions(data)["v"] == 80
+
+    @pytest.mark.parametrize(
+        ("reference", "expected"),
+        [("${.p}", 1), ("${..x}", 5), ("${...x}", 5)],
+    )
+    def test_a_relative_reference_climbs_a_key_holding_a_dot_as_one_level(self, reference: str, expected: int) -> None:
+        """One dot is the container holding the value, and ``h.com`` is one level of it."""
+        data = {"a": {"h.com": {"p": 1, "q": reference}, "x": 5}, "x": 5}
+        assert resolve_expressions(data)["a"]["h.com"]["q"] == expected
+
+
 # ---------------------------------------------------------------------------
 # Anchor marker lexing
 # ---------------------------------------------------------------------------
@@ -1452,20 +1493,21 @@ class TestAnchorDepthArithmetic:
     @pytest.mark.parametrize(
         ("node_path", "levels", "expected"),
         [
-            pytest.param("dbs.0.url", 1, "dbs.0.", id="sibling-in-a-list-element"),
-            pytest.param("dbs.0.url", 2, "dbs.", id="the-list-itself"),
-            pytest.param("dbs.0.url", 3, "", id="document-root"),
-            pytest.param("a", 1, "", id="already-at-the-root"),
+            pytest.param(("dbs", "0", "url"), 1, ("dbs", "0"), id="sibling-in-a-list-element"),
+            pytest.param(("dbs", "0", "url"), 2, ("dbs",), id="the-list-itself"),
+            pytest.param(("dbs", "0", "url"), 3, (), id="document-root"),
+            pytest.param(("a",), 1, (), id="already-at-the-root"),
+            pytest.param(("h.com", "url"), 1, ("h.com",), id="a-key-holding-a-dot-is-one-segment"),
         ],
     )
-    def test_prefix(self, node_path: str, levels: int, expected: str) -> None:
+    def test_prefix(self, node_path: tuple[str, ...], levels: int, expected: tuple[str, ...]) -> None:
         """A list index is an ordinary segment, as it is everywhere else."""
         assert _anchor_prefix(node_path, levels) == expected
 
     def test_climbing_past_the_root_is_an_error(self) -> None:
         """The message names the run, the depth it had, and the way out."""
         with pytest.raises(MissingReferenceError, match=r"above the document root"):
-            _anchor_prefix("a", 2)
+            _anchor_prefix(("a",), 2)
 
     def test_a_non_identifier_key_is_still_addressable(self) -> None:
         """The absolute path is built as a tree, so ``web-1`` never has to parse."""

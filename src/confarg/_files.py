@@ -332,11 +332,6 @@ def _load_includes(
     return result
 
 
-def _join_path(prefix: str, seg: str) -> str:
-    """Join a within-file path with one more segment."""
-    return f"{prefix}.{seg}" if prefix else seg
-
-
 def _include_with_siblings(included: Any, siblings: dict[str, Any], union_tag: str | None) -> dict[str, Any]:
     """Merge an include's sibling keys on top of *included*, which must be a dict.
 
@@ -352,16 +347,16 @@ def _resolve_node(
     data: Any,
     base: str,
     seen: frozenset[str],
-    path_in_file: str = "",
+    path_in_file: tuple[str, ...] = (),
     union_tag: str | None = None,
 ) -> Any:
     """Dispatch include resolution by node type.
 
     *path_in_file* is the position of *data* relative to the root of the document
-    currently being resolved; it is what an included document gets prefixed by,
-    and it resets to ``""`` on entry to each document (see :func:`_load_any`).  It
-    is also the depth a node-relative reference is clamped to, which is why the
-    check below sits on this walk rather than on the mounting pass.
+    currently being resolved, one segment per key or list index; it is what an included
+    document gets prefixed by, and it resets to ``()`` on entry to each document (see
+    :func:`_load_any`).  It is also the depth a node-relative reference is clamped to,
+    which is why the check below sits on this walk rather than on the mounting pass.
 
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
@@ -379,7 +374,7 @@ def _resolve_dict(
     data: dict[str, Any],
     base: str,
     seen: frozenset[str],
-    path_in_file: str = "",
+    path_in_file: tuple[str, ...] = (),
     union_tag: str | None = None,
 ) -> Any:
     """Resolve INCLUDE_KEY in a dict node.
@@ -401,7 +396,7 @@ def _resolve_dict(
     if INCLUDE_KEY in data:
         included = prefix_references(
             _load_includes(_parse_include_val(data[INCLUDE_KEY]), base, seen, union_tag),
-            path_in_file,
+            ".".join(path_in_file),  # a dotted prefix until prefix_references takes segments (BUG-127)
         )
         siblings = {k: v for k, v in data.items() if k != INCLUDE_KEY}
         if not siblings:
@@ -411,7 +406,7 @@ def _resolve_dict(
         result = dict(data)
 
     for k, v in result.items():
-        result[k] = _resolve_node(v, base, seen, _join_path(path_in_file, k), union_tag)
+        result[k] = _resolve_node(v, base, seen, (*path_in_file, k), union_tag)
 
     return result
 
@@ -420,7 +415,7 @@ def _resolve_list(
     data: list[Any],
     base: str,
     seen: frozenset[str],
-    path_in_file: str = "",
+    path_in_file: tuple[str, ...] = (),
     union_tag: str | None = None,
 ) -> list[Any]:
     """Resolve INCLUDE_KEY in list items.
@@ -439,11 +434,11 @@ def _resolve_list(
     """
     result: list[Any] = []
     for item in data:
-        here = _join_path(path_in_file, str(len(result)))
+        here = (*path_in_file, str(len(result)))
         if isinstance(item, dict) and INCLUDE_KEY in item:
             included = prefix_references(
                 _load_includes(_parse_include_val(item[INCLUDE_KEY]), base, seen, union_tag),
-                here,
+                ".".join(here),
             )
             siblings = {k: v for k, v in item.items() if k != INCLUDE_KEY}
             if not siblings:
@@ -475,7 +470,7 @@ def _load_any(
     Dev Notes:
         docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies
     """
-    return _resolve_node(_load_document(loc, options), loc, seen, "", union_tag)
+    return _resolve_node(_load_document(loc, options), loc, seen, (), union_tag)
 
 
 def _require_layer(value: Any, loc: str) -> dict[str, Any]:
