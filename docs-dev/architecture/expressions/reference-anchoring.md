@@ -94,6 +94,15 @@ reads any other.
   other way. Before BUG-138 a file mounted below the root turned its `${items[(::step)]}` into
   the slice `${db.items[::step]}`, and a mount path whose first segment is no name
   (`::['web-1']`) did the same to every bare reference it prefixed inside a subscript.
+- **A token's offset counts rows where the tokenizer does** (`_significant_tokens`, BUG-139).
+  The tokenizer gives a (row, column) pair, and a row is one line its `readline` handed it,
+  which ends at a `\n` and only there. So the offset each row begins at is summed over those
+  same lines, read once and fed to the tokenizer. `str.splitlines` also splits at a form feed,
+  a lone `\r`, `\x85`, U+2028 and more, which Python reads as whitespace or, inside a string,
+  as its text: before BUG-139 a marker on a later row was edited at the wrong offset, so
+  `(.y +\f\n .x)` was named into a body that did not parse and `merge()` cut the character
+  before a `::`. CPython met the same split in `ast.get_source_segment`, which splits with
+  its own `_splitlines_no_ff` instead of `str.splitlines` so a form feed is no line break.
 - **The stand-ins never leave the parse.** A marker is not Python, so it is swapped for a name
   that is (`.x` → `__UP1__.x`, `::x` → `__ROOT__.x`), and that swap happens in one place:
   `_parse_expression`, the cache every parse site goes through. Everything else — the graph,
