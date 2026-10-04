@@ -697,9 +697,11 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any]
     so ``svc[k].host`` reads what ``svc[k]['host']`` reads; it is never ``getattr``, so no
     attribute of a value — a bound method above all — is reachable. When the subscript fails
     too, the path's own miss is reported rather than a ``KeyError``, with how to call a
-    string method a dot named. With no path to report, a miss names the key or the index it
-    looked for, which :func:`_eval_expr` quotes the expression as written around; any other
-    failure (``'int' object is not subscriptable``) keeps Python's own message.
+    string method a dot named, spelled as written (:func:`_unparse`): ``.n.upper`` is
+    hinted at as ``.n.upper(...)``, never as the absolute path its anchor resolved to. With
+    no path to report, a miss names the key or the index it looked for, which
+    :func:`_eval_expr` quotes the expression as written around; any other failure
+    (``'int' object is not subscriptable``) keeps Python's own message.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
@@ -723,7 +725,7 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any]
             raise
         if isinstance(node, ast.Attribute) and node.attr in _SAFE_METHODS:
             path = ".".join(cast("list[str]", parts))
-            raise MissingReferenceError.uncalled(path, "method", node.attr, ast.unparse(node)) from None
+            raise MissingReferenceError.uncalled(path, "method", node.attr, _unparse(node)) from None
         raise missing from None
 
 
@@ -1259,20 +1261,33 @@ class _Unnamer(ast.NodeTransformer):
     """Fold a dot read off a stand-in into one name, the marker then the segment (``..host``).
 
     The marker carries its own dot, so the attribute's would be one too many: ``...host``.
+    A path :class:`_AnchorResolver` resolved is visited as the node it was written as, so
+    it folds the same way.
     """
+
+    def visit(self, node: ast.AST) -> Any:
+        """Visit the node *node* was written as, which is *node* unless the resolver made it."""
+        return super().visit(getattr(node, _WRITTEN, node))
 
     def visit_Attribute(self, node: ast.Attribute) -> ast.AST:  # NodeTransformer dispatches on the class name
         """Spell ``<stand-in>.<attr>`` as the name ``<marker><attr>``, else recurse."""
+        # The base first, so the stand-in a resolved path was written as is the one tested.
+        node.value = self.visit(node.value)
         if isinstance(node.value, ast.Name) and _anchor_dot_count(node.value.id) is not None:
             return ast.copy_location(ast.Name(id=node.value.id + node.attr, ctx=node.ctx), node)
-        return self.generic_visit(node)
+        return node
 
 
 def _unparse(tree: ast.AST) -> str:
     """Unparse *tree* as a ``${...}`` body, each stand-in written as the marker it stands for.
 
     A stand-in's text is its marker already (:class:`_StandIn`), so only the dot read off
-    one is folded into it; *tree* itself is left as it is.
+    one is folded into it; *tree* itself is left as it is. A tree :class:`_AnchorResolver`
+    rewrote unparses as written too, each path it resolved as the marker it resolved, so
+    ``.n.upper`` stays ``.n.upper`` wherever the node sits.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/reference-anchoring.md#implementation-constraints
     """
     return ast.unparse(_Unnamer().visit(copy.deepcopy(tree)))
 
@@ -1319,6 +1334,19 @@ def check_anchor_depth(value: str, node_path: _Path, scope: str = "file") -> Non
             _anchor_prefix(node_path, marker.levels, scope)
 
 
+#: The attribute on which a node :class:`_AnchorResolver` made keeps the node it replaced.
+_WRITTEN = "_confarg_written"
+
+
+def _resolved(node: ast.AST, written: ast.AST) -> ast.AST:
+    """Return *node*, put by :class:`_AnchorResolver` where the user wrote *written*.
+
+    *written* is kept on it, so :func:`_unparse` spells the resolved tree as written.
+    """
+    setattr(node, _WRITTEN, written)
+    return node
+
+
 class _AnchorResolver(ast.NodeTransformer):
     """Replace each anchor stand-in by the absolute path it denotes at *node_path*.
 
@@ -1333,6 +1361,8 @@ class _AnchorResolver(ast.NodeTransformer):
     the first segment after the stand-in becomes the base name instead (``::['web-1']``
     reads ``web-1``); a stand-in left in the tree names the root itself (``${::}``,
     ``${::[k]}``), which :func:`_collect_names` reads as a reference to the whole of it.
+    Each node it makes keeps the one it replaced (:func:`_resolved`), so a message can
+    quote the tree as written (:func:`_unparse`), never as a path pinned to an index.
 
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#implementation-constraints
@@ -1352,7 +1382,7 @@ class _AnchorResolver(ast.NodeTransformer):
         """Make the segment *node* spells on a stand-in for the root its base name, else recurse."""
         segment = _segment(node) if self._anchored(node.value) == () else None
         if segment is not None:
-            return ast.copy_location(ast.Name(id=segment, ctx=ast.Load()), node)
+            return _resolved(ast.copy_location(ast.Name(id=segment, ctx=ast.Load()), node), node)
         return self.generic_visit(node)
 
     visit_Attribute = _visit_segment  # NodeTransformer dispatches on the class name
@@ -1365,7 +1395,7 @@ class _AnchorResolver(ast.NodeTransformer):
         visited in turn.
         """
         anchored = self._anchored(node)
-        return self.visit(ast.copy_location(_path_to_ast(anchored), node)) if anchored else node
+        return _resolved(self.visit(ast.copy_location(_path_to_ast(anchored), node)), node) if anchored else node
 
 
 def _parse_anchored(expr_content: str, node_path: _Path) -> ast.Expression:

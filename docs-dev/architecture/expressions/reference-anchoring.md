@@ -142,6 +142,20 @@ reads any other.
   BUG-125 this was a safety rule too: the attribute fallback was `getattr`, so
   `${.a['__class__'].mro}` rebuilt as `a.__class__.mro` would have bypassed the dunder ban,
   which validation applies to attributes as written.
+- **A resolved tree still unparses as written** (BUG-136). Evaluation runs on the tree
+  `_AnchorResolver` rewrote, so a message built there from a node — the uncalled-method hint,
+  `as in .n.upper(...)` — would otherwise spell the absolute path, `xs[0].n.upper`, pinning the
+  element to its index ([above](#a-relative-reference-is-never-serialized-as-an-absolute-path)).
+  Each node the resolver makes keeps the one it replaced (`_resolved`), and `_unparse` visits
+  that node in its place, so it is the one spelling of a tree as written, resolved or not. A
+  field is still named by its absolute path: that is the data's position, not the user's text.
+  rustc does the same with a macro's expansion: each expanded token keeps the span of the call
+  site that produced it, so a diagnostic quotes the source as written.
+  Rejected: **`ast.get_source_segment` on the named body.** Its offsets are into the text with
+  stand-in names, so the segment would need un-naming, the lossy text inverse BUG-129 removed.
+  Rejected too: **finding the node at the same offsets in the cached parse.** It works on the tree,
+  but it needs the body at every site that words a message, and it trusts that no two nodes of a
+  type share a span.
 - **The configuration root has no node to stand for.** A path is a `Name` and the links after it,
   and the empty path has no `Name`. So where the stand-in names the root — `::`, or a dot run that
   climbs all the way up — the first segment after it becomes the base name instead (`_segment`,

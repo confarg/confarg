@@ -32,7 +32,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-117 — A union with an `Any` variant refuses to load and crashes `dump()`](BUG-117-a-union-with-an-any-variant-refuses-to-load-and-crashes-dump.md) | M | high | behavior |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | S | low | behavior |
 | [BUG-119 — `_defaults.py` says four front-ends must agree; there are five](BUG-119-defaults-module-counts-four-front-ends.md) | S | low | none |
-| [BUG-136 — The uncalled-method hint spells an anchored path as an absolute one](BUG-136-an-uncalled-method-hint-spells-an-anchored-path-absolute.md) | S | high | behavior |
 | [BUG-137 — A too deeply nested expression escapes as a raw parser error](BUG-137-a-too-deeply-nested-expression-escapes-as-a-raw-parser-error.md) | S | high | behavior |
 | [BUG-138 — Mounting drops the parentheses that make a root marker in a subscript](BUG-138-mounting-drops-the-parentheses-that-make-a-root-marker-in-a-subscript.md) | S | high | behavior |
 | [BUG-139 — A form feed in an expression shifts its anchor markers](BUG-139-a-form-feed-in-an-expression-shifts-its-anchor-markers.md) | S | high | behavior |
