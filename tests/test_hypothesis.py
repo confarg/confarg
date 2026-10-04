@@ -9,7 +9,7 @@ from __future__ import annotations
 import keyword
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 import confarg
@@ -66,15 +66,15 @@ class TestRoundTripCoercion:
         result = confarg.load(WithDefaults, argv=[], env={"MYAPP_VERBOSE": str(value).lower()}, env_prefix="MYAPP_")
         assert result.verbose is value
 
-    @given(value=cli_safe_strs)
+    @example("--A")
+    @given(value=leaf_strs)
     def test_str_round_trip(self, value: str) -> None:
-        """Str survives round-trip via CLI (expression syntax escaped with $${...}).
+        """Str survives round-trip via CLI, dashed values included (expression syntax escaped with $${...}).
 
-        The value must be CLI-safe — a token starting with ``-`` reads as a flag,
-        never as the value of the preceding ``--name`` (the parser matches argparse
-        and click here; ``--name=-x`` is the escape hatch).
+        Dev Notes:
+            docs-dev/architecture/design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value
         """
-        result = confarg.load(WithDefaults, argv=["--name", _escape_expressions(value)], env={})
+        result = confarg.load(WithDefaults, argv=[f"--name={_escape_expressions(value)}"], env={})
         assert result.name == value
 
     @given(value=leaf_ints)
@@ -131,12 +131,17 @@ class TestEnvNameConstruction:
 class TestMergePriorityInvariant:
     """Property: CLI always overrides env, env always overrides config."""
 
+    @example(cli_val="--A", env_val="x")
     @given(cli_val=cli_safe_strs, env_val=leaf_strs)
     def test_cli_beats_env(self, cli_val: str, env_val: str) -> None:
-        """CLI value always wins over env value for the same field."""
+        """CLI value always wins over env value for the same field, dashed values included.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value
+        """
         result = confarg.load(
             WithDefaults,
-            argv=["--name", _escape_expressions(cli_val)],
+            argv=[f"--name={_escape_expressions(cli_val)}"],
             env={"MYAPP_NAME": _escape_expressions(env_val)},
             env_prefix="MYAPP_",
         )
@@ -168,15 +173,20 @@ class TestMergePriorityInvariant:
         )
         assert result.name == env_val
 
+    @example(cli_val="--A", env_val="x")
     @given(cli_val=cli_safe_strs, env_val=leaf_strs)
     @settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_cli_beats_config(self, cli_val: str, env_val: str, tmp_path) -> None:
-        """CLI value always wins over config file value."""
+        """CLI value always wins over config file value, dashed values included.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value
+        """
         config_file = tmp_path / "config.toml"
         config_file.write_text('name = "from_config"\n')
         result = confarg.load(
             WithDefaults,
-            argv=["--name", _escape_expressions(cli_val)],
+            argv=[f"--name={_escape_expressions(cli_val)}"],
             env={"MYAPP_NAME": _escape_expressions(env_val)},
             env_prefix="MYAPP_",
             files=[config_file],
@@ -246,17 +256,27 @@ class TestCollectionRoundTrip:
         result = confarg.load(WithList, argv=args, env={})
         assert result.items == values
 
+    @example(values=frozenset({"--A"}))
+    @example(values=frozenset({""}))
     @given(
         values=st.frozensets(
-            cli_safe_strs.filter(lambda s: len(s) > 0),
+            leaf_strs,
             min_size=0,
             max_size=10,
         ),
     )
     def test_set_round_trip(self, values: frozenset[str]) -> None:
-        """Set of strings survives CLI round-trip (expression syntax escaped with $${...})."""
+        """Set of strings survives CLI round-trip, empty and dashed elements included.
+
+        Each element is one ``--tags=<value>`` occurrence: the ``=`` form carries
+        a value the space form would take for a flag, and repeated occurrences
+        accumulate into the set (expression syntax escaped with $${...}).
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value
+        """
         WithSet = make_target("tags", set[str], default_factory=set)
-        args = ["--tags", *[_escape_expressions(v) for v in values]] if values else []
+        args = [f"--tags={_escape_expressions(v)}" for v in values]
         result = confarg.load(WithSet, argv=args, env={})
         assert result.tags == set(values)
 
