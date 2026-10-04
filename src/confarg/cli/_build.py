@@ -35,7 +35,6 @@ from confarg._types import (
     _base_declares_path,
     _dataclass_subclasses,
     _elem_type,
-    _final_inner,
     _fixed_seq_types,
     _init_defaults,
     _init_fields,
@@ -43,7 +42,6 @@ from confarg._types import (
     _is_callable,
     _is_dict,
     _is_enum,
-    _is_final,
     _is_literal,
     _is_namedtuple,
     _is_struct,
@@ -905,9 +903,6 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per
             FlagSpec(name=flag, metavar="VALUE", help=help_text, group=group, group_description=group_description),
             *_union_cast_flag_specs(flag, _scalar_cast_types_in_union(resolved), group, group_description),
         ]
-
-    if _is_final(core):
-        core = _final_inner(core)
 
     if _is_callable(core):
         help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)

@@ -30,7 +30,7 @@ from dataclasses import field as dataclasses_field
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple
 from uuid import UUID
 
 import pytest
@@ -6170,3 +6170,31 @@ class TestArgvOrderContract:
     def test_later_occurrence_wins(self, loader: ConfargLoader, argv: list[str], expected: dict[str, Any]) -> None:
         """A later occurrence overwrites what an earlier one wrote at its path (BUG-111, BUG-95)."""
         assert loader.merge(_OrderInterleaved, argv=argv, env={}, config_flag="") == expected
+
+
+# ---------------------------------------------------------------------------
+# Final[T] is T: every walk sees through the qualifier
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _FinalInner:
+    x: int = 1
+
+
+@dataclass
+class _WithFinals:
+    inner: Final[_FinalInner] = dataclasses_field(default_factory=_FinalInner)
+    n: Final[int] = 3
+
+
+class TestFinalContract:
+    """A ``Final[T]`` field merges and builds exactly as a ``T`` field does."""
+
+    def test_struct_sub_flag(self, loader: ConfargLoader) -> None:
+        """The sub-flags registration lists for ``Final[Struct]`` are the ones the walk accepts."""
+        assert loader.load(_WithFinals, argv=["--inner.x", "5"], env={}).inner == _FinalInner(x=5)
+
+    def test_scalar_merges_coerced(self, loader: ConfargLoader) -> None:
+        """A ``Final[int]`` token is coerced at merge time, as an ``int`` token is."""
+        assert loader.merge(_WithFinals, argv=["--n", "4"], env={}) == {"n": 4}

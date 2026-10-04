@@ -1,7 +1,7 @@
 # Leaf coercion
 
-`_coerce_leaf` converts to bool, int, float, str, None, `Final[T]`, `Literal`, `Enum` and
-registered leaf types. Policies:
+`_coerce_leaf` converts to bool, int, float, str, None, `Literal`, `Enum` and registered
+leaf types (`Final[T]` reaches it as `T`, [introspection](introspection.md#wrappers-are-transparent)). Policies:
 
 - bool words: true/1/yes/on, false/0/no/off (case-insensitive); None words: none/null, and
   the empty string for a `None` target;
@@ -50,5 +50,5 @@ raises. Pick deliberately: overrides of locals use `_coerce_leaf` because a fail
 an error there ([locals](../locals.md#declare-in-files-modify-anywhere)). Expression tokens are
 skipped by rule ([expressions](../expressions/deferral-rule.md#deferral-rule)). The two share one predicate for
 "is this leaf type coerced eagerly?" — `_is_eagerly_coercible`, the eager subset of
-`_coerce_leaf`'s domain (str and `Final` excluded) — and diverge only on raise-vs-return
+`_coerce_leaf`'s domain (str excluded) — and diverge only on raise-vs-return
 ([invariants](../invariants.md#delegate-to-the-canonical-function)).

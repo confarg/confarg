@@ -124,6 +124,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | the error for a field no channel supplied | `typedload._construct._missing_field_error` |
 | "what dotted path names this object?" | `_import.dotted_name` |
 | "what type is this value, to a reader?" | `_types._src_type` |
+| "which type does this annotation stand for, its wrappers aside?" | `_types._resolve_type` — `TypeAliasType`, `Annotated` and `Final` unwrapped in any nesting, a bare `Final` as `Any`; no walk unwraps a wrapper at its own site ([types](types/introspection.md#wrappers-are-transparent)) |
 | the text of an error raised from more than one site | a classmethod factory on the class in `exceptions.py` |
 
 ## Merge stays unvalidated
