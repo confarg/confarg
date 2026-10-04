@@ -53,7 +53,7 @@ def _partial_config_from_argv(argv: Sequence[str], config_flag: str) -> dict[str
                 i += 1
         elif tok.startswith(f"{flag_prefix}="):
             # Equals form: --config=file
-            path_str = tok[len(flag_prefix) + 1 :]
+            path_str = tok.removeprefix(f"{flag_prefix}=")
             if path_str:
                 with contextlib.suppress(Exception):
                     merged = _deep_merge(merged, _load_file(path_str))
