@@ -193,8 +193,9 @@ __transforms__:
    may pass to collect one record per firing: rule, selector, matched path, before, after. The shared
    helper at the two resolution call sites; strip the key after application; `TRANSFORMS_KEY` into
    `_defaults.py` beside `LOCALS_KEYS` and `ROOT_KEY`, the stated home for reserved names.
-   `transforms=` reaches `load()` and `merge()` and therefore the five front-ends, so size it against
-   REF-40 before spelling it.
+   `transforms=` reaches `load()` and `merge()` and therefore the five front-ends; it is one more
+   key on `MergeOptions`, which all of them take
+   ([api-seams](../architecture/pipeline/api-seams.md#one-option-set)).
 4. **Errors and documentation.** A `TransformError` family on `LocalsError`'s classmethod-factory
    shape, messages built in the factories
    ([design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it](../architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it)). A how-to and an `examples/` entry whose example
@@ -257,7 +258,7 @@ no version key.
 
 - **Reference repair is moot post-resolve, but `move` still has to decide what happens to a key the
   target type does not have.** `build()` rejecting it is probably right; confirm it reads well.
-- **`transforms=` against REF-40.** Whether the parameter earns fourteen more spellings, or whether
-  the rules-only file covers the case well enough for v1.
+- **`transforms=` as a `MergeOptions` key.** Whether the parameter earns a place in the option set
+  every front-end takes, or whether the rules-only file covers the case well enough for v1.
 - **`dicttransform` or `dictpatch`** as the package name. The former keeps one vocabulary with
   `__transforms__` and `transform()`; the latter is shorter and matches the borrowed op semantics.

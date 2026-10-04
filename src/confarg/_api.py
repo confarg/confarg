@@ -6,17 +6,15 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast, overload
+from typing import TYPE_CHECKING, Any, Unpack, cast, overload
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
     from types import UnionType
     from typing import TypeAliasType
 
 from confarg import _defaults
+from confarg._defaults import MergeOptions, _Options, _resolve_options
 from confarg._files import _dump_file
 from confarg._parse_cli import _locals_keys_at, _parse_cli
 from confarg._pipeline import _merge_sources
@@ -27,19 +25,7 @@ from confarg.exceptions import MissingFieldError
 from confarg.typedload import construct as _tc
 
 
-def merge(  # noqa: PLR0913
-    target: type | TypeAliasType | UnionType,
-    *,
-    argv: Sequence[str] | None = None,
-    env: Mapping[str, str] | None = None,
-    env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = _defaults.ENV_SEPARATOR,
-    cli_prefix: str = "",
-    config_flag: str = _defaults.CONFIG_FLAG,
-    files: Sequence[str | Path] = (),
-    env_config: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-) -> dict[str, Any]:
+def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]) -> dict[str, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
     Sources are merged in priority order: config files (lowest), then
@@ -58,28 +44,7 @@ def merge(  # noqa: PLR0913
 
     Args:
         target: The dataclass type (or scalar type) used to guide CLI parsing.
-        argv: CLI arguments to parse. Defaults to sys.argv[1:].
-        env: Environment variable mapping to scan. Defaults to os.environ.
-        env_prefix: Prefix that env vars must start with. Defaults to ``None``,
-            which disables environment variable parsing entirely. Set to ``""``
-            to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
-            read only vars with that prefix.
-        env_separator: Separator used to split env var names into nested keys.
-            Defaults to ``"__"`` (double underscore).
-        cli_prefix: Namespace that all CLI flags live under, addressed as
-            ``--<prefix>.<field>``. Defaults to ``""``, which means no prefix is
-            required; with one set, a flag that lacks it is rejected. It is also
-            the only way to address a non-struct (scalar) target from the CLI,
-            as ``--<prefix> VALUE``. The CLI adapters accept the same keyword on
-            their ``populate_*`` functions, which is where they apply it.
-        config_flag: Flag name used to specify config files on the CLI
-            (``--config path/to/file.yaml``). Set to ``""`` to disable.
-            Defaults to ``"config"``.
-        files: Paths to config files to load.
-        env_config: Name of an env var whose value is a config file path to load.
-            Loaded after ``files`` but before CLI ``--config`` files.
-        union_tag: Field name used as a discriminator tag in union types.
-            Defaults to ``"class"``.
+        **opts: The sources to read and how to read them; see :class:`MergeOptions`.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact.
@@ -101,24 +66,15 @@ def merge(  # noqa: PLR0913
         InvalidConfigFileError: If a config file cannot be loaded.
         UnknownArgumentError: If an unrecognized CLI argument is encountered.
     """
-    if argv is None:
-        argv = sys.argv[1:]
-    if env is None:
-        env = os.environ
+    return _merge(target, _resolve_options("merge", opts))
 
-    cli_data, cli_configs = _parse_cli(argv, target, cli_prefix, config_flag, union_tag)
-    return _merge_sources(
-        target,
-        cli_data,
-        cli_configs,
-        env=env,
-        env_prefix=env_prefix,
-        env_separator=env_separator,
-        config_flag=config_flag,
-        files=files,
-        env_config=env_config,
-        union_tag=union_tag,
-    )
+
+def _merge(target: type | TypeAliasType | UnionType, options: _Options) -> dict[str, Any]:
+    """Merge every source into a raw dict; :func:`merge` with its options resolved."""
+    # Vanilla registers no flags, so omitting the prefix means the registered one: none.
+    cli_prefix = "" if options.cli_prefix is None else options.cli_prefix
+    cli_data, cli_configs = _parse_cli(options.argv, target, cli_prefix, options.config_flag, options.union_tag)
+    return _merge_sources(target, cli_data, cli_configs, options)
 
 
 def _strip_locals(data: dict[str, Any], target: Any, union_tag: str) -> dict[str, Any]:
@@ -255,46 +211,10 @@ def from_dict[T](
 
 
 @overload
-def load[T](
-    target: type[T],
-    *,
-    argv: Sequence[str] | None = ...,
-    env: Mapping[str, str] | None = ...,
-    env_prefix: str | None = ...,
-    env_separator: str = ...,
-    cli_prefix: str = ...,
-    config_flag: str = ...,
-    files: Sequence[str | Path] = ...,
-    env_config: str | None = ...,
-    union_tag: str = ...,
-) -> T: ...
+def load[T](target: type[T], **opts: Unpack[MergeOptions]) -> T: ...
 @overload
-def load(
-    target: object,
-    *,
-    argv: Sequence[str] | None = ...,
-    env: Mapping[str, str] | None = ...,
-    env_prefix: str | None = ...,
-    env_separator: str = ...,
-    cli_prefix: str = ...,
-    config_flag: str = ...,
-    files: Sequence[str | Path] = ...,
-    env_config: str | None = ...,
-    union_tag: str = ...,
-) -> Any: ...
-def load[T](  # noqa: PLR0913
-    target: type[T] | TypeAliasType | UnionType,
-    *,
-    argv: Sequence[str] | None = None,
-    env: Mapping[str, str] | None = None,
-    env_prefix: str | None = _defaults.ENV_PREFIX,
-    env_separator: str = _defaults.ENV_SEPARATOR,
-    cli_prefix: str = "",
-    config_flag: str = _defaults.CONFIG_FLAG,
-    files: Sequence[str | Path] = (),
-    env_config: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-) -> T:
+def load(target: object, **opts: Unpack[MergeOptions]) -> Any: ...
+def load[T](target: type[T] | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]) -> T:
     """Merge configuration from all sources and construct the target type.
 
     Convenience wrapper for ``merge()`` + ``build()``. For more control —
@@ -303,28 +223,7 @@ def load[T](  # noqa: PLR0913
 
     Args:
         target: The dataclass type (or scalar type) to load configuration into.
-        argv: CLI arguments to parse. Defaults to sys.argv[1:].
-        env: Environment variable mapping to scan. Defaults to os.environ.
-        env_prefix: Prefix that env vars must start with. Defaults to ``None``,
-            which disables environment variable parsing entirely. Set to ``""``
-            to read all env vars without filtering, or to e.g. ``"MYAPP_"`` to
-            read only vars with that prefix.
-        env_separator: Separator used to split env var names into nested keys.
-            Defaults to ``"__"`` (double underscore).
-        cli_prefix: Namespace that all CLI flags live under, addressed as
-            ``--<prefix>.<field>``. Defaults to ``""``, which means no prefix is
-            required; with one set, a flag that lacks it is rejected. It is also
-            the only way to address a non-struct (scalar) target from the CLI,
-            as ``--<prefix> VALUE``. The CLI adapters accept the same keyword on
-            their ``populate_*`` functions, which is where they apply it.
-        config_flag: Flag name used to specify config files on the CLI
-            (``--config path/to/file.yaml``). Set to ``""`` to disable.
-            Defaults to ``"config"``.
-        files: Paths to config files to load.
-        env_config: Name of an env var whose value is a config file path to load.
-            Loaded after ``files`` but before CLI ``--config`` files.
-        union_tag: Field name used as a discriminator tag in union types.
-            Defaults to ``"class"``.
+        **opts: The sources to read and how to read them; see :class:`MergeOptions`.
 
     Returns:
         An instance of the target type populated with the merged configuration.
@@ -340,19 +239,8 @@ def load[T](  # noqa: PLR0913
         MissingReferenceError: If an expression references a field that does not exist.
         ExpressionEvalError: If an expression fails at runtime.
     """
-    data = merge(
-        target,
-        argv=argv,
-        env=env,
-        env_prefix=env_prefix,
-        env_separator=env_separator,
-        cli_prefix=cli_prefix,
-        config_flag=config_flag,
-        files=files,
-        env_config=env_config,
-        union_tag=union_tag,
-    )
-    return build(target, data, union_tag=union_tag)
+    options = _resolve_options("load", opts)
+    return build(target, _merge(target, options), union_tag=options.union_tag)
 
 
 def dump(

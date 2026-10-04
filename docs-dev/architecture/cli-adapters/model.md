@@ -21,8 +21,9 @@ implementation: every adapter must produce exactly what `confarg.load()` would
 argv (`_require_argv_spells`) → vanilla's loop over argv (`_parse_cli._parse_cli(...,
 host_parsed=True)`), which returns the CLI channel and its `--config` files →
 `_pipeline._merge_sources`. `from_*` = `merge_*` + `build()`. Only the flattening is
-per-adapter, so the four cannot drift. Keyword names and
-order mirror `confarg.load` exactly. `populate_*` defaults `argv` to `sys.argv[1:]` like
+per-adapter, so the four cannot drift. `merge_*` and `from_*` take `confarg.load`'s own
+keywords, `**opts: Unpack[MergeOptions]`
+([pipeline](../pipeline/api-seams.md#one-option-set)). `populate_*` defaults `argv` to `sys.argv[1:]` like
 `merge_*`, so the host parser accepts every flag `merge_*` will consume; `argv=[]` registers
 only static flags.
 

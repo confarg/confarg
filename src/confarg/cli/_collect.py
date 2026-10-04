@@ -16,13 +16,12 @@ Dev Notes:
 
 from __future__ import annotations
 
-import os
-import sys
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from pathlib import Path
+
+    from confarg._defaults import _Options
 
 from confarg._api import build
 from confarg._import import _import_dotted
@@ -79,41 +78,28 @@ def _require_argv_spells(
         raise ConfargError(msg)
 
 
-def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only signature
+def _merge_from_flat(
     flat: dict[str, Any],
     target: object,
+    options: _Options,
     *,
-    argv: Sequence[str] | None,
-    env: Mapping[str, str] | None,
-    env_prefix: str | None,
-    env_separator: str,
     cli_prefix: str,
-    config_flag: str,
-    files: Sequence[str | Path],
-    env_config: str | None,
-    union_tag: str,
     binds_runs: bool,
 ) -> dict[str, Any]:
-    """Merge every source into a raw dict, the CLI channel written from *argv*.
+    """Merge every source into a raw dict, the CLI channel written from ``options.argv``.
 
     The shared tail of ``merge_namespace`` / ``merge_context`` / ``merge_app``, so the
     four cannot drift.  The CLI channel and its ``--config`` files are what vanilla's
-    loop (:func:`~confarg._parse_cli._parse_cli`) reads off *argv*, in the mode that
+    loop (:func:`~confarg._parse_cli._parse_cli`) reads off the argv, in the mode that
     leaves the host's own tokens to the host; the framework's parse result *flat* only
-    has to agree with *argv* (:func:`_require_argv_spells`).
+    has to agree with that argv (:func:`_require_argv_spells`).
 
     Args:
         flat: The adapter's parse result as ``{dotted.flag: value}``.
         target: The target type, used to guide the type walk.
-        argv: The CLI arguments the framework parsed; ``None`` means ``sys.argv[1:]``.
-        env: Environment variable mapping; ``None`` means ``os.environ``.
-        env_prefix: Prefix that env vars must start with.
-        env_separator: Separator splitting env var names into nested keys.
-        cli_prefix: Namespace the flags were registered under.
-        config_flag: Flag name used to specify config files.
-        files: Config file paths to load at lowest priority.
-        env_config: Name of an env var holding a config file path.
-        union_tag: Field name used as a discriminator tag in unions.
+        options: The caller's resolved options; ``argv`` is the list the framework parsed.
+        cli_prefix: Namespace the flags were registered under, reconciled with
+            ``options.cli_prefix`` by :func:`~confarg.cli._prefix.resolve_prefix`.
         binds_runs: The framework binds every token up to the next flag to a
             multi-token or fixed-arity flag (argparse, cyclopts), so a token after
             the run vanilla consumes is a stray rather than a positional of the host's.
@@ -122,38 +108,22 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
         A plain dict of the merged configuration, with expression strings intact.
 
     Raises:
-        ConfargError: If *flat* holds a confarg flag *argv* does not spell.
+        ConfargError: If *flat* holds a confarg flag the argv does not spell.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/model.md#argv-is-the-only-writer
     """
-    if env is None:
-        env = os.environ
-
-    raw_argv = sys.argv[1:] if argv is None else list(argv)
-    _require_argv_spells(flat, raw_argv, cli_prefix, target, union_tag)
+    _require_argv_spells(flat, options.argv, cli_prefix, target, options.union_tag)
     cli_data, cli_configs = _parse_cli(
-        raw_argv,
+        options.argv,
         target,
         cli_prefix,
-        config_flag,
-        union_tag,
+        options.config_flag,
+        options.union_tag,
         host_parsed=True,
         host_binds_run=_binds_a_run if binds_runs else None,
     )
-
-    return _merge_sources(
-        target,
-        cli_data,
-        cli_configs,
-        env=env,
-        env_prefix=env_prefix,
-        env_separator=env_separator,
-        config_flag=config_flag,
-        files=files,
-        env_config=env_config,
-        union_tag=union_tag,
-    )
+    return _merge_sources(target, cli_data, cli_configs, options)
 
 
 def _construct_from_merged(target: object, merged: dict[str, Any], union_tag: str) -> Any:
