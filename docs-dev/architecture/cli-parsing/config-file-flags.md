@@ -6,8 +6,10 @@ the same name as `config_flag` could never be set; that shadowing is rejected up
 names. `_addresses_key` is the one canonical test for "this token belongs to a reserved
 namespace", shared by the config flag and the locals namespace across CLI and env.
 
-`_collect_config_file_pairs` is a lenient re-scan used by the adapters to recover argv
-order after the framework already consumed the paths; it never raises.
+The adapters read `--config` files off argv with vanilla's loop, in command order
+([CLI adapters](../cli-adapters/model.md#argv-is-the-only-writer)). `_collect_config_file_pairs`
+is the cyclopts pre-parse refusal of a bare occurrence, which cyclopts would otherwise read as
+an implicit value and assert on.
 
 The first path may carry the `=` spelling (`--config=a.yaml b.yaml` reads both) on vanilla and
 cyclopts; argparse's `=` binds the one path after it and its parser exits on the rest, the

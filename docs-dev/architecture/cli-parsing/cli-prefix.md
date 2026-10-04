@@ -15,8 +15,7 @@ host framework and is left alone. That is not a divergence in the prefix but the
 model itself — it holds with or without one.
 
 A non-struct (scalar) target has no field name to address, so `--<prefix> VALUE` is its only
-CLI spelling, handled by `_handle_scalar_root` and mirrored for the adapters in
-`cli/_collect.py`. Without a prefix it has no CLI spelling at all, in any front-end.
+CLI spelling, handled by `_handle_scalar_root`, on the adapters too. Without a prefix it has no CLI spelling at all, in any front-end.
 `--<prefix>.json` reaches the same root through the
 [root cast](casts-and-reserved-words.md#force-casts).
 

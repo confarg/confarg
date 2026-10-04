@@ -38,8 +38,8 @@
 - The `[` half is a **whole-value** spelling, so `_lone_json_array` grants it only to a flag
   carrying exactly one token: `--tags '["a","b"]'` decodes, and `--tags '["a","b"]' z` or a second
   occurrence makes every token an ordinary item. On a multi-token flag the question is therefore
-  asked of the *accumulated* tokens, which is what a framework's own collection already hands
-  `_collect._json_array_override` ([CLI adapters](../cli-adapters/list-syntax-divergence.md#list-syntax-divergence)).
+  asked of the *accumulated* tokens
+  ([CLI adapters](../cli-adapters/list-syntax-divergence.md#list-syntax-divergence)).
 - Leaves are coerced eagerly with `_try_coerce` so the merged dict has the same types
   whichever channel supplied them (and so CLI numbers work inside expressions).
 - Bool fields take an explicit value: `--verbose true` ([design decisions](../design-decisions/explicit-boolean-values.md#explicit-boolean-values)).

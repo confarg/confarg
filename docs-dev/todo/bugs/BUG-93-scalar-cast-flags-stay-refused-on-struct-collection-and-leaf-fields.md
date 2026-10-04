@@ -1,8 +1,7 @@
 # BUG-93 — Scalar cast flags stay refused on struct, collection and registered-leaf fields
 
 **Where:** `src/confarg/cli/_build.py` (`_scalar_cast_parent_is_leaf`, `_collect_patch_argv_specs`) ·
-`src/confarg/cli/_collect.py` (`_collect_field` struct and registered-leaf branches) ·
-**Filed:** 2026-09-30 · **Effort:** M · **Risk:** medium · **Impact:** behavior
+**Filed:** 2026-09-30 · **Effort:** S · **Risk:** medium · **Impact:** behavior
 
 BUG-72 registered the typed scalar cast flags on *plain leaf* fields only. Vanilla's
 `detect_force_cast` accepts them wherever the trailing segment names no real member of the
@@ -10,10 +9,9 @@ parent type — and a struct, a collection or a registered leaf (e.g. `Path`) ha
 named `str` either — so vanilla pins the *whole field* (`--nested.str x` builds
 `nested='x'`, `--items.str 3` builds `items='3'`, `--p.str y` builds `p='y'`) while every
 adapter still refuses the flag at parse time. Fix direction: widen `_scalar_cast_parent_is_leaf`
-(the collection-parent write already lands in the leaf branch the collector honours), add the
-cast override to the struct branch with the argv-order interplay vanilla gives
-(`--nested.str x --nested.n 5` builds `Nested(n=5)`; reversed, `nested='x'`), and decide what
-the registered-leaf branch does with a cast beside its tag hatch. A maintainer may instead
+— registration is all that is left, since the adapters' CLI channel is vanilla's loop (REF-72)
+and writes the cast, with its argv-order interplay (`--nested.str x --nested.n 5` builds
+`Nested(n=5)`; reversed, `nested='x'`), exactly as vanilla does. A maintainer may instead
 prefer to refuse the whole family in vanilla — the spellings disambiguate nothing there
 either; BUG-72 chose registration for leaves, which sets the precedent.
 Rationale: [cli-parsing/casts-and-reserved-words.md#real-field-wins](../../architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins),

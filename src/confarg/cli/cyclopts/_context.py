@@ -129,6 +129,7 @@ def merge_app(  # noqa: PLR0913
         files=files,
         env_config=env_config,
         union_tag=union_tag,
+        binds_runs=True,
     )
 
 

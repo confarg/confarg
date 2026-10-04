@@ -1,18 +1,14 @@
-# REF-56 — Seven `[len(prefix):]` slices that are `str.removeprefix`
+# REF-56 — Four `[len(prefix):]` slices that are `str.removeprefix`
 
-**Where:** `src/confarg/cli/_collect.py`, `src/confarg/cli/_prefix.py`,
-`src/confarg/cli/_build.py`, `src/confarg/_parse_env.py`, `src/confarg/_parse_cli.py` ·
+**Where:** `src/confarg/cli/_prefix.py`, `src/confarg/cli/_build.py`, `src/confarg/_parse_env.py` ·
 **Filed:** 2026-09-24
 **Effort:** S · **Risk:** low · **Impact:** none
 
 Each of these sits inside an explicit `startswith` branch, so `removeprefix` is exact:
 
-- `cli/_collect.py:277` — `tail = k[len(flag_prefix) :]` (guard on line 276)
-- `cli/_collect.py:302` — `k[len(prefix) :].split(".")` (guard on line 301)
 - `cli/_prefix.py:103` — `stripped[key[len(dot_pfx) :]] = value` (guard on line 102)
 - `cli/_prefix.py:133` — `token[2 + len(dot_pfx) :]` → `token[2:].removeprefix(dot_pfx)`
   (guard on line 130)
-- `_parse_cli.py:490` — `raw_key[len(dot_pfx) :]` (guard on line 489)
 - `_parse_env.py:408` — `key[len(prefix) :].removeprefix(separator)`, which already calls
   `removeprefix` for the *second* half of the same expression. This one is the argument for the
   sweep: the two spellings sit on one line.

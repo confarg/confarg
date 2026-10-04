@@ -450,16 +450,18 @@ class TestFromNamespace:
         """Test that fixed-length tuple fields parse positional values."""
         parser = argparse.ArgumentParser()
         populate_parser(WithCollections, parser)
-        ns = parser.parse_args(["--coords", "1.5", "2.5"])
-        result = from_namespace(WithCollections, ns)
+        argv = ["--coords", "1.5", "2.5"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(WithCollections, ns, argv=argv)
         assert result.coords == (1.5, 2.5)
 
     def test_enum_field(self) -> None:
         """Test that Enum fields parse to the correct Enum member."""
         parser = argparse.ArgumentParser()
         populate_parser(WithEnum, parser)
-        ns = parser.parse_args(["--color", "BLUE"])
-        result = from_namespace(WithEnum, ns)
+        argv = ["--color", "BLUE"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(WithEnum, ns, argv=argv)
         assert result.color == Color.BLUE
 
     def test_registered_leaf_type_round_trip(self) -> None:
@@ -467,8 +469,9 @@ class TestFromNamespace:
         confarg.register_leaf_type(_Hex, lambda s: _Hex(int(s, 16)))
 
         parser = make_parser(_WithHex)
-        ns = parser.parse_args(["--color", "ff"])
-        result = from_namespace(_WithHex, ns)
+        argv = ["--color", "ff"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(_WithHex, ns, argv=argv)
         assert isinstance(result.color, _Hex)
         assert result.color.value == 255
 
@@ -481,8 +484,9 @@ class TestFromNamespace:
 
         parser = argparse.ArgumentParser()
         populate_parser(WithNoneLiteral, parser)
-        ns = parser.parse_args(["--value", "none"])
-        result = from_namespace(WithNoneLiteral, ns)
+        argv = ["--value", "none"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(WithNoneLiteral, ns, argv=argv)
         assert result.value is None
 
     def test_literal_int_stealing_cli(self) -> None:
@@ -494,8 +498,9 @@ class TestFromNamespace:
 
         parser = argparse.ArgumentParser()
         populate_parser(WithMixedLiteral, parser)
-        ns = parser.parse_args(["--value", "16"])
-        result = from_namespace(WithMixedLiteral, ns)
+        argv = ["--value", "16"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(WithMixedLiteral, ns, argv=argv)
         assert result.value == 16
         assert type(result.value) is int
 
@@ -504,8 +509,9 @@ class TestFromNamespace:
         parser = argparse.ArgumentParser()
         populate_parser(Simple, parser)
         parser.add_argument("--verbose", action="store_true")
-        ns = parser.parse_args(["--host", "h", "--verbose"])
-        result = from_namespace(Simple, ns)
+        argv = ["--host", "h", "--verbose"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(Simple, ns, argv=argv)
         assert result.host == "h"
         assert ns.verbose is True
 
@@ -535,8 +541,9 @@ class TestFromNamespace:
         """--value.str red forces str even when 'red' is an enum member value."""
         parser = argparse.ArgumentParser()
         populate_parser(_WithEnumStr, parser)
-        ns = parser.parse_args(["--value.str", "red"])
-        result = from_namespace(_WithEnumStr, ns)
+        argv = ["--value.str", "red"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(_WithEnumStr, ns, argv=argv)
         assert result.value == "red"
         assert type(result.value) is str
 
@@ -544,8 +551,9 @@ class TestFromNamespace:
         """--value.int 1 forces int even when 1 is an enum member value."""
         parser = argparse.ArgumentParser()
         populate_parser(_WithEnumInt, parser)
-        ns = parser.parse_args(["--value.int", "1"])
-        result = from_namespace(_WithEnumInt, ns)
+        argv = ["--value.int", "1"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(_WithEnumInt, ns, argv=argv)
         assert result.value == 1
         assert type(result.value) is int
 
@@ -565,8 +573,9 @@ class TestFromNamespace:
         """Struct union field is constructed from variant fields alone, no --item.class needed."""
         parser = argparse.ArgumentParser(allow_abbrev=False)
         populate_parser(_WithStructUnion, parser)
-        ns = parser.parse_args(["--item.x", "42"])
-        result = from_namespace(_WithStructUnion, ns, env={})
+        argv = ["--item.x", "42"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(_WithStructUnion, ns, argv=argv, env={})
         assert isinstance(result.item, _StructVariantA)
         assert result.item.x == 42
 
@@ -684,8 +693,9 @@ class TestMakeParser:
     def test_parse_and_construct(self) -> None:
         """make_parser produces a parser that round-trips through from_namespace."""
         parser = make_parser(Simple, config_flag="")
-        ns = parser.parse_args(["--host", "localhost", "--port", "9999"])
-        result = from_namespace(Simple, ns, env={})
+        argv = ["--host", "localhost", "--port", "9999"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(Simple, ns, argv=argv, env={})
         assert result.host == "localhost"
         assert result.port == 9999
 
@@ -705,25 +715,29 @@ class TestCliPrefixArgparse:
         parser.add_argument("--port", type=int)  # the host's --port, not Simple.port
         populate_parser(Simple, parser, cli_prefix="app", config_flag="", argv=[])
 
-        ns = parser.parse_args(["--verbose", "--port", "1", "--app.host", "h", "--app.port", "9999"])
+        argv = ["--verbose", "--port", "1", "--app.host", "h", "--app.port", "9999"]
+
+        ns = parser.parse_args(argv)
         assert ns.verbose is True
         assert ns.port == 1
 
-        result = from_namespace(Simple, ns, env={}, config_flag="")
+        result = from_namespace(Simple, ns, argv=argv, env={}, config_flag="")
         assert result.host == "h"
         assert result.port == 9999
 
     def test_prefix_recovered_from_namespace(self) -> None:
         """from_namespace needs no cli_prefix of its own."""
         parser = make_parser(Simple, cli_prefix="app", config_flag="")
-        ns = parser.parse_args(["--app.host", "h"])
-        assert from_namespace(Simple, ns, env={}, config_flag="").host == "h"
+        argv = ["--app.host", "h"]
+        ns = parser.parse_args(argv)
+        assert from_namespace(Simple, ns, argv=argv, env={}, config_flag="").host == "h"
 
     def test_matching_prefix_accepted(self) -> None:
         """Repeating the registered prefix is allowed."""
         parser = make_parser(Simple, cli_prefix="app", config_flag="")
-        ns = parser.parse_args(["--app.host", "h"])
-        assert from_namespace(Simple, ns, env={}, cli_prefix="app", config_flag="").host == "h"
+        argv = ["--app.host", "h"]
+        ns = parser.parse_args(argv)
+        assert from_namespace(Simple, ns, argv=argv, env={}, cli_prefix="app", config_flag="").host == "h"
 
     def test_mismatched_prefix_raises(self) -> None:
         """A prefix disagreeing with the registered one fails loudly, not silently."""
@@ -737,3 +751,21 @@ class TestCliPrefixArgparse:
         parser = make_parser(Simple, config_flag="")
         ns = parser.parse_args(["--host", "h"])
         assert not [k for k in vars(ns) if k.startswith("__confarg")]
+
+
+class TestArgvIsTheParsedArgv:
+    """The CLI channel is read off argv, so a parse result argv does not spell is refused."""
+
+    def test_parse_result_argv_does_not_spell_raises(self) -> None:
+        """A custom parse_args list merged against another argv names the flag it would lose."""
+        parser = make_parser(Simple, config_flag="")
+        ns = parser.parse_args(["--host", "h"])
+        with pytest.raises(confarg.exceptions.ConfargError, match=r"holds '--host', which argv does not spell"):
+            from_namespace(Simple, ns, argv=[], env={}, config_flag="")
+
+    def test_host_flag_argv_does_not_spell_is_left_alone(self) -> None:
+        """A host parameter is not confarg's to judge, whatever its default."""
+        parser = make_parser(Simple, config_flag="")
+        parser.add_argument("--dry-run", action="store_true")
+        ns = parser.parse_args(["--host", "h"])
+        assert from_namespace(Simple, ns, argv=["--host", "h"], env={}, config_flag="").host == "h"

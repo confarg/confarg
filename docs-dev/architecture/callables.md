@@ -25,7 +25,7 @@ Directive words sit next to the target's own kwargs, so a parameter named `fn`, 
 
 **The opener alone selects the mode for the whole spec**; a directive word in the other form
 is ordinary data. Do not mix forms. `active_directives(has_key)` is the one canonical mode
-selector, shared by construction (`spec.__contains__`), the CLI collector and flag
+selector, shared by construction (`spec.__contains__`), the CLI parser and flag
 registration (probes over the flat `{flag}.{name}` namespace), so every channel agrees
 without duplicating tables. On the CLI a field's escaped opener likewise beats a plain
 `--f.fn`, which is then a kwarg named `fn`.
@@ -47,8 +47,7 @@ report through the shared struct construction say the same thing as the rest.
 
 Both bind spellings are **subtrees** on the CLI, whichever is active: `_resolve_field_type`
 accepts either under a `Callable` and leaves the mode question to construction, and the
-adapters' `_collect_bind_sections` nests both out of the flat namespace, so the merged dict
-matches vanilla's key for key.
+adapters' CLI channel is the same loop, so the merged dict matches vanilla's key for key.
 
 ## Class as factory versus class as instance
 

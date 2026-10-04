@@ -430,41 +430,6 @@ def _descend_creating(d: dict[str, Any], path: list[str]) -> dict[str, Any]:
     return d
 
 
-def _pop_nested(d: dict[str, Any], path: list[str]) -> None:
-    """Remove the node *path* names, as the whole-value write that replaces it does.
-
-    The destructive twin of :func:`_set_nested`'s last-write-wins: a plain CLI flag
-    replaces the node at its path outright, so whatever an argv-order scan
-    accumulated at that path and below stops with it.  The descent stops at the
-    first segment whose node is missing or not a dict, popping that node: a
-    non-dict intermediate is replaced wholesale by the write that follows, so every
-    op recorded under it is gone whether or not the descent ran deeper.
-
-    Args:
-        d: The root dict to modify in place.
-        path: A list of keys forming the path to the node to remove.
-
-    Dev Notes:
-        docs-dev/architecture/pipeline/deep-merge.md#scalar-intermediates
-    """
-    if not path:
-        return
-    node: Any = d
-    for part in path[:-1]:
-        if not isinstance(node, dict):
-            return
-        if (target := _navigate_append_spec(node, part)) is not None:
-            node = target
-            continue
-        child = node.get(part)
-        if not isinstance(child, dict):
-            node.pop(part, None)
-            return
-        node = child
-    if isinstance(node, dict):
-        node.pop(path[-1], None)
-
-
 def _accumulate_list_delete(
     d: dict[str, Any],
     path: list[str],

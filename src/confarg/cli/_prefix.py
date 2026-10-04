@@ -5,13 +5,13 @@
 """Apply and strip ``cli_prefix`` at the two adapter boundaries.
 
 The prefix is a naming convention, not a parsing mode: it is added to every
-``FlagSpec.name`` when flags are registered and removed again from the flat parse
-result and from argv when they are read back.  Everything between those two
-boundaries -- the type walk, the patch scan, the config-file scan -- never sees it.
+``FlagSpec.name`` when flags are registered and removed again where registration,
+completion and the argv check read argv and the parse result back.  The adapters' CLI
+channel is written by vanilla's loop, which strips the prefix itself
+(:func:`~confarg._parse_cli._strip_cli_prefix`), skipping the host's flags outside it.
 
-Unlike vanilla's :func:`~confarg._parse_cli._strip_cli_prefix`, the strippers here
-are **lenient**: a flag outside the prefix belongs to the host framework, not to a
-user typo, so it is skipped rather than reported as unknown.
+The strippers here are **lenient** the same way: a flag outside the prefix belongs to the
+host framework, not to a user typo, so it is skipped rather than reported as unknown.
 
 Dev Notes:
     docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix
@@ -88,8 +88,7 @@ def apply_prefix(specs: list[FlagSpec], cli_prefix: str) -> list[FlagSpec]:
 def strip_flat_prefix(flat: dict[str, Any], cli_prefix: str) -> dict[str, Any]:
     """Return *flat* with *cli_prefix* removed from its keys, dropping foreign entries.
 
-    The bare prefix key becomes ``""``, the empty path that
-    :func:`~confarg.cli._collect._collect_ns_fields` reads as the scalar root.  Keys
+    The bare prefix key becomes ``""``, the empty path of the scalar root.  Keys
     outside the namespace are the host framework's own parameters and are dropped.
     """
     if not cli_prefix:
@@ -109,12 +108,11 @@ def strip_argv_prefix(argv: Sequence[str], cli_prefix: str) -> list[str]:
 
     ``--k=v`` is normalized first, so both spellings strip alike.  A flag outside the
     namespace is dropped **together with its value tokens**, which keeps the
-    left-to-right order of what remains -- the whole reason the patch scan and the
-    config-file scan read argv rather than the framework's parse result.
+    left-to-right order of what remains, which the argv scans of registration and
+    completion read.
 
-    The bare ``--<prefix>`` is dropped too: a scalar root carries no patch and no
-    config file, and the flat collector already owns it (as it does in vanilla's
-    ``patch_only`` mode).
+    The bare ``--<prefix>`` is dropped too: a scalar root's flag carries no config file
+    and names no path below the root.
     """
     # Imported here: a module-level import would create a load-time import cycle.
     from confarg._parse_cli import _looks_like_flag, _normalize_eq_args, _skip_flag_values  # noqa: PLC0415

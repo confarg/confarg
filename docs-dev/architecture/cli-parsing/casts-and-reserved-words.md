@@ -13,8 +13,9 @@ bypassing the type-directed coercion (notably the stealing rule,
   hard-errors on invalid JSON: an explicit request deserves a loud failure, not a fallback.
 - Occurrences write sequentially, so of the plain flag and its cast spellings at one field the
   last typed wins — and the pinning being deferred, only the survivor's coercion runs, so a
-  cast a later occurrence replaced never errors. The adapters read that order back off argv
-  (`cli/_collect._last_leaf_cast_spelling`).
+  cast a later occurrence replaced never errors. The adapters' CLI channel is the same loop
+  ([CLI adapters](../cli-adapters/model.md#argv-is-the-only-writer)), so the order holds there
+  too (BUG-95 was the read-back that once stood in for it, missing a union's cast).
 - JSON-decoded values are stored raw (not tokens), so their elements are exempt from the
   stealing rule (`"yes"` stays a string) and `null` becomes expressible inside a list.
 - Root `--json` injects a whole config. It is folded in **under** the per-field flags (field
@@ -24,8 +25,7 @@ bypassing the type-directed coercion (notably the stealing rule,
   The fold is one function, `_cast.fold_root_json`, that all three channels call (REF-44).
 - On a **scalar** root there are no fields to fold under: `--<prefix>` and `--<prefix>.json`
   are two spellings of one value, so the rule above for a field and its casts applies, and
-  the last one typed wins. The adapters read that order back off the raw argv
-  (`cli/_collect.apply_root_json`), because the bare flag is the prefix itself. That is
+  the last one typed wins, on the adapters too, whose CLI channel is the same loop. That is
   also how argparse and click treat a dest given twice. Letting the plain value always
   win was rejected: it borrows the struct root's "fields refine the object" rule where
   there is nothing to refine, and it contradicts the per-field rule.
@@ -40,7 +40,7 @@ checked for the name; dicts accept any key so the name is always real there; lis
 tuples, callables and scalars have no named members, so the word is reserved.
 
 Keep this predicate canonical: casts, the locals name derivation, the env `__json` cast, the
-env channel's unknown-field warning (BUG-90) and the adapters' `_find_json_cast`/`apply_root_json` all rely on it answering identically.
+env channel's unknown-field warning (BUG-90) and the adapters' cast-flag registration all rely on it answering identically.
 
 The union tag yields the same way (BUG-102): a field whose exact spelling equals `union_tag`
 is that field, and the tag applies only where no member of that spelling exists — the

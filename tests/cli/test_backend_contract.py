@@ -1318,8 +1318,7 @@ class TestFixedSequenceContract:
     def test_repeated_flag_after_sub_flag_replaces_wholesale(self, loader: ConfargLoader) -> None:
         """The last occurrence is also the latest writer, so it takes the whole field (BUG-62).
 
-        The repeat rides the read-back ``_arity_flag_writes_last`` already performs: the
-        last ``--pair`` follows the ``--pair.y`` it supersedes, exactly as a lone arity
+        The last ``--pair`` follows the ``--pair.y`` it supersedes, exactly as a lone arity
         flag does (BUG-66).
         """
         assert loader.merge(_WithPoint, argv=["--pair", "1", "2", "--pair.y", "7", "--pair", "3", "4"], env={}) == {
@@ -3415,8 +3414,7 @@ class TestCollectionPatchContract:
     """List index/append/delete and dict-subkey CLI patches resolve identically everywhere.
 
     These were vanilla-only before ``build_dynamic_flags`` registered the
-    argv-derived patch flags and ``_parse_cli(..., patch_only=True)`` applied
-    them in command order on top of the framework parse result.
+    argv-derived patch flags; vanilla's loop writes them in command order.
     """
 
     def test_index_set(self, loader: ConfargLoader, tmp_yaml) -> None:
@@ -3454,10 +3452,10 @@ class TestCollectionPatchContract:
     def test_index_force_cast_bypasses_stealing(self, loader: ConfargLoader) -> None:
         """``--field.N.str`` force-casts a single list element, bypassing the stealing rule.
 
-        The cast path (``input.1``) is itself a collection-patch path, so it is applied by the
-        argv-order patch scan, not the flat collector — the whole reason both the patch-flag
-        registration and ``_parse_cli(patch_only=True)`` route the decision through
-        ``_is_collection_patch_path`` rather than assuming every cast is a plain-field cast.
+        The cast path (``input.1``) is itself a collection-patch path, so its flag is
+        registered when typed — the reason the patch-flag registration routes the decision
+        through ``_is_collection_patch_path`` rather than assuming every cast is a
+        plain-field cast.
         """
         cfg = loader.load(
             _WithStrBools,
@@ -6061,3 +6059,114 @@ class TestUnionTagFieldCollision:
         flags = build_static_flags(_KindOtherVariant | int, union_tag="Kind", config_flag="")
         by_name = {f.name: f for f in flags}
         assert by_name["Kind"].metavar == "DOTTED.CLASS.PATH"
+
+
+# ---------------------------------------------------------------------------
+# Key order: the merged dict is written in argv order (BUG-87)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _OrderV1:
+    a: int = 1
+
+
+@dataclass
+class _OrderV2:
+    b: int = 2
+
+
+@dataclass
+class _OrderInner:
+    x: int = 0
+    y: int = 0
+
+
+@dataclass
+class _OrderBase:
+    base_field: int = 0
+
+
+@dataclass
+class _OrderSub(_OrderBase):
+    sub_field: int = 0
+
+
+@dataclass
+class _OrderHolder:
+    p: int = 0
+    q: int = 0
+    s: _OrderInner = dataclasses_field(default_factory=_OrderInner)
+    u: _OrderV1 | _OrderV2 | None = None
+    b: _OrderBase = dataclasses_field(default_factory=_OrderBase)
+
+
+class TestMergedKeyOrderContract:
+    """Vanilla writes each flag where argv spells it, so a dump of the merged dict is byte-identical.
+
+    Dict equality ignores order, so each case compares the serialized dict (BUG-87).
+    """
+
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            pytest.param(["--q", "1", "--p", "2"], {"q": 1, "p": 2}, id="fields-against-declaration-order"),
+            pytest.param(
+                ["--s.y", "1", "--p", "3", "--s.x", "2"],
+                {"s": {"y": 1, "x": 2}, "p": 3},
+                id="nested-interleaved",
+            ),
+            pytest.param(
+                ["--u.a", "7", "--u.class", f"{__name__}._OrderV1"],
+                {"u": {"a": 7, "class": f"{__name__}._OrderV1"}},
+                id="union-tag-after-variant-flags",
+            ),
+            pytest.param(
+                ["--b.class", f"{__name__}._OrderSub", "--b.sub_field", "4", "--b.base_field", "3"],
+                {"b": {"class": f"{__name__}._OrderSub", "sub_field": 4, "base_field": 3}},
+                id="inheritance-tag-before-fields",
+            ),
+        ],
+    )
+    def test_keys_follow_argv(self, loader: ConfargLoader, argv: list[str], expected: dict[str, Any]) -> None:
+        """Every front-end serializes the merged dict exactly as vanilla does."""
+        merged = loader.merge(_OrderHolder, argv=argv, env={}, config_flag="")
+        assert json.dumps(merged) == json.dumps(expected)
+
+
+# ---------------------------------------------------------------------------
+# Occurrences are written in argv order (BUG-111, BUG-95)
+# ---------------------------------------------------------------------------
+
+
+class _OrderPt(NamedTuple):
+    x: int = 0
+    y: int = 0
+
+
+@dataclass
+class _OrderInterleaved:
+    pt: _OrderPt = dataclasses_field(default_factory=_OrderPt)
+    s: _OrderInner = dataclasses_field(default_factory=_OrderInner)
+    b: str | bool | None = None
+
+
+class TestArgvOrderContract:
+    """Every front-end writes each occurrence where argv spells it, as vanilla's loop does."""
+
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            pytest.param(
+                ["--pt.x", "1", "--pt", "7", "8", "--pt.y", "2"],
+                {"pt": {"x": 7, "y": 2}},
+                id="arity-flag-between-sub-flags",
+            ),
+            pytest.param(["--s.x", "1", "--s", '{"y": 5}', "--s.y", "2"], {"s": {"y": 2}}, id="blob-between-sub-flags"),
+            pytest.param(["--b.json", "5", "--b", "no"], {"b": "no"}, id="plain-flag-after-cast"),
+            pytest.param(["--b", "no", "--b.json", "5"], {"b": 5}, id="cast-after-plain-flag"),
+        ],
+    )
+    def test_later_occurrence_wins(self, loader: ConfargLoader, argv: list[str], expected: dict[str, Any]) -> None:
+        """A later occurrence overwrites what an earlier one wrote at its path (BUG-111, BUG-95)."""
+        assert loader.merge(_OrderInterleaved, argv=argv, env={}, config_flag="") == expected

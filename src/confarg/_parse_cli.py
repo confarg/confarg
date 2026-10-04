@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 from confarg import _defaults
 from confarg._callable import names_a_bind, names_an_opener, promote_bare_spec
@@ -34,7 +34,6 @@ from confarg._merge import (
     LIST_REPLACE_BASE_KEY,
     _accumulate_list_delete,
     _peek_nested,
-    _pop_nested,
     _set_nested,
 )
 from confarg._tags import import_tagged_classes
@@ -214,8 +213,8 @@ def _addresses_callable_key(target: Any, parts: list[str], union_tag: str) -> bo
     — the opener decides at construction, and a path does not see the opener.
 
     The adapters register a flag on this answer alone, so the caller must strip an
-    append/delete suffix first: those flags belong to the patch scan, which registers
-    them in the shape their mode demands.
+    append/delete suffix first: those flags are registered when typed, in the shape
+    their mode demands.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
@@ -236,9 +235,9 @@ def _addresses_callable_key(target: Any, parts: list[str], union_tag: str) -> bo
 def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> bool:  # noqa: PLR0911  # one early return per type case, mirroring _advance_field_type
     """Return True if the dotted path indexes a list/tuple/set or keys a dict.
 
-    Such paths (e.g. ``users.0``, ``dbs.1.port``, ``foo.bar``) are applied by the
-    argv-order patch scan (``_parse_cli(..., patch_only=True)``), not by the adapters'
-    flat collector. Pure struct-field, namedtuple, and callable paths return False.
+    Such paths (e.g. ``users.0``, ``dbs.1.port``, ``foo.bar``) are open-ended, so no
+    static walk can list them: the adapters register their flags when argv types them.
+    Pure struct-field, namedtuple, and callable paths return False.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
@@ -266,19 +265,29 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
     return False
 
 
-def _is_replayed_path(target: Any, parts: list[str], union_tag: str) -> bool:
-    """Return True if the adapters write this path through the argv-order patch scan.
+def _registered_when_typed(target: Any, parts: list[str], union_tag: str) -> bool:
+    """Return True if the adapters register this path's flag only when argv types it.
 
     A collection patch (:func:`_is_collection_patch_path`), or a union tag the walk
     reaches by its fallback (:func:`_names_tag_by_fallback`) -- whatever the parent, as
-    vanilla's tag rule answers whatever the parent. The registration of dynamic patch
-    flags and the ``patch_only`` scan both ask it, so a flag the frameworks accept is a
-    write the scan replays, in the order argv spells it.
+    vanilla's tag rule answers whatever the parent.  The static walk lists neither, so
+    the argv scan registers them, and the loop that writes the adapters' CLI channel
+    writes them as it writes any flag, in the order argv spells it.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
     """
     return _is_collection_patch_path(target, parts, union_tag) or _names_tag_by_fallback(target, parts, union_tag)
+
+
+def _path_unknown(target: Any, parts: list[str], union_tag: str) -> bool:
+    """Return True when *parts* names no node a flag can write: vanilla refuses it as unknown.
+
+    A path the walk resolves is a member; a path below a dict-typed node is a key the dict
+    takes, whatever it spells.  The delete handler, the unknown-field handler and the
+    adapters' skip of the host's own flags all ask this one question.
+    """
+    return _resolve_field_type(target, parts, union_tag) is None and not _is_dict_at_path(target, parts, union_tag)
 
 
 def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
@@ -540,16 +549,18 @@ def _normalize_eq_args(args: Sequence[str]) -> list[str]:
     return normalized
 
 
+def _in_cli_prefix(raw_key: str, cli_prefix: str) -> bool:
+    """Return True when the flag *raw_key* spells lives in the *cli_prefix* namespace."""
+    return not cli_prefix or raw_key == cli_prefix or raw_key.startswith(f"{cli_prefix}.")
+
+
 def _strip_cli_prefix(raw_key: str, cli_prefix: str, token: str) -> str:
     """Return raw_key with cli_prefix stripped, or raise UnknownArgumentError."""
     if not cli_prefix:
         return raw_key
-    dot_pfx = f"{cli_prefix}."
-    if raw_key.startswith(dot_pfx):
-        return raw_key[len(dot_pfx) :]
-    if raw_key == cli_prefix:
-        return ""
-    raise UnknownArgumentError.wrong_prefix(token, cli_prefix)
+    if not _in_cli_prefix(raw_key, cli_prefix):
+        raise UnknownArgumentError.wrong_prefix(token, cli_prefix)
+    return "" if raw_key == cli_prefix else raw_key.removeprefix(f"{cli_prefix}.")
 
 
 @functools.cache
@@ -748,8 +759,7 @@ def _handle_delete_token(
     """Apply a delete-mode flag (--foo.1- or --foo.bar-) to data."""
     if is_list_delete:
         parent_path = path[:-1]
-        ft_check = _resolve_field_type(ctx.target, path, ctx.union_tag)
-        if ft_check is None and not _is_dict_at_path(ctx.target, path, ctx.union_tag):
+        if _path_unknown(ctx.target, path, ctx.union_tag):
             raise UnknownArgumentError.not_indexable(token, parent_path)
         node: Any = ctx.data
         for _p in parent_path:
@@ -757,8 +767,7 @@ def _handle_delete_token(
         del_key = LIST_POST_APPEND_DELETE_KEY if isinstance(node, dict) and LIST_APPEND_KEY in node else LIST_DELETE_KEY
         _accumulate_list_delete(ctx.data, parent_path, delete_idx, token, delete_key=del_key)
     else:
-        ft_check = _resolve_field_type(ctx.target, path, ctx.union_tag)
-        if ft_check is None and not _is_dict_at_path(ctx.target, path, ctx.union_tag):
+        if _path_unknown(ctx.target, path, ctx.union_tag):
             raise UnknownArgumentError.no_such_field(token, path)
         # A whole-field delete ends the value at this path, so a later multi-token occurrence
         # starts a new list rather than extending the one the delete just discarded. An index
@@ -1221,15 +1230,14 @@ def _collect_config_file_pairs(
 ) -> list[tuple[str, str]]:
     """Return (subpath, mount value) pairs for ``--config[.subpath]`` flags in command-line order.
 
-    Strict about a flag whose occurrence carries no path: the frameworks argparse and
-    cyclopts take a ``nargs="*"`` flag with zero tokens, so the rescan is the only place
-    their silent nothing gets refused. Raises exactly what vanilla's parse raises, off
-    the same message builders — including the check that a subpath names a node of
-    *target*, which vanilla runs at its own interception.
+    Cyclopts' pre-parse refusal: cyclopts asserts on a ``nargs="*"`` flag with zero
+    tokens before confarg's loop ever reads argv, so a bare ``--config[.subpath]`` is
+    refused here first, raising exactly what vanilla's parse raises, off the same
+    message builders — including the check that a subpath names a node of *target*.
 
-    Takes argv with any ``cli_prefix`` already removed: the adapters strip it with
-    :func:`~confarg.cli._prefix.strip_argv_prefix` before rescanning, so this scan
-    never has to know about it.
+    Takes argv with any ``cli_prefix`` already removed
+    (:func:`~confarg.cli._prefix.strip_argv_prefix`), so this scan never has to know
+    about it.
 
     Args:
         argv: The CLI argument sequence to scan, free of any ``cli_prefix``.
@@ -1278,15 +1286,15 @@ def _skip_flag_values(argv: Sequence[str], i: int) -> int:
     return i
 
 
-def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse loop; force-cast + patch skip share one dispatch
+def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse loop, vanilla's and the adapters'
     argv: Sequence[str],
     target: Any,
     cli_prefix: str,
     config_flag: str,
     union_tag: str,
     *,
-    patch_only: bool = False,
-    patch_base: dict[str, Any] | None = None,
+    host_parsed: bool = False,
+    host_binds_run: Callable[[Any], bool] | None = None,
 ) -> tuple[dict[str, Any], list[tuple[str, str]]]:
     """Parse CLI arguments into a nested dict and a list of config file paths.
 
@@ -1296,31 +1304,28 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         cli_prefix: Required prefix for CLI flags (empty string for no prefix).
         config_flag: The flag name used to specify config files.
         union_tag: The field name used as a discriminator tag in unions.
-        patch_only: When True, only collection-patch flags (list index/append/
-            delete and dict-subkey) are processed; every other token — normal
-            struct fields, scalar roots, force-casts, config files, and stray
-            values — is skipped, and no config-file pairs are returned.  Used by
-            the CLI adapters (see :func:`_collect_cli_patch_ops`).  A skipped
-            plain flag still erases the ops this scan recorded at its path before
-            it: the flat collector's write replaces that node in vanilla's own
-            loop, so the ops die with it here too.
-        patch_base: The dict the ops will be deep-merged over, or ``None``.  Only the
-            adapters pass one: their bare-string callable shorthand was collected by
-            ``cli/_collect.py``, not by this loop, so the shorthand this loop opens on
-            behalf of a patch flag has to be opened there too (BUG-24).  Modified in
-            place.
+        host_parsed: The argv is one a host framework already parsed for an adapter,
+            beside parameters of its own.  A token the host owns -- a positional or
+            subcommand token no flag consumes, a flag outside *cli_prefix*, or, with no
+            prefix, a flag whose first segment names no member of *target* -- is
+            skipped with its values instead of refused.  Everything in confarg's
+            namespace is parsed exactly as vanilla parses it, so the adapters' CLI
+            channel is this loop's own output.
+        host_binds_run: Asked of the type a flag consumed for when the token after
+            its run is a value: True when the host bound that token to the flag (a
+            framework registering the flag greedily), so it is the stray vanilla
+            refuses rather than a positional of the host's.  ``None`` for vanilla,
+            whose own loop refuses every stray at the top.
 
     Returns:
         A tuple of (data_dict, config_files) where data_dict is the parsed
-        argument data and config_files is a list of (subpath, mount value) pairs
-        (always empty when ``patch_only`` is True).
+        argument data and config_files is a list of (subpath, mount value) pairs.
 
     Raises:
         UnknownArgumentError: If an unrecognized argument is encountered.
         ConfargError: If a config flag is missing its path argument or conflicts with a field name.
     """
-    if not patch_only:
-        _check_config_flag_conflict(target, config_flag, cli_prefix)
+    _check_config_flag_conflict(target, config_flag, cli_prefix)
     argv = _normalize_eq_args(argv)
     # Before any path resolves: a subclass named by the tag is invisible to
     # _subclass_field_type until its module has run.
@@ -1338,17 +1343,17 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     while i < len(argv):
         token = argv[i]
         if not _looks_like_flag(token):
-            if patch_only:
-                i += 1  # stray value of a skipped non-patch flag
+            if host_parsed:
+                i += 1  # a positional or subcommand token of the host's own
                 continue
             raise UnknownArgumentError.unexpected_positional(token)
 
+        if host_parsed and not _in_cli_prefix(token[2:], cli_prefix):
+            i = _skip_flag_values(argv, i)  # a flag the host registered outside the namespace
+            continue
         key = _strip_cli_prefix(token[2:], cli_prefix, token)
 
         if _addresses_key(key, config_flag):
-            if patch_only:
-                i = _skip_flag_values(argv, i)  # config files handled by the pipeline, not the patch scan
-                continue
             _check_mount_subpath(target, _config_subpath(key, config_flag), union_tag, token)
             i, new_cfgs = _consume_config_paths(argv, i, key, config_flag)
             config_files.extend(new_cfgs)
@@ -1360,28 +1365,14 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         if not append_mode and not delete_mode:
             path, force_cast = detect_force_cast(path, walk_target, union_tag)
 
-        if patch_only and force_cast is not None and not _is_replayed_path(walk_target, path, union_tag):
-            # The cast's write lands at its plain path, so the ops recorded before
-            # it there die with the node the write replaces, as they do in vanilla.
-            _pop_nested(ctx.data, path)
-            i += 1  # cast on a plain field: owned by the flat collector; its value is a stray token
-            continue
-
-        if patch_only and not delete_mode and not append_mode and not _is_replayed_path(walk_target, path, union_tag):
-            # Same replay for every plain flag: its whole-value write is what the
-            # flat collector will supply, and it ends the ops recorded before it.
-            _pop_nested(ctx.data, path)
-            i += 1  # normal field / scalar root: owned by the flat collector
+        if host_parsed and not cli_prefix and path and _path_unknown(walk_target, path[:1], union_tag):
+            i = _skip_flag_values(argv, i)  # a flag the host registered beside the confarg ones
             continue
 
         # A bare callable shorthand already stored at a prefix of this path is a spec, not
         # a stale scalar: open it so this flag refines it
         # (docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption).
-        # *patch_base* holds the adapters' half of that dict; opening both keeps the deep
-        # merge that follows from replacing the shorthand instead of joining it.
         _open_callable_shorthand(ctx.data, path, walk_target, union_tag)
-        if patch_base is not None:
-            _open_callable_shorthand(patch_base, path, walk_target, union_tag)
         _promote_namedtuple_positional(ctx.data, path, walk_target, union_tag)
 
         if delete_mode:
@@ -1427,27 +1418,9 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             continue
 
         i = _consume_typed_arg(ctx, i, token, ft, path)
+        if host_binds_run is not None and i < len(argv) and not _looks_like_flag(argv[i]) and host_binds_run(ft):
+            # The host bound the token after the run to this flag, so it is no positional of
+            # the host's: it is the stray vanilla refuses.
+            raise UnknownArgumentError.unexpected_positional(argv[i])
 
     return fold_root_json(ctx.data, root_json, union_tag), config_files
-
-
-def _collect_cli_patch_ops(
-    argv: Sequence[str],
-    target: Any,
-    config_flag: str,
-    union_tag: str,
-    patch_base: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Return the collection-patch ops in *argv* as a nested merge-op dict.
-
-    Thin wrapper over :func:`_parse_cli` in ``patch_only`` mode, used by the CLI
-    adapters: the result is deep-merged on top of the values already collected
-    from the host framework's parse result.  Hand those collected values in as
-    *patch_base* so a bare callable shorthand among them is opened before the
-    merge reaches it; the dict is modified in place.
-
-    Dev Notes:
-        docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
-    """
-    data, _ = _parse_cli(argv, target, "", config_flag, union_tag, patch_only=True, patch_base=patch_base)
-    return data

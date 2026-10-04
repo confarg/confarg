@@ -56,26 +56,17 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "does this token address a reserved name?" | `_parse_cli._addresses_key` |
 | "is this argv token a flag, or a value?" | `_parse_cli._looks_like_flag` |
 | "does this flag have its value here?" | `_parse_cli._require_value` |
-| "is this fixed-arity flag's token run exactly its run?" | `cli/_collect._require_fixed_arity` (the adapters' peer of the `_require_value` loop, which counts argv one token at a time; answers both bounds) |
-| "which token runs did argv spell for a repeated fixed-arity flag?" | `cli/_collect._fixed_arity_occurrence_runs`, read off argv — a greedy registration keeps only the surviving run |
-| "which plain-occurrence tokens survive the last whole-field delete at a path?" | `cli/_collect._tokens_past_whole_field_delete`, read off argv — a framework's parse result has the pre-delete ones folded into the value after it |
-| "how long is a fixed-arity flag's token run?" | `cli/_collect._fixed_arity_whole_value` on its first token — one for a whole value, the arity otherwise |
-| "how is an `Optional[<sequence>]` field's flag value shaped?" | `cli/_collect._collect_ns_optional_seq` — the union shaper `_collect_union_seq_value`, asked of the resolved union as vanilla's `_union_seq_value` is |
-| "what did argv's occurrences of a union-seq flag write, and which bare one was a missing value?" | `cli/_collect._union_seq_occurrence_writes`, read off argv — the accumulation each occurrence joins, the whole-value blob that never joins it, the delete that ends it, and the bare occurrence the shaper refuses on an empty accumulation |
 | "what does an op recorded below a node do with what it finds there?" | `_merge._descend_creating` — the one descent `_set_nested` and `_accumulate_list_delete` share: a plain list becomes the `'*'` base, any other non-dict (a scalar, a whole-field delete's sentinel) is replaced, a negative index enters an appended item (BUG-77) |
 | "how does a sub-flag write re-key a namedtuple's positional list?" | `_parse_cli._promote_namedtuple_positional` (field names, unlike the `'*'` base `_set_nested` gives a varlen collection) |
-| "which keys does a namedtuple's sub-flag collection keep?" | `cli/_collect._namedtuple_sub_flags` — the keys as spelled, name and index alike; the win belongs to construction |
-| "which of a namedtuple's fields does a deep path reach, and who collects it?" | `cli/_collect._namedtuple_deep_fields` (which — a struct-shaped field, however wrapped) / `cli/_collect._collect_field` (the collector — the one per-field dispatch, shared with a struct's own fields) |
-| "which of a bare flag and its sub-flags is the latest writer?" | `cli/_collect._arity_flag_writes_last`, read off argv (`_last_flag_occurrence` is the occurrence-index reader it and the conflict stores descend from) — the namedtuple's arity flag (BUG-66) and the bare value at a struct, registered-leaf or union field (BUG-85) |
-| "does a scalar cast land on a plain leaf field (registration)?" | `cli/_build._scalar_cast_parent_is_leaf` — the leaf answer mirrors the collector's dispatch, so the frameworks never accept a cast flag the collector drops |
-| "which scalar spelling of a leaf field wrote last — the plain flag or a cast?" | `cli/_collect._last_leaf_cast_spelling`, read off argv — vanilla writes the occurrences sequentially and only the survivor's pin coerces |
-| "which occurrence of a repeated fixed-arity flag reaches the collector, on cyclopts?" | `cli/cyclopts/_register._last_occurrence_convert`, read off the `CliToken` index |
+| "does a scalar cast land on a plain leaf field (registration)?" | `cli/_build._scalar_cast_parent_is_leaf` |
 | reserved-name shadowing | `_parse_cli._check_reserved_key_conflict` |
 | locals namespace names | `_parse_cli._locals_keys_at` |
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |
-| "does the adapters' patch scan write this path, and so register its flag when typed?" | `_parse_cli._is_replayed_path` — a collection patch, or a tag the walk reaches by its fallback, whatever the parent (BUG-106) |
-| "which patch ops does a plain flag occurrence supersede?" | `_merge._pop_nested`, replayed at the patch scan's skip sites |
-| "what does a collected list meet when a patch op addresses it?" | `cli/_collect._promote_patched_lists` — the promotion vanilla's own descent makes: a namedtuple run re-keyed by field name through `_parse_cli._promote_namedtuple_positional`, any other list into the `'*'` base of the op dict |
+| "who writes the adapters' CLI channel and its `--config` files?" | `_parse_cli._parse_cli(..., host_parsed=True)` — vanilla's loop over the argv the framework parsed, skipping only the host's own tokens (REF-72); the parse result is only checked against argv, by `cli/_collect._require_argv_spells` |
+| "would vanilla refuse this path as unknown?" | `_parse_cli._path_unknown` — the delete handler, and the host-mode skip of a flag whose first segment names no member |
+| "did the host bind the token after a flag's run to that flag?" | `cli/_build._binds_a_run`, asked by the loop only for a framework that varies a flag's token count (argparse, cyclopts: `binds_runs`) |
+| "which flags does argv spell?" | `cli._argv.spelled_flag_names` |
+| "does the static walk leave this path's flag to be registered when typed?" | `_parse_cli._registered_when_typed` — a collection patch, or a tag the walk reaches by its fallback, whatever the parent (BUG-106) |
 | "does this field take a whole `{…}` token?" | `_parse_cli._accepts_object_value` |
 | "is this a whole-value inline JSON array?" | `_parse_cli._lone_json_array` |
 | what a multi-token flag's accumulated tokens hold | `_parse_cli._varlen_value` / `_union_seq_value` |
@@ -83,19 +74,15 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | the dict form a bare callable string abbreviates | `_callable.promote_bare_spec` |
 | "how many positional tokens, of which types?" | `_types._fixed_seq_types` |
 | "is this variant sequence-shaped?" | `_types._is_seq_variant` |
-| "which index spellings does an n-field namedtuple register and accept?" | `_parse_cli._namedtuple_index_spellings` — the one source for `str(i)` and `str(i - n)`, so no odd form (`-0`, `+N`, `007`) slips through (BUG-97); the walk looks a spelling up in it, and the registration and collector sites list a field's keys through its per-position view `_namedtuple_position_spellings` |
-| "which struct does a class tag name, if any?" | `cli/_collect._tag_named_struct` — the collector's two tag branches and the argparse completion pre-extend |
+| "which index spellings does an n-field namedtuple register and accept?" | `_parse_cli._namedtuple_index_spellings` — the one source for `str(i)` and `str(i - n)`, so no odd form (`-0`, `+N`, `007`) slips through (BUG-97); the walk looks a spelling up in it, and registration lists a field's keys through its per-position view `_namedtuple_position_spellings` |
+| "which struct does a class tag name, if any?" | `cli/_collect._tag_named_struct` — the argparse completion pre-extend |
 | "which flat tagged-leaf flags (`--<leaf>.class`, `--<leaf>.<param>`) does argv spell?" | `cli/_build._collect_leaf_tag_argv_specs`, accepting exactly what `_parse_cli._resolve_field_type` accepts |
 | "is this segment the union tag, reached by the walk's fallback?" | `_parse_cli._names_tag_by_fallback` — the walk asked with and without its tag rule (`_resolve_field_type(..., tag_fallback=False)`) |
-| "write a class tag back, then descend into the struct it names and the path's other variants" | `cli/_collect._collect_named_variant` (the tag first, the import after, the siblings last) |
-| "descend into every variant a path holds, each in its own guard" | `cli/_collect._collect_variant_fields` — the named variant's siblings, a union field's variants, and a base class's subclasses with no tag (BUG-83); a flag the variants own with disagreeing types is collected before the walks, once, as vanilla's raw-token answer (BUG-84) |
-| "does the walk answer this struct member from the subclasses?" | `_types._answered_by_subclasses` — only a name the struct does not declare; a declared field keeps its own annotation however a subclass overrides it. Vanilla's `_advance_field_type` asks it of a segment; the collector's subclass walks and registration's subclass recursion ask its path form `_types._base_declares_path` of a flag path (BUG-86) |
-| "which flags do several variants own with disagreeing types?" | `cli/_collect._disagreeing_owner_flags` — vanilla's per-variant resolution, the common type when every owner agrees and `str` when they do not |
+| "does the walk answer this struct member from the subclasses?" | `_types._answered_by_subclasses` — only a name the struct does not declare; a declared field keeps its own annotation however a subclass overrides it. Vanilla's `_advance_field_type` asks it of a segment; registration's subclass recursion asks its path form `_types._base_declares_path` of a flag path (BUG-86) |
 | reconciling a registered `cli_prefix` with one passed to `merge_*` | `cli._prefix.resolve_prefix` |
 | "does this argv flag occurrence carry an item?" | `cli._argv._bare_occurrence` |
 | "which argv tokens does a host framework parse?" | `cli._argv.drop_bare_occurrences` |
 | "does this field's flag consume many tokens, and so stand bare?" | `cli._build._takes_multi_tokens` |
-| "which flags did the framework never see, and what did they mean?" | `cli._argv.bare_only_flag_names` (which) / `cli._collect._bare_multi_token_flags` (what) |
 | "which bare occurrence is a missing value, refused before the framework parses?" | `cli._argv.refuse_bare_occurrences`, off `FlagSpec.refuses_bare` — set by the same `_fixed_seq_types(resolved)` gate that arms the fixed-arity guard |
 | plain vs escaped callable directives | `_callable.active_directives` |
 | single-value (scalar/type-ref) construction | `_construct._construct_scalar` |
@@ -133,9 +120,11 @@ reinterpreted. Tokens never leak into dumps or error messages
 
 ## Adapter output equals vanilla output
 
-An adapter's merged dict is byte-identical to `confarg.merge()`'s for the same input; new
-collection logic goes into `cli/_collect.py` mirroring the vanilla decision
-([CLI adapters](cli-adapters/parity.md#byte-identical-merged-dicts)).
+An adapter's merged dict is byte-identical to `confarg.merge()`'s for the same input, key order
+included. The adapters' CLI channel is vanilla's loop over argv and nothing else: a rule the CLI
+needs goes into that loop, never into a second writer over the framework's parse result
+([CLI adapters](cli-adapters/model.md#argv-is-the-only-writer),
+[parity](cli-adapters/parity.md#byte-identical-merged-dicts)).
 
 ## Fragile couplings
 
@@ -159,12 +148,12 @@ collection logic goes into `cli/_collect.py` mirroring the vanilla decision
 - Completion and dynamic flag registration never raise
   ([CLI adapters](cli-adapters/completion.md#completion)).
 - `FlagSpec.stands_bare` is set on what `cli._build._takes_multi_tokens` names, plus the
-  append flag. A bare occurrence of such a flag never reaches the framework's parse result, so
-  marking anything else needs a reader for what the dropped token meant — or the information
-  is gone ([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)).
-- `FlagSpec.refuses_bare` is set by the same `_fixed_seq_types(resolved)` gate that arms
-  `cli/_collect._require_fixed_arity`, asked without unwrapping `Optional`, so the pre-parse
-  refusal and the collector's guard cannot disagree about which flags are fixed-arity
+  append flag. A bare occurrence of such a flag never reaches the framework's parse result,
+  which is safe only because the CLI channel is read off the argv the user typed
+  ([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)).
+- `FlagSpec.refuses_bare` is set by the `_fixed_seq_types(resolved)` gate, asked without
+  unwrapping `Optional` — the type vanilla's loop dispatches on — so the pre-parse refusal and
+  the loop cannot disagree about which flags are fixed-arity
   ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)).
 - `import_tagged_classes` runs before anything reads `__subclasses__()` — before the static
   type walk in `build_static_flags`, before path resolution in `_parse_cli`, and at the start of

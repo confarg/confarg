@@ -31,13 +31,11 @@ Three spellings therefore clear a list, and they are not interchangeable:
 `--f-` is the only one every front-end spells, because a delete registers value-less. It also ends
 the list being built, so it resets the token accumulation: `--f x --f- --f a` is `['a']`, not
 `['x', 'a']`. An *index* delete (`--f.1-`) is a patch inside the list and leaves the accumulation
-alone. The adapters honor the same order: their scan erases the ops a plain occurrence supersedes
-([CLI adapters](../cli-adapters/collection-patch-parity.md#a-plain-occurrence-erases-the-ops-before-it)), so there too
-`--f- --f a` is `['a']`, and their collector drops the pre-delete tokens the frameworks
-accumulated into one value
-([CLI adapters](../cli-adapters/collection-patch-parity.md#a-whole-field-delete-ends-the-token-accumulation)),
-so there too `--f x --f- --f a` is `['a']`.
+alone. The adapters' CLI channel is this same loop over the same argv
+([CLI adapters](../cli-adapters/model.md#argv-is-the-only-writer)), so there too
+`--f x --f- --f a` is `['a']`.
 
 `_is_collection_patch_path` answers "does this path index a list/tuple/set or key a dict?".
-It is the dividing line between what a framework's flat parse result can represent and what
-needs the argv-order patch scan ([CLI adapters](../cli-adapters/collection-patch-parity.md#collection-patch-parity)).
+It is the dividing line between the flags a static walk can register and the ones the adapters
+register only when argv types them
+([CLI adapters](../cli-adapters/collection-patch-parity.md#collection-patch-parity)).

@@ -55,13 +55,9 @@ class FlagSpec:
     fixed-arity field's flag is the second kind, since its resolved type is a union
     with a sequence variant).  A framework that cannot express a flag taking zero *or*
     more tokens parses an argv with this flag's bare occurrences removed
-    (:func:`~confarg.cli._argv.drop_bare_occurrences`), so what a dropped occurrence
-    meant is read back off the original argv: the patch scan honors the append, the
-    subkey and the element, :func:`~confarg.cli._collect._bare_multi_token_flags`
-    restores a field flag's clear, and
-    :func:`~confarg.cli._collect._union_seq_occurrence_writes` replays a multi-token
-    union flag's occurrences, refusing the bare one that met an empty accumulation.
-    Marking a flag with no such reader loses what the user typed.
+    (:func:`~confarg.cli._argv.drop_bare_occurrences`).  Nothing is lost: the adapters'
+    CLI channel is written by vanilla's loop over the original argv, which reads the
+    bare occurrence exactly as vanilla does.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare

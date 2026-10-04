@@ -347,8 +347,9 @@ class TestFromNamespaceUnionDispatch:
             config_flag="config",
             argv=[f"--db.class={module}._ServerDB"],
         )
-        ns = parser.parse_args([f"--db.class={module}._ServerDB", "--db.host=pg.example.com", "--db.port=9999"])
-        result = from_namespace(_AppConfig, ns, env={})
+        argv = [f"--db.class={module}._ServerDB", "--db.host=pg.example.com", "--db.port=9999"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(_AppConfig, ns, argv=argv, env={})
         assert isinstance(result.db, _ServerDB)
         assert result.db.host == "pg.example.com"
         assert result.db.port == 9999
@@ -365,8 +366,9 @@ class TestFromNamespaceUnionDispatch:
             config_flag="config",
             argv=[f"--db.class={module}._SQLiteDB"],
         )
-        ns = parser.parse_args([f"--db.class={module}._SQLiteDB", "--db.dbpath=/data/mydb.sqlite"])
-        result = from_namespace(_AppConfig, ns, env={})
+        argv = [f"--db.class={module}._SQLiteDB", "--db.dbpath=/data/mydb.sqlite"]
+        ns = parser.parse_args(argv)
+        result = from_namespace(_AppConfig, ns, argv=argv, env={})
         assert isinstance(result.db, _SQLiteDB)
         assert result.db.dbpath == "/data/mydb.sqlite"
 

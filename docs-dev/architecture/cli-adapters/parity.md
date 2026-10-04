@@ -2,22 +2,18 @@
 
 ## Byte-identical merged dicts
 
-Adapters must produce the same merged dict as vanilla, byte for byte (the contract suite
-checks it). Therefore `_collect.py` mirrors vanilla decisions exactly: eager leaf coercion
-through `_try_coerce`; single-element lists for scalar+sequence unions collapse to
-`_UnionSeqToken`; a lone JSON-array token is decoded with vanilla's `_try_parse_json_list`
-and stored raw; scalar casts via `_cast.resolve_forced_value`; callable specs keyed by the
-active directive names from `_callable.active_directives`; root `--json` folded under
-fields by `apply_root_json`. Without eager coercion, CLI numbers stayed strings and
-`${base * 3}` failed (fixed in PR #99).
+Adapters must produce the same merged dict as vanilla, byte for byte — values, and the key order
+a dump serializes (the contract suite checks both; `TestMergedKeyOrderContract` compares the
+serialized dict, since dict equality ignores order). They do so by construction: the CLI channel
+is written by vanilla's own loop over the argv the framework parsed
+([argv is the only writer](model.md#argv-is-the-only-writer)), so eager leaf coercion, the
+union shapers, the casts, the callable openers, the root `--json` fold and the order occurrences
+override each other in are vanilla's code, not a mirror of it.
 
-When no union tag is given, the collector collects the fields of **all** struct variants so
-structural inference in `construct` can pick one.
-
-A flag several variants own with different types is collected once, as vanilla collects it —
-the common type when every owner agrees, the raw token when they disagree, never one variant's
-coercion (BUG-84)
-([unions](union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags)).
+Until REF-72 `_collect.py` mirrored each of those decisions over the framework's parse result,
+and the mirror drifted one decision at a time: CLI numbers stayed strings until eager coercion
+was mirrored (PR #99), several variants' flag was coerced by the last walk (BUG-84), and the keys
+followed the walk rather than argv (BUG-87).
 
 ## Expression-tolerant choice gates
 

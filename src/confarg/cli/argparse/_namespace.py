@@ -42,9 +42,12 @@ def merge_namespace(  # noqa: PLR0913
     Args:
         target: The dataclass type to construct.
         ns: The Namespace returned by ``ArgumentParser.parse_args()``.
-        argv: CLI argument list used to determine config-file loading order.
+        argv: The argument list ``parse_args()`` parsed: the CLI values,
+            patches and ``--config`` files are read from it, in its order.
             Defaults to ``sys.argv[1:]``.  Pass an explicit list when
-            ``parse_args()`` was called with a custom argv.
+            ``parse_args()`` was called with a custom argv; a namespace holding a
+            confarg flag *argv* does not spell raises
+            :class:`~confarg.exceptions.ConfargError`.
         env: Environment variable mapping.  Defaults to ``os.environ``.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,
@@ -88,6 +91,7 @@ def merge_namespace(  # noqa: PLR0913
         files=files,
         env_config=env_config,
         union_tag=union_tag,
+        binds_runs=True,
     )
 
 
@@ -119,9 +123,12 @@ def from_namespace(  # noqa: PLR0913
     Args:
         target: The dataclass type to construct.
         ns: The Namespace returned by ``ArgumentParser.parse_args()``.
-        argv: CLI argument list used to determine config-file loading order.
+        argv: The argument list ``parse_args()`` parsed: the CLI values,
+            patches and ``--config`` files are read from it, in its order.
             Defaults to ``sys.argv[1:]``.  Pass an explicit list when
-            ``parse_args()`` was called with a custom argv.
+            ``parse_args()`` was called with a custom argv; a namespace holding a
+            confarg flag *argv* does not spell raises
+            :class:`~confarg.exceptions.ConfargError`.
         env: Environment variable mapping.  Defaults to ``os.environ``.
             Pass ``{}`` to disable env-var reading.
         env_prefix: Prefix that env vars must start with. Defaults to ``None``,

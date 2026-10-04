@@ -46,7 +46,8 @@ Four costs decide it against:
 - The canonical decision spreads. Today it is `_parse_cli._addresses_key`: a string test that needs
   no type, read at two sites, running *before* field lookup. A suffix needs `detect_force_cast`'s
   shape — resolve the parent, then ask real-field-wins — and five readers would have to agree on
-  it: vanilla, env, `cli/_collect.py`, the lenient `_collect_config_file_pairs`, and completion.
+  it: vanilla, env, the adapters' collector, the lenient `_collect_config_file_pairs`, and
+  completion (the collector has since given way to vanilla's own loop, REF-72).
 - Two new precedence rules with nothing to copy: `.config` against a trailing `.json` cast, and
   where `+` attaches. `--servers.config+` reads as "append at `servers.config`", which is not what
   it means, and no combined cast-plus-append spelling exists to follow.

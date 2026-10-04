@@ -26,12 +26,10 @@ user typed, found by scanning argv (and config files named on argv):
 - the typed scalar cast flags on plain leaf fields (`--host.str`, BUG-72), registered only
   when typed on the same help-noise ground as `.json`: the leaf's own flag is the ordinary
   spelling, and one flag per castable type would clutter `--help` for an escape hatch. The
-  leaf answer (`_scalar_cast_parent_is_leaf`) mirrors the collector's dispatch, so the host
-  framework never accepts a cast flag the collector drops — struct, collection, dict,
-  callable and registered-leaf parents keep their own spellings and their cast spelling stays
-  refused. Which spelling wrote last, the plain flag or a cast, is read off argv
-  (`_last_leaf_cast_spelling`), because vanilla writes the occurrences sequentially and only
-  the survivor's pin coerces;
+  leaf answer is `_scalar_cast_parent_is_leaf`: struct, collection, dict, callable and
+  registered-leaf parents keep their own spellings and their cast spelling stays refused
+  (BUG-93). Which spelling wrote last, the plain flag or a cast, is vanilla's loop's answer,
+  since it writes the occurrences sequentially;
 - the flat tagged-leaf flags typed below a registered leaf field (`--id.class`,
   `--id.hex`, BUG-56), or below a registered leaf that *is* the target — the root, with
   no field to descend from, is the leaf at the empty prefix of the path (BUG-71) —
@@ -78,13 +76,11 @@ made the five front-ends disagree — the flag is the adapter's to accept and th
 construction's to judge, so the user hears the real complaint (`Unknown kwargs [...]`,
 `must specify one of 'fn', 'class', or 'call'`) instead of `unrecognized arguments`.
 
-One predicate for the whole subtree needs the *collector* to read the whole subtree, which is
-the other half of BUG-28: `_collect_callable_spec` used to gather sibling `--<field>.<param>`
-flags only when an opener was present, so registering them alone would have dropped their
-values silently instead. It now gathers them unconditionally, as the vanilla parser has always
-written them — the opener decides what a key *means*, never whether it is stored.
+The values are vanilla's loop's to write, and it has always written every key below a
+callable field — the opener decides what a key *means*, never whether it is stored. (The other
+half of BUG-28 was the adapters' own collector, which gathered sibling `--<field>.<param>` flags
+only when an opener was present.)
 
 The predicate answers about a *path*, so the caller strips an append/delete suffix before
-asking. Those flags belong to the patch scan, which registers each in the shape its mode
-demands; claiming `--f.bind.<key>-` here registered a value-less delete as if it took an
+asking. Those flags are registered by the patch-flag scan, in the shape their mode demands; claiming `--f.bind.<key>-` here registered a value-less delete as if it took an
 argument (BUG-29).

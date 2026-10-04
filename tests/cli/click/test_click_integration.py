@@ -403,3 +403,23 @@ class TestCliPrefixClick:
         """A prefix disagreeing with the registered one fails loudly, not silently."""
         with pytest.raises(confarg.exceptions.ConfargError, match="cli_prefix mismatch"):
             self._run(["--app.host", "h"], cli_prefix="cfg")
+
+
+class TestArgvIsTheParsedArgvClick:
+    """The CLI channel is read off argv, so a context argv does not spell is refused."""
+
+    def test_context_argv_does_not_spell_raises(self) -> None:
+        """CliRunner's args are not sys.argv: a merge left to default names the flag it would lose."""
+        errors: list[Exception] = []
+
+        @click.command()
+        def cmd(**kwargs: Any) -> None:
+            try:
+                confargclick.from_context(Simple, click.get_current_context(), argv=[], env={}, config_flag="")
+            except confarg.exceptions.ConfargError as exc:
+                errors.append(exc)
+
+        populate_command(Simple, cmd, config_flag="", argv=["--host", "h"])
+        CliRunner().invoke(cmd, ["--host", "h"], catch_exceptions=False)
+        assert len(errors) == 1
+        assert "holds '--host', which argv does not spell" in str(errors[0])

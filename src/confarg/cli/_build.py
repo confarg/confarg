@@ -135,15 +135,28 @@ def _takes_multi_tokens(tp: Any) -> bool:
     return _is_varlen_collection(tp) or _union_has_seq_variant(tp)
 
 
+def _binds_a_run(tp: Any) -> bool:
+    """Return whether a framework that varies a flag's token count binds a run to *tp*'s flag.
+
+    Argparse and cyclopts register a multi-token flag (:func:`_takes_multi_tokens`) and a
+    fixed-arity one (``FlagSpec.whole_value``, which needs a variable token count) greedily,
+    so every token up to the next flag is the flag's; click and typer bind the exact count.
+    Vanilla's loop asks it of the type it consumed for, to tell a stray it refuses from a
+    positional of the host's own.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/model.md#the-quartet
+    """
+    return _takes_multi_tokens(tp) or _fixed_seq_types(tp) is not None
+
+
 def _scalar_cast_parent_is_leaf(parent: Any) -> bool:
     """Return whether a scalar force-cast lands on a plain leaf field (BUG-72).
 
     The registration half of the plain-field cast contract: vanilla's
     :func:`~confarg._parse_cli.detect_force_cast` accepts a scalar cast wherever the
     trailing segment names no real member of the parent type, and a plain leaf has
-    no members, so the cast flags are the leaf's to take.  The predicate mirrors the
-    collector's dispatch — the leaf branch is the one that honours the cast override —
-    so every flag the framework accepts is one the collector reads.  The parents that
+    no members, so the cast flags are the leaf's to take.  The parents that
     answer False keep their own spellings: a struct's or namedtuple's sub-flags, a
     collection's element indices, a dict's keys, a callable's openers, a registered
     leaf's tag hatch, and a multi-variant union, whose cast flags are registered
@@ -1388,8 +1401,8 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
     Scans for list index/append/delete and dict-subkey flags
     (``--field.N``, ``--field+``, ``--field.N-``, ``--field.key``) whose dotted
     path the *target* type confirms reaches a list, tuple, set, or dict, plus ``.json``
-    casts.  Their values are read later from argv by ``_parse_cli`` in ``patch_only``
-    mode.  Delete flags register value-less (``nargs=0``); an append registers
+    casts.  Their values are written from argv by ``_parse_cli``, like every flag's.
+    Delete flags register value-less (``nargs=0``); an append registers
     ``nargs="*"`` and ``stands_bare``, since it takes zero *or* more items, and a subkey or
     element flag inherits ``stands_bare`` from the type it addresses -- multi-token when a
     field flag of that type would be (``--map.k`` on a ``dict[str, list[int]]``).
@@ -1400,12 +1413,12 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import (  # noqa: PLC0415
         _addresses_key,
-        _is_replayed_path,
         _locals_keys,
         _looks_like_flag,
         _names_tag_by_fallback,
         _normalize_eq_args,
         _parse_flag_mode,
+        _registered_when_typed,
         _resolve_field_type,
         _walk_target,
         detect_force_cast,
@@ -1437,13 +1450,11 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
                     FlagSpec(name=key, metavar="JSON", help=f"Parse the value as JSON for {target_desc}."),
                 )
                 continue
-            if force_cast and not _is_replayed_path(target, path, union_tag):
+            if force_cast and not _registered_when_typed(target, path, union_tag):
                 # A scalar cast on a plain leaf field (--host.str): registered only
-                # when typed, like `.json`, so `--help` stays clean (BUG-72). The
-                # leaf answer mirrors the collector's dispatch, so the value the
-                # framework hands over is one the collector reads. Struct,
+                # when typed, like `.json`, so `--help` stays clean (BUG-72). Struct,
                 # collection, dict, callable and registered-leaf parents keep their
-                # own spellings, and their cast spelling stays refused.
+                # own spellings, and their cast spelling stays refused (BUG-93).
                 at = _resolve_field_type(target, path, union_tag)
                 if at is not None and _scalar_cast_parent_is_leaf(at):
                     seen.add(key)
@@ -1457,7 +1468,7 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
                 continue
             # else: cast on a collection element (--field.N.str) falls through to
             # dynamic collection-patch registration below.
-        if not (delete_mode or append_mode or _is_replayed_path(target, path, union_tag)):
+        if not (delete_mode or append_mode or _registered_when_typed(target, path, union_tag)):
             continue
         seen.add(key)
         target_path = ".".join(path)
