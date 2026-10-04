@@ -2247,6 +2247,27 @@ class TestCliPrefixContract:
         """``--<prefix>.json`` sets a non-struct root, as vanilla's root cast does."""
         assert loader.load(int, argv=["--app.json", "42"], env={}, cli_prefix="app", config_flag="") == 42
 
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            (["--app", "3", "--app.json", "4"], 4),
+            (["--app.json", "4", "--app", "3"], 3),
+            (["--app=3", "--app.json=4"], 4),
+        ],
+    )
+    def test_scalar_root_last_of_plain_and_json_cast_wins(
+        self,
+        loader: ConfargLoader,
+        argv: list[str],
+        expected: int,
+    ) -> None:
+        """Of ``--<prefix>`` and ``--<prefix>.json`` on a scalar root, the last typed wins (REF-44).
+
+        The root's two spellings write one value, as a field's plain flag and its casts do:
+        the adapters once let the plain flag win whatever the order.
+        """
+        assert loader.load(int, argv=argv, env={}, cli_prefix="app", config_flag="") == expected
+
     def test_scalar_root_json_cast_list(self, loader: ConfargLoader) -> None:
         """A root ``.json`` cast builds a whole collection root from one token."""
         got = loader.load(list[int], argv=["--app.json", "[1, 2]"], env={}, cli_prefix="app", config_flag="")
@@ -4457,6 +4478,18 @@ class TestEnvJsonCastContract:
             env_prefix="MYAPP_",
         )
         assert cfg.db == Simple(host="cli", port=1)
+
+    @pytest.mark.parametrize(
+        "env",
+        [{"MYAPP_": "3", "MYAPP_JSON": "4"}, {"MYAPP_JSON": "4", "MYAPP_": "3"}],
+    )
+    def test_env_scalar_root_plain_var_beats_root_json(self, loader: ConfargLoader, env: dict[str, str]) -> None:
+        """On a scalar root the plain variable wins over ``<PREFIX>JSON`` whatever the dict order.
+
+        The environment has no order for "last typed wins" to read, so the plain value
+        refines the cast as a per-field variable refines it on a struct root (REF-44).
+        """
+        assert loader.load(int, argv=[], env=env, env_prefix="MYAPP_") == 3
 
     def test_env_root_real_json_field_wins(self, loader: ConfargLoader) -> None:
         """A real root field named ``json`` is addressed as a field, not a cast."""

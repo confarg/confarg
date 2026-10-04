@@ -21,6 +21,14 @@ bypassing the type-directed coercion (notably the stealing rule,
   flags refine it); with several `--json`, the later wins. At the root only `--json` is a
   cast; scalar casts have nothing to attach to. The environment has the same root form,
   `<PREFIX>JSON` ([environment parsing](../environment-parsing.md#environment-parsing)).
+  The fold is one function, `_cast.fold_root_json`, that all three channels call (REF-44).
+- On a **scalar** root there are no fields to fold under: `--<prefix>` and `--<prefix>.json`
+  are two spellings of one value, so the rule above for a field and its casts applies, and
+  the last one typed wins. The adapters read that order back off the raw argv
+  (`cli/_collect.apply_root_json`), because the bare flag is the prefix itself. That is
+  also how argparse and click treat a dest given twice. Letting the plain value always
+  win was rejected: it borrows the struct root's "fields refine the object" rule where
+  there is nothing to refine, and it contradicts the per-field rule.
 
 ## Real field wins
 

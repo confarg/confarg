@@ -52,6 +52,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "what exact spelling does an env segment resolve to?" | `_parse_env._match_env_part` — a member case-insensitively, then the union tag by its own spelling, lowercase otherwise |
 | "does this mount subpath name a node of the target?" | `_parse_cli._check_mount_subpath` |
 | "is this a cast, and which?" | `_parse_cli.detect_force_cast` (whether) / `_cast` (what) |
+| "how do the objects a root `json` cast decoded meet the fields?" | `_cast.fold_root_json` — vanilla's `--json`, the adapters' `apply_root_json` and the environment's `<PREFIX>JSON` (REF-44) |
 | "does this token address a reserved name?" | `_parse_cli._addresses_key` |
 | "is this argv token a flag, or a value?" | `_parse_cli._looks_like_flag` |
 | "does this flag have its value here?" | `_parse_cli._require_value` |

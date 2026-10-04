@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._callable import names_a_bind, names_an_opener, promote_bare_spec
-from confarg._cast import FORCE_CAST_NAMES, JSON_CAST_NAME, resolve_forced_value
+from confarg._cast import FORCE_CAST_NAMES, JSON_CAST_NAME, fold_root_json, resolve_forced_value
 from confarg._merge import (
     DICT_DELETE,
     LIST_APPEND_KEY,
@@ -33,7 +33,6 @@ from confarg._merge import (
     LIST_POST_APPEND_DELETE_KEY,
     LIST_REPLACE_BASE_KEY,
     _accumulate_list_delete,
-    _deep_merge,
     _peek_nested,
     _pop_nested,
     _set_nested,
@@ -910,8 +909,10 @@ def _handle_root_cast(  # noqa: PLR0913  # each arg carries distinct root-placem
 
     For a struct/union root the decoded object must be a JSON object; it is collected
     into ``root_json`` and folded in as a base (so per-field CLI flags win) once the
-    whole argv is parsed.  For a scalar root the decoded value is stored under
-    ``__root__``.  Invalid JSON raises via :func:`resolve_forced_value`.
+    whole argv is parsed by :func:`~confarg._cast.fold_root_json`.  For a scalar root the
+    decoded value is stored under ``__root__``, written in argv order like the bare
+    ``--<cli_prefix>`` flag, so of the two the last typed wins.  Invalid JSON raises via
+    :func:`resolve_forced_value`.
     """
     i += 1
     _require_value(args, i, token, "'<json>'")
@@ -1427,13 +1428,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
 
         i = _consume_typed_arg(ctx, i, token, ft, path)
 
-    if root_json:
-        base: dict[str, Any] = {}
-        for obj in root_json:
-            base = _deep_merge(base, obj, union_tag=union_tag)  # a later `--json` wins over an earlier one
-        ctx.data = _deep_merge(base, ctx.data, union_tag=union_tag)  # per-field CLI flags win over `--json`
-
-    return ctx.data, config_files
+    return fold_root_json(ctx.data, root_json, union_tag), config_files
 
 
 def _collect_cli_patch_ops(
