@@ -168,6 +168,16 @@ class TestDocumentRootReferences:
         cfg = write(tmp_path, "app.yaml", f"name: myapp\ndb:\n  {INCLUDE_KEY}: ./db.yaml\n")
         assert confarg.load(Cfg, argv=["--config", str(cfg)], env={}).db.host == "myapp-db"
 
+    @pytest.mark.parametrize("body", ["items[(::step)]", "items[(::sel).k]"])
+    def test_a_root_reference_inside_a_subscript_survives_the_mount(self, tmp_path: Path, body: str) -> None:
+        """Mounting keeps the parentheses that make ``::`` a marker, not a slice step (BUG-138)."""
+        write(tmp_path, "db.yaml", f"items:\n  a: 7\np: ${{{body}}}\n")
+        cfg = write(tmp_path, "app.yaml", f"step: a\nsel:\n  k: a\ndb:\n  {INCLUDE_KEY}: ./db.yaml\n")
+        merged = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
+        # Once every file is mounted the root marker is dropped, its parentheses kept.
+        assert merged["db"]["p"] == "${db." + body.replace("::", "") + "}"
+        assert confarg.resolve(merged)["db"]["p"] == 7
+
     def test_bare_reference_cannot_reach_out(self, tmp_path: Path) -> None:
         """Without the marker the same name is looked for inside the fragment."""
         write(tmp_path, "db.yaml", "host: ${name}-db\nport: 1\n")
@@ -294,6 +304,14 @@ class TestAMountPathIsSpelledSegmentBySegment:
         data = confarg.merge(dict[str, Any], argv=["--config.a", str(mid)], env={})
         assert data == {"a": {"web-1": {"p": 1, "q": "${a['web-1'].p}"}}}
         assert confarg.resolve(data) == {"a": {"web-1": {"p": 1, "q": 1}}}
+
+    def test_a_root_key_inside_a_subscript_stays_a_root_reference(self, tmp_path: Path) -> None:
+        """The ``::`` a root segment hangs off is parenthesized inside brackets, as a slice it is not (BUG-138)."""
+        write(tmp_path, "frag.yaml", "k: a\nitems:\n  a: 7\np: ${items[k]}\n")
+        cfg = write(tmp_path, "app.yaml", f"web-1:\n  {INCLUDE_KEY}: ./frag.yaml\n")
+        data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
+        assert data["web-1"]["p"] == "${::['web-1'].items[(::)['web-1'].k]}"
+        assert confarg.resolve(data)["web-1"]["p"] == 7
 
     def test_a_user_root_marker_is_not_prefixed(self, tmp_path: Path) -> None:
         """Only bare references move with the mount; ``::`` still names the configuration root."""

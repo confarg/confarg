@@ -1284,18 +1284,68 @@ class _Unnamer(ast.NodeTransformer):
     The marker carries its own dot, so the attribute's would be one too many: ``...host``.
     A path :class:`_AnchorResolver` resolved is visited as the node it was written as, so
     it folds the same way.
+
+    A root marker whose innermost enclosing bracket is a ``[`` is written in parentheses
+    (``items[(::step)]``), since there :func:`_anchor_markers` reads ``::`` as a slice step:
+    its rule, run the other way. The brackets are those :func:`ast.unparse` writes, so a
+    parenthesis it adds for precedence alone is not counted, and may enclose one more.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/reference-anchoring.md#implementation-constraints
     """
+
+    def __init__(self) -> None:
+        #: Whether the innermost bracket written around the node visited is a ``[``.
+        self._in_square = False
 
     def visit(self, node: ast.AST) -> Any:
         """Visit the node *node* was written as, which is *node* unless the resolver made it."""
         return super().visit(getattr(node, _WRITTEN, node))
 
+    def _visit_within(self, node: ast.AST, *, square: bool) -> Any:
+        """Visit *node* inside a bracket, a ``[`` when *square*, else a ``(`` or a ``{``."""
+        outer, self._in_square = self._in_square, square
+        try:
+            return self.visit(node)
+        finally:
+            self._in_square = outer
+
+    def _marker(self, stand_in: str, segment: str, node: ast.expr) -> ast.Name:
+        """Spell the marker *stand_in* stands for then *segment* as one name, in place of *node*."""
+        text = stand_in + segment
+        if self._in_square and _anchor_dot_count(stand_in) == 0:
+            text = f"({text})"
+        return ast.copy_location(ast.Name(id=text, ctx=ast.Load()), node)
+
+    def visit_Name(self, node: ast.Name) -> ast.AST:  # NodeTransformer dispatches on the class name
+        """Spell a stand-in as its marker, else leave *node* as it is."""
+        return node if _anchor_dot_count(node.id) is None else self._marker(node.id, "", node)
+
     def visit_Attribute(self, node: ast.Attribute) -> ast.AST:  # NodeTransformer dispatches on the class name
         """Spell ``<stand-in>.<attr>`` as the name ``<marker><attr>``, else recurse."""
-        # The base first, so the stand-in a resolved path was written as is the one tested.
+        # The base as written, so the stand-in a resolved path was written as is the one tested.
+        base = getattr(node.value, _WRITTEN, node.value)
+        if isinstance(base, ast.Name) and _anchor_dot_count(base.id) is not None:
+            return self._marker(base.id, node.attr, node)
         node.value = self.visit(node.value)
-        if isinstance(node.value, ast.Name) and _anchor_dot_count(node.value.id) is not None:
-            return ast.copy_location(ast.Name(id=node.value.id + node.attr, ctx=node.ctx), node)
+        return node
+
+    def visit_Subscript(self, node: ast.Subscript) -> ast.AST:  # NodeTransformer dispatches on the class name
+        """Visit the key inside the ``[`` the subscript writes around it."""
+        node.value = self.visit(node.value)
+        node.slice = self._visit_within(node.slice, square=True)
+        return node
+
+    def visit_List(self, node: ast.List) -> ast.AST:  # NodeTransformer dispatches on the class name
+        """Visit each element inside the ``[`` the display writes around it."""
+        node.elts = [self._visit_within(elt, square=True) for elt in node.elts]
+        return node
+
+    def visit_Call(self, node: ast.Call) -> ast.AST:  # NodeTransformer dispatches on the class name
+        """Visit the arguments inside the ``(`` the call writes around them."""
+        node.func = self.visit(node.func)
+        node.args = [self._visit_within(arg, square=False) for arg in node.args]
+        node.keywords = [self._visit_within(kw, square=False) for kw in node.keywords]
         return node
 
 

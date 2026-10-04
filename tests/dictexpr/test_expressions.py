@@ -1608,6 +1608,45 @@ class TestAnchorNameRoundTrip:
         assert _prefix_content("::name", ("db",)) == "::name"
 
 
+class TestARootMarkerInASubscriptKeepsItsParentheses:
+    """Inside a subscript ``::`` is a slice step, so a root marker there unparses parenthesized (BUG-138)."""
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            "items[(::step)]",
+            "items[(::step).k]",
+            "items[(::)['web-1']]",
+            "items[(::step) + 1]",
+            "items[str(::step)]",
+            "items[(::step)][(::k)]",
+            "items[.k] + ::n",
+        ],
+    )
+    def test_round_trip(self, expr: str) -> None:
+        """Parsing the markers and unparsing them is the identity."""
+        assert _unparse(_parse_expression(expr)) == expr
+
+    @pytest.mark.parametrize(
+        ("body", "prefixed"),
+        [
+            pytest.param("items[(::step)]", "db.items[(::step)]", id="root-marker"),
+            pytest.param("items[(::step).k]", "db.items[(::step).k]", id="root-marker-then-a-dot"),
+            pytest.param("items[k]", "db.items[db.k]", id="bare-key"),
+        ],
+    )
+    def test_mounting_keeps_it_a_root_marker(self, body: str, prefixed: str) -> None:
+        """The prefixed body reads the root where the file's own body did."""
+        assert _prefix_content(body, ("db",)) == prefixed
+
+    def test_a_root_key_mounted_in_a_subscript_is_parenthesized(self) -> None:
+        """A mount path whose first segment is no name hangs off ``::``, inside the brackets too."""
+        prefixed = _prefix_content("items[k]", ("web-1",))
+        assert prefixed == "::['web-1'].items[(::)['web-1'].k]"
+        data = {"web-1": {"k": "a", "items": {"a": 7}, "p": "${" + prefixed + "}"}}
+        assert resolve_expressions(data)["web-1"]["p"] == 7
+
+
 class TestAnchorDepthArithmetic:
     """One dot drops the value's own key; each further dot drops one more segment."""
 

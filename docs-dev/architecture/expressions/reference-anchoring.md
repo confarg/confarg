@@ -88,7 +88,12 @@ reads any other.
   `...` as a single ellipsis token while `..` arrives as two dots, and a `::` is a root marker
   only when the innermost enclosing bracket is not `[` — inside a subscript it is a slice step,
   which is what keeps `items[::2]` available to [FEAT-12](../../todo/features/FEAT-12-scoped-expression-expansion.md).
-  Parentheses reopen the marker: `items[(::step)]`.
+  Parentheses reopen the marker: `items[(::step)]`. What confarg writes back keeps them: `ast.unparse`
+  writes no parenthesis Python does not need, so `_unparse` puts back the ones around a root
+  marker whose innermost enclosing bracket is a `[`, the rule `_anchor_markers` reads run the
+  other way. Before BUG-138 a file mounted below the root turned its `${items[(::step)]}` into
+  the slice `${db.items[::step]}`, and a mount path whose first segment is no name
+  (`::['web-1']`) did the same to every bare reference it prefixed inside a subscript.
 - **The stand-ins never leave the parse.** A marker is not Python, so it is swapped for a name
   that is (`.x` → `__UP1__.x`, `::x` → `__ROOT__.x`), and that swap happens in one place:
   `_parse_expression`, the cache every parse site goes through. Everything else — the graph,
