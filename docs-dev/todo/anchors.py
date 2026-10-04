@@ -19,7 +19,12 @@ there: lowercase, punctuation dropped, spaces to hyphens, underscores kept, a re
 heading suffixed ``-1``, ``-2``, … The same rule is what mkdocs calls ``slugify(case="lower",
 separator="-")``, so it holds on the documentation site as well. Citations are collected from
 every ``.py`` file under ``src/``, so a cited anchor cannot go stale in a docstring a sweep
-forgot to include.
+forgot to include. Tests cite notes too, so ``tests/`` is swept alongside ``src/``.
+
+A citation spelled any other way is an error rather than something to skip: a ``<name>.md#<anchor>``
+without the repo-root ``docs-dev/architecture/`` prefix, or a numbered ``NN-<name>.md`` from the
+retired flat layout, cannot be checked, and a citation nobody checks is how twelve of them went
+stale unnoticed.
 """
 
 from __future__ import annotations
@@ -30,11 +35,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ARCHITECTURE = ROOT / "docs-dev" / "architecture"
-SRC = ROOT / "src"
+#: Every root a citation can be written under.
+SWEPT = (ROOT / "src", ROOT / "tests")
 
 #: A citation as the ``Dev Notes:`` convention writes it: repo-root path, ``.md``, one anchor.
 #: The path may name a subtopic inside a topic folder, so it carries ``/`` segments.
 _CITATION = re.compile(r"docs-dev/architecture/([\w.-]+(?:/[\w.-]+)*\.md)#([\w-]+)")
+#: What looks like a citation but is not spelled as one: an anchored ``.md`` path that the
+#: ``docs-dev/architecture/`` form above does not cover, or a numbered note of the retired layout.
+_LOOKALIKE = re.compile(r"(?<![\w./-])(?:[\w./-]+\.md#[\w-]+|\d\d-[\w-]+\.md)")
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 
 
@@ -60,14 +69,27 @@ def _anchors(document: Path) -> list[str]:
     return anchors
 
 
+def _lookalikes(path: Path, number: int, line: str) -> list[str]:
+    """Return an error for every citation-shaped string in ``line`` that is not spelled as one."""
+    covered = [match.span() for match in _CITATION.finditer(line)]
+    return [
+        f"{path.relative_to(ROOT)}:{number}: cites {match.group(0)}, which is not spelled"
+        " docs-dev/architecture/<document>.md#<anchor>, so it cannot be checked"
+        for match in _LOOKALIKE.finditer(line)
+        if not any(start <= match.start() < end for start, end in covered)
+    ]
+
+
 def main() -> int:
-    """List every citation in ``src/`` whose anchor names no heading, and fail if there is one."""
+    """List every citation under ``src/`` and ``tests/`` that does not resolve, and fail if there is one."""
     # An error is a source location plus the citation it holds, not a missing anchor alone: the
     # fix happens where the citation is written, so that is what the message has to name.
     errors: list[str] = []
     anchors: dict[str, list[str]] = {}
-    for path in sorted(SRC.rglob("*.py")):
+    paths = sorted(path for root in SWEPT for path in root.rglob("*.py"))
+    for path in paths:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            errors.extend(_lookalikes(path, number, line))
             for match in _CITATION.finditer(line):
                 document, anchor = ARCHITECTURE / match.group(1), match.group(2)
                 if match.group(1) not in anchors:
