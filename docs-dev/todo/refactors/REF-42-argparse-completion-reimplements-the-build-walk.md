@@ -1,8 +1,13 @@
+---
+filed: 2026-09-24
+where:
+  - src/confarg/cli/argparse/_completion.py::_extend_walk_field
+  - src/confarg/cli/argparse/_completion.py::_extend_walk_specs
+effort: M
+risk: medium
+impact: none
+---
 # REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk
-
-**Where:** `src/confarg/cli/argparse/_completion.py` (`_extend_walk_field`,
-`_extend_walk_specs`) · **Filed:** 2026-09-24
-**Effort:** M · **Risk:** medium · **Impact:** none
 
 `_extend_walk_field` is branch-for-branch `_build._specs_for_field`, and `_extend_walk_specs` is
 `_collect_struct_specs` — same `_resolve_struct` / `_var_params` / `_get_field_docstrings` /

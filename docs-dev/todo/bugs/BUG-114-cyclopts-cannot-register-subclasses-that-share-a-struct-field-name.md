@@ -1,8 +1,12 @@
+---
+filed: 2026-10-01
+where:
+  - src/confarg/cli/cyclopts/_register.py  # group creation per struct field
+effort: S
+risk: medium
+impact: behavior
+---
 # BUG-114 — Cyclopts cannot register subclasses that share a struct field name
-
-**Where:** `src/confarg/cli/cyclopts/_register.py` (group creation per struct field) ·
-**Filed:** 2026-10-01
-**Effort:** S · **Risk:** medium · **Impact:** behavior
 
 When two subclasses of a field's base type each declare a struct field with the same name and
 different types, `populate_app` gives cyclopts two distinct `Group` objects with one name.

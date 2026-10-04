@@ -1,8 +1,12 @@
+---
+filed: 2026-10-01
+where:
+  - src/confarg/cli/_build.py  # static registration of subclass fields
+effort: M
+risk: medium
+impact: behavior
+---
 # BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters
-
-**Where:** static registration of subclass fields in `src/confarg/cli/_build.py` ·
-**Filed:** 2026-10-01
-**Effort:** M · **Risk:** medium · **Impact:** behavior
 
 When subclasses disagree on a field's type, vanilla's walk answers `str` for that field
 (`_types._subclass_field_type`). A path continuing below it then resolves to nothing, so

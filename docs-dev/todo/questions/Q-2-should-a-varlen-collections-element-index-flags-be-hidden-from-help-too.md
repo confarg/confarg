@@ -1,6 +1,9 @@
+---
+filed: 2026-09-30
+where:
+  - src/confarg/cli/_build.py::_addresses_fixed_seq_element
+---
 # Q-2 — Should a varlen collection's element index flags be hidden from help too?
-
-**Where:** `src/confarg/cli/_build.py` (`_addresses_fixed_seq_element`) · **Filed:** 2026-09-30
 
 Filed while fixing BUG-80 (closed). The hiding decision BUG-80 landed hides an index
 spelling only when its parent node is a *fixed-length* sequence — a `tuple[X, Y]` or a

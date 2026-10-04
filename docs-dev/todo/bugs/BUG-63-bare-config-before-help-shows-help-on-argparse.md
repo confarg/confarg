@@ -1,7 +1,12 @@
+---
+filed: 2026-09-29
+where:
+  - src/confarg/cli/argparse/_namespace.py
+effort: S
+risk: medium
+impact: behavior
+---
 # BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four
-
-**Where:** `src/confarg/cli/argparse/_namespace.py` · **Filed:** 2026-09-29
-**Effort:** S · **Risk:** medium · **Impact:** behavior
 
 `--config --help` is refused by every front-end but argparse: vanilla always raised, and since
 BUG-51's strict rescan click, typer and cyclopts refuse it with confarg's own

@@ -1,7 +1,12 @@
+---
+filed: 2026-09-27
+where:
+  - examples/13_collection_items/README.md  # line 356
+effort: S
+risk: low
+impact: none
+---
 # REF-63 — `13_collection_items` carries an empty section and a misplaced tuple remark
-
-**Where:** `examples/13_collection_items/README.md:356` · **Filed:** 2026-09-27
-**Effort:** S · **Risk:** low · **Impact:** none
 
 `## From environment variables` is a heading with no body — the next line is the next
 heading. `12_collections` already defers the environment-variable discussion to a later

@@ -1,8 +1,13 @@
+---
+filed: 2026-09-24
+where:
+  - src/confarg/dictexpr/_expressions.py::_map_expressions
+  - src/confarg/dictexpr/_expressions.py::_resolve_single
+effort: S
+risk: low
+impact: none
+---
 # REF-54 — Two span loops in `dictexpr` that one helper writes
-
-**Where:** `src/confarg/dictexpr/_expressions.py` (`_map_expressions`, `_resolve_single`) ·
-**Filed:** 2026-09-24
-**Effort:** S · **Risk:** low · **Impact:** none
 
 `_map_expressions` and the interpolation branch of `_resolve_single` are the same loop: walk the
 spans `_find_expressions` yields, append the text before each and a replacement for it, join.

@@ -1,8 +1,14 @@
+---
+filed: 2026-10-03
+where:
+  - src/confarg/_serialize.py::_variant_holds
+  - src/confarg/typedload/_construct.py::_construct_union
+  - src/confarg/typedload/_construct.py::_construct_union_leaf
+effort: M
+risk: high
+impact: behavior
+---
 # BUG-117 — A union with an `Any` variant refuses to load and crashes `dump()`
-
-**Where:** `src/confarg/_serialize.py` (`_variant_holds`), `src/confarg/typedload/_construct.py`
-(`_construct_union`, `_construct_union_leaf`) · **Filed:** 2026-10-03
-**Effort:** M · **Risk:** high · **Impact:** behavior
 
 A bare `x: Any` field passes any value through, both ways. Put `Any` in a union and both
 sides break. Construction refuses a value only `Any` accepts, because union dispatch never

@@ -1,8 +1,13 @@
+---
+filed: 2026-10-03
+where:
+  - src/confarg/_defaults.py  # module docstring
+  - src/confarg/_defaults.py::ROOT_KEY  # its docstring
+effort: S
+risk: low
+impact: none
+---
 # BUG-119 — `_defaults.py` says four front-ends must agree; there are five
-
-**Where:** `src/confarg/_defaults.py` (module docstring, `ROOT_KEY` docstring) ·
-**Filed:** 2026-10-03
-**Effort:** S · **Risk:** low · **Impact:** none
 
 The module docstring says the constants exist "so the four front-ends cannot drift apart", and
 `ROOT_KEY` says "all four front-ends have to agree on the spelling". The architecture counts five

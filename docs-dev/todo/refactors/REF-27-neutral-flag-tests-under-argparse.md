@@ -1,7 +1,13 @@
+---
+filed: 2026-09-15
+where:
+  - tests/cli/argparse/test_gaps.py
+  - tests/cli/argparse/test_final.py
+effort: M
+risk: low
+impact: none
+---
 # REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`
-
-**Where:** `tests/cli/argparse/test_gaps.py`, `test_final.py` · **Filed:** 2026-09-15
-**Effort:** M · **Risk:** low · **Impact:** none
 
 REF-1 moved `_spec.py` and `_build.py` to `cli/`, but their tests stayed where they were, so
 `tests/` no longer mirrors `src/confarg/`. `test_gaps.py` mixes specs-and-build tests with

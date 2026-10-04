@@ -1,9 +1,16 @@
+---
+filed: 2026-09-21
+where:
+  - src/confarg/_pipeline.py
+  - src/confarg/_api.py
+  - src/confarg/cli/_spec.py
+  # plus a new core marker module
+effort: L
+risk: medium
+impact: behavior
+inferred: true  # design settled with the maintainer, no code written
+---
 # FEAT-19 — App-declared defaults, mounted at the type that declares them
-
-**Where:** `src/confarg/_pipeline.py`, `src/confarg/_api.py`, `src/confarg/cli/_spec.py`, plus a new
-core marker module · **Filed:** 2026-09-21 · *(inferred — design settled with the maintainer, no
-code written)*
-**Effort:** L · **Risk:** medium · **Impact:** behavior
 
 An application that composes stand-alone configurations knows things about the composition that
 none of the composed types know. A pipeline whose `prepare` and `eval` nodes are both configured by

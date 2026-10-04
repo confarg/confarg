@@ -1,7 +1,12 @@
+---
+filed: 2026-09-30
+where:
+  - src/confarg/cli/_build.py::_scalar_cast_types_in_union
+effort: S
+risk: medium
+impact: behavior
+---
 # BUG-94 — Multi-variant unions refuse the scalar casts beyond the union's own scalars
-
-**Where:** `src/confarg/cli/_build.py` (`_scalar_cast_types_in_union`) · **Filed:** 2026-09-30 ·
-**Effort:** S · **Risk:** medium · **Impact:** behavior
 
 Vanilla accepts *every* scalar cast on *any* multi-variant union — the trailing segment
 names no member of the union — but `_scalar_cast_types_in_union` offers only the union's own

@@ -1,7 +1,12 @@
+---
+filed: 2026-10-03
+where:
+  - .ruff.toml
+effort: S
+risk: low
+impact: none
+---
 # REF-78 — `.ruff.toml` selects "PL" twice
-
-**Where:** `.ruff.toml` · **Filed:** 2026-10-03
-**Effort:** S · **Risk:** low · **Impact:** none
 
 `[lint] select` lists `"PL"  # Pylint` twice, at the pylint position and again between `TRY` and
 `RUF`. Harmless — a selected prefix stays selected — but a reader scanning the list learns the

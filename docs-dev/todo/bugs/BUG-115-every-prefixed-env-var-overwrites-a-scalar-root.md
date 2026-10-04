@@ -1,8 +1,12 @@
+---
+filed: 2026-10-01
+where:
+  - src/confarg/_parse_env.py::_parse_env  # the `if not is_struct:` branch
+effort: S
+risk: low
+impact: behavior
+---
 # BUG-115 — Every prefixed environment variable overwrites a scalar root
-
-**Where:** `src/confarg/_parse_env.py` (`_parse_env`, the `if not is_struct:` branch) ·
-**Filed:** 2026-10-01
-**Effort:** S · **Risk:** low · **Impact:** behavior
 
 On a non-struct target, `_parse_env` writes every variable under the prefix to `__root__`,
 whatever follows the prefix. So `MYAPP_DEBUG` or `MYAPP_HOME` silently replaces the root

@@ -1,7 +1,12 @@
+---
+filed: 2026-10-03
+where:
+  - src/confarg/typedload/_construct.py::_is_index_key
+effort: S
+risk: medium
+impact: config
+---
 # BUG-142 — A namedtuple built from a dict accepts index keys the CLI refuses
-
-**Where:** `src/confarg/typedload/_construct.py` (`_is_index_key`) · **Filed:** 2026-10-03
-**Effort:** S · **Risk:** medium · **Impact:** config
 
 BUG-97 limited a namedtuple position on the CLI to its two canonical spellings, `str(i)` and
 `str(i - n)` (`_parse_cli._namedtuple_index_spellings`). Construction decides with its own

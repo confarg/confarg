@@ -1,7 +1,12 @@
+---
+filed: 2026-09-24
+where:
+  - src/confarg/cli/_spec.py::_get_field_docstrings
+effort: S
+risk: low
+impact: none
+---
 # REF-55 — An adjacent-pair loop written with indices instead of `itertools.pairwise`
-
-**Where:** `src/confarg/cli/_spec.py` (`_get_field_docstrings`) · **Filed:** 2026-09-24
-**Effort:** S · **Risk:** low · **Impact:** none
 
 It walks a sequence looking at each element and its successor, and carries a bounds guard that
 exists only to skip the final element — which is exactly what `pairwise` omits.

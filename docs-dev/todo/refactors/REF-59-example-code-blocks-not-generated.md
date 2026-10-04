@@ -1,8 +1,13 @@
+---
+filed: 2026-09-25  # body updated 2026-10-03
+where:
+  - examples/6_unions/README.md
+  - examples/9_child_configurations/README.md
+effort: S
+risk: low
+impact: none
+---
 # REF-59 — Two `type` blocks under `examples/` wait on the hook; the rest is generated
-
-**Where:** `examples/6_unions/README.md`, `examples/9_child_configurations/README.md` ·
-**Filed:** 2026-09-25, body updated 2026-10-03
-**Effort:** S · **Risk:** low · **Impact:** none
 
 The 2026-09-25 sweep found twenty hand-copied `python` and `yaml` blocks under `examples/`.
 Every one is resolved except the two `type Config = …` blocks: their sources exist

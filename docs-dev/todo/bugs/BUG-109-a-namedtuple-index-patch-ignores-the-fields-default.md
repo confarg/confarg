@@ -1,7 +1,12 @@
+---
+filed: 2026-10-01
+where:
+  - src/confarg/typedload/_construct.py::_resolve_tuple_partial
+effort: S
+risk: medium
+impact: behavior
+---
 # BUG-109 — A namedtuple index patch ignores the field's default, where a tuple patch keeps it
-
-**Where:** `src/confarg/typedload/_construct.py` (`_resolve_tuple_partial`) · **Filed:** 2026-10-01
-**Effort:** S · **Risk:** medium · **Impact:** behavior
 
 `--pair.1 5` on `pair: tuple[int, int] = (0, 0)` patches the default and builds `(0, 5)`.
 The same patch on `pt: Pt = Pt(0, 0)` raises `MissingFieldError` for `pt.x`, on the CLI and in

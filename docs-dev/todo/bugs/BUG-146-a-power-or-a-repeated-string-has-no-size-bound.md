@@ -1,8 +1,13 @@
+---
+filed: 2026-10-03
+where:
+  - src/confarg/dictexpr/_expressions.py::_BINOP_MAP
+  - src/confarg/dictexpr/_expressions.py::_eval_binop
+effort: L
+risk: high
+impact: config
+---
 # BUG-146 — A power or a repeated string has no size bound
-
-**Where:** `src/confarg/dictexpr/_expressions.py` (`_BINOP_MAP`, `_eval_binop`) ·
-**Filed:** 2026-10-03
-**Effort:** L · **Risk:** high · **Impact:** config
 
 The interpreter exists so that configuration nobody trusts can be evaluated without `eval`
 ([design decision](../../architecture/design-decisions/expressions-resolved-after-merging.md)),

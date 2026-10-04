@@ -1,8 +1,14 @@
+---
+filed: 2026-09-26
+where:
+  - tests/test_serialize.py  # the `dump_file` tests
+  - src/confarg/_files.py::_dump_yaml
+  - src/confarg/_files.py::_dump_json
+effort: S
+risk: medium
+impact: none
+---
 # REF-60 — Nothing asserts the bytes `dump_file` writes
-
-**Where:** `tests/test_serialize.py` (`dump_file` tests), `src/confarg/_files.py`
-(`_dump_yaml`, `_dump_json`) · **Filed:** 2026-09-26
-**Effort:** S · **Risk:** medium · **Impact:** none
 
 Every `dump_file` test is a round trip: write the file, `load()` it back, compare the objects. No
 test ever reads the bytes on disk, and a round trip through the library's own reader is insensitive

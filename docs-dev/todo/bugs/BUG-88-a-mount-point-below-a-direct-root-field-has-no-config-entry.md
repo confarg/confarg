@@ -1,7 +1,12 @@
+---
+filed: 2026-09-30
+where:
+  - src/confarg/cli/_build.py::_collect_subconfig_specs
+effort: L
+risk: medium
+impact: behavior
+---
 # BUG-88 — A mount point below a direct root field has no `--config.<path>` entry
-
-**Where:** `src/confarg/cli/_build.py` (`_collect_subconfig_specs`) · **Filed:** 2026-09-30
-**Effort:** L · **Risk:** medium · **Impact:** behavior
 
 `_check_mount_subpath` accepts a mount at whatever depth it resolves — dict keys and sequence
 indices included

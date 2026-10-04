@@ -1,7 +1,15 @@
+---
+filed: 2026-09-26
+where:
+  - src/confarg/_files.py::_DUMPERS
+  - src/confarg/_files.py::_dump_file
+  - src/confarg/_sources.py
+  - src/confarg/_api.py::dump_file
+effort: M
+risk: low
+impact: behavior
+---
 # FEAT-24 — Writing a configuration back to a URL
-
-**Where:** `src/confarg/_files.py` (`_DUMPERS`, `_dump_file`), `src/confarg/_sources.py`, `src/confarg/_api.py` (`dump_file`) · **Filed:** 2026-09-26
-**Effort:** M · **Risk:** low · **Impact:** behavior
 
 Reading a configuration accepts any registered scheme; writing one does not. `dump_file()` still
 takes a filesystem path, `_DUMPERS` still dispatches on `Path.suffix`, and each dumper opens the

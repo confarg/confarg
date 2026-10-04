@@ -1,8 +1,13 @@
+---
+filed: 2026-09-17
+where:
+  - src/confarg/_parse_cli.py::_looks_like_flag  # and the parse loop
+effort: M
+risk: medium
+impact: behavior
+needs_design: true  # the effort sizes the design pass; the implementation is not sized
+---
 # FEAT-17 — An end-of-options separator (`--`)
-
-**Where:** `src/confarg/_parse_cli.py` (`_looks_like_flag`, the parse loop)
-· **Filed:** 2026-09-17
-**Effort:** M *(design pass; implementation not sized)* · **Risk:** medium · **Impact:** behavior
 
 A bare `--` is an ordinary token in every front-end: nothing marks "everything after this is a
 value". The `=` form is the escape for a dashed value and closes BUG-27

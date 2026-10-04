@@ -1,9 +1,15 @@
+---
+filed: 2026-10-03
+where:
+  - src/confarg/cli/argparse/_namespace.py::from_namespace
+  - src/confarg/cli/click/_context.py::from_context
+  - src/confarg/cli/typer/_context.py::from_context
+  - src/confarg/cli/argparse/_register.py::populate_parser
+effort: S
+risk: low
+impact: behavior
+---
 # BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result
-
-**Where:** `src/confarg/cli/argparse/_namespace.py` (`from_namespace`) ·
-`src/confarg/cli/click/_context.py` / `src/confarg/cli/typer/_context.py` (`from_context`) ·
-`src/confarg/cli/argparse/_register.py` (`populate_parser`) · **Filed:** 2026-10-03
-**Effort:** S · **Risk:** low · **Impact:** behavior
 
 Since REF-72, argv is the only writer: the CLI channel is vanilla's loop over the argv the
 framework parsed, and the parse result is only *checked* — a confarg flag it holds that argv

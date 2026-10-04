@@ -1,7 +1,12 @@
+---
+filed: 2026-10-03
+where:
+  - src/confarg/typedload/_construct.py
+effort: S
+risk: medium
+impact: none
+---
 # REF-77 — The four "expected N elements" refusals have drifted on the type's name
-
-**Where:** `src/confarg/typedload/_construct.py` · **Filed:** 2026-10-03
-**Effort:** S · **Risk:** medium · **Impact:** none
 
 The arity refusals — "Cannot construct X at '`<path>`': expected N elements, got M" — are a
 construction-error family still spelled at each of its four sites (L143, L647, L652, L662),

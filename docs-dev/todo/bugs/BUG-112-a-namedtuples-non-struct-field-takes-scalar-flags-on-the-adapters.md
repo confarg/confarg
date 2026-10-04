@@ -1,7 +1,12 @@
+---
+filed: 2026-10-01
+where:
+  - src/confarg/cli/_build.py::_collect_namedtuple_specs
+effort: M
+risk: medium
+impact: behavior
+---
 # BUG-112 — A namedtuple's non-struct field takes scalar flags on the adapters
-
-**Where:** `src/confarg/cli/_build.py` (`_collect_namedtuple_specs`) · **Filed:** 2026-10-01
-**Effort:** M · **Risk:** medium · **Impact:** behavior
 
 BUG-68 sent a namedtuple's *struct-shaped* fields through the per-field registration
 (`_specs_for_field`) and left every other field on a separate path: one single-token

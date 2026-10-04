@@ -22,7 +22,8 @@ the revision that closed it.
 Every ticket is its own file inside its board's folder, named `<ID>-<slug>.md`:
 `bugs/BUG-3-root-json-cast-refused-in-env.md`. The ID leads, because that is what code comments and
 revision descriptions cite; the slug only makes a directory listing readable and may be
-reworded freely. The file opens with `# <ID> — <headline>` and holds nothing else.
+reworded freely. The file opens with its [front matter](#front-matter), then
+`# <ID> — <headline>`, and holds nothing else.
 
 Each board folder also carries a `README.md`: the board's intro, and a table of its open
 tickets with effort, risk and impact. **The ticket files are authoritative and the table is a
@@ -35,26 +36,44 @@ uv run python docs-dev/todo/index.py
 
 It rewrites the table between the `tickets:start` and `tickets:end` markers, leaving the prose
 around them alone, and checks what it reads on the way past: a filename that disagrees with its
-heading, a board holding another board's prefix, a missing or misspelled effort, risk or
-impact, a bug ticket with no reproduction, and two tickets claiming one ID. Validation gates the
-rewrite: one error anywhere leaves **every** table exactly as it was, because a table written
-beside an error is a table missing the row of a ticket that is still open. Fix what it reports,
-then run it again. `--check` writes nothing either way and exits non-zero on a stale table, which
-is the form for CI.
+heading, a board holding another board's prefix, a missing, unknown or misspelled front matter
+field, a bug ticket with no reproduction, two tickets claiming one ID, a `where` naming a file
+or symbol that no longer exists, and a `blocked_by` naming a ticket that is closed. Validation
+gates the rewrite: one error anywhere leaves **every** table exactly as it was, because a table
+written beside an error is a table missing the row of a ticket that is still open. Fix what it
+reports, then run it again. `--check` writes nothing either way and exits non-zero on a stale
+table, which is the form for CI.
+
+`--where PATH` answers the question to ask before editing a file: which open tickets touch it?
+It matches a ticket filed against that file, against a directory above it, against a file below
+it when `PATH` is a directory, or through a glob:
+
+```console
+$ uv run python docs-dev/todo/index.py --where src/confarg/_parse_env.py
+bugs/BUG-115-every-prefixed-env-var-overwrites-a-scalar-root.md
+  BUG-115 — Every prefixed environment variable overwrites a scalar root
+  where: src/confarg/_parse_env.py::_parse_env
+…
+```
 
 Documentation defects go on these same boards, sorted the same way: documentation wrong about
 itself is a bug, documentation that is missing is a feature, documentation merely untidy is a
 refactor. There is no separate documentation board, because the boards sort by *what the entry
-is* and not by which files it touches — and `**Where:**` already says which files those are.
+is* and not by which files it touches — and `where` already says which files those are.
 
 ## Ticket format
 
 ````markdown
+---
+filed: 2026-09-12
+where:
+  - src/confarg/_parse_env.py::_parse_env  # the `if not is_struct:` branch
+effort: M
+risk: high
+impact: config
+inferred: true  # from code reading, no test covers it
+---
 # BUG-99 — One-line summary in the imperative or as a defect statement
-
-**Where:** `src/confarg/_parse_env.py` · **Filed:** 2026-09-12 · *(inferred — from code
-reading, no test covers it)*
-**Effort:** M · **Risk:** high · **Impact:** config
 
 Two or three lines: what is wrong, when it bites, and what the fix direction looks like.
 Link the rationale it touches:
@@ -75,18 +94,45 @@ confarg.load(Config, argv=[], env={"MYAPP_PORT": "5432"}, env_prefix="MYAPP_")
   IDs are never reused, so they stay greppable in code comments and revision descriptions.
   Check the board folder, not your memory — two tickets once shared REF-26.
 - **Confidence**: mark anything you have not actually observed as *(inferred)*, as in the
-  architecture notes. A suspicion is worth filing; a suspicion sold as a fact is not.
+  architecture notes — the ticket as a whole with `inferred: true`, a single claim in the body
+  with the inline marker. A suspicion is worth filing; a suspicion sold as a fact is not.
 - **Reproduction**: every ticket on `bugs/` ends with one. See [Reproduction](#reproduction).
   The other three boards are exempt — nothing is broken yet to reproduce.
 - **Effort, risk and impact**: every ticket on `bugs/`, `features/` and `refactors/` carries
-  all three, on their own line under `**Where:**`. See [Effort](#effort), [Risk](#risk) and
-  [Impact](#impact). `questions/` is exempt — a question is answered, not implemented.
+  all three. See [Effort](#effort), [Risk](#risk) and [Impact](#impact). `questions/` is
+  exempt — a question is answered, not implemented.
 - **Ordering**: tickets sort by ID, which is filing order, so the newest is last. There is no
   priority field — say it in the body if it matters.
 - **Links** are relative to the ticket file, which sits one level deeper than the board:
   `../../architecture/…`.
 - Keep it short. The code and `../architecture/` hold the detail; a ticket only has to be
   enough to pick the work up cold.
+
+## Front matter
+
+Every ticket opens with YAML front matter between two `---` lines. It holds the fields a script
+reads — to build the tables, to answer `--where`, to catch a ticket orphaned by a rename — and
+nothing else: the ID and headline are the filename and the heading, and everything a reader
+needs beyond the fields is the body. A value is bare; what qualifies it goes in a YAML comment
+on the same line, where the parser drops it and a reader still sees it.
+
+| Key | Boards | Value |
+|---|---|---|
+| `filed` | all, required | The filing date, `YYYY-MM-DD`. |
+| `where` | all | A list of repository-root paths the work touches, each optionally followed by `::` and a symbol the file defines (`src/confarg/_files.py::_dump_yaml`, as pytest spells a node). A directory ends with `/`; a glob (`src/confarg/cli/*/_register.py`) must match a file. `where: []  # a new console script` when the code does not exist yet. |
+| `effort` | sized, required | `S`, `M`, `L` or `XL` — see [Effort](#effort). |
+| `risk` | sized, required | `low`, `medium` or `high` — see [Risk](#risk). |
+| `impact` | sized, required | `none`, `behavior`, `api` or `config` — see [Impact](#impact). |
+| `needs_design` | sized | `true` when the effort sizes the design pass, not the implementation — see [Effort](#effort). Omitted otherwise. |
+| `inferred` | all | `true` when the ticket rests on something nobody observed; the comment says what it rests on. Omitted otherwise. |
+| `blocked_by` | all | A list of open ticket IDs that must close first, on any board. Omitted when empty. |
+
+`where` is checked against the tree: a path that no longer exists or a symbol its file no longer
+holds is an error, so a rename that orphans a ticket is caught by the next run. The
+agent-facing files (`AGENTS.md`, `CLAUDE.md`, `docs-agents/`) are exempt, since version control
+ignores them. A `blocked_by` entry whose ticket has closed is an error too: that ticket is
+unblocked, so drop the entry. Any other key is refused — there is deliberately no `id`, `title`,
+`status`, `priority` or `labels`.
 
 ## Reproduction
 
@@ -142,9 +188,9 @@ which nobody can predict and which age badly:
 
 An unvetted idea has no design yet, so its implementation cannot honestly be sized. Size the
 **design pass** instead — deciding whether to do it at all is the next actionable step — and
-say so: `**Effort:** M *(design pass; implementation not sized)*`. Size that pass by the
-investigation it needs, not by the `L` clause above: a design pass always ends in a decision
-record, so reading that clause literally would make every one of them `L`.
+say so with `needs_design: true` beside the effort. Size that pass by the investigation it
+needs, not by the `L` clause above: a design pass always ends in a decision record, so reading
+that clause literally would make every one of them `L`.
 
 ## Risk
 

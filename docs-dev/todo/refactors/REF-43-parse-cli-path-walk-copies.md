@@ -1,8 +1,15 @@
+---
+filed: 2026-09-24
+where:
+  - src/confarg/_parse_cli.py::_field_types
+  - src/confarg/_parse_cli.py::_addresses_callable_key
+  - src/confarg/_parse_cli.py::_is_collection_patch_path
+  - src/confarg/_parse_cli.py::_is_dict_at_path
+effort: M
+risk: high
+impact: none
+---
 # REF-43 — Four copies of the type-tree path walk in `_parse_cli.py`
-
-**Where:** `src/confarg/_parse_cli.py` (`_field_types`, `_addresses_callable_key`,
-`_is_collection_patch_path`, `_is_dict_at_path`) · **Filed:** 2026-09-24
-**Effort:** M · **Risk:** high · **Impact:** none
 
 Three of these are the same loop with a one-line question in the middle: `_resolve_type`, the
 `union_tag` check, union recursion over `_union_args_no_none`, `_advance_field_type`, bail on

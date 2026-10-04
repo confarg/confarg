@@ -1,7 +1,12 @@
+---
+filed: 2026-10-03
+where:
+  - examples/90_integration/README.md
+effort: S
+risk: low
+impact: none
+---
 # REF-81 — `90_integration/README.md` opens at h3 and sandwiches a lone h2 between h3 sections
-
-**Where:** `examples/90_integration/README.md` · **Filed:** 2026-10-03
-**Effort:** S · **Risk:** low · **Impact:** none
 
 Every other tutorial README opens with an h1 title and the tip blockquote; this one starts at
 `### Integration with CLI framework` with no title, and the `## Old help` heading sits

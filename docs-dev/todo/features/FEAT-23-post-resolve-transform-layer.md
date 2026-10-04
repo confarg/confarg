@@ -1,9 +1,16 @@
+---
+filed: 2026-09-27
+where:
+  # new src/confarg/dicttransform/
+  - src/confarg/_api.py
+  - src/confarg/dictexpr/_expressions.py
+  - src/confarg/_defaults.py
+  - src/confarg/exceptions.py
+effort: XL
+risk: high
+impact: config
+---
 # FEAT-23 — A post-resolve transform layer
-
-**Where:** new `src/confarg/dicttransform/`, plus `src/confarg/_api.py`,
-`src/confarg/dictexpr/_expressions.py`, `src/confarg/_defaults.py`, `src/confarg/exceptions.py` ·
-**Filed:** 2026-09-27
-**Effort:** XL · **Risk:** high · **Impact:** config
 
 Every channel can only patch what it contributes — set a value, extend a list, remove a key. Nothing
 rewrites the merged result itself. The case that motivates it is **read-modify-write**: reclassify a

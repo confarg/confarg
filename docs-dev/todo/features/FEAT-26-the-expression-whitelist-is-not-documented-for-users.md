@@ -1,9 +1,14 @@
+---
+filed: 2026-10-03
+where:
+  - README.md  # § Expressions and variable interpolation
+  - examples/21_expressions/README.md
+  - docs/how-to/derived-values.md
+effort: S
+risk: low
+impact: none
+---
 # FEAT-26 — The expression whitelist is not documented for users
-
-**Where:** `README.md` (§ Expressions and variable interpolation), `examples/21_expressions/README.md`,
-`docs/how-to/derived-values.md` ·
-**Filed:** 2026-10-03
-**Effort:** S · **Risk:** low · **Impact:** none
 
 No user-facing page says what a `${...}` may contain. The README and Tutorial 21 show `int(...)`
 and arithmetic, and the derived-values how-to says `len` "is part of the expression whitelist",

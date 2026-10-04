@@ -1,7 +1,12 @@
+---
+filed: 2026-09-28
+where:
+  - .pre-commit-config.yaml
+effort: S
+risk: low
+impact: none
+---
 # REF-66 — the pinned ruff and the project's own ruff disagree
-
-**Where:** `.pre-commit-config.yaml` · **Filed:** 2026-09-28
-**Effort:** S · **Risk:** low · **Impact:** none
 
 The `ruff-pre-commit` hook pins v0.15.16 while the project environment resolves ruff 0.16.7, and
 the newer one reports 17 `PLR0917` ("too many positional arguments") errors the hook does not

@@ -1,8 +1,13 @@
+---
+filed: 2026-09-25
+where:
+  - src/confarg/_tags.py::_tags_from_config
+  - src/confarg/cli/_build.py::_collect_fn_paths_from_config
+effort: S
+risk: medium
+impact: none
+---
 # REF-58 — The config-parallel struct walk has two owners
-
-**Where:** `src/confarg/_tags.py` (`_tags_from_config`), `src/confarg/cli/_build.py`
-(`_collect_fn_paths_from_config`) · **Filed:** 2026-09-25
-**Effort:** S · **Risk:** medium · **Impact:** none
 
 Both functions walk a struct type in lockstep with a config dict, and it is the skeleton that is
 spelled twice: the `_resolve_type` / `_is_struct` guard, `_struct_fields` inside the same

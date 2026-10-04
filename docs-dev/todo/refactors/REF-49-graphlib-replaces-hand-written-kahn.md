@@ -1,7 +1,12 @@
+---
+filed: 2026-09-24
+where:
+  - src/confarg/dictexpr/_expressions.py::_topological_sort
+effort: S
+risk: low
+impact: behavior
+---
 # REF-49 — `graphlib.TopologicalSorter` replaces the hand-written Kahn loop
-
-**Where:** `src/confarg/dictexpr/_expressions.py` (`_topological_sort`) · **Filed:** 2026-09-24
-**Effort:** S · **Risk:** low · **Impact:** behavior
 
 `_topological_sort` is Kahn's algorithm with an explicit reverse adjacency list and in-degree
 counts, about 34 lines where the stdlib does it in nine. The node sets match exactly, because the

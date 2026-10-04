@@ -1,9 +1,16 @@
+---
+filed: 2026-09-24
+where:
+  - src/confarg/_types.py::_is_plain_class
+  - src/confarg/_types.py::_init_fields
+  - src/confarg/_types.py::_init_defaults
+  - src/confarg/_types.py::_var_params
+  - src/confarg/typedload/_construct.py::_call_with_var_positional
+effort: M
+risk: high
+impact: none
+---
 # REF-48 — `inspect.signature` is walked four or five times per struct
-
-**Where:** `src/confarg/_types.py` (`_is_plain_class`, `_init_fields`, `_init_defaults`,
-`_var_params`), `src/confarg/typedload/_construct.py` (`_call_with_var_positional`) ·
-**Filed:** 2026-09-24
-**Effort:** M · **Risk:** high · **Impact:** none
 
 `_init_fields`, `_init_defaults` and `_var_params` are the textbook three functions differing only
 in *which attribute of each `inspect.Parameter` they collect*; `_call_with_var_positional` walks

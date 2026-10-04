@@ -1,8 +1,13 @@
+---
+filed: 2026-09-25
+where:
+  - examples/90_integration/README.md  # three `python` blocks under `## Old help`
+effort: S
+risk: low
+impact: none
+inferred: true  # from code reading, no test covers it
+---
 # BUG-46 — The `90_integration` code blocks document an API that does not exist
-
-**Where:** `examples/90_integration/README.md` (three `python` blocks under `## Old help`) ·
-**Filed:** 2026-09-25 · *(inferred — from code reading, no test covers it)*
-**Effort:** S · **Risk:** low · **Impact:** none
 
 The three python blocks call `confarg.load(Config, args=ctx.args)`,
 `confarg.populate_parser(Config, parser)` and `confarg.from_namespace(namespace, Config)`.

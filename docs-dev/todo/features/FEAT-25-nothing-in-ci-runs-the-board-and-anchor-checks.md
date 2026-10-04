@@ -1,8 +1,14 @@
+---
+filed: 2026-09-29
+where:
+  - .github/workflows/ci-lint.yml
+  - .pre-commit-config.yaml
+  - docs-dev/todo/
+effort: S
+risk: low
+impact: none
+---
 # FEAT-25 — Nothing in CI runs the board and anchor checks
-
-**Where:** `.github/workflows/ci-lint.yml`, `.pre-commit-config.yaml`, `docs-dev/todo/` ·
-**Filed:** 2026-09-29
-**Effort:** S · **Risk:** low · **Impact:** none
 
 `docs-dev/todo/index.py` validates the boards and regenerates their tables, and
 `docs-dev/todo/anchors.py` (added with BUG-49) checks every `docs-dev/architecture/*.md#anchor`

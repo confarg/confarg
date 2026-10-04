@@ -1,7 +1,11 @@
+---
+filed: 2026-09-12
+where: []  # new console script (no `[project.scripts]` entry exists yet)
+effort: L
+risk: low
+impact: behavior
+---
 # FEAT-9 — A `confarg check` command to validate a configuration against a target
-
-**Where:** new console script (no `[project.scripts]` entry exists yet) · **Filed:** 2026-09-12
-**Effort:** L · **Risk:** low · **Impact:** behavior
 
 In a project environment, `confarg check module.Config -- --config app.yaml --db.port 5433`
 should run the same pipeline `confarg.load()` runs — every channel, not a single file — resolve

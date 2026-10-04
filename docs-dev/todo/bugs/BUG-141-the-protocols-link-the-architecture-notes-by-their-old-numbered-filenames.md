@@ -1,9 +1,16 @@
+---
+filed: 2026-10-03
+where:
+  - docs-agents/boards.md
+  - docs-agents/bug-fixing.md
+  - docs-agents/docstrings.md
+  - docs-agents/feature-design.md
+  - docs-agents/working-with-architecture.md
+effort: S
+risk: medium
+impact: none
+---
 # BUG-141 — The protocols link the architecture notes by their old numbered filenames
-
-**Where:** `docs-agents/boards.md`, `docs-agents/bug-fixing.md`, `docs-agents/docstrings.md`,
-`docs-agents/feature-design.md`, `docs-agents/working-with-architecture.md` ·
-**Filed:** 2026-10-03
-**Effort:** S · **Risk:** medium · **Impact:** none
 
 The architecture notes were unnumbered (`invariants.md`, `design-decisions/`, `cli-adapters/`,
 `types/`, `expressions/` — see [architecture/README.md § Layout](../../architecture/README.md#layout)),

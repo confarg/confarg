@@ -1,7 +1,14 @@
+---
+filed: 2026-09-30
+where:
+  - src/confarg/cli/cyclopts/_context.py
+  - src/confarg/cli/argparse/
+  - src/confarg/cli/_clicklike/
+effort: M
+risk: low
+impact: behavior
+---
 # BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters
-
-**Where:** `src/confarg/cli/cyclopts/_context.py`, `src/confarg/cli/argparse/`, `src/confarg/cli/_clicklike/` · **Filed:** 2026-09-30
-**Effort:** M · **Risk:** low · **Impact:** behavior
 
 Vanilla refuses a bare scalar flag with `ConfargError` (`_require_value`, the same error the
 fixed-arity guard reproduces on argparse and cyclopts since BUG-58 closed). The four adapters
