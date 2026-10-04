@@ -28,6 +28,11 @@ the boundary moves here.
   and `dump_file()` on purpose, so a dumped fragment stays position-independent, and so is
   `${::['web-1']}`, which no plain path spells
   ([expressions](expressions/reference-anchoring.md#a-relative-reference-is-never-serialized-as-an-absolute-path)).
+- A bare reference in a file mounted under a root key that is no identifier is written
+  `${::['web-1'].p}`, the one spelling of that path. Dumped and mounted again under another key,
+  that `::` still names the configuration root, so the dump does not re-anchor the way one
+  holding `${db.p}` does
+  ([expressions](expressions/reference-anchoring.md#a-document-is-prefixed-once-by-its-whole-mount-path)).
 - A non-string key at the document root is not reachable: `${::[0]}` reads the root key `"0"`.
   Below the root the subscript's fallback indexes by the integer, but the root has no node to
   index ([expressions](expressions/reference-anchoring.md#implementation-constraints)).

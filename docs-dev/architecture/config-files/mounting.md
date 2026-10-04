@@ -12,8 +12,10 @@ structural nesting — and that divergence is argued in
 not diverge. `_load_mount_value` reads a `--config[.<path>]` token or a `CONFIG[__PATH]`
 variable as an `__include__` value, so all three accept the same locations, the same
 `{path: …, orient: …}` object (spelled as JSON on argv and in the environment) and the same
-list form, and `_load_mount` then places the result with `_mount`, the one implementation of
-"put this value at that subpath". `_load_any` is the one loader underneath all of it.
+list form, and `_load_mount` is the one implementation of "put this value at that subpath": it
+loads the value with the subpath as its *mount*, so references are anchored as the documents
+load ([expressions](../expressions/reference-anchoring.md#a-document-is-prefixed-once-by-its-whole-mount-path)),
+then nests it. `_load_any` is the one loader underneath all of it.
 
 Two things do differ, both on purpose:
 

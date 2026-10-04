@@ -6,9 +6,9 @@
 
 A configuration file's root lands wherever the file is mounted, so a bare
 reference is anchored at that file's root and moves with it, while ``${::path}``
-names the configuration root.  That rewriting happens as files are mounted
-(``_files._resolve_dict``, ``_pipeline._load_cli_config``), which is the only
-point at which the file boundary is still known.
+names the configuration root.  That rewriting happens as each file is loaded, by
+the whole path it is mounted at (``_files._load_any``), which is the only point at
+which the file boundary is still known.
 
 ``${.path}`` is a third thing again: relative to the node that wrote it, one
 level per dot.  It is resolved at evaluation time rather than at mount time,
@@ -200,6 +200,78 @@ class TestCanonicalForm:
             inner: Cfg = field(default_factory=Cfg)
 
         assert confarg.load(Outer, argv=["--config", str(outer)], env={}).inner.db.host == "base-5432"
+
+
+# ---------------------------------------------------------------------------
+# A mount path is spelled segment by segment
+# ---------------------------------------------------------------------------
+
+
+#: A fragment whose one reference is to its own sibling, mounted under keys no dot can spell.
+SELF_READING = "p: 1\nq: ${p}\n"
+
+
+class TestAMountPathIsSpelledSegmentBySegment:
+    """A bare reference is prefixed by the mount path, whatever its segments are (BUG-127).
+
+    A segment no dot can spell — a list index, a key that is no identifier, a key holding a
+    dot, a keyword — is spelled as a subscript, and a first one hangs off ``::``, the only
+    spelling of a root key that is no identifier.
+    """
+
+    @pytest.mark.parametrize(
+        ("mount", "spelled"),
+        [
+            pytest.param(f"xs:\n  - {INCLUDE_KEY}: ./frag.yaml\n", "${xs[0].p}", id="list-index"),
+            pytest.param(f"svc:\n  web-1:\n    {INCLUDE_KEY}: ./frag.yaml\n", "${svc['web-1'].p}", id="hyphen"),
+            pytest.param(f"svc:\n  'h.com':\n    {INCLUDE_KEY}: ./frag.yaml\n", "${svc['h.com'].p}", id="dot-in-key"),
+            pytest.param(f"svc:\n  import:\n    {INCLUDE_KEY}: ./frag.yaml\n", "${svc['import'].p}", id="keyword"),
+            pytest.param(f"svc:\n  __x__:\n    {INCLUDE_KEY}: ./frag.yaml\n", "${svc['__x__'].p}", id="dunder"),
+            pytest.param(f"web-1:\n  {INCLUDE_KEY}: ./frag.yaml\n", "${::['web-1'].p}", id="root-hyphen"),
+            pytest.param(f"'h.com':\n  {INCLUDE_KEY}: ./frag.yaml\n", "${::['h.com'].p}", id="root-dot-in-key"),
+            pytest.param(f"import:\n  {INCLUDE_KEY}: ./frag.yaml\n", "${::['import'].p}", id="root-keyword"),
+        ],
+    )
+    def test_an_include_reads_itself(self, tmp_path: Path, mount: str, spelled: str) -> None:
+        """The merged dict spells the path so that it parses, and it resolves to the sibling."""
+        write(tmp_path, "frag.yaml", SELF_READING)
+        cfg = write(tmp_path, "app.yaml", mount)
+        data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
+        assert spelled in str(data)
+        assert "'p': 1, 'q': 1" in str(confarg.resolve(data))
+
+    def test_an_integer_key_reads_the_node_it_names(self, tmp_path: Path) -> None:
+        """A YAML integer key is spelled ``[0]``, whose subscript reaches the integer key."""
+        write(tmp_path, "frag.yaml", SELF_READING)
+        cfg = write(tmp_path, "app.yaml", f"a:\n  0:\n    {INCLUDE_KEY}: ./frag.yaml\n")
+        data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
+        assert data == {"a": {0: {"p": 1, "q": "${a[0].p}"}}}
+        assert confarg.resolve(data) == {"a": {0: {"p": 1, "q": 1}}}
+
+    def test_a_file_mounted_twice_over_is_prefixed_by_its_whole_path(self, tmp_path: Path) -> None:
+        """The ``::`` a root segment needs is written once, by the absolute mount path."""
+        write(tmp_path, "frag.yaml", SELF_READING)
+        write(tmp_path, "mid.yaml", f"web-1:\n  {INCLUDE_KEY}: ./frag.yaml\n")
+        cfg = write(tmp_path, "app.yaml", f"a:\n  {INCLUDE_KEY}: ./mid.yaml\n")
+        data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
+        assert data == {"a": {"web-1": {"p": 1, "q": "${a['web-1'].p}"}}}
+        assert confarg.resolve(data) == {"a": {"web-1": {"p": 1, "q": 1}}}
+
+    def test_a_flag_mount_prefixes_by_the_whole_path(self, tmp_path: Path) -> None:
+        """``--config.<path>`` mounts a file whose own includes land below that path."""
+        write(tmp_path, "frag.yaml", SELF_READING)
+        mid = write(tmp_path, "mid.yaml", f"web-1:\n  {INCLUDE_KEY}: ./frag.yaml\n")
+        data = confarg.merge(dict[str, Any], argv=["--config.a", str(mid)], env={})
+        assert data == {"a": {"web-1": {"p": 1, "q": "${a['web-1'].p}"}}}
+        assert confarg.resolve(data) == {"a": {"web-1": {"p": 1, "q": 1}}}
+
+    def test_a_user_root_marker_is_not_prefixed(self, tmp_path: Path) -> None:
+        """Only bare references move with the mount; ``::`` still names the configuration root."""
+        write(tmp_path, "frag.yaml", "q: ${::['web-1']}\n")
+        write(tmp_path, "mid.yaml", f"web-1:\n  {INCLUDE_KEY}: ./frag.yaml\n")
+        cfg = write(tmp_path, "app.yaml", f"web-1: top\na:\n  {INCLUDE_KEY}: ./mid.yaml\n")
+        data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
+        assert confarg.resolve(data)["a"] == {"web-1": {"q": "top"}}
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +467,12 @@ class TestDotsAreClampedToTheirFile:
         write(tmp_path, "frag.yaml", "'h.com':\n  q: ${...x}\n")
         cfg = write(tmp_path, "app.yaml", f"x: 1\nsub:\n  x: 2\n  inner:\n    {INCLUDE_KEY}: ./frag.yaml\n")
         with pytest.raises(MissingReferenceError, match=r"above the file root"):
+            confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
+
+    def test_an_integer_key_is_one_level(self, tmp_path: Path) -> None:
+        """A YAML integer key is a segment of the position like any other, and the error names it."""
+        cfg = write(tmp_path, "app.yaml", "a:\n  0:\n    x: ${....y}\n")
+        with pytest.raises(MissingReferenceError, match=r"at 'a\.0\.x'.*above the file root"):
             confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
 
 

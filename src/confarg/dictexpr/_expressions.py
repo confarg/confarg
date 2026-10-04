@@ -18,6 +18,7 @@ import math
 import operator
 import re
 import tokenize
+import unicodedata
 from collections import deque
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
@@ -1021,11 +1022,56 @@ def _anchor_markers(expr_content: str) -> list[_AnchorMarker]:
     return found
 
 
-def _path_to_ast(parts: list[str]) -> ast.expr:
-    """Build the ``Name``/``Attribute`` chain that reads the dotted path *parts*."""
-    built: ast.expr = ast.Name(id=parts[0], ctx=ast.Load())
-    for part in parts[1:]:
-        built = ast.Attribute(value=built, attr=part, ctx=ast.Load())
+def _spells_as_name(segment: str) -> bool:
+    """Return ``True`` when *segment* can be written as a name, ``.segment`` or a base ``segment``.
+
+    It must parse back as itself: an identifier that is no keyword (``import``) and that
+    Python's NFKC normalization leaves alone (``ﬁle`` would read ``file``). A dunder is
+    excluded too, because validation refuses it after a dot and a stand-in (``__UP1__``) is
+    one.
+    """
+    return (
+        segment.isidentifier()
+        and not keyword.iskeyword(segment)
+        and not segment.startswith("__")
+        and unicodedata.normalize("NFKC", segment) == segment
+    )
+
+
+def _segment_link(base: ast.expr, segment: str) -> ast.Attribute | ast.Subscript:
+    """Read *segment* off *base*: a dot when it spells as a name, else a constant subscript.
+
+    A segment that spells a list index (``0``) is subscripted by the integer, the others
+    by the string, so ``xs[0]`` and ``svc['web-1']`` read what ``xs.0`` and ``svc.web-1``
+    name, and a YAML integer key stays reachable when the path read misses.
+    """
+    if _spells_as_name(segment):
+        return ast.Attribute(value=base, attr=segment, ctx=ast.Load())
+    index: int | str = segment
+    if segment.isascii() and segment.isdecimal() and str(int(segment)) == segment:
+        index = int(segment)
+    return ast.Subscript(value=base, slice=ast.Constant(index), ctx=ast.Load())
+
+
+def _path_to_ast(parts: Sequence[str]) -> ast.expr:
+    """Build the tree that reads the path *parts*, and that unparses to source reading it too.
+
+    The one spelling of a path as an expression: a segment is a dot or a constant
+    subscript (:func:`_segment_link`), each one segment to :func:`_attribute_chain`. A first
+    segment that spells as no name hangs off the root stand-in (``::['web-1'].p``), the only
+    spelling of a root key that is no identifier, which :class:`_AnchorResolver` reads back.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
+    """
+    first, *rest = parts
+    built: ast.expr = (
+        ast.Name(id=first, ctx=ast.Load())
+        if _spells_as_name(first)
+        else _segment_link(ast.Name(id=_ROOT_ANCHOR, ctx=ast.Load()), first)
+    )
+    for part in rest:
+        built = _segment_link(built, part)
     return built
 
 
@@ -1201,9 +1247,13 @@ class _AnchorResolver(ast.NodeTransformer):
     visit_Subscript = _visit_segment
 
     def visit_Name(self, node: ast.Name) -> ast.AST:  # NodeTransformer dispatches on the class name
-        """Rewrite a stand-in into the path of the node it names, unless that is the root."""
+        """Rewrite a stand-in into the path of the node it names, unless that is the root.
+
+        The path may itself hang off the root stand-in (:func:`_path_to_ast`), so it is
+        visited in turn.
+        """
         anchored = self._anchored(node)
-        return ast.copy_location(_path_to_ast(list(anchored)), node) if anchored else node
+        return self.visit(ast.copy_location(_path_to_ast(anchored), node)) if anchored else node
 
 
 def _parse_anchored(expr_content: str, node_path: _Path) -> ast.Expression:
@@ -1220,20 +1270,22 @@ def _parse_anchored(expr_content: str, node_path: _Path) -> ast.Expression:
 
 
 class _Prefixer(ast.NodeTransformer):
-    """Rewrite each file-anchored reference base ``name`` into ``<prefix>.name``.
+    """Rewrite each file-anchored reference base ``name`` into the path ``<prefix>.name``.
 
     Replacing the base ``Name`` of ``servers[0].host`` with ``db.servers`` yields
     ``db.servers[0].host``; a method receiver works the same (``x.upper()`` →
     ``db.x.upper()``), and so does a name spelled like a function anywhere but as a
-    callee (``max`` → ``db.max``, but ``max(a)`` → ``max(db.a)``). Correct only while
+    callee (``max`` → ``db.max``, but ``max(a)`` → ``max(db.a)``). The prefix is a tuple of
+    segments, spelled by :func:`_path_to_ast`, so ``("xs", "0")`` prefixes ``p`` into
+    ``xs[0].p`` and ``("web-1",)`` into ``::['web-1'].p``. Correct only while
     :data:`_ALLOWED_NODES` has no construct that binds names (lambdas, comprehensions).
 
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
 
-    def __init__(self, prefix: str) -> None:
-        self._parts = prefix.split(".")
+    def __init__(self, prefix: _Path) -> None:
+        self._parts = prefix
 
     def visit_Call(self, node: ast.Call) -> ast.AST:  # NodeTransformer dispatches on the AST class name
         """Prefix the arguments, and the callee only when it names no function."""
@@ -1250,7 +1302,7 @@ class _Prefixer(ast.NodeTransformer):
         return ast.copy_location(_path_to_ast([*self._parts, node.id]), node)
 
 
-def _prefix_content(expr_content: str, prefix: str) -> str:
+def _prefix_content(expr_content: str, prefix: _Path) -> str:
     """Prefix every file-anchored reference in one ``${...}`` body by *prefix*."""
     tree = _parse_body(_name_anchor(expr_content))
     tree = _Prefixer(prefix).visit(tree)
@@ -1284,11 +1336,12 @@ def _map_strings(data: Any, fn: Callable[[str], str]) -> Any:
     return data
 
 
-def prefix_references(data: Any, prefix: str) -> Any:
+def prefix_references(data: Any, prefix: _Path) -> Any:
     """Return *data* with every file-anchored reference prefixed by *prefix*.
 
-    Called when one configuration file's content is mounted at *prefix* inside a
-    larger document; every bare reference of the file gets the same prefix.  Anchored
+    Called on one configuration file's own content, mounted at *prefix* inside the
+    configuration, one segment per key or list index; every bare reference of the file
+    gets the same prefix.  Anchored
     references — the configuration root (``${::foo}``) and node-relative ones
     (``${.foo}``, ``${..foo}``) — are left untouched, the first because it does not
     depend on the mount and the second because it moves with the node.  An empty

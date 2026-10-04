@@ -11,7 +11,11 @@ the other two mount routes, which read their value with the same parser ([mounti
   exactly as it does across `--config` files
   ([design decisions](../design-decisions/class-tag-replaces.md#a-class-tag-replaces-not-merges)).
 - A pure include (no sibling keys) may yield any type; with siblings the include must yield a
-  dict, and siblings merge on top (they were written by the including file).
+  dict, and siblings merge on top (they were written by the including file). They are resolved
+  first, so a sibling that is itself an include wins over the included document as a plain value
+  would: `{__include__: base.yaml, db: {__include__: db.yaml}}` keeps `db.yaml`'s `host` over
+  `base.yaml`'s. Merged first and resolved after, the included document's keys would have become
+  siblings of the inner include and won instead.
 - In a list, an include lands as **one** element, whatever type it yields. Spreading a value
   over several elements is the `+` operator's job and nothing else's
   ([design decisions](../design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling)), so
