@@ -11,6 +11,15 @@ between the two other channels in priority: above
   (`MYAPP_DB__MAX_CONNECTIONS` → `db.max_connections`).
 - Segments are matched **case-insensitively** against the target type tree, because env
   names are conventionally upper-case; a segment matching several fields is an error.
+- A segment that names no member but names the union tag resolves to the tag's **exact
+  spelling**, whatever case the variable spelled it in (BUG-101): the walks downstream —
+  the mount-subpath check, `build()` — compare the tag exactly, so a lowercased custom tag
+  such as `Kind` would be warned away and dropped while the CLI channel's `--Kind` merged.
+  A member that matched case-insensitively always wins over the tag, which is what the
+  default lowercase `class` tag already did; the CLI can tell `--Kind` (tag) from
+  `--kind` (field) by case, and the env channel — where every spelling collapses to one —
+  settles that collision on the field. The one decision-maker is `_match_env_part`, so the
+  field variables, deletes, casts and config subpaths all resolve through it.
 - Values starting with `[` or `{` are parsed as JSON only when the target type can accept a
   list or an object; otherwise they are ordinary tokens. Which types those are is not this
   channel's question: `{` defers to `_parse_cli._accepts_object_value`, the one predicate the
@@ -32,6 +41,11 @@ between the two other channels in priority: above
   "orient": "columns"}` says in the environment what a file says with a mapping
   ([mounting](config-files/mounting.md#mounting)). The variable named by `env_config` is removed from field parsing.
 - An unknown first segment emits `ConfargWarning` and the variable is ignored, whereas an
-  unknown CLI flag is an error. *(inferred)* The environment is ambient and shared with
-  other software, while argv is an explicit request; a stray variable should not stop the
-  program. Tests can escalate the warning with `warnings.filterwarnings("error", …)`.
+  unknown CLI flag is an error. "Real member" is not this channel's question to answer: the
+  check defers to the canonical `_parse_cli._segment_names_real_field`
+  ([CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)), so the union tag
+  and a subclass-only field name a member — the tag was warned away and dropped before
+  BUG-90, while the CLI and file channels accepted the same configuration. *(inferred)* The
+  environment is ambient and shared with other software, while argv is an explicit request; a
+  stray variable should not stop the program. Tests can escalate the warning with
+  `warnings.filterwarnings("error", …)`.

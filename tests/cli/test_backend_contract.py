@@ -4583,17 +4583,23 @@ class TestWholeValueFlagContract:
         leaf_registry: None,
         tmp_yaml,
     ) -> None:
-        """A root-leaf tag merges at the top level, as the file channel's ``class:`` key does (BUG-71).
+        """A root-leaf tag merges at the top level, as the file and env channels do (BUG-71, BUG-90).
 
-        The file channel is the witness: the env channel drops a root-level ``CLASS``
-        variable with a warning (filed as BUG-90 on the way).
+        The file channel's top-level ``class:`` key and the env channel's root-level
+        ``CLASS`` variable merge to the same dict the tag flag produces.
         """
         confarg.register_leaf_type(UUID, UUID)
         hex_text = _UUID_TEXT.replace("-", "")
         cli = loader.merge(UUID, argv=["--app.class", "uuid.UUID", "--app.hex", hex_text], env={}, cli_prefix="app")
         cfg = tmp_yaml(f'class: uuid.UUID\nhex: "{hex_text}"\n')
         file = loader.merge(UUID, argv=[], env={}, files=[cfg])
-        assert cli == file == {"class": "uuid.UUID", "hex": hex_text}
+        env = loader.merge(
+            UUID,
+            argv=[],
+            env={"MYAPP_CLASS": "uuid.UUID", "MYAPP_HEX": hex_text},
+            env_prefix="MYAPP_",
+        )
+        assert cli == file == env == {"class": "uuid.UUID", "hex": hex_text}
 
     def test_flat_leaf_root_tag_registers_only_when_typed(
         self,

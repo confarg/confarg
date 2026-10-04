@@ -18,7 +18,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-86 — A subclass's override of a base-declared field is coerced by the last subclass walk](BUG-86-a-subclass-override-of-a-base-field-is-coerced-by-the-last-walk.md) | M | medium | behavior |
 | [BUG-87 — The adapters' merged dict orders keys by the walk, not by argv, so a dump differs byte for byte](BUG-87-merged-dict-key-order-follows-the-walk-not-argv.md) | M | medium | behavior |
 | [BUG-88 — A mount point below a direct root field has no `--config.<path>` entry](BUG-88-a-mount-point-below-a-direct-root-field-has-no-config-entry.md) | L | medium | behavior |
-| [BUG-90 — The env channel drops a root-level CLASS variable on a struct-walked root](BUG-90-env-channel-drops-a-root-level-class-variable.md) | S | medium | behavior |
 | [BUG-91 — Vanilla silently drops the bare prefix flag's value on a struct-like root](BUG-91-vanilla-drops-the-bare-prefix-flag-value-on-a-struct-root.md) | S | medium | behavior |
 | [BUG-92 — The adapters reject a root tag on a subclass-less struct root that vanilla accepts](BUG-92-adapters-reject-a-root-tag-on-a-subclass-less-struct-root.md) | S | medium | behavior |
 | [BUG-93 — Scalar cast flags stay refused on struct, collection and registered-leaf fields](BUG-93-scalar-cast-flags-stay-refused-on-struct-collection-and-leaf-fields.md) | M | medium | behavior |
@@ -28,5 +27,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-97 — A namedtuple's -0 and +0 index spellings diverge across the front-ends](BUG-97-a-namedtuples-minus-zero-and-plus-zero-index-spellings-diverge.md) | S | low | behavior |
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | S | low | behavior |
 | [BUG-99 — The config flag's space-separated multi-file spelling is declined on click and typer, undocumented](BUG-99-the-config-flags-space-separated-multi-file-spelling-is-declined-on-click-and-typer-undocumented.md) | S | low | none |
+| [BUG-102 — A field named exactly like the union tag is unreachable on every channel](BUG-102-a-field-named-exactly-like-the-union-tag-is-unreachable.md) | L | high | config |
 
 <!-- tickets:end -->

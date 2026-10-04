@@ -25,6 +25,7 @@ from confarg._parse_cli import (
     _check_mount_subpath,
     _locals_segment_index,
     _open_callable_shorthand,
+    _segment_names_real_field,
     detect_force_cast,
 )
 from confarg._types import (
@@ -52,16 +53,18 @@ from confarg.exceptions import ConfargError, ConfargWarning
 from confarg.typedload._coerce import _try_coerce
 
 
-def _resolve_env_parts(target: Any, parts: list[str]) -> tuple[list[str], Any]:
+def _resolve_env_parts(target: Any, parts: list[str], union_tag: str) -> tuple[list[str], Any]:
     """Map env var parts to actual field names using case-insensitive matching.
 
     Walks the type tree to find the correct casing for each path segment.
     Falls back to lowercase when the type is not a dataclass (e.g. dict keys,
-    list indices).
+    list indices); a segment that names the union tag falls back to the tag's
+    exact casing instead, because the walk downstream compares the tag exactly.
 
     Args:
         target: The root target type.
         parts: A list of env var path segments.
+        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         A tuple of (resolved_parts, leaf_type) where resolved_parts has correct
@@ -74,13 +77,13 @@ def _resolve_env_parts(target: Any, parts: list[str]) -> tuple[list[str], Any]:
     tp: Any = _resolve_type(target)
 
     for part in parts:
-        name, tp = _match_env_part(tp, part)
+        name, tp = _match_env_part(tp, part, union_tag)
         resolved.append(name)
 
     return resolved, tp
 
 
-def _match_struct_part(tp: Any, part: str) -> tuple[str, Any]:
+def _match_struct_part(tp: Any, part: str) -> tuple[str, Any] | None:
     """Match a single env var part against a struct (dataclass or plain class) type."""
     flds = _struct_fields(tp)
     matches = [name for name in flds if name.lower() == part.lower()]
@@ -92,10 +95,10 @@ def _match_struct_part(tp: Any, part: str) -> tuple[str, Any]:
         raise ConfargError(msg)
     if len(matches) == 1:
         return matches[0], flds[matches[0]]
-    return part.lower(), None
+    return None
 
 
-def _match_union_part(tp: Any, part: str) -> tuple[str, Any]:
+def _match_union_part(tp: Any, part: str) -> tuple[str, Any] | None:
     """Match a single env var part against a Union type, searching all struct variants."""
     name_to_types: dict[str, list[Any]] = {}
     for variant in _union_args_no_none(tp):
@@ -118,10 +121,10 @@ def _match_union_part(tp: Any, part: str) -> tuple[str, Any]:
         # Only return a concrete type when all variants agree; otherwise None (defer to construct)
         ft = types[0] if all(t == types[0] for t in types[1:]) else None
         return name, ft
-    return part.lower(), None
+    return None
 
 
-def _match_namedtuple_part(tp: Any, part: str) -> tuple[str, Any]:
+def _match_namedtuple_part(tp: Any, part: str) -> tuple[str, Any] | None:
     """Match a single env var part against a namedtuple type (by field name or index)."""
     flds = _namedtuple_fields(tp)
     # Try field-name match first (case-insensitive)
@@ -144,10 +147,10 @@ def _match_namedtuple_part(tp: Any, part: str) -> tuple[str, Any]:
             return str(idx), flds[fname]
     except ValueError:
         pass
-    return part.lower(), None
+    return None
 
 
-def _match_tuple_part(tp: Any, part: str) -> tuple[str, Any]:
+def _match_tuple_part(tp: Any, part: str) -> tuple[str, Any] | None:
     """Match a single env var part against a tuple type."""
     tt = _tuple_types(tp)
     if tt is None:
@@ -158,15 +161,16 @@ def _match_tuple_part(tp: Any, part: str) -> tuple[str, Any]:
             return part.lower(), tt[idx]
     except ValueError:
         pass
-    return part.lower(), None
+    return None
 
 
-def _match_env_part(tp: Any, part: str) -> tuple[str, Any]:  # noqa: PLR0911
+def _match_env_part(tp: Any, part: str, union_tag: str) -> tuple[str, Any]:
     """Match a single env var part against the current type level.
 
     Args:
         tp: The current type being walked.
         part: The env var path segment to match.
+        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         A tuple of (resolved_name, next_type) where next_type may be None.
@@ -174,18 +178,28 @@ def _match_env_part(tp: Any, part: str) -> tuple[str, Any]:  # noqa: PLR0911
     if tp is not None:
         tp = _resolve_type(tp)
     if _is_namedtuple(tp):
-        return _match_namedtuple_part(tp, part)
-    if _is_struct(tp):
-        return _match_struct_part(tp, part)
-    if _is_union(tp):
-        return _match_union_part(tp, part)
-    if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
-        return part.lower(), _elem_type(tp)
-    if _is_tuple(tp):
-        return _match_tuple_part(tp, part)
-    if _is_dict(tp):
+        matched = _match_namedtuple_part(tp, part)
+    elif _is_struct(tp):
+        matched = _match_struct_part(tp, part)
+    elif _is_union(tp):
+        matched = _match_union_part(tp, part)
+    elif _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
+        matched = (part.lower(), _elem_type(tp))
+    elif _is_tuple(tp):
+        matched = _match_tuple_part(tp, part)
+    elif _is_dict(tp):
         _, vt = _dict_kv(tp)
-        return part.lower(), vt
+        matched = (part.lower(), vt)
+    else:
+        matched = None
+    if matched is not None:
+        return matched
+    if part.lower() == union_tag.lower():
+        # A segment that names no member but names the tag keeps the tag's exact casing,
+        # whatever case the variable spelled it in: the walk downstream compares the tag
+        # exactly, so a lowercased custom tag would be warned away and dropped (BUG-101).
+        # A member that matched above always wins over the tag, as under the default tag.
+        return union_tag, str
     return part.lower(), None
 
 
@@ -207,7 +221,7 @@ def _handle_env_config_flag(  # noqa: PLR0913  # the check needs the tag, the me
     """
     subpath_parts = parts[1:]
     if subpath_parts:
-        resolved_parts, _ = _resolve_env_parts(target, subpath_parts)
+        resolved_parts, _ = _resolve_env_parts(target, subpath_parts, union_tag)
         subpath = ".".join(resolved_parts)
         # Resolved parts, because the env match is case-insensitive and the walk the
         # check runs is exact.
@@ -217,7 +231,7 @@ def _handle_env_config_flag(  # noqa: PLR0913  # the check needs the tag, the me
     env_configs.append((subpath, value))
 
 
-def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[str, Any]) -> None:
+def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[str, Any], union_tag: str) -> None:
     """Apply a delete sentinel (FOO__BAR- or FOO__ITEMS__1-) to data."""
     raw_last = parts[-1][:-1]
     try:
@@ -229,10 +243,10 @@ def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[
 
     if is_list_delete:
         parent_raw = parts[:-1]
-        parent_parts, _ = _resolve_env_parts(target, parent_raw) if parent_raw else ([], None)
+        parent_parts, _ = _resolve_env_parts(target, parent_raw, union_tag) if parent_raw else ([], None)
         _accumulate_list_delete(data, parent_parts, delete_idx, orig_key)
     else:
-        del_parts, _ = _resolve_env_parts(target, [*parts[:-1], raw_last])
+        del_parts, _ = _resolve_env_parts(target, [*parts[:-1], raw_last], union_tag)
         _set_nested(data, del_parts, DICT_DELETE)
 
 
@@ -257,7 +271,7 @@ def _apply_env_json_cast(  # noqa: PLR0913  # root and nested placement need dis
     """
     if parts[-1].lower() != JSON_CAST_NAME:
         return False
-    parent_parts, _ = _resolve_env_parts(target, parts[:-1]) if parts[:-1] else ([], None)
+    parent_parts, _ = _resolve_env_parts(target, parts[:-1], union_tag) if parts[:-1] else ([], None)
     path, cast_name = detect_force_cast([*parent_parts, JSON_CAST_NAME], target, union_tag)
     if cast_name is None:
         return False
@@ -289,31 +303,39 @@ def _fold_root_json(data: dict[str, Any], root_json: list[dict[str, Any]], union
     return _deep_merge(base, data, union_tag=union_tag)
 
 
-def _warn_unknown_env_field(orig_key: str, parts: list[str], root_tp: Any) -> bool:
-    """Warn and return True if the env var's first segment has no matching field."""
-    if _is_struct(root_tp) and parts[0] not in _struct_fields(root_tp):
-        known = sorted(_struct_fields(root_tp).keys())
+def _warn_unknown_env_field(orig_key: str, parts: list[str], root_tp: Any, union_tag: str) -> bool:
+    """Warn and return True if the env var's first segment names no real member of the root.
+
+    Real membership is the canonical :func:`~confarg._parse_cli._segment_names_real_field`'s
+    to answer — the same predicate the CLI's casts and locals consult — so the union
+    tag and a subclass-only field name a member here exactly as the CLI channel
+    accepts them (BUG-90).
+
+    Dev Notes:
+        docs-dev/architecture/environment-parsing.md#environment-parsing
+    """
+    if _segment_names_real_field(root_tp, parts[0], union_tag):
+        return False
+    if _is_union(root_tp):
+        struct_variants = [_resolve_type(v) for v in _union_args_no_none(root_tp) if _is_struct(_resolve_type(v))]
+        all_fields = sorted({f for v in struct_variants for f in _struct_fields(v)})
         warnings.warn(
             f"Environment variable {orig_key!r} has no matching field"
-            f" (segment {parts[0]!r} not found in {root_tp.__name__})."
-            f" Known fields: {known}. The variable will be ignored.",
+            f" (segment {parts[0]!r} not found in any union variant)."
+            f" Known fields across variants: {all_fields}. The variable will be ignored.",
             ConfargWarning,
             stacklevel=4,
         )
         return True
-    if _is_union(root_tp):
-        struct_variants = [_resolve_type(v) for v in _union_args_no_none(root_tp) if _is_struct(_resolve_type(v))]
-        if struct_variants and not any(parts[0] in _struct_fields(v) for v in struct_variants):
-            all_fields = sorted({f for v in struct_variants for f in _struct_fields(v)})
-            warnings.warn(
-                f"Environment variable {orig_key!r} has no matching field"
-                f" (segment {parts[0]!r} not found in any union variant)."
-                f" Known fields across variants: {all_fields}. The variable will be ignored.",
-                ConfargWarning,
-                stacklevel=4,
-            )
-            return True
-    return False
+    known = sorted(_struct_fields(root_tp).keys())
+    warnings.warn(
+        f"Environment variable {orig_key!r} has no matching field"
+        f" (segment {parts[0]!r} not found in {root_tp.__name__})."
+        f" Known fields: {known}. The variable will be ignored.",
+        ConfargWarning,
+        stacklevel=4,
+    )
+    return True
 
 
 def _accepts_json_for(ft: Any, value: str) -> bool:
@@ -406,7 +428,7 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
             continue
 
         if parts[-1].endswith("-") and len(parts[-1]) > 1:
-            _handle_env_delete(orig_key, parts, target, data)
+            _handle_env_delete(orig_key, parts, target, data, union_tag)
             continue
 
         if _apply_env_json_cast(orig_key, parts, target, value, data, root_json, union_tag):
@@ -416,11 +438,11 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
             data[_defaults.ROOT_KEY] = _try_coerce(_resolve_type(target), _StrToken(value))
             continue
 
-        parts, ft = _resolve_env_parts(target, parts)
+        parts, ft = _resolve_env_parts(target, parts, union_tag)
         # Locals are not target fields: skip the unknown-field warning and store the raw
         # token; _pipeline checks and coerces them (docs-dev/architecture/locals.md).
         is_locals = _locals_segment_index(target, parts, union_tag) is not None
-        if not is_locals and _warn_unknown_env_field(orig_key, parts, _resolve_type(target)):
+        if not is_locals and _warn_unknown_env_field(orig_key, parts, _resolve_type(target), union_tag):
             continue
         if is_locals:
             ft = None
