@@ -111,10 +111,10 @@ file-layer ordering, so extract it.
 Wraps the composed dict and answers what the target used to answer:
 
 - `resolve_path(parts) -> list[str]` — case-insensitive match of each segment against the keys
-  actually present at that node, ambiguity an error. Mirrors `_parse_env._match_struct_part`
-  (`_parse_env.py:82-94`) but reads dict keys instead of dataclass fields. This is what makes
+  actually present at that node, ambiguity an error. Mirrors `_parse_env._env_spelling`
+  but reads dict keys instead of declared members. This is what makes
   `DB__MAX_CONNECTIONS` land on `maxConnections` when the file spells it that way — impossible
-  today, where a non-struct node falls back to `part.lower()` (`_parse_env.py:94`).
+  today, where a node with no declared members falls back to `part.lower()`.
 - `value_at(parts)` / `exists(parts)` — walks dicts by key and lists by integer index, exactly as
   `_pipeline._lookup_declared` (`_pipeline.py:99-117`) does. Reuse that walk rather than rewriting.
 - `accepts_container(parts)` — whether a `{`/`[`-leading token should be JSON-decoded, answered

@@ -1,6 +1,6 @@
 # REF-43 — Four copies of the type-tree path walk in `_parse_cli.py`
 
-**Where:** `src/confarg/_parse_cli.py` (`_resolve_field_type`, `_addresses_callable_key`,
+**Where:** `src/confarg/_parse_cli.py` (`_field_types`, `_addresses_callable_key`,
 `_is_collection_patch_path`, `_is_dict_at_path`) · **Filed:** 2026-09-24
 **Effort:** M · **Risk:** high · **Impact:** none
 
@@ -24,7 +24,8 @@ The same family, one member already closed: `_parse_env._accepts_json_for` used 
 came about; closing that bug reduced it to the two calls. Nothing is left of it to fold into this
 pass — it is here as the precedent for what the walk should end up looking like.
 
-The walk in `_parse_env._match_env_part` is **not** in scope. Env adds case-insensitive matching
-and two ambiguity errors, and its struct branch lacks the `_subclass_field_type` fallback the CLI
-has, so unifying the two would change behavior silently. Only the tuple, list and dict arms are
-safe there; the rest needs a parity ruling first.
+The env channel has no walk of its own left to fold in: since REF-73 it spells each segment
+case-insensitively and asks `_field_types` (which branches reach the prefix) and
+`_resolve_field_type` (its fold) for the rest, so it inherits whatever this pass does to the
+walk. `_field_types` already returns the per-branch answer a `_walk_path` generator would yield
+at the end of the path.

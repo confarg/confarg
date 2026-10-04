@@ -11,6 +11,18 @@ between the two other channels in priority: above
   (`MYAPP_DB__MAX_CONNECTIONS` → `db.max_connections`).
 - Segments are matched **case-insensitively** against the target type tree, because env
   names are conventionally upper-case; a segment matching several fields is an error.
+  Case-insensitivity is the channel's **only** rule about paths. Each segment is spelled as
+  the member it names — among the named members of every type the CLI channel's walk
+  (`_parse_cli._field_types`) reaches at the spelled prefix, so every union variant and
+  every subclass-only field — and the spelled path is then typed by
+  `_parse_cli._resolve_field_type`, exactly as a flag of the same path is. The channel
+  kept a walk of its own until REF-73, and it lagged each rule the CLI walk gained: a
+  subclass-only field it could not see (BUG-104), a namedtuple's negative index it left
+  uncoerced, non-struct union variants it skipped, a field below disagreeing variants it
+  lowercased, and odd index spellings (`01`) it rewrote into ones the walk accepts. "Several
+  fields" therefore counts every member the walk reaches: two variants, or a declared field
+  and a subclass-only one, that differ only by case cannot be told apart from the
+  environment, and the segment is an error rather than a silent pick of one of them.
 - A segment that names no member but names the union tag resolves to the tag's **exact
   spelling**, whatever case the variable spelled it in (BUG-101): the walks downstream —
   the mount-subpath check, `build()` — compare the tag exactly, so a lowercased custom tag
@@ -22,7 +34,7 @@ between the two other channels in priority: above
   channel now, the walk and construction reading the key as the field's value rather than a
   class path (BUG-102,
   [CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)).
-  The one decision-maker is `_match_env_part`, so the
+  The one decision-maker is `_env_spelling`, so the
   field variables, deletes, casts and config subpaths all resolve through it.
 - Values starting with `[` or `{` are parsed as JSON only when the target type can accept a
   list or an object; otherwise they are ordinary tokens. Which types those are is not this

@@ -19,7 +19,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-94 — Multi-variant unions refuse the scalar casts beyond the union's own scalars](BUG-94-multi-variant-unions-refuse-casts-beyond-their-own-scalars.md) | S | medium | behavior |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | M | low | behavior |
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | S | low | behavior |
-| [BUG-104 — The env walk cannot see a subclass-only field, so the tag wins a case-differing spelling](BUG-104-the-env-walk-cannot-see-a-subclass-only-field-so-the-tag-wins-a-case-differing-spelling.md) | S | medium | config |
 | [BUG-105 — The anchor sweep cannot see citations under `tests/`, nor short-form spellings](BUG-105-the-anchor-sweep-cannot-see-citations-under-tests-or-short-form-spellings.md) | S | medium | none |
 | [BUG-107 — A real field named like the tag, nested inside a union variant, is stripped by the type check](BUG-107-a-nested-real-field-named-like-the-tag-is-stripped-by-the-union-type-check.md) | S | medium | behavior |
 | [BUG-108 — A plain fixed tuple accepts the index spellings a namedtuple refuses](BUG-108-a-plain-fixed-tuple-accepts-the-index-spellings-a-namedtuple-refuses.md) | S | medium | behavior |

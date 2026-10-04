@@ -1,7 +1,6 @@
 # BUG-108 — A plain fixed tuple accepts the index spellings a namedtuple refuses
 
-**Where:** `src/confarg/_parse_cli.py` (`_step_tuple_type`) · `src/confarg/_parse_env.py`
-(`_match_tuple_part`, `_match_namedtuple_part`) · **Filed:** 2026-10-01
+**Where:** `src/confarg/_parse_cli.py` (`_step_tuple_type`) · **Filed:** 2026-10-01
 **Effort:** S · **Risk:** medium · **Impact:** behavior
 
 BUG-97 limited a namedtuple position to the two canonical spellings, `str(i)` and
@@ -9,11 +8,11 @@ BUG-97 limited a namedtuple position to the two canonical spellings, `str(i)` an
 the same kind of thing
 ([a namedtuple is a fixed-length sequence](../../architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence)),
 but its walk step still decides with `et[int(part)]`. So `-0`, `+1` and `01` address a
-position on `tuple[int, int]` and are refused on a two-field namedtuple. The env matchers use
-`int(part)` for both kinds, so `MYAPP_PAIR__01` patches index 1. Fix direction: generalize the
-generator into a fixed-length-sequence index rule and route `_step_tuple_type` and both env
-matchers through it. Overlaps [REF-61](../refactors/REF-61-env-index-guards-decide-nothing.md),
-which questions the env matchers' range guards.
+position on `tuple[int, int]` and are refused on a two-field namedtuple. The env channel types
+its path by the same walk since REF-73, so `MYAPP_PAIR__01` patches index 1 as `--pair.01` does,
+and is refused on the namedtuple as the flag is. Fix direction: generalize the generator into a
+fixed-length-sequence index rule and route `_step_tuple_type` through it; the env channel
+follows.
 
 ```python
 from dataclasses import dataclass

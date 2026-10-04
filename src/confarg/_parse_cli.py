@@ -56,6 +56,7 @@ from confarg._types import (
     _resolve_type,
     _StrToken,
     _struct_fields,
+    _struct_member_names,
     _struct_member_type,
     _tuple_types,
     _union_args_no_none,
@@ -66,26 +67,6 @@ from confarg._types import (
 )
 from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce
-
-
-def _resolve_union_field_type(
-    tp: Any,
-    remaining: list[str],
-    union_tag: str,
-    *,
-    tag_fallback: bool = True,
-) -> Any | None:
-    """Resolve the field type through a Union by trying all non-None variants."""
-    resolved = []
-    for variant in _union_args_no_none(tp):
-        v = _resolve_type(variant)
-        result = _resolve_field_type(v, remaining, union_tag, tag_fallback=tag_fallback)
-        if result is not None:
-            resolved.append(result)
-    if not resolved:
-        return None
-    first = resolved[0]
-    return first if all(r == first for r in resolved[1:]) else str
 
 
 def _step_tuple_type(tp: Any, part: str) -> Any | None:
@@ -146,13 +127,19 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911
     return None
 
 
-def _resolve_field_type(target: Any, parts: list[str], union_tag: str, *, tag_fallback: bool = True) -> Any | None:
-    """Walk the type tree following dot-separated path parts.
+def _field_types(target: Any, parts: list[str], union_tag: str, *, tag_fallback: bool = True) -> list[Any]:
+    """Walk the type tree along *parts*, returning the type each union branch reaches.
 
-    Resolves the type at the end of the path by traversing dataclass fields,
-    collections, dicts, and unions. A segment names the union tag only when no real
-    member of that exact spelling exists at its position; a field named like the tag
-    is that field.
+    The one type walk. A union met before the path ends is walked once per non-None
+    variant, so the answer lists one type per branch that accepts the whole path, in
+    variant order; a branch that refuses it drops out, and an empty list means no branch
+    accepts it. A path ending *on* a union-typed node answers that union, unexpanded.
+    :func:`_resolve_field_type` folds the list into the single type a value is coerced
+    by; a caller that asks what each branch holds at a node -- the env channel spelling
+    the next segment -- reads it whole.
+
+    A segment names the union tag only when no real member of that exact spelling exists
+    at its position; a field named like the tag is that field.
 
     Args:
         target: The root type to start resolution from.
@@ -161,20 +148,21 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str, *, tag_fa
         tag_fallback: Whether a segment no member reaches may still name the union tag.
             Off, the walk answers members only, which is how
             :func:`_names_tag_by_fallback` tells the two apart.
-
-    Returns:
-        The resolved type at the end of the path, or None if the path is invalid.
     """
     tp = _resolve_type(target)
     for idx, part in enumerate(parts):
         tp = _resolve_type(tp)
         if _is_union(tp):
-            return _resolve_union_field_type(tp, parts[idx:], union_tag, tag_fallback=tag_fallback)
+            return [
+                found
+                for v in _union_args_no_none(tp)
+                for found in _field_types(v, parts[idx:], union_tag, tag_fallback=tag_fallback)
+            ]
         if _is_callable(tp) and names_a_bind(part):
             # A callable's bind key is addressable as a str-leaf subtree (--field.bind.key)
             # and, in escaped mode, as a plain scalar init-kwarg (--field.bind 5). Whether the
             # active-mode bind must be a dict is validated in construct, not here (lenient parse).
-            return str
+            return [str]
         if part in _locals_keys_nested(tp, union_tag):
             tp = dict[str, Any]
             continue
@@ -183,9 +171,32 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str, *, tag_fa
             if tag_fallback and part == union_tag:
                 # The tag is the fallback, so it resolves only at a position no member
                 # of its exact spelling reaches.
-                return str
-            return None
-    return tp
+                return [str]
+            return []
+    return [tp]
+
+
+def _resolve_field_type(target: Any, parts: list[str], union_tag: str, *, tag_fallback: bool = True) -> Any | None:
+    """Return the type a value at the dotted path *parts* is coerced by, None if no branch accepts it.
+
+    The fold of :func:`_field_types` over the branches that accept the path: their common
+    type when they all agree, ``str`` -- the raw token, left for construction to read by
+    the variant it picks -- when they do not.
+
+    Args:
+        target: The root type to start resolution from.
+        parts: A list of path segments to follow.
+        union_tag: The field name used as a discriminator tag in unions.
+        tag_fallback: Whether a segment no member reaches may still name the union tag.
+
+    Returns:
+        The resolved type at the end of the path, or None if the path is invalid.
+    """
+    found = _field_types(target, parts, union_tag, tag_fallback=tag_fallback)
+    if not found:
+        return None
+    first = found[0]
+    return first if all(t == first for t in found[1:]) else str
 
 
 def _names_tag_by_fallback(target: Any, parts: list[str], union_tag: str) -> bool:
@@ -305,6 +316,25 @@ def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
         if pt is not None and _is_dict(_resolve_type(pt)):
             return True
     return False
+
+
+def _member_names(pt: Any) -> list[str]:
+    """Return the exact spellings of the named members of container type ``pt``.
+
+    A struct's members (:func:`~confarg._types._struct_member_names`, subclass-only names
+    included), a namedtuple's fields, and either across a union's variants: the names
+    :func:`_segment_names_real_field` answers by declaration. A position counts nothing
+    here -- a namedtuple index, a sequence index, a dict key -- and neither does a
+    callable's sub-key, for none of those is a declared name.
+    """
+    pt = _resolve_type(pt)
+    if _is_union(pt):
+        return list(dict.fromkeys(n for v in _union_args_no_none(pt) for n in _member_names(v)))
+    if _is_namedtuple(pt):
+        return list(_namedtuple_fields(pt))
+    if _is_struct(pt):
+        return _struct_member_names(pt)
+    return []
 
 
 def _segment_names_real_field(pt: Any, seg: str, union_tag: str) -> bool:

@@ -23,29 +23,22 @@ from confarg._merge import DICT_DELETE, _accumulate_list_delete, _set_nested
 from confarg._parse_cli import (
     _accepts_object_value,
     _check_mount_subpath,
+    _field_types,
     _locals_segment_index,
+    _member_names,
     _open_callable_shorthand,
+    _resolve_field_type,
     _segment_names_real_field,
     detect_force_cast,
 )
 from confarg._types import (
-    _dict_kv,
-    _elem_type,
-    _is_dict,
-    _is_frozenset,
-    _is_list,
-    _is_namedtuple,
     _is_seq_variant,
-    _is_set,
     _is_struct,
     _is_struct_like,
-    _is_tuple,
     _is_union,
-    _namedtuple_fields,
     _resolve_type,
     _StrToken,
     _struct_fields,
-    _tuple_types,
     _union_args_no_none,
     _union_has_seq_variant,
 )
@@ -54,12 +47,13 @@ from confarg.typedload._coerce import _try_coerce
 
 
 def _resolve_env_parts(target: Any, parts: list[str], union_tag: str) -> tuple[list[str], Any]:
-    """Map env var parts to actual field names using case-insensitive matching.
+    """Spell each env var segment as the member it names, then type the path by the canonical walk.
 
-    Walks the type tree to find the correct casing for each path segment.
-    Falls back to lowercase when the type is not a dataclass (e.g. dict keys,
-    list indices); a segment that names the union tag falls back to the tag's
-    exact casing instead, because the walk downstream compares the tag exactly.
+    The environment adds one rule to the CLI channel's path, case-insensitivity, and only
+    that rule lives here: :func:`_env_spelling` turns each segment into the exact spelling
+    the walk compares, and :func:`~confarg._parse_cli._resolve_field_type` types the
+    spelled path exactly as it types a flag's. So an env variable merges what the flag of
+    the same path merges (REF-73).
 
     Args:
         target: The root target type.
@@ -71,136 +65,44 @@ def _resolve_env_parts(target: Any, parts: list[str], union_tag: str) -> tuple[l
         casing and leaf_type is the resolved type of the final field (or None).
 
     Raises:
-        ConfargError: If a part matches multiple field names at the same level.
+        ConfargError: If a part matches several member spellings at its position.
+
+    Dev Notes:
+        docs-dev/architecture/environment-parsing.md#environment-parsing
     """
     resolved: list[str] = []
-    tp: Any = _resolve_type(target)
-
     for part in parts:
-        name, tp = _match_env_part(tp, part, union_tag)
-        resolved.append(name)
-
-    return resolved, tp
+        resolved.append(_env_spelling(target, resolved, part, union_tag))
+    return resolved, _resolve_field_type(target, resolved, union_tag)
 
 
-def _match_struct_part(tp: Any, part: str) -> tuple[str, Any] | None:
-    """Match a single env var part against a struct (dataclass or plain class) type."""
-    flds = _struct_fields(tp)
-    matches = [name for name in flds if name.lower() == part.lower()]
-    if len(matches) > 1:
-        msg = (
-            f"Ambiguous env var segment {part!r}: matches multiple fields {matches} in {tp.__name__}."
-            " Check your dataclass definition for duplicate case-insensitive field names."
-        )
-        raise ConfargError(msg)
-    if len(matches) == 1:
-        return matches[0], flds[matches[0]]
-    return None
+def _env_spelling(target: Any, prefix: list[str], part: str, union_tag: str) -> str:
+    """Return the exact spelling env segment *part* takes below the spelled path *prefix*.
 
+    A member it names case-insensitively, among the named members of every type the walk
+    reaches at *prefix* -- each union variant, each subclass-only field; else the union
+    tag by its own spelling, which the walk downstream compares exactly (BUG-101); else
+    the segment lowercased, a dict key or an index the walk reads as it is. A member
+    always wins over the tag, as the walk's tag is its fallback.
 
-def _match_union_part(tp: Any, part: str) -> tuple[str, Any] | None:
-    """Match a single env var part against a Union type, searching all struct variants."""
-    name_to_types: dict[str, list[Any]] = {}
-    for variant in _union_args_no_none(tp):
-        v = _resolve_type(variant)
-        if _is_struct(v):
-            flds = _struct_fields(v)
-            for fname in flds:
-                if fname.lower() == part.lower():
-                    name_to_types.setdefault(fname, []).append(flds[fname])
-    if len(name_to_types) > 1:
-        msg = (
-            f"Ambiguous env var segment {part!r}: matches fields"
-            f" {sorted(name_to_types.keys())} across union variants."
-            " Use a more specific environment variable name or add a discriminator field."
-        )
-        raise ConfargError(msg)
-    if len(name_to_types) == 1:
-        name = next(iter(name_to_types))
-        types = name_to_types[name]
-        # Only return a concrete type when all variants agree; otherwise None (defer to construct)
-        ft = types[0] if all(t == types[0] for t in types[1:]) else None
-        return name, ft
-    return None
-
-
-def _match_namedtuple_part(tp: Any, part: str) -> tuple[str, Any] | None:
-    """Match a single env var part against a namedtuple type (by field name or index)."""
-    flds = _namedtuple_fields(tp)
-    # Try field-name match first (case-insensitive)
-    matches = [name for name in flds if name.lower() == part.lower()]
-    if len(matches) > 1:
-        msg = (
-            f"Ambiguous env var segment {part!r}: matches multiple fields {matches} in {tp.__name__}."
-            " Check your namedtuple definition for duplicate case-insensitive field names."
-        )
-        raise ConfargError(msg)
-    if len(matches) == 1:
-        name = matches[0]
-        return name, flds[name]
-    # Fall back to numeric index
-    try:
-        idx = int(part)
-        field_names = list(flds.keys())
-        if 0 <= idx < len(field_names):
-            fname = field_names[idx]
-            return str(idx), flds[fname]
-    except ValueError:
-        pass
-    return None
-
-
-def _match_tuple_part(tp: Any, part: str) -> tuple[str, Any] | None:
-    """Match a single env var part against a tuple type."""
-    tt = _tuple_types(tp)
-    if tt is None:
-        return part.lower(), _elem_type(tp)
-    try:
-        idx = int(part)
-        if 0 <= idx < len(tt):
-            return part.lower(), tt[idx]
-    except ValueError:
-        pass
-    return None
-
-
-def _match_env_part(tp: Any, part: str, union_tag: str) -> tuple[str, Any]:
-    """Match a single env var part against the current type level.
-
-    Args:
-        tp: The current type being walked.
-        part: The env var path segment to match.
-        union_tag: The field name used as a discriminator tag in unions.
-
-    Returns:
-        A tuple of (resolved_name, next_type) where next_type may be None.
+    Raises:
+        ConfargError: If the segment matches several member spellings, which no
+            environment variable can tell apart.
     """
-    if tp is not None:
-        tp = _resolve_type(tp)
-    if _is_namedtuple(tp):
-        matched = _match_namedtuple_part(tp, part)
-    elif _is_struct(tp):
-        matched = _match_struct_part(tp, part)
-    elif _is_union(tp):
-        matched = _match_union_part(tp, part)
-    elif _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
-        matched = (part.lower(), _elem_type(tp))
-    elif _is_tuple(tp):
-        matched = _match_tuple_part(tp, part)
-    elif _is_dict(tp):
-        _, vt = _dict_kv(tp)
-        matched = (part.lower(), vt)
-    else:
-        matched = None
-    if matched is not None:
-        return matched
+    names = {n for tp in _field_types(target, prefix, union_tag) for n in _member_names(tp)}
+    matches = sorted(n for n in names if n.lower() == part.lower())
+    if len(matches) > 1:
+        where = ".".join(prefix) or "the root"
+        msg = (
+            f"Ambiguous env var segment {part!r}: matches fields {matches} at {where}."
+            " An environment variable cannot tell spellings that differ only by case apart."
+        )
+        raise ConfargError(msg)
+    if matches:
+        return matches[0]
     if part.lower() == union_tag.lower():
-        # A segment that names no member but names the tag keeps the tag's exact casing,
-        # whatever case the variable spelled it in: the walk downstream compares the tag
-        # exactly, so a lowercased custom tag would be warned away and dropped (BUG-101).
-        # A member that matched above always wins over the tag, as under the default tag.
-        return union_tag, str
-    return part.lower(), None
+        return union_tag
+    return part.lower()
 
 
 def _handle_env_config_flag(  # noqa: PLR0913  # the check needs the tag, the message the spelling the user typed

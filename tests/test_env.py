@@ -10,7 +10,7 @@ import warnings
 from dataclasses import dataclass as _dc
 from dataclasses import field, make_dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union
 from uuid import UUID
 
 if TYPE_CHECKING:
@@ -1142,3 +1142,143 @@ class TestEnvExactTagFieldCollision:
             union_tag="Kind",
         )
         assert cfg == _EnvExactKindField(Kind="v")
+
+
+# ---------------------------------------------------------------------------
+# The env channel spells a segment, the canonical walk types the path (REF-73)
+# ---------------------------------------------------------------------------
+
+
+@_dc
+class _EnvLowerKindBase:
+    pass
+
+
+@_dc
+class _EnvLowerKindSub(_EnvLowerKindBase):
+    kind: str = "f"
+
+
+class _EnvPt(NamedTuple):
+    x: int
+    y: int
+
+
+@_dc
+class _EnvHostA:
+    Host: int = 0
+
+
+@_dc
+class _EnvDbA:
+    Host: int = 0
+
+
+@_dc
+class _EnvDbB:
+    Host: str = ""
+
+
+@_dc
+class _EnvVariantA:
+    db: _EnvDbA = field(default_factory=_EnvDbA)
+
+
+@_dc
+class _EnvVariantB:
+    db: _EnvDbB = field(default_factory=_EnvDbB)
+
+
+@_dc
+class _EnvWalked:
+    pt: _EnvPt = field(default_factory=lambda: _EnvPt(0, 0))
+    pair: tuple[int, int] = (0, 0)
+    u: _EnvHostA | dict[str, int] = field(default_factory=_EnvHostA)
+    v: _EnvVariantA | _EnvVariantB = field(default_factory=_EnvVariantA)
+    sub: _EnvLowerKindBase = field(default_factory=_EnvLowerKindBase)
+
+
+@_dc
+class _EnvLowerHost:
+    host: str = ""
+
+
+@_dc
+class _EnvUpperHost:
+    Host: str = ""
+
+
+@_dc
+class _EnvCaseHolder:
+    db: _EnvLowerHost | _EnvUpperHost = field(default_factory=_EnvLowerHost)
+
+
+@_dc
+class _EnvHostBase:
+    host: str = ""
+
+
+@_dc
+class _EnvHostSub(_EnvHostBase):
+    Host: str = ""
+
+
+_HOST_AMBIGUOUS = r"Ambiguous env var segment 'HOST'.*\['Host', 'host'\]"
+
+
+class TestEnvSpellsWhatTheWalkReaches:
+    """An env variable merges what the CLI flag of the same path merges.
+
+    The env channel's own rule is case-insensitivity: a segment takes the exact spelling of
+    the member it names, and the path is then typed by the CLI channel's walk. A second walk
+    kept beside it lagged every rule the canonical one gained: it dropped a namedtuple's
+    negative index, skipped the non-struct variants of a union, lowercased a field below
+    variants that disagree, and could not see a subclass-only field (REF-73, BUG-104).
+    """
+
+    @pytest.mark.parametrize(
+        ("flag", "var"),
+        [
+            pytest.param("pt.y", "PT__Y", id="namedtuple-field"),
+            pytest.param("pt.1", "PT__1", id="namedtuple-index"),
+            pytest.param("pt.-1", "PT__-1", id="namedtuple-negative-index"),
+            pytest.param("pair.1", "PAIR__1", id="tuple-index"),
+            pytest.param("u.Host", "U__HOST", id="union-struct-variant"),
+            pytest.param("u.foo", "U__FOO", id="union-dict-variant"),
+            pytest.param("v.db.Host", "V__DB__HOST", id="below-disagreeing-variants"),
+            pytest.param("sub.kind", "SUB__KIND", id="subclass-only-field"),
+        ],
+    )
+    def test_env_merges_what_the_flag_merges(self, loader: ConfargLoader, flag: str, var: str) -> None:
+        """The variable and the flag spelling the same path merge the same dict."""
+        from_cli = loader.merge(_EnvWalked, argv=[f"--{flag}", "5"], env={})
+        from_env = loader.merge(_EnvWalked, argv=[], env={f"APP_{var}": "5"}, env_prefix="APP_")
+        assert from_env == from_cli
+
+    def test_odd_namedtuple_index_is_not_respelled(self, loader: ConfargLoader) -> None:
+        """PT__01 keeps its spelling, which the walk refuses, rather than becoming index 1."""
+        merged = loader.merge(_EnvWalked, argv=[], env={"APP_PT__01": "5"}, env_prefix="APP_")
+        assert merged == {"pt": {"01": "5"}}
+
+    def test_subclass_only_field_wins_over_case_differing_tag(self, loader: ConfargLoader) -> None:
+        """BUG-104's repro: KIND is the subclass-only field `kind`, not the tag `Kind`."""
+        from_cli = loader.merge(_EnvLowerKindBase, argv=["--kind", "v"], env={}, union_tag="Kind")
+        from_env = loader.merge(_EnvLowerKindBase, argv=[], env={"APP_KIND": "v"}, env_prefix="APP_", union_tag="Kind")
+        assert from_cli == {"kind": "v"}
+        assert from_env == from_cli
+
+    def test_spellings_differing_by_case_across_variants_are_ambiguous(self) -> None:
+        """A segment two variants spell differently cannot pick one of them."""
+        with pytest.raises(
+            confarg.exceptions.ConfargError,
+            match=_HOST_AMBIGUOUS,
+        ):
+            confarg.merge(_EnvCaseHolder, argv=[], env={"APP_DB__HOST": "x"}, env_prefix="APP_")
+
+    def test_declared_and_subclass_only_spellings_differing_by_case_are_ambiguous(self) -> None:
+        """A subclass-only field is a member, so it collides with a declared one as a variant's would."""
+        with pytest.raises(
+            confarg.exceptions.ConfargError,
+            match=_HOST_AMBIGUOUS,
+        ):
+            confarg.merge(_EnvHostBase, argv=[], env={"APP_HOST": "x"}, env_prefix="APP_")

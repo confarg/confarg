@@ -15,7 +15,8 @@ target. Convertibility is decided only in `build()`/`construct()`, which raise
   - an index patch past the end of a base list (`--input.2 3` over `[1, 2]`) is an error for a
     `list` but fills a slot for a fixed `tuple`, so `_merge_list_base` carries the base as
     `{"*": base, "2": 3}` and lets construction decide;
-  - `_parse_env._match_union_part` returns a field type only when all union variants agree,
-    otherwise `None` (store the raw token, coerce in `construct`).
+  - `_parse_cli._resolve_field_type` returns a field type only when all union variants agree,
+    otherwise `str` (the raw token is stored, coerced in `construct`), on the CLI and env
+    channels alike.
 - Expressions are the extreme case: their value is unknown until `build()`. See
   [expressions](../expressions/deferral-rule.md#deferral-rule).

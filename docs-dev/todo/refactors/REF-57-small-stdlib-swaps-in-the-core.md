@@ -1,7 +1,6 @@
 # REF-57 — Small stdlib swaps across the core
 
-**Where:** `src/confarg/_pipeline.py`, `src/confarg/_files.py`, `src/confarg/_parse_env.py`,
-`src/confarg/_types.py`, `src/confarg/cli/cyclopts/_register.py`,
+**Where:** `src/confarg/_pipeline.py`, `src/confarg/_files.py`, `src/confarg/_types.py`, `src/confarg/cli/cyclopts/_register.py`,
 `src/confarg/typedload/_coerce.py`, `src/confarg/typedload/_construct.py` ·
 **Filed:** 2026-09-24
 **Effort:** S · **Risk:** low · **Impact:** none
@@ -17,9 +16,6 @@ question attached to any of them. Split across revisions if one turns out bigger
   `functools.partial(_load_csv, orient="rows")`. `path` is `_load_csv`'s first positional
   parameter and the rest are keyword-only, so the binding is exact. A `partial` also reprs
   usefully in a traceback where `<lambda>` does not.
-- `_parse_env.py:99-106` — `name_to_types.setdefault(fname, []).append(...)` is
-  `collections.defaultdict(list)`. The variable is local to `_match_union_part` and never
-  returned, so the auto-vivification a `defaultdict` adds cannot leak.
 - `cli/cyclopts/_register.py:68` — three chained `.replace()` calls are one `str.maketrans`
   table plus `.translate()`. Verified equal today, because no replacement's output contains a
   later search character — which is exactly the cascade hazard a single-pass `translate` removes
