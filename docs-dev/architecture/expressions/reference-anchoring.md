@@ -105,10 +105,11 @@ reads any other.
   text: `_AnchorResolver` makes the first segment after a root stand-in the base name, and a
   segment is any key, so `${::['__ROOT__']}` or `${::['..']}` would be read as the root whole.
   Two steps keep the type in place. Before parsing, `_name_anchor` spells each marker as a name the
-  body writes nowhere, as Python reads it (NFKC): `__ROOT__`, or `___ROOT__` when the body writes
-  `__ROOT__`. After it, `_parse_expression` swaps those names for `_StandIn` ids. On the way back
-  out, `_unparse` prints a stand-in as its own text, and folds a dot read off one into it (`..host`,
-  not `...host`). This works on the tree, so a string literal cannot be touched.
+  body writes nowhere: `__ROOT__`, or `___ROOT__` when the body writes `__ROOT__`. A name Python
+  would read as a stand-in's (`__ＲＯＯＴ__`) needs no padding, since the same parse refuses it
+  ([values and references](values-and-references.md#spelling-a-path), BUG-132). After it,
+  `_parse_expression` swaps those names for `_StandIn` ids. On the way back out, `_unparse` prints
+  a stand-in as its own text, and folds a dot read off one into it (`..host`, not `...host`). This works on the tree, so a string literal cannot be touched.
   Rejected: **reserve the stand-in spellings** and refuse them in a body, the way `__include__`
   is reserved in a file. A key so named would still be unreachable through `${::['__ROOT__']}`,
   and the user would get a reserved name that no documentation can justify. Jinja2 takes the same
@@ -151,9 +152,10 @@ reads any other.
   the empty path, and since the root holds every expression, it is the cycle any reference to an
   ancestor is ([resolution](resolution.md#a-reference-reads-everything-its-path-reaches)).
 - **A spelled path parses back as itself.** `_path_to_ast` writes a segment with a dot only
-  when it is an identifier that is no keyword, no dunder and NFKC-stable (`ﬁle` would read back
-  as `file`); everything else is a subscript, by the integer when the segment spells an index
-  (`[0]`, which also reaches a YAML integer key below the root), else by the string. It is what
+  when it is an identifier that is no keyword, no dunder and that Python reads as written
+  (`_reads_as_written`: `ﬁle` would read back as `file`, and a body writing it is refused);
+  everything else is a subscript, by the integer when the segment spells an index (`[0]`, which
+  also reaches a YAML integer key below the root), else by the string. It is what
   `_Prefixer` unparses, and what `_AnchorResolver` builds the path of a dot run with, so the two
   agree with `_attribute_chain` on every segment.
 - `_Prefixer` rewrites only `ast.Name` bases. That is correct only because lambdas and

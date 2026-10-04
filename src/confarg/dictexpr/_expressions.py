@@ -230,7 +230,9 @@ def _parse_expression(content: str) -> ast.Expression:
     but at most once, and is the only place anchor markers are swapped for the stand-in
     names that let them parse (:func:`_name_anchor`). The text anywhere else is the text
     the user wrote, so a message quoting it never shows a stand-in. Once parsed, each
-    stand-in's id becomes a :class:`_StandIn`, which no name the body writes is.
+    stand-in's id becomes a :class:`_StandIn`, which no name the body writes is. A name
+    Python would read as another is refused here too (:func:`_refuse_normalized_names`),
+    so no parse site reads ``ﬁle`` as ``file``.
 
     A stand-in parses and so caches like anything else; what it *denotes* differs per
     node, which is why :func:`_parse_anchored` rewrites the tree on the way out rather
@@ -241,10 +243,50 @@ def _parse_expression(content: str) -> ast.Expression:
     """
     named, stand_ins = _name_anchor(content)
     tree = _parse_body(named)
+    _refuse_normalized_names(named)
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id in stand_ins:
             node.id = _StandIn(_marker_text(stand_ins[node.id]))
     return tree
+
+
+class _NormalizedNameError(SyntaxError):
+    """A name the body writes that Python reads as another, refused as a body that does not parse."""
+
+    def __init__(self, written: str) -> None:
+        self.written = written
+        self.read = unicodedata.normalize("NFKC", written)
+        super().__init__(f"name {written!r} reads as {self.read!r}")
+
+
+def _reads_as_written(name: str) -> bool:
+    """Return ``True`` when Python reads the identifier *name* as itself.
+
+    Python NFKC-normalizes every identifier it parses (PEP 3131), so ``ﬁle`` is the name
+    ``file``; a string is never normalized. The one answer for both directions: a body
+    writing such a name is refused (:func:`_refuse_normalized_names`), and a path segment
+    is never spelled as one (:func:`_spells_as_name`).
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
+    """
+    return unicodedata.is_normalized("NFKC", name)
+
+
+def _refuse_normalized_names(body: str) -> None:
+    """Raise :class:`_NormalizedNameError` for the first name *body* writes that Python reads as another.
+
+    Each name is checked as the tokenizer sees it, before normalization, which the tree no
+    longer shows. Being a :class:`SyntaxError`, the refusal is a body that does not parse to
+    every parse site: reference extraction skips it, mounting leaves it as written, and
+    validation reports it, pointing at the subscript, the spelling that reads a key as written.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
+    """
+    for ttype, tstr, _, _ in _significant_tokens(body.strip()):
+        if ttype == tokenize.NAME and not _reads_as_written(tstr):
+            raise _NormalizedNameError(tstr)
 
 
 def resolve_expressions(
@@ -586,6 +628,13 @@ def _validate_ast(expr_str: str) -> None:
     """
     try:
         tree = _parse_expression(expr_str)
+    except _NormalizedNameError as exc:
+        msg = (
+            f"Name {exc.written!r} reads as {exc.read!r} in expression {expr_str!r}, as Python normalizes"
+            f" names (NFKC): write {exc.read!r}, or read the key as written with a subscript,"
+            f" [{exc.written!r}] or ::[{exc.written!r}] at the root"
+        )
+        raise UnsafeExpressionError(msg) from exc
     except SyntaxError as exc:
         msg = f"Invalid expression syntax: {expr_str!r}"
         raise UnsafeExpressionError(msg) from exc
@@ -1059,14 +1108,14 @@ def _spells_as_name(segment: str) -> bool:
     """Return ``True`` when *segment* can be written as a name, ``.segment`` or a base ``segment``.
 
     It must parse back as itself: an identifier that is no keyword (``import``) and that
-    Python's NFKC normalization leaves alone (``ﬁle`` would read ``file``). A dunder is
-    excluded too, because validation refuses it after a dot.
+    Python reads as written (:func:`_reads_as_written`: ``ﬁle`` would read ``file``, and is
+    refused). A dunder is excluded too, because validation refuses it after a dot.
     """
     return (
         segment.isidentifier()
         and not keyword.iskeyword(segment)
         and not segment.startswith("__")
-        and unicodedata.normalize("NFKC", segment) == segment
+        and _reads_as_written(segment)
     )
 
 
@@ -1142,9 +1191,10 @@ def _name_anchor(expr_content: str) -> tuple[str, dict[str, int]]:
     """Swap each anchor marker for a parseable name (``..foo`` -> ``__UP2__.foo``).
 
     Return the named text, and the level count each name it wrote stands for. The name is
-    one the body spells nowhere, as Python reads it (NFKC-normalized): a body that writes
-    ``__ROOT__`` has its root marker named ``___ROOT__``, so :func:`_parse_expression` tells
-    each stand-in from a written name by its spelling alone.
+    one the body spells nowhere: a body that writes ``__ROOT__`` has its root marker named
+    ``___ROOT__``, so :func:`_parse_expression` tells each stand-in from a written name by
+    its spelling alone. A name Python would read as a stand-in's (``__ROOT__`` in fullwidth letters) is refused
+    by that same parse (:func:`_refuse_normalized_names`), so it needs no padding here.
 
     The stand-in owns a dot only when a name follows the marker: ``.[0]`` becomes
     ``__UP1__[0]`` and a bare ``.`` becomes ``__UP1__``, each a path to
@@ -1156,11 +1206,7 @@ def _name_anchor(expr_content: str) -> tuple[str, dict[str, int]]:
     markers = _anchor_markers(expr_content)
     if not markers:
         return expr_content, {}
-    written = {
-        unicodedata.normalize("NFKC", tstr)
-        for ttype, tstr, _, _ in _significant_tokens(expr_content)
-        if ttype == tokenize.NAME
-    }
+    written = {tstr for ttype, tstr, _, _ in _significant_tokens(expr_content) if ttype == tokenize.NAME}
     pad = ""
     while any(_stand_in_spelling(marker.levels, pad) in written for marker in markers):
         pad += "_"

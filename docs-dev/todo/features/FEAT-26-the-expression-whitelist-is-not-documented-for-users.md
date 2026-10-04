@@ -17,3 +17,9 @@ function only when called (BUG-120). A user learns each of these from an
 reference table belongs in the README's expressions section or in Tutorial 21.
 
 Precedents: Jinja2, CEL and simpleeval each document their callable set in their user docs.
+
+The path spelling is just as undocumented: no user page shows a subscript (`${svc['web-1']}`,
+`${servers[0].host}`, `${::['web-1']}`), though it is the only way to read a key that is no
+identifier, and the `UnsafeExpressionError` for a name Python would normalize (`${ﬁle}`,
+BUG-132) points the user at it
+([values-and-references.md#spelling-a-path](../../architecture/expressions/values-and-references.md#spelling-a-path)).

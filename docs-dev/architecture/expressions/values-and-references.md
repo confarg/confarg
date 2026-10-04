@@ -52,6 +52,25 @@ An anchor marker takes either spelling too, so `${.['web-1']}`, `${.[0]}` and `$
 read a sibling key, a sibling element and a root key
 ([reference anchoring](reference-anchoring.md#implementation-constraints)).
 
+**A name reads the key it is written as, or is refused** (BUG-132). Python NFKC-normalizes every
+identifier it parses (PEP 3131), so `${ﬁle}` (with the `ﬁ` ligature) or `${svc.ﬁle}` would read
+the key `file`, silently, even when the configuration holds both; a string is never normalized,
+so `${::['ﬁle']}` and `${svc['ﬁle']}` read the key as written. `_parse_expression` therefore
+refuses a body that writes a name Python would read as another, as a body that does not parse:
+reference extraction skips it, mounting leaves it as written (it would otherwise unparse `ﬁle`
+as `file`), and validation reports it, naming both spellings and the subscript. The rule covers
+every name, a callee (`ｍax(...)`) or a method (`.ｕpper()`) included, since the tokenizer sees
+them all the same way. `_reads_as_written` is its one predicate, and the converse already asks it:
+`_path_to_ast` never spells such a segment with a dot.
+
+Rejected: **read the name as written**, recovering each identifier's token text after parsing.
+JavaScript compares identifiers as written and JSONPath (RFC 9535) compares member names by code
+point, with no normalization, so `${ﬁle}` would read `ﬁle` there. But the expression language
+would stop being Python exactly where a reader cannot see it: `ｍax(a, b)` would name no
+function, and every node carrying a name, a dot's included, would need its token found again
+by offset. A refusal changes no answer Python gives, only declines one. jq makes the same call
+from the other side: its bare identifiers are ASCII, so any other key takes `.["ﬁle"]`.
+
 `_expressions._attribute_chain` is the one answer to "which config path does this node read?".
 Reference collection asks it for the dependency graph and evaluation asks it for the value, so a
 spelling can never be a dependency on one path and read another. `_expressions._path_to_ast` is
