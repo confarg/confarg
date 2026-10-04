@@ -166,7 +166,7 @@ def _is_none_type(tp: Any) -> bool:
     Returns:
         True if tp is NoneType.
     """
-    return _resolve_type(tp) is type(None)
+    return _resolve_type(tp) is types.NoneType
 
 
 def _is_union(tp: Any) -> bool:
@@ -203,7 +203,7 @@ def _union_args_no_none(tp: Any) -> list[Any]:
     Returns:
         A list of the Union's type arguments with NoneType filtered out.
     """
-    return [a for a in get_args(_resolve_type(tp)) if a is not type(None)]
+    return [a for a in get_args(_resolve_type(tp)) if a is not types.NoneType]
 
 
 def _allows_none(tp: Any) -> bool:
@@ -219,7 +219,7 @@ def _allows_none(tp: Any) -> bool:
     if _is_none_type(tp):
         return True
     if _is_union(tp):
-        return type(None) in _union_args(tp)
+        return types.NoneType in _union_args(tp)
     return False
 
 
@@ -577,7 +577,7 @@ def _all_have_defaults(tp: Any) -> bool:
 
 
 _PLAIN_CLASS_BUILTINS = frozenset(
-    {str, int, float, bool, bytes, bytearray, type(None), list, dict, set, frozenset, tuple, CallableABC},
+    {str, int, float, bool, bytes, bytearray, types.NoneType, list, dict, set, frozenset, tuple, CallableABC},
 )
 
 

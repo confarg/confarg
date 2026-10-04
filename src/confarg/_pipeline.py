@@ -17,6 +17,8 @@ Dev Notes:
 
 from __future__ import annotations
 
+import operator
+from itertools import chain
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -223,10 +225,7 @@ def _iter_namespace_nodes(
     if keys:
         yield path, keys
     if dicts:
-        names: dict[str, None] = {}
-        for d in dicts:
-            for k in d:
-                names.setdefault(k, None)
+        names: dict[str, None] = dict.fromkeys(chain.from_iterable(dicts))
         for name in names:
             if name in keys:
                 continue  # inside a namespace everything is free-form data
@@ -330,7 +329,7 @@ def _merge_sources(
     file_entries: list[tuple[str, Any]] = [("", f) for f in options.files]
     if env_config and (env_config_path := env.get(env_config)):
         file_entries.append(("", env_config_path))
-    env_configs.sort(key=lambda ec: ec[0])
+    env_configs.sort(key=operator.itemgetter(0))
     config_data = _load_subpath_files(file_entries + env_configs, union_tag)
     for subpath, value in cli_configs:
         fdata = _load_cli_config(value, subpath, config_flag, union_tag)
