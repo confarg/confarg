@@ -345,7 +345,7 @@ def _navigate_append_spec(d: dict[str, Any], part: str) -> dict[str, Any] | None
 def _peek_nested(d: dict[str, Any], path: list[str]) -> Any:
     """Return the value stored at *path*, or ``None`` when the path is not (fully) there.
 
-    The read-only twin of :func:`_set_nested`'s descent: it navigates append-specs the
+    The read-only twin of :func:`_descend_creating`: it navigates append-specs the
     same way and stops at anything that is not a dict, so a caller can ask what
     ``_set_nested`` would have to descend through before it descends. Keep the two in step.
 
@@ -390,11 +390,34 @@ def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#scalar-intermediates
     """
-    for part in path[:-1]:
+    if path:
+        _descend_creating(d, path[:-1])[path[-1]] = value
+
+
+def _descend_creating(d: dict[str, Any], path: list[str]) -> dict[str, Any]:
+    """Return the dict at *path* inside *d*, opening every node on the way into one.
+
+    The one descent every writer into a parse result shares, so an op recorded below a
+    node treats what it finds there the same way whichever op it is: a missing node is
+    created, a plain list is kept as the ``'*'`` base the patch applies to, and any other
+    non-dict -- an earlier scalar, or the sentinel of a whole-field delete -- is replaced,
+    the later writer at the path winning.
+
+    Args:
+        d: The root dict to modify in place.
+        path: A list of keys forming the path to descend; empty returns *d*.
+
+    Returns:
+        The dict now stored at *path*.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#scalar-intermediates
+    """
+    for part in path:
         # Negative index into an active append-spec: navigate directly into the
         # appended item so multiple --field+ / --field.-1.sub sequences each
         # patch their own newly-added item rather than colliding on the "-N" key.
-        if isinstance(d, dict) and (target := _navigate_append_spec(d, part)) is not None:
+        if (target := _navigate_append_spec(d, part)) is not None:
             d = target
             continue
         if part not in d:
@@ -404,8 +427,7 @@ def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
         elif not isinstance(d[part], dict):
             d[part] = {}
         d = d[part]
-    if path:
-        d[path[-1]] = value
+    return d
 
 
 def _pop_nested(d: dict[str, Any], path: list[str]) -> None:
@@ -463,13 +485,7 @@ def _accumulate_list_delete(
     Raises:
         ConfargError: If ``idx`` has already been scheduled for deletion.
     """
-    node = d
-    for key in path:
-        if key not in node:
-            node[key] = {}
-        elif isinstance(node[key], list):
-            node[key] = {LIST_REPLACE_BASE_KEY: node[key]}
-        node = node[key]
+    node = _descend_creating(d, path)
     existing = node.get(delete_key)
     if isinstance(existing, list):
         if idx in existing:

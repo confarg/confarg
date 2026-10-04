@@ -49,6 +49,13 @@ collector already nests the subkey over the whole value, and the reverse order a
 the whole value replace the subkeys. The crashing case was the only one that resolved to a
 Python `TypeError` escaping the merge core instead of to last-write-wins.
 
+The same holds for the sentinel a whole-field delete leaves: `--users- --users.0-` is an
+index delete written after it, and records like a lone `--users.0-`. The rule lives in one
+descent, `_descend_creating`, which every writer into a parse result goes through —
+`_set_nested` and the list-index delete alike. The delete once carried a walk of its own
+that missed both the non-dict replacement and the append-spec navigation, so it crashed on
+the sentinel and recorded `--items+ … --items.-1.tags.0-` under a stray `'-1'` key (BUG-77).
+
 Replacing is right only because the scalar meant nothing to its field. Where it *does* mean
 something — a bare string at a `Callable` field is the shorthand for `{fn: <string>}` — the
 parsers open it into that meaning before `_set_nested` ever sees it, so the later key refines
