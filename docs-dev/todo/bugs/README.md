@@ -32,11 +32,12 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-117 — A union with an `Any` variant refuses to load and crashes `dump()`](BUG-117-a-union-with-an-any-variant-refuses-to-load-and-crashes-dump.md) | M | high | behavior |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | S | low | behavior |
 | [BUG-119 — `_defaults.py` says four front-ends must agree; there are five](BUG-119-defaults-module-counts-four-front-ends.md) | S | low | none |
-| [BUG-129 — A syntax error quotes the anchor stand-in names, not the expression as written](BUG-129-a-syntax-error-quotes-the-anchor-stand-in-names.md) | S | low | behavior |
 | [BUG-130 — A malformed expression in an included file crashes `merge()` with a raw `SyntaxError`](BUG-130-a-malformed-expression-in-an-included-file-crashes-merge.md) | S | medium | behavior |
 | [BUG-131 — A key named like an anchor stand-in is read as the anchor](BUG-131-a-key-named-like-an-anchor-stand-in-is-read-as-the-anchor.md) | M | high | behavior |
 | [BUG-132 — A name Python normalizes reads another key](BUG-132-a-name-python-normalizes-reads-another-key.md) | M | high | config |
 | [BUG-133 — An expression's list index accepts any spelling `int()` does](BUG-133-an-expression-list-index-accepts-any-int-spelling.md) | S | high | config |
 | [BUG-134 — A miss off a value no path names is a bare repr](BUG-134-a-miss-off-a-value-no-path-names-is-a-bare-repr.md) | S | high | behavior |
+| [BUG-135 — An operator or a call that fails names no expression](BUG-135-an-operator-or-call-error-names-no-expression.md) | S | high | behavior |
+| [BUG-136 — The uncalled-method hint spells an anchored path as an absolute one](BUG-136-an-uncalled-method-hint-spells-an-anchored-path-absolute.md) | S | high | behavior |
 
 <!-- tickets:end -->
