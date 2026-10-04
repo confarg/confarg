@@ -1385,7 +1385,14 @@ class TestSilentFailureFixes:
     @pytest.mark.parametrize(
         ("type_ann", "env_val", "match"),
         [
-            (Union[int, float, None], "xyz", r"Cannot coerce.*int.*float.*None"),
+            (
+                Union[int, float, None],
+                "xyz",
+                (
+                    r"Cannot coerce str 'xyz' to int \| float \| None at 'value'\."
+                    r" To set this field to None, pass 'none' or 'null'\."
+                ),
+            ),
             (Union[int, float, None], "not_a_number", r"'value'"),
             (Union[bool, int, None], "abc", "Cannot coerce"),
         ],

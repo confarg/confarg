@@ -185,8 +185,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
 
         return tp(**kwargs)
 
-    msg = f"Cannot construct {tp.__name__} at '{path}': expected list, tuple, or dict, got {_src_type(data)} {data!r}"
-    raise TypeCoercionError(msg)
+    raise TypeCoercionError.wrong_shape(_src_type(data), data, tp.__name__, "list, tuple, or dict", path)
 
 
 def _warn_shadowed_tag_key(path: str, union_tag: str, what: str) -> None:
@@ -217,8 +216,7 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) ->
         docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
     """
     if not isinstance(data, dict):
-        msg = f"Cannot construct {tp.__name__} at '{path}': expected dict, got {_src_type(data)} {data!r}"
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.wrong_shape(_src_type(data), data, tp.__name__, "dict", path)
     direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
     if union_tag in data:
         if not _union_tag_shadowed(tp, union_tag):
@@ -282,11 +280,14 @@ def _construct_shadowed_subclass(tp: Any, data: dict[str, Any], path: str, union
     raise TypeCoercionError(msg)
 
 
-def _ambiguous_subclass_msg(matches: list[Any], data: dict[str, Any], path: str, union_tag: str) -> str:
-    """Build a diagnostic message for subclasses the provided fields cannot tell apart."""
-    lines = [
-        f"Ambiguous subclasses at '{path}': cannot distinguish between " + ", ".join(m.__name__ for m in matches) + ".",
-    ]
+def _ambiguous_structs_msg(matches: list[Any], provided: set[str], path: str, header: str, remedy: str) -> str:
+    """Build the per-variant field breakdown the two ambiguity refusals share.
+
+    *header* names what the provided fields cannot tell apart, *remedy* how to make them
+    tell it, and *provided* the keys the data carries — the caller deciding whether the
+    tag-shaped key counts as one.
+    """
+    lines = [f"{header} at '{path}': cannot distinguish between " + ", ".join(m.__name__ for m in matches) + "."]
     for var in matches:
         flds = _struct_fields(var)
         defs = _struct_defaults(var)
@@ -298,12 +299,21 @@ def _ambiguous_subclass_msg(matches: list[Any], data: dict[str, Any], path: str,
         if optional:
             parts.append("optional: " + ", ".join(optional))
         lines.append(f"  {var.__name__}: {'; '.join(parts) if parts else '(no fields)'}")
-    lines.append(f"Provided fields: {sorted(data) if data else '(none)'}")
-    lines.append(
+    lines.append(f"Provided fields: {sorted(provided) if provided else '(none)'}")
+    lines.append(remedy)
+    return "\n".join(lines)
+
+
+def _ambiguous_subclass_msg(matches: list[Any], data: dict[str, Any], path: str, union_tag: str) -> str:
+    """Build a diagnostic message for subclasses the provided fields cannot tell apart."""
+    return _ambiguous_structs_msg(
+        matches,
+        set(data),
+        path,
+        "Ambiguous subclasses",
         f"A member spelled {union_tag!r} owns the tag's spelling, so no class-path tag"
         " can select between them. Rename the field or pass a different union_tag.",
     )
-    return "\n".join(lines)
 
 
 def _construct_taggable_leaf(tp: Any, data: dict[str, Any], path: str, union_tag: str) -> Any:
@@ -344,11 +354,7 @@ def _construct_collection(tp: Any, data: Any, path: str, union_tag: str) -> Any:
         docs-dev/architecture/types/construction.md#structs-collections-and-defaults
     """
     if _is_list(tp) and not isinstance(data, list | dict):
-        msg = (
-            f"Cannot construct list at '{path}': expected list or dict with integer keys,"
-            f" got {_src_type(data)} {data!r}"
-        )
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.wrong_shape(_src_type(data), data, "list", "list or dict with integer keys", path)
     items = _build_items(_elem_type(tp), data, path, union_tag)
     if _is_frozenset(tp):
         return frozenset(items)
@@ -602,11 +608,7 @@ def _build_items(et: Any, data: Any, path: str, union_tag: str) -> list[Any]:
         return [
             construct(et, data.get(str(i), None), path=f"{path}[{i}]", union_tag=union_tag) for i in range(max_idx + 1)
         ]
-    msg = (
-        f"Cannot construct collection at '{path}': expected sequence or dict with integer keys,"
-        f" got {_src_type(data)} {data!r}"
-    )
-    raise TypeCoercionError(msg)
+    raise TypeCoercionError.wrong_shape(_src_type(data), data, "collection", "sequence or dict with integer keys", path)
 
 
 def _construct_tuple(tp: Any, data: Any, path: str, union_tag: str) -> tuple[Any, ...]:
@@ -633,11 +635,13 @@ def _construct_tuple(tp: Any, data: Any, path: str, union_tag: str) -> tuple[Any
         return tuple(_build_items(et, data, path, union_tag))
 
     if not isinstance(data, list | tuple | dict):
-        msg = (
-            f"Cannot construct tuple at '{path}': expected list, tuple, or dict with integer keys,"
-            f" got {_src_type(data)} {data!r}"
+        raise TypeCoercionError.wrong_shape(
+            _src_type(data),
+            data,
+            "tuple",
+            "list, tuple, or dict with integer keys",
+            path,
         )
-        raise TypeCoercionError(msg)
     if isinstance(data, list | tuple):
         if len(data) > len(tt):
             msg = f"Cannot construct {tp} at '{path}': expected {len(tt)} elements, got {len(data)}"
@@ -683,8 +687,7 @@ def _construct_dict(tp: Any, data: Any, path: str, union_tag: str) -> dict[Any, 
     """
     kt, vt = _dict_kv(tp)
     if not isinstance(data, dict):
-        msg = f"Cannot construct dict at '{path}': expected dict, got {_src_type(data)} {data!r}"
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.wrong_shape(_src_type(data), data, "dict", "dict", path)
     return {
         _coerce_leaf(kt, _StrToken(k) if isinstance(k, str) else k, path): construct(
             vt,
@@ -713,12 +716,8 @@ def _construct_single_variant_union(
         return construct(non_none[0], data, path=path, union_tag=union_tag)
     except (TypeCoercionError, MissingFieldError):
         if type(None) in all_args:
-            msg = (
-                f"Cannot coerce {_src_type(data)} {data!r} to"
-                f" {getattr(_resolve_type(non_none[0]), '__name__', repr(non_none[0]))} at '{path}'."
-                f" To set this field to None, pass 'none' or 'null'."
-            )
-            raise TypeCoercionError(msg) from None
+            name = getattr(_resolve_type(non_none[0]), "__name__", repr(non_none[0]))
+            raise TypeCoercionError.cannot_coerce(_src_type(data), data, name, path, none_sentinel=True) from None
         raise  # pragma: no cover  # len(non_none)==1 without NoneType is impossible via normal Union typing
 
 
@@ -878,10 +877,13 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
     variant_names = " | ".join(
         "None" if v is type(None) else getattr(_resolve_type(v), "__name__", repr(v)) for v in all_args
     )
-    msg = f"Cannot coerce {_src_type(data)} {data!r} to {variant_names} at '{path}'"
-    if type(None) in all_args:
-        msg += ". To set this field to None, pass 'none' or 'null'."
-    raise TypeCoercionError(msg)
+    raise TypeCoercionError.cannot_coerce(
+        _src_type(data),
+        data,
+        variant_names,
+        path,
+        none_sentinel=type(None) in all_args,
+    )
 
 
 def _construct_union(tp: Any, data: Any, path: str, union_tag: str) -> Any:
@@ -1023,25 +1025,14 @@ def _value_matches_type(value: Any, tp: Any, union_tag: str) -> bool:
 
 def _ambiguous_union_msg(matches: list[Any], data: dict[str, Any], path: str, union_tag: str) -> str:
     """Build a diagnostic AmbiguousUnionError message with per-variant field breakdowns."""
-    lines = [f"Ambiguous union at '{path}': cannot distinguish between " + ", ".join(m.__name__ for m in matches) + "."]
-    provided = {k for k in data if k != union_tag}
-    for var in matches:
-        flds = _struct_fields(var)
-        defs = _struct_defaults(var)
-        required = sorted(n for n in flds if n not in defs)
-        optional = sorted(n for n in flds if n in defs)
-        parts = []
-        if required:
-            parts.append("required: " + ", ".join(required))
-        if optional:
-            parts.append("optional: " + ", ".join(optional))
-        lines.append(f"  {var.__name__}: {'; '.join(parts) if parts else '(no fields)'}")
-    lines.append(f"Provided fields: {sorted(provided) if provided else '(none)'}")
-    lines.append(
+    return _ambiguous_structs_msg(
+        matches,
+        {k for k in data if k != union_tag},
+        path,
+        "Ambiguous union",
         f"To select a variant add a {union_tag!r} field, e.g. {union_tag!r}: {matches[0].__name__!r}."
         f" The field name can be changed via the union_tag= parameter.",
     )
-    return "\n".join(lines)
 
 
 def _structurally_matches(var: Any, keys: set[str]) -> bool:
@@ -1105,7 +1096,6 @@ def _construct_by_class_path(tp: type, data: dict[str, Any], path: str, union_ta
     tag = data[union_tag]
     cls = _import_class_by_path(tag, path, union_tag)
     if not issubclass(cls, tp):
-        msg = f"Class {tag!r} at '{path}' is not a subclass of {dotted_name(tp)}."
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.not_a_subclass(tag, dotted_name(tp), path)
     cleaned = {k: v for k, v in data.items() if k != union_tag}
     return _construct_struct(cls, cleaned, path, union_tag)

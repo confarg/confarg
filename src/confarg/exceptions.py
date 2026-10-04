@@ -88,9 +88,51 @@ class TypeCoercionError(ConfargError):
     """Raised when a value cannot be coerced to the target type."""
 
     @classmethod
-    def cannot_coerce(cls, src: str, value: Any, tp: str, path: str) -> TypeCoercionError:
-        """Return an error for a value that cannot be coerced to the target type."""
-        return cls(f"Cannot coerce {src} {value!r} to {tp} at '{path}'")
+    def cannot_coerce(
+        cls,
+        src: str,
+        value: Any,
+        tp: str,
+        path: str,
+        *,
+        none_sentinel: bool = False,
+    ) -> TypeCoercionError:
+        """Return an error for a value that cannot be coerced to the target type.
+
+        *none_sentinel* appends the remedy for a union field whose ``None`` a channel spells
+        as a none word, offered only when the union counts ``None`` among its variants.
+        """
+        msg = f"Cannot coerce {src} {value!r} to {tp} at '{path}'"
+        if none_sentinel:
+            msg += ". To set this field to None, pass 'none' or 'null'."
+        return cls(msg)
+
+    @classmethod
+    def wrong_shape(cls, src: str, value: Any, what: str, accepted: str, path: str) -> TypeCoercionError:
+        """Return the error for raw data no constructor of *what* accepts on shape.
+
+        The one spelling for every shape refusal in construction, the sites differing only in
+        *what* is being built and the *accepted* shapes. *src* is the value's type as text —
+        ``_src_type(value)`` — passed in rather than computed, this module importing nothing
+        from ``confarg``.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
+        """
+        return cls(f"Cannot construct {what} at '{path}': expected {accepted}, got {src} {value!r}")
+
+    @classmethod
+    def not_a_subclass(cls, name: Any, parent: str, path: str) -> TypeCoercionError:
+        """Return the error for a class that is not a subclass of the target type.
+
+        *name* arrives as the text the caller names the class by — a dotted name, or the
+        string the user typed — and *parent* as a dotted name, both passed in rather than
+        computed, this module importing nothing from ``confarg``.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
+        """
+        return cls(f"Class {name!r} at '{path}' is not a subclass of {parent}.")
 
 
 class InvalidConfigFileError(ConfargError):

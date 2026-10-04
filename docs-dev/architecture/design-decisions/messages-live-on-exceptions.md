@@ -4,7 +4,14 @@ An error message raised from **more than one site** is built by a classmethod fa
 exception class, not by an f-string at each of them. `InvalidConfigFileError` and `LocalsError`
 were written that way from the start; `ConfargError.root_cast_not_object`,
 `ConfargError.include_siblings_need_a_dict` and the three `UnknownArgumentError` factories
-followed once the duplication had cost something (REF-51, closed). The threshold is duplication,
+followed once the duplication had cost something (REF-51, closed). The two construction-error
+families in `typedload/` followed before they could drift a second time (REF-69, closed):
+`TypeCoercionError.wrong_shape` for the six shape refusals, `TypeCoercionError.not_a_subclass`
+for the three class-tag refusals, and a `none_sentinel` keyword on `cannot_coerce` carrying
+the none-word remedy. The per-variant breakdown of the two ambiguity refusals is the one
+multi-site text that stays out of `exceptions.py`: it reads `_struct_fields` and
+`_struct_defaults`, so it lives as one module-level builder in `_construct.py`, parametrized
+by its header and remedy lines. The threshold is duplication,
 not user-facing-ness: a message with one call site is fine where it is raised, and most of them
 still are. The point is not tidiness either — a message spelled at four call sites drifts, and
 the drift is invisible because no test reads more than one of them. Two of the four "Unknown
