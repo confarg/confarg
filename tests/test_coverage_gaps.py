@@ -989,6 +989,12 @@ class TestExpressionBranches:
         with pytest.raises(confarg.exceptions.ExpressionEvalError, match="Unsupported comparison"):
             _evaluate_ast(node, {"a": 1, "b": 1})
 
+    def test_indirect_call_is_refused_at_evaluation(self) -> None:
+        """Evaluation refuses an indirect call itself, rather than call whatever the callee yields."""
+        node = ast.parse("f[0]()", mode="eval").body
+        with pytest.raises(confarg.exceptions.UnsafeExpressionError, match="Indirect function calls"):
+            _evaluate_ast(node, {"f": [print]})
+
 
 # ---------------------------------------------------------------------------
 # typedload._coerce — uncovered branches

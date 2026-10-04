@@ -312,6 +312,11 @@ class MissingReferenceError(ConfargError):
 class UnsafeExpressionError(ConfargError):
     """Raised when an expression contains disallowed AST nodes or function calls."""
 
+    @classmethod
+    def indirect_call(cls) -> UnsafeExpressionError:
+        """Return an error for a call whose callee is neither a function name nor a method."""
+        return cls("Indirect function calls are not allowed")
+
 
 class ExpressionEvalError(ConfargError):
     """Raised for runtime errors during expression evaluation."""

@@ -32,8 +32,8 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-117 — A union with an `Any` variant refuses to load and crashes `dump()`](BUG-117-a-union-with-an-any-variant-refuses-to-load-and-crashes-dump.md) | M | high | behavior |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | S | low | behavior |
 | [BUG-119 — `_defaults.py` says four front-ends must agree; there are five](BUG-119-defaults-module-counts-four-front-ends.md) | S | low | none |
-| [BUG-122 — A method call is whitelisted by name alone, free-function names included](BUG-122-a-method-call-is-whitelisted-by-name-alone.md) | S | medium | behavior |
 | [BUG-123 — A reference is a dependency only on its exact path](BUG-123-a-reference-is-a-dependency-only-on-its-exact-path.md) | M | medium | behavior |
 | [BUG-124 — An expression under a key holding a dot crashes resolution](BUG-124-an-expression-under-a-key-holding-a-dot-crashes-resolution.md) | M | medium | behavior |
+| [BUG-125 — A method named without a call yields the bound method](BUG-125-a-method-named-without-a-call-yields-the-bound-method.md) | S | medium | behavior |
 
 <!-- tickets:end -->
