@@ -16,7 +16,6 @@ different board.
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | M | high | none |
 | [REF-26 — The `--config` files named on argv are parsed three times per run](REF-26-config-files-parsed-three-times.md) | M | low | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | M | low | none |
-| [REF-38 — `test_collect_names_keyword_args` or-asserts away its own claim](REF-38-collect-names-keyword-args-or-asserts-away-claim.md) | S | low | none |
 | [REF-39 — `test_dict_field_from_env` or-asserts away its own claim](REF-39-dict-field-env-test-or-asserts-away-claim.md) | S | low | none |
 | [REF-41 — `cli/click/_context.py` and `cli/typer/_context.py` are the same file](REF-41-click-and-typer-context-are-the-same-file.md) | S | low | none |
 | [REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk](REF-42-argparse-completion-reimplements-the-build-walk.md) | M | medium | none |
@@ -46,5 +45,6 @@ different board.
 | [REF-75 — `cli/_collect.py` no longer collects, and `_merge_from_flat` no longer merges from the flat result](REF-75-cli-collect-module-no-longer-collects.md) | S | low | none |
 | [REF-76 — `FlagSpec.accumulates` has no reader left in the merge](REF-76-flagspec-accumulates-has-no-reader-left.md) | S | low | none |
 | [REF-77 — `_parse_expression` strips a root marker that no body reaching it still holds](REF-77-parse-expression-strips-a-root-marker-no-body-still-holds.md) | S | low | none |
+| [REF-78 — Subsumed `or`-disjuncts in tests read like the or-asserts-away family](REF-78-subsumed-or-disjuncts-read-like-or-asserts-away.md) | S | low | none |
 
 <!-- tickets:end -->
