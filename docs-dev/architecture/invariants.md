@@ -49,6 +49,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "are these two locations the same document?" | `_sources._identity` |
 | "would resolution rewrite this value?" | `dictexpr.contains_expression` |
 | "where does each `${...}` of this string begin and end?" | `dictexpr._expressions._find_expressions` ([expressions](expressions/values-and-references.md#delimiting-an-expression)) |
+| "which config path does this node read?" | `dictexpr._expressions._attribute_chain` — a dot and a constant subscript each spell one segment; reference collection (`_collect_names`, a method's receiver) and evaluation (`_eval_path_or`, behind both `_eval_attribute` and `_eval_subscript`) ask it (BUG-121, [expressions](expressions/values-and-references.md#spelling-a-path)) |
 | "is this name a function or a config key?" | `dictexpr._expressions._function_name` — a function only as a call's callee, a key everywhere else; validation, evaluation, `_collect_names` and `_Prefixer` all ask it (BUG-120, [expressions](expressions/safety-model.md#a-function-is-named-only-by-a-call)) |
 | "does this segment name a real member?" | `_parse_cli._segment_names_real_field` |
 | "does a real field own the union tag's spelling?" | `_types._union_tag_shadowed` |

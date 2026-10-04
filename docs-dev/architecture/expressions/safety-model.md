@@ -3,7 +3,7 @@
 Expressions come from config files, env and argv, so they are evaluated by a small
 interpreter over a whitelisted AST, never `eval`:
 
-- allowed nodes: constants, names, attributes, integer subscripts, arithmetic, comparisons,
+- allowed nodes: constants, names, attributes, subscripts, arithmetic, comparisons,
   boolean ops, conditional expressions, calls (`_ALLOWED_NODES`);
 - calls only to whitelisted free functions (`abs min max round ceil floor str int float bool
   len`) and string methods (`upper lower strip split replace startswith endswith join`); no
@@ -13,9 +13,12 @@ interpreter over a whitelisted AST, never `eval`:
   f-strings. A `}` inside a string literal is fine: delimiting is lexical, not a regex
   ([values and references](values-and-references.md#delimiting-an-expression)).
 
-`a.b` is first tried as a config path; only if that fails is it a real attribute access
-(e.g. the receiver of a string method), and a miss is reported as a missing field rather
-than an `AttributeError` on `dict`.
+`a.b` and `a['b']` are first tried as a config path; only if that fails are they a real
+attribute access or subscript (the receiver of a string method, an index into a string), and a
+miss is reported as a missing field rather than an `AttributeError` on `dict`
+([values and references](values-and-references.md#spelling-a-path)). A subscript never reaches
+`getattr`, so `['__class__']` is a key like any other; that holds only while no rewrite turns a
+subscript into an attribute ([reference anchoring](reference-anchoring.md#implementation-constraints)).
 
 ## A function is named only by a call
 
