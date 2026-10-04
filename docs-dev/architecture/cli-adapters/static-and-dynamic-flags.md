@@ -40,6 +40,13 @@ user typed, found by scanning argv (and config files named on argv):
   `__init__` parameter would clutter `--help` for the escape hatch. A root's parameters
   are an exception the *static* walk already owns: the root is walked structurally, as a
   union holding the same leaf is, so only its tag flag is argv-scanned.
+- the union-tag flags the static walk gave none (`--<path>.<union_tag>`, and
+  `--<union_tag>` at the root, BUG-92 / BUG-106), registered only when typed, on the same
+  help-noise ground: a path's ordinary spelling is its own value or fields. They are
+  replayed writes, admitted wherever the walk reaches the tag by its fallback
+  ([a tag is a replayed write](collection-patch-parity.md#a-tag-is-a-replayed-write)).
+  `import_tagged_classes` runs at the start of `build_dynamic_flags`, so a tag naming a real
+  subclass is visible to every scan that follows.
 
 Why dynamic: the framework must accept every token the user types, but registering every
 possible index, key or bind parameter statically is impossible, and registering rarely used

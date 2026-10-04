@@ -743,12 +743,15 @@ def _collect_namedtuple_specs(
         ),
     )
     # Individual flags by field name and by index, positive and negative alike
+    from confarg._parse_cli import _namedtuple_position_spellings  # noqa: PLC0415  # import cycle
+
     for i, (fname, ft) in enumerate(flds.items()):
+        keys = [fname, *_namedtuple_position_spellings(n, i)]
         fcore = _unwrap_optional(_resolve_type(ft))
         if _is_struct(fcore) or _is_namedtuple(fcore):
             # The field is itself structured, so its spellings take what that
             # field type takes — the whole-value/arity flag and the flags below it.
-            for sub_flag in (f"{flag}.{fname}", f"{flag}.{i}", f"{flag}.{i - n}"):
+            for sub_flag in (f"{flag}.{key}" for key in keys):
                 result.extend(
                     _specs_for_field(
                         sub_flag,
@@ -763,20 +766,16 @@ def _collect_namedtuple_specs(
                     ),
                 )
             continue
-        for sub_flag, spelled_index in (
-            (f"{flag}.{fname}", str(i)),
-            (f"{flag}.{i}", str(i)),
-            (f"{flag}.{i - n}", str(i - n)),
-        ):
-            result.append(
-                FlagSpec(
-                    name=sub_flag,
-                    metavar=getattr(ft, "__name__", "VALUE").upper(),
-                    help=f"Field {fname!r} of {core.__name__} (index {spelled_index})",
-                    group=group,
-                    group_description=group_description,
-                ),
+        result.extend(
+            FlagSpec(
+                name=f"{flag}.{key}",
+                metavar=getattr(ft, "__name__", "VALUE").upper(),
+                help=f"Field {fname!r} of {core.__name__} (index {key if key != fname else i})",
+                group=group,
+                group_description=group_description,
             )
+            for key in keys
+        )
     # The deep spellings and the arity flag of an index-spelled deep field carry
     # a numeric last segment of their own; the recursion below already marked the
     # flags it generated, so one pass over the result covers what this level added.
@@ -1376,7 +1375,7 @@ def _collect_leaf_tag_argv_specs(
     return specs
 
 
-def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind (delete/append/collection/json cast)
+def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kind (delete/append/tag/patch/cast)
     target: object,
     argv: Sequence[str],
     union_tag: str,
@@ -1399,9 +1398,10 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import (  # noqa: PLC0415
         _addresses_key,
-        _is_collection_patch_path,
+        _is_replayed_path,
         _locals_keys,
         _looks_like_flag,
+        _names_tag_by_fallback,
         _normalize_eq_args,
         _parse_flag_mode,
         _resolve_field_type,
@@ -1435,7 +1435,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
                     FlagSpec(name=key, metavar="JSON", help=f"Parse the value as JSON for {target_desc}."),
                 )
                 continue
-            if force_cast and not _is_collection_patch_path(target, path, union_tag):
+            if force_cast and not _is_replayed_path(target, path, union_tag):
                 # A scalar cast on a plain leaf field (--host.str): registered only
                 # when typed, like `.json`, so `--help` stays clean (BUG-72). The
                 # leaf answer mirrors the collector's dispatch, so the value the
@@ -1455,7 +1455,7 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
                 continue
             # else: cast on a collection element (--field.N.str) falls through to
             # dynamic collection-patch registration below.
-        if not (delete_mode or append_mode or _is_collection_patch_path(target, path, union_tag)):
+        if not (delete_mode or append_mode or _is_replayed_path(target, path, union_tag)):
             continue
         seen.add(key)
         target_path = ".".join(path)
@@ -1480,6 +1480,15 @@ def _collect_patch_argv_specs(  # noqa: C901  # one branch per dynamic flag kind
                     metavar="ITEM",
                     stands_bare=True,
                     help=f"Append element(s) to the list at '{target_path}'.",
+                ),
+            )
+        elif _names_tag_by_fallback(target, path, union_tag):
+            # A tag takes the one class-path token vanilla's scan consumes for it.
+            specs.append(
+                FlagSpec(
+                    name=key,
+                    metavar="DOTTED.CLASS.PATH",
+                    help=f"Class path written at '{target_path}', for build() to judge.",
                 ),
             )
         else:
@@ -1522,8 +1531,9 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
     by the host framework (duplicates of static flags are skipped at load time).
 
     Also registers the collection-patch flags (``--field.N``, ``--field+``,
-    ``--field.N-``, ``--field.key``) and ``.json`` casts found in ``argv``, plus the
-    flat tagged-leaf flags (``--<leaf>.class``, ``--<leaf>.<param>``).
+    ``--field.N-``, ``--field.key``) and ``.json`` casts found in ``argv``, the
+    flat tagged-leaf flags (``--<leaf>.class``, ``--<leaf>.<param>``), and the union-tag
+    flags the walk reaches by its fallback (``--<path>.class``) at any other path.
 
     Registration is best-effort: no exception escapes into ``populate_*``.  A failure
     returns no dynamic flag and emits a :class:`~confarg.exceptions.ConfargWarning`
@@ -1551,6 +1561,10 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         # Strip first: the scans below resolve dotted paths against *target*, which
         # knows nothing of the prefix (docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix).
         argv_list = strip_argv_prefix(argv, cli_prefix)
+        # A subclass is invisible to the walks below until its module has run, and the
+        # tag is the only thing that says which module that is
+        # (docs-dev/architecture/design-decisions/a-named-tag-is-imported-before-registration.md).
+        import_tagged_classes(argv_list, target, union_tag=union_tag, config_flag=config_flag)
         config_dict = _partial_config_from_argv(argv_list, config_flag) if config_flag else {}
 
         config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)

@@ -639,6 +639,13 @@ class TestHelpHidesIndexSpellings:
         assert "--pt.0" not in help_text
         assert "--pt.-1" not in help_text
 
+    def test_namedtuple_name_flag_help_names_its_position(self) -> None:
+        """The advertised name spelling tells the field's position, since its index flags are hidden."""
+        parser = make_parser(_WithHelpPoint, config_flag="")
+        helps = {s: a.help for a in parser._actions for s in a.option_strings}
+        assert helps["--pt.x"] == "Field 'x' of _HelpPoint (index 0)"
+        assert helps["--pt.y"] == "Field 'y' of _HelpPoint (index 1)"
+
     def test_tuple_element_flag_hidden_when_typed(self) -> None:
         """A fixed tuple's element flag, registered from argv, is kept out of --help."""
         parser = make_parser(_WithHelpPair, config_flag="", argv=["--pair.0", "a"])

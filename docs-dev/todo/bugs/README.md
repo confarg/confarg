@@ -18,14 +18,16 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-86 — A subclass's override of a base-declared field is coerced by the last subclass walk](BUG-86-a-subclass-override-of-a-base-field-is-coerced-by-the-last-walk.md) | M | medium | behavior |
 | [BUG-87 — The adapters' merged dict orders keys by the walk, not by argv, so a dump differs byte for byte](BUG-87-merged-dict-key-order-follows-the-walk-not-argv.md) | M | medium | behavior |
 | [BUG-88 — A mount point below a direct root field has no `--config.<path>` entry](BUG-88-a-mount-point-below-a-direct-root-field-has-no-config-entry.md) | L | medium | behavior |
-| [BUG-92 — The adapters reject a root tag on a subclass-less struct root that vanilla accepts](BUG-92-adapters-reject-a-root-tag-on-a-subclass-less-struct-root.md) | S | medium | behavior |
 | [BUG-93 — Scalar cast flags stay refused on struct, collection and registered-leaf fields](BUG-93-scalar-cast-flags-stay-refused-on-struct-collection-and-leaf-fields.md) | M | medium | behavior |
 | [BUG-94 — Multi-variant unions refuse the scalar casts beyond the union's own scalars](BUG-94-multi-variant-unions-refuse-casts-beyond-their-own-scalars.md) | S | medium | behavior |
 | [BUG-95 — A union's cast flag beats its plain flag whatever the argv order](BUG-95-a-union-cast-flag-beats-its-plain-flag-whatever-the-argv-order.md) | S | medium | behavior |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | M | low | behavior |
-| [BUG-97 — A namedtuple's -0 and +0 index spellings diverge across the front-ends](BUG-97-a-namedtuples-minus-zero-and-plus-zero-index-spellings-diverge.md) | S | low | behavior |
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | S | low | behavior |
 | [BUG-104 — The env walk cannot see a subclass-only field, so the tag wins a case-differing spelling](BUG-104-the-env-walk-cannot-see-a-subclass-only-field-so-the-tag-wins-a-case-differing-spelling.md) | S | medium | config |
 | [BUG-105 — The anchor sweep cannot see citations under `tests/`, nor short-form spellings](BUG-105-the-anchor-sweep-cannot-see-citations-under-tests-or-short-form-spellings.md) | S | medium | none |
+| [BUG-107 — A real field named like the tag, nested inside a union variant, is stripped by the type check](BUG-107-a-nested-real-field-named-like-the-tag-is-stripped-by-the-union-type-check.md) | S | medium | behavior |
+| [BUG-108 — A plain fixed tuple accepts the index spellings a namedtuple refuses](BUG-108-a-plain-fixed-tuple-accepts-the-index-spellings-a-namedtuple-refuses.md) | S | medium | behavior |
+| [BUG-109 — A namedtuple index patch ignores the field's default, where a tuple patch keeps it](BUG-109-a-namedtuple-index-patch-ignores-the-fields-default.md) | S | medium | behavior |
+| [BUG-110 — The walk accepts a path that continues past the union tag](BUG-110-the-walk-accepts-a-path-that-continues-past-the-tag.md) | S | medium | behavior |
 
 <!-- tickets:end -->

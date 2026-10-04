@@ -37,7 +37,9 @@ from confarg._parse_cli import (
     _collect_cli_patch_ops,
     _collect_config_file_pairs,
     _looks_like_flag,
+    _namedtuple_position_spellings,
     _parse_json_arg,
+    _promote_namedtuple_positional,
     _resolve_field_type,
     _segment_names_real_field,
     _try_parse_json_list,
@@ -858,7 +860,7 @@ def _namedtuple_deep_fields(fields: Mapping[str, Any]) -> list[tuple[Any, list[s
     for i, (fname, ftype) in enumerate(fields.items()):
         fcore = _unwrap_optional(ftype)
         if _is_struct(fcore) or _is_namedtuple(fcore):
-            result.append((ftype, [fname, str(i), str(i - n)]))
+            result.append((ftype, [fname, *_namedtuple_position_spellings(n, i)]))
     return result
 
 
@@ -914,7 +916,8 @@ def _namedtuple_sub_flags(flat: dict[str, Any], flag: str, fields: Mapping[str, 
     sub: dict[str, Any] = {}
     n = len(fields)
     for i, (fname, ftype) in enumerate(fields.items()):
-        for key, spelled in ((f"{flag}.{fname}", fname), (f"{flag}.{i}", str(i)), (f"{flag}.{i - n}", str(i - n))):
+        for spelled in (fname, *_namedtuple_position_spellings(n, i)):
+            key = f"{flag}.{spelled}"
             if spelled in deep:
                 continue
             if flat.get(key) is not None:
@@ -1378,7 +1381,7 @@ def _collect_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915  # one bra
         _set_nested(result, flag.split("."), _coerce_leaf_value(core, v))
 
 
-def _promote_patched_lists(ops: Mapping[str, Any], collected: dict[str, Any]) -> None:
+def _promote_patched_lists(ops: Mapping[str, Any], collected: dict[str, Any], target: Any, union_tag: str) -> None:
     """Promote every collected plain list an op dict addresses into its ``'*'`` base.
 
     The list-op half of the channel split: vanilla stores a plain occurrence and the
@@ -1389,15 +1392,40 @@ def _promote_patched_lists(ops: Mapping[str, Any], collected: dict[str, Any]) ->
     over the collected values, and ``_deep_merge`` applies list ops on sight -- right
     for its usual job of joining two priorities, wrong within one channel -- so the
     collected lists the ops address are promoted into the recorded shape first, and
-    the merge that follows only lays the op keys beside the base.
+    the merge that follows only lays the op keys beside the base.  A namedtuple's
+    positional run is the exception vanilla's descent makes too: its positions are its
+    fields, so it is re-keyed by field name through vanilla's own
+    :func:`~confarg._parse_cli._promote_namedtuple_positional`, and a tag the scan
+    replays below it joins those fields (BUG-106).
 
     Args:
         ops: The patch scan's op tree, read but never modified.
         collected: The flat collector's dict, promoted in place.
+        target: The type the op paths resolve against.
+        union_tag: The field name used as a union discriminator.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/collection-patch-parity.md#a-patch-op-records-against-a-list-the-channel-collected
     """
+    for path in _op_leaf_paths(ops):
+        _promote_namedtuple_positional(collected, path, target, union_tag)
+    _promote_varlen_lists(ops, collected)
+
+
+def _op_leaf_paths(ops: Mapping[str, Any], prefix: tuple[str, ...] = ()) -> list[list[str]]:
+    """Return the path of every leaf in an op tree, outermost key first."""
+    paths: list[list[str]] = []
+    for key, val in ops.items():
+        here = (*prefix, key)
+        if isinstance(val, dict) and val:
+            paths.extend(_op_leaf_paths(val, here))
+        else:
+            paths.append(list(here))
+    return paths
+
+
+def _promote_varlen_lists(ops: Mapping[str, Any], collected: dict[str, Any]) -> None:
+    """Promote every collected plain list *ops* address into its ``'*'`` base, in place."""
     for key, val in ops.items():
         if not isinstance(val, dict):
             continue
@@ -1405,7 +1433,7 @@ def _promote_patched_lists(ops: Mapping[str, Any], collected: dict[str, Any]) ->
         if isinstance(node, list):
             collected[key] = {LIST_REPLACE_BASE_KEY: node}
         elif isinstance(node, dict):
-            _promote_patched_lists(val, node)
+            _promote_varlen_lists(val, node)
 
 
 def _restore_patch_deletes(ops: dict[str, Any], result: dict[str, Any]) -> None:
@@ -1540,7 +1568,7 @@ def _merge_from_flat(  # noqa: PLR0913  # mirrors confarg.merge's keyword-only s
     patch_ops = _collect_cli_patch_ops(argv_, target, config_flag, union_tag, cli_data)
     # A collected list the ops address is their recorded base, not the list they apply
     # to (BUG-67), exactly as the deletes below are re-asserted as records.
-    _promote_patched_lists(patch_ops, cli_data)
+    _promote_patched_lists(patch_ops, cli_data, target, union_tag)
     cli_data = _deep_merge(cli_data, patch_ops)
     _restore_patch_deletes(patch_ops, cli_data)
     apply_root_json(flat, target, union_tag, cli_data)  # fold root `--json` under collected fields

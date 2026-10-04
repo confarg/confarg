@@ -71,8 +71,9 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | reserved-name shadowing | `_parse_cli._check_reserved_key_conflict` |
 | locals namespace names | `_parse_cli._locals_keys_at` |
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |
+| "does the adapters' patch scan write this path, and so register its flag when typed?" | `_parse_cli._is_replayed_path` — a collection patch, or a tag the walk reaches by its fallback, whatever the parent (BUG-106) |
 | "which patch ops does a plain flag occurrence supersede?" | `_merge._pop_nested`, replayed at the patch scan's skip sites |
-| "what does a collected list meet when a patch op addresses it?" | `cli/_collect._promote_patched_lists` — the `'*'` base of the op dict, the promotion vanilla's own descent makes |
+| "what does a collected list meet when a patch op addresses it?" | `cli/_collect._promote_patched_lists` — the promotion vanilla's own descent makes: a namedtuple run re-keyed by field name through `_parse_cli._promote_namedtuple_positional`, any other list into the `'*'` base of the op dict |
 | "does this field take a whole `{…}` token?" | `_parse_cli._accepts_object_value` |
 | "is this a whole-value inline JSON array?" | `_parse_cli._lone_json_array` |
 | what a multi-token flag's accumulated tokens hold | `_parse_cli._varlen_value` / `_union_seq_value` |
@@ -80,8 +81,10 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | the dict form a bare callable string abbreviates | `_callable.promote_bare_spec` |
 | "how many positional tokens, of which types?" | `_types._fixed_seq_types` |
 | "is this variant sequence-shaped?" | `_types._is_seq_variant` |
+| "which index spellings does an n-field namedtuple register and accept?" | `_parse_cli._namedtuple_index_spellings` — the one source for `str(i)` and `str(i - n)`, so no odd form (`-0`, `+N`, `007`) slips through (BUG-97); the walk looks a spelling up in it, and the registration and collector sites list a field's keys through its per-position view `_namedtuple_position_spellings` |
 | "which struct does a class tag name, if any?" | `cli/_collect._tag_named_struct` — the collector's two tag branches and the argparse completion pre-extend |
 | "which flat tagged-leaf flags (`--<leaf>.class`, `--<leaf>.<param>`) does argv spell?" | `cli/_build._collect_leaf_tag_argv_specs`, accepting exactly what `_parse_cli._resolve_field_type` accepts |
+| "is this segment the union tag, reached by the walk's fallback?" | `_parse_cli._names_tag_by_fallback` — the walk asked with and without its tag rule (`_resolve_field_type(..., tag_fallback=False)`) |
 | "write a class tag back, then descend into the struct it names and the path's other variants" | `cli/_collect._collect_named_variant` (the tag first, the import after, the siblings last) |
 | "descend into every variant a path holds, each in its own guard" | `cli/_collect._collect_variant_fields` — the named variant's siblings, a union field's variants, and a base class's subclasses with no tag (BUG-83); a flag the variants own with disagreeing types is collected before the walks, once, as vanilla's raw-token answer (BUG-84) |
 | "which flags do several variants own with disagreeing types?" | `cli/_collect._disagreeing_owner_flags` — vanilla's per-variant resolution, the common type when every owner agrees and `str` when they do not |
@@ -161,7 +164,8 @@ collection logic goes into `cli/_collect.py` mirroring the vanilla decision
   refusal and the collector's guard cannot disagree about which flags are fixed-arity
   ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)).
 - `import_tagged_classes` runs before anything reads `__subclasses__()` — before the static
-  type walk in `build_static_flags`, and before path resolution in `_parse_cli`
+  type walk in `build_static_flags`, before path resolution in `_parse_cli`, and at the start of
+  `build_dynamic_flags`, before any argv scan
   ([design decisions](design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration)).
 - Defaults and shared reserved key names (`ROOT_KEY`, `LOCALS_KEYS`) live in
   `_defaults.py`; never repeat the literals
