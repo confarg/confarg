@@ -28,7 +28,7 @@ different board.
 | [REF-54 — Three hand-written scan loops in `dictexpr` the stdlib writes in one line](REF-54-dictexpr-scan-loops-are-re-sub-and-accumulate.md) | S | low | none |
 | [REF-55 — An adjacent-pair loop written with indices instead of `itertools.pairwise`](REF-55-pairwise-for-index-window-loops.md) | S | low | none |
 | [REF-58 — The config-parallel struct walk has two owners](REF-58-config-parallel-struct-walk-has-two-owners.md) | S | medium | none |
-| [REF-59 — Twenty code blocks under `examples/` are still hand-copied](REF-59-example-code-blocks-not-generated.md) | M | low | none |
+| [REF-59 — Two `type` blocks under `examples/` wait on the hook; the rest is generated](REF-59-example-code-blocks-not-generated.md) | S | low | none |
 | [REF-60 — Nothing asserts the bytes `dump_file` writes](REF-60-dumped-file-bytes-are-never-asserted.md) | S | medium | none |
 | [REF-63 — `13_collection_items` carries an empty section and a misplaced tuple remark](REF-63-collection-items-readme-empty-section-and-misplaced-remark.md) | S | low | none |
 | [REF-64 — The clicklike completion tests assert that nothing was added](REF-64-completion-tests-assert-nothing-was-added.md) | S | medium | none |
@@ -40,5 +40,6 @@ different board.
 | [REF-77 — The four "expected N elements" refusals have drifted on the type's name](REF-77-expected-elements-refusals-have-drifted.md) | S | medium | none |
 | [REF-78 — `.ruff.toml` selects "PL" twice](REF-78-ruff-toml-selects-pl-twice.md) | S | low | none |
 | [REF-81 — `90_integration/README.md` opens at h3 and sandwiches a lone h2 between h3 sections](REF-81-integration-readme-heading-structure.md) | S | low | none |
+| [REF-82 — `greetings.py` in two examples carries a dead `Config` dataclass](REF-82-greetings-py-carries-a-dead-config-dataclass.md) | S | low | none |
 
 <!-- tickets:end -->

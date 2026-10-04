@@ -4,9 +4,12 @@ Between a Markdown block and the prose around it, one blank line. Inside a fence
 block, whatever `ruff format` gives that code: two blank lines around a top-level `def` or
 `class`, one between statements. A blank-line sweep of the docs collapses the runs outside
 code blocks and leaves the interiors alone — REF-80 was closed this way, its "collapse
-each" having overstated the rule: the two blank lines in `examples/11_include/README.md`
-(between two top-level dataclasses) and `examples/4_leaf_types/README.md` (after
-`serialize_int`, before the `register_leaf_type` call) stay.
+each" having overstated the rule: the two blank-line runs that then survived in
+`examples/11_include/README.md` (between two top-level dataclasses) and
+`examples/4_leaf_types/README.md` (after `serialize_int`, before the `register_leaf_type`
+call) stayed. Both blocks are hook-generated now (REF-59), and no interior run is left
+under `examples/`; the rule still matters for any hand-copied block
+([some quoted blocks stay hand-copied](quoted-blocks-stay-hand-copied.md#some-quoted-blocks-stay-hand-copied)).
 
 Why: the docs quote real, formatter-clean files — the `markdown-code-snippet` hook
 regenerates the annotated blocks from them, and mkdocstrings renders the code it quotes
