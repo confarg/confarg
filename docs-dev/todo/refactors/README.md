@@ -16,7 +16,6 @@ different board.
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | M | high | none |
 | [REF-26 — The `--config` files named on argv are parsed three times per run](REF-26-config-files-parsed-three-times.md) | M | low | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | M | low | none |
-| [REF-29 — Nothing pins line endings, so the CRLF conversion can come back](REF-29-nothing-pins-line-endings.md) | S | low | none |
 | [REF-38 — `test_collect_names_keyword_args` or-asserts away its own claim](REF-38-collect-names-keyword-args-or-asserts-away-claim.md) | S | low | none |
 | [REF-39 — `test_dict_field_from_env` or-asserts away its own claim](REF-39-dict-field-env-test-or-asserts-away-claim.md) | S | low | none |
 | [REF-40 — The nine-keyword option surface is spelled out fourteen times](REF-40-option-surface-spelled-fourteen-times.md) | L | medium | behavior |
