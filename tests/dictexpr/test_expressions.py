@@ -1161,6 +1161,10 @@ class TestExpressionDelimiting:
         """Mounting a file whose expression is padded rewrites it rather than failing."""
         assert prefix_references({"v": "${ a }"}, ("db",)) == {"v": "${db.a}"}
 
+    def test_prefixing_leaves_a_body_that_does_not_parse(self) -> None:
+        """Mounting rewrites what parses and leaves the rest for validation to refuse (BUG-130)."""
+        assert prefix_references({"v": "${a +}", "w": "${a} ${a +}"}, ("db",)) == {"v": "${a +}", "w": "${db.a} ${a +}"}
+
     def test_prefixing_keeps_the_literal(self) -> None:
         """Mounting a file rewrites the references, not the braces of the literal."""
         assert _prefix_content("root + '{x}'", ("db",)) == "db.root + '{x}'"

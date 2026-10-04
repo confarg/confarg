@@ -22,7 +22,7 @@ dict with no side channel:
 |---|---|
 | `_files._load_mount` | turn the mount subpath of `--config.<path>` and the env pointers into the *mount*, a tuple of segments (`()` at the root) |
 | `_files._load_any` | carry the *mount* of the document it loads: where that document's root lands, from the configuration root |
-| `_files._resolve_node` | walk the document's own nodes, threading the path within the file; `prefix_references` each expression by the document's *mount* and `check_anchor_depth` it against the path within the file; an include lands at *mount* + path within the file, and its siblings are walked before they merge on top, so the walk never reaches what was included |
+| `_files._resolve_node` | walk the document's own nodes, threading the path within the file; `prefix_references` each expression by the document's *mount* (one that does not parse is left as written: the merge never validates, so resolution refuses it, BUG-130) and `check_anchor_depth` it against the path within the file; an include lands at *mount* + path within the file, and its siblings are walked before they merge on top, so the walk never reaches what was included |
 | end of `_merge_sources` | `canonicalize_references` turns remaining `${::x}` into `${x}` |
 
 The prefix is uniform per file, **not per position**, which is what lets one fragment be

@@ -1305,9 +1305,21 @@ class _Prefixer(ast.NodeTransformer):
 
 
 def _prefix_content(expr_content: str, prefix: _Path) -> str:
-    """Prefix every file-anchored reference in one ``${...}`` body by *prefix*."""
-    tree = _parse_body(_name_anchor(expr_content))
-    tree = _Prefixer(prefix).visit(tree)
+    """Prefix every file-anchored reference in one ``${...}`` body by *prefix*.
+
+    A body that does not parse is returned as written: the merge never validates an
+    expression, so it reaches resolution, which refuses it quoting the file's own text, as
+    it does for a file loaded at the root.
+
+    Dev Notes:
+        docs-dev/architecture/invariants.md#merge-stays-unvalidated
+    """
+    try:
+        tree = _parse_expression(expr_content)
+    except SyntaxError:
+        return expr_content
+    # The parse cache is shared, and _Prefixer rewrites the tree in place.
+    tree = _Prefixer(prefix).visit(copy.deepcopy(tree))
     ast.fix_missing_locations(tree)
     return _unname_anchor(ast.unparse(tree))
 
