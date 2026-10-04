@@ -734,10 +734,7 @@ def _eval_binop(node: ast.BinOp, namespace: dict[str, Any]) -> Any:
     if op_func is None:
         msg = f"Unsupported binary operator: {type(node.op).__name__}"
         raise ExpressionEvalError(msg)
-    try:
-        return op_func(left, right)
-    except Exception as exc:
-        raise ExpressionEvalError(str(exc)) from exc
+    return op_func(left, right)
 
 
 def _eval_unaryop(node: ast.UnaryOp, namespace: dict[str, Any]) -> Any:
@@ -811,10 +808,7 @@ def _eval_call(node: ast.Call, namespace: dict[str, Any]) -> Any:
         raise UnsafeExpressionError.indirect_call()
     args = [_evaluate_ast(a, namespace) for a in node.args]
     kwargs = {cast("str", kw.arg): _evaluate_ast(kw.value, namespace) for kw in node.keywords}
-    try:
-        return func(*args, **kwargs)
-    except Exception as exc:
-        raise ExpressionEvalError(str(exc)) from exc
+    return func(*args, **kwargs)
 
 
 _AST_EVALUATORS: dict[type, Any] = {
@@ -842,18 +836,22 @@ def _evaluate_ast(node: ast.AST, namespace: dict[str, Any]) -> Any:
 
 
 def _eval_expr(tree: ast.Expression, namespace: dict[str, Any], context: str) -> Any:
-    """Evaluate a parsed expression, wrapping an unexpected failure in ``ExpressionEvalError``.
+    """Evaluate a parsed expression, wrapping any runtime failure in ``ExpressionEvalError``.
 
-    ``MissingReferenceError``, ``UnsafeExpressionError`` and an ``ExpressionEvalError`` the
-    interpreter already raised propagate unchanged. Anything else — typically raised by a
-    whitelisted function the expression called — becomes an ``ExpressionEvalError`` quoting
-    *context*: the whole string for a pure expression, the ``${...}`` fragment alone for one
-    embedded in an interpolation.
+    ``MissingReferenceError`` and ``UnsafeExpressionError`` propagate unchanged. Anything else
+    — an operator's ``TypeError``, a whitelisted function's or a string method's
+    ``ValueError``, a miss off a value no path names — becomes an ``ExpressionEvalError``
+    quoting *context*: the whole string for a pure expression, the ``${...}`` fragment alone
+    for one embedded in an interpolation. This is the one site that words it, so the
+    evaluators let Python's exception through rather than wrap it themselves.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/resolution.md#an-evaluation-failure-names-its-expression
     """
     try:
         return _evaluate_ast(tree, namespace)
     # Load-bearing: without it the catch-all below would re-wrap the typed errors.
-    except (MissingReferenceError, UnsafeExpressionError, ExpressionEvalError):
+    except (MissingReferenceError, UnsafeExpressionError):
         raise
     except Exception as exc:
         msg = f"Error in expression {context!r}: {exc}"
