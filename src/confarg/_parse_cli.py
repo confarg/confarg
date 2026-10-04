@@ -38,7 +38,6 @@ from confarg._merge import (
 )
 from confarg._tags import import_tagged_classes
 from confarg._types import (
-    _answered_by_subclasses,
     _dict_kv,
     _elem_type,
     _fixed_seq_types,
@@ -57,7 +56,7 @@ from confarg._types import (
     _resolve_type,
     _StrToken,
     _struct_fields,
-    _subclass_field_type,
+    _struct_member_type,
     _tuple_types,
     _union_args_no_none,
     _union_has_scalar_variant,
@@ -133,7 +132,7 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911
             return list(flds.values())[spellings[part]]
         return None
     if _is_struct(tp):
-        return _subclass_field_type(tp, part) if _answered_by_subclasses(tp, part) else _struct_fields(tp)[part]
+        return _struct_member_type(tp, part)
     if _is_list(tp) or _is_set(tp) or _is_frozenset(tp):
         return _elem_type(tp)
     if _is_tuple(tp):
@@ -325,7 +324,7 @@ def _segment_names_real_field(pt: Any, seg: str, union_tag: str) -> bool:
     if _is_union(pt):
         return any(_segment_names_real_field(_resolve_type(v), seg, union_tag) for v in _union_args_no_none(pt))
     if _is_struct(pt):
-        return seg in _struct_fields(pt) or _subclass_field_type(pt, seg) is not None
+        return _struct_member_type(pt, seg) is not None
     if _is_namedtuple(pt):
         return seg in _namedtuple_fields(pt)
     # dicts accept any key (real member); lists/sets/tuples/callables/scalars do not.
@@ -1328,7 +1327,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     _check_config_flag_conflict(target, config_flag, cli_prefix)
     argv = _normalize_eq_args(argv)
     # Before any path resolves: a subclass named by the tag is invisible to
-    # _subclass_field_type until its module has run.
+    # _struct_member_type until its module has run.
     import_tagged_classes(argv, target, union_tag=union_tag, config_flag=config_flag)
 
     # Paths resolve against the locals-grafted target; root classification keeps `target`.

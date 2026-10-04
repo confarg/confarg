@@ -729,10 +729,10 @@ def _answered_by_subclasses(tp: Any, field: str) -> bool:
 def _base_declares_path(tp: Any, prefix: str, path: str) -> bool:
     """Return whether dotted *path* lies under *prefix* through a member struct ``tp`` declares.
 
-    The path form of :func:`_answered_by_subclasses`, for the adapters' subclass walks, which
-    see flag paths rather than segments: such a path is the base's to answer, never a
-    subclass's, so the collector hides it from the subclass walks and registration from the
-    subclass recursion (BUG-86).
+    The path form of :func:`_answered_by_subclasses`, for registration's subclass recursion,
+    which sees flag paths rather than segments: such a path is the base's to answer, never a
+    subclass's, so ``cli/_build._collect_struct_specs`` drops a subclass's spec under it
+    (BUG-86).
     """
     head = f"{prefix}." if prefix else ""
     return path.startswith(head) and not _answered_by_subclasses(tp, path[len(head) :].split(".", maxsplit=1)[0])
@@ -757,6 +757,20 @@ def _subclass_field_type(tp: type, field: str) -> Any | None:
     return first if all(f == first for f in found[1:]) else str
 
 
+def _struct_member_type(tp: Any, name: str) -> Any | None:
+    """Return the type struct ``tp`` answers for member *name*, None when nothing declares it.
+
+    The walk's one member rule: ``tp``'s own annotation for a name it declares, however a
+    subclass overrides it, and the subclasses' common type or ``str`` for a subclass-only
+    name. The type walk asks it for the type; the member predicates ask whether it is None,
+    so "is it a member?" and "what type is it?" cannot drift apart (BUG-86, BUG-103).
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
+    """
+    return _subclass_field_type(tp, name) if _answered_by_subclasses(tp, name) else _struct_fields(tp)[name]
+
+
 def _union_tag_shadowed(tp: Any, union_tag: str) -> bool:
     """Return True if a struct-shaped ``tp`` owns a member spelled exactly like the tag.
 
@@ -774,9 +788,7 @@ def _union_tag_shadowed(tp: Any, union_tag: str) -> bool:
         return any(_union_tag_shadowed(v, union_tag) for v in _union_args_no_none(tp))
     if not _is_struct(tp):
         return False
-    if union_tag in _struct_fields(tp):
-        return True
-    return _subclass_field_type(tp, union_tag) is not None
+    return _struct_member_type(tp, union_tag) is not None
 
 
 def _struct_defaults(tp: Any) -> dict[str, Any]:
