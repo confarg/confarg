@@ -81,6 +81,10 @@ the boundary moves here.
   what makes it visible, and nothing names it on a bare `--help`
   ([design decisions](design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration)). Import the
   plugin module, or name the class earlier on the same command line.
+- A subclass-only field spelled exactly like `union_tag` turns subclass dispatch structural:
+  the tag's class-path route is unreachable at that position, so the subclass is selected by
+  its fields, several matches are an error, and a subclass needing more fields than provided
+  is refused ([CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)).
 
 ## Callables and serialization
 

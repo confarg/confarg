@@ -5550,6 +5550,16 @@ class _KindOtherVariant:
     other: str = "o"
 
 
+@dataclass
+class _KindOnlySubBase:
+    """Base whose subclass alone owns the tag's spelling (BUG-103)."""
+
+
+@dataclass
+class _KindOnlySub(_KindOnlySubBase):
+    Kind: str
+
+
 class TestUnionTagFieldCollision:
     """The exact tag/field collision settles on the field, identically on all front-ends.
 
@@ -5578,6 +5588,28 @@ class TestUnionTagFieldCollision:
             union_tag="Kind",
         )
         assert result == _KindUnionVariant(Kind="v")
+
+    def test_subclass_only_field_builds_owning_subclass(self, loader: ConfargLoader) -> None:
+        """A subclass-only field spelled like the tag keeps its value on every front-end.
+
+        Construction once read the tag-shaped key as a class path and stripped the
+        value, so the field the user set went missing (BUG-103); the merged dict is
+        the field's, and the subclass that owns the field is built from it.
+        """
+        result = loader.load(_KindOnlySubBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
+        assert result == _KindOnlySub(Kind="v")
+
+    def test_subclass_only_field_merge_matches_vanilla(self, loader: ConfargLoader) -> None:
+        """The merged dict carries the field's value, byte-identical to vanilla's."""
+        merged = loader.merge(_KindOnlySubBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
+        assert merged == {"Kind": "v"}
+
+    def test_registration_subclass_only_field_flag_wins(self) -> None:
+        """The subclass-only field takes the spelling; no tag flag is registered on it."""
+        flags = build_static_flags(_KindOnlySubBase, union_tag="Kind", config_flag="")
+        by_name = {f.name: f for f in flags}
+        assert "Kind" in by_name
+        assert by_name["Kind"].metavar != "DOTTED.CLASS.PATH"
 
     def test_merge_matches_vanilla(self, loader: ConfargLoader) -> None:
         """The merged dict carries the field's value, byte-identical to vanilla's."""

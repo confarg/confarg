@@ -713,13 +713,33 @@ def _struct_fields(tp: Any) -> dict[str, Any]:
     return _dc_fields(tp) if _is_dc(tp) else _init_fields(tp)
 
 
+def _subclass_field_type(tp: type, field: str) -> Any | None:
+    """Search all struct subclasses of tp for a field, returning its type.
+
+    Returns the common type if all subclasses agree, str if they disagree, None if absent.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+    """
+    found: list[Any] = []
+    for sub in _dataclass_subclasses(tp):
+        flds = _struct_fields(sub)
+        if field in flds:
+            found.append(flds[field])
+    if not found:
+        return None
+    first = found[0]
+    return first if all(f == first for f in found[1:]) else str
+
+
 def _union_tag_shadowed(tp: Any, union_tag: str) -> bool:
     """Return True if a struct-shaped ``tp`` owns a member spelled exactly like the tag.
 
     Answers "is this tag-shaped key a field's value instead?" wherever only the type and
     the key are at hand. A union is shadowed by any struct variant that owns the name;
-    a subclass-only field does not shadow, because the base itself cannot consume the
-    key as one of its fields.
+    a struct by its own fields or by a subclass-only field — the walk's member answer,
+    so a subclass-only field spelled exactly like the tag wins the tag's spelling
+    (BUG-103).
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
@@ -727,7 +747,11 @@ def _union_tag_shadowed(tp: Any, union_tag: str) -> bool:
     tp = _resolve_type(tp)
     if _is_union(tp):
         return any(_union_tag_shadowed(v, union_tag) for v in _union_args_no_none(tp))
-    return _is_struct(tp) and union_tag in _struct_fields(tp)
+    if not _is_struct(tp):
+        return False
+    if union_tag in _struct_fields(tp):
+        return True
+    return _subclass_field_type(tp, union_tag) is not None
 
 
 def _struct_defaults(tp: Any) -> dict[str, Any]:

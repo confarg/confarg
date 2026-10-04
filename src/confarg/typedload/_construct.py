@@ -21,6 +21,7 @@ from confarg._merge import LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_K
 from confarg._types import (
     _all_have_defaults,
     _allows_none,
+    _dataclass_subclasses,
     _dict_kv,
     _elem_type,
     _fixed_seq_types,
@@ -189,8 +190,10 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
 def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     """Dispatch struct construction, handling the union_tag class-path variant.
 
-    A tag-shaped key is the class path only when no field of ``tp`` bears the tag's
-    spelling; a field that does owns the key, and the struct builds from its fields.
+    A tag-shaped key is the class path only when no member of ``tp`` bears the tag's
+    spelling; a member that does owns the key. The struct's own field builds from its
+    fields, and a subclass-only field constructs through the subclass that owns it,
+    the union's structural answer (BUG-103).
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
@@ -199,12 +202,23 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) ->
         msg = f"Cannot construct {tp.__name__} at '{path}': expected dict, got {_src_type(data)} {data!r}"
         raise TypeCoercionError(msg)
     if union_tag in data:
+        if not _union_tag_shadowed(tp, union_tag):
+            return _construct_by_class_path(tp, data, path, union_tag)
         if union_tag in _struct_fields(tp):
             return _construct_struct(tp, data, path, union_tag)
-        return _construct_by_class_path(tp, data, path, union_tag)
+        return _construct_shadowed_subclass(tp, data, path, union_tag)
     direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
     if direct_subs:
         sub_names = ", ".join(dotted_name(s) for s in direct_subs)
+        if _union_tag_shadowed(tp, union_tag):
+            msg = (
+                f"Cannot construct '{tp.__name__}' at '{path}': it has subclasses ({sub_names})"
+                f" and a member spelled {union_tag!r} owns the tag's spelling, so no"
+                " class-path tag can select one. Provide the fields of the subclass you"
+                f" want, its {union_tag!r} field included, or rename the field or pass a"
+                " different union_tag."
+            )
+            raise TypeCoercionError(msg)
         msg = (
             f"Cannot construct '{tp.__name__}' at '{path}': it has subclasses ({sub_names})"
             f" but no {union_tag!r} discriminator was provided."
@@ -212,6 +226,62 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: str, union_tag: str) ->
         )
         raise TypeCoercionError(msg)
     return _construct_struct(tp, data, path, union_tag)
+
+
+def _construct_shadowed_subclass(tp: Any, data: dict[str, Any], path: str, union_tag: str) -> Any:
+    """Construct through the subclass that owns the tag-shaped subclass-only field.
+
+    The key is field data, so the subclass is selected the way the union's structural
+    fallback selects a variant: the subclass whose fields cover the keys. Several
+    matches are a loud ambiguity and none a loud refusal — never a silent pick, and
+    never a strip of the value the tag-shaped key holds.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+    """
+    subs = _dataclass_subclasses(tp)
+    matches = _disambiguate_struct(subs, data, union_tag)
+    if len(matches) == 1:
+        return _construct_struct(matches[0], data, path, union_tag)
+    if len(matches) > 1:
+        raise TypeCoercionError(_ambiguous_subclass_msg(matches, data, path, union_tag))
+    for sub in subs:
+        try:
+            return _construct_struct(sub, data, path, union_tag)
+        except (ConfargError, TypeError):
+            continue
+    sub_names = ", ".join(dotted_name(s) for s in subs)
+    msg = (
+        f"Cannot construct '{tp.__name__}' at '{path}': the {union_tag!r} key is a field's"
+        f" value, and no subclass accepts the provided fields (subclasses: {sub_names})."
+        " Provide the fields of the subclass you want, or rename the field or pass a"
+        " different union_tag."
+    )
+    raise TypeCoercionError(msg)
+
+
+def _ambiguous_subclass_msg(matches: list[Any], data: dict[str, Any], path: str, union_tag: str) -> str:
+    """Build a diagnostic message for subclasses the provided fields cannot tell apart."""
+    lines = [
+        f"Ambiguous subclasses at '{path}': cannot distinguish between " + ", ".join(m.__name__ for m in matches) + ".",
+    ]
+    for var in matches:
+        flds = _struct_fields(var)
+        defs = _struct_defaults(var)
+        required = sorted(n for n in flds if n not in defs)
+        optional = sorted(n for n in flds if n in defs)
+        parts = []
+        if required:
+            parts.append("required: " + ", ".join(required))
+        if optional:
+            parts.append("optional: " + ", ".join(optional))
+        lines.append(f"  {var.__name__}: {'; '.join(parts) if parts else '(no fields)'}")
+    lines.append(f"Provided fields: {sorted(data) if data else '(none)'}")
+    lines.append(
+        f"A member spelled {union_tag!r} owns the tag's spelling, so no class-path tag"
+        " can select between them. Rename the field or pass a different union_tag.",
+    )
+    return "\n".join(lines)
 
 
 def _construct_taggable_leaf(tp: Any, data: dict[str, Any], path: str, union_tag: str) -> Any:
@@ -223,14 +293,14 @@ def _construct_taggable_leaf(tp: Any, data: dict[str, Any], path: str, union_tag
     Dev Notes:
         docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in
     """
-    if union_tag in data and union_tag not in _struct_fields(tp):
+    if union_tag in data and not _union_tag_shadowed(tp, union_tag):
         return _construct_struct_dispatch(tp, data, path, union_tag)
-    if union_tag in _struct_fields(tp):
+    if _union_tag_shadowed(tp, union_tag):
         msg = (
             f"Cannot coerce dict {data!r} to {tp.__name__} at '{path}'."
-            f" {tp.__name__} is a registered leaf type and its {union_tag!r} parameter"
+            f" {tp.__name__} is a registered leaf type and a member spelled {union_tag!r}"
             f" consumes the tag's spelling, so no tag can open it:"
-            f" rename the parameter or pass a different union_tag."
+            f" rename the field or pass a different union_tag."
         )
         raise TypeCoercionError(msg)
     msg = (

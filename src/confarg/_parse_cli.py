@@ -40,7 +40,6 @@ from confarg._merge import (
 )
 from confarg._tags import import_tagged_classes
 from confarg._types import (
-    _dataclass_subclasses,
     _dict_kv,
     _elem_type,
     _fixed_seq_types,
@@ -59,6 +58,7 @@ from confarg._types import (
     _resolve_type,
     _StrToken,
     _struct_fields,
+    _subclass_field_type,
     _tuple_types,
     _union_args_no_none,
     _union_has_scalar_variant,
@@ -68,22 +68,6 @@ from confarg._types import (
 )
 from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce
-
-
-def _subclass_field_type(tp: type, field: str) -> Any | None:
-    """Search all dataclass subclasses of tp for a field, returning its type.
-
-    Returns the common type if all subclasses agree, str if they disagree, None if absent.
-    """
-    found: list[Any] = []
-    for sub in _dataclass_subclasses(tp):
-        flds = _struct_fields(sub)
-        if field in flds:
-            found.append(flds[field])
-    if not found:
-        return None
-    first = found[0]
-    return first if all(f == first for f in found[1:]) else str
 
 
 def _resolve_union_field_type(tp: Any, remaining: list[str], union_tag: str) -> Any | None:

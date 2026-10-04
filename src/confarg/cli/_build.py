@@ -1039,7 +1039,7 @@ def _collect_struct_specs(  # union-root branch added one more conditional
         all_subs = _dataclass_subclasses(tp)  # recursive, for tab-completion paths
         tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
         by_name: dict[str, FlagSpec] = {s.name: s for s in result}
-        if tag_name not in by_name:
+        if tag_name not in by_name and not _union_tag_shadowed(tp, union_tag):
             paths = [dotted_name(v) for v in all_subs]
             # An empty completer would suppress the shell's own suggestions, so leave it unset.
             tag_spec = FlagSpec(
@@ -1356,7 +1356,7 @@ def _collect_leaf_tag_argv_specs(
             continue
         existing_names.add(key)
         leaf_desc = f"the '{leaf_flag}' registered leaf" if leaf_flag else "the registered leaf target"
-        if parts[-1] == union_tag and union_tag not in _struct_fields(leaf):
+        if parts[-1] == union_tag and not _union_tag_shadowed(leaf, union_tag):
             specs.append(
                 FlagSpec(
                     name=key,
