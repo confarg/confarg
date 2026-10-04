@@ -3149,6 +3149,24 @@ class TestCollectionPatchContract:
         cfg = loader.load(_WithMap, argv=["--config", str(base), "--data.a-"], env={})
         assert cfg.data == {"b": 2}
 
+    def test_whole_field_delete_spelled_twice_is_one_delete(self, loader: ConfargLoader) -> None:
+        """A delete repeated is the same delete, on every front-end (BUG-78).
+
+        The whole-field delete is idempotent anyway, but a value-less cyclopts
+        parameter refuses a second occurrence with a usage error where the other
+        front-ends take it in stride.  The delete's value never reaches a parse
+        result the collector reads — the patch scan reads argv directly — so
+        repetition must not be a framework question.
+        """
+        cfg = loader.load(_WithUsers, argv=["--users", "a", "--users-", "--users-", "--users", "b"], env={})
+        assert cfg.users == ["b"]
+
+    def test_dict_key_delete_spelled_twice_is_one_delete(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A repeated dict-key delete is the same delete too (BUG-78)."""
+        base = tmp_yaml("data: {a: 1, b: 2}\n")
+        cfg = loader.load(_WithMap, argv=["--config", str(base), "--data.a-", "--data.a-"], env={})
+        assert cfg.data == {"b": 2}
+
     def test_whole_field_delete_then_set(self, loader: ConfargLoader) -> None:
         """A whole-field delete loses to the plain flag that follows it (BUG-53).
 

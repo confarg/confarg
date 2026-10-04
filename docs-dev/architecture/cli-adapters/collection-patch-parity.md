@@ -21,6 +21,15 @@ One family of patch flags needs more than registering: a patch flag that may leg
 token at all, whose occurrence a framework cannot be handed as typed —
 [a flag that stands bare](a-flag-that-stands-bare.md#a-flag-that-stands-bare).
 
+A value-less delete also repeats — a delete spelled twice is the same delete, and the
+whole-field one is idempotent anyway. Every front-end but cyclopts takes the repeat in
+stride; a value-less cyclopts parameter refuses the second occurrence with a usage error,
+where its plain flags repeat (`consume_multiple`) and its appends accumulate. Nothing needs
+the argv-dropping the stands-bare family built: a delete's value never reaches a parse
+result the collector reads, because the patch scan reads argv, so the registration itself
+tells cyclopts to allow the repeat (`allow_repeating=True`) and cyclopts keeps only the
+last occurrence — indistinguishable from the first for a flag with no value (BUG-78).
+
 ## A patch op joins the values the framework collected
 
 Splitting one channel across two dicts costs what vanilla gets for free by writing both into
