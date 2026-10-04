@@ -41,6 +41,15 @@ only holdout.
   the arity filter it feeds, so the one function that answers "fixed arity, of which types?"
   answers on the way in as well
   ([types](../types/leaf-coercion.md#leaf-coercion)).
+- Follow-through: the identity reaches the negative index (BUG-80). `--pt.-1` counts from the
+  end everywhere, as `--lang.-1` always did on the plain tuple: `build()` maps an index-keyed
+  dict through `_indexed_dict_to_positions` — the fixed tuple's own resolver, one
+  decision-maker for "a negative key counts from the end" — an integer key (a YAML file's own
+  parsing of a bare `-1:`) is accepted alongside its string spelling, and the registration and
+  the collector carry the third spelling beside the name and the index, the deep fields'
+  spellings included. Every index spelling is hidden from `--help`
+  ([index spellings are hidden from help](index-spellings-are-hidden-from-help.md#index-spellings-are-hidden-from-help));
+  the odd spellings `-0` and `+N` still diverge across the front-ends (BUG-97, open).
 - Boundary: taking a whole `{...}` or `[...]` token on a fixed-arity flag needs a framework
   that can vary a flag's token count at parse time. argparse and cyclopts can and now do;
   click cannot and declines, the approved divergence argued in

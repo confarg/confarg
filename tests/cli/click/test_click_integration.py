@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, NamedTuple
 
 import click
 import pytest
@@ -249,6 +249,54 @@ class TestPopulateCommand:
         result = runner.invoke(cmd, ["--help"])
         assert "TCP port." in result.output
         assert "PORT" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Index spellings are accepted but hidden from --help
+# ---------------------------------------------------------------------------
+
+
+class _HelpPoint(NamedTuple):
+    """Namedtuple whose index spellings stay out of --help (BUG-80)."""
+
+    x: int = 0
+    y: int = 0
+
+
+@dataclass
+class _WithHelpPoint:
+    pt: _HelpPoint = dataclasses.field(default_factory=_HelpPoint)
+
+
+@dataclass
+class _WithHelpPair:
+    pair: tuple[str, str] = ("left", "right")
+
+
+class TestHelpHidesIndexSpellings:
+    """Index spellings patch a position; --help advertises the name spellings (BUG-80)."""
+
+    def test_namedtuple_index_flags_hidden(self) -> None:
+        """A namedtuple's per-index flags are accepted but absent from --help."""
+        cmd = _make_command()
+        populate_command(_WithHelpPoint, cmd, config_flag="")
+        names = {opt for p in cmd.params for opt in p.opts}
+        assert "--pt.x" in names
+        assert "--pt.0" in names
+        assert "--pt.-1" in names
+        result = CliRunner().invoke(cmd, ["--help"])
+        assert "--pt.x" in result.output
+        assert "--pt.0" not in result.output
+        assert "--pt.-1" not in result.output
+
+    def test_tuple_element_flag_hidden_when_typed(self) -> None:
+        """A fixed tuple's element flag, registered from argv, is kept out of --help."""
+        cmd = _make_command()
+        populate_command(_WithHelpPair, cmd, config_flag="", argv=["--pair.0", "a"])
+        names = {opt for p in cmd.params for opt in p.opts}
+        assert "--pair.0" in names
+        result = CliRunner().invoke(cmd, ["--help"])
+        assert "--pair.0" not in result.output
 
 
 # ---------------------------------------------------------------------------

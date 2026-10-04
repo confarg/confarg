@@ -461,7 +461,7 @@ Config(db=DBServerConfig(host='example.com', port=1234, name='mydb'), log_level=
 A similar pattern applies to environment variables:
 
 ```console
-$ MYAPP_CONFIG_DB=db_config.py myapp.py
+$ MYAPP_CONFIG__DB=db_config.yaml myapp.py
 Config(db=DBServerConfig(host='example.com', port=1234, name='mydb'), log_level='INFO')
 ```
 

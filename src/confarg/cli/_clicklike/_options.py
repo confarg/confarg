@@ -146,6 +146,8 @@ def option_kwargs(
             "required": False,
             "help": spec.help or None,
             "allow_from_autoenv": False,
+            # A hidden flag is accepted but kept out of --help (BUG-80).
+            "hidden": spec.hidden,
         }
 
     # Neither framework supports nargs=-1 for options; use multiple=True instead.
@@ -162,6 +164,8 @@ def option_kwargs(
         # confarg handles env vars itself via _parse_env; prevent the framework from
         # also reading them via its auto-envvar prefix.
         "allow_from_autoenv": False,
+        # A hidden flag is accepted but kept out of --help (BUG-80).
+        "hidden": spec.hidden,
     }
 
     if spec.completer is not None:

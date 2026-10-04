@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field, make_dataclass
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 
 import pytest
 
@@ -600,6 +600,51 @@ class TestConfigFileSupport:
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--config.middle" in flags
         assert "--config.middle.inner" not in flags
+
+
+# ---------------------------------------------------------------------------
+# Index spellings are accepted but hidden from --help
+# ---------------------------------------------------------------------------
+
+
+class _HelpPoint(NamedTuple):
+    """Namedtuple whose index spellings stay out of --help (BUG-80)."""
+
+    x: int = 0
+    y: int = 0
+
+
+@dataclass
+class _WithHelpPoint:
+    pt: _HelpPoint = field(default_factory=_HelpPoint)
+
+
+@dataclass
+class _WithHelpPair:
+    pair: tuple[str, str] = ("left", "right")
+
+
+class TestHelpHidesIndexSpellings:
+    """Index spellings patch a position; --help advertises the name spellings (BUG-80)."""
+
+    def test_namedtuple_index_flags_hidden(self) -> None:
+        """A namedtuple's per-index flags are accepted but absent from --help."""
+        parser = make_parser(_WithHelpPoint, config_flag="")
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--pt.x" in flags
+        assert "--pt.0" in flags
+        assert "--pt.-1" in flags
+        help_text = parser.format_help()
+        assert "--pt.x" in help_text
+        assert "--pt.0" not in help_text
+        assert "--pt.-1" not in help_text
+
+    def test_tuple_element_flag_hidden_when_typed(self) -> None:
+        """A fixed tuple's element flag, registered from argv, is kept out of --help."""
+        parser = make_parser(_WithHelpPair, config_flag="", argv=["--pair.0", "a"])
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--pair.0" in flags
+        assert "--pair.0" not in parser.format_help()
 
 
 class TestMakeParser:
