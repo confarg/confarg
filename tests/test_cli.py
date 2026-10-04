@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import uuid
 from dataclasses import dataclass, field, make_dataclass
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
@@ -139,6 +140,30 @@ class TestCliPrefix:
             confarg.load(
                 Flat,
                 argv=["--name", "x", "--count", "1", "--rate", "0", "--verbose", "true"],
+                env={},
+                cli_prefix="app",
+            )
+
+    def test_prefix_bare_flag_on_struct_root_refused(self) -> None:
+        """The bare --<prefix> flag names no field of a struct-like root, so it is refused (BUG-91).
+
+        It used to consume its value and silently drop it: the empty path made the
+        write a no-op.
+        """
+        with pytest.raises(confarg.exceptions.UnknownArgumentError, match="'--app'"):
+            confarg.load(WithDefaults, argv=["--app", "val"], env={}, cli_prefix="app")
+
+    def test_prefix_bare_flag_on_leaf_root_refused(self, leaf_registry: None) -> None:
+        """A registered leaf as the root refuses the bare --<prefix> flag the same way (BUG-91).
+
+        It used to consume its value and drop it, leaving ``build()`` to complain that
+        the dict it got does not coerce — advice the user had already followed.
+        """
+        confarg.register_leaf_type(uuid.UUID, uuid.UUID)
+        with pytest.raises(confarg.exceptions.UnknownArgumentError, match="'--app'"):
+            confarg.load(
+                uuid.UUID,
+                argv=["--app", "12345678-1234-5678-1234-567812345678"],
                 env={},
                 cli_prefix="app",
             )

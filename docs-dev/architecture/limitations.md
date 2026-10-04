@@ -77,6 +77,11 @@ the boundary moves here.
   (`typer._types`, `typer._click`): the option, choice and context classes it must subclass
   have no public spelling since typer forked click, so a typer release that moves them breaks
   the adapter rather than degrading it ([CLI adapters](cli-adapters/clicklike-seam.md#the-clicklike-seam)).
+- A registered leaf as the *root* has no whole-value CLI spelling: the bare
+  `--<cli_prefix> VALUE` form is refused — it names no field, and the root `.json` cast
+  requires a JSON object there ([CLI parsing](cli-parsing/cli-prefix.md#cli_prefix)). It is
+  spelled through its tag instead (`--<cli_prefix>.class uuid.UUID --<cli_prefix>.hex …`),
+  or supplied by the file and environment channels.
 
 ## Subclasses
 
