@@ -63,10 +63,13 @@ node anchor is preserved.
   which is a fine `ast.Attribute` chain for `_attribute_chain` to read back but not Python anyone
   could parse. Rewriting the text instead would miscompile `web-1.host` into a subtraction.
 - **`_AnchorResolver` rewrites only the stand-in and the segment it owns** (`__UP1__.a`), never the
-  rest of the chain. Rebuilding the whole chain as attributes would turn `${.a['__class__'].mro}`
-  into `a.__class__.mro`: the path read misses, evaluation falls back on `getattr`, and the
-  dunder ban — which validation applies to attributes as written — is bypassed. Each segment the
-  expression spells keeps its own node, so a subscript stays an item lookup.
+  rest of the chain. Each segment the expression spells keeps its own node, so a subscript stays
+  a subscript: when the path read misses, its fallback indexes by the key it spells, the integer
+  `0` of `${.m[0]}` on a YAML `{0: x}`, where a rebuilt attribute could only index by the string
+  `"0"` ([values and references](values-and-references.md#spelling-a-path)). Before BUG-125 this
+  was a safety rule too: the attribute fallback was `getattr`, so `${.a['__class__'].mro}`
+  rebuilt as `a.__class__.mro` would have bypassed the dunder ban, which validation applies to
+  attributes as written.
 - `_Prefixer` rewrites only `ast.Name` bases. That is correct only because lambdas and
   comprehensions are not in `_ALLOWED_NODES`, so every non-function `Name` is a reference
   base. **Adding a binding construct to the whitelist breaks prefixing.**

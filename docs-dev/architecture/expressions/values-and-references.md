@@ -55,12 +55,15 @@ spelling can never be a dependency on one path and read another. A computed subs
 (`${svc[k]}`) spells no path: its key is only known once `k` is evaluated, so it is Python's own
 subscript, and it is no dependency beyond the names it is computed from.
 
-Evaluation reads the path first and falls back on Python's access only when the path is missing
-(`_eval_path_or`): that is what lets `${name[0]}` index a string, and keeps a dict with a non-string key (`{0: x}`, which YAML can produce) reachable as
-`${m[0]}`. The path model's segments are strings, as everywhere else in `dictexpr`, so `${m[0]}`
-reads a key `"0"` before an integer key `0`. When the fallback fails too, the path's own miss is
-reported — `Field 'svc.nope' not found`, or `index 5 out of range` — rather than a `KeyError` or
-an `AttributeError` on `dict`.
+Evaluation reads the path first and falls back on Python's subscript only when the path is
+missing (`_eval_path_or`): that is what lets `${name[0]}` index a string, and keeps a dict with a
+non-string key (`{0: x}`, which YAML can produce) reachable as `${m[0]}`. A dot falls back the
+same way, as the subscript of the name it spells, so `${svc[k].host}` reads what
+`${svc[k]['host']}` reads; it never reaches a Python attribute
+([safety model](safety-model.md#a-dot-reads-a-key-never-an-attribute)). The path model's segments
+are strings, as everywhere else in `dictexpr`, so `${m[0]}` reads a key `"0"` before an integer
+key `0`. When the fallback fails too, the path's own miss is reported — `Field 'svc.nope' not
+found`, or `index 5 out of range` — rather than a `KeyError`.
 
 The callee of a method call is no path at all: `${name.upper()}` evaluates `name` and calls the
 method on it, never reading a key `name.upper`

@@ -14,10 +14,10 @@ interpreter over a whitelisted AST, never `eval`:
   ([values and references](values-and-references.md#delimiting-an-expression)).
 
 `a.b` and `a['b']` are first tried as a config path; only if that fails are they a real
-attribute access or subscript (an index into a string), and a miss is reported as a missing field rather than an `AttributeError` on `dict`
-([values and references](values-and-references.md#spelling-a-path)). A subscript never reaches
-`getattr`, so `['__class__']` is a key like any other; that holds only while no rewrite turns a
-subscript into an attribute ([reference anchoring](reference-anchoring.md#implementation-constraints)).
+subscript (an index into a string), and a miss is reported as a missing field rather than a
+`KeyError` ([values and references](values-and-references.md#spelling-a-path)). Neither
+reaches `getattr` ([below](#a-dot-reads-a-key-never-an-attribute)), so `['__class__']` is a key
+like any other.
 
 ## A function is named only by a call
 
@@ -86,3 +86,40 @@ escapes through `str.format` and `format_map`, which it now blocks by name.
 
 Rejected: **refusing a non-`str` receiver at validation.** Validation sees syntax, not data; the
 receiver may be a path, a subscript or a call whose type no rule could predict.
+
+## A dot reads a key, never an attribute
+
+`.x` is the constant subscript `['x']`, on a path and off one: when no config path answers
+`a.b`, evaluation indexes the evaluated `a` by the key `"b"`, exactly as it would for `a['b']`.
+`_expressions._eval_path_or` is the one evaluator of both nodes, so a dot and a subscript cannot
+disagree on what they reach:
+
+| Expression | Value |
+|---|---|
+| `${svc[k].host}`, `${(a if c else b).host}` | the key `host` of the dict the base evaluates to |
+| `${n.upper}` | `MissingReferenceError`, hinting that `upper` is called as `n.upper(...)` |
+| `${p.unlink}` on a `pathlib.Path`, `${d.year}` on a date | `MissingReferenceError`: a value's attributes are no keys |
+
+Before BUG-125 the fallback was `getattr`, with only dunders refused. On a string that only ever
+yielded a bound method, which an interpolation printed as `<built-in method upper of str object
+at 0x…>` — the leak BUG-120 closed for a bare function name. On any other value it reached every
+public attribute by name, whatever the type, and a bound method such as `Path.unlink` could reach
+a `Callable` field. The same fallback also made `.x` and `['x']` disagree off a path:
+`${svc[k].host}` failed with `'dict' object has no attribute 'host'` while `${svc[k]['host']}`
+read the key. A method may only be called, and only on a string
+([above](#a-method-is-a-string-method)); a data attribute such as a date's `year` had no test,
+no documented use and no whitelist entry, so the narrower rule loses nothing the safety model
+promised.
+
+Precedents expose the data's fields only, never host-language attributes: JMESPath and CEL
+select fields of the document, OmegaConf's `${a.b}` is a node path, and JavaScript, jq and Jinja2
+read `a.b` as `a['b']` (Jinja2 falls back on `getattr` only because its data are Python objects,
+and its sandbox then has to vet each attribute).
+
+Rejected:
+
+- **Refusing a callable result only** (Jinja2's sandbox, `is_safe_attribute`). It keeps a date's
+  `year`, but leaves every public data attribute of every type reachable — a surface decided per
+  type, which the whitelist never audited — and keeps `.x` and `['x']` apart off a path.
+- **No fallback for a dot at all.** An attribute no path answers would always be a missing
+  field, so `${svc[k].host}` would stay unreadable while `${svc[k]['host']}` reads it.

@@ -583,21 +583,24 @@ def _validate_call(node: ast.Call) -> None:
 def _eval_name(node: ast.Name, namespace: dict[str, Any]) -> Any:
     """Read the config key *node* names; a callee never reaches here (see :func:`_function_name`)."""
     if node.id in _SAFE_FUNCTIONS and node.id not in namespace:
-        detail = f"'{node.id}' is a function only when called, as in {node.id}(...)"
-        raise MissingReferenceError.field_not_found(node.id, detail)
+        raise MissingReferenceError.uncalled(node.id, "function", node.id, node.id)
     return _get_nested(namespace, [node.id])
 
 
-def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any], access: Callable[[Any], Any]) -> Any:
-    """Read the config path *node* spells; failing that, apply *access* to its evaluated base.
+def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any]) -> Any:
+    """Read the config path *node* spells; failing that, index its evaluated base by the key it spells.
 
     The path comes first, so ``svc['web'].host`` reads what ``svc.web.host`` reads. What no
-    path answers is Python's own access: a method off a string (``name.upper``), an index into
-    one (``name[0]``), a computed key (``svc[k]``), a key that is no string. When that fails
-    too, the path's own miss is reported rather than ``'dict' object has no attribute ...``.
+    path answers is Python's own subscript: an index into a string (``name[0]``), a computed
+    key (``svc[k]``), a key that is no string (``m[0]`` on ``{0: ...}``). A dot is that
+    subscript with its name as the key, so ``svc[k].host`` reads what ``svc[k]['host']``
+    reads; it is never ``getattr``, so no attribute of a value — a bound method above all —
+    is reachable. When the subscript fails too, the path's own miss is reported rather than a
+    ``KeyError``, with how to call a string method a dot named.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
+        docs-dev/architecture/expressions/safety-model.md#a-dot-reads-a-key-never-an-attribute
     """
     parts = _attribute_chain(node)
     missing: MissingReferenceError | None = None
@@ -607,19 +610,15 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any]
         except MissingReferenceError as exc:
             missing = exc
     try:
-        return access(_evaluate_ast(node.value, namespace))
+        base = _evaluate_ast(node.value, namespace)
+        return base[node.attr if isinstance(node, ast.Attribute) else _evaluate_ast(node.slice, namespace)]
     except (AttributeError, LookupError, TypeError):
-        if missing is None:
+        if missing is None or parts is None:
             raise
+        if isinstance(node, ast.Attribute) and node.attr in _SAFE_METHODS:
+            path = ".".join(parts)
+            raise MissingReferenceError.uncalled(path, "method", node.attr, ast.unparse(node)) from None
         raise missing from None
-
-
-def _eval_attribute(node: ast.Attribute, namespace: dict[str, Any]) -> Any:
-    return _eval_path_or(node, namespace, lambda base: getattr(base, node.attr))
-
-
-def _eval_subscript(node: ast.Subscript, namespace: dict[str, Any]) -> Any:
-    return _eval_path_or(node, namespace, lambda base: base[_evaluate_ast(node.slice, namespace)])
 
 
 def _eval_binop(node: ast.BinOp, namespace: dict[str, Any]) -> Any:
@@ -716,8 +715,8 @@ _AST_EVALUATORS: dict[type, Any] = {
     ast.Expression: lambda n, ns: _evaluate_ast(n.body, ns),
     ast.Constant: lambda n, _ns: n.value,
     ast.Name: _eval_name,
-    ast.Attribute: _eval_attribute,
-    ast.Subscript: _eval_subscript,
+    ast.Attribute: _eval_path_or,
+    ast.Subscript: _eval_path_or,
     ast.BinOp: _eval_binop,
     ast.UnaryOp: _eval_unaryop,
     ast.Compare: _eval_compare,
@@ -1119,8 +1118,8 @@ class _AnchorResolver(ast.NodeTransformer):
     not as Python anyone could parse.
 
     Only the stand-in and the segment it owns are rewritten; whatever the expression
-    spells after them keeps its own node, so ``.a['__class__']`` stays a subscript and
-    never becomes an attribute the evaluator would ``getattr``.
+    spells after them keeps its own node, so ``.m[0]`` stays a subscript, which an
+    integer key answers when the path read misses.
 
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#implementation-constraints
