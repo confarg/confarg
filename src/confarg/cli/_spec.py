@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+import functools
 import inspect
 import textwrap
 from typing import TYPE_CHECKING, Annotated, Any, get_args, get_origin
@@ -156,6 +157,7 @@ def _get_field_meta(raw_type: Any) -> FieldMeta | None:
     return None
 
 
+@functools.cache
 def _get_field_docstrings(dc_type: type) -> dict[str, str]:
     """Extract attribute docstrings (string literals after field defs) via AST.
 
@@ -163,6 +165,10 @@ def _get_field_docstrings(dc_type: type) -> dict[str, str]:
     statement is a string constant, that string is treated as the field's
     docstring.  Returns an empty dict when source is unavailable (e.g.
     dynamically created classes).
+
+    Cached per class: before Python 3.13, ``inspect.getsource`` re-parses the whole
+    defining module on every call, which dominates a CLI build in a large module.
+    The returned dict is shared and must not be mutated.
     """
     try:
         source = inspect.getsource(dc_type)
