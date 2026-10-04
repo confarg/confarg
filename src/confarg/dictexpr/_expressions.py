@@ -217,8 +217,26 @@ def _parse_body(body: str) -> ast.Expression:
     Whitespace around the body is layout, as in an f-string replacement field and for
     :func:`eval`, so ``${ a }`` means ``${a}``; :func:`ast.parse` alone would read the
     leading blank as an indent.
+
+    A body nested too deeply for the parser raises :class:`_TooDeepError`, a
+    :class:`SyntaxError`, so every parse site treats it as a body that does not parse.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/resolution.md#resolution-algorithm
     """
-    return ast.parse(body.strip(), mode="eval")
+    try:
+        return ast.parse(body.strip(), mode="eval")
+    except (RecursionError, MemoryError) as exc:
+        raise _TooDeepError from exc
+
+
+class _TooDeepError(SyntaxError):
+    """A body nested too deeply for Python's parser, refused as a body that does not parse.
+
+    The parser gives up on it with a :class:`RecursionError` while it builds the tree, or a
+    :class:`MemoryError` when its own stack overflows, never a :class:`SyntaxError`; which
+    one depends on the depth and the Python version.
+    """
 
 
 @lru_cache(maxsize=2048)
@@ -634,6 +652,9 @@ def _validate_ast(expr_str: str) -> None:
             f" names (NFKC): write {exc.read!r}, or read the key as written with a subscript,"
             f" [{exc.written!r}] or ::[{exc.written!r}] at the root"
         )
+        raise UnsafeExpressionError(msg) from exc
+    except _TooDeepError as exc:
+        msg = f"Expression nests too deeply to parse: {expr_str!r}"
         raise UnsafeExpressionError(msg) from exc
     except SyntaxError as exc:
         msg = f"Invalid expression syntax: {expr_str!r}"

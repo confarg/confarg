@@ -19,7 +19,8 @@ the boundary moves here.
 - A malformed expression contributes no dependency edges, and a mounted file's malformed
   expression takes no prefix: it is not parseable, so nothing can be derived from it. The error
   surfaces at validation instead, with the expression text as written, wherever the file was
-  mounted (BUG-130).
+  mounted (BUG-130). A body nested too deeply for Python's parser is one of them
+  ([expressions](expressions/resolution.md#resolution-algorithm), BUG-137).
 - `--config.<path>+` fragments keep their **bare** references anchored at the merged root, not
   at the mount point; a node-relative `${.x}` works there, because it is resolved once the
   element has an index ([expressions](expressions/reference-anchoring.md#reference-anchoring)).

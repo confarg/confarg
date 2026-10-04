@@ -6,12 +6,14 @@
 
 from __future__ import annotations
 
+import ast
 import math
 import re
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -2010,3 +2012,43 @@ class TestAnEvaluationFailureNamesItsExpression:
         with pytest.raises(ExpressionEvalError) as info:
             resolve_expressions({"b": 1, "v": "${b / 0}"})
         assert isinstance(info.value.__cause__, ZeroDivisionError)
+
+
+class TestABodyTooDeepToParse:
+    """A body Python's parser gives up on is refused as one that does not parse (BUG-137).
+
+    On a deeply nested body the parser raises a ``RecursionError`` or a ``MemoryError``, not a
+    ``SyntaxError``; which one depends on the depth and the Python version.
+    """
+
+    TOO_DEEP = "-" * 100_000 + "a"
+
+    def test_validation_refuses_it_as_written(self) -> None:
+        """``resolve()`` raises the library's own error, quoting the body."""
+        with pytest.raises(UnsafeExpressionError, match=r"^Expression nests too deeply to parse: '---") as info:
+            resolve_expressions({"a": 1, "v": "${" + self.TOO_DEEP + "}"})
+        assert str(info.value).endswith("-a'")
+
+    def test_it_contributes_no_reference(self) -> None:
+        """Reference extraction skips it, as any body that does not parse."""
+        assert _extract_references("${" + self.TOO_DEEP + "} ${b}") == {("b",)}
+
+    def test_mounting_leaves_it_as_written(self) -> None:
+        """Mounting prefixes what parses and leaves the rest for validation to refuse."""
+        value = "${" + self.TOO_DEEP + "} ${a}"
+        assert prefix_references({"v": value}, ("db",)) == {"v": "${" + self.TOO_DEEP + "} ${db.a}"}
+
+    @pytest.mark.parametrize("error", [RecursionError, MemoryError])
+    def test_either_give_up_is_a_syntax_error(self, error: type[Exception], monkeypatch: pytest.MonkeyPatch) -> None:
+        """Python 3.14 raises only ``MemoryError`` on a unary chain, so the other is forced here."""
+        body = f"{error.__name__} + 1"  # a body no other test caches
+        parse = ast.parse
+
+        def give_up(source: str, *args: Any, **kwargs: Any) -> ast.AST:
+            if source == body:
+                raise error
+            return parse(source, *args, **kwargs)
+
+        monkeypatch.setattr(ast, "parse", give_up)
+        with pytest.raises(SyntaxError):
+            _parse_expression(body)
