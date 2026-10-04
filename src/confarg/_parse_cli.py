@@ -14,6 +14,7 @@ Dev Notes:
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import functools
 import json
@@ -746,11 +747,9 @@ def _parse_flag_mode(
     if delete_mode:
         raw_last = path[-1][:-1]
         path[-1] = raw_last
-        try:
+        with contextlib.suppress(ValueError):
             delete_idx = int(raw_last)
             is_list_delete = True
-        except ValueError:
-            pass
 
     return path, append_mode, delete_mode, delete_idx, is_list_delete
 

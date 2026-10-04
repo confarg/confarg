@@ -476,19 +476,17 @@ def _collect_callable_field_specs(
     kwargs stay plain (``--<field>.<param>``) in both modes.
     """
     if mode == "class":
-        try:
+        with contextlib.suppress(SymbolImportError):
             cls = _import_dotted(fn_path)
             if isinstance(cls, type):
                 # Constructor params → factory kwargs; __call__ params → bind kwargs.
                 specs = _collect_callable_factory_specs(field_flag, cls, existing_names)
                 specs.extend(_collect_callable_call_bind_specs(field_flag, cls, bind_key, existing_names))
                 return specs
-        except SymbolImportError:
-            pass
     elif mode == "call":
         return _collect_callable_bind_specs(field_flag, fn_path, bind_key, existing_names)
     else:  # mode == "fn"
-        try:
+        with contextlib.suppress(SymbolImportError):
             obj = _import_dotted(fn_path)
             if isinstance(obj, type):
                 # 'fn: SomeClass' is a factory; its constructor params are bind targets
@@ -502,8 +500,6 @@ def _collect_callable_field_specs(
                 specs = _collect_callable_factory_specs(field_flag, owning_cls, existing_names)
                 specs.extend(_collect_callable_bind_specs(field_flag, fn_path, bind_key, existing_names))
                 return specs
-        except SymbolImportError:
-            pass
     return _collect_callable_bind_specs(field_flag, fn_path, bind_key, existing_names)
 
 

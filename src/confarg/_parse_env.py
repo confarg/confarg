@@ -10,6 +10,7 @@ Dev Notes:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import warnings
 from typing import TYPE_CHECKING, Any
@@ -252,13 +253,11 @@ def _accepts_json_for(ft: Any, value: str) -> bool:
 def _store_env_value(parts: list[str], ft: Any, value: str, data: dict[str, Any]) -> None:
     """Parse an env var string value and store it at the resolved path in data."""
     if _accepts_json_for(ft, value):
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             parsed = json.loads(value)
             if isinstance(parsed, list | dict):
                 _set_nested(data, parts, parsed)
                 return
-        except json.JSONDecodeError:
-            pass
     _set_nested(data, parts, _try_coerce(ft, _StrToken(value)))
 
 
