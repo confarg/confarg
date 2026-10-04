@@ -74,6 +74,9 @@ spelling. Path-first is also the order an attribute already used.
 
 A reference is a path, not a leaf selector: `_get_nested` returns whatever sits at that path,
 so `${db}` is as valid as `${db.port}` and substitutes the entire node — dict, list or scalar.
+Every expression inside the node resolves first, so what is substituted holds no `${...}`; a
+node that holds the referencing expression itself is therefore a cycle
+([resolution](resolution.md#a-reference-reads-everything-its-path-reaches)).
 
 **Value semantics, not identity.** Resolution finishes before construction begins
 ([pipeline](../pipeline/stages.md#the-pipeline)), so what a site references is raw data, never

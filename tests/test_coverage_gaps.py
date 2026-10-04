@@ -906,7 +906,7 @@ class TestExpressionBranches:
         """Keyword argument names in function calls are collected as references."""
         # keyword arg 'y' should be collected as a reference
         refs = _extract_references("${sorted(x, key=y)}")
-        assert "x" in refs or "y" in refs
+        assert ("x",) in refs or ("y",) in refs
 
     def test_attribute_chain_subscript_at_top(self) -> None:
         """_attribute_chain handles a subscript at the top level gracefully."""
@@ -1304,8 +1304,8 @@ class TestExpressionsBranches:
     def test_collect_names_keyword_arg_in_safe_method_call(self) -> None:
         """Keyword arg names in a safe method call are collected as references."""
         refs = _extract_references("${x.replace(a, old=b)}")
-        assert "x" in refs
-        assert "b" in refs
+        assert ("x",) in refs
+        assert ("b",) in refs
 
     def test_attribute_chain_string_subscript_is_a_segment(self) -> None:
         """_attribute_chain reads a string subscript as the key it names (BUG-121)."""
