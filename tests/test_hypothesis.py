@@ -13,7 +13,7 @@ from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 import confarg
-from confarg.dictexpr._expressions import _EXPR_RE
+from confarg.dictexpr._expressions import _find_expressions
 from tests.conftest import (
     Color,
     WithDefaults,
@@ -36,7 +36,13 @@ def _escape_expressions(value: str) -> str:
     ``$${...}``/``${...}`` occurrence therefore makes ``load()`` return the
     original string unchanged, whatever hypothesis generated.
     """
-    return _EXPR_RE.sub(lambda m: "$" + m.group(0), value)
+    out: list[str] = []
+    last = 0
+    for span in _find_expressions(value):
+        out += [value[last : span.start], "$"]
+        last = span.start
+    out.append(value[last:])
+    return "".join(out)
 
 
 # ---------------------------------------------------------------------------

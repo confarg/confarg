@@ -37,27 +37,28 @@ The function receives plain resolved data, not a constructed object, because res
 before construction begins. An application that wants its own type back calls
 `confarg.from_dict(DbConfig, node)` inside the function; the seam composes.
 
-## The crux: prefixing has to know the names
+## The crux: prefixing has to know the names — gone since BUG-120
 
-`_Prefixer.visit_Name` leaves a name alone only if it is in `_SAFE_FUNCTIONS`
-(`_expressions.py:782`), and `_collect_names` skips those same names instead of treating them as
-reference bases. Both run at **mount time, inside `merge()`** — so a table visible only to
-`resolve()` would rewrite `${label_count(db)}` in a mounted fragment into
-`${sub.label_count(sub.db)}` and then fail to find it. That decides the spelling more than taste
-does:
+This section used to argue that `_Prefixer` and `_collect_names`, which run at **mount time,
+inside `merge()`**, exempted a name by looking it up in `_SAFE_FUNCTIONS`, so a table visible only
+to `resolve()` would turn a mounted fragment's `${label_count(db)}` into
+`${sub.label_count(sub.db)}`; and that a registered name would shadow a same-named key everywhere.
+Neither holds any more: a name is a function exactly when it is a call's callee, a syntactic rule
+that needs no table (`_function_name`,
+[07](../../architecture/expressions/safety-model.md#a-function-is-named-only-by-a-call)). The
+fragment becomes `${label_count(sub.db)}` whatever the table holds, and `${label_count}` reads
+the key. The table only has to reach validation and evaluation, in `resolve()`:
 
-| Spelling | How the table reaches the prefixer | Cost |
+| Spelling | What mount time needs | Cost |
 |---|---|---|
-| `${label_count(db)}`, global registry | import-time global state | `resolve()` stops being a pure function of its dict; a merged dict resolves in one application and not in another |
-| `${label_count(db)}`, a `functions=` parameter | threaded through `merge`, `resolve`, `build`, `load` **and** the five front-ends | a large API surface for one feature; `resolve(data)`'s deliberately type-blind signature grows |
-| **`${fn.label_count(db)}`, a reserved namespace** | it does not have to — a static, lexical exemption beside `_ROOT_ANCHOR` in `visit_Name` | one more reserved name ([FEAT-3](FEAT-3-reserved-sentinel-key-registry.md)), derived by *real field wins* |
+| `${label_count(db)}`, global registry | nothing | `resolve()` stops being a pure function of its dict; a merged dict resolves in one application and not in another |
+| `${label_count(db)}`, a `functions=` parameter | nothing | threaded through `resolve`, `build`, `load` **and** the five front-ends, not `merge`; `resolve(data)`'s deliberately type-blind signature grows |
+| `${fn.label_count(db)}`, a reserved namespace | a lexical exemption for `fn` beside `_ROOT_ANCHOR` in `visit_Name`, and the matching skip in `_collect_names` | one more reserved name ([FEAT-3](FEAT-3-reserved-sentinel-key-registry.md)), derived by *real field wins* |
 
-The third is the one to start from. It is the only spelling where mounting stays correct without
-the table being visible during `merge()`, so how the table is supplied becomes an independent
-question instead of the question. It reads as what it is in a config file. And it avoids a
-collision the bare form carries: because `_collect_names` stops treating a whitelisted name as a
-reference base, **a registered name shadows a same-named config key everywhere**. With `len` that
-is a small documented set; with application names it is unbounded and different per application.
+The namespace was the one to start from while it was the only spelling that mounted correctly and
+did not shadow keys. BUG-120 took both advantages away. What it still has is that it reads as what
+it is in a config file, and that application names cannot collide with a builtin the whitelist
+gains later. Weigh that again before building.
 
 `locals` is the precedent for a reserved namespace derived from the target rather than
 configured ([08](../../architecture/locals.md#derived-name)): `_fn` when the target really has
@@ -75,7 +76,8 @@ an `fn` field, decided by the same `_segment_names_real_field` predicate
 - **What may trigger it.** `--help` does not resolve today and must not start; a future
   `confarg check` ([FEAT-9](FEAT-9-confarg-check-command.md)) has to decide whether validating a
   configuration is allowed to run application code.
-- **Keyword arguments** already come for free: `_collect_names_from_call` walks `node.keywords`.
+- **Keyword arguments** are half there: `_collect_names_from_call` walks `node.keywords`, but
+  `ast.keyword` is not in `_ALLOWED_NODES`, so validation refuses `${round(x, ndigits=2)}` today.
 
 ## Rejected
 

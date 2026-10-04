@@ -20,10 +20,10 @@ import re
 import tokenize
 from collections import deque
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
 from confarg.exceptions import (
     CircularReferenceError,
@@ -32,8 +32,74 @@ from confarg.exceptions import (
     UnsafeExpressionError,
 )
 
-# Regex: matches escaped $${...} (no capture) and real ${...} (content in group 1)
-_EXPR_RE = re.compile(r"\$\$\{[^}]*\}|\$\{([^}]+)\}")
+#: A Python string literal, triple-quoted or not. A backslash escapes the next
+#: character whatever the prefix (``r'\''`` is one literal), so a prefix never moves
+#: where a literal ends, which is all delimiting needs to know.
+_STRING_LITERAL_RE = re.compile(r"""('''|\"\"\"|'|")(?:\\.|(?!\1)[^\\])*\1""", re.DOTALL)
+
+#: The characters that can close an expression body or hide a brace from it.
+_BODY_DELIMITER_RE = re.compile(r"""[{}'"]""")
+
+
+class _ExpressionSpan(NamedTuple):
+    """One ``${...}`` found in a string, or a ``$${...}`` escape of one."""
+
+    start: int
+    end: int
+    #: The text between the braces; ``None`` for an escape, which is never evaluated.
+    body: str | None
+
+
+def _body_end(text: str, start: int) -> int | None:
+    """Index of the ``}`` closing the expression body that begins at *start*.
+
+    That is the first ``}`` outside a string literal and outside a brace pair the body
+    opened itself, as for an f-string replacement field. ``None`` when nothing closes
+    the body, including when a string literal in it is never closed.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#delimiting-an-expression
+    """
+    depth = 0
+    index = start
+    while (delimiter := _BODY_DELIMITER_RE.search(text, index)) is not None:
+        char = delimiter.group()
+        index = delimiter.end()
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            if not depth:
+                return delimiter.start()
+            depth -= 1
+        else:
+            literal = _STRING_LITERAL_RE.match(text, delimiter.start())
+            if literal is None:
+                return None
+            index = literal.end()
+    return None
+
+
+def _find_expressions(text: str) -> Iterator[_ExpressionSpan]:
+    """Yield each ``${...}`` and ``$${...}`` escape of *text*, left to right.
+
+    An escape is delimited exactly like the expression it spells, and a ``${`` whose
+    body is empty or never closed is plain text.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#delimiting-an-expression
+    """
+    search = 0
+    while (opening := text.find("${", search)) != -1:
+        end = _body_end(text, opening + 2)
+        escaped = opening > 0 and text[opening - 1] == "$"
+        if end is None or (end == opening + 2 and not escaped):
+            search = opening + 1
+            continue
+        if escaped:
+            yield _ExpressionSpan(opening - 1, end + 1, None)
+        else:
+            yield _ExpressionSpan(opening, end + 1, text[opening + 2 : end])
+        search = end + 1
 
 
 def contains_expression(value: object) -> bool:
@@ -46,7 +112,7 @@ def contains_expression(value: object) -> bool:
     Dev Notes:
         docs-dev/architecture/expressions/deferral-rule.md#deferral-rule
     """
-    return isinstance(value, str) and _EXPR_RE.search(value) is not None
+    return isinstance(value, str) and next(_find_expressions(value), None) is not None
 
 
 # Whitelisted free functions
@@ -140,6 +206,16 @@ _CMPOP_MAP: dict[type, Any] = {
 }
 
 
+def _parse_body(body: str) -> ast.Expression:
+    """Parse the text of one ``${...}`` as a Python expression.
+
+    Whitespace around the body is layout, as in an f-string replacement field and for
+    :func:`eval`, so ``${ a }`` means ``${a}``; :func:`ast.parse` alone would read the
+    leading blank as an indent.
+    """
+    return ast.parse(body.strip(), mode="eval")
+
+
 @lru_cache(maxsize=2048)
 def _parse_expression(content: str) -> ast.Expression:
     """Parse one ``${...}`` body into a cached AST.
@@ -157,7 +233,7 @@ def _parse_expression(content: str) -> ast.Expression:
     Dev Notes:
         docs-dev/architecture/expressions/resolution.md#resolution-algorithm
     """
-    return ast.parse(_strip_anchor(content), mode="eval")
+    return _parse_body(_strip_anchor(content))
 
 
 def resolve_expressions(
@@ -203,11 +279,9 @@ def resolve_expressions(
 
     # 5. Validate AST for all expressions
     for path in order:
-        raw_str = expr_fields[path]
-        for m in _EXPR_RE.finditer(raw_str):
-            expr_content = m.group(1)
-            if expr_content is not None:  # not escaped
-                _validate_ast(expr_content)
+        for span in _find_expressions(expr_fields[path]):
+            if span.body is not None:  # not escaped
+                _validate_ast(span.body)
 
     # 6. Resolve in order, building namespace incrementally
     for path in order:
@@ -256,38 +330,43 @@ def _extract_references(expr_str: str, node_path: str = "") -> set[str]:
         Set of dotted paths (e.g. {"db.host", "db.port"}).
     """
     refs: set[str] = set()
-    for m in _EXPR_RE.finditer(expr_str):
-        expr_content = m.group(1)
-        if expr_content is None:
+    for span in _find_expressions(expr_str):
+        if span.body is None:
             continue  # escaped $${...}
         try:
-            tree = _parse_anchored(expr_content, node_path)
+            tree = _parse_anchored(span.body, node_path)
         except SyntaxError:
             continue
         _collect_names(tree, refs)
     return refs
 
 
+def _function_name(node: ast.Call) -> str | None:
+    """Return the name of the free function *node* calls, or ``None`` for any other callee.
+
+    The one place a name is read as a function: the callee of a call. Anywhere else — an
+    operand, an argument, a method receiver, the base of a dotted path — a name is a config
+    key, even one spelled like a whitelisted function, so ``${max}`` reads the key ``max``
+    and ``${max(max, 5)}`` calls the builtin on it. The rule is syntactic, so the
+    mount-time prefixer applies it without seeing the data.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/safety-model.md#a-function-is-named-only-by-a-call
+    """
+    return node.func.id if isinstance(node.func, ast.Name) else None
+
+
 def _collect_names_from_call(node: ast.Call, refs: set[str]) -> None:
-    """Collect field references from a Call node, distinguishing methods from free functions."""
+    """Collect field references from a Call node: its arguments, and its callee unless that names a function."""
     _min_attribute_parts = 2
-    if isinstance(node.func, ast.Attribute):
-        parts = _attribute_chain(node.func)
+    if _function_name(node) is None:
+        parts = _attribute_chain(node.func) if isinstance(node.func, ast.Attribute) else None
         if parts is not None and len(parts) >= _min_attribute_parts and parts[-1] in _SAFE_METHODS:
             # Method call like x.upper(): add the receiver path, not the method name.
-            obj_path = ".".join(parts[:-1])
-            if obj_path not in _SAFE_FUNCTIONS:
-                refs.add(obj_path)
-            for arg in node.args:
-                _collect_names(arg, refs)
-            for kw in node.keywords:
-                _collect_names(kw.value, refs)
-            return
-        _collect_names(node.func, refs)
-    elif not isinstance(node.func, ast.Name):
-        # Indirect call — descend into the func expression.
-        _collect_names(node.func, refs)
-    # Free function call: skip the function name itself, collect args.
+            refs.add(".".join(parts[:-1]))
+        else:
+            # Indirect call — descend into the func expression.
+            _collect_names(node.func, refs)
     for arg in node.args:
         _collect_names(arg, refs)
     for kw in node.keywords:
@@ -297,14 +376,12 @@ def _collect_names_from_call(node: ast.Call, refs: set[str]) -> None:
 def _collect_names(node: ast.AST, refs: set[str]) -> None:
     """Collect Name nodes and dotted Attribute chains from AST as field references."""
     if isinstance(node, ast.Name):
-        if node.id not in _SAFE_FUNCTIONS:
-            refs.add(node.id)
+        refs.add(node.id)
         return
     if isinstance(node, ast.Attribute):
         parts = _attribute_chain(node)
         if parts is not None:
-            if parts[0] not in _SAFE_FUNCTIONS:
-                refs.add(".".join(parts))
+            refs.add(".".join(parts))
         else:
             for child in ast.iter_child_nodes(node):
                 _collect_names(child, refs)
@@ -431,9 +508,10 @@ def _validate_ast(expr_str: str) -> None:
 
 def _validate_call(node: ast.Call) -> None:
     """Validate that a Call node targets a whitelisted function/method."""
-    if isinstance(node.func, ast.Name):
-        if node.func.id not in _SAFE_FUNCTIONS:
-            msg = f"Function '{node.func.id}' is not allowed"
+    function = _function_name(node)
+    if function is not None:
+        if function not in _SAFE_FUNCTIONS:
+            msg = f"Function '{function}' is not allowed"
             raise UnsafeExpressionError(msg)
     elif isinstance(node.func, ast.Attribute):
         if node.func.attr not in _SAFE_METHODS and node.func.attr not in _SAFE_FUNCTIONS:
@@ -445,8 +523,10 @@ def _validate_call(node: ast.Call) -> None:
 
 
 def _eval_name(node: ast.Name, namespace: dict[str, Any]) -> Any:
-    if node.id in _SAFE_FUNCTIONS:
-        return _SAFE_FUNCTIONS[node.id]
+    """Read the config key *node* names; a callee never reaches here (see :func:`_function_name`)."""
+    if node.id in _SAFE_FUNCTIONS and node.id not in namespace:
+        detail = f"'{node.id}' is a function only when called, as in {node.id}(...)"
+        raise MissingReferenceError.field_not_found(node.id, detail)
     return _get_nested(namespace, node.id)
 
 
@@ -533,7 +613,8 @@ def _eval_ifexp(node: ast.IfExp, namespace: dict[str, Any]) -> Any:
 
 
 def _eval_call(node: ast.Call, namespace: dict[str, Any]) -> Any:
-    func = _evaluate_ast(node.func, namespace)
+    function = _function_name(node)
+    func = _SAFE_FUNCTIONS[function] if function is not None else _evaluate_ast(node.func, namespace)
     args = [_evaluate_ast(a, namespace) for a in node.args]
     kwargs = {cast("str", kw.arg): _evaluate_ast(kw.value, namespace) for kw in node.keywords}
     try:
@@ -596,33 +677,30 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any], node_path: str = "
     *node_path* is where the expression sits, which is what an anchor stand-in
     (``__UP1__``, ``__ROOT__``) is resolved against.
     """
+    spans = list(_find_expressions(expr_str))
     # Check if the entire string is a single ${expr}
-    stripped = expr_str.strip()
-    m = re.fullmatch(r"\$\{([^}]+)\}", stripped)
-    if m and stripped == expr_str:
+    if len(spans) == 1 and spans[0].body is not None and (spans[0].start, spans[0].end) == (0, len(expr_str)):
         # Pure expression — return typed result
-        tree = _parse_anchored(m.group(1), node_path)
+        tree = _parse_anchored(spans[0].body, node_path)
         return _eval_expr(tree, namespace, expr_str)
 
     # Interpolation or escape mode: build string from parts
     result_parts: list[str] = []
     last_end = 0
-    for m in _EXPR_RE.finditer(expr_str):
+    for span in spans:
         # Add literal text before this match
-        start = m.start()
-        result_parts.append(expr_str[last_end:start])
+        result_parts.append(expr_str[last_end : span.start])
 
-        if m.group(1) is None:
-            # Escaped $${...} — produce literal ${...}
-            escaped_text = m.group(0)  # e.g. "$${foo}"
-            result_parts.append(escaped_text[1:])  # strip one $, producing "${foo}"
+        if span.body is None:
+            # Escaped $${...} — strip one $, producing the literal ${...}
+            result_parts.append(expr_str[span.start + 1 : span.end])
         else:
             # Real expression — evaluate and stringify
-            tree = _parse_anchored(m.group(1), node_path)
-            value = _eval_expr(tree, namespace, m.group(0))
+            tree = _parse_anchored(span.body, node_path)
+            value = _eval_expr(tree, namespace, expr_str[span.start : span.end])
             result_parts.append(str(value))
 
-        last_end = m.end()
+        last_end = span.end
 
     # Add any trailing literal text
     result_parts.append(expr_str[last_end:])
@@ -918,11 +996,10 @@ def check_anchor_depth(value: str, node_path: str, scope: str = "file") -> None:
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     depth = len(node_path.split(".")) if node_path else 0
-    for match in _EXPR_RE.finditer(value):
-        content = match.group(1)
-        if content is None:
+    for span in _find_expressions(value):
+        if span.body is None:
             continue  # escaped $${...}
-        for _, _, levels in _anchor_markers(content):
+        for _, _, levels in _anchor_markers(span.body):
             if levels > depth:
                 raise MissingReferenceError.anchor_above_root(node_path, levels, scope)
 
@@ -995,8 +1072,9 @@ class _Prefixer(ast.NodeTransformer):
 
     Replacing the base ``Name`` of ``servers[0].host`` with ``db.servers`` yields
     ``db.servers[0].host``; a method receiver works the same (``x.upper()`` →
-    ``db.x.upper()``). Correct only while :data:`_ALLOWED_NODES` has no construct
-    that binds names (lambdas, comprehensions).
+    ``db.x.upper()``), and so does a name spelled like a function anywhere but as a
+    callee (``max`` → ``db.max``, but ``max(a)`` → ``max(db.a)``). Correct only while
+    :data:`_ALLOWED_NODES` has no construct that binds names (lambdas, comprehensions).
 
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
@@ -1005,16 +1083,24 @@ class _Prefixer(ast.NodeTransformer):
     def __init__(self, prefix: str) -> None:
         self._parts = prefix.split(".")
 
+    def visit_Call(self, node: ast.Call) -> ast.AST:  # NodeTransformer dispatches on the AST class name
+        """Prefix the arguments, and the callee only when it names no function."""
+        if _function_name(node) is None:
+            return self.generic_visit(node)
+        node.args = [self.visit(arg) for arg in node.args]
+        node.keywords = [self.visit(keyword) for keyword in node.keywords]
+        return node
+
     def visit_Name(self, node: ast.Name) -> ast.AST:  # NodeTransformer dispatches on the AST class name
-        """Return *node* unchanged for a function or anchor, else prefixed."""
-        if node.id in _SAFE_FUNCTIONS or _anchor_dot_count(node.id) is not None:
+        """Return *node* unchanged for an anchor, else prefixed."""
+        if _anchor_dot_count(node.id) is not None:
             return node
         return ast.copy_location(_path_to_ast([*self._parts, node.id]), node)
 
 
 def _prefix_content(expr_content: str, prefix: str) -> str:
     """Prefix every file-anchored reference in one ``${...}`` body by *prefix*."""
-    tree = ast.parse(_name_anchor(expr_content), mode="eval")
+    tree = _parse_body(_name_anchor(expr_content))
     tree = _Prefixer(prefix).visit(tree)
     ast.fix_missing_locations(tree)
     return _unname_anchor(ast.unparse(tree))
@@ -1024,10 +1110,10 @@ def _map_expressions(value: str, fn: Callable[[str], str]) -> str:
     """Apply *fn* to the body of each real ``${...}``, leaving ``$${...}`` escapes alone."""
     out: list[str] = []
     last = 0
-    for m in _EXPR_RE.finditer(value):
-        out.append(value[last : m.start()])
-        out.append(m.group(0) if m.group(1) is None else "${" + fn(m.group(1)) + "}")
-        last = m.end()
+    for span in _find_expressions(value):
+        out.append(value[last : span.start])
+        out.append(value[span.start : span.end] if span.body is None else "${" + fn(span.body) + "}")
+        last = span.end
     out.append(value[last:])
     return "".join(out)
 

@@ -48,6 +48,8 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "what location does this relative include name?" | `_sources._join` |
 | "are these two locations the same document?" | `_sources._identity` |
 | "would resolution rewrite this value?" | `dictexpr.contains_expression` |
+| "where does each `${...}` of this string begin and end?" | `dictexpr._expressions._find_expressions` ([expressions](expressions/values-and-references.md#delimiting-an-expression)) |
+| "is this name a function or a config key?" | `dictexpr._expressions._function_name` — a function only as a call's callee, a key everywhere else; validation, evaluation, `_collect_names` and `_Prefixer` all ask it (BUG-120, [expressions](expressions/safety-model.md#a-function-is-named-only-by-a-call)) |
 | "does this segment name a real member?" | `_parse_cli._segment_names_real_field` |
 | "does a real field own the union tag's spelling?" | `_types._union_tag_shadowed` |
 | "what exact spelling does an env segment resolve to?" | `_parse_env._env_spelling` — a member case-insensitively, among the `_parse_cli._member_names` of every type `_parse_cli._field_types` reaches at the spelled prefix, then the union tag by its own spelling, lowercase otherwise. The spelling is the env channel's only rule: the spelled path is typed by `_parse_cli._resolve_field_type`, as a flag's is (REF-73) |

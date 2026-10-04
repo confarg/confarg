@@ -58,6 +58,22 @@ class Cfg:
     name: str = ""
 
 
+@dataclass
+class Limits:
+    """Block whose keys are named like whitelisted expression functions."""
+
+    max: int = 0
+    limit: int = 0
+
+
+@dataclass
+class Bounded:
+    """Root config mounting ``Limits``, with a root ``max`` a fragment must not reach."""
+
+    limits: Limits = field(default_factory=Limits)
+    max: int = 1
+
+
 #: A fragment that is self-contained: its only reference is to its own sibling.
 FRAGMENT = "host: base-${port}\nport: 5432\n"
 
@@ -100,6 +116,12 @@ class TestFragmentReadsItself:
         first = confarg.load(Cfg, argv=["--config", str(shallow)], env={})
         second = confarg.load(Cfg, argv=["--config", str(deep)], env={})
         assert first == second == Cfg(db=Db(host="base-5432", port=5432))
+
+    def test_a_key_named_like_a_function(self, tmp_path: Path) -> None:
+        """A fragment's ``${max}`` reads the fragment's own ``max`` key (BUG-120)."""
+        write(tmp_path, "limits.yaml", "max: 10\nlimit: ${max}\n")
+        cfg = write(tmp_path, "app.yaml", f"limits:\n  {INCLUDE_KEY}: ./limits.yaml\n")
+        assert confarg.load(Bounded, argv=["--config", str(cfg)], env={}).limits.limit == 10
 
 
 # ---------------------------------------------------------------------------

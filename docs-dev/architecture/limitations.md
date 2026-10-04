@@ -11,8 +11,7 @@ the boundary moves here.
 
 ## Expressions
 
-- The grammar cannot express `}` inside an expression, collection literals, slices,
-  comprehensions or lambdas. The whitelist is the safety model, not an unfinished parser
+- The grammar cannot express collection literals, slices, comprehensions or lambdas. The whitelist is the safety model, not an unfinished parser
   ([expressions](expressions/safety-model.md#safety-model)).
 - A malformed expression contributes no dependency edges: it is not parseable, so nothing can
   be derived from it. The error surfaces at validation instead, with the expression text.
