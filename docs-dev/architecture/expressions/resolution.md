@@ -61,7 +61,10 @@ resolved — and keeps the rest as written, which the "above it" rule covers: `$
 `svc.a` itself, so `svc.a` depends on itself and `CircularReferenceError` names it. Before, it
 substituted a dict that contained itself. This holds whatever reads the ancestor, `${len(svc)}` and
 `${svc[k]}` included: the graph is built from syntax, and cannot tell that `len` only counts keys
-or which key `k` will name ([limitations](../limitations.md#expressions)). CUE draws the same line
+or which key `k` will name ([limitations](../limitations.md#expressions)). The configuration root
+is the ancestor of every expression, so an anchor that names it whole — `${::}`, `${::[k]}` —
+is a cycle too; its path is the empty one, and the index below answers it with every expression
+([reference anchoring](reference-anchoring.md#implementation-constraints)). CUE draws the same line
 — a struct that references itself from inside is a structural cycle — while engines that resolve
 lazily on access (OmegaConf, Jsonnet, Nix) need no ordering at all, and so detect such a cycle,
 if at all, only once something walks the value.

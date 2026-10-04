@@ -325,16 +325,17 @@ def _dependency_graph(data: dict[str, Any], expr_fields: dict[_Path, str]) -> di
     A reference reads every expression its path reaches, not just one sitting exactly there:
     any below it, since ``${svc}`` hands on or stringifies the whole subtree, and one above
     it, since ``${a.b.c}`` reads into what ``a.b`` resolves to. A reference to an ancestor
-    of the expression that makes it therefore reads that expression itself, the cycle it is.
-    The reference is first named as the scan names it (:func:`_scan_path`), so ``xs[-1]``
-    reaches the element the scan calls ``xs.1``.
+    of the expression that makes it therefore reads that expression itself, the cycle it is;
+    the root, ``()``, is an ancestor of every expression. The reference is first named as
+    the scan names it (:func:`_scan_path`), so ``xs[-1]`` reaches the element the scan calls
+    ``xs.1``.
 
     Dev Notes:
         docs-dev/architecture/expressions/resolution.md#a-reference-reads-everything-its-path-reaches
     """
     below: dict[_Path, list[_Path]] = {}
     for path in expr_fields:
-        for depth in range(1, len(path) + 1):
+        for depth in range(len(path) + 1):
             below.setdefault(path[:depth], []).append(path)
     deps: dict[_Path, set[_Path]] = {}
     for path, raw_str in expr_fields.items():
@@ -432,9 +433,13 @@ def _collect_names_from_call(node: ast.Call, refs: set[tuple[str, ...]]) -> None
 
 
 def _collect_names(node: ast.AST, refs: set[tuple[str, ...]]) -> None:
-    """Collect Name nodes and the config paths of Attribute/Subscript chains as field references."""
+    """Collect Name nodes and the config paths of Attribute/Subscript chains as field references.
+
+    A stand-in :class:`_AnchorResolver` left in the tree names the configuration root, the
+    empty path.
+    """
     if isinstance(node, ast.Name):
-        refs.add((node.id,))
+        refs.add(() if _anchor_dot_count(node.id) is not None else (node.id,))
         return
     if isinstance(node, ast.Attribute | ast.Subscript):
         parts = _attribute_chain(node)
@@ -477,6 +482,16 @@ def _subscript_segment(index: ast.expr) -> str | None:
     return None if number is None else str(number)
 
 
+def _segment(node: ast.Attribute | ast.Subscript) -> str | None:
+    """Return the one path segment *node* adds to its base, or ``None`` for a computed subscript.
+
+    A dot's name, or what :func:`_subscript_segment` reads in a subscript's index. Asked of
+    each link by :func:`_attribute_chain`, and of the first segment after a root stand-in by
+    :class:`_AnchorResolver`.
+    """
+    return node.attr if isinstance(node, ast.Attribute) else _subscript_segment(node.slice)
+
+
 def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
     """Return the config path *node* reads, segment by segment, or ``None`` when it reads none.
 
@@ -493,7 +508,7 @@ def _attribute_chain(node: ast.Attribute | ast.Subscript) -> list[str] | None:
     parts: list[str] = []
     current: ast.expr = node
     while isinstance(current, ast.Attribute | ast.Subscript):
-        segment = current.attr if isinstance(current, ast.Attribute) else _subscript_segment(current.slice)
+        segment = _segment(current)
         if segment is None:
             return None
         parts.append(segment)
@@ -939,14 +954,27 @@ def _run_end(toks: list[tuple[int, str, int, int]], start: int, matches: Callabl
     return index, end
 
 
-def _anchor_markers(expr_content: str) -> list[tuple[int, int, int]]:
-    """``(offset, length, levels)`` of each anchor marker that begins an operand.
+class _AnchorMarker(NamedTuple):
+    """One anchor marker that begins an operand, as :func:`_anchor_markers` finds it."""
 
-    *levels* is how far a dot run climbs — one per dot — and ``0`` marks ``::``, the
-    configuration root. Token-based: the dots of ``1.5`` or ``','.join(x)`` are not
-    markers, while the one in ``a if .b else c`` is. A ``::`` inside brackets is a
-    slice step and not a marker, which keeps ``items[::2]`` spellable; reach the root
-    there with ``items[(::step)]``.
+    offset: int
+    length: int
+    #: How far a dot run climbs — one per dot — and ``0`` for ``::``, the configuration root.
+    levels: int
+    #: Whether a name follows, and so spells the first segment after the marker (``.host``),
+    #: rather than a subscript (``.['web-1']``) or nothing at all (``.``).
+    before_name: bool
+
+
+def _anchor_markers(expr_content: str) -> list[_AnchorMarker]:
+    """Each anchor marker that begins an operand, and whether a name follows it.
+
+    Token-based: the dots of ``1.5`` or ``','.join(x)`` are not markers, while the one
+    in ``a if .b else c`` is. A ``::`` inside brackets is a slice step and not a marker,
+    which keeps ``items[::2]`` spellable; reach the root there with ``items[(::step)]``.
+    The one answer to "what follows this marker?": the stand-in that replaces it owns a
+    dot only before a name (:func:`_name_anchor`), and only before a name can ``::`` be
+    dropped (:func:`_strip_anchor`).
 
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
@@ -955,7 +983,7 @@ def _anchor_markers(expr_content: str) -> list[tuple[int, int, int]]:
         toks = _significant_tokens(expr_content)
     except (tokenize.TokenError, IndentationError, SyntaxError):
         return []  # malformed: let ast.parse report it with its own message
-    found: list[tuple[int, int, int]] = []
+    found: list[_AnchorMarker] = []
     brackets: list[str] = []
     prev_type: int | None = None
     prev_str = ""
@@ -983,10 +1011,12 @@ def _anchor_markers(expr_content: str) -> list[tuple[int, int, int]]:
             continue
         index, end = _run_end(toks, index, _is_dot_run if dots else _is_colon)
         run = expr_content[begin:end]
+        # A keyword cannot be an attribute, so `. if c else d` names the node itself.
+        before_name = index < len(toks) and toks[index][0] == tokenize.NAME and not keyword.iskeyword(toks[index][1])
         if dots:
-            found.append((begin, end - begin, len(run)))
+            found.append(_AnchorMarker(begin, end - begin, len(run), before_name))
         elif len(run) == _ROOT_MARKER_COLONS:
-            found.append((begin, end - begin, 0))
+            found.append(_AnchorMarker(begin, end - begin, 0, before_name))
         prev_type, prev_str = tokenize.OP, run[-1]
     return found
 
@@ -1014,21 +1044,42 @@ def _strip_anchor(expr_content: str) -> str:
 
     Node-relative markers are left alone: they mean nothing without the path of the
     node that wrote them, and :func:`resolve_expressions` has already replaced them
-    by the time any parse site runs.
+    by the time any parse site runs. So is a root marker no name follows: no plain path
+    reads a root key that is no identifier (``::['web-1']``), or the root itself.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/reference-anchoring.md#a-relative-reference-is-never-serialized-as-an-absolute-path
     """
     return _replace_spans(
         expr_content,
-        [(o, o + n, "") for o, n, levels in _anchor_markers(expr_content) if levels == 0],
+        [
+            (marker.offset, marker.offset + marker.length, "")
+            for marker in _anchor_markers(expr_content)
+            if marker.levels == 0 and marker.before_name
+        ],
     )
 
 
 def _name_anchor(expr_content: str) -> str:
-    """Swap each anchor marker for a parseable name (``..foo`` -> ``__UP2__.foo``)."""
+    """Swap each anchor marker for a parseable name (``..foo`` -> ``__UP2__.foo``).
+
+    The stand-in owns a dot only when a name follows the marker: ``.[0]`` becomes
+    ``__UP1__[0]`` and a bare ``.`` becomes ``__UP1__``, each a path to
+    :func:`_attribute_chain`, as ``x[0]`` and ``x`` are.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/reference-anchoring.md#implementation-constraints
+    """
     return _replace_spans(
         expr_content,
         [
-            (o, o + n, (_ROOT_ANCHOR if levels == 0 else _up_anchor(levels)) + ".")
-            for o, n, levels in _anchor_markers(expr_content)
+            (
+                marker.offset,
+                marker.offset + marker.length,
+                (_ROOT_ANCHOR if marker.levels == 0 else _up_anchor(marker.levels))
+                + ("." if marker.before_name else ""),
+            )
+            for marker in _anchor_markers(expr_content)
         ],
     )
 
@@ -1036,8 +1087,9 @@ def _name_anchor(expr_content: str) -> str:
 def _unname_anchor(expr_content: str) -> str:
     """Turn ``__UP2__.foo`` back into ``..foo`` after unparsing.
 
-    Token-based, so a string literal containing the name is left intact.  The dot the
-    stand-in owns is consumed with it, because the marker it restores carries its own.
+    Token-based, so a string literal containing the name is left intact.  The dot a
+    stand-in owns is consumed with it, because the marker it restores carries its own;
+    before a subscript (``__UP1__[0]``) it owns none.
     """
     try:
         toks = _significant_tokens(expr_content)
@@ -1092,8 +1144,8 @@ def check_anchor_depth(value: str, node_path: _Path, scope: str = "file") -> Non
     for span in _find_expressions(value):
         if span.body is None:
             continue  # escaped $${...}
-        for _, _, levels in _anchor_markers(span.body):
-            _anchor_prefix(node_path, levels, scope)
+        for marker in _anchor_markers(span.body):
+            _anchor_prefix(node_path, marker.levels, scope)
 
 
 def name_anchors(value: str) -> str:
@@ -1117,9 +1169,12 @@ class _AnchorResolver(ast.NodeTransformer):
     ``ast.Attribute`` chain, which :func:`_attribute_chain` reads straight back, but
     not as Python anyone could parse.
 
-    Only the stand-in and the segment it owns are rewritten; whatever the expression
-    spells after them keeps its own node, so ``.m[0]`` stays a subscript, which an
-    integer key answers when the path read misses.
+    Only the stand-in is rewritten; every segment the expression spells after it keeps
+    its own node, so ``.m[0]`` and ``.[0]`` stay subscripts, which an integer key answers
+    when the path read misses. The configuration root has no path to stand for, so there
+    the first segment after the stand-in becomes the base name instead (``::['web-1']``
+    reads ``web-1``); a stand-in left in the tree names the root itself (``${::}``,
+    ``${::[k]}``), which :func:`_collect_names` reads as a reference to the whole of it.
 
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#implementation-constraints
@@ -1128,25 +1183,27 @@ class _AnchorResolver(ast.NodeTransformer):
     def __init__(self, node_path: _Path) -> None:
         self._node_path = node_path
 
-    def _absolute(self, parts: list[str]) -> list[str] | None:
-        """Return *parts* with a leading stand-in expanded, or ``None`` if it has none."""
-        levels = _anchor_dot_count(parts[0])
+    def _anchored(self, node: ast.expr) -> _Path | None:
+        """Return the path the stand-in *node* names, or ``None`` when *node* is no stand-in."""
+        levels = _anchor_dot_count(node.id) if isinstance(node, ast.Name) else None
         if levels is None:
             return None
-        prefix = () if levels == 0 else _anchor_prefix(self._node_path, levels)
-        return [*prefix, *parts[1:]]
+        return () if levels == 0 else _anchor_prefix(self._node_path, levels)
 
-    def visit_Attribute(self, node: ast.Attribute) -> ast.AST:  # NodeTransformer dispatches on the class name
-        """Rewrite ``<stand-in>.name`` into the absolute path to ``name``, else recurse."""
-        absolute = self._absolute([node.value.id, node.attr]) if isinstance(node.value, ast.Name) else None
-        if absolute:
-            return ast.copy_location(_path_to_ast(absolute), node)
+    def _visit_segment(self, node: ast.Attribute | ast.Subscript) -> ast.AST:
+        """Make the segment *node* spells on a stand-in for the root its base name, else recurse."""
+        segment = _segment(node) if self._anchored(node.value) == () else None
+        if segment is not None:
+            return ast.copy_location(ast.Name(id=segment, ctx=ast.Load()), node)
         return self.generic_visit(node)
 
+    visit_Attribute = _visit_segment  # NodeTransformer dispatches on the class name
+    visit_Subscript = _visit_segment
+
     def visit_Name(self, node: ast.Name) -> ast.AST:  # NodeTransformer dispatches on the class name
-        """Rewrite a bare stand-in, which names the anchored node itself."""
-        absolute = self._absolute([node.id])
-        return ast.copy_location(_path_to_ast(absolute), node) if absolute else node
+        """Rewrite a stand-in into the path of the node it names, unless that is the root."""
+        anchored = self._anchored(node)
+        return ast.copy_location(_path_to_ast(list(anchored)), node) if anchored else node
 
 
 def _parse_anchored(expr_content: str, node_path: _Path) -> ast.Expression:

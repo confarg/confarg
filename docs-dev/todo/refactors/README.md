@@ -45,5 +45,6 @@ different board.
 | [REF-71 — Three functions answer "does this segment name a member?", and they disagree at the edges](REF-71-three-answers-to-is-this-a-member.md) | M | medium | none |
 | [REF-75 — `cli/_collect.py` no longer collects, and `_merge_from_flat` no longer merges from the flat result](REF-75-cli-collect-module-no-longer-collects.md) | S | low | none |
 | [REF-76 — `FlagSpec.accumulates` has no reader left in the merge](REF-76-flagspec-accumulates-has-no-reader-left.md) | S | low | none |
+| [REF-77 — `_parse_expression` strips a root marker that no body reaching it still holds](REF-77-parse-expression-strips-a-root-marker-no-body-still-holds.md) | S | low | none |
 
 <!-- tickets:end -->

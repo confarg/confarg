@@ -48,6 +48,9 @@ An integer subscript is a list index, `${servers[0].host}` or `${servers[-1].hos
 subscript is the only way to write a key that is no identifier: `${svc['web-1'].port}`,
 `${hosts['example.com']}`. Precedents agree: in JavaScript `a.b` is `a['b']`, in jq `.foo` is
 shorthand for `.["foo"]`, and Jinja2 documents `foo.bar` and `foo['bar']` as the same lookup.
+An anchor marker takes either spelling too, so `${.['web-1']}`, `${.[0]}` and `${::['web-1']}`
+read a sibling key, a sibling element and a root key
+([reference anchoring](reference-anchoring.md#implementation-constraints)).
 
 `_expressions._attribute_chain` is the one answer to "which config path does this node read?".
 Reference collection asks it for the dependency graph and evaluation asks it for the value, so a

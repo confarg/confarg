@@ -179,6 +179,14 @@ class TestCanonicalForm:
         data = confarg.merge(Cfg, argv=["--config", str(cfg)], env={})
         assert data["db"]["host"] == "${name}-db"
 
+    def test_a_root_marker_before_a_subscript_is_kept(self, tmp_path: Path) -> None:
+        """No bare spelling reads a root key that is no identifier, so ``::`` stays (BUG-126)."""
+        write(tmp_path, "db.yaml", "host: ${::['web-1']}\nport: ${.['p-1']}\np-1: 1\n")
+        cfg = write(tmp_path, "app.yaml", f"web-1: h\ndb:\n  {INCLUDE_KEY}: ./db.yaml\n")
+        data = confarg.merge(dict, argv=["--config", str(cfg)], env={})
+        assert data["db"] == {"host": "${::['web-1']}", "port": "${.['p-1']}", "p-1": 1}
+        assert confarg.resolve(data)["db"] == {"host": "h", "port": 1, "p-1": 1}
+
     def test_merged_dict_is_itself_includable(self, tmp_path: Path) -> None:
         """The canonical form is still a fragment: mount it again and it re-anchors."""
         write(tmp_path, "db.yaml", FRAGMENT)

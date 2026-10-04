@@ -25,8 +25,12 @@ the boundary moves here.
   `dbs.0.url`, `${..host}` names the list rather than the mapping holding it
   ([expressions](expressions/reference-anchoring.md#reference-anchoring)).
 - A merged dict is no longer uniformly root-anchored: `${.x}` is preserved through `merge()`
-  and `dump_file()` on purpose, so a dumped fragment stays position-independent
+  and `dump_file()` on purpose, so a dumped fragment stays position-independent, and so is
+  `${::['web-1']}`, which no plain path spells
   ([expressions](expressions/reference-anchoring.md#a-relative-reference-is-never-serialized-as-an-absolute-path)).
+- A non-string key at the document root is not reachable: `${::[0]}` reads the root key `"0"`.
+  Below the root the subscript's fallback indexes by the integer, but the root has no node to
+  index ([expressions](expressions/reference-anchoring.md#implementation-constraints)).
 - A reference to a whole node substitutes that node's *value*, so each referencing site is
   constructed separately: two fields referring to one struct hold equal, non-identical
   objects. There is no way to share one instance
