@@ -1517,6 +1517,51 @@ class TestEqualsSpelledRunContinuation:
 
 
 # ---------------------------------------------------------------------------
+# The config flag's space-separated multi-file run -- the clicklike front-ends decline it
+# ---------------------------------------------------------------------------
+
+
+class TestSpaceSeparatedConfigRun:
+    """``--config base.yaml override.yaml`` reads both files where the space run is taken (BUG-99)."""
+
+    def test_space_separated_config_files_merged(self, space_sep_loader: ConfargLoader, tmp_yaml) -> None:
+        """``--config base.yaml override.yaml`` merges both files on the space-taking front-ends."""
+        base = tmp_yaml("host: base\nport: 1000\n", filename="base.yaml")
+        override = tmp_yaml("port: 2000\n", filename="override.yaml")
+        assert space_sep_loader.merge(Simple, argv=["--config", str(base), str(override)], env={}) == {
+            "host": "base",
+            "port": 2000,
+        }
+
+    def test_space_separated_subkey_config_files_merged(self, space_sep_loader: ConfargLoader, tmp_yaml) -> None:
+        """The scoped ``--config.db base.yaml override.yaml`` run declines the same way (BUG-99)."""
+        base = tmp_yaml("host: base\nport: 1000\n", filename="base.yaml")
+        override = tmp_yaml("port: 2000\n", filename="override.yaml")
+        assert space_sep_loader.merge(AppConfig, argv=["--config.db", str(base), str(override)], env={}) == {
+            "db": {"host": "base", "port": 2000},
+        }
+
+    def test_clicklike_decline_the_space_separated_config_run(self, tmp_yaml) -> None:
+        """The space-separated multi-file run exits on click and typer (BUG-99).
+
+        The approved divergence (docs-dev/architecture/invariants.md#cross-channel-parity):
+        a click Option cannot vary its token count, and ``multiple=True`` -- the only
+        registration that takes every path -- binds exactly one per occurrence, so the
+        repeated form is the clicklike front-ends' multi-file spelling
+        (docs-dev/architecture/cli-parsing/config-file-flags.md#config-file-flags). That
+        form parses on every front-end, pinned by
+        ``TestPipelineParity::test_multiple_config_files_merged``.
+        """
+        base = tmp_yaml("host: base\nport: 1000\n", filename="base.yaml")
+        override = tmp_yaml("port: 2000\n", filename="override.yaml")
+        for loader in (ClickLoader(), TyperLoader()):
+            with pytest.raises(SystemExit):
+                loader.merge(Simple, argv=["--config", str(base), str(override)], env={})
+            with pytest.raises(SystemExit):
+                loader.merge(AppConfig, argv=["--config.db", str(base), str(override)], env={})
+
+
+# ---------------------------------------------------------------------------
 # Bool convention
 # ---------------------------------------------------------------------------
 

@@ -29,6 +29,10 @@ accumulates, its arity deferred to `build()` (BUG-79;
 [design decisions](../design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence)) — and it is not the `+`
 suffix, which is a merge operator rather than a spelling (below).
 
+The config flag is not a field flag and crosses the same seam: its space-separated multi-file
+run declines on the two clicklike front-ends, an approved divergence of its own recorded in
+[config file flags](../cli-parsing/config-file-flags.md#config-file-flags) (BUG-99).
+
 Two consequences follow from the accumulation being over **tokens**, not over shaped values:
 
 - vanilla joins the occurrences and shapes the result once, in `_parse_cli._varlen_value` /

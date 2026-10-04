@@ -13,3 +13,18 @@ The first path may carry the `=` spelling (`--config=a.yaml b.yaml` reads both) 
 cyclopts; argparse's `=` binds the one path after it and its parser exits on the rest, the
 approved divergence BUG-75 recorded
 ([whole-value flags](../cli-adapters/whole-value-flags.md#whole-value-flags)).
+
+The multi-file run is spelled space-separated on vanilla, argparse and cyclopts
+(`--config a.yaml b.yaml`) and by repetition on click and typer — an **approved divergence**
+narrowed to the two clicklike front-ends (BUG-99, closed): a click `Option` cannot vary its
+token count, so the flag registers `multiple=True`, which binds exactly one path per occurrence
+and lets the framework's parser exit on the tokens that would complete a space-separated run,
+before any confarg code runs. It is the config flag's half of the
+[list syntax divergence](../cli-adapters/list-syntax-divergence.md#list-syntax-divergence), which
+scopes its own approval to the multi-token *field* flags and leaves this one here; the
+`--<config_flag>.<subpath>` scoped flags and the locals flag register the same `nargs="*"`
+and decline the same way. Repetition is the spelling the two frameworks teach their own
+users, the lean
+[design decisions](../design-decisions/divergence-leans-to-the-backend.md#a-divergence-leans-towards-the-affected-backends-own-idiom)
+settles, and the contract suite pins the decline beside the BUG-75 tests
+([testing](../testing.md#list-syntax-split)).

@@ -26,7 +26,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | M | low | behavior |
 | [BUG-97 — A namedtuple's -0 and +0 index spellings diverge across the front-ends](BUG-97-a-namedtuples-minus-zero-and-plus-zero-index-spellings-diverge.md) | S | low | behavior |
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | S | low | behavior |
-| [BUG-99 — The config flag's space-separated multi-file spelling is declined on click and typer, undocumented](BUG-99-the-config-flags-space-separated-multi-file-spelling-is-declined-on-click-and-typer-undocumented.md) | S | low | none |
 | [BUG-104 — The env walk cannot see a subclass-only field, so the tag wins a case-differing spelling](BUG-104-the-env-walk-cannot-see-a-subclass-only-field-so-the-tag-wins-a-case-differing-spelling.md) | S | medium | config |
 
 <!-- tickets:end -->
