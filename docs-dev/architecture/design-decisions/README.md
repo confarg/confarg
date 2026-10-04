@@ -16,6 +16,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [One merge pipeline for every front-end](one-merge-pipeline.md) | the adapters translate into it; they never re-implement it |
 | [Adapters instead of an own CLI framework](adapters-not-a-cli-framework.md) | users keep argparse/click/typer/cyclopts, and need no CLI library at all |
 | [Zero runtime dependencies](zero-runtime-dependencies.md) | YAML, TOML writing, completion and the adapters are extras |
+| [Adapter argument names keep the framework's noun](adapter-argument-names-keep-the-framework-noun.md) | `populate_*` and `merge_*` name the object the user holds, `ctx` or `app`, not one generic `cli` |
 
 ## Parity, and where it has to give
 

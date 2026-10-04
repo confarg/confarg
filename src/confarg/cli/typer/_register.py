@@ -78,11 +78,11 @@ def load_flags_into_command(
     _clicklike.load_flags_into_command(flags, command, _spec_to_option)
 
 
-def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app signatures; all params are keyword-only with sensible defaults
+def populate_command(  # noqa: PLR0913
     target: object,
     command: Command,
     *,
-    cli_prefix: str = "",
+    cli_prefix: str | None = None,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
@@ -135,6 +135,7 @@ def populate_command(  # noqa: PLR0913  # mirrors populate_parser/populate_app s
             :func:`from_context`); pass an explicit list, or ``[]`` to register
             only the static, type-derived options.
     """
+    cli_prefix = cli_prefix or ""
     _clicklike.populate_command(
         target,
         command,
