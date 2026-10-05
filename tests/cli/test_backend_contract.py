@@ -6529,6 +6529,16 @@ class _RemedyNestedList:
     rows: list[list[_RemedyItem]]
 
 
+@dataclass
+class _RemedyPoint:
+    p: _Point
+
+
+@dataclass
+class _RemedyOptionalPoint:
+    p: _Point | None = None
+
+
 class TestMissingFieldRemedyContract:
     """The flag a ``MissingFieldError`` tells the user to pass is one every front-end accepts."""
 
@@ -6545,6 +6555,7 @@ class TestMissingFieldRemedyContract:
             pytest.param(_RemedyVarTuple, ["--v.0.name", "a"], "--v.0.size", id="var-tuple-element"),
             pytest.param(_RemedyNestedList, ["--rows.0.0.name", "a"], "--rows.0.0.size", id="nested-list-element"),
             pytest.param(_RemedyDict, ["--d.k.name", "a"], "--d.k.size", id="dict-value"),
+            pytest.param(_RemedyOptionalPoint, ["--p", "1"], "--p.y", id="short-optional-namedtuple-run"),
         ],
     )
     def test_remedy_flag_completes_the_load(
@@ -6554,10 +6565,24 @@ class TestMissingFieldRemedyContract:
         argv: list[str],
         flag: str,
     ) -> None:
-        """Passing the flag the message names, as the CLI spells it, builds the field it reported (BUG-165)."""
+        """Passing the flag the message names, as the CLI spells it, builds the field it reported (BUG-165).
+
+        A namedtuple's positions shorter than its arity leave a field missing like any other
+        (BUG-167).
+        """
         with pytest.raises(MissingFieldError) as exc_info:
             loader.load(target, argv=argv, env={})
         remedy = re.search(r"Set it via CLI \((\S+)\)", str(exc_info.value))
         assert remedy is not None
         assert remedy.group(1) == flag
         loader.load(target, argv=[*argv, flag, "1"], env={})
+
+    def test_short_whole_value_namedtuple_names_the_missing_field(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+    ) -> None:
+        """A whole ``[...]`` token shorter than a namedtuple reports the field it stops before (BUG-167)."""
+        with pytest.raises(MissingFieldError, match=r"Set it via CLI \(--p\.y\)"):
+            whole_value_arity_loader.load(_RemedyPoint, argv=["--p", "[1]"], env={})
+        cfg = whole_value_arity_loader.load(_RemedyPoint, argv=["--p", "[1]", "--p.y", "2"], env={})
+        assert cfg.p == _Point(1, 2)
