@@ -3433,6 +3433,13 @@ class _WithTriple:
 
 
 @dataclass
+class _WithPointAndCount:
+    """Fixed-length tuple whose first slot is a namedtuple — refined below a deferred patch."""
+
+    t: tuple[_Point, int] = (_Point(0, 0), 0)
+
+
+@dataclass
 class _WithDbs:
     """List-of-struct field."""
 
@@ -3625,6 +3632,26 @@ class TestCollectionPatchContract:
         base = tmp_yaml("input: [1, 2]\n")
         cfg = loader.load(_WithTriple, argv=["--config", str(base), "--input.2", "3"], env={})
         assert cfg.input == (1, 2, 3)
+
+    @pytest.mark.parametrize(
+        "patches",
+        [["--t.0.x", "9", "--t.1", "5"], ["--t.1", "5", "--t.0.x", "9"]],
+        ids=["refine-first", "fill-first"],
+    )
+    def test_tuple_slot_past_config_base_keeps_a_refinement(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        patches: list[str],
+    ) -> None:
+        """A patch below a base element refines it although a slot past the base defers the patch (BUG-164).
+
+        ``--t.0.x 9`` alone refines the file's ``[1, 2]`` in the merge; ``--t.1 5`` beside it
+        defers the whole patch to build(), which must refine the element the same way.
+        """
+        base = tmp_yaml("t: [[1, 2]]\n")
+        cfg = loader.load(_WithPointAndCount, argv=["--config", str(base), *patches], env={})
+        assert cfg.t == (_Point(9, 2), 5)
 
     def test_list_index_past_config_base_still_errors(self, loader: ConfargLoader, tmp_yaml) -> None:
         """The same out-of-base index on a *list* field still errors (replacement-only).

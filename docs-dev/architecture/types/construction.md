@@ -95,6 +95,11 @@ indifferent to both.
   the message ([invariants](../invariants.md#delegate-to-the-canonical-function)).
 - An index-keyed dict for a tuple field with a default patches the default in place, unless
   the merge layer carried a base (`"*"`), which wins.
+- A `"*"` base with an index patch beside it builds as the merge would have built it, had no
+  index escaped the base: each patch value refines what the base holds at its position through
+  `_merge._merge_existing_value`, and fills a slot past the base's end. So `--t.1 5` beside
+  `--t.0.a 9` over a file's `t: [[1, 2]]` defers the patch without turning the refinement of
+  `t[0]` into a replacement (BUG-164). A fixed tuple and a namedtuple lay their positions alike.
 - Lists accept a list or an index-keyed dict. Index-keyed lists must be gap-free unless the
   element type is Optional. Deletes and negative indices need a base list; without one they
   are errors that say so.
