@@ -207,12 +207,13 @@ def _apply_list_ops(
     return working
 
 
-def _index_patch_escapes_base(base: list[Any], ops: dict[str, Any]) -> bool:
-    """Whether *ops* is a pure index patch with an index outside *base*.
+def _patch_needs_the_type(base: list[Any], ops: dict[str, Any]) -> bool:
+    """Whether *ops* is a pure patch whose meaning over *base* depends on the target type.
 
-    Such a patch is deferred to ``build()`` with the base carried along. Patches with
-    append/delete keys, and non-integer keys, return False so ``_apply_list_ops``
-    handles them (and raises its specific errors).
+    A key that is no integer names a namedtuple field or nothing, and an index outside
+    *base* fills a fixed tuple's slot or overruns a list. Such a patch is deferred to
+    ``build()`` with the base carried along. Patches with append/delete keys return
+    False so ``_apply_list_ops`` handles them (and raises its specific errors).
 
     Dev Notes:
         docs-dev/architecture/pipeline/merge-build-contract.md#merge-build-contract
@@ -226,15 +227,22 @@ def _index_patch_escapes_base(base: list[Any], ops: dict[str, Any]) -> bool:
         try:
             i = int(k)
         except (TypeError, ValueError):
-            return False
+            return True
         if not -n <= i < n:
             return True
     return False
 
 
 def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) -> Any:
-    """Compute the merged value when *key* exists in both base and override."""
+    """Compute the merged value when *key* exists in both base and override.
+
+    An override carrying its own base list (``LIST_REPLACE_BASE_KEY``) replaces a dict
+    base outright, as a union tag does: the patches beside that list address it, not
+    whatever an earlier layer held.
+    """
     if isinstance(bv, dict) and isinstance(val, dict):
+        if LIST_REPLACE_BASE_KEY in val:
+            return val
         if LIST_APPEND_KEY in bv and LIST_APPEND_KEY in val:
             combined = _to_append_list(bv[LIST_APPEND_KEY]) + _to_append_list(val[LIST_APPEND_KEY])
             rest = _deep_merge(
@@ -261,8 +269,9 @@ def _merge_list_base(bv: list[Any], val: dict[str, Any], key: str, union_tag: st
     """Combine a list base *bv* with an override patch dict *val*."""
     if LIST_REPLACE_BASE_KEY in val:
         return _apply_list_ops(list(val[LIST_REPLACE_BASE_KEY]), val, key, union_tag)
-    if _index_patch_escapes_base(bv, val):
-        # Defer to build(): an out-of-range index is an error for a list, a slot for a tuple.
+    if _patch_needs_the_type(bv, val):
+        # Defer to build(): an out-of-range index is an error for a list, a slot for a tuple;
+        # a name key is an error for a list, a field for a namedtuple.
         return {LIST_REPLACE_BASE_KEY: list(bv), **val}
     return _apply_list_ops(list(bv), val, key, union_tag)
 
@@ -296,8 +305,8 @@ def _deep_merge(
         A new dict containing the merged result.
 
     Raises:
-        ConfargError: If a list is patched/deleted with an out-of-range index, or
-            if a non-integer key is used for list patching.
+        ConfargError: If a delete index is out of range, or if a list patch beside an
+            append or a delete uses an out-of-range index or a non-integer key.
     """
     base = _normalize_merge_ops(base)
     override = _normalize_merge_ops(override)

@@ -52,12 +52,11 @@
   the shorthand outright — the rule that already makes an opener beat the blob beside it. A
   field with no shorthand has nothing to open and the deeper key replaces its scalar
   ([pipeline](../pipeline/deep-merge.md#scalar-intermediates)).
-- A namedtuple's **positional list is re-keyed under its field names** before a sub-flag
-  descends into it: `_promote_namedtuple_positional` turns the `--pt 1 2` list into
-  `{'x': 1, 'y': 2}` for `--pt.y 9` to join, where the generic `_set_nested` promotion
-  would have wrapped it in `LIST_REPLACE_BASE_KEY` — the shape a *varlen* collection's
-  index patches ride on, and one a namedtuple cannot build. Write order decides the
-  shape: a later arity flag still replaces the whole field
+- A namedtuple's **positional list is the `'*'` base** a later sub-flag patches beside,
+  as a *varlen* collection's is: the generic `_set_nested` promotion turns `--pt 1 2
+  --pt.y 9` into `{'*': [1, 2], 'y': 9}`, and `build()` lays the patch over the positions
+  by field name, the same shape the merge defers a file's list under a name patch to.
+  Write order decides the shape: a later arity flag still replaces the whole field
   ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#a-namedtuples-arity-flag-and-its-sub-flags-merge-in-argv-order)).
 
 ## Unions with sequence variants

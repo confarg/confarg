@@ -566,6 +566,105 @@ class TestConfigFiles:
         assert loaded.pair == original.pair
 
 
+@dataclass
+class _Segment:
+    """Dataclass whose namedtuple holds another namedtuple."""
+
+    seg: Line
+
+
+class Line(NamedTuple):
+    """A namedtuple one of whose fields is a namedtuple."""
+
+    start: Point
+    width: int
+
+
+class TestPatchOverAPositionalBase:
+    """A patch over a positional list builds whichever channel spelled the list (BUG-160).
+
+    The merge cannot tell a namedtuple's list from a plain one, so it carries the list as
+    the ``'*'`` base beside the patch; ``build()`` lays the patch over the positions, by
+    field name or by index, as ``Point(*base)._replace(...)`` would.
+    """
+
+    def test_construct_lays_a_name_patch_over_the_base(self) -> None:
+        """The ``'*'`` base fills the positions the name keys do not take."""
+        assert construct(Point, {"*": [1, 2], "x": 9}) == Point(x=9, y=2)
+
+    def test_construct_lays_an_index_patch_over_the_base(self) -> None:
+        """An index patch, negative included, takes its position as a fixed tuple's does."""
+        assert construct(Point, {"*": [1, 2], "0": 9}) == Point(x=9, y=2)
+        assert construct(Point, {"*": [1, 2], "-1": 9}) == Point(x=1, y=9)
+
+    def test_construct_fills_past_a_short_base_from_the_defaults(self) -> None:
+        """A base shorter than the arity leaves the rest to the patch, then to the defaults."""
+        assert construct(Color, {"*": [1, 2], "b": 3}) == Color(r=1, g=2, b=3, a=255)
+        assert construct(Color, {"*": [1, 2, 3], "3": 4}) == Color(r=1, g=2, b=3, a=4)
+
+    def test_construct_patches_into_a_nested_position(self) -> None:
+        """A patch below a position refines what the base holds there, as a list patch does."""
+        assert construct(Line, {"*": [[1, 2], 5], "start": {"y": 9}}) == Line(start=Point(1, 9), width=5)
+
+    def test_construct_refuses_a_base_longer_than_the_arity(self) -> None:
+        """A base with more positions than fields is refused, as the plain list is."""
+        with pytest.raises(TypeCoercionError, match="expected 2 elements, got 3"):
+            construct(Point, {"*": [1, 2, 3], "x": 9})
+
+    def test_construct_still_refuses_a_mixed_patch(self) -> None:
+        """A patch mixing names and indices stays the refusal Q-1 asks about."""
+        with pytest.raises(TypeCoercionError, match="Unknown field"):
+            construct(Point, {"*": [1, 2], "x": 9, "1": 8})
+
+    def test_name_patch_on_the_cli_over_a_file_list(self, tmp_path) -> None:
+        """``--pair.x`` over a file's ``pair: [1, 2]`` builds as over ``--pair 1 2``."""
+        p = tmp_path / "base.yaml"
+        p.write_text("pair: [1, 2]\n")
+        assert confarg.load(WithPoint, argv=["--config", str(p), "--pair.x", "9"], env={}).pair == Point(9, 2)
+
+    def test_name_patch_in_the_env_over_a_file_list(self, tmp_path) -> None:
+        """``APP_PAIR__X`` over a file's list builds the same."""
+        p = tmp_path / "base.yaml"
+        p.write_text("pair: [1, 2]\n")
+        cfg = confarg.load(WithPoint, argv=[], files=[str(p)], env={"APP_PAIR__X": "9"}, env_prefix="APP_")
+        assert cfg.pair == Point(9, 2)
+
+    def test_name_patch_in_a_later_file_over_an_earlier_list(self, tmp_path) -> None:
+        """A later file's ``pair: {x: 9}`` over an earlier file's list builds the same."""
+        a = tmp_path / "a.yaml"
+        a.write_text("pair: [1, 2]\n")
+        b = tmp_path / "b.yaml"
+        b.write_text("pair: {x: 9}\n")
+        assert confarg.load(WithPoint, argv=[], files=[str(a), str(b)], env={}).pair == Point(9, 2)
+
+    def test_name_patch_beside_a_whole_list_in_the_env(self) -> None:
+        """Within the env channel, ``APP_PAIR__X`` refines ``APP_PAIR``'s list."""
+        env = {"APP_PAIR": "[1, 2]", "APP_PAIR__X": "9"}
+        assert confarg.load(WithPoint, argv=[], env=env, env_prefix="APP_").pair == Point(9, 2)
+
+    def test_index_patch_past_a_short_file_list(self, tmp_path) -> None:
+        """An index past a file's short list fills that position (the merge's deferred patch)."""
+        p = tmp_path / "base.yaml"
+        p.write_text("color: [1, 2, 3]\n")
+        cfg = confarg.load(WithColor, argv=["--config", str(p), "--color.3", "4"], env={})
+        assert cfg.color == Color(r=1, g=2, b=3, a=4)
+
+    def test_whole_list_with_a_patch_replaces_a_name_dict_below(self, tmp_path) -> None:
+        """A later channel's list-plus-patch replaces an earlier name dict, it does not join it."""
+        p = tmp_path / "base.yaml"
+        p.write_text("pair: {x: 5}\n")
+        env = {"APP_PAIR": "[1, 2]", "APP_PAIR__Y": "9"}
+        cfg = confarg.load(WithPoint, argv=[], files=[str(p)], env=env, env_prefix="APP_")
+        assert cfg.pair == Point(1, 9)
+
+    def test_name_patch_below_a_nested_position(self, tmp_path) -> None:
+        """``--seg.start.y`` over a file's nested list refines the inner namedtuple."""
+        p = tmp_path / "base.yaml"
+        p.write_text("seg: [[1, 2], 5]\n")
+        cfg = confarg.load(_Segment, argv=["--config", str(p), "--seg.start.y", "9"], env={})
+        assert cfg.seg == Line(start=Point(1, 9), width=5)
+
+
 class TestNamedtupleFieldsCache:
     """``_namedtuple_fields`` is cached per class, but never an answer it had to guess (REF-48)."""
 

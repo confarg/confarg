@@ -90,4 +90,6 @@ indifferent to both.
   are errors that say so.
 - Negative indices count from the end wherever a sequence's length is known
   (`_indexed_dict_to_positions`), mirroring list patches.
-- Namedtuples accept a list, a dict by field name, or a dict by index.
+- Namedtuples accept a list, a dict by field name, or a dict by index — and a `"*"` base list
+  with either kind of patch beside it, laid over the positions
+  ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#build-reconciles-the-positions-with-the-patch)).

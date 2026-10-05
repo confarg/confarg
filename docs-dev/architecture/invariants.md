@@ -82,7 +82,8 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "is this argv token a flag, or a value?" | `_parse_cli._looks_like_flag` |
 | "does this flag have its value here?" | `_parse_cli._require_value` |
 | "what does an op recorded below a node do with what it finds there?" | `_merge._descend_creating` — the one descent `_set_nested` and `_accumulate_list_delete` share: a plain list becomes the `'*'` base, any other non-dict (a scalar, a whole-field delete's sentinel) is replaced, a negative index enters an appended item (BUG-77) |
-| "how does a sub-flag write re-key a namedtuple's positional list?" | `_parse_cli._promote_namedtuple_positional` (field names, unlike the `'*'` base `_set_nested` gives a varlen collection) |
+| "does this patch over a list need the type to apply?" | `_merge._patch_needs_the_type` — a key that is no integer, or an index outside the base, in a patch with no append or delete: deferred to `build()` as `{'*': base, **patch}` ([pipeline](pipeline/merge-build-contract.md#merge-build-contract)) |
+| "how does a patch meet a namedtuple's positional base?" | `typedload._construct._lay_patch_over_positions` — the `'*'` list keyed by field name, an all-index patch by position, a name patch by name, each value refined through `_merge._merge_existing_value`; the CLI's arity flag, the env and the files all reach it through the one `'*'` shape (BUG-160, [design decisions](design-decisions/namedtuple-arity-flag-argv-order.md#build-reconciles-the-positions-with-the-patch)) |
 | "does a scalar cast land on a plain leaf field (registration)?" | `cli/_build._scalar_cast_parent_is_leaf` |
 | reserved-name shadowing | `_parse_cli._check_reserved_key_conflict` |
 | locals namespace names | `_parse_cli._locals_keys_at` |

@@ -19,7 +19,13 @@ from confarg import _defaults
 from confarg._callable import _resolve_callable_spec
 from confarg._cast import type_for_cast_name
 from confarg._import import _import_dotted, dotted_name
-from confarg._merge import LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, _apply_list_ops
+from confarg._merge import (
+    LIST_APPEND_KEY,
+    LIST_DELETE_KEY,
+    LIST_REPLACE_BASE_KEY,
+    _apply_list_ops,
+    _merge_existing_value,
+)
 from confarg._types import (
     _all_have_defaults,
     _allows_none,
@@ -116,6 +122,39 @@ def _is_index_key(k: Any) -> bool:
     return isinstance(k, str) and (k.isdigit() or (k.startswith("-") and k[1:].isdigit()))
 
 
+def _check_namedtuple_length(tp: Any, got: int, path: str) -> None:
+    """Refuse *got* positions for a namedtuple that has fewer fields."""
+    n = len(_namedtuple_fields(tp))
+    if got > n:
+        msg = f"Cannot construct {tp.__name__} at '{path}': expected {n} elements, got {got}"
+        raise TypeCoercionError(msg)
+
+
+def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: str, union_tag: str) -> dict[Any, Any]:
+    """Key a namedtuple's ``'*'`` base list by field name and lay the patch beside it over it.
+
+    The merge carries a positional list under ``LIST_REPLACE_BASE_KEY`` beside a patch it
+    cannot apply without the type, and the CLI's arity flag leaves one under its sub-flags.
+    An all-index patch takes its positions as a fixed tuple's does; any other patch lays
+    its keys by name, so a mixed one keeps the index key the by-name form refuses. A patch
+    value refines what the base holds at its position, through the merge's own combiner.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/namedtuple-arity-flag-argv-order.md#build-reconciles-the-positions-with-the-patch
+    """
+    field_names = list(_namedtuple_fields(tp))
+    base = list(data[LIST_REPLACE_BASE_KEY])
+    _check_namedtuple_length(tp, len(base), path)
+    patch = {k: v for k, v in data.items() if k != LIST_REPLACE_BASE_KEY}
+    if patch and all(_is_index_key(k) for k in patch):
+        positions = _indexed_dict_to_positions(patch, len(field_names), path, tp.__name__)
+        patch = {field_names[i]: v for i, v in positions.items()}
+    laid: dict[Any, Any] = dict(zip(field_names, base, strict=False))
+    for k, v in patch.items():
+        laid[k] = _merge_existing_value(laid[k], v, f"{path}.{k}", union_tag) if k in laid else v
+    return laid
+
+
 def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:  # noqa: C901 PLR0912
     """Construct a namedtuple from a list (positional) or dict (by name or index).
 
@@ -131,10 +170,11 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     field_types = list(flds.values())
     n = len(field_names)
 
+    if isinstance(data, dict) and LIST_REPLACE_BASE_KEY in data:
+        data = _lay_patch_over_positions(tp, data, path, union_tag)
+
     if isinstance(data, list | tuple):
-        if len(data) > n:
-            msg = f"Cannot construct {tp.__name__} at '{path}': expected {n} elements, got {len(data)}"
-            raise TypeCoercionError(msg)
+        _check_namedtuple_length(tp, len(data), path)
         values = [
             construct(
                 field_types[i],

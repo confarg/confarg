@@ -508,3 +508,15 @@ class TestNestedIndexMerge:
         derived = tmp_yaml("grid:\n  0:\n    0: 42\n", "derived.yaml")
         result = loader.load(WithGrid, argv=[], env={}, files=[base, derived])
         assert result.grid == [[42, 2, 3], [4, 5]]
+
+    def test_a_later_base_and_patch_replace_an_earlier_deferred_patch(self, tmp_yaml) -> None:
+        """A channel's whole list plus a patch replaces what lower layers deferred, stale keys included.
+
+        Two files defer ``{'*': [1], 1: 5}``; the env's ``[7, 9]`` and its ``.0`` patch arrive as
+        ``{'*': [7, 9], '0': 8}``, which once deep-merged into the files' patch and kept its ``1``.
+        """
+        WithPair = make_target("t", tuple[int, int])
+        a = tmp_yaml("t: [1]\n", "a.yaml")
+        b = tmp_yaml("t: {1: 5}\n", "b.yaml")
+        env = {"APP_T": "[7, 9]", "APP_T__0": "8"}
+        assert confarg.load(WithPair, argv=[], env=env, env_prefix="APP_", files=[a, b]).t == (8, 9)
