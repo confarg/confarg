@@ -517,8 +517,8 @@ class TestEnvVars:
         assert result.color == Color(r=255, g=0, b=0, a=255)
 
     def test_unknown_env_field_raises(self) -> None:
-        """Unknown namedtuple field in env var raises TypeCoercionError at construction."""
-        with pytest.raises(TypeCoercionError, match="Unknown field"):
+        """Unknown namedtuple field in env var is refused at parse, as the flag is (BUG-170)."""
+        with pytest.raises(ConfargError, match="segment 'z' names no element of 'pair'"):
             confarg.load(WithPoint, argv=[], env={"MYAPP_PAIR__Z": "99"}, env_prefix="MYAPP_")
 
 

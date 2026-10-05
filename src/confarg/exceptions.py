@@ -222,6 +222,16 @@ class TypeCoercionError(ConfargError):
         return cls(f"Cannot construct {what} at '{path}': expected {accepted}, got {src} {value!r}")
 
     @classmethod
+    def base_not_a_list(cls, src: str, value: Any, path: str) -> TypeCoercionError:
+        """Return the error for a list patch whose ``'*'`` key holds no base list.
+
+        *src* is the value's type as text, passed in rather than computed, this module
+        importing nothing from ``confarg``; the value is never a token, as no channel's
+        parser writes the key from what the user typed.
+        """
+        return cls(f"Cannot patch the list at '{path}': the '*' base must be a list, got {src} {value!r}")
+
+    @classmethod
     def not_a_subclass(cls, name: Any, parent: str, path: str) -> TypeCoercionError:
         """Return the error for a class that is not a subclass of the target type.
 

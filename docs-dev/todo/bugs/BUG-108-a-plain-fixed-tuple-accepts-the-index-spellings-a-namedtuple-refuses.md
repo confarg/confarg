@@ -17,7 +17,10 @@ position on `tuple[int, int]` and are refused on a two-field namedtuple. The env
 its path by the same walk since REF-73, so `MYAPP_PAIR__01` patches index 1 as `--pair.01` does,
 and is refused on the namedtuple as the flag is. Fix direction: generalize the generator into a
 fixed-length-sequence index rule and route `_step_tuple_type` through it; the env channel
-follows.
+follows. Since BUG-170 a list, a set and a variadic tuple take only the canonical spelling too
+(`dictexpr._expressions._list_index`), which leaves the fixed tuple the one sequence still
+reading its position with `int()`; the env refusal that fix added below a sequence already
+covers `APP_PAIR__*` and `APP_PAIR__FOO`, not `APP_PAIR__01`.
 
 ```python
 from dataclasses import dataclass

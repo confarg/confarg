@@ -70,3 +70,11 @@ between the two other channels in priority: above
   environment is ambient and shared with other software, while argv is an explicit request; a
   stray variable should not stop the program. Tests can escalate the warning with
   `warnings.filterwarnings("error", …)`.
+- An unknown segment *below* the first is stored as spelled and left for `build()` to refuse
+  (`APP_SUB__ZZ` → "Unknown field(s)"), except below a sequence: there a segment naming no
+  element — no index as `str()` writes one, no namedtuple field — is refused at parse
+  (`_sequence_refusal`), delete included, because stored it would reach the merge as one of
+  its own list-patch keys, `APP_XS__+` an append and `APP_PAIR__*=12` the base `(1, 2)`
+  ([CLI parsing](cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index),
+  BUG-170). A variable that deep was never ambient noise to drop: it already stopped the
+  program at `build()`.

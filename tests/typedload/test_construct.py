@@ -5,10 +5,11 @@
 """Unit tests for _construct: struct dispatch, union fallbacks and the all-default shortcut."""
 
 import enum
+import re
 import warnings
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 from uuid import UUID
 
 import pytest
@@ -587,3 +588,27 @@ class TestShadowedTagWarning:
                 union_tag="Kind",
             )
         assert result == _KindOnlyUnionSub(Kind="v")
+
+
+class _BasePt(NamedTuple):
+    x: int
+    y: int
+
+
+class TestReplaceBaseIsAList:
+    """The ``'*'`` key a patch carries holds the base list, or construction refuses it (BUG-170).
+
+    Only a file can still write the key itself. Its value was read with ``list()``, so an int
+    escaped as a raw ``TypeError`` and a string was split into its characters.
+    """
+
+    @pytest.mark.parametrize(
+        "tp",
+        [list[int], tuple[int, int], _BasePt],
+        ids=["list", "fixed-tuple", "namedtuple"],
+    )
+    @pytest.mark.parametrize("base", [5, "12"], ids=["int", "str"])
+    def test_base_that_is_no_list_is_refused(self, tp: Any, base: Any) -> None:
+        """Neither an int nor a string is a base list, whatever ``list()`` makes of it."""
+        with pytest.raises(TypeCoercionError, match=re.escape("at 'v': the '*' base must be a list")):
+            construct(tp, {"*": base, "0": 1}, path=("v",))

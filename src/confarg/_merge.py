@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from confarg.exceptions import ConfargError
+from confarg.exceptions import ConfargError, TypeCoercionError
 
 # "Append these items to the list".  The value is a list or a scalar (single-value append);
 # every producer stores one of those two shapes.
@@ -153,6 +153,22 @@ def _resolve_index(orig_idx: int, length: int, key: str, kind: str) -> int:
     raise ConfargError(msg)
 
 
+def _replace_base(ops: dict[str, Any], key: str) -> list[Any]:
+    """Return a copy of the base list *ops* carries under ``LIST_REPLACE_BASE_KEY``.
+
+    The one reader of the key, for the merge and for construction alike: a value that is no
+    list or tuple -- which only a file writing the key itself can hold -- is refused rather than
+    read with ``list()``, which would split a string into its characters.
+
+    Raises:
+        TypeCoercionError: If the value is no list or tuple.
+    """
+    base = ops[LIST_REPLACE_BASE_KEY]
+    if not isinstance(base, list | tuple):
+        raise TypeCoercionError.base_not_a_list(type(base).__name__, base, key)
+    return list(base)
+
+
 def _apply_list_ops(
     working: list[Any],
     ops: dict[str, Any],
@@ -268,7 +284,7 @@ def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) ->
 def _merge_list_base(bv: list[Any], val: dict[str, Any], key: str, union_tag: str | None) -> Any:
     """Combine a list base *bv* with an override patch dict *val*."""
     if LIST_REPLACE_BASE_KEY in val:
-        return _apply_list_ops(list(val[LIST_REPLACE_BASE_KEY]), val, key, union_tag)
+        return _apply_list_ops(_replace_base(val, key), val, key, union_tag)
     if _patch_needs_the_type(bv, val):
         # Defer to build(): an out-of-range index is an error for a list, a slot for a tuple;
         # a name key is an error for a list, a field for a namedtuple.

@@ -30,6 +30,7 @@ from confarg._parse_cli import (
     _open_callable_shorthand,
     _resolve_field_type,
     _segment_names_real_field,
+    _sequence_refusal,
     detect_force_cast,
 )
 from confarg._types import (
@@ -134,9 +135,29 @@ def _handle_env_config_flag(  # noqa: PLR0913  # the check needs the tag, the me
     env_configs.append((subpath, value))
 
 
+def _refuse_below_a_sequence(orig_key: str, parts: list[str], target: Any, union_tag: str) -> None:
+    """Refuse a variable whose spelled path *parts* puts a segment naming no element below a sequence.
+
+    Raises:
+        ConfargError: If a sequence refuses a segment of the path (BUG-170).
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index
+    """
+    at = _sequence_refusal(target, parts, union_tag)
+    if at is not None:
+        msg = (
+            f"Environment variable {orig_key!r} has no matching field"
+            f" (segment {parts[at]!r} names no element of '{'.'.join(parts[:at])}')."
+        )
+        raise ConfargError(msg)
+
+
 def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[str, Any], union_tag: str) -> None:
     """Apply a delete sentinel (FOO__BAR- or FOO__ITEMS__1-) to data."""
     raw_last = parts[-1][:-1]
+    del_parts, _ = _resolve_env_parts(target, [*parts[:-1], raw_last], union_tag)
+    _refuse_below_a_sequence(orig_key, del_parts, target, union_tag)
     try:
         delete_idx = int(raw_last)
         is_list_delete = True
@@ -145,11 +166,8 @@ def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[
         delete_idx = -1
 
     if is_list_delete:
-        parent_raw = parts[:-1]
-        parent_parts, _ = _resolve_env_parts(target, parent_raw, union_tag) if parent_raw else ([], None)
-        _accumulate_list_delete(data, parent_parts, delete_idx, orig_key)
+        _accumulate_list_delete(data, del_parts[:-1], delete_idx, orig_key)
     else:
-        del_parts, _ = _resolve_env_parts(target, [*parts[:-1], raw_last], union_tag)
         _set_nested(data, del_parts, DICT_DELETE)
 
 
@@ -336,6 +354,8 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
             continue
         if is_locals:
             ft = None
+        else:
+            _refuse_below_a_sequence(orig_key, parts, target, union_tag)
 
         # Same rule as the CLI: a bare callable shorthand already stored at a prefix of
         # this path is a spec this variable refines, not a scalar it replaces.

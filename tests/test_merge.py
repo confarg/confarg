@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -520,3 +521,13 @@ class TestNestedIndexMerge:
         b = tmp_yaml("t: {1: 5}\n", "b.yaml")
         env = {"APP_T": "[7, 9]", "APP_T__0": "8"}
         assert confarg.load(WithPair, argv=[], env=env, env_prefix="APP_", files=[a, b]).t == (8, 9)
+
+
+class TestReplaceBaseIsAList:
+    """A patch over a list base carries its own base as a list, or the merge refuses it (BUG-170)."""
+
+    @pytest.mark.parametrize("base", [5, "12"], ids=["int", "str"])
+    def test_base_that_is_no_list_is_refused(self, base: object) -> None:
+        """A file's ``'*'`` holding no list is refused rather than read with ``list()``."""
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("at 'input': the '*' base must be a list")):
+            _deep_merge({"input": [1, 2]}, {"input": {"*": base, "0": 3}})

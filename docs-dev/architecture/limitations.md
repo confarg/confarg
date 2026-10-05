@@ -66,6 +66,11 @@ the boundary moves here.
   otherwise have to invent an element of an unknown type.
 - A list is extended with the `+` suffix on argv and in config files, but not from the
   environment: an append never got an env spelling, though a delete did (FEAT-18).
+- Below a sequence, argv and the environment take an index only as `str()` writes one, while a
+  config file's key is read by the merge's `int()`: `--xs.01` is refused and `xs: {"01": 5}`
+  patches index 1. A file is not walked against the type, and a file writing the merge's own
+  keys is FEAT-3's to guard
+  ([CLI parsing](cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index)).
 - A construction error names a dict key that is no plain name ambiguously: the key `a.b`
   reads as nesting (`d.a.b`) and the key `x[0]` as an index (`d.x[0]`). The path is held
   exactly, as segments, so a missing field's remedy still names the right flag
