@@ -76,3 +76,59 @@ and the `TypeNode` its encoder and decoder share — rather than letting each di
 re-derive it. typedload, the other way round, keeps a separate ordered `handlers` list in its
 `Loader` and its `Dumper`, which is the duplication this table removes; cattrs registers
 predicate hooks per direction, in an order each converter holds on its own.
+
+## Introspection is cached per class
+
+Every channel and front-end asks the same few questions of a struct, and asks them again for
+each field, each union variant and each subclass: one union disambiguation used to call
+`_struct_fields` at least twice per variant before construction called it again. Each call
+re-ran `get_type_hints`, and a plain class's `__init__` signature was walked by five functions,
+each collecting a different attribute of the same parameters (REF-48). Two changes answer that:
+
+- **One signature walk.** `_init_params(tp)` reads `inspect.signature(tp.__init__)` once into an
+  `_InitParams` record: the parameter names, the declared defaults, the `*args` / `**kwargs`
+  names (`_VarParams`) and the names a positional argument fills. `_is_plain_class`,
+  `_init_fields`, `_init_defaults`, `_var_params`, `_struct_required` and the `*args` call in
+  construction are views of it. The record holds nothing the annotations decide, so it stays
+  valid whatever the annotations resolve to.
+- **The answers are cached per class.** `_init_params`, `_dc_fields`, `_init_fields` and
+  `_namedtuple_fields` are `functools.cache`d, as `cli._spec._get_field_docstrings` already
+  was. A cached mapping is shared, so it is returned as a read-only `MappingProxyType`: a
+  caller that mutates it fails at once rather than corrupting every later answer.
+  `inspect.Signature.parameters` hands out the same read-only view, for the same reason. The
+  cache is unbounded: the key is a class, and a program has as many classes as it defines.
+
+What is never cached, and why:
+
+- **Defaults are built per call.** `_dc_defaults` calls each `default_factory`, and
+  `_init_defaults` gives `*args` and `**kwargs` a fresh `[]` and `{}`: a cached default would be
+  one mutable object shared by every constructed instance. The declared defaults of a plain
+  class are cached, because Python itself evaluates them once, when `__init__` is defined. A
+  question that only needs to know *whether* a field has a default asks `_struct_required`,
+  which builds none.
+- **Nothing that reads the leaf registry.** `register_leaf_type` writes `_LEAF_COERCIONS` at
+  runtime ([leaf coercion](leaf-coercion.md#leaf-coercion)), so `_is_registered_leaf`,
+  `_is_struct_variant`, `_is_taggable_leaf`, `_is_eagerly_coercible` and `_type_kind` would
+  keep answering for the registry as it was. Nothing in `_types.py` reads the registry, which
+  is what lets its answers be cached.
+- **An annotation that does not resolve.** A plain class's or a namedtuple's annotation that
+  `get_type_hints` cannot resolve reads as `Any`, but that answer is not cached: a forward
+  reference to a name the module defines later resolves on a later call. A dataclass's
+  unresolvable annotation raises, and an exception is never cached. pydantic does the same with
+  a model whose forward references are not yet defined: it stays incomplete, and is rebuilt on
+  use rather than frozen with the missing type.
+
+**`*args` is reached by position, through the record.** A class taking `*args` cannot have
+its positional parameters passed by keyword, so construction passes them by position, in
+order, up to the first one it has no value for. `inspect.Signature.bind_partial` would do the
+same with its `BoundArguments.args`, but it binds every value it is given by keyword first and
+so refuses a positional-only parameter, which the record serves as well as any other. A gap
+before a non-empty `*args` raises: no call can reach `*args` past an unfilled positional
+parameter, and filling the gap with the first element would build the wrong object silently.
+Construction fills every declared field before the call, so the gap is unreachable today.
+
+Precedents: the standard library's `dataclasses` computes a class's fields once and stores them
+on the class (`__dataclass_fields__`), msgspec caches the type information its encoder and
+decoder share on the class it describes, and `typing` caches its parameterised aliases with
+`functools.lru_cache`. All three cache a structure that is fixed once the class exists, never
+one that a registry can change afterwards.

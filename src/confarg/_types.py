@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+import functools
 import inspect
 import types
 from collections import deque
@@ -136,17 +137,26 @@ def _is_dc(tp: Any) -> bool:
     return dataclasses.is_dataclass(tp) and isinstance(tp, type)
 
 
-def _dc_fields(tp: Any) -> dict[str, Any]:
+@functools.cache
+def _dc_fields(tp: Any) -> MappingABC[str, Any]:
     """Return field names mapped to their resolved types for a dataclass.
+
+    Cached per class, so the mapping is shared and read-only.
 
     Args:
         tp: A dataclass type.
 
     Returns:
-        A dict mapping field names to their resolved type annotations.
+        A read-only mapping of field names to their resolved type annotations.
+
+    Raises:
+        NameError: If an annotation does not resolve; nothing is cached, so a later call retries.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
     """
     hints = get_type_hints(tp)
-    return {f.name: _resolve_type(hints[f.name]) for f in dataclasses.fields(tp)}
+    return types.MappingProxyType({f.name: _resolve_type(hints[f.name]) for f in dataclasses.fields(tp)})
 
 
 def _dc_defaults(tp: Any) -> dict[str, Any]:
@@ -157,7 +167,12 @@ def _dc_defaults(tp: Any) -> dict[str, Any]:
 
     Returns:
         A dict mapping field names to default values for fields that have them.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
     """
+    # Never cache this: it calls default_factory(), and a cached default would be one
+    # mutable object shared by every constructed instance.
     out: dict[str, Any] = {}
     for f in dataclasses.fields(tp):
         if f.default is not dataclasses.MISSING:
@@ -334,13 +349,42 @@ def _is_namedtuple(tp: Any) -> bool:
     return isinstance(tp, type) and issubclass(tp, tuple) and hasattr(tp, "_fields") and hasattr(tp, "_make")
 
 
-def _namedtuple_fields(tp: Any) -> dict[str, Any]:
-    """Return {field_name: resolved_type} for a namedtuple class."""
+class _UnresolvedHintsError(Exception):
+    """``get_type_hints`` failed: raised through a cached function so the fallback is not cached."""
+
+
+def _type_hints(obj: Any) -> dict[str, Any]:
+    """Return ``get_type_hints(obj)``, raising _UnresolvedHintsError when an annotation does not resolve."""
     try:
-        hints = get_type_hints(tp)
-    except (NameError, AttributeError, TypeError):
-        hints = {}
-    return {f: _resolve_type(hints.get(f, Any)) for f in tp._fields}
+        return get_type_hints(obj)
+    except (NameError, AttributeError, TypeError) as e:
+        raise _UnresolvedHintsError from e
+
+
+def _namedtuple_fields(tp: Any) -> MappingABC[str, Any]:
+    """Return {field_name: resolved_type} for a namedtuple class.
+
+    A field whose annotation does not resolve reads as Any. Cached per class once every
+    annotation resolves, so the mapping is shared and read-only.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
+    """
+    try:
+        return _annotated_namedtuple_fields(tp)
+    except _UnresolvedHintsError:
+        return _typed_namedtuple_fields(tp, {})
+
+
+@functools.cache
+def _annotated_namedtuple_fields(tp: Any) -> MappingABC[str, Any]:
+    """Return :func:`_namedtuple_fields` when every annotation resolves, cached per class."""
+    return _typed_namedtuple_fields(tp, _type_hints(tp))
+
+
+def _typed_namedtuple_fields(tp: Any, hints: MappingABC[str, Any]) -> MappingABC[str, Any]:
+    """Return {field_name: resolved_type} for a namedtuple class, reading types from *hints*."""
+    return types.MappingProxyType({f: _resolve_type(hints.get(f, Any)) for f in tp._fields})
 
 
 def _namedtuple_defaults(tp: Any) -> dict[str, Any]:
@@ -555,10 +599,7 @@ def _is_enum(tp: Any) -> bool:
 def _all_have_defaults(tp: Any) -> bool:
     """Check whether every field in a struct type has a default value."""
     tp = _resolve_type(tp)
-    if not _is_struct(tp):
-        return False
-    defs = _struct_defaults(tp)
-    return all(name in defs for name in _struct_fields(tp))
+    return _is_struct(tp) and not _struct_required(tp)
 
 
 _PLAIN_CLASS_BUILTINS = frozenset(
@@ -581,55 +622,9 @@ def _is_plain_class(tp: Any) -> bool:
     if issubclass(tp, (enum.Enum, PurePath, tuple)):
         return False
     try:
-        sig = inspect.signature(tp.__init__)
-        return any(p.name != "self" for p in sig.parameters.values())
+        return bool(_init_params(tp).names)
     except (ValueError, TypeError):
         return False
-
-
-def _init_fields(tp: Any) -> dict[str, Any]:
-    """Return {name: resolved_type} for __init__ parameters of a plain class.
-
-    VAR_POSITIONAL (*args) becomes List[T] and VAR_KEYWORD (**kwargs) becomes
-    Dict[str, T], where T is the annotation on the parameter (Any if absent).
-    """
-    try:
-        hints = get_type_hints(tp.__init__)
-    except (NameError, AttributeError, TypeError):
-        hints = {}
-    sig = inspect.signature(tp.__init__)
-    result: dict[str, Any] = {}
-    for name, param in sig.parameters.items():
-        if name == "self":
-            continue
-        if param.kind == inspect.Parameter.VAR_POSITIONAL:
-            elem = _resolve_type(hints.get(name, Any))
-            result[name] = list[elem]
-        elif param.kind == inspect.Parameter.VAR_KEYWORD:
-            val = _resolve_type(hints.get(name, Any))
-            result[name] = dict[str, val]
-        else:
-            result[name] = _resolve_type(hints.get(name, Any))
-    return result
-
-
-def _init_defaults(tp: Any) -> dict[str, Any]:
-    """Return {name: default} for __init__ parameters that have defaults.
-
-    VAR_POSITIONAL and VAR_KEYWORD params always get implicit defaults of [] and {}.
-    """
-    sig = inspect.signature(tp.__init__)
-    result: dict[str, Any] = {}
-    for name, param in sig.parameters.items():
-        if name == "self":
-            continue
-        if param.kind == inspect.Parameter.VAR_POSITIONAL:
-            result[name] = []
-        elif param.kind == inspect.Parameter.VAR_KEYWORD:
-            result[name] = {}
-        elif param.default is not inspect.Parameter.empty:
-            result[name] = param.default
-    return result
 
 
 @dataclasses.dataclass(frozen=True)
@@ -643,6 +638,120 @@ class _VarParams:
     def names(self) -> frozenset[str]:
         """The names that are present, for membership tests against declared fields."""
         return frozenset(name for name in (self.positional, self.keyword) if name is not None)
+
+
+@dataclasses.dataclass(frozen=True)
+class _InitParams:
+    """What a plain class's ``__init__`` signature declares, ``self`` excluded.
+
+    Attributes:
+        names: Every parameter name, in signature order.
+        defaults: The declared default of each parameter that has one; ``*args`` and
+            ``**kwargs`` have none here.
+        var: The ``*args`` and ``**kwargs`` names.
+        positional: The names a positional argument fills, in order: the positional-only and
+            positional-or-keyword parameters, all of which precede ``*args``.
+    """
+
+    names: tuple[str, ...]
+    defaults: MappingABC[str, Any]
+    var: _VarParams
+    positional: tuple[str, ...]
+
+    @property
+    def required(self) -> frozenset[str]:
+        """The names a call must supply: no declared default, and neither ``*args`` nor ``**kwargs``."""
+        return frozenset(n for n in self.names if n not in self.defaults and n not in self.var.names)
+
+
+@functools.cache
+def _init_params(tp: Any) -> _InitParams:
+    """Return the one walk of ``tp.__init__``'s signature every plain-class question reads.
+
+    Cached per class; it reads no annotation, so its answer holds however they resolve.
+
+    Raises:
+        ValueError: If the signature cannot be read (nothing is cached).
+        TypeError: If the signature cannot be read (nothing is cached).
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
+    """
+    params = [p for name, p in inspect.signature(tp.__init__).parameters.items() if name != "self"]
+    var_kinds = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    variadic = {p.kind: p.name for p in params if p.kind in var_kinds}
+    return _InitParams(
+        names=tuple(p.name for p in params),
+        defaults=types.MappingProxyType(
+            {p.name: p.default for p in params if p.default is not inspect.Parameter.empty},
+        ),
+        var=_VarParams(variadic.get(inspect.Parameter.VAR_POSITIONAL), variadic.get(inspect.Parameter.VAR_KEYWORD)),
+        positional=tuple(
+            p.name
+            for p in params
+            if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        ),
+    )
+
+
+def _init_fields(tp: Any) -> MappingABC[str, Any]:
+    """Return {name: resolved_type} for __init__ parameters of a plain class.
+
+    VAR_POSITIONAL (*args) becomes List[T] and VAR_KEYWORD (**kwargs) becomes
+    Dict[str, T], where T is the annotation on the parameter (Any if absent). Annotations
+    that do not resolve all read as Any. Cached per class once every annotation resolves,
+    so the mapping is shared and read-only.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
+    """
+    try:
+        return _annotated_init_fields(tp)
+    except _UnresolvedHintsError:
+        return _typed_init_fields(tp, {})
+
+
+@functools.cache
+def _annotated_init_fields(tp: Any) -> MappingABC[str, Any]:
+    """Return :func:`_init_fields` when every annotation resolves, cached per class."""
+    return _typed_init_fields(tp, _type_hints(tp.__init__))
+
+
+def _typed_init_fields(tp: Any, hints: MappingABC[str, Any]) -> MappingABC[str, Any]:
+    """Return {name: resolved_type} for __init__ parameters of a plain class, reading types from *hints*."""
+    params = _init_params(tp)
+    out: dict[str, Any] = {}
+    for name in params.names:
+        ann = _resolve_type(hints.get(name, Any))
+        if name == params.var.positional:
+            out[name] = list[ann]
+        elif name == params.var.keyword:
+            out[name] = dict[str, ann]
+        else:
+            out[name] = ann
+    return types.MappingProxyType(out)
+
+
+def _init_defaults(tp: Any) -> dict[str, Any]:
+    """Return {name: default} for __init__ parameters that have defaults.
+
+    VAR_POSITIONAL and VAR_KEYWORD params always get implicit defaults of [] and {}, fresh
+    on every call.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
+    """
+    # Never cache this: its [] and {} would be shared by every constructed instance.
+    params = _init_params(tp)
+    out: dict[str, Any] = {}
+    for name in params.names:
+        if name == params.var.positional:
+            out[name] = []
+        elif name == params.var.keyword:
+            out[name] = {}
+        elif name in params.defaults:
+            out[name] = params.defaults[name]
+    return out
 
 
 def _var_params(tp: Any) -> _VarParams:
@@ -660,16 +769,9 @@ def _var_params(tp: Any) -> _VarParams:
     if _is_dc(tp):
         return _VarParams()
     try:
-        sig = inspect.signature(tp.__init__)
+        return _init_params(tp).var
     except (ValueError, TypeError):
         return _VarParams()
-    positional = keyword = None
-    for name, param in sig.parameters.items():
-        if param.kind == inspect.Parameter.VAR_POSITIONAL:
-            positional = name
-        elif param.kind == inspect.Parameter.VAR_KEYWORD:
-            keyword = name
-    return _VarParams(positional, keyword)
 
 
 def _is_struct(tp: Any) -> bool:
@@ -693,8 +795,8 @@ def _dataclass_subclasses(tp: type) -> list[type]:
     return found
 
 
-def _struct_fields(tp: Any) -> dict[str, Any]:
-    """Return {name: type} for all fields/parameters of a struct or plain class."""
+def _struct_fields(tp: Any) -> MappingABC[str, Any]:
+    """Return {name: type} for all fields/parameters of a struct or plain class, read-only."""
     return _dc_fields(tp) if _is_dc(tp) else _init_fields(tp)
 
 
@@ -788,13 +890,27 @@ def _union_tag_shadowed(tp: Any, union_tag: str) -> bool:
 
 
 def _struct_defaults(tp: Any) -> dict[str, Any]:
-    """Return {name: default} for fields/parameters that have defaults."""
+    """Return {name: default} for fields/parameters that have defaults, built afresh on every call."""
     return _dc_defaults(tp) if _is_dc(tp) else _init_defaults(tp)
+
+
+def _struct_required(tp: Any) -> frozenset[str]:
+    """Return the names of a struct's fields that have no default, building none of the defaults.
+
+    The fields :func:`_struct_defaults` leaves out, without calling a ``default_factory``.
+    """
+    if _is_dc(tp):
+        return frozenset(
+            f.name
+            for f in dataclasses.fields(tp)
+            if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING
+        )
+    return _init_params(tp).required
 
 
 def _resolve_struct(
     target: Any,
-) -> tuple[Any, dict[str, Any], dict[str, Any]] | None:
+) -> tuple[Any, MappingABC[str, Any], dict[str, Any]] | None:
     """Resolve a struct type to (tp, fields, hints), or None if not a struct."""
     tp = _resolve_type(target)
     if not _is_struct(tp):
