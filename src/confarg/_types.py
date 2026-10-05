@@ -13,31 +13,15 @@ import inspect
 import types
 from collections import deque
 from collections.abc import (
-    Callable as CallableABC,
-)
-from collections.abc import (
-    Collection as CollectionABC,
-)
-from collections.abc import (
-    Iterable as IterableABC,
-)
-from collections.abc import (
-    Mapping as MappingABC,
-)
-from collections.abc import (
-    MutableMapping as MutableMappingABC,
-)
-from collections.abc import (
-    MutableSequence as MutableSequenceABC,
-)
-from collections.abc import (
-    MutableSet as MutableSetABC,
-)
-from collections.abc import (
-    Sequence as SequenceABC,
-)
-from collections.abc import (
-    Set as SetABC,
+    Callable,
+    Collection,
+    Iterable,
+    Mapping,
+    MutableMapping,
+    MutableSequence,
+    MutableSet,
+    Sequence,
+    Set,
 )
 from pathlib import PurePath
 from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
@@ -138,7 +122,7 @@ def _is_dc(tp: Any) -> bool:
 
 
 @functools.cache
-def _dc_fields(tp: Any) -> MappingABC[str, Any]:
+def _dc_fields(tp: Any) -> Mapping[str, Any]:
     """Return field names mapped to their resolved types for a dataclass.
 
     Cached per class, so the mapping is shared and read-only.
@@ -291,9 +275,9 @@ def _origin(tp: Any) -> Any:
     return get_origin(_resolve_type(tp))
 
 
-_LIST_ORIGINS = frozenset({list, SequenceABC, MutableSequenceABC, IterableABC, CollectionABC})
-_SET_ORIGINS = frozenset({set, SetABC, MutableSetABC})
-_DICT_ORIGINS = frozenset({dict, MappingABC, MutableMappingABC})
+_LIST_ORIGINS = frozenset({list, Sequence, MutableSequence, Iterable, Collection})
+_SET_ORIGINS = frozenset({set, Set, MutableSet})
+_DICT_ORIGINS = frozenset({dict, Mapping, MutableMapping})
 
 
 def _is_list(tp: Any) -> bool:
@@ -361,7 +345,7 @@ def _type_hints(obj: Any) -> dict[str, Any]:
         raise _UnresolvedHintsError from e
 
 
-def _namedtuple_fields(tp: Any) -> MappingABC[str, Any]:
+def _namedtuple_fields(tp: Any) -> Mapping[str, Any]:
     """Return {field_name: resolved_type} for a namedtuple class.
 
     A field whose annotation does not resolve reads as Any. Cached per class once every
@@ -377,12 +361,12 @@ def _namedtuple_fields(tp: Any) -> MappingABC[str, Any]:
 
 
 @functools.cache
-def _annotated_namedtuple_fields(tp: Any) -> MappingABC[str, Any]:
+def _annotated_namedtuple_fields(tp: Any) -> Mapping[str, Any]:
     """Return :func:`_namedtuple_fields` when every annotation resolves, cached per class."""
     return _typed_namedtuple_fields(tp, _type_hints(tp))
 
 
-def _typed_namedtuple_fields(tp: Any, hints: MappingABC[str, Any]) -> MappingABC[str, Any]:
+def _typed_namedtuple_fields(tp: Any, hints: Mapping[str, Any]) -> Mapping[str, Any]:
     """Return {field_name: resolved_type} for a namedtuple class, reading types from *hints*."""
     return types.MappingProxyType({f: _resolve_type(hints.get(f, Any)) for f in tp._fields})
 
@@ -402,18 +386,6 @@ def _is_dict(tp: Any) -> bool:
         True if tp is a dict or mapping type.
     """
     return _origin(tp) in _DICT_ORIGINS
-
-
-def _is_collection(tp: Any) -> bool:
-    """Check whether a type is a list, set, frozenset, or tuple.
-
-    Args:
-        tp: The type to check.
-
-    Returns:
-        True if tp is a list, set, frozenset, or tuple type.
-    """
-    return _is_list(tp) or _is_set(tp) or _is_frozenset(tp) or _is_tuple(tp)
 
 
 def _is_varlen_collection(tp: Any) -> bool:
@@ -603,7 +575,7 @@ def _all_have_defaults(tp: Any) -> bool:
 
 
 _PLAIN_CLASS_BUILTINS = frozenset(
-    {str, int, float, bool, bytes, bytearray, types.NoneType, list, dict, set, frozenset, tuple, CallableABC},
+    {str, int, float, bool, bytes, bytearray, types.NoneType, list, dict, set, frozenset, tuple, Callable},
 )
 
 
@@ -654,7 +626,7 @@ class _InitParams:
     """
 
     names: tuple[str, ...]
-    defaults: MappingABC[str, Any]
+    defaults: Mapping[str, Any]
     var: _VarParams
     positional: tuple[str, ...]
 
@@ -694,7 +666,7 @@ def _init_params(tp: Any) -> _InitParams:
     )
 
 
-def _init_fields(tp: Any) -> MappingABC[str, Any]:
+def _init_fields(tp: Any) -> Mapping[str, Any]:
     """Return {name: resolved_type} for __init__ parameters of a plain class.
 
     VAR_POSITIONAL (*args) becomes List[T] and VAR_KEYWORD (**kwargs) becomes
@@ -712,12 +684,12 @@ def _init_fields(tp: Any) -> MappingABC[str, Any]:
 
 
 @functools.cache
-def _annotated_init_fields(tp: Any) -> MappingABC[str, Any]:
+def _annotated_init_fields(tp: Any) -> Mapping[str, Any]:
     """Return :func:`_init_fields` when every annotation resolves, cached per class."""
     return _typed_init_fields(tp, _type_hints(tp.__init__))
 
 
-def _typed_init_fields(tp: Any, hints: MappingABC[str, Any]) -> MappingABC[str, Any]:
+def _typed_init_fields(tp: Any, hints: Mapping[str, Any]) -> Mapping[str, Any]:
     """Return {name: resolved_type} for __init__ parameters of a plain class, reading types from *hints*."""
     params = _init_params(tp)
     out: dict[str, Any] = {}
@@ -795,7 +767,7 @@ def _dataclass_subclasses(tp: type) -> list[type]:
     return found
 
 
-def _struct_fields(tp: Any) -> MappingABC[str, Any]:
+def _struct_fields(tp: Any) -> Mapping[str, Any]:
     """Return {name: type} for all fields/parameters of a struct or plain class, read-only."""
     return _dc_fields(tp) if _is_dc(tp) else _init_fields(tp)
 
@@ -910,7 +882,7 @@ def _struct_required(tp: Any) -> frozenset[str]:
 
 def _resolve_struct(
     target: Any,
-) -> tuple[Any, MappingABC[str, Any], dict[str, Any]] | None:
+) -> tuple[Any, Mapping[str, Any], dict[str, Any]] | None:
     """Resolve a struct type to (tp, fields, hints), or None if not a struct."""
     tp = _resolve_type(target)
     if not _is_struct(tp):
@@ -945,7 +917,7 @@ def _type_ref_constraint(tp: Any) -> type:
 def _is_callable(tp: Any) -> bool:
     """Check whether a type is Callable[...] or bare Callable."""
     tp = _resolve_type(tp)
-    return get_origin(tp) is CallableABC or tp is CallableABC
+    return get_origin(tp) is Callable or tp is Callable
 
 
 def _callable_param_types(tp: Any) -> list[Any] | None:
@@ -960,12 +932,3 @@ def _callable_param_types(tp: Any) -> list[Any] | None:
     if params is Ellipsis:
         return None
     return [_resolve_type(p) for p in params]
-
-
-def _callable_return_type(tp: Any) -> Any | None:
-    """Return the declared return type for Callable[..., R], or None for bare Callable."""
-    _callable_min_args = 2
-    args = get_args(_resolve_type(tp))
-    if len(args) < _callable_min_args:
-        return None
-    return _resolve_type(args[1])

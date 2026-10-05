@@ -24,8 +24,9 @@ from confarg._callable import (
     _import_dotted,
     _resolve_bind_kwargs,
     _serialize_callable,
+    _SpecContext,
 )
-from confarg._types import _callable_param_types, _callable_return_type, _is_callable
+from confarg._types import _callable_param_types, _is_callable
 from confarg.exceptions import SymbolImportError, TypeCoercionError
 from confarg.typedload._construct import construct
 
@@ -244,14 +245,6 @@ class TestCallableParamReturn:
     def test_param_types_ellipsis(self) -> None:
         """Callable[..., T] returns None for parameter types."""
         assert _callable_param_types(Callable[..., int]) is None
-
-    def test_return_type(self) -> None:
-        """Test extraction of the return type from a parameterized Callable."""
-        assert _callable_return_type(Callable[[int], float]) is float
-
-    def test_return_type_bare(self) -> None:
-        """Bare Callable returns None for return type."""
-        assert _callable_return_type(Callable) is None
 
 
 # ---------------------------------------------------------------------------
@@ -614,23 +607,31 @@ class TestBindParamChecking:
 
     def test_valid_bind_passes(self) -> None:
         """Valid bind parameters pass without error."""
-        assert _resolve_bind_kwargs(_add, {"x": 1, "y": 2}, "f", "class", construct) == {"x": 1, "y": 2}
+        assert _resolve_bind_kwargs(_add, {"x": 1, "y": 2}, _SpecContext("f", "class", construct)) == {"x": 1, "y": 2}
 
     def test_unknown_key_raises(self) -> None:
         """An unknown bind key raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="Unknown bind parameter"):
-            _resolve_bind_kwargs(_add, {"x": 1, "z": 99}, "f", "class", construct)
+            _resolve_bind_kwargs(_add, {"x": 1, "z": 99}, _SpecContext("f", "class", construct))
 
     def test_error_names_invalid_and_valid(self) -> None:
         """The error message names both invalid and valid keys."""
         with pytest.raises(TypeCoercionError, match="'z'") as exc_info:
-            _resolve_bind_kwargs(_add, {"z": 1}, "myfield", "class", construct)
+            _resolve_bind_kwargs(_add, {"z": 1}, _SpecContext("myfield", "class", construct))
         assert "x" in str(exc_info.value)
         assert "y" in str(exc_info.value)
 
+    def test_a_declared_self_is_an_ordinary_parameter(self) -> None:
+        """A function that declares ``self`` accepts it as a kwarg: only *args and **kwargs are not fillable."""
+
+        def handler(self: int, event: int) -> int:
+            return self + event
+
+        assert _resolve_bind_kwargs(handler, {"self": 1}, _SpecContext("f", "class", construct)) == {"self": 1}
+
     def test_var_keyword_fn_skips_validation(self) -> None:
         """Test that **kwargs functions skip bind key validation."""
-        _resolve_bind_kwargs(_kwargs_fn, {"anything": 1, "goes": 2}, "f", "class", construct)
+        _resolve_bind_kwargs(_kwargs_fn, {"anything": 1, "goes": 2}, _SpecContext("f", "class", construct))
 
     def test_uninspectable_skips_validation(self) -> None:
         """Uninspectable builtins skip bind key validation."""
@@ -640,7 +641,7 @@ class TestBindParamChecking:
             pytest.skip("len is inspectable on this platform")
         except (ValueError, TypeError):
             pass
-        assert _resolve_bind_kwargs(len, {"unknown": 1}, "f", "class", construct) == {"unknown": 1}
+        assert _resolve_bind_kwargs(len, {"unknown": 1}, _SpecContext("f", "class", construct)) == {"unknown": 1}
 
     def test_fn_bind_unknown_key_raises_via_load(self, tmp_json: Any) -> None:
         """Unknown bind key in fn: dict raises via confarg.load."""

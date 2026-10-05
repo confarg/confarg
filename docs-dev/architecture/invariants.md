@@ -76,6 +76,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "which names does this node declare?" | `_parse_cli._member_names` — a struct's `_types._struct_member_names` (the listing view of `_struct_member_type`, subclass-only names included), a namedtuple's fields, either across a union's variants |
 | "does this mount subpath name a node of the target?" | `_parse_cli._check_mount_subpath` |
 | "is this a cast, and which?" | `_parse_cli.detect_force_cast` (whether) / `_cast` (what) |
+| "which type does a file's `__cast__` name, and which name does a pinned type dump as?" | `_cast.type_for_cast_name` / `_cast.cast_name_for_type` — the two directions of one vocabulary, side by side ([types](types/stealing-rule.md#cast-pinning-in-files)) |
 | "how do the objects a root `json` cast decoded meet the fields?" | `_cast.fold_root_json` — vanilla's `--json`, the adapters' `apply_root_json` and the environment's `<PREFIX>JSON` (REF-44) |
 | "does this token address a reserved name?" | `_parse_cli._addresses_key` |
 | "is this argv token a flag, or a value?" | `_parse_cli._looks_like_flag` |
@@ -109,6 +110,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "does this field's flag consume many tokens, and so stand bare?" | `cli._build._takes_multi_tokens` |
 | "which bare occurrence is a missing value, refused before the framework parses?" | `cli._argv.refuse_bare_occurrences`, off `FlagSpec.refuses_bare` — set by the same `_fixed_seq_types(resolved)` gate that arms the fixed-arity guard |
 | plain vs escaped callable directives | `_callable.active_directives` |
+| "which parameters does a caller fill one argument each?" | `_callable._fillable_params` — every one but `*args` and `**kwargs`, read off a signature as written, so a function that declares `self` has one ([callables](callables.md#one-coercion-route)) |
 | single-value (scalar/type-ref) construction | `_construct._construct_scalar` |
 | "which `__init__` parameters are `*args` / `**kwargs`?" | `_types._var_params` |
 | "what does a plain class's `__init__` declare?" | `_types._init_params` — the one signature walk, cached per class; `_is_plain_class`, `_init_fields`, `_init_defaults`, `_var_params`, `_struct_required` and construction's `*args` call read it (REF-48, [types](types/introspection.md#introspection-is-cached-per-class)) |
@@ -166,6 +168,10 @@ needs goes into that loop, never into a second writer over the framework's parse
   ([expressions](expressions/reference-anchoring.md#a-relative-reference-is-never-serialized-as-an-absolute-path)).
 - Only graft the names `_locals_keys` returns ([locals](locals.md#walk-target-graft)).
 - `_strip_locals` must not mutate its input ([locals](locals.md#stripping)).
+- `_cast.type_for_cast_name` imports the leaf registry lazily: `typedload`'s package init
+  imports `_construct`, which imports `_cast`, so a module-level import of
+  `typedload._coerce` from `_cast` is a cycle
+  ([types](types/stealing-rule.md#cast-pinning-in-files)).
 - `cli/_build.py` imports `_parse_cli` lazily (import cycle) and never imports argparse
   ([CLI adapters](cli-adapters/flag-model.md#framework-neutral-flag-model)).
 - `cli/_clicklike/` imports neither click nor typer, so importing one adapter does not drag

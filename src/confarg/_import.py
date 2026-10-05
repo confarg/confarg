@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import builtins
+import functools
 import importlib
 from typing import Any
 
@@ -81,8 +82,7 @@ def _import_dotted(path: str) -> Any:
             msg = f"Cannot import {path!r}: error loading module '{module_path}': {e}"
             raise SymbolImportError(msg) from e
         try:
-            for attr in parts[i:]:
-                obj = getattr(obj, attr)
+            obj = functools.reduce(getattr, parts[i:], obj)
         except AttributeError as e:
             msg = f"Cannot import {path!r}: {e}"
             raise SymbolImportError(msg) from e
@@ -105,9 +105,6 @@ def _resolve_builtin(parts: list[str]) -> Any:
     so a name that resolves to ``None`` (the ``None`` builtin) is still a hit.
     """
     try:
-        obj = builtins
-        for attr in parts:
-            obj = getattr(obj, attr)
+        return functools.reduce(getattr, parts, builtins)
     except AttributeError:
         return _NOT_FOUND
-    return obj

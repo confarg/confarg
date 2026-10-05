@@ -21,7 +21,9 @@ at its first `}`, and `_find_expressions`, the lexical scanner that replaced it
 ([expressions/values-and-references.md#delimiting-an-expression](../../architecture/expressions/values-and-references.md#delimiting-an-expression)),
 has no `sub`. A third bullet, `_line_starts` as a prefix sum, went with BUG-139.
 
-This sharpens one bullet of [REF-52](REF-52-mechanical-collapses-in-the-type-machinery.md),
-which notes that `_resolve_single` and `_map_expressions` are the same accumulate loop differing
-only in escape handling. REF-52 names the duplication; this names the answer. Close that half of
-the bullet here.
+This was half of a REF-52 bullet, which noted that `_resolve_single` and `_map_expressions` are
+the same accumulate loop differing only in escape handling. REF-52 closed without it. The other
+half, folding `_strip_anchor` into `_name_anchor`, was declined
+([look-alike code that behaves differently stays apart](../../architecture/design-decisions/look-alike-code-that-behaves-differently-stays-apart.md#look-alike-code-that-behaves-differently-stays-apart)).
+This loop is not that case: the two copies differ only in the replacement, which one
+`Callable` parameter carries.

@@ -27,7 +27,7 @@ from typing import Any
 
 from confarg._merge import _deep_merge
 from confarg._types import _Pinned, _StrToken
-from confarg.exceptions import ConfargError
+from confarg.exceptions import ConfargError, TypeCoercionError
 
 JSON_CAST_NAME = "json"
 
@@ -97,8 +97,7 @@ def fold_root_json(data: dict[str, Any], root_json: list[dict[str, Any]], union_
 def cast_name_for_type(tp: type) -> str:
     """Name the pinned type the way a file spells it, for the ``__cast__`` key.
 
-    The inverse of the name lookup in
-    :func:`confarg.typedload._construct._try_pinned_dict`: a scalar cast keeps the name
+    The inverse of :func:`type_for_cast_name`: a scalar cast keeps the name
     :data:`SCALAR_CAST_TYPES` gives it, and any other pinned type — a registered leaf,
     which only the file spelling can produce — is named by its ``__name__``.
 
@@ -112,3 +111,28 @@ def cast_name_for_type(tp: type) -> str:
         docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
     """
     return _SCALAR_CAST_NAMES.get(tp) or tp.__name__
+
+
+def type_for_cast_name(name: str) -> type:
+    """Return the type a file's ``__cast__`` key names.
+
+    The inverse of :func:`cast_name_for_type`: a scalar cast name, or the ``__name__`` of a
+    registered leaf type.
+
+    Raises:
+        TypeCoercionError: If *name* is neither, listing the names that are.
+
+    Dev Notes:
+        docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
+    """
+    # Lazy: typedload's package init imports _construct, which imports this module.
+    from confarg.typedload._coerce import _LEAF_COERCIONS  # noqa: PLC0415  # import cycle
+
+    tp = SCALAR_CAST_TYPES.get(name) or next((t for t in _LEAF_COERCIONS if getattr(t, "__name__", None) == name), None)
+    if tp is None:
+        valid = sorted(SCALAR_CAST_TYPES) + sorted(
+            t.__name__ for t in _LEAF_COERCIONS if t not in SCALAR_CAST_TYPES.values()
+        )
+        msg = f"Unknown __cast__ type: {name!r}. Valid: {valid}"
+        raise TypeCoercionError(msg)
+    return tp

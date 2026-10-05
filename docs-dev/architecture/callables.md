@@ -72,6 +72,15 @@ instances.
 Validation is skipped where it cannot work: uninspectable callables (C extensions) and
 signature arity checks for `*args` callables or `Callable[..., R]`.
 
+The kwarg check, the arity check and the constructor example a failed auto-instantiation
+prints all count parameters the same way, through `_fillable_params`: every parameter a
+signature lists except `*args` and `**kwargs`. None of them drops a parameter named `self`. A
+signature already leaves out the receiver of a class or of a bound method, so a `self` still in
+one is a parameter the function really declares: `def handler(self, event)` takes two
+arguments, and `bind: {self: …}` fills one of them. The constructor example reads
+`inspect.signature(cls)` for that reason, rather than `cls.__init__`, whose signature still
+lists the receiver.
+
 ## Auto-binding
 
 `fn: Class.method` without kwargs instantiates `Class()`; if that needs arguments, the error

@@ -14,7 +14,7 @@ import contextlib
 import functools
 import inspect
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, cast, get_args, get_type_hints
 
 if TYPE_CHECKING:
@@ -28,6 +28,29 @@ from confarg._types import (
     _src_type,
 )
 from confarg.exceptions import ConfargError, TypeCoercionError
+
+
+@dataclass(frozen=True)
+class _SpecContext:
+    """Where a callable spec sits, and how the arguments it names are built.
+
+    Attributes:
+        path: The spec's dotted path, which messages name and its arguments are built below.
+        union_tag: The union tag the arguments are built with.
+        construct_fn: The typed construction the arguments go through.
+    """
+
+    path: str
+    union_tag: str
+    construct_fn: Any
+
+    def at(self, key: str) -> _SpecContext:
+        """Return this context one *key* deeper."""
+        return replace(self, path=f"{self.path}.{key}")
+
+    def construct(self, tp: Any, value: Any) -> Any:
+        """Build *value* as *tp* at this context's path."""
+        return self.construct_fn(tp, value, path=self.path, union_tag=self.union_tag)
 
 
 def _detect_owning_class(func: Any) -> type | None:
@@ -44,11 +67,10 @@ def _detect_owning_class(func: Any) -> type | None:
     module = sys.modules.get(getattr(func, "__module__", ""))
     if module is None:
         return None
-    cls: Any = module
-    for part in cls_qualname.split("."):
-        cls = getattr(cls, part, None)
-        if cls is None:
-            return None
+    try:
+        cls = functools.reduce(getattr, cls_qualname.split("."), module)
+    except AttributeError:
+        return None
     return cls if isinstance(cls, type) else None
 
 
@@ -76,37 +98,39 @@ def _maybe_bind_method(func: Any, path: str) -> Any:
     return getattr(instance, func.__name__)
 
 
+def _fillable_params(
+    params: Mapping[str, inspect.Parameter],
+    *,
+    required: bool | None = None,
+) -> list[inspect.Parameter]:
+    """Return the parameters a caller fills one argument each: all but ``*args`` and ``**kwargs``.
+
+    *required* keeps only those without a default when true, only those with one when
+    false, and every one when None. *params* is a signature's ``parameters``, so a receiver
+    is in it only when the callable really declares one (an unbound function's ``self``).
+    """
+    return [
+        p
+        for p in params.values()
+        if p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        and (required is None or required is (p.default is inspect.Parameter.empty))
+    ]
+
+
 def _format_fn_dict_example(fn_path: str, cls: type) -> str:
     """Return a YAML-like snippet showing the fn: dict form with required constructor kwargs."""
     try:
-        sig = inspect.signature(cls.__init__)
+        sig = inspect.signature(cls)
     except (ValueError, TypeError):
         return f"  fn: {fn_path}\n  # (add constructor arguments here)"
 
-    params = [
-        (name, p)
-        for name, p in sig.parameters.items()
-        if name != "self"
-        and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-        and p.default is inspect.Parameter.empty
-    ]
-    optional_params = [
-        (name, p)
-        for name, p in sig.parameters.items()
-        if name != "self"
-        and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-        and p.default is not inspect.Parameter.empty
-    ]
-
     lines = [f"  fn: {fn_path}"]
-    for name, p in params:
-        ann = p.annotation
-        type_hint = f"  # {ann.__name__}" if isinstance(ann, type) else ""
-        lines.append(f"  {name}: <value>{type_hint}")
-    for name, p in optional_params:
-        ann = p.annotation
-        type_hint = f"  # {ann.__name__}, optional" if isinstance(ann, type) else "  # optional"
-        lines.append(f"  # {name}: {p.default!r}{type_hint}")
+    for p in _fillable_params(sig.parameters, required=True):
+        type_hint = f"  # {p.annotation.__name__}" if isinstance(p.annotation, type) else ""
+        lines.append(f"  {p.name}: <value>{type_hint}")
+    for p in _fillable_params(sig.parameters, required=False):
+        type_hint = f"  # {p.annotation.__name__}, optional" if isinstance(p.annotation, type) else "  # optional"
+        lines.append(f"  # {p.name}: {p.default!r}{type_hint}")
     return "\n".join(lines)
 
 
@@ -147,7 +171,7 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: str, union_tag: str, constr
     if isinstance(spec, str):
         result = _resolve_bare_string(str(spec), path, tp)
     elif isinstance(spec, dict):
-        result = _resolve_dict_spec(spec, path, union_tag, construct_fn)
+        result = _resolve_dict_spec(spec, _SpecContext(path, union_tag, construct_fn))
     elif callable(spec):
         result = spec
     else:
@@ -205,8 +229,8 @@ def _unproducible_return(cls: type, callable_tp: Any) -> str | None:
     ``Callable[..., TypeVar]``), in which case the user is trusted.
 
     Note: ``get_args`` reports the return of ``Callable[..., None]`` as the object
-    ``None`` (not ``NoneType``), so ``_callable_return_type`` cannot distinguish it from
-    a bare ``Callable``; the raw args are inspected here instead.
+    ``None`` (not ``NoneType``), so a lookup answering ``None`` for a bare ``Callable``
+    could not tell the two apart; the raw args are inspected here instead.
     """
     if callable_tp is None:
         return None
@@ -234,16 +258,14 @@ def _acceptable_kwarg_names(params: Mapping[str, inspect.Parameter]) -> set[str]
     """
     if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
         return None
-    return {n for n, p in params.items() if n != "self" and p.kind is not inspect.Parameter.VAR_POSITIONAL}
+    return {p.name for p in _fillable_params(params)}
 
 
-def _coerce_kwargs(  # noqa: PLR0913
+def _coerce_kwargs(  # noqa: PLR0913  # kind and subject only word the refusal
     sig_obj: Any,
     hints_obj: Any,
     kwargs: dict,
-    base_path: str,
-    union_tag: str,
-    construct_fn: Any,
+    ctx: _SpecContext,
     *,
     kind: str,
     subject: str,
@@ -251,7 +273,7 @@ def _coerce_kwargs(  # noqa: PLR0913
     """Validate and typed-construct kwargs against a callable's signature.
 
     Shared by 'call', 'class' (factory), and 'bind' kwargs: unknown keys raise, and
-    each value is built via construct_fn.
+    each value is built through *ctx*, one key below its path.
 
     ``sig_obj`` and ``hints_obj`` are passed separately because for a class they
     differ: ``inspect.signature(cls)`` yields the constructor params (self excluded),
@@ -275,7 +297,7 @@ def _coerce_kwargs(  # noqa: PLR0913
         invalid = sorted(set(kwargs) - valid)
         if invalid:
             msg = (
-                f"Unknown {kind} {invalid} for {subject} at '{base_path}'."
+                f"Unknown {kind} {invalid} for {subject} at '{ctx.path}'."
                 f" Valid parameters: {sorted(valid)}.{_mixed_form_hint(invalid)}"
             )
             raise TypeCoercionError(msg)
@@ -286,36 +308,28 @@ def _coerce_kwargs(  # noqa: PLR0913
         if ann is inspect.Parameter.empty:
             coerced[k] = v
         else:
-            resolved_ann = _resolve_type(ann)
-            coerced[k] = construct_fn(resolved_ann, v, path=f"{base_path}.{k}", union_tag=union_tag)
+            coerced[k] = ctx.at(k).construct(_resolve_type(ann), v)
     return coerced
 
 
-def _resolve_call_kwargs(func: Any, kwargs: dict, path: str, union_tag: str, construct_fn: Any) -> dict:
+def _resolve_call_kwargs(func: Any, kwargs: dict, ctx: _SpecContext) -> dict:
     """Coerce and validate kwargs against func's signature using typed construction."""
     subject = repr(getattr(func, "__qualname__", repr(func)))
-    return _coerce_kwargs(func, func, kwargs, path, union_tag, construct_fn, kind="kwargs", subject=subject)
+    return _coerce_kwargs(func, func, kwargs, ctx, kind="kwargs", subject=subject)
 
 
-def _resolve_call_spec(  # noqa: PLR0913
-    fn_path: str,
-    call_kwargs: dict,
-    original_spec: dict,
-    path: str,
-    union_tag: str,
-    construct_fn: Any,
-) -> Any:
+def _resolve_call_spec(fn_path: str, call_kwargs: dict, original_spec: dict, ctx: _SpecContext) -> Any:
     """Resolve a 'call:' spec: import the function, call it with call_kwargs, use the return value."""
     func = _import_dotted(fn_path)
-    coerced = _resolve_call_kwargs(func, call_kwargs, path, union_tag, construct_fn)
+    coerced = _resolve_call_kwargs(func, call_kwargs, ctx)
     try:
         result = func(**coerced)
     except Exception as e:
-        msg = f"Failed to call {fn_path!r} at '{path}': {e}"
+        msg = f"Failed to call {fn_path!r} at '{ctx.path}': {e}"
         raise TypeCoercionError(msg) from e
     if not callable(result):
         msg = (
-            f"'call:' at '{path}': {fn_path!r}(**{call_kwargs!r}) returned {type(result).__name__!r},"
+            f"'call:' at '{ctx.path}': {fn_path!r}(**{call_kwargs!r}) returned {type(result).__name__!r},"
             " which is not callable."
         )
         raise TypeCoercionError(msg)
@@ -475,7 +489,7 @@ def _select_directives(spec: dict) -> _Directives:
     return active_directives(spec.__contains__)
 
 
-def _resolve_dict_spec(spec: dict, path: str, union_tag: str, construct_fn: Any) -> Any:
+def _resolve_dict_spec(spec: dict, ctx: _SpecContext) -> Any:
     """Resolve a dict callable spec (fn/class/call + sibling kwargs + bind).
 
     Directive keys come in a plain and a single-underscore-escaped form; the opener
@@ -487,28 +501,23 @@ def _resolve_dict_spec(spec: dict, path: str, union_tag: str, construct_fn: Any)
     has_call = d.call in spec
     exclusive = [k for k in d.openers if k in spec]
     if len(exclusive) > 1:
-        msg = f"Callable dict at '{path}' must not specify more than one of {list(d.openers)} (got: {exclusive})"
+        msg = f"Callable dict at '{ctx.path}' must not specify more than one of {list(d.openers)} (got: {exclusive})"
         raise TypeCoercionError(msg)
     if not has_fn and not has_class and not has_call:
-        msg = f"Callable dict at '{path}' must specify one of 'fn', 'class', or 'call' (or their _-prefixed forms)"
+        msg = f"Callable dict at '{ctx.path}' must specify one of 'fn', 'class', or 'call' (or their _-prefixed forms)"
         raise TypeCoercionError(msg)
     bind_raw = spec.get(d.bind, {})
     if not isinstance(bind_raw, dict):
-        msg = f"{d.bind!r} in Callable dict at '{path}' must be a dict, got {_src_type(bind_raw)}"
+        msg = f"{d.bind!r} in Callable dict at '{ctx.path}' must be a dict, got {_src_type(bind_raw)}"
         raise TypeCoercionError(msg)
     init_kwargs = {k: v for k, v in spec.items() if k not in d.reserved}
 
     if has_call:
         call_kwargs = {**init_kwargs, **bind_raw}
-        return _resolve_call_spec(spec[d.call], call_kwargs, spec, path, union_tag, construct_fn)
+        return _resolve_call_spec(spec[d.call], call_kwargs, spec, ctx)
     if has_fn:
-        return _resolve_fn_spec(spec[d.fn], init_kwargs, bind_raw, path, union_tag, construct_fn)
-    return _resolve_class_spec(
-        _ClassSpec(spec[d.cls], init_kwargs, bind_raw, spec),
-        path,
-        union_tag,
-        construct_fn,
-    )
+        return _resolve_fn_spec(spec[d.fn], init_kwargs, bind_raw, ctx)
+    return _resolve_class_spec(_ClassSpec(spec[d.cls], init_kwargs, bind_raw, spec), ctx)
 
 
 def _bind_hints_source(callable_obj: Any) -> Any:
@@ -527,7 +536,7 @@ def _bind_hints_source(callable_obj: Any) -> Any:
     return call if call is not None else callable_obj
 
 
-def _resolve_bind_kwargs(callable_obj: Any, bind: dict, path: str, union_tag: str, construct_fn: Any) -> dict:
+def _resolve_bind_kwargs(callable_obj: Any, bind: dict, ctx: _SpecContext) -> dict:
     """Validate and typed-construct 'bind' kwargs against callable_obj's signature.
 
     Values go through :func:`_coerce_kwargs`, so bound arguments get full typed
@@ -542,15 +551,13 @@ def _resolve_bind_kwargs(callable_obj: Any, bind: dict, path: str, union_tag: st
         callable_obj,
         _bind_hints_source(callable_obj),
         bind,
-        f"{path}.bind",
-        union_tag,
-        construct_fn,
+        ctx.at("bind"),
         kind="bind parameter(s)",
         subject=subject,
     )
 
 
-def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, path: str, union_tag: str, construct_fn: Any) -> Any:  # noqa: PLR0913
+def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, ctx: _SpecContext) -> Any:
     """Resolve a 'fn:' callable spec.
 
     If init_kwargs are provided, detect the owning class via __qualname__,
@@ -562,7 +569,7 @@ def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, path: str, uni
         # The hint replaces the generic advice rather than following it: when the kwarg is
         # a directive in the other form, "use bind" without saying why is the confusing half.
         msg = (
-            f"Constructor kwargs {sorted(init_kwargs)} are not valid for '__init__' at '{path}':"
+            f"Constructor kwargs {sorted(init_kwargs)} are not valid for '__init__' at '{ctx.path}':"
             " '__init__' is treated as a plain function."
             + (_mixed_form_hint(init_kwargs) or " Use 'bind:' to partially apply arguments.")
         )
@@ -571,7 +578,7 @@ def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, path: str, uni
         cls = _detect_owning_class(func)
         if cls is None:
             msg = (
-                f"Constructor kwargs {sorted(init_kwargs)} provided for {fn_path!r} at '{path}',"
+                f"Constructor kwargs {sorted(init_kwargs)} provided for {fn_path!r} at '{ctx.path}',"
                 " but it does not appear to be an instance method."
                 + (
                     _mixed_form_hint(init_kwargs)
@@ -579,13 +586,13 @@ def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, path: str, uni
                 )
             )
             raise TypeCoercionError(msg)
-        _reject_mixed_form_kwargs(cls, init_kwargs, path)
-        instance = _construct_class(cls, init_kwargs, path, union_tag, construct_fn)
+        _reject_mixed_form_kwargs(cls, init_kwargs, ctx.path)
+        instance = ctx.construct(cls, init_kwargs)
         result: Any = getattr(instance, func.__name__)
     else:
-        result = _maybe_bind_method(func, path)
+        result = _maybe_bind_method(func, ctx.path)
     if bind:
-        bind = _resolve_bind_kwargs(result, bind, path, union_tag, construct_fn)
+        bind = _resolve_bind_kwargs(result, bind, ctx)
         result = functools.partial(result, **bind)
     return result
 
@@ -600,12 +607,7 @@ class _ClassSpec:
     original: dict
 
 
-def _resolve_class_spec(
-    spec: _ClassSpec,
-    path: str,
-    union_tag: str,
-    construct_fn: Any,
-) -> Any:
+def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
     """Resolve a 'class:' callable spec: instantiate the class; the instance is the callable.
 
     ``init_kwargs`` (sibling keys) are the constructor arguments; the instance must be
@@ -616,14 +618,14 @@ def _resolve_class_spec(
     """
     cls = _import_dotted(spec.cls_path)
     if not isinstance(cls, type):
-        msg = f"'class' key at '{path}' must reference a class, got {type(cls).__name__} {spec.cls_path!r}"
+        msg = f"'class' key at '{ctx.path}' must reference a class, got {type(cls).__name__} {spec.cls_path!r}"
         raise TypeCoercionError(msg)
 
-    _reject_mixed_form_kwargs(cls, spec.init_kwargs, path)
-    instance = _construct_class(cls, spec.init_kwargs, path, union_tag, construct_fn)
+    _reject_mixed_form_kwargs(cls, spec.init_kwargs, ctx.path)
+    instance = ctx.construct(cls, spec.init_kwargs)
     if not callable(instance):
         msg = (
-            f"Instance of {spec.cls_path!r} at '{path}' is not callable: the class must define"
+            f"Instance of {spec.cls_path!r} at '{ctx.path}' is not callable: the class must define"
             f" __call__ to be used as a Callable via 'class:'. To use {spec.cls_path} as a"
             f" factory (calling it constructs an instance), give its bare name"
             f" '{spec.cls_path}', or 'fn: {spec.cls_path}' with 'bind:' for constructor args."
@@ -631,18 +633,13 @@ def _resolve_class_spec(
         raise TypeCoercionError(msg)
     result: Any
     if spec.bind:
-        bind = _resolve_bind_kwargs(instance, spec.bind, path, union_tag, construct_fn)
+        bind = _resolve_bind_kwargs(instance, spec.bind, ctx)
         result = functools.partial(instance, **bind)
     else:
         result = instance
     with contextlib.suppress(AttributeError, TypeError):
         cast("Any", result).__confarg_spec__ = spec.original
     return result
-
-
-def _construct_class(cls: type, kwargs: dict, path: str, union_tag: str, construct_fn: Any) -> Any:
-    """Construct a class instance using the confarg struct construction pipeline."""
-    return construct_fn(cls, kwargs, path=path, union_tag=union_tag)
 
 
 def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
@@ -668,12 +665,7 @@ def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
     if has_var_positional:
         return
 
-    required = [
-        p
-        for p in sig.parameters.values()
-        if p.default is inspect.Parameter.empty
-        and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-    ]
+    required = _fillable_params(sig.parameters, required=True)
     if len(required) != len(param_types):
         type_names = [getattr(_resolve_type(t), "__name__", repr(t)) for t in param_types]
         msg = (
