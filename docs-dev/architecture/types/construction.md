@@ -36,7 +36,10 @@ value: its "Cannot coerce … to int | float | None" gains the remedy for a toke
 nothing else (BUG-162). One predicate, `_construct._reads_none_word`, answers whether the
 value could have been a none word, and every union site asks it: the single-variant union to
 select `None` and to offer the remedy, the scalar variants to rank `None` among them, the
-multi-variant refusal to offer the remedy.
+multi-variant refusal to offer the remedy. Whether such a value does select `None` is
+`_construct._selects_none`, which the CLI parser asks too, before storing a lone none word
+bare rather than as a one-item list
+([design decisions](../design-decisions/a-lone-none-word-nulls-an-optional-sequence.md#a-lone-none-word-nulls-an-optional-sequence)).
 
 The remedy is appended to the variant's error rather than replacing it, so a token keeps
 what the variant had to say: a callable shorthand's arity refusal, the element of a list a

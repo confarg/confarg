@@ -1839,6 +1839,57 @@ class TestUnionWithSequenceContract:
         """
         assert loader.merge(_WithOptionalIntList, argv=["--input", "5"], env={}) == {"input": ["5"]}
 
+    @pytest.mark.parametrize(
+        "field_type",
+        [
+            list[int] | None,
+            set[int] | None,
+            tuple[int, ...] | None,
+            tuple[int, int] | None,
+            _Point | None,
+            list[int] | tuple[int, int] | None,
+            list[str] | None,
+            list[int | None] | None,
+        ],
+    )
+    @pytest.mark.parametrize("word", ["none", "NULL"])
+    def test_lone_none_word_sets_an_optional_sequence_to_none(
+        self,
+        loader: ConfargLoader,
+        field_type: Any,
+        word: str,
+    ) -> None:
+        """``--input none`` sets an optional sequence to None, as ``APP_INPUT=none`` does (BUG-163).
+
+        The lone token is stored bare, the environment's shape, so the merged dicts agree too
+        and ``build()`` reads the none word off it. An element type that would take the word
+        does not keep it: the environment answers None there as well.
+        """
+        target = make_target("input", field_type, default=None)
+        env_merged = confarg.merge(target, argv=[], env={"APP_INPUT": word}, env_prefix="APP_")
+        assert loader.merge(target, argv=["--input", word], env={}) == env_merged == {"input": word}
+        assert loader.load(target, argv=["--input", word], env={}).input is None
+
+    @pytest.mark.parametrize(
+        ("field_type", "argv", "expected"),
+        [
+            (list[str] | None, ["--input", '["none"]'], ["none"]),
+            (list[str] | None, ["--input", "none", "--input", "none"], ["none", "none"]),
+            (list[str], ["--input", "none"], ["none"]),
+            (list[str] | tuple[str, str], ["--input", "none"], ["none"]),
+        ],
+    )
+    def test_none_word_stays_an_item_where_none_is_no_whole_value(
+        self,
+        loader: ConfargLoader,
+        field_type: Any,
+        argv: list[str],
+        expected: list[str],
+    ) -> None:
+        """The none word is an item inside an array, beside another token, or with no ``None`` variant (BUG-163)."""
+        target = make_target("input", field_type, default_factory=list)
+        assert loader.load(target, argv=argv, env={}).input == expected
+
     def test_flag_registered(self, populating_loader: ConfargLoader) -> None:
         """The union-with-sequence field flag is registered on every adapter."""
         for target in (_WithStrTuple, _WithStrList):
