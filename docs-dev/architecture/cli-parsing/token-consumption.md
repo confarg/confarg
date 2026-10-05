@@ -18,7 +18,9 @@
   ([design decisions](../design-decisions/a-whole-value-flag-needs-its-value.md#a-whole-value-flag-needs-its-value)). `_require_value` is the
   single guard: argv running out and the next token being another flag are one failure, and
   the fixed-arity branch asks it once per positional token, so a short token run is a missing
-  value rather than a shorter tuple.
+  value rather than a shorter tuple. A key path below a dict that the walk types as nothing
+  (`--d.a.b` on `dict[str, Any]`) is a value-taking flag too, so it asks the same guard rather
+  than being dropped when bare (BUG-161).
 - **Repeating** a multi-token flag extends it rather than replacing it: `--f x --f y` is a second
   spelling of `--f x y`, which is what the clicklike front-ends have no other way to write
   ([CLI adapters](../cli-adapters/list-syntax-divergence.md#list-syntax-divergence)). The occurrences are joined as *tokens*
