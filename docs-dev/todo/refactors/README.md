@@ -40,5 +40,6 @@ different board.
 | [REF-83 — The registration walk dispatches on shape outside `_type_kind`](REF-83-registration-walk-dispatches-outside-the-kind-table.md) | M | medium | none |
 | [REF-84 — The delete suffix and its list index are decoded twice](REF-84-env-delete-suffix-decoded-twice.md) | S | low | none |
 | [REF-85 — `api-seams.md`'s round-trip paragraphs sit under the option-set heading](REF-85-api-seams-round-trip-paragraphs-sit-under-the-option-set-heading.md) | S | low | none |
+| [REF-86 — The collection-patch question stops at a callable for nothing](REF-86-the-collection-patch-question-stops-at-a-callable-for-nothing.md) | S | low | none |
 
 <!-- tickets:end -->
