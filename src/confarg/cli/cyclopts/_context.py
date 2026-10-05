@@ -85,7 +85,7 @@ def _merge_app(target: object, app: cyclopts.App, options: _Options) -> dict[str
             target,
             options.union_tag,
         )
-    refuse_bare_occurrences(tokens, meta["refuses_bare"] if meta else ())
+    refuse_bare_occurrences(tokens, meta["refuses_bare"] if meta else {})
     command, bound, _ = app.parse_args(
         drop_bare_occurrences(tokens, meta["stands_bare"] if meta else ()),
     )

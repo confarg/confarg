@@ -605,6 +605,30 @@ def _require_value(args: Sequence[str], i: int, token: str, usage: str = "<value
         raise ConfargError.missing_value(token, usage)
 
 
+def _fixed_arity_usage(tp: Any) -> str:
+    """Return the usage a fixed-arity flag's missing value spells: one placeholder per position.
+
+    A namedtuple's position is named by its field, as its ``--<flag>.<field>`` sub-flag
+    names it (``<x> <y>``); a ``tuple[X, Y]`` has no names, so each position is a
+    ``<value>``.  The one spelling, for vanilla's loop (:func:`_consume_fixed_tuple_args`)
+    and for the spec a front-end refuses a bare occurrence from
+    (:attr:`~confarg.cli.FlagSpec.usage`), so the two cannot disagree (BUG-171).
+
+    Args:
+        tp: A type :func:`~confarg._types._fixed_seq_types` gives a fixed arity.
+
+    Returns:
+        The placeholders, space-separated.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
+    """
+    tp = _resolve_type(tp)
+    if _is_namedtuple(tp):
+        return " ".join(f"<{name}>" for name in _namedtuple_fields(tp))
+    return " ".join("<value>" for _ in _fixed_seq_types(tp) or ())
+
+
 def _check_reserved_key_conflict(target: Any, name: str, detail: str) -> None:
     """Raise ConfargError if the reserved name *name* is also a top-level field of *target*.
 
@@ -968,22 +992,23 @@ def _consume_fixed_tuple_args(  # noqa: PLR0913  # token only names the flag in 
     args: Sequence[str],
     i: int,
     token: str,
-    tt: list[Any],
+    ft: Any,
     path: list[str],
     data: dict[str, Any],
 ) -> int:
-    """Consume exactly len(tt) arguments for a fixed-length tuple field.
+    """Consume exactly one argument per position of the fixed-length sequence *ft*.
 
     Every one of them is required: a fixed arity is not a shape a bare flag is reserved
     for, so argv running short -- or reaching the next flag -- is a missing value and not
-    a shorter tuple (BUG-43).
+    a shorter tuple (BUG-43), whose usage spells every position (BUG-171).
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
+    usage = _fixed_arity_usage(ft)
     items: list[Any] = []
-    for et in tt:
-        _require_value(args, i, token)
+    for et in _fixed_seq_types(ft) or ():
+        _require_value(args, i, token, usage)
         items.append(_try_coerce(et, _StrToken(args[i])))
         i += 1
     _set_nested(data, path, items)
@@ -1200,7 +1225,7 @@ def _consume_collection_or_scalar(
 
     # Fixed-length sequence (tuple[X, Y] or a namedtuple) → consume exact count
     if tt is not None:
-        return _consume_fixed_tuple_args(args, i, token, tt, path, ctx.data)
+        return _consume_fixed_tuple_args(args, i, token, ft, path, ctx.data)
 
     # Union with a sequence variant → consume greedily (disambiguation deferred to construct)
     if _union_has_seq_variant(ft):

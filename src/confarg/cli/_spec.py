@@ -79,6 +79,17 @@ class FlagSpec:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
 
+    usage: str = "<value>"
+    """What the flag's missing-value error names after the flag, e.g. ``"<x> <y>"``.
+
+    Set with :attr:`refuses_bare` to one placeholder per position of the fixed arity,
+    the usage vanilla's loop spells for the same flag, so refusing the bare occurrence
+    before the framework parses reads exactly as vanilla's refusal does.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
+    """
+
     choices: list[str] | None = None
     """Allowed values (for ``Literal`` / ``Enum`` fields)."""
 

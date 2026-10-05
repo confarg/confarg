@@ -83,6 +83,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "does this token address a reserved name?" | `_parse_cli._addresses_key` |
 | "is this argv token a flag, or a value?" | `_parse_cli._looks_like_flag` |
 | "does this flag have its value here?" | `_parse_cli._require_value` |
+| "how does a fixed-arity flag's missing value spell its positions?" | `_parse_cli._fixed_arity_usage` — one `<value>` per position of a `tuple[X, Y]`, a namedtuple's field names (`<x> <y>`); vanilla's `_consume_fixed_tuple_args` passes it to `_require_value`, and `cli._build._refusing_bare` sets it as `FlagSpec.usage` for the pre-parse refusal (BUG-171, [CLI parsing](cli-parsing/token-consumption.md#token-consumption)) |
 | "what does an op recorded below a node do with what it finds there?" | `_merge._descend_creating` — the one descent `_set_nested` and `_accumulate_list_delete` share: a plain list becomes the `'*'` base, any other non-dict (a scalar, a whole-field delete's sentinel) is replaced, a negative index enters an appended item (BUG-77) |
 | "does this patch over a list need the type to apply?" | `_merge._patch_needs_the_type` — a key that is no integer, or an index outside the base, in a patch with no append or delete: deferred to `build()` as `{'*': base, **patch}` ([pipeline](pipeline/merge-build-contract.md#merge-build-contract)) |
 | "how does a missing field's error read, and which flag does it offer?" | `exceptions.MissingFieldError.__str__` — the field by its construction path (`items[0].size`), the remedy by the flag the CLI accepts for it, each segment of the path one dotted segment (`--items.0.size`, and `--d.x[0].size` for the key `x[0]`), spelled when shown so that `_api._build_for_cli` can first set the `cli_prefix` `load()` and the adapters' `from_*` resolved (`--app.items.0.size`); every missing field, and a scalar target nothing supplied, raises it (BUG-165, BUG-168, BUG-169, [types](types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)) |
@@ -115,7 +116,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "does this argv flag occurrence carry an item?" | `cli._argv._bare_occurrence` |
 | "which argv tokens does a host framework parse?" | `cli._argv.drop_bare_occurrences` |
 | "does this field's flag consume many tokens, and so stand bare?" | `cli._build._takes_multi_tokens` |
-| "which bare occurrence is a missing value, refused before the framework parses?" | `cli._argv.refuse_bare_occurrences`, off `FlagSpec.refuses_bare` — set by the same `_fixed_seq_types(resolved)` gate that arms the fixed-arity guard |
+| "which bare occurrence is a missing value, refused before the framework parses?" | `cli._argv.refuse_bare_occurrences`, off `FlagSpec.refuses_bare` and `FlagSpec.usage` — both set by `cli._build._refusing_bare`, the same `_fixed_seq_types(resolved)` gate that arms the fixed-arity guard |
 | plain vs escaped callable directives | `_callable.active_directives` |
 | "which parameters does a caller fill one argument each?" | `_callable._fillable_params` — every one but `*args` and `**kwargs`, read off a signature as written, so a function that declares `self` has one ([callables](callables.md#one-coercion-route)) |
 | single-value (scalar/type-ref) construction | `_construct._construct_scalar` |
@@ -192,7 +193,7 @@ needs goes into that loop, never into a second writer over the framework's parse
   append flag. A bare occurrence of such a flag never reaches the framework's parse result,
   which is safe only because the CLI channel is read off the argv the user typed
   ([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)).
-- `FlagSpec.refuses_bare` is set by the `_fixed_seq_types(resolved)` gate, asked without
+- `FlagSpec.refuses_bare` is set by the `_fixed_seq_types(resolved)` gate (`cli._build._refusing_bare`), asked without
   unwrapping `Optional` — the type vanilla's loop dispatches on — so the pre-parse refusal and
   the loop cannot disagree about which flags are fixed-arity
   ([CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)).

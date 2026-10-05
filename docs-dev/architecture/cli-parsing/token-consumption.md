@@ -18,7 +18,13 @@
   ([design decisions](../design-decisions/a-whole-value-flag-needs-its-value.md#a-whole-value-flag-needs-its-value)). `_require_value` is the
   single guard: argv running out and the next token being another flag are one failure, and
   the fixed-arity branch asks it once per positional token, so a short token run is a missing
-  value rather than a shorter tuple. A key path below a dict that the walk types as nothing
+  value rather than a shorter tuple. Its usage line spells every position, so it never tells the
+  user who passed one value to pass one value: `--pair <value> <value>` for a `tuple[X, Y]`, and
+  a namedtuple's field names, `--pt <x> <y>` — the names its `--pt.x` sub-flags spell, as
+  argparse spells a tuple metavar (`--pt X Y`); click and argparse name the count instead
+  (`requires 2 arguments`). `_fixed_arity_usage` is the one spelling, which the adapters' spec
+  carries as `FlagSpec.usage` for the front-end that refuses a bare occurrence before it parses
+  (BUG-171). A key path below a dict that the walk types as nothing
   (`--d.a.b` on `dict[str, Any]`) is a value-taking flag too, so it asks the same guard rather
   than being dropped when bare (BUG-161). No declaration types that key, so it is typed as
   `Any` — the raw token it stores is what an `Any` field takes — and its append spelling

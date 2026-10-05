@@ -114,7 +114,12 @@ refuses, `Unexpected positional argument: '3'`; click and typer counted the toke
 and never reach the question ([argv is the only writer](model.md#argv-is-the-only-writer)).
 The two errors have one owner each — `ConfargError.missing_value` and
 `UnknownArgumentError.unexpected_positional` — so the adapters raise what vanilla raises
-(BUG-58, BUG-60). A whole value is one token whatever arity it spells, so `--pair '[13]'` stays
+(BUG-58, BUG-60). The missing value's usage line spells every position
+([token consumption](../cli-parsing/token-consumption.md#token-consumption)); cyclopts refuses a
+bare occurrence before it parses, off the spec alone, so the spec carries that usage
+(`FlagSpec.usage`), set beside `refuses_bare` by the one gate `_build._refusing_bare`, and
+`_argv.refuse_bare_occurrences` raises with it what vanilla's loop raises (BUG-171). A whole
+value is one token whatever arity it spells, so `--pair '[13]'` stays
 the arity error `build()` owns and the `9` in `--pair '[13]' 9` is surplus.
 
 What a *repeat* of the flag means is vanilla's answer too — the last occurrence's run, every

@@ -133,6 +133,23 @@ def _takes_multi_tokens(tp: Any) -> bool:
     return _is_varlen_collection(tp) or _union_has_seq_variant(tp)
 
 
+def _refusing_bare(spec: FlagSpec, tp: Any) -> FlagSpec:
+    """Return *spec* refusing its bare occurrence when *tp* has a fixed arity, as vanilla spells it.
+
+    The one ``_fixed_seq_types`` gate behind :attr:`FlagSpec.refuses_bare`, asked of the
+    type *as resolved* (``None`` when the walk resolved none), which also sets the
+    :attr:`FlagSpec.usage` vanilla's loop spells for that type (BUG-171).
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
+    """
+    from confarg._parse_cli import _fixed_arity_usage  # noqa: PLC0415  # import cycle
+
+    if tp is None or _fixed_seq_types(tp) is None:
+        return spec
+    return dataclasses.replace(spec, refuses_bare=True, usage=_fixed_arity_usage(tp))
+
+
 def _binds_a_run(tp: Any) -> bool:
     """Return whether a framework that varies a flag's token count binds a run to *tp*'s flag.
 
@@ -925,7 +942,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per
                 stands_bare=True,
             )
         else:
-            specs[0].refuses_bare = _fixed_seq_types(resolved) is not None
+            specs[0] = _refusing_bare(specs[0], resolved)
         return specs
 
     if _is_registered_leaf(core):
@@ -958,8 +975,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per
         ]
     # Only the fixed-arity spelling reaches here with a fixed type: a plain
     # `tuple[X, Y]` whose bare occurrence is a missing value.
-    spec.refuses_bare = _fixed_seq_types(resolved) is not None
-    return [spec]
+    return [_refusing_bare(spec, resolved)]
 
 
 def _collect_union_root_specs(
@@ -1498,14 +1514,16 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
             # (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
             at = _resolve_field_type(target, path, union_tag)
             specs.append(
-                FlagSpec(
-                    name=key,
-                    nargs="*",
-                    metavar="VALUE",
-                    stands_bare=at is not None and _takes_multi_tokens(at),
-                    refuses_bare=at is not None and _fixed_seq_types(at) is not None,
-                    help=f"Set the collection element at '{target_path}'.",
-                    hidden=_addresses_fixed_seq_element(target, path, union_tag),
+                _refusing_bare(
+                    FlagSpec(
+                        name=key,
+                        nargs="*",
+                        metavar="VALUE",
+                        stands_bare=at is not None and _takes_multi_tokens(at),
+                        help=f"Set the collection element at '{target_path}'.",
+                        hidden=_addresses_fixed_seq_element(target, path, union_tag),
+                    ),
+                    at,
                 ),
             )
     return specs
