@@ -343,10 +343,12 @@ def _path_unknown(target: Any, parts: list[str], union_tag: str) -> bool:
 
 
 def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
-    """Check if any prefix of the path lands on a dict type.
+    """Check if any branch of the walk stands on a dict at a non-empty proper prefix of the path.
 
-    A prefix lands where :func:`_resolve_field_type` would answer it: on the fold of what
-    the branches reach there, so a prefix the branches disagree on lands on ``str``.
+    The node a branch stands on, not the type the prefix reaches: a field typed
+    ``dict[str, Any] | None`` or ``dict[str, Any] | Inner`` reaches the union, and its dict
+    variant takes what is below as a key, as a plain dict field and the environment do
+    (BUG-158).
 
     Args:
         target: The root type to start resolution from.
@@ -354,13 +356,13 @@ def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
         union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
-        True if any non-empty proper prefix of parts resolves to a dict type.
+        True if a branch stands on a dict type at any non-empty proper prefix of parts.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/type-guided-parsing.md#one-walk-many-questions
     """
-    reached: dict[int, list[Any]] = {}
-    for branch in _walk_path(target, parts, union_tag):
-        for depth, stone in enumerate(branch.stones[1:], start=1):
-            reached.setdefault(depth, []).append(stone.reached)
-    return any(_is_dict(_resolve_type(_common_type(found))) for found in reached.values())
+    branches = _walk_path(target, parts, union_tag)
+    return any(_is_dict(stone.node) for branch in branches for stone in branch.stones[1:])
 
 
 def _member_names(pt: Any) -> list[str]:
