@@ -749,6 +749,19 @@ def _first_constructible(variants: list[Any], data: Any, path: str, union_tag: s
     return _UNION_NO_MATCH
 
 
+def _reads_none_word(all_args: list[Any], data: Any) -> bool:
+    """Return whether a union of *all_args* reads *data* as a none word when it spells one.
+
+    Only a token is read as one, and only for a union counting ``None`` among its variants: a
+    file writes ``None`` as its own null, and its ``"none"`` stays a string. The one test for
+    selecting ``None`` off a value and for offering the none-word remedy when the value fails.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
+    """
+    return types.NoneType in all_args and isinstance(data, _StrToken)
+
+
 def _construct_single_variant_union(
     all_args: list[Any],
     non_none: list[Any],
@@ -764,7 +777,7 @@ def _construct_single_variant_union(
     Dev Notes:
         docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
     """
-    reads_none_word = types.NoneType in all_args and isinstance(data, _StrToken)
+    reads_none_word = _reads_none_word(all_args, data)
     if reads_none_word and data.lower() in _NONE_TOKENS:
         return None
     try:
@@ -864,7 +877,7 @@ def _coerce_scalar_variants(
         docs-dev/architecture/types/stealing-rule.md#stealing-rule
     """
     if isinstance(data, _StrToken):
-        with_none = scalar_leaf_vars + ([types.NoneType] if types.NoneType in all_args else [])
+        with_none = scalar_leaf_vars + ([types.NoneType] if _reads_none_word(all_args, data) else [])
         ordered = _steal_order(with_none, key=_resolve_type)
     else:
         ordered = scalar_leaf_vars
@@ -884,7 +897,14 @@ def _coerce_scalar_variants(
 
 
 def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, path: str, union_tag: str) -> Any:
-    """Construct a union value by trying leaf variants in priority order."""
+    """Construct a union value by trying leaf variants in priority order.
+
+    A value no variant accepts fails naming the whole union; for a token, the refusal also says
+    how to pass ``None`` (BUG-162).
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
+    """
     leaf_vars = [v for v in non_none if not _is_struct_variant(_resolve_type(v))]
     fixed_vars = [v for v in leaf_vars if _fixed_seq_types(_resolve_type(v)) is not None]
     coll_vars = [
@@ -921,7 +941,7 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
         data,
         variant_names,
         path,
-        none_sentinel=types.NoneType in all_args,
+        none_sentinel=_reads_none_word(all_args, data),
     )
 
 

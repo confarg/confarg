@@ -44,7 +44,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-154 — An integer in a file is refused for a `float` field](BUG-154-an-integer-in-a-file-is-refused-for-a-float-field.md) | S | high | behavior |
 | [BUG-155 — A `call:` spec naming a class passes its kwargs uncoerced](BUG-155-a-call-spec-naming-a-class-passes-its-kwargs-uncoerced.md) | S | high | behavior |
 | [BUG-156 — A positional-only parameter in a callable spec is passed by keyword](BUG-156-a-positional-only-parameter-in-a-callable-spec-is-passed-by-keyword.md) | S | high | behavior |
-| [BUG-162 — A union with `None` offers the none word to a value that is no token](BUG-162-a-union-with-none-offers-the-none-word-to-a-value-that-is-no-token.md) | S | medium | behavior |
 | [BUG-163 — A none word on the CLI cannot null an optional collection](BUG-163-a-none-word-on-the-cli-cannot-null-an-optional-collection.md) | M | high | behavior |
 | [BUG-164 — A fixed tuple's deferred patch replaces the element it should refine](BUG-164-a-fixed-tuples-deferred-patch-replaces-the-element-it-should-refine.md) | S | high | behavior |
 | [BUG-165 — A missing field below a list element names a flag the CLI refuses](BUG-165-a-missing-field-below-a-list-element-names-a-flag-the-cli-refuses.md) | S | medium | behavior |
