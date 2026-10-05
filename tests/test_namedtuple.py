@@ -162,16 +162,16 @@ class TestConstruct:
     def test_short_list_missing_required_field_raises(self) -> None:
         """A list that stops before a required field is the MissingFieldError a dict gets (BUG-167)."""
         with pytest.raises(MissingFieldError, match=r"'p\.y' .*\(--p\.y\)"):
-            construct(Point, [1], path="p")
+            construct(Point, [1], path=("p",))
         with pytest.raises(MissingFieldError, match=r"'p\.y' .*\(--p\.y\)"):
-            construct(Point, {"x": 1}, path="p")
+            construct(Point, {"x": 1}, path=("p",))
 
     def test_short_list_does_not_fill_an_optional_field_with_none(self) -> None:
         """An optional field with no default is still required, positionally as by name (BUG-167)."""
         with pytest.raises(MissingFieldError, match=r"'p\.y'"):
-            construct(MaybePoint, [1], path="p")
+            construct(MaybePoint, [1], path=("p",))
         with pytest.raises(MissingFieldError, match=r"'p\.y'"):
-            construct(MaybePoint, {"x": 1}, path="p")
+            construct(MaybePoint, {"x": 1}, path=("p",))
 
     def test_index_out_of_range_raises(self) -> None:
         """Index key out of bounds raises TypeCoercionError."""

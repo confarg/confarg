@@ -105,14 +105,54 @@ class TestMissingFields:
         assert "env" in msg.lower()
         assert "config" in msg
 
+    @pytest.mark.parametrize(
+        ("target", "data", "error", "path"),
+        [
+            pytest.param(
+                dict[str, Flat],
+                {"x": {"name": "a"}},
+                confarg.exceptions.MissingFieldError,
+                "x.count",
+                id="dict",
+            ),
+            pytest.param(dict[str, int], {"x": "no"}, confarg.exceptions.TypeCoercionError, "x", id="dict-value"),
+            pytest.param(Point, {"x": 1, "y": "no"}, confarg.exceptions.TypeCoercionError, "y", id="namedtuple"),
+        ],
+    )
+    def test_path_below_a_collection_root_has_no_leading_dot(
+        self,
+        target: Any,
+        data: Any,
+        error: type[Exception],
+        path: str,
+    ) -> None:
+        """A field below a dict or namedtuple target is named by its own path, as one below a dataclass is."""
+        with pytest.raises(error, match=f"'{path}'"):
+            confarg.build(target, {"__root__": data})
+
 
 # ---------------------------------------------------------------------------
 # Type coercion errors
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _DefaultPair:
+    t: tuple[int, int] = (1, 2)
+
+
+@dataclass
+class _NestedDefaultPair:
+    a: _DefaultPair
+
+
 class TestTypeCoercionErrors:
     """Errors when a value cannot be coerced to the target type."""
+
+    def test_index_patch_on_a_default_tuple_names_its_whole_path(self) -> None:
+        """An out-of-range patch on a nested default tuple names ``a.t``, not the bare field ``t``."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"tuple at 'a\.t': index 5 out of range"):
+            confarg.build(_NestedDefaultPair, {"a": {"t": {"5": 9}}})
 
     def test_int_coercion_failure(self, loader: ConfargLoader) -> None:
         """Non-numeric string for int field raises TypeCoercionError."""

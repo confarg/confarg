@@ -417,7 +417,7 @@ class TestCallableEdgeCases:
         result = _resolve_callable_spec(
             my_func,
             Callable[[int], str],
-            path="test",
+            path=("test",),
             union_tag="class",
             construct_fn=construct,
         )
@@ -427,18 +427,18 @@ class TestCallableEdgeCases:
         """A non-dict bind: value in the fn: dict form raises TypeCoercionError."""
         spec = {"fn": "os.path.join", "bind": "not_a_dict"}
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="must be a dict"):
-            _resolve_callable_spec(spec, Callable, path="test", union_tag="class", construct_fn=construct)
+            _resolve_callable_spec(spec, Callable, path=("test",), union_tag="class", construct_fn=construct)
 
     def test_resolve_class_spec_not_a_class_raises(self) -> None:
         """A non-class path in the class: dict form raises TypeCoercionError."""
         spec = {"class": "os.path.join"}
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="must reference a class"):
-            _resolve_callable_spec(spec, Callable, path="test", union_tag="class", construct_fn=construct)
+            _resolve_callable_spec(spec, Callable, path=("test",), union_tag="class", construct_fn=construct)
 
     def test_resolve_spec_invalid_type_raises(self) -> None:
         """A non-str, non-dict callable spec raises TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="expected str or dict"):
-            _resolve_callable_spec(12345, Callable, path="test", union_tag="class", construct_fn=construct)
+            _resolve_callable_spec(12345, Callable, path=("test",), union_tag="class", construct_fn=construct)
 
     def test_check_signature_var_positional_skipped(self) -> None:
         """*args functions skip parameter count checking."""
@@ -1147,7 +1147,7 @@ class TestCallableBranches:
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="is not callable"):
             _resolve_class_spec(
                 _ClassSpec(cls_path, {}, {}, {"class": cls_path}),
-                _SpecContext("test_path", "class", construct),
+                _SpecContext(("test_path",), "class", construct),
             )
 
     def test_slotted_callable_confarg_spec_except_branch(self) -> None:
@@ -1155,7 +1155,7 @@ class TestCallableBranches:
         cls_path = f"{_SlottedCallableClass.__module__}.{_SlottedCallableClass.__qualname__}"
         result = _resolve_class_spec(
             _ClassSpec(cls_path, {"value": 5}, {}, {"class": cls_path, "value": 5}),
-            _SpecContext("test_path", "class", construct),
+            _SpecContext(("test_path",), "class", construct),
         )
         assert callable(result)
 
@@ -1626,13 +1626,13 @@ class TestCallableGaps:
             raise TypeError(msg)
 
         monkeypatch.setattr(callable_mod.inspect, "signature", _boom)
-        result = _resolve_call_kwargs(len, {"x": 1}, _SpecContext("test", "class", None))
+        result = _resolve_call_kwargs(len, {"x": 1}, _SpecContext(("test",), "class", None))
         assert result == {"x": 1}
 
     def test_resolve_call_spec_raises_on_call_failure(self) -> None:
         """_resolve_call_spec raises TypeCoercionError when the called function raises."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="Failed to call"):
-            _resolve_call_spec(f"{_COV_MOD}._cov_raise_fn", {"x": 1}, {}, _SpecContext("test", "class", construct))
+            _resolve_call_spec(f"{_COV_MOD}._cov_raise_fn", {"x": 1}, {}, _SpecContext(("test",), "class", construct))
 
     def test_resolve_bind_kwargs_string_values(self) -> None:
         """_resolve_bind_kwargs coerces _StrToken bind values to annotated parameter types."""
@@ -1643,7 +1643,7 @@ class TestCallableGaps:
         result = _resolve_bind_kwargs(
             fn,
             {"lr": _StrToken("0.01"), "steps": _StrToken("5")},
-            _SpecContext("test", "class", construct),
+            _SpecContext(("test",), "class", construct),
         )
         assert result["lr"] == pytest.approx(0.01)
         assert result["steps"] == 5
@@ -1656,7 +1656,7 @@ class TestCallableGaps:
             raise ValueError(msg)
 
         monkeypatch.setattr(callable_mod.inspect, "signature", _boom)
-        assert _resolve_bind_kwargs(len, {"x": 1}, _SpecContext("test", "class", construct)) == {"x": 1}
+        assert _resolve_bind_kwargs(len, {"x": 1}, _SpecContext(("test",), "class", construct)) == {"x": 1}
 
     def test_resolve_call_kwargs_unannotated_param(self) -> None:
         """_resolve_call_kwargs passes unannotated params through unchanged (line 229)."""
@@ -1664,7 +1664,7 @@ class TestCallableGaps:
         def fn(x, y=10):  # no annotations
             pass
 
-        result = _resolve_call_kwargs(fn, {"x": "hello", "y": "5"}, _SpecContext("test", "class", None))
+        result = _resolve_call_kwargs(fn, {"x": "hello", "y": "5"}, _SpecContext(("test",), "class", None))
         assert result["x"] == "hello"
 
     def test_resolve_call_kwargs_get_type_hints_fails(self) -> None:
@@ -1673,7 +1673,7 @@ class TestCallableGaps:
         def _fn(x: UndefinedType777) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
             pass
 
-        result = _resolve_call_kwargs(_fn, {"x": 1}, _SpecContext("test", "class", None))
+        result = _resolve_call_kwargs(_fn, {"x": 1}, _SpecContext(("test",), "class", None))
         assert result["x"] == 1
 
     def test_resolve_bind_kwargs_get_type_hints_fails(self) -> None:
@@ -1682,7 +1682,7 @@ class TestCallableGaps:
         def _fn(x: UndefinedHintType999) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
             pass
 
-        result = _resolve_bind_kwargs(_fn, {"x": _StrToken("1")}, _SpecContext("test", "class", construct))
+        result = _resolve_bind_kwargs(_fn, {"x": _StrToken("1")}, _SpecContext(("test",), "class", construct))
         assert result["x"] == _StrToken("1")
 
     def test_resolve_bind_kwargs_unannotated_param(self) -> None:
@@ -1691,7 +1691,7 @@ class TestCallableGaps:
         def fn(x, y=10):  # no annotations
             pass
 
-        result = _resolve_bind_kwargs(fn, {"x": _StrToken("hello")}, _SpecContext("test", "class", construct))
+        result = _resolve_bind_kwargs(fn, {"x": _StrToken("hello")}, _SpecContext(("test",), "class", construct))
         assert result["x"] == _StrToken("hello")
 
     def test_resolve_bind_kwargs_non_scalar_type_constructs(self) -> None:
@@ -1700,7 +1700,7 @@ class TestCallableGaps:
         def fn(name: str) -> None:
             pass
 
-        result = _resolve_bind_kwargs(fn, {"name": _StrToken("hello")}, _SpecContext("test", "class", construct))
+        result = _resolve_bind_kwargs(fn, {"name": _StrToken("hello")}, _SpecContext(("test",), "class", construct))
         assert result["name"] == "hello"
 
     def test_resolve_bind_kwargs_bad_value_raises(self) -> None:
@@ -1710,7 +1710,7 @@ class TestCallableGaps:
             pass
 
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            _resolve_bind_kwargs(fn, {"x": _StrToken("not_an_int")}, _SpecContext("test", "class", construct))
+            _resolve_bind_kwargs(fn, {"x": _StrToken("not_an_int")}, _SpecContext(("test",), "class", construct))
 
     def test_issubclass_safe_type_error(self) -> None:
         """_issubclass_safe returns False when issubclass raises TypeError."""

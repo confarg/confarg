@@ -36,7 +36,7 @@ from confarg._types import (
     _tuple_types,
     _union_args_no_none,
 )
-from confarg.exceptions import ConfargError, ConfargWarning
+from confarg.exceptions import ConfargError, ConfargWarning, FieldPath, _spell_field_path
 from confarg.typedload._coerce import _LEAF_SERIALIZERS, _is_struct_variant, _type_kind, _TypeKind
 from confarg.typedload._construct import _disambiguate_struct, construct
 
@@ -44,7 +44,7 @@ from confarg.typedload._construct import _disambiguate_struct, construct
 def _serialize(
     tp: Any,
     instance: Any,
-    path: str,
+    path: FieldPath,
     union_tag: str,
     tag_policy: TagPolicy,
 ) -> Any:
@@ -53,7 +53,7 @@ def _serialize(
     Args:
         tp: The declared type of the value.
         instance: The value to serialize.
-        path: Dot-separated field path for diagnostics.
+        path: The field's path below the instance, which diagnostics name.
         union_tag: The field name used as a discriminator tag in unions.
         tag_policy: "auto" or "always".
 
@@ -69,7 +69,7 @@ def _serialize(
 def _serialize_by_type(  # noqa: PLR0911  # one return per kind
     tp: Any,
     instance: Any,
-    path: str,
+    path: FieldPath,
     union_tag: str,
     tag_policy: TagPolicy,
 ) -> Any:
@@ -96,14 +96,14 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
 def _serialize_collection(
     tp: Any,
     instance: Any,
-    path: str,
+    path: FieldPath,
     union_tag: str,
     tag_policy: TagPolicy,
 ) -> list[Any]:
     """Serialize a list, set, or frozenset."""
     et = _elem_type(tp)
     if _is_list(tp):
-        return [_serialize(et, v, f"{path}[{i}]", union_tag, tag_policy) for i, v in enumerate(instance)]
+        return [_serialize(et, v, (*path, i), union_tag, tag_policy) for i, v in enumerate(instance)]
     items = [_serialize(et, v, path, union_tag, tag_policy) for v in instance]
     return sorted(items, key=_sort_key)
 
@@ -111,7 +111,7 @@ def _serialize_collection(
 def _serialize_namedtuple(
     tp: Any,
     instance: Any,
-    path: str,
+    path: FieldPath,
     union_tag: str,
     tag_policy: TagPolicy,
 ) -> dict[str, Any]:
@@ -120,7 +120,7 @@ def _serialize_namedtuple(
     out: dict[str, Any] = {}
     for name, ft in flds.items():
         value = getattr(instance, name)
-        fp = f"{path}.{name}" if path else name
+        fp = (*path, name)
         out[name] = _serialize(ft, value, fp, union_tag, tag_policy)
     return out
 
@@ -128,7 +128,7 @@ def _serialize_namedtuple(
 def _serialize_struct(
     tp: Any,
     instance: Any,
-    path: str,
+    path: FieldPath,
     union_tag: str,
     tag_policy: TagPolicy,
 ) -> dict[str, Any]:
@@ -150,7 +150,7 @@ def _serialize_struct(
                 f" Plain classes must store every __init__ parameter as a same-named instance attribute."
             )
             raise ConfargError(msg) from None
-        fp = f"{path}.{name}" if path else name
+        fp = (*path, name)
         out[name] = _serialize(ft, value, fp, union_tag, tag_policy)
     return out
 
@@ -158,7 +158,7 @@ def _serialize_struct(
 def _serialize_union(
     tp: Any,
     instance: Any,
-    path: str,
+    path: FieldPath,
     union_tag: str,
     tag_policy: TagPolicy,
 ) -> Any:
@@ -191,19 +191,19 @@ def _serialize_union(
     return serialized
 
 
-def _warn_unpinnable_leaf(variant_tp: Any, serialized: Any, path: str) -> None:
+def _warn_unpinnable_leaf(variant_tp: Any, serialized: Any, path: FieldPath) -> None:
     """Warn that a leaf no ``__cast__`` can name will read back as another union variant.
 
     Args:
         variant_tp: The variant the value was serialized as.
         serialized: Its bare serialized form, written as-is.
-        path: Dot-separated field path for diagnostics.
+        path: The field's path below the instance, which diagnostics name.
 
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#casting-a-stolen-leaf
     """
     warnings.warn(
-        f"Value at '{path or _defaults.ROOT_KEY}' will not read back as"
+        f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as"
         f" {getattr(variant_tp, '__name__', variant_tp)!r}: another union variant takes the"
         f" dumped {type(serialized).__name__}, and no __cast__ names that type."
         f" confarg.register_leaf_type makes it nameable.",
@@ -242,7 +242,7 @@ def _reads_back(tp: Any, instance: Any, data: Any, union_tag: str) -> bool:
 def _serialize_tuple(
     tp: Any,
     instance: Any,
-    path: str,
+    path: FieldPath,
     union_tag: str,
     tag_policy: TagPolicy,
 ) -> list[Any]:
@@ -250,9 +250,9 @@ def _serialize_tuple(
     tt = _tuple_types(tp)
     if tt is None:
         et = _elem_type(tp)
-        return [_serialize(et, v, f"{path}[{i}]", union_tag, tag_policy) for i, v in enumerate(instance)]
+        return [_serialize(et, v, (*path, i), union_tag, tag_policy) for i, v in enumerate(instance)]
     return [
-        _serialize(et, v, f"{path}[{i}]", union_tag, tag_policy)
+        _serialize(et, v, (*path, i), union_tag, tag_policy)
         for i, (et, v) in enumerate(zip(tt, instance, strict=False))
     ]
 
@@ -260,14 +260,14 @@ def _serialize_tuple(
 def _serialize_dict(
     tp: Any,
     instance: Any,
-    path: str,
+    path: FieldPath,
     union_tag: str,
     tag_policy: TagPolicy,
 ) -> dict[Any, Any]:
     """Serialize a typed dict."""
     kt, vt = _dict_kv(tp)
     return {
-        _serialize_leaf(kt, k): _serialize(vt, v, f"{path}.{k}", union_tag, tag_policy) for k, v in instance.items()
+        _serialize_leaf(kt, k): _serialize(vt, v, (*path, str(k)), union_tag, tag_policy) for k, v in instance.items()
     }
 
 

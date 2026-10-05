@@ -49,14 +49,14 @@ class TestConstructStructDispatch:
     def test_subclasses_without_tag_raises(self) -> None:
         """When a struct has subclasses and no union_tag is present, raise TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="discriminator"):
-            _construct_struct_dispatch(_BaseWithSubs, {"x": _StrToken("hello")}, "", "class")
+            _construct_struct_dispatch(_BaseWithSubs, {"x": _StrToken("hello")}, (), "class")
 
     def test_subclasses_with_tag_constructs(self) -> None:
         """When the union_tag is present, the named subclass is constructed."""
         result = _construct_struct_dispatch(
             _BaseWithSubs,
             {"class": f"{__name__}._Sub1", "x": _StrToken("hello")},
-            "",
+            (),
             "class",
         )
         assert isinstance(result, _Sub1)
@@ -64,7 +64,7 @@ class TestConstructStructDispatch:
 
     def test_no_subclasses_constructs_directly(self) -> None:
         """When the struct has no subclasses, it is constructed directly without a tag."""
-        result = _construct_struct_dispatch(_BaseNoSubs, {}, "", "class")
+        result = _construct_struct_dispatch(_BaseNoSubs, {}, (), "class")
         assert result == _BaseNoSubs()
 
 
@@ -409,12 +409,12 @@ class TestTagFieldCollision:
 
     def test_plain_struct_field_wins(self) -> None:
         """A subclass-less struct builds the colliding field from the tag-shaped key."""
-        result = _construct_struct_dispatch(_KindPlain, {"Kind": "v"}, "", "Kind")
+        result = _construct_struct_dispatch(_KindPlain, {"Kind": "v"}, (), "Kind")
         assert result == _KindPlain(Kind="v")
 
     def test_dispatch_struct_field_wins(self) -> None:
         """A base with subclasses still builds from its own colliding field."""
-        result = _construct_struct_dispatch(_KindBase, {"Kind": _StrToken("v")}, "", "Kind")
+        result = _construct_struct_dispatch(_KindBase, {"Kind": _StrToken("v")}, (), "Kind")
         assert result == _KindBase(Kind="v")
 
     def test_subclass_only_field_wins(self) -> None:
@@ -424,13 +424,13 @@ class TestTagFieldCollision:
         read the key as the tag and imported the field's value as a class path, stripping
         it from the data — the very field the user had set then went missing (BUG-103).
         """
-        result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken("v")}, "", "Kind")
+        result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken("v")}, (), "Kind")
         assert result == _KindOnlySub(Kind="v")
 
     def test_subclass_only_field_value_is_never_a_class_path(self) -> None:
         """A class-path-looking value stays the field's value; nothing is imported."""
         path = f"{__name__}._KindOnlySub"
-        result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken(path)}, "", "Kind")
+        result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken(path)}, (), "Kind")
         assert result == _KindOnlySub(Kind=path)
 
     def test_subclass_only_field_with_base_fields(self) -> None:
@@ -438,7 +438,7 @@ class TestTagFieldCollision:
         result = _construct_struct_dispatch(
             _KindOnlyRichBase,
             {"host": "h", "Kind": _StrToken("v")},
-            "",
+            (),
             "Kind",
         )
         assert result == _KindOnlyRichSub(host="h", Kind="v")
@@ -446,12 +446,12 @@ class TestTagFieldCollision:
     def test_ambiguous_subclass_only_field_raises(self) -> None:
         """Two structurally matching subclasses are a loud ambiguity, not a silent pick."""
         with pytest.raises(TypeCoercionError, match="Ambiguous subclasses"):
-            _construct_struct_dispatch(_KindOnlyAmbBase, {"Kind": _StrToken("v")}, "", "Kind")
+            _construct_struct_dispatch(_KindOnlyAmbBase, {"Kind": _StrToken("v")}, (), "Kind")
 
     def test_subclass_only_field_no_match_raises(self) -> None:
         """A subclass needing more than the tag-shaped key refuses the data loudly."""
         with pytest.raises(TypeCoercionError, match="no subclass accepts"):
-            _construct_struct_dispatch(_KindOnlyNeedyBase, {"Kind": _StrToken("v")}, "", "Kind")
+            _construct_struct_dispatch(_KindOnlyNeedyBase, {"Kind": _StrToken("v")}, (), "Kind")
 
     def test_union_variants_subclass_only_field_wins(self) -> None:
         """A union whose variant's subclass owns the colliding field builds that subclass.
@@ -472,7 +472,7 @@ class TestTagFieldCollision:
         result = _construct_struct_dispatch(
             _KindBase,
             {"class": f"{__name__}._KindSub", "extra": "e"},
-            "",
+            (),
             "class",
         )
         assert result == _KindSub(Kind="field", extra="e")
@@ -530,20 +530,20 @@ class TestShadowedTagWarning:
     def test_subclass_only_field_use_warns(self) -> None:
         """The BUG-103 shape: setting the field warns that no class-path tag dispatches."""
         with pytest.warns(ConfargWarning, match="selected structurally"):
-            result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken("v")}, "", "Kind")
+            result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken("v")}, (), "Kind")
         assert result == _KindOnlySub(Kind="v")
 
     def test_base_field_use_on_dispatch_struct_warns(self) -> None:
         """The BUG-102 shape: the base's own field warns where subclasses could dispatch."""
         with pytest.warns(ConfargWarning, match="Rename the field"):
-            result = _construct_struct_dispatch(_KindBase, {"Kind": _StrToken("v")}, "", "Kind")
+            result = _construct_struct_dispatch(_KindBase, {"Kind": _StrToken("v")}, (), "Kind")
         assert result == _KindBase(Kind="v")
 
     def test_plain_struct_use_does_not_warn(self) -> None:
         """A struct without subclasses never dispatches, so its own field needs no apology."""
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            result = _construct_struct_dispatch(_KindPlain, {"Kind": _StrToken("v")}, "", "Kind")
+            result = _construct_struct_dispatch(_KindPlain, {"Kind": _StrToken("v")}, (), "Kind")
         assert result == _KindPlain(Kind="v")
         assert not any(issubclass(w.category, ConfargWarning) for w in caught)
 
@@ -554,7 +554,7 @@ class TestShadowedTagWarning:
             result = _construct_struct_dispatch(
                 _KindBase,
                 {"class": f"{__name__}._KindSub", "extra": "e"},
-                "",
+                (),
                 "class",
             )
         assert result == _KindSub(Kind="field", extra="e")
