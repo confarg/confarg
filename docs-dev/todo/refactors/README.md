@@ -17,7 +17,6 @@ different board.
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | M | low | none |
 | [REF-41 — `cli/click/_context.py` and `cli/typer/_context.py` are the same file](REF-41-click-and-typer-context-are-the-same-file.md) | S | low | none |
 | [REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk](REF-42-argparse-completion-reimplements-the-build-walk.md) | M | medium | none |
-| [REF-43 — Four copies of the type-tree path walk in `_parse_cli.py`](REF-43-parse-cli-path-walk-copies.md) | M | high | none |
 | [REF-45 — The argv value-run scan is written seven times](REF-45-argv-value-run-scan-duplicated.md) | M | high | none |
 | [REF-46 — Near-duplicate helper pairs in the merge core](REF-46-near-duplicate-helpers-in-the-merge-core.md) | S | low | none |
 | [REF-49 — `graphlib.TopologicalSorter` replaces the hand-written Kahn loop](REF-49-graphlib-replaces-hand-written-kahn.md) | S | low | behavior |

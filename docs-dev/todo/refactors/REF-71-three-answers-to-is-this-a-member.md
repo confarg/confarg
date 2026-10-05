@@ -12,7 +12,7 @@ impact: none
 ---
 # REF-71 — Four functions answer "does this segment name a member?", and they disagree at the edges
 
-The walk's step, `_advance_field_type` (with `_field_types` recursing into unions), is what
+The walk's step, `_advance_field_type` (with `_walk_path` forking at unions), is what
 decides whether a segment reaches a member. For a struct it asks `_types._struct_member_type`,
 and so do the struct arms of `_segment_names_real_field` and `_union_tag_shadowed` (which closed
 BUG-103's lag). What still restates the decision is the dispatch around that call:

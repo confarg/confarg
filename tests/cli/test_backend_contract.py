@@ -5372,6 +5372,88 @@ n: ${locals.k * 2}
 
 
 # ---------------------------------------------------------------------------
+# Questions about a path, asked across a union's branches
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _WalkInner:
+    """A struct variant holding a list, beside the collection variant of each union below."""
+
+    q: int = 0
+    xs: list[int] = dataclasses_field(default_factory=list)
+
+
+@dataclass
+class _WalkUnions:
+    """Fields whose path leaves a union only through one variant."""
+
+    opt: _WalkInner | None = None
+    m: dict[str, int] | _WalkInner = dataclasses_field(default_factory=dict)
+    deep: dict[str, dict[str, Any]] | _WalkInner = dataclasses_field(default_factory=dict)
+
+
+@dataclass
+class _LocalsOptNested:
+    """Target whose nested namespace sits in an optional block."""
+
+    db: _LocalsNode | None = None
+
+
+class TestUnionPathWalkContract:
+    """Each question about a flag's path follows every branch of the unions it crosses.
+
+    Registration asks whether a path is a collection patch, a callable's key or
+    unknown; the loop asks which type the path reaches and whether a dict lies above
+    it. All of them are answered by the one type walk, which forks at a union, so a
+    path that only one variant accepts is accepted alike in every front-end and in the
+    environment.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/type-guided-parsing.md#one-walk-many-questions
+    """
+
+    def test_index_patch_below_an_optional_struct(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--opt.xs.1`` reaches the list through the struct variant of ``_WalkInner | None``."""
+        base = tmp_yaml("opt:\n  xs: [1, 2]\n")
+        cfg = loader.load(_WalkUnions, argv=["--config", str(base), "--opt.xs.1", "9"], env={})
+        assert cfg.opt == _WalkInner(xs=[1, 9])
+
+    def test_dict_key_through_the_dict_variant(self, loader: ConfargLoader) -> None:
+        """A key the struct variant refuses is a key of the dict variant, typed by its value."""
+        cli = loader.merge(_WalkUnions, argv=["--m.k", "5"], env={})
+        env = loader.merge(_WalkUnions, argv=[], env={"MYAPP_M__K": "5"}, env_prefix="MYAPP_")
+        assert cli == env == {"m": {"k": 5}}
+
+    def test_a_path_below_a_dict_reached_through_a_union_is_a_key(self, loader: ConfargLoader) -> None:
+        """``deep.a`` lands on a dict in the one branch that accepts it, so what is below is a key."""
+        cfg = loader.load(_WalkUnions, argv=["--deep.a.b.c", "1"], env={})
+        assert cfg.deep == {"a": {"b": {"c": "1"}}}
+
+    def test_keys_below_an_optional_callable(self, loader: ConfargLoader) -> None:
+        """A kwarg no signature names, and a bind subkey, are keys inside the spec of ``Callable | None``."""
+        sibling = ["--fn.fn", f"{__name__}._shout", "--fn.punct", "!"]
+        assert loader.merge(_OptCallableConfig, argv=sibling, env={}) == {
+            "fn": {"fn": f"{__name__}._shout", "punct": "!"},
+        }
+        bind = ["--fn.fn", f"{__name__}._shout", "--fn.bind.punct", "!"]
+        assert loader.load(_OptCallableConfig, argv=bind, env={}).fn("hi") == "HI!"
+
+    def test_nested_namespace_below_an_optional_struct(self, loader: ConfargLoader, tmp_path, tmp_yaml) -> None:
+        """``--db.locals.h`` enters the namespace of the struct variant of ``_LocalsNode | None``."""
+        (tmp_path / "db.yaml").write_text("locals:\n  h: db.internal\nhost: ${locals.h}\n")
+        cfg = tmp_yaml(f"db:\n  {INCLUDE_KEY}: ./db.yaml\n")
+        cli = loader.load(_LocalsOptNested, argv=["--config", str(cfg), "--db.locals.h", "from-cli"], env={})
+        env = loader.load(
+            _LocalsOptNested,
+            argv=["--config", str(cfg)],
+            env={"MYAPP_DB__LOCALS__H": "from-env"},
+            env_prefix="MYAPP_",
+        )
+        assert (cli.db, env.db) == (_LocalsNode("from-cli"), _LocalsNode("from-env"))
+
+
+# ---------------------------------------------------------------------------
 # Dynamic flag registration failures
 # ---------------------------------------------------------------------------
 
