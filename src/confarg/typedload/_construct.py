@@ -11,6 +11,7 @@ Dev Notes:
 from __future__ import annotations
 
 import itertools
+import re
 import types
 import warnings
 from typing import Any
@@ -82,15 +83,22 @@ from confarg.typedload._coerce import (
     _TypeKind,
 )
 
+_PATH_INDEX = re.compile(r"\[(\d+)\]")
+
 
 def _missing_field_error(fp: str, ft: Any) -> MissingFieldError:
     """Return the error for a field of type *ft* that no channel supplied at path *fp*.
 
+    The remedy spells each ``[i]`` of *fp* as the CLI segment ``.i``: ``items[0].size`` names
+    ``--items.0.size``.
+
     Dev Notes:
-        docs-dev/architecture/types/construction.md#structs-collections-and-defaults
+        docs-dev/architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it
     """
+    flag = _PATH_INDEX.sub(r".\1", fp).removeprefix(".")
     msg = (
-        f"Missing required field '{fp}' of type {ft!r}. Set it via CLI (--{fp}), environment variable, or config file."
+        f"Missing required field '{fp}' of type {ft!r}. "
+        f"Set it via CLI (--{flag}), environment variable, or config file."
     )
     return MissingFieldError(msg)
 

@@ -80,7 +80,8 @@ indifferent to both.
 ## Structs, collections and defaults
 
 - Unknown keys are errors (typo detection); missing required fields are `MissingFieldError`
-  naming the CLI flag to set.
+  naming the CLI flag to set, as the CLI spells it
+  ([below](#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
 - A missing struct field whose type has all-default fields is built from `{}` — a registered
   leaf never is, however defaulted its `__init__` looks, so a missing one is a
   `MissingFieldError` rather than whatever its constructor raises for no arguments.
@@ -108,3 +109,22 @@ indifferent to both.
 - Namedtuples accept a list, a dict by field name, or a dict by index — and a `"*"` base list
   with either kind of patch beside it, laid over the positions
   ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#build-reconciles-the-positions-with-the-patch)).
+
+### A missing field's remedy is spelled as the CLI spells it
+
+A `MissingFieldError` names the field by its construction path and the remedy by the flag the
+CLI accepts for it. The two spell a sequence element differently: the path writes it as
+`[0]`, like an expression (`${items[0].size}`) and `dump()`'s errors, while the CLI writes
+the index as one more dotted segment. So `items[0].size` is reported missing with the remedy
+`--items.0.size`, which every front-end accepts; `--items[0].size` was refused as an unknown
+argument (BUG-165). `_missing_field_error` is the one site that spells the remedy, so every
+missing field below a list, a fixed or variable tuple, or a nested sequence gets it right.
+
+The flag is spelled by rewriting each `[N]` of the path string, which is the one place the
+path's segments are not recoverable exactly: a dict key literally spelled `x[0]` is
+addressed as `--d.x[0].size` and gets the remedy `--d.x.0.size`. Carrying the path as a
+tuple of segments, as pydantic carries its `loc`, would be exact, at the cost of every site
+that threads a path through construction and of the public `construct(path=...)` keyword; the
+string rewrite was chosen over it (maintainer-chosen). The field name itself keeps the `[0]`
+spelling, so the message's two halves read the same path two ways rather than every
+construction error changing its spelling.
