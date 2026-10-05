@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 if TYPE_CHECKING:
@@ -167,6 +168,83 @@ class TestTypeCoercionErrors:
         WithOpt = make_target("value", int | None, default=None)
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"'none' or 'null'"):
             loader.load(WithOpt, argv=[], env={"MYAPP_VALUE": "blah"}, env_prefix="MYAPP_")
+
+
+@dataclass
+class Inner:
+    """Struct with an int field, for an error reported below an optional field."""
+
+    q: int = 0
+
+
+@dataclass
+class Required:
+    """Struct with a required field, for a missing field below an optional field."""
+
+    r: int
+
+
+class TestOptionalReportsItsVariantsError:
+    """An ``X | None`` field fails as an ``X`` field does, the remedy added only for a token (BUG-159)."""
+
+    @staticmethod
+    def _failure(fn: Callable[[], object]) -> confarg.exceptions.ConfargError:
+        with pytest.raises(confarg.exceptions.ConfargError) as excinfo:
+            fn()
+        return excinfo.value
+
+    @pytest.mark.parametrize(
+        ("annotation", "value"),
+        [
+            (Inner, {"q": "notint"}),
+            (Required, {}),
+            (list[int], [1, "x"]),
+            (tuple[int, int], [1, "x"]),
+            (Callable[[], int], {"fn": "builtins.len"}),
+            (int, "none"),
+        ],
+        ids=["struct-field", "missing-field", "list-item", "tuple-item", "callable-spec", "file-string"],
+    )
+    def test_a_value_no_none_word_reads_fails_as_the_variant(self, annotation: Any, value: Any) -> None:
+        """A dict, a list or a file's string could not have meant None: no remedy, nothing hidden."""
+        plain = self._failure(lambda: confarg.build(make_target("value", annotation), {"value": value}))
+        optional = self._failure(
+            lambda: confarg.build(make_target("value", annotation | None, default=None), {"value": value}),
+        )
+        assert (type(optional), str(optional)) == (type(plain), str(plain))
+
+    @pytest.mark.parametrize(
+        ("annotation", "token"),
+        [
+            (int, "abc"),
+            (int, ""),
+            (Inner, "abc"),
+            (list[int], "x"),
+            (Callable[[], int], "builtins.len"),
+        ],
+        ids=["int", "empty", "struct", "list-item", "callable-shorthand"],
+    )
+    def test_a_token_fails_as_the_variant_with_the_none_remedy(
+        self,
+        loader: ConfargLoader,
+        annotation: Any,
+        token: str,
+    ) -> None:
+        """A token is where a none word is read, so the variant's own error gains the remedy."""
+        env = {"MYAPP_VALUE": token}
+        plain = self._failure(
+            lambda: loader.load(make_target("value", annotation), argv=[], env=env, env_prefix="MYAPP_"),
+        )
+        optional = self._failure(
+            lambda: loader.load(
+                make_target("value", annotation | None, default=None),
+                argv=[],
+                env=env,
+                env_prefix="MYAPP_",
+            ),
+        )
+        assert type(optional) is type(plain)
+        assert str(optional) == f"{plain}. To set this field to None, pass 'none' or 'null'."
 
 
 class TestTokensStayOutOfMessages:

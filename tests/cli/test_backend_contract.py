@@ -897,7 +897,7 @@ class TestFixedSequenceContract:
         than exiting with their own usage error.
         """
         assert loader.merge(_WithOptionalIntPair, argv=["--pair", "13"], env={}) == {"pair": ["13"]}
-        with pytest.raises(TypeCoercionError, match="Cannot coerce"):
+        with pytest.raises(TypeCoercionError, match=re.escape("at 'pair': expected 2 elements, got 1")):
             loader.load(_WithOptionalIntPair, argv=["--pair", "13"], env={})
 
     def test_optional_namedtuple_token_run_is_stored_raw(self, space_sep_loader: ConfargLoader) -> None:
@@ -924,7 +924,7 @@ class TestFixedSequenceContract:
         assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={}) == {
             "pair": {"*": ["1", "2"], "y": 9},
         }
-        with pytest.raises(TypeCoercionError, match="Cannot coerce"):
+        with pytest.raises(TypeCoercionError, match=re.escape("Unknown field(s) ['*'] for _Point at 'pair'")):
             space_sep_loader.load(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={})
 
     def test_optional_namedtuple_sub_flag_then_arity_replaces_wholesale(self, space_sep_loader: ConfargLoader) -> None:
@@ -971,7 +971,7 @@ class TestFixedSequenceContract:
         assert space_sep_loader.merge(_WithOptionalIntPair, argv=["--pair", "1", "2", "--pair", "3", "4"], env={}) == {
             "pair": ["1", "2", "3", "4"],
         }
-        with pytest.raises(TypeCoercionError, match="Cannot coerce"):
+        with pytest.raises(TypeCoercionError, match=re.escape("at 'pair': expected 2 elements, got 4")):
             space_sep_loader.load(_WithOptionalIntPair, argv=["--pair", "1", "2", "--pair", "3", "4"], env={})
 
     def test_optional_namedtuple_repeated_occurrences_accumulate(self, loader: ConfargLoader) -> None:
@@ -984,7 +984,10 @@ class TestFixedSequenceContract:
         assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair", "3", "4"], env={}) == {
             "pair": ["1", "2", "3", "4"],
         }
-        with pytest.raises(TypeCoercionError, match="Cannot coerce"):
+        with pytest.raises(
+            TypeCoercionError,
+            match=re.escape("Cannot construct _Point at 'pair': expected 2 elements, got 4"),
+        ):
             space_sep_loader.load(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair", "3", "4"], env={})
 
     def test_optional_tuple_leading_bare_occurrence_is_a_missing_value(self, loader: ConfargLoader) -> None:
@@ -2581,10 +2584,10 @@ class TestSubclasslessStructTagContract:
     def test_optional_struct_tag_named_complaint(self, loader: ConfargLoader) -> None:
         """An ``Optional[<subclass-less struct>]`` field takes the tag too (BUG-92).
 
-        The tag dict matches no union variant, so the complaint is the coercion error
-        vanilla raises -- not the parse-time rejection the adapters answered with.
+        The tag names no subclass of the one variant, so the complaint is the one vanilla
+        raises at build() -- not the parse-time rejection the adapters answered with.
         """
-        with pytest.raises(TypeCoercionError, match="Cannot coerce dict"):
+        with pytest.raises(TypeCoercionError, match=re.escape("Class 'decimal.Decimal' at 'inner' is not a subclass")):
             loader.load(_TaglessOptional, argv=["--inner.class", "decimal.Decimal"], env={}, config_flag="")
 
     def test_tag_registers_only_when_typed(self, populating_loader: ConfargLoader) -> None:

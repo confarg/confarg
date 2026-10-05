@@ -716,16 +716,23 @@ def _construct_single_variant_union(
     path: str,
     union_tag: str,
 ) -> Any:
-    """Construct a union that has exactly one non-None variant."""
-    if types.NoneType in all_args and isinstance(data, _StrToken) and data.lower() in _NONE_TOKENS:
+    """Construct a union that has exactly one non-None variant.
+
+    A token spelling a none word is ``None``. Any other value is the variant's, and fails with
+    the variant's own error; for a token, that error also says how to pass ``None``.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
+    """
+    reads_none_word = types.NoneType in all_args and isinstance(data, _StrToken)
+    if reads_none_word and data.lower() in _NONE_TOKENS:
         return None
     try:
         return construct(non_none[0], data, path=path, union_tag=union_tag)
-    except (TypeCoercionError, MissingFieldError):
-        if types.NoneType in all_args:
-            name = getattr(_resolve_type(non_none[0]), "__name__", repr(non_none[0]))
-            raise TypeCoercionError.cannot_coerce(_src_type(data), data, name, path, none_sentinel=True) from None
-        raise  # pragma: no cover  # len(non_none)==1 without NoneType is impossible via normal Union typing
+    except (TypeCoercionError, MissingFieldError) as e:
+        if reads_none_word:
+            raise e._with_none_remedy() from None
+        raise
 
 
 def _construct_union_by_tag(non_none: list[Any], data: dict[str, Any], path: str, union_tag: str) -> Any:

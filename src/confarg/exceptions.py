@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -18,6 +18,11 @@ def _locals_file_flag(config_flag: str, locals_key: str) -> str | None:
     ``config_flag=""`` suppresses the config-file flag, and then no message may offer it.
     """
     return f"--{config_flag}.{locals_key} FILE" if config_flag else None
+
+
+def _append_none_remedy(message: str) -> str:
+    """Return *message* followed by the remedy for a field whose ``None`` a channel spells as a none word."""
+    return f"{message.removesuffix('.')}. To set this field to None, pass 'none' or 'null'."
 
 
 def _in_expression(expression: str, reason: object) -> str:
@@ -36,6 +41,17 @@ def _in_expression(expression: str, reason: object) -> str:
 
 class ConfargError(Exception):
     """Base exception for all confarg errors."""
+
+    def _with_none_remedy(self) -> Self:
+        """Return an error of this type whose message ends with the none-word remedy.
+
+        For an optional field that failed on a channel token: the error its one variant raised,
+        and how to set the field to ``None`` instead.
+
+        Dev Notes:
+            docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
+        """
+        return type(self)(_append_none_remedy(str(self)))
 
     @classmethod
     def missing_value(cls, token: str, usage: str = "<value>") -> ConfargError:
@@ -117,9 +133,7 @@ class TypeCoercionError(ConfargError):
         as a none word, offered only when the union counts ``None`` among its variants.
         """
         msg = f"Cannot coerce {src} {value!r} to {tp} at '{path}'"
-        if none_sentinel:
-            msg += ". To set this field to None, pass 'none' or 'null'."
-        return cls(msg)
+        return cls(_append_none_remedy(msg) if none_sentinel else msg)
 
     @classmethod
     def wrong_shape(cls, src: str, value: Any, what: str, accepted: str, path: str) -> TypeCoercionError:
