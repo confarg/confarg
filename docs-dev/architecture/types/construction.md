@@ -92,7 +92,7 @@ indifferent to both.
   traceback out of `build()`: it is caught and the field is reported missing like any other.
   Catching it is preferred to asking the question up front — there is no way to ask short of
   calling the constructor, and a class whose `__init__` has side effects should be called once,
-  not twice. Every missing field goes through `_missing_field_error`, so its type never changes
+  not twice. Every missing field raises the one `MissingFieldError(path, type)`, so its type never changes
   the message ([invariants](../invariants.md#delegate-to-the-canonical-function)).
 - An index-keyed dict for a tuple field with a default patches the default in place, unless
   the merge layer carried a base (`"*"`), which wins.
@@ -123,8 +123,8 @@ CLI accepts for it. The two spell a sequence element differently: the path write
 `[0]`, like an expression (`${items[0].size}`) and `dump()`'s errors, while the CLI writes
 the index as one more dotted segment. So `items[0].size` is reported missing with the remedy
 `--items.0.size`, which every front-end accepts; `--items[0].size` was refused as an unknown
-argument (BUG-165). `_missing_field_error` is the one site that spells the remedy, so every
-missing field below a list, a fixed or variable tuple, or a nested sequence gets it right.
+argument (BUG-165). `MissingFieldError.__str__` is the one site that spells the remedy, so
+every missing field below a list, a fixed or variable tuple, or a nested sequence gets it right.
 
 The flag is spelled by rewriting each `[N]` of the path string, which is the one place the
 path's segments are not recoverable exactly: a dict key literally spelled `x[0]` is
@@ -134,3 +134,24 @@ that threads a path through construction and of the public `construct(path=...)`
 string rewrite was chosen over it (maintainer-chosen). The field name itself keeps the `[0]`
 spelling, so the message's two halves read the same path two ways rather than every
 construction error changing its spelling.
+
+The flag also lives under the `cli_prefix`, which `build()` never sees: it turns a dict into
+an object and knows no command line. So the error carries the field's path and type, and
+spells its message when it is shown rather than when it is raised. `load()` and the adapters'
+`from_*` build through `_api._build_for_cli`, which sets on a `MissingFieldError` the prefix
+the merge resolved and re-raises it, traceback intact: under `cli_prefix="app"` the remedy is
+`--app.port`, a flag the CLI accepts, where `--port` was refused as outside the prefix
+(BUG-168). The target itself, a scalar root, has the same error with an empty path: its remedy
+is the bare `--app`, and with no prefix, which leaves the bare flag no spelling
+([CLI parsing](../cli-parsing/cli-prefix.md#cli_prefix)), the root cast `--json`. It used to
+offer the literal placeholder `--<prefix>`. click spells a missing option the same way:
+`MissingParameter` holds the parameter and builds its hint in `format_message()`, not when
+it is raised.
+
+Rejected: a `cli_prefix` keyword on the public `build()`, threaded through `construct()`
+down to the error. It would let `merge()` then `build()` spell the prefixed flag when the
+caller repeats the prefix, but it puts a CLI presentation concern on the dict-to-object step,
+and every recursive `construct()` call would carry one more argument. Also rejected: a
+context variable that `load()` sets around `build()`, which is hidden global state. The cost
+of the chosen shape is that `build()` called directly, after `merge(cli_prefix=...)` or on a
+hand-built dict, still offers the unprefixed flag (maintainer-chosen).

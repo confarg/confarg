@@ -57,6 +57,12 @@ def merge_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) -
     return _merge_app(target, app, _resolve_options("merge_app", opts))
 
 
+def _app_prefix(app: cyclopts.App, options: _Options) -> str:
+    """Return the prefix *app*'s flags were registered under, reconciled with the one passed."""
+    meta = _app_meta.get(id(app))
+    return resolve_prefix(meta.get(PREFIX_ATTR) if meta else None, options.cli_prefix)
+
+
 def _merge_app(target: object, app: cyclopts.App, options: _Options) -> dict[str, Any]:
     """Parse *app*'s argv and merge every source; :func:`merge_app` with its options resolved."""
     meta = _app_meta.get(id(app))
@@ -68,7 +74,7 @@ def _merge_app(target: object, app: cyclopts.App, options: _Options) -> dict[str
     # occurrence is a missing value, not a no-op -- so it is refused instead, before
     # cyclopts parses, with confarg's own error.  Both scans read the argv the user
     # typed (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
-    prefix = resolve_prefix(meta.get(PREFIX_ATTR) if meta else None, options.cli_prefix)
+    prefix = _app_prefix(app, options)
     tokens = options.argv
     if options.config_flag:
         # A bare --config[.subpath] must be refused before cyclopts parses it, with
@@ -125,7 +131,8 @@ def from_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) ->
         An instance of *target* populated from all sources.
     """
     options = _resolve_options("from_app", opts)
-    return _construct_from_merged(target, _merge_app(target, app, options), options.union_tag)
+    merged = _merge_app(target, app, options)
+    return _construct_from_merged(target, merged, options.union_tag, _app_prefix(app, options))
 
 
 __all__ = ["from_app", "merge_app"]

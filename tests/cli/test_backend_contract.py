@@ -6586,3 +6586,49 @@ class TestMissingFieldRemedyContract:
             whole_value_arity_loader.load(_RemedyPoint, argv=["--p", "[1]"], env={})
         cfg = whole_value_arity_loader.load(_RemedyPoint, argv=["--p", "[1]", "--p.y", "2"], env={})
         assert cfg.p == _Point(1, 2)
+
+    @pytest.mark.parametrize(
+        ("target", "argv", "flag"),
+        [
+            pytest.param(_RemedyItem, ["--app.name", "a"], "--app.size", id="field"),
+            pytest.param(_RemedyList, ["--app.items.0.name", "a"], "--app.items.0.size", id="list-element"),
+            pytest.param(_RemedyOptionalPoint, ["--app.p", "1"], "--app.p.y", id="short-optional-namedtuple-run"),
+        ],
+    )
+    def test_remedy_flag_is_spelled_under_the_cli_prefix(
+        self,
+        loader: ConfargLoader,
+        target: type,
+        argv: list[str],
+        flag: str,
+    ) -> None:
+        """Under a ``cli_prefix`` the remedy names the flag inside it, the one the CLI accepts (BUG-168)."""
+        with pytest.raises(MissingFieldError) as exc_info:
+            loader.load(target, argv=argv, env={}, cli_prefix="app")
+        remedy = re.search(r"Set it via CLI \((\S+)\)", str(exc_info.value))
+        assert remedy is not None
+        assert remedy.group(1) == flag
+        loader.load(target, argv=[*argv, flag, "1"], env={}, cli_prefix="app")
+
+    @pytest.mark.parametrize(
+        ("cli_prefix", "usage", "argv"),
+        [
+            pytest.param("app", "--app <value>", ["--app", "5"], id="prefix"),
+            pytest.param("", "--json <json>", ["--json", "5"], id="no-prefix"),
+        ],
+    )
+    def test_scalar_root_remedy_names_the_flag_that_sets_it(
+        self,
+        loader: ConfargLoader,
+        cli_prefix: str,
+        usage: str,
+        argv: list[str],
+    ) -> None:
+        """A scalar target no channel supplied names its flag: the bare prefix, or the root cast without one (BUG-168).
+
+        Without a prefix the bare ``--<prefix>`` has no spelling, so the remedy offers the root
+        ``json`` cast, the one CLI spelling such a root keeps.
+        """
+        with pytest.raises(MissingFieldError, match=re.escape(f"via CLI flag ({usage})")):
+            loader.load(int, argv=[], env={}, cli_prefix=cli_prefix)
+        assert loader.load(int, argv=argv, env={}, cli_prefix=cli_prefix) == 5

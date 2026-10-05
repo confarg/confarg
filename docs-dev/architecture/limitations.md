@@ -109,6 +109,10 @@ the boundary moves here.
   requires a JSON object there ([CLI parsing](cli-parsing/cli-prefix.md#cli_prefix)). It is
   spelled through its tag instead (`--<cli_prefix>.class uuid.UUID --<cli_prefix>.hex …`),
   or supplied by the file and environment channels.
+- A `MissingFieldError` names the flag under the `cli_prefix` only when `load()` or an adapter's
+  `from_*` built the object: `build()` is never given the prefix, so called directly, even on
+  what `merge(cli_prefix="app")` returned, it offers `--port` where the CLI accepts
+  `--app.port` ([types](types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
 
 ## Subclasses
 

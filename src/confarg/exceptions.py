@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
@@ -18,6 +19,9 @@ def _locals_file_flag(config_flag: str, locals_key: str) -> str | None:
     ``config_flag=""`` suppresses the config-file flag, and then no message may offer it.
     """
     return f"--{config_flag}.{locals_key} FILE" if config_flag else None
+
+
+_PATH_INDEX = re.compile(r"\[(\d+)\]")
 
 
 def _append_none_remedy(message: str) -> str:
@@ -102,7 +106,55 @@ class ConfargError(Exception):
 
 
 class MissingFieldError(ConfargError):
-    """Raised when a required field is not provided by any source."""
+    """Raised when a required field is not provided by any source.
+
+    The message is spelled when the error is shown rather than when it is raised: its remedy
+    names the CLI flag that sets the field, and every flag lives under the ``cli_prefix`` only
+    the front-end that parsed the command line knows. :func:`confarg.load` and the adapters'
+    ``from_*`` spell it under theirs; :func:`confarg.build` is given none.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it
+    """
+
+    def __init__(self, path: str, field_type: Any) -> None:
+        """Record the field of type *field_type* at construction path *path*; ``""`` is the target itself."""
+        super().__init__(path, field_type)
+        self._path = path
+        self._field_type = field_type
+        self._cli_prefix = ""
+        self._none_remedy = False
+
+    def __str__(self) -> str:
+        """Return the message, its remedy naming the flag the CLI accepts under ``_cli_prefix``.
+
+        A field's flag spells each ``[i]`` of its path as the CLI segment ``.i``:
+        ``items[0].size`` names ``--items.0.size``. The target itself is set by the bare
+        ``--<prefix>``, or, with no prefix, by the root ``json`` cast alone.
+        """
+        # Imported here: confarg._cast imports this module.
+        from confarg._cast import JSON_CAST_NAME  # noqa: PLC0415
+
+        if self._path:
+            flag = _PATH_INDEX.sub(r".\1", self._path).removeprefix(".")
+            flag = f"{self._cli_prefix}.{flag}" if self._cli_prefix else flag
+            message = (
+                f"Missing required field '{self._path}' of type {self._field_type!r}. "
+                f"Set it via CLI (--{flag}), environment variable, or config file."
+            )
+        else:
+            usage = f"--{self._cli_prefix} <value>" if self._cli_prefix else f"--{JSON_CAST_NAME} <json>"
+            message = (
+                f"No value provided for target type {self._field_type!r}."
+                f" Provide a value via CLI flag ({usage}), environment variable, or config file."
+            )
+        return _append_none_remedy(message) if self._none_remedy else message
+
+    def _with_none_remedy(self) -> Self:
+        """Return this error with the none-word remedy after its message, still spelled when shown."""
+        error = type(self)(self._path, self._field_type)
+        error._none_remedy = True
+        return error
 
 
 class SymbolImportError(ConfargError):

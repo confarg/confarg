@@ -71,10 +71,19 @@ def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]
 
 def _merge(target: type | TypeAliasType | UnionType, options: _Options) -> dict[str, Any]:
     """Merge every source into a raw dict; :func:`merge` with its options resolved."""
-    # Vanilla registers no flags, so omitting the prefix means the registered one: none.
-    cli_prefix = "" if options.cli_prefix is None else options.cli_prefix
-    cli_data, cli_configs = _parse_cli(options.argv, target, cli_prefix, options.config_flag, options.union_tag)
+    cli_data, cli_configs = _parse_cli(
+        options.argv,
+        target,
+        _cli_prefix(options),
+        options.config_flag,
+        options.union_tag,
+    )
     return _merge_sources(target, cli_data, cli_configs, options)
+
+
+def _cli_prefix(options: _Options) -> str:
+    """Return the prefix vanilla's flags start with: omitted means the registered one, and vanilla registers none."""
+    return "" if options.cli_prefix is None else options.cli_prefix
 
 
 def _strip_locals(data: dict[str, Any], target: Any, union_tag: str) -> dict[str, Any]:
@@ -143,13 +152,25 @@ def build[T](
     if not is_dataclass:
         raw = resolved.get(_defaults.ROOT_KEY, _MISSING)
         if raw is _MISSING:
-            msg = (
-                f"No value provided for target type {target_r!r}."
-                " Provide a value via CLI flag (--<prefix> <value>), environment variable, or config file."
-            )
-            raise MissingFieldError(msg)
+            raise MissingFieldError(path="", field_type=target_r)
         return _tc(target_r, raw, union_tag=union_tag)
     return _tc(target_r, resolved, union_tag=union_tag)
+
+
+def _build_for_cli(target: Any, data: dict[str, Any], union_tag: str, cli_prefix: str) -> Any:
+    """Return :func:`build`'s result, a ``MissingFieldError`` naming its flag under *cli_prefix*.
+
+    The front-ends that parsed the command line build through it -- :func:`load` and the
+    adapters' ``from_*`` -- since :func:`build` knows no prefix.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it
+    """
+    try:
+        return build(target, data, union_tag=union_tag)
+    except MissingFieldError as e:
+        e._cli_prefix = cli_prefix
+        raise
 
 
 def resolve(data: dict[str, Any]) -> dict[str, Any]:
@@ -240,7 +261,7 @@ def load[T](target: type[T] | TypeAliasType | UnionType, **opts: Unpack[MergeOpt
         ExpressionEvalError: If an expression fails at runtime.
     """
     options = _resolve_options("load", opts)
-    return build(target, _merge(target, options), union_tag=options.union_tag)
+    return _build_for_cli(target, _merge(target, options), options.union_tag, _cli_prefix(options))
 
 
 def dump(
