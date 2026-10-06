@@ -43,7 +43,7 @@ The loop runs in `host_parsed` mode, which differs from vanilla in one respect o
 host owns is skipped with its values instead of refused. That is a positional or subcommand
 token no flag consumed, a flag outside `cli_prefix`, or, with no prefix, a flag whose first
 segment names no member of the target. Anything inside confarg's namespace is parsed exactly as
-vanilla parses it, so a flag the registration accepted and vanilla refuses (BUG-112, BUG-113)
+vanilla parses it, so a flag the registration accepted and vanilla refuses (BUG-113)
 raises vanilla's error at merge rather than being dropped. One stray needs the host's answer:
 argparse and cyclopts register a multi-token or fixed-arity flag greedily, so the token after
 the run vanilla consumes was bound to the flag and is the stray vanilla refuses, while click and

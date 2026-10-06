@@ -197,10 +197,15 @@ is `[13, 42]`, the reverse order patches the positions, and `--pt.x 1 --pt 7 8 -
 `{'*': [7, 8], 'y': 2}`
 ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#a-namedtuples-arity-flag-and-its-sub-flags-merge-in-argv-order)).
 
-A sub-flag one level below a struct-shaped field — a struct, or another namedtuple, however
-wrapped — is not a scalar, and the spellings of such a field take what that field type takes at
-any other depth (BUG-68): the static walk recurses into them as it recurses into a struct's
-fields, so `--pt.inner.a` registers next to `--pt.inner`, under the index spellings too.
+Each field of a namedtuple, under each of its spellings, registers the flags that field type
+registers as a struct's field: the static walk sends every one through the per-field
+registration a struct's fields go through (`cli/_build._specs_for_field`). So `--pt.inner.a`
+registers next to `--pt.inner` below a struct-shaped field (BUG-68), a `list[str]` field is the
+greedy flag vanilla's loop consumes as a run, a union of structs takes its tag and its variants'
+flags, and a `Literal` field offers its choices — under the index spellings too (BUG-112). A
+field kind registered on a path of its own is the gap BUG-68 closed for the struct-shaped fields
+and BUG-112 for the rest: whatever the one per-field registration learns, a namedtuple's fields
+learn with it.
 
 Everything else about a namedtuple is shared — the arity flag, the per-field and per-index
 flags (the negative index included, BUG-80), and the vanilla positional form

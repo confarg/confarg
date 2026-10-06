@@ -629,6 +629,20 @@ class _WithHelpPoint:
     pt: _HelpPoint = field(default_factory=_HelpPoint)
 
 
+class _HelpTagged(NamedTuple):
+    """Namedtuple whose fields carry their own help (BUG-112)."""
+
+    name: str = "n"
+    tags: list[str] = []  # noqa: RUF012  # a namedtuple field, never mutated
+    """Labels attached to the point."""
+    inner: _HelpPoint = _HelpPoint()
+
+
+@dataclass
+class _WithHelpTagged:
+    tagged: _HelpTagged = field(default_factory=_HelpTagged)
+
+
 @dataclass
 class _WithHelpPair:
     pair: tuple[str, str] = ("left", "right")
@@ -653,8 +667,16 @@ class TestHelpHidesIndexSpellings:
         """The advertised name spelling tells the field's position, since its index flags are hidden."""
         parser = make_parser(_WithHelpPoint, config_flag="")
         helps = {s: a.help for a in parser._actions for s in a.option_strings}
-        assert helps["--pt.x"] == "Field 'x' of _HelpPoint (index 0)"
-        assert helps["--pt.y"] == "Field 'y' of _HelpPoint (index 1)"
+        assert helps["--pt.x"] == "(index 0) (default: 0)"
+        assert helps["--pt.y"] == "(index 1) (default: 0)"
+
+    def test_namedtuple_field_help_is_a_struct_fields_with_its_position(self) -> None:
+        """Every field of a namedtuple keeps its docstring and default, then names its position (BUG-112)."""
+        parser = make_parser(_WithHelpTagged, config_flag="")
+        helps = {s: a.help for a in parser._actions for s in a.option_strings}
+        assert helps["--tagged.tags"] == "Labels attached to the point. (index 1) (default: [])"
+        assert helps["--tagged.inner"] == "(index 2) (default: _HelpPoint(x=0, y=0)) (positional order: x, y)"
+        assert helps["--tagged.inner.x"] == "(index 0) (default: 0)"
 
     def test_tuple_element_flag_hidden_when_typed(self) -> None:
         """A fixed tuple's element flag, registered from argv, is kept out of --help."""

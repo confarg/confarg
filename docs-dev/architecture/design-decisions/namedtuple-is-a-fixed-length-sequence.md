@@ -54,6 +54,13 @@ only holdout.
   keys from, so all front-ends accept exactly the
   same spellings and no odd form like `-0`, `+0` or `007` slips through (BUG-97). The plain
   fixed tuple does not use it yet (BUG-108).
+- Follow-through: the identity reaches registration (BUG-112). A namedtuple's fields are
+  the fields of a struct whose names are also positions, so the adapters register each of
+  them, at each spelling, through the one per-field registration a struct's field goes
+  through (`cli/_build._specs_for_field`). Registering only the struct-shaped fields that way
+  (BUG-68) and every other field as a one-token scalar left a `list[str]` field refused by the
+  framework after its first token, while vanilla's loop, which resolves a namedtuple field
+  as any other, took the run.
 - Boundary: taking a whole `{...}` or `[...]` token on a fixed-arity flag needs a framework
   that can vary a flag's token count at parse time. argparse and cyclopts can and now do;
   click cannot and declines, the approved divergence argued in

@@ -87,13 +87,10 @@ def _extend_walk_field(  # noqa: PLR0913, C901
                 specs.append(
                     _whole_value_spec(
                         flag,
-                        name,
-                        raw_type,
                         _resolve_type(raw_type),
+                        _build_help(name, raw_type, docstrings, defaults, flag=flag),
                         group,
                         group_description,
-                        docstrings,
-                        defaults,
                     ),
                 )
                 ctx.existing_dests.add(flag)
@@ -118,13 +115,10 @@ def _extend_walk_field(  # noqa: PLR0913, C901
             specs.append(
                 _whole_value_spec(
                     flag,
-                    name,
-                    raw_type,
                     _resolve_type(raw_type),
+                    _build_help(name, raw_type, docstrings, defaults, flag=flag),
                     group,
                     group_description,
-                    docstrings,
-                    defaults,
                 ),
             )
             ctx.existing_dests.add(flag)
@@ -146,13 +140,10 @@ def _extend_walk_field(  # noqa: PLR0913, C901
             specs.append(
                 _whole_value_spec(
                     flag,
-                    name,
-                    raw_type,
                     _resolve_type(raw_type),
+                    _build_help(name, raw_type, docstrings, defaults, flag=flag),
                     group,
                     group_description,
-                    docstrings,
-                    defaults,
                 ),
             )
             ctx.existing_dests.add(flag)

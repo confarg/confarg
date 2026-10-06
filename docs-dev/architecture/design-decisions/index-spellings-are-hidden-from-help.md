@@ -24,6 +24,17 @@ The cost is discoverability: a reader of `--help` no longer sees that `--pair.0`
 That is the same trade every framework's own `hidden`/`SUPPRESS` mechanism takes, and the
 name spelling is always visible beside it.
 
+The name spelling therefore carries the position the hidden ones would have shown. A
+namedtuple field's help is the help any struct field gets — its `FieldMeta.help` or attribute
+docstring, its default, the none hint — with `(index <i>)` before the default
+(`_spec._build_help`'s *position*): `--pt.tags` reads `Labels. (index 1) (default: [])`. The
+namedtuple's own arity flag is its field's whole-value flag, so it reads like one, followed by
+the order its positions take (`(positional order: x, y)`). Until BUG-112 the leaf fields read
+`Field 'x' of Pt (index 0)` instead, which dropped the docstring and the default, while the
+struct-shaped fields read like a struct's field and dropped the position. One help for every
+field is what one per-field registration gives. Precedent: tyro documents a `NamedTuple`'s
+fields with the docstrings and defaults it shows for a dataclass's.
+
 Precedent: argparse's `SUPPRESS`, click's `hidden=True` and cyclopts's `show=False` all
 exist precisely for flags a tool accepts but declines to advertise; using the mechanisms
 the frameworks ship means completion and parsing keep their native behavior, and only the
