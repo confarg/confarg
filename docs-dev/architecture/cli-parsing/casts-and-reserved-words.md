@@ -37,7 +37,9 @@ field named `locals` beats the locals namespace. One predicate decides it everyw
 `_segment_names_real_field`: the union tag, structs (a subclass-only field included),
 namedtuples and (recursively) union variants are
 checked for the name; dicts accept any key so the name is always real there; lists, sets,
-tuples, callables and scalars have no named members, so the word is reserved.
+tuples, callables and scalars have no named members, so the word is reserved. The CLI asks it
+of the walk target, so a dict *root*, whose keys no flag addresses, leaves `json` to the root
+cast ([cli_prefix](cli-prefix.md#a-non-struct-root-is-set-whole)).
 
 Keep this predicate canonical: casts, the locals name derivation, the env `__json` cast, the
 env channel's unknown-field warning (BUG-90) and the adapters' cast-flag registration all rely on it answering identically.

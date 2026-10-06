@@ -140,7 +140,11 @@ spells its message when it is shown rather than when it is raised. `load()` and 
 `from_*` build through `_api._build_for_cli`, which sets on a `MissingFieldError` the prefix
 the merge resolved and re-raises it, traceback intact: under `cli_prefix="app"` the remedy is
 `--app.port`, a flag the CLI accepts, where `--port` was refused as outside the prefix
-(BUG-168). The target itself, a scalar root, has the same error with an empty path: its remedy
+(BUG-168). A field inside a non-struct target's value has no flag of its own, since such a root
+is [set whole](../cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole). `build()` marks
+the error so, and its remedy names the root cast that sets the whole value, `--app.json <json>`
+(`--json <json>` with no prefix), where it had offered `--0.size`, which reads as a positional
+(BUG-172). The target itself, a scalar root, has the same error with an empty path: its remedy
 is the bare `--app`, and with no prefix, which leaves the bare flag no spelling
 ([CLI parsing](../cli-parsing/cli-prefix.md#cli_prefix)), the root cast `--json`. It used to
 offer the literal placeholder `--<prefix>`. click spells a missing option the same way:

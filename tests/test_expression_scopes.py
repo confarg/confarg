@@ -59,6 +59,17 @@ class Cfg:
 
 
 @dataclass
+class Mounts:
+    """Root whose dict fields take whatever a file mounted at them holds.
+
+    A dict root would not do: a non-struct root is set whole, so nothing mounts below it.
+    """
+
+    db: dict[str, Any] = field(default_factory=dict)
+    a: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class Limits:
     """Block whose keys are named like whitelisted expression functions."""
 
@@ -138,7 +149,7 @@ class TestAMalformedExpressionInAMountedFile:
             "config-flag": (["--config.db", str(frag)], {}),
             "env-pointer": ([], {"MYAPP_CONFIG__DB": str(frag)}),
         }[route]
-        merged = confarg.merge(dict[str, Any], argv=argv, env=env, env_prefix="MYAPP_")
+        merged = confarg.merge(Mounts, argv=argv, env=env, env_prefix="MYAPP_")
         node, prefix = (merged, "") if route == "root" else (merged["db"], "db.")
         assert node == {"p": 1, "q": "${p +}", "r": "${" + prefix + "p} and ${p +}"}
         with pytest.raises(UnsafeExpressionError, match=r"^Error in expression '\$\{p \+\}': Invalid syntax$"):
@@ -148,7 +159,7 @@ class TestAMalformedExpressionInAMountedFile:
         """The parser's own give-up is a body that does not parse, not a crash of ``merge()`` (BUG-137)."""
         body = "-" * 100_000 + "p"
         frag = write(tmp_path, "frag.yaml", f"p: 1\nq: ${{{body}}}\n")
-        merged = confarg.merge(dict[str, Any], argv=["--config.db", str(frag)], env={})
+        merged = confarg.merge(Mounts, argv=["--config.db", str(frag)], env={})
         assert merged == {"db": {"p": 1, "q": "${" + body + "}"}}
         with pytest.raises(
             UnsafeExpressionError,
@@ -304,7 +315,7 @@ class TestAMountPathIsSpelledSegmentBySegment:
         """``--config.<path>`` mounts a file whose own includes land below that path."""
         write(tmp_path, "frag.yaml", SELF_READING)
         mid = write(tmp_path, "mid.yaml", f"web-1:\n  {INCLUDE_KEY}: ./frag.yaml\n")
-        data = confarg.merge(dict[str, Any], argv=["--config.a", str(mid)], env={})
+        data = confarg.merge(Mounts, argv=["--config.a", str(mid)], env={})
         assert data == {"a": {"web-1": {"p": 1, "q": "${a['web-1'].p}"}}}
         assert confarg.resolve(data) == {"a": {"web-1": {"p": 1, "q": 1}}}
 

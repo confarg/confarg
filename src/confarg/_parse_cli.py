@@ -229,7 +229,7 @@ def _walk_path(target: Any, parts: list[str], union_tag: str, *, tag_fallback: b
                 yield from walk(dict[str, Any], here, str_subtree=False)
             elif (advanced := _advance_field_type(node, part)) is not None:
                 yield from walk(advanced, here, str_subtree=False)
-            elif tag_fallback and part == union_tag:
+            elif tag_fallback and part == union_tag and not getattr(node, _LOCALS_GRAFT, False):
                 # The tag is the fallback, so it resolves only at a position no member
                 # of its exact spelling reaches.
                 yield from walk(str, here, str_subtree=True)
@@ -711,32 +711,42 @@ def _strip_cli_prefix(raw_key: str, cli_prefix: str, token: str) -> str:
     return "" if raw_key == cli_prefix else raw_key.removeprefix(f"{cli_prefix}.")
 
 
+_LOCALS_GRAFT = "_confarg_locals_graft"
+
+
 @functools.cache
 def _locals_walk_root(locals_keys: tuple[str, ...]) -> Any:
     """Return a dataclass with one ``dict[str, Any]`` field per local-variables key.
 
     Grafted onto the walk target by :func:`_walk_target` so ``--<key>.<name>`` paths
-    resolve like a real dict field. Validation happens in the pipeline, not here.
+    resolve like a real dict field. It answers those keys and nothing else: no class is
+    dispatched on it, so :func:`_walk_path` never answers the union tag at it.
+    Validation happens in the pipeline, not here.
 
     Dev Notes:
         docs-dev/architecture/locals.md#walk-target-graft
     """
     name = "_LocalsRoot_" + "_".join(locals_keys)
-    return dataclasses.make_dataclass(name, [(key, dict[str, Any]) for key in locals_keys])
+    fields = [(key, dict[str, Any]) for key in locals_keys]
+    return dataclasses.make_dataclass(name, fields, namespace={_LOCALS_GRAFT: True})
 
 
 def _walk_target(target: Any, locals_keys: tuple[str, ...]) -> Any:
     """Return the target to resolve dotted paths against, with the locals namespace grafted on.
 
-    Use the result *only* for path resolution; classify the root (scalar vs struct)
-    and check config-flag conflicts against the real ``target``. *locals_keys* must
-    come from :func:`_locals_keys`: grafting a name that is also a real field silently
-    routes ``--<name>.x`` away from that field. Nested namespaces are handled by
+    A non-struct root is set whole, from ``__root__``, so no dotted path reaches into its
+    value: its walk target is the locals namespace beside it, alone. Use the result *only*
+    for path resolution; classify the root (scalar vs struct) and check config-flag
+    conflicts against the real ``target``. *locals_keys* must come from
+    :func:`_locals_keys`: grafting a name that is also a real field silently routes
+    ``--<name>.x`` away from that field. Nested namespaces are handled by
     :func:`_resolve_field_type` itself.
 
     Dev Notes:
-        docs-dev/architecture/locals.md#walk-target-graft
+        docs-dev/architecture/cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole
     """
+    if not _is_struct_like(_resolve_type(target)):
+        return _locals_walk_root(locals_keys)
     if not locals_keys:
         return target
     return target | _locals_walk_root(locals_keys)
@@ -819,6 +829,9 @@ def _check_mount_subpath(target: Any, subpath: str, union_tag: str, spelling: st
     for j in range(1, len(parts) + 1):
         if _resolve_field_type(walk_target, parts[:j], union_tag) is not None:
             continue
+        if j == 1 and not _is_struct_like(_resolve_type(target)):
+            name = _mount_owner(target)[0]
+            raise ConfargError.mount_below_a_value_root(spelling, name, _defaults.ROOT_KEY)
         owner = _resolve_field_type(target, parts[: j - 1], union_tag)
         name, valid = _mount_owner(owner)
         raise ConfargError.no_such_mount_point(spelling, name, valid)

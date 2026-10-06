@@ -26,3 +26,37 @@ along, so vanilla's `UnknownArgumentError` is the refusal the five front-ends sh
 registered leaf as the root keeps its flat tagged spelling
 (`--<prefix>.class uuid.UUID --<prefix>.hex …`), the one
 [a registered leaf is opted back in with](../design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in).
+
+## A non-struct root is set whole
+
+`build()` reads a non-struct root from `__root__` alone, so no flag addresses a path below it
+(BUG-172): `--app.0.size` on a `list[Item]` root, `--app.k` on a dict root, `--app.x` on a
+namedtuple root and the tag `--app.class` on an `int` root are all `UnknownArgumentError`.
+Vanilla had written each at the top of the merged dict, beside `__root__`, where the value was
+dropped without a word. The adapters refused the element flags they never registered, and
+accepted the ones the walk let them register. Such a root is spelled whole: the bare
+`--<prefix>` or the [root cast](casts-and-reserved-words.md#force-casts) `--<prefix>.json`,
+and a missing field below it names that cast as its remedy
+([construction](../types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
+
+One decision-maker settles it: `_walk_target`, which every dotted path is resolved against —
+vanilla's loop, the adapters' patch-flag registration, the host-mode skip and the mount check.
+For a non-struct root it is the [locals graft](../locals.md#walk-target-graft) alone, so the
+namespace beside the root value stays addressable (`--app.locals.n`), and nothing else does.
+Three consequences follow from that one answer:
+
+- A dict root's `--<prefix>.json` (and `--json` without a prefix) is the root cast, not a key
+  named `json`: no key of that dict is a CLI member, so the
+  [real field wins](casts-and-reserved-words.md#real-field-wins) rule has nothing to yield to.
+- A config file mounted below the root (`--app.config.0`, `APP_CONFIG__0`) is refused with
+  the error that says so. A root config file writes the value under `__root__` instead.
+- With no prefix, an adapter's host owns every dotted flag on such a root, locals aside,
+  since the host-mode skip asks the same walk.
+
+Writing the path under `__root__` as a patch was rejected. It is a feature, not a fix: the
+four adapters would have to register element flags of a collection root, and the environment
+would need `APP_0_SIZE` for parity, the opposite of the direction BUG-115 takes for it. A list
+root without a prefix would still have no spelling, since `--0.size` reads as a positional.
+Hydra wants a mapping as its primary config, and pydantic-settings and simple_parsing want a
+model or a dataclass at the root. tyro is the exception: it registers `--0.x` below a tuple of
+dataclasses.

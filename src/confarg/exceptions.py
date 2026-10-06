@@ -121,6 +121,18 @@ class ConfargError(Exception):
             return cls(f"{spelling} names no field of {owner} to mount a config file at: it holds no nested fields.")
         return cls(f"{spelling} names no field of {owner} to mount a config file at. Valid fields: {list(valid)}.")
 
+    @classmethod
+    def mount_below_a_value_root(cls, spelling: str, owner: str, root_key: str) -> ConfargError:
+        """Return the error for a mount flag whose subpath reaches into a non-struct root's value.
+
+        Such a root is set whole, from *root_key*, so no subpath of it is a mount point,
+        whatever its type would hold there.
+        """
+        return cls(
+            f"{spelling} mounts a config file below the {owner} root, which is set whole: "
+            f"write its value under {root_key!r} in a root config file instead.",
+        )
+
 
 class MissingFieldError(ConfargError):
     """Raised when a required field is not provided by any source.
@@ -140,6 +152,7 @@ class MissingFieldError(ConfargError):
         self._path = path
         self._field_type = field_type
         self._cli_prefix = ""
+        self._in_root_value = False
         self._none_remedy = False
 
     def __str__(self) -> str:
@@ -148,18 +161,21 @@ class MissingFieldError(ConfargError):
         The field is named as every construction message names it (``items[0].size``); its
         flag writes each segment of the path as one dotted CLI segment, an index included, so
         it names ``--items.0.size``, and a dict key spelled ``x[0]`` stays ``--d.x[0].size``.
-        The target itself is set by the bare ``--<prefix>``, or, with no prefix, by the root
-        ``json`` cast alone.
+        A field inside a non-struct target's value (``_in_root_value``) has no flag of its
+        own, so it names the root ``json`` cast that sets the whole value. The target itself
+        is set by the bare ``--<prefix>``, or, with no prefix, by the root ``json`` cast alone.
         """
         # Imported here: confarg._cast imports this module.
         from confarg._cast import JSON_CAST_NAME  # noqa: PLC0415
 
         if self._path:
-            flag = ".".join(str(segment) for segment in self._path)
+            segments = (JSON_CAST_NAME,) if self._in_root_value else self._path
+            flag = ".".join(str(segment) for segment in segments)
             flag = f"{self._cli_prefix}.{flag}" if self._cli_prefix else flag
+            usage = f"--{flag} <json>" if self._in_root_value else f"--{flag}"
             message = (
                 f"Missing required field '{_spell_field_path(self._path)}' of type {self._field_type!r}. "
-                f"Set it via CLI (--{flag}), environment variable, or config file."
+                f"Set it via CLI ({usage}), environment variable, or config file."
             )
         else:
             usage = f"--{self._cli_prefix} <value>" if self._cli_prefix else f"--{JSON_CAST_NAME} <json>"

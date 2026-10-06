@@ -2329,6 +2329,14 @@ class TestPipelineParity:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _RootItem:
+    """An element of a collection root."""
+
+    name: str
+    size: int
+
+
 class TestCliPrefixContract:
     """``cli_prefix`` namespaces every confarg flag, identically in every integration.
 
@@ -2453,6 +2461,67 @@ class TestCliPrefixContract:
     def test_no_prefix_registers_no_scalar_root_flag(self, populating_loader: ConfargLoader) -> None:
         """Without a prefix there is no flag name for a scalar root — as in vanilla."""
         assert populating_loader.registered_flags(int, config_flag="") == set()
+
+    @pytest.mark.parametrize(
+        ("target", "argv"),
+        [
+            pytest.param(list[_RootItem], ["--app.0.name", "a", "--app.0.size", "1"], id="list-element-field"),
+            pytest.param(list[_RootItem], ["--app.0", '{"name": "a", "size": 1}'], id="list-element"),
+            pytest.param(dict[str, int], ["--app.k", "1"], id="dict-key"),
+            pytest.param(tuple[int, int], ["--app.0", "1", "--app.1", "2"], id="fixed-tuple-element"),
+            pytest.param(_Point, ["--app.x", "1", "--app.y", "2"], id="namedtuple-field"),
+            pytest.param(int, ["--app.class", "X"], id="tag"),
+        ],
+    )
+    def test_path_below_a_non_struct_root_is_refused(
+        self,
+        loader: ConfargLoader,
+        target: type,
+        argv: list[str],
+    ) -> None:
+        """No flag addresses a path below a non-struct root: its value is set whole (BUG-172).
+
+        ``build()`` reads such a root from ``__root__`` alone, and vanilla wrote the path at the
+        top of the merged dict, where the value was dropped without a word.
+        """
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(target, argv=argv, env={}, cli_prefix="app", config_flag="")
+
+    @pytest.mark.parametrize(
+        ("target", "subpath"),
+        [
+            pytest.param(list[_RootItem], "0", id="list-element"),
+            pytest.param(dict[str, int], "k", id="dict-key"),
+            pytest.param(_Point, "x", id="namedtuple-field"),
+        ],
+    )
+    def test_mount_below_a_non_struct_root_is_refused(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        target: type,
+        subpath: str,
+    ) -> None:
+        """A config file mounted below a non-struct root is refused like the flag (BUG-172)."""
+        doc = tmp_path / "value.json"
+        doc.write_text("1")
+        with pytest.raises(ConfargError, match="which is set whole"):
+            loader.merge(target, argv=[f"--app.config.{subpath}", str(doc)], env={}, cli_prefix="app")
+
+    @pytest.mark.parametrize(
+        ("cli_prefix", "flag"),
+        [pytest.param("app", "--app.json", id="prefix"), pytest.param("", "--json", id="no-prefix")],
+    )
+    def test_root_json_cast_sets_a_dict_root(self, loader: ConfargLoader, cli_prefix: str, flag: str) -> None:
+        """On a dict root the root ``json`` cast sets the whole dict, rather than a key named ``json`` (BUG-172)."""
+        got = loader.load(dict[str, int], argv=[flag, '{"k": 1}'], env={}, cli_prefix=cli_prefix, config_flag="")
+        assert got == {"k": 1}
+
+    def test_locals_beside_a_non_struct_root_stay_addressable(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The locals namespace lives beside a non-struct root's value, so its flags stay accepted."""
+        cfg = tmp_yaml("locals:\n  n: 3\n__root__: ${locals.n}\n")
+        got = loader.load(int, argv=["--app.config", str(cfg), "--app.locals.n", "5"], env={}, cli_prefix="app")
+        assert got == 5
 
 
 # ---------------------------------------------------------------------------
@@ -2775,11 +2844,6 @@ class TestTagAtAnyPathContract:
         """``build()`` raises its own complaint on every front-end, not a parse-time rejection."""
         with pytest.raises(TypeCoercionError, match="Cannot coerce dict"):
             loader.load(_TagAnywhere, argv=["--leaf.class", "decimal.Decimal"], env={}, config_flag="")
-
-    def test_scalar_root_tag_merges_like_vanilla(self, loader: ConfargLoader) -> None:
-        """A tag on a scalar root under a ``cli_prefix`` merges as vanilla's does."""
-        merged = loader.merge(int, argv=["--v.class", "X"], env={}, cli_prefix="v", config_flag="")
-        assert merged == {"class": "X"}
 
     def test_tag_registers_only_when_typed(self, populating_loader: ConfargLoader) -> None:
         """The tag flag registers when typed and stays off --help otherwise."""
@@ -6410,6 +6474,15 @@ class TestUnionTagFieldCollision:
         result = loader.load(_KindFieldTarget, argv=["--Kind", "v"], env={}, union_tag="Kind")
         assert result == _KindFieldTarget(Kind="v")
 
+    def test_shadowed_field_flag_is_typed_by_the_field(self, loader: ConfargLoader) -> None:
+        """The field's own type reads the flag's value, as a field named otherwise is read.
+
+        The locals graft beside the root answered the tag by its fallback, so the walk's
+        two branches disagreed (``int`` and the tag's ``str``) and folded to ``str``.
+        """
+        merged = loader.merge(make_target("Kind", int), argv=["--Kind", "5"], env={}, union_tag="Kind")
+        assert merged == {"Kind": 5}
+
     def test_shadowed_field_on_dispatch_struct(self, loader: ConfargLoader) -> None:
         """A subclassed base with the colliding field still builds from its own field."""
         result = loader.load(_KindDispatchBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
@@ -6783,3 +6856,24 @@ class TestMissingFieldRemedyContract:
         with pytest.raises(MissingFieldError, match=re.escape(f"via CLI flag ({usage})")):
             loader.load(int, argv=[], env={}, cli_prefix=cli_prefix)
         assert loader.load(int, argv=argv, env={}, cli_prefix=cli_prefix) == 5
+
+    @pytest.mark.parametrize(
+        ("cli_prefix", "flag"),
+        [pytest.param("app", "--app.json", id="prefix"), pytest.param("", "--json", id="no-prefix")],
+    )
+    def test_remedy_below_a_non_struct_root_names_the_root_cast(
+        self,
+        loader: ConfargLoader,
+        cli_prefix: str,
+        flag: str,
+    ) -> None:
+        """A field below a non-struct root is set only with the whole root, so its remedy names the root cast (BUG-172).
+
+        No flag addresses a path below such a root: ``--0.size`` read as a positional, and
+        ``--app.0.size`` would be refused.
+        """
+        with pytest.raises(MissingFieldError) as exc_info:
+            loader.load(list[_RemedyItem], argv=[flag, '[{"name": "a"}]'], env={}, cli_prefix=cli_prefix)
+        assert f"Set it via CLI ({flag} <json>)" in str(exc_info.value)
+        got = loader.load(list[_RemedyItem], argv=[flag, '[{"name": "a", "size": 1}]'], env={}, cli_prefix=cli_prefix)
+        assert got == [_RemedyItem("a", 1)]

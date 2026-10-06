@@ -17,6 +17,9 @@ about an unknown segment and ignores the variable
 Fix direction: only the bare `<PREFIX>` (and the `<PREFIX>JSON` cast, already handled before
 this branch) should address a scalar root; anything else goes through the same unknown-field
 warning, so no channel gets a rule of its own. Found while closing REF-44.
+The CLI side is settled: a non-struct root is
+[set whole](../../architecture/cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole), and
+no flag addresses a path below it (BUG-172).
 
 ```python
 import warnings
