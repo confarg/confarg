@@ -58,23 +58,24 @@ def _expression_tolerant_convert(type_: Any, tokens: Any) -> Any:
     return cyclopts_convert(type_, tokens)
 
 
-#: One single-pass mapping, so a reserved token's spelling can never collide with a later
-#: search character the way chained `.replace()` calls can.
-_PYNAME_TRANS = str.maketrans({".": "__", "+": "__append_", "-": "__delete_"})
+def _escape_char(c: str) -> str:
+    """Spell *c* as an escape of :func:`_pyname`: ``_`` doubled, any other character ``_<hex>_``."""
+    return "__" if c == "_" else f"_{ord(c):x}_"
 
 
 def _pyname(name: str) -> str:
-    """Map a dotted CLI flag name to a valid, unique Python identifier.
+    """Map a CLI flag name to a valid Python identifier, distinct names to distinct ones.
 
-    ``.``, ``+`` (append config flags), and ``-`` (list/dict delete flags) are
-    not identifier characters; each maps to a reserved token.  The name_map
-    restores the original CLI name, so only validity and uniqueness matter here.
+    ASCII letters and digits are kept and every other character is escaped, ``_``
+    included; a leading digit and the first letter of a keyword are escaped too.
+    The name_map restores the CLI name.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/framework-specifics.md#cyclopts-parameter-names
     """
-    out = name.translate(_PYNAME_TRANS)
-    if out and out[0].isdigit():
-        out = f"_{out}"
-    if iskeyword(out):
-        out = f"{out}_"
+    out = "".join(c if c.isascii() and c.isalnum() else _escape_char(c) for c in name)
+    if out[:1].isdigit() or iskeyword(out):
+        out = _escape_char(out[0]) + out[1:]
     return out
 
 

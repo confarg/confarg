@@ -3629,12 +3629,12 @@ class _SequenceSegments:
 _NO_INDEX_SEGMENTS = ["+", "*", "-", "~", "foo", "01", "+1", "-0", "1_0"]
 
 
-def _xfail_cyclopts_on_no_identifier(loader: ConfargLoader, request: pytest.FixtureRequest, flag: str) -> None:
-    """Mark the test an expected failure on cyclopts when *flag* holds what its parameter name cannot."""
-    if loader.id == "cyclopts" and any(c in flag for c in "*~"):
-        request.applymarker(
-            pytest.mark.xfail(raises=ValueError, strict=True, reason="BUG-173: cyclopts cannot register the flag"),
-        )
+@dataclass
+class _NestedDicts:
+    """Dicts whose keys a flag spells, below the field and one level further (BUG-173)."""
+
+    d: dict[str, dict[str, int]] = dataclasses.field(default_factory=dict)
+    lists: dict[str, list[int]] = dataclasses.field(default_factory=dict)
 
 
 class TestCollectionPatchContract:
@@ -4068,6 +4068,41 @@ class TestCollectionPatchContract:
         }
         assert loader.load(_WithPatchPair, argv=argv, env={}).pair == _PatchPair("a", [1], {"k": 3})
 
+    @pytest.mark.parametrize("key", ["x[0]", "a/b", "a:b", "a b", "é", "class", "1x", "x__y"])
+    def test_dict_key_spelling_no_identifier(self, loader: ConfargLoader, key: str) -> None:
+        """A dict key is any string, whatever a Python identifier may hold (BUG-173).
+
+        Cyclopts names a parameter per flag, and once named ``--d.x[0].k``'s ``d__x[0]__k``,
+        which ``inspect.Parameter`` refused before parsing started.
+        """
+        cfg = loader.load(_NestedDicts, argv=[f"--d.{key}.k", "1"], env={})
+        assert cfg.d == {key: {"k": 1}}
+
+    @pytest.mark.parametrize(
+        ("base", "argv", "merged"),
+        [
+            ("{}", ["--d.a__b.c", "1", "--d.a.b__c", "2"], {"d": {"a__b": {"c": 1}, "a": {"b__c": 2}}}),
+            ("{}", ["--lists.x__append_", "1", "--lists.x+", "2"], {"lists": {"x__append_": [1], "x": [2]}}),
+            ("{d: {x: {k: 1}}}", ["--d.x.k__delete_", "2", "--d.x.k-"], {"d": {"x": {"k__delete_": 2}}}),
+        ],
+        ids=["separator", "append", "delete"],
+    )
+    def test_flags_one_parameter_name_could_spell_stay_apart(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        base: str,
+        argv: list[str],
+        merged: dict[str, Any],
+    ) -> None:
+        """Two flags are two parameters, even when a key spells what another's separator maps to (BUG-173).
+
+        Cyclopts once named both ``--d.a__b.c`` and ``--d.a.b__c`` ``d__a__b__c``, registered
+        the first alone and refused the second as an unknown option.
+        """
+        cfg = loader.load(_NestedDicts, argv=["--config", str(tmp_yaml(base)), *argv], env={})
+        assert {k: getattr(cfg, k) for k in merged} == merged
+
     def test_namespace_of_a_namedtuple_field(self, loader: ConfargLoader, tmp_path, tmp_yaml) -> None:
         """``--db.locals.h`` enters the namespace a namedtuple node holds, like a struct's (BUG-157)."""
         (tmp_path / "db.yaml").write_text("locals:\n  h: db.internal\nhost: ${locals.h}\n")
@@ -4080,7 +4115,6 @@ class TestCollectionPatchContract:
     def test_segment_spelling_no_index_below_a_sequence_is_refused(
         self,
         loader: ConfargLoader,
-        request: pytest.FixtureRequest,
         field: str,
         segment: str,
     ) -> None:
@@ -4092,7 +4126,6 @@ class TestCollectionPatchContract:
         lone ``+`` misses its name, as ``--sub.+`` does.
         """
         flag = f"--{field}.{segment}"
-        _xfail_cyclopts_on_no_identifier(loader, request, flag)
         with pytest.raises((UnknownArgumentError, SystemExit)) as excinfo:
             loader.merge(_SequenceSegments, argv=[flag, "5"], env={})
         if isinstance(excinfo.value, UnknownArgumentError):
@@ -4104,14 +4137,8 @@ class TestCollectionPatchContract:
             assert str(excinfo.value) == expected
 
     @pytest.mark.parametrize("flag", ["--xs.*-", "--xs.01-", "--d.k.+-", "--d.k.01-"])
-    def test_delete_of_a_segment_spelling_no_index_is_refused(
-        self,
-        loader: ConfargLoader,
-        request: pytest.FixtureRequest,
-        flag: str,
-    ) -> None:
+    def test_delete_of_a_segment_spelling_no_index_is_refused(self, loader: ConfargLoader, flag: str) -> None:
         """A delete below a sequence names an index ``str()`` writes, as a patch does (BUG-170)."""
-        _xfail_cyclopts_on_no_identifier(loader, request, flag)
         with pytest.raises((UnknownArgumentError, SystemExit)):
             loader.merge(_SequenceSegments, argv=[flag], env={})
 
@@ -4141,7 +4168,10 @@ class TestCollectionPatchContract:
         built: dict[str, Any] | None,
     ) -> None:
         """The canonical index still patches, and a union's dict variant still takes any key (BUG-170)."""
-        _xfail_cyclopts_on_no_identifier(loader, request, argv[0])
+        if loader.id == "cyclopts" and argv[0].endswith("*"):
+            request.applymarker(
+                pytest.mark.xfail(raises=SystemExit, strict=True, reason="BUG-180: cyclopts strips a trailing '*'"),
+            )
         assert loader.merge(_SequenceSegments, argv=argv, env={}) == merged
         if built is not None:
             cfg = loader.load(_SequenceSegments, argv=argv, env={})
@@ -6786,16 +6816,8 @@ class TestMissingFieldRemedyContract:
         assert remedy.group(1) == flag
         loader.load(target, argv=[*argv, flag, "1"], env={})
 
-    def test_remedy_flag_keeps_a_dict_key_spelled_like_an_index(
-        self,
-        loader: ConfargLoader,
-        request: pytest.FixtureRequest,
-    ) -> None:
+    def test_remedy_flag_keeps_a_dict_key_spelled_like_an_index(self, loader: ConfargLoader) -> None:
         """A dict key spelled ``x[0]`` is one segment of the flag, never an index (BUG-169)."""
-        if loader.id == "cyclopts":
-            request.applymarker(
-                pytest.mark.xfail(raises=ValueError, strict=True, reason="BUG-173: cyclopts cannot register the key"),
-            )
         with pytest.raises(MissingFieldError, match=re.escape("Set it via CLI (--d.x[0].size)")):
             loader.load(_RemedyDict, argv=["--d.x[0].name", "a"], env={})
         cfg = loader.load(_RemedyDict, argv=["--d.x[0].name", "a", "--d.x[0].size", "1"], env={})
