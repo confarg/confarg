@@ -6,6 +6,8 @@ where:
 effort: S
 risk: low
 impact: behavior
+severity: minor
+introduced_by: [PR-77]  # fix: Various fixes to CLI integration, which wrote the union path's missing-value refusal
 ---
 # BUG-176 — A bare optional fixed-arity flag gets a one-value usage line
 
@@ -20,6 +22,10 @@ possibly beside the none word. The union path has more than one variant, so whic
 reads best is open. See
 [token consumption](../../architecture/cli-parsing/token-consumption.md#token-consumption) and
 [whole-value flags](../../architecture/cli-adapters/whole-value-flags.md#whole-value-flags).
+
+Origin: latent since PR-77, which wrote `_union_seq_value`'s missing-value refusal with a fixed
+`<value>` usage. Before BUG-171 a plain fixed-arity field read `<value>` too; that fix gave it one
+placeholder per position through `_fixed_arity_usage` and did not route the union path through it.
 
 ```python
 from dataclasses import dataclass

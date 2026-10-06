@@ -3,6 +3,7 @@ filed: 2026-09-12
 effort: S
 risk: low
 impact: behavior
+severity: minor
 needs_design: true  # the effort sizes the design pass; the implementation is not sized
 ---
 # FEAT-5 — Optional structural validation right after `merge()`

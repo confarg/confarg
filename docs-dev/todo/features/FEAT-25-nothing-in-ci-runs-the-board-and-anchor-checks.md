@@ -7,6 +7,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # FEAT-25 — Nothing in CI runs the board and anchor checks
 

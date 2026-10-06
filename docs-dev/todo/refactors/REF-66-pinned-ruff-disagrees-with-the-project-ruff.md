@@ -5,6 +5,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-66 — the pinned ruff and the project's own ruff disagree
 

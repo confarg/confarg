@@ -6,6 +6,8 @@ where:
 effort: L
 risk: high
 impact: config
+severity: critical  # a short value can stall the host
+introduced_by: [PR-5]  # _BINOP_MAP maps ast.Pow and ast.Mult straight to operator.pow and operator.mul
 ---
 # BUG-146 — A power or a repeated string has no size bound
 
@@ -22,6 +24,9 @@ simpleeval caps an exponent at `MAX_POWER` (4 000 000) and a string at `MAX_STRI
 (100 000), and CPython limits int↔str conversion to 4 300 digits (CVE-2020-10735). Any bound
 refuses a value that resolves today, hence `config`, though a real configuration is unlikely to
 come near one.
+
+Origin: latent since the initial version (PR-5), whose interpreter mapped `**` and `*` to the
+`operator` functions with no bound on the operands. No revision since has bounded them.
 
 ```python
 import time

@@ -6,6 +6,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-41 — `cli/click/_context.py` and `cli/typer/_context.py` are the same file
 

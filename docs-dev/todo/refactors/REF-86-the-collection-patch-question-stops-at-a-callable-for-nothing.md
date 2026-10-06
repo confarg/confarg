@@ -5,6 +5,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-86 — The collection-patch question stops at a callable for nothing
 

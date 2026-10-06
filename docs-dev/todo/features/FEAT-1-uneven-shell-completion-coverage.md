@@ -6,6 +6,7 @@ where:
 effort: L
 risk: low
 impact: behavior
+severity: minor
 ---
 # FEAT-1 — Uneven shell-completion coverage
 

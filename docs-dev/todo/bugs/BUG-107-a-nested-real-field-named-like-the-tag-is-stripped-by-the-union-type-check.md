@@ -5,6 +5,8 @@ where:
 effort: S
 risk: medium
 impact: behavior
+severity: minor  # workaround: spell the tag explicitly
+introduced_by: [PR-5]  # _struct_matches_value's unconditional `k != union_tag`
 ---
 # BUG-107 — A real field named like the tag, nested inside a union variant, is stripped by the type check
 
@@ -19,6 +21,11 @@ duplicates `_structurally_matches`. Fix direction: drop the tag only when
 `_union_tag_shadowed` says no member owns it, and share the coverage test with
 `_structurally_matches`. See
 [real-field-wins](../../architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins).
+
+Origin: latent since the initial version (PR-5), which dropped the tag-shaped key in every
+structural check. BUG-102's fix taught `_disambiguate_struct` to keep a real field spelled like the
+tag, through `_union_tag_shadowed`, and left this sibling on the unconditional drop: the
+reproduction fails the same way before and after that fix.
 
 ```python
 from dataclasses import dataclass

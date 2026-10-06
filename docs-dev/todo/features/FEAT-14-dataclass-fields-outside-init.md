@@ -6,6 +6,7 @@ where:
 effort: L  # M for the `init=False` half alone
 risk: high
 impact: behavior
+severity: major  # an ordinary dataclass field crashes build() with a raw TypeError
 ---
 # FEAT-14 — Dataclass fields that are not `__init__` parameters
 

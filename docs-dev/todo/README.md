@@ -26,7 +26,8 @@ reworded freely. The file opens with its [front matter](#front-matter), then
 `# <ID> — <headline>`, and holds nothing else.
 
 Each board folder also carries a `README.md`: the board's intro, and a table of its open
-tickets with effort, risk and impact. **The ticket files are authoritative and the table is a
+tickets with severity, blockers, effort, risk and impact, sorted in [work order](#work-order).
+**The ticket files are authoritative and the table is a
 view of them**, so the table is generated, never edited. After filing, closing or re-sizing a
 ticket, run:
 
@@ -37,8 +38,9 @@ uv run python docs-dev/todo/index.py
 It rewrites the table between the `tickets:start` and `tickets:end` markers, leaving the prose
 around them alone, and checks what it reads on the way past: a filename that disagrees with its
 heading, a board holding another board's prefix, a missing, unknown or misspelled front matter
-field, a bug ticket with no reproduction, two tickets claiming one ID, a `where` naming a file
-or symbol that no longer exists, and a `blocked_by` naming a ticket that is closed. Validation
+field, a bug ticket with no reproduction or no [origin](#origin), two tickets claiming one ID, a
+`where` naming a file or symbol that no longer exists, and a `blocked_by` naming a ticket that is
+closed or closing a cycle. Validation
 gates the rewrite: one error anywhere leaves **every** table exactly as it was, because a table
 written beside an error is a table missing the row of a ticket that is still open. Fix what it
 reports, then run it again. `--check` writes nothing either way and exits non-zero on a stale
@@ -56,6 +58,15 @@ bugs/BUG-115-every-prefixed-env-var-overwrites-a-scalar-root.md
 …
 ```
 
+`--next [N]` answers the question to ask before picking work up: what comes first? It prints the
+first `N` (10 by default) unblocked tickets across every board, in [work order](#work-order):
+
+```console
+$ uv run python docs-dev/todo/index.py --next 1
+ 1. BUG-115 — Every prefixed environment variable overwrites a scalar root
+    critical · S · bugs/BUG-115-every-prefixed-env-var-overwrites-a-scalar-root.md
+```
+
 Documentation defects go on these same boards, sorted the same way: documentation wrong about
 itself is a bug, documentation that is missing is a feature, documentation merely untidy is a
 refactor. There is no separate documentation board, because the boards sort by *what the entry
@@ -71,13 +82,18 @@ where:
 effort: M
 risk: high
 impact: config
+severity: critical
 inferred: true  # from code reading, no test covers it
+introduced_by: [BUG-12]  # PR-87, the branch that skips a non-struct root
 ---
 # BUG-99 — One-line summary in the imperative or as a defect statement
 
 Two or three lines: what is wrong, when it bites, and what the fix direction looks like.
 Link the rationale it touches:
 [expressions/deferral-rule.md#deferral-rule](../architecture/expressions/deferral-rule.md#deferral-rule).
+
+Origin: regression from the fix for BUG-12, which let a scalar root take its value from the
+environment and kept the same branch for every prefixed variable, matched or not.
 
 ```python
 @dataclass
@@ -96,13 +112,15 @@ confarg.load(Config, argv=[], env={"MYAPP_PORT": "5432"}, env_prefix="MYAPP_")
 - **Confidence**: mark anything you have not actually observed as *(inferred)*, as in the
   architecture notes — the ticket as a whole with `inferred: true`, a single claim in the body
   with the inline marker. A suspicion is worth filing; a suspicion sold as a fact is not.
+- **Origin**: every ticket on `bugs/` names the revision that introduced the bug, and says why it
+  did. See [Origin](#origin).
 - **Reproduction**: every ticket on `bugs/` ends with one. See [Reproduction](#reproduction).
   The other three boards are exempt — nothing is broken yet to reproduce.
-- **Effort, risk and impact**: every ticket on `bugs/`, `features/` and `refactors/` carries
-  all three. See [Effort](#effort), [Risk](#risk) and [Impact](#impact). `questions/` is
-  exempt — a question is answered, not implemented.
-- **Ordering**: tickets sort by ID, which is filing order, so the newest is last. There is no
-  priority field — say it in the body if it matters.
+- **Effort, risk, impact and severity**: every ticket on `bugs/`, `features/` and `refactors/`
+  carries all four. See [Effort](#effort), [Risk](#risk), [Impact](#impact) and
+  [Severity](#severity). `questions/` is exempt — a question is answered, not implemented.
+- **Ordering**: there is no priority field. The tables sort in [work order](#work-order), which
+  `index.py` derives from severity, `blocked_by` and effort.
 - **Links** are relative to the ticket file, which sits one level deeper than the board:
   `../../architecture/…`.
 - Keep it short. The code and `../architecture/` hold the detail; a ticket only has to be
@@ -123,16 +141,19 @@ on the same line, where the parser drops it and a reader still sees it.
 | `effort` | sized, required | `S`, `M`, `L` or `XL` — see [Effort](#effort). |
 | `risk` | sized, required | `low`, `medium` or `high` — see [Risk](#risk). |
 | `impact` | sized, required | `none`, `behavior`, `api` or `config` — see [Impact](#impact). |
+| `severity` | sized, required | `critical`, `major`, `minor` or `trivial` — see [Severity](#severity). |
 | `needs_design` | sized | `true` when the effort sizes the design pass, not the implementation — see [Effort](#effort). Omitted otherwise. |
 | `inferred` | all | `true` when the ticket rests on something nobody observed; the comment says what it rests on. Omitted otherwise. |
 | `blocked_by` | all | A list of open ticket IDs that must close first, on any board. Omitted when empty. |
+| `introduced_by` | bugs, required since 2026-10-07 | The revision that introduced the bug: a list of the ticket IDs it closed, open or not, or `PR-<n>` when it closed none, or `unknown` with a comment saying what was searched — see [Origin](#origin). |
 
 `where` is checked against the tree: a path that no longer exists or a symbol its file no longer
 holds is an error, so a rename that orphans a ticket is caught by the next run. The
 agent-facing files (`AGENTS.md`, `CLAUDE.md`, `docs-agents/`) are exempt, since version control
 ignores them. A `blocked_by` entry whose ticket has closed is an error too: that ticket is
-unblocked, so drop the entry. Any other key is refused — there is deliberately no `id`, `title`,
-`status`, `priority` or `labels`.
+unblocked, so drop the entry; so is a cycle of `blocked_by` entries, which nothing could ever
+start. Any other key is refused — there is deliberately no `id`, `title`, `status`, `priority`
+or `labels`. A priority especially is computed, never written: see [Work order](#work-order).
 
 ## Reproduction
 
@@ -173,6 +194,68 @@ Everything below applies to both kinds.
 - **The reproduction is not the regression test.** It stays on the board, never in `tests/`.
   Fixing the bug starts by turning it into a real test under the test-first protocol, and
   closing the ticket deletes the file it lives in.
+
+## Origin
+
+A bug ticket says **which revision introduced the bug, and why**. A fix aimed at the symptom
+alone can land in three wrong places, and the origin is what shows them:
+
+- **The change that introduced the bug was wrong**, and the right fix is to revert or rework
+  it rather than to patch around it.
+- **One change introduced several bugs.** Fixed one by one, each fix is narrow and the next
+  ticket still stands; fixed at their shared origin, they close together.
+- **Two fixes undo each other.** A bug introduced by the fix for another means the two
+  constraints meet at one place in the code. Fixed independently, each fix brings the other
+  bug back in a new shape, and only a change that honors both at once ends the loop.
+
+**Finding it.** Start from the code the bug runs through: read who wrote those lines
+(`jj file annotate`, `git blame`), then search the history for when the deciding line or the
+missing branch appeared (`jj log -r 'diff_lines(substring:"…", "path")'`, `git log -S`). When the
+cause is spread out, bisect: run the reproduction against older revisions until it stops failing
+(`jj bisect run`, `git bisect run`). Then read the revision found — its description, its diff and
+the ticket it closed — until you can say what it set out to do and why that produced the bug.
+
+**Naming it** in `introduced_by`:
+
+- **The ticket IDs the revision closed**, which its description cites (`fix(cli): … (BUG-97)`).
+  It is usually closed by now; that is expected.
+- **`PR-<n>`** when it closed none: every revision on `master` carries the number of the pull
+  request that merged it (`feat: Add cyclopts integration (#26)` is `PR-26`).
+- **Never a commit ID.** A rebase rewrites it, and a squash merge replaces every commit of a
+  pull request with one new one, so it names nothing a month later.
+- **Several entries** when the bug took more than one revision to appear, and **`unknown`** when
+  the search came back empty, with a YAML comment saying what was searched. `unknown` is an
+  answer; an absent key is a ticket nobody researched.
+
+The YAML comment on the line carries the PR number or the code involved. The body carries the
+**why**, in an `Origin:` paragraph: what that revision meant to do, and how it produced the bug.
+Say whether the bug is a **regression** — it worked before that revision, so the revision broke
+it — or **latent** — wrong since the code was first written, so the revision is where the case
+was missed. A regression introduced by a bug fix gets the closest look, since that is the
+pattern of the third case above.
+
+**Bugs sharing an origin** share a value in the *Introduced by* column of the
+[bugs table](bugs/README.md): grep the table for an ID to find them.
+
+**After the fix.** Closing the ticket deletes the file, and the origin with it, so the
+description of the revision that fixes the bug keeps it, as a trailer on the last line:
+
+```text
+fix(env): Match a prefixed variable against the root before setting it (BUG-115)
+
+Introduced-by: BUG-12
+```
+
+`Introduced-by: unknown` when the ticket said so. The history then answers both questions: what
+did this revision fix (its subject), and what did a revision break (the trailers naming it):
+
+```console
+$ jj log -r 'description(substring:"Introduced-by: BUG-12")'
+$ git log --grep='Introduced-by: BUG-12'
+```
+
+A bug filed before this rule took effect, on 2026-10-07, may carry no `introduced_by` until a
+sweep reaches it; `index.py` requires one on every bug filed since.
 
 ## Effort
 
@@ -235,3 +318,40 @@ meaning with no error anywhere.
 Impact doubles as a smell test on a refactor: anything above `none` on `refactors/` is not
 really a refactor. REF-9 is `api`, which is what says it needs a deprecation story rather than
 a rename.
+
+## Severity
+
+**What a user meets while the ticket stays open.** Effort, risk and impact all describe the
+change; severity describes the problem as it stands, and is the cost of leaving it there. The
+rungs run as impact's do, in order of how late the user finds out:
+
+| | |
+|---|---|
+| `critical` | **A wrong result with no error.** A configuration loads and means something other than it says — a value misread, dropped or left uncoerced, one front-end meaning what the others do not — or a configuration can exhaust the host. Nothing in the user's tooling catches it. BUG-115, BUG-146, BUG-155. |
+| `major` | **A valid use fails loudly, with no workaround.** A configuration or flag that should work is refused, or crashes with a raw Python exception instead of a confarg error, or a front-end cannot register the target at all. BUG-114, BUG-117, BUG-152. |
+| `minor` | **Slowed, not stopped.** A loud failure with a workaround, invalid input answered with a raw exception or a misleading message, a wrong usage or help line, a missing convenience. BUG-144, BUG-154, BUG-176. |
+| `trivial` | **No user of the library meets it.** Internal documentation, test hygiene, code structure. BUG-119, BUG-149. |
+
+Score what the user meets, not how often: frequency is a guess, the symptom is in the
+reproduction. A feature's severity is what its *absence* costs — FEAT-14 is `major`, because an
+ordinary dataclass field crashes `build()` today. A refactor is almost always `trivial`; when one
+matters, it is because it blocks something that does, and the [work order](#work-order) carries
+that through `blocked_by` without anyone re-scoring it.
+
+## Work order
+
+There is no priority field: `index.py` derives the order, and both the tables and `--next` read
+it.
+
+1. **Effective severity**, highest first. A ticket's effective severity is its own, or the
+   highest effective severity among the tickets it blocks, transitively and across boards —
+   a refactor blocking a `critical` bug is `critical`, shown as `critical (via BUG-…)`. A
+   question carries no severity of its own and only ever inherits one.
+2. **Unblocked before blocked**: a ticket whose `blocked_by` is empty can start now.
+3. **Effort**, smallest first: among equally severe tickets, the cheapest one buys the most.
+4. **ID**, which is filing order.
+
+Derived and not written, because a stored priority goes stale the moment *another* ticket gains
+or loses a blocker — the drift the generated tables exist to prevent. The rationale and its
+precedents are in
+[design-decisions/ticket-severity-and-work-order.md](../architecture/design-decisions/ticket-severity-and-work-order.md).

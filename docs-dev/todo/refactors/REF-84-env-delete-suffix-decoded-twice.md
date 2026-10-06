@@ -6,6 +6,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-84 — The delete suffix and its list index are decoded twice
 

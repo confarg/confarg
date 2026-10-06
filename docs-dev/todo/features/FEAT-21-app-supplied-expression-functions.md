@@ -9,6 +9,7 @@ where:
 effort: L
 risk: high
 impact: behavior
+severity: minor
 inferred: true  # design discussed with the maintainer, no code written
 ---
 # FEAT-21 — Expression functions supplied by the application

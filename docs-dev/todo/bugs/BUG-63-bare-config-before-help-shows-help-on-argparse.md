@@ -5,6 +5,8 @@ where:
 effort: S
 risk: medium
 impact: behavior
+severity: minor
+introduced_by: [PR-5]  # argparse's eager --help and vanilla's refusal of a bare --config, both in the initial version
 ---
 # BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four
 
@@ -22,6 +24,11 @@ Nothing covers the corner today, so a mistake in the fix would stay silent on ar
 other four stay correct — closing it means adding a test there
 ([testing.md#examples-and-documentation](../../architecture/testing.md#examples-and-documentation)
 for where parity tests live).
+
+Origin: latent since the initial version (PR-5), which already refused a bare `--config` in
+vanilla's loop and let argparse's eager `--help` exit before any confarg code ran; it reproduces
+before BUG-51. That fix brought click, typer and cyclopts to vanilla's refusal and left argparse,
+which is out of reach of a rescan that runs after `parse_args`.
 
 ```python
 from dataclasses import dataclass

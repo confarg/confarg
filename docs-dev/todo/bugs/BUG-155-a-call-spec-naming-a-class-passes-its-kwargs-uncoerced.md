@@ -5,6 +5,8 @@ where:
 effort: S
 risk: high
 impact: behavior
+severity: critical  # the constructor silently receives the string
+introduced_by: [PR-5]  # get_type_hints(func) in _resolve_call_kwargs; PR-93 kept it for call:
 ---
 # BUG-155 — A `call:` spec naming a class passes its kwargs uncoerced
 
@@ -15,6 +17,11 @@ That breaks [tokens mean untyped text](../../architecture/invariants.md#tokens-m
 and the [one coercion route](../../architecture/callables.md#one-coercion-route) that `class:` and
 `bind:` already follow. Fix direction: take the hints from `_bind_hints_source(func)`, as
 `_resolve_bind_kwargs` does, which answers `__init__` for a class.
+
+Origin: latent since the initial version (PR-5), whose `_resolve_call_kwargs` read
+`get_type_hints(func)`, which answers a class's attribute annotations. PR-93 added
+`_bind_hints_source` so that `bind:` and `class:` read `__init__`, and left `call:` on the old
+source (`_coerce_kwargs(func, func, …)`), so the case was missed a second time there.
 
 ```python
 from collections.abc import Callable

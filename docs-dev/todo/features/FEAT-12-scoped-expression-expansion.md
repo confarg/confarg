@@ -5,6 +5,7 @@ where:
 effort: L  # list literals alone; XL with dict and set literals
 risk: high
 impact: behavior
+severity: minor
 ---
 # FEAT-12 — Carefully scoped expression expansion
 

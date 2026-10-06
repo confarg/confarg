@@ -5,6 +5,7 @@ where:
 effort: M
 risk: low
 impact: behavior
+severity: minor
 ---
 # FEAT-15 — No way to inspect the flags of a class the tag has not named yet
 

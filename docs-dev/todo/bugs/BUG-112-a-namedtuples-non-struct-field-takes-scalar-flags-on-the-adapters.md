@@ -5,6 +5,8 @@ where:
 effort: M
 risk: medium
 impact: behavior
+severity: major
+introduced_by: [PR-39]  # feat: Add namedtuple support
 ---
 # BUG-112 — A namedtuple's non-struct field takes scalar flags on the adapters
 
@@ -23,6 +25,11 @@ spelling, through `_specs_for_field`. See
 [namedtuple-is-a-fixed-length-sequence.md](../../architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md)
 and
 [invariants.md#delegate-to-the-canonical-function](../../architecture/invariants.md#delegate-to-the-canonical-function).
+
+Origin: latent since PR-39, which added namedtuple support: argparse refuses the second token there
+already (bisected with `parse_args`). BUG-68's fix routed the struct-shaped fields through
+`_specs_for_field` and left the others where they were. BUG-109 and BUG-142 also come from PR-39,
+each a place where a namedtuple does not take the path a tuple or a struct takes.
 
 ```python
 from dataclasses import dataclass

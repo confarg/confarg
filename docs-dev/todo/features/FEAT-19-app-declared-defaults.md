@@ -8,6 +8,7 @@ where:
 effort: L
 risk: medium
 impact: behavior
+severity: minor
 inferred: true  # design settled with the maintainer, no code written
 ---
 # FEAT-19 — App-declared defaults, mounted at the type that declares them

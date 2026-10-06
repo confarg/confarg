@@ -9,6 +9,7 @@ where:
 effort: XL
 risk: high
 impact: config
+severity: minor
 ---
 # FEAT-23 — A post-resolve transform layer
 

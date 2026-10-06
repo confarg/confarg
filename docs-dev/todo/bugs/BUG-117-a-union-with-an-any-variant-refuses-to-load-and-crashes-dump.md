@@ -7,6 +7,8 @@ where:
 effort: M
 risk: high
 impact: behavior
+severity: major
+introduced_by: [PR-5]  # union dispatch never offers a value to an Any variant
 ---
 # BUG-117 — A union with an `Any` variant refuses to load and crashes `dump()`
 
@@ -25,6 +27,12 @@ that a more specific variant keeps what it can take (the stealing rule's order,
 [stealing-rule.md](../../architecture/types/stealing-rule.md)). Or, if the maintainer would rather
 not support it, refuse such a union with a clear error on both sides. A leaked `TypeError` is
 wrong either way.
+
+Origin: latent since the initial version (PR-5) *(inferred: the reproduction runs from PR-28, where
+both halves already fail)*. Union dispatch has never offered a value to an `Any` variant, and
+`dump()` has crashed in `isinstance` throughout, on a different argument as the code moved (`list`,
+a parameterized generic, at PR-28; `Any` itself before and after REF-47, whose kind table kept the
+fallback).
 
 ```python
 from dataclasses import dataclass

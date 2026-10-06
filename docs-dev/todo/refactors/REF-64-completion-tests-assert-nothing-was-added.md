@@ -6,6 +6,7 @@ where:
 effort: S
 risk: medium
 impact: none
+severity: trivial
 ---
 # REF-64 — The clicklike completion tests assert that nothing was added
 

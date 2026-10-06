@@ -6,6 +6,7 @@ where:
 effort: M
 risk: medium
 impact: none
+severity: trivial
 ---
 # REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk
 

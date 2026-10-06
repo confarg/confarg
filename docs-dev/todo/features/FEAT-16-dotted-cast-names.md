@@ -6,6 +6,7 @@ where:
 effort: M
 risk: medium
 impact: behavior
+severity: minor  # dump() warns, so the loss is not silent
 ---
 # FEAT-16 — Let `__cast__` name a leaf type by dotted path
 

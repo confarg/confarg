@@ -7,6 +7,7 @@ where:
 effort: M
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-50 — Adapter registration and completion boilerplate
 

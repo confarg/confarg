@@ -6,6 +6,7 @@ where:
 effort: S
 risk: medium
 impact: none
+severity: trivial
 ---
 # REF-58 — The config-parallel struct walk has two owners
 

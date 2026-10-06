@@ -4,6 +4,7 @@ where: []  # new console script (no `[project.scripts]` entry exists yet)
 effort: L
 risk: low
 impact: behavior
+severity: minor
 ---
 # FEAT-9 — A `confarg check` command to validate a configuration against a target
 

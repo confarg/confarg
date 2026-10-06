@@ -3,6 +3,7 @@ filed: 2026-09-12
 effort: L
 risk: medium
 impact: behavior
+severity: minor
 needs_design: true  # the effort sizes the design pass; the implementation is not sized
 ---
 # FEAT-6 — `Annotated` field metadata read by all three channels

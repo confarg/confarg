@@ -5,6 +5,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-63 — `13_collection_items` carries an empty section and a misplaced tuple remark
 

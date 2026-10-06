@@ -6,6 +6,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-54 — Two span loops in `dictexpr` that one helper writes
 

@@ -5,6 +5,8 @@ where:
 effort: M
 risk: medium
 impact: config
+severity: critical  # the stray token is dropped in silence
+introduced_by: [PR-72]  # fix: Close CLI-adapter parity gaps, which registered element flags nargs="*"
 ---
 # BUG-179 — An element flag on a scalar swallows a stray token on argparse and cyclopts
 
@@ -16,6 +18,12 @@ reads `2` and leaves `1` to the host, as a host positional. The `1` is dropped i
 Vanilla refuses it as a stray positional and click and typer refuse it at parse. A field flag
 of the same type registers a scalar arity. The fix direction is to derive the element flag's
 `nargs` from the type it addresses, as its `stands_bare` already is.
+
+Origin: regression from PR-72, a bug fix that closed the adapters' parity gaps. Before it no adapter
+registered a dict-subkey or list-element flag, and argparse refused `--d.a 2 1` outright. PR-72
+registered every such flag `nargs="*"`, whatever type it addresses, and the stray token has been
+swallowed since (bisected with the reproduction). BUG-38's fix later derived the flag's
+`stands_bare` from the addressed type and left its `nargs`. BUG-180 shares this origin.
 
 ```python
 from dataclasses import dataclass, field

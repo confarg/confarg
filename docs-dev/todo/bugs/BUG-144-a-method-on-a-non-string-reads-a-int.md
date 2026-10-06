@@ -5,6 +5,8 @@ where:
 effort: S
 risk: low
 impact: behavior
+severity: minor
+introduced_by: [BUG-122]  # PR-281, which wrote the message
 ---
 # BUG-144 — The refusal of a method on a non-string reads "a int"
 
@@ -14,6 +16,9 @@ wrong article is also the common case. `dictexpr` cannot import `_types._src_typ
 ([messages-live-on-exceptions.md](../../architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it)).
 Fix direction: name the type without an article (`called on an object of type 'int'`), or pick
 the article from the name.
+
+Origin: latent since BUG-122's fix, which introduced this refusal when it limited methods to
+strings, with the article fixed to `a`.
 
 ```python
 from confarg.dictexpr import resolve_expressions

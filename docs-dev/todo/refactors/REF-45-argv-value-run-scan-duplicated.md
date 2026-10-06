@@ -6,6 +6,7 @@ where:
 effort: M
 risk: high
 impact: none
+severity: trivial
 ---
 # REF-45 — The argv value-run scan is written seven times
 

@@ -7,6 +7,8 @@ where:
 effort: M
 risk: medium
 impact: behavior
+severity: minor  # workaround: the root's json cast
+introduced_by: [PR-5]  # the bare-prefix root handler consumes exactly one token
 ---
 # BUG-177 — A collection root's bare flag takes one token, which construction refuses
 
@@ -19,6 +21,11 @@ root's value as a field flag of its type does, writing at `__root__`, or else to
 name the root `json` cast for a collection root
 ([cli_prefix](../../architecture/cli-parsing/cli-prefix.md#cli_prefix),
 [construction](../../architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
+
+Origin: latent since the initial version (PR-5), whose bare-prefix root handler consumes exactly one
+token for any non-struct root, as a scalar takes it; a collection root was never given its field's
+token rule. It reproduces at PR-28, and BUG-172's fix, which settled that a non-struct root is set
+whole, kept the one-token consumption.
 
 ```python
 from dataclasses import dataclass

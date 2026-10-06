@@ -5,6 +5,7 @@ where:
 effort: M
 risk: high
 impact: none
+severity: trivial
 ---
 # REF-10 — Sweep for code obsoleted by past refactors
 

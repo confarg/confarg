@@ -7,6 +7,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: minor
 ---
 # FEAT-26 — The expression whitelist is not documented for users
 

@@ -6,6 +6,8 @@ where:
 effort: S
 risk: high
 impact: behavior
+severity: major
+introduced_by: [PR-5]  # _construct_struct calls a plain class by keyword unless it takes *args
 ---
 # BUG-152 — A positional-only `__init__` parameter fails `build()` with a raw `TypeError`
 
@@ -16,6 +18,11 @@ on every channel and front-end. With `*args` the same class builds, because
 `_call_with_var_positional` passes `_init_params(tp).positional` by position. Fix direction: one
 call path for every plain class, filling the positional names by position as that function
 does ([types/introspection.md](../../architecture/types/introspection.md#introspection-is-cached-per-class)).
+
+Origin: latent since the initial version (PR-5), which already passed the positional names by
+position for a class taking `*args` and called every other plain class by keyword. It reproduces
+unchanged at PR-28, the oldest revision the reproduction runs on. BUG-156 is the same miss in the
+callable specs, from the same revision.
 
 ```python
 from dataclasses import dataclass

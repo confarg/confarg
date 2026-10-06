@@ -6,6 +6,7 @@ where:
 effort: L
 risk: high
 impact: behavior
+severity: minor  # workaround: leave the tag base unparameterized
 ---
 # FEAT-13 — Struct types that are generic
 

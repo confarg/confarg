@@ -6,7 +6,9 @@ where:
 effort: M
 risk: medium
 impact: behavior
+severity: major
 needs_design: true
+introduced_by: [PR-72]  # fix: Close CLI-adapter parity gaps, which registered dict-key flags on cyclopts
 ---
 # BUG-180 — Cyclopts refuses a flag whose name ends in a star
 
@@ -22,6 +24,12 @@ already drops bare occurrences
 or refuse it with confarg's own error and record the limitation. The contract case
 `test_index_below_a_sequence_and_key_of_a_dict_variant_are_kept[cyclopts-key-of-a-dict-variant]`
 xfails strictly on cyclopts for this.
+
+Origin: latent since PR-72, a bug fix that first registered dict-subkey flags on the adapters.
+Before it no adapter accepted `--d.<key>` at all; PR-72 closed that gap and missed this spelling on
+cyclopts (bisected: cyclopts refuses `--d.*` before PR-72, crashes on it from PR-72). The crash was
+the invalid parameter name `d__*` (BUG-173), and BUG-173's fix uncovered cyclopts' own star syntax
+beneath it. BUG-179 shares this origin.
 
 ```python
 from dataclasses import dataclass, field

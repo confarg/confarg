@@ -9,6 +9,7 @@ where:
 effort: L
 risk: high
 impact: behavior
+severity: minor
 inferred: true  # design discussed with the maintainer, no code written
 ---
 # FEAT-22 — The process environment as an expression namespace

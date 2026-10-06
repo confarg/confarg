@@ -7,6 +7,8 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
+introduced_by: [BUG-7]  # PR-194, which added typer; inferred, docs-agents/ has no history in the repository
 ---
 # BUG-150 — The protocols count four front-ends and leave typer out
 
@@ -21,6 +23,12 @@ as [BUG-119](BUG-119-defaults-module-counts-four-front-ends.md) in `_defaults.py
 direction: say five and list typer, or drop the count. `docs-agents/` is `.gitignore`d, so the
 text is the same on every revision; editing it means running
 `uv run python docs-agents/archive.py` afterwards.
+
+Origin: regression from BUG-7 *(inferred)*, which added the typer front-end and changed "four
+front-ends" to "five" throughout `docs-dev/architecture/`. `docs-agents/` is `.gitignore`d, so its
+own history cannot be read; the protocols were split out of `docs-dev/` by PR-134, before BUG-7, and
+still say what `docs-dev/` said then. BUG-119 shares this origin, and BUG-149 went stale the same
+way: a revision updated the versioned notes and could not see the unversioned ones.
 
 ```console
 $ grep -n "four front-ends\|all four\|(click/cyclopts)" docs-agents/*.md

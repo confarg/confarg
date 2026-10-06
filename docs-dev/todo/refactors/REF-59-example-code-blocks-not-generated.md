@@ -6,6 +6,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-59 — Two `type` blocks under `examples/` wait on the hook; the rest is generated
 

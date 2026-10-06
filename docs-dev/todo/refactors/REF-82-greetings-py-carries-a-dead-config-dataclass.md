@@ -6,6 +6,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-82 — `greetings.py` in two examples carries a dead `Config` dataclass
 

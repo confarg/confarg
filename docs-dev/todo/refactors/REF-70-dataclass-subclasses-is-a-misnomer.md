@@ -5,6 +5,7 @@ where:
 effort: M
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-70 — `_dataclass_subclasses` is named for dataclasses but returns plain-class structs
 

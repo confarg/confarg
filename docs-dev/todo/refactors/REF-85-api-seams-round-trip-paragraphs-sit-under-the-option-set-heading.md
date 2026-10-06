@@ -5,6 +5,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-85 — `api-seams.md`'s round-trip paragraphs sit under the option-set heading
 

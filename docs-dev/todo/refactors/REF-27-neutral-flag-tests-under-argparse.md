@@ -6,6 +6,7 @@ where:
 effort: M
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`
 

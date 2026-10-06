@@ -6,6 +6,7 @@ where:
 effort: M
 risk: medium
 impact: none
+severity: trivial
 ---
 # REF-83 — The registration walk dispatches on shape outside `_type_kind`
 

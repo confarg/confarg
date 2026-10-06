@@ -5,6 +5,7 @@ where:
 effort: M
 risk: low
 impact: behavior
+severity: minor
 needs_design: true  # the effort sizes the design pass; the implementation is not sized
 ---
 # FEAT-18 — The environment channel has no append spelling

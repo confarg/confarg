@@ -5,6 +5,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-55 — An adjacent-pair loop written with indices instead of `itertools.pairwise`
 

@@ -7,6 +7,8 @@ where:
 effort: M
 risk: low
 impact: behavior
+severity: minor
+introduced_by: [PR-5, PR-13, PR-26]  # the argparse, click and cyclopts adapters; typer shares click's seam
 ---
 # BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters
 
@@ -30,6 +32,12 @@ confarg code runs, so they need the same scan on the command hook. Setting the m
 every scalar spec is what makes it a decision rather than a spot fix — but note the refusal
 then fires before a framework's own `--help` handling, the ordering BUG-63 already tracks for
 argparse.
+
+Origin: latent since each adapter was written: argparse in the initial version (PR-5), click in
+PR-13, cyclopts in PR-26, and typer on click's seam (BUG-7). Each registered a scalar flag with its
+framework's one-value arity and let the framework refuse a bare occurrence before any confarg code
+runs. BUG-58's and BUG-74's fixes gave the fixed-arity flags confarg's refusal without extending it
+to the scalar spelling.
 
 ```python
 from dataclasses import dataclass
