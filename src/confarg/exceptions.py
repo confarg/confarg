@@ -260,6 +260,22 @@ class TypeCoercionError(ConfargError):
         """
         return cls(f"Class {name!r} at '{path}' is not a subclass of {parent}.")
 
+    @classmethod
+    def tag_not_a_subclass(cls, name: Any, parent: str, path: str, call: str) -> TypeCoercionError:
+        """Return the error for a class tag on a typed field that names no subclass of the field's type.
+
+        *call* is the spelling of the ``call`` directive in the spec's mode, passed in because this
+        module imports nothing from ``confarg``. The message points to it: a class the annotation
+        does not accept is still buildable, by a factory that ``call:`` names.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/class-names-a-subclass-call-computes.md#class-names-a-subclass-call-computes
+        """
+        return cls(
+            f"Class {name!r} at '{path}' is not a subclass of {parent}."
+            f" To build {name} with a factory, give the field a '{call}:' spec instead.",
+        )
+
 
 class InvalidConfigFileError(ConfargError):
     """Raised for config file issues: not found, malformed, or unsupported format."""

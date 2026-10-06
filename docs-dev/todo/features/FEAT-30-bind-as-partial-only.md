@@ -6,7 +6,6 @@ effort: M
 risk: medium
 impact: config
 severity: major
-blocked_by: [FEAT-29]
 ---
 # FEAT-30 — `bind:` yields a partial of its target; `fn:` and the `bind:` kwargs form are removed
 
@@ -25,4 +24,4 @@ mapping for a migration note:
 | `f: {class: pkg.Cls, x: 1}` | `f: {class: pkg.Cls, x: 1}` (unchanged) |
 | `f: {call: pkg.g, a: 1}` | `f: {call: pkg.g, a: 1}` (unchanged) |
 
-Depends on FEAT-29 so that `class:` is settled before `bind:` takes over the partial role.
+`class:` is settled ([class names a subclass](../../architecture/design-decisions/class-names-a-subclass-call-computes.md)), so `bind:` can take over the partial role.
