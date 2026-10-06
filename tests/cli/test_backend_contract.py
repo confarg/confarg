@@ -3586,6 +3586,21 @@ class _WithUsers:
 
 
 @dataclass
+class _DefaultedSection:
+    """Struct whose every field has a default."""
+
+    a: int = 1
+    b: int = 2
+
+
+@dataclass
+class _WithDefaultedSection:
+    """Root holding a defaulted struct field."""
+
+    sec: _DefaultedSection = dataclasses.field(default_factory=_DefaultedSection)
+
+
+@dataclass
 class _TaggedItem:
     """List-element struct holding a list of its own."""
 
@@ -3963,17 +3978,71 @@ class TestCollectionPatchContract:
         assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {"*": ["alice", "bob"], "-": [0]}}
         assert loader.load(_WithUsers, argv=argv, env={}).users == ["bob"]
 
-    def test_index_delete_after_a_whole_field_delete_replaces_it(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """An index delete after a whole-field delete is the later writer at the path (BUG-77).
+    def test_index_delete_after_a_whole_field_delete_has_no_base(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """An index delete after a whole-field delete finds no list to delete from (BUG-116).
 
-        Every other op below a whole delete replaces the sentinel it finds there — an index
-        set does — so the index delete records like a lone ``--users.0-`` and applies
-        against what the lower sources hold.  Its descent read the sentinel as a dict.
+        The whole-field delete cuts the field off from the lower sources, so the index
+        delete records like a lone ``--users.0-`` and fails as it does with no file.  Its
+        descent once read the sentinel as a dict (BUG-77).
         """
         argv = ["--users-", "--users.0-"]
         assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {"-": [0]}}
         base = tmp_yaml("users: [alice, bob]\n")
-        assert loader.load(_WithUsers, argv=["--config", str(base), *argv], env={}).users == ["bob"]
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="requires a base list"):
+            loader.load(_WithUsers, argv=["--config", str(base), *argv], env={})
+
+    @pytest.mark.parametrize(
+        ("ops", "expected"),
+        [
+            (["--users.0", "x"], ["x"]),
+            (["--users+", "x"], ["x"]),
+        ],
+    )
+    def test_op_after_a_whole_list_delete_applies_to_nothing_below(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        ops: list[str],
+        expected: list[str],
+    ) -> None:
+        """An op written after a whole-field delete ignores the lower sources, as with no file (BUG-116)."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        assert loader.load(_WithUsers, argv=["--config", str(base), "--users-", *ops], env={}).users == expected
+
+    def test_op_after_a_whole_list_delete_ignores_a_root_json_cast_too(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+    ) -> None:
+        """The deleted base outlives the root ``json`` fold and still cuts the file off (BUG-116)."""
+        base = tmp_yaml("users: [alice, bob]\n")
+        argv = ["--config", str(base), "--json", '{"users": ["q"]}', "--users-", "--users+", "x"]
+        assert loader.load(_WithUsers, argv=argv, env={}).users == ["x"]
+
+    def test_flag_refines_an_env_list_cut_off_by_its_delete(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A flag patches what the env built after its delete, not the file below it (BUG-116)."""
+        base = tmp_yaml("users: [alice, bob, carol]\n")
+        env = {"APP_USERS-": "", "APP_USERS__0": "x", "APP_USERS__1": "z"}
+        argv = ["--config", str(base), "--users.1", "y"]
+        assert loader.load(_WithUsers, argv=argv, env=env, env_prefix="APP_").users == ["x", "y"]
+
+    def test_delete_and_append_inside_an_appended_item(self, loader: ConfargLoader) -> None:
+        """A delete then an append below ``-1`` rebuild the appended item's list from nothing (BUG-116)."""
+        argv = ["--items+", '{"tags": ["a", "b"]}', "--items.-1.tags-", "--items.-1.tags+", "x"]
+        assert loader.merge(_WithTaggedItems, argv=argv, env={}) == {"items": {"+": [{"tags": {"+": ["x"]}}]}}
+        assert loader.load(_WithTaggedItems, argv=argv, env={}).items == [_TaggedItem(tags=["x"])]
+
+    @pytest.mark.parametrize("ops", [["--sec.a", "9"], ["--sec", '{"a": 9}']])
+    def test_op_after_a_whole_struct_delete_refines_the_default(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        ops: list[str],
+    ) -> None:
+        """A field or a whole object written after a struct delete leaves the file's other fields out (BUG-116)."""
+        base = tmp_yaml("sec: {a: 5, b: 6}\n")
+        sec = loader.load(_WithDefaultedSection, argv=["--config", str(base), "--sec-", *ops], env={}).sec
+        assert sec == _DefaultedSection(a=9, b=2)
 
     def test_index_delete_into_an_appended_item_records_inside_it(self, loader: ConfargLoader) -> None:
         """An index delete below ``-1`` after an append lands in the appended item (BUG-77).

@@ -33,6 +33,7 @@ from confarg._merge import (
     LIST_POST_APPEND_DELETE_KEY,
     LIST_REPLACE_BASE_KEY,
     _deep_merge,
+    _drop_deleted_bases,
     _to_append_list,
 )
 from confarg._merge import LIST_APPEND_KEY as _LIST_APPEND_KEY
@@ -347,6 +348,8 @@ def _merge_sources(
     # 3. Merge: config (lowest) → env → CLI (highest)
     merged = _deep_merge(config_data, env_data, union_tag=union_tag)
     merged = _deep_merge(merged, cli_data, union_tag=union_tag)
+    # Every layer is in: a whole-field delete has cut the ops after it off from all of them.
+    merged = _drop_deleted_bases(merged)
 
     # Every file is mounted now: rewrite configuration-root references (${::x}) as plain
     # paths. Node-relative ones (${.x}) are deliberately left alone -- resolving them here

@@ -32,8 +32,8 @@ from confarg._merge import (
     LIST_APPEND_KEY,
     LIST_DELETE_KEY,
     LIST_POST_APPEND_DELETE_KEY,
-    LIST_REPLACE_BASE_KEY,
     _accumulate_list_delete,
+    _open_for_ops,
     _peek_nested,
     _set_nested,
 )
@@ -964,17 +964,13 @@ def _collect_append_items(args: Sequence[str], i: int, et: Any) -> tuple[list[An
 
 
 def _merge_append_ops(existing: Any, append_items: list[Any]) -> dict[str, Any]:
-    """Combine append_items with any existing list-operation dict at this path."""
-    if isinstance(existing, list):
-        return {LIST_REPLACE_BASE_KEY: existing, LIST_APPEND_KEY: append_items}
-    if isinstance(existing, dict):
-        if LIST_REPLACE_BASE_KEY in existing:
-            prior = existing.get(LIST_APPEND_KEY, [])
-            return {**existing, LIST_APPEND_KEY: prior + append_items}
-        if LIST_APPEND_KEY in existing:
-            return {**existing, LIST_APPEND_KEY: existing[LIST_APPEND_KEY] + append_items}
-        return {**existing, LIST_APPEND_KEY: append_items}
-    return {LIST_APPEND_KEY: append_items}
+    """Combine append_items with what the path holds, opened as any op below it opens it.
+
+    So an append after a whole value extends that value, and one after a whole-field delete
+    extends nothing (:func:`~confarg._merge._open_for_ops`).
+    """
+    node = _open_for_ops(existing)
+    return {**node, LIST_APPEND_KEY: node.get(LIST_APPEND_KEY, []) + append_items}
 
 
 def _handle_append_token(

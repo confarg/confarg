@@ -38,6 +38,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [Real field wins over reserved words](real-field-wins.md) | a reserved name is reserved only where it shadows nothing |
 | [A shadowed tag warns on use](a-shadowed-tag-warns-on-use.md) | the structural selection is named where the tag could have dispatched, and nowhere else |
 | [Strict CLI, lenient environment](strict-cli-lenient-environment.md) | an unknown flag is an error, an unknown variable a warning |
+| [The broader environment variable applies first](the-broader-environment-variable-applies-first.md) | nested variables merge as their flags typed broader first, whatever the mapping's order |
 
 ## Where a document comes from
 
@@ -84,6 +85,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [A whole-value flag needs its value](a-whole-value-flag-needs-its-value.md) | `--db` with nothing after it is an error, like `--port` with nothing after it |
 | [A namedtuple's arity flag and its sub-flags merge in argv order](namedtuple-arity-flag-argv-order.md) | latest arguments overwrite earlier ones, per path |
 | [A whole value followed by a subkey opens rather than collides](whole-value-then-subkey.md) | the scalar is opened into whatever it means to its field, then refined |
+| [An op after a whole-field delete applies to nothing below](an-op-after-a-whole-field-delete-applies-to-nothing-below.md) | `--users- --users.0-` fails as with no file; the delete is never silently lost |
 | [Index spellings are hidden from help](index-spellings-are-hidden-from-help.md) | patch syntax is accepted, not advertised |
 
 ## Internals

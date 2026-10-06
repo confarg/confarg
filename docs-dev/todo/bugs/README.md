@@ -12,9 +12,10 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-116 — An env whole-field delete beside a sub-path variable depends on the mapping's order](BUG-116-an-env-whole-field-delete-beside-a-sub-path-var-depends-on-mapping-order.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-155 — A `call:` spec naming a class passes its kwargs uncoerced](BUG-155-a-call-spec-naming-a-class-passes-its-kwargs-uncoerced.md) | critical |  | S | high | behavior | PR-5 |
 | [BUG-182 — An env delete naming no member is dropped without a warning](BUG-182-an-env-delete-naming-no-member-is-dropped-without-a-warning.md) | critical |  | S | low | behavior | PR-5 |
+| [BUG-185 — A dict key `*` from a higher layer wipes the dict's other keys](BUG-185-a-dict-key-star-from-a-higher-layer-wipes-the-dicts-other-keys.md) | critical |  | S | high | behavior | BUG-160 |
+| [BUG-186 — A root `json` cast swallows a field delete meant for the layers below](BUG-186-a-root-json-cast-swallows-a-field-delete-meant-for-the-layers-below.md) | critical |  | S | high | behavior | PR-87, BUG-3 |
 | [BUG-179 — An element flag on a scalar swallows a stray token on argparse and cyclopts](BUG-179-an-element-flag-on-a-scalar-swallows-a-stray-token-on-argparse-and-cyclopts.md) | critical |  | M | medium | config | PR-72 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
 | [BUG-114 — Cyclopts cannot register subclasses that share a struct field name](BUG-114-cyclopts-cannot-register-subclasses-that-share-a-struct-field-name.md) | major |  | S | medium | behavior | PR-38 |

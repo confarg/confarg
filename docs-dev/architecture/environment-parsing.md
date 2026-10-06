@@ -69,10 +69,9 @@ between the two other channels in priority: above
   the walk target, so a dict root's `<PREFIX>JSON` is its cast, as `--<prefix>.json` is: no
   key of a root set whole is a member for a real one to win.
   On a scalar root the plain `<PREFIX>` variable wins over `<PREFIX>JSON`, whatever the
-  mapping's order (REF-44). The CLI's rule there is "last typed wins", and the environment
-  has no typing order: a mapping's iteration order is an accident of how it was built,
-  not something the user chose. So the plain value refines the cast, as a per-field
-  variable does on a struct root.
+  mapping's order (REF-44): the plain value refines the cast, as a per-field variable does
+  on a struct root. That is one case of the order every variable is applied in
+  ([below](#the-broader-variable-applies-first)).
 - `FOO__BAR-` / `FOO__ITEMS__1-` are deletes, mirroring `--bar-` / `--items.1-`.
 - `<PREFIX>CONFIG[__SUBPATH]` are file pointers, collected and loaded by the pipeline. Their
   value is read as an `__include__` value, so `<PREFIX>CONFIG__USERS={"path": "users.csv",
@@ -98,3 +97,29 @@ between the two other channels in priority: above
   ([CLI parsing](cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index),
   BUG-170). A variable that deep was never ambient noise to drop: it already stopped the
   program at `build()`.
+
+## The broader variable applies first
+
+The CLI settles two flags whose paths nest by "last typed wins". The environment has no typing
+order — a mapping's iteration order is an accident of how it was built — so `_parse_env` gives
+it one before writing anything: `_parse_env._env_order` sorts the variables by the depth of the
+path each one writes, then, at one path, a delete before a `json` cast before a plain value,
+then by name. A deeper variable therefore always refines a broader one, exactly as its flag
+does when typed after the broader flag:
+
+| variables, either order | as the CLI's | merges to |
+|---|---|---|
+| `APP_USERS='["q", "r"]'`, `APP_USERS__0=x` | `--users '["q", "r"]' --users.0 x` | `[x, r]` |
+| `APP_DB__json='{"host": "h"}'`, `APP_DB__PORT=2` | `--db.json '{"host": "h"}' --db.port 2` | `host=h, port=2` |
+| `APP_USERS-`, `APP_USERS__0-` | `--users- --users.0-` | error: no base list ([deep merge](pipeline/deep-merge.md#an-op-after-a-whole-field-delete-has-nothing-below-it)) |
+| `APP_DB=oops`, `APP_DB__HOST=db1` | `--db oops --db.host db1` | `{host: db1}` |
+| `<PREFIX>JSON`, `<PREFIX>` on a scalar root | `--json … --<prefix> …` | the plain value |
+
+The depth of a cast is that of the path it writes, its parent's: `_env_cast` answers both the
+order and the write, so the two cannot disagree on whether a trailing `json` is a cast. File
+pointers are not in this order: the pipeline loads them, sorted by subpath
+([merge order](pipeline/merge-order.md#source-precedence)). Until BUG-116 the variables were
+written in the mapping's order, and every pair above resolved one way or the other depending
+on how the environment was built; REF-44 had settled the root case alone. Why this order and
+not another is in
+[design decisions](design-decisions/the-broader-environment-variable-applies-first.md#the-broader-environment-variable-applies-first).

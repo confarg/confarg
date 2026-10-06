@@ -22,9 +22,10 @@ LIST_APPEND_KEY = "+"
 # (original indices before deletion).
 LIST_DELETE_KEY = "-"
 
-# "Replace the base list with this value before applying the other operations".
-# Produced when a whole-list value is followed by a patch or append.  The value is the
-# replacement list.
+# "Replace the base with this value before applying the other operations".
+# Produced when a whole-list value is followed by a patch or append; the value is the
+# replacement list.  Also produced when a whole-field delete is followed by an op at or
+# below its path; the value is then ``DICT_DELETE``: nothing lies below the ops.
 LIST_REPLACE_BASE_KEY = "*"
 
 # "Delete these indices AFTER appends have been applied".  Produced by the CLI parser when
@@ -63,7 +64,7 @@ def _merge_regular_key(key: str, new_val: Any, result: dict[str, Any]) -> None:
     if isinstance(new_val, dict) and LIST_DELETE_KEY in new_val and isinstance(prev, dict) and LIST_APPEND_KEY in prev:
         result[key] = {**new_val, LIST_APPEND_KEY: prev[LIST_APPEND_KEY]}
     else:
-        result[key] = new_val
+        result[key] = _written_over(prev, new_val)
 
 
 def _apply_append_key(plain_key: str, new_val: Any, result: dict[str, Any]) -> None:
@@ -76,6 +77,8 @@ def _apply_append_key(plain_key: str, new_val: Any, result: dict[str, Any]) -> N
         result[plain_key] = {LIST_APPEND_KEY: existing[LIST_APPEND_KEY] + items}
     elif isinstance(existing, dict) and LIST_DELETE_KEY in existing:
         result[plain_key] = {**existing, LIST_APPEND_KEY: items}
+    elif existing is DICT_DELETE:
+        result[plain_key] = {**_open_for_ops(existing), LIST_APPEND_KEY: items}
     else:
         result[plain_key] = {LIST_APPEND_KEY: items}
 
@@ -252,13 +255,15 @@ def _patch_needs_the_type(base: list[Any], ops: dict[str, Any]) -> bool:
 def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) -> Any:
     """Compute the merged value when *key* exists in both base and override.
 
-    An override carrying its own base list (``LIST_REPLACE_BASE_KEY``) replaces a dict
-    base outright, as a union tag does: the patches beside that list address it, not
-    whatever an earlier layer held.
+    An override carrying its own base (``LIST_REPLACE_BASE_KEY``) replaces a dict base
+    outright, as a union tag does: the patches beside that base address it, not whatever
+    an earlier layer held.  A base that is a whole-field delete replaces a list base too.
     """
+    if isinstance(val, dict) and (
+        val.get(LIST_REPLACE_BASE_KEY) is DICT_DELETE or (isinstance(bv, dict) and LIST_REPLACE_BASE_KEY in val)
+    ):
+        return val
     if isinstance(bv, dict) and isinstance(val, dict):
-        if LIST_REPLACE_BASE_KEY in val:
-            return val
         if LIST_APPEND_KEY in bv and LIST_APPEND_KEY in val:
             combined = _to_append_list(bv[LIST_APPEND_KEY]) + _to_append_list(val[LIST_APPEND_KEY])
             rest = _deep_merge(
@@ -330,8 +335,9 @@ def _deep_merge(
     if union_tag is not None and union_tag in override:
         return dict(override)
 
-    # Copy base, skipping any DICT_DELETE sentinels left over from normalization.
-    result = {k: v for k, v in base.items() if not isinstance(v, _DeleteSentinel)}
+    # Copy base, skipping any DICT_DELETE sentinels left over from normalization -- but not
+    # a deleted base, which still cuts its node off from the layers merged under it later.
+    result = {k: v for k, v in base.items() if k == LIST_REPLACE_BASE_KEY or not isinstance(v, _DeleteSentinel)}
 
     for key, val in override.items():
         if isinstance(val, _DeleteSentinel):
@@ -397,15 +403,17 @@ def _peek_nested(d: dict[str, Any], path: list[str]) -> Any:
 def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
     """Set a value in a nested dict by following a list of keys.
 
-    Intermediate dicts are created as needed.  If an intermediate value is a
-    plain list (from a prior full-replace CLI operation), it is converted to
-    ``{LIST_REPLACE_BASE_KEY: list}`` so that subsequent index patches can be
-    accumulated alongside it.  Any other non-dict intermediate is a scalar an
-    earlier whole-value assignment left behind; a path cannot descend through it,
-    so the deeper key replaces it (last write wins, as it already does when the
-    two arrive from different sources).  A scalar that *means* something to its
-    field is opened into that meaning before it gets here — see
-    :func:`~confarg._parse_cli._open_callable_shorthand`.
+    Intermediate nodes are opened by :func:`_open_for_ops`: a missing one is created, a
+    plain list (from a prior full-replace CLI operation) becomes the
+    ``{LIST_REPLACE_BASE_KEY: list}`` base the later index patches are accumulated beside,
+    and a whole-field delete becomes ``{LIST_REPLACE_BASE_KEY: DICT_DELETE}``, so the ops
+    below it still have nothing below them.  Any other non-dict intermediate is a scalar
+    an earlier whole-value assignment left behind; a path cannot descend through it, so
+    the deeper key replaces it (last write wins, as it already does when the two arrive
+    from different sources).  A scalar that *means* something to its field is opened into
+    that meaning before it gets here — see
+    :func:`~confarg._parse_cli._open_callable_shorthand`.  The value itself is written by
+    :func:`_written_over`, so a dict written over a whole-field delete keeps it as its base.
 
     Args:
         d: The root dict to modify in place.
@@ -416,17 +424,50 @@ def _set_nested(d: dict[str, Any], path: list[str], value: Any) -> None:
         docs-dev/architecture/pipeline/deep-merge.md#scalar-intermediates
     """
     if path:
-        _descend_creating(d, path[:-1])[path[-1]] = value
+        parent = _descend_creating(d, path[:-1])
+        parent[path[-1]] = _written_over(parent.get(path[-1]), value)
+
+
+def _written_over(existing: Any, value: Any) -> Any:
+    """Return what writing *value* where *existing* lies leaves there, both in one source.
+
+    *value* itself, except a dict written over a whole-field delete: it keeps the delete
+    as its base (:func:`_open_for_ops`), since a dict merges into the layers below where
+    a list or a scalar replaces them.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#an-op-after-a-whole-field-delete-has-nothing-below-it
+    """
+    if isinstance(value, dict) and existing is DICT_DELETE:
+        return {**_open_for_ops(existing), **value}
+    return value
+
+
+def _open_for_ops(node: Any) -> dict[str, Any]:
+    """Return the dict an op recorded at or below a node writes into, given what *node* holds.
+
+    A dict is written into as it is.  A plain list becomes the ``'*'`` base the op is
+    recorded beside, and a whole-field delete becomes a ``'*'`` base of ``DICT_DELETE``:
+    the op still applies to nothing below, the lower layers included.  Anything else -- a
+    missing node, a scalar an earlier whole value left -- gives a fresh dict, the later
+    writer winning.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#an-op-after-a-whole-field-delete-has-nothing-below-it
+    """
+    if isinstance(node, dict):
+        return node
+    if isinstance(node, list) or node is DICT_DELETE:
+        return {LIST_REPLACE_BASE_KEY: node}
+    return {}
 
 
 def _descend_creating(d: dict[str, Any], path: list[str]) -> dict[str, Any]:
     """Return the dict at *path* inside *d*, opening every node on the way into one.
 
     The one descent every writer into a parse result shares, so an op recorded below a
-    node treats what it finds there the same way whichever op it is: a missing node is
-    created, a plain list is kept as the ``'*'`` base the patch applies to, and any other
-    non-dict -- an earlier scalar, or the sentinel of a whole-field delete -- is replaced,
-    the later writer at the path winning.
+    node treats what it finds there the same way whichever op it is: each node is opened
+    by :func:`_open_for_ops`.
 
     Args:
         d: The root dict to modify in place.
@@ -445,14 +486,32 @@ def _descend_creating(d: dict[str, Any], path: list[str]) -> dict[str, Any]:
         if (target := _navigate_append_spec(d, part)) is not None:
             d = target
             continue
-        if part not in d:
-            d[part] = {}
-        elif isinstance(d[part], list):
-            d[part] = {LIST_REPLACE_BASE_KEY: d[part]}
-        elif not isinstance(d[part], dict):
-            d[part] = {}
+        d[part] = _open_for_ops(d.get(part))
         d = d[part]
     return d
+
+
+def _drop_deleted_bases(node: Any) -> Any:
+    """Return *node* with every ``'*'`` base of ``DICT_DELETE`` removed, at any depth.
+
+    Run once every layer is merged: the deleted base has cut its ops off from the layers
+    below, so what remains is the ops alone, which ``build()`` applies to nothing, as it
+    does when no layer set the field.  Nodes holding none are returned as they are.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#an-op-after-a-whole-field-delete-has-nothing-below-it
+    """
+    if isinstance(node, list):
+        items = [_drop_deleted_bases(v) for v in node]
+        return items if any(a is not b for a, b in zip(items, node, strict=True)) else node
+    if not isinstance(node, dict):
+        return node
+    out = {k: _drop_deleted_bases(v) for k, v in node.items()}
+    if out.get(LIST_REPLACE_BASE_KEY) is DICT_DELETE:
+        del out[LIST_REPLACE_BASE_KEY]
+    elif all(out[k] is node[k] for k in node):
+        return node
+    return out
 
 
 def _accumulate_list_delete(
