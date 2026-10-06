@@ -6,7 +6,6 @@ effort: L
 risk: medium
 impact: config
 severity: major
-blocked_by: [FEAT-28]
 ---
 # FEAT-31 — `classfn:` names an instance method and takes the owner's constructor arguments
 

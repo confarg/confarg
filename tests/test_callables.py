@@ -998,3 +998,102 @@ class TestEscapedDirectiveMode:
         cfg = tmp_json(json.dumps({"fn": {"_class": f"{_MOD}._InitBind", "bind": 5, "_bind": {"lr": 10}}}))
         result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         assert result.fn() == 15
+
+
+# ---------------------------------------------------------------------------
+# call: in a field that is not a Callable (FEAT-28)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Inner:
+    a: int = 1
+
+
+@dataclass
+class _WithCallField:
+    call: int = 0
+
+
+def _text() -> str:
+    return "hi"
+
+
+def _inner_value() -> _Inner:
+    return _Inner(a=7)
+
+
+def _inner_dict() -> dict:
+    return {"a": 2}
+
+
+@dataclass
+class _TypedCallHolder:
+    n: int = 0
+    inner: _Inner | None = None
+    w: _WithCallField | None = None
+    d: dict[str, str] | None = None
+    o: int | None = None
+    anything: Any = None
+
+
+class TestCallInTypedField:
+    """A ``call:`` spec fills any typed field, and a field whose type holds that key as data keeps it."""
+
+    def test_call_fills_an_int_field(self):
+        """A call fills an int field from its keyword arguments."""
+        cfg = confarg.build(_TypedCallHolder, {"n": {"call": f"{__name__}._double", "x": 4}})
+        assert cfg.n == 8
+
+    def test_call_result_already_an_instance_is_taken_as_is(self):
+        """A call result that already is the annotated class is taken as it is."""
+        cfg = confarg.build(_TypedCallHolder, {"inner": {"call": f"{__name__}._inner_value"}})
+        assert cfg.inner == _Inner(a=7)
+
+    def test_call_result_of_another_shape_is_constructed_as_the_annotation(self):
+        """A call result of another shape is constructed as the annotated class."""
+        cfg = confarg.build(_TypedCallHolder, {"inner": {"call": f"{__name__}._inner_dict"}})
+        assert cfg.inner == _Inner(a=2)
+
+    def test_optional_field_takes_the_call(self):
+        """An Optional field takes the call as its member type."""
+        cfg = confarg.build(_TypedCallHolder, {"o": {"call": f"{__name__}._double", "x": 3}})
+        assert cfg.o == 6
+
+    def test_wrong_return_type_fails_as_a_wrong_literal_does(self):
+        """A value that is no int fails as a wrong literal does, at the field."""
+        with pytest.raises(TypeCoercionError, match="Cannot coerce str 'hi' to int at 'n'"):
+            confarg.build(_TypedCallHolder, {"n": {"call": f"{__name__}._text"}})
+
+    def test_bind_is_refused_outside_a_callable(self):
+        """bind: is refused, since only a Callable takes it."""
+        with pytest.raises(TypeCoercionError, match="applies to a Callable"):
+            confarg.build(_TypedCallHolder, {"n": {"call": f"{__name__}._double", "bind": {"x": 1}}})
+
+    def test_unknown_callee_names_the_import(self):
+        """A callee that cannot be imported names it."""
+        with pytest.raises(SymbolImportError, match=r"nope.nothing"):
+            confarg.build(_TypedCallHolder, {"n": {"call": "nope.nothing"}})
+
+    def test_struct_member_named_call_stays_data(self):
+        """A struct member named call keeps the field as data."""
+        cfg = confarg.build(_TypedCallHolder, {"w": {"call": 7}})
+        assert cfg.w == _WithCallField(call=7)
+
+    def test_dict_field_keeps_the_call_key_as_data(self):
+        """A dict field keeps a call key as data."""
+        cfg = confarg.build(_TypedCallHolder, {"d": {"call": "not-a-spec"}})
+        assert cfg.d == {"call": "not-a-spec"}
+
+    def test_any_field_keeps_the_call_key_as_data(self):
+        """An Any field keeps a call key as data."""
+        data = {"anything": {"call": f"{__name__}._double"}}
+        cfg = confarg.build(_TypedCallHolder, data)
+        assert cfg.anything == {"call": f"{__name__}._double"}
+
+    def test_load_reaches_the_same_result(self, tmp_path):
+        """load() takes the same route as build() for a file."""
+        path = tmp_path / "cfg.json"
+        path.write_text(json.dumps({"n": {"call": f"{__name__}._double", "x": 5}}))
+        cfg = confarg.load(_TypedCallHolder, files=[path], env={}, argv=[])
+        assert cfg.n == 10

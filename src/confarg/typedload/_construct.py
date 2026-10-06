@@ -16,7 +16,7 @@ import warnings
 from typing import Any
 
 from confarg import _defaults
-from confarg._callable import _resolve_callable_spec
+from confarg._callable import _resolve_callable_spec, _select_directives, resolve_typed_call
 from confarg._cast import type_for_cast_name
 from confarg._import import _import_dotted, dotted_name
 from confarg._merge import (
@@ -54,6 +54,7 @@ from confarg._types import (
     _StrToken,
     _struct_defaults,
     _struct_fields,
+    _struct_member_names,
     _struct_required,
     _tuple_types,
     _union_args,
@@ -429,6 +430,31 @@ def _construct_typed(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
             return _construct_scalar(tp, data, path, union_tag)
 
 
+def _is_typed_call(data: Any, tp: Any) -> bool:
+    """True if *data* is a ``call:`` spec for a field of type *tp*, and that field is not a Callable.
+
+    A ``call:`` key is a spec only where no member of the annotation could hold that key as data: a
+    dict type, ``Any`` and a Callable keep their own meaning, and a struct member named ``call``
+    (``_call`` in the escaped form) keeps the field's data. ``fn:`` is not dispatched here, and
+    ``class:`` is the union tag, which already selects a struct.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#call-in-a-typed-field
+    """
+    if not isinstance(data, dict):
+        return False
+    d = _select_directives(data)
+    if d.call not in data or d.fn in data or d.cls in data:
+        return False
+    members = [_resolve_type(arg) for arg in _union_args_no_none(tp)] if _is_union(tp) else [tp]
+    for member in members:
+        if _type_kind(member) in (_TypeKind.ANY, _TypeKind.DICT, _TypeKind.CALLABLE) or member is dict:
+            return False
+        if _is_struct(member) and d.call in _struct_member_names(member):
+            return False
+    return True
+
+
 def construct(tp: Any, data: Any, *, path: FieldPath = (), union_tag: str = _defaults.UNION_TAG) -> Any:
     """Construct a typed value from raw data.
 
@@ -457,6 +483,8 @@ def construct(tp: Any, data: Any, *, path: FieldPath = (), union_tag: str = _def
         return _coerce_leaf(pinned.tp, pinned.value, _spell_field_path(path))
     if data is None and _allows_none(tp):
         return None
+    if _is_typed_call(data, tp):
+        return resolve_typed_call(data, tp, path=path, union_tag=union_tag, construct_fn=construct)
     return _construct_typed(tp, data, path, union_tag)
 
 

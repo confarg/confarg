@@ -15,7 +15,7 @@ import functools
 import inspect
 import sys
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, cast, get_args, get_type_hints
+from typing import TYPE_CHECKING, Any, cast, get_args, get_origin, get_type_hints
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -24,6 +24,7 @@ from confarg._import import _import_dotted, dotted_name
 from confarg._types import (
     _callable_param_types,
     _is_callable,
+    _is_union,
     _resolve_type,
     _src_type,
 )
@@ -324,15 +325,20 @@ def _resolve_call_kwargs(func: Any, kwargs: dict, ctx: _SpecContext) -> dict:
     return _coerce_kwargs(func, func, kwargs, ctx, kind="kwargs", subject=subject)
 
 
-def _resolve_call_spec(fn_path: str, call_kwargs: dict, original_spec: dict, ctx: _SpecContext) -> Any:
-    """Resolve a 'call:' spec: import the function, call it with call_kwargs, use the return value."""
+def _call_factory(fn_path: str, call_kwargs: dict, ctx: _SpecContext) -> Any:
+    """Import ``fn_path``, call it with ``call_kwargs`` and return its value, unchecked."""
     func = _import_dotted(fn_path)
     coerced = _resolve_call_kwargs(func, call_kwargs, ctx)
     try:
-        result = func(**coerced)
+        return func(**coerced)
     except Exception as e:
         msg = f"Failed to call {fn_path!r} at '{ctx.where}': {e}"
         raise TypeCoercionError(msg) from e
+
+
+def _resolve_call_spec(fn_path: str, call_kwargs: dict, original_spec: dict, ctx: _SpecContext) -> Any:
+    """Resolve a 'call:' spec: import the function, call it with call_kwargs, use the return value."""
+    result = _call_factory(fn_path, call_kwargs, ctx)
     if not callable(result):
         msg = (
             f"'call:' at '{ctx.where}': {fn_path!r}(**{call_kwargs!r}) returned {type(result).__name__!r},"
@@ -524,6 +530,43 @@ def _resolve_dict_spec(spec: dict, ctx: _SpecContext) -> Any:
     if has_fn:
         return _resolve_fn_spec(spec[d.fn], init_kwargs, bind_raw, ctx)
     return _resolve_class_spec(_ClassSpec(spec[d.cls], init_kwargs, bind_raw, spec), ctx)
+
+
+def _accepts(tp: Any, value: Any) -> bool:
+    """True if ``value`` already is a ``tp``, so it needs no construction to be one.
+
+    A plain class or a parametrized one (by its origin) is an ``isinstance`` test; a union
+    accepts what any of its members accepts. Anything else answers no, and the caller
+    constructs the value, which is what coerces or refuses it.
+    """
+    if tp is Any:
+        return True
+    if _is_union(tp):
+        return any(_accepts(_resolve_type(arg), value) for arg in get_args(tp))
+    base = get_origin(tp) or tp
+    return isinstance(base, type) and isinstance(value, base)
+
+
+def resolve_typed_call(spec: dict, tp: Any, path: FieldPath, union_tag: str, construct_fn: Any) -> Any:
+    """Build a non-Callable value from a ``call:`` spec: call the function and take its value as the field's.
+
+    The sibling keys are the function's arguments. A value the annotation already accepts is
+    returned as it is; any other is built as ``tp`` from the raw value, so a wrong type fails the
+    way a wrong literal does. ``bind`` is refused, since it only applies to a Callable.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#call-in-a-typed-field
+    """
+    ctx = _SpecContext(path, union_tag, construct_fn)
+    d = _select_directives(spec)
+    if d.bind in spec:
+        msg = f"'{d.bind}' at '{ctx.where}' applies to a Callable; a '{d.call}' spec for {tp!r} takes none"
+        raise TypeCoercionError(msg)
+    init_kwargs = {k: v for k, v in spec.items() if k not in d.reserved}
+    value = _call_factory(spec[d.call], init_kwargs, ctx)
+    if _accepts(tp, value):
+        return value
+    return ctx.construct(tp, value)
 
 
 def _bind_hints_source(callable_obj: Any) -> Any:

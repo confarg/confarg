@@ -17,6 +17,23 @@ Implementation: `_callable.py`, called from `typedload.construct`.
 
 Exactly one opener (`fn`/`class`/`call`) is allowed.
 
+## Call in a typed field
+
+A `call:` spec also fills a field whose annotation is not a Callable: an `int`, a dataclass, an
+`Optional`, any other type. The function is called with the sibling keys as its arguments, and
+its value is the field. A value the annotation already accepts is taken as it is; any other is
+built as the annotation, so a wrong type fails the way a wrong literal does. `bind:` is refused
+there, since only a Callable takes it.
+
+The key stops being a spec where the annotation could hold it as data: a `dict` type, `Any`, a
+Callable (which has its own rules), and a struct with a member named `call` (`_call` in the
+escaped form). Those keep the value as written. The check is per construction in
+`typedload._construct._is_typed_call`, so a `call` key means a call on one field and data on
+another ([design decision](design-decisions/call-yields-to-the-data-a-type-holds.md)).
+
+`fn:` is not dispatched on a typed field. `class:` on one is the union tag, which already
+selects a struct and builds it from its sibling keys ([union tag](design-decisions/union-tag-defaults-to-class.md)).
+
 ## Plain and escaped directives
 
 Directive words sit next to the target's own kwargs, so a parameter named `fn`, `call` or

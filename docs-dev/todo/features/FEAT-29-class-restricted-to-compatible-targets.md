@@ -7,7 +7,6 @@ effort: S
 risk: low
 impact: api
 severity: minor
-blocked_by: [FEAT-28]
 ---
 # FEAT-29 — `class:` only names classes compatible with the target type
 
