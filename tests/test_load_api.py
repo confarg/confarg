@@ -136,7 +136,7 @@ class TestNonDataclassTargets:
 
     def test_float_target(self) -> None:
         """Load a plain float via env."""
-        result = confarg.load(float, argv=[], env={"MYAPP_VALUE": "3.14"}, env_prefix="MYAPP_", cli_prefix="confarg")
+        result = confarg.load(float, argv=[], env={"MYAPP_": "3.14"}, env_prefix="MYAPP_", cli_prefix="confarg")
         assert result == pytest.approx(3.14)
 
 

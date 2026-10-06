@@ -386,6 +386,12 @@ class TestLocalsWithScalarTarget:
         cfg = write(tmp_path, "config.yaml", "locals:\n  k: 3\n__root__: ${locals.k * 2}\n")
         assert confarg.load(int, argv=["--config", str(cfg), "--locals.k", "5"], env={}) == 10
 
+    def test_scalar_root_local_is_modifiable_from_env(self, tmp_path: Path) -> None:
+        """The environment reaches the namespace beside a scalar root, as --locals.k does (BUG-115)."""
+        cfg = write(tmp_path, "config.yaml", "locals:\n  k: 3\n__root__: ${locals.k * 2}\n")
+        env = {"APP_LOCALS__K": "5"}
+        assert confarg.load(int, argv=["--config", str(cfg)], env=env, env_prefix="APP_") == 10
+
 
 # ---------------------------------------------------------------------------
 # Namespaces below the root

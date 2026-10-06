@@ -25,12 +25,14 @@ from confarg._parse_cli import (
     _accepts_object_value,
     _check_mount_subpath,
     _field_types,
+    _locals_keys,
     _locals_segment_index,
     _member_names,
     _open_callable_shorthand,
+    _path_unknown,
     _resolve_field_type,
-    _segment_names_real_field,
     _sequence_refusal,
+    _walk_target,
     detect_force_cast,
 )
 from confarg._types import (
@@ -174,17 +176,21 @@ def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[
 def _apply_env_json_cast(  # noqa: PLR0913  # root and nested placement need distinct sinks
     orig_key: str,
     parts: list[str],
-    target: Any,
+    walk_target: Any,
     value: str,
     data: dict[str, Any],
     root_json: list[dict[str, Any]],
     union_tag: str,
+    *,
+    is_struct: bool,
 ) -> bool:
     """Apply a ``json`` force-cast (``FOO__DB__json``, or ``FOO_JSON`` at the root).
 
     Mirrors the CLI ``.json`` suffix, including the bare root form: whether the trailing
     segment is a cast at all is decided by the canonical
-    :func:`~confarg._parse_cli.detect_force_cast` (a real field/key named ``json`` wins).
+    :func:`~confarg._parse_cli.detect_force_cast` (a real field/key named ``json`` wins),
+    asked of the *walk_target* a flag's path resolves against. So a dict root's
+    ``FOO_JSON`` is its cast: no key of a root set whole is a member.
     A nested cast is stored at the parent path; a root cast injects the whole
     configuration — collected into ``root_json`` and folded in as a base by
     :func:`~confarg._cast.fold_root_json`, so per-field env vars win over it.  Returns
@@ -193,15 +199,15 @@ def _apply_env_json_cast(  # noqa: PLR0913  # root and nested placement need dis
     """
     if parts[-1].lower() != JSON_CAST_NAME:
         return False
-    parent_parts, _ = _resolve_env_parts(target, parts[:-1], union_tag) if parts[:-1] else ([], None)
-    path, cast_name = detect_force_cast([*parent_parts, JSON_CAST_NAME], target, union_tag)
+    parent_parts, _ = _resolve_env_parts(walk_target, parts[:-1], union_tag) if parts[:-1] else ([], None)
+    path, cast_name = detect_force_cast([*parent_parts, JSON_CAST_NAME], walk_target, union_tag)
     if cast_name is None:
         return False
     decoded = resolve_forced_value(cast_name, value, flag=orig_key)
     if path:
         _set_nested(data, path, decoded)
         return True
-    if not _is_struct_like(_resolve_type(target)):
+    if not is_struct:
         # Non-struct root: the decoded value *is* the configuration, whatever its shape.
         # The environment has no order for "last typed wins" to read, so the plain
         # variable refines the cast, as a per-field one does on a struct root.
@@ -213,19 +219,31 @@ def _apply_env_json_cast(  # noqa: PLR0913  # root and nested placement need dis
     return True
 
 
-def _warn_unknown_env_field(orig_key: str, parts: list[str], root_tp: Any, union_tag: str) -> bool:
-    """Warn and return True if the env var's first segment names no real member of the root.
+def _warn_unknown_env_field(orig_key: str, parts: list[str], target: Any, walk_target: Any, union_tag: str) -> bool:
+    """Warn and return True if the env var's first segment names nothing a flag of the root reaches.
 
-    Real membership is the canonical :func:`~confarg._parse_cli._segment_names_real_field`'s
-    to answer — the same predicate the CLI's casts and locals consult — so the union
-    tag and a subclass-only field name a member here exactly as the CLI channel
-    accepts them (BUG-90).
+    Whether it does is the canonical :func:`~confarg._parse_cli._path_unknown`'s to answer,
+    asked of the *walk_target* every flag resolves against, so a segment is warned about
+    here exactly when the CLI refuses it as unknown: the union tag and a subclass-only
+    field name a member (BUG-90), and nothing below a non-struct root does, since that
+    root is set whole (BUG-115).
 
     Dev Notes:
         docs-dev/architecture/environment-parsing.md#environment-parsing
     """
-    if _segment_names_real_field(root_tp, parts[0], union_tag):
+    if not _path_unknown(walk_target, parts[:1], union_tag):
         return False
+    root_tp = _resolve_type(target)
+    if not _is_struct_like(root_tp):
+        warnings.warn(
+            f"Environment variable {orig_key!r} has no matching field"
+            f" (segment {parts[0]!r} is below the {getattr(root_tp, '__name__', root_tp)} root,"
+            " which is set whole by the bare prefix variable or its JSON cast)."
+            " The variable will be ignored.",
+            ConfargWarning,
+            stacklevel=4,
+        )
+        return True
     if _is_union(root_tp):
         struct_variants = [_resolve_type(v) for v in _union_args_no_none(root_tp) if _is_struct(_resolve_type(v))]
         all_fields = sorted({f for v in struct_variants for f in _struct_fields(v)})
@@ -291,7 +309,9 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
 
     Variables are matched by prefix and split by separator into nested keys.
     Field names are matched case-insensitively against the target type tree.
-    For non-dataclass targets, the value is stored under a ``__root__`` key.
+    A non-struct target is set whole, under a ``__root__`` key, by the bare prefix
+    variable or its ``JSON`` cast; any other variable names a path below it, which no
+    flag reaches either, and is warned about and ignored.
 
     A variable whose first segment (after stripping the prefix) matches
     ``config_flag`` (case-insensitive) is treated as a sub-config file pointer:
@@ -321,6 +341,8 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
     env_configs: list[tuple[str, str]] = []
     root_json: list[dict[str, Any]] = []  # objects from a root-level `json` cast, folded in below fields
     is_struct = _is_struct_like(_resolve_type(target))
+    # Paths resolve against the locals-grafted target, as a flag's do; root classification keeps `target`.
+    walk_target = _walk_target(target, _locals_keys(target, union_tag))
 
     for orig_key, value in env.items():
         key = orig_key
@@ -336,30 +358,31 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
             continue
 
         if parts[-1].endswith("-") and len(parts[-1]) > 1:
-            _handle_env_delete(orig_key, parts, target, data, union_tag)
+            _handle_env_delete(orig_key, parts, walk_target, data, union_tag)
             continue
 
-        if _apply_env_json_cast(orig_key, parts, target, value, data, root_json, union_tag):
+        if _apply_env_json_cast(orig_key, parts, walk_target, value, data, root_json, union_tag, is_struct=is_struct):
             continue
 
-        if not is_struct:
+        if not is_struct and not key:
+            # The bare prefix sets a non-struct root whole, as the bare --<cli_prefix> does.
             data[_defaults.ROOT_KEY] = _try_coerce(_resolve_type(target), _StrToken(value))
             continue
 
-        parts, ft = _resolve_env_parts(target, parts, union_tag)
+        parts, ft = _resolve_env_parts(walk_target, parts, union_tag)
         # Locals are not target fields: skip the unknown-field warning and store the raw
         # token; _pipeline checks and coerces them (docs-dev/architecture/locals.md).
         is_locals = _locals_segment_index(target, parts, union_tag) is not None
-        if not is_locals and _warn_unknown_env_field(orig_key, parts, _resolve_type(target), union_tag):
+        if not is_locals and _warn_unknown_env_field(orig_key, parts, target, walk_target, union_tag):
             continue
         if is_locals:
             ft = None
         else:
-            _refuse_below_a_sequence(orig_key, parts, target, union_tag)
+            _refuse_below_a_sequence(orig_key, parts, walk_target, union_tag)
 
         # Same rule as the CLI: a bare callable shorthand already stored at a prefix of
         # this path is a spec this variable refines, not a scalar it replaces.
-        _open_callable_shorthand(data, parts, target, union_tag)
+        _open_callable_shorthand(data, parts, walk_target, union_tag)
         _store_env_value(parts, ft, value, data)
 
     return fold_root_json(data, root_json, union_tag), env_configs

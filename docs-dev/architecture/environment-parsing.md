@@ -23,6 +23,21 @@ between the two other channels in priority: above
   fields" therefore counts every member the walk reaches: two variants, or a declared field
   and a subclass-only one, that differ only by case cannot be told apart from the
   environment, and the segment is an error rather than a silent pick of one of them.
+- Every path starts where a flag's does: at `_parse_cli._walk_target`, the target with the
+  [locals graft](locals.md#walk-target-graft) beside it, which segments are spelled, typed,
+  cast and checked against. The real target only classifies the root. The channel walked
+  the bare target until BUG-115, so a variable could take a path no flag can. The locals
+  namespace is one of the members a root segment is spelled among, so a field that differs
+  from a namespace name only by case (`Locals`) is ambiguous here, where the CLI tells
+  `--Locals` from `--locals.x` apart. Before BUG-115 such a field silently won, and the
+  namespace could not be reached from the environment.
+- A **non-struct root** is [set whole](cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole):
+  by the bare `<PREFIX>` variable, or by its `<PREFIX>JSON` cast. Every other variable names a
+  path below the root, and no flag reaches one, so the first-segment check below warns about it
+  and ignores it. The locals namespace beside the root is the exception: `<PREFIX>LOCALS__N`
+  reaches it, as `--<prefix>.locals.n` does. Until BUG-115 a branch of its own wrote every
+  prefixed variable to `__root__`, so `MYAPP_DEBUG` replaced the root, and when several were
+  set the mapping's order chose the winner.
 - A segment that names no member but names the union tag resolves to the tag's **exact
   spelling**, whatever case the variable spelled it in (BUG-101): the walks downstream —
   the mount-subpath check, `build()` — compare the tag exactly, so a lowercased custom tag
@@ -50,7 +65,9 @@ between the two other channels in priority: above
   error on invalid JSON. `<PREFIX>JSON` is the root form: it injects a whole config, folded
   in **under** the per-field env vars exactly as root `--json` sits under the field flags
   ([CLI parsing](cli-parsing/casts-and-reserved-words.md#force-casts)). Whether a trailing `json` is a cast at all is
-  decided by the canonical `detect_force_cast`, not by a second rule in `_parse_env`.
+  decided by the canonical `detect_force_cast`, not by a second rule in `_parse_env`. Asked of
+  the walk target, so a dict root's `<PREFIX>JSON` is its cast, as `--<prefix>.json` is: no
+  key of a root set whole is a member for a real one to win.
   On a scalar root the plain `<PREFIX>` variable wins over `<PREFIX>JSON`, whatever the
   mapping's order (REF-44). The CLI's rule there is "last typed wins", and the environment
   has no typing order: a mapping's iteration order is an accident of how it was built,
@@ -62,11 +79,14 @@ between the two other channels in priority: above
   "orient": "columns"}` says in the environment what a file says with a mapping
   ([mounting](config-files/mounting.md#mounting)). The variable named by `env_config` is removed from field parsing.
 - An unknown first segment emits `ConfargWarning` and the variable is ignored, whereas an
-  unknown CLI flag is an error. "Real member" is not this channel's question to answer: the
-  check defers to the canonical `_parse_cli._segment_names_real_field`
-  ([CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)), so the union tag
-  and a subclass-only field name a member — the tag was warned away and dropped before
-  BUG-90, while the CLI and file channels accepted the same configuration. *(inferred)* The
+  unknown CLI flag is an error. "Unknown" is not this channel's question to answer: the
+  check asks the walk target the CLI's own `_parse_cli._path_unknown`, so a first segment is
+  warned about exactly when its flag would be refused. The union tag and a subclass-only field
+  name a member on a struct root — the tag was warned away and dropped before BUG-90, while the
+  CLI and file channels accepted the same configuration — and nothing names one below a
+  non-struct root, the tag included (BUG-115). The check asked `_segment_names_real_field` of
+  the bare target until then, which counts every key of a dict root and the tag of any root
+  as a member. *(inferred)* The
   environment is ambient and shared with other software, while argv is an explicit request; a
   stray variable should not stop the program. Tests can escalate the warning with
   `warnings.filterwarnings("error", …)`.

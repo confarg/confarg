@@ -814,7 +814,7 @@ class TestParseEnvBranches:
         result = confarg.load(
             str | None,
             argv=[],
-            env={"MYAPP_VALUE": "none"},
+            env={"MYAPP_": "none"},
             env_prefix="MYAPP_",
         )
         assert result is None

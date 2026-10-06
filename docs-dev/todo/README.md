@@ -52,9 +52,10 @@ it when `PATH` is a directory, or through a glob:
 
 ```console
 $ uv run python docs-dev/todo/index.py --where src/confarg/_parse_env.py
-bugs/BUG-115-every-prefixed-env-var-overwrites-a-scalar-root.md
-  BUG-115 — Every prefixed environment variable overwrites a scalar root
+bugs/BUG-116-an-env-whole-field-delete-beside-a-sub-path-var-depends-on-mapping-order.md
+  BUG-116 — An env whole-field delete beside a sub-path variable depends on the mapping's order
   where: src/confarg/_parse_env.py::_parse_env
+  where: src/confarg/_parse_env.py::_handle_env_delete
 …
 ```
 
@@ -63,8 +64,8 @@ first `N` (10 by default) unblocked tickets across every board, in [work order](
 
 ```console
 $ uv run python docs-dev/todo/index.py --next 1
- 1. BUG-115 — Every prefixed environment variable overwrites a scalar root
-    critical · S · bugs/BUG-115-every-prefixed-env-var-overwrites-a-scalar-root.md
+ 1. BUG-116 — An env whole-field delete beside a sub-path variable depends on the mapping's order
+    critical · S · bugs/BUG-116-an-env-whole-field-delete-beside-a-sub-path-var-depends-on-mapping-order.md
 ```
 
 Documentation defects go on these same boards, sorted the same way: documentation wrong about

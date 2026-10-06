@@ -1341,3 +1341,65 @@ class TestEnvSpellsWhatTheWalkReaches:
             match=_HOST_AMBIGUOUS,
         ):
             confarg.merge(_EnvHostBase, argv=[], env={"APP_HOST": "x"}, env_prefix="APP_")
+
+    def test_field_and_locals_namespace_differing_by_case_are_ambiguous(self) -> None:
+        """The namespace is a member the walk reaches at the root, so `Locals` and `locals` collide."""
+        target = make_dataclass("_EnvLocalsField", [("Locals", int, field(default=0))])
+        with pytest.raises(confarg.exceptions.ConfargError, match=r"Ambiguous env var segment 'LOCALS'"):
+            confarg.merge(target, argv=[], env={"APP_LOCALS": "1"}, env_prefix="APP_")
+
+
+# ---------------------------------------------------------------------------
+# A non-struct root is set whole
+# ---------------------------------------------------------------------------
+
+
+def _confarg_warnings(caught: list[warnings.WarningMessage]) -> list[str]:
+    return [str(w.message) for w in caught if issubclass(w.category, confarg.exceptions.ConfargWarning)]
+
+
+class TestEnvNonStructRoot:
+    """Only the bare prefix and its ``json`` cast address a non-struct root (BUG-115).
+
+    Any other variable names a path below a root that is set whole, which no flag reaches
+    (docs-dev/architecture/cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole): it is
+    warned about and ignored, as an unknown field of a struct root is.
+    """
+
+    @pytest.mark.parametrize(
+        "env",
+        [{"APP_": "3", "APP_DEBUG": "1"}, {"APP_DEBUG": "1", "APP_": "3"}],
+    )
+    def test_sub_path_variable_does_not_replace_the_root(self, loader: ConfargLoader, env: dict[str, str]) -> None:
+        """BUG-115's repro: APP_DEBUG is warned about and ignored, whatever the mapping's order."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = loader.merge(int, argv=[], env=env, env_prefix="APP_")
+        assert result == {"__root__": 3}
+        [msg] = _confarg_warnings(caught)
+        assert "'APP_DEBUG'" in msg
+
+    @pytest.mark.parametrize(
+        ("target", "var"),
+        [
+            (int, "APP_CLASS"),  # the union tag: no class is dispatched on a value root
+            (list[int], "APP_0"),
+            (dict[str, int], "APP_A"),
+            (_EnvSeqPt, "APP_X"),
+        ],
+    )
+    def test_variable_below_a_value_root_is_ignored(self, loader: ConfargLoader, target: Any, var: str) -> None:
+        """No variable reaches an element, a key, a field or the tag below the root, as no flag does."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = loader.merge(target, argv=[], env={var: "1"}, env_prefix="APP_")
+        assert result == {}
+        [msg] = _confarg_warnings(caught)
+        assert f"{var!r}" in msg
+        assert "set whole" in msg
+
+    def test_dict_root_json_is_the_root_cast(self, loader: ConfargLoader) -> None:
+        """No key of a dict root is a member, so APP_JSON is its cast, as --app.json is."""
+        from_cli = loader.load(dict[str, int], argv=["--app.json", '{"a": 1}'], env={}, cli_prefix="app")
+        from_env = loader.load(dict[str, int], argv=[], env={"APP_JSON": '{"a": 1}'}, env_prefix="APP_")
+        assert from_env == from_cli == {"a": 1}
