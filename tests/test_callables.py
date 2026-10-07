@@ -1090,6 +1090,23 @@ class TestSerialization:
         result = confarg.load(Target, argv=[], env={}, files=[cfg])
         assert confarg.dump(result)["fn"] == spec
 
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["--fn.call", f"{_MOD}._make_adder", "--fn.offset", "2"], id="call"),
+            pytest.param(["--fn.class", f"{_MOD}._Multiplier", "--fn.factor", "2"], id="class"),
+            pytest.param(["--fn.bind.class", f"{_MOD}._Multiplier", "--fn.bind.factor", "2"], id="nested"),
+        ],
+    )
+    def test_a_stamped_spec_from_the_cli_dumps_plain_strings(self, argv: list[str]) -> None:
+        """A spec the CLI spelled dumps its text as plain str, never as the tokens it was parsed into."""
+        dumped = confarg.dump(confarg.load(WithCallable, argv=argv, env={}))
+
+        def leaves(node: Any) -> list[Any]:
+            return [x for v in node.values() for x in leaves(v)] if isinstance(node, dict) else [node]
+
+        assert {type(leaf) for leaf in leaves(dumped["fn"])} == {str}
+
 
 # ---------------------------------------------------------------------------
 # Regression: callable-object mode via CLI (non-subclass return type)

@@ -88,7 +88,8 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
         case _TypeKind.DICT:
             return _serialize_dict(tp, instance, path, union_tag, tag_policy)
         case _TypeKind.CALLABLE:
-            return _serialize_callable(instance)
+            # A stamped spec is merged data, tokens included: it leaves as the raw dict does.
+            return _serialize_untyped(_serialize_callable(instance))
         case _TypeKind.ANY | _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
             return _serialize_leaf(tp, instance)
 
