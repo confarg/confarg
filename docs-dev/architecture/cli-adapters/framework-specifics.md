@@ -42,3 +42,17 @@ the name invalid, and with `_` unescaped a key could spell a separator's token: 
 Rejected: **a positional name** (`p0`, `p1`, …), unique by construction. It would work as well,
 the name never reaching the user, but it ties a parameter's name to registration order, so a
 debugger or a traceback shows `p17` where the escape still reads as the flag.
+
+## Cyclopts repeated one-token flags
+
+A one-token flag spelled twice is the last occurrence's write on every front-end: `--port 1
+--port 2` is `2`, as each later occurrence overwrites what an earlier one wrote at its path
+([argv is the only writer](model.md#argv-is-the-only-writer)). argparse, click and typer keep the
+last occurrence on their own; a cyclopts parameter that consumes one token refuses the second
+with `Parameter --port specified multiple times.` unless it is registered `allow_repeating=True`.
+Nothing reads the value cyclopts binds, vanilla's loop reading every occurrence off argv, so the
+registration allows the repeat, as it does for a value-less delete
+([collection patch parity](collection-patch-parity.md#collection-patch-parity)). A flag that
+consumes many tokens (`consume_multiple`) accumulates its repeats already. The refusal dates from
+the adapter itself (PR-26) on field flags; it reached the element flags of a one-token type when
+they stopped registering greedily (BUG-179).

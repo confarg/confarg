@@ -164,7 +164,8 @@ def _binds_a_run(tp: Any) -> bool:
     fixed-arity one (``FlagSpec.whole_value``, which needs a variable token count) greedily,
     so every token up to the next flag is the flag's; click and typer bind the exact count.
     Vanilla's loop asks it of the type it consumed for, to tell a stray it refuses from a
-    positional of the host's own.
+    positional of the host's own, and a subkey or element flag registers greedily exactly
+    where it holds, so the two cannot disagree (BUG-179).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/model.md#the-quartet
@@ -1427,8 +1428,9 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
     casts.  Their values are written from argv by ``_parse_cli``, like every flag's.
     Delete flags register value-less (``nargs=0``); an append registers
     ``nargs="*"`` and ``stands_bare``, since it takes zero *or* more items, and a subkey or
-    element flag inherits ``stands_bare`` from the type it addresses -- multi-token when a
-    field flag of that type would be (``--map.k`` on a ``dict[str, list[int]]``).
+    element flag inherits its arity and ``stands_bare`` from the type it addresses --
+    multi-token when a field flag of that type would be (``--map.k`` on a
+    ``dict[str, list[int]]``), one token on a scalar (``--map.k`` on a ``dict[str, int]``).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
@@ -1532,12 +1534,14 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
             # bare exactly when a field flag of that type would, and refuses its bare
             # occurrence exactly when a field flag of that type would too
             # (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
+            # It registers greedily exactly where the loop is told the host binds a run,
+            # so a one-token type leaves the token after its value a stray (BUG-179).
             at = _resolve_field_type(target, path, union_tag)
             specs.append(
                 _refusing_bare(
                     FlagSpec(
                         name=key,
-                        nargs="*",
+                        nargs="*" if at is not None and _binds_a_run(at) else None,
                         metavar="VALUE",
                         stands_bare=at is not None and _takes_multi_tokens(at),
                         help=f"Set the collection element at '{target_path}'.",

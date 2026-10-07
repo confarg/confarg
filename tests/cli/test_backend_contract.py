@@ -3822,6 +3822,41 @@ class TestCollectionPatchContract:
         with pytest.raises(ConfargError, match=re.escape("Missing value for '--pairs.0'")):
             space_sep_loader.merge(_WithPairs, argv=["--pairs.0", "1", "2", "--pairs.0"], env={})
 
+    @pytest.mark.parametrize(
+        ("target", "argv"),
+        [
+            pytest.param(_WithMap, ["--data.a", "2", "9"], id="scalar-dict-value"),
+            pytest.param(_WithUsers, ["--users.0", "allan", "9"], id="scalar-list-element"),
+            pytest.param(_WithDbs, ["--dbs.0", '{"dbpath": "a"}', "9"], id="struct-list-element"),
+            pytest.param(_NestedDicts, ["--d.a", '{"b": 1}', "9"], id="dict-dict-value"),
+        ],
+    )
+    def test_single_token_element_flag_refuses_a_stray_token(
+        self,
+        loader: ConfargLoader,
+        target: type,
+        argv: list[str],
+    ) -> None:
+        """A subkey or element flag over a one-token type leaves the next token a stray (BUG-179).
+
+        Vanilla consumes one token for it, as for a field flag of that type, and refuses
+        the next as a stray positional; click and typer refuse it in their own parser. A
+        greedy registration let argparse and cyclopts bind the stray to the flag, and the
+        loop, told the host binds no run to that type, skipped it as the host's positional.
+        """
+        with pytest.raises((UnknownArgumentError, SystemExit)) as exc_info:
+            loader.merge(target, argv=argv, env={})
+        if exc_info.type is UnknownArgumentError:
+            assert "Unexpected positional argument: '9'" in str(exc_info.value)
+
+    def test_single_token_element_flag_repeated_keeps_the_last(self, loader: ConfargLoader) -> None:
+        """A repeated one-token element flag is the last occurrence's write, as a field flag's is (BUG-179).
+
+        Registered with one token, a cyclopts parameter refuses a second occurrence unless
+        it allows the repeat; the value is read off argv, so keeping the last is harmless.
+        """
+        assert loader.merge(_WithMap, argv=["--data.a", "1", "--data.a", "2"], env={}) == {"data": {"a": 2}}
+
     def test_tuple_index_set(self, loader: ConfargLoader) -> None:
         """Tuple elements are patchable by index."""
         cfg = loader.load(_WithLang, argv=["--lang.1", "FR"], env={})
@@ -7173,6 +7208,7 @@ class TestArgvOrderContract:
             pytest.param(["--s.x", "1", "--s", '{"y": 5}', "--s.y", "2"], {"s": {"y": 2}}, id="blob-between-sub-flags"),
             pytest.param(["--b.json", "5", "--b", "no"], {"b": "no"}, id="plain-flag-after-cast"),
             pytest.param(["--b", "no", "--b.json", "5"], {"b": 5}, id="cast-after-plain-flag"),
+            pytest.param(["--s.x", "1", "--s.x", "2"], {"s": {"x": 2}}, id="repeated-scalar-flag"),
         ],
     )
     def test_later_occurrence_wins(self, loader: ConfargLoader, argv: list[str], expected: dict[str, Any]) -> None:

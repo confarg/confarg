@@ -100,7 +100,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |
 | "who writes the adapters' CLI channel and its `--config` files?" | `_parse_cli._parse_cli(..., host_parsed=True)` — vanilla's loop over the argv the framework parsed, skipping only the host's own tokens (REF-72); the parse result is only checked against argv, by `cli/_collect._require_argv_spells` |
 | "would vanilla refuse this path as unknown?" | `_parse_cli._path_unknown` — the delete handler, the host-mode skip of a flag whose first segment names no member, and the environment's warning about a variable whose first segment names none (BUG-115) |
-| "did the host bind the token after a flag's run to that flag?" | `cli/_build._binds_a_run`, asked by the loop only for a framework that varies a flag's token count (argparse, cyclopts: `binds_runs`) |
+| "did the host bind the token after a flag's run to that flag?" | `cli/_build._binds_a_run`, asked by the loop only for a framework that varies a flag's token count (argparse, cyclopts: `binds_runs`); a subkey or element flag registers greedily exactly where it holds, so a one-token type's flag leaves the token after its value a stray (BUG-179, [CLI adapters](cli-adapters/collection-patch-parity.md#collection-patch-parity)) |
 | "which flags does argv spell?" | `cli._argv.spelled_flag_names` |
 | "does the static walk leave this path's flag to be registered when typed?" | `_parse_cli._registered_when_typed` — a collection patch, or a tag the walk reaches by its fallback, whatever the parent (BUG-106) |
 | "does this field take a whole `{…}` token?" | `_parse_cli._accepts_object_value` |
