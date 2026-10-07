@@ -63,6 +63,5 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-119 — `_defaults.py` says four front-ends must agree; there are five](BUG-119-defaults-module-counts-four-front-ends.md) | trivial |  | S | low | none | BUG-7 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
 | [BUG-150 — The protocols count four front-ends and leave typer out](BUG-150-the-protocols-count-four-front-ends-and-leave-typer-out.md) | trivial |  | S | low | none | BUG-7 |
-| [BUG-151 — The namedtuple decision names the bugs board by its old file](BUG-151-the-namedtuple-decision-names-the-bugs-board-by-its-old-file.md) | trivial |  | S | low | none | PR-162 |
 
 <!-- tickets:end -->
