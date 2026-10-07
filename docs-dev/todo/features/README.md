@@ -12,8 +12,8 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact |
 |---|---|---|---|---|---|
+| [FEAT-3 — A registry of reserved sentinel keys](FEAT-3-reserved-sentinel-key-registry.md) | critical (via BUG-199) |  | S | high | config |
 | [FEAT-14 — Dataclass fields that are not `__init__` parameters](FEAT-14-dataclass-fields-outside-init.md) | major |  | L | high | behavior |
-| [FEAT-3 — A registry of reserved sentinel keys](FEAT-3-reserved-sentinel-key-registry.md) | minor |  | S | high | config |
 | [FEAT-5 — Optional structural validation right after `merge()`](FEAT-5-structural-validation-after-merge.md) | minor |  | S | low | behavior |
 | [FEAT-26 — The expression whitelist is not documented for users](FEAT-26-the-expression-whitelist-is-not-documented-for-users.md) | minor |  | S | low | none |
 | [FEAT-7 — Lazy resolution between `merge` and `build`](FEAT-7-lazy-resolution-merge-to-build.md) | minor |  | M | high | behavior |

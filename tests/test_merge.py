@@ -564,3 +564,25 @@ class TestReplaceBaseIsAList:
         """A file's ``'*'`` holding no list is refused rather than read with ``list()``."""
         with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("at 'input': the '*' base must be a list")):
             _deep_merge({"input": [1, 2]}, {"input": {"*": base, "0": 3}})
+
+
+class TestDictKeyStar:
+    """A dict's own key ``*`` merges as any other key: it holds no base, so it replaces nothing (BUG-185)."""
+
+    def test_star_key_over_a_dict_is_merged_beside_its_keys(self) -> None:
+        """``{'*': 5}`` over ``{'k': 1}`` adds the key, as ``{'z': 5}`` does."""
+        assert _deep_merge({"d": {"k": 1}}, {"d": {"*": 5}}) == {"d": {"k": 1, "*": 5}}
+
+    def test_star_key_from_the_env_keeps_the_files_keys(self, tmp_json) -> None:
+        """``APP_D__*`` over a file's ``d`` adds the key ``*`` beside the file's."""
+        WithDict = make_target("d", dict[str, int], default_factory=dict)
+        base = tmp_json('{"d": {"k": 1}}')
+        cfg = confarg.load(WithDict, argv=[], env={"APP_D__*": "5"}, env_prefix="APP_", files=[base])
+        assert cfg.d == {"k": 1, "*": 5}
+
+    def test_star_key_from_a_later_file_keeps_the_earlier_files_keys(self, tmp_json) -> None:
+        """A later file's ``{"*": 5}`` under ``d`` adds the key beside the earlier file's."""
+        WithDict = make_target("d", dict[str, int], default_factory=dict)
+        a = tmp_json('{"d": {"k": 1}}', "a.json")
+        b = tmp_json('{"d": {"*": 5}}', "b.json")
+        assert confarg.load(WithDict, argv=[], env={}, files=[a, b]).d == {"k": 1, "*": 5}

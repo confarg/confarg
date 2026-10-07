@@ -258,11 +258,15 @@ def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) ->
     An override carrying its own base (``LIST_REPLACE_BASE_KEY``) replaces a dict base
     outright, as a union tag does: the patches beside that base address it, not whatever
     an earlier layer held.  A base that is a whole-field delete replaces a list base too.
+    A ``'*'`` holding anything else is a dict's own key, merged as any other (BUG-185).
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#deep-merge-semantics
     """
-    if isinstance(val, dict) and (
-        val.get(LIST_REPLACE_BASE_KEY) is DICT_DELETE or (isinstance(bv, dict) and LIST_REPLACE_BASE_KEY in val)
-    ):
-        return val
+    if isinstance(val, dict):
+        carried = val.get(LIST_REPLACE_BASE_KEY)
+        if carried is DICT_DELETE or (isinstance(bv, dict) and isinstance(carried, list | tuple)):
+            return val
     if isinstance(bv, dict) and isinstance(val, dict):
         if LIST_APPEND_KEY in bv and LIST_APPEND_KEY in val:
             combined = _to_append_list(bv[LIST_APPEND_KEY]) + _to_append_list(val[LIST_APPEND_KEY])
