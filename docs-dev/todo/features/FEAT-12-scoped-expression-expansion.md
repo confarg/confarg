@@ -38,7 +38,7 @@ lookup is spelled there ([expressions/reference-anchoring.md#implementation-cons
 Adding `ast.Slice` to the whitelist therefore needs no lexer change, but it does need tests
 pinning `items[::2]`, `items[:3]` and `items[(::step)]` apart.
 
-Parity is not at risk — the engine is shared by all three channels and all four front-ends, so
+Parity is not at risk — the engine is shared by all three channels and all five front-ends, so
 an expansion lands everywhere at once — but each new node must stay inside the deferral rule
 ([expressions/deferral-rule.md#deferral-rule](../../architecture/expressions/deferral-rule.md#deferral-rule)): a value
 gate must still defer on `contains_expression`, and a literal that now resolves to a `list`
