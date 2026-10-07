@@ -8,7 +8,7 @@ quote:
 
 - **A bare expression quoted out of a function.** `confarg.load(PostgreSQLConfig,
   env_prefix="MYAPP_")` in `1_three_input_sources`, `config.greet_fn("world")` in
-  `18_callables`, the `merge()`/`dump_file()`/`build()` trio in `23_local_variables`, and
+  `18_callables`, the `merge()`/`dump_file()`/`build()` trio in `24_local_variables`, and
   the `register_leaf_type` calls in `4_leaf_types` (the second one is `main()`'s own line,
   unreachable by a selector). The hook quotes whole files or whole symbols; showing the
   whole `main()` to illustrate a one-liner trades teaching for generation, and inventing a
@@ -17,7 +17,7 @@ quote:
   argument and introduces the serializer a page later, while the shipped
   `custom_leaf_type.py` registers with both. The block teaches the progression, and quoting
   the script would spoil it.
-- **A file the run itself writes.** `22_variable_scopes` shows the `saved_config_*.yaml`
+- **A file the run itself writes.** `23_variable_scopes` shows the `saved_config_*.yaml`
   files a `dump_file()` produces. They are `gitignore`d, so annotating them fails the hook
   on a clean checkout.
 

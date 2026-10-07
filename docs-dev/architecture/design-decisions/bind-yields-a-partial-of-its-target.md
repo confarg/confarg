@@ -26,6 +26,9 @@ Rejected:
 - **A migration error naming the replacement for `fn:`.** It would keep `fn` reserved, so a
   parameter named `fn` would still need the escaped form, for the sake of configurations that
   do not exist yet.
+- **A migration table from the old forms in the user documentation** (FEAT-34, declined in
+  that part). The same ground: confarg has not shipped, so no user has an old configuration
+  to migrate, and the tutorials teach the grammar as it is.
 - **`{bind: T}` always a partial, as Hydra's `_partial_: true` is.** It would make the dict
   form and the bare string resolve to different objects for a function (`partial(f)` against
   `f`), and the shorthand rule that opens `"T"` into `{bind: T}` before a sibling refines it

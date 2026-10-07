@@ -167,7 +167,7 @@ Today every expression resolves before any construction, so a `call:` argument c
 expression's value, but an expression cannot read a `call:` result. Resolution sees only merged
 values, and construction runs afterwards.
 
-The planned order (FEAT-35, after FEAT-28 dispatches `call:` on typed fields) puts `call:` specs in the same graph as expressions: a `call:` node
+The planned order (FEAT-35) puts `call:` specs in the same graph as expressions: a `call:` node
 depends on what its arguments reach, and an expression depends on what its references reach, as
 in the section above. Kahn's sort then yields one order, and a cycle through a call is a
 `CircularReferenceError` naming its members, the same as a cycle between expressions. An
@@ -177,8 +177,8 @@ that expression. Nothing that works today is lost.
 Rejected:
 
 - **Keep the merged, unresolved tree as the only input to expressions.** Simplest, and no
-  dispatch order is needed. It forbids `${...}` over a call result, which FEAT-28 relies on
-  to make `call:` work in every typed field.
+  dispatch order is needed. It forbids `${...}` over a call result, the value a `call:` on a
+  typed field computes.
 - **Two passes: plain expressions, then calls, then expressions that read calls.** It keeps
   both directions for one level only. A call whose argument reads an expression that reads
   another call fails, so it needs a graph anyway, plus a second rule to explain.
@@ -186,6 +186,6 @@ Rejected:
   beside the expression graph, which already exists, and it moves expression evaluation onto the
   typed object, which this note's algorithm does not assume.
 
-Open cost (to check when FEAT-28 is built): an expression that reads a call result reads it
+Open cost (to check when FEAT-35 is built): an expression that reads a call result reads it
 after the call has been checked against its annotation. Whether that value is typed or raw in
 the expression namespace is not decided here.

@@ -96,7 +96,7 @@ lengthens the run (REF-62, closed). A block that must not run at all takes the `
 directive, never duplication.
 
 Each block runs with the README's own directory as its working directory, so a script that
-writes a file writes it there — `21_expressions` and `22_variable_scopes` end their scripts
+writes a file writes it there — `22_expressions` and `23_variable_scopes` end their scripts
 with `dump_file()` and leave `saved_config_*.yaml` behind on every run. Those artifacts are
 `.gitignore`d rather than redirected: writing next to the configuration is what the tutorials
 show a reader getting, and parameterizing the path would put test scaffolding into script

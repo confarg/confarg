@@ -129,7 +129,7 @@ confarg/
 │
 │   type machinery
 ├── _types.py          type introspection; _StrToken, _UnionSeqToken, _Pinned
-├── _callable.py       Callable specs (fn/class/call/bind), serialization of callables
+├── _callable.py       Callable specs (bind/call/class/classfn), serialization of callables
 ├── _import.py         dotted-path import with builtins fallback
 ├── _serialize.py      typed object → dict (inverse of construction)
 ├── typedload/         resolved dict → typed object; leaf coercion and registry

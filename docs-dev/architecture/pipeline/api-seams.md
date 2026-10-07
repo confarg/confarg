@@ -49,10 +49,13 @@ are pydantic's `ConfigDict` and pydantic-settings' `SettingsConfigDict` (options
 TypedDict) and PEP 692's own motivating case. Also set aside: an options *object* passed as one
 argument, which would change every call site where this keeps every one of them as it was.
 
-**Round-trip fidelity comes from the seam, not from a reverse pass.** `merge()` keeps
-`${...}` verbatim and `dump_file(raw_dict, path)` writes it back, so a merged config can be
-saved with its expressions. `dump(instance)` serializes the *constructed* object and
-therefore emits resolved values. There is deliberately no "un-resolve" step.
+**Round-trip fidelity comes from the seam, not from a reverse pass.** The two dumps write two
+different things ([design decision](../design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
+`merge()` keeps `${...}` and every callable spec verbatim and `dump_file(raw_dict, path)`
+writes them back, so a merged config can be saved as written: how its values are produced.
+`dump(instance)` serializes the *constructed* object, the values the program ran with: every
+expression resolved, and every `call:` replaced by what it produced. There is deliberately no
+"un-resolve" step.
 
 The raw dict is not made of file-native values, though: `_try_coerce` coerces CLI, env and
 CSV leaves eagerly ([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)), so it can hold a `Path` or an
