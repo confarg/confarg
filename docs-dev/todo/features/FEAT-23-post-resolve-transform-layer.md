@@ -39,7 +39,8 @@ applies them.
 `${...}`. Its lighter alias-only half moved to
 [FEAT-6](FEAT-6-annotated-field-metadata.md), which needs no version key.
 
-Related: [FEAT-3](FEAT-3-reserved-sentinel-key-registry.md) gains a reserved key;
+Related: `_defaults.RESERVED_KEYS` gains a reserved key
+([reserved keys](../../architecture/config-files/reserved-keys.md#reserved-file-only-keys));
 [FEAT-4](FEAT-4-ordered-patch-op-stream.md) may share the op record;
 [FEAT-8](FEAT-8-value-provenance.md) and [FEAT-10](FEAT-10-confarg-explain-command.md) become
 load-bearing rather than optional, because a rule is the last word over an explicitly supplied value

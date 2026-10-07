@@ -68,9 +68,17 @@ the boundary moves here.
   environment: an append never got an env spelling, though a delete did (FEAT-18).
 - Below a sequence, argv and the environment take an index only as `str()` writes one, while a
   config file's key is read by the merge's `int()`: `--xs.01` is refused and `xs: {"01": 5}`
-  patches index 1. A file is not walked against the type, and a file writing the merge's own
-  keys is FEAT-3's to guard
+  patches index 1. A file is not walked against the type
   ([CLI parsing](cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index)).
+- The [reserved keys](config-files/reserved-keys.md#reserved-file-only-keys) (`__include__`,
+  `__cast__`, `__value__`, `__root__`, and the list ops `__append__`, `__delete__`,
+  `__delete_after__`, `__base__`) are no data key anywhere: a file reads one as its own, and a
+  flag, a variable or a mount point naming one is refused. A field or a dict key spelled like
+  one cannot be set.
+- `build()` reads a merged dict, not a file's: the list ops a parsed file spells by name, like
+  its `key+:` shorthand, apply only once `merge()` has read the file. A merged dict saved with
+  `dump_file` is read back through `merge(files=[saved])`
+  ([design decisions](design-decisions/merge-ops-are-markers-no-channel-types.md#merge-ops-are-markers-no-channel-types)).
 - A construction error names a dict key that is no plain name ambiguously: the key `a.b`
   reads as nesting (`d.a.b`) and the key `x[0]` as an index (`d.x[0]`). The path is held
   exactly, as segments, so a missing field's remedy still names the right flag

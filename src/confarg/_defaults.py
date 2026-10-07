@@ -68,6 +68,40 @@ Dev Notes:
     docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
 """
 
+INCLUDE_KEY: Final[str] = "__include__"
+"""Reserved file key naming the documents whose content a node of the file takes."""
+
+CAST_KEY: Final[str] = "__cast__"
+"""Reserved file key naming the type ``VALUE_KEY`` is cast to, in a dict holding only the two."""
+
+VALUE_KEY: Final[str] = "__value__"
+"""Reserved file key holding the value ``CAST_KEY`` casts."""
+
+APPEND_KEY: Final[str] = "__append__"
+"""How a file writes the merge's append op: the items to append to the list below."""
+
+DELETE_KEY: Final[str] = "__delete__"
+"""How a file writes the merge's delete op: the indices to delete before the appends."""
+
+DELETE_AFTER_KEY: Final[str] = "__delete_after__"
+"""How a file writes the merge's post-append delete op: the indices to delete after the appends."""
+
+BASE_KEY: Final[str] = "__base__"
+"""How a file writes the merge's base op: the list the other ops apply to, replacing the one below."""
+
+RESERVED_KEYS: Final[frozenset[str]] = frozenset(
+    {ROOT_KEY, INCLUDE_KEY, CAST_KEY, VALUE_KEY, APPEND_KEY, DELETE_KEY, DELETE_AFTER_KEY, BASE_KEY},
+)
+"""Keys that mean something other than data to the merge or to ``build()``.
+
+A configuration file writes them; a flag, an environment variable or a mount point naming one is
+refused, through ``confarg._parse_cli._reserved_segment``. The four ops are held in the merged dict
+as markers no channel can type, built from these spellings in ``confarg._merge``.
+
+Dev Notes:
+    docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
+"""
+
 
 class MergeOptions(TypedDict, total=False):
     """The sources :func:`confarg.merge` and :func:`confarg.load` read, and how they read them.

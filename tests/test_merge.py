@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from tests._loaders import ConfargLoader
@@ -16,7 +17,8 @@ if TYPE_CHECKING:
 import pytest
 
 import confarg
-from confarg._merge import _deep_merge
+from confarg._merge import LIST_REPLACE_BASE_KEY, _deep_merge
+from confarg.exceptions import ConfargError
 from tests.conftest import (
     AppConfig,
     Flat,
@@ -546,8 +548,8 @@ class TestNestedIndexMerge:
     def test_a_later_base_and_patch_replace_an_earlier_deferred_patch(self, tmp_yaml) -> None:
         """A channel's whole list plus a patch replaces what lower layers deferred, stale keys included.
 
-        Two files defer ``{'*': [1], 1: 5}``; the env's ``[7, 9]`` and its ``.0`` patch arrive as
-        ``{'*': [7, 9], '0': 8}``, which once deep-merged into the files' patch and kept its ``1``.
+        Two files defer ``{__base__: [1], 1: 5}``; the env's ``[7, 9]`` and its ``.0`` patch arrive as
+        ``{__base__: [7, 9], '0': 8}``, which once deep-merged into the files' patch and kept its ``1``.
         """
         WithPair = make_target("t", tuple[int, int])
         a = tmp_yaml("t: [1]\n", "a.yaml")
@@ -561,9 +563,9 @@ class TestReplaceBaseIsAList:
 
     @pytest.mark.parametrize("base", [5, "12"], ids=["int", "str"])
     def test_base_that_is_no_list_is_refused(self, base: object) -> None:
-        """A file's ``'*'`` holding no list is refused rather than read with ``list()``."""
-        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("at 'input': the '*' base must be a list")):
-            _deep_merge({"input": [1, 2]}, {"input": {"*": base, "0": 3}})
+        """A file's ``__base__`` holding no list is refused rather than read with ``list()``."""
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("at 'input': '__base__' must hold a list")):
+            _deep_merge({"input": [1, 2]}, {"input": {LIST_REPLACE_BASE_KEY: base, "0": 3}})
 
 
 class TestDictKeyStar:
@@ -586,3 +588,89 @@ class TestDictKeyStar:
         a = tmp_json('{"d": {"k": 1}}', "a.json")
         b = tmp_json('{"d": {"*": 5}}', "b.json")
         assert confarg.load(WithDict, argv=[], env={}, files=[a, b]).d == {"k": 1, "*": 5}
+
+    def test_star_key_holding_a_list_from_the_env_keeps_the_files_keys(self, tmp_json) -> None:
+        """``APP_D__*=[3]`` adds the key ``*`` holding a list beside the file's (BUG-199)."""
+        WithDict = make_target("d", dict[str, list[int]], default_factory=dict)
+        base = tmp_json('{"d": {"k": [1]}}')
+        cfg = confarg.load(WithDict, argv=[], env={"APP_D__*": "[3]"}, env_prefix="APP_", files=[base])
+        assert cfg.d == {"k": [1], "*": [3]}
+
+
+class TestMergeOpsAreSpelledByNoChannel:
+    """The merge's list ops are keys no channel types; a file writes one by its reserved name (FEAT-3)."""
+
+    @pytest.mark.parametrize("key", ["*", "+", "-", "~"])
+    def test_dict_key_spelled_like_a_list_op_merges_as_any_other(self, tmp_json, key: str) -> None:
+        """A later file's value of the key replaces the earlier file's, and the dict keeps its other keys."""
+        WithDict = make_target("d", dict[str, list[int]], default_factory=dict)
+        a = tmp_json(json.dumps({"d": {"k": [1], key: [2]}}), "a.json")
+        b = tmp_json(json.dumps({"d": {key: [3]}}), "b.json")
+        assert confarg.load(WithDict, argv=[], env={}, files=[a, b]).d == {"k": [1], key: [3]}
+
+    @pytest.mark.parametrize(
+        ("ops", "built"),
+        [
+            ({"__append__": [3]}, [1, 2, 3]),
+            ({"__delete__": [0]}, [2]),
+            ({"__base__": [7], "0": 8}, [8]),
+            ({"__append__": [3], "__delete_after__": [0]}, [2, 3]),
+        ],
+        ids=["append", "delete", "base", "delete-after"],
+    )
+    def test_file_writes_a_list_op_by_its_reserved_key(self, tmp_json, ops: dict[str, Any], built: list[int]) -> None:
+        """``__append__``, ``__delete__``, ``__base__`` and ``__delete_after__`` are the ops a merged dict holds."""
+        WithList = make_target("xs", list[int], default_factory=list)
+        a = tmp_json('{"xs": [1, 2]}', "a.json")
+        b = tmp_json(json.dumps({"xs": ops}), "b.json")
+        assert confarg.load(WithList, argv=[], env={}, files=[a, b]).xs == built
+
+    @pytest.mark.parametrize("key", ["*", "+", "-", "~"])
+    def test_file_key_spelled_like_a_list_op_is_no_op(self, tmp_json, key: str) -> None:
+        """Below a list, a file's ``{"+": [3]}`` is a key the list has no position for, not an append."""
+        WithList = make_target("xs", list[int], default_factory=list)
+        a = tmp_json('{"xs": [1, 2]}', "a.json")
+        b = tmp_json(json.dumps({"xs": {key: [3]}}), "b.json")
+        with pytest.raises(ConfargError, match=re.escape(f"Cannot patch list 'xs' with non-integer key {key!r}")):
+            confarg.load(WithList, argv=[], env={}, files=[a, b])
+
+    def test_merged_dict_holds_no_op_a_channel_could_type(self) -> None:
+        """The append ``--xs+ 3`` records is neither the key ``+`` nor the key ``__append__``."""
+        WithList = make_target("xs", list[int], default_factory=list)
+        (op,) = confarg.merge(WithList, argv=["--xs+", "3"], env={})["xs"]
+        assert op not in {"+", "__append__"}
+
+
+class TestListDeleteKeysHoldIndices:
+    """A file's list-delete key holding no index list is refused with the field it patches (BUG-175)."""
+
+    @pytest.mark.parametrize(
+        ("ops", "key"),
+        [({"__delete__": 0}, "__delete__"), ({"__append__": [3], "__delete_after__": 0}, "__delete_after__")],
+        ids=["delete", "delete-after"],
+    )
+    def test_delete_key_holding_no_index_list_is_refused(self, tmp_json, ops: dict[str, Any], key: str) -> None:
+        """``xs: {__delete__: 0}`` names the field and the key, rather than escaping as a ``TypeError``."""
+        WithList = make_target("xs", list[int], default_factory=list)
+        a = tmp_json('{"xs": [1, 2]}', "a.json")
+        b = tmp_json(json.dumps({"xs": ops}), "b.json")
+        with pytest.raises(ConfargError, match=re.escape(f"at 'xs': {key!r} must hold a list of indices, got int 0")):
+            confarg.load(WithList, argv=[], env={}, files=[a, b])
+
+    def test_delete_keys_of_two_layers_holding_no_index_list_are_refused(self) -> None:
+        """Two layers' deletes are combined only once each is read as indices."""
+        with pytest.raises(ConfargError, match=re.escape("at 'xs': '__delete__' must hold a list of indices")):
+            _deep_merge({"xs": {"__delete__": [0]}}, {"xs": {"__delete__": 1}})
+
+    @pytest.mark.parametrize("ops", [{"-": 0}, {"+": [3], "~": 0}], ids=["dash", "tilde"])
+    def test_file_writing_the_former_delete_keys_is_refused_as_a_confarg_error(
+        self,
+        tmp_json,
+        ops: dict[str, Any],
+    ) -> None:
+        """The literal ``-`` and ``~`` keys of the original report no longer escape as a ``TypeError``."""
+        WithList = make_target("xs", list[int], default_factory=list)
+        a = tmp_json('{"xs": [1, 2]}', "a.json")
+        b = tmp_json(json.dumps({"xs": ops}), "b.json")
+        with pytest.raises(ConfargError, match=re.escape("Cannot patch list 'xs' with non-integer key")):
+            confarg.load(WithList, argv=[], env={}, files=[a, b])

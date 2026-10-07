@@ -28,15 +28,14 @@ if TYPE_CHECKING:
 
 from confarg._files import _load_mount, _load_mount_value, _load_subpath_files, _nest
 from confarg._merge import (
+    APPEND_SUFFIX,
     DICT_DELETE,
-    LIST_DELETE_KEY,
-    LIST_POST_APPEND_DELETE_KEY,
-    LIST_REPLACE_BASE_KEY,
+    LIST_APPEND_KEY,
     _deep_merge,
     _drop_deleted_bases,
+    _OpKey,
     _to_append_list,
 )
-from confarg._merge import LIST_APPEND_KEY as _LIST_APPEND_KEY
 from confarg._parse_cli import _locals_keys, _locals_keys_at
 from confarg._parse_env import _parse_env
 from confarg._types import _StrToken
@@ -63,17 +62,17 @@ def _load_cli_config(value: Any, subpath: str, config_flag: str, union_tag: str 
         docs-dev/architecture/config-files/mounting.md#mounting
         docs-dev/architecture/design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel
     """
-    if subpath.endswith(_LIST_APPEND_KEY):
-        real_subpath = subpath[: -len(_LIST_APPEND_KEY)]
+    if subpath.endswith(APPEND_SUFFIX):
+        real_subpath = subpath[: -len(APPEND_SUFFIX)]
         if not real_subpath or real_subpath.endswith("."):
             msg = (
-                f"--{config_flag}{'.' + real_subpath if real_subpath else ''}{_LIST_APPEND_KEY}"
+                f"--{config_flag}{'.' + real_subpath if real_subpath else ''}{APPEND_SUFFIX}"
                 f" requires a field path to append to."
-                f" Use --{config_flag}.fieldname{_LIST_APPEND_KEY} /path/to/file."
+                f" Use --{config_flag}.fieldname{APPEND_SUFFIX} /path/to/file."
             )
             raise ConfargError(msg)
         loaded = _load_mount_value(value, union_tag=union_tag)
-        return _nest({_LIST_APPEND_KEY: _to_append_list(loaded)}, real_subpath)
+        return _nest({LIST_APPEND_KEY: _to_append_list(loaded)}, real_subpath)
 
     return _load_mount(value, subpath, union_tag=union_tag)
 
@@ -98,11 +97,6 @@ def _check_locals_are_typed(node: Any, locals_key: str, path: str) -> None:
 
 
 _UNSET = object()
-
-#: Keys ``_deep_merge`` reads as list append/delete/replace operations.
-_MERGE_OP_KEYS = frozenset(
-    {_LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_POST_APPEND_DELETE_KEY, LIST_REPLACE_BASE_KEY},
-)
 
 
 def _lookup_declared(node: Any, path: list[str]) -> Any:
@@ -175,7 +169,7 @@ def _apply_locals_overrides(  # noqa: PLR0913  # recursive walk: carries both th
     for key, value in override.items():
         path = [*prefix, key]
         # Merge-op markers would add or remove a local: refused with their own error.
-        if value is DICT_DELETE or key in _MERGE_OP_KEYS:
+        if value is DICT_DELETE or isinstance(key, _OpKey):
             raise LocalsError.not_restructurable(".".join(prefix or path), locals_key, source)
         found = _lookup_declared(declared, path)
         if found is _UNSET:

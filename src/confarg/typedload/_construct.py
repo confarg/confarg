@@ -25,6 +25,7 @@ from confarg._merge import (
     LIST_REPLACE_BASE_KEY,
     _apply_list_ops,
     _merge_existing_value,
+    _OpKey,
     _replace_base,
 )
 from confarg._types import (
@@ -95,10 +96,10 @@ def _try_pinned_dict(data: Any) -> _Pinned | None:
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
     """
-    if not (isinstance(data, dict) and data.keys() == {"__cast__", "__value__"}):
+    if not (isinstance(data, dict) and data.keys() == {_defaults.CAST_KEY, _defaults.VALUE_KEY}):
         return None
-    tp = type_for_cast_name(data["__cast__"])
-    raw = data["__value__"]
+    tp = type_for_cast_name(data[_defaults.CAST_KEY])
+    raw = data[_defaults.VALUE_KEY]
     value = _StrToken(str(raw)) if isinstance(raw, str) else raw
     return _Pinned(tp, value)
 
@@ -123,7 +124,7 @@ def _check_namedtuple_length(tp: Any, got: int, path: FieldPath) -> None:
 
 
 def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, union_tag: str) -> dict[Any, Any]:
-    """Key a namedtuple's ``'*'`` base list by field name and lay the patch beside it over it.
+    """Key a namedtuple's ``LIST_REPLACE_BASE_KEY`` base list by field name and lay the patch beside it over it.
 
     The merge carries a positional list under ``LIST_REPLACE_BASE_KEY`` beside a patch it
     cannot apply without the type, and the CLI's arity flag leaves one under its sub-flags.
@@ -774,11 +775,13 @@ def _construct_dict(tp: Any, data: Any, path: FieldPath, union_tag: str) -> dict
         The constructed dict with coerced keys and constructed values.
 
     Raises:
-        TypeCoercionError: If data is not a dict.
+        TypeCoercionError: If data is not a dict, or holds a list op the merge recorded.
     """
     kt, vt = _dict_kv(tp)
     if not isinstance(data, dict):
         raise TypeCoercionError.wrong_shape(_src_type(data), data, "dict", "dict", _spell_field_path(path))
+    if op := next((k for k in data if isinstance(k, _OpKey)), None):
+        raise TypeCoercionError.list_op_on_a_dict(op, _spell_field_path(path))
     return {
         _coerce_leaf(kt, _StrToken(k) if isinstance(k, str) else k, _spell_field_path(path)): construct(
             vt,

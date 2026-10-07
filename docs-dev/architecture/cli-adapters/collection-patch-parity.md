@@ -74,7 +74,7 @@ paid with a repair:
   collector stored was opened before a patch below it (BUG-24);
 - a delete was re-asserted after the merge (`_restore_patch_deletes`), because `_deep_merge`
   applies a delete sentinel on sight where within one channel it is a record;
-- a collected list an op addressed was promoted into the `'*'` base first
+- a collected list an op addressed was promoted into the `__base__` first
   (`_promote_patched_lists`), because `_deep_merge` applies list ops on sight too (BUG-67);
 - a skipped plain flag replayed its write's destructive half (`_pop_nested`), so the ops before
   it died with the node, as in vanilla (BUG-53, BUG-54);

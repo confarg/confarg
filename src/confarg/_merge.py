@@ -12,25 +12,60 @@ from __future__ import annotations
 
 from typing import Any
 
+from confarg import _defaults
 from confarg.exceptions import ConfargError, TypeCoercionError
+
+
+class _OpKey(str):
+    """A key of the merged dict that records a list op rather than naming data.
+
+    It reads as the reserved key a file writes the op with, so a message or a dump spells it
+    the way a file does, but it equals only another marker of the same spelling: never the
+    plain string, which any channel can type as a key of its own.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
+    """
+
+    __slots__ = ()
+
+    def __eq__(self, other: object) -> bool:
+        return type(other) is _OpKey and str.__eq__(self, other)
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    def __hash__(self) -> int:
+        return hash((_OpKey, str.__str__(self)))
+
 
 # "Append these items to the list".  The value is a list or a scalar (single-value append);
 # every producer stores one of those two shapes.
-LIST_APPEND_KEY = "+"
+LIST_APPEND_KEY = _OpKey(_defaults.APPEND_KEY)
 
 # "Delete these indices from the list".  The value is a sorted list of integers
 # (original indices before deletion).
-LIST_DELETE_KEY = "-"
+LIST_DELETE_KEY = _OpKey(_defaults.DELETE_KEY)
 
 # "Replace the base with this value before applying the other operations".
 # Produced when a whole-list value is followed by a patch or append; the value is the
 # replacement list.  Also produced when a whole-field delete is followed by an op at or
 # below its path; the value is then ``DICT_DELETE``: nothing lies below the ops.
-LIST_REPLACE_BASE_KEY = "*"
+LIST_REPLACE_BASE_KEY = _OpKey(_defaults.BASE_KEY)
 
 # "Delete these indices AFTER appends have been applied".  Produced by the CLI parser when
 # --field.N- appears after --field+.  The value is a sorted list of post-append indices.
-LIST_POST_APPEND_DELETE_KEY = "~"
+LIST_POST_APPEND_DELETE_KEY = _OpKey(_defaults.DELETE_AFTER_KEY)
+
+#: Every list op, keyed by the reserved key a file writes it with.
+MERGE_OP_KEYS: dict[str, _OpKey] = {
+    str(k): k for k in (LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, LIST_POST_APPEND_DELETE_KEY)
+}
+
+# The suffixes a flag, a variable or a file key carries to append to the field it names
+# (``--xs+``, ``xs+:``) or to delete it (``--d.k-``, ``k-:``, ``"0-":``).
+APPEND_SUFFIX = "+"
+DELETE_SUFFIX = "-"
 
 
 class _DeleteSentinel:
@@ -84,14 +119,18 @@ def _apply_append_key(plain_key: str, new_val: Any, result: dict[str, Any]) -> N
 
 
 def _normalize_merge_ops(d: Any) -> Any:
-    """Recursively normalise ``key+`` / ``key-`` shorthand in file-sourced dicts.
+    """Recursively normalise ``key+`` / ``key-`` shorthand and the reserved op keys in file-sourced dicts.
 
     Transforms:
-    - ``key+: val``        → ``key: {"+": list(val)}``   (append to list)
-    - ``key-: val``        → ``key: DICT_DELETE``         (remove dict key)
-    - ``"N-": val``        → accumulated ``{"-": [N]}``   (delete list index N)
+    - ``key+: val``        → ``key: {LIST_APPEND_KEY: list(val)}``   (append to list)
+    - ``key-: val``        → ``key: DICT_DELETE``                    (remove dict key)
+    - ``"N-": val``        → accumulated ``{LIST_DELETE_KEY: [N]}``  (delete list index N)
+    - ``__append__: val`` and the other keys of ``MERGE_OP_KEYS`` → the op's marker
 
     Only dict keys are inspected; list items are left untouched.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
     """
     if not isinstance(d, dict):
         return d
@@ -105,15 +144,18 @@ def _normalize_merge_ops(d: Any) -> Any:
         if new_val is not val:
             has_change = True
 
-        if not isinstance(key, str) or len(key) <= 1:
-            result[key] = new_val
+        # A reserved key is stored as the marker of the op it spells (a marker equals none of
+        # them), and a key that cannot carry a shorthand suffix is stored as it is.
+        if key in MERGE_OP_KEYS or not isinstance(key, str) or isinstance(key, _OpKey) or len(key) <= 1:
+            has_change = has_change or key in MERGE_OP_KEYS
+            result[MERGE_OP_KEYS.get(key, key)] = new_val
             continue
 
-        if key.endswith("+"):
+        if key.endswith(APPEND_SUFFIX):
             has_change = True
             _apply_append_key(key[:-1], new_val, result)
 
-        elif key.endswith("-"):
+        elif key.endswith(DELETE_SUFFIX):
             has_change = True
             plain_key = key[:-1]
             try:
@@ -168,8 +210,23 @@ def _replace_base(ops: dict[str, Any], key: str) -> list[Any]:
     """
     base = ops[LIST_REPLACE_BASE_KEY]
     if not isinstance(base, list | tuple):
-        raise TypeCoercionError.base_not_a_list(type(base).__name__, base, key)
+        raise TypeCoercionError.op_not_a_list(LIST_REPLACE_BASE_KEY, "a list", type(base).__name__, base, key)
     return list(base)
+
+
+def _delete_indices(ops: dict[str, Any], delete_key: str, key: str) -> list[int]:
+    """Return the indices *ops* deletes under *delete_key*, ``LIST_DELETE_KEY`` or ``LIST_POST_APPEND_DELETE_KEY``.
+
+    The one reader of the two keys: a value that is no list of integers -- which only a file
+    writing the key itself can hold -- is refused rather than iterated.
+
+    Raises:
+        TypeCoercionError: If the value is no list or tuple of integers.
+    """
+    indices = ops[delete_key]
+    if not isinstance(indices, list | tuple) or not all(type(i) is int for i in indices):
+        raise TypeCoercionError.op_not_a_list(delete_key, "a list of indices", type(indices).__name__, indices, key)
+    return list(indices)
 
 
 def _apply_list_ops(
@@ -181,18 +238,17 @@ def _apply_list_ops(
     """Apply list mutation operations from *ops* onto *working* in order.
 
     Operations are applied in a fixed semantic order regardless of dict iteration:
-    1. Pre-append deletions (LIST_DELETE_KEY ``"-"``): remove indices from *working*.
-    2. Appends (LIST_APPEND_KEY ``"+"``): extend *working*.
-    3. Post-append deletions (LIST_POST_APPEND_DELETE_KEY ``"~"``): remove indices
+    1. Pre-append deletions (LIST_DELETE_KEY): remove indices from *working*.
+    2. Appends (LIST_APPEND_KEY): extend *working*.
+    3. Post-append deletions (LIST_POST_APPEND_DELETE_KEY): remove indices
        from the post-append *working* (used when a CLI delete follows an append).
     4. Index patches (integer string keys, including negative): replace elements.
 
-    LIST_REPLACE_BASE_KEY (``"*"``) is ignored here; the caller already used it
-    to set *working*.
+    LIST_REPLACE_BASE_KEY is ignored here; the caller already used it to set *working*.
     """
     # 1. Pre-append deletions
     if LIST_DELETE_KEY in ops:
-        del_set = {_resolve_index(i, len(working), key, "delete") for i in ops[LIST_DELETE_KEY]}
+        del_set = {_resolve_index(i, len(working), key, "delete") for i in _delete_indices(ops, LIST_DELETE_KEY, key)}
         working = [item for i, item in enumerate(working) if i not in del_set]
 
     # 2. Appends
@@ -201,13 +257,13 @@ def _apply_list_ops(
 
     # 3. Post-append deletions
     if LIST_POST_APPEND_DELETE_KEY in ops:
-        del_set = {_resolve_index(i, len(working), key, "delete") for i in ops[LIST_POST_APPEND_DELETE_KEY]}
+        after = _delete_indices(ops, LIST_POST_APPEND_DELETE_KEY, key)
+        del_set = {_resolve_index(i, len(working), key, "delete") for i in after}
         working = [item for i, item in enumerate(working) if i not in del_set]
 
     # 4. Index patches
-    _SKIP = {LIST_REPLACE_BASE_KEY, LIST_DELETE_KEY, LIST_APPEND_KEY, LIST_POST_APPEND_DELETE_KEY}
     for ik, iv in ops.items():
-        if ik in _SKIP:
+        if isinstance(ik, _OpKey):
             continue
         try:
             orig_idx = int(ik)
@@ -258,15 +314,17 @@ def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) ->
     An override carrying its own base (``LIST_REPLACE_BASE_KEY``) replaces a dict base
     outright, as a union tag does: the patches beside that base address it, not whatever
     an earlier layer held.  A base that is a whole-field delete replaces a list base too.
-    A ``'*'`` holding anything else is a dict's own key, merged as any other (BUG-185).
+    A dict's own key ``'*'`` is no base, whatever it holds: no channel spells the marker.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#deep-merge-semantics
     """
-    if isinstance(val, dict):
-        carried = val.get(LIST_REPLACE_BASE_KEY)
-        if carried is DICT_DELETE or (isinstance(bv, dict) and isinstance(carried, list | tuple)):
-            return val
+    if (
+        isinstance(val, dict)
+        and LIST_REPLACE_BASE_KEY in val
+        and (val[LIST_REPLACE_BASE_KEY] is DICT_DELETE or isinstance(bv, dict))
+    ):
+        return val
     if isinstance(bv, dict) and isinstance(val, dict):
         if LIST_APPEND_KEY in bv and LIST_APPEND_KEY in val:
             combined = _to_append_list(bv[LIST_APPEND_KEY]) + _to_append_list(val[LIST_APPEND_KEY])
@@ -277,7 +335,9 @@ def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) ->
             )
             return {**rest, LIST_APPEND_KEY: combined}
         if LIST_DELETE_KEY in bv and LIST_DELETE_KEY in val:
-            combined_del = sorted(set(bv[LIST_DELETE_KEY]) | set(val[LIST_DELETE_KEY]))
+            combined_del = sorted(
+                set(_delete_indices(bv, LIST_DELETE_KEY, key)) | set(_delete_indices(val, LIST_DELETE_KEY, key)),
+            )
             rest = _deep_merge(
                 {k: v for k, v in bv.items() if k != LIST_DELETE_KEY},
                 {k: v for k, v in val.items() if k != LIST_DELETE_KEY},
@@ -312,10 +372,10 @@ def _deep_merge(
     Dict values are merged recursively.  Special override values:
 
     - ``DICT_DELETE`` as a value → removes that key from the result.
-    - ``{"*": list}`` as a value for a list base → replaces the base list, then
-      applies any additional ``"+"``, ``"-"``, or integer-key operations.
-    - ``{"+": items}`` as a value for a list base → appends items.
-    - ``{"-": [i, j]}`` as a value for a list base → deletes original indices i, j.
+    - ``{LIST_REPLACE_BASE_KEY: list}`` as a value for a list base → replaces the base
+      list, then applies any additional append, delete or integer-key operations.
+    - ``{LIST_APPEND_KEY: items}`` as a value for a list base → appends items.
+    - ``{LIST_DELETE_KEY: [i, j]}`` as a value for a list base → deletes original indices i, j.
     - ``{"N": v}`` (integer string keys) as a value for a list base → patches by index.
 
     When ``union_tag`` is set and the override dict contains that key, the override
@@ -450,8 +510,8 @@ def _written_over(existing: Any, value: Any) -> Any:
 def _open_for_ops(node: Any) -> dict[str, Any]:
     """Return the dict an op recorded at or below a node writes into, given what *node* holds.
 
-    A dict is written into as it is.  A plain list becomes the ``'*'`` base the op is
-    recorded beside, and a whole-field delete becomes a ``'*'`` base of ``DICT_DELETE``:
+    A dict is written into as it is.  A plain list becomes the ``LIST_REPLACE_BASE_KEY`` base the
+    op is recorded beside, and a whole-field delete becomes a base of ``DICT_DELETE``:
     the op still applies to nothing below, the lower layers included.  Anything else -- a
     missing node, a scalar an earlier whole value left -- gives a fresh dict, the later
     writer winning.
@@ -496,7 +556,7 @@ def _descend_creating(d: dict[str, Any], path: list[str]) -> dict[str, Any]:
 
 
 def _drop_deleted_bases(node: Any) -> Any:
-    """Return *node* with every ``'*'`` base of ``DICT_DELETE`` removed, at any depth.
+    """Return *node* with every ``LIST_REPLACE_BASE_KEY`` base of ``DICT_DELETE`` removed, at any depth.
 
     Run once every layer is merged: the deleted base has cut its ops off from the layers
     below, so what remains is the ops alone, which ``build()`` applies to nothing, as it

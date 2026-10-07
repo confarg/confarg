@@ -141,7 +141,7 @@ footgun. Every system that permits this restricts the namespace to something fix
 document is parsed; none lets the document choose its own inputs.
 
 Relations: [FEAT-21](FEAT-21-app-supplied-expression-functions.md) shares the reserved-namespace
-exemptions; [FEAT-3](FEAT-3-reserved-sentinel-key-registry.md) gains another reserved name;
+exemptions; `_defaults.py` gains another reserved name ([shared reserved names](../../architecture/design-decisions/shared-reserved-key-names.md#shared-reserved-key-names-live-in-_defaultspy));
 accepting this removes a line from [limitations.md](../../architecture/limitations.md) and
 changes the caveat in `docs/how-to/derived-values.md` that says an include path cannot be an
 expression.

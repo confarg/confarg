@@ -133,6 +133,20 @@ class ConfargError(Exception):
             f"write its value under {root_key!r} in a root config file instead.",
         )
 
+    @classmethod
+    def reserved_key(cls, spelling: str, key: str) -> ConfargError:
+        """Return the error for a flag, a variable or a mount point naming a key confarg reserves.
+
+        The one spelling for the CLI's loop, the environment and the mount check, which differ
+        only in *spelling*: ``--d.__base__``, ``APP_d.__base__``, ``--config.d.__base__``.
+
+        Dev Notes:
+            docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
+        """
+        return cls(
+            f"Cannot set {spelling!r}: {key!r} is a key confarg reserves, which only a configuration file may write.",
+        )
+
 
 class MissingFieldError(ConfargError):
     """Raised when a required field is not provided by any source.
@@ -250,14 +264,23 @@ class TypeCoercionError(ConfargError):
         return cls(f"Unknown field(s) {sorted(names)} for {what} at '{path}'. Valid fields: {valid}")
 
     @classmethod
-    def base_not_a_list(cls, src: str, value: Any, path: str) -> TypeCoercionError:
-        """Return the error for a list patch whose ``'*'`` key holds no base list.
+    def op_not_a_list(cls, key: str, what: str, src: str, value: Any, path: str) -> TypeCoercionError:
+        """Return the error for a list op whose key holds no list: the base, or the indices a delete reads.
 
-        *src* is the value's type as text, passed in rather than computed, this module
-        importing nothing from ``confarg``; the value is never a token, as no channel's
-        parser writes the key from what the user typed.
+        *key* is the op's key, which reads as the reserved key a file writes it with; *what* is
+        what it must hold. *src* is the value's type as text, passed in rather than computed,
+        this module importing nothing from ``confarg``; the value is never a token, as only a
+        file writes the key.
         """
-        return cls(f"Cannot patch the list at '{path}': the '*' base must be a list, got {src} {value!r}")
+        return cls(f"Cannot patch the list at '{path}': {str(key)!r} must hold {what}, got {src} {value!r}")
+
+    @classmethod
+    def list_op_on_a_dict(cls, key: str, path: str) -> TypeCoercionError:
+        """Return the error for a list op the merge recorded where the type has a dict.
+
+        *key* is the op's key, which reads as the reserved key a file writes it with.
+        """
+        return cls(f"Cannot apply {str(key)!r} to the dict at '{path}': it is an operation on a list.")
 
     @classmethod
     def not_a_subclass(cls, name: Any, parent: str, path: str) -> TypeCoercionError:

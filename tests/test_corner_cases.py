@@ -21,7 +21,7 @@ from typing import Literal, Optional, Union
 import pytest
 
 import confarg
-from confarg._merge import LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, _deep_merge
+from confarg._merge import LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, _deep_merge
 from confarg._types import _is_frozenset, _is_set, _StrToken
 from confarg.dictexpr import resolve_expressions
 from confarg.exceptions import ConfargError, TypeCoercionError
@@ -161,12 +161,12 @@ class TestDeepMergeListPatchErrors:
     def test_non_integer_key_beside_an_op_still_raises(self) -> None:
         """A patch that also appends or deletes is a list operation, so its name key is refused at once."""
         with pytest.raises(ConfargError, match="non-integer key"):
-            _deep_merge({"items": [1, 2, 3]}, {"items": {"+": [4], "name": "bad"}})
+            _deep_merge({"items": [1, 2, 3]}, {"items": {LIST_APPEND_KEY: [4], "name": "bad"}})
 
     def test_replacement_base_replaces_a_dict_base(self) -> None:
-        """An override carrying its own ``'*'`` base replaces a dict below it, stale patches included.
+        """An override carrying its own ``__base__`` base replaces a dict below it, stale patches included.
 
-        The ``'*'`` says "this list, then these patches"; deep-merging it into an earlier
+        The ``__base__`` says "this list, then these patches"; deep-merging it into an earlier
         deferred patch kept the earlier index keys, so ``(8, 5)`` built where ``(8, 9)`` was due.
         """
         base = {"t": {LIST_REPLACE_BASE_KEY: [1], "1": 5}}
@@ -215,7 +215,7 @@ class TestDeepMergeListPatchErrors:
             construct(WithList, result)
 
     def test_negative_delete_index(self) -> None:
-        """{"-": [-1]} deletes the last element."""
+        """{__delete__: [-1]} deletes the last element."""
         base = {"items": [1, 2, 3]}
         result = _deep_merge(base, {"items": {LIST_DELETE_KEY: [-1]}})
         assert result["items"] == [1, 2]

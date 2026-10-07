@@ -62,7 +62,7 @@ the key. The table only has to reach validation and evaluation, in `resolve()`:
 |---|---|---|
 | `${label_count(db)}`, global registry | nothing | `resolve()` stops being a pure function of its dict; a merged dict resolves in one application and not in another |
 | `${label_count(db)}`, a `functions=` parameter | nothing | threaded through `resolve`, `build`, `load` **and** the five front-ends, not `merge`; `resolve(data)`'s deliberately type-blind signature grows |
-| `${fn.label_count(db)}`, a reserved namespace | a lexical exemption for `fn` beside `_ROOT_ANCHOR` in `visit_Name`, and the matching skip in `_collect_names` | one more reserved name ([FEAT-3](FEAT-3-reserved-sentinel-key-registry.md)), derived by *real field wins* |
+| `${fn.label_count(db)}`, a reserved namespace | a lexical exemption for `fn` beside `_ROOT_ANCHOR` in `visit_Name`, and the matching skip in `_collect_names` | one more reserved name in `_defaults.py` ([shared reserved names](../../architecture/design-decisions/shared-reserved-key-names.md#shared-reserved-key-names-live-in-_defaultspy)), derived by *real field wins* |
 
 The namespace was the one to start from while it was the only spelling that mounted correctly and
 did not shadow keys. BUG-120 took both advantages away. What it still has is that it reads as what

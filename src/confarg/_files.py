@@ -37,7 +37,7 @@ from confarg._types import _StrToken
 from confarg.dictexpr._expressions import check_anchor_depth, contains_expression, prefix_references
 from confarg.exceptions import ConfargError, InvalidConfigFileError
 
-INCLUDE_KEY = "__include__"
+INCLUDE_KEY = _defaults.INCLUDE_KEY
 
 
 def _load_toml(data: bytes, loc: str) -> dict[str, Any]:

@@ -51,10 +51,11 @@ the loop refuses `--xs.foo 5` as unknown, and `--xs. 5` as a missing name, as it
 `--sub.` (BUG-170).
 
 The reason is the merge vocabulary, not tidiness. A patch below a sequence travels as a dict
-whose keys the merge reads as indices or as its own `+`, `-`, `*`, `~`
+whose keys the merge reads as indices, beside its own ops
 ([pipeline](../pipeline/deep-merge.md#deep-merge-semantics)), so a user's segment stored there
-is read as one of them: the walk once stepped into the element whatever the segment spelled,
-and `--xs.+ 1` appended, `--xs.* 5` crashed `build()` with a raw `TypeError`. Refusing at the
+has to be an index for anything to read it. The walk once stepped into the element whatever the
+segment spelled, and while the ops were the plain strings `+`, `-`, `*`, `~` (until FEAT-3),
+`--xs.+ 1` appended and `--xs.* 5` crashed `build()` with a raw `TypeError`. Refusing at the
 walk is what lets registration and the loop agree, since both ask it. RFC 6901 (JSON
 Pointer) draws the same line for an array index: digits, no leading zero.
 
@@ -63,12 +64,14 @@ walk refuses is a key path, left to `build()` (BUG-161) — except when the bran
 standing on a sequence, which `_refuses_at_a_sequence` names and `_is_dict_at_path` excludes:
 `--d.k.* 5` on a `dict[str, list[int]]` addresses the list, not a key of the dict. Fixed
 tuples and namedtuples count as sequences there, since the merge carries their patches in
-the same `'*'` shape. The environment, which leaves any other unknown path below its first
+the same `__base__` shape. The environment, which leaves any other unknown path below its first
 segment to `build()`, refuses such a variable at parse through `_sequence_refusal`
 ([environment parsing](../environment-parsing.md#environment-parsing)).
 
 Configuration files are not walked, so a file key below a list is still read by the merge's
-`int()`: `xs: {"01": 5}` patches index 1. Only a file can still write a list-patch key itself,
-and `_merge._replace_base`, the one reader of `'*'` for the merge and for construction,
-refuses one holding no list rather than reading it with `list()`. A general guard against a
-file's keys colliding with the merge's is FEAT-3.
+`int()`: `xs: {"01": 5}` patches index 1. Only a file writes a list op by name
+(`__base__`, `__append__`, ...), which no other channel may
+([reserved keys](../config-files/reserved-keys.md#reserved-file-only-keys)), and the one reader
+of each op that holds a list, `_merge._replace_base` for the base and `_merge._delete_indices`
+for either delete, refuses a value of the wrong shape rather than reading it with `list()` or
+iterating it (BUG-170, BUG-175).

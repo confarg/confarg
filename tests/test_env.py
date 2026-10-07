@@ -1456,3 +1456,17 @@ class TestEnvNonStructRoot:
         from_cli = loader.load(dict[str, int], argv=["--app.json", '{"a": 1}'], env={}, cli_prefix="app")
         from_env = loader.load(dict[str, int], argv=[], env={"APP_JSON": '{"a": 1}'}, env_prefix="APP_")
         assert from_env == from_cli == {"a": 1}
+
+
+class TestEnvReservedKey:
+    """A key confarg reserves is no variable's to write, as it is no flag's (FEAT-3)."""
+
+    def test_reserved_key_below_a_dict_is_refused(self) -> None:
+        """A separator that lets a variable spell a dunder still cannot write ``__cast__``."""
+        WithDict = make_target("d", dict[str, int], default_factory=dict)
+        with pytest.raises(confarg.exceptions.ConfargError) as excinfo:
+            confarg.merge(WithDict, argv=[], env={"APP_d.__cast__": "int"}, env_prefix="APP_", env_separator=".")
+        assert str(excinfo.value) == (
+            "Cannot set 'APP_d.__cast__': '__cast__' is a key confarg reserves,"
+            " which only a configuration file may write."
+        )
