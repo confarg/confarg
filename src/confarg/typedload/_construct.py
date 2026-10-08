@@ -1005,6 +1005,14 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
     variant_names = " | ".join(
         "None" if v is types.NoneType else getattr(_resolve_type(v), "__name__", repr(v)) for v in all_args
     )
+    if isinstance(data, dict) and LIST_REPLACE_BASE_KEY in data:
+        # A patch the merge deferred with its base ({__base__: base, **patch}) is a sequence
+        # patch; every variant refused it above, so the first sequence variant's own refusal
+        # names the key it cannot place, where printing *data* would show the merge's
+        # internal base key (BUG-200).
+        seq_vars = fixed_vars + [v for v in coll_vars if not _is_dict(_resolve_type(v))]
+        if seq_vars:
+            construct(seq_vars[0], data, path=path, union_tag=union_tag)
     raise TypeCoercionError.cannot_coerce(
         _src_type(data),
         data,
