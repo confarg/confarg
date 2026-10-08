@@ -3,9 +3,18 @@
 ## Force casts
 
 `.str`, `.int`, `.float`, `.bool` and `.json` suffixes pin how a value is interpreted,
-bypassing the type-directed coercion (notably the stealing rule,
-[types](../types/stealing-rule.md#stealing-rule)).
+bypassing the type-directed coercion (notably the stealing rule among the variants the field
+holds,
+[types](../types/stealing-rule.md#stealing-rule)) — never the field's type itself.
 
+- A cast names a type the field's annotation holds — its own type for a leaf, a variant for
+  a union, anything for `Any` — and a cast naming anything else is refused, on every channel
+  and front-end alike (BUG-210): an int where the config asked for a `tuple[int, int]`, a
+  `str`, a list or a struct is a value the field does not accept
+  ([design decisions](../design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds)).
+  `_cast.holds_the_cast` owns the admission; `detect_force_cast` asks it, so vanilla's parse
+  and the adapters' registration refuse the same spellings, and `construct()` asks it of a
+  file's `__cast__` pin and of a stored `_Pinned` alike.
 - `_cast.py` owns **what** the cast names are and **what value** each produces, so vanilla,
   adapters and env produce byte-identical results. `detect_force_cast` owns **whether** a
   trailing segment is a cast, because that needs the type walk.

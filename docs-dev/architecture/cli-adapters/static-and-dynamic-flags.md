@@ -36,8 +36,10 @@ user typed, found by scanning argv (and config files named on argv):
 - collection patches (`--f.N`, `--f+`, `--f.N-`, `--f.key`) and `.json` casts;
 - the typed scalar cast flags on plain leaf fields (`--host.str`, BUG-72), registered only
   when typed on the same help-noise ground as `.json`: the leaf's own flag is the ordinary
-  spelling, and one flag per castable type would clutter `--help` for an escape hatch. The
-  leaf answer is `_scalar_cast_parent_is_leaf`: struct, collection, dict, callable and
+  spelling, and one flag per castable type would clutter `--help` for an escape hatch — and
+  only the leaf's own cast registers, since a cast naming a type the field does not hold is
+  refused everywhere ([design decisions](../design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds)).
+  The leaf answer is `_scalar_cast_parent_is_leaf`: struct, collection, dict, callable and
   registered-leaf parents keep their own spellings and their cast spelling stays refused
   (BUG-93). Which spelling wrote last, the plain flag or a cast, is vanilla's loop's answer,
   since it writes the occurrences sequentially;

@@ -15,7 +15,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-182 — An env delete naming no member is dropped without a warning](BUG-182-an-env-delete-naming-no-member-is-dropped-without-a-warning.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-186 — A root `json` cast swallows a field delete meant for the layers below](BUG-186-a-root-json-cast-swallows-a-field-delete-meant-for-the-layers-below.md) | critical |  | S | high | behavior | PR-87, BUG-3 |
 | [BUG-193 — A closure or a lambda dumps as a path that cannot be imported](BUG-193-a-closure-dumps-as-a-path-that-cannot-be-imported.md) | critical (via BUG-191) |  | S | low | behavior | PR-5 |
-| [BUG-210 — A pinned cast at a defaulted fixed-sequence field is silently dropped, its default built](BUG-210-a-pinned-cast-at-a-defaulted-fixed-sequence-field-is-dropped.md) | critical |  | S | low | behavior | PR-50 |
 | [BUG-190 — A typed `call:` spec merges with the lower layer's value instead of replacing it](BUG-190-a-typed-call-spec-merges-with-the-lower-layers-value.md) | critical |  | M | medium | behavior | FEAT-28 |
 | [BUG-192 — A `class:` instance dumps the arguments it was built with, not the values it holds](BUG-192-a-class-instance-dumps-the-arguments-it-was-built-with.md) | critical |  | M | low | behavior | PR-5 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
@@ -30,8 +29,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-180 — Cyclopts refuses a flag whose name ends in a star](BUG-180-cyclopts-refuses-a-flag-whose-name-ends-in-a-star.md) | major |  | M | medium | behavior | PR-72 |
 | [BUG-46 — The `90_integration` code blocks document an API that does not exist](BUG-46-old-help-blocks-document-a-removed-api.md) | minor |  | S | low | none | PR-13, PR-28 |
 | [BUG-63 — A bare `--config` before `--help` shows help on argparse and errors on the other four](BUG-63-bare-config-before-help-shows-help-on-argparse.md) | minor |  | S | medium | behavior | PR-5 |
-| [BUG-93 — Scalar cast flags stay refused on struct, collection and registered-leaf fields](BUG-93-scalar-cast-flags-stay-refused-on-struct-collection-and-leaf-fields.md) | minor |  | S | medium | behavior | PR-50 |
-| [BUG-94 — Multi-variant unions refuse the scalar casts beyond the union's own scalars](BUG-94-multi-variant-unions-refuse-casts-beyond-their-own-scalars.md) | minor |  | S | medium | behavior | PR-50 |
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-107 — A real field named like the tag, nested inside a union variant, is stripped by the type check](BUG-107-a-nested-real-field-named-like-the-tag-is-stripped-by-the-union-type-check.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-108 — A plain fixed tuple accepts the index spellings a namedtuple refuses](BUG-108-a-plain-fixed-tuple-accepts-the-index-spellings-a-namedtuple-refuses.md) | minor |  | S | medium | behavior | PR-5 |

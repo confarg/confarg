@@ -11,10 +11,11 @@ following value is interpreted, bypassing the type-directed "magic":
   union "stealing rule").
 - ``.json`` — parse the value as JSON, storing the decoded structure raw.
 
-This module defines *which* names are casts, *what value* each produces, and how the
-objects a root ``json`` cast decodes fold in under the fields (:func:`fold_root_json`).
-Whether a trailing segment is a cast at all (vs. a real field of the same name) is decided
-by :func:`confarg._parse_cli.detect_force_cast`.
+This module defines *which* names are casts, *what value* each produces, whether the field's
+type admits the cast at all (:func:`holds_the_cast` — a cast names one of the types the field
+itself holds), and how the objects a root ``json`` cast decodes fold in under the fields
+(:func:`fold_root_json`). Whether a trailing segment is a cast at all (vs. a real field of the
+same name) is decided by :func:`confarg._parse_cli.detect_force_cast`.
 
 Dev Notes:
     docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#force-casts
@@ -26,7 +27,7 @@ import json
 from typing import Any
 
 from confarg._merge import _deep_merge
-from confarg._types import _Pinned, _StrToken
+from confarg._types import _is_union, _Pinned, _resolve_type, _StrToken, _union_args_no_none
 from confarg.exceptions import ConfargError, TypeCoercionError
 
 JSON_CAST_NAME = "json"
@@ -65,6 +66,26 @@ def resolve_forced_value(cast_name: str, raw: str, *, flag: str = "") -> Any:
             msg = f"Invalid JSON for {label}: {e}"
             raise ConfargError(msg) from e
     return _Pinned(SCALAR_CAST_TYPES[cast_name], _StrToken(raw))
+
+
+def holds_the_cast(field_tp: Any, cast_tp: Any) -> bool:
+    """Return whether *field_tp* holds *cast_tp* among the types it accepts.
+
+    The one admission rule every cast asks, on every channel: a leaf field holds
+    its own type, a union holds its variants, and ``Any`` holds everything. A cast
+    naming anything else would place a value the field's type does not accept —
+    an int where the config asked for a ``tuple[int, int]`` — so it is refused,
+    by construction reading a pin and by the CLI detecting and registering a cast
+    flag alike.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds
+    """
+    field_tp = _resolve_type(field_tp)
+    if field_tp is Any:
+        return True
+    members = [_resolve_type(v) for v in _union_args_no_none(field_tp)] if _is_union(field_tp) else [field_tp]
+    return any(m == cast_tp for m in members)
 
 
 def fold_root_json(data: dict[str, Any], root_json: list[dict[str, Any]], union_tag: str) -> dict[str, Any]:

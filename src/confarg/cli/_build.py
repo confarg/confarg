@@ -78,24 +78,18 @@ from confarg.typedload._construct import _is_typed_call
 
 
 def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
-    """Return scalar types to offer as explicit cast flags for a multi-variant union.
+    """Return the scalar cast types the union holds, to offer as explicit cast flags.
 
-    Returns non-empty when the union has (a) at least one enum variant, or (b) str
-    alongside any other variant, scalar or not (``str | type``, ``str | Path``).
+    A cast is admitted only where the field's type holds it, so a multi-variant
+    union offers exactly its own scalar variants: the flags disambiguate the
+    stealing among them, and registration and vanilla's parse agree because both
+    ask the one admission rule (BUG-94).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
+        docs-dev/architecture/design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds
     """
-    non_none = _union_args_no_none(resolved)
-    types = [_resolve_type(v) for v in non_none]
-    scalars = [t for t in types if t in SCALAR_CAST_TYPES.values()]
-    has_enum = any(_is_enum(t) for t in types)
-    # In this branch the union always has >= 2 non-None variants, so a bare `str in
-    # scalars` already means "str shares the union with at least one other variant".
-    has_str_with_other = str in scalars
-    if not has_enum and not has_str_with_other:
-        return []
-    return scalars
+    return [t for t in (_resolve_type(v) for v in _union_args_no_none(resolved)) if t in SCALAR_CAST_TYPES.values()]
 
 
 def _literal_cli_choices(vals: tuple[Any, ...]) -> list[str]:
@@ -176,14 +170,13 @@ def _binds_a_run(tp: Any) -> bool:
 def _scalar_cast_parent_is_leaf(parent: Any) -> bool:
     """Return whether a scalar force-cast lands on a plain leaf field (BUG-72).
 
-    The registration half of the plain-field cast contract: vanilla's
-    :func:`~confarg._parse_cli.detect_force_cast` accepts a scalar cast wherever the
-    trailing segment names no real member of the parent type, and a plain leaf has
-    no members, so the cast flags are the leaf's to take.  The parents that
+    The registration half of the plain-field cast contract: a cast is admitted
+    only where the field's type holds it, and a plain leaf holds exactly its own
+    type, so the leaf's cast flag is the field's to take.  The parents that
     answer False keep their own spellings: a struct's or namedtuple's sub-flags, a
     collection's element indices, a dict's keys, a callable's openers, a registered
     leaf's tag hatch, and a multi-variant union, whose cast flags are registered
-    statically where the stealing rule is non-obvious.
+    statically for the union's own scalars.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
@@ -934,8 +927,8 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per
             return seq_specs
         # Any other multi-variant leaf union (str | type, int | float, str | Path, …)
         # is a single scalar flag. Register it unconditionally so the field is
-        # accepted; add force-cast escape hatches when the stealing rule is
-        # non-obvious (str-with-scalar or enum unions).
+        # accepted; add the force-cast escape hatches for the union's own scalars,
+        # which the one admission rule lets through (BUG-94).
         return [
             FlagSpec(name=flag, metavar="VALUE", help=help_text, group=group, group_description=group_description),
             *_union_cast_flag_specs(flag, _scalar_cast_types_in_union(resolved), group, group_description),

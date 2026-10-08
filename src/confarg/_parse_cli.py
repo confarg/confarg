@@ -26,7 +26,14 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._callable import names_a_call, names_a_target_opener, names_an_opener, promote_bare_spec
-from confarg._cast import FORCE_CAST_NAMES, JSON_CAST_NAME, fold_root_json, resolve_forced_value
+from confarg._cast import (
+    FORCE_CAST_NAMES,
+    JSON_CAST_NAME,
+    SCALAR_CAST_TYPES,
+    fold_root_json,
+    holds_the_cast,
+    resolve_forced_value,
+)
 from confarg._merge import (
     APPEND_SUFFIX,
     DELETE_SUFFIX,
@@ -651,10 +658,17 @@ def detect_force_cast(path: list[str], target: Any, union_tag: str) -> tuple[lis
     """Decide whether ``path``'s trailing segment is a force-cast suffix.
 
     Returns ``(path_without_cast, cast_name)`` when the last segment is one of
-    :data:`~confarg._cast.FORCE_CAST_NAMES` *and* it does not name a real field/key of
-    the parent (real field wins); otherwise ``(path, None)``.  A root-level cast (no
-    parent to attach to) is a cast only for ``--json`` (whole-config injection, empty
-    returned path); root-level scalar casts have no struct to attach to and are ignored.
+    :data:`~confarg._cast.FORCE_CAST_NAMES`, it does not name a real field/key of
+    the parent (real field wins), and the parent's type holds the cast's type —
+    a cast naming anything else would place a value the field does not accept,
+    so the key keeps its path and the walk refuses it as unknown, exactly as the
+    adapters' registration never offers it.  Otherwise ``(path, None)``.  A
+    root-level cast (no parent to attach to) is a cast only for ``--json``
+    (whole-config injection, empty returned path); root-level scalar casts have
+    no struct to attach to and are ignored.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds
     """
     if not path or path[-1] not in FORCE_CAST_NAMES:
         return path, None
@@ -668,6 +682,8 @@ def detect_force_cast(path: list[str], target: Any, union_tag: str) -> tuple[lis
         return path, None
     parent_type = _resolve_field_type(target, parent, union_tag)
     if parent_type is None or _segment_names_real_field(parent_type, path[-1], union_tag):
+        return path, None
+    if path[-1] != JSON_CAST_NAME and not holds_the_cast(parent_type, SCALAR_CAST_TYPES[path[-1]]):
         return path, None
     return parent, path[-1]
 
