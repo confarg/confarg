@@ -54,7 +54,8 @@ between the two other channels in priority: above
 - Values starting with `[` or `{` are parsed as JSON only when the target type can accept a
   list or an object; otherwise they are ordinary tokens. Which types those are is not this
   channel's question: `{` defers to `_parse_cli._accepts_object_value`, the one predicate the
-  CLI whole-value flag consults ([04](cli-adapters/whole-value-flags.md#whole-value-flags)), and `[` to
+  CLI whole-value flag consults
+  ([whole-value flags](cli-adapters/whole-value-flags.md#whole-value-flags)), and `[` to
   `_types._is_seq_variant` plus `_union_has_seq_variant`. Asking again here is what let a
   plain class take the blob from the environment while the CLI refused it (BUG-39, closed):
   a *struct* is either spelling of one, because construction takes a dataclass and a plain

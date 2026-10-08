@@ -34,7 +34,6 @@ different board.
 | [REF-85 — `api-seams.md`'s round-trip paragraphs sit under the option-set heading](REF-85-api-seams-round-trip-paragraphs-sit-under-the-option-set-heading.md) | trivial |  | S | low | none |
 | [REF-86 — The collection-patch question stops at a callable for nothing](REF-86-the-collection-patch-question-stops-at-a-callable-for-nothing.md) | trivial |  | S | low | none |
 | [REF-87 — An append is combined with what its path holds in two functions](REF-87-an-append-is-combined-with-the-path-in-two-functions.md) | trivial |  | S | medium | none |
-| [REF-90 — Two notes cite a note as `[04]`, its number from before the folder split](REF-90-two-notes-cite-a-note-as-04-its-pre-split-number.md) | trivial |  | S | low | none |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | trivial |  | M | high | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | trivial |  | M | low | none |
 | [REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk](REF-42-argparse-completion-reimplements-the-build-walk.md) | trivial |  | M | medium | none |
