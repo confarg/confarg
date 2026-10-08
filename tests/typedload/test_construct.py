@@ -170,6 +170,23 @@ class TestAllDefaultShortcut:
         """The shortcut itself is intact: a struct that accepts {} is still built from it."""
         assert confarg.build(_NeedsAllDefaults, {}) == _NeedsAllDefaults(nested=_AllDefaults())
 
+    def test_constructor_refusing_empty_call_is_a_missing_root(self) -> None:
+        """The root takes the field's rule: a root that refuses {} is a missing root (BUG-184)."""
+        with pytest.raises(MissingFieldError, match="No value provided for target type"):
+            confarg.build(UUID, {})
+
+    def test_message_matches_the_scalar_root_message(self) -> None:
+        """The message is the one a scalar target nothing supplied gets, naming the target type."""
+        with pytest.raises(MissingFieldError) as exc_info:
+            confarg.build(UUID, {})
+        msg = str(exc_info.value)
+        assert repr(UUID) in msg
+        assert "--json <json>" in msg
+
+    def test_buildable_root_is_still_built_from_nothing(self) -> None:
+        """The shortcut itself is intact at the root: a struct that accepts {} still builds."""
+        assert confarg.build(_AllDefaults, {}) == _AllDefaults()
+
 
 # ---------------------------------------------------------------------------
 # Stealing order
@@ -492,6 +509,22 @@ class TestTagFieldCollision:
             union_tag="class",
         )
         assert result == _KindVariant(Kind="v")
+
+    def test_tag_alone_on_a_refusing_class_is_a_coercion(self) -> None:
+        """A tag naming an all-default class that refuses {} is refused as a coercion (BUG-213).
+
+        The tag is supplied data, so the field is not missing: the refusal names the class and
+        quotes Python's own text, as the auto-bound owner of an instance method already does.
+        """
+        with pytest.raises(TypeCoercionError, match="with no arguments") as exc_info:
+            construct(UUID | int, {"class": "uuid.UUID"})
+        msg = str(exc_info.value)
+        assert "uuid.UUID" in msg
+        assert "one of the hex, bytes, bytes_le, fields, or int arguments must be given" in msg
+
+    def test_tag_beside_the_refusing_classs_fields_builds(self) -> None:
+        """The refusal's advice is real: the class's fields beside the tag build it."""
+        assert construct(UUID | int, {"class": "uuid.UUID", "int": 5}) == UUID(int=5)
 
     def test_taggable_leaf_param_shadows_tag(
         self,
