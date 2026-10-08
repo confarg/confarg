@@ -14,6 +14,7 @@ from typing import Annotated, Literal, NamedTuple
 import pytest
 
 import confarg
+import confarg.cli.argparse as confargargparse
 from confarg.cli import FieldMeta
 from confarg.cli._spec import _get_field_docstrings
 from confarg.cli.argparse import from_namespace, make_parser, populate_parser
@@ -792,3 +793,22 @@ class TestArgvIsTheParsedArgv:
         parser.add_argument("--dry-run", action="store_true")
         ns = parser.parse_args(["--host", "h"])
         assert from_namespace(Simple, ns, argv=["--host", "h"], env={}, config_flag="").host == "h"
+
+
+# ---------------------------------------------------------------------------
+# Public API surface
+# ---------------------------------------------------------------------------
+
+
+def test_public_api() -> None:
+    """confarg.cli.argparse exports exactly the six documented public functions."""
+    assert set(confargargparse.__all__) == {
+        "from_namespace",
+        "load_flags_into_parser",
+        "make_parser",
+        "merge_namespace",
+        "populate_parser",
+        "setup_completion",
+    }
+    for name in confargargparse.__all__:
+        assert hasattr(confargargparse, name)

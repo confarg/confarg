@@ -359,11 +359,16 @@ class TestSetupCompletion:
 
 
 def test_public_api() -> None:
-    """confarg.click exports the four documented public functions."""
-    assert hasattr(confargclick, "populate_command")
-    assert hasattr(confargclick, "load_flags_into_command")
-    assert hasattr(confargclick, "from_context")
-    assert hasattr(confargclick, "setup_completion")
+    """confarg.click exports exactly the five documented public functions."""
+    assert set(confargclick.__all__) == {
+        "from_context",
+        "load_flags_into_command",
+        "merge_context",
+        "populate_command",
+        "setup_completion",
+    }
+    for name in confargclick.__all__:
+        assert hasattr(confargclick, name)
 
 
 # ---------------------------------------------------------------------------

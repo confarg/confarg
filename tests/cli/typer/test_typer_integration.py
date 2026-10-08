@@ -406,3 +406,21 @@ def test_neither_adapter_drags_in_the_other(adapter: str, absent: str) -> None:
         check=True,
     )
     assert out.stdout.strip() == "False"
+
+
+# ---------------------------------------------------------------------------
+# Public API surface
+# ---------------------------------------------------------------------------
+
+
+def test_public_api() -> None:
+    """confarg.cli.typer exports exactly the five documented public functions."""
+    assert set(confargtyper.__all__) == {
+        "from_context",
+        "load_flags_into_command",
+        "merge_context",
+        "populate_command",
+        "setup_completion",
+    }
+    for name in confargtyper.__all__:
+        assert hasattr(confargtyper, name)
