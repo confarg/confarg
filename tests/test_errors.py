@@ -154,7 +154,10 @@ class TestTypeCoercionErrors:
 
     def test_index_patch_on_a_default_tuple_names_its_whole_path(self) -> None:
         """An out-of-range patch on a nested default tuple names ``a.t``, not the bare field ``t``."""
-        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"tuple at 'a\.t': index 5 out of range"):
+        with pytest.raises(
+            confarg.exceptions.TypeCoercionError,
+            match=r"tuple\[int, int\] at 'a\.t': index 5 out of range",
+        ):
             confarg.build(_NestedDefaultPair, {"a": {"t": {"5": 9}}})
 
     def test_int_coercion_failure(self, loader: ConfargLoader) -> None:

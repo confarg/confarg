@@ -73,7 +73,11 @@ environment variable or a mount point naming one is refused, by
 back, through `merge(files=[saved])`, as the merged dict it was, ops included.
 
 A marker that reaches a dict field in `build()` (a file's `d+:`, or BUG-174's `--d.1-`) is
-refused by `_construct_dict` rather than built as one of the dict's keys.
+refused by `_construct_dict` rather than built as one of the dict's keys. The plain string a
+direct `build()` caller might spell — out-of-contract, as no channel can produce it — is
+refused too, by `_indexed_dict_to_positions`, the one index reader every sequence path of
+construction shares: against a default, where `_resolve_tuple_partial`'s stray-skipping once
+dropped it silently, and without one alike, with one refusal naming the key (BUG-209).
 
 The alternatives weighed are in
 [design decisions](../design-decisions/merge-ops-are-markers-no-channel-types.md#merge-ops-are-markers-no-channel-types).

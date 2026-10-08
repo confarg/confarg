@@ -23,6 +23,7 @@ from confarg._merge import (
     LIST_APPEND_KEY,
     LIST_DELETE_KEY,
     LIST_REPLACE_BASE_KEY,
+    MERGE_OP_KEYS,
     _apply_list_ops,
     _merge_existing_value,
     _OpKey,
@@ -521,11 +522,21 @@ def _indexed_dict_to_positions(
             path like ``COORDS__BAD``) are ignored rather than treated as an error.
 
     Raises:
-        TypeCoercionError: on a non-integer key (unless *tolerate_non_int*) or an index out of
-            range for *length*.
+        TypeCoercionError: on a key spelling one of the reserved list ops (``_merge.MERGE_OP_KEYS``
+            — a marker, never the plain string, is the op), on a non-integer key (unless
+            *tolerate_non_int*) or an index out of range for *length*.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
     """
     out: dict[int, Any] = {}
     for k, v in data.items():
+        if isinstance(k, str) and k in MERGE_OP_KEYS:
+            msg = (
+                f"Cannot construct {what} at '{_spell_field_path(path)}':"
+                f" {k!r} spells a list op, which only a configuration file writes"
+            )
+            raise TypeCoercionError(msg)
         try:
             ik = int(k)
         except (TypeError, ValueError):
@@ -554,7 +565,7 @@ def _resolve_tuple_partial(field_data: dict[str, Any], ft: Any, default: Any, pa
     if tup_tp is None or default is None:
         return field_data
     base = list(default)
-    for idx, iv in _indexed_dict_to_positions(field_data, len(base), path, "tuple", tolerate_non_int=True).items():
+    for idx, iv in _indexed_dict_to_positions(field_data, len(base), path, f"{tup_tp}", tolerate_non_int=True).items():
         base[idx] = iv
     return base
 
