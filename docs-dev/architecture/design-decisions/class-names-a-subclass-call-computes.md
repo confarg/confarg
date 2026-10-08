@@ -2,14 +2,17 @@
 
 On a typed field the `class` key is the union tag, and it names a class the annotation accepts:
 a subclass of it, or the annotation itself. Any other class is refused at the field, and the
-message points to `call:`, which builds it through a factory it names. The two keys say different
-things: `class:` says "the type I want", and `call:` says "compute the value".
+message names `call:` to say what it does: it computes a value the annotation accepts, and does
+not get around the refusal. The two keys say different things: `class:` says "the type I want",
+and `call:` says "compute the value".
 
 Why: a field's annotation is the contract the rest of the program reads. A `class:` that could
 name an unrelated class would hand that field an object the annotation does not promise, and the
 type of the built value would depend on whatever the file named. `call:` already has the
-function-returns-the-value form, so a value of an unrelated class needs no second spelling, only
-a factory that returns it.
+function-returns-the-value form, but it is no second spelling here: on a typed field its value
+is taken only when the annotation accepts it, and anything else is built as the annotation
+([call in a typed field](../callables.md#call-in-a-typed-field)), so a factory returning an
+unrelated class is refused in turn.
 
 Rejected:
 
@@ -22,5 +25,6 @@ Precedent: Pydantic validates a model-typed field by `isinstance`, so an instanc
 class is refused rather than rebuilt; Hydra's `_target_` instantiates any importable class, but
 its structured configs check the result against the declared type.
 
-Cost: a user who wants a value of an unrelated class on a typed field writes a `call:` spec that
-names a factory returning it. Naming the class directly, with no factory, is refused.
+Cost: a user who wants a value of an unrelated class on a typed field cannot get it from the
+configuration: `class:` is refused, and a `call:` spec returning it is refused in turn, so
+widening the annotation — a union holding the class — is the way to it.
