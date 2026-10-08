@@ -9,7 +9,7 @@ copied into it.
 |---|---|
 | [architecture/](architecture/README.md) | **Why** the code is the way it is: design choices, rejected alternatives, trade-offs, invariants, vocabulary, source map. The single source of truth for rationale — docstrings must not repeat it. |
 | [todo/](todo/README.md) | **What is left to do**: bugs, desirable features, refactors, and questions for the maintainer. The place to file drive-by findings that are not being addressed. |
-| [plans/](plans/README.md) | **How a settled design is going to be built**, for work too large to describe on a board and not yet built. One file per design, deleted when the work lands and its rationale moves to `architecture/`. |
+| [todo/plans/](todo/plans/README.md) | **How a settled design is going to be built**, for work too large to describe on a board and not yet built. One file per design, deleted when the work lands and its rationale moves to `architecture/`. |
 
 The three are complements, and the order is the life of a piece of work: a ticket says something is
 missing; a plan says what was decided about it and in what order to build it; and landing it leaves a
@@ -28,7 +28,7 @@ maps source modules to documents, so you can open only what your change touches.
 | A reason, a trade-off, a rejected alternative, an invariant | `architecture/` |
 | Something broken, missing, or ugly that you are not fixing right now | `todo/` |
 | A question only the maintainer can answer | `todo/questions/` |
-| A design settled with the maintainer for work not yet built | `plans/`, with a ticket on `todo/` pointing at it |
+| A design settled with the maintainer for work not yet built | `todo/plans/`, with a ticket on the boards pointing at it |
 | Anything a *user* of confarg needs | `README.md`, `docs/`, `examples/` |
 | A standing instruction to coding agents | `AGENTS.md`, or the protocol folder it names |
 

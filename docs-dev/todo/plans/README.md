@@ -6,11 +6,11 @@ board and not yet built.
 A plan is the staging area between a ticket and the code. It holds what was decided, what was
 rejected and why, the order to build it in, and how to tell it worked — the material that has nowhere
 else to live while the code does not exist yet, because
-[`../architecture/`](../architecture/README.md) documents why the code *is* the way it is, not why it
-is going to be. Open work stays on the boards in [`../todo/`](../todo/README.md); a plan is cited by
+[`../../architecture/`](../../architecture/README.md) documents why the code *is* the way it is, not why it
+is going to be. Open work stays on the boards in [`../`](../README.md); a plan is cited by
 the ticket it serves, and it carries no work items of its own.
 
-**A plan is never a destination.** When the work lands, its rationale moves to `../architecture/` and
+**A plan is never a destination.** When the work lands, its rationale moves to `../../architecture/` and
 the plan file is deleted, the same way a ticket's file is deleted when it closes. Nothing in the
 repository should cite a plan for a feature that already exists — if it does, the move never happened.
 

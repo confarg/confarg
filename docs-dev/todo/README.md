@@ -16,6 +16,7 @@ it is*. A closed ticket often leaves a decision behind — the decision goes to
 `../architecture/`, not here.
 Boards hold open work only: a ticket's file is deleted when it closes, and its ID is named in
 the revision that closed it.
+This folder holds one thing beside the boards: [plans/](plans/README.md), the settled designs of work not yet built. A plan is not a ticket — it is cited by the ticket it serves, and carries no work items of its own.
 
 ## One ticket, one file
 
