@@ -384,10 +384,10 @@ def _is_eagerly_coercible(tp: Any) -> bool:
     return _is_literal(tp) or _is_enum(tp) or tp in (bool, int, float) or tp in _LEAF_COERCIONS or _is_none_type(tp)
 
 
-def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # one branch per leaf type
+def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  # one branch per leaf type
     """Coerce a raw value to the target leaf type.
 
-    Handles bool, int, float, str, NoneType, Literal, Enum, and registered
+    Handles bool, int, float, str, NoneType, Literal, Enum, Any, and registered
     leaf types (``Path`` and any type passed to ``confarg.register_leaf_type``). Only
     string tokens from the CLI, env vars or CSV files are parsed from text; any other
     value must already have the target type.
@@ -404,6 +404,10 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # one branch per 
         TypeCoercionError: If the value cannot be coerced to the target type.
     """
     tp = _resolve_type(tp)
+    if tp is Any:
+        # The one leaf every value holds; a token leaves as written, as construct()'s
+        # ANY branch leaves it.
+        return value
     if _is_none_type(tp):
         if value is None:
             return None

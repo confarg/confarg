@@ -281,7 +281,7 @@ _DICT_ORIGINS = frozenset({dict, Mapping, MutableMapping})
 
 
 def _is_list(tp: Any) -> bool:
-    """Check whether a type is list[...] or an abstract sequence type (Sequence, MutableSequence, Iterable, Collection).
+    """Check whether a type is a list: list[...], a bare list, or Sequence, MutableSequence, Iterable or Collection.
 
     Args:
         tp: The type to check.
@@ -289,11 +289,12 @@ def _is_list(tp: Any) -> bool:
     Returns:
         True if tp is a list or sequence type.
     """
-    return _origin(tp) in _LIST_ORIGINS
+    tp = _resolve_type(tp)
+    return tp is list or _origin(tp) in _LIST_ORIGINS
 
 
 def _is_set(tp: Any) -> bool:
-    """Check whether a type is set[...] or an abstract set type (AbstractSet, MutableSet).
+    """Check whether a type is set[...], a bare set, or an abstract set type (AbstractSet, MutableSet).
 
     Args:
         tp: The type to check.
@@ -301,11 +302,12 @@ def _is_set(tp: Any) -> bool:
     Returns:
         True if tp is a set type.
     """
-    return _origin(tp) in _SET_ORIGINS
+    tp = _resolve_type(tp)
+    return tp is set or _origin(tp) in _SET_ORIGINS
 
 
 def _is_frozenset(tp: Any) -> bool:
-    """Check whether a type is frozenset[...].
+    """Check whether a type is frozenset[...] or a bare frozenset.
 
     Args:
         tp: The type to check.
@@ -313,11 +315,12 @@ def _is_frozenset(tp: Any) -> bool:
     Returns:
         True if tp is a frozenset type.
     """
-    return _origin(tp) is frozenset
+    tp = _resolve_type(tp)
+    return tp is frozenset or _origin(tp) is frozenset
 
 
 def _is_tuple(tp: Any) -> bool:
-    """Check whether a type is tuple[...].
+    """Check whether a type is tuple[...] or a bare tuple.
 
     Args:
         tp: The type to check.
@@ -325,7 +328,8 @@ def _is_tuple(tp: Any) -> bool:
     Returns:
         True if tp is a tuple type.
     """
-    return _origin(tp) is tuple
+    tp = _resolve_type(tp)
+    return tp is tuple or _origin(tp) is tuple
 
 
 def _is_namedtuple(tp: Any) -> bool:
@@ -377,7 +381,7 @@ def _namedtuple_defaults(tp: Any) -> dict[str, Any]:
 
 
 def _is_dict(tp: Any) -> bool:
-    """Check whether a type is dict[...] or an abstract mapping type (Mapping, MutableMapping).
+    """Check whether a type is dict[...], a bare dict, or an abstract mapping type (Mapping, MutableMapping).
 
     Args:
         tp: The type to check.
@@ -385,7 +389,8 @@ def _is_dict(tp: Any) -> bool:
     Returns:
         True if tp is a dict or mapping type.
     """
-    return _origin(tp) in _DICT_ORIGINS
+    tp = _resolve_type(tp)
+    return tp is dict or _origin(tp) in _DICT_ORIGINS
 
 
 def _is_varlen_collection(tp: Any) -> bool:
@@ -405,7 +410,7 @@ def _is_varlen_collection(tp: Any) -> bool:
     if _is_tuple(tp):
         a = get_args(tp)
         _variable_length_tuple_args = 2
-        return len(a) == _variable_length_tuple_args and a[1] is Ellipsis
+        return not a or (len(a) == _variable_length_tuple_args and a[1] is Ellipsis)
     return False
 
 
@@ -491,7 +496,7 @@ def _elem_type(tp: Any) -> Any:
 
 
 def _tuple_types(tp: Any) -> list[Any] | None:
-    """Return fixed-length element types for a tuple, or None for tuple[X, ...].
+    """Return fixed-length element types for a tuple, or None for tuple[X, ...] or a bare tuple.
 
     Args:
         tp: A tuple type.
@@ -501,7 +506,7 @@ def _tuple_types(tp: Any) -> list[Any] | None:
     """
     a = get_args(_resolve_type(tp))
     _variable_length_tuple_args = 2
-    if len(a) == _variable_length_tuple_args and a[1] is Ellipsis:
+    if not a or (len(a) == _variable_length_tuple_args and a[1] is Ellipsis):
         return None
     return [_resolve_type(x) for x in a]
 
@@ -513,10 +518,10 @@ def _dict_kv(tp: Any) -> tuple[Any, Any]:
         tp: A dict type.
 
     Returns:
-        A (key_type, value_type) tuple, defaulting to (str, Any).
+        A (key_type, value_type) tuple, defaulting to (Any, Any) for the unparameterized form.
     """
     a = get_args(_resolve_type(tp))
-    return (_resolve_type(a[0]), _resolve_type(a[1])) if a else (str, Any)
+    return (_resolve_type(a[0]), _resolve_type(a[1])) if a else (Any, Any)
 
 
 def _is_literal(tp: Any) -> bool:

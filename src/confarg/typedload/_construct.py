@@ -486,7 +486,7 @@ def _takes_typed_call(tp: Any, call_key: str) -> bool:
     tp = _resolve_type(tp)
     members = [_resolve_type(arg) for arg in _union_args_no_none(tp)] if _is_union(tp) else [tp]
     for member in members:
-        if _type_kind(member) in (_TypeKind.ANY, _TypeKind.DICT, _TypeKind.CALLABLE) or member is dict:
+        if _type_kind(member) in (_TypeKind.ANY, _TypeKind.DICT, _TypeKind.CALLABLE):
             return False
         if _is_struct(member) and call_key in _struct_member_names(member):
             return False

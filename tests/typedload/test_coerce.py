@@ -122,6 +122,20 @@ class TestCoerceLeafCustomType:
             _coerce_leaf(UUID, _StrToken(_UUID_STR))
 
 
+class TestCoerceLeafAny:
+    """_coerce_leaf passes a value through to Any, the leaf every value holds (BUG-212)."""
+
+    def test_native_value_passes_through(self) -> None:
+        """A native value is returned as-is."""
+        assert _coerce_leaf(Any, 1) == 1
+        assert _coerce_leaf(Any, None) is None
+
+    def test_token_passes_through(self) -> None:
+        """A string token is returned as written, as construct()'s ANY branch does."""
+        token = _StrToken("x")
+        assert _coerce_leaf(Any, token) is token
+
+
 # ---------------------------------------------------------------------------
 # TestTryCoerceCustomType — eager coercion during merge
 # ---------------------------------------------------------------------------
@@ -493,10 +507,15 @@ class TestTypeKind:
             (tuple[int, int], _TypeKind.TUPLE),
             (_Config, _TypeKind.STRUCT),
             (list[int], _TypeKind.LIST),
+            (list, _TypeKind.LIST),
             (Sequence[int], _TypeKind.LIST),
             (set[int], _TypeKind.SET),
+            (set, _TypeKind.SET),
             (frozenset[int], _TypeKind.FROZENSET),
+            (frozenset, _TypeKind.FROZENSET),
+            (tuple, _TypeKind.TUPLE),
             (Mapping[str, int], _TypeKind.DICT),
+            (dict, _TypeKind.DICT),
             (Callable[..., int], _TypeKind.CALLABLE),
             (Path, _TypeKind.LEAF),
             (UUID, _TypeKind.STRUCT),

@@ -510,6 +510,11 @@ class _WithDictField:
     d: dict[str, int] = dataclasses.field(default_factory=dict)
 
 
+@dataclass
+class _WithBareDictField:
+    d: dict = dataclasses.field(default_factory=dict)
+
+
 # ---------------------------------------------------------------------------
 # Loading basics
 # ---------------------------------------------------------------------------
@@ -557,6 +562,11 @@ class TestLoadContract:
         """Optional fields are set when provided."""
         cfg = loader.load(WithOptional, argv=["--label", "hello"], env={})
         assert cfg.label == "hello"
+
+    def test_bare_dict_field_takes_a_subkey_flag(self, loader: ConfargLoader) -> None:
+        """A bare ``dict`` field is a dict field, so a subkey flag addresses it (BUG-187)."""
+        cfg = loader.load(_WithBareDictField, argv=["--d.x", "1"], env={})
+        assert cfg.d == {"x": "1"}
 
     def test_enum_by_value(self, loader: ConfargLoader) -> None:
         """Enum fields accept enum values (not just names)."""
