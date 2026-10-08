@@ -4,11 +4,12 @@ An error message raised from **more than one site** is built by a classmethod fa
 exception class, not by an f-string at each of them. `InvalidConfigFileError` and `LocalsError`
 were written that way from the start; `ConfargError.root_cast_not_object`,
 `ConfargError.include_siblings_need_a_dict` and the three `UnknownArgumentError` factories
-followed once the duplication had cost something (REF-51, closed). The two construction-error
-families in `typedload/` followed before they could drift a second time (REF-69, closed):
+followed once the duplication had cost something (REF-51, closed). The construction-error
+factories in `typedload/` followed before they could drift a second time (REF-69, closed):
 `TypeCoercionError.wrong_shape` for the six shape refusals, `TypeCoercionError.not_a_subclass`
-for the three class-tag refusals, and a `none_sentinel` keyword on `cannot_coerce` carrying
-the none-word remedy. The per-variant breakdown of the two ambiguity refusals is the one
+for the type-ref constraint refusals, and `TypeCoercionError.tag_not_a_subclass` for the
+class-tag refusal, which FEAT-29 split off so it could name `call:`, plus a `none_sentinel`
+keyword on `cannot_coerce` carrying the none-word remedy. The per-variant breakdown of the two ambiguity refusals is the one
 multi-site text that stays out of `exceptions.py`: it reads `_struct_fields` and
 `_struct_defaults`, so it lives as one module-level builder in `_construct.py`, parametrized
 by its header and remedy lines. The threshold is duplication,

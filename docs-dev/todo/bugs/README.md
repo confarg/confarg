@@ -44,7 +44,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-178 — A bare-prefix append is told it lacks the prefix](BUG-178-a-bare-prefix-append-is-told-it-lacks-the-prefix.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-183 — The bare prefix variable on a struct root is warned about as segment ''](BUG-183-the-bare-prefix-variable-on-a-struct-root-is-warned-about-as-segment-empty.md) | minor |  | S | low | none | PR-5 |
 | [BUG-184 — A struct root that refuses an empty call escapes `build()` as a `TypeError`](BUG-184-a-struct-root-that-refuses-an-empty-call-escapes-build-as-a-typeerror.md) | minor |  | S | low | behavior | PR-5 |
-| [BUG-188 — A class key on a scalar field is refused as a coercion error](BUG-188-a-class-key-on-a-scalar-field-is-refused-as-a-coercion-error.md) | minor |  | S | low | behavior | unknown |
 | [BUG-195 — A builtin method descriptor loads from its path but cannot be dumped](BUG-195-a-builtin-method-descriptor-cannot-be-dumped.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-197 — A typed call's opener flag is described as a value, not as the function to call](BUG-197-a-typed-calls-opener-flag-is-described-as-a-spec-value.md) | minor |  | S | low | behavior | FEAT-32 |
 | [BUG-198 — A fixed-arity element flag takes one token on click and typer](BUG-198-a-fixed-arity-element-flag-takes-one-token-on-click-and-typer.md) | minor |  | S | low | config | PR-72 |
