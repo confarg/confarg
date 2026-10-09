@@ -13,7 +13,7 @@ why features such as locals need no engine support ([locals](../locals.md)).
 
 1. scan for expression strings (returns the input unchanged if there are none);
 2. deep-copy, then extract each expression's references;
-3. topologically sort (Kahn); a cycle raises `CircularReferenceError`;
+3. topologically sort (`graphlib.TopologicalSorter`); a cycle raises `CircularReferenceError`;
 4. validate every expression's AST;
 5. evaluate in dependency order, writing results back so later expressions see them.
 
@@ -24,10 +24,9 @@ section.
 Steps 2, 4 and 5 each need a parsed AST, but a unique expression text is parsed once: every
 parse site goes through the module-level `_parse_expression` cache (keyed by the `${...}` body
 as written, whose anchor markers it names itself —
-[reference anchoring](reference-anchoring.md#implementation-constraints)). The Kahn sort is linear in the graph size (`V + E`): a reverse
-adjacency list records who depends on each node, so releasing a node touches only its direct
-dependents. Both matter only for large configurations — a config with thousands of chained
-expressions is the only case that felt the old quadratic sort and triple parse.
+[reference anchoring](reference-anchoring.md#implementation-constraints)). The sort is the standard library's `graphlib.TopologicalSorter` — Kahn's algorithm, linear in the graph size (`V + E`): releasing a node touches only its direct dependents. Both matter only for large configurations — a config with thousands of chained expressions is the only case that felt the old quadratic sort and triple parse.
+
+**A cycle error names the nodes the cycle leaves unresolved.** `TopologicalSorter.prepare` raises its own `CycleError`, which names nothing in its message; the engine lets `get_ready` release every node it still can, then reports the rest — the cycle's members and every expression that waits on them, spelled dotted and sorted. Not the whole graph, and not one cycle alone: a node that resolves is never named, and a node blocked by the cycle is.
 
 **A body too deep for the parser does not parse.** On a deeply nested body (`${------…a}`)
 Python's parser gives up without a `SyntaxError`: a `RecursionError` while it builds the tree, or
@@ -169,7 +168,7 @@ values, and construction runs afterwards.
 
 The planned order (FEAT-35) puts `call:` specs in the same graph as expressions: a `call:` node
 depends on what its arguments reach, and an expression depends on what its references reach, as
-in the section above. Kahn's sort then yields one order, and a cycle through a call is a
+in the section above. The topological sort then yields one order, and a cycle through a call is a
 `CircularReferenceError` naming its members, the same as a cycle between expressions. An
 expression reading a call result waits for that call. A call reading an expression waits for
 that expression. Nothing that works today is lost.

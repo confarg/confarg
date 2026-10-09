@@ -8,6 +8,8 @@ wants either a decision in
 [../../architecture/design-decisions/README.md](../../architecture/design-decisions/README.md) or a
 different board.
 
+Working on refactoring should never modify tests, unless the ticket is about refactoring tests.
+
 <!-- tickets:start -->
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact |
@@ -15,7 +17,6 @@ different board.
 | [REF-26 — The `--config` files named on argv are parsed three times per run](REF-26-config-files-parsed-three-times.md) | minor |  | M | low | none |
 | [REF-41 — `cli/click/_context.py` and `cli/typer/_context.py` are the same file](REF-41-click-and-typer-context-are-the-same-file.md) | trivial |  | S | low | none |
 | [REF-46 — Near-duplicate helper pairs in the merge core](REF-46-near-duplicate-helpers-in-the-merge-core.md) | trivial |  | S | low | none |
-| [REF-49 — `graphlib.TopologicalSorter` replaces the hand-written Kahn loop](REF-49-graphlib-replaces-hand-written-kahn.md) | trivial |  | S | low | behavior |
 | [REF-54 — Two span loops in `dictexpr` that one helper writes](REF-54-dictexpr-span-loops-share-one-helper.md) | trivial |  | S | low | none |
 | [REF-55 — An adjacent-pair loop written with indices instead of `itertools.pairwise`](REF-55-pairwise-for-index-window-loops.md) | trivial |  | S | low | none |
 | [REF-58 — The config-parallel struct walk has two owners](REF-58-config-parallel-struct-walk-has-two-owners.md) | trivial |  | S | medium | none |
