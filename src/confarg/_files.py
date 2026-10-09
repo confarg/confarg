@@ -634,6 +634,9 @@ def _dump_yaml(data: dict[str, Any], path: Path) -> None:
 
     Raises:
         InvalidConfigFileError: If PyYAML is not installed.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/dumped-files-carry-raw-utf-8.md#dumped-files-carry-raw-utf-8
     """
     try:
         import yaml  # noqa: PLC0415
@@ -641,7 +644,7 @@ def _dump_yaml(data: dict[str, Any], path: Path) -> None:
         msg = "PyYAML"
         raise InvalidConfigFileError.missing_library(msg, "pyyaml", "writing YAML files") from None
     with Path(path).open("w", encoding="utf-8", newline="\n") as f:
-        yaml.dump(data, f, Dumper=yaml.SafeDumper)
+        yaml.dump(data, f, Dumper=yaml.SafeDumper, allow_unicode=True)
 
 
 def _dump_json(data: dict[str, Any], path: Path) -> None:
@@ -650,9 +653,12 @@ def _dump_json(data: dict[str, Any], path: Path) -> None:
     Args:
         data: The dict to write.
         path: Path to the output file.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/dumped-files-carry-raw-utf-8.md#dumped-files-carry-raw-utf-8
     """
     with Path(path).open("w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, indent=2)
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 _DUMPERS = {".toml": _dump_toml, ".yaml": _dump_yaml, ".yml": _dump_yaml, ".json": _dump_json}

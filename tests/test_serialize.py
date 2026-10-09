@@ -666,6 +666,47 @@ class TestDumpYaml:
         ):
             confarg.dump_file(obj, path)
 
+    def test_raw_dict_tuple_is_written_as_a_list(self, tmp_path: Path) -> None:
+        """A raw dict's tuple is written as a plain list, never the `!!python/tuple` tag.
+
+        SafeDumper's spelling; the default Dumper would emit a tag the reader's
+        `yaml.safe_load` refuses.
+        """
+        path = tmp_path / "out.yaml"
+        confarg.dump_file({"items": (1, 2)}, path)
+        assert path.read_bytes() == b"items:\n- 1\n- 2\n"
+
+    def test_non_ascii_is_written_as_utf_8(self, tmp_path: Path) -> None:
+        r"""Non-ASCII text reaches the file as raw UTF-8 bytes, not `\x` escapes."""
+        path = tmp_path / "out.yaml"
+        confarg.dump_file({"name": "naïve"}, path)
+        assert path.read_bytes() == b"name: " + "naïve".encode() + b"\n"
+        target = make_target("name", str, default="")
+        assert confarg.load(target, argv=[], env={}, files=[path]).name == "naïve"
+
+
+# ---------------------------------------------------------------------------
+# dump_json
+# ---------------------------------------------------------------------------
+
+
+class TestDumpJson:
+    """JSON dump: the bytes it writes."""
+
+    def test_indent_is_two_spaces(self, tmp_path: Path) -> None:
+        """A member one level down is indented by exactly the declared two spaces."""
+        path = tmp_path / "out.json"
+        confarg.dump_file({"db": {"host": "h"}}, path)
+        assert path.read_bytes() == b'{\n  "db": {\n    "host": "h"\n  }\n}'
+
+    def test_non_ascii_is_written_as_utf_8(self, tmp_path: Path) -> None:
+        r"""Non-ASCII text reaches the file as raw UTF-8 bytes, not `\u` escapes."""
+        path = tmp_path / "out.json"
+        confarg.dump_file({"name": "naïve"}, path)
+        assert path.read_bytes() == b'{\n  "name": "' + "naïve".encode() + b'"\n}'
+        target = make_target("name", str, default="")
+        assert confarg.load(target, argv=[], env={}, files=[path]).name == "naïve"
+
 
 # ---------------------------------------------------------------------------
 # Roundtrip: load -> dump -> load

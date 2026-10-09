@@ -82,6 +82,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [Dump round-trips at the built object](dump-round-trips-at-the-built-object.md) | not at the merged dict: a file's values are never re-interpreted |
 | [A stolen leaf dumps with its cast](a-stolen-leaf-dumps-with-its-cast.md) | `{__cast__, __value__}` exactly where the bare scalar would be taken back |
 | [Registered leaf types dump through a registered serializer](registered-leaf-serializer.md) | registration is two directions; `str` is only the default for the second |
+| [Dumped files carry raw UTF-8](dumped-files-carry-raw-utf-8.md) | non-ASCII text is written as it stands, escaped nowhere — what the TOML writer always did |
 
 ## CLI front-ends
 
