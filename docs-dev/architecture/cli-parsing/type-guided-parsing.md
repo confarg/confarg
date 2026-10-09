@@ -48,13 +48,12 @@ lines:
 - `_field_types` reads the ends of the branches that accept the path.
 - `_addresses_callable_key`: does any branch stand on a callable, or step into a typed call,
   before the path ends.
-- `_is_collection_patch_path`: does a branch stand on a list, tuple, set or dict, or enter a
-  namespace, before it stands on a callable. A namedtuple stops nothing: the static walk lists
-  its own fields and indices, so a path ending on one is no patch, but a list, a dict or a
-  namespace below its fields is as open-ended as one below a struct's (BUG-157). The stop is
-  per branch, which is why the walk yields branches rather than a flat stream of nodes: a
-  stream loses which branch a node belongs to, and with it the stop that leaves the sibling
-  branches walking.
+- `_is_collection_patch_path`: does any branch stand on a list, tuple, set or dict, or enter a
+  namespace. A namedtuple stops nothing: the static walk lists its own fields and indices, so
+  a path ending on one is no patch, but a list, a dict or a namespace below its fields is as
+  open-ended as one below a struct's (BUG-157). Nor does a callable: past one the walk stands
+  on nothing but `str` — every key of a spec is one, a bind key opens a `str` subtree — and a
+  callable holds no namespace, so the stop it once had never changed the answer (REF-86).
 - `_is_dict_at_path`: does any branch stand on a dict before the path ends. It reads the node,
   not the reached type: a field typed `dict[str, Any] | None` or `dict[str, Any] | Inner`
   reaches the union, which is no dict, and a prefix the branches disagree on folds to `str`
@@ -79,8 +78,13 @@ This is the collapse
 keeps: the copies were the same code, and the walk takes no parameter for any caller's
 difference (`tag_fallback` is the walk's own, asked by `_names_tag_by_fallback`; `calls` is
 what the command line opens, `_typed_call_openings`, which every CLI question about the same
-argv gets alike, and which a caller with no argv leaves empty). Rejected:
-handing the walk the question as a callback, which would need a three-way answer — yes, no,
-keep walking — to stop one branch, and walking breadth-first by depth, which serves the fold
-but cannot stop one branch either. The shape is `os.walk`'s and `ast.walk`'s: one traversal as
-a generator, each question a loop over what it yields.
+argv gets alike, and which a caller with no argv leaves empty). No question stops a branch
+since the callable's stop went (REF-86), so the questions are asked of every stone of every
+branch; what still needs branches is the pairing of stones and end, which a flat stream of
+nodes loses: `_field_types` reads each accepting branch's end, in variant order, and a
+refusing branch yields its `None` end with the last stone it stood on
+(`_refuses_at_a_sequence`). Rejected: handing the walk the question as a callback, which
+answers one verdict where the questions read what each branch stood on and where it ended,
+and walking breadth-first by depth, which serves the fold but cannot carry that pairing. The
+shape is `os.walk`'s and `ast.walk`'s: one traversal as a generator, each question a loop over
+what it yields.
