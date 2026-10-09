@@ -125,6 +125,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "does this argv flag occurrence carry an item?" | `cli._argv._bare_occurrence` |
 | "which argv tokens does a host framework parse?" | `cli._argv.drop_bare_occurrences` |
 | "does this field's flag consume many tokens, and so stand bare?" | `cli._build._takes_multi_tokens` |
+| "what does this spec look like forced to a single token?" | `cli._spec.FlagSpec.as_single_token` — the one inverse of the shape attributes (`nargs`, `whole_value`, `stands_bare`), asked by `_scalar_root_spec`, so a non-struct root's one-token flag cannot drift from the shape vocabulary it undoes (REF-68, [CLI adapters](cli-adapters/flag-model.md#framework-neutral-flag-model)) |
 | "which bare occurrence is a missing value, refused before the framework parses?" | `cli._argv.refuse_bare_occurrences`, off `FlagSpec.refuses_bare` and `FlagSpec.usage` — both set by `cli._build._refusing_bare`, the same `_fixed_seq_types(resolved)` gate that arms the fixed-arity guard |
 | plain vs escaped callable directives | `_callable.active_directives` |
 | "does a `call` key open a typed call on a field of this type?" | `typedload._construct._takes_typed_call` — the type half of construction's `_is_typed_call`; the CLI walk asks it of a path through `_parse_cli._opens_target` ([callables](callables.md#call-in-a-typed-field)) |

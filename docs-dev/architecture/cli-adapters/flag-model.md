@@ -14,6 +14,16 @@ honored by the adapters whose framework can.
 priority: `FieldMeta.help` > attribute docstring (read from source with `ast`; unavailable
 for dynamically created classes) > empty.
 
+The model owns the inverse of that shape vocabulary, too: `FlagSpec.as_single_token()` clears
+`nargs`, `whole_value` and `stands_bare` in one operation, spelled beside the attributes
+themselves. A flag forced to a single token — a non-struct root's, which takes exactly one
+whatever its type collects ([CLI parsing](../cli-parsing/cli-prefix.md#cli_prefix)) — is
+therefore reshaped where the shape is declared, and the next shape attribute is undone where
+it is added rather than cleared by each caller by hand, one attribute at a time (REF-68).
+That reset is what once lapsed attribute by attribute: a fixed-tuple root kept
+`whole_value`, which made argparse register the bare prefix flag greedily, because nothing
+tied the reset to the shape it undoes.
+
 `_spec.py` (the model) and `_build.py` (spec generation) live in `cli/`, beside the other two
 modules every adapter shares, `_prefix.py` and `_collect.py`; `cli/argparse/` holds only what
 speaks argparse. They grew out of the argparse backend and sat under `cli/argparse/` until
