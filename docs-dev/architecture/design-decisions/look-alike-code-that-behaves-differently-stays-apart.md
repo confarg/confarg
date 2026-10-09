@@ -19,8 +19,10 @@ reader has to work them out. Two collapses were declined on that ground when REF
   `_replace_spans`, run over `_anchor_markers`. What is left differs: one drops the root
   markers a name follows, the other names every marker and has to pick a stand-in spelling the
   body does not use. Folding them further saves two lines. The other duplication in `dictexpr`,
-  between `_resolve_single` and `_map_expressions`, is a real one, and
-  [REF-54](../../todo/refactors/REF-54-dictexpr-span-loops-share-one-helper.md) keeps it open.
+  between `_resolve_single` and `_map_expressions`, was a real one and did collapse: the two
+  loops differed only in what a span became, so `_rewrite_spans` writes the accumulate loop and
+  a `Callable[[_ExpressionSpan], str]` carries each caller's answer, escape handling included
+  (REF-54).
 
 The precedent is Sandi Metz's "duplication is far cheaper than the wrong abstraction", as
 applied in Kent C. Dodds's "AHA programming": an abstraction that needs a parameter for each

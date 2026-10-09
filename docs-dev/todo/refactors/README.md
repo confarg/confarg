@@ -17,7 +17,6 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-26 — The `--config` files named on argv are parsed three times per run](REF-26-config-files-parsed-three-times.md) | minor |  | M | low | none |
 | [REF-41 — `cli/click/_context.py` and `cli/typer/_context.py` are the same file](REF-41-click-and-typer-context-are-the-same-file.md) | trivial |  | S | low | none |
 | [REF-46 — Near-duplicate helper pairs in the merge core](REF-46-near-duplicate-helpers-in-the-merge-core.md) | trivial |  | S | low | none |
-| [REF-54 — Two span loops in `dictexpr` that one helper writes](REF-54-dictexpr-span-loops-share-one-helper.md) | trivial |  | S | low | none |
 | [REF-55 — An adjacent-pair loop written with indices instead of `itertools.pairwise`](REF-55-pairwise-for-index-window-loops.md) | trivial |  | S | low | none |
 | [REF-58 — The config-parallel struct walk has two owners](REF-58-config-parallel-struct-walk-has-two-owners.md) | trivial |  | S | medium | none |
 | [REF-59 — Two `type` blocks under `examples/` wait on the hook; the rest is generated](REF-59-example-code-blocks-not-generated.md) | trivial |  | S | low | none |
