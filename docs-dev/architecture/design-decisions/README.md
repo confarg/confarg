@@ -118,3 +118,4 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [A bug ticket names the revision that introduced it](ticket-origin.md) | `introduced_by` and an `Origin:` paragraph, so a fix can go to the cause; the fixing revision keeps it as a trailer |
 | [Plans live under `todo/`](plans-live-under-todo.md) | beside the boards that cite them, not as a third top-level folder of `docs-dev/` |
 | [The board and anchor checks run as always-on pre-commit hooks](board-and-anchor-checks-run-in-pre-commit.md) | `ticket-boards` and `architecture-anchors` fail the commit, not a CI run nobody watches |
+| [The ruff hook and the dev dependency carry one pin](one-ruff-pin.md) | ruff sits in the dev group pinned `==` to the hook's rev, so `uv run ruff` and the hook give one answer |

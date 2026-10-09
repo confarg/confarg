@@ -67,9 +67,7 @@ frag = pathlib.Path("frag.yaml")
 frag.write_text("kind: A\na: 5\n")
 
 flags = sorted(
-    f.name
-    for f in build_static_flags(Outer, union_tag="kind", config_flag="config")
-    if f.name.startswith("config")
+    f.name for f in build_static_flags(Outer, union_tag="kind", config_flag="config") if f.name.startswith("config")
 )
 print(flags)
 print(confarg.merge(Outer, argv=["--config.inner.db", str(frag)], env={}, union_tag="kind"))

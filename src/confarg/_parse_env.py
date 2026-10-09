@@ -110,7 +110,7 @@ def _env_spelling(target: Any, prefix: list[str], part: str, union_tag: str) -> 
     return part.lower()
 
 
-def _handle_env_config_flag(  # noqa: PLR0913  # the check needs the tag, the message the spelling the user typed
+def _handle_env_config_flag(  # noqa: PLR0913, PLR0917  # the check needs the tag, the message its typed spelling
     parts: list[str],
     target: Any,
     env_configs: list[tuple[str, str]],
@@ -233,7 +233,7 @@ def _env_order(parts: list[str], key: str, walk_target: Any, union_tag: str) -> 
     return (len(parts) if key else 0), 2
 
 
-def _apply_env_json_cast(  # noqa: PLR0913  # root and nested placement need distinct sinks
+def _apply_env_json_cast(  # noqa: PLR0913, PLR0917  # root and nested placement need distinct sinks
     orig_key: str,
     parts: list[str],
     walk_target: Any,
@@ -367,7 +367,7 @@ def _prefixed_variables(
         yield orig_key, key, key.split(separator) if separator in key else [key], value
 
 
-def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env channel must intercept
+def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the env channel must intercept
     env: Mapping[str, str],
     prefix: str,
     separator: str,

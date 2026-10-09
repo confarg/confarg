@@ -63,7 +63,7 @@ def setup_completion(
     Dev Notes:
         docs-dev/architecture/cli-adapters/completion.md#completion
     """
-    try:
+    try:  # noqa: PLW0717  # best-effort: any failure degrades silently
         prog_name: Any = getattr(command, "name", None) or ""
         complete_var = f"_{prog_name.upper().replace('-', '_')}_COMPLETE"
         if not os.environ.get(complete_var):

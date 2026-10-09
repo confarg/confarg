@@ -137,7 +137,7 @@ class TestEnvCoercion:
         ],
         ids=["int", "float", "path", "enum"],
     )
-    def test_type_coercion(self, loader: ConfargLoader, env_key, env_val, field, expected, target_cls) -> None:  # noqa: PLR0913 — pytest parametrize + loader fixture
+    def test_type_coercion(self, loader: ConfargLoader, env_key, env_val, field, expected, target_cls) -> None:  # noqa: PLR0913, PLR0917 — pytest parametrize + loader fixture
         """Env var string coerced to the target type."""
         cls = target_cls or WithDefaults
         result = loader.load(cls, argv=[], env={env_key: env_val}, env_prefix="MYAPP_")

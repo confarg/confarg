@@ -196,7 +196,7 @@ def _scalar_cast_parent_is_leaf(parent: Any) -> bool:
     )
 
 
-def _build_leaf_spec(  # noqa: PLR0911 PLR0913
+def _build_leaf_spec(  # noqa: PLR0911 PLR0913 PLR0917
     flag: str,
     raw_type: Any,
     core: Any,
@@ -761,7 +761,7 @@ def _addresses_fixed_seq_element(target: Any, path: list[str], union_tag: str) -
     return _is_namedtuple(core) or (_is_tuple(core) and _tuple_types(core) is not None)
 
 
-def _collect_namedtuple_specs(  # noqa: PLR0913  # _specs_for_field's context, plus its help
+def _collect_namedtuple_specs(  # noqa: PLR0913, PLR0917  # _specs_for_field's context, plus its help
     core: Any,
     flag: str,
     union_tag: str,
@@ -872,7 +872,7 @@ def _whole_value_spec(
     )
 
 
-def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per type case
+def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one branch per type case
     flag: str,
     name: str,
     raw_type: Any,
@@ -1595,7 +1595,7 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import _locals_keys, _typed_call_openings, _walk_target  # noqa: PLC0415
 
-    try:
+    try:  # noqa: PLW0717  # best-effort: any failure degrades silently
         # Strip first: the scans below resolve dotted paths against *target*, which
         # knows nothing of the prefix (docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix).
         argv_list = strip_argv_prefix(argv, cli_prefix)

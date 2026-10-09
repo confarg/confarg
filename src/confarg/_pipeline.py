@@ -147,7 +147,7 @@ def _coerce_override(value: Any, declared: Any, path: str) -> Any:
     return _coerce_leaf(type(declared), value, path)
 
 
-def _apply_locals_overrides(  # noqa: PLR0913  # recursive walk: carries both the declaration and the error context
+def _apply_locals_overrides(  # noqa: PLR0913, PLR0917  # recursive walk: carries the declaration and the error context
     declared: Any,
     override: dict[str, Any],
     locals_key: str,

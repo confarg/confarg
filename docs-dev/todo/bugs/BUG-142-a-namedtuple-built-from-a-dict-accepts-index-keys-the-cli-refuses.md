@@ -34,13 +34,16 @@ from dataclasses import dataclass
 from typing import NamedTuple
 import confarg
 
+
 class Pt(NamedTuple):
     x: int = 0
     y: int = 0
 
+
 @dataclass
 class Cfg:
     pt: Pt = Pt()
+
 
 for key in ("01", "-0", "١", "²"):
     for label, run in (

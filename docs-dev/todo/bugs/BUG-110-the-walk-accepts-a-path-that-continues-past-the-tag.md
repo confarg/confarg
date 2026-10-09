@@ -28,9 +28,11 @@ from dataclasses import dataclass
 import confarg
 from confarg.cli.argparse import make_parser, merge_namespace
 
+
 @dataclass
 class Cfg:
     leaf: int = 0
+
 
 argv = ["--leaf.class.junk", "X"]
 try:

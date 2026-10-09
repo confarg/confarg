@@ -346,7 +346,7 @@ def _include_with_siblings(included: Any, siblings: dict[str, Any], union_tag: s
     return _deep_merge(included, siblings, union_tag=union_tag)
 
 
-def _resolve_node(  # noqa: PLR0913  # the walk's state: document, cycle guard, position, tag, mount
+def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycle guard, position, tag, mount
     data: Any,
     base: str,
     seen: frozenset[str],
@@ -389,7 +389,7 @@ def _resolve_node(  # noqa: PLR0913  # the walk's state: document, cycle guard, 
     return data
 
 
-def _resolve_dict(  # noqa: PLR0913  # the walk's state: document, cycle guard, position, tag, mount
+def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycle guard, position, tag, mount
     data: dict[Any, Any],
     base: str,
     seen: frozenset[str],

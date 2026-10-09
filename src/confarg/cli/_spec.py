@@ -193,7 +193,7 @@ def _get_field_docstrings(dc_type: type) -> dict[str, str]:
     return {}
 
 
-def _build_help(  # noqa: PLR0913  # one argument per part of the help
+def _build_help(  # noqa: PLR0913, PLR0917  # one argument per part of the help
     field_name: str,
     raw_type: Any,
     docstrings: dict[str, str],

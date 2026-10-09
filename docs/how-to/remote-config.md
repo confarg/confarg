@@ -72,11 +72,13 @@ an instance or task role — so `confarg` never sees them and has no options of 
 
 ```python
 import confarg
-from google.cloud import storage   # for example
+from google.cloud import storage  # for example
+
 
 def read_gcs(location: str) -> bytes:
     bucket_name, _, key = location.removeprefix("gs://").partition("/")
     return storage.Client().bucket(bucket_name).blob(key).download_as_bytes()
+
 
 confarg.register_scheme("gs", read_gcs)
 
@@ -103,10 +105,12 @@ import urllib.request
 
 TOKEN = "..."
 
+
 def read_authenticated(location: str) -> bytes:
     request = urllib.request.Request(location, headers={"Authorization": f"Bearer {TOKEN}"})
     with urllib.request.urlopen(request, timeout=30) as response:
         return response.read()
+
 
 confarg.register_scheme("https", read_authenticated)
 ```
@@ -118,7 +122,7 @@ file is. If those two fetches matter, wrap the built-in behaviour:
 ```python
 import functools
 
-from confarg._sources import _read_http   # the built-in, to delegate to
+from confarg._sources import _read_http  # the built-in, to delegate to
 
 confarg.register_scheme("https", functools.cache(_read_http))
 ```

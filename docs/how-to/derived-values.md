@@ -101,14 +101,14 @@ themselves configuration.
 @dataclass
 class Config:
     db: DbConfig
-    model: ModelConfig # needs num_labels
+    model: ModelConfig  # needs num_labels
 ```
 
 ```python
-raw = confarg.merge(Config, argv=argv)                 # every source merged, ${...} still literal
-db = connect(confarg.build(DbConfig, raw["db"]))       # resolve and build the db subtree only
+raw = confarg.merge(Config, argv=argv)  # every source merged, ${...} still literal
+db = connect(confarg.build(DbConfig, raw["db"]))  # resolve and build the db subtree only
 raw.setdefault("model", {}).setdefault("num_labels", db.count_labels())
-config = confarg.build(Config, raw)                    # resolve again, now with num_labels present
+config = confarg.build(Config, raw)  # resolve again, now with num_labels present
 ```
 
 The credentials are fully merged and resolved by the time you connect, so they can come from a

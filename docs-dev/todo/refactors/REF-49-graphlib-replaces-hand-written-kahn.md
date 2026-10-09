@@ -19,8 +19,8 @@ from graphlib import TopologicalSorter
 from confarg.dictexpr._expressions import _topological_sort
 
 g = {"a": {"b"}, "b": {"c"}, "c": set(), "d": set()}
-print(_topological_sort(dict(g)))                    # ['c', 'd', 'b', 'a']
-print(list(TopologicalSorter(g).static_order()))     # ['c', 'd', 'b', 'a']
+print(_topological_sort(dict(g)))  # ['c', 'd', 'b', 'a']
+print(list(TopologicalSorter(g).static_order()))  # ['c', 'd', 'b', 'a']
 ```
 
 `dictexpr` may import it: `graphlib` is the standard library, so engine independence

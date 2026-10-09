@@ -55,7 +55,7 @@ class _WalkCtx:
     existing_dests: set[str] = field(default_factory=set)
 
 
-def _extend_walk_field(  # noqa: PLR0913, C901
+def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
     name: str,
     raw_type: Any,
     flag: str,
@@ -239,7 +239,7 @@ def _pre_extend_parser_for_completion(
     from argv before the scans (whose dotted paths resolve against *target*) and put back
     on the field paths, so the flags land under the same namespace as the static ones.
     """
-    try:
+    try:  # noqa: PLW0717  # best-effort: any failure degrades silently
         cli_prefix = parser.get_default(PREFIX_ATTR) or ""
         argv = strip_argv_prefix(argv, cli_prefix)
         config_dict = _partial_config_from_argv(argv, config_flag)
