@@ -28,7 +28,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-145 — An expression that parses but nests past the recursion limit crashes the walkers](BUG-145-an-expression-that-parses-but-nests-past-the-recursion-limit-crashes-the-walkers.md) | major |  | M | high | behavior | PR-5 |
 | [BUG-180 — Cyclopts refuses a flag whose name ends in a star](BUG-180-cyclopts-refuses-a-flag-whose-name-ends-in-a-star.md) | major |  | M | medium | behavior | PR-72 |
 | [BUG-219 — A fragment appended to a list loses its `locals`](BUG-219-a-fragment-appended-to-a-list-loses-its-locals.md) | major |  | M | high | behavior | PR-105 |
-| [BUG-224 — A self-referential type crashes flag registration with a `RecursionError`](BUG-224-a-self-referential-type-crashes-flag-registration.md) | major |  | L | medium | behavior | PR-5 |
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-107 — A real field named like the tag, nested inside a union variant, is stripped by the type check](BUG-107-a-nested-real-field-named-like-the-tag-is-stripped-by-the-union-type-check.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-108 — A plain fixed tuple accepts the index spellings a namedtuple refuses](BUG-108-a-plain-fixed-tuple-accepts-the-index-spellings-a-namedtuple-refuses.md) | minor |  | S | medium | behavior | PR-5 |
@@ -46,12 +45,14 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-197 — A typed call's opener flag is described as a value, not as the function to call](BUG-197-a-typed-calls-opener-flag-is-described-as-a-spec-value.md) | minor |  | S | low | behavior | FEAT-32 |
 | [BUG-198 — A fixed-arity element flag takes one token on click and typer](BUG-198-a-fixed-arity-element-flag-takes-one-token-on-click-and-typer.md) | minor |  | S | low | config | PR-72 |
 | [BUG-222 — A registered `NewType` crashes with a raw `TypeError`](BUG-222-a-registered-newtype-crashes-with-a-raw-typeerror.md) | minor |  | S | medium | behavior | PR-37 |
+| [BUG-226 — cyclopts `--help` drops the `<field>` placeholder from confarg's help text](BUG-226-cyclopts-help-drops-the-field-placeholder.md) | minor |  | S | medium | behavior | PR-26 |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | minor |  | M | low | behavior | PR-5, PR-13, PR-26, BUG-179 |
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | minor |  | M | medium | behavior | PR-38 |
 | [BUG-177 — A collection root's bare flag takes one token, which construction refuses](BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-181 — An out-of-domain Literal or Enum flag exits with the framework's choice error on the adapters](BUG-181-an-out-of-domain-literal-or-enum-flag-exits-with-the-frameworks-choice-error.md) | minor |  | M | medium | behavior | PR-5, PR-13, PR-26 |
 | [BUG-194 — A `bind:` keyword built as a struct dumps as the instance, which no file format writes](BUG-194-a-bind-keyword-built-as-a-struct-dumps-as-the-instance.md) | minor |  | M | low | behavior | PR-93 |
 | [BUG-220 — A reference into a list with pending ops reads none of its items](BUG-220-a-reference-into-a-list-with-pending-ops-reads-none-of-its-items.md) | minor |  | M | high | behavior | PR-5 |
+| [BUG-225 — argparse completion offers nothing below a tagged class that holds itself](BUG-225-argparse-completion-offers-nothing-below-a-tagged-class-that-holds-itself.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-201 — An environment variable below a dict appends, though the environment has no append](BUG-201-an-environment-variable-below-a-dict-appends-though-the-environment-has-no-append.md) | minor | FEAT-18 | S | medium | config | PR-5 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
 

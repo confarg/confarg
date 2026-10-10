@@ -8,7 +8,7 @@ openers (`.bind`/`.class`/`.call`), `--config` and `--config.<mount point>` at a
 unknown keys belongs — or a union whose variants are all structs, whose help entry says the
 fragment's top level must name its variant with the tag, because the field's own flags are
 per-variant — and
-`--config.<locals>` (the CLI way to declare locals). `build_static_flags` takes `argv` too, but
+`--config.<locals>` (the CLI way to declare locals). The walk enters no struct or namedtuple already on its path: such a node keeps its own flags and its members get none, so a type that holds itself terminates ([design decision](../design-decisions/a-node-already-on-the-path-is-not-entered.md#a-node-already-on-the-path-is-not-entered)). `build_static_flags` takes `argv` too, but
 only to import the classes it names by `union_tag` before the walk starts; it never adds a flag
 from it, so `argv=[]` still describes exactly the declared type.
 
@@ -33,6 +33,7 @@ user typed, found by scanning argv (and config files named on argv):
   the opener left inactive, which is ordinary data
   ([callables](../callables.md#plain-and-escaped-directives));
 - `--config.<any.depth>[+]`;
+- the flags below a node the static walk did not enter because it was already on the path (`--child.a`, `--child.child.a` on a `child: Node | None`), found by walking the type again with that stop lifted along every typed path (BUG-224, [design decision](../design-decisions/a-node-already-on-the-path-is-not-entered.md#a-node-already-on-the-path-is-not-entered));
 - collection patches (`--f.N`, `--f+`, `--f.N-`, `--f.key`) and `.json` casts;
 - the typed scalar cast flags on plain leaf fields (`--host.str`, BUG-72), registered only
   when typed on the same help-noise ground as `.json`: the leaf's own flag is the ordinary

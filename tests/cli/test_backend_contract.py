@@ -8320,3 +8320,90 @@ class TestAFieldDefaultIsTheBaseLayer:
         cfg = tmp_yaml("copy: '${s}'\n")
         built = loader.load(_LiteralDefault, files=[cfg], argv=[], env={})
         assert built == _LiteralDefault(s="${HOME}", copy="${HOME}")
+
+
+# ---------------------------------------------------------------------------
+# A type that holds itself (BUG-224)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _SelfHolding:
+    """A struct holding itself."""
+
+    a: int = 0
+    child: _SelfHolding | None = None
+
+
+class _SelfHoldingPair(NamedTuple):
+    """A namedtuple holding itself, with a mount point among its fields."""
+
+    leaf: Simple | None = None
+    nxt: _SelfHoldingPair | None = None
+
+
+@dataclass
+class _HoldsSelfHoldingPair:
+    pair: _SelfHoldingPair | None = None
+
+
+@dataclass
+class _CycleBase:
+    a: int = 0
+
+
+@dataclass
+class _CycleSub(_CycleBase):
+    """A subclass holding its base, so the cycle runs through the subclass walk."""
+
+    kid: _CycleBase | None = None
+
+
+class TestSelfHoldingTypeContract:
+    """A type that holds itself registers, and every depth vanilla reads is read alike (BUG-224).
+
+    The static walk enters no node already on the path, as the mount-point listing does;
+    the deeper flags are registered when argv types them.
+    """
+
+    def test_a_path_below_the_cut_is_read_at_any_depth(self, loader: ConfargLoader) -> None:
+        """``--child.child.a`` is two struct re-entries deep, which no static flag reaches."""
+        built = loader.load(_SelfHolding, argv=["--child.child.a", "5"], env={})
+        assert built == _SelfHolding(child=_SelfHolding(child=_SelfHolding(a=5)))
+
+    def test_a_member_flag_and_a_whole_value_below_the_cut(self, loader: ConfargLoader) -> None:
+        """The node's own whole-value flag and its members' flags both reach below the cut."""
+        argv = ["--child.a", "1", "--child.child", '{"a": 2}']
+        built = loader.load(_SelfHolding, argv=argv, env={})
+        assert built == _SelfHolding(child=_SelfHolding(a=1, child=_SelfHolding(a=2)))
+
+    def test_a_namedtuple_that_holds_itself(self, loader: ConfargLoader) -> None:
+        """A namedtuple on the path is a node the walk does not enter twice, as a struct is."""
+        built = loader.load(_HoldsSelfHoldingPair, argv=["--pair.nxt.nxt.leaf.port", "1"], env={})
+        deepest = _SelfHoldingPair(leaf=Simple(port=1))
+        assert built == _HoldsSelfHoldingPair(pair=_SelfHoldingPair(nxt=_SelfHoldingPair(nxt=deepest)))
+
+    def test_a_cycle_through_a_subclass(self, loader: ConfargLoader) -> None:
+        """A subclass field holding the base closes the cycle through the subclass walk."""
+        sub, base = f"{__name__}._CycleSub", f"{__name__}._CycleBase"
+        argv = ["--class", sub, "--kid.class", sub, "--kid.kid.class", base, "--kid.kid.a", "3"]
+        built = loader.load(_CycleBase, argv=argv, env={})
+        assert built == _CycleSub(kid=_CycleSub(kid=_CycleBase(a=3)))
+
+    def test_help_lists_the_node_and_not_its_members(self, populating_loader: ConfargLoader) -> None:
+        """A struct already on the path keeps its own flag; its members' flags are registered when typed."""
+        flags = populating_loader.registered_flags(_SelfHolding)
+        assert flags is not None
+        assert {"a", "child", "config.child"} <= flags
+        assert not {f for f in flags if f.startswith("child.")}
+        typed = populating_loader.registered_flags(_SelfHolding, argv=["--child.child.a", "5"])
+        assert typed is not None
+        assert "child.child.a" in typed
+        assert "child.a" not in typed  # registered only when typed
+
+    def test_a_namedtuple_cycle_lists_its_mount_point_once(self, populating_loader: ConfargLoader) -> None:
+        """The mount-point listing ends on a namedtuple that holds itself, as on a struct."""
+        flags = populating_loader.registered_flags(_HoldsSelfHoldingPair)
+        assert flags is not None
+        assert "config.pair.leaf" in flags
+        assert "config.pair.nxt.leaf" not in flags
