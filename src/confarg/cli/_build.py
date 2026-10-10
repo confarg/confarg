@@ -1122,49 +1122,75 @@ def _config_file_spec(name: str, config_flag: str, help_text: str) -> FlagSpec:
     )
 
 
-def _collect_subconfig_specs(
-    target: Any,
-    config_flag: str,
-    prefix: str,
-    union_tag: str,
-) -> list[FlagSpec]:
-    """Build FlagSpecs for ``--<config_flag>.<subpath>`` scoped config-file flags."""
-    setup = _resolve_struct(target)
-    if setup is None:
-        return []
-    _tp, flds, hints = setup
+def _holds_a_fragment(tp: Any) -> tuple[bool, bool]:
+    """Return whether a node of type *tp* is a mount point, and whether its fragment names a variant.
 
+    A mount point is a struct (a fragment of known keys), a dict (a fragment of unknown keys),
+    or a union whose variants are all structs: the fragment then names its variant with the
+    union tag, the way a struct fragment names its keys. ``Optional`` is no variant.
+    """
+    resolved = _resolve_type(tp)
+    core = _unwrap_optional(resolved)
+    if core is None:
+        return all(_is_struct(_resolve_type(v)) for v in _union_args_no_none(resolved)), True
+    return _is_struct(core) or _is_dict(core), False
+
+
+def _collect_subconfig_specs(target: Any, config_flag: str, union_tag: str) -> list[FlagSpec]:
+    """Build the ``--<config_flag>.<path>`` entry of every mount point of *target*, at any depth.
+
+    The entries are read off the walk that checks a mount
+    (:func:`~confarg._parse_cli._check_mount_subpath`): the names a node declares
+    (:func:`~confarg._parse_cli._member_names` -- a union's variants' and a subclass's
+    included), each typed by every branch the walk takes to it
+    (:func:`~confarg._parse_cli._field_types`), so ``--help`` lists no mount point the parse
+    refuses. A path is listed where every branch reaches a node that holds a fragment
+    (:func:`_holds_a_fragment`), in depth-first order, and the walk descends below every
+    node that declares names, listed or not: a namedtuple holds no fragment, its struct
+    field does. A node whose structs are all already on the path is listed but not
+    entered, so a type that holds itself lists its mount point once.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/every-mount-point-has-a-help-entry.md#every-mount-point-has-a-help-entry
+    """
+    # Imported here: a module-level import would create an import cycle with _parse_cli.
+    from confarg._parse_cli import (  # noqa: PLC0415
+        _field_types,
+        _locals_keys,
+        _member_names,
+        _union_branches,
+        _walk_target,
+    )
+
+    walk_target = _walk_target(target, _locals_keys(target, union_tag))
     result: list[FlagSpec] = []
-    for name in flds:
-        resolved = _resolve_type(hints.get(name, Any))
-        subpath = f"{prefix}.{name}" if prefix else name
 
-        core = _unwrap_optional(resolved)
-        variants: list[Any] = []
-        if core is None:
-            # A multi-variant union is a mount point only when every variant is a struct:
-            # the fragment then names its variant with the union tag, so it needs one
-            # the way a struct fragment needs its keys.
-            variants = _union_args_no_none(resolved)
-            if not all(_is_struct(_resolve_type(v)) for v in variants):
+    def visit(path: tuple[str, ...], ends: list[Any], entered: frozenset[Any]) -> None:
+        for name in dict.fromkeys(n for end in ends for n in _member_names(end)):
+            subpath_parts = (*path, name)
+            sub_ends = _field_types(walk_target, list(subpath_parts), union_tag)
+            if not sub_ends:
                 continue
-        elif not (_is_struct(core) or _is_dict(core)):
-            # A mount point is a struct field (a fragment of known keys) or a dict field
-            # (a fragment of unknown keys); everything else holds no fragment.
-            continue
+            shapes = [_holds_a_fragment(end) for end in sub_ends]
+            if all(holds for holds, _ in shapes):
+                subpath = ".".join(subpath_parts)
+                help_text = (
+                    f"Config file(s) whose contents are merged under the '{subpath}' field. "
+                    f"Equivalent to a root config file with a top-level '{subpath}' key. "
+                    "Supports TOML, YAML, and JSON."
+                )
+                if any(names_variant for _, names_variant in shapes):
+                    # The node's own flags are per-variant, so the reader cannot guess the
+                    # tag from --help without this line.
+                    help_text += f" Its top level must name the chosen variant with the '{union_tag}' key."
+                result.append(_config_file_spec(f"{config_flag}.{subpath}", config_flag, help_text))
+            nodes = {node for end in sub_ends for node in _union_branches(end) if _is_struct(node)}
+            if nodes and nodes <= entered:
+                continue
+            visit(subpath_parts, sub_ends, entered | nodes)
 
-        help_text = (
-            f"Config file(s) whose contents are merged under the '{subpath}' field. "
-            f"Equivalent to a root config file with a top-level '{subpath}' key. "
-            "Supports TOML, YAML, and JSON."
-        )
-        if variants:
-            # The field's own flags are per-variant, so the reader cannot guess the tag
-            # from --help without this line.
-            help_text += f" Its top level must name the chosen variant with the '{union_tag}' key."
-
-        result.append(_config_file_spec(f"{config_flag}.{subpath}", config_flag, help_text))
-
+    root_nodes = frozenset(node for node in _union_branches(target) if _is_struct(node))
+    visit((), [target], root_nodes)
     return result
 
 
@@ -1219,8 +1245,8 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
         union_tag: Discriminator field name (default ``"class"``).
         config_flag: Name of the config-file flag (default ``"config"``).
             Pass ``""`` to omit config-file flag specs.
-        config_subkeys: Whether to register ``--<config_flag>.<field>`` flags for
-            each direct struct field of the root dataclass (default ``True``).
+        config_subkeys: Whether to register ``--<config_flag>.<path>`` flags for
+            every mount point of the target, at any depth (default ``True``).
             Set to ``False`` to expose only the root ``--<config_flag>`` flag.
 
     Returns:
@@ -1247,7 +1273,7 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
             ),
         )
         if config_subkeys:
-            flags.extend(_collect_subconfig_specs(target, config_flag, prefix="", union_tag=union_tag))
+            flags.extend(_collect_subconfig_specs(target, config_flag, union_tag))
             for key in _locals_keys(target, union_tag):
                 # --config.<locals> FILE declares locals from the CLI; not a real field,
                 # so _collect_subconfig_specs does not emit it.

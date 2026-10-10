@@ -604,13 +604,13 @@ class TestConfigFileSupport:
         assert result.host == "base"
         assert result.port == 2000
 
-    def test_subkey_config_no_deep_flags(self) -> None:
-        """--config.<field> flags are generated only for direct fields, not recursively."""
+    def test_subkey_config_deep_flags(self) -> None:
+        """--config.<path> flags are generated for every mount point, recursively (BUG-88)."""
         parser = argparse.ArgumentParser()
         populate_parser(_DeepConfig, parser)
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--config.middle" in flags
-        assert "--config.middle.inner" not in flags
+        assert "--config.middle.inner" in flags
 
 
 # ---------------------------------------------------------------------------

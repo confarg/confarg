@@ -2233,6 +2233,68 @@ class TestJsonArrayTokenContract:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _MountDbA:
+    kind: str = "A"
+    a: int = 0
+
+
+@dataclass
+class _MountDbB:
+    kind: str = "B"
+    b: int = 1
+
+
+@dataclass
+class _MountInner:
+    db: _MountDbA | _MountDbB = dataclasses_field(default_factory=_MountDbA)
+    leaf: Simple = dataclasses_field(default_factory=Simple)
+
+
+@dataclass
+class _MountOuter:
+    """Mount points below a direct field: a struct, and a union of structs (BUG-88)."""
+
+    inner: _MountInner = dataclasses_field(default_factory=_MountInner)
+
+
+@dataclass
+class _MountVariantA:
+    x: Simple = dataclasses_field(default_factory=Simple)
+
+
+@dataclass
+class _MountVariantB:
+    y: Simple = dataclasses_field(default_factory=Simple)
+
+
+@dataclass
+class _MountBase:
+    """Root whose subclass declares a mount point the base does not."""
+
+    n: int = 0
+
+
+@dataclass
+class _MountSub(_MountBase):
+    extra: Simple = dataclasses_field(default_factory=Simple)
+
+
+class _MountPair(NamedTuple):
+    left: Simple
+    count: int
+
+
+@dataclass
+class _MountHoldsPair:
+    """A struct inside a namedtuple field: the namedtuple holds no fragment, its field does."""
+
+    pair: _MountPair = dataclasses_field(default_factory=lambda: _MountPair(Simple(), 0))
+
+
+_MOUNT_TARGETS: list[Any] = [_MountOuter, _MountVariantA | _MountVariantB, _MountBase, _MountHoldsPair]
+
+
 class TestConfigFilesContract:
     """Config-file loading and precedence behave identically in every integration."""
 
@@ -2466,11 +2528,71 @@ class TestConfigFilesContract:
         assert "'class'" in specs["config.u"].help
 
     def test_config_subkeys_false_root_only(self, populating_loader: ConfargLoader) -> None:
-        """config_subkeys=False registers only the root --config flag."""
+        """config_subkeys=False registers only the root --config flag, at every depth."""
         flags = populating_loader.registered_flags(AppConfig, config_subkeys=False)
         assert flags is not None
         assert "config" in flags
         assert "config.db" not in flags
+        deep = populating_loader.registered_flags(_MountOuter, config_subkeys=False)
+        assert deep is not None
+        assert not {f for f in deep if f.startswith("config.inner")}
+
+    def test_mount_point_below_a_field_gets_a_subkey_flag(self, populating_loader: ConfargLoader) -> None:
+        """A mount point below a direct field is registered as the direct one is (BUG-88).
+
+        ``--config.<path>`` projects the configuration tree onto filenames, so the projection
+        does not stop at the root's own fields.
+        """
+        flags = populating_loader.registered_flags(_MountOuter)
+        assert flags is not None
+        assert {"config.inner", "config.inner.db", "config.inner.leaf"} <= flags
+
+    def test_deep_union_mount_entry_help_names_the_tag(self) -> None:
+        """A union-of-structs mount point below a field keeps the tag line of its help (BUG-88, BUG-70)."""
+        specs = {s.name: s for s in build_static_flags(_MountOuter)}
+        assert "'class'" in specs["config.inner.db"].help
+
+    @pytest.mark.parametrize(
+        ("target", "entry"),
+        [
+            (_MountVariantA | _MountVariantB, "config.x"),
+            (_MountBase, "config.extra"),
+            (_MountHoldsPair, "config.pair.left"),
+        ],
+        ids=["union-root-variant-field", "subclass-only-field", "struct-in-a-namedtuple"],
+    )
+    def test_every_member_the_walk_reaches_gets_its_mount_entry(
+        self,
+        populating_loader: ConfargLoader,
+        target: Any,
+        entry: str,
+    ) -> None:
+        """A mount point is listed wherever the type walk reaches one, not only at a struct's own fields.
+
+        A union root's variant fields, a field only a subclass declares, and a struct held by a
+        namedtuple are all mounted by vanilla; each gets its ``--help`` entry too.
+        """
+        flags = populating_loader.registered_flags(target)
+        assert flags is not None
+        assert entry in flags
+
+    @pytest.mark.parametrize("target", _MOUNT_TARGETS, ids=lambda t: getattr(t, "__name__", str(t)))
+    def test_every_listed_mount_point_is_accepted(self, loader: ConfargLoader, target: Any, tmp_path: Path) -> None:
+        """Every ``--config.<path>`` entry registration lists, every front-end mounts.
+
+        The listing is read off the walk that checks a mount, so ``--help`` never offers a
+        mount point the parse refuses.
+        """
+        frag = tmp_path / "frag.json"
+        frag.write_text("{}", encoding="utf-8")
+        entries = [
+            s.name
+            for s in build_static_flags(target)
+            if s.name.startswith("config.") and s.name.removeprefix("config.") not in {"locals", "_locals"}
+        ]
+        assert entries
+        for name in entries:
+            loader.merge(target, argv=[f"--{name}", str(frag)], env={})
 
 
 # ---------------------------------------------------------------------------

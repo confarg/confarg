@@ -250,8 +250,8 @@ def populate_app(  # noqa: PLR0913
         union_tag: Name of the union discriminator field to skip.
         config_flag: Name of the config-file option (default ``"config"``).
             Set to ``""`` to disable config-file option registration.
-        config_subkeys: Whether to register ``--<config_flag>.<field>`` options
-            for each direct struct field of the root dataclass (default
+        config_subkeys: Whether to register ``--<config_flag>.<path>`` options
+            for every mount point of the target, at any depth (default
             ``True``).
         argv: CLI argument list scanned to register argv-derived dynamic
             parameters: ``--<field>.<param>`` for resolved ``--<field>.bind`` /
