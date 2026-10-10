@@ -7871,3 +7871,41 @@ class TestAnAppendThroughAUnion:
         target = make_target("xs", int | str, default=0)
         with pytest.raises(ConfargError, match=re.escape("which is not a list, set, or frozenset")):
             loader.load(target, argv=["--xs+", "1"], env={})
+
+
+class _OverPt(NamedTuple):
+    """A two-field namedtuple, whose fields a patch names."""
+
+    x: int
+    y: int
+
+
+@dataclass
+class _WithOverPt:
+    """A namedtuple field with no default."""
+
+    pt: _OverPt
+
+
+@dataclass
+class _WithPinnedUnion:
+    """A field a pin can select the scalar variant of."""
+
+    u: int | tuple[int, int] = 0
+
+
+class TestAnOverrideThatReplacesTheListBelow:
+    """A layer's own base or a cast pin replaces what a lower layer held, on every front-end."""
+
+    def test_a_name_patch_beside_a_flags_whole_value_over_the_environment(self, loader: ConfargLoader) -> None:
+        """``--pt 1 2 --pt.y 5`` over ``APP_PT='[7, 8]'`` builds as it does with no variable (5a)."""
+        cfg = loader.load(
+            _WithOverPt, argv=["--pt", "1", "2", "--pt.y", "5"], env={"APP_PT": "[7, 8]"}, env_prefix="APP_"
+        )
+        assert cfg.pt == _OverPt(1, 5)
+
+    def test_a_pin_over_a_lower_files_list(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The second file's pin selects the scalar, as it does alone (5b)."""
+        lower = tmp_yaml("u: [1, 2]\n", filename="lower.yaml")
+        upper = tmp_yaml("u: {__cast__: int, __value__: 5}\n", filename="upper.yaml")
+        assert loader.load(_WithPinnedUnion, files=[lower, upper], argv=[], env={}).u == 5

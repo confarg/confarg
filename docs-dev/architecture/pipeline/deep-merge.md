@@ -14,6 +14,15 @@ anything that is not a dict-on-dict, which is merged recursively.
   ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#a-base-list-carried-with-its-patch-replaces-what-lay-below)).
   A `__base__` of `DICT_DELETE` discards a list base too: it is a whole-field delete with
   ops after it ([below](#an-op-after-a-whole-field-delete-has-nothing-below-it)).
+  Over a list base, the override's own base replaces it as well; a patch beside it whose meaning
+  is the type's — a name key, an index past the base — stays deferred with it rather than being
+  applied as list ops, as the same override over no lower layer is (5a, found fixing BUG-221:
+  `--pt 1 2 --pt.y 5` over `APP_PT='[7, 8]'` read `y` as a list index).
+- **A cast pin replaces what lies below.** A file's `{__cast__, __value__}` is a value, so it
+  replaces a list or a dict a lower layer held, as a scalar would, rather than being merged
+  into it as a patch (5b: two files, `u: [1, 2]` then a pin, deferred the pin's keys as a
+  patch of the list). The merge tells it by shape alone (`_is_pin_dict`), so it stays
+  type-unaware; construction resolves the pin, as it does wherever one stands (BUG-210).
 - `DICT_DELETE` (from `key-` in files, `--field.key-`, `FOO__KEY-`) removes a key.
 - File-sourced shorthand `key+:` / `key-:` / `"N-":`, and the reserved keys below, are
   normalized to the ops by `_normalize_merge_ops` so files, env and CLI share one patch
