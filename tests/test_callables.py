@@ -27,7 +27,7 @@ from confarg._callable import (
     _SpecContext,
 )
 from confarg._types import _callable_param_types, _is_callable
-from confarg.exceptions import SymbolImportError, TypeCoercionError
+from confarg.exceptions import ConfargError, SymbolImportError, TypeCoercionError
 from confarg.typedload._construct import construct
 
 # ---------------------------------------------------------------------------
@@ -1040,6 +1040,23 @@ class TestSerialization:
         assert _serialize_callable(p) == {"_bind": f"{_MOD}._OwnerWithBind", "bind": 1}
         p = functools.partial(_with_classfn_param, classfn=1)
         assert _serialize_callable(p) == {"_bind": f"{_MOD}._with_classfn_param", "classfn": 1}
+
+    @pytest.mark.parametrize(
+        "keywords",
+        [
+            pytest.param({"_call": 1}, id="escaped-opener"),
+            pytest.param({"bind": 1, "_class": 2}, id="both-forms"),
+        ],
+    )
+    def test_partial_whose_keyword_no_spec_spells_cannot_be_dumped(self, keywords: dict[str, int]) -> None:
+        """A keyword spelled like an escaped opener is an opener in either form, so no spec holds it.
+
+        Writing ``{bind: f, _call: 1}`` would read back as a ``_call:`` spec, and the escaped
+        form would hold two openers: the dump refuses rather than write either (BUG-217).
+        """
+        cfg = WithBareCallable(fn=functools.partial(_kwargs_fn, **keywords))
+        with pytest.raises(ConfargError, match=r"keyword\(s\) \['_c(all|lass)'\]"):
+            confarg.dump(cfg)
 
     def test_a_classfn_keyword_round_trips_through_the_escaped_form(self) -> None:
         """A parameter named classfn is reached through an escaped opener, and dumps back that way."""

@@ -218,7 +218,7 @@ A callable therefore dumps as what it is, opener by opener:
 | Built from | Dumps as |
 |---|---|
 | a function, a class, a static or class method | its dotted path |
-| `bind:` | `{bind: <target>, <keywords>}`, in the escaped form when a keyword is spelled like a plain opener; a bare path when nothing is bound. The target is serialized by these same rules |
+| `bind:` | `{bind: <target>, <keywords>}`, in the form `active_directives` reads back with every keyword an argument (`_form_holding`): the escaped form when a keyword is spelled like a plain opener; a bare path when nothing is bound. A keyword spelled like an escaped opener opens a spec in either form, so no spec holds it and the dump is refused (BUG-217). The target is serialized by these same rules |
 | `class:` | the spec stamped on the instance as `__confarg_spec__` |
 | `classfn:` | the spec stamped on the owner: a bound method refuses attributes, so a method bound to an owner whose stamp holds a `classfn` opener dumps as that stamp |
 | `call:` | the callable it returned, by the rows above |
