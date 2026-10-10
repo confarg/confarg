@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._callable import _PLAIN_DIRECTIVES
-from confarg._tags import _partial_config_from_argv, _tags_from_argv, _tags_from_config
+from confarg._tags import _partial_config_from_argv, _tag_named_struct, _tags_from_argv, _tags_from_config
 from confarg._types import (
     _is_callable,
     _is_dict,
@@ -38,7 +38,6 @@ from confarg.cli._build import (
     _collect_callable_field_specs,
     _whole_value_spec,
 )
-from confarg.cli._collect import _tag_named_struct
 from confarg.cli._prefix import PREFIX_ATTR, strip_argv_prefix
 from confarg.cli._spec import FlagSpec, _build_help, _get_field_docstrings
 from confarg.cli.argparse._register import load_flags_into_parser

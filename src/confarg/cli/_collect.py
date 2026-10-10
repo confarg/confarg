@@ -25,29 +25,12 @@ if TYPE_CHECKING:
     from confarg._merge import MergeDict
 
 from confarg._api import _build_for_cli
-from confarg._import import _import_dotted
 from confarg._parse_cli import _parse_cli, _path_unknown
 from confarg._pipeline import _merge_sources
-from confarg._types import _is_struct, _resolve_type
 from confarg.cli._argv import spelled_flag_names
 from confarg.cli._build import _binds_a_run
 from confarg.cli._prefix import strip_argv_prefix, strip_flat_prefix
-from confarg.exceptions import ConfargError, SymbolImportError
-
-
-def _tag_named_struct(class_tag: Any) -> Any:
-    """Return the struct type a class tag names, or ``None`` when it names none.
-
-    ``None`` covers both failure modes -- the import fails, or the class is not a struct
-    -- because every caller's response is the same: leave the tag where its channel put
-    it and move on.  Vanilla stores the raw string and lets ``construct()`` raise the
-    import error, so no caller reports the failure itself.
-    """
-    try:
-        cls = _import_dotted(str(class_tag))
-    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
-        return None
-    return cls if isinstance(cls, type) and _is_struct(_resolve_type(cls)) else None
+from confarg.exceptions import ConfargError
 
 
 def _require_argv_spells(

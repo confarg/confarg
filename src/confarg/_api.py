@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from typing import TypeAliasType
 
 from confarg import _defaults
+from confarg._default_layer import drop_untouched, lay_defaults
 from confarg._defaults import MergeOptions, _Options, _resolve_options
 from confarg._files import _dump_file
 from confarg._merge import ListOp, MergeDict
@@ -154,11 +155,23 @@ def build[T](
         ExpressionEvalError: If an expression fails at runtime.
     """
     target_r = _resolve_type(target)
-    is_dataclass = _is_struct_like(target_r)
+    resolved = _strip_locals(_resolve_over_defaults(target_r, data, union_tag), target_r, union_tag)
+    return _construct_resolved(target_r, resolved, union_tag)
 
-    resolved = _strip_locals(resolve_expressions(data), target_r, union_tag)
 
-    if not is_dataclass:
+def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str) -> MergeDict:
+    """Resolve *data*'s expressions over *target_r*'s field defaults, the defaults nobody touched taken out again.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
+    """
+    laid = lay_defaults(target_r, data, union_tag, for_resolution=True)
+    return drop_untouched(resolve_expressions(laid.data), laid.untouched)
+
+
+def _construct_resolved(target_r: Any, resolved: MergeDict, union_tag: str) -> Any:
+    """Construct *target_r* from a resolved dict: a non-struct target from ``__root__``, a struct from the whole."""
+    if not _is_struct_like(target_r):
         raw = resolved.get(_defaults.ROOT_KEY, _MISSING)
         if raw is _MISSING:
             raise MissingFieldError(path=(), field_type=target_r)
@@ -191,30 +204,46 @@ def _build_for_cli(target: Any, data: MergeDict, union_tag: str, cli_prefix: str
         raise
 
 
-def resolve(data: dict[Any, Any]) -> dict[str | ListOp, Any]:
-    """Resolve ``${...}`` expressions in a merged config dict.
+def resolve(
+    target: type | TypeAliasType | UnionType,
+    data: dict[Any, Any],
+    *,
+    union_tag: str = _defaults.UNION_TAG,
+) -> dict[str | ListOp, Any]:
+    """Resolve ``${...}`` expressions in a merged config dict, over the target's field defaults.
 
     Use this between ``merge()`` and ``from_dict()`` when you need the
     resolved dict itself (e.g. to inspect values or write it to a file):
 
         raw = confarg.merge(MyConfig, ...)
-        resolved = confarg.resolve(raw)
+        resolved = confarg.resolve(MyConfig, raw)
         confarg.dump_file(resolved, "out.yaml")
         cfg = confarg.from_dict(MyConfig, resolved)
 
+    The target's field defaults are the layer below *data*: an expression reads a default
+    nobody set, and a patch the merge left pending over a defaulted field (``--t+ 3``) is
+    applied over the default. A default nothing touched is not in the result; construction
+    applies it.
+
     Args:
+        target: The type *data* is for, whose field defaults lie below it; ``dict`` for none.
         data: A plain config dict, e.g. the output of ``merge()``.
+        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         A new dict with all ``${...}`` expression strings replaced by their values.
 
     Raises:
+        ConfargError: If a patch the merge left pending does not apply over a default.
         CircularReferenceError: If expression references form a cycle.
         UnsafeExpressionError: If an expression contains disallowed constructs.
         MissingReferenceError: If an expression references a field that does not exist.
         ExpressionEvalError: If an expression fails at runtime.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
     """
-    return resolve_expressions(data)
+    return _resolve_over_defaults(_resolve_type(target), data, union_tag)
 
 
 @overload
@@ -246,7 +275,8 @@ def from_dict[T](
         AmbiguousUnionError: If a Union cannot be disambiguated.
     """
     target_r = _resolve_type(target)
-    return _tc(target_r, _strip_locals(data, target_r, union_tag), union_tag=union_tag)
+    laid = lay_defaults(target_r, data, union_tag, for_resolution=False).data
+    return _construct_resolved(target_r, _strip_locals(laid, target_r, union_tag), union_tag)
 
 
 @overload

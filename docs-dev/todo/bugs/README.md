@@ -15,7 +15,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-182 — An env delete naming no member is dropped without a warning](BUG-182-an-env-delete-naming-no-member-is-dropped-without-a-warning.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-186 — A root `json` cast swallows a field delete meant for the layers below](BUG-186-a-root-json-cast-swallows-a-field-delete-meant-for-the-layers-below.md) | critical |  | S | high | behavior | PR-87, BUG-3 |
 | [BUG-193 — A closure or a lambda dumps as a path that cannot be imported](BUG-193-a-closure-dumps-as-a-path-that-cannot-be-imported.md) | critical (via BUG-191) |  | S | low | behavior | PR-5 |
-| [BUG-221 — A file's append to a tuple is dropped without a word](BUG-221-a-files-append-to-a-tuple-is-dropped-without-a-word.md) | critical |  | S | medium | config | PR-5 |
 | [BUG-190 — A typed `call:` spec merges with the lower layer's value instead of replacing it](BUG-190-a-typed-call-spec-merges-with-the-lower-layers-value.md) | critical |  | M | medium | behavior | FEAT-28 |
 | [BUG-192 — A `class:` instance dumps the arguments it was built with, not the values it holds](BUG-192-a-class-instance-dumps-the-arguments-it-was-built-with.md) | critical |  | M | low | behavior | PR-5 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
@@ -33,7 +32,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-107 — A real field named like the tag, nested inside a union variant, is stripped by the type check](BUG-107-a-nested-real-field-named-like-the-tag-is-stripped-by-the-union-type-check.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-108 — A plain fixed tuple accepts the index spellings a namedtuple refuses](BUG-108-a-plain-fixed-tuple-accepts-the-index-spellings-a-namedtuple-refuses.md) | minor |  | S | medium | behavior | PR-5 |
-| [BUG-109 — A namedtuple index patch ignores the field's default, where a tuple patch keeps it](BUG-109-a-namedtuple-index-patch-ignores-the-fields-default.md) | minor |  | S | medium | behavior | PR-39 |
 | [BUG-110 — The walk accepts a path that continues past the union tag](BUG-110-the-walk-accepts-a-path-that-continues-past-the-tag.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |

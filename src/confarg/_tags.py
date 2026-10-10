@@ -30,6 +30,22 @@ from confarg._types import (
     _union_args_no_none,
     _union_tag_shadowed,
 )
+from confarg.exceptions import SymbolImportError
+
+
+def _tag_named_struct(class_tag: Any) -> Any:
+    """Return the struct type a class tag names, or ``None`` when it names none.
+
+    ``None`` covers both failure modes -- the import fails, or the class is not a struct
+    -- because every caller's response is the same: leave the tag where its channel put
+    it and move on.  Vanilla stores the raw string and lets ``construct()`` raise the
+    import error, so no caller reports the failure itself.
+    """
+    try:
+        cls = _import_dotted(str(class_tag))
+    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
+        return None
+    return cls if isinstance(cls, type) and _is_struct(_resolve_type(cls)) else None
 
 
 def _partial_config_from_argv(argv: Sequence[str], config_flag: str) -> MergeDict:

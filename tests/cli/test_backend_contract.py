@@ -7909,3 +7909,174 @@ class TestAnOverrideThatReplacesTheListBelow:
         lower = tmp_yaml("u: [1, 2]\n", filename="lower.yaml")
         upper = tmp_yaml("u: {__cast__: int, __value__: 5}\n", filename="upper.yaml")
         assert loader.load(_WithPinnedUnion, files=[lower, upper], argv=[], env={}).u == 5
+
+
+@dataclass
+class _DefaultedTuples:
+    """A fixed and a variadic tuple with defaults, a scalar an expression reads, a nested pair."""
+
+    t: tuple[int, int] = (0, 0)
+    v: tuple[int, ...] = (0, 1)
+    n: int = 42
+    m: int = 0
+    d: tuple[dict[str, int], int] = ({"a": 1}, 0)
+
+
+@dataclass
+class _UndefaultedTuple:
+    """A fixed tuple with no default."""
+
+    t: tuple[int, int]
+
+
+class _DefaultPt(NamedTuple):
+    """A namedtuple whose fields a patch names."""
+
+    x: int
+    y: int
+
+
+_DEFAULT_PT = _DefaultPt(1, 2)
+
+
+@dataclass
+class _WithDefaultPt:
+    """A namedtuple field with a default (BUG-109)."""
+
+    pt: _DefaultPt = _DEFAULT_PT
+
+
+@dataclass
+class _ItemWithTuple:
+    """A list item holding a defaulted tuple and a scalar a relative reference reads."""
+
+    t: tuple[int, int] = (0, 0)
+    port: int = 80
+    url: str = ""
+
+
+@dataclass
+class _WithItems:
+    """Items whose defaults sit below a list."""
+
+    items: list[_ItemWithTuple] = dataclasses.field(default_factory=list)
+
+
+@dataclass
+class _LiteralDefault:
+    """A default string spelled like an expression, which stays text."""
+
+    s: str = "${HOME}"
+    copy: str = ""
+
+
+@dataclass
+class _ShapeBase:
+    """A struct a tag dispatches below."""
+
+    size: tuple[int, int] = (1, 1)
+
+
+@dataclass
+class _WideShape(_ShapeBase):
+    """A subclass with its own tuple default."""
+
+    size: tuple[int, int] = (9, 9)
+
+
+@dataclass
+class _WithShape:
+    """A field whose class a tag selects."""
+
+    shape: _ShapeBase = dataclasses.field(default_factory=_ShapeBase)
+
+
+class TestAFieldDefaultIsTheBaseLayer:
+    """A field default is what a patch applies over and what an expression reads (BUG-221, BUG-109).
+
+    It enters ``build()`` below every source, as a lower file holding it would, so a list op
+    on a defaulted tuple is applied or refused, never dropped, and ``${n}`` reads the 42 the
+    class declares.
+    """
+
+    def test_a_files_append_to_a_fixed_tuple_is_refused(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """BUG-221: the append overruns the default as it would a file's ``t: [0, 0]``."""
+        cfg = tmp_yaml("t+: [1]\n")
+        with pytest.raises(ConfargError, match=re.escape("expected 2 elements, got 3")):
+            loader.load(_DefaultedTuples, files=[cfg], argv=[], env={})
+
+    def test_an_append_to_a_fixed_tuple_with_no_default_names_the_op(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """With nothing below it, the op itself is refused, as a dict field refuses it."""
+        cfg = tmp_yaml("t+: [1]\n")
+        msg = "Cannot apply '__append__' to the tuple[int, int] at 't': it is an operation on a list."
+        with pytest.raises(ConfargError, match=re.escape(msg)):
+            loader.load(_UndefaultedTuple, files=[cfg], argv=[], env={})
+
+    def test_an_append_extends_a_variadic_default(self, loader: ConfargLoader) -> None:
+        """``--v+ 3`` over ``(0, 1)``."""
+        assert loader.load(_DefaultedTuples, argv=["--v+", "3"], env={}).v == (0, 1, 3)
+
+    def test_a_delete_shortens_a_variadic_default(self, loader: ConfargLoader) -> None:
+        """``--v.0-`` and ``APP_V__0-`` alike."""
+        assert loader.load(_DefaultedTuples, argv=["--v.0-"], env={}).v == (1,)
+        assert loader.load(_DefaultedTuples, argv=[], env={"APP_V__0-": "1"}, env_prefix="APP_").v == (1,)
+
+    def test_a_delete_from_a_fixed_default_is_refused(self, loader: ConfargLoader) -> None:
+        """``--t.0-`` leaves one element for two positions."""
+        with pytest.raises(ConfargError, match=re.escape("expected 2 elements, got 1")):
+            loader.load(_DefaultedTuples, argv=["--t.0-"], env={})
+
+    def test_an_expression_reads_a_default(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``${n}`` reads 42 from a file, a flag and a variable alike."""
+        cfg = tmp_yaml("m: '${n}'\n")
+        assert loader.load(_DefaultedTuples, files=[cfg], argv=[], env={}).m == 42
+        assert loader.load(_DefaultedTuples, argv=["--m", "${n}"], env={}).m == 42
+        assert loader.load(_DefaultedTuples, argv=[], env={"APP_M": "${n}"}, env_prefix="APP_").m == 42
+
+    def test_a_stray_key_on_a_defaulted_tuple_is_refused(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``t: {foo: 1}`` is refused as it is with no default, never dropped."""
+        cfg = tmp_yaml("t: {foo: 1}\n")
+        with pytest.raises(ConfargError, match=re.escape("dict keys must be integer indices")):
+            loader.load(_DefaultedTuples, files=[cfg], argv=[], env={})
+
+    def test_a_whole_field_delete_falls_back_to_the_default(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--t-`` drops what the file set, and the default is what is left."""
+        cfg = tmp_yaml("t: [5, 6]\n")
+        assert loader.load(_DefaultedTuples, files=[cfg], argv=["--t-"], env={}).t == (0, 0)
+
+    def test_a_patch_refines_a_default_element(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``d: {0: {b: 2}}`` merges into the default's dict, as over a file's ``[{a: 1}, 0]``."""
+        cfg = tmp_yaml("d: {0: {b: 2}}\n")
+        assert loader.load(_DefaultedTuples, files=[cfg], argv=[], env={}).d == ({"a": 1, "b": 2}, 0)
+
+    @pytest.mark.parametrize("argv", [["--pt.1", "5"], ["--pt.y", "5"]], ids=["index", "name"])
+    def test_a_namedtuple_patch_keeps_the_default(self, loader: ConfargLoader, argv: list[str]) -> None:
+        """BUG-109: the default's other field survives the patch."""
+        assert loader.load(_WithDefaultPt, argv=argv, env={}).pt == _DefaultPt(1, 5)
+
+    def test_a_namedtuple_variable_keeps_the_default(self, loader: ConfargLoader) -> None:
+        """BUG-109, from the environment."""
+        cfg = loader.load(_WithDefaultPt, argv=[], env={"APP_PT__Y": "5"}, env_prefix="APP_")
+        assert cfg.pt == _DefaultPt(1, 5)
+
+    def test_a_tagged_subclass_patches_its_own_default(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The class the tag names lays its defaults, not the annotation's."""
+        name = f"{__name__}._WideShape"
+        cfg = tmp_yaml(f"shape: {{class: {name}, size: {{1: 5}}}}\n")
+        assert loader.load(_WithShape, files=[cfg], argv=[], env={}).shape == _WideShape(size=(9, 5))
+
+    def test_a_list_item_patches_its_default(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Defaults are laid below a list item as below a field."""
+        cfg = tmp_yaml("items: [{t: {1: 5}}]\n")
+        assert loader.load(_WithItems, files=[cfg], argv=[], env={}).items == [_ItemWithTuple(t=(0, 5))]
+
+    def test_a_relative_reference_reads_an_items_default(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``${.port}`` in an item reads the item's own default."""
+        cfg = tmp_yaml("items: [{url: 'http://h:${.port}'}]\n")
+        assert loader.load(_WithItems, files=[cfg], argv=[], env={}).items[0].url == "http://h:80"
+
+    def test_a_default_spelled_like_an_expression_stays_text(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The default is text, and a reference to it reads the text."""
+        cfg = tmp_yaml("copy: '${s}'\n")
+        built = loader.load(_LiteralDefault, files=[cfg], argv=[], env={})
+        assert built == _LiteralDefault(s="${HOME}", copy="${HOME}")

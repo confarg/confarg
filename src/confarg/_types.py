@@ -927,6 +927,21 @@ def _struct_required(tp: Any) -> frozenset[str]:
     return _init_params(tp).required
 
 
+def _struct_declared_defaults(tp: Any) -> dict[str, Any]:
+    """Return the defaults a struct declares as values, calling nothing to get them.
+
+    A dataclass field's ``default`` (never its ``default_factory``), a plain class's
+    ``__init__`` parameter defaults. A fresh dict per call, never cached: the values are
+    the class's own objects.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#tier-1-defaults-read-without-running-code
+    """
+    if _is_dc(tp):
+        return {f.name: f.default for f in dataclasses.fields(tp) if f.default is not dataclasses.MISSING}
+    return dict(_init_params(tp).defaults)
+
+
 def _resolve_struct(
     target: Any,
 ) -> tuple[Any, Mapping[str, Any], dict[str, Any]] | None:

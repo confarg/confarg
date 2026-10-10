@@ -24,7 +24,7 @@ Cannot construct Point at 'p': expected 2 elements, got 3
 Cannot construct tuple[int, str] at 'p': expected 2 elements, got 3
 ```
 
-One factory parametrized by the count pair serves all four, in the wake of
+Since BUG-221's fix, the fixed tuple's base-overrun site sits in `_construct._patched_positions`, and an op over a carried base reaches the list-length check, so it is the one more callers meet (`--t 1 2 --t.0-`). One factory parametrized by the count pair serves all four, in the wake of
 `TypeCoercionError.wrong_shape` (REF-69); it must settle which name spelling wins and pin it.
 
 Two more construction refusals, found reviewing REF-69, belong in the same pass:

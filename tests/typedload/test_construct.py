@@ -786,9 +786,21 @@ class TestPlainSpellingOfAListOpOnASequence:
             errors.append(str(ei.value))
         assert errors[0] == errors[1]
 
-    def test_a_non_reserved_stray_still_patches_the_default(self) -> None:
-        """A stray no reserved key spells is still tolerated, so the default is patched in place."""
-        assert confarg.build(_TupleWithDefault, {"u": {"0": 9, "z": 5}}).u == (9, 0)
+    def test_a_non_reserved_stray_is_refused_like_a_file_bases(self) -> None:
+        """A stray over a default is refused as over a lower file's list: the default is that base (FEAT-37).
+
+        It was tolerated while ``_resolve_tuple_partial`` patched the default in place, the
+        skip that dropped BUG-209's plain spelling, BUG-210's pin and BUG-221's marker.
+        """
+        errors = []
+        for target, data in (
+            (_TupleWithDefault, {"u": {"0": 9, "z": 5}}),
+            (_TupleWithoutDefault, {"u": {ListOp.BASE: [0, 0], "0": 9, "z": 5}}),
+        ):
+            with pytest.raises(TypeCoercionError, match=re.escape("dict keys must be integer indices")) as ei:
+                confarg.build(target, data)
+            errors.append(str(ei.value))
+        assert errors[0] == errors[1]
 
     def test_the_marker_spelling_still_carries_the_base(self) -> None:
         """The marker, not the plain string, is the op: it still replaces the default."""
