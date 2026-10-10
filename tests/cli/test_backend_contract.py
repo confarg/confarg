@@ -5197,6 +5197,27 @@ class TestCallOnTheCliContract:
         )
         assert cfg.p == _CallPoint(a=6, b=3)
 
+    def test_whole_value_the_field_does_not_decode_opens_no_call(self, loader: ConfargLoader) -> None:
+        """A ``{…}`` value at an int field is text, as the loop stores it: it opens no call (BUG-216).
+
+        The scan for typed-call openings decoded every ``{``-led value, so ``--n.x`` was taken
+        for an argument of a call the merged dict never held, and the text was dropped.
+        """
+        blob = json.dumps({"call": f"{__name__}._twice"})
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_TypedCallConfig, argv=["--n", blob, "--n.x", "4"], env={})
+        assert loader.merge(_TypedCallConfig, argv=["--n", blob], env={}) == {"n": blob}
+
+    def test_whole_value_the_field_does_not_decode_buys_no_flag(self, populating_loader: ConfargLoader) -> None:
+        """Registration reads the same ``{…}`` value as text: it buys no argument flag (BUG-216)."""
+        blob = json.dumps({"call": f"{__name__}._twice"})
+        flags = populating_loader.registered_flags(_TypedCallConfig, argv=["--n", blob])
+        assert flags is not None
+        assert "n.x" not in flags
+        flags = populating_loader.registered_flags(_TypedCallConfig, argv=["--p", blob])
+        assert flags is not None
+        assert "p.x" in flags
+
     def test_sibling_delete(self, loader: ConfargLoader) -> None:
         """A sibling of an opened call deletes as a Callable field's sibling does."""
         merged = loader.merge(

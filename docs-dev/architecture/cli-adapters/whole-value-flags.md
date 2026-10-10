@@ -9,6 +9,8 @@ for static registration and for the env channel's `{`-led value, so they cannot 
 construction takes both spellings of a struct apart the same way; env and files accepted it
 while the CLI alone refused until BUG-39 deleted the env channel's second answer.
 
+Which token after a flag is decoded whole is `_parse_cli._takes_whole_value`: a `{`-led value at a field `_accepts_object_value` admits. Vanilla's loop decodes with it, and so do the two scans that read argv ahead of the loop — the typed-call openings (`_typed_call_openings`, through `_paths_argv_spells`) and the adapters' callable argument flags (`cli._build._blob_document_from_argv`). The scans used to decode every `{`-led value, so `--n '{"call": "pkg.f"}'` at an `int` field opened a call the loop never stored — the loop keeps that value as text — and `--n.x 4` was accepted as its argument while the text was dropped (BUG-216).
+
 The struct arm asks `_is_struct`, **not** the narrower
 `typedload._coerce._is_struct_variant` that construction's dispatchers ask
 ([types](../types/leaf-coercion.md#leaf-coercion)). The two disagree on a registered leaf

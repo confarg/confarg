@@ -110,6 +110,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "which flags does argv spell?" | `cli._argv.spelled_flag_names` |
 | "does the static walk leave this path's flag to be registered when typed?" | `_parse_cli._registered_when_typed` — a collection patch, or a tag the walk reaches by its fallback, whatever the parent (BUG-106) |
 | "does this field take a whole `{…}` token?" | `_parse_cli._accepts_object_value` |
+| "is the token after this flag decoded as a whole `{…}` value?" | `_parse_cli._takes_whole_value` — a `{`-led token at a field `_accepts_object_value` admits; vanilla's loop, the typed-call openings scan and the adapters' blob scan (`cli._build._blob_document_from_argv`) all ask it, so a value the loop keeps as text opens no call and buys no flag (BUG-216, [CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)) |
 | "is this a whole-value inline JSON array?" | `_parse_cli._lone_json_array` |
 | what a multi-token flag's accumulated tokens hold | `_parse_cli._varlen_value` / `_union_seq_value` |
 | "is a bare string here a callable shorthand, and must it be opened?" | `_parse_cli._open_callable_shorthand` |

@@ -565,7 +565,7 @@ def _collect_fn_paths_from_argv(
     return {**plain, **escaped}  # escaped opener wins: a field's plain '.bind' is then data
 
 
-def _blob_document_from_argv(argv: Sequence[str]) -> dict[str, Any]:
+def _blob_document_from_argv(target: Any, argv: Sequence[str], union_tag: str) -> dict[str, Any]:
     """Nest every whole-value ``--<dotted.path> <value>`` token of argv into one document.
 
     The result is shaped like a config file, so :func:`_collect_fn_paths_from_config`
@@ -574,7 +574,8 @@ def _blob_document_from_argv(argv: Sequence[str]) -> dict[str, Any]:
     whose value happens to carry a ``class`` key from being read as a callable spec.
 
     Both whole-value shapes are collected, because a config file may spell a callable
-    either way and the walk already reads both: a ``{``-prefixed blob, and a bare string,
+    either way and the walk already reads both: a ``{``-prefixed blob, where vanilla's loop
+    decodes one (:func:`~confarg._parse_cli._takes_whole_value`), and a bare string,
     which is the shorthand for ``{bind: <string>}`` and must buy the same argument flags.  A
     malformed blob is skipped rather than raised on — registration is best-effort, and
     the real error belongs to the parse.  A key that would have to descend through a
@@ -583,6 +584,8 @@ def _blob_document_from_argv(argv: Sequence[str]) -> dict[str, Any]:
     Dev Notes:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
+    from confarg._parse_cli import _resolve_field_type, _takes_whole_value  # noqa: PLC0415  # import cycle
+
     doc: dict[str, Any] = {}
     i = 0
     while i < len(argv):
@@ -603,6 +606,9 @@ def _blob_document_from_argv(argv: Sequence[str]) -> dict[str, Any]:
         if any(isinstance(_peek_nested(doc, parts[:n]), str) for n in range(1, len(parts))):
             continue
         if val.startswith("{"):
+            # Read whole only where vanilla's loop decodes it; elsewhere it is text (BUG-216).
+            if not _takes_whole_value(_resolve_field_type(target, parts, union_tag), val):
+                continue
             with contextlib.suppress(json.JSONDecodeError):
                 decoded = json.loads(val)
                 if isinstance(decoded, dict):
@@ -722,7 +728,7 @@ def _callable_argument_targets(
     one. Flag registration and argparse's completion both ask it.
     """
     config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
-    blob_fns = _collect_fn_paths_from_config(_blob_document_from_argv(argv), target, "", union_tag)
+    blob_fns = _collect_fn_paths_from_config(_blob_document_from_argv(target, argv, union_tag), target, "", union_tag)
     argv_fns = _collect_fn_paths_from_argv(argv, target, union_tag)
     return [
         (field_flag, target_path, mode, _is_callable_field(target, field_flag, union_tag))
