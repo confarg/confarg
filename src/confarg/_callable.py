@@ -96,6 +96,29 @@ def _instance_method_owner(path_str: str) -> type | None:
     return owner if isinstance(attr, types.FunctionType) else None
 
 
+def _target_signature(path_str: str) -> inspect.Signature:
+    """Return the signature of the callable a dotted ``bind:`` or ``call:`` target yields, building nothing.
+
+    The callable :func:`_import_target` resolves: a class is called as it is, so its
+    signature has no receiver, and an instance method is bound to its owner first
+    (:func:`_instance_method_owner`), so its receiver goes, whatever it is named. Any other
+    function keeps every parameter it declares, a ``self`` included. The owner is not built:
+    the method is bound to a stand-in, which only the receiver's position depends on.
+
+    Raises:
+        SymbolImportError: If *path_str* does not import.
+        ValueError: If the callable cannot be inspected.
+        TypeError: If what *path_str* names is not callable.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#one-coercion-route
+    """
+    obj = _import_dotted(path_str)
+    if _instance_method_owner(path_str) is not None:
+        obj = types.MethodType(obj, object())
+    return inspect.signature(obj)
+
+
 def _maybe_bind_method(func: Any, path_str: str, where: str) -> Any:
     """Bind *func* to an owner built with no arguments when *path_str* names an instance method.
 

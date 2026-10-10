@@ -4917,6 +4917,18 @@ class _OptCallableConfig:
     fn: Callable[[str], str] | None = None
 
 
+def _handler_declaring_self(self: str, event: str) -> str:
+    """A module-level function whose first parameter happens to be named ``self``."""
+    return f"{self}:{event}"
+
+
+class _ReceiverNamedThis:
+    """An instance method whose receiver is not spelled ``self``."""
+
+    def act(this, x: int) -> int:
+        return x
+
+
 class TestCallableBindContract:
     """``bind:`` over a ``class:`` spec partially applies the instance's ``__call__``, everywhere (FEAT-30).
 
@@ -4960,6 +4972,32 @@ class TestCallableOpenerRegistrationContract:
         assert flags is not None
         assert {"fn.name", "fn.punct"} <= flags
         assert not any(f.startswith("fn.bind.") for f in flags)
+
+    @pytest.mark.parametrize("opener", ["bind", "call"])
+    def test_a_declared_self_is_an_argument_flag(self, populating_loader: ConfargLoader, opener: str) -> None:
+        """A function that declares ``self`` takes it as an argument, so ``--fn.self`` is registered (BUG-218).
+
+        Construction counts parameters through ``_fillable_params``, which drops no name.
+        """
+        flags = populating_loader.registered_flags(
+            _CallableConfig,
+            argv=[f"--fn.{opener}", f"{__name__}._handler_declaring_self"],
+            config_flag="",
+        )
+        assert flags is not None
+        assert {"fn.self", "fn.event"} <= flags
+
+    @pytest.mark.parametrize("opener", ["bind", "call"])
+    def test_an_instance_methods_receiver_is_no_flag(self, populating_loader: ConfargLoader, opener: str) -> None:
+        """An instance method is bound before it is called, so its receiver is no flag, whatever its name (BUG-218)."""
+        flags = populating_loader.registered_flags(
+            _CallableConfig,
+            argv=[f"--fn.{opener}", f"{__name__}._ReceiverNamedThis.act"],
+            config_flag="",
+        )
+        assert flags is not None
+        assert "fn.x" in flags
+        assert "fn.this" not in flags
 
     def test_class_registers_only_constructor_parameters(self, populating_loader: ConfargLoader) -> None:
         """``--fn.class`` buys the constructor's flags; its ``__call__`` parameters take a ``bind:`` over it."""
