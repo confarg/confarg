@@ -7835,3 +7835,39 @@ class TestClassTagPointsToCall:
         with pytest.raises(TypeCoercionError, match=re.escape("is not a subclass of")) as info:
             loader.load(_TaglessOptional, argv=["--inner.class", "decimal.Decimal"], env={}, config_flag="")
         assert "'call:'" in str(info.value)
+
+
+class TestAnAppendThroughAUnion:
+    """``--xs+`` appends wherever the walk takes ``--xs.<i>``, a union's sequence variant included (D4).
+
+    A file's ``xs+:`` already built on such a field, and the command line took ``--xs.0`` and
+    ``--xs.0-`` there; only the append asked the folded type whether it was a list, and a
+    union is none.
+    """
+
+    @pytest.mark.parametrize(
+        "field_type",
+        [list[int] | None, list[int] | str, list[int] | set[str]],
+        ids=["optional", "with-a-leaf", "two-sequences"],
+    )
+    def test_an_append_with_nothing_below(self, loader: ConfargLoader, field_type: Any) -> None:
+        """With no base, the append is the whole list."""
+        target = make_target("xs", field_type, default=None)
+        assert loader.load(target, argv=["--xs+", "1"], env={}).xs in ([1], ["1"], {"1"})
+
+    @pytest.mark.parametrize(
+        "field_type",
+        [list[int] | None, list[int] | str],
+        ids=["optional", "with-a-leaf"],
+    )
+    def test_an_append_over_a_files_list(self, loader: ConfargLoader, tmp_yaml, field_type: Any) -> None:
+        """Over a file's list, the append extends it, as a file's ``xs+:`` would."""
+        base = tmp_yaml("xs: [0]\n")
+        target = make_target("xs", field_type, default=None)
+        assert loader.load(target, argv=["--config", str(base), "--xs+", "1"], env={}).xs == [0, 1]
+
+    def test_a_union_with_no_sequence_still_refuses(self, loader: ConfargLoader) -> None:
+        """``int | str`` has no variant a ``+`` could append to."""
+        target = make_target("xs", int | str, default=0)
+        with pytest.raises(ConfargError, match=re.escape("which is not a list, set, or frozenset")):
+            loader.load(target, argv=["--xs+", "1"], env={})
