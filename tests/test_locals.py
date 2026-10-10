@@ -23,6 +23,7 @@ import pytest
 
 import confarg
 from confarg._files import INCLUDE_KEY
+from confarg._parse_cli import _locals_keys
 from confarg.exceptions import ConfargError, InvalidConfigFileError, LocalsError, TypeCoercionError
 
 # ---------------------------------------------------------------------------
@@ -366,6 +367,21 @@ class TestLocalsNameResolution:
         """`--locals` would be eaten as the config flag, so that pairing is refused."""
         with pytest.raises(ConfargError, match="also a name of the local-variables"):
             confarg.load(Cfg, argv=[], env={}, config_flag="locals")
+
+    def test_a_subclass_defined_later_is_seen(self) -> None:
+        """A subclass declaring `locals` takes the name as soon as it exists, however often the base was asked."""
+
+        @dataclass
+        class Base:
+            x: int = 0
+
+        assert _locals_keys(Base, "class") == ("locals", "_locals")
+
+        @dataclass
+        class Sub(Base):
+            locals: str = ""
+
+        assert _locals_keys(Base, "class") == ("_locals",)
 
 
 # ---------------------------------------------------------------------------

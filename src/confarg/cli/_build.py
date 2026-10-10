@@ -41,7 +41,6 @@ from confarg._merge import _peek_nested, _set_nested
 from confarg._tags import _partial_config_from_argv, import_tagged_classes
 from confarg._types import (
     _base_declares_path,
-    _dataclass_subclasses,
     _elem_type,
     _fixed_seq_types,
     _init_defaults,
@@ -65,6 +64,7 @@ from confarg._types import (
     _resolve_type,
     _struct_defaults,
     _struct_fields,
+    _struct_subclasses,
     _tuple_types,
     _union_args_no_none,
     _union_has_seq_variant,
@@ -1070,7 +1070,7 @@ def _collect_struct_specs(  # union-root branch added one more conditional
     # a --<union_tag> selector and the union of all subclass fields.
     direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
     if direct_subs:
-        all_subs = _dataclass_subclasses(tp)  # recursive, for tab-completion paths
+        all_subs = _struct_subclasses(tp)  # recursive, for tab-completion paths
         tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
         by_name: dict[str, FlagSpec] = {s.name: s for s in result}
         if tag_name not in by_name and not _union_tag_shadowed(tp, union_tag):
