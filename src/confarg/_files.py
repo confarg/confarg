@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from confarg import _defaults, _sources
-from confarg._merge import _deep_merge
+from confarg._merge import MergeDict, _deep_merge
 from confarg._types import _StrToken
 from confarg.dictexpr._expressions import check_anchor_depth, contains_expression, prefix_references
 from confarg.exceptions import ConfargError, InvalidConfigFileError
@@ -335,7 +335,7 @@ def _load_includes(
     return result
 
 
-def _include_with_siblings(included: Any, siblings: dict[str, Any], union_tag: str | None) -> dict[str, Any]:
+def _include_with_siblings(included: Any, siblings: MergeDict, union_tag: str | None) -> MergeDict:
     """Merge an include's sibling keys on top of *included*, which must be a dict.
 
     Siblings were written by the including file, so they win; a non-dict include has nothing
@@ -447,7 +447,7 @@ def _load_any(
     return _resolve_node(_load_document(loc, options), loc, seen, (), union_tag, mount)
 
 
-def _require_layer(value: Any, loc: str) -> dict[str, Any]:
+def _require_layer(value: Any, loc: str) -> MergeDict:
     """Return *value* as a configuration layer, or raise.
 
     The one place the root-is-a-mapping rule is applied, so every format, every
@@ -465,7 +465,7 @@ def _require_layer(value: Any, loc: str) -> dict[str, Any]:
     return value
 
 
-def _load_raw(loc: str, seen: frozenset[str], union_tag: str | None = None) -> dict[str, Any]:
+def _load_raw(loc: str, seen: frozenset[str], union_tag: str | None = None) -> MergeDict:
     """Load a config source whose content is a document root, so a configuration layer.
 
     A data file contributes a value rather than a layer, so it is rejected here even though
@@ -478,7 +478,7 @@ def _load_raw(loc: str, seen: frozenset[str], union_tag: str | None = None) -> d
     return _require_layer(_load_any(loc, seen, union_tag=union_tag), loc)
 
 
-def _load_file(loc: str | Path, union_tag: str | None = None) -> dict[str, Any]:
+def _load_file(loc: str | Path, union_tag: str | None = None) -> MergeDict:
     """Load a config source, dispatching by extension.
 
     Supports .toml, .yaml, .yml, and .json documents, local or remote -- a data file is a
@@ -568,7 +568,7 @@ def _load_mount_value(
     return _load_includes(_parse_mount_value(value), base, frozenset(), union_tag, mount)
 
 
-def _load_mount(value: Any, subpath: str, base: str | None = None, union_tag: str | None = None) -> dict[str, Any]:
+def _load_mount(value: Any, subpath: str, base: str | None = None, union_tag: str | None = None) -> MergeDict:
     """Load one mount and return it nested at the dot-separated *subpath*.
 
     The one implementation of mounting a channel value: ``--config.<path>`` and
@@ -592,14 +592,14 @@ def _load_mount(value: Any, subpath: str, base: str | None = None, union_tag: st
     return _require_layer(_load_mount_value(value, base, union_tag), locations[-1])
 
 
-def _load_subpath_files(entries: Sequence[tuple[str, Any]], union_tag: str) -> dict[str, Any]:
+def _load_subpath_files(entries: Sequence[tuple[str, Any]], union_tag: str) -> MergeDict:
     """Load and merge a sequence of (subpath, mount value) pairs into a single dict.
 
     Carries ``files=`` and the ``CONFIG[__SUBPATH]`` environment pointers. Each value is
     mounted at its subpath by :func:`_load_mount`, so these routes accept exactly what
     ``__include__`` accepts. An empty subpath means the root. Later entries win on conflict.
     """
-    result: dict[str, Any] = {}
+    result: MergeDict = {}
     for subpath, value in entries:
         fdata = _load_mount(value, subpath, union_tag=union_tag)
         result = _deep_merge(result, fdata, union_tag=union_tag)

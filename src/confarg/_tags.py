@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 from confarg._files import _load_file
 from confarg._import import _import_dotted
-from confarg._merge import _deep_merge
+from confarg._merge import MergeDict, _deep_merge
 from confarg._types import (
     _is_struct,
     _is_union,
@@ -32,14 +32,14 @@ from confarg._types import (
 )
 
 
-def _partial_config_from_argv(argv: Sequence[str], config_flag: str) -> dict[str, Any]:
+def _partial_config_from_argv(argv: Sequence[str], config_flag: str) -> MergeDict:
     """Return the merged contents of the root ``--<config_flag>`` files named in argv.
 
     Only the root flag, not its ``--<config_flag>.<subpath>`` variants.  Missing files and
     parse failures are ignored: callers run before the pipeline has had its say, and the real
     error belongs to the pipeline.
     """
-    merged: dict[str, Any] = {}
+    merged: MergeDict = {}
     flag_prefix = f"--{config_flag}"
     i = 0
     while i < len(argv):
@@ -103,7 +103,7 @@ def _tags_from_argv(argv: Sequence[str], union_tag: str) -> dict[str, str]:
 
 
 def _union_field_tags(
-    merged: dict[str, Any],
+    merged: MergeDict,
     name: str,
     flag: str,
     resolved: Any,
@@ -126,7 +126,7 @@ def _union_field_tags(
 
 
 def _tags_from_config(
-    merged: dict[str, Any],
+    merged: MergeDict,
     target: Any,
     prefix: str,
     union_tag: str,

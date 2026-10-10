@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._defaults import MergeOptions, _Options, _resolve_options
 from confarg._files import _dump_file
+from confarg._merge import ListOp, MergeDict
 from confarg._parse_cli import _locals_keys_at, _parse_cli
 from confarg._pipeline import _merge_sources
 from confarg._serialize import _serialize, _serialize_untyped
@@ -26,7 +27,7 @@ from confarg.typedload import construct as _tc
 from confarg.typedload._construct import build_from_nothing
 
 
-def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]) -> dict[str, Any]:
+def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]) -> dict[str | ListOp, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
     Sources are merged in priority order: config files (lowest), then
@@ -48,7 +49,9 @@ def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]
         **opts: The sources to read and how to read them; see :class:`MergeOptions`.
 
     Returns:
-        A plain dict of the merged configuration, with expression strings intact.
+        A plain dict of the merged configuration, with expression strings intact. A list
+        operation that only ``build()`` can apply stays in it, keyed by a
+        :class:`confarg.ListOp`.
 
     Config file loading order:
         All config files share the same priority level (below inline env vars and
@@ -70,7 +73,7 @@ def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]
     return _merge(target, _resolve_options("merge", opts))
 
 
-def _merge(target: type | TypeAliasType | UnionType, options: _Options) -> dict[str, Any]:
+def _merge(target: type | TypeAliasType | UnionType, options: _Options) -> MergeDict:
     """Merge every source into a raw dict; :func:`merge` with its options resolved."""
     cli_data, cli_configs = _parse_cli(
         options.argv,
@@ -87,7 +90,7 @@ def _cli_prefix(options: _Options) -> str:
     return "" if options.cli_prefix is None else options.cli_prefix
 
 
-def _strip_locals(data: dict[str, Any], target: Any, union_tag: str) -> dict[str, Any]:
+def _strip_locals(data: MergeDict, target: Any, union_tag: str) -> MergeDict:
     """Return *data* without the reserved local-variables namespaces, at every node.
 
     Never mutates *data*: nodes are copied only where a namespace is dropped, and
@@ -96,7 +99,7 @@ def _strip_locals(data: dict[str, Any], target: Any, union_tag: str) -> dict[str
     Dev Notes:
         docs-dev/architecture/locals.md#stripping
     """
-    return cast("dict[str, Any]", _strip_locals_node(data, target, union_tag, []))
+    return cast("MergeDict", _strip_locals_node(data, target, union_tag, []))
 
 
 def _strip_locals_node(node: Any, target: Any, union_tag: str, path: list[str]) -> Any:
@@ -107,19 +110,24 @@ def _strip_locals_node(node: Any, target: Any, union_tag: str, path: list[str]) 
     if not isinstance(node, dict):
         return node
     drop = {key for key in _locals_keys_at(target, path, union_tag) if key in node}
-    kept = {k: _strip_locals_node(v, target, union_tag, [*path, k]) for k, v in node.items() if k not in drop}
+    kept = {
+        # A pending op names no field: what it holds is not walked (BUG-219).
+        k: v if isinstance(k, ListOp) else _strip_locals_node(v, target, union_tag, [*path, k])
+        for k, v in node.items()
+        if k not in drop
+    }
     if not drop and all(kept[k] is v for k, v in node.items()):
         return node
     return kept
 
 
 @overload
-def build[T](target: type[T], data: dict[str, Any], *, union_tag: str = ...) -> T: ...
+def build[T](target: type[T], data: dict[Any, Any], *, union_tag: str = ...) -> T: ...
 @overload
-def build(target: object, data: dict[str, Any], *, union_tag: str = ...) -> Any: ...
+def build(target: object, data: dict[Any, Any], *, union_tag: str = ...) -> Any: ...
 def build[T](
     target: type[T] | TypeAliasType | UnionType,
-    data: dict[str, Any],
+    data: dict[Any, Any],
     *,
     union_tag: str = _defaults.UNION_TAG,
 ) -> T:
@@ -167,7 +175,7 @@ def build[T](
     return _tc(target_r, resolved, union_tag=union_tag)
 
 
-def _build_for_cli(target: Any, data: dict[str, Any], union_tag: str, cli_prefix: str) -> Any:
+def _build_for_cli(target: Any, data: MergeDict, union_tag: str, cli_prefix: str) -> Any:
     """Return :func:`build`'s result, a ``MissingFieldError`` naming its flag under *cli_prefix*.
 
     The front-ends that parsed the command line build through it -- :func:`load` and the
@@ -183,7 +191,7 @@ def _build_for_cli(target: Any, data: dict[str, Any], union_tag: str, cli_prefix
         raise
 
 
-def resolve(data: dict[str, Any]) -> dict[str, Any]:
+def resolve(data: dict[Any, Any]) -> dict[str | ListOp, Any]:
     """Resolve ``${...}`` expressions in a merged config dict.
 
     Use this between ``merge()`` and ``from_dict()`` when you need the
@@ -210,12 +218,12 @@ def resolve(data: dict[str, Any]) -> dict[str, Any]:
 
 
 @overload
-def from_dict[T](target: type[T], data: dict[str, Any], *, union_tag: str = ...) -> T: ...
+def from_dict[T](target: type[T], data: dict[Any, Any], *, union_tag: str = ...) -> T: ...
 @overload
-def from_dict(target: object, data: dict[str, Any], *, union_tag: str = ...) -> Any: ...
+def from_dict(target: object, data: dict[Any, Any], *, union_tag: str = ...) -> Any: ...
 def from_dict[T](
     target: type[T] | TypeAliasType | UnionType,
-    data: dict[str, Any],
+    data: dict[Any, Any],
     *,
     union_tag: str = _defaults.UNION_TAG,
 ) -> T:

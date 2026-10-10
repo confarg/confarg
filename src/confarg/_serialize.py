@@ -18,7 +18,7 @@ from confarg import _defaults
 from confarg._callable import _serialize_callable
 from confarg._cast import cast_name_for_type
 from confarg._import import dotted_name
-from confarg._merge import _OpKey
+from confarg._merge import ListOp, MergeDict
 from confarg._types import (
     TagPolicy,
     _dict_kv,
@@ -317,7 +317,7 @@ def _serialize_untyped(value: Any) -> Any:
     if isinstance(value, _Pinned):
         return _serialize_pinned(value)
     if isinstance(value, dict):
-        return {(str(k) if isinstance(k, _OpKey) else k): _serialize_untyped(v) for k, v in value.items()}
+        return {(str(k) if isinstance(k, ListOp) else k): _serialize_untyped(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_serialize_untyped(v) for v in value]
     return _serialize_leaf(None, value)
@@ -399,7 +399,7 @@ def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one retu
             return isinstance(checkable, type) and isinstance(instance, checkable)
 
 
-def _needs_tag(tp: Any, serialized_data: dict[str, Any], union_tag: str) -> bool:
+def _needs_tag(tp: Any, serialized_data: MergeDict, union_tag: str) -> bool:
     """Check if a class tag is needed by running disambiguation on the serialized data."""
     struct_vars = [v for v in _union_args_no_none(tp) if _is_struct_variant(_resolve_type(v))]
     if len(struct_vars) <= 1:

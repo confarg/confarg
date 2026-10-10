@@ -20,7 +20,12 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._cast import JSON_CAST_NAME, fold_root_json, resolve_forced_value
-from confarg._merge import DICT_DELETE, _accumulate_list_delete, _set_nested
+from confarg._merge import (
+    DICT_DELETE,
+    MergeDict,
+    _accumulate_list_delete,
+    _set_nested,
+)
 from confarg._parse_cli import (
     _accepts_object_value,
     _check_mount_subpath,
@@ -176,7 +181,7 @@ def _refuse_reserved_key(orig_key: str, parts: list[str]) -> None:
         raise ConfargError.reserved_key(orig_key, reserved)
 
 
-def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[str, Any], union_tag: str) -> None:
+def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: MergeDict, union_tag: str) -> None:
     """Apply a delete sentinel (FOO__BAR- or FOO__ITEMS__1-) to data."""
     raw_last = parts[-1][:-1]
     del_parts, _ = _resolve_env_parts(target, [*parts[:-1], raw_last], union_tag)
@@ -238,8 +243,8 @@ def _apply_env_json_cast(  # noqa: PLR0913, PLR0917  # root and nested placement
     parts: list[str],
     walk_target: Any,
     value: str,
-    data: dict[str, Any],
-    root_json: list[dict[str, Any]],
+    data: MergeDict,
+    root_json: list[MergeDict],
     union_tag: str,
     *,
     is_struct: bool,
@@ -339,7 +344,7 @@ def _accepts_json_for(ft: Any, value: str) -> bool:
     return False
 
 
-def _store_env_value(parts: list[str], ft: Any, value: str, data: dict[str, Any]) -> None:
+def _store_env_value(parts: list[str], ft: Any, value: str, data: MergeDict) -> None:
     """Parse an env var string value and store it at the resolved path in data."""
     if _accepts_json_for(ft, value):
         with contextlib.suppress(json.JSONDecodeError):
@@ -374,7 +379,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
     target: Any,
     config_flag: str = _defaults.CONFIG_FLAG,
     union_tag: str = _defaults.UNION_TAG,
-) -> tuple[dict[str, Any], list[tuple[str, str]]]:
+) -> tuple[MergeDict, list[tuple[str, str]]]:
     """Parse environment variables into a nested dict matching the target type.
 
     Variables are matched by prefix and split by separator into nested keys.
@@ -407,9 +412,9 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
     Raises:
         ConfargError: If an env var segment matches multiple field names.
     """
-    data: dict[str, Any] = {}
+    data: MergeDict = {}
     env_configs: list[tuple[str, str]] = []
-    root_json: list[dict[str, Any]] = []  # objects from a root-level `json` cast, folded in below fields
+    root_json: list[MergeDict] = []  # objects from a root-level `json` cast, folded in below fields
     is_struct = _is_struct_like(_resolve_type(target))
     # Paths resolve against the locals-grafted target, as a flag's do; root classification keeps `target`.
     walk_target = _walk_target(target, _locals_keys(target, union_tag))

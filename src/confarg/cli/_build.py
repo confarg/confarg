@@ -37,7 +37,11 @@ from confarg._callable import (
 )
 from confarg._cast import SCALAR_CAST_TYPES
 from confarg._import import _import_dotted, dotted_name
-from confarg._merge import _peek_nested, _set_nested
+from confarg._merge import (
+    MergeDict,
+    _peek_nested,
+    _set_nested,
+)
 from confarg._tags import _partial_config_from_argv, import_tagged_classes
 from confarg._types import (
     _base_declares_path,
@@ -567,7 +571,7 @@ def _collect_fn_paths_from_argv(
     return {**plain, **escaped}  # escaped opener wins: a field's plain '.bind' is then data
 
 
-def _blob_document_from_argv(target: Any, argv: Sequence[str], union_tag: str) -> dict[str, Any]:
+def _blob_document_from_argv(target: Any, argv: Sequence[str], union_tag: str) -> MergeDict:
     """Nest every whole-value ``--<dotted.path> <value>`` token of argv into one document.
 
     The result is shaped like a config file, so :func:`_collect_fn_paths_from_config`
@@ -588,7 +592,7 @@ def _blob_document_from_argv(target: Any, argv: Sequence[str], union_tag: str) -
     """
     from confarg._parse_cli import _resolve_field_type, _takes_whole_value  # noqa: PLC0415  # import cycle
 
-    doc: dict[str, Any] = {}
+    doc: MergeDict = {}
     i = 0
     while i < len(argv):
         tok = argv[i]
@@ -679,7 +683,7 @@ def _spec_openings(flag: str, sub: Any, *, typed: bool = False) -> dict[str, tup
 
 
 def _collect_fn_paths_from_config(
-    config_dict: dict[str, Any],
+    config_dict: MergeDict,
     target: Any,
     prefix: str,
     union_tag: str,
@@ -718,7 +722,7 @@ def _collect_fn_paths_from_config(
 def _callable_argument_targets(
     target: Any,
     argv: Sequence[str],
-    config_dict: dict[str, Any],
+    config_dict: MergeDict,
     union_tag: str,
 ) -> list[tuple[str, str, str, bool]]:
     """Return ``(field_flag, target_path, mode, grouped)`` for each spec whose arguments argv may spell.

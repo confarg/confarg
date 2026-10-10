@@ -38,7 +38,10 @@ import pytest
 import confarg
 import confarg.cli._build as build_mod
 from confarg._files import INCLUDE_KEY
-from confarg._merge import DICT_DELETE, LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY
+from confarg._merge import (
+    DICT_DELETE,
+    ListOp,
+)
 from confarg.cli._build import _scalar_root_spec, build_static_flags
 from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError, UnknownArgumentError
 from tests._loaders import ArgparseLoader, ClickLoader, CycloptsLoader, TyperLoader, VanillaLoader
@@ -1014,7 +1017,7 @@ class TestFixedSequenceContract:
         (BUG-160). Every front-end stores the same dict and builds it alike.
         """
         assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={}) == {
-            "pair": {LIST_REPLACE_BASE_KEY: ["1", "2"], "y": 9},
+            "pair": {ListOp.BASE: ["1", "2"], "y": 9},
         }
         cfg = space_sep_loader.load(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={})
         assert cfg.pair == _Point(1, 9)
@@ -1186,7 +1189,7 @@ class TestFixedSequenceContract:
         ``build()`` lays the sub-flag over them by field name.
         """
         assert loader.merge(_WithPoint, argv=["--pair", "13", "42", "--pair.y", "7"], env={}) == {
-            "pair": {LIST_REPLACE_BASE_KEY: [13, 42], "y": 7},
+            "pair": {ListOp.BASE: [13, 42], "y": 7},
         }
         assert loader.load(_WithPoint, argv=["--pair", "13", "42", "--pair.y", "7"], env={}).pair == _Point(13, 7)
 
@@ -1199,7 +1202,7 @@ class TestFixedSequenceContract:
         base = tmp_path / "base.yaml"
         base.write_text("pair: [13, 42]\n")
         argv = ["--config", str(base), "--pair.y", "7"]
-        assert loader.merge(_WithPoint, argv=argv, env={}) == {"pair": {LIST_REPLACE_BASE_KEY: [13, 42], "y": 7}}
+        assert loader.merge(_WithPoint, argv=argv, env={}) == {"pair": {ListOp.BASE: [13, 42], "y": 7}}
         assert loader.load(_WithPoint, argv=argv, env={}).pair == _Point(13, 7)
 
     def test_namedtuple_sub_flag_then_arity_flag_replaces_wholesale(self, loader: ConfargLoader) -> None:
@@ -1269,7 +1272,7 @@ class TestFixedSequenceContract:
         position as it does a plain tuple's (BUG-160).
         """
         assert loader.merge(_WithPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}) == {
-            "pair": {LIST_REPLACE_BASE_KEY: [1, 2], "0": 9},
+            "pair": {ListOp.BASE: [1, 2], "0": 9},
         }
         assert loader.load(_WithPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}).pair == _Point(9, 2)
 
@@ -1282,7 +1285,7 @@ class TestFixedSequenceContract:
         """The union shape keeps the index key beside the ``__base__`` base, as vanilla does (BUG-65, BUG-160)."""
         argv = ["--pair", "1", "2", "--pair.0", "9"]
         assert space_sep_loader.merge(_WithOptionalPoint, argv=argv, env={}) == {
-            "pair": {LIST_REPLACE_BASE_KEY: ["1", "2"], "0": 9},
+            "pair": {ListOp.BASE: ["1", "2"], "0": 9},
         }
         assert space_sep_loader.load(_WithOptionalPoint, argv=argv, env={}).pair == _Point(9, 2)
 
@@ -1366,7 +1369,7 @@ class TestFixedSequenceContract:
         """
         argv = ["--pt", "1", "2", "--pt.inner.b", "y"]
         assert loader.merge(_WithNestedPoint, argv=argv, env={}) == {
-            "pt": {LIST_REPLACE_BASE_KEY: ["1", 2], "inner": {"b": "y"}},
+            "pt": {ListOp.BASE: ["1", 2], "inner": {"b": "y"}},
         }
         assert loader.load(_WithNestedPoint, argv=argv, env={}).pt == _PtNested(inner=_Inner(a=0, b="y"), x=2)
 
@@ -1378,7 +1381,7 @@ class TestFixedSequenceContract:
         """The same priority holds at the deeper level, on the field's own arity flag (BUG-68)."""
         argv = ["--pt.inner", "7", "8", "--pt.inner.a", "5"]
         assert loader.merge(_WithPlainNestedPoint, argv=argv, env={}) == {
-            "pt": {"inner": {LIST_REPLACE_BASE_KEY: [7, "8"], "a": 5}},
+            "pt": {"inner": {ListOp.BASE: [7, "8"], "a": 5}},
         }
         assert loader.load(_WithPlainNestedPoint, argv=argv, env={}).pt.inner == _Inner(a=5, b="8")
 
@@ -3079,7 +3082,7 @@ class TestTagAtAnyPathContract:
     def test_tag_after_namedtuple_positional_run(self, loader: ConfargLoader) -> None:
         """A tag after the arity flag joins the positions' ``__base__`` base, as vanilla's does."""
         merged = loader.merge(_TagAnywhere, argv=["--pt", "1", "2", "--pt.class", "X"], env={}, config_flag="")
-        assert merged == {"pt": {LIST_REPLACE_BASE_KEY: [1, 2], "class": "X"}}
+        assert merged == {"pt": {ListOp.BASE: [1, 2], "class": "X"}}
 
     def test_namedtuple_positional_run_after_tag(self, loader: ConfargLoader) -> None:
         """The arity flag typed after the tag replaces it."""
@@ -4037,7 +4040,7 @@ class TestCollectionPatchContract:
         """
         argv = ["--users", "alice", "--users", "bob", "--users.0", "allan"]
         assert loader.merge(_WithUsers, argv=argv, env={}) == {
-            "users": {LIST_REPLACE_BASE_KEY: ["alice", "bob"], "0": "allan"},
+            "users": {ListOp.BASE: ["alice", "bob"], "0": "allan"},
         }
         assert loader.load(_WithUsers, argv=argv, env={}).users == ["allan", "bob"]
 
@@ -4148,7 +4151,7 @@ class TestCollectionPatchContract:
         holds the operation ``{__base__: [fr, FR], '0': en}``.
         """
         argv = ["--lang", "fr", "FR", "--lang.0", "en"]
-        assert loader.merge(_WithLang, argv=argv, env={}) == {"lang": {LIST_REPLACE_BASE_KEY: ["fr", "FR"], "0": "en"}}
+        assert loader.merge(_WithLang, argv=argv, env={}) == {"lang": {ListOp.BASE: ["fr", "FR"], "0": "en"}}
         assert loader.load(_WithLang, argv=argv, env={}).lang == ("en", "FR")
 
     def test_tuple_build_with_mixed_indices_no_base(self, loader: ConfargLoader) -> None:
@@ -4236,7 +4239,7 @@ class TestCollectionPatchContract:
         """
         argv = ["--users", "alice", "--users", "bob", "--users+", "carol"]
         assert loader.merge(_WithUsers, argv=argv, env={}) == {
-            "users": {LIST_REPLACE_BASE_KEY: ["alice", "bob"], LIST_APPEND_KEY: ["carol"]},
+            "users": {ListOp.BASE: ["alice", "bob"], ListOp.APPEND: ["carol"]},
         }
         assert loader.load(_WithUsers, argv=argv, env={}).users == ["alice", "bob", "carol"]
 
@@ -4286,7 +4289,7 @@ class TestCollectionPatchContract:
         """
         argv = ["--users", "alice", "--users", "bob", "--users.0-"]
         assert loader.merge(_WithUsers, argv=argv, env={}) == {
-            "users": {LIST_REPLACE_BASE_KEY: ["alice", "bob"], LIST_DELETE_KEY: [0]},
+            "users": {ListOp.BASE: ["alice", "bob"], ListOp.DELETE: [0]},
         }
         assert loader.load(_WithUsers, argv=argv, env={}).users == ["bob"]
 
@@ -4298,7 +4301,7 @@ class TestCollectionPatchContract:
         descent once read the sentinel as a dict (BUG-77).
         """
         argv = ["--users-", "--users.0-"]
-        assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {LIST_DELETE_KEY: [0]}}
+        assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {ListOp.DELETE: [0]}}
         base = tmp_yaml("users: [alice, bob]\n")
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="requires a base list"):
             loader.load(_WithUsers, argv=["--config", str(base), *argv], env={})
@@ -4342,7 +4345,7 @@ class TestCollectionPatchContract:
         """A delete then an append below ``-1`` rebuild the appended item's list from nothing (BUG-116)."""
         argv = ["--items+", '{"tags": ["a", "b"]}', "--items.-1.tags-", "--items.-1.tags+", "x"]
         assert loader.merge(_WithTaggedItems, argv=argv, env={}) == {
-            "items": {LIST_APPEND_KEY: [{"tags": {LIST_APPEND_KEY: ["x"]}}]},
+            "items": {ListOp.APPEND: [{"tags": {ListOp.APPEND: ["x"]}}]},
         }
         assert loader.load(_WithTaggedItems, argv=argv, env={}).items == [_TaggedItem(tags=["x"])]
 
@@ -4366,7 +4369,7 @@ class TestCollectionPatchContract:
         """
         argv = ["--items+", '{"tags": ["a", "b"]}', "--items.-1.tags.0-"]
         assert loader.merge(_WithTaggedItems, argv=argv, env={}) == {
-            "items": {LIST_APPEND_KEY: [{"tags": {LIST_REPLACE_BASE_KEY: ["a", "b"], LIST_DELETE_KEY: [0]}}]},
+            "items": {ListOp.APPEND: [{"tags": {ListOp.BASE: ["a", "b"], ListOp.DELETE: [0]}}]},
         }
         assert loader.load(_WithTaggedItems, argv=argv, env={}).items == [_TaggedItem(tags=["b"])]
 
@@ -4530,7 +4533,7 @@ class TestCollectionPatchContract:
         """A key of a dict inside a namedtuple field is a patch flag too, typed by the dict's value (BUG-157)."""
         argv = ["--pair.name", "a", "--pair.items+", "1", "--pair.meta.k", "3"]
         assert loader.merge(_WithPatchPair, argv=argv, env={}) == {
-            "pair": {"name": "a", "items": {LIST_APPEND_KEY: [1]}, "meta": {"k": 3}},
+            "pair": {"name": "a", "items": {ListOp.APPEND: [1]}, "meta": {"k": 3}},
         }
         assert loader.load(_WithPatchPair, argv=argv, env={}).pair == _PatchPair("a", [1], {"k": 3})
 
@@ -7315,7 +7318,7 @@ class TestMountParity:
         target = make_target("items", list[dict[str, str]], default_factory=list)
 
         merged = loader.merge(target, argv=["--config.items+", str(item)], env={})
-        assert merged == {"items": {LIST_APPEND_KEY: [{"host": "inner"}]}}
+        assert merged == {"items": {ListOp.APPEND: [{"host": "inner"}]}}
 
     def test_append_parity_between_cli_and_file(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """Test that --config.f+ FILE and f+: {__include__: FILE} mean the same thing.
@@ -7603,7 +7606,7 @@ class TestArgvOrderContract:
         [
             pytest.param(
                 ["--pt.x", "1", "--pt", "7", "8", "--pt.y", "2"],
-                {"pt": {LIST_REPLACE_BASE_KEY: [7, 8], "y": 2}},
+                {"pt": {ListOp.BASE: [7, 8], "y": 2}},
                 id="arity-flag-between-sub-flags",
             ),
             pytest.param(["--s.x", "1", "--s", '{"y": 5}', "--s.y", "2"], {"s": {"y": 2}}, id="blob-between-sub-flags"),

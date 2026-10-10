@@ -50,9 +50,8 @@ from confarg._files import (
 )
 from confarg._merge import (
     DICT_DELETE,
-    LIST_APPEND_KEY,
-    LIST_DELETE_KEY,
-    LIST_REPLACE_BASE_KEY,
+    ListOp,
+    MergeDict,
     _accumulate_list_delete,
     _apply_append_key,
     _deep_merge,
@@ -1364,14 +1363,14 @@ class TestConstructBranches:
             )
 
     def test_list_replace_base_key_in_construct(self) -> None:
-        """LIST_REPLACE_BASE_KEY in a list construction dict applies ops against the base list."""
-        result = construct(list[int], {LIST_REPLACE_BASE_KEY: [1, 2, 3]})
+        """ListOp.BASE in a list construction dict applies ops against the base list."""
+        result = construct(list[int], {ListOp.BASE: [1, 2, 3]})
         assert result == [1, 2, 3]
 
     def test_list_delete_without_base_raises(self) -> None:
-        """LIST_DELETE_KEY without a base list raises TypeCoercionError."""
+        """ListOp.DELETE without a base list raises TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="requires a base list"):
-            construct(list[int], {LIST_DELETE_KEY: [0]})
+            construct(list[int], {ListOp.DELETE: [0]})
 
     def test_try_coll_variants_all_fail_returns_no_match(self) -> None:
         """_try_coll_variants returns _UNION_NO_MATCH when all collection variants fail."""
@@ -1401,10 +1400,10 @@ class TestMergeGaps:
 
     def test_merge_regular_key_delete_preserves_append(self) -> None:
         """When a delete-spec arrives and existing value has an append-spec, the append is preserved."""
-        result: dict = {"key": {LIST_APPEND_KEY: [1, 2]}}
-        _merge_regular_key("key", {LIST_DELETE_KEY: [0]}, result)
-        assert LIST_APPEND_KEY in result["key"]
-        assert LIST_DELETE_KEY in result["key"]
+        result: dict = {"key": {ListOp.APPEND: [1, 2]}}
+        _merge_regular_key("key", {ListOp.DELETE: [0]}, result)
+        assert ListOp.APPEND in result["key"]
+        assert ListOp.DELETE in result["key"]
 
     def test_apply_append_key_existing_list(self) -> None:
         """When the existing value is a plain list, items are appended to it directly."""
@@ -1414,43 +1413,43 @@ class TestMergeGaps:
 
     def test_apply_append_key_existing_append_dict(self) -> None:
         """When the existing value is a {__append__: [...]} dict, items are merged into the append list."""
-        result: dict = {"key": {LIST_APPEND_KEY: [1, 2]}}
+        result: dict = {"key": {ListOp.APPEND: [1, 2]}}
         _apply_append_key("key", 3, result)
-        assert result["key"][LIST_APPEND_KEY] == [1, 2, 3]
+        assert result["key"][ListOp.APPEND] == [1, 2, 3]
 
     def test_normalize_merge_ops_double_delete_indices(self) -> None:
         """Two 'N-' keys in the same dict merge their delete indices (hits line 132)."""
-        # the delete marker is stored as it is → result[LIST_DELETE_KEY] = [1]
+        # the delete marker is stored as it is → result[ListOp.DELETE] = [1]
         # "3-" key → delete_indices = [3]
         # At end: existing_del = [1] → sorted({1, 3}) = [1, 3]
-        result = _normalize_merge_ops({LIST_DELETE_KEY: [1], "3-": "x"})
-        assert 3 in result[LIST_DELETE_KEY]
-        assert 1 in result[LIST_DELETE_KEY]
+        result = _normalize_merge_ops({ListOp.DELETE: [1], "3-": "x"})
+        assert 3 in result[ListOp.DELETE]
+        assert 1 in result[ListOp.DELETE]
 
     def test_deep_merge_list_delete_both_sides(self) -> None:
-        """Merging two dicts both having LIST_DELETE_KEY combines deletion indices."""
-        base = {"items": {LIST_DELETE_KEY: [0]}}
-        override = {"items": {LIST_DELETE_KEY: [1]}}
+        """Merging two dicts both having ListOp.DELETE combines deletion indices."""
+        base: MergeDict = {"items": {ListOp.DELETE: [0]}}
+        override: MergeDict = {"items": {ListOp.DELETE: [1]}}
         merged = _deep_merge(base, override)
-        assert sorted(merged["items"][LIST_DELETE_KEY]) == [0, 1]
+        assert sorted(merged["items"][ListOp.DELETE]) == [0, 1]
 
     def test_set_nested_nonint_key_in_append_dict(self) -> None:
         """Non-integer path segment into an append-dict falls through to normal dict set."""
-        d: dict = {LIST_APPEND_KEY: [{"a": 1}]}
+        d: dict = {ListOp.APPEND: [{"a": 1}]}
         _set_nested(d, ["nonint", "b"], "value")
         assert d.get("nonint") == {"b": "value"}
 
     def test_set_nested_list_intermediate_converted(self) -> None:
-        """An intermediate list value in _set_nested is converted to {LIST_REPLACE_BASE_KEY: list}."""
+        """An intermediate list value in _set_nested is converted to {ListOp.BASE: list}."""
         d: dict = {"a": [1, 2, 3]}
         _set_nested(d, ["a", "subkey"], "value")
-        assert LIST_REPLACE_BASE_KEY in d["a"]
+        assert ListOp.BASE in d["a"]
 
     def test_accumulate_list_delete_list_intermediate(self) -> None:
         """An intermediate list value in _accumulate_list_delete is converted to a replace-base dict."""
         d: dict = {"a": [1, 2, 3]}
         _accumulate_list_delete(d, ["a"], 0, "test")
-        assert LIST_REPLACE_BASE_KEY in d["a"]
+        assert ListOp.BASE in d["a"]
 
 
 # ---------------------------------------------------------------------------
@@ -1468,7 +1467,7 @@ class TestParseCliGaps2:
             confarg.load(WithList, argv=["--nonexistent.0-"])
 
     def test_double_append_after_replace_base(self) -> None:
-        """Two --items+ after --items a b accumulates all items (hits LIST_REPLACE_BASE_KEY branch)."""
+        """Two --items+ after --items a b accumulates all items (hits ListOp.BASE branch)."""
         WithList = make_target("items", list[str], default_factory=list)
         result = confarg.load(WithList, argv=["--items", "a", "b", "--items+", "c", "--items+", "d"])
         assert result.items == ["a", "b", "c", "d"]

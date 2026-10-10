@@ -55,32 +55,13 @@ concept, so there is no path that could reach it.
 
 ## No channel types an op
 
-The four ops are `_merge._OpKey` markers: a `str` subclass that reads as the reserved key a
-file writes the op with, and equals only another marker, never the plain string. A flag, a
-variable or a file can spell a dict key `*`, `+`, `-` or `~`, and even `__base__`; none of them
-spells a marker, so the merge cannot read a user's key as an op. Until FEAT-3 the ops were the
-plain strings `+`, `-`, `*` and `~`, and every channel could type them as a dict's keys:
-`--d.* 5` wiped the dict's other keys (BUG-185), `--d.* 1 2` and `--d.*-` still did once the
-merge told the two apart by the value (BUG-199), and of two files giving `d: {"+": 1}` and
-`d: {"+": 5}` the second appended where it meant to replace.
+The four ops are the members of `confarg.ListOp`, an enum whose `str()` is the reserved key a file writes the op with, and which no string equals. A flag, a variable or a file can spell a dict key `*`, `+`, `-` or `~`, and even `__base__`; none of them spells a marker, so the merge cannot read a user's key as an op. The merged dict is typed `MergeDict` (`dict[str | ListOp, Any]`) along its whole path, so code that assumes a key is text fails the type checker rather than reading `__append__` as a field. Until FEAT-3 the ops were the plain strings `+`, `-`, `*` and `~`, and every channel could type them as a dict's keys: `--d.* 5` wiped the dict's other keys (BUG-185), `--d.* 1 2` and `--d.*-` still did once the merge told the two apart by the value (BUG-199), and of two files giving `d: {"+": 1}` and `d: {"+": 5}` the second appended where it meant to replace.
 
-Only `_normalize_merge_ops` makes a marker out of a string: a file's reserved key (`__append__`,
-`__delete__`, `__base__`, `__delete_after__`, listed in `_defaults.RESERVED_KEYS` beside the
-other [file-only keys](../config-files/reserved-keys.md#reserved-file-only-keys)). A flag, an
-environment variable or a mount point naming one is refused, by
-`_parse_cli._reserved_segment`, so the file is the one channel that writes an op by name.
-`_serialize_untyped` writes a marker back as that plain key, so `dump_file(merge(...))` reads
-back, through `merge(files=[saved])`, as the merged dict it was, ops included.
+Only `_normalize_merge_ops` makes a marker out of a string: a file's reserved key (`__append__`, `__delete__`, `__base__`, `__delete_after__`, listed in `_defaults.RESERVED_KEYS` beside the other [file-only keys](../config-files/reserved-keys.md#reserved-file-only-keys)). A flag, an environment variable or a mount point naming one is refused, by `_parse_cli._reserved_segment`, so the file is the one channel that writes an op by name. `_serialize_untyped` writes a marker back as that plain key, so `dump_file(merge(...))` reads back, through `merge(files=[saved])`, as the merged dict it was, ops included.
 
-A marker that reaches a dict field in `build()` (a file's `d+:`, or BUG-174's `--d.1-`) is
-refused by `_construct_dict` rather than built as one of the dict's keys. The plain string a
-direct `build()` caller might spell — out-of-contract, as no channel can produce it — is
-refused too, by `_indexed_dict_to_positions`, the one index reader every sequence path of
-construction shares: against a default, where `_resolve_tuple_partial`'s stray-skipping once
-dropped it silently, and without one alike, with one refusal naming the key (BUG-209).
+A marker that reaches a dict field in `build()` (a file's `d+:`, or BUG-174's `--d.1-`) is refused by `_construct_dict` rather than built as one of the dict's keys. The plain string a direct `build()` caller might spell — out-of-contract, as no channel can produce it — is refused too, by `_indexed_dict_to_positions`, the one index reader every sequence path of construction shares: against a default, where `_resolve_tuple_partial`'s stray-skipping once dropped it silently, and without one alike, with one refusal naming the key (BUG-209).
 
-The alternatives weighed are in
-[design decisions](../design-decisions/merge-ops-are-markers-no-channel-types.md#merge-ops-are-markers-no-channel-types).
+The alternatives weighed are in [design decisions](../design-decisions/merge-ops-are-markers-no-channel-types.md#merge-ops-are-markers-no-channel-types).
 
 ## Scalar intermediates
 

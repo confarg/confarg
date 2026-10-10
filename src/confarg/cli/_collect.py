@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from confarg._defaults import _Options
+    from confarg._merge import MergeDict
 
 from confarg._api import _build_for_cli
 from confarg._import import _import_dotted
@@ -85,7 +86,7 @@ def _merge_from_flat(
     *,
     cli_prefix: str,
     binds_runs: bool,
-) -> dict[str, Any]:
+) -> MergeDict:
     """Merge every source into a raw dict, the CLI channel written from ``options.argv``.
 
     The shared tail of ``merge_namespace`` / ``merge_context`` / ``merge_app``, so the
@@ -105,7 +106,9 @@ def _merge_from_flat(
             the run vanilla consumes is a stray rather than a positional of the host's.
 
     Returns:
-        A plain dict of the merged configuration, with expression strings intact.
+        A plain dict of the merged configuration, with expression strings intact. A list
+        operation that only ``build()`` can apply stays in it, keyed by a
+        :class:`confarg.ListOp`.
 
     Raises:
         ConfargError: If *flat* holds a confarg flag the argv does not spell.
@@ -126,7 +129,7 @@ def _merge_from_flat(
     return _merge_sources(target, cli_data, cli_configs, options)
 
 
-def _construct_from_merged(target: object, merged: dict[str, Any], union_tag: str, cli_prefix: str) -> Any:
+def _construct_from_merged(target: object, merged: MergeDict, union_tag: str, cli_prefix: str) -> Any:
     """Construct *target* from an already-merged dict; the shared tail of every ``from_*``.
 
     *cli_prefix* is the one the merge resolved, which a missing field's remedy is spelled under.

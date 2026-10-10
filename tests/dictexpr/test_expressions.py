@@ -13,11 +13,12 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import confarg
+from confarg._merge import ListOp
 from confarg._types import _StrToken
 from confarg.dictexpr._expressions import (
     _ALLOWED_NODES,
@@ -30,6 +31,7 @@ from confarg.dictexpr._expressions import (
     _anchor_prefix,
     _extract_references,
     _parse_expression,
+    _Path,
     _prefix_content,
     _RefusedError,
     _scan_expressions,
@@ -50,6 +52,9 @@ from confarg.exceptions import (
 from tests.conftest import (
     WithDefaults,
 )
+
+if TYPE_CHECKING:
+    from confarg._merge import MergeDict
 
 # ---------------------------------------------------------------------------
 # contains_expression: the canonical "would resolution rewrite this?" predicate
@@ -91,7 +96,7 @@ class TestContainsExpression:
 
     def test_agrees_with_the_resolver_scan(self) -> None:
         """Every leaf the predicate accepts is a leaf ``_scan_expressions`` collects."""
-        data = {"real": "${a}", "escaped": "$${a}", "embedded": "x${a}y", "plain": "a", "open": "${"}
+        data: MergeDict = {"real": "${a}", "escaped": "$${a}", "embedded": "x${a}y", "plain": "a", "open": "${"}
         scanned = set(_scan_expressions(data))
         predicted = {(k,) for k, v in data.items() if contains_expression(v)}
         assert scanned == predicted == {("real",), ("escaped",), ("embedded",)}
@@ -107,50 +112,50 @@ class TestScanExpressions:
 
     def test_simple_reference(self) -> None:
         """A simple ${b} reference is detected."""
-        data = {"a": "${b}", "b": "hello"}
+        data: MergeDict = {"a": "${b}", "b": "hello"}
         result = _scan_expressions(data)
         assert result == {("a",): "${b}"}
 
     def test_nested_dict(self) -> None:
         """Expressions in nested dicts are detected with their path, one segment per key."""
-        data = {"db": {"url": "jdbc://${db.host}:${db.port}/mydb", "host": "localhost", "port": 5432}}
+        data: MergeDict = {"db": {"url": "jdbc://${db.host}:${db.port}/mydb", "host": "localhost", "port": 5432}}
         result = _scan_expressions(data)
         assert result == {("db", "url"): "jdbc://${db.host}:${db.port}/mydb"}
 
     def test_non_string_ignored(self) -> None:
         """Non-string values are ignored in expression scanning."""
-        data = {"count": 42, "rate": math.pi, "flag": True, "nothing": None}
+        data: MergeDict = {"count": 42, "rate": math.pi, "flag": True, "nothing": None}
         result = _scan_expressions(data)
         assert result == {}
 
     def test_no_expressions(self) -> None:
         """A dict with no expressions returns an empty scan result."""
-        data = {"name": "hello", "nested": {"value": "world"}}
+        data: MergeDict = {"name": "hello", "nested": {"value": "world"}}
         result = _scan_expressions(data)
         assert result == {}
 
     def test_escaped_not_detected(self) -> None:
         """Escaped $${...} is detected for processing (to unescape) but not as a real reference."""
-        data = {"a": "$${not_a_ref}"}
+        data: MergeDict = {"a": "$${not_a_ref}"}
         result = _scan_expressions(data)
         # Escaped expressions ARE detected for processing (to unescape them)
         assert result == {("a",): "$${not_a_ref}"}
 
     def test_list_values_scanned(self) -> None:
         """Expressions inside list elements are detected with their index as a segment."""
-        data = {"items": ["${a}", "plain"]}
+        data: MergeDict = {"items": ["${a}", "plain"]}
         result = _scan_expressions(data)
         assert result == {("items", "0"): "${a}"}
 
     def test_deeply_nested(self) -> None:
         """Deeply nested expressions are detected with their full path."""
-        data = {"a": {"b": {"c": {"d": "${x}"}}}}
+        data: MergeDict = {"a": {"b": {"c": {"d": "${x}"}}}}
         result = _scan_expressions(data)
         assert result == {("a", "b", "c", "d"): "${x}"}
 
     def test_multiple_expressions(self) -> None:
         """Multiple expression fields are all detected."""
-        data = {"a": "${x}", "b": "${y}", "c": "plain"}
+        data: MergeDict = {"a": "${x}", "b": "${y}", "c": "plain"}
         result = _scan_expressions(data)
         assert result == {("a",): "${x}", ("b",): "${y}"}
 
@@ -219,20 +224,20 @@ class TestTopologicalSort:
 
     def test_simple_chain(self) -> None:
         """A simple dependency chain is sorted topologically."""
-        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {("c",): {("b",)}, ("b",): {("a",)}, ("a",): set()}
+        deps: dict[_Path, set[_Path]] = {("c",): {("b",)}, ("b",): {("a",)}, ("a",): set()}
         order = _topological_sort(deps)
         assert order.index(("a",)) < order.index(("b",))
         assert order.index(("b",)) < order.index(("c",))
 
     def test_independent(self) -> None:
         """Independent nodes all appear in the sorted result."""
-        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {("a",): set(), ("b",): set()}
+        deps: dict[_Path, set[_Path]] = {("a",): set(), ("b",): set()}
         order = _topological_sort(deps)
         assert set(order) == {("a",), ("b",)}
 
     def test_diamond(self) -> None:
         """A diamond dependency graph is sorted correctly."""
-        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {
+        deps: dict[_Path, set[_Path]] = {
             ("d",): {("b",), ("c",)},
             ("b",): {("a",)},
             ("c",): {("a",)},
@@ -246,25 +251,25 @@ class TestTopologicalSort:
 
     def test_circular_raises(self) -> None:
         """A two-node cycle raises CircularReferenceError."""
-        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {("a",): {("b",)}, ("b",): {("a",)}}
+        deps: dict[_Path, set[_Path]] = {("a",): {("b",)}, ("b",): {("a",)}}
         with pytest.raises(CircularReferenceError):
             _topological_sort(deps)
 
     def test_self_reference_raises(self) -> None:
         """A self-referencing node raises CircularReferenceError."""
-        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {("a",): {("a",)}}
+        deps: dict[_Path, set[_Path]] = {("a",): {("a",)}}
         with pytest.raises(CircularReferenceError):
             _topological_sort(deps)
 
     def test_circular_three(self) -> None:
         """A three-node cycle raises CircularReferenceError."""
-        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {("a",): {("c",)}, ("b",): {("a",)}, ("c",): {("b",)}}
+        deps: dict[_Path, set[_Path]] = {("a",): {("c",)}, ("b",): {("a",)}, ("c",): {("b",)}}
         with pytest.raises(CircularReferenceError):
             _topological_sort(deps)
 
     def test_circular_message_names_the_unresolved_nodes(self) -> None:
         """The message names every node the cycle leaves unresolved, and no other."""
-        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {
+        deps: dict[_Path, set[_Path]] = {
             ("a",): {("b",)},
             ("b",): {("a",)},
             ("c",): set(),
@@ -272,6 +277,12 @@ class TestTopologicalSort:
         }
         with pytest.raises(CircularReferenceError, match=r"^Circular reference detected among: a, b, d$"):
             _topological_sort(deps)
+
+    def test_circular_message_spells_a_pending_list_op_as_a_file_writes_it(self) -> None:
+        """An item appended to the list it reads is a cycle whose position names the op ``__append__``."""
+        data: MergeDict = {"names": {ListOp.APPEND: ["${names}"]}}
+        with pytest.raises(CircularReferenceError, match=r"^Circular reference detected among: names\.__append__\.0$"):
+            resolve_expressions(data)
 
     def test_empty(self) -> None:
         """An empty dependency dict returns an empty list."""

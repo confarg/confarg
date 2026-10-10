@@ -255,13 +255,16 @@ class TypeCoercionError(ConfargError):
     def unknown_fields(cls, names: Any, what: str, path: str, valid: list[str]) -> TypeCoercionError:
         """Return the error for keys a struct or a namedtuple declares no field for.
 
-        *names* are the refused keys, listed sorted; *valid* is the field list as the caller
-        orders it.
+        *names* are the refused keys, listed sorted by the text a file spells them with (a YAML
+        integer key, a pending list op), so keys of different types sort together; *valid* is
+        the field list as the caller orders it.
 
         Dev Notes:
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
         """
-        return cls(f"Unknown field(s) {sorted(names)} for {what} at '{path}'. Valid fields: {valid}")
+        return cls(
+            f"Unknown field(s) {sorted(str(name) for name in names)} for {what} at '{path}'. Valid fields: {valid}"
+        )
 
     @classmethod
     def cast_not_held(cls, cast: str, field: str, path: str) -> TypeCoercionError:
@@ -283,20 +286,20 @@ class TypeCoercionError(ConfargError):
     def op_not_a_list(cls, key: str, what: str, src: str, value: Any, path: str) -> TypeCoercionError:
         """Return the error for a list op whose key holds no list: the base, or the indices a delete reads.
 
-        *key* is the op's key, which reads as the reserved key a file writes it with; *what* is
-        what it must hold. *src* is the value's type as text, passed in rather than computed,
-        this module importing nothing from ``confarg``; the value is never a token, as only a
-        file writes the key.
+        *key* is the reserved key a file writes the op with; *what* is what it must hold.
+        *src* is the value's type as text, passed in rather than computed, this module
+        importing nothing from ``confarg``; the value is never a token, as only a file writes
+        the key.
         """
-        return cls(f"Cannot patch the list at '{path}': {str(key)!r} must hold {what}, got {src} {value!r}")
+        return cls(f"Cannot patch the list at '{path}': {key!r} must hold {what}, got {src} {value!r}")
 
     @classmethod
     def list_op_on_a_dict(cls, key: str, path: str) -> TypeCoercionError:
         """Return the error for a list op the merge recorded where the type has a dict.
 
-        *key* is the op's key, which reads as the reserved key a file writes it with.
+        *key* is the reserved key a file writes the op with.
         """
-        return cls(f"Cannot apply {str(key)!r} to the dict at '{path}': it is an operation on a list.")
+        return cls(f"Cannot apply {key!r} to the dict at '{path}': it is an operation on a list.")
 
     @classmethod
     def not_a_subclass(cls, name: Any, parent: str, path: str) -> TypeCoercionError:

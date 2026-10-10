@@ -15,6 +15,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-182 — An env delete naming no member is dropped without a warning](BUG-182-an-env-delete-naming-no-member-is-dropped-without-a-warning.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-186 — A root `json` cast swallows a field delete meant for the layers below](BUG-186-a-root-json-cast-swallows-a-field-delete-meant-for-the-layers-below.md) | critical |  | S | high | behavior | PR-87, BUG-3 |
 | [BUG-193 — A closure or a lambda dumps as a path that cannot be imported](BUG-193-a-closure-dumps-as-a-path-that-cannot-be-imported.md) | critical (via BUG-191) |  | S | low | behavior | PR-5 |
+| [BUG-221 — A file's append to a tuple is dropped without a word](BUG-221-a-files-append-to-a-tuple-is-dropped-without-a-word.md) | critical |  | S | medium | config | PR-5 |
 | [BUG-190 — A typed `call:` spec merges with the lower layer's value instead of replacing it](BUG-190-a-typed-call-spec-merges-with-the-lower-layers-value.md) | critical |  | M | medium | behavior | FEAT-28 |
 | [BUG-192 — A `class:` instance dumps the arguments it was built with, not the values it holds](BUG-192-a-class-instance-dumps-the-arguments-it-was-built-with.md) | critical |  | M | low | behavior | PR-5 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
@@ -51,6 +52,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-177 — A collection root's bare flag takes one token, which construction refuses](BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-181 — An out-of-domain Literal or Enum flag exits with the framework's choice error on the adapters](BUG-181-an-out-of-domain-literal-or-enum-flag-exits-with-the-frameworks-choice-error.md) | minor |  | M | medium | behavior | PR-5, PR-13, PR-26 |
 | [BUG-194 — A `bind:` keyword built as a struct dumps as the instance, which no file format writes](BUG-194-a-bind-keyword-built-as-a-struct-dumps-as-the-instance.md) | minor |  | M | low | behavior | PR-93 |
+| [BUG-220 — A reference into a list with pending ops reads none of its items](BUG-220-a-reference-into-a-list-with-pending-ops-reads-none-of-its-items.md) | minor |  | M | high | behavior | PR-5 |
 | [BUG-88 — A mount point below a direct root field has no `--config.<path>` entry](BUG-88-a-mount-point-below-a-direct-root-field-has-no-config-entry.md) | minor |  | L | medium | behavior | PR-13 |
 | [BUG-201 — An environment variable below a dict appends, though the environment has no append](BUG-201-an-environment-variable-below-a-dict-appends-though-the-environment-has-no-append.md) | minor | FEAT-18 | S | medium | config | PR-5 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |

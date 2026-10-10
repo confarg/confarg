@@ -18,7 +18,7 @@ import re
 import pytest
 
 import confarg
-from confarg._merge import LIST_REPLACE_BASE_KEY
+from confarg._merge import ListOp
 from tests.conftest import (
     AppConfig,
     Color,
@@ -60,6 +60,38 @@ class TestExceptionHierarchy:
     def test_confarg_error_is_exception(self) -> None:
         """ConfargError inherits from Exception."""
         assert issubclass(confarg.exceptions.ConfargError, Exception)
+
+
+# ---------------------------------------------------------------------------
+# Unknown fields
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Named:
+    """One-field struct, for the unknown-field messages."""
+
+    name: str = ""
+
+
+class TestUnknownFields:
+    """The keys a struct declares no field for are listed as a file spells them."""
+
+    WithNamed = make_target("one", Named, default_factory=Named)
+
+    def test_keys_of_different_types_are_listed_together(self) -> None:
+        """A YAML integer key beside a string key is refused by name, not with a raw ``TypeError``."""
+        with pytest.raises(
+            confarg.exceptions.TypeCoercionError, match=re.escape("Unknown field(s) ['1', 'x'] for Named")
+        ):
+            confarg.build(self.WithNamed, {"one": {1: "a", "x": "b"}})
+
+    def test_a_list_op_is_listed_by_the_key_a_file_writes(self) -> None:
+        """``one: {__append__: [1], bogus: 2}`` names ``__append__`` as written, beside the other key."""
+        with pytest.raises(
+            confarg.exceptions.TypeCoercionError, match=re.escape("Unknown field(s) ['__append__', 'bogus'] for Named")
+        ):
+            confarg.build(self.WithNamed, {"one": {ListOp.APPEND: [1], "bogus": 2}})
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +393,7 @@ class TestUnionWithACarriedBaseFailsAsItsSequenceVariant:
         key: str,
     ) -> None:
         """A key the sequence cannot take is refused naming it, as the sequence's own target does."""
-        data: dict[str, Any] = {"u": {LIST_REPLACE_BASE_KEY: [1, 2], key: 5}}
+        data: dict[str, Any] = {"u": {ListOp.BASE: [1, 2], key: 5}}
         plain = self._failure(
             lambda: confarg.build(make_target("u", annotation, default_factory=default_factory), data),
         )
@@ -372,7 +404,7 @@ class TestUnionWithACarriedBaseFailsAsItsSequenceVariant:
             ),
         )
         assert (type(union), str(union)) == (type(plain), str(plain))
-        assert LIST_REPLACE_BASE_KEY not in str(union)
+        assert str(ListOp.BASE) not in str(union)
 
     def test_a_name_patch_from_the_command_line_over_a_files_list(self, loader: ConfargLoader, tmp_path: Any) -> None:
         """A ``--u.z`` over a file's list at a union field names the key, on every front-end."""
@@ -381,7 +413,7 @@ class TestUnionWithACarriedBaseFailsAsItsSequenceVariant:
         WithUnion = make_target("u", list[int] | dict[str, int], default_factory=list)
         with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("non-integer key 'z'")) as excinfo:
             loader.load(WithUnion, argv=["--u.z", "5"], files=[str(base)], env={})
-        assert LIST_REPLACE_BASE_KEY not in str(excinfo.value)
+        assert str(ListOp.BASE) not in str(excinfo.value)
 
 
 class TestTokensStayOutOfMessages:
