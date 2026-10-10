@@ -16,7 +16,7 @@ import warnings
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
 from confarg import _defaults
 from confarg._callable import _resolve_callable_spec, _select_directives, resolve_typed_call
@@ -152,6 +152,29 @@ def _check_namedtuple_length(tp: Any, got: int, path: FieldPath) -> None:
         raise TypeCoercionError(msg)
 
 
+_LENGTH_OPS = (ListOp.APPEND, ListOp.DELETE, ListOp.DELETE_AFTER)
+
+
+def _apply_carried_ops(data: MergeDict, what: str, path: FieldPath, union_tag: str) -> MergeDict | list[Any]:
+    """Apply the list ops *data* carries over the ``ListOp.BASE`` beside them, for a fixed-arity sequence.
+
+    A fixed tuple or a namedtuple (*what* names it for the message) has no length an op
+    could grow or shrink, so an op with no base below it is refused, as the dict field
+    refuses one; with a base it applies as the merge would have, and the list it leaves is
+    checked against the arity like any other. A dict holding no op is returned unchanged.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
+    """
+    op = next((k for k in _LENGTH_OPS if k in data), None)
+    if op is None:
+        return data
+    spelled = _spell_field_path(path)
+    if ListOp.BASE not in data:
+        raise TypeCoercionError.list_op_on(str(op), what, spelled)
+    return _apply_list_ops(_replace_base(data, spelled), data, spelled, union_tag)
+
+
 def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, union_tag: str) -> dict[Any, Any]:
     """Key a namedtuple's ``ListOp.BASE`` base list by field name and lay the patch beside it over it.
 
@@ -194,6 +217,8 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
     field_types = list(flds.values())
     n = len(field_names)
 
+    if isinstance(data, dict):
+        data = _apply_carried_ops(data, f"namedtuple {tp.__name__}", path, union_tag)
     if isinstance(data, dict) and ListOp.BASE in data:
         data = _lay_patch_over_positions(tp, data, path, union_tag)
 
@@ -758,7 +783,7 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
             # Append-only dict: apply all list ops (appends, deletions, index patches) against an empty base.
             working = _apply_list_ops([], data, _spell_field_path(path), None)
             return [construct(et, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(working)]
-        if ListOp.DELETE in data:
+        if ListOp.DELETE in data or ListOp.DELETE_AFTER in data:
             msg = (
                 f"List deletion (the '-' operator) at '{_spell_field_path(path)}' requires a base list to delete from,"
                 " but no base list was provided. Supply the full list via a config file or other source."
@@ -767,11 +792,12 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
         if not data:
             return []
         try:
-            int_keys = [int(k) for k in data]
-        except ValueError:
+            # One reading of an index key, whether a file spelled it as text or as a YAML integer.
+            positions = {int(k): v for k, v in data.items()}
+        except (TypeError, ValueError):
             msg = f"Cannot construct collection at '{_spell_field_path(path)}': dict keys must be integer indices"
             raise TypeCoercionError(msg) from None
-        neg = [k for k in int_keys if k < 0]
+        neg = [k for k in positions if k < 0]
         if neg:
             msg = (
                 f"Negative index/indices {sorted(neg)} at '{_spell_field_path(path)}' require a base list to"
@@ -779,8 +805,8 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
                 " a config file or other source."
             )
             raise TypeCoercionError(msg)
-        max_idx = max(int_keys)
-        gaps = [i for i in range(max_idx + 1) if str(i) not in data]
+        max_idx = max(positions)
+        gaps = [i for i in range(max_idx + 1) if i not in positions]
         if gaps and not _allows_none(et):
             msg = (
                 f"List at '{_spell_field_path(path)}' has gap(s) at index/indices {gaps}:"
@@ -788,7 +814,7 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
                 f" or the element type must be Optional."
             )
             raise TypeCoercionError(msg)
-        return [construct(et, data.get(str(i), None), path=(*path, i), union_tag=union_tag) for i in range(max_idx + 1)]
+        return [construct(et, positions.get(i), path=(*path, i), union_tag=union_tag) for i in range(max_idx + 1)]
     raise TypeCoercionError.wrong_shape(
         _src_type(data),
         data,
@@ -829,6 +855,8 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
             "list, tuple, or dict with integer keys",
             _spell_field_path(path),
         )
+    if isinstance(data, dict):
+        data = _apply_carried_ops(data, f"{tp}", path, union_tag)
     if isinstance(data, list | tuple):
         if len(data) > len(tt):
             msg = f"Cannot construct {tp} at '{_spell_field_path(path)}': expected {len(tt)} elements, got {len(data)}"
@@ -843,27 +871,42 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
                 raise TypeCoercionError(msg)
         seq = list(data)
     else:
-        base_seq: list[Any] = []
-        patches = data
-        if ListOp.BASE in data:
-            # A deferred index patch carrying a base (e.g. a config list completed by --field.N).
-            base_seq = _replace_base(data, _spell_field_path(path))
-            if len(base_seq) > len(tt):
-                msg = (
-                    f"Cannot construct {tp} at '{_spell_field_path(path)}'"
-                    f": expected {len(tt)} elements, got {len(base_seq)}"
-                )
-                raise TypeCoercionError(msg)
-            patches = {k: v for k, v in data.items() if k != ListOp.BASE}
-        seq = [base_seq[i] if i < len(base_seq) else None for i in range(len(tt))]
-        # A patch refines what the base holds at its position, as the merge would have.
-        for i, v in _indexed_dict_to_positions(patches, len(tt), path, f"{tp}").items():
-            seq[i] = (
-                _merge_existing_value(seq[i], v, _spell_field_path((*path, i)), union_tag) if i < len(base_seq) else v
-            )
+        seq = _patched_positions(tp, tt, data, path, union_tag)
     return tuple(
-        construct(et, seq[i] if i < len(seq) else None, path=(*path, i), union_tag=union_tag) for i, et in enumerate(tt)
+        _construct_position(et, seq[i] if i < len(seq) else None, (*path, i), union_tag) for i, et in enumerate(tt)
     )
+
+
+def _patched_positions(tp: Any, tt: Sequence[Any], data: MergeDict, path: FieldPath, union_tag: str) -> list[Any]:
+    """Lay a fixed tuple's index patch over the base it carries, ``_UNSET`` where neither fills a position."""
+    base_seq: list[Any] = []
+    patches = data
+    if ListOp.BASE in data:
+        # A deferred index patch carrying a base (e.g. a config list completed by --field.N).
+        base_seq = _replace_base(data, _spell_field_path(path))
+        if len(base_seq) > len(tt):
+            spelled = _spell_field_path(path)
+            msg = f"Cannot construct {tp} at '{spelled}': expected {len(tt)} elements, got {len(base_seq)}"
+            raise TypeCoercionError(msg)
+        patches = {k: v for k, v in data.items() if k != ListOp.BASE}
+    seq = [base_seq[i] if i < len(base_seq) else _UNSET for i in range(len(tt))]
+    # A patch refines what the base holds at its position, as the merge would have.
+    for i, v in _indexed_dict_to_positions(patches, len(tt), path, f"{tp}").items():
+        seq[i] = _merge_existing_value(seq[i], v, _spell_field_path((*path, i)), union_tag) if i < len(base_seq) else v
+    return seq
+
+
+# A fixed tuple's position that neither a base nor a patch filled.
+_UNSET: Any = object()
+
+
+def _construct_position(et: Any, value: Any, path: FieldPath, union_tag: str) -> Any:
+    """Construct one position of a fixed tuple, an unset one missing unless its type takes ``None``."""
+    if value is _UNSET:
+        if not _allows_none(et):
+            raise MissingFieldError(path, et)
+        value = None
+    return construct(et, value, path=path, union_tag=union_tag)
 
 
 def _construct_dict(tp: Any, data: Any, path: FieldPath, union_tag: str) -> dict[Any, Any]:
@@ -885,7 +928,7 @@ def _construct_dict(tp: Any, data: Any, path: FieldPath, union_tag: str) -> dict
     if not isinstance(data, dict):
         raise TypeCoercionError.wrong_shape(_src_type(data), data, "dict", "dict", _spell_field_path(path))
     if op := next((k for k in data if isinstance(k, ListOp)), None):
-        raise TypeCoercionError.list_op_on_a_dict(str(op), _spell_field_path(path))
+        raise TypeCoercionError.list_op_on(str(op), "dict", _spell_field_path(path))
     return {
         _coerce_leaf(kt, _StrToken(k) if isinstance(k, str) else k, _spell_field_path(path)): construct(
             vt,

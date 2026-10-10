@@ -660,6 +660,96 @@ class TestListOpOnADict:
             construct(dict[str, list[int]], {"a": [1], ListOp.DELETE: [1]}, path=("d",))
 
 
+_OPS = [ListOp.APPEND, ListOp.DELETE, ListOp.DELETE_AFTER]
+
+
+class TestListOpOnAFixedArity:
+    """A list op on a fixed-arity sequence applies over the base it carries, or is refused (BUG-221).
+
+    A fixed tuple and a namedtuple have no length to grow or shrink into, so an op with no
+    base below it is refused as the dict field refuses one, naming the op; one carried with
+    its base applies, and the result's length is checked as a list's would be.
+    """
+
+    @pytest.mark.parametrize("op", _OPS, ids=str)
+    def test_a_fixed_tuple_refuses_an_op_with_no_base(self, op: ListOp) -> None:
+        """The op is named, not read as a key that is no index."""
+        msg = f"Cannot apply {str(op)!r} to the tuple[int, int] at 't': it is an operation on a list."
+        with pytest.raises(TypeCoercionError, match=re.escape(msg)):
+            construct(tuple[int, int], {op: [0]}, path=("t",))
+
+    @pytest.mark.parametrize("op", _OPS, ids=str)
+    def test_a_namedtuple_refuses_an_op_with_no_base(self, op: ListOp) -> None:
+        """The op is named, not reported as an unknown field."""
+        msg = f"Cannot apply {str(op)!r} to the namedtuple _BasePt at 'p': it is an operation on a list."
+        with pytest.raises(TypeCoercionError, match=re.escape(msg)):
+            construct(_BasePt, {op: [0]}, path=("p",))
+
+    def test_a_delete_over_a_carried_base_shortens_it(self) -> None:
+        """``--t 1 2 --t.0-`` leaves one element for two positions: the arity refusal, not a key one."""
+        with pytest.raises(TypeCoercionError, match=re.escape("expected 2 elements, got 1")):
+            construct(tuple[int, int], {ListOp.BASE: [1, 2], ListOp.DELETE: [0]}, path=("t",))
+
+    def test_an_append_over_a_carried_base_overruns_it(self) -> None:
+        """An append past the arity is refused as the list it makes."""
+        with pytest.raises(TypeCoercionError, match=re.escape("expected 2 elements, got 3")):
+            construct(tuple[int, int], {ListOp.BASE: [1, 2], ListOp.APPEND: [3]}, path=("t",))
+
+    def test_ops_over_a_carried_base_build_when_the_arity_holds(self) -> None:
+        """A delete after an append keeps two elements, which a fixed tuple builds."""
+        data = {ListOp.BASE: [1, 2], ListOp.APPEND: [3], ListOp.DELETE_AFTER: [0]}
+        assert construct(tuple[int, int], data, path=("t",)) == (2, 3)
+
+    def test_a_namedtuple_shortened_by_a_delete_misses_its_field(self) -> None:
+        """The positions left fill the first fields; the last one is missing."""
+        with pytest.raises(MissingFieldError) as ei:
+            construct(_BasePt, {ListOp.BASE: [1, 2], ListOp.DELETE: [0]}, path=("p",))
+        assert ei.value._path == ("p", "y")
+
+
+class TestIndexKeyedList:
+    """An index-keyed list reads an integer key as its string spelling (D6), and a delete needs a base."""
+
+    def test_integer_keys_build_the_list(self) -> None:
+        """A YAML mapping ``{0: 9, 1: 8}`` keys its entries by integer."""
+        assert construct(list[int], {0: 9, 1: 8}, path=("xs",)) == [9, 8]
+
+    def test_integer_keys_are_checked_for_gaps(self) -> None:
+        """The gap is the index no key spells, whichever form the keys take."""
+        with pytest.raises(TypeCoercionError, match=re.escape("gap(s) at index/indices [1]")):
+            construct(list[int], {0: 9, 2: 7}, path=("xs",))
+
+    def test_an_optional_element_fills_a_gap_with_none(self) -> None:
+        """An Optional element type accepts the hole."""
+        assert construct(list[int | None], {0: 9, "2": 7}, path=("xs",)) == [9, None, 7]
+
+    def test_a_delete_after_an_append_needs_a_base(self) -> None:
+        """``__delete_after__`` alone is refused as a delete with no base, not as a raw ``TypeError``."""
+        with pytest.raises(TypeCoercionError, match="requires a base list"):
+            construct(list[int], {ListOp.DELETE_AFTER: [0]}, path=("xs",))
+
+
+class TestAnUnsetFixedTuplePosition:
+    """A fixed tuple's position no base and no patch filled is a missing field (D7)."""
+
+    def test_an_unset_position_is_missing(self) -> None:
+        """``{1: 5}`` leaves ``t[0]`` unset: the error names it and the flag that sets it."""
+        with pytest.raises(MissingFieldError) as ei:
+            construct(tuple[int, int], {"1": 5}, path=("t",))
+        assert ei.value._path == ("t", 0)
+        assert "Missing required field 't[0]' of type <class 'int'>. Set it via CLI (--t.0)" in str(ei.value)
+
+    def test_a_position_past_a_short_base_is_missing(self) -> None:
+        """A base shorter than the arity leaves the positions after it unset."""
+        with pytest.raises(MissingFieldError) as ei:
+            construct(tuple[int, int, int], {ListOp.BASE: [1], "2": 3}, path=("t",))
+        assert ei.value._path == ("t", 1)
+
+    def test_an_optional_position_is_none(self) -> None:
+        """An Optional position left unset is ``None``, as before."""
+        assert construct(tuple[int | None, int], {"1": 5}, path=("t",)) == (None, 5)
+
+
 @dataclass
 class _TupleWithDefault:
     u: tuple[int, int] = (0, 0)
