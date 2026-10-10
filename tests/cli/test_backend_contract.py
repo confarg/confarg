@@ -208,6 +208,23 @@ class _UnionScalarCfg:
     b: str | bool = "b"
 
 
+@dataclass
+class _CastBranchA:
+    x: int | str = 0
+
+
+@dataclass
+class _CastBranchB:
+    x: float | str = 0.0
+
+
+@dataclass
+class _CastBranchCfg:
+    """A union of structs typing the same field differently, for the cast-admission contract (BUG-214)."""
+
+    u: _CastBranchA | _CastBranchB = dataclasses_field(default_factory=_CastBranchA)
+
+
 class _Point(NamedTuple):
     """Fixed-length sequence with named fields."""
 
@@ -1971,6 +1988,30 @@ class TestCastAdmissionContract:
         """--b.float 1.5 at str | bool is refused in every front-end (BUG-94)."""
         with pytest.raises((UnknownArgumentError, SystemExit)):
             loader.load(_UnionScalarCfg, argv=["--b.float", "1.5"], env={})
+
+    def test_cast_held_by_one_branch_of_a_struct_union(self, loader: ConfargLoader) -> None:
+        """--u.x.int 5 is admitted when one variant's x holds int, as the file's pin is (BUG-214).
+
+        The two variants type ``x`` differently, so the walk's folded type at ``u.x`` is ``str``;
+        the cast is admitted on what each branch holds, and construction checks it against the
+        variant the tag picks.
+        """
+        cfg = loader.load(_CastBranchCfg, argv=["--u.class", f"{__name__}._CastBranchA", "--u.x.int", "5"], env={})
+        assert cfg.u == _CastBranchA(x=5)
+        assert cfg == confarg.build(
+            _CastBranchCfg,
+            {"u": {"class": f"{__name__}._CastBranchA", "x": {"__cast__": "int", "__value__": "5"}}},
+        )
+
+    def test_cast_held_by_no_branch_of_a_struct_union(self, loader: ConfargLoader) -> None:
+        """--u.x.bool true is refused: no variant's x holds bool (BUG-214)."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.load(_CastBranchCfg, argv=["--u.class", f"{__name__}._CastBranchA", "--u.x.bool", "true"], env={})
+
+    def test_cast_the_tagged_variant_does_not_hold(self, loader: ConfargLoader) -> None:
+        """--u.x.int 5 with the tag picking B is refused by construction, as B's file pin is (BUG-214)."""
+        with pytest.raises(TypeCoercionError, match="does not hold it"):
+            loader.load(_CastBranchCfg, argv=["--u.class", f"{__name__}._CastBranchB", "--u.x.int", "5"], env={})
 
 
 # ---------------------------------------------------------------------------

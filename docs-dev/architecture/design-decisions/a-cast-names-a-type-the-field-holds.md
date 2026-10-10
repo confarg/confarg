@@ -13,7 +13,8 @@ field annotations provided as input ([invariants](../invariants.md#contracts)).
 
 **One predicate owns the admission.** `_cast.holds_the_cast` answers it.
 `_parse_cli.detect_force_cast` asks it, so vanilla's parse, the adapters' registration and
-their parse refuse the same spellings; `construct()` asks it of a pin, so a file's
+their parse refuse the same spellings. It asks it of each branch the walk reaches at the field, never of the branches' fold: two variants typing the field differently fold to `str`, which would refuse `--u.x.int 5` where the variant the tag picks holds `int` and its file pin is admitted (BUG-214);
+`construct()` asks it of a pin, so a file's
 `__cast__` and a stored `_Pinned` a hand-built `merge()` supplied are covered too. The gate
 in `_constructStruct` exempts the pin spelling from reading a defaulted fixed-sequence
 field's dict as an index patch, so a pin is read the same way whether the field carries a

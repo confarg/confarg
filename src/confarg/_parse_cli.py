@@ -682,10 +682,14 @@ def detect_force_cast(path: list[str], target: Any, union_tag: str) -> tuple[lis
         if path[-1] == JSON_CAST_NAME and not _segment_names_real_field(target, path[-1], union_tag):
             return [], path[-1]
         return path, None
-    parent_type = _resolve_field_type(target, parent, union_tag)
+    branch_types = _field_types(target, parent, union_tag)
+    parent_type = _common_type(branch_types)
     if parent_type is None or _segment_names_real_field(parent_type, path[-1], union_tag):
         return path, None
-    if path[-1] != JSON_CAST_NAME and not holds_the_cast(parent_type, SCALAR_CAST_TYPES[path[-1]]):
+    # Each branch is asked what it holds, never the fold: branches that disagree fold to
+    # `str`, which holds no other cast, where the variant construction picks may (BUG-214).
+    cast_tp = SCALAR_CAST_TYPES.get(path[-1])
+    if cast_tp is not None and not any(holds_the_cast(t, cast_tp) for t in branch_types):
         return path, None
     return parent, path[-1]
 
