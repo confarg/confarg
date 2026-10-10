@@ -312,6 +312,21 @@ class TypeCoercionError(ConfargError):
         return cls(f"Class {name!r} at '{path}' is not a subclass of {parent}.")
 
     @classmethod
+    def refused_empty_call(cls, name: Any, path: str, reason: str, beside: str) -> TypeCoercionError:
+        """Return the error for a class a tag or an opener named, refusing to be built with no arguments.
+
+        *name* is the class as the user named it, *reason* Python's own text, and *beside* what
+        the class's fields sit beside: the tag, or the opener that named it.
+
+        Dev Notes:
+            docs-dev/architecture/types/construction.md#a-class-built-from-nothing
+        """
+        return cls(
+            f"Class {name!r} at '{path}' cannot be built with no arguments: {reason}."
+            f" Supply the class's fields as keys beside the {beside}.",
+        )
+
+    @classmethod
     def tag_not_a_subclass(cls, name: Any, parent: str, path: str, call: str) -> TypeCoercionError:
         """Return the error for a class tag on a typed field that names no subclass of the field's type.
 

@@ -108,7 +108,7 @@ indifferent to both.
   calling the constructor, and a class whose `__init__` has side effects should be called once,
   not twice. Every missing field raises the one `MissingFieldError(path, type)`, so its type never changes
   the message ([invariants](../invariants.md#delegate-to-the-canonical-function)).
-- The root takes the same rule (BUG-184): `build()` builds a struct root from the empty merged dict when no channel supplied anything, and a `TypeError` out of that call is the missing root — `MissingFieldError((), target)`, the error a scalar root nothing supplied raises, whose remedy is the root's own ([above](#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)). The catch sits in `build()` rather than at `_construct_struct`'s final `tp(**kwargs)`, because the union tag reaches that call with an empty dict too (`--field.class x.S` and nothing else), and there the field *was* supplied, so "missing" would be wrong — that route refuses as a coercion instead ([above](#union-construction)). And it is gated on nothing having been supplied at all, so a constructor's own `TypeError` about data a channel did supply still escapes as its own.
+- The root takes the same rule (BUG-184): `build()` builds a struct root from the empty merged dict when no channel supplied anything, and a `TypeError` out of that call is the missing root — `MissingFieldError((), target)`, the error a scalar root nothing supplied raises, whose remedy is the root's own ([above](#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)). The catch sits in `build()` rather than at `_construct_struct`'s final `tp(**kwargs)`, because a tag or an opener reaches that call with an empty dict too (`--field.class x.S` and nothing else), and there the value *was* supplied, so "missing" would be wrong — that route refuses as a coercion instead ([below](#a-class-built-from-nothing)). And it is gated on nothing having been supplied at all, so a constructor's own `TypeError` about data a channel did supply still escapes as its own.
 - An index-keyed dict for a tuple field with a default patches the default in place, unless
   the merge layer carried a base (`__base__`), which wins.
 - A `__base__` with an index patch beside it builds as the merge would have built it, had no
@@ -130,6 +130,12 @@ indifferent to both.
   which failed as a coercion of a value nobody passed, or built silently for an `X | None`
   field (BUG-167). The stdlib agrees (`P._make([1])` is a `TypeError`, "Expected 2
   arguments, got 1"), and so does pydantic, which reports `y` as a `missing_argument`.
+
+### A class built from nothing
+
+Five routes ask a class to build from no key at all: a missing defaulted struct field, a struct root no channel supplied, a union's tag with nothing beside it, a struct field's subclass tag with nothing beside it (`--opt.class x.Sub` on a `Base | None` field takes this route, not the union's), and a `class:` or `classfn:` opener with no argument. All five call `_construct.build_from_nothing`, the one reader of the refused empty call, because what the refusal means differs only by whether the user supplied the value. Nothing supplied — the field, the root — reads as the missing value, `MissingFieldError(path, type)`. A tag or an opener named the class, so the value was supplied: the refusal is a `TypeCoercionError` naming the class as written, quoting Python's own text, and saying the fields go beside the tag or the opener (`TypeCoercionError.refused_empty_call`).
+
+BUG-213 put the supplied reading at the union route alone, the site its reproduction reached, which left the struct field's tag route — the common `Base | None` shape — and the two openers letting the constructor's bare `TypeError` out of `build()` (BUG-215). Routing every route through one function is what keeps a sixth from being missed the same way.
 
 ### A missing field's remedy is spelled as the CLI spells it
 

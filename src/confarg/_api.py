@@ -23,6 +23,7 @@ from confarg._types import _MISSING, TagPolicy, _is_dc, _is_struct, _is_struct_l
 from confarg.dictexpr import resolve_expressions
 from confarg.exceptions import MissingFieldError
 from confarg.typedload import construct as _tc
+from confarg.typedload._construct import build_from_nothing
 
 
 def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]) -> dict[str, Any]:
@@ -160,13 +161,9 @@ def build[T](
             e._in_root_value = True
             raise
     if not resolved:
-        # No channel supplied anything, so the root is built from {} — a guess. A TypeError
-        # out of it means the guess was wrong and the root is missing, the rule a defaulted
-        # field already takes (BUG-184), caught rather than asked up front.
-        try:
-            return _tc(target_r, resolved, union_tag=union_tag)
-        except TypeError:
-            raise MissingFieldError(path=(), field_type=target_r) from None
+        # No channel supplied anything, so the root is built from {}: a guess a defaulted
+        # field takes too, its refusal the missing root (BUG-184).
+        return build_from_nothing(lambda: _tc(target_r, resolved, union_tag=union_tag), target_r, ())
     return _tc(target_r, resolved, union_tag=union_tag)
 
 

@@ -3135,6 +3135,44 @@ class _RefusingTagged:
     u: UUID | int = 0
 
 
+class _RefusingBase:
+    """A struct whose subclass a tag names; it builds from no keys."""
+
+    def __init__(self, a: int = 0) -> None:
+        self.a = a
+
+
+class _RefusingSub(_RefusingBase):
+    """An all-default subclass whose constructor still refuses an empty call."""
+
+    def __init__(self, a: int | None = None) -> None:
+        if a is None:
+            msg = "_RefusingSub needs a"
+            raise TypeError(msg)
+        super().__init__(a)
+
+    def __call__(self) -> int:
+        return self.a
+
+    def get(self) -> int:
+        return self.a
+
+
+@dataclass
+class _RefusingSubTagged:
+    """A struct field and an optional one, each naming the refusing subclass by its tag (BUG-215)."""
+
+    opt: _RefusingBase | None = None
+    plain: _RefusingBase = dataclasses_field(default_factory=_RefusingBase)
+
+
+@dataclass
+class _RefusingCallable:
+    """A callable field whose ``class:`` or ``classfn:`` names the refusing class (BUG-215)."""
+
+    fn: Callable[[], int] | None = None
+
+
 class TestUnionFieldTagContract:
     """A struct field whose type is a union dispatches on its tag identically everywhere."""
 
@@ -3187,6 +3225,39 @@ class TestUnionFieldTagContract:
             config_flag="",
         )
         assert cfg.u == UUID(_UUID_TEXT)
+
+    @pytest.mark.parametrize("field", ["opt", "plain"])
+    def test_tag_alone_on_a_refusing_subclass_is_a_coercion(self, loader: ConfargLoader, field: str) -> None:
+        """A tag naming a subclass that refuses {} is a coercion naming it, below a struct field too (BUG-215).
+
+        A struct field, optional or not, dispatches its tag by class path, not as a union of
+        variants; the refusal must still read as BUG-213's, never as Python's bare TypeError.
+        """
+        with pytest.raises(TypeCoercionError, match="cannot be built with no arguments: _RefusingSub needs a"):
+            loader.load(_RefusingSubTagged, argv=[f"--{field}.class", f"{__name__}._RefusingSub"], env={})
+        cfg = loader.load(
+            _RefusingSubTagged,
+            argv=[f"--{field}.class", f"{__name__}._RefusingSub", f"--{field}.a", "4"],
+            env={},
+        )
+        assert getattr(cfg, field).a == 4
+
+    @pytest.mark.parametrize(
+        ("opener", "path"),
+        [("class", "_RefusingSub"), ("classfn", "_RefusingSub.get")],
+    )
+    def test_opener_alone_on_a_refusing_class_is_a_coercion(
+        self,
+        loader: ConfargLoader,
+        opener: str,
+        path: str,
+    ) -> None:
+        """A ``class:`` or ``classfn:`` with no argument, naming a class refusing {}, is a coercion (BUG-215)."""
+        with pytest.raises(TypeCoercionError, match="cannot be built with no arguments: _RefusingSub needs a"):
+            loader.load(_RefusingCallable, argv=[f"--fn.{opener}", f"{__name__}.{path}"], env={})
+        cfg = loader.load(_RefusingCallable, argv=[f"--fn.{opener}", f"{__name__}.{path}", "--fn.a", "4"], env={})
+        assert cfg.fn is not None
+        assert cfg.fn() == 4
 
 
 # ---------------------------------------------------------------------------
