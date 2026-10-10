@@ -29,14 +29,7 @@ A subkey or element flag over a one-token type (`--d.a` on a `dict[str, int]`, `
 `list[int]`) is the same scalar spec since BUG-179's fix, which registers it with the one-token
 arity a field flag of that type has, and its bare occurrence meets the same framework refusal.
 
-Fix direction: the pre-parse refusal BUG-74 built extends naturally — `FlagSpec.refuses_bare`
-on the scalar specs (every leaf, subkey and element spec whose `nargs` is `None`), answered by
-`cli._argv.refuse_bare_occurrences` on cyclopts; argparse needs the scan before
-`parse_args` too (its own parser exits first), and the clicklike parsers refuse before any
-confarg code runs, so they need the same scan on the command hook. Setting the marker on
-every scalar spec is what makes it a decision rather than a spot fix — but note the refusal
-then fires before a framework's own `--help` handling, the ordering BUG-63 already tracks for
-argparse.
+Fix direction: the pre-parse refusal BUG-74 built extends naturally — `FlagSpec.refuses_bare` on the scalar specs (every leaf, subkey and element spec whose `nargs` is `None`), answered by `cli._argv.refuse_bare_occurrences` on cyclopts; argparse cannot be scanned before `parse_args`, which the host calls, but the config-file flags show its seam since BUG-63 closed: an action (`cli/argparse/_register._RefusingBareAction`) refuses the occurrence argparse hands no value, in argv order. A scalar flag's `nargs=None` makes argparse refuse before any action runs, so its spec would have to register `"?"` to reach one. The clicklike parsers refuse before any confarg code runs, so they need the same scan on the command hook. Setting the marker on every scalar spec is what makes it a decision rather than a spot fix — and a refusal answers `--help` in argv order: a pre-parse scan reads argv only up to the first help flag, as cyclopts' `_context._before_eager_flag` does for the config-file and fixed-arity refusals ([a flag that stands bare](../../architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)).
 
 Origin: latent since each adapter was written: argparse in the initial version (PR-5), click in
 PR-13, cyclopts in PR-26, and typer on click's seam (BUG-7). Each registered a scalar flag with its

@@ -75,7 +75,7 @@ def refuse_bare_occurrences(argv: Sequence[str], refuses_bare: Mapping[str, str]
         argv: The tokens the user typed, in order.
         refuses_bare: Dotted flag names (no ``--``) whose specs set
             :attr:`~confarg.cli.FlagSpec.refuses_bare`, each mapped to its spec's
-            :attr:`~confarg.cli.FlagSpec.usage`.
+            :meth:`~confarg.cli.FlagSpec.bare_refusal`.
 
     Raises:
         ConfargError: If *argv* spells a bare occurrence of one of those flags.
@@ -85,7 +85,7 @@ def refuse_bare_occurrences(argv: Sequence[str], refuses_bare: Mapping[str, str]
     """
     for i, tok in enumerate(argv):
         if _bare_occurrence(argv, i) and tok[2:] in refuses_bare:
-            raise ConfargError.missing_value(tok, refuses_bare[tok[2:]])
+            raise ConfargError(refuses_bare[tok[2:]])
 
 
 def spelled_flag_names(argv: Sequence[str]) -> set[str]:

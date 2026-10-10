@@ -1549,6 +1549,24 @@ class TestFixedSequenceContract:
         with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
             whole_value_arity_loader.merge(_WithPoint, argv=["--pair", "1", "2", "--pair"], env={})
 
+    @pytest.mark.parametrize("target", [_WithIntPair, _WithPoint])
+    def test_bare_occurrence_before_help_is_a_missing_value(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+        target: type,
+    ) -> None:
+        """A bare fixed-arity flag is refused before a later --help can show help (BUG-63)."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'. Usage: --pair <")):
+            whole_value_arity_loader.merge(target, argv=["--pair", "--help"], env={})
+
+    @pytest.mark.parametrize("target", [_WithIntPair, _WithPoint])
+    def test_help_before_a_bare_occurrence_shows_help(self, target: type) -> None:
+        """A --help ahead of a bare fixed-arity flag shows help on argparse and cyclopts (BUG-63)."""
+        for loader in (ArgparseLoader(), CycloptsLoader()):
+            with pytest.raises(SystemExit) as excinfo:
+                loader.merge(target, argv=["--help", "--pair"], env={})
+            assert excinfo.value.code == 0, loader.id
+
     def test_click_refuses_the_short_first_occurrence_in_its_own_parser(self) -> None:
         """Click registers the exact count, so the short first occurrence never lands (BUG-73).
 
@@ -2351,6 +2369,42 @@ class TestConfigFilesContract:
         tags_file = tmp_yaml("- a\n- b\n", filename="tags.yaml")
         with pytest.raises(_REJECTS_BARE_FLAG):
             loader.load(WithList, argv=["--config.tags+", str(tags_file), "--config.tags+"], env={})
+
+    @pytest.mark.parametrize(
+        ("target", "flag"),
+        [(Simple, "--config"), (AppConfig, "--config.db"), (WithList, "--config.tags+")],
+    )
+    def test_bare_config_flag_before_help_refused(self, loader: ConfargLoader, target: type, flag: str) -> None:
+        """A bare config flag is refused before a later --help can show help (BUG-63)."""
+        with pytest.raises(ConfargError, match="Missing file path after --config"):
+            loader.load(target, argv=[flag, "--help"], env={})
+
+    @pytest.mark.parametrize(
+        ("target", "flag"),
+        [(Simple, "--config"), (AppConfig, "--config.db"), (WithList, "--config.tags+")],
+    )
+    def test_help_before_a_bare_config_flag_shows_help(self, target: type, flag: str) -> None:
+        """A --help ahead of a bare config flag shows help, as it does ahead of the framework's own (BUG-63).
+
+        argparse and cyclopts answer argv in order: the refusal is reached only past the
+        --help. The clicklike parsers refuse a missing value before running --help.
+        """
+        for loader in (ArgparseLoader(), CycloptsLoader()):
+            with pytest.raises(SystemExit) as excinfo:
+                loader.merge(target, argv=["--help", flag], env={})
+            assert excinfo.value.code == 0, loader.id
+
+    def test_clicklike_refuse_a_bare_config_flag_after_help_in_their_own_parser(self) -> None:
+        """Click and typer exit with their usage error on --help --config, as on their own options (BUG-63).
+
+        The approved divergence
+        (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare):
+        their parser refuses an option's missing value before any eager callback runs.
+        """
+        for loader in (ClickLoader(), TyperLoader()):
+            with pytest.raises(SystemExit) as excinfo:
+                loader.merge(Simple, argv=["--help", "--config"], env={})
+            assert excinfo.value.code == 2, loader.id
 
     def test_unknown_subpath_rejected_on_every_frontend(self, loader: ConfargLoader, tmp_yaml) -> None:
         """--config.<subpath> naming no field is an error everywhere, not a silent mount (BUG-50)."""

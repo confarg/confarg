@@ -214,7 +214,7 @@ def load_flags_into_app(
         "stands_bare": {spec.name for spec in flags if spec.stands_bare},
         # and refuses these ones' bare occurrence before cyclopts parses
         # (docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).
-        "refuses_bare": {spec.name: spec.usage for spec in flags if spec.refuses_bare},
+        "refuses_bare": {spec.name: spec.bare_refusal() for spec in flags if spec.refuses_bare},
     }
 
 

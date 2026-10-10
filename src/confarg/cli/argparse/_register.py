@@ -22,6 +22,7 @@ from confarg.cli._build import (
 )
 from confarg.cli._prefix import PREFIX_ATTR
 from confarg.dictexpr import contains_expression
+from confarg.exceptions import ConfargError
 
 
 class _ExpressionTolerantChoices(list):
@@ -40,6 +41,34 @@ class _ExpressionTolerantChoices(list):
     def __contains__(self, value: object) -> bool:
         """Accept a declared choice, or any token expression resolution will rewrite."""
         return contains_expression(value) or super().__contains__(value)
+
+
+class _RefusingBareAction(argparse._StoreAction):
+    """A store action raising :meth:`~confarg.cli.FlagSpec.bare_refusal` for an occurrence handed no value.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
+    """
+
+    def __init__(self, *args: Any, bare_error: str, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.bare_error = bare_error
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[Any] | None,
+        option_string: str | None = None,
+    ) -> None:
+        """Store *values*.
+
+        Raises:
+            ConfargError: If the occurrence carries no value.
+        """
+        if not values:
+            raise ConfargError(self.bare_error)
+        super().__call__(parser, namespace, values, option_string)
 
 
 def _register_spec(
@@ -68,6 +97,9 @@ def _register_spec(
         common["choices"] = _ExpressionTolerantChoices(spec.choices)
     if spec.metavar is not None:
         common["metavar"] = spec.metavar
+    if (bare_refusal := spec.bare_refusal()) is not None:
+        common["action"] = _RefusingBareAction
+        common["bare_error"] = bare_refusal
 
     # A fixed-arity flag that also takes one whole-value token registers greedily:
     # argparse fixes its token count at registration, so "*" is the only spelling that

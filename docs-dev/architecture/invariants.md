@@ -28,7 +28,8 @@ multi-file spelling
 ([config files](config-files/reserved-keys.md#reserved-file-only-keys)); declaring locals only in files
 ([locals](locals.md#declare-in-files-modify-anywhere)); the mount keyword and the form its path
 takes, spelled per channel
-([design decisions](design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel)). Known unapproved gaps
+([design decisions](design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel)); a `--help` ahead of a refused bare flag, which shows help on argparse and cyclopts and which only the two clicklike front-ends answer with their own usage error — their parser refuses a missing value before any eager flag runs
+([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)). Known unapproved gaps
 are listed in [../todo/bugs/](../todo/bugs/README.md).
 
 ## Delegate to the canonical function
@@ -132,6 +133,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "does this field's flag consume many tokens, and so stand bare?" | `cli._build._takes_multi_tokens` |
 | "what does this spec look like forced to a single token?" | `cli._spec.FlagSpec.as_single_token` — the one inverse of the shape attributes (`nargs`, `whole_value`, `stands_bare`), asked by `_scalar_root_spec`, so a non-struct root's one-token flag cannot drift from the shape vocabulary it undoes (REF-68, [CLI adapters](cli-adapters/flag-model.md#framework-neutral-flag-model)) |
 | "which bare occurrence is a missing value, refused before the framework parses?" | `cli._argv.refuse_bare_occurrences`, off `FlagSpec.refuses_bare` and `FlagSpec.usage` — both set by `cli._build._refusing_bare`, the same `_fixed_seq_types(resolved)` gate that arms the fixed-arity guard |
+| "what does a bare occurrence of this flag raise?" | `cli._spec.FlagSpec.bare_refusal` — a config-file spec's `bare_error` (`_missing_config_path_msg`, set by `cli._build._config_file_spec`), or the missing-value error of a spec that `refuses_bare`; argparse's `_RefusingBareAction` and cyclopts' `refuse_bare_occurrences` both raise it, in argv order up to a help flag (BUG-63, [CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)) |
 | plain vs escaped callable directives | `_callable.active_directives` |
 | "does a `call` key open a typed call on a field of this type?" | `typedload._construct._takes_typed_call` — the type half of construction's `_is_typed_call`; the CLI walk asks it of a path through `_parse_cli._opens_target` ([callables](callables.md#call-in-a-typed-field)) |
 | "at which paths does this command line open a typed call?" | `_parse_cli._typed_call_openings` — a flag below the `call` key, a key of a whole value, a key of a root `--config` file; vanilla's loop and the adapters' registration both pass it to the walk ([design decisions](design-decisions/a-typed-call-sibling-needs-its-opener-on-the-command-line.md)) |

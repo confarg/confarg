@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from confarg._types import _allows_none, _per_class_cache, _resolve_type, _union_args_no_none
+from confarg.exceptions import ConfargError
 
 
 @dataclasses.dataclass
@@ -89,6 +90,17 @@ class FlagSpec:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
 
+    bare_error: str | None = None
+    """The message a bare occurrence of this config-file flag is refused with.
+
+    Set on every ``--<config_flag>[.<subpath>][+]`` spec to the error vanilla's loop
+    raises for it.  An adapter whose framework takes the flag's zero tokens refuses the
+    occurrence with it during the framework's own parse.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
+    """
+
     choices: list[str] | None = None
     """Allowed values (for ``Literal`` / ``Enum`` fields)."""
 
@@ -134,6 +146,22 @@ class FlagSpec:
             docs-dev/architecture/cli-adapters/flag-model.md#framework-neutral-flag-model
         """
         return dataclasses.replace(self, nargs=None, whole_value=False, stands_bare=False)
+
+    def bare_refusal(self) -> str | None:
+        """Return the message a bare occurrence of this flag is refused with, or ``None``.
+
+        :attr:`bare_error` for a config-file flag, vanilla's missing-value error spelled
+        with :attr:`usage` for a flag that :attr:`refuses_bare`, and ``None`` for a flag
+        whose bare occurrence vanilla accepts or leaves to its framework.
+
+        Dev Notes:
+            docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
+        """
+        if self.bare_error is not None:
+            return self.bare_error
+        if self.refuses_bare:
+            return str(ConfargError.missing_value(f"--{self.name}", self.usage))
+        return None
 
 
 @dataclasses.dataclass
