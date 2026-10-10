@@ -132,6 +132,19 @@ def _rewrite_spans(text: str, spans: Iterable[_ExpressionSpan], replace: Callabl
     return "".join(out)
 
 
+def escape_expressions(text: str) -> str:
+    """Return *text* spelled so that resolution gives *text* back, byte for byte.
+
+    Every ``${...}`` becomes the ``$${...}`` escape of it, and every escape gains one more
+    ``$``, which resolution takes off again. A ``${`` that is no expression is left as
+    written, so it stays no expression.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#delimiting-an-expression
+    """
+    return _rewrite_spans(text, _find_expressions(text), lambda span: "$" + text[span.start : span.end])
+
+
 def contains_expression(value: object) -> bool:
     """Return ``True`` when expression resolution would rewrite *value*.
 
