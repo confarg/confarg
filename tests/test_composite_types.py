@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import pytest
 
@@ -211,6 +211,34 @@ class TestCollections:
         result = confarg.load(WithTuple, argv=[], env={})
         assert result.pair == ("", 0)
 
+    @pytest.mark.parametrize(
+        ("field_type", "default_factory", "value", "expected"),
+        [
+            (list, list, [1, "a"], [1, "a"]),
+            (set, set, [1, 2], {1, 2}),
+            (frozenset, frozenset, [1, 2], frozenset({1, 2})),
+            (tuple, tuple, ["a", 1], ("a", 1)),
+        ],
+        ids=["list", "set", "frozenset", "tuple"],
+    )
+    def test_bare_collection_builds(self, field_type, default_factory, value, expected) -> None:
+        """A bare collection annotation builds, as its Any-parameterized form does (BUG-211)."""
+        WithCollection = make_target("items", field_type, default_factory=default_factory)
+        result = confarg.build(WithCollection, {"items": value})
+        assert result.items == expected
+
+    def test_bare_list_from_cli(self) -> None:
+        """A bare list field takes space-separated tokens, as list[Any] does (BUG-211)."""
+        WithList = make_target("items", list, default_factory=list)
+        result = confarg.load(WithList, argv=["--items", "a", "b"], env={})
+        assert result.items == ["a", "b"]
+
+    def test_bare_tuple_from_cli_is_variadic(self) -> None:
+        """A bare tuple is a variadic tuple, not a fixed zero-length one (BUG-211)."""
+        WithTuple = make_target("pair", tuple, default=())
+        result = confarg.load(WithTuple, argv=["--pair", "a", "b"], env={})
+        assert result.pair == ("a", "b")
+
 
 class TestDict:
     """Dict type parsing."""
@@ -241,6 +269,47 @@ class TestDict:
         WithDict = make_target("metadata", dict[str, int], default_factory=dict)
         result = confarg.load(WithDict, argv=[], env={})
         assert result.metadata == {}
+
+    def test_bare_dict_builds_from_a_mapping(self) -> None:
+        """A field annotated with the bare dict builds, as dict[Any, Any] should (BUG-187)."""
+        WithDict = make_target("metadata", dict, default_factory=dict)
+        result = confarg.build(WithDict, {"metadata": {"x": 1}})
+        assert result.metadata == {"x": 1}
+
+    def test_bare_dict_keeps_non_string_keys(self) -> None:
+        """The bare dict's keys are Any, so a file's non-string keys stay as written (BUG-187)."""
+        WithDict = make_target("metadata", dict, default_factory=dict)
+        result = confarg.build(WithDict, {"metadata": {1: "a", "b": 2}})
+        assert result.metadata == {1: "a", "b": 2}
+
+    def test_bare_dict_from_cli_key_value(self) -> None:
+        """A bare dict field takes subkey flags, as a typed dict field does (BUG-187)."""
+        WithDict = make_target("metadata", dict, default_factory=dict)
+        result = confarg.load(WithDict, argv=["--metadata.alpha", "1", "--metadata.beta", "2"], env={})
+        assert result.metadata == {"alpha": "1", "beta": "2"}
+
+    def test_bare_dict_from_env(self) -> None:
+        """A bare dict field takes env-var keys, as a typed dict field does (BUG-187)."""
+        WithDict = make_target("metadata", dict, default_factory=dict)
+        result = confarg.load(
+            WithDict,
+            argv=[],
+            env={"MYAPP_METADATA__foo": "10", "MYAPP_METADATA__bar": "20"},
+            env_prefix="MYAPP_",
+        )
+        assert result.metadata == {"foo": "10", "bar": "20"}
+
+    def test_dict_any_keys_build(self) -> None:
+        """dict[Any, K] builds: an Any key passes through, native or token alike (BUG-212)."""
+        WithDict = make_target("metadata", dict[Any, int], default_factory=dict)
+        result = confarg.build(WithDict, {"metadata": {"x": 1, 2: 3}})
+        assert result.metadata == {"x": 1, 2: 3}
+
+    def test_bare_dict_dump_roundtrip(self) -> None:
+        """A bare dict field dumps and loads back, as a typed dict field does (BUG-187)."""
+        WithDict = make_target("metadata", dict, default_factory=dict)
+        built = confarg.build(WithDict, {"metadata": {"x": 1}})
+        assert confarg.dump(built) == {"metadata": {"x": 1}}
 
     def test_dict_union_value_with_nested_dict(self) -> None:
         """Dict value type that is a union containing a dict variant constructs correctly."""

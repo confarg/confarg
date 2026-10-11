@@ -1,7 +1,7 @@
 # Leaf coercion
 
-`_coerce_leaf` converts to bool, int, float, str, None, `Literal`, `Enum` and registered
-leaf types (`Final[T]` reaches it as `T`, [introspection](introspection.md#wrappers-are-transparent)). Policies:
+`_coerce_leaf` converts to bool, int, float, str, None, `Literal`, `Enum`, registered
+leaf types (`Final[T]` reaches it as `T`, [introspection](introspection.md#wrappers-are-transparent)) and `Any`. Policies:
 
 - bool words: true/1/yes/on, false/0/no/off (case-insensitive); None words: none/null, and
   the empty string for a `None` target;
@@ -9,6 +9,8 @@ leaf types (`Final[T]` reaches it as `T`, [introspection](introspection.md#wrapp
 - a real `bool` is never accepted as an int or float;
 - Enum: member name first, then `str(value)`;
 - tokens only: a native value from a file must already have the right type.
+
+`Any` is the one leaf every value holds: the value passes through, a token as written, exactly as `construct()`'s `ANY` branch passes one. A dict's key coercion asks `_coerce_leaf` of an `Any` key annotation directly, without the shape dispatch that handles `ANY` everywhere else, which is the one site that needs the branch (BUG-212).
 
 **Registry**: `_LEAF_COERCIONS` maps a type to a coerce function and `_LEAF_SERIALIZERS` maps
 it to the inverse; `register_leaf_type` writes both, and `Path` is simply the first entry of

@@ -8,6 +8,7 @@ confarg requires no base class, decorator or field marker
   [wrappers are transparent](#wrappers-are-transparent)).
 - Abstract collection types map to concrete ones: `Sequence`/`Iterable`/`Collection` → list,
   `AbstractSet`/`MutableSet` → set, `Mapping`/`MutableMapping` → dict.
+- A bare collection annotation (`dict`, `list`, `set`, `frozenset`, `tuple`) reads as its `Any`-parameterized form, PEP 484's reading of it: `dict` is `dict[Any, Any]` — `_dict_kv`'s default for the unparameterized form — and `tuple` is `tuple[Any, ...]`, variadic (`_is_varlen_collection`, `_tuple_types`). `get_origin` of a bare class is `None`, so each shape predicate names the class itself before asking the origin (BUG-187, BUG-211). pydantic and msgspec read a bare collection the same way.
 - A **struct** is a dataclass or a *plain class* whose `__init__` takes parameters. Builtins,
   `Enum`, `PurePath` and tuple subclasses are never plain classes. `*args` becomes
   `list[T]`, `**kwargs` becomes `dict[str, T]`, both with empty defaults (never required).
