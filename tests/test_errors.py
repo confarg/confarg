@@ -559,3 +559,13 @@ class TestRemoteSourceErrors:
             confarg.exceptions.InvalidConfigFileError.cross_origin_include("a", "b"),
         ):
             assert isinstance(error, confarg.exceptions.ConfargError)
+
+
+class TestListOpOnMessage:
+    """One text for a list op where the type has no list: a dict, a fixed tuple, a namedtuple (BUG-221)."""
+
+    @pytest.mark.parametrize("what", ["dict", "tuple[int, int]", "namedtuple Pt"])
+    def test_the_text_names_the_op_and_the_target(self, what: str) -> None:
+        """The reserved key, what the field is, and where."""
+        err = confarg.exceptions.TypeCoercionError.list_op_on("__append__", what, "a.b")
+        assert str(err) == f"Cannot apply '__append__' to the {what} at 'a.b': it is an operation on a list."

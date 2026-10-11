@@ -294,12 +294,13 @@ class TypeCoercionError(ConfargError):
         return cls(f"Cannot patch the list at '{path}': {key!r} must hold {what}, got {src} {value!r}")
 
     @classmethod
-    def list_op_on_a_dict(cls, key: str, path: str) -> TypeCoercionError:
-        """Return the error for a list op the merge recorded where the type has a dict.
+    def list_op_on(cls, key: str, what: str, path: str) -> TypeCoercionError:
+        """Return the error for a list op the merge recorded where the type has no list to apply it to.
 
-        *key* is the reserved key a file writes the op with.
+        *key* is the reserved key a file writes the op with; *what* names the field's type
+        as the message reads it: ``dict``, a fixed tuple, a namedtuple.
         """
-        return cls(f"Cannot apply {key!r} to the dict at '{path}': it is an operation on a list.")
+        return cls(f"Cannot apply {key!r} to the {what} at '{path}': it is an operation on a list.")
 
     @classmethod
     def not_a_subclass(cls, name: Any, parent: str, path: str) -> TypeCoercionError:
