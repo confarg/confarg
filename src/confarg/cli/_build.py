@@ -18,6 +18,7 @@ import contextlib
 import dataclasses
 import inspect
 import json
+import operator
 import re
 import warnings
 from typing import TYPE_CHECKING, Any
@@ -1475,7 +1476,7 @@ def _collect_leaf_tag_argv_specs(
         _looks_like_flag,
         _normalize_eq_args,
         _parse_flag_mode,
-        _resolve_field_type,
+        _walk_path,
     )
 
     specs: list[FlagSpec] = []
@@ -1489,19 +1490,26 @@ def _collect_leaf_tag_argv_specs(
             # their mode demands.
             continue
         parts = key.split(".")
-        leaf = None
-        leaf_flag = ""
-        for j in range(len(parts)):
-            # The longest type-guided question: which prefix of the path names a
-            # registered leaf? The empty prefix is the root target itself (BUG-71).
-            # Struct fields answer no here -- their sub-flags are registered statically.
-            at = _resolve_field_type(target, parts[:j], union_tag)
-            if at is not None and _is_registered_leaf(_resolve_type(at)):
-                leaf = _resolve_type(at)
-                leaf_flag = ".".join(parts[:j])
-                break
-        if leaf is None or _resolve_field_type(target, parts, union_tag) is None:
+        # Which prefix of the path names a registered leaf? The walk's own answer: the
+        # shortest one a branch accepting the whole path stood on a registered leaf at,
+        # the walk having forked at every union on the way (``UUID | None``). Stone 0 is
+        # the root target itself (BUG-71); a struct field answers no -- its sub-flags are
+        # registered statically.
+        found = min(
+            (
+                (k, stone.node)
+                for branch in _walk_path(target, parts, union_tag)
+                if branch.end is not None
+                for k, stone in enumerate(branch.stones)
+                if _is_registered_leaf(stone.node)
+            ),
+            key=operator.itemgetter(0),
+            default=None,
+        )
+        if found is None:
             continue
+        j, leaf = found
+        leaf_flag = ".".join(parts[:j])
         existing_names.add(key)
         leaf_desc = f"the '{leaf_flag}' registered leaf" if leaf_flag else "the registered leaf target"
         if parts[-1] == union_tag and not _union_tag_shadowed(leaf, union_tag):

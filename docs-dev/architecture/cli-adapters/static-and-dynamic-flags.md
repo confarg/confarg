@@ -44,14 +44,7 @@ user typed, found by scanning argv (and config files named on argv):
   registered-leaf parents keep their own spellings and their cast spelling stays refused
   (BUG-93). Which spelling wrote last, the plain flag or a cast, is vanilla's loop's answer,
   since it writes the occurrences sequentially;
-- the flat tagged-leaf flags typed below a registered leaf field (`--id.class`,
-  `--id.hex`, BUG-56), or below a registered leaf that *is* the target — the root, with
-  no field to descend from, is the leaf at the empty prefix of the path (BUG-71) —
-  registered only when typed, on the same help-noise ground as the
-  escaped openers: a registered leaf's ordinary spelling is its scalar, and one flag per
-  `__init__` parameter would clutter `--help` for the escape hatch. A root's parameters
-  are an exception the *static* walk already owns: the root is walked structurally, as a
-  union holding the same leaf is, so only its tag flag is argv-scanned.
+- the flat tagged-leaf flags typed below a registered leaf field (`--id.class`, `--id.hex`, BUG-56), or below a registered leaf that *is* the target — the root, with no field to descend from, is the leaf at the empty prefix of the path (BUG-71) — found on the stones of the walk's branches, as vanilla's walk finds it, so a leaf the field holds below a union (`UUID | None`) is found where the field's own type, the union, is no registered leaf — registered only when typed, on the same help-noise ground as the escaped openers: a registered leaf's ordinary spelling is its scalar, and one flag per `__init__` parameter would clutter `--help` for the escape hatch. A root's parameters are an exception the *static* walk already owns: the root is walked structurally, as a union holding the same leaf is, so only its tag flag is argv-scanned.
 - the union-tag flags the static walk gave none (`--<path>.<union_tag>`, and
   `--<union_tag>` at the root, BUG-92 / BUG-106), registered only when typed, on the same
   help-noise ground: a path's ordinary spelling is its own value or fields. They are
