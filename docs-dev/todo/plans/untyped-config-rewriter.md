@@ -16,7 +16,7 @@ Three findings shape the design:
 1. **confarg already documents this workflow.** `_api.py:199` (`resolve()`) has it in its own
    docstring: `merge()` → `resolve()` → `dump_file()`. The architecture states the split
    explicitly: *"The merge layer is type-unaware; `build()` is type-aware"*
-   ([pipeline/merge-build-contract.md](../architecture/pipeline/merge-build-contract.md#merge-build-contract)),
+   ([pipeline/merge-build-contract.md](../../architecture/pipeline/merge-build-contract.md#merge-build-contract)),
    with plain dicts at every seam.
 2. **The reusable core is already import-isolated.** `_merge.py` (445 lines) imports nothing but
    `exceptions`; `dictexpr/_expressions.py` (1081) likewise; `_files.py` (534 — format dispatch,
@@ -27,7 +27,7 @@ Three findings shape the design:
    `_pipeline._apply_locals_overrides` / `_coerce_override` (`_pipeline.py:120-179`) take env and
    CLI overrides and coerce each to *the runtime type of the value the file declared*, with full
    env/CLI parity and typo detection
-   ([locals.md](../architecture/locals.md#declare-in-files-modify-anywhere)). This tool is that
+   ([locals.md](../../architecture/locals.md#declare-in-files-modify-anywhere)). This tool is that
    idea generalised: **the composed document is the model.**
 
 Model-awareness is concentrated in exactly two places this tool cannot reuse — `_parse_env.py`
@@ -45,7 +45,7 @@ container-vs-scalar and leaf coercion — plus `typedload/`, `_serialize.py`, `_
 | Unknown keys | Strict by default (error, as `LocalsError.not_declared` does), `--allow-new` to opt in. |
 
 Why one distribution rather than a separate library: the composition semantics must not fork
-([pipeline/merge-order.md](../architecture/pipeline/merge-order.md#the-single-merge-pipeline) —
+([pipeline/merge-order.md](../../architecture/pipeline/merge-order.md#the-single-merge-pipeline) —
 "fix merge-order or file-loading behavior in this module only"), the shared surface is most of what the tool needs, confarg is at
 0.0.4 with **no `[project.scripts]` at all**, and FEAT-9/FEAT-10 already plan
 `confarg check` / `confarg explain` on one console script. Extracting `confarg-core` stays
@@ -71,8 +71,8 @@ possible later — but the core's true boundary is unknowable until a model-less
 ## The one real architectural change: load files *first*
 
 confarg parses env before loading files, because env vars can name config files
-(`_pipeline.py:320-334`, rationale at [config-files/](../architecture/config-files/README.md) and
-[pipeline/merge-order.md](../architecture/pipeline/merge-order.md#source-precedence)). This tool
+(`_pipeline.py:320-334`, rationale at [config-files/](../../architecture/config-files/README.md) and
+[pipeline/merge-order.md](../../architecture/pipeline/merge-order.md#source-precedence)). This tool
 needs the opposite: the document must exist before env/CLI parsing, because the document *is* the
 source of key casing and types.
 
@@ -160,7 +160,7 @@ Document unless `--allow-new` is set.
 
 `src/confarg/untyped/_compose.py` — `compose(...) -> dict`: the two-phase pipeline above, ending
 in `dictexpr.resolve_expressions` (skippable with `--no-resolve`, which keeps `${...}` verbatim —
-the seam [pipeline/api-seams.md](../architecture/pipeline/api-seams.md#public-api-seams) describes).
+the seam [pipeline/api-seams.md](../../architecture/pipeline/api-seams.md#public-api-seams) describes).
 
 `src/confarg/untyped/_write.py`:
 - ruamel.yaml / tomlkit when installed — load the *primary* input with the round-trip loader, apply
@@ -175,7 +175,7 @@ the seam [pipeline/api-seams.md](../architecture/pipeline/api-seams.md#public-ap
 
 `[project.scripts] confarg = "confarg.__main__:main"`, subcommand `merge`, argparse-only so the
 zero-dependency stance
-([design-decisions/zero-runtime-dependencies.md](../architecture/design-decisions/zero-runtime-dependencies.md#zero-runtime-dependencies))
+([design-decisions/zero-runtime-dependencies.md](../../architecture/design-decisions/zero-runtime-dependencies.md#zero-runtime-dependencies))
 holds.
 
 **Flag-collision resolution** — the exact problem FEAT-10 flags: a user path could be named
@@ -225,7 +225,7 @@ Reused as-is, not reimplemented: `_files` (formats, `__include__`, mounting, dum
      layering, cycle detection, subpath mounting, the `+ - * ~ N` sentinels, expression anchoring.
    - **Idempotence** — `compose(compose(x))` byte-equals `compose(x)`. The typed path deliberately
      does not guarantee this
-     ([pipeline/api-seams.md](../architecture/pipeline/api-seams.md#public-api-seams)); for a
+     ([pipeline/api-seams.md](../../architecture/pipeline/api-seams.md#public-api-seams)); for a
      rewriter it is the point.
    - **Round-trip fidelity** — comments, key order and quoting preserved with the extra installed;
      clean degradation with a clear message without it.

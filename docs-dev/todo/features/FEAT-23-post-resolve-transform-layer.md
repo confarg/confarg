@@ -28,7 +28,7 @@ governs, still overridable from the command line.
 
 The design was settled with the maintainer on 2026-09-26. The contract, the rejected alternatives
 and the phased plan are in
-[../../plans/feat-23-transform-layer.md](../../plans/feat-23-transform-layer.md). In short: a stage
+[../plans/feat-23-transform-layer.md](../plans/feat-23-transform-layer.md). In short: a stage
 between resolution and construction; rules under a reserved `__transforms__` key — in the document,
 in a rules-only file layered above it, or passed as `transforms=`; ops `set`, `move` and `remove`
 over a `[*]` selector with a `when:` guard; one sequential pass; rules consumed by the stage that
