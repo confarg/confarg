@@ -557,7 +557,7 @@ class TestBindDictForm:
     def test_fn_is_an_ordinary_argument(self, tmp_json: Any) -> None:
         """A target parameter named fn is filled by a sibling key, with no escaping."""
         cfg = tmp_json(json.dumps({"fn": {"bind": f"{_MOD}._with_fn_param", "fn": 4}}))
-        result = confarg.load(WithCallable, argv=[], env={}, files=[cfg])
+        result = confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         assert result.fn(x=3) == 7
 
     def test_kwargs_dict_under_bind_is_refused(self, tmp_json: Any) -> None:
