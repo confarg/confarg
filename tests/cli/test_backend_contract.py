@@ -3909,6 +3909,13 @@ class _RegisteredLeaf:
     id: UUID = _NIL_UUID
 
 
+@dataclass
+class _OptionalRegisteredLeaf:
+    """A registered leaf the field also lets be ``None``."""
+
+    id: UUID | None = None
+
+
 class TestMergeContract:
     """merge_* returns the raw merged dict, identically in every integration."""
 
@@ -6421,6 +6428,22 @@ class TestWholeValueFlagContract:
         confarg.register_leaf_type(UUID, UUID)
         hex_text = _UUID_TEXT.replace("-", "")
         cfg = loader.load(_RegisteredLeaf, argv=["--id.class", "uuid.UUID", "--id.hex", hex_text], env={})
+        assert cfg.id == UUID(_UUID_TEXT)
+
+    def test_flat_tagged_optional_registered_leaf_builds_on_every_frontend(
+        self,
+        loader: ConfargLoader,
+        leaf_registry: None,
+    ) -> None:
+        """The flat tagged-leaf hatch reaches a registered leaf below ``| None`` too.
+
+        Vanilla's walk forks at the union and steps into the leaf's ``__init__``; the
+        adapters asked whether the field's type, the union itself, is a registered leaf, so
+        ``--id.hex`` was never registered and the four frameworks rejected it.
+        """
+        confarg.register_leaf_type(UUID, UUID)
+        hex_text = _UUID_TEXT.replace("-", "")
+        cfg = loader.load(_OptionalRegisteredLeaf, argv=["--id.class", "uuid.UUID", "--id.hex", hex_text], env={})
         assert cfg.id == UUID(_UUID_TEXT)
 
     def test_flat_tagged_registered_leaf_matches_env_channel(
