@@ -70,7 +70,7 @@ def populate_command(  # noqa: PLR0913  # mirrors the public populate_* signatur
         cli_prefix: Namespace every confarg option lives under.
         union_tag: Name of the union discriminator field.
         config_flag: Name of the config-file option; ``""`` suppresses it.
-        config_subkeys: Whether to register ``--<config_flag>.<field>`` options.
+        config_subkeys: Whether to register ``--<config_flag>.<path>`` options.
         argv: CLI argument list scanned for argv-derived dynamic options.
     """
     before_names = {p.name for p in command.params}

@@ -66,6 +66,14 @@ if TYPE_CHECKING:
     from confarg._merge import MergeDict
 
 
+@dataclass
+class _SelfNode:
+    """A struct holding itself, for the mount walk's cycle guard."""
+
+    a: int = 0
+    child: _SelfNode | None = None
+
+
 class TestArgparseBranches:
     """Uncovered branches in the argparse integration layer."""
 
@@ -153,7 +161,7 @@ class TestArgparseBranches:
 
     def test_register_subconfig_flags_non_struct(self) -> None:
         """_collect_subconfig_specs returns empty list for non-struct types."""
-        assert _collect_subconfig_specs(int, "config", "", "class") == []
+        assert _collect_subconfig_specs(int, "config", "class") == []
 
     def test_register_subconfig_flags_get_type_hints_exception(self) -> None:
         """_collect_subconfig_specs falls back gracefully when get_type_hints raises."""
@@ -167,7 +175,7 @@ class TestArgparseBranches:
                 self.x = x
                 self.y = y
 
-        _collect_subconfig_specs(BrokenClassAnnot, "config", "", "class")
+        _collect_subconfig_specs(BrokenClassAnnot, "config", "class")
 
     def test_register_subconfig_flags_union_tag_skipped(self) -> None:
         """_collect_subconfig_specs skips the union_tag field."""
@@ -177,7 +185,16 @@ class TestArgparseBranches:
             type: str = "a"
             value: int = 0
 
-        _collect_subconfig_specs(WithTypeField, "config", "", union_tag="type")
+        _collect_subconfig_specs(WithTypeField, "config", union_tag="type")
+
+    def test_subconfig_specs_end_on_a_self_referential_type(self) -> None:
+        """A type that holds itself lists its mount point once, and the walk ends (BUG-88).
+
+        The cycle guard stops the descent at a struct already on the path: ``child`` is
+        listed, ``child.child`` is not.
+        """
+        names = [s.name for s in _collect_subconfig_specs(_SelfNode, "config", "class")]
+        assert names == ["config.child"]
 
     def test_from_namespace_with_expressions(self) -> None:
         """from_namespace resolves ${...} expressions supplied via the env parameter."""

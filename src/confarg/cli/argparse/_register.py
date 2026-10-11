@@ -188,8 +188,8 @@ def populate_parser(  # noqa: PLR0913
             the ``union_tag`` parameter of :func:`from_namespace`).
         config_flag: Name of the config-file flag (default ``"config"``).
             Set to ``""`` to disable config-file argument registration.
-        config_subkeys: Whether to register ``--<config_flag>.<field>`` flags for
-            each direct struct field of the root dataclass (default ``True``).
+        config_subkeys: Whether to register ``--<config_flag>.<path>`` flags for
+            every mount point of the target, at any depth (default ``True``).
             Set to ``False`` to expose only the root ``--<config_flag>`` flag.
         argv: CLI argument list scanned to register argv-derived dynamic flags:
             ``--<field>.<param>`` for resolved ``--<field>.bind`` / ``--<field>.class``
@@ -255,7 +255,7 @@ def make_parser(  # noqa: PLR0913
             :func:`populate_parser`).
         config_flag: Name of the config-file flag (forwarded to
             :func:`populate_parser`).
-        config_subkeys: Whether to register per-field config flags (forwarded
+        config_subkeys: Whether to register the mount-point config flags (forwarded
             to :func:`populate_parser`).
         argv: CLI argument list for registering argv-derived dynamic flags
             (forwarded to :func:`populate_parser`; defaults to ``sys.argv[1:]``,

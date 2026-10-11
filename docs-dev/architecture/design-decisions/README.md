@@ -30,6 +30,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | Decision | In one line |
 |---|---|
 | [The mount keyword is spelled per channel](mount-keyword-per-channel.md) | `--config`, `CONFIG__…` and `__include__` are one operation with three names |
+| [Every mount point has a help entry](every-mount-point-has-a-help-entry.md) | `--config.<path>` is listed at every depth the walk reaches, read off the walk that checks a mount |
 | [The `+` suffix is a merge operator, not a list spelling](plus-is-a-merge-operator.md) | appending is confarg's axis; how many tokens a value takes is the framework's |
 | [union_tag defaults to "class"](union-tag-defaults-to-class.md) | a Python keyword can never collide with a field name |
 | [Environment variables off by default](environment-variables-off-by-default.md) | `env_prefix=None`, because the environment is shared with every other process |

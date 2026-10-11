@@ -4,10 +4,10 @@
 namedtuples (whole, then per name, per index and per negative index whatever that field type
 takes as a struct's field, recursively — the index spellings hidden from `--help`: BUG-68, BUG-80,
 BUG-112), union tags and variant fields, plain callable
-openers (`.bind`/`.class`/`.call`), `--config` and `--config.<mount point>` (a struct field, a dict field — where a fragment of
+openers (`.bind`/`.class`/`.call`), `--config` and `--config.<mount point>` at any depth the type walk reaches ([design decision](../design-decisions/every-mount-point-has-a-help-entry.md#every-mount-point-has-a-help-entry)): a struct field, a dict field — where a fragment of
 unknown keys belongs — or a union whose variants are all structs, whose help entry says the
 fragment's top level must name its variant with the tag, because the field's own flags are
-per-variant), and
+per-variant — and
 `--config.<locals>` (the CLI way to declare locals). `build_static_flags` takes `argv` too, but
 only to import the classes it names by `union_tag` before the walk starts; it never adds a flag
 from it, so `argv=[]` still describes exactly the declared type.
