@@ -23,7 +23,7 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
 from confarg import _defaults
 from confarg._callable import (
@@ -773,6 +773,42 @@ def _addresses_fixed_seq_element(target: Any, path: list[str], union_tag: str) -
     return _is_namedtuple(core) or (_is_tuple(core) and _tuple_types(core) is not None)
 
 
+@dataclasses.dataclass(frozen=True)
+class _Descent:
+    """Where a registration walk stands: the nodes already on its path, and the flags argv types.
+
+    A node is a struct or a namedtuple, the two shapes a walk enters by their members' names.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-already-on-the-path-is-not-entered.md#a-node-already-on-the-path-is-not-entered
+    """
+
+    on_path: frozenset[Any] = frozenset()
+    typed: frozenset[str] = frozenset()
+
+    def entering(self, tps: Iterable[Any]) -> _Descent:
+        """Return the descent below a node walked as *tps*, entered whatever is on the path."""
+        return dataclasses.replace(self, on_path=self.on_path | _walked_nodes(tps))
+
+    def into(self, path: str, tps: Iterable[Any]) -> _Descent | None:
+        """Return the descent below the node at *path*, walked as *tps*, or None where the walk stops.
+
+        The walk stops at a node whose structs and namedtuples are all already on the path,
+        unless argv types a flag below it.
+        """
+        nodes = _walked_nodes(tps)
+        if nodes and nodes <= self.on_path and not any(key.startswith(f"{path}.") for key in self.typed):
+            return None
+        return dataclasses.replace(self, on_path=self.on_path | nodes)
+
+
+def _walked_nodes(tps: Iterable[Any]) -> frozenset[Any]:
+    """Return the structs and namedtuples a node of the types *tps* is walked as."""
+    from confarg._parse_cli import _union_branches  # noqa: PLC0415  # import cycle
+
+    return frozenset(node for tp in tps for node in _union_branches(tp) if _is_struct(node) or _is_namedtuple(node))
+
+
 def _collect_namedtuple_specs(  # noqa: PLR0913, PLR0917  # _specs_for_field's context, plus its help
     core: Any,
     flag: str,
@@ -780,6 +816,7 @@ def _collect_namedtuple_specs(  # noqa: PLR0913, PLR0917  # _specs_for_field's c
     group: str | None,
     group_description: str,
     help_text: str,
+    descent: _Descent,
 ) -> list[FlagSpec]:
     """Build FlagSpecs for a namedtuple field: its arity flag, then each field's flags.
 
@@ -811,22 +848,25 @@ def _collect_namedtuple_specs(  # noqa: PLR0913, PLR0917  # _specs_for_field's c
     ]
     from confarg._parse_cli import _namedtuple_position_spellings  # noqa: PLC0415  # import cycle
 
-    for i, (fname, ft) in enumerate(flds.items()):
-        for key in (fname, *_namedtuple_position_spellings(n, i)):
-            result.extend(
-                _specs_for_field(
-                    f"{flag}.{key}",
-                    fname,
-                    ft,
-                    _resolve_type(ft),
-                    union_tag,
-                    group,
-                    group_description,
-                    docstrings,
-                    defaults,
-                    position=i,
-                ),
-            )
+    below = descent.into(flag, [core])
+    if below is not None:
+        for i, (fname, ft) in enumerate(flds.items()):
+            for key in (fname, *_namedtuple_position_spellings(n, i)):
+                result.extend(
+                    _specs_for_field(
+                        f"{flag}.{key}",
+                        fname,
+                        ft,
+                        _resolve_type(ft),
+                        union_tag,
+                        group,
+                        group_description,
+                        docstrings,
+                        defaults,
+                        below,
+                        position=i,
+                    ),
+                )
     # A field's index spellings end in a numeric segment, and so does a deep
     # namedtuple's own arity flag under one; the recursion already marked the
     # flags it generated, so one pass over the result covers what this level added.
@@ -894,10 +934,17 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
     group_description: str,
     docstrings: dict[str, str],
     defaults: dict[str, Any],
+    descent: _Descent,
     *,
     position: int | None = None,
 ) -> list[FlagSpec]:
-    """Return FlagSpecs for one field of a struct type, or of a namedtuple at *position*."""
+    """Return FlagSpecs for one field of a struct type, or of a namedtuple at *position*.
+
+    A node already on *descent*'s path registers its own flags and none of its members'.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-already-on-the-path-is-not-entered.md#a-node-already-on-the-path-is-not-entered
+    """
     help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag, position=position)
     core = _unwrap_optional(resolved)
     if core is None:
@@ -908,13 +955,15 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
             whole = _whole_value_spec(flag, resolved, help_text, group, group_description)
             specs = [whole, _build_union_tag_spec(flag, union_tag, concrete, group, group_description)]
             by_name: dict[str, FlagSpec] = {s.name: s for s in specs}
-            for variant in concrete:
+            below = descent.into(flag, [resolved])
+            for variant in concrete if below is not None else []:
                 for spec in _collect_struct_specs(
                     variant,
                     flag,
                     union_tag,
                     group=variant.__name__,
                     group_description=inspect.getdoc(variant) or "",
+                    descent=below,
                 ):
                     _merge_or_append_spec(specs, by_name, spec)
             return specs
@@ -952,7 +1001,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
         return specs
 
     if _is_namedtuple(core):
-        specs = _collect_namedtuple_specs(core, flag, union_tag, group, group_description, help_text)
+        specs = _collect_namedtuple_specs(core, flag, union_tag, group, group_description, help_text, descent)
         # The combined arity flag is first.  A bare occurrence of it is a missing
         # value -- unless Optional wraps the field: `Pt | None` is a union with a
         # sequence variant as resolved, which consumes greedily and stands bare,
@@ -974,7 +1023,10 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
 
     if _is_struct(core):
         whole = _whole_value_spec(flag, resolved, help_text, group, group_description)
-        return [whole, *_collect_struct_specs(core, flag, union_tag, flag, inspect.getdoc(core) or "")]
+        below = descent.into(flag, [resolved])
+        if below is None:
+            return [whole]
+        return [whole, *_collect_struct_specs(core, flag, union_tag, flag, inspect.getdoc(core) or "", descent=below)]
 
     if _is_dict(core):
         # A dict has no statically known keys, so the bare flag is its only static form;
@@ -1004,6 +1056,7 @@ def _collect_union_root_specs(
     variants: list[Any],
     prefix: str,
     union_tag: str,
+    descent: _Descent,
 ) -> list[FlagSpec]:
     """Build FlagSpecs for a union target (variants are the concrete struct types)."""
     tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
@@ -1032,19 +1085,30 @@ def _collect_union_root_specs(
             union_tag,
             group=variant.__name__,
             group_description=inspect.getdoc(variant) or "",
+            descent=descent,
         ):
             _merge_or_append_spec(result, by_name, spec)
     return result
 
 
-def _collect_struct_specs(  # union-root branch added one more conditional
+def _collect_struct_specs(  # noqa: C901, PLR0913  # a root call starts its own descent; the context is threaded
     target: Any,
     prefix: str,
     union_tag: str,
     group: str | None = None,
     group_description: str = "",
+    *,
+    descent: _Descent | None = None,
 ) -> list[FlagSpec]:
-    """Recursively build FlagSpecs for all fields of a struct type."""
+    """Recursively build FlagSpecs for all fields of a struct type.
+
+    *descent* is where the walk stands; ``None`` starts it at *target*, the root.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-already-on-the-path-is-not-entered.md#a-node-already-on-the-path-is-not-entered
+    """
+    if descent is None:
+        descent = _Descent().entering([target])
     setup = _resolve_struct(target)
     if setup is None:
         tp = _resolve_type(target)
@@ -1052,7 +1116,7 @@ def _collect_struct_specs(  # union-root branch added one more conditional
             non_none = _union_args_no_none(tp)
             concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
             if concrete:
-                return _collect_union_root_specs(concrete, prefix, union_tag)
+                return _collect_union_root_specs(concrete, prefix, union_tag, descent)
         return []
     tp, flds, hints = setup
     var_params = _var_params(tp).names
@@ -1067,7 +1131,18 @@ def _collect_struct_specs(  # union-root branch added one more conditional
         resolved = _resolve_type(raw_type)
         flag = f"{prefix}.{name}" if prefix else name
         result.extend(
-            _specs_for_field(flag, name, raw_type, resolved, union_tag, group, group_description, docstrings, defaults),
+            _specs_for_field(
+                flag,
+                name,
+                raw_type,
+                resolved,
+                union_tag,
+                group,
+                group_description,
+                docstrings,
+                defaults,
+                descent,
+            ),
         )
 
     # Handle inheritance-based dispatch: if this struct has subclasses, register
@@ -1095,7 +1170,8 @@ def _collect_struct_specs(  # union-root branch added one more conditional
             result.append(tag_spec)
             by_name[tag_name] = tag_spec
         for sub in direct_subs:
-            specs = _collect_struct_specs(sub, prefix, union_tag, group, group_description)
+            # A subclass stands at its base's path, so the descent is the base's.
+            specs = _collect_struct_specs(sub, prefix, union_tag, group, group_description, descent=descent)
             for spec in (s for s in specs if not _base_declares_path(tp, prefix, s.name)):
                 _merge_or_append_spec(result, by_name, spec)
 
@@ -1147,25 +1223,25 @@ def _collect_subconfig_specs(target: Any, config_flag: str, union_tag: str) -> l
     refuses. A path is listed where every branch reaches a node that holds a fragment
     (:func:`_holds_a_fragment`), in depth-first order, and the walk descends below every
     node that declares names, listed or not: a namedtuple holds no fragment, its struct
-    field does. A node whose structs are all already on the path is listed but not
-    entered, so a type that holds itself lists its mount point once.
+    field does. A node already on the path is listed but not entered (:class:`_Descent`),
+    so a type that holds itself lists its mount point once.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/every-mount-point-has-a-help-entry.md#every-mount-point-has-a-help-entry
+        docs-dev/architecture/design-decisions/a-node-already-on-the-path-is-not-entered.md#a-node-already-on-the-path-is-not-entered
     """
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import (  # noqa: PLC0415
         _field_types,
         _locals_keys,
         _member_names,
-        _union_branches,
         _walk_target,
     )
 
     walk_target = _walk_target(target, _locals_keys(target, union_tag))
     result: list[FlagSpec] = []
 
-    def visit(path: tuple[str, ...], ends: list[Any], entered: frozenset[Any]) -> None:
+    def visit(path: tuple[str, ...], ends: list[Any], descent: _Descent) -> None:
         for name in dict.fromkeys(n for end in ends for n in _member_names(end)):
             subpath_parts = (*path, name)
             sub_ends = _field_types(walk_target, list(subpath_parts), union_tag)
@@ -1184,13 +1260,11 @@ def _collect_subconfig_specs(target: Any, config_flag: str, union_tag: str) -> l
                     # tag from --help without this line.
                     help_text += f" Its top level must name the chosen variant with the '{union_tag}' key."
                 result.append(_config_file_spec(f"{config_flag}.{subpath}", config_flag, help_text))
-            nodes = {node for end in sub_ends for node in _union_branches(end) if _is_struct(node)}
-            if nodes and nodes <= entered:
-                continue
-            visit(subpath_parts, sub_ends, entered | nodes)
+            below = descent.into(".".join(subpath_parts), sub_ends)
+            if below is not None:
+                visit(subpath_parts, sub_ends, below)
 
-    root_nodes = frozenset(node for node in _union_branches(target) if _is_struct(node))
-    visit((), [target], root_nodes)
+    visit((), [target], _Descent().entering([target]))
     return result
 
 
@@ -1589,6 +1663,38 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
     return specs
 
 
+def _collect_unentered_argv_specs(
+    target: object,
+    argv: Sequence[str],
+    union_tag: str,
+    existing_names: set[str],
+) -> list[FlagSpec]:
+    """Build the FlagSpecs typed in argv below a node the static walk did not enter.
+
+    The static walk stops at a node already on its path, so a type that holds itself
+    (``child: Node | None``) registers ``--child`` and not ``--child.a``. Walking it again with
+    that stop lifted along every path argv types reaches each typed flag at the depth vanilla
+    reads it, in the shape the static walk gives it there. Only typed names the static walk
+    did not register are kept, and with no group, as the other argv-scanned flags.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-already-on-the-path-is-not-entered.md#a-node-already-on-the-path-is-not-entered
+    """
+    # Imported here: a module-level import would create an import cycle with _parse_cli.
+    from confarg._parse_cli import _looks_like_flag, _normalize_eq_args  # noqa: PLC0415
+
+    typed = frozenset(tok[2:] for tok in _normalize_eq_args(list(argv)) if _looks_like_flag(tok))
+    if not typed:
+        return []
+    static = {spec.name for spec in _collect_struct_specs(target, "", union_tag)}
+    specs: list[FlagSpec] = []
+    for spec in _collect_struct_specs(target, "", union_tag, descent=_Descent(typed=typed).entering([target])):
+        if spec.name in typed and spec.name not in static and spec.name not in existing_names:
+            existing_names.add(spec.name)
+            specs.append(dataclasses.replace(spec, group=None, group_description=""))
+    return specs
+
+
 def build_dynamic_flags(  # one branch per argv-scanned flag family (config/locals/callable/patch)
     target: object,
     argv: Sequence[str],
@@ -1610,8 +1716,10 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
 
     Also registers the collection-patch flags (``--field.N``, ``--field+``,
     ``--field.N-``, ``--field.key``) and ``.json`` casts found in ``argv``, the
-    flat tagged-leaf flags (``--<leaf>.class``, ``--<leaf>.<param>``), and the union-tag
-    flags the walk reaches by its fallback (``--<path>.class``) at any other path.
+    flat tagged-leaf flags (``--<leaf>.class``, ``--<leaf>.<param>``), the union-tag
+    flags the walk reaches by its fallback (``--<path>.class``) at any other path, and
+    the flags below a node the static walk did not enter because it was already on the
+    path (``--child.child.a`` on a type that holds itself).
 
     Registration is best-effort: no exception escapes into ``populate_*``.  A failure
     returns no dynamic flag and emits a :class:`~confarg.exceptions.ConfargWarning`
@@ -1649,7 +1757,9 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         config_dict = _partial_config_from_argv(argv_list, config_flag) if config_flag else {}
 
         existing_names: set[str] = set()
-        result = _escaped_opener_specs(_collect_fn_paths_from_argv(argv_list, target, union_tag), existing_names)
+        # First, as the static flags it stands in for are loaded before every dynamic one.
+        result = _collect_unentered_argv_specs(target, argv_list, union_tag, existing_names)
+        result.extend(_escaped_opener_specs(_collect_fn_paths_from_argv(argv_list, target, union_tag), existing_names))
         for field_flag, target_path, mode, grouped in _callable_argument_targets(
             target,
             argv_list,

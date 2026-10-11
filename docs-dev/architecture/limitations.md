@@ -159,6 +159,7 @@ A field default is the layer below every source only where the class declares it
   `from_*` built the object: `build()` is never given the prefix, so called directly, even on
   what `merge(cli_prefix="app")` returned, it offers `--port` where the CLI accepts
   `--app.port` ([types](types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
+- On a type that holds itself (`child: Node | None`), `--help` lists the field's own flags (`--child`, `--config.child`) and not its members': `--child.a` and every deeper flag are accepted when typed, and shown nowhere ([design decisions](design-decisions/a-node-already-on-the-path-is-not-entered.md#a-node-already-on-the-path-is-not-entered)).
 
 ## Subclasses
 
