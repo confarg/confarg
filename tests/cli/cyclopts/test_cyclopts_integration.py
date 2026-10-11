@@ -380,10 +380,15 @@ class TestHelpHidesIndexSpellings:
 
 
 def test_public_api() -> None:
-    """confarg.cli.cyclopts exports the three documented public functions."""
-    assert hasattr(confargcyclopts, "populate_app")
-    assert hasattr(confargcyclopts, "load_flags_into_app")
-    assert hasattr(confargcyclopts, "from_app")
+    """confarg.cli.cyclopts exports exactly the four documented public functions."""
+    assert set(confargcyclopts.__all__) == {
+        "from_app",
+        "load_flags_into_app",
+        "merge_app",
+        "populate_app",
+    }
+    for name in confargcyclopts.__all__:
+        assert hasattr(confargcyclopts, name)
 
 
 # ---------------------------------------------------------------------------
