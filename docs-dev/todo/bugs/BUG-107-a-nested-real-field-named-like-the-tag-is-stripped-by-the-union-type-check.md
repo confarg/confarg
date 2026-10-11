@@ -31,25 +31,31 @@ reproduction fails the same way before and after that fix.
 from dataclasses import dataclass
 import confarg
 
+
 @dataclass
 class A:
     kind: int
+
 
 @dataclass
 class B:
     other: int
 
+
 @dataclass
 class Wa:
     v: A
+
 
 @dataclass
 class Wb:
     v: B
 
+
 @dataclass
 class Root:
     w: Wa | Wb
+
 
 for tag in ("zz", "kind"):
     try:

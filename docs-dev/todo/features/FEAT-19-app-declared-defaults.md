@@ -34,12 +34,12 @@ the target type itself.
 ```python
 @dataclass
 class Config:
-    __confarg_wiring__ = (          # class-level form: same markers, the class as mount point
+    __confarg_wiring__ = (  # class-level form: same markers, the class as mount point
         Default({"prepare.project.project_id": "${project_id}"}),
     )
     project_id: int
     prepare: Annotated[Prepare, Default({"project.project_id": "${project_id}"})]
-    eval:    Annotated[Eval,    Default({"project.project_id": "${project_id}"})]
+    eval: Annotated[Eval, Default({"project.project_id": "${project_id}"})]
 ```
 
 | Aspect | Rule |

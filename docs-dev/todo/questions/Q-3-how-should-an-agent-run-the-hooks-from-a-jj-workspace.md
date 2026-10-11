@@ -18,14 +18,15 @@ Check the log at C:\Users\Pascal\.cache\pre-commit\pre-commit.log
 ```
 
 Agents working in a workspace are left improvising verification, and the improvised answer can
-be wrong: `uv run ruff check` resolves 0.16.7, whose PLR0917 hits and Markdown formatting
-disagree with the pinned hook
-([REF-66](../refactors/REF-66-pinned-ruff-disagrees-with-the-project-ruff.md)). Options:
+be wrong: before REF-66 settled the pin, `uv run ruff check` resolved 0.16.7 from the machine's
+`PATH`, whose PLR0917 hits and Markdown formatting disagreed with the pinned hook
+([REF-66](../refactors/) — closed by pinning the dev group's ruff to the hook's version, so the
+two now give one answer). Options:
 
 - Document a workspace-safe substitute in `AGENTS.md`: run the pinned hook tools directly on
-  the changed files — `uvx ruff@0.15.16 check` and `format --check` — plus the trivia hooks.
-  Exact and works from anywhere; but it re-implements the hook set, so it drifts whenever
-  `.pre-commit-config.yaml` is bumped.
+  the changed files — `uv run ruff check` and `format --check`, exact now that the dev pin
+  matches the hook — plus the trivia hooks. Exact and works from anywhere; but it
+  re-implements the hook set, so it drifts whenever `.pre-commit-config.yaml` is bumped.
 - Mandate running `pre-commit` from the main checkout. The real hooks; but they inspect the
   main working copy, not the workspace's files, so they verify nothing about the change in
   flight.

@@ -1194,7 +1194,7 @@ def _handle_append_token(
     return i
 
 
-def _consume_fixed_tuple_args(  # noqa: PLR0913  # token only names the flag in the error
+def _consume_fixed_tuple_args(  # noqa: PLR0913, PLR0917  # token only names the flag in the error
     args: Sequence[str],
     i: int,
     token: str,
@@ -1292,7 +1292,7 @@ def _handle_root_cast(  # noqa: PLR0913  # each arg carries distinct root-placem
     return i + 1
 
 
-def _handle_force_cast(  # noqa: PLR0913  # cast_name is a necessary discriminator, not incidental
+def _handle_force_cast(  # noqa: PLR0913, PLR0917  # cast_name is a necessary discriminator, not incidental
     args: list[str],
     i: int,
     token: str,

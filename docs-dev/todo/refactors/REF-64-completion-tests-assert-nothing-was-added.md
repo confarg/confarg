@@ -35,10 +35,11 @@ then assert the flag arrived. A collection-patch token is the smallest case —
 class Cfg:
     items: list[int] = field(default_factory=list)
 
+
 # COMP_WORDS="cli --items.0 5 ", COMP_CWORD=3, _CLI_COMPLETE=bash_complete
 before = [p.name for p in cmd.params]
 setup_completion(cmd, Cfg)
-assert "items.0" in [p.name for p in cmd.params]   # observed: added
+assert "items.0" in [p.name for p in cmd.params]  # observed: added
 ```
 
 Keep `test_completion_exception_is_swallowed` as it is — it pins the never-crash contract, which

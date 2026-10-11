@@ -177,6 +177,7 @@ class DBServerConfig:
     port: int
     name: str
 
+
 @dataclass
 class SQLiteConfig:
     dbpath: str
@@ -238,11 +239,13 @@ Another way to provide a flexible configuration is to derive akin configuration 
 class DBConfig:
     pass
 
+
 @dataclass
 class DBServerConfig(DBConfig):
     host: str
     port: int
     name: str
+
 
 @dataclass
 class SQLiteConfig(DBConfig):

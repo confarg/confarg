@@ -35,6 +35,7 @@ import confarg
 def make_joiner(sep: str) -> Callable[[str], str]:
     def join(s: str) -> str:
         return sep.join(s)
+
     return join
 
 

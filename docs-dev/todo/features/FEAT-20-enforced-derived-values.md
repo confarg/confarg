@@ -24,7 +24,7 @@ construction, and overriding exactly one of the two is what breaks the invariant
 @dataclass
 class Config:
     batch_size: int
-    data:  Annotated[Data,  Derived({"batch_size": "${batch_size}"})]
+    data: Annotated[Data, Derived({"batch_size": "${batch_size}"})]
     model: Annotated[Model, Derived({"batch_size": "${batch_size}"}), Default({"seed": 0})]
 ```
 

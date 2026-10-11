@@ -39,7 +39,7 @@ def _double(x: int) -> int:
     return x * 2
 
 
-def _add(x: int, y: int) -> int:
+def _add(x: int, y: int) -> int:  # noqa: FURB118  # a user function with its own dotted path, not operator.add
     return x + y
 
 
@@ -919,7 +919,7 @@ class TestBindParamChecking:
     def test_a_declared_self_is_an_ordinary_parameter(self) -> None:
         """A function that declares ``self`` accepts it as a kwarg: only *args and **kwargs are not fillable."""
 
-        def handler(self: int, event: int) -> int:
+        def handler(self: int, event: int) -> int:  # noqa: FURB118  # the declared self is the point, not operator.add
             return self + event
 
         assert _resolve_bind_kwargs(handler, {"self": 1}, _SpecContext(("f",), "class", construct)) == {"self": 1}

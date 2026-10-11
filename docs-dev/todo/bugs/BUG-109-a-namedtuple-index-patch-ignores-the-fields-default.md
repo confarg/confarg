@@ -29,14 +29,17 @@ from dataclasses import dataclass
 from typing import NamedTuple
 import confarg
 
+
 class Pt(NamedTuple):
     x: int
     y: int
+
 
 @dataclass
 class Cfg:
     pair: tuple[int, int] = (0, 0)
     pt: Pt = Pt(0, 0)
+
 
 print(confarg.load(Cfg, argv=["--pair.1", "5"], env={}))
 try:

@@ -37,6 +37,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "pytest>=8.0",
     "pyyaml>=6.0",
+    "ruff==0.16.9",
     "tomli-w>=1.0",
     "ty>=0.0.85",
     "typer>=0.27",
