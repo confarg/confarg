@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 from collections import namedtuple
 from dataclasses import dataclass, field
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import pytest
 
@@ -564,3 +564,25 @@ class TestConfigFiles:
             tomli_w.dump(dumped, f)
         loaded = confarg.load(WithPoint, argv=[], files=[str(p)])
         assert loaded.pair == original.pair
+
+
+class TestNamedtupleFieldsCache:
+    """``_namedtuple_fields`` is cached per class, but never an answer it had to guess (REF-48)."""
+
+    def test_fields_are_read_only(self) -> None:
+        """The cached mapping is shared, so it refuses a write."""
+        from confarg._types import _namedtuple_fields  # noqa: PLC0415 — private helper under test
+
+        with pytest.raises(TypeError):
+            _namedtuple_fields(Point)["z"] = int  # ty: ignore[invalid-assignment]  # the write must fail
+
+    def test_unresolved_annotation_is_retried(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A forward reference reads as Any until its name exists, then as the type it names."""
+        from confarg._types import _namedtuple_fields  # noqa: PLC0415 — private helper under test
+
+        class Pending(NamedTuple):
+            x: _NotYetDefined  # noqa: F821  # ty: ignore[unresolved-reference]  # monkeypatched in below
+
+        assert dict(_namedtuple_fields(Pending)) == {"x": Any}
+        monkeypatch.setitem(globals(), "_NotYetDefined", int)
+        assert dict(_namedtuple_fields(Pending)) == {"x": int}

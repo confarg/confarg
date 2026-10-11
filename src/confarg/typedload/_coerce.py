@@ -41,6 +41,9 @@ from confarg.exceptions import SymbolImportError, TypeCoercionError
 _TRUTHY = frozenset({"true", "1", "yes", "on"})
 _FALSY = frozenset({"false", "0", "no", "off"})
 _NONE_TOKENS = frozenset({"none", "null"})
+# register_leaf_type writes both registries at runtime, so nothing that reads them is ever
+# cached: not _is_registered_leaf, _is_struct_variant, _is_taggable_leaf, _is_eagerly_coercible
+# nor _type_kind (docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class).
 _LEAF_COERCIONS: dict[type, Any] = {Path: Path}
 _LEAF_SERIALIZERS: dict[type, Any] = {Path: str}
 

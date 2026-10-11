@@ -7,14 +7,17 @@
 from __future__ import annotations
 
 import enum
+import inspect
 from collections.abc import Iterable, Mapping, MutableMapping, MutableSequence, Sequence  # noqa: TC003
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 import confarg
-from confarg._types import _init_defaults, _init_fields, _is_plain_class
+from confarg._types import _dc_fields, _init_defaults, _init_fields, _init_params, _is_plain_class, _var_params
+from confarg.typedload._construct import _call_with_var_positional
 
 # ---------------------------------------------------------------------------
 # Minimal plain classes mimicking an albumentations-style transform hierarchy
@@ -481,3 +484,94 @@ class TestAnyIsNotAPlainClass:
     def test_real_plain_class_still_detected(self) -> None:
         """The Any guard is narrow: genuine plain classes remain plain classes."""
         assert _is_plain_class(Transform) is True
+
+
+# ---------------------------------------------------------------------------
+# One signature walk, cached per class (REF-48)
+# ---------------------------------------------------------------------------
+
+
+class _Gapped:
+    def __init__(self, a: int = 1, b: int = 2, *rest: int) -> None:
+        self.a, self.b, self.rest = a, b, rest
+
+
+class _PositionalOnlyWithRest:
+    def __init__(self, a: int, /, *rest: int) -> None:
+        self.a, self.rest = a, rest
+
+
+class TestInitParams:
+    """Every plain-class question reads one cached walk of ``__init__``'s signature."""
+
+    def test_signature_is_walked_once_per_class(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Detection, fields, defaults, ``*args`` and construction share one walk."""
+
+        class Fresh:
+            def __init__(self, x: int, *rest: int, **extra: int) -> None:
+                self.x, self.rest, self.extra = x, rest, extra
+
+        walks: list[object] = []
+        signature = inspect.signature
+        monkeypatch.setattr(inspect, "signature", lambda obj, **kw: walks.append(obj) or signature(obj, **kw))
+
+        assert _is_plain_class(Fresh)
+        assert set(_init_fields(Fresh)) == {"x", "rest", "extra"}
+        assert _init_defaults(Fresh) == {"rest": [], "extra": {}}
+        assert _var_params(Fresh).names == {"rest", "extra"}
+        built = confarg.build(Fresh, {"x": 1, "rest": [2, 3], "extra": {"k": 4}})
+        assert (built.x, built.rest, built.extra) == (1, (2, 3), {"k": 4})
+        assert walks == [Fresh.__init__]
+
+    def test_field_mappings_are_read_only(self) -> None:
+        """A cached mapping is shared between callers, so it refuses a write."""
+        with pytest.raises(TypeError):
+            _init_fields(Compose)["p"] = int  # ty: ignore[invalid-assignment]  # the write must fail
+        with pytest.raises(TypeError):
+            _dc_fields(TrainingConfig)["lr"] = int  # ty: ignore[invalid-assignment]  # the write must fail
+
+    def test_var_param_defaults_are_fresh_per_call(self) -> None:
+        """``*args`` and ``**kwargs`` default to a new ``[]`` and ``{}`` every time, never a cached one."""
+
+        class Variadic:
+            def __init__(self, *rest: int, **extra: int) -> None:
+                self.rest, self.extra = rest, extra
+
+        first, second = _init_defaults(Variadic), _init_defaults(Variadic)
+        assert first["rest"] is not second["rest"]
+        assert first["extra"] is not second["extra"]
+
+    def test_unresolved_annotation_is_retried(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A forward reference reads as Any until its name exists, then as the type it names."""
+
+        class Pending:
+            def __init__(
+                self,
+                x: _NotYetDefined,  # noqa: F821  # ty: ignore[unresolved-reference]  # monkeypatched in below
+            ) -> None:
+                self.x = x
+
+        assert dict(_init_fields(Pending)) == {"x": Any}
+        monkeypatch.setitem(globals(), "_NotYetDefined", int)
+        assert dict(_init_fields(Pending)) == {"x": int}
+
+    def test_record_lists_positional_names(self) -> None:
+        """The names a positional argument fills, in order; ``self`` and the variadics excluded."""
+        params = _init_params(_Gapped)
+        assert params.positional == ("a", "b")
+        assert params.required == frozenset()
+
+    def test_positional_only_parameter_before_args(self) -> None:
+        """A positional-only parameter is passed by position ahead of ``*args``."""
+        built = confarg.build(_PositionalOnlyWithRest, {"a": 1, "rest": [2, 3]})
+        assert (built.a, built.rest) == (1, (2, 3))
+
+    def test_positional_gap_goes_by_keyword(self) -> None:
+        """A later positional value never slides into an earlier unfilled parameter."""
+        built = _call_with_var_positional(_Gapped, {"b": 5}, "rest", {})
+        assert (built.a, built.b, built.rest) == (1, 5, ())
+
+    def test_positional_gap_before_args_is_refused(self) -> None:
+        """No call reaches ``*args`` past an unfilled positional parameter."""
+        with pytest.raises(TypeError, match="positional parameter 'a' is unset"):
+            _call_with_var_positional(_Gapped, {"b": 5, "rest": [6]}, "rest", {})

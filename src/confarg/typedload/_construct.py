@@ -10,7 +10,7 @@ Dev Notes:
 
 from __future__ import annotations
 
-import inspect
+import itertools
 import types
 import warnings
 from typing import Any
@@ -27,6 +27,7 @@ from confarg._types import (
     _dict_kv,
     _elem_type,
     _fixed_seq_types,
+    _init_params,
     _is_dict,
     _is_frozenset,
     _is_list,
@@ -46,6 +47,7 @@ from confarg._types import (
     _StrToken,
     _struct_defaults,
     _struct_fields,
+    _struct_required,
     _tuple_types,
     _union_args,
     _union_args_no_none,
@@ -290,13 +292,11 @@ def _ambiguous_structs_msg(matches: list[Any], provided: set[str], path: str, he
     """
     lines = [f"{header} at '{path}': cannot distinguish between " + ", ".join(m.__name__ for m in matches) + "."]
     for var in matches:
-        flds = _struct_fields(var)
-        defs = _struct_defaults(var)
-        required = sorted(n for n in flds if n not in defs)
-        optional = sorted(n for n in flds if n in defs)
+        required = _struct_required(var)
+        optional = sorted(n for n in _struct_fields(var) if n not in required)
         parts = []
         if required:
-            parts.append("required: " + ", ".join(required))
+            parts.append("required: " + ", ".join(sorted(required)))
         if optional:
             parts.append("optional: " + ", ".join(optional))
         lines.append(f"  {var.__name__}: {'; '.join(parts) if parts else '(no fields)'}")
@@ -492,20 +492,26 @@ def _call_with_var_positional(
     var_pos_name: str,
     var_kw: dict[str, Any],
 ) -> Any:
-    """Call tp(*pos_args, *var_pos, **kwargs, **var_kw) with *args support."""
+    """Call tp(*pos_args, *var_pos, **kwargs, **var_kw) with *args support.
+
+    The positional parameters are passed by position, in order, up to the first one
+    *kwargs* has no value for; the rest go by keyword.
+
+    Raises:
+        TypeError: If *var_pos_name* holds values while a positional parameter is unfilled,
+            since no call reaches ``*args`` past it.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
+    """
     var_pos = list(kwargs.pop(var_pos_name, []))
-    sig = inspect.signature(tp.__init__)
-    pos_args: list[Any] = []
-    for pname, param in sig.parameters.items():
-        if pname == "self":
-            continue
-        if param.kind == inspect.Parameter.VAR_POSITIONAL:
-            break
-        if (
-            param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY)
-            and pname in kwargs
-        ):
-            pos_args.append(kwargs.pop(pname))
+    positional = _init_params(tp).positional
+    filled = list(itertools.takewhile(kwargs.__contains__, positional))
+    if var_pos and len(filled) < len(positional):
+        unset = positional[len(filled)]
+        msg = f"{tp.__name__}() cannot take *{var_pos_name} while positional parameter {unset!r} is unset"
+        raise TypeError(msg)
+    pos_args = [kwargs.pop(name) for name in filled]
     return tp(*pos_args, *var_pos, **kwargs, **var_kw)
 
 
@@ -935,13 +941,7 @@ def _construct_union(tp: Any, data: Any, path: str, union_tag: str) -> Any:
 
 def _struct_matches_value(tp: Any, value: Any, union_tag: str) -> bool:
     """Check if value could be a valid dict for struct tp."""
-    if not isinstance(value, dict):
-        return False
-    flds = _struct_fields(tp)
-    defs = _struct_defaults(tp)
-    keys = {k for k in value if k != union_tag}
-    required = {n for n in flds if n not in defs}
-    return required.issubset(keys) and keys.issubset(set(flds))
+    return isinstance(value, dict) and _structurally_matches(tp, {k for k in value if k != union_tag})
 
 
 def _bool_matches_value(value: Any) -> bool:
@@ -1038,10 +1038,7 @@ def _ambiguous_union_msg(matches: list[Any], data: dict[str, Any], path: str, un
 
 def _structurally_matches(var: Any, keys: set[str]) -> bool:
     """Return True if var's fields cover keys and all required fields are present."""
-    flds = _struct_fields(var)
-    defs = _struct_defaults(var)
-    required = {n for n in flds if n not in defs}
-    return required.issubset(keys) and keys.issubset(set(flds))
+    return _struct_required(var).issubset(keys) and keys.issubset(_struct_fields(var))
 
 
 def _type_compatible(var: Any, data: dict[str, Any], keys: set[str], union_tag: str) -> bool:

@@ -514,3 +514,33 @@ class TestTypeKind:
         """Registration moves a class with __init__ parameters from STRUCT to TAGGABLE_LEAF."""
         confarg.register_leaf_type(UUID, UUID)
         assert _type_kind(UUID) is _TypeKind.TAGGABLE_LEAF
+
+
+# ---------------------------------------------------------------------------
+# TestRegistrationAfterIntrospection — the per-class caches never hold a leaf answer
+# ---------------------------------------------------------------------------
+
+
+class _Later:
+    def __init__(self, raw: str) -> None:
+        self.raw = raw
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Later) and other.raw == self.raw
+
+    __hash__ = object.__hash__
+
+
+@dataclass
+class _HoldsLater:
+    item: _Later
+
+
+class TestRegistrationAfterIntrospection:
+    """A type introspected as a struct becomes a leaf the moment it is registered (REF-48)."""
+
+    def test_registering_after_a_build_takes_effect(self) -> None:
+        """The struct answers for ``_Later`` are cached; the leaf decision must not be."""
+        assert confarg.build(_HoldsLater, {"item": {"raw": "a"}}).item == _Later("a")
+        confarg.register_leaf_type(_Later, _Later)
+        assert confarg.build(_HoldsLater, {"item": "b"}).item == _Later("b")

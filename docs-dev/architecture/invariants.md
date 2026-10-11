@@ -111,6 +111,8 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | plain vs escaped callable directives | `_callable.active_directives` |
 | single-value (scalar/type-ref) construction | `_construct._construct_scalar` |
 | "which `__init__` parameters are `*args` / `**kwargs`?" | `_types._var_params` |
+| "what does a plain class's `__init__` declare?" | `_types._init_params` — the one signature walk, cached per class; `_is_plain_class`, `_init_fields`, `_init_defaults`, `_var_params`, `_struct_required` and construction's `*args` call read it (REF-48, [types](types/introspection.md#introspection-is-cached-per-class)) |
+| "which of this struct's fields have no default?" | `_types._struct_required` — without building a default, so no `default_factory` runs to answer it |
 | combine existing value with override | `_merge._merge_existing_value` |
 | how a leaf value leaves the library | `_serialize._serialize_leaf` |
 | "which union variant does this instance belong to?" | `_serialize._variant_holds` |
@@ -193,6 +195,10 @@ needs goes into that loop, never into a second writer over the framework's parse
   A message factory that needs `_src_type` or `dotted_name` therefore cannot have them: either
   the caller passes the text in, or the factory's own argument provably cannot be a token
   ([design decisions](design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it)).
+- The per-class introspection caches hold only what is fixed once a class exists. A default
+  (`_dc_defaults`, `_init_defaults`), anything that reads the leaf registry, and an annotation
+  that did not resolve are never cached, and a cached mapping is read-only
+  ([types](types/introspection.md#introspection-is-cached-per-class)).
 - A type in `_LEAF_COERCIONS` must also be in `_LEAF_SERIALIZERS`: registration makes a type
   a leaf in both directions, and only `register_leaf_type` writes them
   ([types](types/leaf-coercion.md#leaf-coercion)).

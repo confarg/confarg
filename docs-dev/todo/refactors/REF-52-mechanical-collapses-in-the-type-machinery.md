@@ -25,8 +25,6 @@ any turns out to be bigger than it looks.
   `cannot_coerce` — and can be driven from `_SCALAR_COERCIONS` extended to carry the native types
   and the parse function. **`int` must keep its base-0 parse**; base 10 would change what `"0x10"`
   and `"010"` mean.
-- `_construct._struct_matches_value` is `_structurally_matches` plus a dict guard, the last four
-  lines verbatim identical.
 - Three byte-identical try-each-variant-then-no-match loops in `_construct.py` want one
   `_first_constructible`.
 - `_construct._try_pinned_dict` re-derives the cast-name-to-type map by scanning
