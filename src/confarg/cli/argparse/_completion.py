@@ -18,10 +18,8 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._tags import _partial_config_from_argv, _tags_from_argv, _tags_from_config
 from confarg._types import (
-    _final_inner,
     _is_callable,
     _is_dict,
-    _is_final,
     _is_singleton_literal,
     _is_struct,
     _resolve_struct,
@@ -102,9 +100,6 @@ def _extend_walk_field(  # noqa: PLR0913, C901
             specs.append(_build_union_tag_spec(flag, ctx.union_tag, concrete_variants, group, group_description))
             ctx.existing_dests.add(dest)
         return specs
-
-    if _is_final(core):
-        core = _final_inner(core)
 
     if concrete and _is_singleton_literal(core):
         return specs  # class already selected — singleton value is determined by the class

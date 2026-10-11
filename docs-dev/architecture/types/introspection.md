@@ -4,7 +4,8 @@ All type knowledge is derived at runtime from ordinary annotations (`_types.py`)
 confarg requires no base class, decorator or field marker
 ([design decisions](../design-decisions/no-custom-types-required.md#no-custom-types-required)).
 
-- `TypeAliasType` and `Annotated` are unwrapped everywhere (`_resolve_type`).
+- `TypeAliasType`, `Annotated` and `Final` are unwrapped everywhere (`_resolve_type`; see
+  [wrappers are transparent](#wrappers-are-transparent)).
 - Abstract collection types map to concrete ones: `Sequence`/`Iterable`/`Collection` → list,
   `AbstractSet`/`MutableSet` → set, `Mapping`/`MutableMapping` → dict.
 - A **struct** is a dataclass or a *plain class* whose `__init__` takes parameters. Builtins,
@@ -15,6 +16,26 @@ confarg requires no base class, decorator or field marker
   shape test runs.
 - `_unwrap_optional` returns Python `None` (not `NoneType`) to mean "multi-variant union";
   callers must handle that sentinel.
+
+## Wrappers are transparent
+
+`_resolve_type` unwraps `TypeAliasType`, `Annotated` and `Final` in a loop, so they nest in
+any order (`Annotated[Final[X], …]`, an alias of `Final[X]`), and a bare `Final` reads as
+`Any`. What each wrapper adds — an alias name, metadata, "not reassigned" — is nothing a
+channel, the merge, construction or serialization acts on, so every walk asks the type
+underneath.
+
+`Final` used to be unwrapped only at the sites that remembered to: flag registration, the
+argparse completion and `_coerce_leaf`. `_type_kind` did not, so a `Final[Struct]` field
+registered `--inner.x` that the CLI walk then refused on every front-end, `build()` refused
+its dict as an unsupported leaf, `dump()` passed the object through, and a `Final[int]` token
+stayed text in the merged dict where an `int` one is coerced. A wrapper is unwrapped in the
+one function every walk already calls, never at a site.
+
+Precedents: the standard library's `dataclasses` makes a `Final`-annotated class attribute an
+ordinary instance field, and msgspec and cattrs both decode and encode `Final[T]` as `T`.
+pydantic instead reads a `Final` attribute with a default as a class variable, which suits a
+model with validation-time defaults but not a library whose targets are plain dataclasses.
 
 ## Shape dispatch
 

@@ -11,7 +11,7 @@ import sys
 from dataclasses import dataclass as _dc
 from dataclasses import field
 from pathlib import Path
-from typing import Literal, Union
+from typing import Final, Literal, Union
 from unittest import mock
 from uuid import UUID
 
@@ -1097,3 +1097,25 @@ class TestDumpLineEndings:
         path = tmp_path / f"out{suffix}"
         confarg.dump_file(obj, path)
         assert b"\r" not in path.read_bytes()
+
+
+@_dc
+class _FinalInner:
+    x: int = 1
+
+
+@_dc
+class _WithFinalStruct:
+    inner: Final[_FinalInner] = field(default_factory=_FinalInner)
+
+
+class TestFinalRoundTrip:
+    """A ``Final[Struct]`` field builds from and dumps to a dict, as the bare struct does."""
+
+    def test_builds_from_dict(self) -> None:
+        """The struct inside ``Final`` is built from its fields."""
+        assert confarg.from_dict(_WithFinalStruct, {"inner": {"x": 5}}) == _WithFinalStruct(_FinalInner(5))
+
+    def test_dumps_to_dict(self) -> None:
+        """The struct inside ``Final`` is dumped field by field, not passed through."""
+        assert confarg.dump(_WithFinalStruct(_FinalInner(5))) == {"inner": {"x": 5}}

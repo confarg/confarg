@@ -16,11 +16,9 @@ if TYPE_CHECKING:
 
 from confarg._import import _import_dotted, dotted_name
 from confarg._types import (
-    _final_inner,
     _is_callable,
     _is_dict,
     _is_enum,
-    _is_final,
     _is_frozenset,
     _is_list,
     _is_literal,
@@ -373,9 +371,8 @@ def _is_eagerly_coercible(tp: Any) -> bool:
 
     The set of leaf types whose coercion is unambiguous enough to run eagerly in
     the parsers: Literal, Enum, the scalar numbers (bool, int, float), registered
-    leaf types and None. ``str`` and ``Final`` are excluded — a ``str`` token is
-    already a str subclass and passes through, and ``Final`` is resolved to its
-    inner type first. This mirrors the branches of :func:`_coerce_leaf`; the two
+    leaf types and None. ``str`` is excluded — a ``str`` token is already a str
+    subclass and passes through. This mirrors the branches of :func:`_coerce_leaf`; the two
     diverge on raise-vs-return, so share only the predicate, not the behavior.
 
     Dev Notes:
@@ -384,10 +381,10 @@ def _is_eagerly_coercible(tp: Any) -> bool:
     return _is_literal(tp) or _is_enum(tp) or tp in (bool, int, float) or tp in _LEAF_COERCIONS or _is_none_type(tp)
 
 
-def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  # one branch per leaf type
+def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # one branch per leaf type
     """Coerce a raw value to the target leaf type.
 
-    Handles bool, int, float, str, NoneType, ``Final[T]``, Literal, Enum, and registered
+    Handles bool, int, float, str, NoneType, Literal, Enum, and registered
     leaf types (``Path`` and any type passed to ``confarg.register_leaf_type``). Only
     string tokens from the CLI, env vars or CSV files are parsed from text; any other
     value must already have the target type.
@@ -410,8 +407,6 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  
         if isinstance(value, _StrToken) and (str(value).lower() in _NONE_TOKENS or str(value) == ""):
             return None
         raise TypeCoercionError.cannot_coerce(_src_type(value), value, "None", path)
-    if _is_final(tp):
-        return _coerce_leaf(_final_inner(tp), value, path)
     if tp in _SCALAR_COERCIONS:
         return _SCALAR_COERCIONS[tp](value, path)
     if _is_literal(tp):

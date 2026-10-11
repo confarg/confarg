@@ -88,19 +88,29 @@ def _src_type(value: Any) -> str:
 
 
 def _resolve_type(tp: Any) -> Any:
-    """Unwrap TypeAliasType and Annotated wrappers.
+    """Unwrap the TypeAliasType, Annotated and Final wrappers, nested in any order.
+
+    ``Final[T]`` is ``T`` to every walk, and a bare ``Final`` is ``Any``: the qualifier says
+    the attribute is not reassigned, which no channel, merge or construction step reads.
 
     Args:
         tp: The type to resolve.
 
     Returns:
         The unwrapped underlying type.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#wrappers-are-transparent
     """
-    while type(tp).__name__ == "TypeAliasType":
-        tp = tp.__value__
-    if get_origin(tp) is Annotated:
-        tp = get_args(tp)[0]
-    return tp
+    while True:
+        if type(tp).__name__ == "TypeAliasType":
+            tp = tp.__value__
+        elif get_origin(tp) is Annotated or get_origin(tp) is Final:
+            tp = get_args(tp)[0]
+        elif tp is Final:
+            return Any
+        else:
+            return tp
 
 
 def _is_struct_like(tp: Any) -> bool:
@@ -527,31 +537,6 @@ def _is_singleton_literal(tp: Any) -> bool:
         True if tp is Literal[X] for a single value X.
     """
     return _is_literal(tp) and len(_literal_values(tp)) == 1
-
-
-def _is_final(tp: Any) -> bool:
-    """Check whether a type is a Final annotation.
-
-    Args:
-        tp: The type to check.
-
-    Returns:
-        True if tp is Final[X] for some X.
-    """
-    return get_origin(tp) is Final
-
-
-def _final_inner(tp: Any) -> Any:
-    """Return the inner type of a Final annotation.
-
-    Args:
-        tp: A Final[X] type.
-
-    Returns:
-        X, or Any if Final has no argument.
-    """
-    args = get_args(tp)
-    return args[0] if args else Any
 
 
 def _is_enum(tp: Any) -> bool:
