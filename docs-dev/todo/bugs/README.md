@@ -62,6 +62,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-201 — An environment variable below a dict appends, though the environment has no append](BUG-201-an-environment-variable-below-a-dict-appends-though-the-environment-has-no-append.md) | minor | FEAT-18 | S | medium | config | PR-5 |
 | [BUG-119 — `_defaults.py` says four front-ends must agree; there are five](BUG-119-defaults-module-counts-four-front-ends.md) | trivial |  | S | low | none | BUG-7 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
-| [BUG-206 — The `=` escape note counts four front-ends refusing the space form; all five do](BUG-206-the-equals-escape-note-counts-four-refusing-the-space-form.md) | trivial |  | S | low | none | BUG-53, BUG-54 |
+| [BUG-207 — AGENTS.md links docs-dev/plan/, a folder that has been plans/ since PR-210](BUG-207-agents-links-docs-dev-plan-but-the-folder-is-plans.md) | trivial |  | S | low | none | unknown |
 
 <!-- tickets:end -->
