@@ -1432,6 +1432,47 @@ class TestCallInTypedField:
         assert cfg.n == 10
 
 
+@dataclass
+class _TypedCallDumpHolder:
+    base: int = 0
+    n: int = 0
+    inner: _Inner | None = None
+
+
+class TestDumpOfATypedCall:
+    """The object dumps the value a typed ``call:`` produced; the merged dict keeps the call as written."""
+
+    @pytest.mark.parametrize(("callee", "dumped"), [("_inner_value", {"a": 7}), ("_inner_dict", {"a": 2})])
+    def test_a_struct_result_dumps_as_its_fields(self, callee: str, dumped: dict) -> None:
+        """A struct result dumps its fields, whether the call returned it or it was built from the return."""
+        cfg = confarg.build(_TypedCallDumpHolder, {"inner": {"call": f"{__name__}.{callee}"}})
+        assert confarg.dump(cfg)["inner"] == dumped
+
+    def test_a_change_after_build_is_dumped(self) -> None:
+        """The dump records the value the object holds now, not the call that first produced it."""
+        cfg = confarg.build(_TypedCallDumpHolder, {"inner": {"call": f"{__name__}._inner_value"}})
+        assert cfg.inner is not None
+        cfg.inner.a = 9
+        assert confarg.dump(cfg)["inner"] == {"a": 9}
+
+    def test_a_scalar_result_dumps_as_its_value(self) -> None:
+        """A computed int dumps as the int."""
+        cfg = confarg.build(_TypedCallDumpHolder, {"n": {"call": f"{__name__}._double", "x": 4}})
+        assert confarg.dump(cfg)["n"] == 8
+
+    def test_the_merged_dict_dumps_the_call_as_written(self, tmp_path: pathlib.Path) -> None:
+        """Before build the call is data: dump_file writes it as merged, its expression unresolved."""
+        source = tmp_path / "in.json"
+        source.write_text(json.dumps({"base": 3, "n": {"call": f"{__name__}._double", "x": "${base}"}}))
+        raw = confarg.merge(_TypedCallDumpHolder, files=[source], env={}, argv=[])
+        out = tmp_path / "out.json"
+        confarg.dump_file(raw, out)
+        assert json.loads(out.read_text())["n"] == {"call": f"{__name__}._double", "x": "${base}"}
+        built = tmp_path / "built.json"
+        confarg.dump_file(confarg.build(_TypedCallDumpHolder, raw), built)
+        assert json.loads(built.read_text())["n"] == 6
+
+
 # ---------------------------------------------------------------------------
 # class: on a typed field names a subclass; call: builds anything else (FEAT-29)
 # ---------------------------------------------------------------------------

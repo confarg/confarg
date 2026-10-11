@@ -7,7 +7,7 @@ named `call` (the escaped `_call` in escaped mode) keep the value as written. Th
 taken per construction, so the same key means a call on one field and data on another.
 
 Why: a `call:` spec on a field that takes a plain value is the function-returns-the-value form
-the redesign needs for every type ([FEAT-27](../../todo/features/FEAT-27-callable-openers-redesign.md)),
+the redesign of the openers needs for every type ([callables](../callables.md#spec-grammar)),
 and it is additive, because the key was an error on those fields before. Precedent: Hydra marks
 any config node to be instantiated with `_target_`, whatever its type.
 

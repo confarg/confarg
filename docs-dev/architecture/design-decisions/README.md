@@ -63,7 +63,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [No implicit subclass inference](no-implicit-subclass-inference.md) | a subclass exists only once imported, so confarg never scans for one |
 | [A call spec yields to data the annotation can hold](call-yields-to-the-data-a-type-holds.md) | `call:` fills any typed field, except where a dict type, `Any` or a member named `call` holds the key as data |
 | [Class names a subclass; call computes](class-names-a-subclass-call-computes.md) | `class:` on a typed field names a subclass of it, and an unrelated class is refused with a pointer to `call:` |
-| [Bind yields a partial of its target](bind-yields-a-partial-of-its-target.md) | `bind:` is an opener whose siblings are its target's arguments; `fn:` and the `bind:` kwargs dict are removed outright |
+| [Bind yields a partial of its target](bind-yields-a-partial-of-its-target.md) | `bind:` is an opener whose siblings are its target's arguments; `fn:` and the `bind:` kwargs dict are removed outright, with no migration table |
 | [Classfn names an instance method](classfn-names-an-instance-method.md) | `classfn:` siblings build the owner the path names; static and class methods need no owner; `call:` takes any callable spec as `bind:` does |
 | [Class names the type it builds](class-names-the-type-it-builds.md) | `class:` and a `classfn:` owner are built exactly as named, never through subclass dispatch |
 | [Stealing rule for text in unions](stealing-rule-for-text-in-unions.md) | a total, fixed rank; declaration order is only a tie-break |
@@ -76,6 +76,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 
 | Decision | In one line |
 |---|---|
+| [The object dump writes state](the-object-dump-writes-state.md) | the merged dict dumps as written, the built object as the values it holds: no `${...}`, no `call:` |
 | [Dump round-trips at the built object](dump-round-trips-at-the-built-object.md) | not at the merged dict: a file's values are never re-interpreted |
 | [A stolen leaf dumps with its cast](a-stolen-leaf-dumps-with-its-cast.md) | `{__cast__, __value__}` exactly where the bare scalar would be taken back |
 | [Registered leaf types dump through a registered serializer](registered-leaf-serializer.md) | registration is two directions; `str` is only the default for the second |

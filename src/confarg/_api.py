@@ -277,8 +277,10 @@ def dump(
 ) -> dict[str, Any]:
     """Serialize a dataclass instance to a config-compatible plain dict.
 
-    The instance holds resolved values, so ``${...}`` expressions are not reproduced;
-    to save a configuration with its expressions, pass the dict returned by
+    The dump records the values the instance holds, not how they were produced:
+    ``${...}`` expressions are written as their resolved values, and a value a ``call:``
+    spec computed is written as that value, not as the call. To save a configuration as
+    written, with its expressions and its ``call:`` specs, pass the dict returned by
     ``merge()`` to ``dump_file()`` instead. Plain (non-dataclass) classes are not
     supported.
 
@@ -325,8 +327,10 @@ def dump_file(
     """Serialize and write to a config file.
 
     Accepts a dataclass instance or a raw config dict (e.g. from ``merge()``
-    or ``resolve()``). The output format is determined by the file extension
-    (.toml, .yaml, .yml, .json).
+    or ``resolve()``). A dict is written as it stands, so the dict ``merge()``
+    returns keeps its ``${...}`` expressions and ``call:`` specs; an instance is
+    written as ``dump()`` serializes it, as the values it holds. The output
+    format is determined by the file extension (.toml, .yaml, .yml, .json).
 
     Args:
         value: A dataclass instance or a raw config dict.

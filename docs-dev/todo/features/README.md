@@ -13,7 +13,6 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 | Ticket | Severity | Blocked by | Effort | Risk | Impact |
 |---|---|---|---|---|---|
 | [FEAT-14 — Dataclass fields that are not `__init__` parameters](FEAT-14-dataclass-fields-outside-init.md) | major |  | L | high | behavior |
-| [FEAT-27 — Replace the callable openers with `bind`, `call`, `class` and `classfn`](FEAT-27-callable-openers-redesign.md) | major |  | XL | high | config |
 | [FEAT-3 — A registry of reserved sentinel keys](FEAT-3-reserved-sentinel-key-registry.md) | minor |  | S | high | config |
 | [FEAT-5 — Optional structural validation right after `merge()`](FEAT-5-structural-validation-after-merge.md) | minor |  | S | low | behavior |
 | [FEAT-26 — The expression whitelist is not documented for users](FEAT-26-the-expression-whitelist-is-not-documented-for-users.md) | minor |  | S | low | none |
@@ -24,7 +23,6 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 | [FEAT-17 — An end-of-options separator (`--`)](FEAT-17-end-of-options-separator.md) | minor |  | M | medium | behavior |
 | [FEAT-18 — The environment channel has no append spelling](FEAT-18-no-append-spelling-in-the-environment.md) | minor |  | M | low | behavior |
 | [FEAT-24 — Writing a configuration back to a URL](FEAT-24-writing-a-configuration-to-a-url.md) | minor |  | M | low | behavior |
-| [FEAT-33 — Dump of resolved values produced by `call:`](FEAT-33-dump-of-call-results.md) | minor |  | M | low | behavior |
 | [FEAT-1 — Uneven shell-completion coverage](FEAT-1-uneven-shell-completion-coverage.md) | minor |  | L | low | behavior |
 | [FEAT-2 — Protocol-typed callables and `**kwargs`](FEAT-2-protocol-callables-and-kwargs.md) | minor |  | L | medium | behavior |
 | [FEAT-6 — `Annotated` field metadata read by all three channels](FEAT-6-annotated-field-metadata.md) | minor |  | L | medium | behavior |
@@ -39,7 +37,6 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 | [FEAT-20 — Derived values that cannot be made inconsistent](FEAT-20-enforced-derived-values.md) | minor | FEAT-19 | M | medium | behavior |
 | [FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin](FEAT-10-confarg-explain-command.md) | minor | FEAT-8 | XL | low | behavior |
 | [FEAT-25 — Nothing in CI runs the board and anchor checks](FEAT-25-nothing-in-ci-runs-the-board-and-anchor-checks.md) | trivial |  | S | low | none |
-| [FEAT-34 — Rewrite the callables architecture note and write the migration table](FEAT-34-callables-architecture-note-and-migration.md) | trivial |  | S | low | none |
 | [FEAT-4 — An explicit ordered patch-op stream](FEAT-4-ordered-patch-op-stream.md) | trivial |  | M | high | none |
 
 <!-- tickets:end -->

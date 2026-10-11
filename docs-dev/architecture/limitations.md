@@ -153,8 +153,14 @@ the boundary moves here.
 - Plain (non-dataclass) classes cannot be dumped by `dump()`. To serialize as fields, a class
   must store its `__init__` parameters as same-named attributes — confarg reads attributes, it
   does not replay constructor calls.
-- A `call:` result on a non-Callable field is not dumped as the spec that made it
-  ([callables](callables.md#call-in-a-typed-field)).
+- A `call:` result is dumped from the object as the value it produced, never as the call
+  ([design decision](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
+  A result that no configuration spells, such as a closure, a lambda or an instance no spec
+  built, cannot be dumped from the object. The merged dict keeps the call, and `dump_file()`
+  writes it as written.
+- A `class:` instance and a `classfn:` owner dump the arguments they were built with, stamped
+  on them at `build()`. A change made to them afterwards is not dumped
+  ([callables](callables.md#round-trip)).
 - An expression cannot read a `call:` result: expressions resolve before construction
   ([expressions](expressions/resolution.md#calls-and-expressions-share-one-graph)).
 - Attribute docstrings used as `--help` text require the class source, which is unavailable for
