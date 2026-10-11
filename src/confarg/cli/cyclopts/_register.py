@@ -212,11 +212,11 @@ def load_flags_into_app(
     }
 
 
-def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command signatures; all params are keyword-only with sensible defaults
+def populate_app(  # noqa: PLR0913
     target: object,
     app: cyclopts.App,
     *,
-    cli_prefix: str = "",
+    cli_prefix: str | None = None,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
@@ -255,6 +255,7 @@ def populate_app(  # noqa: PLR0913  # mirrors populate_parser/populate_command s
             :func:`from_app`); pass an explicit list, or ``[]`` to register only
             the static, type-derived parameters.
     """
+    cli_prefix = cli_prefix or ""
     if argv is None:
         argv = sys.argv[1:]
     flags = build_static_flags(

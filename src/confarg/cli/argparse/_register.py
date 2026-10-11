@@ -116,7 +116,7 @@ def populate_parser(  # noqa: PLR0913
     target: object,
     parser: argparse.ArgumentParser,
     *,
-    cli_prefix: str = "",
+    cli_prefix: str | None = None,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
@@ -172,6 +172,7 @@ def populate_parser(  # noqa: PLR0913
         ``allow_abbrev=False`` by default to prevent schema evolution from
         silently breaking abbreviated flag invocations.
     """
+    cli_prefix = cli_prefix or ""
     if argv is None:
         argv = sys.argv[1:]
     static = build_static_flags(
@@ -191,10 +192,10 @@ def populate_parser(  # noqa: PLR0913
         parser.set_defaults(**{PREFIX_ATTR: cli_prefix})
 
 
-def make_parser(  # noqa: PLR0913  # thin pass-through: every parameter goes to populate_parser
+def make_parser(  # noqa: PLR0913
     target: object,
     *,
-    cli_prefix: str = "",
+    cli_prefix: str | None = None,
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,

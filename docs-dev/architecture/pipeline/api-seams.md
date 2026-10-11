@@ -34,7 +34,9 @@ fourteen times, and its documentation had drifted — `env_prefix` read five dif
   registered under": the one `populate_*` recorded for an adapter
   (`cli._prefix.resolve_prefix`), none for vanilla, which registers nothing. Vanilla used to
   type it `str = ""`; accepting `None` there is the only widening, and it buys one option set
-  instead of a base and two variants.
+  instead of a base and two variants. The `populate_*` functions and `make_parser` default it
+  to `None` too (REF-9, [design decision](../design-decisions/adapter-argument-names-keep-the-framework-noun.md)):
+  `None` and `""` both register no prefix.
 - **The documentation moved.** The reference page renders `**opts` on each function and the
   per-key table once, on `MergeOptions`, from the attribute docstrings. A caller passes the
   same keywords as before, and can annotate a forwarding wrapper with the public type.
