@@ -44,6 +44,7 @@ from confarg._types import (
     _is_frozenset,
     _is_list,
     _is_literal,
+    _is_seq_variant,
     _is_set,
     _is_struct,
     _is_tuple,
@@ -1110,12 +1111,12 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
     )
     if isinstance(data, dict) and LIST_REPLACE_BASE_KEY in data:
         # A patch the merge deferred with its base ({__base__: base, **patch}) is a sequence
-        # patch; every variant refused it above, so the first sequence variant's own refusal
-        # names the key it cannot place, where printing *data* would show the merge's
-        # internal base key (BUG-200).
-        seq_vars = fixed_vars + [v for v in coll_vars if not _is_dict(_resolve_type(v))]
-        if seq_vars:
-            construct(seq_vars[0], data, path=path, union_tag=union_tag)
+        # patch; every variant refused it above, so the first sequence variant tried has its
+        # own refusal name the key it cannot place, where printing *data* would show the
+        # merge's internal base key (BUG-200).
+        seq_var = next((v for v in (*fixed_vars, *coll_vars) if _is_seq_variant(v)), None)
+        if seq_var is not None:
+            construct(seq_var, data, path=path, union_tag=union_tag)
     raise TypeCoercionError.cannot_coerce(
         _src_type(data),
         data,
