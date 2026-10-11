@@ -167,7 +167,7 @@ Today every expression resolves before any construction, so a `call:` argument c
 expression's value, but an expression cannot read a `call:` result. Resolution sees only merged
 values, and construction runs afterwards.
 
-The planned order (FEAT-28) puts `call:` specs in the same graph as expressions: a `call:` node
+The planned order (FEAT-35, after FEAT-28 dispatches `call:` on typed fields) puts `call:` specs in the same graph as expressions: a `call:` node
 depends on what its arguments reach, and an expression depends on what its references reach, as
 in the section above. Kahn's sort then yields one order, and a cycle through a call is a
 `CircularReferenceError` naming its members, the same as a cycle between expressions. An

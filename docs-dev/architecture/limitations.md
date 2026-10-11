@@ -143,6 +143,11 @@ the boundary moves here.
 - Plain (non-dataclass) classes cannot be dumped by `dump()`. To serialize as fields, a class
   must store its `__init__` parameters as same-named attributes — confarg reads attributes, it
   does not replay constructor calls.
+- A `call:` spec on a non-Callable field is reached by the file and dict channels only. The CLI
+  and environment cannot spell it until FEAT-32 gives it flags. A call result is not dumped
+  as the spec that made it ([callables](callables.md#call-in-a-typed-field)).
+- An expression cannot read a `call:` result: expressions resolve before construction
+  ([expressions](expressions/resolution.md#calls-and-expressions-share-one-graph)).
 - Attribute docstrings used as `--help` text require the class source, which is unavailable for
   dynamically created classes ([CLI adapters](cli-adapters/flag-model.md#framework-neutral-flag-model)).
 - A union leaf `__cast__` cannot name does not round-trip: an unregistered `Enum` beside a

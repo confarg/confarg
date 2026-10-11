@@ -7,7 +7,6 @@ effort: M
 risk: low
 impact: behavior
 severity: minor
-blocked_by: [FEAT-28]
 ---
 # FEAT-33 — Dump of resolved values produced by `call:`
 
