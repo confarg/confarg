@@ -264,6 +264,22 @@ class TypeCoercionError(ConfargError):
         return cls(f"Unknown field(s) {sorted(names)} for {what} at '{path}'. Valid fields: {valid}")
 
     @classmethod
+    def cast_not_held(cls, cast: str, field: str, path: str) -> TypeCoercionError:
+        """Return the error for a cast whose type the field's type does not hold.
+
+        The one refusal for a pin that would place a value the field does not accept.
+        *cast* names the pinned type and *field* the field's type, both spelled by the
+        caller — this module importing nothing from ``confarg``.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds
+        """
+        return cls(
+            f"Cannot cast to {cast} at '{path}': the field's type {field} does not hold it."
+            " A cast names one of the types the field itself holds.",
+        )
+
+    @classmethod
     def op_not_a_list(cls, key: str, what: str, src: str, value: Any, path: str) -> TypeCoercionError:
         """Return the error for a list op whose key holds no list: the base, or the indices a delete reads.
 

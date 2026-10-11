@@ -84,6 +84,14 @@ the boundary moves here.
   exactly, as segments, so a missing field's remedy still names the right flag
   ([types](types/construction.md#a-construction-path-is-a-sequence-of-segments)).
 
+## Casts
+
+- A cast is admitted only where the field's type holds its named type, so it cannot
+  disambiguate a `Literal`'s stealing: `Literal["16", 16]` reads the token `"16"` as `16`,
+  and `--u.str 16` is refused for naming a type the field does not hold — a type-level rule
+  cannot promise the coerced value stays a member
+  ([design decisions](design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds)).
+
 ## CLI front-ends
 
 - A multi-token flag is spelled per framework: space-separated for vanilla/argparse/cyclopts,

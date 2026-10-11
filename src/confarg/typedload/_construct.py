@@ -17,7 +17,7 @@ from typing import Any
 
 from confarg import _defaults
 from confarg._callable import _resolve_callable_spec, _select_directives, resolve_typed_call
-from confarg._cast import type_for_cast_name
+from confarg._cast import cast_name_for_type, holds_the_cast, type_for_cast_name
 from confarg._import import _import_dotted, dotted_name
 from confarg._merge import (
     LIST_APPEND_KEY,
@@ -89,6 +89,19 @@ from confarg.typedload._coerce import (
 )
 
 
+def _is_pin_dict(data: Any) -> bool:
+    """Return whether *data* spells the file-side cast pin: exactly the ``__cast__`` and ``__value__`` keys.
+
+    The shape half of :func:`_try_pinned_dict`, which resolves it: a defaulted
+    fixed-sequence field's gate asks it, so a pin reaches ``construct()`` — the one
+    reader — whether the field carries a default or not.
+
+    Dev Notes:
+        docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
+    """
+    return isinstance(data, dict) and data.keys() == {_defaults.CAST_KEY, _defaults.VALUE_KEY}
+
+
 def _try_pinned_dict(data: Any) -> _Pinned | None:
     """Detect a ``{__cast__: typename, __value__: raw}`` tagged dict and convert to _Pinned.
 
@@ -97,12 +110,25 @@ def _try_pinned_dict(data: Any) -> _Pinned | None:
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
     """
-    if not (isinstance(data, dict) and data.keys() == {_defaults.CAST_KEY, _defaults.VALUE_KEY}):
+    if not _is_pin_dict(data):
         return None
     tp = type_for_cast_name(data[_defaults.CAST_KEY])
     raw = data[_defaults.VALUE_KEY]
     value = _StrToken(str(raw)) if isinstance(raw, str) else raw
     return _Pinned(tp, value)
+
+
+def _refuse_unheld_cast(tp: Any, cast_tp: Any, path: FieldPath) -> None:
+    """Refuse a pin whose type the field's type does not hold.
+
+    The construction half of the cast-admission rule: the CLI asks it at parse, so
+    only a pin the merge supplied by hand can reach it.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds
+    """
+    if not holds_the_cast(tp, cast_tp):
+        raise TypeCoercionError.cast_not_held(cast_name_for_type(cast_tp), str(tp), _spell_field_path(path))
 
 
 def _is_index_key(k: Any) -> bool:
@@ -489,9 +515,11 @@ def construct(tp: Any, data: Any, *, path: FieldPath = (), union_tag: str = _def
     """
     tp = _resolve_type(tp)
     if isinstance(data, _Pinned):
+        _refuse_unheld_cast(tp, data.tp, path)
         return _coerce_leaf(data.tp, data.value, _spell_field_path(path))
     pinned = _try_pinned_dict(data)
     if pinned is not None:
+        _refuse_unheld_cast(tp, pinned.tp, path)
         return _coerce_leaf(pinned.tp, pinned.value, _spell_field_path(path))
     if data is None and _allows_none(tp):
         return None
@@ -613,9 +641,16 @@ def _construct_struct(tp: Any, data: dict[str, Any], path: FieldPath, union_tag:
         fp = (*path, name)
         if name in data:
             field_data = data[name]
-            if isinstance(field_data, dict) and name in defs and LIST_REPLACE_BASE_KEY not in field_data:
+            if (
+                isinstance(field_data, dict)
+                and name in defs
+                and LIST_REPLACE_BASE_KEY not in field_data
+                and not _is_pin_dict(field_data)
+            ):
                 # A carried base (deferred from merge) wins over the default — let
                 # _construct_tuple resolve it rather than patching the default in place.
+                # A pin is no index patch: it reaches construct() — the one reader —
+                # whether the field carries a default or not (BUG-210).
                 field_data = _resolve_tuple_partial(field_data, ft, defs[name], fp)
             kwargs[name] = construct(ft, field_data, path=fp, union_tag=union_tag)
         elif name in defs:

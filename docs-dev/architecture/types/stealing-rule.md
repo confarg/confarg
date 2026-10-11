@@ -38,8 +38,12 @@ Details that are intended:
 
 `{__cast__: <type name>, __value__: <raw>}` is the file-side escape hatch. The dict must have
 **exactly** these two keys, so a real struct with those fields plus others is never
-hijacked. The type name is a scalar cast name or the `__name__` of a registered leaf. A
-string `__value__` re-enters coercion as a token; a native value does not. `_cast` owns both
+hijacked. The type name is a scalar cast name or the `__name__` of a registered leaf, and it
+must name one of the types the field's annotation holds — the CLI's `.str`/`.int` casts ask
+the same admission, `_cast.holds_the_cast`, so both spellings of the escape hatch read alike
+and neither ever places a value the field's type does not accept (BUG-210,
+[design decisions](../design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds)).
+A string `__value__` re-enters coercion as a token; a native value does not. `_cast` owns both
 directions of that vocabulary — `type_for_cast_name` reads a name, `cast_name_for_type` writes
 one — so the reader and the writer cannot drift apart. The reader needs the leaf registry,
 which lives in `typedload._coerce`, and imports it inside the function: `typedload`'s package

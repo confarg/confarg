@@ -2,6 +2,10 @@
 
 Rules that must hold after every change. Each links to the document that argues it.
 
+## Contracts
+
+* The configuration object that is returned must respect the field annotations provided as input.
+
 ## Cross-channel parity
 
 Every feature behaves identically across the five front-ends (vanilla, argparse, click,
@@ -79,6 +83,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "which names does this node declare?" | `_parse_cli._member_names` — a struct's `_types._struct_member_names` (the listing view of `_struct_member_type`, subclass-only names included), a namedtuple's fields, either across a union's variants |
 | "does this mount subpath name a node of the target?" | `_parse_cli._check_mount_subpath` |
 | "is this a cast, and which?" | `_parse_cli.detect_force_cast` (whether) / `_cast` (what) |
+| "does this field's type hold this cast's type?" | `_cast.holds_the_cast` — a leaf holds its own type, a union its variants, `Any` everything; `detect_force_cast` asks it so vanilla's parse and the adapters' registration refuse the same spellings, and `construct()` asks it of a pin, so a file's `__cast__` and a hand-built merge's stored pin are refused alike (BUG-210, [design decisions](design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds)) |
 | "which type does a file's `__cast__` name, and which name does a pinned type dump as?" | `_cast.type_for_cast_name` / `_cast.cast_name_for_type` — the two directions of one vocabulary, side by side ([types](types/stealing-rule.md#cast-pinning-in-files)) |
 | "how do the objects a root `json` cast decoded meet the fields?" | `_cast.fold_root_json` — vanilla's `--json`, the adapters' `apply_root_json` and the environment's `<PREFIX>JSON` (REF-44) |
 | "does this token address a reserved name?" | `_parse_cli._addresses_key` |

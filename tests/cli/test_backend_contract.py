@@ -185,6 +185,29 @@ class _NestedPlainCast:
     inner: _PlainCastScalars = dataclasses_field(default_factory=_PlainCastScalars)
 
 
+@dataclass
+class _NestedForCastAdmission:
+    n: int = 0
+
+
+@dataclass
+class _CastAdmissionCfg:
+    """A field of every non-leaf shape, for the cast-admission contract (BUG-93, BUG-210)."""
+
+    u: tuple[int, int] = (0, 0)
+    nested: _NestedForCastAdmission = dataclasses_field(default_factory=_NestedForCastAdmission)
+    items: list[int] = dataclasses_field(default_factory=list)
+    p: Path = Path()
+
+
+@dataclass
+class _UnionScalarCfg:
+    """The two unions of BUG-94's repro, for the cast-admission contract."""
+
+    a: int | float = 0
+    b: str | bool = "b"
+
+
 class _Point(NamedTuple):
     """Fixed-length sequence with named fields."""
 
@@ -1813,11 +1836,9 @@ class TestStealingContract:
 class TestPlainFieldCastContract:
     """Scalar force-cast flags on plain leaf fields, in every front-end (BUG-72).
 
-    Vanilla's ``detect_force_cast`` accepts a scalar cast wherever the trailing
-    segment names no real member of the field's type, and a plain leaf has no
-    members — so ``--host.str`` reaches ``build()`` and pins the value there. The
-    adapters register the cast flags only on multi-variant unions, so the host
-    frameworks refused them; the registration now covers plain leaf fields too,
+    A cast is admitted only where the field's type holds it, so a plain leaf field
+    takes its own cast and no other (BUG-210's admission rule): vanilla's
+    ``detect_force_cast`` and the adapters' registration ask the same predicate,
     and the last spelling typed wins, as vanilla's sequential writes decide it.
     """
 
@@ -1827,14 +1848,12 @@ class TestPlainFieldCastContract:
         assert cfg.host == "myhost"
         assert cfg.port == 42
 
-    def test_cross_cast_pins_the_named_scalar_type(self, loader: ConfargLoader) -> None:
-        """--host.int 5 and --port.str 42 pin the cast's type, not the field's."""
-        cfg = loader.load(_PlainCastScalars, argv=["--host.int", "5"], env={})
-        assert cfg.host == 5
-        assert type(cfg.host) is int
-        cfg = loader.load(_PlainCastScalars, argv=["--port.str", "42"], env={})
-        assert cfg.port == "42"
-        assert type(cfg.port) is str
+    def test_unheld_cross_cast_is_refused(self, loader: ConfargLoader) -> None:
+        """--host.int 5 and --port.str 42 name a type their field does not hold."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.load(_PlainCastScalars, argv=["--host.int", "5"], env={})
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.load(_PlainCastScalars, argv=["--port.str", "42"], env={})
 
     def test_float_and_bool_casts(self, loader: ConfargLoader) -> None:
         """--ratio.float 2 and --enabled.bool yes pin float and bool."""
@@ -1849,11 +1868,10 @@ class TestPlainFieldCastContract:
         cfg = loader.load(_OptionalScalar, argv=["--note.str", "hi"], env={})
         assert cfg.note == "hi"
 
-    def test_cast_on_enum_leaf(self, loader: ConfargLoader) -> None:
-        """--color.str red pins the str, which build() then leaves as the field value."""
-        cfg = loader.load(WithEnum, argv=["--color.str", "red"], env={})
-        assert cfg.color == "red"
-        assert type(cfg.color) is str
+    def test_cast_on_enum_leaf_is_refused(self, loader: ConfargLoader) -> None:
+        """--color.str red names a type the Color field does not hold."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.load(WithEnum, argv=["--color.str", "red"], env={})
 
     def test_cast_on_nested_leaf(self, loader: ConfargLoader) -> None:
         """--inner.host.str x pins the leaf two levels down, not only at the root."""
@@ -1872,20 +1890,22 @@ class TestPlainFieldCastContract:
 
     def test_last_cast_of_several_wins(self, loader: ConfargLoader) -> None:
         """Several cast spellings: argv order decides, not the cast name."""
-        cfg = loader.load(_PlainCastScalars, argv=["--host.int", "5", "--host.str", "a"], env={})
-        assert cfg.host == "a"
-        cfg = loader.load(_PlainCastScalars, argv=["--host.str", "a", "--host.int", "5"], env={})
-        assert cfg.host == 5
+        cfg = loader.load(_WithIntFloat, argv=["--value.int", "5", "--value.float", "2"], env={})
+        assert cfg.value == 2.0
+        assert type(cfg.value) is float
+        cfg = loader.load(_WithIntFloat, argv=["--value.float", "2", "--value.int", "5"], env={})
+        assert cfg.value == 5
+        assert type(cfg.value) is int
 
     def test_replaced_bad_cast_does_not_error(self, loader: ConfargLoader) -> None:
         """The pinning is deferred, so a cast a later write replaced never coerces."""
-        cfg = loader.load(_PlainCastScalars, argv=["--host.int", "abc", "--host.str", "a"], env={})
-        assert cfg.host == "a"
+        cfg = loader.load(_PlainCastScalars, argv=["--port.int", "abc", "--port", "42"], env={})
+        assert cfg.port == 42
 
     def test_surviving_bad_cast_raises_at_build(self, loader: ConfargLoader) -> None:
         """The surviving cast is coerced at build(), naming the field like vanilla."""
         with pytest.raises(TypeCoercionError):
-            loader.load(_PlainCastScalars, argv=["--host.str", "a", "--host.int", "abc"], env={})
+            loader.load(_PlainCastScalars, argv=["--port.int", "abc"], env={})
 
     def test_typed_cast_flag_is_registered(self, populating_loader: ConfargLoader) -> None:
         """The cast flag registers only when typed, like `.json` and the escaped openers."""
@@ -1895,6 +1915,52 @@ class TestPlainFieldCastContract:
         flags = populating_loader.registered_flags(_PlainCastScalars, argv=[])
         assert flags is not None
         assert "host.str" not in flags
+
+    def test_unheld_cast_flag_is_not_registered(self, populating_loader: ConfargLoader) -> None:
+        """A cast naming a type the field does not hold registers no flag."""
+        flags = populating_loader.registered_flags(_PlainCastScalars, argv=["--host.int", "5"])
+        assert flags is not None
+        assert "host.int" not in flags
+
+
+# ---------------------------------------------------------------------------
+# Cast admission: a cast is refused where the field's type does not hold it
+# ---------------------------------------------------------------------------
+
+
+class TestCastAdmissionContract:
+    """A cast naming a type the field does not hold is refused, in every front-end (BUG-93, BUG-210)."""
+
+    def test_unheld_cast_on_a_fixed_tuple_field(self, loader: ConfargLoader) -> None:
+        """--u.int 5 at a tuple field is refused: no channel places an int there."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.load(_CastAdmissionCfg, argv=["--u.int", "5"], env={})
+
+    def test_unheld_cast_on_a_struct_field(self, loader: ConfargLoader) -> None:
+        """--nested.str x is refused: a struct holds no str to cast to."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.load(_CastAdmissionCfg, argv=["--nested.str", "x"], env={})
+
+    def test_unheld_cast_on_a_collection_field(self, loader: ConfargLoader) -> None:
+        """--items.str 3 is refused: a list[int] holds no str to cast to."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.load(_CastAdmissionCfg, argv=["--items.str", "3"], env={})
+
+    def test_unheld_cast_on_a_registered_leaf_field(self, loader: ConfargLoader) -> None:
+        """--p.str y is refused: a Path field holds no str to cast to."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.load(_CastAdmissionCfg, argv=["--p.str", "y"], env={})
+
+    def test_union_offers_the_cast_of_its_own_scalar(self, loader: ConfargLoader) -> None:
+        """--a.float 5 builds a=5.0 everywhere: float is a variant of int | float (BUG-94)."""
+        cfg = loader.load(_UnionScalarCfg, argv=["--a.float", "5"], env={})
+        assert cfg.a == 5.0
+        assert type(cfg.a) is float
+
+    def test_union_refuses_a_cast_beyond_its_own_scalars(self, loader: ConfargLoader) -> None:
+        """--b.float 1.5 at str | bool is refused in every front-end (BUG-94)."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.load(_UnionScalarCfg, argv=["--b.float", "1.5"], env={})
 
 
 # ---------------------------------------------------------------------------

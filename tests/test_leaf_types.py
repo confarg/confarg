@@ -498,6 +498,51 @@ class TestCastDict:
         with pytest.raises(confarg.exceptions.ConfargError):
             confarg.load(T, argv=[], env={}, files=[path])
 
+    def test_cast_not_held_by_a_fixed_tuple_field_is_refused_alike(self, tmp_toml) -> None:
+        """A pin naming a type the field does not hold is refused, defaulted or not (BUG-210).
+
+        The defaulted side once read the pin as an index patch and built the default
+        silently; both sides now refuse it the same way.
+        """
+        WithDefault = make_target("u", tuple[int, int], default=(0, 0))
+        WithoutDefault = make_target("u", tuple[int, int])
+        path = tmp_toml('[u]\n__cast__ = "int"\n__value__ = 5\n')
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="does not hold"):
+            confarg.load(WithDefault, argv=[], env={}, files=[path])
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="does not hold"):
+            confarg.load(WithoutDefault, argv=[], env={}, files=[path])
+
+    def test_cast_not_held_by_a_variant_union_field_is_refused_alike(self, tmp_toml) -> None:
+        """A pin naming no variant of `tuple[int, int] | None` is refused, defaulted or not."""
+        WithDefault = make_target("u", tuple[int, int] | None, default=(0, 0))
+        WithoutDefault = make_target("u", tuple[int, int] | None)
+        path = tmp_toml('[u]\n__cast__ = "int"\n__value__ = 5\n')
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="does not hold"):
+            confarg.load(WithDefault, argv=[], env={}, files=[path])
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="does not hold"):
+            confarg.load(WithoutDefault, argv=[], env={}, files=[path])
+
+    def test_cast_held_by_a_union_variant_is_honored_alike(self, tmp_toml) -> None:
+        """A pin naming a variant the union holds is honored, defaulted or not (BUG-210)."""
+        WithDefault = make_target("u", int | tuple[int, int], default=(0, 0))
+        WithoutDefault = make_target("u", int | tuple[int, int])
+        path = tmp_toml('[u]\n__cast__ = "int"\n__value__ = 5\n')
+        assert confarg.load(WithDefault, argv=[], env={}, files=[path]).u == 5
+        assert confarg.load(WithoutDefault, argv=[], env={}, files=[path]).u == 5
+
+    def test_cast_str_held_by_a_variant_union_field_with_default(self, tmp_toml) -> None:
+        """A pin naming the str of `tuple[int, int] | str` is honored with a default too."""
+        WithDefault = make_target("u", tuple[int, int] | str, default=(0, 0))
+        path = tmp_toml('[u]\n__cast__ = "str"\n__value__ = "5"\n')
+        assert confarg.load(WithDefault, argv=[], env={}, files=[path]).u == "5"
+
+    def test_cast_not_held_by_a_leaf_field_is_refused(self, tmp_toml) -> None:
+        """A pin may not escape the field's type: an int at a str field is refused."""
+        T = make_target("u", str)
+        path = tmp_toml('[u]\n__cast__ = "int"\n__value__ = 5\n')
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="does not hold"):
+            confarg.load(T, argv=[], env={}, files=[path])
+
 
 # ---------------------------------------------------------------------------
 # Path
