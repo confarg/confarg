@@ -28,6 +28,8 @@ from confarg import _defaults
 from confarg._callable import names_a_call, names_a_target_opener, names_an_opener, promote_bare_spec
 from confarg._cast import FORCE_CAST_NAMES, JSON_CAST_NAME, fold_root_json, resolve_forced_value
 from confarg._merge import (
+    APPEND_SUFFIX,
+    DELETE_SUFFIX,
     DICT_DELETE,
     LIST_APPEND_KEY,
     LIST_DELETE_KEY,
@@ -790,6 +792,19 @@ def _check_reserved_key_conflict(target: Any, name: str, detail: str) -> None:
                 _check_struct(v)
 
 
+def _reserved_segment(path: Sequence[str]) -> str | None:
+    """Return the first segment of *path* spelling a key confarg reserves, or ``None``.
+
+    The one test a flag's path, an environment variable's and a mount point's are put to: none
+    of them may write a key the merge or ``build()`` reads as its own
+    (``_defaults.RESERVED_KEYS``), which only a configuration file writes.
+
+    Dev Notes:
+        docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
+    """
+    return next((seg for seg in path if seg in _defaults.RESERVED_KEYS), None)
+
+
 def _check_config_flag_conflict(target: Any, config_flag: str, cli_prefix: str) -> None:
     """Raise ConfargError if config_flag matches a top-level field name of target.
 
@@ -924,7 +939,7 @@ def _addresses_key(key: str, reserved: str) -> bool:
     """
     if not reserved:
         return False
-    key = key.removesuffix(LIST_APPEND_KEY)
+    key = key.removesuffix(APPEND_SUFFIX)
     return key == reserved or key.startswith(reserved + ".")
 
 
@@ -977,16 +992,19 @@ def _check_mount_subpath(target: Any, subpath: str, union_tag: str, spelling: st
     and this walk is exact.
 
     Raises:
-        ConfargError: When the subpath names no field of the node it descends to.
+        ConfargError: When the subpath names no field of the node it descends to, or a
+            segment spells a key confarg reserves (:func:`_reserved_segment`).
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/type-guided-parsing.md#type-guided-parsing
     """
-    path = subpath.removesuffix(LIST_APPEND_KEY)
+    path = subpath.removesuffix(APPEND_SUFFIX)
     if not path:
         return
-    walk_target = _walk_target(target, _locals_keys(target, union_tag))
     parts = path.split(".")
+    if (reserved := _reserved_segment(parts)) is not None:
+        raise ConfargError.reserved_key(spelling, reserved)
+    walk_target = _walk_target(target, _locals_keys(target, union_tag))
     for j in range(1, len(parts) + 1):
         if _resolve_field_type(walk_target, parts[:j], union_tag) is not None:
             continue
@@ -1031,11 +1049,11 @@ def _parse_flag_mode(
     """
     path = key.split(".") if key else []
 
-    append_mode = bool(path) and path[-1].endswith("+") and len(path[-1]) > 1
+    append_mode = bool(path) and path[-1].endswith(APPEND_SUFFIX) and len(path[-1]) > 1
     if append_mode:
         path[-1] = path[-1][:-1]
 
-    delete_mode = not append_mode and bool(path) and path[-1].endswith("-") and len(path[-1]) > 1
+    delete_mode = not append_mode and bool(path) and path[-1].endswith(DELETE_SUFFIX) and len(path[-1]) > 1
     delete_idx = -1
     is_list_delete = False
     if delete_mode:
@@ -1656,6 +1674,9 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         if host_parsed and not cli_prefix and path and _path_unknown(walk_target, path[:1], union_tag):
             i = _skip_flag_values(argv, i)  # a flag the host registered beside the confarg ones
             continue
+
+        if (reserved := _reserved_segment(path)) is not None:
+            raise ConfargError.reserved_key(token, reserved)
 
         # A bare callable shorthand already stored at a prefix of this path is a spec, not
         # a stale scalar: open it so this flag refines it

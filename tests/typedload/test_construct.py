@@ -15,6 +15,7 @@ from uuid import UUID
 import pytest
 
 import confarg
+from confarg._merge import LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY
 from confarg._types import _StrToken, _UnionSeqToken
 from confarg.exceptions import ConfargWarning, MissingFieldError, TypeCoercionError
 from confarg.typedload._construct import _construct_struct_dispatch, construct
@@ -596,7 +597,7 @@ class _BasePt(NamedTuple):
 
 
 class TestReplaceBaseIsAList:
-    """The ``'*'`` key a patch carries holds the base list, or construction refuses it (BUG-170).
+    """The ``__base__`` key a patch carries holds the base list, or construction refuses it (BUG-170).
 
     Only a file can still write the key itself. Its value was read with ``list()``, so an int
     escaped as a raw ``TypeError`` and a string was split into its characters.
@@ -610,5 +611,14 @@ class TestReplaceBaseIsAList:
     @pytest.mark.parametrize("base", [5, "12"], ids=["int", "str"])
     def test_base_that_is_no_list_is_refused(self, tp: Any, base: Any) -> None:
         """Neither an int nor a string is a base list, whatever ``list()`` makes of it."""
-        with pytest.raises(TypeCoercionError, match=re.escape("at 'v': the '*' base must be a list")):
-            construct(tp, {"*": base, "0": 1}, path=("v",))
+        with pytest.raises(TypeCoercionError, match=re.escape("at 'v': '__base__' must hold a list")):
+            construct(tp, {LIST_REPLACE_BASE_KEY: base, "0": 1}, path=("v",))
+
+
+class TestListOpOnADict:
+    """A list op the merge recorded below a dict is refused, never built as one of its keys (FEAT-3)."""
+
+    def test_list_op_below_a_dict_is_refused(self) -> None:
+        """``{__delete__: [1]}`` beside a dict's keys names the op and the field."""
+        with pytest.raises(TypeCoercionError, match=re.escape("Cannot apply '__delete__' to the dict at 'd'")):
+            construct(dict[str, list[int]], {"a": [1], LIST_DELETE_KEY: [1]}, path=("d",))

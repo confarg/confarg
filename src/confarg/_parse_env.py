@@ -30,6 +30,7 @@ from confarg._parse_cli import (
     _member_names,
     _open_callable_shorthand,
     _path_unknown,
+    _reserved_segment,
     _resolve_field_type,
     _sequence_refusal,
     _walk_target,
@@ -153,6 +154,26 @@ def _refuse_below_a_sequence(orig_key: str, parts: list[str], target: Any, union
             f" (segment {parts[at]!r} names no element of '{'.'.join(parts[:at])}')."
         )
         raise ConfargError(msg)
+
+
+def _refuse_reserved_key(orig_key: str, parts: list[str]) -> None:
+    """Refuse a variable whose path spells a key confarg reserves, as its flag is refused.
+
+    A segment is compared lowercased, as the walk reads one naming no member, and a delete's
+    suffix is dropped first. Only a separator other than the default ``__`` lets a variable
+    spell such a key at all.
+
+    Raises:
+        ConfargError: If a segment spells a key of ``_defaults.RESERVED_KEYS``.
+
+    Dev Notes:
+        docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
+    """
+    segments = [p.lower() for p in parts]
+    if _is_env_delete(parts):
+        segments[-1] = segments[-1][:-1]
+    if (reserved := _reserved_segment(segments)) is not None:
+        raise ConfargError.reserved_key(orig_key, reserved)
 
 
 def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[str, Any], union_tag: str) -> None:
@@ -403,6 +424,7 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
 
     # The environment has no typing order, so it is given one: the broader variable first.
     for _, orig_key, key, parts, value in sorted(variables):
+        _refuse_reserved_key(orig_key, parts)
         if _is_env_delete(parts):
             _handle_env_delete(orig_key, parts, walk_target, data, union_tag)
             continue

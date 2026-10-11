@@ -13,6 +13,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 |---|---|
 | [No custom types required](no-custom-types-required.md) | plain dataclasses and standard annotations, no base class, decorator or field marker |
 | [Plain dicts between stages](plain-dicts-between-stages.md) | no container type of confarg's own between the stages |
+| [Merge ops are markers no channel types](merge-ops-are-markers-no-channel-types.md) | a list op is a key no flag, variable or file types; a file writes it, and `dump_file` dumps it, by a reserved name |
 | [One merge pipeline for every front-end](one-merge-pipeline.md) | the adapters translate into it; they never re-implement it |
 | [Adapters instead of an own CLI framework](adapters-not-a-cli-framework.md) | users keep argparse/click/typer/cyclopts, and need no CLI library at all |
 | [Zero runtime dependencies](zero-runtime-dependencies.md) | YAML, TOML writing, completion and the adapters are extras |

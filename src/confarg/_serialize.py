@@ -18,6 +18,7 @@ from confarg import _defaults
 from confarg._callable import _serialize_callable
 from confarg._cast import cast_name_for_type
 from confarg._import import dotted_name
+from confarg._merge import _OpKey
 from confarg._types import (
     TagPolicy,
     _dict_kv,
@@ -307,7 +308,8 @@ def _serialize_untyped(value: Any) -> Any:
 
     A force-cast is written back as the ``{__cast__, __value__}`` dict a file spells it
     with, rather than as the value it pins: nothing here knows the declared type, and a
-    bare scalar is re-read by declaration order.
+    bare scalar is re-read by declaration order. A list op the merge still holds is written
+    as the plain reserved key a file writes it with (``__append__``, ``__base__``, ...).
 
     Dev Notes:
         docs-dev/architecture/types/serialization.md#serialization
@@ -315,7 +317,7 @@ def _serialize_untyped(value: Any) -> Any:
     if isinstance(value, _Pinned):
         return _serialize_pinned(value)
     if isinstance(value, dict):
-        return {k: _serialize_untyped(v) for k, v in value.items()}
+        return {(str(k) if isinstance(k, _OpKey) else k): _serialize_untyped(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_serialize_untyped(v) for v in value]
     return _serialize_leaf(None, value)
@@ -346,7 +348,7 @@ def _cast_dict(tp: Any, value: Any) -> dict[str, Any]:
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
     """
-    return {"__cast__": cast_name_for_type(tp), "__value__": value}
+    return {_defaults.CAST_KEY: cast_name_for_type(tp), _defaults.VALUE_KEY: value}
 
 
 def _find_variant_type(tp: Any, instance: Any) -> Any | None:

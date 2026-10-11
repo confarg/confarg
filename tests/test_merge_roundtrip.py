@@ -6,9 +6,12 @@
 
 from __future__ import annotations
 
+import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any, NamedTuple
 
+import pytest
 from hypothesis import HealthCheck, given, settings
 
 import confarg
@@ -168,3 +171,42 @@ class TestNestedRoundTrip:
         confarg.dump_file(raw, out)
         reloaded = confarg.merge(Outer, argv=[], env={}, files=[out])
         assert raw == reloaded
+
+
+class _Pt(NamedTuple):
+    x: int
+    y: int
+
+
+@dataclass
+class _WithOps:
+    """A list and a namedtuple, whose patches the merge can hold for ``build()`` to apply."""
+
+    xs: list[int] = field(default_factory=list)
+    pt: _Pt = field(default_factory=lambda: _Pt(0, 0))
+
+
+class TestMergeOpRoundTrip:
+    """An op the merged dict still holds is dumped by the name a file writes it with (FEAT-3)."""
+
+    @pytest.mark.parametrize(
+        ("argv", "files"),
+        [
+            (["--xs+", "3"], {}),
+            (["--xs.0-"], {}),
+            (["--xs+", "3", "--xs.0-"], {}),
+            (["--pt.x", "9"], {"pt": [1, 2]}),
+        ],
+        ids=["append", "delete", "delete-after", "deferred-base"],
+    )
+    def test_merged_op_survives_dump_file(self, tmp_path, argv: list[str], files: dict[str, Any]) -> None:
+        """``dump_file(merge(...))`` reads back as the same merged dict, the op included."""
+        sources = []
+        if files:
+            sources.append(tmp_path / "base.json")
+            sources[0].write_text(json.dumps(files))
+        raw = confarg.merge(_WithOps, argv=argv, env={}, files=sources)
+        out = tmp_path / "snap.yaml"
+        confarg.dump_file(raw, out)
+        assert confarg.merge(_WithOps, argv=[], env={}, files=[out]) == raw
+        assert "__" in out.read_text()

@@ -14,6 +14,7 @@ from typing import Any, NamedTuple
 import pytest
 
 import confarg
+from confarg._merge import LIST_REPLACE_BASE_KEY
 from confarg.cli.argparse import from_namespace, populate_parser
 from confarg.exceptions import ConfargError, MissingFieldError, TypeCoercionError
 from confarg.typedload import construct
@@ -605,37 +606,40 @@ class TestPatchOverAPositionalBase:
     """A patch over a positional list builds whichever channel spelled the list (BUG-160).
 
     The merge cannot tell a namedtuple's list from a plain one, so it carries the list as
-    the ``'*'`` base beside the patch; ``build()`` lays the patch over the positions, by
+    the ``__base__`` base beside the patch; ``build()`` lays the patch over the positions, by
     field name or by index, as ``Point(*base)._replace(...)`` would.
     """
 
     def test_construct_lays_a_name_patch_over_the_base(self) -> None:
-        """The ``'*'`` base fills the positions the name keys do not take."""
-        assert construct(Point, {"*": [1, 2], "x": 9}) == Point(x=9, y=2)
+        """The ``__base__`` base fills the positions the name keys do not take."""
+        assert construct(Point, {LIST_REPLACE_BASE_KEY: [1, 2], "x": 9}) == Point(x=9, y=2)
 
     def test_construct_lays_an_index_patch_over_the_base(self) -> None:
         """An index patch, negative included, takes its position as a fixed tuple's does."""
-        assert construct(Point, {"*": [1, 2], "0": 9}) == Point(x=9, y=2)
-        assert construct(Point, {"*": [1, 2], "-1": 9}) == Point(x=1, y=9)
+        assert construct(Point, {LIST_REPLACE_BASE_KEY: [1, 2], "0": 9}) == Point(x=9, y=2)
+        assert construct(Point, {LIST_REPLACE_BASE_KEY: [1, 2], "-1": 9}) == Point(x=1, y=9)
 
     def test_construct_fills_past_a_short_base_from_the_defaults(self) -> None:
         """A base shorter than the arity leaves the rest to the patch, then to the defaults."""
-        assert construct(Color, {"*": [1, 2], "b": 3}) == Color(r=1, g=2, b=3, a=255)
-        assert construct(Color, {"*": [1, 2, 3], "3": 4}) == Color(r=1, g=2, b=3, a=4)
+        assert construct(Color, {LIST_REPLACE_BASE_KEY: [1, 2], "b": 3}) == Color(r=1, g=2, b=3, a=255)
+        assert construct(Color, {LIST_REPLACE_BASE_KEY: [1, 2, 3], "3": 4}) == Color(r=1, g=2, b=3, a=4)
 
     def test_construct_patches_into_a_nested_position(self) -> None:
         """A patch below a position refines what the base holds there, as a list patch does."""
-        assert construct(Line, {"*": [[1, 2], 5], "start": {"y": 9}}) == Line(start=Point(1, 9), width=5)
+        assert construct(Line, {LIST_REPLACE_BASE_KEY: [[1, 2], 5], "start": {"y": 9}}) == Line(
+            start=Point(1, 9),
+            width=5,
+        )
 
     def test_construct_refuses_a_base_longer_than_the_arity(self) -> None:
         """A base with more positions than fields is refused, as the plain list is."""
         with pytest.raises(TypeCoercionError, match="expected 2 elements, got 3"):
-            construct(Point, {"*": [1, 2, 3], "x": 9})
+            construct(Point, {LIST_REPLACE_BASE_KEY: [1, 2, 3], "x": 9})
 
     def test_construct_still_refuses_a_mixed_patch(self) -> None:
         """A patch mixing names and indices stays the refusal Q-1 asks about."""
         with pytest.raises(TypeCoercionError, match="Unknown field"):
-            construct(Point, {"*": [1, 2], "x": 9, "1": 8})
+            construct(Point, {LIST_REPLACE_BASE_KEY: [1, 2], "x": 9, "1": 8})
 
     def test_name_patch_on_the_cli_over_a_file_list(self, tmp_path) -> None:
         """``--pair.x`` over a file's ``pair: [1, 2]`` builds as over ``--pair 1 2``."""

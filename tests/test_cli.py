@@ -16,6 +16,7 @@ from typing import Any, NamedTuple, Optional
 import pytest
 
 import confarg
+from confarg._merge import LIST_APPEND_KEY
 from confarg.exceptions import ConfargError
 from tests.conftest import (
     AppConfig,
@@ -1261,7 +1262,7 @@ class TestConfigFileAppend:
         WithRows = make_target("rows", list[str], default_factory=list)
         extra = tmp_yaml("rows:\n  - a\n  - b\n", "extra.yaml")
         merged = confarg.merge(WithRows, argv=["--config.rows+", str(extra)], env={})
-        assert merged == {"rows": {"+": [{"rows": ["a", "b"]}]}}
+        assert merged == {"rows": {LIST_APPEND_KEY: [{"rows": ["a", "b"]}]}}
 
     def test_list_root_file_appends_its_items(self, tmp_yaml) -> None:
         """For a list of lists, the appended fragment is the list of rows to add."""

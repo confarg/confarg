@@ -2,31 +2,31 @@
 
 `--pt 1 2 --pt.y 9` and `--pt.y 9 --pt 1 2` used to produce three different merged dicts
 between the two sides: vanilla promoted the arity list to the list-op shape
-(`{'*': [1, 2], 'y': 9}`, which `build()` could not read then — `'*'` names no field) or
+(`{__base__: [1, 2], 'y': 9}`, which `build()` could not read then — the base names no field) or
 dropped the sub-flag outright, and the adapters merged the two halves order-independently,
 so the flag the user typed last had no effect. The rule chosen: **the latest arguments
 overwrite the earlier ones**, per path and in argv order — the same last-write-wins the other
 [sub-flag rules](whole-value-then-subkey.md#a-whole-value-followed-by-a-subkey-opens-rather-than-collides) read:
 
 - a sub-flag writes at `pt.y`, so it *refines* what is at `pt`: the arity flag's
-  positional list becomes the `'*'` base and the sub-flag patches beside it —
-  `{'*': [1, 2], 'y': 9}`, which builds `Pt(x=1, y=9)`;
+  positional list becomes the `__base__` and the sub-flag patches beside it —
+  `{__base__: [1, 2], 'y': 9}`, which builds `Pt(x=1, y=9)`;
 - the arity flag writes at `pt`, so a later occurrence *replaces* the field wholesale —
   `{'pt': [1, 2]}`, the sub-flag gone, as any later write at a path drops what the path
   held.
 
 Vanilla gets both from its sequential scan alone: `_set_nested` turns a plain list a later
-write descends through into the `'*'` base, for a namedtuple as for a *varlen* collection or
+write descends through into the `__base__`, for a namedtuple as for a *varlen* collection or
 a plain `tuple[int, int]`. The adapters' CLI channel is the same sequential scan over the
 same argv ([CLI adapters](../cli-adapters/model.md#argv-is-the-only-writer)), so the same argv
 produces byte-identical dicts on all five front-ends — interleavings included
-(`--pt.x 1 --pt 7 8 --pt.y 2` is `{'*': [7, 8], 'y': 2}`), which the per-flag argv read-back
+(`--pt.x 1 --pt 7 8 --pt.y 2` is `{__base__: [7, 8], 'y': 2}`), which the per-flag argv read-back
 the adapters first used (`_arity_flag_writes_last`) could not describe (BUG-111).
 
 ## build() reconciles the positions with the patch
 
 `typedload._construct._lay_patch_over_positions` is the one place a namedtuple's positional
-base meets a patch, whichever channel wrote them: it keys the `'*'` list by field name and
+base meets a patch, whichever channel wrote them: it keys the `__base__` list by field name and
 lays the patch over it — an all-index patch by position, as a fixed tuple's, a name patch by
 name, each value refining what the base holds at its position through
 `_merge._merge_existing_value`. That is `Pt(*base)._replace(**patch)`, the stdlib's own
@@ -38,7 +38,7 @@ The shape reaches `build()` from every channel because the merge cannot do bette
 type-unaware ([merge/build contract](../pipeline/merge-build-contract.md#merge-build-contract)),
 so a file's `pt: [1, 2]` under `--pt.x 9` or `APP_PT__X=9` is a list patched by a key that is
 no index — a field for a namedtuple, an error for a list. `_merge._patch_needs_the_type`
-defers it as `{'*': [1, 2], 'x': 9}`, beside the out-of-range index it already deferred for
+defers it as `{__base__: [1, 2], 'x': 9}`, beside the out-of-range index it already deferred for
 the same reason (BUG-160).
 
 The sub-flag's value is eagerly coerced, like every other leaf token. The adapters' former
@@ -50,7 +50,7 @@ The alternatives, and why not:
 
 - **Re-key the positional list by field name at parse time** (`_promote_namedtuple_positional`,
   BUG-66 to BUG-160). It made the CLI's dict buildable while `build()` could not read the
-  `'*'` shape, and it was the rule here until BUG-160. Withdrawn: the parser is the only
+  `__base__` shape, and it was the rule here until BUG-160. Withdrawn: the parser is the only
   writer that knows the field is a namedtuple, so a file's or the env's list under a name
   patch still reached the merge as a list and failed there, and the same reconciliation had
   to exist in `build()` anyway. Two decision-makers then disagreed on the index patch:
@@ -65,22 +65,22 @@ The alternatives, and why not:
 
 The optional spelling is no different. `Point | None` is a union with a sequence variant to
 the vanilla scan, and its positional run descends through the same `_set_nested`, so
-`--pt 1 2 --pt.y 9` is `{'*': ['1', '2'], 'y': 9}` there too, and builds `Pt(1, 9)` on all five
+`--pt 1 2 --pt.y 9` is `{__base__: ['1', '2'], 'y': 9}` there too, and builds `Pt(1, 9)` on all five
 front-ends. Under the parse-time re-keying it was the one spelling the promotion skipped (it
 asked the field as resolved and found the union), and so the one that failed in `build()`.
 
 ## A base list carried with its patch replaces what lay below
 
-A `'*'` dict in a higher layer says "this list, then these patches". `_merge_existing_value`
+A `__base__` dict in a higher layer says "this list, then these patches". `_merge_existing_value`
 therefore lets it replace a dict base outright, as a union tag does, instead of deep-merging
 into it: the base may be a name dict a file spelled (`pt: {x: 5}` under `APP_PT='[1, 2]'`
 plus `APP_PT__Y=9` is `Pt(1, 9)`, not `Pt(5, 9)`), or a patch an earlier merge deferred, whose
-stale index keys would otherwise survive (`{'*': [1], '1': 5}` under `{'*': [7, 9], '0': 8}`
+stale index keys would otherwise survive (`{__base__: [1], '1': 5}` under `{__base__: [7, 9], '0': 8}`
 built `(8, 5)` on a `tuple[int, int]` until BUG-160).
 
-A dict field may hold a key `*` of its own (`--d.* 5`, `APP_D__*=5`), so whether a `'*'` is a
-base is decided by what it holds, never by the key alone: a list, or the `DICT_DELETE` of a
-whole-field delete, the only two values the merge stores there. A `'*'` holding anything else
-merges as any other key. Until BUG-185 the key alone decided, and `--d.* 5` dropped every key
-the files gave `d`. A dict key `*` holding a list, or deleted, still reads as a base: the IR
-spells it exactly as a base, which only a marker no channel can type would settle (FEAT-3).
+A dict field may hold a key `*` of its own (`--d.* 5`, `APP_D__*=[1, 2]`), and nothing in its
+value tells it from a base: a list is what both hold. So the base is no string any channel
+types, but a marker (FEAT-3, [deep merge](../pipeline/deep-merge.md#no-channel-types-an-op)),
+and the key `*` merges as any other whatever it holds. Until BUG-185 the key alone decided, and
+`--d.* 5` dropped every key the files gave `d`; BUG-185 then decided by the value, which still
+dropped them for a list or a delete (BUG-199).

@@ -14,8 +14,8 @@ introduced_by: [PR-5]  # both channels decide a list delete with int() on the la
 
 Both channels decide "is this delete a list-index delete?" with `int()` on the last segment
 alone, never asking the type. On a dict the key `1` is a key like `a`, but `--d.1-` and
-`APP_D__1-` record a list delete, `{'-': [1]}`, beside the dict's keys, and `build()` then
-fails on a field named `-`. `--d.a-` deletes its key as it should. Fix direction: a delete is
+`APP_D__1-` record a list delete, `{__delete__: [1]}`, beside the dict's keys, and `build()`
+then refuses it as an operation on a list. `--d.a-` deletes its key as it should. Fix direction: a delete is
 a list-index delete only where the walk stands on a sequence, the rest are key deletes; this
 is the one decoder [REF-84](../refactors/REF-84-env-delete-suffix-decoded-twice.md) asks for,
 and the merge vocabulary it protects is in
@@ -50,10 +50,10 @@ for argv, env in ((["--d.1-"], {}), ([], {"APP_D__1-": "x"}), (["--d.a-"], {})):
 
 # expected: the first two delete the key '1' as the third deletes 'a': {'d': {'a': 6}}
 # actual:
-#   ['--d.1-'] -> {'d': {'1': 5, 'a': 6, '-': [1]}}
-#       TypeCoercionError Cannot coerce list [1] to int at 'd.-'
-#   {'APP_D__1-': 'x'} -> {'d': {'1': 5, 'a': 6, '-': [1]}}
-#       TypeCoercionError Cannot coerce list [1] to int at 'd.-'
+#   ['--d.1-'] -> {'d': {'1': 5, 'a': 6, '__delete__': [1]}}
+#       TypeCoercionError Cannot apply '__delete__' to the dict at 'd': it is an operation on a list.
+#   {'APP_D__1-': 'x'} -> {'d': {'1': 5, 'a': 6, '__delete__': [1]}}
+#       TypeCoercionError Cannot apply '__delete__' to the dict at 'd': it is an operation on a list.
 #   ['--d.a-'] -> {'d': {'1': 5}}
 #       Cfg(d={'1': 5})
 ```

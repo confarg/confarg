@@ -25,5 +25,8 @@ keeps the engines independent of where data came from, makes round-tripping triv
 lets the contract tests assert byte-equality across front-ends.
 
 Cost: the dict is untyped and stringly keyed, so structural mistakes surface late (in
-`build()`), and sentinel keys (`__root__`, `__cast__`, `+`, `-`, `*`, `~`, …) live in the same
-key space as user data. See [FEAT-3](../../todo/features/FEAT-3-reserved-sentinel-key-registry.md).
+`build()`), and reserved keys (`__root__`, `__cast__`, `__include__`, …) live in the same key
+space as user data: a file reads them as its own and the other channels may not write them
+([config files](../config-files/reserved-keys.md#reserved-file-only-keys)). The list ops alone
+are kept out of it, as markers no channel types
+([deep merge](deep-merge.md#no-channel-types-an-op)).

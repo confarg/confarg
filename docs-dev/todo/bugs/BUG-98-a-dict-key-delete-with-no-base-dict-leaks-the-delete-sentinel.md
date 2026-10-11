@@ -24,6 +24,9 @@ BUG-78.
 Fix direction: detect the surviving sentinel where the list delete detects its baseless case
 and raise the same style of purposeful error
 ([collection-patches.md](../../architecture/cli-parsing/collection-patches.md#collection-patch-operations)).
+The same surviving sentinel is what `dump_file` cannot write
+([BUG-202](BUG-202-dump-file-of-a-merged-key-delete-escapes-as-a-raw-writer-error.md)), which
+has a file spelling to write it with; `build()` has no base to apply it to.
 
 Origin: latent since the initial version (PR-5): a dict-key delete stores its sentinel in the merged
 dict and relies on the deep merge to meet a base, with no check for a sentinel that survives. It

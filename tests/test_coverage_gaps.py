@@ -1413,14 +1413,14 @@ class TestMergeGaps:
         assert result["key"] == [1, 2, 3]
 
     def test_apply_append_key_existing_append_dict(self) -> None:
-        """When the existing value is a {'+': [...]} dict, items are merged into the append list."""
+        """When the existing value is a {__append__: [...]} dict, items are merged into the append list."""
         result: dict = {"key": {LIST_APPEND_KEY: [1, 2]}}
         _apply_append_key("key", 3, result)
         assert result["key"][LIST_APPEND_KEY] == [1, 2, 3]
 
     def test_normalize_merge_ops_double_delete_indices(self) -> None:
         """Two 'N-' keys in the same dict merge their delete indices (hits line 132)."""
-        # "-" key (len=1) is treated as a regular key → stored as result["-"] = [1]
+        # the delete marker is stored as it is → result[LIST_DELETE_KEY] = [1]
         # "3-" key → delete_indices = [3]
         # At end: existing_del = [1] → sorted({1, 3}) = [1, 3]
         result = _normalize_merge_ops({LIST_DELETE_KEY: [1], "3-": "x"})

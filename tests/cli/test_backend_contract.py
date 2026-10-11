@@ -38,7 +38,7 @@ import pytest
 import confarg
 import confarg.cli._build as build_mod
 from confarg._files import INCLUDE_KEY
-from confarg._merge import DICT_DELETE
+from confarg._merge import DICT_DELETE, LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY
 from confarg.cli._build import build_static_flags
 from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError, UnknownArgumentError
 from tests._loaders import ArgparseLoader, ClickLoader, CycloptsLoader, TyperLoader, VanillaLoader
@@ -957,14 +957,14 @@ class TestFixedSequenceContract:
         self,
         space_sep_loader: ConfargLoader,
     ) -> None:
-        """A sub-flag after the arity flag descends into the raw run, '*' shape and all (BUG-61).
+        """A sub-flag after the arity flag descends into the raw run, ``__base__`` shape and all (BUG-61).
 
-        The positional run becomes the generic ``_set_nested`` list-op ``'*'`` base, as on
+        The positional run becomes the generic ``_set_nested`` list-op ``__base__`` base, as on
         the plain spelling, and ``build()`` lays the sub-flag over it by field name
         (BUG-160). Every front-end stores the same dict and builds it alike.
         """
         assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={}) == {
-            "pair": {"*": ["1", "2"], "y": 9},
+            "pair": {LIST_REPLACE_BASE_KEY: ["1", "2"], "y": 9},
         }
         cfg = space_sep_loader.load(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={})
         assert cfg.pair == _Point(1, 9)
@@ -1132,11 +1132,11 @@ class TestFixedSequenceContract:
 
         The latest arguments overwrite earlier ones, per path: a sub-flag writes at
         ``pair.y``, so it joins the arity flag's positional value instead of replacing
-        it. The positions are the list-op ``'*'`` base every channel carries, and
+        it. The positions are the list-op ``__base__`` base every channel carries, and
         ``build()`` lays the sub-flag over them by field name.
         """
         assert loader.merge(_WithPoint, argv=["--pair", "13", "42", "--pair.y", "7"], env={}) == {
-            "pair": {"*": [13, 42], "y": 7},
+            "pair": {LIST_REPLACE_BASE_KEY: [13, 42], "y": 7},
         }
         assert loader.load(_WithPoint, argv=["--pair", "13", "42", "--pair.y", "7"], env={}).pair == _Point(13, 7)
 
@@ -1144,12 +1144,12 @@ class TestFixedSequenceContract:
         """A sub-flag over a file's positional list builds as it does over the arity flag's (BUG-160).
 
         The merge cannot tell a namedtuple's list from a plain one, so it carries the file's
-        list as the ``'*'`` base beside the name key, and ``build()`` reconciles the two.
+        list as the ``__base__`` base beside the name key, and ``build()`` reconciles the two.
         """
         base = tmp_path / "base.yaml"
         base.write_text("pair: [13, 42]\n")
         argv = ["--config", str(base), "--pair.y", "7"]
-        assert loader.merge(_WithPoint, argv=argv, env={}) == {"pair": {"*": [13, 42], "y": 7}}
+        assert loader.merge(_WithPoint, argv=argv, env={}) == {"pair": {LIST_REPLACE_BASE_KEY: [13, 42], "y": 7}}
         assert loader.load(_WithPoint, argv=argv, env={}).pair == _Point(13, 7)
 
     def test_namedtuple_sub_flag_then_arity_flag_replaces_wholesale(self, loader: ConfargLoader) -> None:
@@ -1214,12 +1214,12 @@ class TestFixedSequenceContract:
     def test_namedtuple_arity_then_index_sub_flag_keeps_both(self, loader: ConfargLoader) -> None:
         """An index sub-flag after the arity flag rides the positions as its own key (BUG-65).
 
-        The index sub-flag keeps its index key beside the ``'*'`` base, not the ``x``
+        The index sub-flag keeps its index key beside the ``__base__`` base, not the ``x``
         overwrite a collection-time re-keying invented, and ``build()`` patches that
         position as it does a plain tuple's (BUG-160).
         """
         assert loader.merge(_WithPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}) == {
-            "pair": {"*": [1, 2], "0": 9},
+            "pair": {LIST_REPLACE_BASE_KEY: [1, 2], "0": 9},
         }
         assert loader.load(_WithPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}).pair == _Point(9, 2)
 
@@ -1229,9 +1229,11 @@ class TestFixedSequenceContract:
         assert loader.load(_WithOptionalPoint, argv=["--pair.0", "13", "--pair.1", "42"], env={}).pair == _Point(13, 42)
 
     def test_optional_namedtuple_arity_then_index_sub_flag_keeps_both(self, space_sep_loader: ConfargLoader) -> None:
-        """The union shape keeps the index key beside the ``'*'`` base, as vanilla does (BUG-65, BUG-160)."""
+        """The union shape keeps the index key beside the ``__base__`` base, as vanilla does (BUG-65, BUG-160)."""
         argv = ["--pair", "1", "2", "--pair.0", "9"]
-        assert space_sep_loader.merge(_WithOptionalPoint, argv=argv, env={}) == {"pair": {"*": ["1", "2"], "0": 9}}
+        assert space_sep_loader.merge(_WithOptionalPoint, argv=argv, env={}) == {
+            "pair": {LIST_REPLACE_BASE_KEY: ["1", "2"], "0": 9},
+        }
         assert space_sep_loader.load(_WithOptionalPoint, argv=argv, env={}).pair == _Point(9, 2)
 
     def test_namedtuple_deep_sub_flag_below_a_namedtuple_field(self, loader: ConfargLoader) -> None:
@@ -1308,12 +1310,14 @@ class TestFixedSequenceContract:
     def test_namedtuple_arity_then_deep_sub_flag_merges(self, loader: ConfargLoader) -> None:
         """A deep sub-flag after the arity flag descends into the positions it left (BUG-68).
 
-        The same priority one level up applies: the arity value is the ``'*'`` base and
+        The same priority one level up applies: the arity value is the ``__base__`` base and
         the sub-flag patches the field it names, here with the dict the deeper level
         collected, which ``build()`` lays over that position (BUG-160).
         """
         argv = ["--pt", "1", "2", "--pt.inner.b", "y"]
-        assert loader.merge(_WithNestedPoint, argv=argv, env={}) == {"pt": {"*": ["1", 2], "inner": {"b": "y"}}}
+        assert loader.merge(_WithNestedPoint, argv=argv, env={}) == {
+            "pt": {LIST_REPLACE_BASE_KEY: ["1", 2], "inner": {"b": "y"}},
+        }
         assert loader.load(_WithNestedPoint, argv=argv, env={}).pt == _PtNested(inner=_Inner(a=0, b="y"), x=2)
 
     def test_namedtuple_deep_sub_flag_then_arity_replaces_wholesale(self, loader: ConfargLoader) -> None:
@@ -1323,7 +1327,9 @@ class TestFixedSequenceContract:
     def test_namedtuple_deep_arity_then_deep_sub_flag_merges(self, loader: ConfargLoader) -> None:
         """The same priority holds at the deeper level, on the field's own arity flag (BUG-68)."""
         argv = ["--pt.inner", "7", "8", "--pt.inner.a", "5"]
-        assert loader.merge(_WithPlainNestedPoint, argv=argv, env={}) == {"pt": {"inner": {"*": [7, "8"], "a": 5}}}
+        assert loader.merge(_WithPlainNestedPoint, argv=argv, env={}) == {
+            "pt": {"inner": {LIST_REPLACE_BASE_KEY: [7, "8"], "a": 5}},
+        }
         assert loader.load(_WithPlainNestedPoint, argv=argv, env={}).pt.inner == _Inner(a=5, b="8")
 
     def test_namedtuple_deep_sub_flag_then_deep_arity_replaces(self, loader: ConfargLoader) -> None:
@@ -2914,9 +2920,9 @@ class TestTagAtAnyPathContract:
         assert merged == {"pt": {"x": 1, "class": "X"}}
 
     def test_tag_after_namedtuple_positional_run(self, loader: ConfargLoader) -> None:
-        """A tag after the arity flag joins the positions' ``'*'`` base, as vanilla's does."""
+        """A tag after the arity flag joins the positions' ``__base__`` base, as vanilla's does."""
         merged = loader.merge(_TagAnywhere, argv=["--pt", "1", "2", "--pt.class", "X"], env={}, config_flag="")
-        assert merged == {"pt": {"*": [1, 2], "class": "X"}}
+        assert merged == {"pt": {LIST_REPLACE_BASE_KEY: [1, 2], "class": "X"}}
 
     def test_namedtuple_positional_run_after_tag(self, loader: ConfargLoader) -> None:
         """The arity flag typed after the tag replaces it."""
@@ -3726,6 +3732,20 @@ class _SequenceSegments:
 # The merge's own list-patch keys, a name, and what int() reads but str() of no integer writes.
 _NO_INDEX_SEGMENTS = ["+", "*", "-", "~", "foo", "01", "+1", "-0", "1_0"]
 
+# The keys only a configuration file may write: the merge's list ops as a file spells them, then
+# what the files, the cast and a non-struct root reserve (FEAT-3).
+_RESERVED_KEYS = [
+    "__append__",
+    "__delete__",
+    "__delete_after__",
+    "__base__",
+    "__include__",
+    "__cast__",
+    "__value__",
+    "__root__",
+]
+_RESERVED_KEY_REASON = "is a key confarg reserves, which only a configuration file may write."
+
 
 @dataclass
 class _NestedDicts:
@@ -3758,14 +3778,16 @@ class TestCollectionPatchContract:
         """An index patch over a list the same channel collected records, not applies (BUG-67).
 
         Within one channel the op is a *record*: vanilla's ``_set_nested`` promotes the
-        stored list into the ``'*'`` base and sets the index key beside it, leaving
+        stored list into the ``__base__`` base and sets the index key beside it, leaving
         ``build()`` to apply it. The adapters' join deep-merged the patch scan over the
         collected value, and ``_deep_merge`` applied the op on the spot — the same list
         built, but a merged dict that is not byte-identical, with the base list hidden
         from no one but the op that consumed it.
         """
         argv = ["--users", "alice", "--users", "bob", "--users.0", "allan"]
-        assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {"*": ["alice", "bob"], "0": "allan"}}
+        assert loader.merge(_WithUsers, argv=argv, env={}) == {
+            "users": {LIST_REPLACE_BASE_KEY: ["alice", "bob"], "0": "allan"},
+        }
         assert loader.load(_WithUsers, argv=argv, env={}).users == ["allan", "bob"]
 
     def test_nested_index_set(self, loader: ConfargLoader, tmp_yaml) -> None:
@@ -3868,14 +3890,14 @@ class TestCollectionPatchContract:
         assert cfg.lang == ("en", "FR")
 
     def test_tuple_index_patch_beside_a_plain_occurrence_records_the_op(self, loader: ConfargLoader) -> None:
-        """A fixed tuple's index patch rides the collected tokens as the ``'*'`` base (BUG-67).
+        """A fixed tuple's index patch rides the collected tokens as the ``__base__`` base (BUG-67).
 
         Same defect as the varlen spelling: the join applied the op to the collected
         list instead of recording it, so the adapters held ``[en, FR]`` where vanilla
-        holds the operation ``{'*': [fr, FR], '0': en}``.
+        holds the operation ``{__base__: [fr, FR], '0': en}``.
         """
         argv = ["--lang", "fr", "FR", "--lang.0", "en"]
-        assert loader.merge(_WithLang, argv=argv, env={}) == {"lang": {"*": ["fr", "FR"], "0": "en"}}
+        assert loader.merge(_WithLang, argv=argv, env={}) == {"lang": {LIST_REPLACE_BASE_KEY: ["fr", "FR"], "0": "en"}}
         assert loader.load(_WithLang, argv=argv, env={}).lang == ("en", "FR")
 
     def test_tuple_build_with_mixed_indices_no_base(self, loader: ConfargLoader) -> None:
@@ -3957,12 +3979,14 @@ class TestCollectionPatchContract:
     def test_append_beside_a_plain_occurrence_records_the_op(self, loader: ConfargLoader) -> None:
         """An append over a list the same channel collected records, not applies (BUG-67).
 
-        Vanilla's ``_merge_append_ops`` wraps the stored list as the ``'*'`` base and
+        Vanilla's ``_merge_append_ops`` wraps the stored list as the ``__base__`` base and
         carries the appended items under ``'+'`` beside it; the adapters' join applied
         the append on the spot.
         """
         argv = ["--users", "alice", "--users", "bob", "--users+", "carol"]
-        assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {"*": ["alice", "bob"], "+": ["carol"]}}
+        assert loader.merge(_WithUsers, argv=argv, env={}) == {
+            "users": {LIST_REPLACE_BASE_KEY: ["alice", "bob"], LIST_APPEND_KEY: ["carol"]},
+        }
         assert loader.load(_WithUsers, argv=argv, env={}).users == ["alice", "bob", "carol"]
 
     def test_append_bare_twice(self, loader: ConfargLoader, tmp_yaml) -> None:
@@ -4006,11 +4030,13 @@ class TestCollectionPatchContract:
         """An index delete over a list the same channel collected records, not applies (BUG-67).
 
         Vanilla's ``_accumulate_list_delete`` promotes the stored list into the
-        ``'*'`` base and accumulates the index under ``'-'``; the adapters' join deleted
+        ``__base__`` base and accumulates the index under ``__delete__``; the adapters' join deleted
         the element from the collected list on the spot.
         """
         argv = ["--users", "alice", "--users", "bob", "--users.0-"]
-        assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {"*": ["alice", "bob"], "-": [0]}}
+        assert loader.merge(_WithUsers, argv=argv, env={}) == {
+            "users": {LIST_REPLACE_BASE_KEY: ["alice", "bob"], LIST_DELETE_KEY: [0]},
+        }
         assert loader.load(_WithUsers, argv=argv, env={}).users == ["bob"]
 
     def test_index_delete_after_a_whole_field_delete_has_no_base(self, loader: ConfargLoader, tmp_yaml) -> None:
@@ -4021,7 +4047,7 @@ class TestCollectionPatchContract:
         descent once read the sentinel as a dict (BUG-77).
         """
         argv = ["--users-", "--users.0-"]
-        assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {"-": [0]}}
+        assert loader.merge(_WithUsers, argv=argv, env={}) == {"users": {LIST_DELETE_KEY: [0]}}
         base = tmp_yaml("users: [alice, bob]\n")
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="requires a base list"):
             loader.load(_WithUsers, argv=["--config", str(base), *argv], env={})
@@ -4064,7 +4090,9 @@ class TestCollectionPatchContract:
     def test_delete_and_append_inside_an_appended_item(self, loader: ConfargLoader) -> None:
         """A delete then an append below ``-1`` rebuild the appended item's list from nothing (BUG-116)."""
         argv = ["--items+", '{"tags": ["a", "b"]}', "--items.-1.tags-", "--items.-1.tags+", "x"]
-        assert loader.merge(_WithTaggedItems, argv=argv, env={}) == {"items": {"+": [{"tags": {"+": ["x"]}}]}}
+        assert loader.merge(_WithTaggedItems, argv=argv, env={}) == {
+            "items": {LIST_APPEND_KEY: [{"tags": {LIST_APPEND_KEY: ["x"]}}]},
+        }
         assert loader.load(_WithTaggedItems, argv=argv, env={}).items == [_TaggedItem(tags=["x"])]
 
     @pytest.mark.parametrize("ops", [["--sec.a", "9"], ["--sec", '{"a": 9}']])
@@ -4087,7 +4115,7 @@ class TestCollectionPatchContract:
         """
         argv = ["--items+", '{"tags": ["a", "b"]}', "--items.-1.tags.0-"]
         assert loader.merge(_WithTaggedItems, argv=argv, env={}) == {
-            "items": {"+": [{"tags": {"*": ["a", "b"], "-": [0]}}]},
+            "items": {LIST_APPEND_KEY: [{"tags": {LIST_REPLACE_BASE_KEY: ["a", "b"], LIST_DELETE_KEY: [0]}}]},
         }
         assert loader.load(_WithTaggedItems, argv=argv, env={}).items == [_TaggedItem(tags=["b"])]
 
@@ -4251,7 +4279,7 @@ class TestCollectionPatchContract:
         """A key of a dict inside a namedtuple field is a patch flag too, typed by the dict's value (BUG-157)."""
         argv = ["--pair.name", "a", "--pair.items+", "1", "--pair.meta.k", "3"]
         assert loader.merge(_WithPatchPair, argv=argv, env={}) == {
-            "pair": {"name": "a", "items": {"+": [1]}, "meta": {"k": 3}},
+            "pair": {"name": "a", "items": {LIST_APPEND_KEY: [1]}, "meta": {"k": 3}},
         }
         assert loader.load(_WithPatchPair, argv=argv, env={}).pair == _PatchPair("a", [1], {"k": 3})
 
@@ -4378,6 +4406,54 @@ class TestCollectionPatchContract:
         base = tmp_json('{"u": {"k": 1}}')
         cfg = loader.load(_SequenceSegments, argv=["--config", str(base), "--u.*", "5"], env={})
         assert cfg.u == {"k": 1, "*": 5}
+
+    def test_key_star_of_a_dict_holding_a_list_keeps_the_files_keys(
+        self,
+        loader: ConfargLoader,
+        request: pytest.FixtureRequest,
+        tmp_json,
+    ) -> None:
+        """``--d.* 3`` adds the key ``*`` holding a list beside the file's keys (BUG-199, FEAT-3).
+
+        A list under ``'*'`` once spelled exactly the merge's own base, which replaced the dict.
+        """
+        if loader.id == "cyclopts":
+            request.applymarker(
+                pytest.mark.xfail(raises=SystemExit, strict=True, reason="BUG-180: cyclopts strips a trailing '*'"),
+            )
+        base = tmp_json('{"d": {"k": [1]}}')
+        cfg = loader.load(_SequenceSegments, argv=["--config", str(base), "--d.*", "3"], env={})
+        assert cfg.d == {"k": [1], "*": [3]}
+
+    @pytest.mark.parametrize("key", ["*", "+", "-", "~"])
+    def test_delete_of_a_dict_key_spelled_like_a_list_op_deletes_that_key(
+        self,
+        loader: ConfargLoader,
+        tmp_json,
+        key: str,
+    ) -> None:
+        """``--d.*-`` deletes the key ``*`` alone, whatever the dict's other keys (BUG-199, FEAT-3)."""
+        base = tmp_json(json.dumps({"d": {"k": [1], key: [2]}}))
+        cfg = loader.load(_SequenceSegments, argv=["--config", str(base), f"--d.{key}-"], env={})
+        assert cfg.d == {"k": [1]}
+
+    @pytest.mark.parametrize("key", _RESERVED_KEYS)
+    def test_reserved_key_typed_as_a_dict_key_is_refused(self, loader: ConfargLoader, key: str) -> None:
+        """A key the merge or ``build()`` reads as its own is no flag's to write (FEAT-3).
+
+        ``--d.__cast__ int --d.__value__ 5`` once built the dict field as the integer 5.
+        """
+        with pytest.raises((ConfargError, SystemExit)) as excinfo:
+            loader.merge(_SequenceSegments, argv=[f"--d.{key}", "5"], env={})
+        if isinstance(excinfo.value, ConfargError):
+            assert str(excinfo.value) == f"Cannot set '--d.{key}': {key!r} {_RESERVED_KEY_REASON}"
+
+    def test_reserved_key_as_a_mount_point_is_refused(self, loader: ConfargLoader, tmp_json) -> None:
+        """``--config.d.__base__`` would mount a file's content as the merge's own base (FEAT-3)."""
+        part = tmp_json("[1]", "part.json")
+        with pytest.raises(ConfargError) as excinfo:
+            loader.merge(_SequenceSegments, argv=["--config.d.__base__", str(part)], env={})
+        assert str(excinfo.value) == f"Cannot set '--config.d.__base__': '__base__' {_RESERVED_KEY_REASON}"
 
 
 class TestCollectionPatchListSyntax:
@@ -6929,7 +7005,7 @@ class TestMountParity:
         target = make_target("items", list[dict[str, str]], default_factory=list)
 
         merged = loader.merge(target, argv=["--config.items+", str(item)], env={})
-        assert merged == {"items": {"+": [{"host": "inner"}]}}
+        assert merged == {"items": {LIST_APPEND_KEY: [{"host": "inner"}]}}
 
     def test_append_parity_between_cli_and_file(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """Test that --config.f+ FILE and f+: {__include__: FILE} mean the same thing.
@@ -7217,7 +7293,7 @@ class TestArgvOrderContract:
         [
             pytest.param(
                 ["--pt.x", "1", "--pt", "7", "8", "--pt.y", "2"],
-                {"pt": {"*": [7, 8], "y": 2}},
+                {"pt": {LIST_REPLACE_BASE_KEY: [7, 8], "y": 2}},
                 id="arity-flag-between-sub-flags",
             ),
             pytest.param(["--s.x", "1", "--s", '{"y": 5}', "--s.y", "2"], {"s": {"y": 2}}, id="blob-between-sub-flags"),

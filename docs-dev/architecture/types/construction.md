@@ -95,8 +95,8 @@ indifferent to both.
   not twice. Every missing field raises the one `MissingFieldError(path, type)`, so its type never changes
   the message ([invariants](../invariants.md#delegate-to-the-canonical-function)).
 - An index-keyed dict for a tuple field with a default patches the default in place, unless
-  the merge layer carried a base (`"*"`), which wins.
-- A `"*"` base with an index patch beside it builds as the merge would have built it, had no
+  the merge layer carried a base (`__base__`), which wins.
+- A `__base__` with an index patch beside it builds as the merge would have built it, had no
   index escaped the base: each patch value refines what the base holds at its position through
   `_merge._merge_existing_value`, and fills a slot past the base's end. So `--t.1 5` beside
   `--t.0.a 9` over a file's `t: [[1, 2]]` defers the patch without turning the refinement of
@@ -106,7 +106,7 @@ indifferent to both.
   are errors that say so.
 - Negative indices count from the end wherever a sequence's length is known
   (`_indexed_dict_to_positions`), mirroring list patches.
-- Namedtuples accept a list, a dict by field name, or a dict by index — and a `"*"` base list
+- Namedtuples accept a list, a dict by field name, or a dict by index — and a `__base__` list
   with either kind of patch beside it, laid over the positions
   ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#build-reconciles-the-positions-with-the-patch)).
   A list is keyed by field name and built as the by-name dict, so a list shorter than the
