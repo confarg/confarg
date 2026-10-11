@@ -20,6 +20,26 @@
 4. **leaf** variants: tuples (filtered by arity), then collections, then scalars (stealing
    rule), then the `_UnionSeqToken` one-element-list fallback.
 
+### An optional field fails as its variant
+
+`X | None` fails exactly as an `X` field does: same exception type, same message, same path.
+A `{q: "notint"}` for `Inner | None` names `inner.q`, a `{}` missing a required field is
+the `MissingFieldError` naming it, and a callable spec's own refusal reaches the user. The
+`None` variant adds one thing, and only where it could have applied: when the value is a
+[token](token-model.md#token-model), the one place a none word is read, the variant's error
+ends with the remedy (`… To set this field to None, pass 'none' or 'null'.`). A dict, a list
+or a file's string could not have meant `None` — a file writes it as its own null, and its
+`"none"` stays a string — so there the remedy would only mislead (BUG-159).
+
+The remedy is appended to the variant's error rather than replacing it, so a token keeps
+what the variant had to say: a callable shorthand's arity refusal, the element of a list a
+whole-value token failed on (maintainer-chosen). Replacing it with one generic "Cannot
+coerce … to X" for a token, as `_construct_single_variant_union` used to for every value,
+was rejected for that reason. The suffix is spelled once in `exceptions.py`
+(`_append_none_remedy`), for this site and for `cannot_coerce`'s `none_sentinel`. pydantic
+reports an `Optional[Model]` failure the same way: at the inner location, as the plain
+model's, the nullable wrapper adding nothing.
+
 ## Inheritance
 
 A struct field whose class has subclasses requires the union tag naming the concrete class;
