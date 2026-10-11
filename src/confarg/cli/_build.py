@@ -729,21 +729,22 @@ def _addresses_fixed_seq_element(target: Any, path: list[str], union_tag: str) -
     return _is_namedtuple(core) or (_is_tuple(core) and _tuple_types(core) is not None)
 
 
-def _collect_namedtuple_specs(
+def _collect_namedtuple_specs(  # noqa: PLR0913  # _specs_for_field's context, plus its help
     core: Any,
     flag: str,
     union_tag: str,
     group: str | None,
     group_description: str,
+    help_text: str,
 ) -> list[FlagSpec]:
-    """Build FlagSpecs for a namedtuple field: nargs leaf + per-field-name + per-index flags.
+    """Build FlagSpecs for a namedtuple field: its arity flag, then each field's flags.
 
-    A struct-shaped field (a struct, or another namedtuple, each however wrapped)
-    takes the flags that field type takes at any other nesting depth, spelled under
-    all three of its own keys — the name, the index, and the negative index that
-    counts from the end — because vanilla resolves a path through a namedtuple's
-    fields as through a struct's (BUG-68) and takes a fixed-length sequence's
-    negative indices as a tuple's (BUG-80).
+    Each field takes, under all three of its own keys — the name, the index, and the
+    negative index that counts from the end — the flags that field type takes as a
+    struct's field, because vanilla resolves a path through a namedtuple's fields as
+    through a struct's (BUG-68, BUG-112) and takes a fixed-length sequence's negative
+    indices as a tuple's (BUG-80).  Every index-spelled flag is hidden from help, so
+    each field's help names its position.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
@@ -753,55 +754,37 @@ def _collect_namedtuple_specs(
     n = len(flds)
     docstrings = _get_field_docstrings(core)
     defaults = _namedtuple_defaults(core)
-    result: list[FlagSpec] = []
-    # Combined nargs flag (like a regular tuple)
-    result.append(
+    result: list[FlagSpec] = [
         FlagSpec(
             name=flag,
             nargs=n,
             whole_value=True,
             metavar="VALUE",
-            help=f"Set all {n} field(s) of {core.__name__} at once (positional order: {', '.join(flds)})",
+            help=f"{help_text} (positional order: {', '.join(flds)})".strip(),
             group=group,
             group_description=group_description,
         ),
-    )
-    # Individual flags by field name and by index, positive and negative alike
+    ]
     from confarg._parse_cli import _namedtuple_position_spellings  # noqa: PLC0415  # import cycle
 
     for i, (fname, ft) in enumerate(flds.items()):
-        keys = [fname, *_namedtuple_position_spellings(n, i)]
-        fcore = _unwrap_optional(_resolve_type(ft))
-        if _is_struct(fcore) or _is_namedtuple(fcore):
-            # The field is itself structured, so its spellings take what that
-            # field type takes — the whole-value/arity flag and the flags below it.
-            for sub_flag in (f"{flag}.{key}" for key in keys):
-                result.extend(
-                    _specs_for_field(
-                        sub_flag,
-                        fname,
-                        ft,
-                        _resolve_type(ft),
-                        union_tag,
-                        group,
-                        group_description,
-                        docstrings,
-                        defaults,
-                    ),
-                )
-            continue
-        result.extend(
-            FlagSpec(
-                name=f"{flag}.{key}",
-                metavar=getattr(ft, "__name__", "VALUE").upper(),
-                help=f"Field {fname!r} of {core.__name__} (index {key if key != fname else i})",
-                group=group,
-                group_description=group_description,
+        for key in (fname, *_namedtuple_position_spellings(n, i)):
+            result.extend(
+                _specs_for_field(
+                    f"{flag}.{key}",
+                    fname,
+                    ft,
+                    _resolve_type(ft),
+                    union_tag,
+                    group,
+                    group_description,
+                    docstrings,
+                    defaults,
+                    position=i,
+                ),
             )
-            for key in keys
-        )
-    # The deep spellings and the arity flag of an index-spelled deep field carry
-    # a numeric last segment of their own; the recursion below already marked the
+    # A field's index spellings end in a numeric segment, and so does a deep
+    # namedtuple's own arity flag under one; the recursion already marked the
     # flags it generated, so one pass over the result covers what this level added.
     for spec in result:
         if _index_spelled(spec.name):
@@ -828,15 +811,12 @@ def _union_cast_flag_specs(
     ]
 
 
-def _whole_value_spec(  # noqa: PLR0913
+def _whole_value_spec(
     flag: str,
-    name: str,
-    raw_type: Any,
     resolved: Any,
+    help_text: str,
     group: str | None,
     group_description: str,
-    docstrings: dict[str, str],
-    defaults: dict[str, Any],
 ) -> FlagSpec:
     """Return the bare ``--<flag>`` spec assigning the whole field value in one token.
 
@@ -854,7 +834,7 @@ def _whole_value_spec(  # noqa: PLR0913
     return FlagSpec(
         name=flag,
         metavar="JSON" if _accepts_object_value(resolved) else "VALUE",
-        help=_build_help(name, raw_type, docstrings, defaults, flag=flag),
+        help=help_text,
         group=group,
         group_description=group_description,
     )
@@ -870,15 +850,18 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per
     group_description: str,
     docstrings: dict[str, str],
     defaults: dict[str, Any],
+    *,
+    position: int | None = None,
 ) -> list[FlagSpec]:
-    """Return FlagSpecs for one field of a struct type."""
+    """Return FlagSpecs for one field of a struct type, or of a namedtuple at *position*."""
+    help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag, position=position)
     core = _unwrap_optional(resolved)
     if core is None:
         non_none = _union_args_no_none(resolved)
         concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
         if concrete:
             # The bare flag first: a whole variant object carries its own discriminator.
-            whole = _whole_value_spec(flag, name, raw_type, resolved, group, group_description, docstrings, defaults)
+            whole = _whole_value_spec(flag, resolved, help_text, group, group_description)
             specs = [whole, _build_union_tag_spec(flag, union_tag, concrete, group, group_description)]
             by_name: dict[str, FlagSpec] = {s.name: s for s in specs}
             for variant in concrete:
@@ -895,7 +878,6 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per
         # a multi-token flag; vanilla consumes greedily, so register nargs="*".
         if _union_has_seq_variant(resolved):
             # The other _takes_multi_tokens disjunct: greedy, and legal with no token.
-            help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
             seq_specs: list[FlagSpec] = [
                 FlagSpec(
                     name=flag,
@@ -915,20 +897,18 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per
         # is a single scalar flag. Register it unconditionally so the field is
         # accepted; add force-cast escape hatches when the stealing rule is
         # non-obvious (str-with-scalar or enum unions).
-        help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
         return [
             FlagSpec(name=flag, metavar="VALUE", help=help_text, group=group, group_description=group_description),
             *_union_cast_flag_specs(flag, _scalar_cast_types_in_union(resolved), group, group_description),
         ]
 
     if _is_callable(core):
-        help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
         specs: list[FlagSpec] = [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
         specs.extend(_build_callable_fn_specs(flag, group, group_description))
         return specs
 
     if _is_namedtuple(core):
-        specs = _collect_namedtuple_specs(core, flag, union_tag, group, group_description)
+        specs = _collect_namedtuple_specs(core, flag, union_tag, group, group_description, help_text)
         # The combined arity flag is first.  A bare occurrence of it is a missing
         # value -- unless Optional wraps the field: `Pt | None` is a union with a
         # sequence variant as resolved, which consumes greedily and stands bare,
@@ -946,19 +926,17 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913  # one branch per
         return specs
 
     if _is_registered_leaf(core):
-        help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
         return [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
 
     if _is_struct(core):
-        whole = _whole_value_spec(flag, name, raw_type, resolved, group, group_description, docstrings, defaults)
+        whole = _whole_value_spec(flag, resolved, help_text, group, group_description)
         return [whole, *_collect_struct_specs(core, flag, union_tag, flag, inspect.getdoc(core) or "")]
 
     if _is_dict(core):
         # A dict has no statically known keys, so the bare flag is its only static form;
         # each --<flag>.<key> found in argv is registered dynamically alongside it.
-        return [_whole_value_spec(flag, name, raw_type, resolved, group, group_description, docstrings, defaults)]
+        return [_whole_value_spec(flag, resolved, help_text, group, group_description)]
 
-    help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
     spec = _build_leaf_spec(flag, raw_type, core, help_text, group, group_description)
     # `tuple[X, Y] | None` is a union with a sequence variant as resolved, so its
     # flag registers the way that union's own flag does: greedy, bare-legal, with

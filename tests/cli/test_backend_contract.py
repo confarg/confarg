@@ -294,6 +294,42 @@ class _WithOptionalStructFieldPoint:
     pt: _PtOptionalStructField = dataclasses_field(default_factory=_PtOptionalStructField)
 
 
+class _PtCollections(NamedTuple):
+    """A namedtuple whose fields are no structs and still no scalars (BUG-112)."""
+
+    x: int = 0
+    tags: list[str] = []  # noqa: RUF012  # a namedtuple field, never mutated
+    ids: set[int] = set()  # noqa: RUF012  # a namedtuple field, never mutated
+    opt: list[int] | None = None
+    pair: tuple[int, int] = (0, 0)
+
+
+@dataclass
+class _WithCollectionsPoint:
+    pt: _PtCollections = dataclasses_field(default_factory=_PtCollections)
+
+
+@dataclass
+class _NtSQLite:
+    dbpath: str = ""
+
+
+@dataclass
+class _NtServer:
+    port: int = 0
+
+
+class _PtUnionField(NamedTuple):
+    """A namedtuple whose field is a union of structs, which a struct's field takes the tag of (BUG-112)."""
+
+    db: _NtSQLite | _NtServer = _NtSQLite()
+
+
+@dataclass
+class _WithUnionFieldPoint:
+    pt: _PtUnionField = dataclasses_field(default_factory=_PtUnionField)
+
+
 class _DefPoint(NamedTuple):
     """A namedtuple whose fields all default, so one sub-flag can fill the rest (BUG-80)."""
 
@@ -1295,6 +1331,53 @@ class TestFixedSequenceContract:
         assert loader.merge(_WithPlainNestedPoint, argv=["--pt.inner.a", "5", "--pt.inner", "7", "8"], env={}) == {
             "pt": {"inner": [7, "8"]},
         }
+
+    @pytest.mark.parametrize("key", ["tags", "1", "-4"])
+    def test_namedtuple_list_field_takes_a_token_run(self, space_sep_loader: ConfargLoader, key: str) -> None:
+        """A list field of a namedtuple takes its run at every spelling, as a struct's does (BUG-112).
+
+        The adapters registered every field that is no struct as a one-token scalar,
+        so the host framework refused the run's second token while vanilla took it.
+        """
+        argv = [f"--pt.{key}", "a", "b"]
+        assert space_sep_loader.merge(_WithCollectionsPoint, argv=argv, env={}) == {"pt": {key: ["a", "b"]}}
+
+    def test_namedtuple_list_field_takes_repeated_occurrences(self, repeated_loader: ConfargLoader) -> None:
+        """The repeated spelling of the same list accumulates too (BUG-112)."""
+        argv = ["--pt.tags", "a", "--pt.tags", "b"]
+        assert repeated_loader.merge(_WithCollectionsPoint, argv=argv, env={}) == {"pt": {"tags": ["a", "b"]}}
+
+    def test_namedtuple_list_field_builds(self, space_sep_loader: ConfargLoader) -> None:
+        """The run reaches the built namedtuple's field (BUG-112)."""
+        result = space_sep_loader.load(_WithCollectionsPoint, argv=["--pt.tags", "a", "b"], env={})
+        assert result.pt == _PtCollections(tags=["a", "b"])
+
+    @pytest.mark.parametrize(
+        ("field", "expected"),
+        [("ids", [1, 2]), ("opt", ["1", "2"]), ("pair", [1, 2])],
+        ids=["set", "optional-list", "fixed-tuple"],
+    )
+    def test_namedtuple_multi_token_field_takes_its_run(
+        self,
+        space_sep_loader: ConfargLoader,
+        field: str,
+        expected: list[Any],
+    ) -> None:
+        """Every field that takes many tokens on a struct takes them on a namedtuple (BUG-112)."""
+        argv = [f"--pt.{field}", "1", "2"]
+        assert space_sep_loader.merge(_WithCollectionsPoint, argv=argv, env={}) == {"pt": {field: expected}}
+
+    def test_namedtuple_fixed_tuple_field_takes_its_arity(self, loader: ConfargLoader) -> None:
+        """A fixed-arity field of a namedtuple takes its positions on every front-end (BUG-112)."""
+        assert loader.merge(_WithCollectionsPoint, argv=["--pt.pair", "1", "2"], env={}) == {"pt": {"pair": [1, 2]}}
+
+    def test_namedtuple_union_field_takes_the_tag_and_variant_flags(self, loader: ConfargLoader) -> None:
+        """A union-of-structs field of a namedtuple takes the tag and its variants' flags (BUG-112)."""
+        argv = ["--pt.db.class", f"{__name__}._NtServer", "--pt.db.port", "5432"]
+        assert loader.merge(_WithUnionFieldPoint, argv=argv, env={}, config_flag="") == {
+            "pt": {"db": {"class": f"{__name__}._NtServer", "port": 5432}},
+        }
+        assert loader.load(_WithUnionFieldPoint, argv=argv, env={}, config_flag="").pt.db == _NtServer(port=5432)
 
     def test_repeated_flag_last_occurrence_wins(self, loader: ConfargLoader) -> None:
         """A fixed-arity flag takes one value, so a repeat replaces it (BUG-62).

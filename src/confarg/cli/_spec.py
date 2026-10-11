@@ -193,21 +193,29 @@ def _get_field_docstrings(dc_type: type) -> dict[str, str]:
     return {}
 
 
-def _build_help(
+def _build_help(  # noqa: PLR0913  # one argument per part of the help
     field_name: str,
     raw_type: Any,
     docstrings: dict[str, str],
     defaults: dict[str, Any],
     flag: str = "",
+    position: int | None = None,
 ) -> str:
     """Compose the help string for one field.
 
     Priority: FieldMeta.help > attribute docstring > empty string.
+    If the field has a *position* (a namedtuple's), appends ``(index <position>)``.
     If the field has a dataclass default, appends ``(default: <repr>)``.
     If the field is Optional, appends a hint about the None sentinel.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/index-spellings-are-hidden-from-help.md#index-spellings-are-hidden-from-help
     """
     meta = _get_field_meta(raw_type)
     base = meta.help if meta is not None and meta.help is not None else docstrings.get(field_name, "")
+
+    if position is not None:
+        base = f"{base} (index {position})".strip()
 
     if field_name in defaults:
         suffix = f"(default: {defaults[field_name]!r})"

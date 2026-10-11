@@ -106,7 +106,7 @@ the boundary moves here.
   result sees the framework's native semantics. Under argparse a repeated multi-token flag
   (`--tags x --tags y`) leaves only the last occurrence in the Namespace, while the merge
   accumulates both ([CLI adapters](cli-adapters/model.md#argv-is-the-only-writer)).
-- A flag the adapters register and vanilla refuses (BUG-112, BUG-113) passes the framework's
+- A flag the adapters register and vanilla refuses (BUG-113) passes the framework's
   parse and is refused at merge, with vanilla's error, rather than at parse time with the
   framework's ([CLI adapters](cli-adapters/model.md#argv-is-the-only-writer)).
 - The typer adapter needs `typer>=0.27` and reads two of its private modules

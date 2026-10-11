@@ -27,7 +27,7 @@ index key (moved into `_is_index_key` by BUG-80's fix); the CLI read positions a
 channels agreed. BUG-97's fix then limited the CLI to the canonical spellings through
 `_namedtuple_index_spellings` and left construction on `isdigit()`, which opened the gap (bisected:
 before it, `--pt.01` builds as the file does). BUG-108 is the same rule missing from the CLI's fixed
-tuple, and BUG-109 and BUG-112 also come from PR-39.
+tuple, and BUG-109 and BUG-112 (closed, the adapters' registration) also come from PR-39.
 
 ```python
 from dataclasses import dataclass

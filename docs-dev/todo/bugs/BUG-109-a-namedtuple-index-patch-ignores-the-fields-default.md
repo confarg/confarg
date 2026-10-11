@@ -21,8 +21,8 @@ namedtuple.
 
 Origin: latent since PR-39, which added namedtuple support and left `_resolve_tuple_partial`,
 written for plain tuples, gated on `_is_tuple`; the reproduction fails the same way at PR-39.
-BUG-112 and BUG-142 also come from PR-39, each a place where a namedtuple does not take the path a
-tuple or a struct takes.
+BUG-142 and BUG-112 (closed, the adapters' registration) also come from PR-39, each a place where
+a namedtuple does not take the path a tuple or a struct takes.
 
 ```python
 from dataclasses import dataclass
