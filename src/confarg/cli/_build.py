@@ -1102,6 +1102,26 @@ def _collect_struct_specs(  # union-root branch added one more conditional
     return result
 
 
+def _config_file_spec(name: str, config_flag: str, help_text: str) -> FlagSpec:
+    """Build the FlagSpec of a ``--<config_flag>[.<subpath>][+]`` config-file flag.
+
+    The one shape every config-file flag registers: zero *or* more paths, refusing a bare
+    occurrence with the message vanilla's loop raises for it.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
+    """
+    from confarg._parse_cli import _missing_config_path_msg  # noqa: PLC0415  # import cycle
+
+    return FlagSpec(
+        name=name,
+        nargs="*",
+        metavar="FILE",
+        help=help_text,
+        bare_error=_missing_config_path_msg(config_flag),
+    )
+
+
 def _collect_subconfig_specs(
     target: Any,
     config_flag: str,
@@ -1143,14 +1163,7 @@ def _collect_subconfig_specs(
             # from --help without this line.
             help_text += f" Its top level must name the chosen variant with the '{union_tag}' key."
 
-        result.append(
-            FlagSpec(
-                name=f"{config_flag}.{subpath}",
-                nargs="*",
-                metavar="FILE",
-                help=help_text,
-            ),
-        )
+        result.append(_config_file_spec(f"{config_flag}.{subpath}", config_flag, help_text))
 
     return result
 
@@ -1223,17 +1236,14 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
 
     if config_flag:
         flags.append(
-            FlagSpec(
-                name=config_flag,
-                nargs="*",
-                metavar="FILE",
-                help=(
-                    "Config file(s) to merge at lowest priority (below env vars and CLI flags). "
-                    "Multiple files are merged left-to-right; later files override earlier ones. "
-                    "Supports TOML, YAML, and JSON. "
-                    f"Use --{config_flag}.<field> FILE to scope a file's contents under a specific field "
-                    f"(e.g. --{config_flag}.db db.toml merges db.toml as if its keys were nested under 'db')."
-                ),
+            _config_file_spec(
+                config_flag,
+                config_flag,
+                "Config file(s) to merge at lowest priority (below env vars and CLI flags). "
+                "Multiple files are merged left-to-right; later files override earlier ones. "
+                "Supports TOML, YAML, and JSON. "
+                f"Use --{config_flag}.<field> FILE to scope a file's contents under a specific field "
+                f"(e.g. --{config_flag}.db db.toml merges db.toml as if its keys were nested under 'db').",
             ),
         )
         if config_subkeys:
@@ -1242,11 +1252,10 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
                 # --config.<locals> FILE declares locals from the CLI; not a real field,
                 # so _collect_subconfig_specs does not emit it.
                 flags.append(
-                    FlagSpec(
-                        name=f"{config_flag}.{key}",
-                        nargs="*",
-                        metavar="FILE",
-                        help=f"Config file(s) declaring local variables in the {key!r} namespace.",
+                    _config_file_spec(
+                        f"{config_flag}.{key}",
+                        config_flag,
+                        f"Config file(s) declaring local variables in the {key!r} namespace.",
                     ),
                 )
 
@@ -1273,11 +1282,10 @@ def _collect_config_argv_specs(argv: Sequence[str], config_flag: str) -> list[Fl
         subpath = _config_subpath(name, config_flag)
         action = "appended to" if subpath.endswith("+") else "merged under"
         specs.append(
-            FlagSpec(
-                name=name,
-                nargs="*",
-                metavar="FILE",
-                help=f"Config file(s) whose contents are {action} the '{subpath.rstrip('+')}' field path.",
+            _config_file_spec(
+                name,
+                config_flag,
+                f"Config file(s) whose contents are {action} the '{subpath.rstrip('+')}' field path.",
             ),
         )
     return specs

@@ -10,6 +10,8 @@ import sys
 from typing import TYPE_CHECKING, Any, Unpack
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import cyclopts
 
     from confarg._defaults import MergeOptions, _Options
@@ -21,6 +23,16 @@ from confarg.cli._argv import drop_bare_occurrences, refuse_bare_occurrences
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix, strip_argv_prefix
 from confarg.cli.cyclopts._register import _app_meta
+
+
+def _before_eager_flag(tokens: Sequence[str], app: cyclopts.App) -> list[str]:
+    """Return *tokens* up to, not including, the first of *app*'s help or version flags.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
+    """
+    eager = {*app.help_flags, *app.version_flags}
+    return next((list(tokens[:i]) for i, tok in enumerate(tokens) if tok in eager), list(tokens))
 
 
 def _run_command(command: Any, bound: Any) -> Any:
@@ -76,19 +88,21 @@ def _merge_app(target: object, app: cyclopts.App, options: _Options) -> MergeDic
     # meets a real token.  A fixed-arity flag cannot drop its bare occurrence -- the
     # occurrence is a missing value, not a no-op -- so it is refused instead, before
     # cyclopts parses, with confarg's own error.  Both scans read the argv the user
-    # typed (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
+    # typed (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare),
+    # up to a help or version flag, so an earlier --help still shows help.
     prefix = _app_prefix(app, options)
     tokens = options.argv
+    scanned = _before_eager_flag(tokens, app)
     if options.config_flag:
         # A bare --config[.subpath] must be refused before cyclopts parses it, with
         # confarg's own error rather than the framework's implicit-token assertion.
         _collect_config_file_pairs(
-            strip_argv_prefix(tokens, prefix),
+            strip_argv_prefix(scanned, prefix),
             options.config_flag,
             target,
             options.union_tag,
         )
-    refuse_bare_occurrences(tokens, meta["refuses_bare"] if meta else {})
+    refuse_bare_occurrences(scanned, meta["refuses_bare"] if meta else {})
     command, bound, _ = app.parse_args(
         drop_bare_occurrences(tokens, meta["stands_bare"] if meta else ()),
     )
