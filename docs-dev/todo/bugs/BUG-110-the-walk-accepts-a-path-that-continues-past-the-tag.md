@@ -1,19 +1,20 @@
 ---
 filed: 2026-10-01
 where:
-  - src/confarg/_parse_cli.py::_resolve_field_type
+  - src/confarg/_parse_cli.py::_walk_path
 effort: S
 risk: medium
 impact: behavior
 ---
 # BUG-110 — The walk accepts a path that continues past the union tag
 
-When no member reaches a segment spelled like the tag, `_resolve_field_type` returns `str`
-right away, without walking the segments after it. So `--leaf.class.junk X` resolves, and
+When no member reaches a segment spelled like the tag, `_walk_path` reads every segment
+after it as a `str`, as it does below a callable's bind key, without walking them. So `--leaf.class.junk X` resolves, and
 vanilla merges a dict under the tag where a class-path string belongs. The adapters refuse
 the same flag at parse time: `_names_tag_by_fallback` admits a tag only as the last segment.
-Fix direction: let the fallback continue the walk at `str` (`tp = str; continue`), so a
-segment after the tag finds nothing and vanilla raises its unknown-field error. See
+Fix direction: let the fallback continue the walk at `str` as an ordinary step
+(`str_subtree=False`), so a segment after the tag finds nothing and vanilla raises its
+unknown-field error. See
 [a tag is a replayed write](../../architecture/cli-adapters/collection-patch-parity.md#a-tag-is-a-replayed-write).
 
 ```python

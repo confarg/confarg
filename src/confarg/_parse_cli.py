@@ -19,10 +19,10 @@ import dataclasses
 import functools
 import json
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
 from confarg import _defaults
 from confarg._callable import names_a_bind, names_an_opener, promote_bare_spec
@@ -129,16 +129,47 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911  # o
             return None
 
 
-def _field_types(target: Any, parts: list[str], union_tag: str, *, tag_fallback: bool = True) -> list[Any]:
-    """Walk the type tree along *parts*, returning the type each union branch reaches.
+class _Stone(NamedTuple):
+    """Where a branch of :func:`_walk_path` stands to step along one path segment."""
+
+    #: The type the walk reached here, a union unexpanded: what a walk of the path so far answers.
+    reached: Any
+    #: The resolved, non-union type this branch takes ``reached`` as.
+    node: Any
+
+
+class _Branch(NamedTuple):
+    """One branch of :func:`_walk_path`: the variant it took at each union it met."""
+
+    #: One per segment the branch stood before: ``stones[k]`` is where it met ``parts[k]``.
+    stones: tuple[_Stone, ...]
+    #: The type reached at the end of the path, a union unexpanded; ``None`` when the branch
+    #: refuses a segment, its last stone then the one it could not step from.
+    end: Any | None
+
+
+def _union_branches(tp: Any) -> list[Any]:
+    """Return the resolved, non-union types a node of type *tp* is walked as, in variant order.
+
+    *tp* itself when it is no union; otherwise each non-None variant, a variant that is a
+    union in turn spread into its own.
+    """
+    tp = _resolve_type(tp)
+    if not _is_union(tp):
+        return [tp]
+    return [node for v in _union_args_no_none(tp) for node in _union_branches(v)]
+
+
+def _walk_path(target: Any, parts: list[str], union_tag: str, *, tag_fallback: bool = True) -> Iterator[_Branch]:
+    """Walk the type tree along *parts*, yielding one branch per way the walk can take it.
 
     The one type walk. A union met before the path ends is walked once per non-None
-    variant, so the answer lists one type per branch that accepts the whole path, in
-    variant order; a branch that refuses it drops out, and an empty list means no branch
-    accepts it. A path ending *on* a union-typed node answers that union, unexpanded.
-    :func:`_resolve_field_type` folds the list into the single type a value is coerced
-    by; a caller that asks what each branch holds at a node -- the env channel spelling
-    the next segment -- reads it whole.
+    variant, so the walk forks there, and the branches come in variant order; a branch
+    that refuses a segment ends there, and a path ending *on* a union-typed node ends on
+    that union, unexpanded. Every question about a path is asked of these branches:
+    :func:`_field_types` reads their ends, and the predicates over a path --
+    :func:`_addresses_callable_key`, :func:`_is_collection_patch_path`,
+    :func:`_is_dict_at_path` -- read the stones each stood on.
 
     A segment names the union tag only when no real member of that exact spelling exists
     at its position; a field named like the tag is that field.
@@ -150,40 +181,72 @@ def _field_types(target: Any, parts: list[str], union_tag: str, *, tag_fallback:
         tag_fallback: Whether a segment no member reaches may still name the union tag.
             Off, the walk answers members only, which is how
             :func:`_names_tag_by_fallback` tells the two apart.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/type-guided-parsing.md#one-walk-many-questions
     """
-    tp = _resolve_type(target)
-    for idx, part in enumerate(parts):
-        tp = _resolve_type(tp)
-        if _is_union(tp):
-            return [
-                found
-                for v in _union_args_no_none(tp)
-                for found in _field_types(v, parts[idx:], union_tag, tag_fallback=tag_fallback)
-            ]
-        if _is_callable(tp) and names_a_bind(part):
-            # A callable's bind key is addressable as a str-leaf subtree (--field.bind.key)
-            # and, in escaped mode, as a plain scalar init-kwarg (--field.bind 5). Whether the
-            # active-mode bind must be a dict is validated in construct, not here (lenient parse).
-            return [str]
-        if part in _locals_keys_nested(tp, union_tag):
-            tp = dict[str, Any]
-            continue
-        tp = _advance_field_type(tp, part)
-        if tp is None:
-            if tag_fallback and part == union_tag:
+
+    def walk(reached: Any, stones: tuple[_Stone, ...], *, str_subtree: bool) -> Iterator[_Branch]:
+        if len(stones) == len(parts):
+            yield _Branch(stones, reached)
+            return
+        part = parts[len(stones)]
+        for node in _union_branches(reached):
+            here = (*stones, _Stone(reached, node))
+            if str_subtree or (_is_callable(node) and names_a_bind(part)):
+                # A callable's bind key is addressable as a str-leaf subtree (--field.bind.key)
+                # and, in escaped mode, as a plain scalar init-kwarg (--field.bind 5). Whether the
+                # active-mode bind must be a dict is validated in construct, not here (lenient parse).
+                yield from walk(str, here, str_subtree=True)
+            elif part in _locals_keys_nested(node, union_tag):
+                yield from walk(dict[str, Any], here, str_subtree=False)
+            elif (advanced := _advance_field_type(node, part)) is not None:
+                yield from walk(advanced, here, str_subtree=False)
+            elif tag_fallback and part == union_tag:
                 # The tag is the fallback, so it resolves only at a position no member
                 # of its exact spelling reaches.
-                return [str]
-            return []
-    return [tp]
+                yield from walk(str, here, str_subtree=True)
+            else:
+                yield _Branch(here, None)
+
+    yield from walk(_resolve_type(target), (), str_subtree=False)
+
+
+def _field_types(target: Any, parts: list[str], union_tag: str, *, tag_fallback: bool = True) -> list[Any]:
+    """Return the type each branch of the walk along *parts* reaches at its end.
+
+    One type per branch of :func:`_walk_path` that accepts the whole path, in variant
+    order; an empty list means no branch accepts it. :func:`_resolve_field_type` folds
+    the list into the single type a value is coerced by; a caller that asks what each
+    branch holds at a node -- the env channel spelling the next segment -- reads it whole.
+
+    Args:
+        target: The root type to start resolution from.
+        parts: A list of path segments to follow.
+        union_tag: The field name used as a discriminator tag in unions.
+        tag_fallback: Whether a segment no member reaches may still name the union tag.
+    """
+    branches = _walk_path(target, parts, union_tag, tag_fallback=tag_fallback)
+    return [branch.end for branch in branches if branch.end is not None]
+
+
+def _common_type(found: list[Any]) -> Any | None:
+    """Fold the types the branches reach at one path into the type a value there is coerced by.
+
+    Their common type when they all agree, ``str`` -- the raw token, left for construction
+    to read by the variant it picks -- when they do not, and None when there is none.
+    """
+    if not found:
+        return None
+    first = found[0]
+    return first if all(t == first for t in found[1:]) else str
 
 
 def _resolve_field_type(target: Any, parts: list[str], union_tag: str, *, tag_fallback: bool = True) -> Any | None:
     """Return the type a value at the dotted path *parts* is coerced by, None if no branch accepts it.
 
-    The fold of :func:`_field_types` over the branches that accept the path: their common
-    type when they all agree, ``str`` -- the raw token, left for construction to read by
-    the variant it picks -- when they do not.
+    The fold (:func:`_common_type`) of :func:`_field_types` over the branches that accept
+    the path.
 
     Args:
         target: The root type to start resolution from.
@@ -194,11 +257,7 @@ def _resolve_field_type(target: Any, parts: list[str], union_tag: str, *, tag_fa
     Returns:
         The resolved type at the end of the path, or None if the path is invalid.
     """
-    found = _field_types(target, parts, union_tag, tag_fallback=tag_fallback)
-    if not found:
-        return None
-    first = found[0]
-    return first if all(t == first for t in found[1:]) else str
+    return _common_type(_field_types(target, parts, union_tag, tag_fallback=tag_fallback))
 
 
 def _names_tag_by_fallback(target: Any, parts: list[str], union_tag: str) -> bool:
@@ -231,17 +290,8 @@ def _addresses_callable_key(target: Any, parts: list[str], union_tag: str) -> bo
     Dev Notes:
         docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
-    tp = _resolve_type(target)
-    for idx, part in enumerate(parts):
-        tp = _resolve_type(tp)
-        if _is_union(tp):
-            return any(_addresses_callable_key(v, parts[idx:], union_tag) for v in _union_args_no_none(tp))
-        if _is_callable(tp):
-            return True
-        tp = _advance_field_type(tp, part)
-        if tp is None:
-            return False
-    return False
+    branches = _walk_path(target, parts, union_tag)
+    return any(_is_callable(stone.node) for branch in branches for stone in branch.stones)
 
 
 def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> bool:
@@ -254,23 +304,15 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
     Dev Notes:
         docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
     """
-    tp = _resolve_type(target)
-    for idx, part in enumerate(parts):
-        tp = _resolve_type(tp)
-        match _type_kind(tp):
-            case _TypeKind.UNION:
-                return any(
-                    _is_collection_patch_path(_resolve_type(v), parts[idx:], union_tag) for v in _union_args_no_none(tp)
-                )
-            case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET | _TypeKind.TUPLE | _TypeKind.DICT:
-                return True
-            case _TypeKind.NAMEDTUPLE | _TypeKind.CALLABLE:
-                return False
-        if part in _locals_keys_nested(tp, union_tag):
-            return True  # a nested namespace is a dict[str, Any]
-        tp = _advance_field_type(tp, part)
-        if tp is None:
-            return False
+    for branch in _walk_path(target, parts, union_tag):
+        for stone, part in zip(branch.stones, parts, strict=False):
+            match _type_kind(stone.node):
+                case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET | _TypeKind.TUPLE | _TypeKind.DICT:
+                    return True
+                case _TypeKind.NAMEDTUPLE | _TypeKind.CALLABLE:
+                    break  # this branch answers no
+            if part in _locals_keys_nested(stone.node, union_tag):
+                return True  # a nested namespace is a dict[str, Any]
     return False
 
 
@@ -302,19 +344,22 @@ def _path_unknown(target: Any, parts: list[str], union_tag: str) -> bool:
 def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
     """Check if any prefix of the path lands on a dict type.
 
+    A prefix lands where :func:`_resolve_field_type` would answer it: on the fold of what
+    the branches reach there, so a prefix the branches disagree on lands on ``str``.
+
     Args:
         target: The root type to start resolution from.
         parts: A list of path segments to check.
         union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
-        True if any non-empty prefix of parts resolves to a dict type.
+        True if any non-empty proper prefix of parts resolves to a dict type.
     """
-    for j in range(len(parts) - 1, 0, -1):
-        pt = _resolve_field_type(target, parts[:j], union_tag)
-        if pt is not None and _is_dict(_resolve_type(pt)):
-            return True
-    return False
+    reached: dict[int, list[Any]] = {}
+    for branch in _walk_path(target, parts, union_tag):
+        for depth, stone in enumerate(branch.stones[1:], start=1):
+            reached.setdefault(depth, []).append(stone.reached)
+    return any(_is_dict(_resolve_type(_common_type(found))) for found in reached.values())
 
 
 def _member_names(pt: Any) -> list[str]:

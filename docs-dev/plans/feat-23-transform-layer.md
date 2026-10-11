@@ -182,7 +182,7 @@ __transforms__:
    `confarg.exceptions` only, no knowledge of channels, files or target types, testable standalone.
    Holds the rule model, the `[*]` selector walk, the three ops and the single-pass executor. Reuse
    the dotted-path walk `dictexpr._expressions._get_nested` and `_set_nested_by_path` already carry
-   rather than adding a fourth copy (REF-43).
+   rather than adding another copy of a path walk.
 2. **The dictexpr entry point.** Expose an anchored single-expression evaluator over the existing
    `_resolve_single(expr, namespace, node_path)`; the anchor parameter is already there. And **skip
    the reserved key in `_collect_expressions`**, which currently walks every dict and list value and

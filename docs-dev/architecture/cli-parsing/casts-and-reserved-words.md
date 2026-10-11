@@ -52,8 +52,9 @@ then reported missing. The predicate now answers with the walk, and construction
 key a subclass-only field owns, selects the subclass structurally the way the union's
 fallback selects a variant (`_construct_shadowed_subclass`): several matches are a loud
 ambiguity, none a loud refusal. The walk asks it as "member first, tag fallback"
-(`_resolve_field_type` advances before it falls back to the tag; its two mirrors,
-`_addresses_callable_key` and `_is_collection_patch_path`, follow), and every site that has
+(`_walk_path` advances before it falls back to the tag, and every question about a path,
+`_resolve_field_type`, `_addresses_callable_key` and `_is_collection_patch_path` alike, reads
+that one walk), and every site that has
 only the type and the key — construction's struct, union and taggable-leaf dispatches, the
 tag collectors in `_tags.py`, the adapters' tag flags — asks `_union_tag_shadowed`
 (`_types.py`), the one predicate for "does a real field own the tag's spelling here?". The
