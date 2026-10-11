@@ -1206,6 +1206,7 @@ def _construct_by_class_path(tp: type, data: dict[str, Any], path: FieldPath, un
     tag = data[union_tag]
     cls = _import_class_by_path(tag, path, union_tag)
     if not issubclass(cls, tp):
-        raise TypeCoercionError.not_a_subclass(tag, dotted_name(tp), _spell_field_path(path))
+        call = _select_directives(data).call
+        raise TypeCoercionError.tag_not_a_subclass(tag, dotted_name(tp), _spell_field_path(path), call)
     cleaned = {k: v for k, v in data.items() if k != union_tag}
     return _construct_struct(cls, cleaned, path, union_tag)

@@ -12,11 +12,10 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact |
 |---|---|---|---|---|---|
-| [FEAT-29 — `class:` only names classes compatible with the target type](FEAT-29-class-restricted-to-compatible-targets.md) | major (via FEAT-30) |  | S | low | api |
+| [FEAT-30 — `bind:` yields a partial of its target; `fn:` and the `bind:` kwargs form are removed](FEAT-30-bind-as-partial-only.md) | major |  | M | medium | config |
 | [FEAT-14 — Dataclass fields that are not `__init__` parameters](FEAT-14-dataclass-fields-outside-init.md) | major |  | L | high | behavior |
 | [FEAT-31 — `classfn:` names an instance method and takes the owner's constructor arguments](FEAT-31-classfn-for-instance-methods.md) | major |  | L | medium | config |
 | [FEAT-27 — Replace the callable openers with `bind`, `call`, `class` and `classfn`](FEAT-27-callable-openers-redesign.md) | major |  | XL | high | config |
-| [FEAT-30 — `bind:` yields a partial of its target; `fn:` and the `bind:` kwargs form are removed](FEAT-30-bind-as-partial-only.md) | major | FEAT-29 | M | medium | config |
 | [FEAT-32 — CLI parity for `bind`, `call`, `class` and `classfn` in all five adapters](FEAT-32-cli-parity-for-callable-openers.md) | major | FEAT-30, FEAT-31 | L | medium | behavior |
 | [FEAT-3 — A registry of reserved sentinel keys](FEAT-3-reserved-sentinel-key-registry.md) | minor |  | S | high | config |
 | [FEAT-5 — Optional structural validation right after `merge()`](FEAT-5-structural-validation-after-merge.md) | minor |  | S | low | behavior |

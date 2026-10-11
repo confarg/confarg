@@ -1097,3 +1097,42 @@ class TestCallInTypedField:
         path.write_text(json.dumps({"n": {"call": f"{__name__}._double", "x": 5}}))
         cfg = confarg.load(_TypedCallHolder, files=[path], env={}, argv=[])
         assert cfg.n == 10
+
+
+# ---------------------------------------------------------------------------
+# class: on a typed field names a subclass; call: builds anything else (FEAT-29)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _TagBase:
+    a: int = 1
+
+
+@dataclass
+class _TagSub(_TagBase):
+    b: int = 2
+
+
+@dataclass
+class _TagUnrelated:
+    z: int = 3
+
+
+@dataclass
+class _TagHolder:
+    base: _TagBase | None = None
+
+
+class TestClassTagNamesASubclass:
+    """A ``class:`` key on a typed field names a subclass of the annotation, and says how to build anything else."""
+
+    def test_subclass_named_by_class_is_built(self):
+        """A subclass of the annotation is built from the sibling keys."""
+        cfg = confarg.build(_TagHolder, {"base": {"class": f"{__name__}._TagSub", "b": 5}})
+        assert cfg.base == _TagSub(a=1, b=5)
+
+    def test_unrelated_class_is_refused_and_points_to_call(self):
+        """An unrelated class is refused, and the message names the call: spec that builds it."""
+        with pytest.raises(TypeCoercionError, match=r"is not a subclass of .*_TagBase.*'call:'"):
+            confarg.build(_TagHolder, {"base": {"class": f"{__name__}._TagUnrelated", "z": 9}})

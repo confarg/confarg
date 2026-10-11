@@ -33,6 +33,8 @@ another ([design decision](design-decisions/call-yields-to-the-data-a-type-holds
 
 `fn:` is not dispatched on a typed field. `class:` on one is the union tag, which already
 selects a struct and builds it from its sibling keys ([union tag](design-decisions/union-tag-defaults-to-class.md)).
+It must name a subclass of the annotation: any other class is refused, and the message points to
+`call:` ([class names a subclass](design-decisions/class-names-a-subclass-call-computes.md)).
 
 ## Plain and escaped directives
 
