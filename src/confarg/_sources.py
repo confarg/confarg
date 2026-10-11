@@ -53,9 +53,7 @@ def _read_file_url(loc: str) -> bytes:
     Raises:
         InvalidConfigFileError: If the URL names a host other than localhost.
     """
-    # url2pathname is soft-deprecated from 3.14 in favour of Path.from_uri, which does not exist
-    # on this project's minimum (3.12) and rejects the single-slash `file:/p` form this accepts.
-    from urllib.request import url2pathname  # noqa: PLC0415  # ty: ignore[deprecated]  # see above
+    from urllib.request import url2pathname  # noqa: PLC0415
 
     parts = urlsplit(loc)
     if parts.netloc.lower() not in _LOCAL_HOSTS:
@@ -64,7 +62,7 @@ def _read_file_url(loc: str) -> bytes:
             f" machine only. Use a plain path for a network share."
         )
         raise InvalidConfigFileError(msg)
-    return _read_local(url2pathname(parts.path))  # ty: ignore[deprecated]  # 3.12 has no replacement
+    return _read_local(url2pathname(parts.path))
 
 
 def _read_http(loc: str) -> bytes:

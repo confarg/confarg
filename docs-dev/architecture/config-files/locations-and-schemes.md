@@ -44,6 +44,12 @@ cause is a misspelling and silence would leave the real scheme loadable
 failure becomes an `InvalidConfigFileError`, so no loader carries its own `FileNotFoundError`
 branch any more.
 
+**`file://` translation stays `url2pathname`'s.** Python soft-deprecates
+`urllib.request.url2pathname` from 3.14 in favour of `Path.from_uri`, which does not exist on
+this project's minimum (3.12) and rejects the single-slash `file:/p` form the reader accepts, so
+the platform-dependent translation `_read_file_url` names in its docstring is the one that
+answers every spelling it accepts.
+
 **Format still comes from the suffix**, with query and fragment stripped first, so
 `https://h/app.yaml?env=prod` is YAML. A location with no suffix raises; nothing sniffs content
 or reads a `Content-Type`, so every scheme answers the format question identically
