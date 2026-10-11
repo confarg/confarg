@@ -14,6 +14,8 @@ the plain-dict IR. Since BUG-170 no channel's parser writes a list-patch key fro
 typed below a sequence, and `_merge._replace_base` refuses a `'*'` holding no list, so what is
 left is a file writing the keys itself
 ([BUG-175](../bugs/BUG-175-a-files-list-delete-key-holding-no-index-list-escapes-as-a-typeerror.md)),
-and a dict's own key `*`, typed on any channel, which the merge reads as a base
-([BUG-185](../bugs/BUG-185-a-dict-key-star-from-a-higher-layer-wipes-the-dicts-other-keys.md)).
+and a dict's own key `*`, typed on any channel. Since BUG-185 the merge reads it as a base only
+when it holds what a base holds, a list or `DICT_DELETE`, and then nothing in the IR tells the two
+apart ([BUG-199](../bugs/BUG-199-a-dict-key-star-holding-a-list-or-deleted-still-wipes-the-dicts-other-keys.md)):
+the merge's base marker needs a spelling no channel can type.
 See [pipeline/deep-merge.md#deep-merge-semantics](../../architecture/pipeline/deep-merge.md#deep-merge-semantics).

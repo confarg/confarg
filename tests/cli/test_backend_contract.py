@@ -4364,6 +4364,21 @@ class TestCollectionPatchContract:
             cfg = loader.load(_SequenceSegments, argv=argv, env={})
             assert {k: getattr(cfg, k) for k in built} == built
 
+    def test_key_star_of_a_dict_keeps_the_files_keys(
+        self,
+        loader: ConfargLoader,
+        request: pytest.FixtureRequest,
+        tmp_json,
+    ) -> None:
+        """``--u.* 5`` adds the key ``*`` beside the file's keys, as ``--u.z 5`` does (BUG-185)."""
+        if loader.id == "cyclopts":
+            request.applymarker(
+                pytest.mark.xfail(raises=SystemExit, strict=True, reason="BUG-180: cyclopts strips a trailing '*'"),
+            )
+        base = tmp_json('{"u": {"k": 1}}')
+        cfg = loader.load(_SequenceSegments, argv=["--config", str(base), "--u.*", "5"], env={})
+        assert cfg.u == {"k": 1, "*": 5}
+
 
 class TestCollectionPatchListSyntax:
     """Multi-value appends follow each framework's list-argument convention.

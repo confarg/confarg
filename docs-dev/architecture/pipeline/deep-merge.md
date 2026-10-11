@@ -8,9 +8,10 @@ anything that is not a dict-on-dict, which is merged recursively.
 - **A union tag in the override discards the base entirely.** Naming a class says "this is
   a new object", so fields of the previous variant must not leak in (the README's
   `--class myapp.SQLiteConfig --dbpath …` over a server config).
-- **A base list carried with its patch discards a dict base.** An override holding `"*"`
-  is "this list, then these patches", so it replaces a name dict or an earlier deferred patch
-  rather than merging into it
+- **A base list carried with its patch discards a dict base.** An override whose `"*"` holds
+  a list is "this list, then these patches", so it replaces a name dict or an earlier deferred
+  patch rather than merging into it; a `"*"` holding anything else is a dict's own key, merged
+  as any other
   ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#a-base-list-carried-with-its-patch-replaces-what-lay-below)).
   A `"*"` holding `DICT_DELETE` discards a list base too: it is a whole-field delete with
   ops after it ([below](#an-op-after-a-whole-field-delete-has-nothing-below-it)).

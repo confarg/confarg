@@ -76,5 +76,11 @@ therefore lets it replace a dict base outright, as a union tag does, instead of 
 into it: the base may be a name dict a file spelled (`pt: {x: 5}` under `APP_PT='[1, 2]'`
 plus `APP_PT__Y=9` is `Pt(1, 9)`, not `Pt(5, 9)`), or a patch an earlier merge deferred, whose
 stale index keys would otherwise survive (`{'*': [1], '1': 5}` under `{'*': [7, 9], '0': 8}`
-built `(8, 5)` on a `tuple[int, int]` until BUG-160). `'*'` is a merge-op key
-(`_pipeline._MERGE_OP_KEYS`), so no dict field's own key is read this way by surprise.
+built `(8, 5)` on a `tuple[int, int]` until BUG-160).
+
+A dict field may hold a key `*` of its own (`--d.* 5`, `APP_D__*=5`), so whether a `'*'` is a
+base is decided by what it holds, never by the key alone: a list, or the `DICT_DELETE` of a
+whole-field delete, the only two values the merge stores there. A `'*'` holding anything else
+merges as any other key. Until BUG-185 the key alone decided, and `--d.* 5` dropped every key
+the files gave `d`. A dict key `*` holding a list, or deleted, still reads as a base: the IR
+spells it exactly as a base, which only a marker no channel can type would settle (FEAT-3).
