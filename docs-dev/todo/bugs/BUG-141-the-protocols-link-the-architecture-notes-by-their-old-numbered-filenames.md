@@ -24,9 +24,9 @@ protocols are `.gitignore`d, outside its scan. Found while fixing REF-57 (the sm
 fix for REF-57 touched them.
 
 Fix direction: point each reference at the file or folder that holds the content now
-(`invariants.md`, `design-decisions/`, `cli-adapters/`, `types/`, `expressions/`), and consider
-having `anchors.py` (or [BUG-105](BUG-105-the-anchor-sweep-cannot-see-citations-under-tests-or-short-form-spellings.md))
-cover the protocols' links into `docs-dev/` so the drift cannot come back. Editing a protocol file
+(`invariants.md`, `design-decisions/`, `cli-adapters/`, `types/`, `expressions/`). Checking
+the protocols' links so the drift cannot come back is
+[BUG-148](BUG-148-nothing-checks-the-markdown-links-between-the-internal-notes.md). Editing a protocol file
 means running `uv run python docs-agents/archive.py` afterwards.
 
 ```console
