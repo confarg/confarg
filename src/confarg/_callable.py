@@ -58,15 +58,17 @@ class _SpecContext:
         """Build *value* as *tp* at this context's path."""
         return self.construct_fn(tp, value, path=self.path, union_tag=self.union_tag)
 
-    def instantiate(self, cls: type, kwargs: dict) -> Any:
+    def instantiate(self, cls: type, kwargs: dict, name: str, opener: str) -> Any:
         """Build exactly *cls* from *kwargs* at this context's path, whatever subclasses it has.
+
+        *name* is the class as the spec wrote it, and *opener* the key that named it.
 
         Dev Notes:
             docs-dev/architecture/design-decisions/class-names-the-type-it-builds.md#class-names-the-type-it-builds
         """
         from confarg.typedload._construct import construct_named_class  # noqa: PLC0415  # import cycle
 
-        return construct_named_class(cls, kwargs, path=self.path, union_tag=self.union_tag)
+        return construct_named_class(cls, kwargs, path=self.path, union_tag=self.union_tag, name=name, opener=opener)
 
 
 def _instance_method_owner(path_str: str) -> type | None:
@@ -590,7 +592,7 @@ def _resolve_dict_spec(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
         return _resolve_bind_spec(spec[d.bind], kwargs, tp, ctx, d.bind)
     if opener == d.classfn:
         return _resolve_classfn_spec(spec[d.classfn], kwargs, spec, ctx, d.classfn)
-    return _resolve_class_spec(_ClassSpec(spec[d.cls], kwargs, spec), ctx)
+    return _resolve_class_spec(_ClassSpec(spec[d.cls], kwargs, spec, d.cls), ctx)
 
 
 def _accepts(tp: Any, value: Any) -> bool:
@@ -706,7 +708,7 @@ def _resolve_classfn_spec(method_path: Any, init_kwargs: dict, original: dict, c
         )
         raise TypeCoercionError(msg)
     _reject_mixed_form_kwargs(owner, init_kwargs, ctx.where)
-    instance = ctx.instantiate(owner, init_kwargs)
+    instance = ctx.instantiate(owner, init_kwargs, method_path.rpartition(".")[0], opener)
     with contextlib.suppress(AttributeError, TypeError):
         instance.__confarg_spec__ = original
     return getattr(instance, method_path.rpartition(".")[2])
@@ -719,6 +721,7 @@ class _ClassSpec:
     cls_path: str
     init_kwargs: dict
     original: dict
+    opener: str
 
 
 def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
@@ -737,7 +740,7 @@ def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
         raise TypeCoercionError(msg)
 
     _reject_mixed_form_kwargs(cls, spec.init_kwargs, ctx.where)
-    instance = ctx.instantiate(cls, spec.init_kwargs)
+    instance = ctx.instantiate(cls, spec.init_kwargs, spec.cls_path, spec.opener)
     if not callable(instance):
         msg = (
             f"Instance of {spec.cls_path!r} at '{ctx.where}' is not callable: the class must define"

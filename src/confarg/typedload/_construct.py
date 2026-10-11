@@ -13,7 +13,10 @@ from __future__ import annotations
 import itertools
 import types
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any, NamedTuple
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from confarg import _defaults
 from confarg._callable import _resolve_callable_spec, _select_directives, resolve_typed_call
@@ -646,6 +649,46 @@ def _call_with_var_positional(
     return tp(*pos_args, *var_pos, **kwargs, **var_kw)
 
 
+class _Naming(NamedTuple):
+    """How the user named a class built from nothing: its name as written, and what its fields sit beside."""
+
+    name: str
+    beside: str
+
+
+def build_from_nothing(build: Callable[[], Any], tp: Any, path: FieldPath, naming: _Naming | None = None) -> Any:
+    """Return ``build()``, which builds *tp* from no key at all, reading a refused empty call.
+
+    The one reader of "this class was asked to build from nothing, and refused": defaulting
+    every ``__init__`` parameter does not promise that ``tp()`` works (``UUID``), so a
+    ``TypeError`` out of the call means the guess was wrong. Where nothing was supplied (no
+    *naming*: a defaulted field, the root), the value is missing, ``MissingFieldError``. Where
+    a tag or an opener named the class, the user supplied it, so the refusal is a coercion
+    naming the class and quoting Python's own text. Only an empty build is passed here, so a
+    constructor's ``TypeError`` about supplied data still escapes as its own.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-class-built-from-nothing
+    """
+    try:
+        return build()
+    except TypeError as e:
+        if naming is None:
+            raise MissingFieldError(path, tp) from None
+        raise TypeCoercionError.refused_empty_call(naming.name, _spell_field_path(path), str(e), naming.beside) from e
+
+
+def _construct_named_struct(cls: type, data: dict[str, Any], path: FieldPath, union_tag: str, naming: _Naming) -> Any:
+    """Build the struct *cls* a tag or an opener named, from the keys *data* holds beside it.
+
+    With none, the class builds from nothing, and its refusal is a coercion naming it
+    (:func:`build_from_nothing`, BUG-213, BUG-215).
+    """
+    if data:
+        return _construct_struct(cls, data, path, union_tag)
+    return build_from_nothing(lambda: _construct_struct(cls, {}, path, union_tag), cls, path, naming)
+
+
 def _construct_struct(tp: Any, data: dict[str, Any], path: FieldPath, union_tag: str) -> Any:
     """Construct a dataclass or plain-class instance from a dict of raw data."""
     flds = _struct_fields(tp)
@@ -675,12 +718,7 @@ def _construct_struct(tp: Any, data: dict[str, Any], path: FieldPath, union_tag:
         elif name in defs:
             kwargs[name] = defs[name]
         elif _is_struct_variant(ft) and _all_have_defaults(ft):
-            try:
-                kwargs[name] = _construct_struct(ft, {}, fp, union_tag)
-            except TypeError:
-                # Defaulted __init__ parameters do not promise that tp() works: the
-                # shortcut guessed wrong, so the field is simply missing.
-                raise MissingFieldError(fp, ft) from None
+            kwargs[name] = build_from_nothing(lambda ft=ft, fp=fp: _construct_struct(ft, {}, fp, union_tag), ft, fp)
         else:
             raise MissingFieldError(fp, ft)
 
@@ -941,19 +979,7 @@ def _construct_union_by_tag(non_none: list[Any], data: dict[str, Any], path: Fie
         )
     if matching:
         cleaned = {k: v2 for k, v2 in data.items() if k != union_tag}
-        if not cleaned:
-            # The tag is all the data, so the named class is asked to build from nothing. Its
-            # refusal is a coercion of the value the user wrote — the field is not missing — and
-            # Python's own text says what the class lacks (BUG-213).
-            try:
-                return _construct_struct(cls, cleaned, path, union_tag)
-            except TypeError as e:
-                msg = (
-                    f"Class {tag!r} at '{_spell_field_path(path)}' cannot be built with no"
-                    f" arguments: {e}. Supply the class's fields as keys beside the tag."
-                )
-                raise TypeCoercionError(msg) from e
-        return _construct_struct(cls, cleaned, path, union_tag)
+        return _construct_named_struct(cls, cleaned, path, union_tag, _Naming(tag, "tag"))
     valid_variants = sorted(dotted_name(_resolve_type(v)) for v in non_none if _is_struct(_resolve_type(v)))
     msg = (
         f"Class {tag!r} at '{_spell_field_path(path)}' is not compatible with any union variant."
@@ -1303,17 +1329,27 @@ def _construct_by_class_path(tp: type, data: dict[str, Any], path: FieldPath, un
         call = _select_directives(data).call
         raise TypeCoercionError.tag_not_a_subclass(tag, dotted_name(tp), _spell_field_path(path), call)
     cleaned = {k: v for k, v in data.items() if k != union_tag}
-    return _construct_struct(cls, cleaned, path, union_tag)
+    return _construct_named_struct(cls, cleaned, path, union_tag, _Naming(tag, "tag"))
 
 
-def construct_named_class(cls: type, data: dict[str, Any], *, path: FieldPath, union_tag: str) -> Any:
+def construct_named_class(  # noqa: PLR0913  # the class, its keys, and how the spec named it
+    cls: type,
+    data: dict[str, Any],
+    *,
+    path: FieldPath,
+    union_tag: str,
+    name: str,
+    opener: str,
+) -> Any:
     """Build exactly *cls* from *data*, whatever subclasses it has.
 
     *cls* is the class a callable spec names: the one ``class:`` names, or the owner a
     ``classfn:`` path names. Subclass dispatch has nothing left to choose, as after a union
     tag selected the class. A tag key in *data* would name a second class, so it is refused
     as an unknown field, unless *cls* declares a field of that spelling. A class that is no
-    struct is built as :func:`construct` builds it.
+    struct is built as :func:`construct` builds it. *name* is the class as the spec wrote it
+    and *opener* the key that named it, which a refused empty call quotes
+    (:func:`build_from_nothing`).
 
     Dev Notes:
         docs-dev/architecture/design-decisions/class-names-the-type-it-builds.md#class-names-the-type-it-builds
@@ -1323,4 +1359,4 @@ def construct_named_class(cls: type, data: dict[str, Any], *, path: FieldPath, u
     flds = _struct_fields(cls)
     if union_tag in data and union_tag not in flds:
         raise TypeCoercionError.unknown_fields([union_tag], cls.__name__, _spell_field_path(path), sorted(flds))
-    return _construct_struct(cls, data, path, union_tag)
+    return _construct_named_struct(cls, data, path, union_tag, _Naming(name, f"{opener!r} opener"))
