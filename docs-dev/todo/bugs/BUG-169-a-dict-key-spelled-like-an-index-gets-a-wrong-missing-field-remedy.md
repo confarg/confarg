@@ -1,7 +1,7 @@
 ---
 filed: 2026-10-05
 where:
-  - src/confarg/typedload/_construct.py::_missing_field_error
+  - src/confarg/exceptions.py::MissingFieldError
   - src/confarg/typedload/_construct.py::construct
 effort: L
 risk: medium
@@ -9,7 +9,7 @@ impact: behavior
 ---
 # BUG-169 — A dict key spelled like an index gets a wrong missing-field remedy
 
-`_missing_field_error` spells its remedy by rewriting each `[N]` of the construction path as
+`MissingFieldError` spells its remedy by rewriting each `[N]` of the construction path as
 `.N`, which was the maintainer's choice for BUG-165 over the exact fix
 ([construction](../../architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
 A dict key that literally contains `[N]` is rewritten too, so the remedy names a flag that

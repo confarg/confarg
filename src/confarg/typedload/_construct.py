@@ -11,7 +11,6 @@ Dev Notes:
 from __future__ import annotations
 
 import itertools
-import re
 import types
 import warnings
 from typing import Any
@@ -82,25 +81,6 @@ from confarg.typedload._coerce import (
     _type_kind,
     _TypeKind,
 )
-
-_PATH_INDEX = re.compile(r"\[(\d+)\]")
-
-
-def _missing_field_error(fp: str, ft: Any) -> MissingFieldError:
-    """Return the error for a field of type *ft* that no channel supplied at path *fp*.
-
-    The remedy spells each ``[i]`` of *fp* as the CLI segment ``.i``: ``items[0].size`` names
-    ``--items.0.size``.
-
-    Dev Notes:
-        docs-dev/architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it
-    """
-    flag = _PATH_INDEX.sub(r".\1", fp).removeprefix(".")
-    msg = (
-        f"Missing required field '{fp}' of type {ft!r}. "
-        f"Set it via CLI (--{flag}), environment variable, or config file."
-    )
-    return MissingFieldError(msg)
 
 
 def _try_pinned_dict(data: Any) -> _Pinned | None:
@@ -215,7 +195,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
                     kwargs[fname] = defs[fname]
                 else:
                     fp = f"{path}.{fname}" if path else fname
-                    raise _missing_field_error(fp, ft)
+                    raise MissingFieldError(fp, ft)
 
         return tp(**kwargs)
 
@@ -574,9 +554,9 @@ def _construct_struct(tp: Any, data: dict[str, Any], path: str, union_tag: str) 
             except TypeError:
                 # Defaulted __init__ parameters do not promise that tp() works: the
                 # shortcut guessed wrong, so the field is simply missing.
-                raise _missing_field_error(fp, ft) from None
+                raise MissingFieldError(fp, ft) from None
         else:
-            raise _missing_field_error(fp, ft)
+            raise MissingFieldError(fp, ft)
 
     var = _var_params(tp)
     var_kw = dict(kwargs.pop(var.keyword, {})) if var.keyword else {}

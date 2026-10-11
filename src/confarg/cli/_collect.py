@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
     from confarg._defaults import _Options
 
-from confarg._api import build
+from confarg._api import _build_for_cli
 from confarg._import import _import_dotted
 from confarg._parse_cli import _parse_cli, _path_unknown
 from confarg._pipeline import _merge_sources
@@ -126,6 +126,9 @@ def _merge_from_flat(
     return _merge_sources(target, cli_data, cli_configs, options)
 
 
-def _construct_from_merged(target: object, merged: dict[str, Any], union_tag: str) -> Any:
-    """Construct *target* from an already-merged dict; the shared tail of every ``from_*``."""
-    return build(target, merged, union_tag=union_tag)
+def _construct_from_merged(target: object, merged: dict[str, Any], union_tag: str, cli_prefix: str) -> Any:
+    """Construct *target* from an already-merged dict; the shared tail of every ``from_*``.
+
+    *cli_prefix* is the one the merge resolved, which a missing field's remedy is spelled under.
+    """
+    return _build_for_cli(target, merged, union_tag, cli_prefix)

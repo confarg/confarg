@@ -58,12 +58,17 @@ def registered_prefix(ctx: Any) -> str | None:
     return None
 
 
+def ctx_prefix(ctx: Any, options: _Options) -> str:
+    """Return the prefix ``ctx``'s options were registered under, reconciled with the one passed."""
+    return resolve_prefix(registered_prefix(ctx), options.cli_prefix)
+
+
 def merge_from_ctx(target: object, ctx: Any, options: _Options) -> dict[str, Any]:
     """Flatten ``ctx`` and run the shared merge tail; see the adapters' merge_context."""
-    cli_prefix = resolve_prefix(registered_prefix(ctx), options.cli_prefix)
-    return _merge_from_flat(flat_from_ctx(ctx), target, options, cli_prefix=cli_prefix, binds_runs=False)
+    return _merge_from_flat(flat_from_ctx(ctx), target, options, cli_prefix=ctx_prefix(ctx, options), binds_runs=False)
 
 
 def construct_from_ctx(target: object, ctx: Any, options: _Options) -> Any:
     """Merge ``ctx`` and construct ``target``; see the adapters' from_context."""
-    return _construct_from_merged(target, merge_from_ctx(target, ctx, options), options.union_tag)
+    merged = merge_from_ctx(target, ctx, options)
+    return _construct_from_merged(target, merged, options.union_tag, ctx_prefix(ctx, options))

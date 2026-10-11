@@ -44,9 +44,9 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-154 — An integer in a file is refused for a `float` field](BUG-154-an-integer-in-a-file-is-refused-for-a-float-field.md) | S | high | behavior |
 | [BUG-155 — A `call:` spec naming a class passes its kwargs uncoerced](BUG-155-a-call-spec-naming-a-class-passes-its-kwargs-uncoerced.md) | S | high | behavior |
 | [BUG-156 — A positional-only parameter in a callable spec is passed by keyword](BUG-156-a-positional-only-parameter-in-a-callable-spec-is-passed-by-keyword.md) | S | high | behavior |
-| [BUG-168 — A missing field's remedy omits the CLI prefix](BUG-168-a-missing-fields-remedy-omits-the-cli-prefix.md) | L | medium | behavior |
 | [BUG-169 — A dict key spelled like an index gets a wrong missing-field remedy](BUG-169-a-dict-key-spelled-like-an-index-gets-a-wrong-missing-field-remedy.md) | L | medium | behavior |
 | [BUG-170 — A list segment spelled as a merge sentinel writes the sentinel](BUG-170-a-list-segment-spelled-as-a-merge-sentinel-writes-the-sentinel.md) | S | medium | behavior |
 | [BUG-171 — A short token run on a fixed-arity flag gets a one-value usage line](BUG-171-a-short-fixed-arity-run-gets-a-one-value-usage.md) | S | medium | behavior |
+| [BUG-172 — An element flag below a collection root is silently dropped](BUG-172-an-element-flag-below-a-collection-root-is-silently-dropped.md) | L | medium | config |
 
 <!-- tickets:end -->

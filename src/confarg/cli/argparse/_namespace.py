@@ -44,11 +44,14 @@ def merge_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[Merge
 
 def _merge_namespace(target: object, ns: argparse.Namespace, options: _Options) -> dict[str, Any]:
     """Merge every source into a raw dict; :func:`merge_namespace` with its options resolved."""
-    flat = vars(ns)
+    return _merge_from_flat(vars(ns), target, options, cli_prefix=_namespace_prefix(ns, options), binds_runs=True)
+
+
+def _namespace_prefix(ns: argparse.Namespace, options: _Options) -> str:
+    """Return the prefix *ns*'s flags were registered under, reconciled with the one passed."""
     # argparse hands us no reference to the parser, so populate_parser left the prefix
     # it registered with on the Namespace itself.
-    cli_prefix = resolve_prefix(flat.get(PREFIX_ATTR), options.cli_prefix)
-    return _merge_from_flat(flat, target, options, cli_prefix=cli_prefix, binds_runs=True)
+    return resolve_prefix(vars(ns).get(PREFIX_ATTR), options.cli_prefix)
 
 
 def from_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeOptions]) -> Any:
@@ -74,4 +77,5 @@ def from_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeO
         An instance of ``target`` populated from all sources.
     """
     options = _resolve_options("from_namespace", opts)
-    return _construct_from_merged(target, _merge_namespace(target, ns, options), options.union_tag)
+    merged = _merge_namespace(target, ns, options)
+    return _construct_from_merged(target, merged, options.union_tag, _namespace_prefix(ns, options))
