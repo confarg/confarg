@@ -123,6 +123,19 @@ class FlagSpec:
         docs-dev/architecture/design-decisions/index-spellings-are-hidden-from-help.md#index-spellings-are-hidden-from-help
     """
 
+    def as_single_token(self) -> FlagSpec:
+        """Return this spec reshaped to consume exactly one token, whatever its shape.
+
+        The one inverse of the shape attributes — :attr:`nargs`, :attr:`whole_value`
+        and :attr:`stands_bare` — spelled beside them, so a spec forced to a single
+        token undoes the multi-token shape in one operation and the next shape
+        attribute is reset where it is declared, not by each caller by hand.
+
+        Dev Notes:
+            docs-dev/architecture/cli-adapters/flag-model.md#framework-neutral-flag-model
+        """
+        return dataclasses.replace(self, nargs=None, whole_value=False, stands_bare=False)
+
 
 @dataclasses.dataclass
 class FieldMeta:

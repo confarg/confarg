@@ -39,7 +39,7 @@ import confarg
 import confarg.cli._build as build_mod
 from confarg._files import INCLUDE_KEY
 from confarg._merge import DICT_DELETE, LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY
-from confarg.cli._build import build_static_flags
+from confarg.cli._build import _scalar_root_spec, build_static_flags
 from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError, UnknownArgumentError
 from tests._loaders import ArgparseLoader, ClickLoader, CycloptsLoader, TyperLoader, VanillaLoader
 from tests.conftest import AppConfig, CacheConfig, DbConfig, WithCollections, make_target
@@ -2626,6 +2626,46 @@ class TestCliPrefixContract:
     def test_no_prefix_registers_no_scalar_root_flag(self, populating_loader: ConfargLoader) -> None:
         """Without a prefix there is no flag name for a scalar root — as in vanilla."""
         assert populating_loader.registered_flags(int, config_flag="") == set()
+
+    @pytest.mark.parametrize(
+        ("root", "leaf"),
+        [
+            pytest.param(list[int], int, id="list"),
+            pytest.param(list[str], str, id="list-str"),
+            pytest.param(set[str], str, id="set"),
+            pytest.param(tuple[int, ...], int, id="varlen-tuple"),
+            pytest.param(list[int] | None, int, id="optional-list"),
+        ],
+    )
+    def test_scalar_root_spec_of_a_collection_is_its_element_leaf(self, root: type, leaf: type) -> None:
+        """A collection root's bare flag is the single-token leaf spec of its element type (REF-68).
+
+        The root's only CLI spelling takes exactly one token whatever the type
+        collects, so the multi-token shape the leaf builder gives a collection is
+        undone in one reset, and the spec comes out equal to the element type's own
+        root spec.
+        """
+        assert _scalar_root_spec(root) == _scalar_root_spec(leaf)
+
+    @pytest.mark.parametrize(
+        "root",
+        [
+            pytest.param(list[int], id="list"),
+            pytest.param(tuple[int, ...], id="varlen-tuple"),
+            pytest.param(tuple[int, int], id="fixed-tuple"),
+            pytest.param(list[int] | None, id="optional-list"),
+        ],
+    )
+    def test_scalar_root_spec_takes_exactly_one_token(self, root: type) -> None:
+        """Every shape attribute of the multi-token leaf is reset: ``nargs``, ``whole_value``, ``stands_bare`` (REF-68).
+
+        ``whole_value`` is the attribute the attribute-by-attribute reset forgot: a
+        fixed-tuple root kept it, so argparse registered the bare prefix flag
+        greedily. The one reset covers the whole shape vocabulary, so the next
+        shape attribute cannot be missed again.
+        """
+        spec = _scalar_root_spec(root)
+        assert (spec.nargs, spec.whole_value, spec.stands_bare) == (None, False, False)
 
     @pytest.mark.parametrize(
         ("target", "argv"),

@@ -1150,12 +1150,11 @@ def _scalar_root_spec(target: Any) -> FlagSpec:
     ``--<cli_prefix>`` flag -- the only CLI spelling a scalar root has -- and drops
     the spec entirely when no prefix is set.
 
-    ``nargs`` is forced to a single token because vanilla's
-    :func:`~confarg._parse_cli._handle_scalar_root` consumes exactly one: a
+    The spec is the root type's leaf spec reshaped through
+    :meth:`FlagSpec.as_single_token`, because vanilla's
+    :func:`~confarg._parse_cli._handle_scalar_root` consumes exactly one token: a
     ``list[int]`` root must not pick up the greedy ``nargs="*"`` that
-    :func:`_build_leaf_spec` gives a collection *field*.  ``stands_bare`` goes
-    with it -- one token is all this flag ever takes, so it never stands with
-    none (REF-68 would make that one reset rather than a field per attribute).
+    :func:`_build_leaf_spec` gives a collection *field*.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix
@@ -1163,9 +1162,7 @@ def _scalar_root_spec(target: Any) -> FlagSpec:
     resolved = _resolve_type(target)
     core = _unwrap_optional(resolved)
     spec = _build_leaf_spec("", target, resolved if core is None else core, "The configuration value.", None, "")
-    spec.nargs = None
-    spec.stands_bare = False
-    return spec
+    return spec.as_single_token()
 
 
 def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring confarg.load
