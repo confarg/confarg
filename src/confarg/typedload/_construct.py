@@ -35,7 +35,6 @@ from confarg._merge import (
 from confarg._types import (
     _all_have_defaults,
     _allows_none,
-    _dataclass_subclasses,
     _dict_kv,
     _elem_type,
     _fixed_seq_types,
@@ -62,6 +61,7 @@ from confarg._types import (
     _struct_fields,
     _struct_member_names,
     _struct_required,
+    _struct_subclasses,
     _tuple_types,
     _union_args,
     _union_args_no_none,
@@ -313,7 +313,7 @@ def _construct_shadowed_subclass(tp: Any, data: dict[str, Any], path: FieldPath,
     Dev Notes:
         docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
     """
-    subs = _dataclass_subclasses(tp)
+    subs = _struct_subclasses(tp)
     matches = _disambiguate_struct(subs, data, union_tag)
     if len(matches) == 1:
         return _construct_struct(matches[0], data, path, union_tag)

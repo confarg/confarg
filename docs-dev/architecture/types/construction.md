@@ -80,7 +80,7 @@ never a silent pick or a stripped value. Where a tag could have dispatched, cons
 shadowed tag-shaped key emits a `ConfargWarning` naming that
 ([design decisions](../design-decisions/a-shadowed-tag-warns-on-use.md#a-shadowed-tag-warns-on-use)).
 
-Subclass discovery (`_dataclass_subclasses`) walks breadth-first and yields each class exactly
+Subclass discovery (`_struct_subclasses`) walks breadth-first and yields each class exactly
 once. Both halves are settled decisions: a diamond subclass is reachable by two inheritance
 paths and used to be offered twice in the `--<union_tag>` completer (BUG-44, closed), and the
 breadth-first order is load-bearing there — direct subclasses are offered before their

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import ast
 import dataclasses
-import functools
 import inspect
 import textwrap
 from typing import TYPE_CHECKING, Annotated, Any, get_args, get_origin
@@ -16,7 +15,7 @@ from typing import TYPE_CHECKING, Annotated, Any, get_args, get_origin
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from confarg._types import _allows_none, _resolve_type, _union_args_no_none
+from confarg._types import _allows_none, _per_class_cache, _resolve_type, _union_args_no_none
 
 
 @dataclasses.dataclass
@@ -165,7 +164,7 @@ def _get_field_meta(raw_type: Any) -> FieldMeta | None:
     return None
 
 
-@functools.cache
+@_per_class_cache
 def _get_field_docstrings(dc_type: type) -> dict[str, str]:
     """Extract attribute docstrings (string literals after field defs) via AST.
 

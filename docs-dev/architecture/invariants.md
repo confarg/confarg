@@ -230,10 +230,7 @@ needs goes into that loop, never into a second writer over the framework's parse
   A message factory that needs `_src_type` or `dotted_name` therefore cannot have them: either
   the caller passes the text in, or the factory's own argument provably cannot be a token
   ([design decisions](design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it)).
-- The per-class introspection caches hold only what is fixed once a class exists. A default
-  (`_dc_defaults`, `_init_defaults`), anything that reads the leaf registry, and an annotation
-  that did not resolve are never cached, and a cached mapping is read-only
-  ([types](types/introspection.md#introspection-is-cached-per-class)).
+- The per-class introspection caches hold only what is fixed once a class exists, and each answer lives as long as its class (`_types._per_class_cache`). A default (`_dc_defaults`, `_init_defaults`), anything that reads the leaf registry or `__subclasses__()`, and an annotation that did not resolve are never cached, and a cached mapping is read-only ([types](types/introspection.md#introspection-is-cached-per-class)).
 - A type in `_LEAF_COERCIONS` must also be in `_LEAF_SERIALIZERS`: registration makes a type
   a leaf in both directions, and only `register_leaf_type` writes them
   ([types](types/leaf-coercion.md#leaf-coercion)).

@@ -11,6 +11,7 @@ import enum
 import functools
 import inspect
 import types
+import weakref
 from collections import deque
 from collections.abc import (
     Callable,
@@ -72,6 +73,28 @@ def _src_type(value: Any) -> str:
     return "str" if isinstance(value, _StrToken) else type(value).__name__
 
 
+def _per_class_cache[R](fn: Callable[[Any], R]) -> Callable[[Any], R]:
+    """Cache *fn*'s answer per class, for as long as the class lives.
+
+    The class is held weakly, so a class nothing else references is collected, its answer
+    with it. A call that raises stores nothing, so the next call asks again.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
+    """
+    answers: weakref.WeakKeyDictionary[Any, R] = weakref.WeakKeyDictionary()
+
+    @functools.wraps(fn)
+    def cached(cls: Any) -> R:
+        try:
+            return answers[cls]
+        except KeyError:
+            answer = answers[cls] = fn(cls)
+            return answer
+
+    return cached
+
+
 def _resolve_type(tp: Any) -> Any:
     """Unwrap the TypeAliasType, Annotated and Final wrappers, nested in any order.
 
@@ -87,6 +110,8 @@ def _resolve_type(tp: Any) -> Any:
     Dev Notes:
         docs-dev/architecture/types/introspection.md#wrappers-are-transparent
     """
+    if isinstance(tp, type):
+        return tp  # a class is never one of the wrappers
     while True:
         if type(tp).__name__ == "TypeAliasType":
             tp = tp.__value__
@@ -121,7 +146,7 @@ def _is_dc(tp: Any) -> bool:
     return dataclasses.is_dataclass(tp) and isinstance(tp, type)
 
 
-@functools.cache
+@_per_class_cache
 def _dc_fields(tp: Any) -> Mapping[str, Any]:
     """Return field names mapped to their resolved types for a dataclass.
 
@@ -364,7 +389,7 @@ def _namedtuple_fields(tp: Any) -> Mapping[str, Any]:
         return _typed_namedtuple_fields(tp, {})
 
 
-@functools.cache
+@_per_class_cache
 def _annotated_namedtuple_fields(tp: Any) -> Mapping[str, Any]:
     """Return :func:`_namedtuple_fields` when every annotation resolves, cached per class."""
     return _typed_namedtuple_fields(tp, _type_hints(tp))
@@ -641,7 +666,7 @@ class _InitParams:
         return frozenset(n for n in self.names if n not in self.defaults and n not in self.var.names)
 
 
-@functools.cache
+@_per_class_cache
 def _init_params(tp: Any) -> _InitParams:
     """Return the one walk of ``tp.__init__``'s signature every plain-class question reads.
 
@@ -688,7 +713,7 @@ def _init_fields(tp: Any) -> Mapping[str, Any]:
         return _typed_init_fields(tp, {})
 
 
-@functools.cache
+@_per_class_cache
 def _annotated_init_fields(tp: Any) -> Mapping[str, Any]:
     """Return :func:`_init_fields` when every annotation resolves, cached per class."""
     return _typed_init_fields(tp, _type_hints(tp.__init__))
@@ -753,11 +778,28 @@ def _var_params(tp: Any) -> _VarParams:
 
 def _is_struct(tp: Any) -> bool:
     """True if tp is a dataclass or a plain class with __init__ parameters."""
-    return _is_dc(tp) or _is_plain_class(tp)
+    tp = _resolve_type(tp)
+    return isinstance(tp, type) and _is_struct_class(tp)
 
 
-def _dataclass_subclasses(tp: type) -> list[type]:
-    """Return all struct subclasses of tp, recursively (BFS order)."""
+@_per_class_cache
+def _is_struct_class(cls: type) -> bool:
+    """Return :func:`_is_struct` for a class, cached per class.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
+    """
+    return _is_dc(cls) or _is_plain_class(cls)
+
+
+def _struct_subclasses(tp: type) -> list[type]:
+    """Return all struct subclasses of tp, recursively (BFS order).
+
+    Read afresh on every call, so a subclass defined since the last one is found.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
+    """
     found: list[type] = []
     seen: set[type] = set()
     queue: deque[type] = deque(tp.__subclasses__())
@@ -767,7 +809,7 @@ def _dataclass_subclasses(tp: type) -> list[type]:
             continue
         seen.add(sub)
         queue.extend(sub.__subclasses__())
-        if _is_struct(sub):
+        if _is_struct_class(sub):
             found.append(sub)
     return found
 
@@ -811,7 +853,7 @@ def _subclass_field_type(tp: type, field: str) -> Any | None:
         docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
     """
     found: list[Any] = []
-    for sub in _dataclass_subclasses(tp):
+    for sub in _struct_subclasses(tp):
         flds = _struct_fields(sub)
         if field in flds:
             found.append(flds[field])
@@ -840,9 +882,9 @@ def _struct_member_names(tp: Any) -> list[str]:
 
     The listing view of the same member rule, for a caller that matches a spelling against
     the members rather than looks one up: ``tp``'s declared fields, then each subclass-only
-    name in the order :func:`_dataclass_subclasses` meets it.
+    name in the order :func:`_struct_subclasses` meets it.
     """
-    inherited = (n for sub in _dataclass_subclasses(tp) for n in _struct_fields(sub) if _answered_by_subclasses(tp, n))
+    inherited = (n for sub in _struct_subclasses(tp) for n in _struct_fields(sub) if _answered_by_subclasses(tp, n))
     return list(dict.fromkeys([*_struct_fields(tp), *inherited]))
 
 

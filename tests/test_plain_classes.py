@@ -7,16 +7,30 @@
 from __future__ import annotations
 
 import enum
+import gc
 import inspect
+import weakref
 from collections.abc import Iterable, Mapping, MutableMapping, MutableSequence, Sequence  # noqa: TC003
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 
 import confarg
-from confarg._types import _dc_fields, _init_defaults, _init_fields, _init_params, _is_plain_class, _var_params
+from confarg import _types
+from confarg._types import (
+    _dc_fields,
+    _init_defaults,
+    _init_fields,
+    _init_params,
+    _is_plain_class,
+    _is_struct,
+    _namedtuple_fields,
+    _struct_subclasses,
+    _var_params,
+)
+from confarg.cli._spec import _get_field_docstrings
 from confarg.typedload._construct import _call_with_var_positional
 
 # ---------------------------------------------------------------------------
@@ -575,3 +589,64 @@ class TestInitParams:
         """No call reaches ``*args`` past an unfilled positional parameter."""
         with pytest.raises(TypeError, match="positional parameter 'a' is unset"):
             _call_with_var_positional(_Gapped, {"b": 5, "rest": [6]}, "rest", {})
+
+
+# ---------------------------------------------------------------------------
+# Cached as long as the class lives, struct test included (REF-92)
+# ---------------------------------------------------------------------------
+
+
+class TestPerClassCache:
+    """Every per-class answer is cached for as long as its class lives, and no longer."""
+
+    def test_cached_class_is_collectable(self) -> None:
+        """A class asked every cached question is still garbage-collected once dropped."""
+
+        def ask_everything() -> list[weakref.ref[type]]:
+            class Plain:
+                def __init__(self, x: int, *rest: int) -> None:
+                    self.x, self.rest = x, rest
+
+            @dataclass
+            class Data:
+                y: int = 0
+                """The y."""
+
+            class Pair(NamedTuple):
+                a: int
+                b: str
+
+            for cls in (Plain, Data, Pair):
+                _is_struct(cls)
+            _init_params(Plain)
+            _init_fields(Plain)
+            _dc_fields(Data)
+            _namedtuple_fields(Pair)
+            _get_field_docstrings(Data)
+            return [weakref.ref(Plain), weakref.ref(Data), weakref.ref(Pair)]
+
+        refs = ask_everything()
+        gc.collect()
+        assert [r() for r in refs] == [None, None, None]
+
+    def test_struct_test_runs_once_per_class(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The subclass scan asks each subclass's shape once, however often the scan runs."""
+
+        class Base:
+            def __init__(self, p: float = 1.0) -> None:
+                self.p = p
+
+        class Child(Base):
+            def __init__(self, q: int, p: float = 1.0) -> None:
+                super().__init__(p)
+                self.q = q
+
+        asked: list[type] = []
+        is_plain_class = _types._is_plain_class
+        monkeypatch.setattr(_types, "_is_plain_class", lambda tp: asked.append(tp) or is_plain_class(tp))
+
+        assert _is_struct(Base)
+        assert _is_struct(Base)
+        assert _struct_subclasses(Base) == [Child]
+        assert _struct_subclasses(Base) == [Child]
+        assert asked == [Base, Child]

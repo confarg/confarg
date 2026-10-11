@@ -26,6 +26,8 @@ any order (`Annotated[Final[X], …]`, an alias of `Final[X]`), and a bare `Fina
 channel, the merge, construction or serialization acts on, so every walk asks the type
 underneath.
 
+A class is none of the wrappers, so `_resolve_type` returns a class unchanged before it tests for any of them. Every struct question passes through `_resolve_type`, so this early return saves time on every subclass scan (REF-92). A parameterized generic is not a class and still goes through the loop.
+
 `Final` used to be unwrapped only at the sites that remembered to: flag registration, the
 argparse completion and `_coerce_leaf`. `_type_kind` did not, so a `Final[Struct]` field
 registered `--inner.x` that the CLI walk then refused on every front-end, `build()` refused
@@ -92,12 +94,7 @@ each collecting a different attribute of the same parameters (REF-48). Two chang
   `_init_fields`, `_init_defaults`, `_var_params`, `_struct_required` and the `*args` call in
   construction are views of it. The record holds nothing the annotations decide, so it stays
   valid whatever the annotations resolve to.
-- **The answers are cached per class.** `_init_params`, `_dc_fields`, `_init_fields` and
-  `_namedtuple_fields` are `functools.cache`d, as `cli._spec._get_field_docstrings` already
-  was. A cached mapping is shared, so it is returned as a read-only `MappingProxyType`: a
-  caller that mutates it fails at once rather than corrupting every later answer.
-  `inspect.Signature.parameters` hands out the same read-only view, for the same reason. The
-  cache is unbounded: the key is a class, and a program has as many classes as it defines.
+- **The answers are cached per class, for as long as the class lives.** `_init_params`, `_dc_fields`, `_init_fields`, `_namedtuple_fields`, the struct test (`_is_struct`, through `_is_struct_class`) and `cli._spec._get_field_docstrings` all go through `_types._per_class_cache`, which keys a `weakref.WeakKeyDictionary` on the class. A class nothing else references — one `make_dataclass` built, or a test defined in a function — is collected, its answers with it. REF-48 had used an unbounded `functools.cache`, which kept every class it was asked about alive for the life of the process (REF-92). One limit remains: an answer that names its own class, such as the fields of a dataclass with a `next: Node | None` field, holds a strong reference to it, so that class stays alive as every class did before. A cached mapping is shared, so it is returned as a read-only `MappingProxyType`: a caller that mutates it fails at once rather than corrupting every later answer. `inspect.Signature.parameters` hands out the same read-only view, for the same reason.
 
 What is never cached, and why:
 
@@ -118,6 +115,7 @@ What is never cached, and why:
   unresolvable annotation raises, and an exception is never cached. pydantic does the same with
   a model whose forward references are not yet defined: it stays incomplete, and is rebuilt on
   use rather than frozen with the missing type.
+- **Nothing that reads `__subclasses__()`.** `_struct_subclasses`, and everything that answers through it — `_subclass_field_type`, `_struct_member_type`, `_struct_member_names` and so `_parse_cli._locals_keys` — read the subclass tree on every call. A subclass appears whenever a module that defines one is imported: by `import_tagged_classes`, by a `class:` path during `build()`, or by the user's own code between two calls. Python tells only a base that defines `__init_subclass__` about a new subclass, and confarg owns none of the bases it walks, so a cached subclass list could not know it was out of date. `functools.singledispatch` can cache per class because the ABC registry gives it `abc.get_cache_token()` to invalidate on; nothing equivalent exists for `__subclasses__()`. Reading it is cheap once each subclass's struct test is cached. On kitzen's example config, with its ~200 albumentations transform subclasses, `merge` + `build` took ~0.15 s; caching the struct test per class brought that to ~0.11 s, and returning a class unchanged from `_resolve_type` to ~0.095 s. Caching the subclass list and `_locals_keys` as well gained nothing measurable (REF-92).
 
 **`*args` is reached by position, through the record.** A class taking `*args` cannot have
 its positional parameters passed by keyword, so construction passes them by position, in
@@ -128,8 +126,4 @@ before a non-empty `*args` raises: no call can reach `*args` past an unfilled po
 parameter, and filling the gap with the first element would build the wrong object silently.
 Construction fills every declared field before the call, so the gap is unreachable today.
 
-Precedents: the standard library's `dataclasses` computes a class's fields once and stores them
-on the class (`__dataclass_fields__`), msgspec caches the type information its encoder and
-decoder share on the class it describes, and `typing` caches its parameterised aliases with
-`functools.lru_cache`. All three cache a structure that is fixed once the class exists, never
-one that a registry can change afterwards.
+Precedents: the standard library's `dataclasses` computes a class's fields once and stores them on the class (`__dataclass_fields__`), and msgspec and pydantic cache the type information they share on the class it describes. A cache stored on the class lives exactly as long as the class, which is what the weak key reproduces without writing to user classes. The standard library caches by class weakly as well: `functools.singledispatch` keeps its dispatch cache in a `WeakKeyDictionary`, and `abc` keeps its subclass caches in `WeakSet`s. Each of these caches a structure that is fixed once the class exists, never one that a registry or a later subclass can change.
