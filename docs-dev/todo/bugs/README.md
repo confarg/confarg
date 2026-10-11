@@ -62,6 +62,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-201 — An environment variable below a dict appends, though the environment has no append](BUG-201-an-environment-variable-below-a-dict-appends-though-the-environment-has-no-append.md) | minor | FEAT-18 | S | medium | config | PR-5 |
 | [BUG-119 — `_defaults.py` says four front-ends must agree; there are five](BUG-119-defaults-module-counts-four-front-ends.md) | trivial |  | S | low | none | BUG-7 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
-| [BUG-204 — Docstrings outside `_defaults.py` and an open ticket count four front-ends](BUG-204-docstrings-outside-defaults-count-four-front-ends.md) | trivial |  | S | low | none | BUG-7 |
+| [BUG-205 — The click and cyclopts public-API tests count fewer functions than the adapters export](BUG-205-public-api-tests-count-fewer-functions-than-the-adapters-export.md) | trivial |  | S | low | none | PR-63 |
+| [BUG-206 — The `=` escape note counts four front-ends refusing the space form; all five do](BUG-206-the-equals-escape-note-counts-four-refusing-the-space-form.md) | trivial |  | S | low | none | BUG-53, BUG-54 |
 
 <!-- tickets:end -->

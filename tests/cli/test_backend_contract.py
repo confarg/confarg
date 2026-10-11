@@ -2085,7 +2085,7 @@ class TestJsonArrayTokenContract:
         assert cfg.values == ["[oops"]
 
     def test_merged_dict_matches_vanilla(self, loader: ConfargLoader) -> None:
-        """The raw merged dict is byte-identical across all four loaders (plain values)."""
+        """The raw merged dict is byte-identical across all five loaders (plain values)."""
         merged = loader.merge(_WithStrBoolList, argv=["--values", '["hello", "yes", "well"]'], env={})
         assert merged == {"values": ["hello", "yes", "well"]}
 
@@ -6208,7 +6208,7 @@ class TestLocalsContract:
     fixing a type and env and CLI have none to fix.  An override is coerced to
     the declared type, so ``${locals.n * 2}`` keeps adding rather than repeating
     a string, and a write to an undeclared name is an error rather than a new
-    variable.  These tests pin all of that across the four front-ends.
+    variable.  These tests pin all of that across the five front-ends.
 
     The bare whole-namespace form (``--locals VALUE``) has parity too: the graft
     makes ``locals`` a dict-typed path, so every front-end registers the flag and
@@ -6373,7 +6373,7 @@ n: ${locals.k * 2}
         tmp_path,
         tmp_yaml,
     ) -> None:
-        """The declared-ness check follows the namespace down, in all four front-ends."""
+        """The declared-ness check follows the namespace down, in all five front-ends."""
         (tmp_path / "db.yaml").write_text("locals:\n  h: db.internal\nhost: ${locals.h}\n")
         cfg = tmp_yaml(f"db:\n  {INCLUDE_KEY}: ./db.yaml\n")
         with pytest.raises(ConfargError, match=r"db\.locals\.nope"):
@@ -6687,7 +6687,7 @@ class TestDashPrefixedValueContract:
     The ``=`` form is the escape argparse, click and cyclopts all honor natively;
     vanilla split it back into two tokens before any flag-check ran, so the value
     was re-read as a flag.  The dict-subkey and append spellings go through the
-    shared argv scan, so they were broken in all four front-ends.
+    shared argv scan, so they were broken in every front-end.
     """
 
     def test_scalar(self, loader: ConfargLoader) -> None:

@@ -1300,7 +1300,7 @@ def _collect_callable_key_argv_specs(
     The vanilla parser accepts any key below a callable field (:func:`~confarg._parse_cli._addresses_callable_key`), so
     registration follows the same rule and hands the token to the collector as a plain
     string; whether the kwarg is acceptable is construction's answer to give, identically
-    in all four front-ends.
+    in all five front-ends.
 
     Append and delete flags are skipped: they take no value, or a variable number of them,
     and :func:`_collect_patch_argv_specs` already registers every one of them in the shape
