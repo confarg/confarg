@@ -4517,6 +4517,40 @@ class TestCollectionPatchContract:
         argv = ["--config", str(base), "--json", '{"users": ["q"]}', "--users-", "--users+", "x"]
         assert loader.load(_WithUsers, argv=argv, env={}).users == ["x"]
 
+    @pytest.mark.parametrize(
+        ("root_json", "delete", "expected"),
+        [
+            pytest.param('{"sec": {"a": 7}}', "--sec-", _DefaultedSection(a=1, b=2), id="field-in-json"),
+            pytest.param("{}", "--sec-", _DefaultedSection(a=1, b=2), id="field-not-in-json"),
+            pytest.param('{"sec": {"a": 7, "b": 8}}', "--sec.a-", _DefaultedSection(a=1, b=8), id="subfield-in-json"),
+            pytest.param('{"sec": {"b": 8}}', "--sec.a-", _DefaultedSection(a=1, b=8), id="subfield-not-in-json"),
+        ],
+    )
+    def test_field_delete_beside_a_root_json_cast_deletes_below_too(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        root_json: str,
+        delete: str,
+        expected: _DefaultedSection,
+    ) -> None:
+        """A field delete beside a root ``json`` cast still deletes in the layers below (BUG-186).
+
+        The fold spent the delete on the decoded object and dropped it, so the file's value came back.
+        """
+        base = tmp_yaml("sec: {a: 5, b: 6}\n")
+        argv = ["--config", str(base), "--json", root_json, delete]
+        assert loader.load(_WithDefaultedSection, argv=argv, env={}).sec == expected
+
+    def test_key_delete_that_met_its_key_in_a_root_json_cast_needs_nothing_below(self, loader: ConfargLoader) -> None:
+        """A key delete the root ``json`` object gave a key to is done, whatever lies below (BUG-186).
+
+        Kept for the layers below, it must not survive them as the sentinel a delete with no base
+        leaves (BUG-98): the decoded object was its base.
+        """
+        argv = ["--json", '{"data": {"x": 1, "y": 2}}', "--data.x-"]
+        assert loader.load(_WithMap, argv=argv, env={}).data == {"y": 2}
+
     def test_flag_refines_an_env_list_cut_off_by_its_delete(self, loader: ConfargLoader, tmp_yaml) -> None:
         """A flag patches what the env built after its delete, not the file below it (BUG-116)."""
         base = tmp_yaml("users: [alice, bob, carol]\n")

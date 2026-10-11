@@ -1126,6 +1126,19 @@ class TestEnvDelete:
         )
         assert result.name == "default"
 
+    @pytest.mark.parametrize("root_json", ['{"name": "q"}', '{"count": 3}'], ids=["field-in-json", "field-not-in-json"])
+    def test_delete_beside_a_root_json_cast_deletes_in_the_files_too(
+        self,
+        loader: ConfargLoader,
+        tmp_toml,
+        root_json: str,
+    ) -> None:
+        """NAME- beside the root JSON cast still deletes the file's name (BUG-186)."""
+        path = tmp_toml("name = 'from_config'\n")
+        env = {"MYAPP_JSON": root_json, "MYAPP_NAME-": "1"}
+        result = loader.load(WithDefaults, argv=[], env=env, env_prefix="MYAPP_", files=[path])
+        assert result.name == "default"
+
 
 class _EnvSeqPt(NamedTuple):
     x: int

@@ -12,12 +12,13 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-186 — A root `json` cast swallows a field delete meant for the layers below](BUG-186-a-root-json-cast-swallows-a-field-delete-meant-for-the-layers-below.md) | critical |  | S | high | behavior | PR-87, BUG-3 |
 | [BUG-193 — A closure or a lambda dumps as a path that cannot be imported](BUG-193-a-closure-dumps-as-a-path-that-cannot-be-imported.md) | critical (via BUG-191) |  | S | low | behavior | PR-5 |
+| [BUG-227 — A delete beside an include never reaches the files below](BUG-227-a-delete-beside-an-include-never-reaches-the-files-below.md) | critical |  | S | medium | behavior | PR-5, PR-97 |
 | [BUG-190 — A typed `call:` spec merges with the lower layer's value instead of replacing it](BUG-190-a-typed-call-spec-merges-with-the-lower-layers-value.md) | critical |  | M | medium | behavior | FEAT-28 |
 | [BUG-192 — A `class:` instance dumps the arguments it was built with, not the values it holds](BUG-192-a-class-instance-dumps-the-arguments-it-was-built-with.md) | critical |  | M | low | behavior | PR-5 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
 | [BUG-191 — A `call:` result on a Callable field dumps as the call, not as what it produced](BUG-191-a-call-result-on-a-callable-field-dumps-as-the-call.md) | critical | BUG-193 | S | low | behavior | PR-5 |
+| [BUG-228 — A JSON cast's `key-` shorthand deletes below only in some positions](BUG-228-a-json-casts-delete-shorthand-deletes-below-only-in-some-positions.md) | critical | Q-7 | S | high | behavior | PR-87, BUG-3 |
 | [BUG-114 — Cyclopts cannot register subclasses that share a struct field name](BUG-114-cyclopts-cannot-register-subclasses-that-share-a-struct-field-name.md) | major |  | S | medium | behavior | PR-38 |
 | [BUG-152 — A positional-only `__init__` parameter fails `build()` with a raw `TypeError`](BUG-152-a-positional-only-init-parameter-fails-build-with-a-raw-typeerror.md) | major |  | S | high | behavior | PR-5 |
 | [BUG-156 — A positional-only parameter in a callable spec is passed by keyword](BUG-156-a-positional-only-parameter-in-a-callable-spec-is-passed-by-keyword.md) | major |  | S | high | behavior | PR-5 |
