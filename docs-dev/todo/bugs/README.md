@@ -44,11 +44,12 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-154 — An integer in a file is refused for a `float` field](BUG-154-an-integer-in-a-file-is-refused-for-a-float-field.md) | S | high | behavior |
 | [BUG-155 — A `call:` spec naming a class passes its kwargs uncoerced](BUG-155-a-call-spec-naming-a-class-passes-its-kwargs-uncoerced.md) | S | high | behavior |
 | [BUG-156 — A positional-only parameter in a callable spec is passed by keyword](BUG-156-a-positional-only-parameter-in-a-callable-spec-is-passed-by-keyword.md) | S | high | behavior |
-| [BUG-173 — cyclopts crashes on a dict-key flag whose key is no identifier](BUG-173-cyclopts-crashes-on-a-dict-key-flag-that-is-no-identifier.md) | S | medium | behavior |
 | [BUG-174 — An index delete on a dict writes the list-delete key into the dict](BUG-174-an-index-delete-on-a-dict-writes-the-list-delete-key.md) | S | medium | behavior |
 | [BUG-175 — A file's list-delete key holding no index list escapes as a raw TypeError](BUG-175-a-files-list-delete-key-holding-no-index-list-escapes-as-a-typeerror.md) | S | low | none |
 | [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | S | low | behavior |
 | [BUG-177 — A collection root's bare flag takes one token, which construction refuses](BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md) | M | medium | behavior |
 | [BUG-178 — A bare-prefix append is told it lacks the prefix](BUG-178-a-bare-prefix-append-is-told-it-lacks-the-prefix.md) | S | low | behavior |
+| [BUG-179 — An element flag on a scalar swallows a stray token on argparse and cyclopts](BUG-179-an-element-flag-on-a-scalar-swallows-a-stray-token-on-argparse-and-cyclopts.md) | M | medium | config |
+| [BUG-180 — Cyclopts refuses a flag whose name ends in a star](BUG-180-cyclopts-refuses-a-flag-whose-name-ends-in-a-star.md) | M | medium | behavior |
 
 <!-- tickets:end -->
