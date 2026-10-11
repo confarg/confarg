@@ -25,6 +25,7 @@ from confarg._merge import (
     LIST_REPLACE_BASE_KEY,
     _apply_list_ops,
     _merge_existing_value,
+    _replace_base,
 )
 from confarg._types import (
     _all_have_defaults,
@@ -133,7 +134,7 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, un
         docs-dev/architecture/design-decisions/namedtuple-arity-flag-argv-order.md#build-reconciles-the-positions-with-the-patch
     """
     field_names = list(_namedtuple_fields(tp))
-    base = list(data[LIST_REPLACE_BASE_KEY])
+    base = _replace_base(data, _spell_field_path(path))
     _check_namedtuple_length(tp, len(base), path)
     patch = {k: v for k, v in data.items() if k != LIST_REPLACE_BASE_KEY}
     if patch and all(_is_index_key(k) for k in patch):
@@ -612,7 +613,7 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
     if isinstance(data, dict):
         if LIST_REPLACE_BASE_KEY in data:
             # CLI-produced dict with an explicit base list; apply ops in order.
-            working = _apply_list_ops(list(data[LIST_REPLACE_BASE_KEY]), data, _spell_field_path(path), None)
+            working = _apply_list_ops(_replace_base(data, _spell_field_path(path)), data, _spell_field_path(path), None)
             return [construct(et, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(working)]
         if LIST_APPEND_KEY in data:
             # Append-only dict: apply all list ops (appends, deletions, index patches) against an empty base.
@@ -707,7 +708,7 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
         patches = data
         if LIST_REPLACE_BASE_KEY in data:
             # A deferred index patch carrying a base (e.g. a config list completed by --field.N).
-            base_seq = list(data[LIST_REPLACE_BASE_KEY])
+            base_seq = _replace_base(data, _spell_field_path(path))
             if len(base_seq) > len(tt):
                 msg = (
                     f"Cannot construct {tp} at '{_spell_field_path(path)}'"

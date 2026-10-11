@@ -63,16 +63,20 @@ from confarg._types import (
     _union_has_varlen_variant,
     _UnionSeqToken,
 )
+from confarg.dictexpr._expressions import _list_index
 from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce, _type_kind, _TypeKind
 from confarg.typedload._construct import _selects_none
 
 
 def _step_tuple_type(tp: Any, part: str) -> Any | None:
-    """Advance one step into a tuple type by numeric index."""
+    """Advance one step into a tuple type by numeric index.
+
+    A variadic tuple takes an index as a list does, only as ``str()`` writes one.
+    """
     et = _tuple_types(tp)
     if et is None:
-        return _elem_type(tp)
+        return _elem_type(tp) if _list_index(part) is not None else None
     try:
         return et[int(part)]
     except (ValueError, IndexError):
@@ -106,7 +110,12 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911  # o
 
     Dispatches on :func:`~confarg.typedload._coerce._type_kind`, as construction does. A
     registered leaf with ``__init__`` parameters is walked as a struct: an explicit class
-    tag may still open it.
+    tag may still open it. An open-ended sequence is entered only by an index as ``str()``
+    writes one (:func:`~confarg.dictexpr._expressions._list_index`): any other key below it
+    would reach the merge as one of its own list-patch keys (BUG-170).
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index
     """
     match _type_kind(tp):
         case _TypeKind.NAMEDTUPLE:
@@ -118,7 +127,7 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911  # o
         case _TypeKind.STRUCT | _TypeKind.TAGGABLE_LEAF:
             return _struct_member_type(tp, part)
         case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET:
-            return _elem_type(tp)
+            return _elem_type(tp) if _list_index(part) is not None else None
         case _TypeKind.TUPLE:
             return _step_tuple_type(tp, part)
         case _TypeKind.DICT:
@@ -148,6 +157,22 @@ class _Branch(NamedTuple):
     #: The type reached at the end of the path, a union unexpanded; ``None`` when the branch
     #: refuses a segment, its last stone then the one it could not step from.
     end: Any | None
+
+
+#: The kinds whose patch is a list patch: the merge reads every key below one as an index or as
+#: one of its own list-patch keys, a namedtuple's field names aside.
+_SEQUENCE_KINDS = frozenset(
+    {_TypeKind.LIST, _TypeKind.SET, _TypeKind.FROZENSET, _TypeKind.TUPLE, _TypeKind.NAMEDTUPLE},
+)
+
+
+def _refuses_at_a_sequence(branch: _Branch) -> bool:
+    """Return True if *branch* refuses its path standing on a sequence, at a segment naming no element of it.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index
+    """
+    return branch.end is None and _type_kind(branch.stones[-1].node) in _SEQUENCE_KINDS
 
 
 def _union_branches(tp: Any) -> list[Any]:
@@ -350,7 +375,9 @@ def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
     The node a branch stands on, not the type the prefix reaches: a field typed
     ``dict[str, Any] | None`` or ``dict[str, Any] | Inner`` reaches the union, and its dict
     variant takes what is below as a key, as a plain dict field and the environment do
-    (BUG-158).
+    (BUG-158). A branch that refuses the path at a sequence below the dict takes nothing
+    (:func:`_refuses_at_a_sequence`): its segment is no key of the dict but a patch key of
+    the sequence, which the merge would read as its own (BUG-170).
 
     Args:
         target: The root type to start resolution from.
@@ -363,8 +390,27 @@ def _is_dict_at_path(target: Any, parts: list[str], union_tag: str) -> bool:
     Dev Notes:
         docs-dev/architecture/cli-parsing/type-guided-parsing.md#one-walk-many-questions
     """
-    branches = _walk_path(target, parts, union_tag)
-    return any(_is_dict(stone.node) for branch in branches for stone in branch.stones[1:])
+    return any(
+        not _refuses_at_a_sequence(branch) and any(_is_dict(stone.node) for stone in branch.stones[1:])
+        for branch in _walk_path(target, parts, union_tag)
+    )
+
+
+def _sequence_refusal(target: Any, parts: list[str], union_tag: str) -> int | None:
+    """Return the position in *parts* of the segment a sequence refuses, None if the path is no such refusal.
+
+    A refusal only when vanilla's loop refuses the path (:func:`_path_unknown`), and a branch
+    of the walk refused it standing on a sequence (:func:`_refuses_at_a_sequence`): the
+    environment, which leaves any other unknown path below its first segment to ``build()``,
+    asks it to keep a segment from reaching the merge as a list-patch key (BUG-170).
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index
+    """
+    if not _path_unknown(target, parts, union_tag):
+        return None
+    refused = (len(b.stones) - 1 for b in _walk_path(target, parts, union_tag) if _refuses_at_a_sequence(b))
+    return next(refused, None)
 
 
 def _member_names(pt: Any) -> list[str]:

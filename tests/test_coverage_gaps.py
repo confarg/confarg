@@ -798,15 +798,15 @@ class TestParseEnvBranches:
         assert result.items[0] == 99
 
     def test_tuple_non_int_segment_from_env(self) -> None:
-        """Non-integer env var path segment for a tuple field is silently ignored."""
+        """Non-integer env var path segment for a tuple field is refused at parse (BUG-170)."""
         WithFixedTuple = make_target("coords", tuple[int, str], default=(0, ""))
-        result = confarg.load(
-            WithFixedTuple,
-            argv=[],
-            env={"MYAPP_COORDS__BAD": "hello"},
-            env_prefix="MYAPP_",
-        )
-        assert result.coords == (0, "")
+        with pytest.raises(confarg.exceptions.ConfargError, match="segment 'bad' names no element of 'coords'"):
+            confarg.load(
+                WithFixedTuple,
+                argv=[],
+                env={"MYAPP_COORDS__BAD": "hello"},
+                env_prefix="MYAPP_",
+            )
 
     def test_none_sentinel_for_non_struct(self) -> None:
         """'none' value in env var resolves a non-struct optional to None."""
@@ -1114,11 +1114,9 @@ class TestParseEnvDictAndFallthrough:
         assert result.mapping == {"key": 42}
 
     def test_tuple_out_of_range_from_env(self) -> None:
-        """Out-of-range env var index for a fixed-length tuple raises TypeCoercionError."""
-        # Index 5 is out of range for a 2-element tuple; the partial-index
-        # merge extends the base list to 6 elements, then _construct_tuple rejects it.
+        """Out-of-range env var index for a fixed-length tuple is refused at parse, as the flag is (BUG-170)."""
         WithTuple = make_target("coords", tuple[int, str], default=(0, ""))
-        with pytest.raises(confarg.exceptions.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.ConfargError, match="segment '5' names no element of 'coords'"):
             confarg.load(
                 WithTuple,
                 argv=[],

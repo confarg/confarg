@@ -17,3 +17,8 @@ again. They agree today, but which spellings count as an index (`int()` takes `+
 writes, BUG-97, BUG-133) is a decision that would have to change at both sites. Fix
 direction: one decoder of the last segment, `(name, index | None)`, which both channels call,
 following [delegate to the canonical function](../../architecture/invariants.md#delegate-to-the-canonical-function).
+
+Since BUG-170 the walk refuses a non-canonical index below a sequence before either `int()` runs
+(`--xs.01-`, `APP_XS__01-`), so the two decoders now differ only where no sequence is walked: on
+a dict, where both take `1-` for a list delete
+([BUG-174](../bugs/BUG-174-an-index-delete-on-a-dict-writes-the-list-delete-key.md)).

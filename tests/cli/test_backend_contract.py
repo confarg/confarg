@@ -3509,6 +3509,29 @@ class _WithLocalsPatchNode:
     db: _LocalsPatchNode
 
 
+@dataclass
+class _SequenceSegments:
+    """A field of each open-ended sequence kind, a list below a dict, and a list-or-dict union (BUG-170)."""
+
+    xs: list[int] = dataclasses.field(default_factory=lambda: [7])
+    s: set[int] = dataclasses.field(default_factory=set)
+    t: tuple[int, ...] = ()
+    d: dict[str, list[int]] = dataclasses.field(default_factory=dict)
+    u: list[int] | dict[str, int] = dataclasses.field(default_factory=list)
+
+
+# The merge's own list-patch keys, a name, and what int() reads but str() of no integer writes.
+_NO_INDEX_SEGMENTS = ["+", "*", "-", "~", "foo", "01", "+1", "-0", "1_0"]
+
+
+def _xfail_cyclopts_on_no_identifier(loader: ConfargLoader, request: pytest.FixtureRequest, flag: str) -> None:
+    """Mark the test an expected failure on cyclopts when *flag* holds what its parameter name cannot."""
+    if loader.id == "cyclopts" and any(c in flag for c in "*~"):
+        request.applymarker(
+            pytest.mark.xfail(raises=ValueError, strict=True, reason="BUG-173: cyclopts cannot register the flag"),
+        )
+
+
 class TestCollectionPatchContract:
     """List index/append/delete and dict-subkey CLI patches resolve identically everywhere.
 
@@ -3946,6 +3969,78 @@ class TestCollectionPatchContract:
         cfg = tmp_yaml(f"db:\n  {INCLUDE_KEY}: ./db.yaml\n")
         loaded = loader.load(_WithLocalsPatchNode, argv=["--config", str(cfg), "--db.locals.h", "cli"], env={})
         assert loaded.db == _LocalsPatchNode("cli")
+
+    @pytest.mark.parametrize("segment", _NO_INDEX_SEGMENTS)
+    @pytest.mark.parametrize("field", ["xs", "s", "t", "d.k"])
+    def test_segment_spelling_no_index_below_a_sequence_is_refused(
+        self,
+        loader: ConfargLoader,
+        request: pytest.FixtureRequest,
+        field: str,
+        segment: str,
+    ) -> None:
+        """Below a sequence a segment is an index as ``str()`` writes one, or no path (BUG-170).
+
+        The walk once stepped into the element whatever the segment spelled, so ``--xs.* 5``
+        wrote the merge's own ``'*'`` key and ``build()`` crashed on it, and ``--xs.+ 1``
+        appended. A list below a dict is no key of the dict, so it is refused there too. A
+        lone ``+`` misses its name, as ``--sub.+`` does.
+        """
+        flag = f"--{field}.{segment}"
+        _xfail_cyclopts_on_no_identifier(loader, request, flag)
+        with pytest.raises((UnknownArgumentError, SystemExit)) as excinfo:
+            loader.merge(_SequenceSegments, argv=[flag, "5"], env={})
+        if isinstance(excinfo.value, UnknownArgumentError):
+            expected = (
+                f"Missing field name after '--{field}.'"
+                if segment == "+"
+                else f"Unknown argument: {flag!r} (field '{field}.{segment}' not found)"
+            )
+            assert str(excinfo.value) == expected
+
+    @pytest.mark.parametrize("flag", ["--xs.*-", "--xs.01-", "--d.k.+-", "--d.k.01-"])
+    def test_delete_of_a_segment_spelling_no_index_is_refused(
+        self,
+        loader: ConfargLoader,
+        request: pytest.FixtureRequest,
+        flag: str,
+    ) -> None:
+        """A delete below a sequence names an index ``str()`` writes, as a patch does (BUG-170)."""
+        _xfail_cyclopts_on_no_identifier(loader, request, flag)
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_SequenceSegments, argv=[flag], env={})
+
+    def test_empty_segment_below_a_list_is_a_missing_name(self, loader: ConfargLoader) -> None:
+        """``--xs.`` misses its index at parse, as ``--sub.`` misses its field name (BUG-170)."""
+        with pytest.raises((UnknownArgumentError, SystemExit)) as excinfo:
+            loader.merge(_SequenceSegments, argv=["--xs.", "5"], env={})
+        if isinstance(excinfo.value, UnknownArgumentError):
+            assert str(excinfo.value) == "Missing field name after '--xs.'"
+
+    @pytest.mark.parametrize(
+        ("argv", "merged", "built"),
+        [
+            (["--xs.0", "5"], {"xs": {"0": 5}}, {"xs": [5]}),
+            (["--xs.-1", "5"], {"xs": {"-1": 5}}, None),
+            (["--d.k.0", "5"], {"d": {"k": {"0": 5}}}, {"d": {"k": [5]}}),
+            (["--u.*", "5"], {"u": {"*": 5}}, {"u": {"*": 5}}),
+        ],
+        ids=["index", "negative-index", "index-below-a-dict", "key-of-a-dict-variant"],
+    )
+    def test_index_below_a_sequence_and_key_of_a_dict_variant_are_kept(
+        self,
+        loader: ConfargLoader,
+        request: pytest.FixtureRequest,
+        argv: list[str],
+        merged: dict[str, Any],
+        built: dict[str, Any] | None,
+    ) -> None:
+        """The canonical index still patches, and a union's dict variant still takes any key (BUG-170)."""
+        _xfail_cyclopts_on_no_identifier(loader, request, argv[0])
+        assert loader.merge(_SequenceSegments, argv=argv, env={}) == merged
+        if built is not None:
+            cfg = loader.load(_SequenceSegments, argv=argv, env={})
+            assert {k: getattr(cfg, k) for k in built} == built
 
 
 class TestCollectionPatchListSyntax:

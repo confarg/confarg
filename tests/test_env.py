@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 import warnings
 from dataclasses import dataclass as _dc
 from dataclasses import field, make_dataclass
@@ -1052,6 +1053,64 @@ class TestEnvDelete:
         assert result.name == "default"
 
 
+class _EnvSeqPt(NamedTuple):
+    x: int
+    y: int
+
+
+@_dc
+class _EnvSequenceSegments:
+    """A field of each sequence kind, a list below a dict, and a struct (BUG-170)."""
+
+    xs: list[int] = field(default_factory=list)
+    s: set[int] = field(default_factory=set)
+    t: tuple[int, ...] = ()
+    pair: tuple[int, int] = (0, 0)
+    pt: _EnvSeqPt = field(default_factory=lambda: _EnvSeqPt(0, 0))
+    d: dict[str, list[int]] = field(default_factory=dict)
+    sub: WithDefaults = field(default_factory=WithDefaults)
+
+
+class TestEnvSequenceSegment:
+    """Below a sequence an env segment is an index as ``str()`` writes one, or is refused at parse (BUG-170).
+
+    The segment was stored as written, so ``APP_XS__+`` appended, ``APP_XS__-`` deleted and
+    ``APP_PAIR__*=12`` built ``(1, 2)``: the user's segment landed in the merge's own patch
+    vocabulary, where no build can tell it apart from a patch.
+    """
+
+    @pytest.mark.parametrize(
+        ("path", "segment"),
+        [
+            *[(path, seg) for path in ("XS", "S", "T", "PAIR", "PT", "D__K") for seg in ("+", "*", "-", "~", "FOO")],
+            # A fixed tuple still reads its position with int(): BUG-108.
+            *[(path, seg) for path in ("XS", "S", "T", "PT", "D__K") for seg in ("01", "+1", "-0", "1_0")],
+        ],
+    )
+    def test_segment_spelling_no_index_is_refused(self, loader: ConfargLoader, path: str, segment: str) -> None:
+        """The variable is refused, naming the segment, whatever value it holds."""
+        name = f"APP_{path}__{segment}"
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape(f"Environment variable {name!r}")):
+            loader.merge(_EnvSequenceSegments, argv=[], env={name: "12"}, env_prefix="APP_")
+
+    @pytest.mark.parametrize("name", ["APP_XS__*-", "APP_XS__01-", "APP_PAIR__+-", "APP_D__K__~-"])
+    def test_delete_of_a_segment_spelling_no_index_is_refused(self, loader: ConfargLoader, name: str) -> None:
+        """A delete names an index ``str()`` writes, as a patch does."""
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape(f"Environment variable {name!r}")):
+            loader.merge(_EnvSequenceSegments, argv=[], env={name: "1"}, env_prefix="APP_")
+
+    def test_canonical_index_and_unknown_struct_field_are_kept(self, loader: ConfargLoader) -> None:
+        """An index still patches, and a struct's unknown field is still left for ``build()`` to name."""
+        env = {"APP_XS__0": "5", "APP_PAIR__-1": "6", "APP_PT__Y": "7", "APP_D__K__0": "8", "APP_SUB__ZZ": "9"}
+        assert loader.merge(_EnvSequenceSegments, argv=[], env=env, env_prefix="APP_") == {
+            "xs": {"0": 5},
+            "pair": {"-1": 6},
+            "pt": {"y": 7},
+            "d": {"k": {"0": 8}},
+            "sub": {"zz": "9"},
+        }
+
+
 class TestEnvUnionSequenceStrict:
     """A bare env scalar does not auto-wrap into a sequence variant.
 
@@ -1256,9 +1315,9 @@ class TestEnvSpellsWhatTheWalkReaches:
         assert from_env == from_cli
 
     def test_odd_namedtuple_index_is_not_respelled(self, loader: ConfargLoader) -> None:
-        """PT__01 keeps its spelling, which the walk refuses, rather than becoming index 1."""
-        merged = loader.merge(_EnvWalked, argv=[], env={"APP_PT__01": "5"}, env_prefix="APP_")
-        assert merged == {"pt": {"01": "5"}}
+        """PT__01 keeps its spelling, which the walk refuses, rather than becoming index 1 (BUG-170)."""
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("segment '01' names no element of 'pt'")):
+            loader.merge(_EnvWalked, argv=[], env={"APP_PT__01": "5"}, env_prefix="APP_")
 
     def test_subclass_only_field_wins_over_case_differing_tag(self, loader: ConfargLoader) -> None:
         """BUG-104's repro: KIND is the subclass-only field `kind`, not the tag `Kind`."""
