@@ -1,6 +1,9 @@
+---
+filed: 2026-09-30
+where:
+  - src/confarg/typedload/_construct.py::_construct_namedtuple
+---
 # Q-1 — Should a mixed name/index spelling of a namedtuple build?
-
-**Where:** `src/confarg/typedload/_construct.py` (`_construct_namedtuple`) · **Filed:** 2026-09-30
 
 Filed while fixing BUG-65 (closed). Each spelling of a namedtuple's sub-flags builds on its
 own — `{'0': 7, '1': 8}` constructs positionally, `{'x': 7}` by name — but a mix of the two is

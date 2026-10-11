@@ -1,8 +1,13 @@
+---
+filed: 2026-10-04
+where:
+  - src/confarg/_parse_env.py::_handle_env_delete
+  - src/confarg/_parse_cli.py::_parse_flag_mode
+effort: S
+risk: low
+impact: none
+---
 # REF-84 — The delete suffix and its list index are decoded twice
-
-**Where:** `src/confarg/_parse_env.py` (`_handle_env_delete`), `src/confarg/_parse_cli.py`
-(`_parse_flag_mode`) · **Filed:** 2026-10-04
-**Effort:** S · **Risk:** low · **Impact:** none
 
 Both channels decide "is this a delete, and does it name a list index?" with code of their
 own. `_parse_cli._parse_flag_mode` strips a trailing `-` from the last segment and calls

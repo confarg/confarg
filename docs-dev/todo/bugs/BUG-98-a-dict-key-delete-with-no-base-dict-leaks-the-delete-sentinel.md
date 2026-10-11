@@ -1,7 +1,12 @@
+---
+filed: 2026-09-30
+where:
+  - src/confarg/typedload/_construct.py  # the coercion path the surviving sentinel falls into
+effort: S
+risk: low
+impact: behavior
+---
 # BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`
-
-**Where:** `src/confarg/typedload/_construct.py` (the coercion path the surviving sentinel falls into) · **Filed:** 2026-09-30
-**Effort:** S · **Risk:** low · **Impact:** behavior
 
 A dict-key delete (`--d.k-`) is a patch, and a patch has nothing to bite on in an empty
 document — the list delete says so in a purposeful message

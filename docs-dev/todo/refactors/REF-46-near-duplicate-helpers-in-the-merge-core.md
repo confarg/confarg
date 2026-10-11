@@ -1,8 +1,14 @@
+---
+filed: 2026-09-24
+where:
+  - src/confarg/_pipeline.py
+  - src/confarg/_files.py
+  - src/confarg/_parse_cli.py
+effort: S
+risk: low
+impact: none
+---
 # REF-46 — Near-duplicate helper pairs in the merge core
-
-**Where:** `src/confarg/_pipeline.py`, `src/confarg/_files.py`, `src/confarg/_parse_cli.py` ·
-**Filed:** 2026-09-24
-**Effort:** S · **Risk:** low · **Impact:** none
 
 Four verified pairs remain, all the same shape — two functions that answer one question — and
 all mechanical enough for one revision. Roughly 30 lines.

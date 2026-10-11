@@ -1,9 +1,17 @@
+---
+filed: 2026-09-24
+where:
+  - src/confarg/_types.py
+  - src/confarg/typedload/_coerce.py
+  - src/confarg/typedload/_construct.py
+  - src/confarg/_callable.py
+  - src/confarg/_import.py
+  - src/confarg/dictexpr/_expressions.py
+effort: S
+risk: low
+impact: none
+---
 # REF-52 — Mechanical collapses in the type machinery
-
-**Where:** `src/confarg/_types.py`, `src/confarg/typedload/_coerce.py`,
-`src/confarg/typedload/_construct.py`, `src/confarg/_callable.py`, `src/confarg/_import.py`,
-`src/confarg/dictexpr/_expressions.py` · **Filed:** 2026-09-24
-**Effort:** S · **Risk:** low · **Impact:** none
 
 Independent, individually small, all verified; roughly 50 source lines and 15 test lines. Grouped
 because each is a one-site edit with no design question attached — split them across revisions if

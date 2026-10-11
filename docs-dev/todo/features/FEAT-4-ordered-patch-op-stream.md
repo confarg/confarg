@@ -1,6 +1,11 @@
+---
+filed: 2026-09-12
+effort: M
+risk: high
+impact: none
+needs_design: true  # the effort sizes the design pass; the implementation is not sized
+---
 # FEAT-4 — An explicit ordered patch-op stream
-
-**Effort:** M *(design pass; implementation not sized)* · **Risk:** high · **Impact:** none
 
 Vanilla and the adapters agree on collection patches structurally since REF-72: the adapters'
 CLI channel is the vanilla parse loop itself, so parity no longer motivates an explicit stream.

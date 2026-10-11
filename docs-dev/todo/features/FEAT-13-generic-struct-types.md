@@ -1,7 +1,13 @@
+---
+filed: 2026-09-13
+where:
+  - src/confarg/_types.py::_resolve_type
+  - src/confarg/_types.py::_is_plain_class
+effort: L
+risk: high
+impact: behavior
+---
 # FEAT-13 — Struct types that are generic
-
-**Where:** `src/confarg/_types.py` (`_resolve_type`, `_is_plain_class`) · **Filed:** 2026-09-13
-**Effort:** L · **Risk:** high · **Impact:** behavior
 
 A field annotated with a parameterized user generic is rejected outright: `item: GBase[Any]`, where
 `GBase[T]` is an ABC with dataclass subclasses, gives `TypeCoercionError: Unsupported leaf type

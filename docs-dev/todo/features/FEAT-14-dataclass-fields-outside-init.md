@@ -1,7 +1,13 @@
+---
+filed: 2026-09-13
+where:
+  - src/confarg/_types.py::_dc_fields
+  - src/confarg/_types.py::_dc_defaults
+effort: L  # M for the `init=False` half alone
+risk: high
+impact: behavior
+---
 # FEAT-14 — Dataclass fields that are not `__init__` parameters
-
-**Where:** `src/confarg/_types.py` (`_dc_fields`, `_dc_defaults`) · **Filed:** 2026-09-13
-**Effort:** L *(M for the `init=False` half alone)* · **Risk:** high · **Impact:** behavior
 
 `_dc_fields` and `_dc_defaults` use `dataclasses.fields()` as a proxy for the `__init__` signature,
 but the two sets differ in **both** directions, and construction ends in `tp(**kwargs)`

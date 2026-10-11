@@ -99,3 +99,4 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [A lint rule is enabled, not hand-fixed](lint-holds-the-line.md) | banning a pattern is a config edit; `FURB118` and `PLW0717` stay selected, wholesale best-effort blocks carry a `noqa` |
 | [Quoted code keeps the formatter's spacing](quoted-code-keeps-formatter-spacing.md) | one blank line between blocks in prose, the formatter's spacing inside a fenced code block |
 | [Some quoted blocks stay hand-copied](quoted-blocks-stay-hand-copied.md) | a bare expression, a staged variant, a run-time-written file: no honest source to quote, so the drift risk is accepted |
+| [A ticket's fields live in YAML front matter](ticket-fields-in-front-matter.md) | bare values a script reads, qualifiers in comments; `where` is checked against the tree, `blocked_by` against the open tickets |

@@ -1,7 +1,12 @@
+---
+filed: 2026-10-01
+where:
+  - docs-dev/todo/anchors.py
+effort: S
+risk: medium
+impact: none
+---
 # BUG-105 — The anchor sweep cannot see citations under `tests/`, nor short-form spellings
-
-**Where:** `docs-dev/todo/anchors.py` · **Filed:** 2026-10-01
-**Effort:** S · **Risk:** medium · **Impact:** none
 
 The sweep collects citations only from `.py` files under `src/` (`SRC = ROOT / "src"`), and its
 `_CITATION` regex matches only the repo-root spelling `docs-dev/architecture/<doc>.md#<anchor>`.

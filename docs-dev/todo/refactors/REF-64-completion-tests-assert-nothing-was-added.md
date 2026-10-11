@@ -1,9 +1,13 @@
+---
+filed: 2026-09-26
+where:
+  - tests/cli/click/test_click_integration.py::TestSetupCompletion
+  - tests/cli/typer/test_typer_integration.py::TestSetupCompletion
+effort: S
+risk: medium
+impact: none
+---
 # REF-64 — The clicklike completion tests assert that nothing was added
-
-**Where:** `tests/cli/click/test_click_integration.py`,
-`tests/cli/typer/test_typer_integration.py` (`TestSetupCompletion`) ·
-**Filed:** 2026-09-26
-**Effort:** S · **Risk:** medium · **Impact:** none
 
 `test_completion_mode_extends_command` is documented "When `_PROGNAME_COMPLETE` is set, dynamic
 flags are added to the command", but its body asserts `len(cmd.params) == before` — that nothing

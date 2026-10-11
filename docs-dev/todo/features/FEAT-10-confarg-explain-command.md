@@ -1,7 +1,12 @@
+---
+filed: 2026-09-12
+where: []  # new console script, shared with FEAT-9
+effort: XL
+risk: low
+impact: behavior
+blocked_by: [FEAT-8]
+---
 # FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin
-
-**Where:** new console script, shared with FEAT-9 · **Filed:** 2026-09-12
-**Effort:** XL *(depends on FEAT-8)* · **Risk:** low · **Impact:** behavior
 
 `confarg explain module.Config -- --config app.yaml --db.port 5433` takes the same argument
 vector as `confarg check` and prints the merged, resolved configuration with, for every leaf,

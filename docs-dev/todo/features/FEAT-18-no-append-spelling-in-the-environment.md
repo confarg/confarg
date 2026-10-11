@@ -1,7 +1,13 @@
+---
+filed: 2026-09-21
+where:
+  - src/confarg/_parse_env.py
+effort: M
+risk: low
+impact: behavior
+needs_design: true  # the effort sizes the design pass; the implementation is not sized
+---
 # FEAT-18 — The environment channel has no append spelling
-
-**Where:** `src/confarg/_parse_env.py` · **Filed:** 2026-09-21
-**Effort:** M *(design pass; implementation not sized)* · **Risk:** low · **Impact:** behavior
 
 Argv and config files both extend a list with the same `+` suffix — `--input+ 42`, `input+: [42]`,
 `--config.dbs+ other.yaml`. The environment can only replace one. `MYAPP_USERS+` is not matched as

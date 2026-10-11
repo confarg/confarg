@@ -1,8 +1,13 @@
+---
+filed: 2026-10-03
+where:
+  - src/confarg/_api.py::merge  # *Config file loading order*
+  - src/confarg/_pipeline.py::_merge_sources  # the same list
+effort: S
+risk: low
+impact: behavior
+---
 # BUG-118 — `merge()`'s loading order names the env config pointer without its prefix
-
-**Where:** `src/confarg/_api.py` (`merge`, *Config file loading order*), and the same list in
-`src/confarg/_pipeline.py` (`_merge_sources`) · **Filed:** 2026-10-03
-**Effort:** S · **Risk:** low · **Impact:** behavior
 
 The published `merge()` docstring, which every adapter's `merge_*` refers to, lists step 3 as
 "``CONFIG__*`` env vars" and gives "a global ``CONFIG=file``" as its example. The environment

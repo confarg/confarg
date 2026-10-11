@@ -1,8 +1,12 @@
+---
+filed: 2026-10-03
+where:
+  - src/confarg/dictexpr/_expressions.py::_eval_method
+effort: S
+risk: low
+impact: behavior
+---
 # BUG-144 — The refusal of a method on a non-string reads "a int"
-
-**Where:** `src/confarg/dictexpr/_expressions.py` (`_eval_method`) ·
-**Filed:** 2026-10-03
-**Effort:** S · **Risk:** low · **Impact:** behavior
 
 `_eval_method` words its refusal as `called on a {type(receiver).__name__}`, which reads
 `a int` for an integer receiver. The YAML values most likely to reach it are integers, so the

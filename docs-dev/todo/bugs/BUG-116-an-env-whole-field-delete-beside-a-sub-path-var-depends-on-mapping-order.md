@@ -1,8 +1,13 @@
+---
+filed: 2026-10-01
+where:
+  - src/confarg/_parse_env.py::_parse_env  # the `for orig_key, value in env.items()` loop
+  - src/confarg/_parse_env.py::_handle_env_delete
+effort: S
+risk: low
+impact: behavior
+---
 # BUG-116 — An env whole-field delete beside a sub-path variable depends on the mapping's order
-
-**Where:** `src/confarg/_parse_env.py` (`_parse_env`'s `for orig_key, value in env.items()`
-loop, `_handle_env_delete`) · **Filed:** 2026-10-01
-**Effort:** S · **Risk:** low · **Impact:** behavior
 
 `FOO__USERS-` beside `FOO__USERS__0=x` (or `FOO__USERS__0-`) is resolved by whichever the
 mapping yields last: the whole-field delete replaces the sub-path op, and the sub-path op

@@ -1,7 +1,12 @@
+---
+filed: 2026-10-01
+where:
+  - src/confarg/typedload/_construct.py::_struct_matches_value
+effort: S
+risk: medium
+impact: behavior
+---
 # BUG-107 — A real field named like the tag, nested inside a union variant, is stripped by the type check
-
-**Where:** `src/confarg/typedload/_construct.py` (`_struct_matches_value`) · **Filed:** 2026-10-01
-**Effort:** S · **Risk:** medium · **Impact:** behavior
 
 `_struct_matches_value`, which `_value_matches_type` asks when a union's structural
 disambiguation checks a variant's nested struct value, drops the tag-shaped key

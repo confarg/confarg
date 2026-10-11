@@ -1,10 +1,17 @@
+---
+filed: 2026-09-22
+where:
+  - src/confarg/dictexpr/_expressions.py::_collect_names
+  - src/confarg/dictexpr/_expressions.py::_Prefixer  # and the resolver's namespace
+  - src/confarg/_files.py  # include resolution
+  - src/confarg/_pipeline.py
+  - src/confarg/_tags.py
+effort: L
+risk: high
+impact: behavior
+inferred: true  # design discussed with the maintainer, no code written
+---
 # FEAT-22 — The process environment as an expression namespace
-
-**Where:** `src/confarg/dictexpr/_expressions.py` (`_collect_names`, `_Prefixer`, the resolver's
-namespace), `src/confarg/_files.py` (include resolution), `src/confarg/_pipeline.py`,
-`src/confarg/_tags.py` · **Filed:** 2026-09-22 · *(inferred — design discussed with the
-maintainer, no code written)*
-**Effort:** L · **Risk:** high · **Impact:** behavior
 
 Two things that look separate and are not:
 

@@ -1,7 +1,12 @@
+---
+filed: 2026-09-29
+where:
+  - src/confarg/_types.py::_dataclass_subclasses
+effort: M
+risk: low
+impact: none
+---
 # REF-70 — `_dataclass_subclasses` is named for dataclasses but returns plain-class structs
-
-**Where:** `src/confarg/_types.py` (`_dataclass_subclasses`) · **Filed:** 2026-09-29
-**Effort:** M · **Risk:** low · **Impact:** none
 
 The docstring says "all struct subclasses", and that is what the walk returns: a plain class
 that `_is_struct` accepts shows up alongside the dataclasses, so the name undersells the

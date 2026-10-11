@@ -1,8 +1,13 @@
+---
+filed: 2026-09-24
+where:
+  - src/confarg/cli/click/_context.py
+  - src/confarg/cli/typer/_context.py
+effort: S
+risk: low
+impact: none
+---
 # REF-41 — `cli/click/_context.py` and `cli/typer/_context.py` are the same file
-
-**Where:** `src/confarg/cli/click/_context.py`, `src/confarg/cli/typer/_context.py` ·
-**Filed:** 2026-09-24
-**Effort:** S · **Risk:** low · **Impact:** none
 
 71 lines each; `diff` reports 18 differing lines, and the only difference in *code* is the
 annotation `ctx: click.Context` versus `ctx: typer.Context`. Both bodies are a one-line forward

@@ -1,8 +1,14 @@
+---
+filed: 2026-09-24
+where:
+  - src/confarg/cli/*/_register.py
+  - src/confarg/cli/*/_completion.py
+  - src/confarg/cli/_clicklike/
+effort: M
+risk: low
+impact: none
+---
 # REF-50 — Adapter registration and completion boilerplate
-
-**Where:** `src/confarg/cli/*/_register.py`, `src/confarg/cli/*/_completion.py`,
-`src/confarg/cli/_clicklike/` · **Filed:** 2026-09-24
-**Effort:** M · **Risk:** low · **Impact:** none
 
 Five findings in the registration half of the adapters, about 65 lines together. The last one is
 the reason to do it: the others are boilerplate, that one is a decision made four times.

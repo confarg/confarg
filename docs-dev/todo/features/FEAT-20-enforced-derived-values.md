@@ -1,9 +1,15 @@
+---
+filed: 2026-09-21
+where:
+  - src/confarg/_api.py  # a post-resolution pass
+  # plus the marker module of FEAT-19
+effort: M
+risk: medium
+impact: behavior
+inferred: true  # design settled with the maintainer, no code written
+blocked_by: [FEAT-19]
+---
 # FEAT-20 — Derived values that cannot be made inconsistent
-
-**Where:** `src/confarg/_api.py` (a post-resolution pass), plus the marker module of
-[FEAT-19](FEAT-19-app-declared-defaults.md) · **Filed:** 2026-09-21 · *(inferred — design settled
-with the maintainer, no code written)*
-**Effort:** M · **Risk:** medium · **Impact:** behavior
 
 [FEAT-19](FEAT-19-app-declared-defaults.md) gives an application a way to *default* one node's field
 from another's. Sometimes the equality is not a convenience but an invariant: a training run whose

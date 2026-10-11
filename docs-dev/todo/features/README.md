@@ -5,8 +5,8 @@ Missing behavior worth having, and ideas not yet vetted. One ticket per file; se
 decision in
 [../../architecture/design-decisions/README.md](../../architecture/design-decisions/README.md).
 
-An entry whose effort reads *(design pass; implementation not sized)* is an unvetted idea: it
-has no design yet, so deciding whether to do it at all is the next actionable step.
+An entry carrying `needs_design: true` is an unvetted idea: it has no design yet, so deciding
+whether to do it at all is the next actionable step, and its effort sizes that decision.
 
 <!-- tickets:start -->
 

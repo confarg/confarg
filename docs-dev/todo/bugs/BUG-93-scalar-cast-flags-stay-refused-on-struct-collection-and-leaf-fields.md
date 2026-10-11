@@ -1,7 +1,13 @@
+---
+filed: 2026-09-30
+where:
+  - src/confarg/cli/_build.py::_scalar_cast_parent_is_leaf
+  - src/confarg/cli/_build.py::_collect_patch_argv_specs
+effort: S
+risk: medium
+impact: behavior
+---
 # BUG-93 — Scalar cast flags stay refused on struct, collection and registered-leaf fields
-
-**Where:** `src/confarg/cli/_build.py` (`_scalar_cast_parent_is_leaf`, `_collect_patch_argv_specs`) ·
-**Filed:** 2026-09-30 · **Effort:** S · **Risk:** medium · **Impact:** behavior
 
 BUG-72 registered the typed scalar cast flags on *plain leaf* fields only. Vanilla's
 `detect_force_cast` accepts them wherever the trailing segment names no real member of the

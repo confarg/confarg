@@ -1,6 +1,9 @@
+---
+filed: 2026-10-03
+where:
+  - AGENTS.md  # § Commands
+---
 # Q-3 — How should an agent run the hooks from a jj workspace, where pre-commit cannot?
-
-**Where:** `AGENTS.md` § Commands · **Filed:** 2026-10-03
 
 A jj workspace created with `jj workspace add` carries no `.git`: the workspace this was filed
 from (`confarg.1`, pointed at the main checkout's `.jj/repo`) is not inside any Git repository,

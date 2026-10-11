@@ -1,8 +1,15 @@
+---
+filed: 2026-09-15
+where:
+  - src/confarg/_tags.py::_partial_config_from_argv
+  - src/confarg/cli/_build.py
+  - src/confarg/_pipeline.py
+  - src/confarg/_parse_cli.py
+effort: M
+risk: low
+impact: none
+---
 # REF-26 — The `--config` files named on argv are parsed three times per run
-
-**Where:** `src/confarg/_tags.py` (`_partial_config_from_argv`), `src/confarg/cli/_build.py`,
-`src/confarg/_pipeline.py`, `src/confarg/_parse_cli.py` · **Filed:** 2026-09-15
-**Effort:** M · **Risk:** low · **Impact:** none
 
 `_partial_config_from_argv` re-reads and re-parses every file argv names, and three callers now
 want the same answer independently: `build_static_flags` (to import tagged classes),

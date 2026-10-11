@@ -1,8 +1,17 @@
+---
+filed: 2026-10-03
+where:
+  - src/confarg/dictexpr/_expressions.py::_parse_expression
+  - src/confarg/dictexpr/_expressions.py::_collect_names
+  - src/confarg/dictexpr/_expressions.py::_Prefixer
+  - src/confarg/dictexpr/_expressions.py::_AnchorResolver
+  - src/confarg/dictexpr/_expressions.py::_unparse
+  - src/confarg/dictexpr/_expressions.py::_evaluate_ast
+effort: M
+risk: high
+impact: behavior
+---
 # BUG-145 — An expression that parses but nests past the recursion limit crashes the walkers
-
-**Where:** `src/confarg/dictexpr/_expressions.py` (`_parse_expression`, `_collect_names`,
-`_Prefixer`, `_AnchorResolver`, `_unparse`, `_evaluate_ast`) · **Filed:** 2026-10-03
-**Effort:** M · **Risk:** high · **Impact:** behavior
 
 BUG-137 made a body too deep for Python's *parser* a body that does not parse. A shallower body
 still parses, a few hundred to a few thousand levels depending on the Python version, but every

@@ -1,9 +1,16 @@
+---
+filed: 2026-10-01
+where:
+  - src/confarg/_types.py::_union_tag_shadowed
+  - src/confarg/_types.py::_struct_member_names
+  - src/confarg/_parse_cli.py::_segment_names_real_field
+  - src/confarg/_parse_cli.py::_member_names
+  - src/confarg/_parse_cli.py::_advance_field_type
+effort: M
+risk: medium
+impact: none
+---
 # REF-71 — Four functions answer "does this segment name a member?", and they disagree at the edges
-
-**Where:** `src/confarg/_types.py` (`_union_tag_shadowed`, `_struct_member_names`) ·
-`src/confarg/_parse_cli.py` (`_segment_names_real_field`, `_member_names`, `_advance_field_type`)
-· **Filed:** 2026-10-01
-**Effort:** M · **Risk:** medium · **Impact:** none
 
 The walk's step, `_advance_field_type` (with `_field_types` recursing into unions), is what
 decides whether a segment reaches a member. For a struct it asks `_types._struct_member_type`,

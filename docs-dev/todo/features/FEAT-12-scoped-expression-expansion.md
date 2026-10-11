@@ -1,8 +1,12 @@
+---
+filed: 2026-09-12
+where:
+  - src/confarg/dictexpr/_expressions.py::_ALLOWED_NODES  # and the call whitelist
+effort: L  # list literals alone; XL with dict and set literals
+risk: high
+impact: behavior
+---
 # FEAT-12 — Carefully scoped expression expansion
-
-**Where:** `src/confarg/dictexpr/_expressions.py` (`_ALLOWED_NODES`, the call whitelist) ·
-**Filed:** 2026-09-12
-**Effort:** L *(list literals alone; XL with dict and set literals)* · **Risk:** high · **Impact:** behavior
 
 The safety model forbids list/dict/set literals, slices, comprehensions, lambdas and
 f-strings

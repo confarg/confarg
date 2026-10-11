@@ -1,8 +1,13 @@
+---
+filed: 2026-10-04
+where:
+  - src/confarg/cli/_build.py::_specs_for_field
+  - docs-dev/architecture/types/introspection.md
+effort: M
+risk: medium
+impact: none
+---
 # REF-83 — The registration walk dispatches on shape outside `_type_kind`
-
-**Where:** `src/confarg/cli/_build.py` (`_specs_for_field`), `docs-dev/architecture/types/introspection.md`
-· **Filed:** 2026-10-04
-**Effort:** M · **Risk:** medium · **Impact:** none
 
 REF-47 gave every shape dispatch one ordered table, `typedload._coerce._type_kind`, and
 converted construction, serialization, `_variant_holds` and the CLI walk. Flag registration is a

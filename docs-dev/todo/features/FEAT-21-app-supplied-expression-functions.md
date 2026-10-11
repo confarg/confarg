@@ -1,9 +1,17 @@
+---
+filed: 2026-09-22
+where:
+  - src/confarg/dictexpr/_expressions.py::_SAFE_FUNCTIONS
+  - src/confarg/dictexpr/_expressions.py::_collect_names
+  - src/confarg/dictexpr/_expressions.py::_Prefixer
+  - src/confarg/_api.py
+  - src/confarg/_pipeline.py
+effort: L
+risk: high
+impact: behavior
+inferred: true  # design discussed with the maintainer, no code written
+---
 # FEAT-21 — Expression functions supplied by the application
-
-**Where:** `src/confarg/dictexpr/_expressions.py` (`_SAFE_FUNCTIONS`, `_collect_names`,
-`_Prefixer`), `src/confarg/_api.py`, `src/confarg/_pipeline.py` · **Filed:** 2026-09-22 ·
-*(inferred — design discussed with the maintainer, no code written)*
-**Effort:** L · **Risk:** high · **Impact:** behavior
 
 An expression can only recombine values that are already in the document, using a fixed table of
 builtins (`abs min max round ceil floor str int float bool len` and a few string methods,

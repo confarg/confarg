@@ -1,7 +1,13 @@
+---
+filed: 2026-09-24
+where:
+  - src/confarg/_parse_cli.py
+  - src/confarg/cli/_prefix.py
+effort: M
+risk: high
+impact: none
+---
 # REF-45 — The argv value-run scan is written seven times
-
-**Where:** `src/confarg/_parse_cli.py`, `src/confarg/cli/_prefix.py` · **Filed:** 2026-09-24
-**Effort:** M · **Risk:** high · **Impact:** none
 
 `while i < len(args) and not _looks_like_flag(args[i])` appears at six places in `_parse_cli.py`
 and once in `cli/_prefix.strip_argv_prefix`.

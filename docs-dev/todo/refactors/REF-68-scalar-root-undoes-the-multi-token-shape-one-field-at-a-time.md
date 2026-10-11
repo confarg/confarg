@@ -1,7 +1,12 @@
+---
+filed: 2026-09-28
+where:
+  - src/confarg/cli/_build.py::_scalar_root_spec
+effort: S
+risk: low
+impact: none
+---
 # REF-68 — the scalar root spec undoes the multi-token shape one attribute at a time
-
-**Where:** `src/confarg/cli/_build.py` (`_scalar_root_spec`) · **Filed:** 2026-09-28
-**Effort:** S · **Risk:** low · **Impact:** none
 
 `_scalar_root_spec` builds the root flag through `_build_leaf_spec` and then clears, by hand, each
 attribute the collection branch set: `nargs`, then `accumulates` (BUG-37), then `stands_bare`

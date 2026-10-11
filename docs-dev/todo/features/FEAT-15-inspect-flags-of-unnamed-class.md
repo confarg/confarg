@@ -1,7 +1,12 @@
+---
+filed: 2026-09-15
+where:
+  - src/confarg/cli/_build.py
+effort: M
+risk: low
+impact: behavior
+---
 # FEAT-15 — No way to inspect the flags of a class the tag has not named yet
-
-**Where:** `src/confarg/cli/_build.py` · **Filed:** 2026-09-15
-**Effort:** M · **Risk:** low · **Impact:** behavior
 
 `--help` lists a subclass's flags only once something has imported it, so a user who does not
 already know a plugin's options cannot discover them

@@ -1,7 +1,13 @@
+---
+filed: 2026-09-17
+where:
+  - src/confarg/typedload/_construct.py::_try_pinned_dict
+  - src/confarg/_cast.py
+effort: M
+risk: medium
+impact: behavior
+---
 # FEAT-16 — Let `__cast__` name a leaf type by dotted path
-
-**Where:** `src/confarg/typedload/_construct.py` (`_try_pinned_dict`), `src/confarg/_cast.py`
-**Effort:** M · **Risk:** medium · **Impact:** behavior
 
 `__cast__` accepts a scalar cast name or a registered leaf's `__name__`, so it cannot name an
 unregistered `Enum`. That is the one variant kind `dump()` cannot pin when a sibling steals its
