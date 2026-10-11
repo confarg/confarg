@@ -788,13 +788,31 @@ def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
         raise TypeCoercionError(msg)
 
 
+def _form_holding(names: Iterable[str]) -> _Directives | None:
+    """Return the directive form whose ``bind:`` spec reads *names* back as its arguments, or None.
+
+    The form is the one :func:`active_directives` selects for the spec written in it, and
+    none of *names* may be an opener of that form. A plain opener word is held by the escaped
+    form; an escaped one opens a spec in either form, so no spec holds it.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#round-trip
+    """
+    names = set(names)
+    for d in (_PLAIN_DIRECTIVES, _ESCAPED_DIRECTIVES):
+        if not names & d.reserved and active_directives({d.bind, *names}.__contains__) is d:
+            return d
+    return None
+
+
 def _serialize_callable(value: Any) -> str | dict:
     """Serialize a callable value back to its config representation.
 
     Class instance with __confarg_spec__ → stored spec dict (e.g. {class: ...}).
     Method bound to an owner a classfn: spec built → that spec, stamped on the owner.
     Partial with pre-bound kwargs → {bind: <its target, serialized>, k: v}, in the escaped
-    form when a kwarg is spelled like a plain opener.
+    form when a kwarg is spelled like a plain opener (:func:`_form_holding`); one spelled like
+    an escaped opener is refused, as no spec holds it.
     Bare partial (a class used factory-like, no kwargs) → "module.qualname" string.
     Plain callable → "module.qualname" string.
     """
@@ -810,7 +828,15 @@ def _serialize_callable(value: Any) -> str | dict:
     if isinstance(value, functools.partial):
         target = _serialize_callable(value.func)
         if value.keywords:
-            d = _ESCAPED_DIRECTIVES if set(value.keywords) & _PLAIN_DIRECTIVES.reserved else _PLAIN_DIRECTIVES
+            d = _form_holding(value.keywords)
+            if d is None:
+                stuck = sorted(set(value.keywords) & _ESCAPED_DIRECTIVES.reserved)
+                msg = (
+                    f"Cannot serialize callable {value!r}: its keyword(s) {stuck} are spelled like an"
+                    " escaped opener, which opens a spec in either form, so no 'bind:' spec can hold them"
+                    " as arguments."
+                )
+                raise ConfargError(msg)
             return {d.bind: target, **value.keywords}
         return target
 
