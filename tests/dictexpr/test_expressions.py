@@ -262,6 +262,17 @@ class TestTopologicalSort:
         with pytest.raises(CircularReferenceError):
             _topological_sort(deps)
 
+    def test_circular_message_names_the_unresolved_nodes(self) -> None:
+        """The message names every node the cycle leaves unresolved, and no other."""
+        deps: dict[tuple[str, ...], set[tuple[str, ...]]] = {
+            ("a",): {("b",)},
+            ("b",): {("a",)},
+            ("c",): set(),
+            ("d",): {("a",)},
+        }
+        with pytest.raises(CircularReferenceError, match=r"^Circular reference detected among: a, b, d$"):
+            _topological_sort(deps)
+
     def test_empty(self) -> None:
         """An empty dependency dict returns an empty list."""
         assert _topological_sort({}) == []

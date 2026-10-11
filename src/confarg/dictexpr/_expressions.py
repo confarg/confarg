@@ -11,6 +11,7 @@ Dev Notes:
 from __future__ import annotations
 
 import ast
+import contextlib
 import copy
 import io
 import keyword
@@ -19,8 +20,8 @@ import operator
 import re
 import tokenize
 import unicodedata
-from collections import deque
 from functools import lru_cache
+from graphlib import CycleError, TopologicalSorter
 from itertools import accumulate
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
@@ -609,33 +610,30 @@ def _attribute_chain(node: ast.Attribute | ast.Subscript, namespace: dict[str, A
 
 
 def _topological_sort(deps: dict[_Path, set[_Path]]) -> list[_Path]:
-    """Kahn's algorithm. Raises CircularReferenceError on cycles.
+    """Topologically sort *deps* with ``graphlib.TopologicalSorter``.
 
-    Linear in the graph size (``V + E``): a reverse adjacency list records, for
-    each node, who depends on it, so releasing a node touches only its direct
-    dependents rather than rescanning the whole graph.
+    Raises CircularReferenceError on cycles, naming every node the cycle leaves
+    unresolved.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/resolution.md#resolution-algorithm
     """
-    if not deps:
-        return []
-
-    in_degree: dict[_Path, int] = dict.fromkeys(deps, 0)
-    dependents: dict[_Path, list[_Path]] = {node: [] for node in deps}
+    sorter = TopologicalSorter()
+    for node in deps:
+        # Every node first, in *deps* order: ``get_ready`` releases a batch in the
+        # order nodes were registered, and a dependency mentioned before its key
+        # would otherwise take that key's place in the batch.
+        sorter.add(node)
     for node, node_deps in deps.items():
         for dep in node_deps:
-            if dep in deps:
-                in_degree[node] += 1
-                dependents[dep].append(node)
-
-    queue: deque[_Path] = deque(node for node, degree in in_degree.items() if degree == 0)
+            sorter.add(node, dep)
+    # prepare() raises CycleError but get_ready() still releases every node the cycle does not block.
+    with contextlib.suppress(CycleError):
+        sorter.prepare()
     order: list[_Path] = []
-    while queue:
-        node = queue.popleft()
-        order.append(node)
-        for dependent in dependents[node]:
-            in_degree[dependent] -= 1
-            if in_degree[dependent] == 0:
-                queue.append(dependent)
-
+    while batch := sorter.get_ready():
+        order.extend(batch)
+        sorter.done(*batch)
     if len(order) != len(deps):
         remaining = set(deps.keys()) - set(order)
         msg = f"Circular reference detected among: {', '.join(sorted('.'.join(path) for path in remaining))}"
