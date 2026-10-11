@@ -200,9 +200,12 @@ a class it calls is built from its `__init__` annotations, as under `class:` (BU
 Validation is skipped where it cannot work: uninspectable callables (C extensions) and
 signature arity checks for `*args` callables or `Callable[..., R]`.
 
-The kwarg check, the arity check and the constructor listing a failed auto-instantiation
-prints all count parameters the same way, through `_fillable_params`: every parameter a
-signature lists except `*args` and `**kwargs`. None of them drops a parameter named `self`. A
+The kwarg check, the arity check, the constructor listing a failed auto-instantiation
+prints and the CLI's `--f.<param>` flags for a `bind:` or `call:` target all count parameters
+the same way, through `_fillable_params`: every parameter a signature lists except `*args` and
+`**kwargs`. Registration reads the signature of the callable construction calls,
+`_target_signature`: an instance method bound off its receiver, whatever the receiver is
+named, without building the owner (BUG-218). None of them drops a parameter named `self`. A
 signature already leaves out the receiver of a class or of a bound method, so a `self` still in
 one is a parameter the function really declares: `def handler(self, event)` takes two
 arguments, and `{bind: handler, self: …}` fills one of them. The constructor listing reads

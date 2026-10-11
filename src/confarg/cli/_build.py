@@ -30,7 +30,9 @@ from confarg._callable import (
     _ESCAPED_DIRECTIVES,
     _PLAIN_DIRECTIVES,
     _Directives,
+    _fillable_params,
     _instance_method_owner,
+    _target_signature,
     active_directives,
 )
 from confarg._cast import SCALAR_CAST_TYPES
@@ -356,30 +358,27 @@ def _build_union_tag_spec(
 
 def _sibling_specs_from_signature(
     field_flag: str,
-    target_obj: Any,
+    sig: inspect.Signature,
     existing_names: set[str],
     *,
     grouped: bool = True,
 ) -> list[FlagSpec]:
-    """Build ``--<field_flag>.<param>`` FlagSpecs from a callable's signature.
+    """Build ``--<field_flag>.<param>`` FlagSpecs from the signature of the callable a spec's target yields.
 
     A sibling of the opener is an argument of the target in every mode and in both directive
-    forms, so the flags sit directly below the field. *grouped* puts them in a group named
-    after the field, which only a Callable field leaves free: a struct field's own flags
-    already hold that name with another description, and cyclopts refuses two such groups.
-    """
-    try:
-        sig = inspect.signature(target_obj)
-    except (ValueError, TypeError):
-        return []
+    forms, so the flags sit directly below the field. One flag per parameter a caller fills
+    (:func:`~confarg._callable._fillable_params`), the parameters construction counts.
+    *grouped* puts them in a group named after the field, which only a Callable field leaves
+    free: a struct field's own flags already hold that name with another description, and
+    cyclopts refuses two such groups.
 
+    Dev Notes:
+        docs-dev/architecture/callables.md#one-coercion-route
+    """
     group_desc = f"Arguments for callable '{field_flag}'"
     result: list[FlagSpec] = []
-    for param_name, param in sig.parameters.items():
-        if param_name == "self":
-            continue
-        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
-            continue
+    for param in _fillable_params(sig.parameters):
+        param_name = param.name
         dest = f"{field_flag}.{param_name}"
         if dest in existing_names:
             continue
@@ -411,13 +410,16 @@ def _collect_callable_sibling_specs(
     *,
     grouped: bool = True,
 ) -> list[FlagSpec]:
-    """Build FlagSpecs for ``--<field_flag>.<param>`` by inspecting the named target's signature."""
+    """Build FlagSpecs for ``--<field_flag>.<param>`` from the signature the named target yields.
+
+    The signature is the one construction calls (:func:`~confarg._callable._target_signature`):
+    an instance method's receiver is bound off, a function's declared ``self`` is kept.
+    """
     try:
-        obj = _import_dotted(target_path)
-    except SymbolImportError:
+        sig = _target_signature(target_path)
+    except (SymbolImportError, ValueError, TypeError):
         return []
-    target_obj = obj.__init__ if isinstance(obj, type) else obj
-    return _sibling_specs_from_signature(field_flag, target_obj, existing_names, grouped=grouped)
+    return _sibling_specs_from_signature(field_flag, sig, existing_names, grouped=grouped)
 
 
 def _collect_callable_factory_specs(
