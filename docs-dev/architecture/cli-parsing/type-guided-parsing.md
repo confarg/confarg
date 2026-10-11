@@ -45,9 +45,12 @@ lines:
 - `_field_types` reads the ends of the branches that accept the path.
 - `_addresses_callable_key`: does any branch stand on a callable before the path ends.
 - `_is_collection_patch_path`: does a branch stand on a list, tuple, set or dict, or enter a
-  namespace, before it stands on a namedtuple or a callable. That stop is per branch, which is
-  why the walk yields branches rather than a flat stream of nodes: a stream loses which
-  branch a node belongs to, and with it the stop that leaves the sibling branches walking.
+  namespace, before it stands on a callable. A namedtuple stops nothing: the static walk lists
+  its own fields and indices, so a path ending on one is no patch, but a list, a dict or a
+  namespace below its fields is as open-ended as one below a struct's (BUG-157). The stop is
+  per branch, which is why the walk yields branches rather than a flat stream of nodes: a
+  stream loses which branch a node belongs to, and with it the stop that leaves the sibling
+  branches walking.
 - `_is_dict_at_path` reads the *reached* type, not the node: a prefix lands where
   `_resolve_field_type` of that prefix would, on the fold of what the branches reach there
   (`_common_type`), so a prefix the branches disagree on lands on `str`. Folding the stones of

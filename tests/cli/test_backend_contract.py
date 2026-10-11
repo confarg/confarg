@@ -3411,6 +3411,34 @@ class _WithPairs:
     pairs: list[tuple[int, int]] = dataclasses.field(default_factory=list)
 
 
+class _PatchPair(NamedTuple):
+    """Namedtuple whose fields are collections, so a path below one of them is a patch."""
+
+    name: str
+    items: list[int]
+    meta: dict[str, int]
+
+
+@dataclass
+class _WithPatchPair:
+    """Namedtuple field holding collections (BUG-157)."""
+
+    pair: _PatchPair
+
+
+class _LocalsPatchNode(NamedTuple):
+    """Namedtuple a file may give a local-variables namespace."""
+
+    host: str
+
+
+@dataclass
+class _WithLocalsPatchNode:
+    """Namedtuple field whose include declares locals (BUG-157)."""
+
+    db: _LocalsPatchNode
+
+
 class TestCollectionPatchContract:
     """List index/append/delete and dict-subkey CLI patches resolve identically everywhere.
 
@@ -3785,6 +3813,49 @@ class TestCollectionPatchContract:
             env={},
         )
         assert cfg.dbs == [_PatchSqlite("db1"), _PatchSqlite("db2")]
+
+    @pytest.mark.parametrize(
+        ("base", "argv", "items"),
+        [
+            ("{name: a, items: [1, 2], meta: {}}", ["--pair.items.0", "5"], [5, 2]),
+            ("{name: a, items: [1, 2], meta: {}}", ["--pair.items.-1-"], [1]),
+            ("[a, [1, 2], {}]", ["--pair.1.-1", "9"], [1, 9]),
+            ("[a, [1, 2], {}]", ["--pair.-2.0-"], [2]),
+        ],
+    )
+    def test_list_patch_below_a_namedtuple_field(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        base: str,
+        argv: list[str],
+        items: list[int],
+    ) -> None:
+        """A list inside a namedtuple field is patched through the field's name or index (BUG-157).
+
+        The namedtuple's own fields and indices are listed by the static walk, but the
+        index into the list below one of them is open-ended, so it is a patch flag the
+        adapters register when argv types it. Each spelling patches a base spelled the
+        same way: a name over an index is the mixed spelling Q-1 asks about.
+        """
+        path = tmp_yaml(f"pair: {base}\n")
+        cfg = loader.load(_WithPatchPair, argv=["--config", str(path), *argv], env={})
+        assert cfg.pair == _PatchPair("a", items, {})
+
+    def test_dict_key_below_a_namedtuple_field(self, loader: ConfargLoader) -> None:
+        """A key of a dict inside a namedtuple field is a patch flag too, typed by the dict's value (BUG-157)."""
+        argv = ["--pair.name", "a", "--pair.items+", "1", "--pair.meta.k", "3"]
+        assert loader.merge(_WithPatchPair, argv=argv, env={}) == {
+            "pair": {"name": "a", "items": {"+": [1]}, "meta": {"k": 3}},
+        }
+        assert loader.load(_WithPatchPair, argv=argv, env={}).pair == _PatchPair("a", [1], {"k": 3})
+
+    def test_namespace_of_a_namedtuple_field(self, loader: ConfargLoader, tmp_path, tmp_yaml) -> None:
+        """``--db.locals.h`` enters the namespace a namedtuple node holds, like a struct's (BUG-157)."""
+        (tmp_path / "db.yaml").write_text("locals:\n  h: db.internal\nhost: ${locals.h}\n")
+        cfg = tmp_yaml(f"db:\n  {INCLUDE_KEY}: ./db.yaml\n")
+        loaded = loader.load(_WithLocalsPatchNode, argv=["--config", str(cfg), "--db.locals.h", "cli"], env={})
+        assert loaded.db == _LocalsPatchNode("cli")
 
 
 class TestCollectionPatchListSyntax:

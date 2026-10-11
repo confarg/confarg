@@ -299,7 +299,8 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
 
     Such paths (e.g. ``users.0``, ``dbs.1.port``, ``foo.bar``) are open-ended, so no
     static walk can list them: the adapters register their flags when argv types them.
-    Pure struct-field, namedtuple, and callable paths return False.
+    Pure struct-field, namedtuple, and callable paths return False; a collection or a
+    namespace below a namedtuple's field is a patch, as one below a struct's is.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
@@ -309,7 +310,7 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
             match _type_kind(stone.node):
                 case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET | _TypeKind.TUPLE | _TypeKind.DICT:
                     return True
-                case _TypeKind.NAMEDTUPLE | _TypeKind.CALLABLE:
+                case _TypeKind.CALLABLE:
                     break  # this branch answers no
             if part in _locals_keys_nested(stone.node, union_tag):
                 return True  # a nested namespace is a dict[str, Any]
