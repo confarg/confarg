@@ -85,6 +85,7 @@ an `fn` field, decided by the same `_segment_names_real_field` predicate
 - **What may trigger it.** `--help` does not resolve today and must not start; a future
   `confarg check` ([FEAT-9](FEAT-9-confarg-check-command.md)) has to decide whether validating a
   configuration is allowed to run application code.
+- **`key` is taken.** It is a path function, `_PATH_FUNCTIONS`, whose argument is a position and is never evaluated ([07](../../architecture/expressions/safety-model.md#a-path-function-reads-a-position-not-a-value)); an application table must refuse the name, or the namespace spelling avoids the clash.
 - **Keyword arguments** are half there: `_collect_names_from_call` walks `node.keywords`, but
   `ast.keyword` is not in `_ALLOWED_NODES`, so validation refuses `${round(x, ndigits=2)}` today.
 

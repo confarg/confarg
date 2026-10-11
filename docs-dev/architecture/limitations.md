@@ -27,6 +27,8 @@ the boundary moves here.
 - A node-relative reference counts *path segments*, and a list index is one: from
   `dbs.0.url`, `${..host}` names the list rather than the mapping holding it
   ([expressions](expressions/reference-anchoring.md#reference-anchoring)).
+- `${key(.)}` names an entry after its key only where it is written: each entry of a `dict[str, Foo]` writes `name: ${key(.)}` itself. A class default cannot carry it, since a default string is text ([design decisions](design-decisions/a-field-default-is-the-base-layer.md#a-default-string-stays-text)), and no declared default reaches every entry of a dict yet ([FEAT-19](../todo/features/FEAT-19-app-declared-defaults.md)). An item a pending list op holds has no key until construction applies the op
+  ([expressions](expressions/safety-model.md#a-path-function-reads-a-position-not-a-value)).
 - A merged dict is no longer uniformly root-anchored: `${.x}` is preserved through `merge()`
   and `dump_file()` on purpose, so a dumped fragment stays position-independent, and so is
   `${::['web-1']}`, which no plain path spells

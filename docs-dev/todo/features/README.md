@@ -22,6 +22,8 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 | [FEAT-18 — The environment channel has no append spelling](FEAT-18-no-append-spelling-in-the-environment.md) | minor |  | M | low | behavior |
 | [FEAT-24 — Writing a configuration back to a URL](FEAT-24-writing-a-configuration-to-a-url.md) | minor |  | M | low | behavior |
 | [FEAT-38 — A `default_factory` default is no base layer](FEAT-38-a-factory-default-is-no-base.md) | minor |  | M | medium | behavior |
+| [FEAT-40 — A field accepts a wider input than the type it holds](FEAT-40-a-field-accepts-a-wider-input-than-it-holds.md) | minor |  | M | high | behavior |
+| [FEAT-41 — A tyro adapter](FEAT-41-a-tyro-adapter.md) | minor |  | M | medium | behavior |
 | [FEAT-1 — Uneven shell-completion coverage](FEAT-1-uneven-shell-completion-coverage.md) | minor |  | L | low | behavior |
 | [FEAT-2 — Protocol-typed callables and `**kwargs`](FEAT-2-protocol-callables-and-kwargs.md) | minor |  | L | medium | behavior |
 | [FEAT-6 — `Annotated` field metadata read by all three channels](FEAT-6-annotated-field-metadata.md) | minor |  | L | medium | behavior |

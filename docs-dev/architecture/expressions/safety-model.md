@@ -6,8 +6,9 @@ interpreter over a whitelisted AST, never `eval`:
 - allowed nodes: constants, names, attributes, subscripts, arithmetic, comparisons,
   boolean ops, conditional expressions, calls (`_ALLOWED_NODES`);
 - calls only to whitelisted free functions (`abs min max round ceil floor str int float bool
-  len`) and string methods (`upper lower strip split replace startswith endswith join`) called
-  on a string; no indirect calls;
+  len`), the path function `key` ([below](#a-path-function-reads-a-position-not-a-value)) and
+  string methods (`upper lower strip split replace startswith endswith join`) called on a
+  string; no indirect calls;
 - no attribute starting with `__`;
 - consequently no literals for lists/dicts/sets, no slices, no comprehensions, no lambdas, no
   f-strings. A `}` inside a string literal is fine: delimiting is lexical, not a regex
@@ -123,3 +124,27 @@ Rejected:
   type, which the whitelist never audited — and keeps `.x` and `['x']` apart off a path.
 - **No fallback for a dot at all.** An attribute no path answers would always be a missing
   field, so `${svc[k].host}` would stay unreadable while `${svc[k]['host']}` reads it.
+
+## A path function reads a position, not a value
+
+`${key(p)}` is the key the path `p` is filed under: `${key(.)}` at `foo.web.name` is `"web"`, `${key(..)}` is `"foo"`, and a list element's key is its position, an `int` (`${key(xs[-1])}` is the last index, as `_step` names it). It is what lets an entry be named after the key it sits under without writing that key twice:
+
+```yaml
+foo:
+  web:
+    name: ${key(.)}   # "web"
+```
+
+The argument is a path, never a value. Reading `.` from `name` would read the `foo.web` node that holds the expression, the cycle any reference to an ancestor is ([resolution](resolution.md#a-reference-reads-everything-its-path-reaches)); `key` reads where the node is, not what it holds. So `_PATH_FUNCTIONS` is a table of its own beside `_SAFE_FUNCTIONS`, and each step treats its argument as syntax:
+
+- **validation** (`_validate_path_call`) takes exactly one positional argument that spells a path: a name, a dot run, a root marker, or a chain of dots and constant subscripts. A computed subscript (`key(svc[k])`), an operand or a constant spells none and is refused;
+- **reference collection** (`_collect_names_from_call`) collects nothing from it, so it is no dependency and resolves in the first batch;
+- **evaluation** (`_expressions._eval_key`, the one answer to "what key is this position filed under?") walks to the container with `_step`, the walk a read takes, so a miss reads `Field 'foo.nope' not found` as a read of it would.
+
+Nothing else learns of it. A dot run is resolved by `_AnchorResolver` before evaluation, as for any reference; `_Prefixer` prefixes a bare path's base, which keeps the last segment (`key(foo)` in a fragment mounted at `sub` is `key(sub.foo)`, still `"foo"`); `check_anchor_depth` clamps `key(..)` as it clamps `${..x}`; and `merge()` keeps the text as written ([reference anchoring](reference-anchoring.md#a-relative-reference-is-never-serialized-as-an-absolute-path)). At a file's top level, `key(.)` names the key the file is mounted under: that is the name of the mount point, not a value outside the file.
+
+Two positions have no key, and are refused at evaluation with an `ExpressionEvalError`: the configuration root (`${key(::)}`, or a dot run that climbs to it), and an item a pending list op holds (`xs.__append__.0`), whose index is only known once construction applies the op. A YAML integer key answers to the integer subscript, as a read falls back on it ([values and references](values-and-references.md#spelling-a-path)).
+
+`key` is a function only as a callee ([above](#a-function-is-named-only-by-a-call)): `${key}` reads a key named `key`.
+
+Why an expression rather than a marker on the type, and the spellings rejected for it: [design decisions](../design-decisions/an-entry-reads-its-key-with-an-expression.md#an-entry-reads-its-key-with-an-expression).

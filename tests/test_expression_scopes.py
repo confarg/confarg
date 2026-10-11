@@ -588,3 +588,45 @@ class TestRelativeReferencesSurviveSerialization:
 
         result = confarg.load(Outer, argv=["--config", str(outer)], env={})
         assert [s.url for s in result.inner.servers] == ["https://web.example.com/", "https://api.example.com/"]
+
+
+@dataclass
+class Named:
+    """An entry naming itself after its key."""
+
+    name: str
+
+
+@dataclass
+class Registry:
+    """A dict of named entries, mountable one key at a time."""
+
+    foo: dict[str, Named] = field(default_factory=dict)
+
+
+class TestAFragmentNamesItselfByItsMountKey:
+    """``key(.)`` at a file's top level is the key the file is mounted under."""
+
+    def test_via_config_subpath_flag(self, tmp_path: Path) -> None:
+        """Mounted at ``foo.web``, the fragment is filed under ``web``."""
+        frag = write(tmp_path, "named.yaml", "name: ${key(.)}\n")
+        cfg = confarg.load(Registry, argv=["--config.foo.web", str(frag), "--config.foo.db", str(frag)])
+        assert cfg == Registry(foo={"web": Named("web"), "db": Named("db")})
+
+    def test_via_include(self, tmp_path: Path) -> None:
+        """An include lands at its key, as a mount does."""
+        write(tmp_path, "named.yaml", "name: ${key(.)}\n")
+        cfg = write(tmp_path, "app.yaml", f"foo:\n  api:\n    {INCLUDE_KEY}: ./named.yaml\n")
+        assert confarg.load(Registry, files=[cfg], argv=[]) == Registry(foo={"api": Named("api")})
+
+    def test_a_dot_run_past_the_file_root_is_clamped(self, tmp_path: Path) -> None:
+        """``key(..)`` would name a key outside the file, which only ``::`` may reach."""
+        frag = write(tmp_path, "named.yaml", "name: ${key(..)}\n")
+        with pytest.raises(MissingReferenceError, match=r"above the file root"):
+            confarg.load(Registry, argv=["--config.foo.web", str(frag)])
+
+    def test_merge_keeps_it_as_written(self, tmp_path: Path) -> None:
+        """A saved merge still names each entry after its key, wherever it is moved."""
+        frag = write(tmp_path, "named.yaml", "name: ${key(.)}\n")
+        merged = confarg.merge(Registry, argv=["--config.foo.web", str(frag)])
+        assert merged == {"foo": {"web": {"name": "${key(.)}"}}}

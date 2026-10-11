@@ -173,6 +173,9 @@ _SAFE_FUNCTIONS: dict[str, Any] = {
     "len": len,
 }
 
+# Whitelisted path functions: called on the path their argument spells, never on its value
+_PATH_FUNCTIONS: frozenset[str] = frozenset({"key"})
+
 # Whitelisted string methods
 _SAFE_METHODS: set[str] = {
     "upper",
@@ -525,8 +528,11 @@ def _method_name(node: ast.Call) -> str | None:
 def _collect_names_from_call(node: ast.Call, refs: set[_Path]) -> None:
     """Collect field references from a Call node: its arguments, and its callee unless that names a function.
 
-    A method call depends on its receiver, never on the path its callee spells.
+    A method call depends on its receiver, never on the path its callee spells, and a path
+    function on nothing: it reads where its argument is, not what it holds.
     """
+    if _function_name(node) in _PATH_FUNCTIONS:
+        return
     if _method_name(node) is not None:
         _collect_names(cast("ast.Attribute", node.func).value, refs)
     elif _function_name(node) is None:
@@ -737,7 +743,9 @@ def _validate_ast(body: str) -> None:
 def _validate_call(node: ast.Call) -> None:
     """Validate that a Call node targets a whitelisted function/method."""
     function = _function_name(node)
-    if function is not None:
+    if function in _PATH_FUNCTIONS:
+        _validate_path_call(node, function)
+    elif function is not None:
         if function not in _SAFE_FUNCTIONS:
             msg = f"Function '{function}' is not allowed"
             raise _RefusedError(msg)
@@ -749,9 +757,66 @@ def _validate_call(node: ast.Call) -> None:
         raise _RefusedError.indirect_call()
 
 
+def _validate_path_call(node: ast.Call, function: str) -> None:
+    """Validate that the path function *node* calls takes one argument, spelling a path.
+
+    The argument is never evaluated, so a computed key (``svc[k]``) or any other operand
+    has no path to give.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/safety-model.md#a-path-function-reads-a-position-not-a-value
+    """
+    if len(node.args) != 1 or node.keywords:
+        msg = f"Function '{function}' takes exactly one argument, a path"
+        raise _RefusedError(msg)
+    arg = node.args[0]
+    if not isinstance(arg, ast.Name) and not (isinstance(arg, ast.Attribute | ast.Subscript) and _attribute_chain(arg)):
+        msg = f"Function '{function}' takes a path, such as {function}(.) or {function}(a.b), not a computed value"
+        raise _RefusedError(msg)
+
+
+def _eval_key(arg: ast.expr, namespace: MergeDict) -> Any:
+    """Return the key the path *arg* spells is filed under: a dict key, or a list element's position.
+
+    The value at the path is never read, only the container holding it. An anchor stand-in
+    left in the tree names the configuration root, which has no key, and a pending list op
+    or an item one holds has none until construction applies the op; both are refused. A
+    dict key no string spells (YAML's ``{0: x}``) answers to the integer subscript, as a
+    path read falls back on it (:func:`_eval_path_or`), and is returned as the data holds it.
+
+    Raises:
+        MissingReferenceError: If the path reaches nothing.
+        ValueError: If the path is the configuration root, a pending op, or an item one holds.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/safety-model.md#a-path-function-reads-a-position-not-a-value
+    """
+    if isinstance(arg, ast.Name):
+        if _anchor_dot_count(arg.id) is not None:
+            msg = "the configuration root has no key"
+            raise ValueError(msg)
+        return _step(namespace, arg.id, [arg.id])[0]
+    node = cast("ast.Attribute | ast.Subscript", arg)
+    parts = cast("list[str | ListOp]", _attribute_chain(node, namespace))
+    if any(isinstance(part, ListOp) for part in parts[-2:]):
+        msg = f"{_spell_path(parts)} is held by a pending list op, and has no key until it is applied"
+        raise ValueError(msg)
+    container: Any = namespace
+    for part in parts[:-1]:
+        _, container = _step(container, part, parts)  # the whole path, so a miss names it as a read does
+    if isinstance(container, dict) and parts[-1] not in container and isinstance(node, ast.Subscript):
+        raw = _evaluate_ast(node.slice, namespace)
+        if raw in container:
+            return raw
+    segment, _ = _step(container, parts[-1], parts)
+    if isinstance(container, list | tuple):
+        return int(cast("str", segment))  # a position, which _step names as a string
+    return segment
+
+
 def _eval_name(node: ast.Name, namespace: MergeDict) -> Any:
     """Read the config key *node* names; a callee never reaches here (see :func:`_function_name`)."""
-    if node.id in _SAFE_FUNCTIONS and node.id not in namespace:
+    if (node.id in _SAFE_FUNCTIONS or node.id in _PATH_FUNCTIONS) and node.id not in namespace:
         raise MissingReferenceError.uncalled(node.id, "function", node.id, node.id)
     return _get_nested(namespace, [node.id])
 
@@ -873,6 +938,8 @@ def _eval_method(node: ast.Call, method: str, namespace: MergeDict) -> Any:
 
 
 def _eval_call(node: ast.Call, namespace: MergeDict) -> Any:
+    if _function_name(node) in _PATH_FUNCTIONS:
+        return _eval_key(node.args[0], namespace)
     if (function := _function_name(node)) is not None:
         func = _SAFE_FUNCTIONS[function]
     elif (method := _method_name(node)) is not None:
