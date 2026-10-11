@@ -180,6 +180,16 @@ class _WithCallableField:
 
 
 @dataclass
+class _AppendInner:
+    nums: list[int] = field(default_factory=list)
+
+
+@dataclass
+class _AppendOuter:
+    inner: _AppendInner = field(default_factory=_AppendInner)
+
+
+@dataclass
 class _WithVarTupleField:
     nums: tuple[int, ...] = ()
 
@@ -1474,16 +1484,7 @@ class TestParseCliGaps2:
 
     def test_append_token_non_dict_node_traversal(self) -> None:
         """_handle_append_token handles non-dict intermediate node gracefully."""
-
-        @dataclass
-        class _Inner:
-            nums: list[int] = field(default_factory=list)
-
-        @dataclass
-        class _Outer:
-            inner: _Inner = field(default_factory=_Inner)
-
-        ctx = _ParseCtx(argv=["--inner.nums+", "1"], target=_Outer, union_tag="class")
+        ctx = _ParseCtx(argv=["--inner.nums+", "1"], target=_AppendOuter, union_tag="class")
         # Set data["inner"] to a list (not a dict) to trigger the else branch at line 421
         ctx.data["inner"] = [99]
         _handle_append_token(ctx, 1, "--inner.nums+", list[int], ["inner", "nums"])

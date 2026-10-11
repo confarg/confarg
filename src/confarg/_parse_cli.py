@@ -1176,6 +1176,22 @@ def _merge_append_ops(existing: Any, append_items: list[Any]) -> MergeDict:
     return {**node, ListOp.APPEND: node.get(ListOp.APPEND, []) + append_items}
 
 
+def _append_element_type(ends: list[Any]) -> Any | None:
+    """Return the type an item appended at a path is coerced by, None where nothing there takes an append.
+
+    Asked of each type the walk reaches at the path (:func:`_field_types`), each union spread
+    into its variants, never of their fold: a ``+`` appends wherever a branch holds a list, a
+    set or a variadic tuple, as ``--xs.<i>`` patches wherever a branch holds a sequence, so
+    ``list[int] | None`` and ``list[int] | str`` take ``--xs+`` as a file's ``xs+:`` already
+    did (D4). The items are coerced by the fold of those branches' element types.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/collection-patches.md#an-append-reaches-every-sequence-variant
+    """
+    elements = [_elem_type(node) for end in ends for node in _union_branches(end) if _is_varlen_collection(node)]
+    return _common_type(elements)
+
+
 def _handle_append_token(
     ctx: _ParseCtx,
     i: int,
@@ -1183,14 +1199,18 @@ def _handle_append_token(
     ft: Any,
     path: list[str],
 ) -> int:
-    """Process an append-mode flag (--foo+ items...) and return the new arg index."""
-    if not _is_varlen_collection(ft):
+    """Process an append-mode flag (--foo+ items...) and return the new arg index.
+
+    *ft* is the field's type as the message names it; what the append reaches is asked of the
+    walk (:func:`_append_element_type`).
+    """
+    et = _append_element_type(_field_types(ctx.target, path, ctx.union_tag, calls=ctx.calls))
+    if et is None:
         msg = (
             f"Cannot use + (append) syntax on {token!r}:"
             f" field '{'.'.join(path)}' has type {ft!r}, which is not a list, set, or frozenset."
         )
         raise ConfargError(msg)
-    et = _elem_type(ft)
     append_items, i = _collect_append_items(ctx.argv, i, et)
     node: Any = ctx.data
     for p in path[:-1]:
