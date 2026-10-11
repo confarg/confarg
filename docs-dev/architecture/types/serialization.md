@@ -24,7 +24,8 @@ through the same `_serialize_leaf` — plus the one thing only a raw dict holds,
   read back as another variant, under either policy
   ([casting a stolen leaf](stealing-rule.md#casting-a-stolen-leaf)).
 - Enums dump as values, registered leaf types through their registered serializer (`Path`
-  being the first of them, hence a string), types as dotted paths, sets sorted by
+  being the first of them, hence a string), types as dotted paths when the path imports back
+  ([dotted imports](dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back)), sets sorted by
   `(type name, str)` so output is deterministic. These rules read the *value*, not the
   declared type, which is why the untyped path can share them; only widening an `int` to a
   `float` needs a type, so it never happens on a raw dict

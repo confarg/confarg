@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, cast, get_args, get_origin, get_type_hint
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
-from confarg._import import _import_dotted, dotted_name
+from confarg._import import _import_dotted, dotted_name, imports_back
 from confarg._types import (
     _callable_param_types,
     _is_callable,
@@ -94,6 +94,23 @@ def _instance_method_owner(path_str: str) -> type | None:
         return None
     attr = inspect.getattr_static(owner, name, None)
     return owner if isinstance(attr, types.FunctionType) else None
+
+
+def _reads_back_from(path_str: str, value: Any) -> bool:
+    """Check that the dotted *path_str*, read as a callable spec, yields *value* again.
+
+    Imports the path rather than resolving it, so nothing is built: an instance method
+    (:func:`_instance_method_owner`) reads back bound to a new owner, so *value* must be that
+    method's function bound to an instance of exactly that owner. Anything else reads back as
+    what the path imports (:func:`imports_back`).
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#a-path-is-written-only-when-it-reads-back
+    """
+    owner = _instance_method_owner(path_str)
+    if owner is None:
+        return imports_back(path_str, value)
+    return inspect.ismethod(value) and type(value.__self__) is owner and imports_back(path_str, value.__func__)
 
 
 def _target_signature(path_str: str) -> inspect.Signature:
@@ -837,7 +854,8 @@ def _serialize_callable(value: Any) -> str | dict:
     form when a kwarg is spelled like a plain opener (:func:`_form_holding`); one spelled like
     an escaped opener is refused, as no spec holds it.
     Bare partial (a class used factory-like, no kwargs) → "module.qualname" string.
-    Plain callable → "module.qualname" string.
+    Plain callable → "module.qualname" string, when that path reads back as it
+    (:func:`_reads_back_from`); a closure, a lambda or a shadowed name is refused.
     """
     spec = getattr(value, "__confarg_spec__", None)
     if spec is not None:
@@ -864,7 +882,16 @@ def _serialize_callable(value: Any) -> str | dict:
         return target
 
     if getattr(value, "__module__", None) and getattr(value, "__qualname__", None):
-        return dotted_name(value)
+        path = dotted_name(value)
+        if _reads_back_from(path, value):
+            return path
+        msg = (
+            f"Cannot serialize callable {value!r}: no configuration spells it, since {path!r} does not"
+            " read back as this callable. A closure, a lambda, or a function its module no longer holds"
+            " under that name cannot be dumped; dump the merged configuration instead, which keeps the"
+            " spec that produced it."
+        )
+        raise ConfargError(msg)
 
     msg = (
         f"Cannot serialize callable {value!r}: no __module__/__qualname__ available."

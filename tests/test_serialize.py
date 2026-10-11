@@ -20,7 +20,7 @@ import pytest
 import confarg
 from confarg._serialize import _serialize_leaf, _serialize_untyped
 from confarg._types import _Pinned, _StrToken, _UnionSeqToken
-from confarg.exceptions import ConfargWarning
+from confarg.exceptions import ConfargError, ConfargWarning
 from tests.conftest import (
     AppConfig,
     CacheConfig,
@@ -565,6 +565,29 @@ class TestDumpSubclass:
         loaded = confarg.from_dict(_SubWrapper, confarg.dump(obj))
         assert isinstance(loaded.item, _SubOuter.Nested)
         assert loaded.item.value == pytest.approx(2.5)
+
+    def test_a_class_tag_naming_a_class_defined_in_a_function_cannot_be_dumped(self) -> None:
+        """A tag whose path holds ``<locals>`` is refused at dump(), not on read-back (BUG-193).
+
+        Both writers of a tag: the subclass a struct field holds, and the variant of a union.
+        """
+
+        @_dc
+        class Local(_SubBase):
+            value: float
+
+        @_dc
+        class Left:
+            x: int
+
+        @_dc
+        class Right:
+            x: int
+
+        with pytest.raises(ConfargError, match=r"does not import back as it"):
+            confarg.dump(_SubWrapper(item=Local(value=1.0)))
+        with pytest.raises(ConfargError, match=r"does not import back as it"):
+            confarg.dump(make_target("v", Left | Right)(v=Right(x=1)))
 
     def test_subclass_fields_and_tag_emitted(self) -> None:
         """When a field typed Foo holds a Bar(Foo) instance, Bar's fields and a type tag are serialized."""

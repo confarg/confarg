@@ -9,6 +9,7 @@ from __future__ import annotations
 import builtins
 import functools
 import importlib
+import inspect
 from typing import Any
 
 from confarg.exceptions import SymbolImportError
@@ -21,12 +22,34 @@ def dotted_name(obj: Any) -> str:
 
     The one writer of a dotted name, so it cannot disagree with the reader beside it.
     ``__qualname__``, not ``__name__``: a class nested inside another class is reached
-    as ``Outer.Inner``, and the tag confarg writes has to be one it can import.
+    as ``Outer.Inner``, and the tag confarg writes has to be one it can import. A bound
+    method is named through the class it is bound to (the class itself for a class
+    method), since its qualified name names the class that defines it, which may be a base.
 
     Dev Notes:
         docs-dev/architecture/types/dotted-imports.md#dotted-imports
     """
+    if inspect.ismethod(obj):
+        owner = obj.__self__ if isinstance(obj.__self__, type) else type(obj.__self__)
+        return f"{dotted_name(owner)}.{obj.__name__}"
     return f"{obj.__module__}.{obj.__qualname__}"
+
+
+def imports_back(path: str, obj: Any) -> bool:
+    """Check that :func:`_import_dotted` resolves *path* to *obj* itself, or to an object equal to it.
+
+    Equality, for a class method: it is a new bound method on each access. What a dump writes
+    is checked this way before it is written, since a qualified name holding ``<locals>`` or
+    ``<lambda>``, or a name the module rebinds, has no import that leads back.
+
+    Dev Notes:
+        docs-dev/architecture/types/dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back
+    """
+    try:
+        named = _import_dotted(path)
+    except SymbolImportError:
+        return False
+    return bool(named is obj or named == obj)
 
 
 def _prefix_not_importable(e: ModuleNotFoundError, module_path: str) -> bool:

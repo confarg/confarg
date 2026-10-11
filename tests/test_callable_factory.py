@@ -100,6 +100,11 @@ class _BindConsumer:
         return _SGD()
 
 
+def _identity(x: int) -> int:
+    """A function importable by its dotted path, to bind arguments to."""
+    return x
+
+
 # ---------------------------------------------------------------------------
 # Target dataclasses
 # ---------------------------------------------------------------------------
@@ -315,15 +320,8 @@ class TestFactorySerialization:
 
     def test_function_partial_serializes_as_bind_dict(self):
         """Test that a function partial serializes as a bind: dict with its keywords beside it."""
-
-        def _fn(x: int) -> int:
-            return x
-
-        p = functools.partial(_fn, x=1)
-        out = _serialize_callable(p)
-        assert isinstance(out, dict)
-        assert "bind" in out
-        assert out.get("x") == 1
+        p = functools.partial(_identity, x=1)
+        assert _serialize_callable(p) == {"bind": f"{_MOD}._identity", "x": 1}
 
     def test_round_trip_factory(self):
         """Load → dump → reload preserves the factory (as bind: with siblings)."""
