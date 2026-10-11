@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     import cyclopts
 
     from confarg._defaults import MergeOptions, _Options
+    from confarg._merge import ListOp, MergeDict
 
 from confarg._defaults import _resolve_options
 from confarg._parse_cli import _collect_config_file_pairs
@@ -27,7 +28,7 @@ def _run_command(command: Any, bound: Any) -> Any:
     return command(*bound.args, **bound.kwargs) if bound is not None else command()
 
 
-def merge_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) -> dict[str, Any]:
+def merge_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) -> dict[str | ListOp, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
     Same as :func:`from_app` but returns the raw merged dict instead of a
@@ -49,7 +50,9 @@ def merge_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) -
             see :class:`confarg.MergeOptions`.  ``argv`` is the token list *app* parses.
 
     Returns:
-        A plain dict of the merged configuration, with expression strings intact.
+        A plain dict of the merged configuration, with expression strings intact. A list
+        operation that only ``build()`` can apply stays in it, keyed by a
+        :class:`confarg.ListOp`.
 
     Config file loading order:
         Same as :func:`confarg.merge`.
@@ -63,7 +66,7 @@ def _app_prefix(app: cyclopts.App, options: _Options) -> str:
     return resolve_prefix(meta.get(PREFIX_ATTR) if meta else None, options.cli_prefix)
 
 
-def _merge_app(target: object, app: cyclopts.App, options: _Options) -> dict[str, Any]:
+def _merge_app(target: object, app: cyclopts.App, options: _Options) -> MergeDict:
     """Parse *app*'s argv and merge every source; :func:`merge_app` with its options resolved."""
     meta = _app_meta.get(id(app))
 

@@ -11,6 +11,7 @@ subclass nobody imported is a contract test (tests/cli/test_backend_contract.py)
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -21,6 +22,9 @@ from confarg._tags import (
     collect_tags,
     import_tagged_classes,
 )
+
+if TYPE_CHECKING:
+    from confarg._merge import MergeDict
 
 
 @dataclass
@@ -157,13 +161,13 @@ class TestTagsFromConfig:
 
     def test_finds_struct_union_tag(self) -> None:
         """Test that a union tag is found in the merged config dict."""
-        merged = {"db": {"class": "myapp.ServerDB", "host": "localhost"}}
+        merged: MergeDict = {"db": {"class": "myapp.ServerDB", "host": "localhost"}}
         tags = _tags_from_config(merged, _AppConfig, prefix="", union_tag="class")
         assert tags == {"db": "myapp.ServerDB"}
 
     def test_empty_when_no_union_tag(self) -> None:
         """Test that no union tag in config yields an empty dict."""
-        merged = {"db": {"host": "localhost"}}
+        merged: MergeDict = {"db": {"host": "localhost"}}
         tags = _tags_from_config(merged, _AppConfig, prefix="", union_tag="class")
         assert tags == {}
 
@@ -174,7 +178,7 @@ class TestTagsFromConfig:
 
     def test_uses_given_prefix(self) -> None:
         """Test that a non-empty prefix is applied when resolving tags."""
-        merged = {"class": "myapp.ServerDB"}
+        merged: MergeDict = {"class": "myapp.ServerDB"}
         tags = _tags_from_config(merged, _DBBase, prefix="db", union_tag="class")
         # _DBBase is not a union field itself; struct walk yields nothing here
         assert isinstance(tags, dict)

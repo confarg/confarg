@@ -495,6 +495,17 @@ class TestNodeRelativeReferences:
         with pytest.raises(MissingReferenceError, match=r"servers\.host"):
             confarg.load(Fleet, argv=["--config", str(cfg)], env={})
 
+    def test_appended_fragment_reads_its_own_siblings(self, tmp_path: Path) -> None:
+        """An item ``--config.servers+`` appends reads beside itself, its position still a pending op."""
+        extra = write(tmp_path, "extra.yaml", "name: web\nhost: web.example.com\nurl: https://${.host}/\n")
+        fleet = confarg.load(Fleet, argv=["--config.servers+", str(extra)], env={})
+        assert [s.url for s in fleet.servers] == ["https://web.example.com/"]
+
+    def test_appended_flag_value_reads_its_own_siblings(self) -> None:
+        """So does an item ``--servers+`` appends as JSON."""
+        argv = ["--servers+", '{"host": "api.example.com", "url": "https://${.host}/"}']
+        assert confarg.load(Fleet, argv=argv, env={}).servers[0].url == "https://api.example.com/"
+
     def test_cli_expression_is_relative_to_where_it_lands(self, tmp_path: Path) -> None:
         """A flag's value has no writing file, so its dots count from the path it lands on."""
         cfg = write(tmp_path, "app.yaml", "db:\n  host: x\n  port: 5432\n")

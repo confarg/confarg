@@ -17,7 +17,11 @@ if TYPE_CHECKING:
 import pytest
 
 import confarg
-from confarg._merge import LIST_REPLACE_BASE_KEY, _deep_merge
+from confarg._merge import (
+    ListOp,
+    MergeDict,
+    _deep_merge,
+)
 from confarg.exceptions import ConfargError
 from tests.conftest import (
     AppConfig,
@@ -533,7 +537,7 @@ class TestNestedIndexMerge:
 
     def test_index_into_list_element_arbitrary_depth(self) -> None:
         """Three-deep index patch composes through every level."""
-        base = {"input": [[[1, 2], [3, 4]], [[5, 6]]]}
+        base: MergeDict = {"input": [[[1, 2], [3, 4]], [[5, 6]]]}
         merged = _deep_merge(base, {"input": {"0": {"1": {"0": 99}}}})
         assert merged == {"input": [[[1, 2], [99, 4]], [[5, 6]]]}
 
@@ -565,7 +569,7 @@ class TestReplaceBaseIsAList:
     def test_base_that_is_no_list_is_refused(self, base: object) -> None:
         """A file's ``__base__`` holding no list is refused rather than read with ``list()``."""
         with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("at 'input': '__base__' must hold a list")):
-            _deep_merge({"input": [1, 2]}, {"input": {LIST_REPLACE_BASE_KEY: base, "0": 3}})
+            _deep_merge({"input": [1, 2]}, {"input": {ListOp.BASE: base, "0": 3}})
 
 
 class TestDictKeyStar:
@@ -639,6 +643,19 @@ class TestMergeOpsAreSpelledByNoChannel:
         WithList = make_target("xs", list[int], default_factory=list)
         (op,) = confarg.merge(WithList, argv=["--xs+", "3"], env={})["xs"]
         assert op not in {"+", "__append__"}
+
+    def test_merged_dict_holds_an_op_as_the_public_list_op(self) -> None:
+        """The append ``--xs+ 3`` records is ``confarg.ListOp.APPEND``, which a caller can test for."""
+        WithList = make_target("xs", list[int], default_factory=list)
+        (op,) = confarg.merge(WithList, argv=["--xs+", "3"], env={})["xs"]
+        assert op is confarg.ListOp.APPEND
+
+    @pytest.mark.parametrize("op", list(ListOp), ids=lambda op: op.name)
+    def test_a_list_op_spells_as_a_file_writes_it_and_equals_no_string(self, op: ListOp) -> None:
+        """``str()`` is the reserved key, ``repr()`` the member, and the reserved key is no lookup of it."""
+        assert (str(op), repr(op)) == (op.value, f"ListOp.{op.name}")
+        assert op != op.value
+        assert {op.value: 1}.get(op) is None
 
 
 class TestListDeleteKeysHoldIndices:

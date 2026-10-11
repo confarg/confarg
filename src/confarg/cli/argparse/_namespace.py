@@ -12,13 +12,14 @@ if TYPE_CHECKING:
     import argparse
 
     from confarg._defaults import MergeOptions, _Options
+    from confarg._merge import ListOp, MergeDict
 
 from confarg._defaults import _resolve_options
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 
 
-def merge_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeOptions]) -> dict[str, Any]:
+def merge_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeOptions]) -> dict[str | ListOp, Any]:
     """Collect and merge configuration from all sources into a raw dict.
 
     Same as :func:`from_namespace` but returns the raw merged dict instead of a
@@ -34,7 +35,9 @@ def merge_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[Merge
             parsed.
 
     Returns:
-        A plain dict of the merged configuration, with expression strings intact.
+        A plain dict of the merged configuration, with expression strings intact. A list
+        operation that only ``build()`` can apply stays in it, keyed by a
+        :class:`confarg.ListOp`.
 
     Config file loading order:
         Same as :func:`confarg.merge`.
@@ -42,7 +45,7 @@ def merge_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[Merge
     return _merge_namespace(target, ns, _resolve_options("merge_namespace", opts))
 
 
-def _merge_namespace(target: object, ns: argparse.Namespace, options: _Options) -> dict[str, Any]:
+def _merge_namespace(target: object, ns: argparse.Namespace, options: _Options) -> MergeDict:
     """Merge every source into a raw dict; :func:`merge_namespace` with its options resolved."""
     return _merge_from_flat(vars(ns), target, options, cli_prefix=_namespace_prefix(ns, options), binds_runs=True)
 

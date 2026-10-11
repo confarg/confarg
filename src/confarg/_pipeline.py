@@ -30,10 +30,10 @@ from confarg._files import _load_mount, _load_mount_value, _load_subpath_files, 
 from confarg._merge import (
     APPEND_SUFFIX,
     DICT_DELETE,
-    LIST_APPEND_KEY,
+    ListOp,
+    MergeDict,
     _deep_merge,
     _drop_deleted_bases,
-    _OpKey,
     _to_append_list,
 )
 from confarg._parse_cli import _locals_keys, _locals_keys_at
@@ -45,7 +45,7 @@ from confarg.exceptions import ConfargError, InvalidConfigFileError, LocalsError
 from confarg.typedload._coerce import _coerce_leaf
 
 
-def _load_cli_config(value: Any, subpath: str, config_flag: str, union_tag: str | None = None) -> dict[str, Any]:
+def _load_cli_config(value: Any, subpath: str, config_flag: str, union_tag: str | None = None) -> MergeDict:
     """Load one CLI config source (``--config[.subpath][+] VALUE``) into a nested dict.
 
     *value* is read as an ``__include__`` value and mounted at *subpath*, so this route
@@ -72,7 +72,7 @@ def _load_cli_config(value: Any, subpath: str, config_flag: str, union_tag: str 
             )
             raise ConfargError(msg)
         loaded = _load_mount_value(value, union_tag=union_tag)
-        return _nest({LIST_APPEND_KEY: _to_append_list(loaded)}, real_subpath)
+        return _nest({ListOp.APPEND: _to_append_list(loaded)}, real_subpath)
 
     return _load_mount(value, subpath, union_tag=union_tag)
 
@@ -149,7 +149,7 @@ def _coerce_override(value: Any, declared: Any, path: str) -> Any:
 
 def _apply_locals_overrides(  # noqa: PLR0913, PLR0917  # recursive walk: carries the declaration and the error context
     declared: Any,
-    override: dict[str, Any],
+    override: MergeDict,
     locals_key: str,
     config_flag: str,
     source: str,
@@ -167,10 +167,10 @@ def _apply_locals_overrides(  # noqa: PLR0913, PLR0917  # recursive walk: carrie
         raise LocalsError.not_assignable(locals_key, config_flag, source)
     prefix = prefix or []
     for key, value in override.items():
-        path = [*prefix, key]
         # Merge-op markers would add or remove a local: refused with their own error.
-        if value is DICT_DELETE or isinstance(key, _OpKey):
-            raise LocalsError.not_restructurable(".".join(prefix or path), locals_key, source)
+        if value is DICT_DELETE or isinstance(key, ListOp):
+            raise LocalsError.not_restructurable(".".join(prefix) or str(key), locals_key, source)
+        path = [*prefix, key]
         found = _lookup_declared(declared, path)
         if found is _UNSET:
             raise LocalsError.not_declared(".".join(path), locals_key, config_flag, source)
@@ -224,6 +224,8 @@ def _iter_namespace_nodes(
         for name in names:
             if name in keys:
                 continue  # inside a namespace everything is free-form data
+            if isinstance(name, ListOp):
+                continue  # a pending op names no field: what it holds is not walked (BUG-219)
             yield from _iter_namespace_nodes([d.get(name) for d in dicts], target, union_tag, [*path, name])
     if lists:
         for i in range(max(len(x) for x in lists)):
@@ -233,9 +235,9 @@ def _iter_namespace_nodes(
 
 def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two names they are read against
     target: Any,
-    config_data: dict[str, Any],
-    env_data: dict[str, Any],
-    cli_data: dict[str, Any],
+    config_data: MergeDict,
+    env_data: MergeDict,
+    cli_data: MergeDict,
     *,
     union_tag: str,
     config_flag: str,
@@ -267,10 +269,10 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
 
 def _merge_sources(
     target: Any,
-    cli_data: dict[str, Any],
+    cli_data: MergeDict,
     cli_configs: Sequence[tuple[str, str]],
     options: _Options,
-) -> dict[str, Any]:
+) -> MergeDict:
     """Merge pre-collected CLI data with env vars and config files in priority order.
 
     Args:
@@ -282,7 +284,9 @@ def _merge_sources(
             read, the CLI having been parsed into *cli_data* and *cli_configs* already.
 
     Returns:
-        A plain dict of the merged configuration, with expression strings intact.
+        A plain dict of the merged configuration, with expression strings intact. A list
+        operation that only ``build()`` can apply stays in it, keyed by a
+        :class:`confarg.ListOp`.
 
     Config file loading order (all at the same priority level, below inline
     env vars and CLI args; later files win on conflict):
@@ -306,7 +310,7 @@ def _merge_sources(
 
     # 1. Parse env vars (done here so env-specified config files are loaded in order)
     if options.env_prefix is None:
-        env_data: dict[str, Any] = {}
+        env_data: MergeDict = {}
         env_configs: list[tuple[str, str]] = []
     else:
         # Exclude the env_config key so it is not mistakenly treated as a field.

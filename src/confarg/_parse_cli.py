@@ -38,9 +38,8 @@ from confarg._merge import (
     APPEND_SUFFIX,
     DELETE_SUFFIX,
     DICT_DELETE,
-    LIST_APPEND_KEY,
-    LIST_DELETE_KEY,
-    LIST_POST_APPEND_DELETE_KEY,
+    ListOp,
+    MergeDict,
     _accumulate_list_delete,
     _open_for_ops,
     _peek_nested,
@@ -1098,7 +1097,7 @@ class _ParseCtx:
     union_tag: str
     #: The paths at which argv opens a typed call (:func:`_typed_call_openings`).
     calls: frozenset[tuple[str, ...]] = frozenset()
-    data: dict[str, Any] = field(default_factory=dict)
+    data: MergeDict = field(default_factory=dict)
     multi_tokens: dict[tuple[str, ...], list[str]] = field(default_factory=dict)
     """Tokens every plain multi-token occurrence contributed, keyed by field path.
 
@@ -1127,7 +1126,7 @@ def _handle_delete_token(
         node: Any = ctx.data
         for _p in parent_path:
             node = node[_p] if isinstance(node, dict) and _p in node else {}
-        del_key = LIST_POST_APPEND_DELETE_KEY if isinstance(node, dict) and LIST_APPEND_KEY in node else LIST_DELETE_KEY
+        del_key = ListOp.DELETE_AFTER if isinstance(node, dict) and ListOp.APPEND in node else ListOp.DELETE
         _accumulate_list_delete(ctx.data, parent_path, delete_idx, token, delete_key=del_key)
     else:
         if _path_unknown(ctx.target, path, ctx.union_tag, calls=ctx.calls):
@@ -1167,14 +1166,14 @@ def _collect_append_items(args: Sequence[str], i: int, et: Any) -> tuple[list[An
     return items, i
 
 
-def _merge_append_ops(existing: Any, append_items: list[Any]) -> dict[str, Any]:
+def _merge_append_ops(existing: Any, append_items: list[Any]) -> MergeDict:
     """Combine append_items with what the path holds, opened as any op below it opens it.
 
     So an append after a whole value extends that value, and one after a whole-field delete
     extends nothing (:func:`~confarg._merge._open_for_ops`).
     """
     node = _open_for_ops(existing)
-    return {**node, LIST_APPEND_KEY: node.get(LIST_APPEND_KEY, []) + append_items}
+    return {**node, ListOp.APPEND: node.get(ListOp.APPEND, []) + append_items}
 
 
 def _handle_append_token(
@@ -1207,7 +1206,7 @@ def _consume_fixed_tuple_args(  # noqa: PLR0913, PLR0917  # token only names the
     token: str,
     ft: Any,
     path: list[str],
-    data: dict[str, Any],
+    data: MergeDict,
 ) -> int:
     """Consume exactly one argument per position of the fixed-length sequence *ft*.
 
@@ -1260,7 +1259,7 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str) -> Any:
     return [_StrToken(t) for t in tokens]
 
 
-def _handle_scalar_root(args: list[str], i: int, token: str, target_r: Any, data: dict[str, Any]) -> int:
+def _handle_scalar_root(args: list[str], i: int, token: str, target_r: Any, data: MergeDict) -> int:
     """Consume the single value for a non-struct scalar target. Returns new arg index."""
     i += 1
     _require_value(args, i, token)
@@ -1275,8 +1274,8 @@ def _handle_root_cast(  # noqa: PLR0913  # each arg carries distinct root-placem
     *,
     is_struct: bool,
     cast_name: str,
-    data: dict[str, Any],
-    root_json: list[dict[str, Any]],
+    data: MergeDict,
+    root_json: list[MergeDict],
 ) -> int:
     """Consume the value for a root-level ``--json`` cast. Returns new arg index.
 
@@ -1303,7 +1302,7 @@ def _handle_force_cast(  # noqa: PLR0913, PLR0917  # cast_name is a necessary di
     args: list[str],
     i: int,
     token: str,
-    data: dict[str, Any],
+    data: MergeDict,
     path: list[str],
     cast_name: str,
 ) -> int:
@@ -1506,7 +1505,7 @@ def _takes_callable_shorthand(ft: Any) -> bool:
     return is_callable_variant(ft) or (_is_union(ft) and any(is_callable_variant(v) for v in _union_args_no_none(ft)))
 
 
-def _open_callable_shorthand(data: dict[str, Any], path: list[str], target: Any, union_tag: str) -> None:
+def _open_callable_shorthand(data: MergeDict, path: list[str], target: Any, union_tag: str) -> None:
     """Open a bare-string callable value into its dict form before *path* descends into it.
 
     ``--fn pkg.func`` is the shorthand for ``--fn.bind pkg.func``, so a later
@@ -1638,7 +1637,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     *,
     host_parsed: bool = False,
     host_binds_run: Callable[[Any], bool] | None = None,
-) -> tuple[dict[str, Any], list[tuple[str, str]]]:
+) -> tuple[MergeDict, list[tuple[str, str]]]:
     """Parse CLI arguments into a nested dict and a list of config file paths.
 
     Args:
@@ -1679,7 +1678,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     calls = _typed_call_openings(walk_target, _strip_argv_prefix(argv, cli_prefix), union_tag, config_flag)
     ctx = _ParseCtx(argv=argv, target=walk_target, union_tag=union_tag, calls=calls)
     config_files: list[tuple[str, str]] = []
-    root_json: list[dict[str, Any]] = []  # objects from root `--json`, folded in below fields
+    root_json: list[MergeDict] = []  # objects from root `--json`, folded in below fields
     target_r = _resolve_type(target)
     is_struct = _is_struct_like(target_r)
     i = 0

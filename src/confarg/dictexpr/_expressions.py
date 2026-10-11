@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
+from confarg._merge import ListOp, MergeDict
 from confarg.exceptions import (
     CircularReferenceError,
     ExpressionEvalError,
@@ -37,7 +38,13 @@ from confarg.exceptions import (
 
 #: A position in the data, one segment per key or list index. Segments are never joined
 #: into a dotted string, which a key holding a dot (``example.com``) would make ambiguous.
-_Path = tuple[str, ...]
+_Path = tuple[str | ListOp, ...]
+
+
+def _spell_path(path: Sequence[str | ListOp]) -> str:
+    """Return *path* as a message names it: its segments joined by dots, a pending list op by its file spelling."""
+    return ".".join(map(str, path))
+
 
 #: A Python string literal, triple-quoted or not. A backslash escapes the next
 #: character whatever the prefix (``r'\''`` is one literal), so a prefix never moves
@@ -326,8 +333,8 @@ def _refuse_normalized_names(body: str) -> None:
 
 
 def resolve_expressions(
-    data: dict[str, Any],
-) -> dict[str, Any]:
+    data: dict[Any, Any],
+) -> MergeDict:
     """Resolve ${...} expressions in a merged config dict.
 
     Args:
@@ -375,7 +382,7 @@ def resolve_expressions(
     return data
 
 
-def _scan_expressions(data: dict[str, Any]) -> dict[_Path, str]:
+def _scan_expressions(data: MergeDict) -> dict[_Path, str]:
     """Walk merged dict, find string values containing ${...}.
 
     Returns:
@@ -404,7 +411,7 @@ def _collect_expressions(value: Any, path: _Path, out: dict[_Path, str]) -> None
         out[path] = value
 
 
-def _dependency_graph(data: dict[str, Any], expr_fields: dict[_Path, str]) -> dict[_Path, set[_Path]]:
+def _dependency_graph(data: MergeDict, expr_fields: dict[_Path, str]) -> dict[_Path, set[_Path]]:
     """Map each expression's path to the paths of the expressions it reads, which resolve first.
 
     A reference reads every expression its path reaches, not just one sitting exactly there:
@@ -433,7 +440,7 @@ def _dependency_graph(data: dict[str, Any], expr_fields: dict[_Path, str]) -> di
     return deps
 
 
-def _scan_path(data: dict[str, Any], parts: Sequence[str]) -> _Path:
+def _scan_path(data: MergeDict, parts: Sequence[str | ListOp]) -> _Path:
     """Return the path *parts* reads in *data*, named as :func:`_scan_expressions` names it.
 
     Each segment is taken by :func:`_step`, the walk evaluation reads the value with, so the
@@ -441,7 +448,7 @@ def _scan_path(data: dict[str, Any], parts: Sequence[str]) -> _Path:
     From the first segment *data* does not answer on — a missing key, or one inside an
     expression's value, unknown until it resolves — the path is kept as written.
     """
-    named: list[str] = []
+    named: list[str | ListOp] = []
     current: Any = data
     for depth, part in enumerate(parts):
         try:
@@ -502,7 +509,7 @@ def _method_name(node: ast.Call) -> str | None:
     return node.func.attr if isinstance(node.func, ast.Attribute) else None
 
 
-def _collect_names_from_call(node: ast.Call, refs: set[tuple[str, ...]]) -> None:
+def _collect_names_from_call(node: ast.Call, refs: set[_Path]) -> None:
     """Collect field references from a Call node: its arguments, and its callee unless that names a function.
 
     A method call depends on its receiver, never on the path its callee spells.
@@ -517,7 +524,7 @@ def _collect_names_from_call(node: ast.Call, refs: set[tuple[str, ...]]) -> None
         _collect_names(kw.value, refs)
 
 
-def _collect_names(node: ast.AST, refs: set[tuple[str, ...]]) -> None:
+def _collect_names(node: ast.AST, refs: set[_Path]) -> None:
     """Collect Name nodes and the config paths of Attribute/Subscript chains as field references.
 
     A stand-in :class:`_AnchorResolver` left in the tree names the configuration root, the
@@ -555,7 +562,7 @@ def _ast_int_value(node: ast.AST) -> int | None:
     return None
 
 
-def _key_segment(key: object) -> str | None:
+def _key_segment(key: object) -> str | ListOp | None:
     """Return the path segment the subscript key *key* spells, or ``None`` when it spells none.
 
     A string is the key itself (``'web-1'``), an integer the list index (``0``, ``-1``); a
@@ -566,10 +573,12 @@ def _key_segment(key: object) -> str | None:
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
     """
+    if isinstance(key, ListOp):
+        return key  # a pending list op, which only a node anchor inside its value reads through
     return str(key) if isinstance(key, str) or type(key) is int else None
 
 
-def _subscript_segment(index: ast.expr) -> str | None:
+def _subscript_segment(index: ast.expr) -> str | ListOp | None:
     """Return the path segment a subscript's *index* spells, or ``None`` for a computed one.
 
     A string constant is the key itself (``['web-1']``), an integer constant the list index
@@ -578,7 +587,7 @@ def _subscript_segment(index: ast.expr) -> str | None:
     return _key_segment(index.value if isinstance(index, ast.Constant) else _ast_int_value(index))
 
 
-def _segment(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any] | None = None) -> str | None:
+def _segment(node: ast.Attribute | ast.Subscript, namespace: MergeDict | None = None) -> str | ListOp | None:
     """Return the one path segment *node* adds to its base, or ``None`` when it spells none.
 
     A dot's name, or what :func:`_subscript_segment` reads in a subscript's index. A computed
@@ -595,7 +604,9 @@ def _segment(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any] | No
     return segment
 
 
-def _attribute_chain(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any] | None = None) -> list[str] | None:
+def _attribute_chain(
+    node: ast.Attribute | ast.Subscript, namespace: MergeDict | None = None
+) -> list[str | ListOp] | None:
     """Return the config path *node* reads, segment by segment, or ``None`` when it reads none.
 
     The one answer to "which config path does this node read?": a dot and a constant
@@ -610,7 +621,7 @@ def _attribute_chain(node: ast.Attribute | ast.Subscript, namespace: dict[str, A
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
     """
-    parts: list[str] = []
+    parts: list[str | ListOp] = []
     current: ast.expr = node
     while isinstance(current, ast.Attribute | ast.Subscript):
         segment = _segment(current, namespace)
@@ -652,7 +663,7 @@ def _topological_sort(deps: dict[_Path, set[_Path]]) -> list[_Path]:
         sorter.done(*batch)
     if len(order) != len(deps):
         remaining = set(deps.keys()) - set(order)
-        msg = f"Circular reference detected among: {', '.join(sorted('.'.join(path) for path in remaining))}"
+        msg = f"Circular reference detected among: {', '.join(sorted(_spell_path(path) for path in remaining))}"
         raise CircularReferenceError(msg)
 
     return order
@@ -725,7 +736,7 @@ def _validate_call(node: ast.Call) -> None:
         raise _RefusedError.indirect_call()
 
 
-def _eval_name(node: ast.Name, namespace: dict[str, Any]) -> Any:
+def _eval_name(node: ast.Name, namespace: MergeDict) -> Any:
     """Read the config key *node* names; a callee never reaches here (see :func:`_function_name`)."""
     if node.id in _SAFE_FUNCTIONS and node.id not in namespace:
         raise MissingReferenceError.uncalled(node.id, "function", node.id, node.id)
@@ -744,7 +755,7 @@ class _ValueMissError(LookupError):
         super().__init__(f"index {key!r} out of range" if isinstance(miss, IndexError) else f"key {key!r} not found")
 
 
-def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any]) -> Any:
+def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: MergeDict) -> Any:
     """Read the config path *node* spells; failing that, index its evaluated base by the key it spells.
 
     The path comes first, so ``svc['web'].host`` reads what ``svc.web.host`` reads, and a
@@ -782,23 +793,23 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any]
                 raise _ValueMissError(exc, key) from None
             raise
         if isinstance(node, ast.Attribute) and node.attr in _SAFE_METHODS:
-            path = ".".join(cast("list[str]", parts))
+            path = _spell_path(cast("list[str | ListOp]", parts))
             raise MissingReferenceError.uncalled(path, "method", node.attr, _unparse(node)) from None
         raise missing from None
 
 
-def _eval_binop(node: ast.BinOp, namespace: dict[str, Any]) -> Any:
+def _eval_binop(node: ast.BinOp, namespace: MergeDict) -> Any:
     left = _evaluate_ast(node.left, namespace)
     right = _evaluate_ast(node.right, namespace)
     return _BINOP_MAP[type(node.op)](left, right)
 
 
-def _eval_unaryop(node: ast.UnaryOp, namespace: dict[str, Any]) -> Any:
+def _eval_unaryop(node: ast.UnaryOp, namespace: MergeDict) -> Any:
     operand = _evaluate_ast(node.operand, namespace)
     return _UNARYOP_MAP[type(node.op)](operand)
 
 
-def _eval_compare(node: ast.Compare, namespace: dict[str, Any]) -> Any:
+def _eval_compare(node: ast.Compare, namespace: MergeDict) -> Any:
     left = _evaluate_ast(node.left, namespace)
     for op, comparator in zip(node.ops, node.comparators, strict=False):
         right = _evaluate_ast(comparator, namespace)
@@ -808,7 +819,7 @@ def _eval_compare(node: ast.Compare, namespace: dict[str, Any]) -> Any:
     return True
 
 
-def _eval_boolop(node: ast.BoolOp, namespace: dict[str, Any]) -> Any:
+def _eval_boolop(node: ast.BoolOp, namespace: MergeDict) -> Any:
     if isinstance(node.op, ast.And):
         result: Any = True
         for value in node.values:
@@ -825,13 +836,13 @@ def _eval_boolop(node: ast.BoolOp, namespace: dict[str, Any]) -> Any:
     return result
 
 
-def _eval_ifexp(node: ast.IfExp, namespace: dict[str, Any]) -> Any:
+def _eval_ifexp(node: ast.IfExp, namespace: MergeDict) -> Any:
     if _evaluate_ast(node.test, namespace):
         return _evaluate_ast(node.body, namespace)
     return _evaluate_ast(node.orelse, namespace)
 
 
-def _eval_method(node: ast.Call, method: str, namespace: dict[str, Any]) -> Any:
+def _eval_method(node: ast.Call, method: str, namespace: MergeDict) -> Any:
     """Return the bound string method *node* calls, refusing any receiver that is no string.
 
     The receiver is evaluated, never the callee's path, and its type is known only now: a
@@ -848,7 +859,7 @@ def _eval_method(node: ast.Call, method: str, namespace: dict[str, Any]) -> Any:
     return getattr(receiver, method)
 
 
-def _eval_call(node: ast.Call, namespace: dict[str, Any]) -> Any:
+def _eval_call(node: ast.Call, namespace: MergeDict) -> Any:
     if (function := _function_name(node)) is not None:
         func = _SAFE_FUNCTIONS[function]
     elif (method := _method_name(node)) is not None:
@@ -875,7 +886,7 @@ _AST_EVALUATORS: dict[type, Any] = {
 }
 
 
-def _evaluate_ast(node: ast.AST, namespace: dict[str, Any]) -> Any:
+def _evaluate_ast(node: ast.AST, namespace: MergeDict) -> Any:
     """Recursively evaluate AST node against namespace.
 
     Only a node :func:`_validate_ast` accepted reaches here, and every one it accepts has an
@@ -884,7 +895,7 @@ def _evaluate_ast(node: ast.AST, namespace: dict[str, Any]) -> Any:
     return _AST_EVALUATORS[type(node)](node, namespace)
 
 
-def _eval_expr(tree: ast.Expression, namespace: dict[str, Any], context: str) -> Any:
+def _eval_expr(tree: ast.Expression, namespace: MergeDict, context: str) -> Any:
     """Evaluate a parsed expression, wrapping any runtime failure in ``ExpressionEvalError``.
 
     ``MissingReferenceError`` propagates unchanged. A :class:`_RefusedError` — a method off
@@ -910,7 +921,7 @@ def _eval_expr(tree: ast.Expression, namespace: dict[str, Any], context: str) ->
         raise ExpressionEvalError.failed(context, exc) from exc
 
 
-def _resolve_single(expr_str: str, namespace: dict[str, Any], node_path: _Path = ()) -> Any:
+def _resolve_single(expr_str: str, namespace: MergeDict, node_path: _Path = ()) -> Any:
     """Resolve a single expression string.
 
     Handles three cases:
@@ -942,7 +953,7 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any], node_path: _Path =
     return _rewrite_spans(expr_str, spans, replace)
 
 
-def _get_nested(data: dict[str, Any], parts: Sequence[str]) -> Any:
+def _get_nested(data: MergeDict, parts: Sequence[str | ListOp]) -> Any:
     """Retrieve the value at the path *parts* from a nested dict/list, one segment per key or index.
 
     Segments are taken as given, never re-split, so a key holding a dot (``['example.com']``)
@@ -954,7 +965,7 @@ def _get_nested(data: dict[str, Any], parts: Sequence[str]) -> Any:
     return current
 
 
-def _list_index(segment: str) -> int | None:
+def _list_index(segment: str | ListOp) -> int | None:
     """Return the list index *segment* spells, or ``None`` when it spells none.
 
     Only the spelling ``str()`` gives an integer is an index — ``0``, ``1``, ``-1`` — so a
@@ -966,6 +977,8 @@ def _list_index(segment: str) -> int | None:
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
     """
+    if isinstance(segment, ListOp):
+        return None  # a pending list op names no element
     try:
         index = int(segment)
     except ValueError:
@@ -973,7 +986,7 @@ def _list_index(segment: str) -> int | None:
     return index if str(index) == segment else None
 
 
-def _step(node: Any, part: str, path: Sequence[str]) -> tuple[str, Any]:
+def _step(node: Any, part: str | ListOp, path: Sequence[str | ListOp]) -> tuple[str | ListOp, Any]:
     """Take the segment *part* of *path* down from *node*: return how the scan names it, and what it reaches.
 
     The one walk over the data: evaluation reads a value with it (:func:`_get_nested`) and
@@ -987,20 +1000,20 @@ def _step(node: Any, part: str, path: Sequence[str]) -> tuple[str, Any]:
     """
     if isinstance(node, dict):
         if part not in node:
-            raise MissingReferenceError.field_not_found(".".join(path))
+            raise MissingReferenceError.field_not_found(_spell_path(path))
         return part, node[part]
     if isinstance(node, list | tuple):
         idx = _list_index(part)
         if idx is None:
-            raise MissingReferenceError.field_not_found(".".join(path), f"'{part}' is not a valid index")
+            raise MissingReferenceError.field_not_found(_spell_path(path), f"'{part}' is not a valid index")
         if not -len(node) <= idx < len(node):
-            raise MissingReferenceError.field_not_found(".".join(path), f"index {idx} out of range")
+            raise MissingReferenceError.field_not_found(_spell_path(path), f"index {idx} out of range")
         position = idx + len(node) if idx < 0 else idx
         return str(position), node[position]
-    raise MissingReferenceError.field_not_found(".".join(path), f"cannot traverse into {type(node).__name__}")
+    raise MissingReferenceError.field_not_found(_spell_path(path), f"cannot traverse into {type(node).__name__}")
 
 
-def _set_nested_by_path(data: dict[str, Any], path: _Path, value: Any) -> None:
+def _set_nested_by_path(data: MergeDict, path: _Path, value: Any) -> None:
     """Replace the value at *path*, a position :func:`_scan_expressions` named, by *value*.
 
     The container is reached by :func:`_get_nested`, the one walk over the data. The scan
@@ -1008,7 +1021,10 @@ def _set_nested_by_path(data: dict[str, Any], path: _Path, value: Any) -> None:
     element is named by its position.
     """
     container = _get_nested(data, path[:-1])
-    container[path[-1] if isinstance(container, dict) else int(path[-1])] = value
+    if isinstance(container, dict):
+        container[path[-1]] = value
+    else:
+        container[int(cast("str", path[-1]))] = value  # an element's position, never an op
 
 
 # ---------------------------------------------------------------------------
@@ -1193,7 +1209,7 @@ def _spells_as_name(segment: str) -> bool:
     )
 
 
-def _segment_link(base: ast.expr, segment: str) -> ast.Attribute | ast.Subscript:
+def _segment_link(base: ast.expr, segment: str | ListOp) -> ast.Attribute | ast.Subscript:
     """Read *segment* off *base*: a dot when it spells as a name, else a constant subscript.
 
     A segment that spells a list index (``0``, ``-1``: :func:`_list_index`) is subscripted
@@ -1201,13 +1217,14 @@ def _segment_link(base: ast.expr, segment: str) -> ast.Attribute | ast.Subscript
     ``xs.0`` and ``svc.web-1`` name, and a YAML integer key stays reachable when the path
     read misses.
     """
-    if _spells_as_name(segment):
+    if isinstance(segment, str) and _spells_as_name(segment):
         return ast.Attribute(value=base, attr=segment, ctx=ast.Load())
     index = _list_index(segment)
-    return ast.Subscript(value=base, slice=ast.Constant(segment if index is None else index), ctx=ast.Load())
+    key = ast.Constant(segment if index is None else index)  # ty: ignore[invalid-argument-type]  # an op: no source has one
+    return ast.Subscript(value=base, slice=key, ctx=ast.Load())
 
 
-def _path_to_ast(parts: Sequence[str]) -> ast.expr:
+def _path_to_ast(parts: Sequence[str | ListOp]) -> ast.expr:
     """Build the tree that reads the path *parts*, and that unparses to source reading it too.
 
     The one spelling of a path as an expression: a segment is a dot or a constant
@@ -1221,7 +1238,7 @@ def _path_to_ast(parts: Sequence[str]) -> ast.expr:
     first, *rest = parts
     built: ast.expr = (
         ast.Name(id=first, ctx=ast.Load())
-        if _spells_as_name(first)
+        if isinstance(first, str) and _spells_as_name(first)
         else _segment_link(ast.Name(id=_ROOT_ANCHOR, ctx=ast.Load()), first)
     )
     for part in rest:
@@ -1397,7 +1414,7 @@ def _anchor_prefix(node_path: _Path, levels: int, scope: str = "document") -> _P
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     if levels > len(node_path):
-        raise MissingReferenceError.anchor_above_root(".".join(node_path), len(node_path), levels, scope)
+        raise MissingReferenceError.anchor_above_root(_spell_path(node_path), len(node_path), levels, scope)
     return node_path[: len(node_path) - levels]
 
 
@@ -1470,7 +1487,7 @@ class _AnchorResolver(ast.NodeTransformer):
     def _visit_segment(self, node: ast.Attribute | ast.Subscript) -> ast.AST:
         """Make the segment *node* spells on a stand-in for the root its base name, else recurse."""
         segment = _segment(node) if self._anchored(node.value) == () else None
-        if segment is not None:
+        if isinstance(segment, str):  # a pending list op is never a root key
             return _resolved(ast.copy_location(ast.Name(id=segment, ctx=ast.Load()), node), node)
         return self.generic_visit(node)
 

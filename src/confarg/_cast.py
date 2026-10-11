@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from confarg._merge import _deep_merge
+from confarg._merge import MergeDict, _deep_merge
 from confarg._types import _is_union, _Pinned, _resolve_type, _StrToken, _union_args_no_none
 from confarg.exceptions import ConfargError, TypeCoercionError
 
@@ -88,7 +88,7 @@ def holds_the_cast(field_tp: Any, cast_tp: Any) -> bool:
     return any(m == cast_tp for m in members)
 
 
-def fold_root_json(data: dict[str, Any], root_json: list[dict[str, Any]], union_tag: str) -> dict[str, Any]:
+def fold_root_json(data: MergeDict, root_json: list[MergeDict], union_tag: str) -> MergeDict:
     """Fold the objects root ``json`` casts decoded in as a base under *data*.
 
     The one fold every channel's root cast goes through -- vanilla's ``--json``, the
@@ -109,7 +109,7 @@ def fold_root_json(data: dict[str, Any], root_json: list[dict[str, Any]], union_
     """
     if not root_json:
         return data
-    base: dict[str, Any] = {}
+    base: MergeDict = {}
     for obj in root_json:
         base = _deep_merge(base, obj, union_tag=union_tag)
     return _deep_merge(base, data, union_tag=union_tag)

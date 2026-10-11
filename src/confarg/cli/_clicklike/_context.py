@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from confarg._defaults import _Options
+    from confarg._merge import MergeDict
 
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
@@ -63,7 +64,7 @@ def ctx_prefix(ctx: Any, options: _Options) -> str:
     return resolve_prefix(registered_prefix(ctx), options.cli_prefix)
 
 
-def merge_from_ctx(target: object, ctx: Any, options: _Options) -> dict[str, Any]:
+def merge_from_ctx(target: object, ctx: Any, options: _Options) -> MergeDict:
     """Flatten ``ctx`` and run the shared merge tail; see the adapters' merge_context."""
     return _merge_from_flat(flat_from_ctx(ctx), target, options, cli_prefix=ctx_prefix(ctx, options), binds_runs=False)
 

@@ -23,13 +23,11 @@ from confarg._callable import _resolve_callable_spec, _select_directives, resolv
 from confarg._cast import cast_name_for_type, holds_the_cast, type_for_cast_name
 from confarg._import import _import_dotted, dotted_name
 from confarg._merge import (
-    LIST_APPEND_KEY,
-    LIST_DELETE_KEY,
-    LIST_REPLACE_BASE_KEY,
     MERGE_OP_KEYS,
+    ListOp,
+    MergeDict,
     _apply_list_ops,
     _merge_existing_value,
-    _OpKey,
     _replace_base,
 )
 from confarg._types import (
@@ -155,9 +153,9 @@ def _check_namedtuple_length(tp: Any, got: int, path: FieldPath) -> None:
 
 
 def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, union_tag: str) -> dict[Any, Any]:
-    """Key a namedtuple's ``LIST_REPLACE_BASE_KEY`` base list by field name and lay the patch beside it over it.
+    """Key a namedtuple's ``ListOp.BASE`` base list by field name and lay the patch beside it over it.
 
-    The merge carries a positional list under ``LIST_REPLACE_BASE_KEY`` beside a patch it
+    The merge carries a positional list under ``ListOp.BASE`` beside a patch it
     cannot apply without the type, and the CLI's arity flag leaves one under its sub-flags.
     An all-index patch takes its positions as a fixed tuple's does; any other patch lays
     its keys by name, so a mixed one keeps the index key the by-name form refuses. A patch
@@ -169,7 +167,7 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, un
     field_names = list(_namedtuple_fields(tp))
     base = _replace_base(data, _spell_field_path(path))
     _check_namedtuple_length(tp, len(base), path)
-    patch = {k: v for k, v in data.items() if k != LIST_REPLACE_BASE_KEY}
+    patch = {k: v for k, v in data.items() if k != ListOp.BASE}
     if patch and all(_is_index_key(k) for k in patch):
         positions = _indexed_dict_to_positions(patch, len(field_names), path, tp.__name__)
         patch = {field_names[i]: v for i, v in positions.items()}
@@ -196,7 +194,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
     field_types = list(flds.values())
     n = len(field_names)
 
-    if isinstance(data, dict) and LIST_REPLACE_BASE_KEY in data:
+    if isinstance(data, dict) and ListOp.BASE in data:
         data = _lay_patch_over_positions(tp, data, path, union_tag)
 
     if isinstance(data, list | tuple):
@@ -302,7 +300,7 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: FieldPath, union_tag: s
     return _construct_struct(tp, data, path, union_tag)
 
 
-def _construct_shadowed_subclass(tp: Any, data: dict[str, Any], path: FieldPath, union_tag: str) -> Any:
+def _construct_shadowed_subclass(tp: Any, data: MergeDict, path: FieldPath, union_tag: str) -> Any:
     """Construct through the subclass that owns the tag-shaped subclass-only field.
 
     The key is field data, so the subclass is selected the way the union's structural
@@ -334,7 +332,9 @@ def _construct_shadowed_subclass(tp: Any, data: dict[str, Any], path: FieldPath,
     raise TypeCoercionError(msg)
 
 
-def _ambiguous_structs_msg(matches: list[Any], provided: set[str], path: FieldPath, header: str, remedy: str) -> str:
+def _ambiguous_structs_msg(
+    matches: list[Any], provided: set[str | ListOp], path: FieldPath, header: str, remedy: str
+) -> str:
     """Build the per-variant field breakdown the two ambiguity refusals share.
 
     *header* names what the provided fields cannot tell apart, *remedy* how to make them
@@ -355,12 +355,12 @@ def _ambiguous_structs_msg(matches: list[Any], provided: set[str], path: FieldPa
         if optional:
             parts.append("optional: " + ", ".join(optional))
         lines.append(f"  {var.__name__}: {'; '.join(parts) if parts else '(no fields)'}")
-    lines.append(f"Provided fields: {sorted(provided) if provided else '(none)'}")
+    lines.append(f"Provided fields: {sorted(str(k) for k in provided) if provided else '(none)'}")
     lines.append(remedy)
     return "\n".join(lines)
 
 
-def _ambiguous_subclass_msg(matches: list[Any], data: dict[str, Any], path: FieldPath, union_tag: str) -> str:
+def _ambiguous_subclass_msg(matches: list[Any], data: MergeDict, path: FieldPath, union_tag: str) -> str:
     """Build a diagnostic message for subclasses the provided fields cannot tell apart."""
     return _ambiguous_structs_msg(
         matches,
@@ -372,7 +372,7 @@ def _ambiguous_subclass_msg(matches: list[Any], data: dict[str, Any], path: Fiel
     )
 
 
-def _construct_taggable_leaf(tp: Any, data: dict[str, Any], path: FieldPath, union_tag: str) -> Any:
+def _construct_taggable_leaf(tp: Any, data: MergeDict, path: FieldPath, union_tag: str) -> Any:
     """Construct a struct-shaped registered leaf from the dict that tags it.
 
     Raises:
@@ -603,7 +603,7 @@ def _indexed_dict_to_positions(
     return out
 
 
-def _resolve_tuple_partial(field_data: dict[str, Any], ft: Any, default: Any, path: FieldPath) -> Any:
+def _resolve_tuple_partial(field_data: MergeDict, ft: Any, default: Any, path: FieldPath) -> Any:
     """If field_data is an index-keyed dict for a tuple field at *path*, patch its *default* in place.
 
     Returns the (possibly patched) data — unchanged if the conditions don't apply.
@@ -679,7 +679,7 @@ def build_from_nothing(build: Callable[[], Any], tp: Any, path: FieldPath, namin
         raise TypeCoercionError.refused_empty_call(naming.name, _spell_field_path(path), str(e), naming.beside) from e
 
 
-def _construct_named_struct(cls: type, data: dict[str, Any], path: FieldPath, union_tag: str, naming: _Naming) -> Any:
+def _construct_named_struct(cls: type, data: MergeDict, path: FieldPath, union_tag: str, naming: _Naming) -> Any:
     """Build the struct *cls* a tag or an opener named, from the keys *data* holds beside it.
 
     With none, the class builds from nothing, and its refusal is a coercion naming it
@@ -690,7 +690,7 @@ def _construct_named_struct(cls: type, data: dict[str, Any], path: FieldPath, un
     return build_from_nothing(lambda: _construct_struct(cls, {}, path, union_tag), cls, path, naming)
 
 
-def _construct_struct(tp: Any, data: dict[str, Any], path: FieldPath, union_tag: str) -> Any:
+def _construct_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str) -> Any:
     """Construct a dataclass or plain-class instance from a dict of raw data."""
     flds = _struct_fields(tp)
     defs = _struct_defaults(tp)
@@ -707,7 +707,7 @@ def _construct_struct(tp: Any, data: dict[str, Any], path: FieldPath, union_tag:
             if (
                 isinstance(field_data, dict)
                 and name in defs
-                and LIST_REPLACE_BASE_KEY not in field_data
+                and ListOp.BASE not in field_data
                 and not _is_pin_dict(field_data)
             ):
                 # A carried base (deferred from merge) wins over the default — let
@@ -750,15 +750,15 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
     if isinstance(data, list | set | frozenset | tuple):
         return [construct(et, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(data)]
     if isinstance(data, dict):
-        if LIST_REPLACE_BASE_KEY in data:
+        if ListOp.BASE in data:
             # CLI-produced dict with an explicit base list; apply ops in order.
             working = _apply_list_ops(_replace_base(data, _spell_field_path(path)), data, _spell_field_path(path), None)
             return [construct(et, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(working)]
-        if LIST_APPEND_KEY in data:
+        if ListOp.APPEND in data:
             # Append-only dict: apply all list ops (appends, deletions, index patches) against an empty base.
             working = _apply_list_ops([], data, _spell_field_path(path), None)
             return [construct(et, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(working)]
-        if LIST_DELETE_KEY in data:
+        if ListOp.DELETE in data:
             msg = (
                 f"List deletion (the '-' operator) at '{_spell_field_path(path)}' requires a base list to delete from,"
                 " but no base list was provided. Supply the full list via a config file or other source."
@@ -845,7 +845,7 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
     else:
         base_seq: list[Any] = []
         patches = data
-        if LIST_REPLACE_BASE_KEY in data:
+        if ListOp.BASE in data:
             # A deferred index patch carrying a base (e.g. a config list completed by --field.N).
             base_seq = _replace_base(data, _spell_field_path(path))
             if len(base_seq) > len(tt):
@@ -854,7 +854,7 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
                     f": expected {len(tt)} elements, got {len(base_seq)}"
                 )
                 raise TypeCoercionError(msg)
-            patches = {k: v for k, v in data.items() if k != LIST_REPLACE_BASE_KEY}
+            patches = {k: v for k, v in data.items() if k != ListOp.BASE}
         seq = [base_seq[i] if i < len(base_seq) else None for i in range(len(tt))]
         # A patch refines what the base holds at its position, as the merge would have.
         for i, v in _indexed_dict_to_positions(patches, len(tt), path, f"{tp}").items():
@@ -884,8 +884,8 @@ def _construct_dict(tp: Any, data: Any, path: FieldPath, union_tag: str) -> dict
     kt, vt = _dict_kv(tp)
     if not isinstance(data, dict):
         raise TypeCoercionError.wrong_shape(_src_type(data), data, "dict", "dict", _spell_field_path(path))
-    if op := next((k for k in data if isinstance(k, _OpKey)), None):
-        raise TypeCoercionError.list_op_on_a_dict(op, _spell_field_path(path))
+    if op := next((k for k in data if isinstance(k, ListOp)), None):
+        raise TypeCoercionError.list_op_on_a_dict(str(op), _spell_field_path(path))
     return {
         _coerce_leaf(kt, _StrToken(k) if isinstance(k, str) else k, _spell_field_path(path)): construct(
             vt,
@@ -961,7 +961,7 @@ def _construct_single_variant_union(
         raise
 
 
-def _construct_union_by_tag(non_none: list[Any], data: dict[str, Any], path: FieldPath, union_tag: str) -> Any:
+def _construct_union_by_tag(non_none: list[Any], data: MergeDict, path: FieldPath, union_tag: str) -> Any:
     """Construct a union value using its class tag field.
 
     The candidates are every ``_is_struct`` variant, registered leaves included: a tag names a
@@ -989,7 +989,7 @@ def _construct_union_by_tag(non_none: list[Any], data: dict[str, Any], path: Fie
     raise TypeCoercionError(msg)
 
 
-def _try_construct_union_struct(dc_vars: list[Any], data: dict[str, Any], path: FieldPath, union_tag: str) -> Any:
+def _try_construct_union_struct(dc_vars: list[Any], data: MergeDict, path: FieldPath, union_tag: str) -> Any:
     """Try structural disambiguation then fallback for struct variants.
 
     Returns _UNION_NO_MATCH if no struct variant accepts the data.
@@ -1018,7 +1018,7 @@ def _try_fixed_seq_variants(fixed_vars: list[Any], data: Any, path: FieldPath, u
     else:
         try:
             data_len = (max(int(k) for k in data) + 1) if data else 0
-        except ValueError:
+        except (TypeError, ValueError):  # a key spelling no index, or a pending list op
             data_len = -1
     candidates = (
         [v for v in fixed_vars if len(_fixed_seq_types(_resolve_type(v)) or ()) == data_len] if data_len >= 0 else []
@@ -1109,7 +1109,7 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
     variant_names = " | ".join(
         "None" if v is types.NoneType else getattr(_resolve_type(v), "__name__", repr(v)) for v in all_args
     )
-    if isinstance(data, dict) and LIST_REPLACE_BASE_KEY in data:
+    if isinstance(data, dict) and ListOp.BASE in data:
         # A patch the merge deferred with its base ({__base__: base, **patch}) is a sequence
         # patch; every variant refused it above, so the first sequence variant tried has its
         # own refusal name the key it cannot place, where printing *data* would show the
@@ -1257,7 +1257,7 @@ def _value_matches_type(value: Any, tp: Any, union_tag: str) -> bool:
     return True
 
 
-def _ambiguous_union_msg(matches: list[Any], data: dict[str, Any], path: FieldPath, union_tag: str) -> str:
+def _ambiguous_union_msg(matches: list[Any], data: MergeDict, path: FieldPath, union_tag: str) -> str:
     """Build a diagnostic AmbiguousUnionError message with per-variant field breakdowns."""
     return _ambiguous_structs_msg(
         matches,
@@ -1269,18 +1269,18 @@ def _ambiguous_union_msg(matches: list[Any], data: dict[str, Any], path: FieldPa
     )
 
 
-def _structurally_matches(var: Any, keys: set[str]) -> bool:
+def _structurally_matches(var: Any, keys: set[str | ListOp]) -> bool:
     """Return True if var's fields cover keys and all required fields are present."""
     return _struct_required(var).issubset(keys) and keys.issubset(_struct_fields(var))
 
 
-def _type_compatible(var: Any, data: dict[str, Any], keys: set[str], union_tag: str) -> bool:
+def _type_compatible(var: Any, data: MergeDict, keys: set[str | ListOp], union_tag: str) -> bool:
     """Return True if data values are compatible with var's field types."""
     flds = _struct_fields(var)
-    return all(k not in flds or _value_matches_type(data[k], flds[k], union_tag) for k in keys)
+    return all(_value_matches_type(data[k], flds[k], union_tag) for k in keys if isinstance(k, str) and k in flds)
 
 
-def _disambiguate_struct(variants: list[Any], data: dict[str, Any], union_tag: str) -> list[Any]:
+def _disambiguate_struct(variants: list[Any], data: MergeDict, union_tag: str) -> list[Any]:
     """Filter struct union variants to those matching data structurally."""
     keys = set(data)
     if not any(_union_tag_shadowed(var, union_tag) for var in variants):
@@ -1322,7 +1322,7 @@ def _import_class_by_path(tag: str, path: FieldPath, union_tag: str) -> type:
     return obj
 
 
-def _construct_by_class_path(tp: type, data: dict[str, Any], path: FieldPath, union_tag: str) -> Any:
+def _construct_by_class_path(tp: type, data: MergeDict, path: FieldPath, union_tag: str) -> Any:
     """Import the class named by union_tag, validate it is a subclass of tp, and construct it."""
     tag = data[union_tag]
     cls = _import_class_by_path(tag, path, union_tag)
@@ -1335,7 +1335,7 @@ def _construct_by_class_path(tp: type, data: dict[str, Any], path: FieldPath, un
 
 def construct_named_class(  # noqa: PLR0913  # the class, its keys, and how the spec named it
     cls: type,
-    data: dict[str, Any],
+    data: MergeDict,
     *,
     path: FieldPath,
     union_tag: str,

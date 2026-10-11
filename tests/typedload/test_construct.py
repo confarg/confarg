@@ -15,7 +15,10 @@ from uuid import UUID
 import pytest
 
 import confarg
-from confarg._merge import LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, MERGE_OP_KEYS
+from confarg._merge import (
+    MERGE_OP_KEYS,
+    ListOp,
+)
 from confarg._types import _StrToken, _UnionSeqToken
 from confarg.exceptions import ConfargWarning, MissingFieldError, TypeCoercionError
 from confarg.typedload._construct import _construct_struct_dispatch, construct
@@ -645,7 +648,7 @@ class TestReplaceBaseIsAList:
     def test_base_that_is_no_list_is_refused(self, tp: Any, base: Any) -> None:
         """Neither an int nor a string is a base list, whatever ``list()`` makes of it."""
         with pytest.raises(TypeCoercionError, match=re.escape("at 'v': '__base__' must hold a list")):
-            construct(tp, {LIST_REPLACE_BASE_KEY: base, "0": 1}, path=("v",))
+            construct(tp, {ListOp.BASE: base, "0": 1}, path=("v",))
 
 
 class TestListOpOnADict:
@@ -654,7 +657,7 @@ class TestListOpOnADict:
     def test_list_op_below_a_dict_is_refused(self) -> None:
         """``{__delete__: [1]}`` beside a dict's keys names the op and the field."""
         with pytest.raises(TypeCoercionError, match=re.escape("Cannot apply '__delete__' to the dict at 'd'")):
-            construct(dict[str, list[int]], {"a": [1], LIST_DELETE_KEY: [1]}, path=("d",))
+            construct(dict[str, list[int]], {"a": [1], ListOp.DELETE: [1]}, path=("d",))
 
 
 @dataclass
@@ -699,7 +702,7 @@ class TestPlainSpellingOfAListOpOnASequence:
 
     def test_the_marker_spelling_still_carries_the_base(self) -> None:
         """The marker, not the plain string, is the op: it still replaces the default."""
-        assert confarg.build(_TupleWithDefault, {"u": {LIST_REPLACE_BASE_KEY: [7, 8]}}).u == (7, 8)
+        assert confarg.build(_TupleWithDefault, {"u": {ListOp.BASE: [7, 8]}}).u == (7, 8)
 
 
 @dataclass

@@ -150,6 +150,8 @@ like any other: `{"a.b": …}` and `{"a": {"b": …}}` are `("a.b",)` and `("a",
 that cannot collide. Joining to a dotted string and splitting it again made them one node, wrote
 a result back to the wrong key, and climbed one level too many from inside such a key (BUG-124).
 
+A segment is a key or an index, or a pending list op: an expression inside an item `merge()` has yet to append sits at `("servers", ListOp.APPEND, "0", "url")`, the op being the key the merged dict holds the item under ([deep merge](../pipeline/deep-merge.md#no-channel-types-an-op)). The walk takes it as any dict key, so a node anchor reads through it (`${.host}` beside `url` reads `host` in the same item), and `_spell_path`, the one spelling of a position in a message, writes it as a file does (`servers.__append__.0.url`). It is never a list index, and a path spells it as a constant subscript, which no source expression can write.
+
 The dotted form survives only in messages, `Field 'a.b' not found`, which a person reads and
 nothing parses back. Precedents keep paths structured for the same reason: jq's `path()`,
 `getpath` and `setpath` work on arrays of keys (`["a.b"]`), and JSON Pointer (RFC 6901)

@@ -21,7 +21,11 @@ from typing import Literal, Optional, Union
 import pytest
 
 import confarg
-from confarg._merge import LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, _deep_merge
+from confarg._merge import (
+    ListOp,
+    MergeDict,
+    _deep_merge,
+)
 from confarg._types import _is_frozenset, _is_set, _StrToken
 from confarg.dictexpr import resolve_expressions
 from confarg.exceptions import ConfargError, TypeCoercionError
@@ -149,11 +153,11 @@ class TestDeepMergeListPatchErrors:
     def test_non_integer_key_defers_to_build(self) -> None:
         """A name key over a list is type-ambiguous (list error vs. namedtuple field), so it defers (BUG-160).
 
-        The merge carries the base under LIST_REPLACE_BASE_KEY beside the patch, as it does
+        The merge carries the base under ListOp.BASE beside the patch, as it does
         for an index past the end; build() refuses the name for a list target.
         """
         result = _deep_merge({"items": [1, 2, 3]}, {"items": {"name": "bad"}})
-        assert result == {"items": {LIST_REPLACE_BASE_KEY: [1, 2, 3], "name": "bad"}}
+        assert result == {"items": {ListOp.BASE: [1, 2, 3], "name": "bad"}}
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(ConfargError, match="non-integer key 'name'"):
             construct(WithList, result)
@@ -161,7 +165,7 @@ class TestDeepMergeListPatchErrors:
     def test_non_integer_key_beside_an_op_still_raises(self) -> None:
         """A patch that also appends or deletes is a list operation, so its name key is refused at once."""
         with pytest.raises(ConfargError, match="non-integer key"):
-            _deep_merge({"items": [1, 2, 3]}, {"items": {LIST_APPEND_KEY: [4], "name": "bad"}})
+            _deep_merge({"items": [1, 2, 3]}, {"items": {ListOp.APPEND: [4], "name": "bad"}})
 
     def test_replacement_base_replaces_a_dict_base(self) -> None:
         """An override carrying its own ``__base__`` base replaces a dict below it, stale patches included.
@@ -169,15 +173,15 @@ class TestDeepMergeListPatchErrors:
         The ``__base__`` says "this list, then these patches"; deep-merging it into an earlier
         deferred patch kept the earlier index keys, so ``(8, 5)`` built where ``(8, 9)`` was due.
         """
-        base = {"t": {LIST_REPLACE_BASE_KEY: [1], "1": 5}}
-        override = {"t": {LIST_REPLACE_BASE_KEY: [7, 9], "0": 8}}
+        base: MergeDict = {"t": {ListOp.BASE: [1], "1": 5}}
+        override: MergeDict = {"t": {ListOp.BASE: [7, 9], "0": 8}}
         assert _deep_merge(base, override) == override
         assert _deep_merge({"t": {"x": 5}}, override) == override
 
     def test_integer_key_still_works(self) -> None:
         """Patching a list with integer keys still works correctly."""
-        base = {"items": [1, 2, 3]}
-        override = {"items": {"1": 99}}
+        base: MergeDict = {"items": [1, 2, 3]}
+        override: MergeDict = {"items": {"1": 99}}
         result = _deep_merge(base, override)
         assert result["items"] == [1, 99, 3]
 
@@ -185,11 +189,11 @@ class TestDeepMergeListPatchErrors:
         """An index beyond the base is type-ambiguous (list error vs. tuple fill), so it defers.
 
         The merge layer can't tell a list from a fixed tuple, so instead of raising it
-        carries the base forward under LIST_REPLACE_BASE_KEY; build() applies the type's
+        carries the base forward under ListOp.BASE; build() applies the type's
         own rule (list → error, fixed tuple → fill).
         """
         result = _deep_merge({"items": [1, 2, 3, 4]}, {"items": {"4": 99}})
-        assert result == {"items": {LIST_REPLACE_BASE_KEY: [1, 2, 3, 4], "4": 99}}
+        assert result == {"items": {ListOp.BASE: [1, 2, 3, 4], "4": 99}}
         # list target: build() raises the replacement-only error (relocated, not removed).
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(ConfargError, match="append syntax"):
@@ -200,7 +204,7 @@ class TestDeepMergeListPatchErrors:
 
     def test_negative_index_patches_from_end(self) -> None:
         """Negative indices count from the end of the list, like Python."""
-        base = {"items": [1, 2, 3]}
+        base: MergeDict = {"items": [1, 2, 3]}
         result = _deep_merge(base, {"items": {"-1": 99}})
         assert result["items"] == [1, 2, 99]
         result = _deep_merge(base, {"items": {"-3": 99}})
@@ -209,27 +213,27 @@ class TestDeepMergeListPatchErrors:
     def test_negative_index_oob_defers_to_build(self) -> None:
         """A negative index beyond the base defers too; build() raises for a list target."""
         result = _deep_merge({"items": [1, 2, 3]}, {"items": {"-4": 99}})
-        assert result == {"items": {LIST_REPLACE_BASE_KEY: [1, 2, 3], "-4": 99}}
+        assert result == {"items": {ListOp.BASE: [1, 2, 3], "-4": 99}}
         WithList = make_target("items", list[int], default_factory=list)
         with pytest.raises(ConfargError, match="-4"):
             construct(WithList, result)
 
     def test_negative_delete_index(self) -> None:
         """{__delete__: [-1]} deletes the last element."""
-        base = {"items": [1, 2, 3]}
-        result = _deep_merge(base, {"items": {LIST_DELETE_KEY: [-1]}})
+        base: MergeDict = {"items": [1, 2, 3]}
+        result = _deep_merge(base, {"items": {ListOp.DELETE: [-1]}})
         assert result["items"] == [1, 2]
 
     def test_negative_delete_oob_raises(self) -> None:
         """Deleting index -4 from a 3-element list raises ConfargError."""
-        base = {"items": [1, 2, 3]}
+        base: MergeDict = {"items": [1, 2, 3]}
         with pytest.raises(ConfargError, match="-4"):
-            _deep_merge(base, {"items": {LIST_DELETE_KEY: [-4]}})
+            _deep_merge(base, {"items": {ListOp.DELETE: [-4]}})
 
     def test_negative_minus_zero_key_raises(self) -> None:
         """Index -0 is numerically 0 but the string '-0' parses as 0, not negative."""
-        base = {"items": [1, 2, 3]}
-        override = {"items": {"-0": 99}}
+        base: MergeDict = {"items": [1, 2, 3]}
+        override: MergeDict = {"items": {"-0": 99}}
         # int("-0") == 0, so this is valid and replaces index 0
         result = _deep_merge(base, override)
         assert result["items"] == [99, 2, 3]
@@ -528,7 +532,7 @@ class TestFixedTupleEdgeCases:
 
     def test_base_carrying_dict_completes_tuple(self) -> None:
         """A deferred index patch carrying a shorter base fills the remaining declared slots."""
-        assert construct(tuple[int, int, int], {LIST_REPLACE_BASE_KEY: [1, 2], "2": _StrToken("3")}) == (1, 2, 3)
+        assert construct(tuple[int, int, int], {ListOp.BASE: [1, 2], "2": _StrToken("3")}) == (1, 2, 3)
 
     def test_base_carrying_dict_refines_a_nested_position(self) -> None:
         """A patch below a position refines what the base holds there, as a namedtuple's does (BUG-164).
@@ -536,15 +540,15 @@ class TestFixedTupleEdgeCases:
         The merge refines an in-range element through ``_merge_existing_value``; deferring
         the patch for an index past the end must not turn that refinement into a replacement.
         """
-        data = {LIST_REPLACE_BASE_KEY: [{"a": 1, "b": 2}], "0": {"a": 9}, "1": 5}
+        data = {ListOp.BASE: [{"a": 1, "b": 2}], "0": {"a": 9}, "1": 5}
         assert construct(tuple[dict[str, int], int], data) == ({"a": 9, "b": 2}, 5)
-        nested = {LIST_REPLACE_BASE_KEY: [[1, 2]], "0": {"0": 9}, "1": 5}
+        nested = {ListOp.BASE: [[1, 2]], "0": {"0": 9}, "1": 5}
         assert construct(tuple[tuple[int, int], int], nested) == ((9, 2), 5)
 
     def test_base_carrying_dict_longer_than_tuple_raises(self) -> None:
         """A carried base longer than the declared tuple length is an error."""
         with pytest.raises(TypeCoercionError, match="expected 3 elements"):
-            construct(tuple[int, int, int], {LIST_REPLACE_BASE_KEY: [1, 2, 3, 4]})
+            construct(tuple[int, int, int], {ListOp.BASE: [1, 2, 3, 4]})
 
 
 # ===========================================================================
@@ -1659,22 +1663,22 @@ class TestUnionTypeSwitchViaClassTag:
 
     def test_deep_merge_discards_base_when_override_has_union_tag(self) -> None:
         """Test that _deep_merge discards the base when the override has a union_tag."""
-        base = {"host": "prod", "port": 5432, "name": "mydb"}
-        override = {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "db.sqlite"}
+        base: MergeDict = {"host": "prod", "port": 5432, "name": "mydb"}
+        override: MergeDict = {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "db.sqlite"}
         result = _deep_merge(base, override, union_tag="class")
         assert result == override
 
     def test_deep_merge_normal_merge_when_no_union_tag(self) -> None:
         """Test that _deep_merge performs a normal merge when no union_tag is present."""
-        base = {"host": "prod", "port": 5432, "name": "mydb"}
-        override = {"port": 9999}
+        base: MergeDict = {"host": "prod", "port": 5432, "name": "mydb"}
+        override: MergeDict = {"port": 9999}
         result = _deep_merge(base, override, union_tag="class")
         assert result == {"host": "prod", "port": 9999, "name": "mydb"}
 
     def test_deep_merge_nested_discard(self) -> None:
         """Test that _deep_merge discards a nested base when a nested override has a union_tag."""
-        base = {"db": {"host": "prod", "port": 5432, "name": "mydb"}}
-        override = {"db": {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "x.sqlite"}}
+        base: MergeDict = {"db": {"host": "prod", "port": 5432, "name": "mydb"}}
+        override: MergeDict = {"db": {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "x.sqlite"}}
         result = _deep_merge(base, override, union_tag="class")
         assert result == {"db": {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "x.sqlite"}}
 
@@ -1716,8 +1720,8 @@ class TestUnionTypeSwitchViaClassTag:
         # Simulate: file provides ServerVariant fields, env provides nothing,
         # then a second override (e.g., from a higher-priority config) introduces
         # a class tag and SqliteVariant fields.
-        file_data = {"host": "prod", "port": 5432, "name": "mydb"}
-        override = {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "override.sqlite"}
+        file_data: MergeDict = {"host": "prod", "port": 5432, "name": "mydb"}
+        override: MergeDict = {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "override.sqlite"}
         merged = _deep_merge(file_data, override, union_tag="class")
         # The class tag in the override discards the ServerVariant fields entirely.
         assert merged == override

@@ -63,6 +63,8 @@ from tests.conftest import WithDefaults
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from confarg._merge import MergeDict
+
 
 class TestArgparseBranches:
     """Uncovered branches in the argparse integration layer."""
@@ -370,26 +372,26 @@ class TestBuildCallableSpecs:
 
     def test_collect_fn_paths_from_config_callable_fn(self) -> None:
         """_collect_fn_paths_from_config finds bind: entries for Callable fields."""
-        config = {"fn": {"bind": "my.module.fn"}}
+        config: MergeDict = {"fn": {"bind": "my.module.fn"}}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
         assert "fn" in result
         assert result["fn"] == ("my.module.fn", "bind", _PLAIN_DIRECTIVES)
 
     def test_collect_fn_paths_from_config_callable_class(self) -> None:
         """_collect_fn_paths_from_config finds class: entries for Callable fields."""
-        config = {"fn": {"class": "my.module.Cls"}}
+        config: MergeDict = {"fn": {"class": "my.module.Cls"}}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
         assert result.get("fn") == ("my.module.Cls", "class", _PLAIN_DIRECTIVES)
 
     def test_collect_fn_paths_from_config_callable_call(self) -> None:
         """_collect_fn_paths_from_config finds call: entries for Callable fields."""
-        config = {"fn": {"call": "my.module.factory"}}
+        config: MergeDict = {"fn": {"call": "my.module.factory"}}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
         assert result.get("fn") == ("my.module.factory", "call", _PLAIN_DIRECTIVES)
 
     def test_collect_fn_paths_from_config_callable_bare_string(self) -> None:
         """_collect_fn_paths_from_config handles bare string value for Callable field."""
-        config = {"fn": "my.module.fn"}
+        config: MergeDict = {"fn": "my.module.fn"}
         result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
         assert result.get("fn") == ("my.module.fn", "bind", _PLAIN_DIRECTIVES)
 
@@ -533,7 +535,7 @@ class TestCompletionGaps:
         class _WithOptionalSub:
             sub: _CovDCResult | None = None
 
-        config = {"sub": {"result_val": "hello"}}
+        config: MergeDict = {"sub": {"result_val": "hello"}}
         result = _tags_from_config(config, _WithOptionalSub, "", "class")
         # No union_tag in sub → tags is empty but shouldn't crash
         assert isinstance(result, dict)
