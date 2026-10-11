@@ -745,6 +745,30 @@ class _WithPrefixedHelp:
 
 
 @dataclass
+class _UndocumentedVariant:
+    xs: list[int] = field(default_factory=list)
+
+
+@dataclass
+class _DocumentedVariant:
+    """The documented variant."""
+
+    y: int = 0
+
+
+@dataclass
+class _WithGroups:
+    pet: _UndocumentedVariant | _DocumentedVariant = field(default_factory=_UndocumentedVariant)
+
+
+def test_a_group_has_no_description_python_wrote() -> None:
+    """A dataclass with no docstring heads its group with none, not with the signature Python wrote for it."""
+    text = make_parser(_WithGroups).format_help()
+    assert "The documented variant." in text
+    assert "_UndocumentedVariant(xs:" not in text
+
+
+@dataclass
 class _WithPercentDefault:
     fmt: str = "%d items"
 

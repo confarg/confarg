@@ -227,6 +227,26 @@ def _get_field_meta(raw_type: Any) -> FieldMeta | None:
     return None
 
 
+def _struct_doc(tp: type) -> str:
+    """Return the description of the group *tp*'s fields head: its docstring, ``""`` when its author wrote none.
+
+    A dataclass without a docstring gets one from Python, its name and signature
+    (``A(xs: list[int] = <factory>)``), which restates the flags the group lists.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/framework-specifics.md#help-text-is-format-neutral
+    """
+    own = tp.__dict__.get("__doc__")
+    if own is not None and dataclasses.is_dataclass(tp):
+        try:
+            generated = tp.__name__ + str(inspect.signature(tp)).replace(" -> None", "")
+        except Exception:  # noqa: BLE001  # dataclasses itself writes no signature when it cannot take one
+            generated = tp.__name__
+        if own == generated:
+            return ""
+    return inspect.getdoc(tp) or ""
+
+
 @_per_class_cache
 def _get_field_docstrings(dc_type: type) -> dict[str, str]:
     """Extract attribute docstrings (string literals after field defs) via AST.
