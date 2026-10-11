@@ -72,6 +72,7 @@ cfg = confarg.from_dict(Config, {"f": {"class": "__main__.FrozenScaler", "factor
 print(confarg.dump(cfg))
 # expected: {'f': {'class': '__main__.FrozenScaler', 'factor': 3}}
 # actual:   confarg.exceptions.ConfargError: Cannot serialize callable FrozenScaler(factor=3):
-#           no __module__/__qualname__ available. For class instances, ensure the instance was
-#           constructed via confarg (which stores the spec for round-trip serialization).
+#           no configuration spells it, since it has no dotted path and holds no 'class:' spec
+#           it was built from. Dump the merged configuration instead, which keeps the spec that
+#           produced it.
 ```

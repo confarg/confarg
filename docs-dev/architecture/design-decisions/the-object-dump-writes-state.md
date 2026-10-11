@@ -33,7 +33,7 @@ Rejected:
   `int`, a `tuple` or a frozen dataclass, as its value. The dump would then re-run the
   function on read-back. It would also have lost any change made to the value after
   `build()`, and an object a factory shares with other configurations would have carried the
-  spec of whichever configuration stamped it last.
+  spec of whichever configuration stamped it last. A Callable field's `call:` result was stamped this way from the initial version, until BUG-191 dropped the stamp: a factory that returns a module function shared it with every configuration naming that function.
 - **Dump the stamp only while it still describes the value**, by re-running the call at dump
   time or by comparing with a snapshot taken at build time. That fixes the stale spec, but the
   dump still holds a call whose result depends on the code that runs at reload.

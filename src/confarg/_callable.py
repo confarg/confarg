@@ -437,8 +437,14 @@ def _call_factory(target: Any, call_kwargs: dict, ctx: _SpecContext, opener: str
         raise TypeCoercionError(msg) from e
 
 
-def _resolve_call_spec(target: Any, call_kwargs: dict, original_spec: dict, ctx: _SpecContext, opener: str) -> Any:
-    """Resolve a 'call:' spec: call its target with call_kwargs, and use the return value as the callable."""
+def _resolve_call_spec(target: Any, call_kwargs: dict, ctx: _SpecContext, opener: str) -> Any:
+    """Resolve a 'call:' spec: call its target with call_kwargs, and use the return value as the callable.
+
+    The result keeps no trace of the spec: it dumps as what it is, never as the call.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state
+    """
     result = _call_factory(target, call_kwargs, ctx, opener)
     if not callable(result):
         msg = (
@@ -446,8 +452,6 @@ def _resolve_call_spec(target: Any, call_kwargs: dict, original_spec: dict, ctx:
             " which is not callable."
         )
         raise TypeCoercionError(msg)
-    with contextlib.suppress(AttributeError, TypeError):
-        result.__confarg_spec__ = original_spec
     return result
 
 
@@ -627,7 +631,7 @@ def _resolve_dict_spec(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
     opener = _single_opener(spec, d, ctx.where)
     kwargs = {k: v for k, v in spec.items() if k not in d.reserved}
     if opener == d.call:
-        return _resolve_call_spec(spec[d.call], kwargs, spec, ctx, d.call)
+        return _resolve_call_spec(spec[d.call], kwargs, ctx, d.call)
     if opener == d.bind:
         return _resolve_bind_spec(spec[d.bind], kwargs, tp, ctx, d.bind)
     if opener == d.classfn:
@@ -856,6 +860,7 @@ def _serialize_callable(value: Any) -> str | dict:
     Bare partial (a class used factory-like, no kwargs) → "module.qualname" string.
     Plain callable → "module.qualname" string, when that path reads back as it
     (:func:`_reads_back_from`); a closure, a lambda or a shadowed name is refused.
+    Instance holding no spec, such as one a ``call:`` factory built → refused.
     """
     spec = getattr(value, "__confarg_spec__", None)
     if spec is not None:
@@ -885,17 +890,11 @@ def _serialize_callable(value: Any) -> str | dict:
         path = dotted_name(value)
         if _reads_back_from(path, value):
             return path
-        msg = (
-            f"Cannot serialize callable {value!r}: no configuration spells it, since {path!r} does not"
-            " read back as this callable. A closure, a lambda, or a function its module no longer holds"
-            " under that name cannot be dumped; dump the merged configuration instead, which keeps the"
-            " spec that produced it."
+        reason = (
+            f"{path!r} does not read back as this callable, as for a closure, a lambda, or a function"
+            " its module no longer holds under that name"
         )
-        raise ConfargError(msg)
+        raise ConfargError.callable_not_spelled(value, reason)
 
-    msg = (
-        f"Cannot serialize callable {value!r}: no __module__/__qualname__ available."
-        " For class instances, ensure the instance was constructed via confarg"
-        " (which stores the spec for round-trip serialization)."
-    )
-    raise ConfargError(msg)
+    reason = "it has no dotted path and holds no 'class:' spec it was built from"
+    raise ConfargError.callable_not_spelled(value, reason)

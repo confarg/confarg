@@ -116,6 +116,21 @@ def _make_multiplier(factor: int) -> Callable[[int], int]:
     return _mul
 
 
+def _pick(name: str) -> Callable[[int], int]:
+    """Factory function: returns one of the module's functions, shared with any other configuration."""
+    return {"double": _double}[name]
+
+
+def _greeter(name: str) -> Callable[[], str]:
+    """Factory function: returns a partial of a module function, holding its argument."""
+    return functools.partial(_greet, name=name)
+
+
+def _multiplier(factor: int) -> Callable[[int], int]:
+    """Factory function: returns a callable instance it built itself, which no spec describes."""
+    return _Multiplier(factor)
+
+
 def _impostor(x: int) -> int:
     """A function whose qualified name is another function's, so its dotted path imports that one."""
     return x
@@ -1159,7 +1174,6 @@ class TestSerialization:
     @pytest.mark.parametrize(
         "argv",
         [
-            pytest.param(["--fn.call", f"{_MOD}._make_adder", "--fn.offset", "2"], id="call"),
             pytest.param(["--fn.class", f"{_MOD}._Multiplier", "--fn.factor", "2"], id="class"),
             pytest.param(["--fn.bind.class", f"{_MOD}._Multiplier", "--fn.bind.factor", "2"], id="nested"),
         ],
@@ -1172,6 +1186,43 @@ class TestSerialization:
             return [x for v in node.values() for x in leaves(v)] if isinstance(node, dict) else [node]
 
         assert {type(leaf) for leaf in leaves(dumped["fn"])} == {str}
+
+
+class TestDumpOfACallResult:
+    """A ``call:`` on a Callable field dumps as the callable it returned, never as the call (BUG-191)."""
+
+    def test_a_returned_function_dumps_as_its_path(self) -> None:
+        """A module function a factory returned dumps as its dotted path, which reads back without the call."""
+        cfg = confarg.build(WithCallable, {"fn": {"call": f"{_MOD}._pick", "name": "double"}})
+        assert confarg.dump(cfg)["fn"] == f"{_MOD}._double"
+
+    def test_a_shared_result_leaves_other_configurations_alone(self) -> None:
+        """A configuration that names the function a factory also returned dumps that name, not the call."""
+        confarg.build(WithCallable, {"fn": {"call": f"{_MOD}._pick", "name": "double"}})
+        cfg = confarg.build(WithCallable, {"fn": f"{_MOD}._double"})
+        assert confarg.dump(cfg)["fn"] == f"{_MOD}._double"
+
+    def test_a_returned_partial_dumps_as_bind(self) -> None:
+        """A partial a factory returned dumps as ``bind:``, its argument as the plain str the CLI spelled."""
+        cfg = confarg.load(WithBareCallable, argv=["--fn.call", f"{_MOD}._greeter", "--fn.name", "bob"], env={})
+        dumped = confarg.dump(cfg)["fn"]
+        assert dumped == {"bind": f"{_MOD}._greet", "name": "bob"}
+        assert type(dumped["name"]) is str
+
+    def test_a_returned_closure_cannot_be_dumped(self, tmp_path: pathlib.Path) -> None:
+        """A closure has no configuration spelling: the object refuses it, the merged dict keeps the call."""
+        raw = {"fn": {"call": f"{_MOD}._make_adder", "offset": 2}}
+        with pytest.raises(ConfargError, match=r"no configuration spells it"):
+            confarg.dump(confarg.build(WithCallable, raw))
+        out = tmp_path / "out.json"
+        confarg.dump_file(raw, out)
+        assert json.loads(out.read_text())["fn"] == raw["fn"]
+
+    def test_a_returned_instance_is_refused_towards_the_merged_dict(self) -> None:
+        """An instance the factory built has no spelling: the refusal points at the merged dict, as a closure's does."""
+        cfg = confarg.build(WithCallable, {"fn": {"call": f"{_MOD}._multiplier", "factor": 3}})
+        with pytest.raises(ConfargError, match=r"no configuration spells it.*Dump the merged configuration"):
+            confarg.dump(cfg)
 
 
 # ---------------------------------------------------------------------------

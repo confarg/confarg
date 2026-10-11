@@ -12,7 +12,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-191 — A `call:` result on a Callable field dumps as the call, not as what it produced](BUG-191-a-call-result-on-a-callable-field-dumps-as-the-call.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-227 — A delete beside an include never reaches the files below](BUG-227-a-delete-beside-an-include-never-reaches-the-files-below.md) | critical |  | S | medium | behavior | PR-5, PR-97 |
 | [BUG-229 — A method bound to an owner that holds state dumps as its bare path, losing the state](BUG-229-a-method-bound-to-an-owner-with-state-dumps-as-its-bare-path.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-190 — A typed `call:` spec merges with the lower layer's value instead of replacing it](BUG-190-a-typed-call-spec-merges-with-the-lower-layers-value.md) | critical |  | M | medium | behavior | FEAT-28 |

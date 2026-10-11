@@ -16,7 +16,7 @@ introduced_by: [PR-5]  # the initial version writes any bound method as module +
 [auto-binding](../../architecture/callables.md#auto-binding): bound to a new owner built with no
 arguments. That is the method again only when the owner was built that way. A method bound to an
 owner the user built in Python, or one whose attributes changed after `build()`, dumps the same
-path, and its state is lost silently. `_reads_back_from` checks the owner's class, not its state
+path, and its state is lost silently. A `call:` whose factory returns such a method, as the second case below does, is dumped the same way: since BUG-191 a `call:` result dumps as what it is, and a bound method never took the call's stamp anyway, since it refuses attributes. `_reads_back_from` checks the owner's class, not its state
 ([round-trip](../../architecture/callables.md#a-path-is-written-only-when-it-reads-back)).
 
 The `classfn:` owner is the stamped case of the same thing, and BUG-192 asks how a callable
@@ -45,12 +45,25 @@ class Counter:
         return x + self.start
 
 
+def counter(start: int) -> Callable[[int], int]:
+    return Counter(start).add
+
+
 @dataclass
 class Config:
     f: Callable[[int], int]
 
 
 cfg = Config(f=Counter(100).add)
+dumped = confarg.dump(cfg)
+print(dumped)
+# expected: a dump that reads back as Counter(100).add, or an error at dump()
+# actual:   {'f': '__main__.Counter.add'}
+print(confarg.from_dict(Config, dumped).f(1))
+# expected: 101
+# actual:   1
+
+cfg = confarg.from_dict(Config, {"f": {"call": "__main__.counter", "start": 100}})
 dumped = confarg.dump(cfg)
 print(dumped)
 # expected: a dump that reads back as Counter(100).add, or an error at dump()
