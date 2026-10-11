@@ -66,6 +66,10 @@ the boundary moves here.
   otherwise have to invent an element of an unknown type.
 - A list is extended with the `+` suffix on argv and in config files, but not from the
   environment: an append never got an env spelling, though a delete did (FEAT-18).
+- A construction error names a dict key that is no plain name ambiguously: the key `a.b`
+  reads as nesting (`d.a.b`) and the key `x[0]` as an index (`d.x[0]`). The path is held
+  exactly, as segments, so a missing field's remedy still names the right flag
+  ([types](types/construction.md#a-construction-path-is-a-sequence-of-segments)).
 
 ## CLI front-ends
 

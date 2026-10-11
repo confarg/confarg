@@ -126,14 +126,13 @@ the index as one more dotted segment. So `items[0].size` is reported missing wit
 argument (BUG-165). `MissingFieldError.__str__` is the one site that spells the remedy, so
 every missing field below a list, a fixed or variable tuple, or a nested sequence gets it right.
 
-The flag is spelled by rewriting each `[N]` of the path string, which is the one place the
-path's segments are not recoverable exactly: a dict key literally spelled `x[0]` is
-addressed as `--d.x[0].size` and gets the remedy `--d.x.0.size`. Carrying the path as a
-tuple of segments, as pydantic carries its `loc`, would be exact, at the cost of every site
-that threads a path through construction and of the public `construct(path=...)` keyword; the
-string rewrite was chosen over it (maintainer-chosen). The field name itself keeps the `[0]`
-spelling, so the message's two halves read the same path two ways rather than every
-construction error changing its spelling.
+The error holds the path as its segments
+([below](#a-construction-path-is-a-sequence-of-segments)), and the flag writes each one as a
+dotted CLI segment, so a dict key literally spelled `x[0]` keeps its spelling:
+`--d.x[0].size`, the flag that addresses it. The remedy used to be spelled by rewriting each
+`[N]` of the path string, which turned that key into `--d.x.0.size` (BUG-169). The field name
+itself keeps the `[0]` spelling, so the message's two halves read the same path two ways
+rather than every construction error changing its spelling.
 
 The flag also lives under the `cli_prefix`, which `build()` never sees: it turns a dict into
 an object and knows no command line. So the error carries the field's path and type, and
@@ -155,3 +154,29 @@ and every recursive `construct()` call would carry one more argument. Also rejec
 context variable that `load()` sets around `build()`, which is hidden global state. The cost
 of the chosen shape is that `build()` called directly, after `merge(cli_prefix=...)` or on a
 hand-built dict, still offers the unprefixed flag (maintainer-chosen).
+
+### A construction path is a sequence of segments
+
+Construction carries the position it builds as a tuple, one segment per step: a field or a
+dict key by name, a sequence element by its integer index (`("items", 0, "size")`), the way
+pydantic carries its `loc` and the expression engine its positions
+([expressions](../expressions/values-and-references.md#a-position-is-a-sequence-of-segments)).
+Text is spelled only for a message, by one function, `exceptions._spell_field_path`: each key
+after a dot, each index in brackets, the first key bare. Construction, the callable specs
+built below it and `dump()`'s diagnostics all name a path through it, and
+`MissingFieldError` holds the tuple itself, since its remedy spells the same segments as a
+flag. A call out to a helper that only words a message (`_coerce_leaf`, the merge's list
+operations, the `TypeCoercionError` factories) is handed the spelled text.
+
+A path string threaded through construction and appended to at each step could not tell a
+key holding `[0]` from an index (BUG-169), and gave a field below a dict or namedtuple target
+a leading dot (`'.x.size'`), since only the struct step special-cased the empty root path.
+The public `construct(path=...)` takes the tuple too, `()` for the target itself: a string
+would have to be split back into segments, which is the loss the tuple removes
+(maintainer-chosen). A dict key enters the path as `str(k)`, so an integer segment is always
+a sequence index.
+
+The message spelling stays lossy where a key is not a plain name: the key `a.b` reads as
+nesting (`d.a.b`) and the key `x[0]` as an index (`d.x[0]`). Spelling such a key as the
+expression engine does (`d['x[0]']`) was rejected to keep every message's spelling unchanged
+(maintainer-chosen); the segments, and so the remedy's flag, are exact either way.

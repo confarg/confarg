@@ -6577,6 +6577,21 @@ class TestMissingFieldRemedyContract:
         assert remedy.group(1) == flag
         loader.load(target, argv=[*argv, flag, "1"], env={})
 
+    def test_remedy_flag_keeps_a_dict_key_spelled_like_an_index(
+        self,
+        loader: ConfargLoader,
+        request: pytest.FixtureRequest,
+    ) -> None:
+        """A dict key spelled ``x[0]`` is one segment of the flag, never an index (BUG-169)."""
+        if loader.id == "cyclopts":
+            request.applymarker(
+                pytest.mark.xfail(raises=ValueError, strict=True, reason="BUG-173: cyclopts cannot register the key"),
+            )
+        with pytest.raises(MissingFieldError, match=re.escape("Set it via CLI (--d.x[0].size)")):
+            loader.load(_RemedyDict, argv=["--d.x[0].name", "a"], env={})
+        cfg = loader.load(_RemedyDict, argv=["--d.x[0].name", "a", "--d.x[0].size", "1"], env={})
+        assert cfg.d == {"x[0]": _RemedyItem("a", 1)}
+
     def test_short_whole_value_namedtuple_names_the_missing_field(
         self,
         whole_value_arity_loader: ConfargLoader,

@@ -152,7 +152,7 @@ def build[T](
     if not is_dataclass:
         raw = resolved.get(_defaults.ROOT_KEY, _MISSING)
         if raw is _MISSING:
-            raise MissingFieldError(path="", field_type=target_r)
+            raise MissingFieldError(path=(), field_type=target_r)
         return _tc(target_r, raw, union_tag=union_tag)
     return _tc(target_r, resolved, union_tag=union_tag)
 
@@ -307,7 +307,7 @@ def dump(
         msg = f"Expected a dataclass instance, got {tp_name}"
         raise TypeError(msg)
     tp = type(value)
-    return _serialize(tp, value, "", union_tag, tag_policy)
+    return _serialize(tp, value, (), union_tag, tag_policy)
 
 
 def dump_file(

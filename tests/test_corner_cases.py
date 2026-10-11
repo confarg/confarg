@@ -125,17 +125,17 @@ class TestNonIntegerDictKeysForCollections:
     def test_set_with_non_integer_keys(self) -> None:
         """Set from dict with non-integer keys raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="integer indices"):
-            construct(set[str], {"name": "oops"}, path="tags")
+            construct(set[str], {"name": "oops"}, path=("tags",))
 
     def test_tuple_with_non_integer_keys(self) -> None:
         """Tuple from dict with non-integer keys raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="integer indices"):
-            construct(tuple[int, str], {"name": "oops"}, path="pair")
+            construct(tuple[int, str], {"name": "oops"}, path=("pair",))
 
     def test_list_with_mixed_keys(self) -> None:
         """List from dict with mix of integer and non-integer keys raises."""
         with pytest.raises(TypeCoercionError, match="integer indices"):
-            construct(list[int], {"0": 1, "name": "oops"}, path="items")
+            construct(list[int], {"0": 1, "name": "oops"}, path=("items",))
 
 
 # ===========================================================================
@@ -570,7 +570,7 @@ class TestDictEdgeCases:
     def test_dict_from_non_dict_data(self) -> None:
         """Dict field with non-dict data raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="expected dict"):
-            construct(dict[str, int], "not_a_dict", path="field")
+            construct(dict[str, int], "not_a_dict", path=("field",))
 
     def test_dict_nested_dataclass_values(self, tmp_toml) -> None:
         """Dict with dataclass values from config file."""
@@ -1487,16 +1487,17 @@ class TestSilentFailureFixes:
     def test_wrong_type_raises(self, tp, bad_value, match) -> None:
         """Test that constructing with a wrong type raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match=match):
-            construct(tp, bad_value, path="field")
+            construct(tp, bad_value, path=("field",))
 
     @pytest.mark.parametrize(
         ("tp", "bad_value", "path", "match"),
         [
-            (list[str], "wrong", "tags", r"'tags'"),
-            (dict[str, str], 99, "cfg", r"'cfg'"),
-            (DbConfig, "wrong", "db", r"DbConfig.*'db'"),
+            (list[str], "wrong", ("tags",), r"'tags'"),
+            (dict[str, str], 99, ("cfg",), r"'cfg'"),
+            (DbConfig, "wrong", ("db",), r"DbConfig.*'db'"),
+            (list[str], "wrong", ("cfg", "x[0]", 1, "tags"), r"'cfg\.x\[0\]\[1\]\.tags'"),
         ],
-        ids=["list-path", "dict-path", "dc-path"],
+        ids=["list-path", "dict-path", "dc-path", "nested-path"],
     )
     def test_error_contains_path(self, tp, bad_value, path, match) -> None:
         """Test that TypeCoercionError message contains the field path."""

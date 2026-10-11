@@ -27,7 +27,7 @@ from confarg._types import (
     _resolve_type,
     _src_type,
 )
-from confarg.exceptions import ConfargError, TypeCoercionError
+from confarg.exceptions import ConfargError, FieldPath, TypeCoercionError, _spell_field_path
 
 
 @dataclass(frozen=True)
@@ -35,18 +35,23 @@ class _SpecContext:
     """Where a callable spec sits, and how the arguments it names are built.
 
     Attributes:
-        path: The spec's dotted path, which messages name and its arguments are built below.
+        path: The spec's construction path, which messages name and its arguments are built below.
         union_tag: The union tag the arguments are built with.
         construct_fn: The typed construction the arguments go through.
     """
 
-    path: str
+    path: FieldPath
     union_tag: str
     construct_fn: Any
 
+    @property
+    def where(self) -> str:
+        """Return the spec's path as messages spell it."""
+        return _spell_field_path(self.path)
+
     def at(self, key: str) -> _SpecContext:
         """Return this context one *key* deeper."""
-        return replace(self, path=f"{self.path}.{key}")
+        return replace(self, path=(*self.path, key))
 
     def construct(self, tp: Any, value: Any) -> Any:
         """Build *value* as *tp* at this context's path."""
@@ -134,7 +139,7 @@ def _format_fn_dict_example(fn_path: str, cls: type) -> str:
     return "\n".join(lines)
 
 
-def _resolve_callable_spec(spec: Any, tp: Any, path: str, union_tag: str, construct_fn: Any) -> Any:
+def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, union_tag: str, construct_fn: Any) -> Any:
     """Resolve a Callable value from a raw spec (string or dict).
 
     Bare string:
@@ -168,19 +173,20 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: str, union_tag: str, constr
         __call__). Do not mix forms within one spec: the opener alone selects the mode,
         so a stray '_bind' under a plain opener is treated as data.
     """
+    where = _spell_field_path(path)
     if isinstance(spec, str):
-        result = _resolve_bare_string(str(spec), path, tp)
+        result = _resolve_bare_string(str(spec), where, tp)
     elif isinstance(spec, dict):
         result = _resolve_dict_spec(spec, _SpecContext(path, union_tag, construct_fn))
     elif callable(spec):
         result = spec
     else:
-        msg = f"Cannot construct Callable at '{path}': expected str or dict, got {type(spec).__name__} {spec!r}"
+        msg = f"Cannot construct Callable at '{where}': expected str or dict, got {type(spec).__name__} {spec!r}"
         raise TypeCoercionError(msg)
     if not callable(result):
-        msg = f"Callable at '{path}': {spec!r} resolved to {result!r}, which is not callable."
+        msg = f"Callable at '{where}': {spec!r} resolved to {result!r}, which is not callable."
         raise TypeCoercionError(msg)
-    _check_callable_signature(result, tp, path)
+    _check_callable_signature(result, tp, where)
     return result
 
 
@@ -297,7 +303,7 @@ def _coerce_kwargs(  # noqa: PLR0913  # kind and subject only word the refusal
         invalid = sorted(set(kwargs) - valid)
         if invalid:
             msg = (
-                f"Unknown {kind} {invalid} for {subject} at '{ctx.path}'."
+                f"Unknown {kind} {invalid} for {subject} at '{ctx.where}'."
                 f" Valid parameters: {sorted(valid)}.{_mixed_form_hint(invalid)}"
             )
             raise TypeCoercionError(msg)
@@ -325,11 +331,11 @@ def _resolve_call_spec(fn_path: str, call_kwargs: dict, original_spec: dict, ctx
     try:
         result = func(**coerced)
     except Exception as e:
-        msg = f"Failed to call {fn_path!r} at '{ctx.path}': {e}"
+        msg = f"Failed to call {fn_path!r} at '{ctx.where}': {e}"
         raise TypeCoercionError(msg) from e
     if not callable(result):
         msg = (
-            f"'call:' at '{ctx.path}': {fn_path!r}(**{call_kwargs!r}) returned {type(result).__name__!r},"
+            f"'call:' at '{ctx.where}': {fn_path!r}(**{call_kwargs!r}) returned {type(result).__name__!r},"
             " which is not callable."
         )
         raise TypeCoercionError(msg)
@@ -501,14 +507,14 @@ def _resolve_dict_spec(spec: dict, ctx: _SpecContext) -> Any:
     has_call = d.call in spec
     exclusive = [k for k in d.openers if k in spec]
     if len(exclusive) > 1:
-        msg = f"Callable dict at '{ctx.path}' must not specify more than one of {list(d.openers)} (got: {exclusive})"
+        msg = f"Callable dict at '{ctx.where}' must not specify more than one of {list(d.openers)} (got: {exclusive})"
         raise TypeCoercionError(msg)
     if not has_fn and not has_class and not has_call:
-        msg = f"Callable dict at '{ctx.path}' must specify one of 'fn', 'class', or 'call' (or their _-prefixed forms)"
+        msg = f"Callable dict at '{ctx.where}' must specify one of 'fn', 'class', or 'call' (or their _-prefixed forms)"
         raise TypeCoercionError(msg)
     bind_raw = spec.get(d.bind, {})
     if not isinstance(bind_raw, dict):
-        msg = f"{d.bind!r} in Callable dict at '{ctx.path}' must be a dict, got {_src_type(bind_raw)}"
+        msg = f"{d.bind!r} in Callable dict at '{ctx.where}' must be a dict, got {_src_type(bind_raw)}"
         raise TypeCoercionError(msg)
     init_kwargs = {k: v for k, v in spec.items() if k not in d.reserved}
 
@@ -569,7 +575,7 @@ def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, ctx: _SpecCont
         # The hint replaces the generic advice rather than following it: when the kwarg is
         # a directive in the other form, "use bind" without saying why is the confusing half.
         msg = (
-            f"Constructor kwargs {sorted(init_kwargs)} are not valid for '__init__' at '{ctx.path}':"
+            f"Constructor kwargs {sorted(init_kwargs)} are not valid for '__init__' at '{ctx.where}':"
             " '__init__' is treated as a plain function."
             + (_mixed_form_hint(init_kwargs) or " Use 'bind:' to partially apply arguments.")
         )
@@ -578,7 +584,7 @@ def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, ctx: _SpecCont
         cls = _detect_owning_class(func)
         if cls is None:
             msg = (
-                f"Constructor kwargs {sorted(init_kwargs)} provided for {fn_path!r} at '{ctx.path}',"
+                f"Constructor kwargs {sorted(init_kwargs)} provided for {fn_path!r} at '{ctx.where}',"
                 " but it does not appear to be an instance method."
                 + (
                     _mixed_form_hint(init_kwargs)
@@ -586,11 +592,11 @@ def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, ctx: _SpecCont
                 )
             )
             raise TypeCoercionError(msg)
-        _reject_mixed_form_kwargs(cls, init_kwargs, ctx.path)
+        _reject_mixed_form_kwargs(cls, init_kwargs, ctx.where)
         instance = ctx.construct(cls, init_kwargs)
         result: Any = getattr(instance, func.__name__)
     else:
-        result = _maybe_bind_method(func, ctx.path)
+        result = _maybe_bind_method(func, ctx.where)
     if bind:
         bind = _resolve_bind_kwargs(result, bind, ctx)
         result = functools.partial(result, **bind)
@@ -618,14 +624,14 @@ def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
     """
     cls = _import_dotted(spec.cls_path)
     if not isinstance(cls, type):
-        msg = f"'class' key at '{ctx.path}' must reference a class, got {type(cls).__name__} {spec.cls_path!r}"
+        msg = f"'class' key at '{ctx.where}' must reference a class, got {type(cls).__name__} {spec.cls_path!r}"
         raise TypeCoercionError(msg)
 
-    _reject_mixed_form_kwargs(cls, spec.init_kwargs, ctx.path)
+    _reject_mixed_form_kwargs(cls, spec.init_kwargs, ctx.where)
     instance = ctx.construct(cls, spec.init_kwargs)
     if not callable(instance):
         msg = (
-            f"Instance of {spec.cls_path!r} at '{ctx.path}' is not callable: the class must define"
+            f"Instance of {spec.cls_path!r} at '{ctx.where}' is not callable: the class must define"
             f" __call__ to be used as a Callable via 'class:'. To use {spec.cls_path} as a"
             f" factory (calling it constructs an instance), give its bare name"
             f" '{spec.cls_path}', or 'fn: {spec.cls_path}' with 'bind:' for constructor args."

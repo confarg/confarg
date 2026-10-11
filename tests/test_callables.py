@@ -607,17 +607,20 @@ class TestBindParamChecking:
 
     def test_valid_bind_passes(self) -> None:
         """Valid bind parameters pass without error."""
-        assert _resolve_bind_kwargs(_add, {"x": 1, "y": 2}, _SpecContext("f", "class", construct)) == {"x": 1, "y": 2}
+        assert _resolve_bind_kwargs(_add, {"x": 1, "y": 2}, _SpecContext(("f",), "class", construct)) == {
+            "x": 1,
+            "y": 2,
+        }
 
     def test_unknown_key_raises(self) -> None:
         """An unknown bind key raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="Unknown bind parameter"):
-            _resolve_bind_kwargs(_add, {"x": 1, "z": 99}, _SpecContext("f", "class", construct))
+            _resolve_bind_kwargs(_add, {"x": 1, "z": 99}, _SpecContext(("f",), "class", construct))
 
     def test_error_names_invalid_and_valid(self) -> None:
         """The error message names both invalid and valid keys."""
         with pytest.raises(TypeCoercionError, match="'z'") as exc_info:
-            _resolve_bind_kwargs(_add, {"z": 1}, _SpecContext("myfield", "class", construct))
+            _resolve_bind_kwargs(_add, {"z": 1}, _SpecContext(("myfield",), "class", construct))
         assert "x" in str(exc_info.value)
         assert "y" in str(exc_info.value)
 
@@ -627,11 +630,11 @@ class TestBindParamChecking:
         def handler(self: int, event: int) -> int:
             return self + event
 
-        assert _resolve_bind_kwargs(handler, {"self": 1}, _SpecContext("f", "class", construct)) == {"self": 1}
+        assert _resolve_bind_kwargs(handler, {"self": 1}, _SpecContext(("f",), "class", construct)) == {"self": 1}
 
     def test_var_keyword_fn_skips_validation(self) -> None:
         """Test that **kwargs functions skip bind key validation."""
-        _resolve_bind_kwargs(_kwargs_fn, {"anything": 1, "goes": 2}, _SpecContext("f", "class", construct))
+        _resolve_bind_kwargs(_kwargs_fn, {"anything": 1, "goes": 2}, _SpecContext(("f",), "class", construct))
 
     def test_uninspectable_skips_validation(self) -> None:
         """Uninspectable builtins skip bind key validation."""
@@ -641,7 +644,7 @@ class TestBindParamChecking:
             pytest.skip("len is inspectable on this platform")
         except (ValueError, TypeError):
             pass
-        assert _resolve_bind_kwargs(len, {"unknown": 1}, _SpecContext("f", "class", construct)) == {"unknown": 1}
+        assert _resolve_bind_kwargs(len, {"unknown": 1}, _SpecContext(("f",), "class", construct)) == {"unknown": 1}
 
     def test_fn_bind_unknown_key_raises_via_load(self, tmp_json: Any) -> None:
         """Unknown bind key in fn: dict raises via confarg.load."""

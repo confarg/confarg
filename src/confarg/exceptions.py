@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
@@ -21,7 +20,25 @@ def _locals_file_flag(config_flag: str, locals_key: str) -> str | None:
     return f"--{config_flag}.{locals_key} FILE" if config_flag else None
 
 
-_PATH_INDEX = re.compile(r"\[(\d+)\]")
+FieldPath = tuple[str | int, ...]
+"""A position below the target, one segment per step: a field or dict key by name, a sequence element by index."""
+
+
+def _spell_field_path(path: FieldPath) -> str:
+    """Spell *path* as a message names a field: each key after a dot, each index in brackets.
+
+    ``("items", 0, "size")`` is ``items[0].size``; ``()``, the target itself, is ``""``.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-construction-path-is-a-sequence-of-segments
+    """
+    spelled = ""
+    for segment in path:
+        if isinstance(segment, int):
+            spelled += f"[{segment}]"
+        else:
+            spelled += f".{segment}" if spelled else segment
+    return spelled
 
 
 def _append_none_remedy(message: str) -> str:
@@ -117,8 +134,8 @@ class MissingFieldError(ConfargError):
         docs-dev/architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it
     """
 
-    def __init__(self, path: str, field_type: Any) -> None:
-        """Record the field of type *field_type* at construction path *path*; ``""`` is the target itself."""
+    def __init__(self, path: FieldPath, field_type: Any) -> None:
+        """Record the field of type *field_type* at construction path *path*; ``()`` is the target itself."""
         super().__init__(path, field_type)
         self._path = path
         self._field_type = field_type
@@ -128,18 +145,20 @@ class MissingFieldError(ConfargError):
     def __str__(self) -> str:
         """Return the message, its remedy naming the flag the CLI accepts under ``_cli_prefix``.
 
-        A field's flag spells each ``[i]`` of its path as the CLI segment ``.i``:
-        ``items[0].size`` names ``--items.0.size``. The target itself is set by the bare
-        ``--<prefix>``, or, with no prefix, by the root ``json`` cast alone.
+        The field is named as every construction message names it (``items[0].size``); its
+        flag writes each segment of the path as one dotted CLI segment, an index included, so
+        it names ``--items.0.size``, and a dict key spelled ``x[0]`` stays ``--d.x[0].size``.
+        The target itself is set by the bare ``--<prefix>``, or, with no prefix, by the root
+        ``json`` cast alone.
         """
         # Imported here: confarg._cast imports this module.
         from confarg._cast import JSON_CAST_NAME  # noqa: PLC0415
 
         if self._path:
-            flag = _PATH_INDEX.sub(r".\1", self._path).removeprefix(".")
+            flag = ".".join(str(segment) for segment in self._path)
             flag = f"{self._cli_prefix}.{flag}" if self._cli_prefix else flag
             message = (
-                f"Missing required field '{self._path}' of type {self._field_type!r}. "
+                f"Missing required field '{_spell_field_path(self._path)}' of type {self._field_type!r}. "
                 f"Set it via CLI (--{flag}), environment variable, or config file."
             )
         else:
