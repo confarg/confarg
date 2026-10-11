@@ -5462,6 +5462,7 @@ class _WalkUnions:
     opt: _WalkInner | None = None
     m: dict[str, int] | _WalkInner = dataclasses_field(default_factory=dict)
     deep: dict[str, dict[str, Any]] | _WalkInner = dataclasses_field(default_factory=dict)
+    od: dict[str, Any] | None = None
 
 
 @dataclass
@@ -5500,6 +5501,19 @@ class TestUnionPathWalkContract:
         """``deep.a`` lands on a dict in the one branch that accepts it, so what is below is a key."""
         cfg = loader.load(_WalkUnions, argv=["--deep.a.b.c", "1"], env={})
         assert cfg.deep == {"a": {"b": {"c": "1"}}}
+
+    @pytest.mark.parametrize("path", ["od.a.b", "m.k.j"])
+    def test_a_path_below_a_union_typed_dict_is_a_key(self, loader: ConfargLoader, path: str) -> None:
+        """The field itself is the union, so only its dict variant stands above the path (BUG-158).
+
+        ``od`` is ``dict[str, Any] | None`` and ``m`` is ``dict[str, int] | _WalkInner``: what is
+        below either is a key, as it is below a plain dict field and in the environment.
+        """
+        env_key = "MYAPP_" + "__".join(path.upper().split("."))
+        cli = loader.merge(_WalkUnions, argv=[f"--{path}", "1"], env={})
+        env = loader.merge(_WalkUnions, argv=[], env={env_key: "1"}, env_prefix="MYAPP_")
+        first, second, third = path.split(".")
+        assert cli == env == {first: {second: {third: "1"}}}
 
     def test_keys_below_an_optional_callable(self, loader: ConfargLoader) -> None:
         """A kwarg no signature names, and a bind subkey, are keys inside the spec of ``Callable | None``."""

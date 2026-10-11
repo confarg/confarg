@@ -51,10 +51,14 @@ lines:
   per branch, which is why the walk yields branches rather than a flat stream of nodes: a
   stream loses which branch a node belongs to, and with it the stop that leaves the sibling
   branches walking.
-- `_is_dict_at_path` reads the *reached* type, not the node: a prefix lands where
-  `_resolve_field_type` of that prefix would, on the fold of what the branches reach there
-  (`_common_type`), so a prefix the branches disagree on lands on `str`. Folding the stones of
-  one walk replaces the walk per prefix it used to run.
+- `_is_dict_at_path`: does any branch stand on a dict before the path ends. It reads the node,
+  not the reached type: a field typed `dict[str, Any] | None` or `dict[str, Any] | Inner`
+  reaches the union, which is no dict, and a prefix the branches disagree on folds to `str`
+  (`_common_type`), so reading what `_resolve_field_type` of the prefix answers refused every
+  key below a union-typed dict field — on the CLI only, for the environment checks a path's
+  first segment alone and never asked (BUG-158). "Any branch", as every other question here asks:
+  a path one variant accepts is accepted, and which variant the value is built as is
+  construction's call.
 
 Before, each question was its own copy of the loop, restating the union recursion and the
 bail-out around a one-line test, and two of them stopped where the others went on: neither
