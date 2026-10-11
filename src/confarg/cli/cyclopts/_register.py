@@ -79,7 +79,7 @@ def _pyname(name: str) -> str:
     return out
 
 
-def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901  # one branch per nargs shape (flag / choices / multi / scalar), the hidden flag adding one
+def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901, PLR0912  # one branch per nargs shape (flag / choices / multi / one token), plus the hidden flag
     """Convert one FlagSpec to a keyword-only inspect.Parameter."""
     py_name = _pyname(spec.name)
 
@@ -142,6 +142,11 @@ def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901  
         param_kwargs["consume_multiple"] = True
     elif isinstance(spec.nargs, int):
         param_kwargs["n_tokens"] = spec.nargs
+    else:
+        # A one-token flag repeated is the last occurrence's write, which vanilla's loop
+        # reads off argv, so cyclopts may keep only the last occurrence too
+        # (docs-dev/architecture/cli-adapters/framework-specifics.md#cyclopts-repeated-one-token-flags).
+        param_kwargs["allow_repeating"] = True
     if spec.group:
         param_kwargs["group"] = Group(
             name=spec.group,

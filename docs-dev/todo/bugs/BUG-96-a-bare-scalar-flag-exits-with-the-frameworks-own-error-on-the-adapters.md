@@ -4,11 +4,12 @@ where:
   - src/confarg/cli/cyclopts/_context.py
   - src/confarg/cli/argparse/
   - src/confarg/cli/_clicklike/
+  - src/confarg/cli/_build.py::_collect_patch_argv_specs  # the subkey or element spec, scalar since BUG-179
 effort: M
 risk: low
 impact: behavior
 severity: minor
-introduced_by: [PR-5, PR-13, PR-26]  # the argparse, click and cyclopts adapters; typer shares click's seam
+introduced_by: [PR-5, PR-13, PR-26, BUG-179]  # the argparse, click and cyclopts adapters, typer on click's seam; BUG-179 for element flags
 ---
 # BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters
 
@@ -24,8 +25,12 @@ flags that stand bare
 ([cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare](../../architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)),
 and nothing covers the scalar spelling at all.
 
+A subkey or element flag over a one-token type (`--d.a` on a `dict[str, int]`, `--xs.0` on a
+`list[int]`) is the same scalar spec since BUG-179's fix, which registers it with the one-token
+arity a field flag of that type has, and its bare occurrence meets the same framework refusal.
+
 Fix direction: the pre-parse refusal BUG-74 built extends naturally — `FlagSpec.refuses_bare`
-on the scalar specs (every leaf spec whose `nargs` is `None`), answered by
+on the scalar specs (every leaf, subkey and element spec whose `nargs` is `None`), answered by
 `cli._argv.refuse_bare_occurrences` on cyclopts; argparse needs the scan before
 `parse_args` too (its own parser exits first), and the clicklike parsers refuse before any
 confarg code runs, so they need the same scan on the command hook. Setting the marker on
@@ -38,6 +43,9 @@ PR-13, cyclopts in PR-26, and typer on click's seam (BUG-7). Each registered a s
 framework's one-value arity and let the framework refuse a bare occurrence before any confarg code
 runs. BUG-58's and BUG-74's fixes gave the fixed-arity flags confarg's refusal without extending it
 to the scalar spelling.
+BUG-179's fix extended the gap to the subkey and element flags of a one-token type, which
+had answered a bare occurrence with confarg's refusal on argparse and cyclopts while they were
+registered `nargs="*"`.
 
 ```python
 from dataclasses import dataclass

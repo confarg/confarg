@@ -29,7 +29,7 @@ Origin: latent since PR-72, a bug fix that first registered dict-subkey flags on
 Before it no adapter accepted `--d.<key>` at all; PR-72 closed that gap and missed this spelling on
 cyclopts (bisected: cyclopts refuses `--d.*` before PR-72, crashes on it from PR-72). The crash was
 the invalid parameter name `d__*` (BUG-173), and BUG-173's fix uncovered cyclopts' own star syntax
-beneath it. BUG-179 shares this origin.
+beneath it. BUG-198 shares this origin.
 
 ```python
 from dataclasses import dataclass, field

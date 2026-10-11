@@ -13,6 +13,16 @@ Registration asks `_parse_cli._registered_when_typed`: a collection patch
 (`_is_collection_patch_path`, so `--input.1.str yes`, a cast on an element, is a patch), or a
 union tag the walk reaches by its fallback ([a tag is a replayed write](#a-tag-is-a-replayed-write)).
 
+A subkey or element flag registers the arity of the type it addresses, as a field flag of that
+type does: greedy (`nargs="*"`) exactly where `_build._binds_a_run` holds, one token elsewhere.
+That predicate is what the loop asks to tell a stray from a host positional, so the two answer
+together: `--d.a 2 1` on a `dict[str, int]` leaves `1` to the host's parser, which refuses it, as
+vanilla does. PR-72 registered every such flag `nargs="*"`, so argparse and cyclopts bound the `1`
+to the flag while the loop, told the host binds no run to an `int`, skipped it as the host's own,
+and the token was dropped in silence (BUG-179). Registered one token, a cyclopts parameter needs
+its repeat allowed
+([cyclopts repeated one-token flags](framework-specifics.md#cyclopts-repeated-one-token-flags)).
+
 History: patches, dict subkeys, bind-on-`__call__` and expressions over CLI numbers were
 vanilla-only until PR #72.
 
@@ -23,7 +33,8 @@ token at all, whose occurrence a framework cannot be handed as typed —
 A value-less delete also repeats — a delete spelled twice is the same delete, and the
 whole-field one is idempotent anyway. Every front-end but cyclopts takes the repeat in
 stride; a value-less cyclopts parameter refuses the second occurrence with a usage error,
-where its plain flags repeat (`consume_multiple`) and its appends accumulate. Since a delete's
+as a one-token one does ([cyclopts repeated one-token flags](framework-specifics.md#cyclopts-repeated-one-token-flags)),
+where its appends accumulate (`consume_multiple`). Since a delete's
 value is read off argv, never off the parse result, the registration itself tells cyclopts to
 allow the repeat (`allow_repeating=True`) and cyclopts keeps only the last occurrence —
 indistinguishable from the first for a flag with no value (BUG-78).
