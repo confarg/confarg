@@ -1499,14 +1499,18 @@ class _TagHolder:
 
 
 class TestClassTagNamesASubclass:
-    """A ``class:`` key on a typed field names a subclass of the annotation, and says how to build anything else."""
+    """A ``class:`` key on a typed field names a subclass of the annotation; anything else is refused."""
 
     def test_subclass_named_by_class_is_built(self):
         """A subclass of the annotation is built from the sibling keys."""
         cfg = confarg.build(_TagHolder, {"base": {"class": f"{__name__}._TagSub", "b": 5}})
         assert cfg.base == _TagSub(a=1, b=5)
 
-    def test_unrelated_class_is_refused_and_points_to_call(self):
-        """An unrelated class is refused, and the message names the call: spec that builds it."""
-        with pytest.raises(TypeCoercionError, match=r"is not a subclass of .*_TagBase.*'call:'"):
+    def test_unrelated_class_refusal_disclaims_the_call_spec(self):
+        """An unrelated class is refused, and the message disclaims call: rather than promising a build (BUG-196)."""
+        with pytest.raises(
+            TypeCoercionError,
+            match=r"is not a subclass of .*_TagBase\. A 'call:' spec computes a value the field's type accepts",
+        ) as info:
             confarg.build(_TagHolder, {"base": {"class": f"{__name__}._TagUnrelated", "z": 9}})
+        assert "with a factory" not in str(info.value)

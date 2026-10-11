@@ -316,15 +316,15 @@ class TypeCoercionError(ConfargError):
         """Return the error for a class tag on a typed field that names no subclass of the field's type.
 
         *call* is the spelling of the ``call`` directive in the spec's mode, passed in because this
-        module imports nothing from ``confarg``. The message points to it: a class the annotation
-        does not accept is still buildable, by a factory that ``call:`` names.
+        module imports nothing from ``confarg``. The message names it to say what it does: it
+        computes a value the field's type accepts, so it is no way to build the refused class.
 
         Dev Notes:
             docs-dev/architecture/design-decisions/class-names-a-subclass-call-computes.md#class-names-a-subclass-call-computes
         """
         return cls(
             f"Class {name!r} at '{path}' is not a subclass of {parent}."
-            f" To build {name} with a factory, give the field a '{call}:' spec instead.",
+            f" A '{call}:' spec computes a value the field's type accepts, so it cannot build this class either.",
         )
 
 

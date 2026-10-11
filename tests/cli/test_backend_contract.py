@@ -7574,7 +7574,7 @@ class TestClassTagPointsToCall:
     """An incompatible ``class`` tag on a typed field refuses and names the ``call`` spec (FEAT-29)."""
 
     def test_tag_refusal_names_call_on_every_frontend(self, loader: ConfargLoader) -> None:
-        """The refusal for a tag naming an unrelated class points to call on every front-end."""
+        """The refusal for a tag naming an unrelated class names call on every front-end."""
         with pytest.raises(TypeCoercionError, match=re.escape("is not a subclass of")) as info:
             loader.load(_TaglessOptional, argv=["--inner.class", "decimal.Decimal"], env={}, config_flag="")
         assert "'call:'" in str(info.value)

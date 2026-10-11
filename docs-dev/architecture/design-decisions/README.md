@@ -64,7 +64,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [A class tag replaces, not merges](class-tag-replaces.md) | naming a class says "this is a new object" |
 | [No implicit subclass inference](no-implicit-subclass-inference.md) | a subclass exists only once imported, so confarg never scans for one |
 | [A call spec yields to data the annotation can hold](call-yields-to-the-data-a-type-holds.md) | `call:` fills any typed field, except where a dict type, `Any` or a member named `call` holds the key as data |
-| [Class names a subclass; call computes](class-names-a-subclass-call-computes.md) | `class:` on a typed field names a subclass of it, and an unrelated class is refused with a pointer to `call:` |
+| [Class names a subclass; call computes](class-names-a-subclass-call-computes.md) | `class:` on a typed field names a subclass of it, and an unrelated class is refused; `call:` computes a value the annotation accepts, so it is no way around the refusal |
 | [Bind yields a partial of its target](bind-yields-a-partial-of-its-target.md) | `bind:` is an opener whose siblings are its target's arguments; `fn:` and the `bind:` kwargs dict are removed outright, with no migration table |
 | [Classfn names an instance method](classfn-names-an-instance-method.md) | `classfn:` siblings build the owner the path names; static and class methods need no owner; `call:` takes any callable spec as `bind:` does |
 | [Class names the type it builds](class-names-the-type-it-builds.md) | `class:` and a `classfn:` owner are built exactly as named, never through subclass dispatch |
