@@ -46,5 +46,6 @@ the work is. No `author` or `updated`: version control knows. No `related`: a "s
 Cost: filing a ticket means writing YAML, and a `where` must name what exists, so a ticket
 filed against a module that is about to be created says so in a comment
 (`where: []  # a new console script`). A code change that renames a file or a function a ticket
-names fails the next `index.py` run — by design, but it lands on whoever runs it next, until
-FEAT-25 puts the check in CI.
+names fails the `ticket-boards` pre-commit hook
+([board-and-anchor-checks-run-in-pre-commit.md](board-and-anchor-checks-run-in-pre-commit.md)) — by
+design, and on the author of the change, not on whoever runs `index.py` next.

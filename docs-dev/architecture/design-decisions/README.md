@@ -117,3 +117,4 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [A ticket carries a severity; its priority is derived](ticket-severity-and-work-order.md) | four rungs anchored to what a user meets; `index.py` orders work by severity inherited through `blocked_by`, then effort |
 | [A bug ticket names the revision that introduced it](ticket-origin.md) | `introduced_by` and an `Origin:` paragraph, so a fix can go to the cause; the fixing revision keeps it as a trailer |
 | [Plans live under `todo/`](plans-live-under-todo.md) | beside the boards that cite them, not as a third top-level folder of `docs-dev/` |
+| [The board and anchor checks run as always-on pre-commit hooks](board-and-anchor-checks-run-in-pre-commit.md) | `ticket-boards` and `architecture-anchors` fail the commit, not a CI run nobody watches |

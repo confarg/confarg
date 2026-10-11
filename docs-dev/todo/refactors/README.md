@@ -28,7 +28,6 @@ different board.
 | [REF-75 — `cli/_collect.py` no longer collects, and `_merge_from_flat` no longer merges from the flat result](REF-75-cli-collect-module-no-longer-collects.md) | trivial |  | S | low | none |
 | [REF-77 — The four "expected N elements" refusals have drifted on the type's name](REF-77-expected-elements-refusals-have-drifted.md) | trivial |  | S | medium | none |
 | [REF-78 — `.ruff.toml` selects "PL" twice](REF-78-ruff-toml-selects-pl-twice.md) | trivial |  | S | low | none |
-| [REF-81 — `90_integration/README.md` opens at h3 and sandwiches a lone h2 between h3 sections](REF-81-integration-readme-heading-structure.md) | trivial |  | S | low | none |
 | [REF-82 — `greetings.py` in two examples carries a dead `Config` dataclass](REF-82-greetings-py-carries-a-dead-config-dataclass.md) | trivial |  | S | low | none |
 | [REF-84 — The delete suffix and its list index are decoded twice](REF-84-env-delete-suffix-decoded-twice.md) | trivial |  | S | low | none |
 | [REF-85 — `api-seams.md`'s round-trip paragraphs sit under the option-set heading](REF-85-api-seams-round-trip-paragraphs-sit-under-the-option-set-heading.md) | trivial |  | S | low | none |

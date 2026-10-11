@@ -59,3 +59,16 @@ repos:
   rev: 914e7df21a07ef503a81201c76d2b11c789d3fca   # v1.7.12
   hooks:
   - id: actionlint
+
+- repo: local
+  hooks:
+  - id: ticket-boards
+    name: ticket boards tables and front matter are valid
+    entry: uv run python docs-dev/todo/index.py --check
+    language: system
+    pass_filenames: false
+  - id: architecture-anchors
+    name: architecture anchors cited in code and notes resolve
+    entry: uv run python docs-dev/todo/anchors.py
+    language: system
+    pass_filenames: false
