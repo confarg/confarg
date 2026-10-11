@@ -15,6 +15,11 @@ target. Convertibility is decided only in `build()`/`construct()`, which raise
   - an index patch past the end of a base list (`--input.2 3` over `[1, 2]`) is an error for a
     `list` but fills a slot for a fixed `tuple`, so `_merge_list_base` carries the base as
     `{"*": base, "2": 3}` and lets construction decide;
+  - a key that is no index over a base list (`--pt.x 9` over a file's `pt: [1, 2]`) names a
+    field of a namedtuple but nothing in a list, so `_merge_list_base` carries it the same way,
+    `{"*": [1, 2], "x": 9}` (BUG-160). Both deferrals are one question,
+    `_merge._patch_needs_the_type`; a patch that also appends or deletes is a list operation
+    and is still refused in the merge;
   - `_parse_cli._resolve_field_type` returns a field type only when all union variants agree,
     otherwise `str` (the raw token is stored, coerced in `construct`), on the CLI and env
     channels alike.

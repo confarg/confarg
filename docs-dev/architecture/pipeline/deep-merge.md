@@ -8,6 +8,10 @@ anything that is not a dict-on-dict, which is merged recursively.
 - **A union tag in the override discards the base entirely.** Naming a class says "this is
   a new object", so fields of the previous variant must not leak in (the README's
   `--class myapp.SQLiteConfig --dbpath …` over a server config).
+- **A base list carried with its patch discards a dict base.** An override holding `"*"`
+  is "this list, then these patches", so it replaces a name dict or an earlier deferred patch
+  rather than merging into it
+  ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#a-base-list-carried-with-its-patch-replaces-what-lay-below)).
 - `DICT_DELETE` (from `key-` in files, `--field.key-`, `FOO__KEY-`) removes a key.
 - File-sourced shorthand `key+:` / `key-:` / `"N-":` is normalized to sentinels by
   `_normalize_merge_ops` so files, env and CLI share one patch vocabulary.
@@ -18,7 +22,7 @@ List patches travel as a dict of sentinel keys:
 |---|---|---|
 | `"+"` | append items | `--f+`, `key+:`, `--config.<f>+` |
 | `"-"` | delete original indices (before appends) | `--f.N-`, `"N-":`, `F__N-` |
-| `"*"` | replacement base list | a whole-list value followed by a patch in the same source, or a deferred index patch |
+| `"*"` | replacement base list | a whole-list value followed by a patch in the same source, or a deferred patch (an index past the base, or a key that is no index) |
 | `"~"` | delete indices *after* appends | `--f.N-` appearing after `--f+` on the CLI |
 | `"N"` | index patch (negative counts from the end) | `--f.N`, `F__N`, index-keyed dicts |
 

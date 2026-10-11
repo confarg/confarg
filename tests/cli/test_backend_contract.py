@@ -916,16 +916,15 @@ class TestFixedSequenceContract:
     ) -> None:
         """A sub-flag after the arity flag descends into the raw run, '*' shape and all (BUG-61).
 
-        The optional spelling is a union to vanilla too, so its positional promotion
-        is the generic ``_set_nested`` one -- the list-op ``'*'`` base -- and not the
-        by-field-name re-keying a plain namedtuple's positions get (BUG-66). Both
-        sides store the same dict, and both refuse to build it.
+        The positional run becomes the generic ``_set_nested`` list-op ``'*'`` base, as on
+        the plain spelling, and ``build()`` lays the sub-flag over it by field name
+        (BUG-160). Every front-end stores the same dict and builds it alike.
         """
         assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={}) == {
             "pair": {"*": ["1", "2"], "y": 9},
         }
-        with pytest.raises(TypeCoercionError, match=re.escape("Unknown field(s) ['*'] for _Point at 'pair'")):
-            space_sep_loader.load(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={})
+        cfg = space_sep_loader.load(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.y", "9"], env={})
+        assert cfg.pair == _Point(1, 9)
 
     def test_optional_namedtuple_sub_flag_then_arity_replaces_wholesale(self, space_sep_loader: ConfargLoader) -> None:
         """The arity flag typed last replaces the field wholesale, as on the plain spelling (BUG-61)."""
@@ -1085,18 +1084,30 @@ class TestFixedSequenceContract:
         )
         assert cfg.pair == _Point(x=13, y=7)
 
-    def test_namedtuple_arity_then_sub_flag_merges_by_field_name(self, loader: ConfargLoader) -> None:
-        """A sub-flag after the arity flag rides on its positions, keyed by field name (BUG-66).
+    def test_namedtuple_arity_then_sub_flag_rides_the_star_base(self, loader: ConfargLoader) -> None:
+        """A sub-flag after the arity flag rides on its positions (BUG-66, BUG-160).
 
         The latest arguments overwrite earlier ones, per path: a sub-flag writes at
         ``pair.y``, so it joins the arity flag's positional value instead of replacing
-        it -- and the positions it did not take keep their field names, the shape
-        ``build()`` reads, rather than vanilla's former list-op ``'*'`` base, which a
-        namedtuple cannot build.
+        it. The positions are the list-op ``'*'`` base every channel carries, and
+        ``build()`` lays the sub-flag over them by field name.
         """
         assert loader.merge(_WithPoint, argv=["--pair", "13", "42", "--pair.y", "7"], env={}) == {
-            "pair": {"x": 13, "y": 7},
+            "pair": {"*": [13, 42], "y": 7},
         }
+        assert loader.load(_WithPoint, argv=["--pair", "13", "42", "--pair.y", "7"], env={}).pair == _Point(13, 7)
+
+    def test_namedtuple_sub_flag_over_a_file_list_rides_it(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """A sub-flag over a file's positional list builds as it does over the arity flag's (BUG-160).
+
+        The merge cannot tell a namedtuple's list from a plain one, so it carries the file's
+        list as the ``'*'`` base beside the name key, and ``build()`` reconciles the two.
+        """
+        base = tmp_path / "base.yaml"
+        base.write_text("pair: [13, 42]\n")
+        argv = ["--config", str(base), "--pair.y", "7"]
+        assert loader.merge(_WithPoint, argv=argv, env={}) == {"pair": {"*": [13, 42], "y": 7}}
+        assert loader.load(_WithPoint, argv=argv, env={}).pair == _Point(13, 7)
 
     def test_namedtuple_sub_flag_then_arity_flag_replaces_wholesale(self, loader: ConfargLoader) -> None:
         """An arity flag after every sub-flag overwrites the field, as any later write does (BUG-66).
@@ -1160,16 +1171,14 @@ class TestFixedSequenceContract:
     def test_namedtuple_arity_then_index_sub_flag_keeps_both(self, loader: ConfargLoader) -> None:
         """An index sub-flag after the arity flag rides the positions as its own key (BUG-65).
 
-        The positional base is re-keyed by field name, as vanilla's promotion does,
-        and the index sub-flag keeps its index key on top of it — the dict
-        ``build()`` refuses on both sides, not the ``x`` overwrite the re-keying
-        invented.
+        The index sub-flag keeps its index key beside the ``'*'`` base, not the ``x``
+        overwrite a collection-time re-keying invented, and ``build()`` patches that
+        position as it does a plain tuple's (BUG-160).
         """
         assert loader.merge(_WithPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}) == {
-            "pair": {"x": 1, "y": 2, "0": 9},
+            "pair": {"*": [1, 2], "0": 9},
         }
-        with pytest.raises(TypeCoercionError, match=re.escape("Unknown field(s) ['0'] for _Point")):
-            loader.load(_WithPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={})
+        assert loader.load(_WithPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}).pair == _Point(9, 2)
 
     def test_optional_namedtuple_index_sub_flag_stays_index_key(self, loader: ConfargLoader) -> None:
         """An index sub-flag under Optional keeps its key too (BUG-65)."""
@@ -1177,10 +1186,10 @@ class TestFixedSequenceContract:
         assert loader.load(_WithOptionalPoint, argv=["--pair.0", "13", "--pair.1", "42"], env={}).pair == _Point(13, 42)
 
     def test_optional_namedtuple_arity_then_index_sub_flag_keeps_both(self, space_sep_loader: ConfargLoader) -> None:
-        """The union shape keeps the index key beside the ``'*'`` base, as vanilla does (BUG-65)."""
-        assert space_sep_loader.merge(_WithOptionalPoint, argv=["--pair", "1", "2", "--pair.0", "9"], env={}) == {
-            "pair": {"*": ["1", "2"], "0": 9},
-        }
+        """The union shape keeps the index key beside the ``'*'`` base, as vanilla does (BUG-65, BUG-160)."""
+        argv = ["--pair", "1", "2", "--pair.0", "9"]
+        assert space_sep_loader.merge(_WithOptionalPoint, argv=argv, env={}) == {"pair": {"*": ["1", "2"], "0": 9}}
+        assert space_sep_loader.load(_WithOptionalPoint, argv=argv, env={}).pair == _Point(9, 2)
 
     def test_namedtuple_deep_sub_flag_below_a_namedtuple_field(self, loader: ConfargLoader) -> None:
         """--pt.inner.a reaches a namedtuple field of a namedtuple, as vanilla does (BUG-68).
@@ -1256,13 +1265,13 @@ class TestFixedSequenceContract:
     def test_namedtuple_arity_then_deep_sub_flag_merges(self, loader: ConfargLoader) -> None:
         """A deep sub-flag after the arity flag descends into the positions it left (BUG-68).
 
-        The same priority one level up applies: the arity value is re-keyed by field
-        name and the sub-flag replaces the key it names, here with the dict the
-        deeper level collected.
+        The same priority one level up applies: the arity value is the ``'*'`` base and
+        the sub-flag patches the field it names, here with the dict the deeper level
+        collected, which ``build()`` lays over that position (BUG-160).
         """
-        assert loader.merge(_WithNestedPoint, argv=["--pt", "1", "2", "--pt.inner.b", "y"], env={}) == {
-            "pt": {"inner": {"b": "y"}, "x": 2},
-        }
+        argv = ["--pt", "1", "2", "--pt.inner.b", "y"]
+        assert loader.merge(_WithNestedPoint, argv=argv, env={}) == {"pt": {"*": ["1", 2], "inner": {"b": "y"}}}
+        assert loader.load(_WithNestedPoint, argv=argv, env={}).pt == _PtNested(inner=_Inner(a=0, b="y"), x=2)
 
     def test_namedtuple_deep_sub_flag_then_arity_replaces_wholesale(self, loader: ConfargLoader) -> None:
         """The arity flag typed after every deep sub-flag takes the whole field (BUG-68)."""
@@ -1270,9 +1279,9 @@ class TestFixedSequenceContract:
 
     def test_namedtuple_deep_arity_then_deep_sub_flag_merges(self, loader: ConfargLoader) -> None:
         """The same priority holds at the deeper level, on the field's own arity flag (BUG-68)."""
-        assert loader.merge(_WithPlainNestedPoint, argv=["--pt.inner", "7", "8", "--pt.inner.a", "5"], env={}) == {
-            "pt": {"inner": {"a": 5, "b": "8"}},
-        }
+        argv = ["--pt.inner", "7", "8", "--pt.inner.a", "5"]
+        assert loader.merge(_WithPlainNestedPoint, argv=argv, env={}) == {"pt": {"inner": {"*": [7, "8"], "a": 5}}}
+        assert loader.load(_WithPlainNestedPoint, argv=argv, env={}).pt.inner == _Inner(a=5, b="8")
 
     def test_namedtuple_deep_sub_flag_then_deep_arity_replaces(self, loader: ConfargLoader) -> None:
         """A deep arity flag after its own sub-flags replaces the field wholesale (BUG-68)."""
@@ -2661,9 +2670,9 @@ class TestTagAtAnyPathContract:
         assert merged == {"pt": {"x": 1, "class": "X"}}
 
     def test_tag_after_namedtuple_positional_run(self, loader: ConfargLoader) -> None:
-        """A tag after the arity flag joins the promoted field names, as vanilla's does."""
+        """A tag after the arity flag joins the positions' ``'*'`` base, as vanilla's does."""
         merged = loader.merge(_TagAnywhere, argv=["--pt", "1", "2", "--pt.class", "X"], env={}, config_flag="")
-        assert merged == {"pt": {"x": 1, "y": 2, "class": "X"}}
+        assert merged == {"pt": {"*": [1, 2], "class": "X"}}
 
     def test_namedtuple_positional_run_after_tag(self, loader: ConfargLoader) -> None:
         """The arity flag typed after the tag replaces it."""
@@ -6330,7 +6339,7 @@ class TestArgvOrderContract:
         [
             pytest.param(
                 ["--pt.x", "1", "--pt", "7", "8", "--pt.y", "2"],
-                {"pt": {"x": 7, "y": 2}},
+                {"pt": {"*": [7, 8], "y": 2}},
                 id="arity-flag-between-sub-flags",
             ),
             pytest.param(["--s.x", "1", "--s", '{"y": 5}', "--s.y", "2"], {"s": {"y": 2}}, id="blob-between-sub-flags"),

@@ -146,12 +146,33 @@ class TestNonIntegerDictKeysForCollections:
 class TestDeepMergeListPatchErrors:
     """_deep_merge should raise when patching a list with non-integer dict keys."""
 
-    def test_non_integer_key_raises(self) -> None:
-        """Patching a list with a non-integer key raises ConfargError."""
-        base = {"items": [1, 2, 3]}
-        override = {"items": {"name": "bad"}}
+    def test_non_integer_key_defers_to_build(self) -> None:
+        """A name key over a list is type-ambiguous (list error vs. namedtuple field), so it defers (BUG-160).
+
+        The merge carries the base under LIST_REPLACE_BASE_KEY beside the patch, as it does
+        for an index past the end; build() refuses the name for a list target.
+        """
+        result = _deep_merge({"items": [1, 2, 3]}, {"items": {"name": "bad"}})
+        assert result == {"items": {LIST_REPLACE_BASE_KEY: [1, 2, 3], "name": "bad"}}
+        WithList = make_target("items", list[int], default_factory=list)
+        with pytest.raises(ConfargError, match="non-integer key 'name'"):
+            construct(WithList, result)
+
+    def test_non_integer_key_beside_an_op_still_raises(self) -> None:
+        """A patch that also appends or deletes is a list operation, so its name key is refused at once."""
         with pytest.raises(ConfargError, match="non-integer key"):
-            _deep_merge(base, override)
+            _deep_merge({"items": [1, 2, 3]}, {"items": {"+": [4], "name": "bad"}})
+
+    def test_replacement_base_replaces_a_dict_base(self) -> None:
+        """An override carrying its own ``'*'`` base replaces a dict below it, stale patches included.
+
+        The ``'*'`` says "this list, then these patches"; deep-merging it into an earlier
+        deferred patch kept the earlier index keys, so ``(8, 5)`` built where ``(8, 9)`` was due.
+        """
+        base = {"t": {LIST_REPLACE_BASE_KEY: [1], "1": 5}}
+        override = {"t": {LIST_REPLACE_BASE_KEY: [7, 9], "0": 8}}
+        assert _deep_merge(base, override) == override
+        assert _deep_merge({"t": {"x": 5}}, override) == override
 
     def test_integer_key_still_works(self) -> None:
         """Patching a list with integer keys still works correctly."""

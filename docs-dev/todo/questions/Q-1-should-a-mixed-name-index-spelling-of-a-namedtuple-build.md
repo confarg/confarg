@@ -2,6 +2,7 @@
 filed: 2026-09-30
 where:
   - src/confarg/typedload/_construct.py::_construct_namedtuple
+  - src/confarg/typedload/_construct.py::_lay_patch_over_positions
 ---
 # Q-1 — Should a mixed name/index spelling of a namedtuple build?
 
@@ -20,7 +21,9 @@ them got a build where vanilla refuses. The question is which way the agreement 
   name keys did not take, name keys win per field, so `{'0': 7, 'y': 9}` builds
   `Point(x=7, y=9)` and `{'x': 13, '0': 9}` picks one by a stated rule.
 
-Precedent inside the same site: `_promote_namedtuple_positional` merges positional and
-name keys by field name at parse time (`--pt 1 2 --pt.x 9` is `{'x': 9, 'y': 2}`), i.e. the
-library already reconciles the two spellings when one arrives as positional tokens — the
-mixed dict is the same collision one channel later.
+Precedent inside the same site: `_lay_patch_over_positions` lays a name patch and an index
+patch alike over a positional `'*'` base (`--pt 1 2 --pt.x 9` and `--pt 1 2 --pt.0 9` both
+build, BUG-160), i.e. the library already reconciles the two spellings when one arrives as
+positions — the mixed dict is the same collision between two patches. A mixed patch over a
+`'*'` base (`{'*': [1, 2], 'x': 9, '1': 8}`) reaches the same refusal, so the answer settles
+both.
