@@ -6473,3 +6473,73 @@ class TestFinalContract:
     def test_scalar_merges_coerced(self, loader: ConfargLoader) -> None:
         """A ``Final[int]`` token is coerced at merge time, as an ``int`` token is."""
         assert loader.merge(_WithFinals, argv=["--n", "4"], env={}) == {"n": 4}
+
+
+# ---------------------------------------------------------------------------
+# A missing field's remedy names a flag the CLI accepts
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _RemedyItem:
+    name: str
+    size: int
+
+
+@dataclass
+class _RemedyList:
+    items: list[_RemedyItem]
+
+
+@dataclass
+class _RemedyPair:
+    t: tuple[_RemedyItem, _RemedyItem]
+
+
+@dataclass
+class _RemedyVarTuple:
+    v: tuple[_RemedyItem, ...]
+
+
+@dataclass
+class _RemedyDict:
+    d: dict[str, _RemedyItem]
+
+
+@dataclass
+class _RemedyNestedList:
+    rows: list[list[_RemedyItem]]
+
+
+class TestMissingFieldRemedyContract:
+    """The flag a ``MissingFieldError`` tells the user to pass is one every front-end accepts."""
+
+    @pytest.mark.parametrize(
+        ("target", "argv", "flag"),
+        [
+            pytest.param(_RemedyList, ["--items.0.name", "a"], "--items.0.size", id="list-element"),
+            pytest.param(
+                _RemedyPair,
+                ["--t.0.name", "a", "--t.0.size", "1", "--t.1.name", "b"],
+                "--t.1.size",
+                id="fixed-tuple-element",
+            ),
+            pytest.param(_RemedyVarTuple, ["--v.0.name", "a"], "--v.0.size", id="var-tuple-element"),
+            pytest.param(_RemedyNestedList, ["--rows.0.0.name", "a"], "--rows.0.0.size", id="nested-list-element"),
+            pytest.param(_RemedyDict, ["--d.k.name", "a"], "--d.k.size", id="dict-value"),
+        ],
+    )
+    def test_remedy_flag_completes_the_load(
+        self,
+        loader: ConfargLoader,
+        target: type,
+        argv: list[str],
+        flag: str,
+    ) -> None:
+        """Passing the flag the message names, as the CLI spells it, builds the field it reported (BUG-165)."""
+        with pytest.raises(MissingFieldError) as exc_info:
+            loader.load(target, argv=argv, env={})
+        remedy = re.search(r"Set it via CLI \((\S+)\)", str(exc_info.value))
+        assert remedy is not None
+        assert remedy.group(1) == flag
+        loader.load(target, argv=[*argv, flag, "1"], env={})

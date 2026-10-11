@@ -44,8 +44,9 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-154 — An integer in a file is refused for a `float` field](BUG-154-an-integer-in-a-file-is-refused-for-a-float-field.md) | S | high | behavior |
 | [BUG-155 — A `call:` spec naming a class passes its kwargs uncoerced](BUG-155-a-call-spec-naming-a-class-passes-its-kwargs-uncoerced.md) | S | high | behavior |
 | [BUG-156 — A positional-only parameter in a callable spec is passed by keyword](BUG-156-a-positional-only-parameter-in-a-callable-spec-is-passed-by-keyword.md) | S | high | behavior |
-| [BUG-165 — A missing field below a list element names a flag the CLI refuses](BUG-165-a-missing-field-below-a-list-element-names-a-flag-the-cli-refuses.md) | S | medium | behavior |
 | [BUG-166 — An append below a dict key says the field does not exist](BUG-166-an-append-below-a-dict-key-says-the-field-does-not-exist.md) | S | low | behavior |
 | [BUG-167 — A short positional namedtuple fills a required field with `None`](BUG-167-a-short-positional-namedtuple-fills-a-required-field-with-none.md) | S | high | config |
+| [BUG-168 — A missing field's remedy omits the CLI prefix](BUG-168-a-missing-fields-remedy-omits-the-cli-prefix.md) | L | medium | behavior |
+| [BUG-169 — A dict key spelled like an index gets a wrong missing-field remedy](BUG-169-a-dict-key-spelled-like-an-index-gets-a-wrong-missing-field-remedy.md) | L | medium | behavior |
 
 <!-- tickets:end -->
