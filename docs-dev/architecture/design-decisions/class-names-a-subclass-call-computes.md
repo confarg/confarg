@@ -6,6 +6,11 @@ message names `call:` to say what it does: it computes a value the annotation ac
 not get around the refusal. The two keys say different things: `class:` says "the type I want",
 and `call:` says "compute the value".
 
+A scalar annotation (`int`, `str`, an enum) is no struct, so the tag has no subclass to
+select: a tagged dict is refused there too, naming the `class` key it refuses and pointing to
+the `call:` spec (BUG-188). At that field the pointer is a remedy rather than a disclaimer:
+the field takes a typed call, whose value the annotation still has to accept.
+
 Why: a field's annotation is the contract the rest of the program reads. A `class:` that could
 name an unrelated class would hand that field an object the annotation does not promise, and the
 type of the built value would depend on whatever the file named. `call:` already has the

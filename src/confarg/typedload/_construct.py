@@ -422,12 +422,31 @@ def _construct_collection(tp: Any, data: Any, path: FieldPath, union_tag: str) -
 
 
 def _construct_scalar(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:
-    """Construct a type reference or leaf value."""
+    """Construct a type reference or leaf value.
+
+    Raises:
+        TypeCoercionError: If *data* is a dict carrying the union tag on a field that is
+            no struct — the tag has no subclass to select, so the refusal names the key
+            and the ``call:`` spec that computes a value the field accepts.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/class-names-a-subclass-call-computes.md#class-names-a-subclass-call-computes
+    """
     if _is_type_ref(tp):
         return _coerce_type_ref(tp, data, _spell_field_path(path))
     resolved = _resolve_type(tp)
     if _is_taggable_leaf(resolved) and isinstance(data, dict):
         return _construct_taggable_leaf(resolved, data, path, union_tag)
+    if isinstance(data, dict) and union_tag in data:
+        call = _select_directives(data).call
+        tp_name = getattr(resolved, "__name__", repr(resolved))
+        msg = (
+            f"Cannot coerce dict {data!r} to {tp_name} at '{_spell_field_path(path)}'."
+            f" The {union_tag!r} key is the union tag, which names a subclass of a struct-typed"
+            f" field's annotation; {tp_name} accepts no struct, so the tag cannot select one."
+            f" A '{call}:' spec computes a value the field's type accepts."
+        )
+        raise TypeCoercionError(msg)
     return _coerce_leaf(tp, data, _spell_field_path(path))
 
 

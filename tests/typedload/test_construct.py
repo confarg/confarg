@@ -667,3 +667,48 @@ class TestPlainSpellingOfAListOpOnASequence:
     def test_the_marker_spelling_still_carries_the_base(self) -> None:
         """The marker, not the plain string, is the op: it still replaces the default."""
         assert confarg.build(_TupleWithDefault, {"u": {LIST_REPLACE_BASE_KEY: [7, 8]}}).u == (7, 8)
+
+
+@dataclass
+class _ScalarFieldConfig:
+    """A scalar field, the ticket's shape: no struct for a tag to select."""
+
+    n: int = 0
+
+
+@dataclass
+class _OtherStruct:
+    """A class the scalar field's annotation does not accept."""
+
+    z: int = 3
+
+
+class TestClassKeyOnAScalarField:
+    """A tagged dict on a scalar field is refused naming the tag and a 'call:' spec (BUG-188).
+
+    The tag selects a subclass of a struct-typed field's annotation; a scalar is no struct,
+    so no class can be selected, and the refusal names the key it refuses and where a value
+    can come from instead.
+    """
+
+    def test_the_refusal_names_the_tag_and_points_to_call(self) -> None:
+        """The repro's dict on an int field names the 'class' key and a 'call:' spec."""
+        data = {"class": f"{__name__}._OtherStruct", "z": 1}
+        with pytest.raises(TypeCoercionError, match="'class' key is the union tag") as ei:
+            confarg.build(_ScalarFieldConfig, {"n": data})
+        assert "'call:' spec computes a value the field's type accepts" in str(ei.value)
+
+    def test_the_refusal_spells_the_union_tag_it_was_given(self) -> None:
+        """A custom tag spelling is named as the key, not the default 'class'."""
+        with pytest.raises(TypeCoercionError, match="'Kind' key is the union tag"):
+            construct(int, {"Kind": f"{__name__}._OtherStruct"}, path=("n",), union_tag="Kind")
+
+    def test_an_optional_scalar_fails_as_its_variant(self) -> None:
+        """Optional[int] fails as an int field does: the same refusal, same path."""
+        with pytest.raises(TypeCoercionError, match="'class' key is the union tag"):
+            construct(int | None, {"class": f"{__name__}._OtherStruct"}, path=("n",))
+
+    def test_an_untagged_dict_keeps_the_generic_refusal(self) -> None:
+        """A dict carrying no tag key still fails the leaf's own coercion message."""
+        with pytest.raises(TypeCoercionError, match=r"Cannot coerce dict \{'a': 1\} to int at 'n'"):
+            construct(int, {"a": 1}, path=("n",))
