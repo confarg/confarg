@@ -167,7 +167,9 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
     """Construct a namedtuple from a list (positional) or dict (by name or index).
 
     An index key counts from the end when negative, exactly as a fixed tuple's
-    index patches do.
+    index patches do. A list shorter than the arity takes the defaults of the fields it
+    stops before, and raises ``MissingFieldError`` for the first one that has none, as a
+    dict omitting it does.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence
@@ -183,16 +185,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: str, union_tag: str) -> Any:
 
     if isinstance(data, list | tuple):
         _check_namedtuple_length(tp, len(data), path)
-        values = [
-            construct(
-                field_types[i],
-                data[i] if i < len(data) else defs.get(field_names[i]),
-                path=f"{path}.{field_names[i]}",
-                union_tag=union_tag,
-            )
-            for i in range(n)
-        ]
-        return tp._make(values)
+        data = dict(zip(field_names, data, strict=False))
 
     if isinstance(data, dict):
         # Determine if keys are field names or integer indices.

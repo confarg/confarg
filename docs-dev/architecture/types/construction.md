@@ -109,6 +109,12 @@ indifferent to both.
 - Namedtuples accept a list, a dict by field name, or a dict by index — and a `"*"` base list
   with either kind of patch beside it, laid over the positions
   ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#build-reconciles-the-positions-with-the-patch)).
+  A list is keyed by field name and built as the by-name dict, so a list shorter than the
+  arity leaves the fields it stops before to their defaults and, for one with none, to the
+  `MissingFieldError` the dict omitting it raises. It used to fill such a field with `None`,
+  which failed as a coercion of a value nobody passed, or built silently for an `X | None`
+  field (BUG-167). The stdlib agrees (`P._make([1])` is a `TypeError`, "Expected 2
+  arguments, got 1"), and so does pydantic, which reports `y` as a `missing_argument`.
 
 ### A missing field's remedy is spelled as the CLI spells it
 
