@@ -691,3 +691,26 @@ class TestListDeleteKeysHoldIndices:
         b = tmp_json(json.dumps({"xs": ops}), "b.json")
         with pytest.raises(ConfargError, match=re.escape("Cannot patch list 'xs' with non-integer key")):
             confarg.load(WithList, argv=[], env={}, files=[a, b])
+
+
+class TestAnOverrideThatReplacesTheListBelow:
+    """An override that carries its own base or a cast pin replaces a lower layer's list.
+
+    It is no patch over that list: a carried base is the list it patches (5a), and a pin
+    is a value, which a scalar override would replace the list with too (5b).
+    """
+
+    def test_a_carried_base_with_a_name_key_stays_deferred(self) -> None:
+        """``--pt 1 2 --pt.y 5`` over a lower ``[7, 8]`` keeps its name patch for the namedtuple."""
+        merged = _deep_merge({"pt": [7, 8]}, {"pt": {ListOp.BASE: [1, 2], "y": 5}})
+        assert merged == {"pt": {ListOp.BASE: [1, 2], "y": 5}}
+
+    def test_a_pin_replaces_a_list_below(self) -> None:
+        """A file's ``{__cast__, __value__}`` over a lower file's list is the pin alone."""
+        pin = {"__cast__": "int", "__value__": 5}
+        assert _deep_merge({"u": [1, 2]}, {"u": pin}) == {"u": pin}
+
+    def test_a_pin_replaces_a_dict_below(self) -> None:
+        """Over a lower dict, the pin's keys are not merged into it."""
+        pin = {"__cast__": "int", "__value__": 5}
+        assert _deep_merge({"u": {"a": 1}}, {"u": pin}) == {"u": pin}

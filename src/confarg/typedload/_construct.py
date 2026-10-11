@@ -27,6 +27,7 @@ from confarg._merge import (
     ListOp,
     MergeDict,
     _apply_list_ops,
+    _is_pin_dict,
     _merge_existing_value,
     _replace_base,
 )
@@ -89,19 +90,6 @@ from confarg.typedload._coerce import (
     _type_kind,
     _TypeKind,
 )
-
-
-def _is_pin_dict(data: Any) -> bool:
-    """Return whether *data* spells the file-side cast pin: exactly the ``__cast__`` and ``__value__`` keys.
-
-    The shape half of :func:`_try_pinned_dict`, which resolves it: a defaulted
-    fixed-sequence field's gate asks it, so a pin reaches ``construct()`` — the one
-    reader — whether the field carries a default or not.
-
-    Dev Notes:
-        docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
-    """
-    return isinstance(data, dict) and data.keys() == {_defaults.CAST_KEY, _defaults.VALUE_KEY}
 
 
 def _try_pinned_dict(data: Any) -> _Pinned | None:

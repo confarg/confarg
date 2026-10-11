@@ -315,18 +315,42 @@ def _patch_needs_the_type(base: list[Any], ops: MergeDict) -> bool:
     return False
 
 
+def _is_pin_dict(data: Any) -> bool:
+    """Return whether *data* spells the file-side cast pin: exactly the ``__cast__`` and ``__value__`` keys.
+
+    The shape half of ``typedload._construct._try_pinned_dict``, which resolves it. A pin is a
+    value, not a patch: the merge lets it replace what lies below as a scalar would, and
+    construction reads it wherever it stands (BUG-210).
+
+    Dev Notes:
+        docs-dev/architecture/types/stealing-rule.md#cast-pinning-in-files
+    """
+    return isinstance(data, dict) and data.keys() == {_defaults.CAST_KEY, _defaults.VALUE_KEY}
+
+
+def _replaces_what_lies_below(bv: Any, val: Any) -> bool:
+    """Whether the override *val* replaces *bv* outright rather than patching it.
+
+    An override carrying its own base (``ListOp.BASE``) replaces a dict base, as a union tag
+    does: the patches beside that base address it, not whatever an earlier layer held. A base
+    that is a whole-field delete replaces a list base too. A cast pin is a value, so it
+    replaces a list or a dict below it as a scalar would.
+    """
+    if _is_pin_dict(val):
+        return True
+    return isinstance(val, dict) and ListOp.BASE in val and (val[ListOp.BASE] is DICT_DELETE or isinstance(bv, dict))
+
+
 def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) -> Any:
     """Compute the merged value when *key* exists in both base and override.
 
-    An override carrying its own base (``ListOp.BASE``) replaces a dict base
-    outright, as a union tag does: the patches beside that base address it, not whatever
-    an earlier layer held.  A base that is a whole-field delete replaces a list base too.
-    A dict's own key ``'*'`` is no base, whatever it holds: no channel spells the marker.
+    An override that replaces what lies below (:func:`_replaces_what_lies_below`) is kept
+    whole. A dict's own key ``'*'`` is no base, whatever it holds: no channel spells the marker.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#deep-merge-semantics
     """
-    if isinstance(val, dict) and ListOp.BASE in val and (val[ListOp.BASE] is DICT_DELETE or isinstance(bv, dict)):
+    if _replaces_what_lies_below(bv, val):
         return val
     if isinstance(bv, dict) and isinstance(val, dict):
         if ListOp.APPEND in bv and ListOp.APPEND in val:
@@ -356,7 +380,11 @@ def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) ->
 def _merge_list_base(bv: list[Any], val: MergeDict, key: str, union_tag: str | None) -> Any:
     """Combine a list base *bv* with an override patch dict *val*."""
     if ListOp.BASE in val:
-        return _apply_list_ops(_replace_base(val, key), val, key, union_tag)
+        base = _replace_base(val, key)
+        if _patch_needs_the_type(base, val):
+            # The override's own base replaces *bv*; what its patch means is still the type's.
+            return val
+        return _apply_list_ops(base, val, key, union_tag)
     if _patch_needs_the_type(bv, val):
         # Defer to build(): an out-of-range index is an error for a list, a slot for a tuple;
         # a name key is an error for a list, a field for a namedtuple.
