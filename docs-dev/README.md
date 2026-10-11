@@ -8,7 +8,7 @@ copied into it.
 | Folder | Holds |
 |---|---|
 | [architecture/](architecture/README.md) | **Why** the code is the way it is: design choices, rejected alternatives, trade-offs, invariants, vocabulary, source map. The single source of truth for rationale — docstrings must not repeat it. |
-| [todo/](todo/README.md) | **What is left to do**: bugs, desirable features, refactors, and questions for the maintainer. The place to file drive-by findings instead of silently fixing or forgetting them. |
+| [todo/](todo/README.md) | **What is left to do**: bugs, desirable features, refactors, and questions for the maintainer. The place to file drive-by findings that are not being addressed. |
 | [plans/](plans/README.md) | **How a settled design is going to be built**, for work too large to describe on a board and not yet built. One file per design, deleted when the work lands and its rationale moves to `architecture/`. |
 
 The three are complements, and the order is the life of a piece of work: a ticket says something is

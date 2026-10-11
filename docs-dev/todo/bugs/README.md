@@ -62,6 +62,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-201 — An environment variable below a dict appends, though the environment has no append](BUG-201-an-environment-variable-below-a-dict-appends-though-the-environment-has-no-append.md) | minor | FEAT-18 | S | medium | config | PR-5 |
 | [BUG-119 — `_defaults.py` says four front-ends must agree; there are five](BUG-119-defaults-module-counts-four-front-ends.md) | trivial |  | S | low | none | BUG-7 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
-| [BUG-203 — The testing protocol lists four fixtures, conftest defines five](BUG-203-the-testing-protocol-lists-four-fixtures-conftest-has-five.md) | trivial |  | S | low | none | BUG-20 |
+| [BUG-204 — Docstrings outside `_defaults.py` and an open ticket count four front-ends](BUG-204-docstrings-outside-defaults-count-four-front-ends.md) | trivial |  | S | low | none | BUG-7 |
 
 <!-- tickets:end -->
