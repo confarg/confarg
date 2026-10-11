@@ -322,10 +322,10 @@ def _build_callable_fn_specs(
             group_description=group_description,
         )
         for sub, desc in (
-            ("bind", "function or class; the other --<flag>.<param> flags are partially applied to it"),
+            ("bind", "function or class; the other --FLAG.PARAM flags are partially applied to it"),
             ("class", "class to instantiate; the resulting instance is the callable"),
-            ("call", "factory function to call with the other --<flag>.<param> flags; its result is the callable"),
-            ("classfn", "instance method; the other --<flag>.<param> flags build its owner"),
+            ("call", "factory function to call with the other --FLAG.PARAM flags; its result is the callable"),
+            ("classfn", "instance method; the other --FLAG.PARAM flags build its owner"),
         )
     ]
 
@@ -352,7 +352,7 @@ def _build_union_tag_spec(
         help=(
             f"Fully-qualified class path selecting the variant for '{flag}' "
             f"(e.g. mypackage.MyClass). "
-            f"Once set, use --{flag}.<field> flags for that class's fields."
+            f"Once set, use --{flag}.FIELD flags for that class's fields."
         ),
         group=group,
         group_description=group_description,
@@ -1342,7 +1342,7 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
                 "Config file(s) to merge at lowest priority (below env vars and CLI flags). "
                 "Multiple files are merged left-to-right; later files override earlier ones. "
                 "Supports TOML, YAML, and JSON. "
-                f"Use --{config_flag}.<field> FILE to scope a file's contents under a specific field "
+                f"Use --{config_flag}.FIELD FILE to scope a file's contents under a specific field "
                 f"(e.g. --{config_flag}.db db.toml merges db.toml as if its keys were nested under 'db').",
             ),
         )
@@ -1509,7 +1509,7 @@ def _collect_leaf_tag_argv_specs(
                 FlagSpec(
                     name=key,
                     metavar="DOTTED.CLASS.PATH",
-                    help=f"Class path opening {leaf_desc} from its __init__ parameters.",
+                    help=f"Class path opening {leaf_desc} from its constructor parameters.",
                     completer=_make_path_completer([dotted_name(leaf)]),
                 ),
             )
@@ -1518,7 +1518,7 @@ def _collect_leaf_tag_argv_specs(
                 FlagSpec(
                     name=key,
                     metavar=parts[-1].upper(),
-                    help=f"__init__ parameter '{parts[-1]}' of {leaf_desc}.",
+                    help=f"Constructor parameter '{parts[-1]}' of {leaf_desc}.",
                 ),
             )
     return specs

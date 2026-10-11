@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import dataclasses
 import types
+from collections.abc import Callable  # noqa: TC003  # a runtime dataclass annotation
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, NamedTuple, Union, get_args, get_origin
+from typing import Annotated, Any, ClassVar, Literal, NamedTuple, Union, get_args, get_origin
+from uuid import UUID
 
 import cyclopts
 import pytest
@@ -17,7 +19,7 @@ import pytest
 import confarg
 import confarg.cli.cyclopts as confargcyclopts
 from confarg.cli import FieldMeta, FlagSpec
-from confarg.cli._build import build_static_flags
+from confarg.cli._build import build_dynamic_flags, build_static_flags
 from confarg.cli.cyclopts._register import (
     _app_meta,
     _expression_tolerant_convert,
@@ -372,6 +374,64 @@ class TestHelpHidesIndexSpellings:
         """A fixed tuple's element flag, registered from argv, is kept out of --help."""
         output = self._help_output(_WithHelpPair, ["--pair.0", "a"])
         assert "--pair.0" not in output
+
+
+# ---------------------------------------------------------------------------
+# confarg's help strings read the same under every cyclopts help format
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _VariantA:
+    x: int = 0
+
+
+@dataclass
+class _VariantB:
+    y: int = 0
+
+
+@dataclass
+class _WithHelpStrings:
+    pet: _VariantA | _VariantB = dataclasses.field(default_factory=_VariantA)
+    fn: Callable[[], int] | None = None
+    uid: UUID = dataclasses.field(default_factory=lambda: UUID(int=0))
+
+
+class TestHelpReadsUnderEveryFormat:
+    """The help confarg writes is plain text that every ``help_format`` prints as written (BUG-226)."""
+
+    _ARGV: ClassVar[list[str]] = ["--uid.class", "uuid.UUID", "--uid.hex", "0" * 32]
+
+    @pytest.mark.parametrize("help_format", ["markdown", "restructuredtext", "rich", "plaintext"])
+    @pytest.mark.usefixtures("leaf_registry")
+    def test_every_confarg_help_string_survives(
+        self,
+        help_format: Literal["markdown", "restructuredtext", "rich", "plaintext"],
+    ) -> None:
+        """No placeholder, dunder or other markup in confarg's own help is eaten by the renderer."""
+        from io import StringIO  # noqa: PLC0415
+
+        from rich.console import Console  # noqa: PLC0415
+
+        confarg.register_leaf_type(UUID, UUID)
+        app = cyclopts.App(help_format=help_format)
+        populate_app(_WithHelpStrings, app, argv=self._ARGV)
+        buf = StringIO()
+        with pytest.raises(SystemExit):
+            app(["--help"], console=Console(file=buf, width=400, highlight=False))
+        text = " ".join(" ".join(line.strip("│ ") for line in buf.getvalue().splitlines()).split())
+        shown: dict[str, FlagSpec] = {}
+        for spec in build_static_flags(_WithHelpStrings, argv=self._ARGV) + build_dynamic_flags(
+            _WithHelpStrings,
+            self._ARGV,
+        ):
+            shown.setdefault(spec.name, spec)  # the first spec of a name is the one registered
+        helps = {" ".join(spec.help.split()) for spec in shown.values() if spec.help and not spec.hidden}
+        assert [h for h in sorted(helps) if h not in text] == []
+        # The strings checked above hold the placeholders, so the check is not vacuous.
+        words = {word for help_text in helps for word in help_text.split()}
+        assert {"--pet.FIELD", "--config.FIELD", "--FLAG.PARAM"} <= words
 
 
 # ---------------------------------------------------------------------------
