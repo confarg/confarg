@@ -14,9 +14,10 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from cyclopts import Group
 from cyclopts import Parameter as CycloptsParam
 from cyclopts import convert as cyclopts_convert
+from cyclopts.core import DEFAULT_FORMAT
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     import cyclopts
 
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg.cli._build import build_dynamic_flags, build_static_flags
+from confarg.cli._markup import help_escape
 from confarg.cli._prefix import PREFIX_ATTR
 from confarg.dictexpr import contains_expression
 
@@ -79,8 +81,16 @@ def _pyname(name: str) -> str:
     return out
 
 
-def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901, PLR0912  # one branch per nargs shape (flag / choices / multi / one token), plus the hidden flag
-    """Convert one FlagSpec to a keyword-only inspect.Parameter."""
+def _spec_to_inspect_param(  # noqa: C901, PLR0912  # one branch per nargs shape (flag / choices / multi / one token), plus the hidden flag
+    spec: FlagSpec,
+    help_escape: Callable[[str], str] | None = None,
+) -> inspect.Parameter:
+    """Convert one FlagSpec to a keyword-only inspect.Parameter.
+
+    *help_escape* turns plain text into the app's help format, for what confarg writes
+    into the help: the spec's note and the metavar standing in front of it.
+    """
+    escape = help_escape or str
     py_name = _pyname(spec.name)
 
     # Build cyclopts Parameter kwargs
@@ -98,8 +108,8 @@ def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901, 
 
     if spec.nargs == 0:
         # Value-less flag (e.g. a list/dict delete --field.N-): a boolean switch.
-        if spec.help:
-            param_kwargs["help"] = spec.help
+        if help_text := spec.rendered_help(help_escape):
+            param_kwargs["help"] = help_text
         # A delete repeated is the same delete, and its value never reaches a parse
         # result the collector reads, so cyclopts may keep only the last occurrence
         # (docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity).
@@ -129,9 +139,9 @@ def _spec_to_inspect_param(spec: FlagSpec) -> inspect.Parameter:  # noqa: C901, 
     # so users can see the expected type (e.g. "(INT) (default: 8080)").
     help_parts: list[str] = []
     if spec.metavar and not spec.choices:
-        help_parts.append(f"({spec.metavar})")
-    if spec.help:
-        help_parts.append(spec.help)
+        help_parts.append(escape(f"({spec.metavar})"))
+    if help_text := spec.rendered_help(help_escape):
+        help_parts.append(help_text)
     if help_parts:
         param_kwargs["help"] = " ".join(help_parts)
     if spec.nargs == "*" or spec.whole_value:
@@ -184,9 +194,11 @@ def load_flags_into_app(
     """
     params: list[inspect.Parameter] = []
     name_map: dict[str, str] = {}
+    # The format the app renders its help in; one set only on a parent app is not seen.
+    escape = help_escape(app.help_format or DEFAULT_FORMAT)
 
     for spec in flags:
-        param = _spec_to_inspect_param(spec)
+        param = _spec_to_inspect_param(spec, escape)
         if param.name in name_map:
             # Same flag spec'd twice (e.g. static + dynamic): first wins, like
             # load_flags_into_parser's silent skip of already-registered dests.

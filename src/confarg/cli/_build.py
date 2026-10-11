@@ -78,7 +78,7 @@ from confarg._types import (
     _var_params,
 )
 from confarg.cli._prefix import apply_prefix, in_prefix, strip_argv_prefix
-from confarg.cli._spec import FlagSpec, _build_help, _get_field_docstrings, _get_field_meta
+from confarg.cli._spec import FlagSpec, HelpParts, _build_help, _get_field_docstrings, _get_field_meta
 from confarg.exceptions import ConfargWarning, SymbolImportError
 from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_registered_leaf
 from confarg.typedload._construct import _is_typed_call
@@ -207,14 +207,20 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913 PLR0917
     flag: str,
     raw_type: Any,
     core: Any,
-    help_text: str,
+    help_text: HelpParts,
     group: str | None,
     group_description: str,
 ) -> FlagSpec:
     """Build a FlagSpec for a single leaf field."""
     meta = _get_field_meta(raw_type)
     metavar: str | None = meta.metavar if meta is not None else None
-    base = FlagSpec(name=flag, help=help_text, group=group, group_description=group_description)
+    base = FlagSpec(
+        name=flag,
+        help=help_text.prose,
+        note=help_text.note,
+        group=group,
+        group_description=group_description,
+    )
 
     if _is_bool(core):
         return dataclasses.replace(base, metavar=metavar or "true|false")
@@ -297,7 +303,7 @@ def _escaped_opener_specs(
             FlagSpec(
                 name=opener_flag,
                 metavar="DOTTED.PATH",
-                help=f"Escaped-mode opener for the '{field_flag}' callable.",
+                note=f"Escaped-mode opener for the '{field_flag}' callable.",
             ),
         )
         existing_names.add(opener_flag)
@@ -318,7 +324,7 @@ def _build_callable_fn_specs(
         FlagSpec(
             name=f"{flag}.{sub}",
             metavar="DOTTED.PATH",
-            help=f"Dotted import path for the '{flag}' callable ({desc}).",
+            note=f"Dotted import path for the '{flag}' callable ({desc}).",
             group=group,
             group_description=group_description,
         )
@@ -350,7 +356,7 @@ def _build_union_tag_spec(
     return FlagSpec(
         name=f"{flag}.{union_tag}",
         metavar="DOTTED.CLASS.PATH",
-        help=(
+        note=(
             f"Fully-qualified class path selecting the variant for '{flag}' "
             f"(e.g. mypackage.MyClass). "
             "Once set, use that class's field flags."
@@ -398,7 +404,7 @@ def _sibling_specs_from_signature(
                 FlagSpec(
                     name=dest,
                     metavar=param_name.upper(),
-                    help=", ".join(help_parts),
+                    note=", ".join(help_parts),
                     group=field_flag if grouped else None,
                     group_description=group_desc if grouped else "",
                 ),
@@ -454,7 +460,9 @@ def _collect_callable_factory_specs(
         if param_name in defaults:
             help_parts.append(f"default: {defaults[param_name]!r}")
         with contextlib.suppress(Exception):
-            result.append(_build_leaf_spec(dest, ft, core_ft, ", ".join(help_parts), group, group_description))
+            result.append(
+                _build_leaf_spec(dest, ft, core_ft, HelpParts(note=", ".join(help_parts)), group, group_description),
+            )
         existing_names.add(dest)
 
     return result
@@ -816,7 +824,7 @@ def _collect_namedtuple_specs(  # noqa: PLR0913, PLR0917  # _specs_for_field's c
     union_tag: str,
     group: str | None,
     group_description: str,
-    help_text: str,
+    help_text: HelpParts,
     descent: _Descent,
 ) -> list[FlagSpec]:
     """Build FlagSpecs for a namedtuple field: its arity flag, then each field's flags.
@@ -842,7 +850,8 @@ def _collect_namedtuple_specs(  # noqa: PLR0913, PLR0917  # _specs_for_field's c
             nargs=n,
             whole_value=True,
             metavar="VALUE",
-            help=f"{help_text} (positional order: {', '.join(flds)})".strip(),
+            help=help_text.prose,
+            note=f"{help_text.note} (positional order: {', '.join(flds)})".strip(),
             group=group,
             group_description=group_description,
         ),
@@ -888,7 +897,7 @@ def _union_cast_flag_specs(
         FlagSpec(
             name=f"{flag}.{tp.__name__}",
             metavar=tp.__name__.upper(),
-            help=f"Force {tp.__name__!r} type for '{flag}' (bypasses the stealing rule).",
+            note=f"Force {tp.__name__!r} type for '{flag}' (bypasses the stealing rule).",
             group=group,
             group_description=group_description,
         )
@@ -899,7 +908,7 @@ def _union_cast_flag_specs(
 def _whole_value_spec(
     flag: str,
     resolved: Any,
-    help_text: str,
+    help_text: HelpParts,
     group: str | None,
     group_description: str,
 ) -> FlagSpec:
@@ -919,7 +928,8 @@ def _whole_value_spec(
     return FlagSpec(
         name=flag,
         metavar="JSON" if _accepts_object_value(resolved) else "VALUE",
-        help=help_text,
+        help=help_text.prose,
+        note=help_text.note,
         group=group,
         group_description=group_description,
     )
@@ -978,7 +988,8 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
                     nargs="*",
                     stands_bare=True,
                     metavar="VALUE",
-                    help=help_text,
+                    help=help_text.prose,
+                    note=help_text.note,
                     group=group,
                     group_description=group_description,
                 ),
@@ -992,7 +1003,14 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
         # accepted; add the force-cast escape hatches for the union's own scalars,
         # which the one admission rule lets through (BUG-94).
         return [
-            FlagSpec(name=flag, metavar="VALUE", help=help_text, group=group, group_description=group_description),
+            FlagSpec(
+                name=flag,
+                metavar="VALUE",
+                help=help_text.prose,
+                note=help_text.note,
+                group=group,
+                group_description=group_description,
+            ),
             *_union_cast_flag_specs(flag, _scalar_cast_types_in_union(resolved), group, group_description),
         ]
 
@@ -1070,7 +1088,7 @@ def _collect_union_root_specs(
         tag_spec = FlagSpec(
             name=tag_name,
             metavar="DOTTED.CLASS.PATH",
-            help=(
+            note=(
                 "Fully-qualified class path selecting the union variant "
                 f"(e.g. {paths[0] if paths else 'mypackage.MyClass'}). "
                 "Once set, use the variant's field flags."
@@ -1159,7 +1177,7 @@ def _collect_struct_specs(  # noqa: C901, PLR0913  # a root call starts its own 
             tag_spec = FlagSpec(
                 name=tag_name,
                 metavar="DOTTED.CLASS.PATH",
-                help=(
+                note=(
                     f"Fully-qualified class path selecting the {tp.__name__!r} subclass "
                     f"(e.g. mypackage.SubClass). "
                     f"Once set, use the subclass's field flags."
@@ -1179,7 +1197,7 @@ def _collect_struct_specs(  # noqa: C901, PLR0913  # a root call starts its own 
     return result
 
 
-def _config_file_spec(name: str, config_flag: str, help_text: str) -> FlagSpec:
+def _config_file_spec(name: str, config_flag: str, note: str) -> FlagSpec:
     """Build the FlagSpec of a ``--<config_flag>[.<subpath>][+]`` config-file flag.
 
     The one shape every config-file flag registers: zero *or* more paths, refusing a bare
@@ -1194,7 +1212,7 @@ def _config_file_spec(name: str, config_flag: str, help_text: str) -> FlagSpec:
         name=name,
         nargs="*",
         metavar="FILE",
-        help=help_text,
+        note=note,
         bare_error=_missing_config_path_msg(config_flag),
     )
 
@@ -1287,7 +1305,14 @@ def _scalar_root_spec(target: Any) -> FlagSpec:
     """
     resolved = _resolve_type(target)
     core = _unwrap_optional(resolved)
-    spec = _build_leaf_spec("", target, resolved if core is None else core, "The configuration value.", None, "")
+    spec = _build_leaf_spec(
+        "",
+        target,
+        resolved if core is None else core,
+        HelpParts(note="The configuration value."),
+        None,
+        "",
+    )
     return spec.as_single_token()
 
 
@@ -1442,7 +1467,7 @@ def _collect_callable_key_argv_specs(
         if key in existing_names or not _addresses_callable_key(target, key.split("."), union_tag, calls=calls):
             continue
         existing_names.add(key)
-        specs.append(FlagSpec(name=key, metavar="VALUE", help=f"Value for '{key}' in the callable spec."))
+        specs.append(FlagSpec(name=key, metavar="VALUE", note=f"Value for '{key}' in the callable spec."))
     return specs
 
 
@@ -1519,7 +1544,7 @@ def _collect_leaf_tag_argv_specs(
                 FlagSpec(
                     name=key,
                     metavar="DOTTED.CLASS.PATH",
-                    help=f"Class path opening {leaf_desc} from its constructor parameters.",
+                    note=f"Class path opening {leaf_desc} from its constructor parameters.",
                     completer=_make_path_completer([dotted_name(leaf)]),
                 ),
             )
@@ -1528,7 +1553,7 @@ def _collect_leaf_tag_argv_specs(
                 FlagSpec(
                     name=key,
                     metavar=parts[-1].upper(),
-                    help=f"Constructor parameter '{parts[-1]}' of {leaf_desc}.",
+                    note=f"Constructor parameter '{parts[-1]}' of {leaf_desc}.",
                 ),
             )
     return specs
@@ -1592,7 +1617,7 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
                 existing_names.add(key)
                 target_desc = f"'{'.'.join(path)}'" if path else "the whole config"
                 specs.append(
-                    FlagSpec(name=key, metavar="JSON", help=f"Parse the value as JSON for {target_desc}."),
+                    FlagSpec(name=key, metavar="JSON", note=f"Parse the value as JSON for {target_desc}."),
                 )
                 continue
             if force_cast and not _registered_when_typed(target, path, union_tag):
@@ -1607,7 +1632,7 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
                         FlagSpec(
                             name=key,
                             metavar=SCALAR_CAST_TYPES[force_cast].__name__.upper(),
-                            help=f"Force {force_cast!r} type for '{'.'.join(path)}'.",
+                            note=f"Force {force_cast!r} type for '{'.'.join(path)}'.",
                         ),
                     )
                 continue
@@ -1622,7 +1647,7 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
                 FlagSpec(
                     name=key,
                     nargs=0,
-                    help=f"Delete the element or key at '{target_path}'.",
+                    note=f"Delete the element or key at '{target_path}'.",
                     hidden=_addresses_fixed_seq_element(target, path, union_tag),
                 ),
             )
@@ -1637,7 +1662,7 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
                     nargs="*",
                     metavar="ITEM",
                     stands_bare=True,
-                    help=f"Append element(s) to the list at '{target_path}'.",
+                    note=f"Append element(s) to the list at '{target_path}'.",
                 ),
             )
         elif _names_tag_by_fallback(target, path, union_tag):
@@ -1646,7 +1671,7 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
                 FlagSpec(
                     name=key,
                     metavar="DOTTED.CLASS.PATH",
-                    help=f"Class path written at '{target_path}', for build() to judge.",
+                    note=f"Class path written at '{target_path}', for build() to judge.",
                 ),
             )
         else:
@@ -1664,7 +1689,7 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
                         nargs="*" if at is not None and _binds_a_run(at) else None,
                         metavar="VALUE",
                         stands_bare=at is not None and _takes_multi_tokens(at),
-                        help=f"Set the collection element at '{target_path}'.",
+                        note=f"Set the collection element at '{target_path}'.",
                         hidden=_addresses_fixed_seq_element(target, path, union_tag),
                     ),
                     at,

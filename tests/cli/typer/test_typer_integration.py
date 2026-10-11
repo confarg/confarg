@@ -347,6 +347,8 @@ class _VariantB:
 @dataclass
 class _WithVariants:
     pet: _VariantA | _VariantB = field(default_factory=_VariantA)
+    glob: str = "*.py|*.pyi*"
+    odd: str = "[/x] :warning: %d <b>"
 
 
 class TestHelpReadsUnderEveryMarkupMode:
@@ -366,6 +368,22 @@ class TestHelpReadsUnderEveryMarkupMode:
         out = _invoke(command, ["--help"])
         text = " ".join(" ".join(line.strip("│ ") for line in out.splitlines()).split())
         assert "Use --config.FIELD FILE to scope" in text
+
+    @pytest.mark.parametrize("markup_mode", ["markdown", "rich", None])
+    def test_a_default_prints_as_written(self, markup_mode: Any) -> None:
+        """A default's repr is data: no ``*`` read as emphasis, no ``[/x]`` as a tag, no ``:warning:`` as an emoji."""
+        app = typer.Typer(add_completion=False, rich_markup_mode=markup_mode)
+
+        @app.command()
+        def _cli(ctx: typer.Context) -> None:
+            pass
+
+        command = get_command(app)
+        populate_command(_WithVariants, command, argv=[])
+        out = _invoke(command, ["--help"])
+        text = " ".join(" ".join(line.strip("│ ") for line in out.splitlines()).split())
+        assert "(default: '*.py|*.pyi*')" in text
+        assert "(default: '[/x] :warning: %d <b>')" in text
 
 
 # ---------------------------------------------------------------------------

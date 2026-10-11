@@ -10,13 +10,22 @@ import ast
 import dataclasses
 import inspect
 import textwrap
-from typing import TYPE_CHECKING, Annotated, Any, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, NamedTuple, get_args, get_origin
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 from confarg._types import _allows_none, _per_class_cache, _resolve_type, _union_args_no_none
 from confarg.exceptions import ConfargError
+
+
+class HelpParts(NamedTuple):
+    """A field's help in the two parts :class:`FlagSpec` keeps apart."""
+
+    #: The field's own help, as its author wrote it.
+    prose: str = ""
+    #: What confarg adds to it, plain text.
+    note: str = ""
 
 
 @dataclasses.dataclass
@@ -108,11 +117,19 @@ class FlagSpec:
     """Display name shown in help text."""
 
     help: str = ""
-    """Help text, handed to the framework unchanged.
+    """The field's own help -- ``FieldMeta.help`` or its attribute docstring -- handed to the framework as written.
 
-    The help confarg writes holds no markup, so it reads as written under any help format
-    the host application picked: a placeholder is spelled ``--config.FIELD``, never
-    ``--config.<field>``, which a Markdown renderer drops as an HTML tag.
+    Markup the host's help format reads (cyclopts' Markdown, typer's rich markup) stays live
+    in it, as it does in the help the host writes for its own parameters.
+    """
+
+    note: str = ""
+    """What confarg writes about the flag, printed after :attr:`help` and read as plain text.
+
+    A default's repr, a class path, a dict key, a placeholder: an adapter whose framework
+    reads help as markup escapes it for that format (:meth:`rendered_help`), so
+    ``(default: '*.py')`` and ``__main__.Cat`` print as written.  Its fixed wording holds no
+    markup either: a placeholder is spelled ``--config.FIELD``, never ``--config.<field>``.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/framework-specifics.md#help-text-is-format-neutral
@@ -141,6 +158,16 @@ class FlagSpec:
     Dev Notes:
         docs-dev/architecture/design-decisions/index-spellings-are-hidden-from-help.md#index-spellings-are-hidden-from-help
     """
+
+    def rendered_help(self, escape: Callable[[str], str] | None = None) -> str:
+        """Return the help the framework prints: :attr:`help`, then :attr:`note` passed through *escape*.
+
+        Args:
+            escape: Turns plain text into the framework's help format, so it prints as
+                written (``None`` for a framework that prints help as plain text).
+        """
+        note = escape(self.note) if escape is not None and self.note else self.note
+        return " ".join(part for part in (self.help, note) if part)
 
     def as_single_token(self) -> FlagSpec:
         """Return this spec reshaped to consume exactly one token, whatever its shape.
@@ -248,29 +275,25 @@ def _build_help(  # noqa: PLR0913, PLR0917  # one argument per part of the help
     defaults: dict[str, Any],
     flag: str = "",
     position: int | None = None,
-) -> str:
-    """Compose the help string for one field.
+) -> HelpParts:
+    """Compose the help for one field: its own prose, then confarg's note.
 
-    Priority: FieldMeta.help > attribute docstring > empty string.
-    If the field has a *position* (a namedtuple's), appends ``(index <position>)``.
-    If the field has a dataclass default, appends ``(default: <repr>)``.
-    If the field is Optional, appends a hint about the None sentinel.
+    The prose is FieldMeta.help, else the attribute docstring, else empty.  The note
+    holds, in order: ``(index <position>)`` if the field has a *position* (a
+    namedtuple's), ``(default: <repr>)`` if it has a dataclass default, and a hint
+    about the None sentinel if it is Optional.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/index-spellings-are-hidden-from-help.md#index-spellings-are-hidden-from-help
     """
     meta = _get_field_meta(raw_type)
-    base = meta.help if meta is not None and meta.help is not None else docstrings.get(field_name, "")
+    prose = meta.help if meta is not None and meta.help is not None else docstrings.get(field_name, "")
 
+    note: list[str] = []
     if position is not None:
-        base = f"{base} (index {position})".strip()
-
+        note.append(f"(index {position})")
     if field_name in defaults:
-        suffix = f"(default: {defaults[field_name]!r})"
-        base = f"{base} {suffix}".strip() if base else suffix
-
+        note.append(f"(default: {defaults[field_name]!r})")
     if flag and _allows_none(_resolve_type(raw_type)) and _union_args_no_none(_resolve_type(raw_type)):
-        none_hint = "(pass 'none' or 'null' to set to None)"
-        base = f"{base} {none_hint}".strip() if base else none_hint
-
-    return base
+        note.append("(pass 'none' or 'null' to set to None)")
+    return HelpParts(prose.strip(), " ".join(note))

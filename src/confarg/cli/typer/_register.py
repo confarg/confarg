@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import functools
 import sys
 from typing import TYPE_CHECKING, Any
 
+import typer.core
 from typer._types import TyperChoice
 from typer.core import TyperOption
 
@@ -21,6 +23,7 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg.cli import _clicklike
+from confarg.cli._markup import help_escape
 
 
 class _ExpressionTolerantChoice(_clicklike.ExpressionTolerantChoiceMixin, TyperChoice):
@@ -46,7 +49,7 @@ def _completer_kwargs(completer: Callable[[str], list[str]]) -> dict[str, Any]:
     return {"autocompletion": _autocompletion}
 
 
-def _spec_to_option(spec: FlagSpec) -> TyperOption:
+def _spec_to_option(spec: FlagSpec, *, help_escape: Callable[[str], str] | None = None) -> TyperOption:
     """Convert one FlagSpec to a TyperOption."""
     return _ConfargOption(
         confarg_name=spec.name,
@@ -55,8 +58,19 @@ def _spec_to_option(spec: FlagSpec) -> TyperOption:
             spec,
             choice_cls=_ExpressionTolerantChoice,
             completer_kwargs=_completer_kwargs,
+            help_escape=help_escape,
         ),
     )
+
+
+def _option_factory(command: Command) -> Callable[[FlagSpec], TyperOption]:
+    """Return the option factory for *command*, escaping confarg's help for the markup typer renders it in.
+
+    typer reads an option's help as markup in the command's ``rich_markup_mode`` when
+    rich is in use, and prints it as plain text otherwise.
+    """
+    mode = getattr(command, "rich_markup_mode", None) if typer.core.HAS_RICH else None
+    return functools.partial(_spec_to_option, help_escape=help_escape(mode))
 
 
 def load_flags_into_command(
@@ -75,7 +89,7 @@ def load_flags_into_command(
             or :func:`~confarg.cli.build_dynamic_flags`.
         command: The command from :func:`typer.main.get_command` to populate.
     """
-    _clicklike.load_flags_into_command(flags, command, _spec_to_option)
+    _clicklike.load_flags_into_command(flags, command, _option_factory(command))
 
 
 def populate_command(  # noqa: PLR0913
@@ -139,7 +153,7 @@ def populate_command(  # noqa: PLR0913
     _clicklike.populate_command(
         target,
         command,
-        _spec_to_option,
+        _option_factory(command),
         _ConfargOption,
         cli_prefix=cli_prefix,
         union_tag=union_tag,

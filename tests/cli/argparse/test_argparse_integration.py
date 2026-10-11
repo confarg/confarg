@@ -744,6 +744,17 @@ class _WithPrefixedHelp:
     pet: _PrefixVariantA | _PrefixVariantB = field(default_factory=_PrefixVariantA)
 
 
+@dataclass
+class _WithPercentDefault:
+    fmt: str = "%d items"
+
+
+def test_a_percent_in_a_default_prints_as_written() -> None:
+    """Argparse reads help as a ``%``-format string; a default's ``%`` is data, not a format (BUG-226 drive-by)."""
+    text = " ".join(make_parser(_WithPercentDefault).format_help().split())
+    assert "(default: '%d items')" in text
+
+
 class TestCliPrefixArgparse:
     """The prefix registered by populate_parser reaches from_namespace on its own."""
 
