@@ -26,6 +26,14 @@ A citation the sweep cannot follow is an error too, or it goes stale unseen: a M
 with an anchor that is not spelled from the repository root (``09-invariants.md#…``), or a
 note's bare file name (``list-syntax-divergence.md``). The error gives the repo-root spelling
 when the file name points at a single note.
+
+The notes cite each other as well, by relative Markdown link, and the same sweep follows those:
+every link in ``docs-dev/``, ``docs-agents/`` and ``AGENTS.md`` has to name a file or folder that
+exists, and its anchor a heading of that file. Links inside a fence or a code span are not links,
+and a URL is not followed. Two more shapes are errors there: a link from ``docs-dev/`` into the
+agent protocols, which the notes never depend on, and a note cited by line number
+(``invariants.md:106``), which no edit of the note survives — link a heading instead. The
+protocols are ``.gitignore``d, so a checkout without them sweeps ``docs-dev/`` alone.
 """
 
 from __future__ import annotations
@@ -33,6 +41,10 @@ from __future__ import annotations
 import re
 from collections import Counter
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -45,6 +57,21 @@ _MARKDOWN = re.compile(r"(?<![\w./-])([\w.-]+(?:/[\w.-]+)*\.md)(?:#([\w-]+))?")
 #: This sweep's own tests, whose fixtures spell broken citations on purpose.
 _OWN_TESTS = "tests/tooling/test_anchors.py"
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
+#: The opening or closing line of a fenced block: three or more backticks or tildes, then the rest.
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+#: An inline code span, delimited by equal runs of backticks.
+_CODE_SPAN = re.compile(r"(`+)(.+?)\1")
+#: An inline link or image, ``[text](target)``, with an optional title after the target.
+_LINK = re.compile(r"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+#: A target with a scheme: a URL, which this sweep leaves to the web.
+_URL = re.compile(r"[a-z][\w+.-]*:")
+#: A Markdown name followed by a line number: a note cited the way no edit of it survives.
+_LINE_CITATION = re.compile(r"(?<![\w./-])[\w.-]+(?:/[\w.-]+)*\.md:\d+")
+#: The Markdown the sweep of the notes reads, from the repository root. One that is absent is
+#: skipped: the protocols are ``.gitignore``d, so a fresh checkout has none.
+_NOTES = ("docs-dev", "docs-agents", "AGENTS.md")
+#: What ``docs-dev/`` never links to: the protocols depend on the notes, never the reverse.
+_PROTOCOLS = ("docs-agents", "AGENTS.md", "CLAUDE.md")
 
 
 def _slug(text: str) -> str:
@@ -55,11 +82,27 @@ def _slug(text: str) -> str:
     return text.replace(" ", "-")
 
 
+def _prose(text: str) -> Iterator[tuple[int, str]]:
+    """Yield each line of a Markdown text that sits outside its fenced blocks, numbered from 1."""
+    # A fence closes on a bare run of its own character at least as long as the one that opened
+    # it, which is what lets a ```` block show a ``` block whole.
+    fence = ""
+    for number, line in enumerate(text.splitlines(), start=1):
+        match = _FENCE.match(line)
+        if fence:
+            if match is not None and match.group(1).startswith(fence) and not match.group(2).strip():
+                fence = ""
+        elif match is not None:
+            fence = match.group(1)
+        else:
+            yield number, line
+
+
 def _anchors(document: Path) -> list[str]:
     """Return every anchor a document's headings generate, duplicates suffixed like GitHub's."""
     anchors: list[str] = []
     seen: Counter[str] = Counter()
-    for line in document.read_text(encoding="utf-8").splitlines():
+    for _, line in _prose(document.read_text(encoding="utf-8")):
         heading = _HEADING.match(line)
         if heading is None:
             continue
@@ -129,13 +172,67 @@ def _sweep(root: Path) -> tuple[list[str], int]:
     return errors, len(anchors)
 
 
+def _link(target: str, document: Path, root: Path, anchors: dict[Path, list[str]]) -> str | None:
+    """Return the error for one relative link in a note, if it cannot be followed.
+
+    ``anchors`` caches each linked document's anchors by its resolved path, and is filled here.
+    """
+    path, _, anchor = target.partition("#")
+    resolved = (document.parent / path).resolve() if path else document
+    if not resolved.exists():
+        return f"links {target}, but there is no such file"
+    if document.is_relative_to(root / "docs-dev") and any(resolved.is_relative_to(root / name) for name in _PROTOCOLS):
+        return f"links {target}, but docs-dev/ never links to the agent protocols"
+    if not anchor:
+        return None
+    if not resolved.is_file():
+        return f"links {target}, but a folder has no headings"
+    if resolved not in anchors:
+        anchors[resolved] = _anchors(resolved)
+    if anchor not in anchors[resolved]:
+        return f"links {target}, but no heading in it generates #{anchor}"
+    return None
+
+
+def _sweep_notes(root: Path) -> tuple[list[str], int]:
+    """Return every link in ``root``'s notes that cannot be followed, and how many links they hold."""
+    root = root.resolve()
+    documents: list[Path] = []
+    for name in _NOTES:
+        path = root / name
+        documents += sorted(path.rglob("*.md")) if path.is_dir() else [path] if path.is_file() else []
+    errors: list[str] = []
+    anchors: dict[Path, list[str]] = {}
+    links = 0
+    for document in documents:
+        for number, line in _prose(document.read_text(encoding="utf-8")):
+            spans = [match.span() for match in _CODE_SPAN.finditer(line)]
+            targets = [
+                match.group(1)
+                for match in _LINK.finditer(line)
+                if not any(a <= match.start() < b for a, b in spans) and not _URL.match(match.group(1))
+            ]
+            links += len(targets)
+            found = [_link(target, document, root, anchors) for target in targets]
+            found += [
+                f"cites {match.group(0)} by line number, which no edit of the note survives; link a heading"
+                for match in _LINE_CITATION.finditer(line)
+            ]
+            where = f"{document.relative_to(root).as_posix()}:{number}"
+            errors += [f"{where}: {error}" for error in found if error is not None]
+    return errors, links
+
+
 def main() -> int:
-    """List every citation in ``src/`` and ``tests/`` that cannot be followed, and fail if there is one."""
+    """List every citation in the code and every link in the notes that cannot be followed, and fail if there is one."""
     errors, cited = _sweep(ROOT)
+    note_errors, links = _sweep_notes(ROOT)
+    errors += note_errors
     for error in errors:
         print(f"error: {error}")
     if not errors:
         print(f"{cited} document(s) cited, every anchor resolves")
+        print(f"{links} link(s) between the notes, every one resolves")
     return 1 if errors else 0
 
 

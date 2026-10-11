@@ -12,8 +12,9 @@ impact: none
 
 `docs-dev/todo/index.py` validates the boards and regenerates their tables, and
 `docs-dev/todo/anchors.py` (added with BUG-49) checks every `docs-dev/architecture/*.md#anchor`
-cited in `src/` against the headings that exist. Neither runs automatically: `ci-lint.yml` runs
-pre-commit only, and `.pre-commit-config.yaml` holds no local hook for either, so both depend on
+cited in `src/` and `tests/`, and every link between the notes in `docs-dev/` and the protocols
+(BUG-148), against the files and headings that exist. Neither runs automatically: `ci-lint.yml`
+runs pre-commit only, and `.pre-commit-config.yaml` holds no local hook for either, so both depend on
 a contributor remembering `--check` exists. A stale board table or a renamed heading that misses
 a citation therefore survives a green CI run — BUG-49 itself went unnoticed through the whole
 `## The triad` → `## The quartet` rename that caused it.

@@ -47,6 +47,17 @@ bare file name or a short-form `<name>.md#<anchor>` as an error rather than skip
 a numbered short form is how twelve citations went stale unseen when these notes lost their
 numbers. A citation without an anchor names the whole note.
 
+Between the notes themselves, a citation is a relative Markdown link to a heading,
+`[merge order](../pipeline/merge-order.md#source-precedence)`, and the same sweep follows every
+link in `docs-dev/` and in the agent protocols to a file and a heading. A note is never cited by
+line number (`merge-order.md:<line>`): no edit of the note leaves the number pointing at the same
+text, so the sweep reports one as an error. Paths written as code (`src/confarg/_api.py`) are
+not checked: a plan names the modules it will create and a rejected alternative names the file
+that was deleted, so a code-span path legitimately names nothing, and the link checkers this
+copies (remark-validate-links, mkdocs' `validation.links`, lychee) all follow links only. The
+sweep also reports a link from `docs-dev/` into the protocols, which this folder never depends
+on ([docs-dev/README.md](../README.md#reference-here-protocol-elsewhere)).
+
 ## Layout
 
 A topic is one file while it stays cohesive, and a folder of subtopic files once it does not:

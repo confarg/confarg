@@ -32,11 +32,12 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | S | low | behavior |
 | [BUG-119 — `_defaults.py` says four front-ends must agree; there are five](BUG-119-defaults-module-counts-four-front-ends.md) | S | low | none |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | S | low | behavior |
-| [BUG-141 — The protocols link the architecture notes by their old numbered filenames](BUG-141-the-protocols-link-the-architecture-notes-by-their-old-numbered-filenames.md) | S | medium | none |
 | [BUG-142 — A namedtuple built from a dict accepts index keys the CLI refuses](BUG-142-a-namedtuple-built-from-a-dict-accepts-index-keys-the-cli-refuses.md) | S | medium | config |
 | [BUG-144 — The refusal of a method on a non-string reads "a int"](BUG-144-a-method-on-a-non-string-reads-a-int.md) | S | low | behavior |
 | [BUG-145 — An expression that parses but nests past the recursion limit crashes the walkers](BUG-145-an-expression-that-parses-but-nests-past-the-recursion-limit-crashes-the-walkers.md) | M | high | behavior |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | L | high | config |
-| [BUG-148 — Nothing checks the Markdown links between the internal notes](BUG-148-nothing-checks-the-markdown-links-between-the-internal-notes.md) | M | low | none |
+| [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | S | low | none |
+| [BUG-150 — The protocols count four front-ends and leave typer out](BUG-150-the-protocols-count-four-front-ends-and-leave-typer-out.md) | S | low | none |
+| [BUG-151 — The namedtuple decision names the bugs board by its old file](BUG-151-the-namedtuple-decision-names-the-bugs-board-by-its-old-file.md) | S | low | none |
 
 <!-- tickets:end -->

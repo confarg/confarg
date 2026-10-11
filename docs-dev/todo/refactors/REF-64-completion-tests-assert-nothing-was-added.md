@@ -14,8 +14,7 @@ flags are added to the command", but its body asserts `len(cmd.params) == before
 was added. It passes for a reason unrelated to its claim: the target is the flat dataclass
 `Simple`, and `build_dynamic_flags(Simple, [])` correctly returns `[]`, so there is nothing to
 add. The test therefore passes with the whole body of `setup_completion` deleted. Same family as
-[REF-38](REF-38-collect-names-keyword-args-or-asserts-away-claim.md) and
-[REF-39](REF-39-dict-field-env-test-or-asserts-away-claim.md).
+REF-38 and REF-39, both closed.
 
 Mutation testing makes the consequence measurable: 63 of the 81 mutants of
 `cli/_clicklike/_completion.py` survive (22% mutation score, the lowest in the library), 56 of

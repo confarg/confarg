@@ -27,5 +27,5 @@ filed rather than folded into BUG-27:
   line, which confarg has no use for — it has no positionals. A per-flag "the next N tokens are
   values" reading is closer to what is wanted and has no precedent to copy.
 - **The other channels.** Neither the environment nor a config file has an equivalent, so a
-  CLI-only spelling has to be justified as such
-  ([feature-design.md](../../../docs-agents/feature-design.md)).
+  CLI-only spelling is a divergence, argued the way the approved ones listed under
+  [invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity) were.
