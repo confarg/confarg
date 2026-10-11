@@ -159,6 +159,14 @@ def build[T](
             # Its remedy names the whole root's flag: no flag addresses a path below it.
             e._in_root_value = True
             raise
+    if not resolved:
+        # No channel supplied anything, so the root is built from {} — a guess. A TypeError
+        # out of it means the guess was wrong and the root is missing, the rule a defaulted
+        # field already takes (BUG-184), caught rather than asked up front.
+        try:
+            return _tc(target_r, resolved, union_tag=union_tag)
+        except TypeError:
+            raise MissingFieldError(path=(), field_type=target_r) from None
     return _tc(target_r, resolved, union_tag=union_tag)
 
 

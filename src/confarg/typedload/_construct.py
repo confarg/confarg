@@ -941,6 +941,18 @@ def _construct_union_by_tag(non_none: list[Any], data: dict[str, Any], path: Fie
         )
     if matching:
         cleaned = {k: v2 for k, v2 in data.items() if k != union_tag}
+        if not cleaned:
+            # The tag is all the data, so the named class is asked to build from nothing. Its
+            # refusal is a coercion of the value the user wrote — the field is not missing — and
+            # Python's own text says what the class lacks (BUG-213).
+            try:
+                return _construct_struct(cls, cleaned, path, union_tag)
+            except TypeError as e:
+                msg = (
+                    f"Class {tag!r} at '{_spell_field_path(path)}' cannot be built with no"
+                    f" arguments: {e}. Supply the class's fields as keys beside the tag."
+                )
+                raise TypeCoercionError(msg) from e
         return _construct_struct(cls, cleaned, path, union_tag)
     valid_variants = sorted(dotted_name(_resolve_type(v)) for v in non_none if _is_struct(_resolve_type(v)))
     msg = (

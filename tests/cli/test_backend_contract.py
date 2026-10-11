@@ -3047,6 +3047,13 @@ class _FieldTagged:
     u: _FieldSqlite | _FieldServer | None = None
 
 
+@dataclass
+class _RefusingTagged:
+    """Struct whose union field's variant is an unregistered all-default class refusing {}."""
+
+    u: UUID | int = 0
+
+
 class TestUnionFieldTagContract:
     """A struct field whose type is a union dispatches on its tag identically everywhere."""
 
@@ -3083,6 +3090,22 @@ class TestUnionFieldTagContract:
             config_flag="",
         )
         assert merged == {"u": {"class": "no.such.module.Class", "dbpath": "/var/db/app.sqlite"}}
+
+    def test_tag_alone_on_a_refusing_variant_is_a_coercion(self, loader: ConfargLoader) -> None:
+        """A tag naming an all-default class that refuses {} is a coercion naming it (BUG-213).
+
+        The tag is supplied data, so the field is not missing: ``build()`` refuses with a
+        ``TypeCoercionError`` quoting Python's own text, on every front-end.
+        """
+        with pytest.raises(TypeCoercionError, match="with no arguments"):
+            loader.load(_RefusingTagged, argv=["--u.class", "uuid.UUID"], env={}, config_flag="")
+        cfg = loader.load(
+            _RefusingTagged,
+            argv=["--u.class", "uuid.UUID", "--u.hex", _UUID_TEXT],
+            env={},
+            config_flag="",
+        )
+        assert cfg.u == UUID(_UUID_TEXT)
 
 
 # ---------------------------------------------------------------------------
@@ -7557,6 +7580,16 @@ class TestMissingFieldRemedyContract:
         with pytest.raises(MissingFieldError, match=re.escape(f"via CLI flag ({usage})")):
             loader.load(int, argv=[], env={}, cli_prefix=cli_prefix)
         assert loader.load(int, argv=argv, env={}, cli_prefix=cli_prefix) == 5
+
+    def test_struct_root_refusing_empty_call_is_a_missing_root(self, loader: ConfargLoader) -> None:
+        """A struct root no channel supplied is missing when its constructor refuses `{}` (BUG-184).
+
+        ``UUID`` defaults every ``__init__`` parameter and still refuses an empty call, so the
+        all-default shortcut guessed wrong: the root is reported as a scalar root nothing
+        supplied, never as the constructor's own ``TypeError``.
+        """
+        with pytest.raises(MissingFieldError, match="No value provided for target type"):
+            loader.load(UUID, argv=[], env={})
 
     @pytest.mark.parametrize(
         ("cli_prefix", "flag"),

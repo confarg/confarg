@@ -9,6 +9,10 @@
    of exactly one variant that `_is_struct` accepts — registered leaves included, since a tag is
    an explicit request to build from fields
    ([design decisions](../design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in)).
+   A tag that is all the data asks the named class to build from nothing, and a `TypeError` out
+   of that call is a `TypeCoercionError` naming the class and quoting Python's own text — the
+   tag is supplied data, so the field is not missing (BUG-213), the shape the auto-bound owner
+   of an instance method already takes ([callables](../callables.md#auto-binding)).
    The key is the tag only when no member — no variant's own field, nor a variant's
    subclass-only field — owns its spelling; a member that does owns the key, the union falls
    through to structural matching, and the key counts as provided data there (BUG-102,
@@ -104,6 +108,7 @@ indifferent to both.
   calling the constructor, and a class whose `__init__` has side effects should be called once,
   not twice. Every missing field raises the one `MissingFieldError(path, type)`, so its type never changes
   the message ([invariants](../invariants.md#delegate-to-the-canonical-function)).
+- The root takes the same rule (BUG-184): `build()` builds a struct root from the empty merged dict when no channel supplied anything, and a `TypeError` out of that call is the missing root — `MissingFieldError((), target)`, the error a scalar root nothing supplied raises, whose remedy is the root's own ([above](#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)). The catch sits in `build()` rather than at `_construct_struct`'s final `tp(**kwargs)`, because the union tag reaches that call with an empty dict too (`--field.class x.S` and nothing else), and there the field *was* supplied, so "missing" would be wrong — that route refuses as a coercion instead ([above](#union-construction)). And it is gated on nothing having been supplied at all, so a constructor's own `TypeError` about data a channel did supply still escapes as its own.
 - An index-keyed dict for a tuple field with a default patches the default in place, unless
   the merge layer carried a base (`__base__`), which wins.
 - A `__base__` with an index patch beside it builds as the merge would have built it, had no
