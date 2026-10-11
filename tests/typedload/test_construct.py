@@ -15,7 +15,7 @@ from uuid import UUID
 import pytest
 
 import confarg
-from confarg._merge import LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY
+from confarg._merge import LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, MERGE_OP_KEYS
 from confarg._types import _StrToken, _UnionSeqToken
 from confarg.exceptions import ConfargWarning, MissingFieldError, TypeCoercionError
 from confarg.typedload._construct import _construct_struct_dispatch, construct
@@ -622,3 +622,48 @@ class TestListOpOnADict:
         """``{__delete__: [1]}`` beside a dict's keys names the op and the field."""
         with pytest.raises(TypeCoercionError, match=re.escape("Cannot apply '__delete__' to the dict at 'd'")):
             construct(dict[str, list[int]], {"a": [1], LIST_DELETE_KEY: [1]}, path=("d",))
+
+
+@dataclass
+class _TupleWithDefault:
+    u: tuple[int, int] = (0, 0)
+
+
+@dataclass
+class _TupleWithoutDefault:
+    u: tuple[int, int]
+
+
+class TestPlainSpellingOfAListOpOnASequence:
+    """A plain-string list-op key in ``build()`` data is refused from both targets alike (BUG-209).
+
+    The merged dict holds the ops as markers, so the plain spelling is a data key no channel
+    can produce. Against a default it was skipped as a stray and the base it spelled never
+    entered; without one it was refused as the non-integer patch key it is.
+    """
+
+    @pytest.mark.parametrize("key", sorted(MERGE_OP_KEYS))
+    def test_every_op_spelling_is_refused_naming_the_key(self, key: str) -> None:
+        """Each of the four spellings meets the same refusal, default or not."""
+        match = re.escape(f"at 'u': {key!r} spells a list op, which only a configuration file writes")
+        with pytest.raises(TypeCoercionError, match=match):
+            confarg.build(_TupleWithDefault, {"u": {key: [1, 2], "z": 5}})
+        with pytest.raises(TypeCoercionError, match=match):
+            confarg.build(_TupleWithoutDefault, {"u": {key: [1, 2], "z": 5}})
+
+    def test_both_targets_refuse_identically(self) -> None:
+        """The refusal is one text from the defaulted patch path and the bare path alike."""
+        errors = []
+        for target in (_TupleWithDefault, _TupleWithoutDefault):
+            with pytest.raises(TypeCoercionError) as ei:
+                confarg.build(target, {"u": {"__base__": [1, 2], "z": 5}})
+            errors.append(str(ei.value))
+        assert errors[0] == errors[1]
+
+    def test_a_non_reserved_stray_still_patches_the_default(self) -> None:
+        """A stray no reserved key spells is still tolerated, so the default is patched in place."""
+        assert confarg.build(_TupleWithDefault, {"u": {"0": 9, "z": 5}}).u == (9, 0)
+
+    def test_the_marker_spelling_still_carries_the_base(self) -> None:
+        """The marker, not the plain string, is the op: it still replaces the default."""
+        assert confarg.build(_TupleWithDefault, {"u": {LIST_REPLACE_BASE_KEY: [7, 8]}}).u == (7, 8)
