@@ -35,11 +35,13 @@ different board.
 | [REF-66 — the pinned ruff and the project's own ruff disagree](REF-66-pinned-ruff-disagrees-with-the-project-ruff.md) | S | low | none |
 | [REF-68 — the scalar root spec undoes the multi-token shape one attribute at a time](REF-68-scalar-root-undoes-the-multi-token-shape-one-field-at-a-time.md) | S | low | none |
 | [REF-70 — `_dataclass_subclasses` is named for dataclasses but returns plain-class structs](REF-70-dataclass-subclasses-is-a-misnomer.md) | M | low | none |
-| [REF-71 — Three functions answer "does this segment name a member?", and they disagree at the edges](REF-71-three-answers-to-is-this-a-member.md) | M | medium | none |
+| [REF-71 — Four functions answer "does this segment name a member?", and they disagree at the edges](REF-71-three-answers-to-is-this-a-member.md) | M | medium | none |
 | [REF-75 — `cli/_collect.py` no longer collects, and `_merge_from_flat` no longer merges from the flat result](REF-75-cli-collect-module-no-longer-collects.md) | S | low | none |
 | [REF-77 — The four "expected N elements" refusals have drifted on the type's name](REF-77-expected-elements-refusals-have-drifted.md) | S | medium | none |
 | [REF-78 — `.ruff.toml` selects "PL" twice](REF-78-ruff-toml-selects-pl-twice.md) | S | low | none |
 | [REF-81 — `90_integration/README.md` opens at h3 and sandwiches a lone h2 between h3 sections](REF-81-integration-readme-heading-structure.md) | S | low | none |
 | [REF-82 — `greetings.py` in two examples carries a dead `Config` dataclass](REF-82-greetings-py-carries-a-dead-config-dataclass.md) | S | low | none |
+| [REF-83 — The registration walk dispatches on shape outside `_type_kind`](REF-83-registration-walk-dispatches-outside-the-kind-table.md) | M | medium | none |
+| [REF-84 — The delete suffix and its list index are decoded twice](REF-84-env-delete-suffix-decoded-twice.md) | S | low | none |
 
 <!-- tickets:end -->

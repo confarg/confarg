@@ -20,3 +20,12 @@ Cannot construct tuple[int, str] at 'p': expected 2 elements, got 3
 
 One factory parametrized by the count pair serves all four, in the wake of
 `TypeCoercionError.wrong_shape` (REF-69); it must settle which name spelling wins and pin it.
+
+Two more construction refusals, found reviewing REF-69, belong in the same pass:
+
+- `_callable.py` (`_resolve_callable_spec`) spells `wrong_shape`'s own sentence inline,
+  "Cannot construct Callable at '<path>': expected str or dict, got …", and names the type with
+  `type(spec).__name__` instead of `_src_type`. It should call
+  `TypeCoercionError.wrong_shape`.
+- "Cannot construct X at '<path>': dict keys must be integer indices" is written twice in
+  `_construct.py` (`_indexed_dict_to_positions`, and the dict branch of `_build_items`).

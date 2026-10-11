@@ -1,21 +1,27 @@
-# REF-71 — Three functions answer "does this segment name a member?", and they disagree at the edges
+# REF-71 — Four functions answer "does this segment name a member?", and they disagree at the edges
 
-**Where:** `src/confarg/_types.py` (`_union_tag_shadowed`) · `src/confarg/_parse_cli.py`
-(`_segment_names_real_field`, `_advance_field_type`) · **Filed:** 2026-10-01
+**Where:** `src/confarg/_types.py` (`_union_tag_shadowed`, `_struct_member_names`) ·
+`src/confarg/_parse_cli.py` (`_segment_names_real_field`, `_member_names`, `_advance_field_type`)
+· **Filed:** 2026-10-01
 **Effort:** M · **Risk:** medium · **Impact:** none
 
 The walk's step, `_advance_field_type` (with `_field_types` recursing into unions), is what
-decides whether a segment reaches a member. Two predicates restate that decision instead of
-asking it:
+decides whether a segment reaches a member. For a struct it asks `_types._struct_member_type`,
+and so do the struct arms of `_segment_names_real_field` and `_union_tag_shadowed` (which closed
+BUG-103's lag). What still restates the decision is the dispatch around that call:
 
-- `_union_tag_shadowed` describes itself as "the walk's member answer". BUG-103 was this copy
-  lagging the walk: it had no subclass-only field arm.
 - `_segment_names_real_field` counts the tag itself as a member (`seg == union_tag` → True),
-  which mixes the casts/locals question with the membership one.
+  which mixes the casts/locals question with the membership one, and counts any key of a dict.
+- `_union_tag_shadowed` has no namedtuple arm, so a custom tag spelled like a namedtuple field
+  is not shadowed.
+- REF-73 added a listing form for the env channel: `_parse_cli._member_names` (struct,
+  namedtuple, union) over `_types._struct_member_names`. It has its own `_is_*` chain, asking
+  namedtuple before struct where `_segment_names_real_field` asks struct before namedtuple, and
+  its own subclass enumeration beside `_subclass_field_type`'s.
 
-They still disagree on namedtuples (a custom tag spelled like a namedtuple field) and dicts
-(any key is a member). Under the current callers the gaps are latent *(inferred — no failing
-case observed)*. Fix direction: express both predicates through the walk's step, keeping the
-tag-is-a-member short-circuit at the casts/locals callers that want it, and update the two
-rows of the canonical table in
+Under the current callers the gaps are latent *(inferred — no failing case observed)*. Fix
+direction: one membership answer per node, `_member_names` dispatching on `_type_kind`, with
+the predicates expressed through it (`seg in _member_names(pt)`, plus the dict and tag
+short-circuits at the casts/locals callers that want them), and `_struct_member_names`
+derived from `_struct_member_type`. Update the rows of the canonical table in
 [invariants.md](../../architecture/invariants.md#delegate-to-the-canonical-function).
