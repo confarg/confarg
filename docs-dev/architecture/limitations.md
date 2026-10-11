@@ -160,6 +160,7 @@ A field default is the layer below every source only where the class declares it
   what `merge(cli_prefix="app")` returned, it offers `--port` where the CLI accepts
   `--app.port` ([types](types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
 - On a type that holds itself (`child: Node | None`), `--help` lists the field's own flags (`--child`, `--config.child`) and not its members': `--child.a` and every deeper flag are accepted when typed, and shown nowhere ([design decisions](design-decisions/a-node-already-on-the-path-is-not-entered.md#a-node-already-on-the-path-is-not-entered)).
+- What confarg writes into a flag's help is escaped for the help format read at registration: cyclopts' `help_format` on the app `populate_app` is given (cyclopts' Markdown default when it has none), typer's `rich_markup_mode` on the command `populate_command` is given. cyclopts resolves the format when it renders, through the app stack, so a format set only on a parent app, or set after `populate_app`, is not seen: under a parent's `help_format="plaintext"`, a default's repr prints with the backslashes escaped for Markdown (`'\*.py'`). Set the format on the app confarg populates ([CLI adapters](cli-adapters/framework-specifics.md#help-text-is-format-neutral)).
 
 ## Subclasses
 

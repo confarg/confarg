@@ -20,6 +20,7 @@ from confarg.cli._build import (
     build_dynamic_flags,
     build_static_flags,
 )
+from confarg.cli._markup import escape_percent
 from confarg.cli._prefix import PREFIX_ATTR
 from confarg.dictexpr import contains_expression
 from confarg.exceptions import ConfargError
@@ -84,7 +85,7 @@ def _register_spec(
         "dest": spec.name,
         "default": argparse.SUPPRESS,
         # A hidden flag is accepted but kept out of --help (BUG-80).
-        "help": argparse.SUPPRESS if spec.hidden else spec.help,
+        "help": argparse.SUPPRESS if spec.hidden else spec.rendered_help(escape_percent),
     }
     if spec.nargs == 0:
         # Value-less flag (e.g. a list/dict delete --field.N-): argparse forbids

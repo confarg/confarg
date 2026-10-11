@@ -2525,7 +2525,7 @@ class TestConfigFilesContract:
         learn that the fragment's top level carries the tag.
         """
         specs = {s.name: s for s in build_static_flags(_FieldTagged)}
-        assert "'class'" in specs["config.u"].help
+        assert "'class'" in specs["config.u"].rendered_help()
 
     def test_config_subkeys_false_root_only(self, populating_loader: ConfargLoader) -> None:
         """config_subkeys=False registers only the root --config flag, at every depth."""
@@ -2550,7 +2550,7 @@ class TestConfigFilesContract:
     def test_deep_union_mount_entry_help_names_the_tag(self) -> None:
         """A union-of-structs mount point below a field keeps the tag line of its help (BUG-88, BUG-70)."""
         specs = {s.name: s for s in build_static_flags(_MountOuter)}
-        assert "'class'" in specs["config.inner.db"].help
+        assert "'class'" in specs["config.inner.db"].rendered_help()
 
     @pytest.mark.parametrize(
         ("target", "entry"),

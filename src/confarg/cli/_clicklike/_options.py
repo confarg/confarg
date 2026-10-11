@@ -118,6 +118,7 @@ def option_kwargs(
     *,
     choice_cls: Callable[[Sequence[str]], Any],
     completer_kwargs: Callable[[Callable[[str], list[str]]], dict[str, Any]],
+    help_escape: Callable[[str], str] | None = None,
 ) -> dict[str, Any]:
     """Return the framework-agnostic option keywords for one :class:`FlagSpec`.
 
@@ -132,6 +133,8 @@ def option_kwargs(
             ``shell_complete`` returning its own completion items, typer takes an
             ``autocompletion`` returning bare strings and deprecates the other — so
             each adapter supplies its own.
+        help_escape: Turns plain text into the format the framework renders help in, for
+            the spec's :attr:`~confarg.cli.FlagSpec.note` (``None`` for plain text).
 
     Returns:
         Keywords accepted by both ``click.Option`` and ``typer.core.TyperOption``,
@@ -144,7 +147,7 @@ def option_kwargs(
             "is_flag": True,
             "default": False,
             "required": False,
-            "help": spec.help or None,
+            "help": spec.rendered_help(help_escape) or None,
             "allow_from_autoenv": False,
             # A hidden flag is accepted but kept out of --help (BUG-80).
             "hidden": spec.hidden,
@@ -159,7 +162,7 @@ def option_kwargs(
         "multiple": multiple,
         "default": () if multiple else None,
         "required": False,
-        "help": spec.help or None,
+        "help": spec.rendered_help(help_escape) or None,
         "metavar": spec.metavar,
         # confarg handles env vars itself via _parse_env; prevent the framework from
         # also reading them via its auto-envvar prefix.

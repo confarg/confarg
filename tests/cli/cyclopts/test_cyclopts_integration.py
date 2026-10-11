@@ -396,6 +396,9 @@ class _WithHelpStrings:
     pet: _VariantA | _VariantB = dataclasses.field(default_factory=_VariantA)
     fn: Callable[[], int] | None = None
     uid: UUID = dataclasses.field(default_factory=lambda: UUID(int=0))
+    glob: str = "*.py|*.pyi*"
+    odd: str = "[/x] :warning: %d <b>"
+    port: Annotated[int, FieldMeta(help="The **port** to bind.")] = 80
 
 
 class TestHelpReadsUnderEveryFormat:
@@ -409,7 +412,7 @@ class TestHelpReadsUnderEveryFormat:
         self,
         help_format: Literal["markdown", "restructuredtext", "rich", "plaintext"],
     ) -> None:
-        """No placeholder, dunder or other markup in confarg's own help is eaten by the renderer."""
+        """Nothing confarg writes -- a placeholder, a default's repr, a class path -- is read as markup."""
         from io import StringIO  # noqa: PLC0415
 
         from rich.console import Console  # noqa: PLC0415
@@ -427,11 +430,44 @@ class TestHelpReadsUnderEveryFormat:
             self._ARGV,
         ):
             shown.setdefault(spec.name, spec)  # the first spec of a name is the one registered
-        helps = {" ".join(spec.help.split()) for spec in shown.values() if spec.help and not spec.hidden}
+        helps = {" ".join(spec.note.split()) for spec in shown.values() if not spec.hidden} - {""}
         assert [h for h in sorted(helps) if h not in text] == []
-        # The strings checked above hold the placeholders, so the check is not vacuous.
+        # The strings checked above hold the placeholders and the data, so the check is not vacuous.
         words = {word for help_text in helps for word in help_text.split()}
-        assert {"--config.FIELD", "--FLAG.PARAM"} <= words
+        assert {"--config.FIELD", "--FLAG.PARAM", "'*.py|*.pyi*')", ":warning:", "'[/x]"} <= words
+
+    @pytest.mark.parametrize("help_format", ["markdown", "restructuredtext", "rich", "plaintext"])
+    def test_a_default_prints_as_written(
+        self,
+        help_format: Literal["markdown", "restructuredtext", "rich", "plaintext"],
+    ) -> None:
+        """A default's repr is data: no ``*`` read as emphasis, no ``[/x]`` as a tag, no ``:warning:`` as an emoji."""
+        from io import StringIO  # noqa: PLC0415
+
+        from rich.console import Console  # noqa: PLC0415
+
+        app = cyclopts.App(help_format=help_format)
+        populate_app(_WithHelpStrings, app, argv=[])
+        buf = StringIO()
+        with pytest.raises(SystemExit):
+            app(["--help"], console=Console(file=buf, width=400, highlight=False))
+        text = " ".join(" ".join(line.strip("│ ") for line in buf.getvalue().splitlines()).split())
+        assert "(default: '*.py|*.pyi*')" in text
+        assert "(default: '[/x] :warning: %d <b>')" in text
+
+    def test_the_fields_own_help_keeps_its_markup(self) -> None:
+        """Only what confarg writes is escaped: ``FieldMeta.help`` is the author's Markdown (BUG-226)."""
+        from io import StringIO  # noqa: PLC0415
+
+        from rich.console import Console  # noqa: PLC0415
+
+        app = cyclopts.App(help_format="markdown")
+        populate_app(_WithHelpStrings, app, argv=[])
+        buf = StringIO()
+        with pytest.raises(SystemExit):
+            app(["--help"], console=Console(file=buf, width=400, highlight=False))
+        text = " ".join(" ".join(line.strip("│ ") for line in buf.getvalue().splitlines()).split())
+        assert "The port to bind. (default: 80)" in text
 
 
 # ---------------------------------------------------------------------------

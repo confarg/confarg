@@ -1,6 +1,6 @@
 # Framework-neutral flag model
 
-`FlagSpec` (name, `nargs`, choices, metavar, help, group, completer) is the contract between
+`FlagSpec` (name, `nargs`, choices, metavar, help, note, group, completer) is the contract between
 spec generation and the adapters. `nargs`: `None` = one value, `"*"` = zero or more,
 `int` = exact count, `0` = value-less switch (deletes). Each adapter re-expresses it
 (argparse `nargs`/`store_true`; click `multiple=True`/`is_flag`; cyclopts
@@ -12,7 +12,7 @@ honored by the adapters whose framework can.
 
 `FieldMeta` (via `Annotated`) adds help and metavar without a custom field type. Help text
 priority: `FieldMeta.help` > attribute docstring (read from source with `ast`; unavailable
-for dynamically created classes) > empty.
+for dynamically created classes) > empty. That prose is `FlagSpec.help`; what confarg adds to it — the default, the positional order, the none hint — is `FlagSpec.note`, kept apart so an adapter can escape confarg's text for its framework's help format without escaping the author's ([framework specifics](framework-specifics.md#help-text-is-format-neutral)).
 
 The model owns the inverse of that shape vocabulary, too: `FlagSpec.as_single_token()` clears
 `nargs`, `whole_value` and `stands_bare` in one operation, spelled beside the attributes
