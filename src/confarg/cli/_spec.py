@@ -108,7 +108,15 @@ class FlagSpec:
     """Display name shown in help text."""
 
     help: str = ""
-    """Help text."""
+    """Help text, handed to the framework unchanged.
+
+    The help confarg writes holds no markup, so it reads as written under any help format
+    the host application picked: a placeholder is spelled ``--config.FIELD``, never
+    ``--config.<field>``, which a Markdown renderer drops as an HTML tag.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/framework-specifics.md#help-text-is-format-neutral
+    """
 
     group: str | None = None
     """Argument group title.  ``None`` places the flag at the top level."""

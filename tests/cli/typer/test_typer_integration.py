@@ -334,6 +334,41 @@ class TestHelpHidesIndexSpellings:
         assert "--pair.0" not in out
 
 
+@dataclass
+class _VariantA:
+    x: int = 0
+
+
+@dataclass
+class _VariantB:
+    y: int = 0
+
+
+@dataclass
+class _WithVariants:
+    pet: _VariantA | _VariantB = field(default_factory=_VariantA)
+
+
+class TestHelpReadsUnderEveryMarkupMode:
+    """The help confarg writes is plain text that every ``rich_markup_mode`` prints as written (BUG-226)."""
+
+    @pytest.mark.parametrize("markup_mode", ["markdown", "rich", None])
+    def test_the_placeholders_survive(self, markup_mode: Any) -> None:
+        """``--pet.FIELD`` and ``--config.FIELD`` are not eaten as markup."""
+        app = typer.Typer(add_completion=False, rich_markup_mode=markup_mode)
+
+        @app.command()
+        def _cli(ctx: typer.Context) -> None:
+            pass
+
+        command = get_command(app)
+        populate_command(_WithVariants, command, argv=[])
+        out = _invoke(command, ["--help"])
+        text = " ".join(" ".join(line.strip("│ ") for line in out.splitlines()).split())
+        assert "use --pet.FIELD flags for that class's fields" in text
+        assert "Use --config.FIELD FILE to scope" in text
+
+
 # ---------------------------------------------------------------------------
 # Completion
 # ---------------------------------------------------------------------------

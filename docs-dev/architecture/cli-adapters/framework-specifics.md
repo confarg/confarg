@@ -56,3 +56,11 @@ registration allows the repeat, as it does for a value-less delete
 consumes many tokens (`consume_multiple`) accumulates its repeats already. The refusal dates from
 the adapter itself (PR-26) on field flags; it reached the element flags of a one-token type when
 they stopped registering greedily (BUG-179).
+
+## Help text is format-neutral
+
+The help confarg writes for a flag reaches the framework unchanged, and two frameworks read it as markup: cyclopts renders parameter help as Markdown unless the application sets another `help_format` (reStructuredText, rich markup, plain text), and typer as rich markup or Markdown under its `rich_markup_mode`. The format is the host application's setting, and one application may mix confarg's flags with its own, so confarg's strings are written to read the same under every format rather than in any one of them: a placeholder is an uppercase word, as argparse and click spell a metavar (`--config.FIELD FILE`, `--FLAG.PARAM`), and a dunder is spelled out (`constructor parameters`, not `__init__ parameters`). Markdown drops `<field>` as an HTML tag and reads `__init__` as bold `init`; rich markup reads `[name]` as a style tag. `TestHelpReadsUnderEveryFormat` renders every string confarg writes through each cyclopts format and asserts it prints as written, and `TestHelpReadsUnderEveryMarkupMode` does the same for typer's placeholders (BUG-226). Before, cyclopts by default and typer under `rich_markup_mode="markdown"` printed `Use --config. FILE`.
+
+Rejected: **forcing `help_format="plaintext"`** on the parameters confarg registers. It would keep any string intact, but it overrides a setting that belongs to the application, and it would disable Markdown the user wrote on purpose in a `FieldMeta.help` or a field docstring, which confarg passes through as the user's own text.
+
+Rejected: **escaping per format** (`\<field\>` for Markdown, `\[` for rich). The escape that one format needs is printed literally by another, so the adapter would have to read the format off the app, and typer reads its mode off the invocation context, after registration.
