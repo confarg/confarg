@@ -225,6 +225,13 @@ class _WithOptionalIntPair:
     pair: tuple[int, int] | None = None
 
 
+@dataclass
+class _WithPointMap:
+    """Fixed-arity values under dict keys, set through a subkey flag."""
+
+    pts: dict[str, _Point] = dataclasses_field(default_factory=dict)
+
+
 class _Inner(NamedTuple):
     """A namedtuple nested inside another namedtuple's field."""
 
@@ -1483,6 +1490,40 @@ class TestFixedSequenceContract:
         """A sibling --pair.y refines the arity flag; it does not excuse its short run (BUG-58)."""
         with pytest.raises(ConfargError, match=re.escape("Missing value for '--pair'")):
             whole_value_arity_loader.merge(_WithPoint, argv=["--pair", "1", "--pair.y", "5"], env={})
+
+    @pytest.mark.parametrize("argv", [["--pair", "1"], ["--pair"]], ids=["short", "bare"])
+    def test_tuple_missing_value_usage_spells_every_position(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+        argv: list[str],
+    ) -> None:
+        """The usage line names one value per position, not the one a scalar flag takes (BUG-171).
+
+        Cyclopts refuses the bare occurrence before it parses, off the flag's spec, so the
+        spec carries the usage vanilla's loop spells.
+        """
+        with pytest.raises(ConfargError, match=re.escape("Usage: --pair <value> <value>")):
+            whole_value_arity_loader.merge(_WithIntPair, argv=argv, env={})
+
+    @pytest.mark.parametrize("argv", [["--pair", "1"], ["--pair"]], ids=["short", "bare"])
+    def test_namedtuple_missing_value_usage_spells_its_field_names(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+        argv: list[str],
+    ) -> None:
+        """A namedtuple's positions are its fields, so the usage line names them (BUG-171)."""
+        with pytest.raises(ConfargError, match=re.escape("Usage: --pair <x> <y>")):
+            whole_value_arity_loader.merge(_WithPoint, argv=argv, env={})
+
+    @pytest.mark.parametrize("argv", [["--pts.a", "1"], ["--pts.a"]], ids=["short", "bare"])
+    def test_subkey_flag_missing_value_usage_spells_the_fields_it_addresses(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+        argv: list[str],
+    ) -> None:
+        """A subkey flag takes the shape of the fixed-arity value it sets, usage line included (BUG-171)."""
+        with pytest.raises(ConfargError, match=re.escape("Usage: --pts.a <x> <y>")):
+            whole_value_arity_loader.merge(_WithPointMap, argv=argv, env={})
 
     def test_click_declines_the_whole_value_token(self) -> None:
         """Click registers the exact token count, so it rejects the whole-value token.

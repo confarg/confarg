@@ -44,10 +44,10 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-154 — An integer in a file is refused for a `float` field](BUG-154-an-integer-in-a-file-is-refused-for-a-float-field.md) | S | high | behavior |
 | [BUG-155 — A `call:` spec naming a class passes its kwargs uncoerced](BUG-155-a-call-spec-naming-a-class-passes-its-kwargs-uncoerced.md) | S | high | behavior |
 | [BUG-156 — A positional-only parameter in a callable spec is passed by keyword](BUG-156-a-positional-only-parameter-in-a-callable-spec-is-passed-by-keyword.md) | S | high | behavior |
-| [BUG-171 — A short token run on a fixed-arity flag gets a one-value usage line](BUG-171-a-short-fixed-arity-run-gets-a-one-value-usage.md) | S | medium | behavior |
 | [BUG-172 — An element flag below a collection root is silently dropped](BUG-172-an-element-flag-below-a-collection-root-is-silently-dropped.md) | L | medium | config |
 | [BUG-173 — cyclopts crashes on a dict-key flag whose key is no identifier](BUG-173-cyclopts-crashes-on-a-dict-key-flag-that-is-no-identifier.md) | S | medium | behavior |
 | [BUG-174 — An index delete on a dict writes the list-delete key into the dict](BUG-174-an-index-delete-on-a-dict-writes-the-list-delete-key.md) | S | medium | behavior |
 | [BUG-175 — A file's list-delete key holding no index list escapes as a raw TypeError](BUG-175-a-files-list-delete-key-holding-no-index-list-escapes-as-a-typeerror.md) | S | low | none |
+| [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | S | low | behavior |
 
 <!-- tickets:end -->

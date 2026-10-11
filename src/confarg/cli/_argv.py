@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from confarg.exceptions import ConfargError
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
 
 def _bare_occurrence(argv: Sequence[str], i: int) -> bool:
@@ -62,7 +62,7 @@ def drop_bare_occurrences(argv: Sequence[str], stands_bare: Collection[str]) -> 
     return [tok for i, tok in enumerate(argv) if not (_bare_occurrence(argv, i) and tok[2:] in stands_bare)]
 
 
-def refuse_bare_occurrences(argv: Sequence[str], refuses_bare: Collection[str]) -> None:
+def refuse_bare_occurrences(argv: Sequence[str], refuses_bare: Mapping[str, str]) -> None:
     """Raise :class:`~confarg.exceptions.ConfargError` on a bare occurrence of a flag in *refuses_bare*.
 
     The refusing counterpart of :func:`drop_bare_occurrences`: a flag whose bare
@@ -74,7 +74,8 @@ def refuse_bare_occurrences(argv: Sequence[str], refuses_bare: Collection[str]) 
     Args:
         argv: The tokens the user typed, in order.
         refuses_bare: Dotted flag names (no ``--``) whose specs set
-            :attr:`~confarg.cli.FlagSpec.refuses_bare`.
+            :attr:`~confarg.cli.FlagSpec.refuses_bare`, each mapped to its spec's
+            :attr:`~confarg.cli.FlagSpec.usage`.
 
     Raises:
         ConfargError: If *argv* spells a bare occurrence of one of those flags.
@@ -84,7 +85,7 @@ def refuse_bare_occurrences(argv: Sequence[str], refuses_bare: Collection[str]) 
     """
     for i, tok in enumerate(argv):
         if _bare_occurrence(argv, i) and tok[2:] in refuses_bare:
-            raise ConfargError.missing_value(tok)
+            raise ConfargError.missing_value(tok, refuses_bare[tok[2:]])
 
 
 def spelled_flag_names(argv: Sequence[str]) -> set[str]:
