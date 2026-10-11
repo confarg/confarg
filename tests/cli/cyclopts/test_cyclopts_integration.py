@@ -431,7 +431,7 @@ class TestHelpReadsUnderEveryFormat:
         assert [h for h in sorted(helps) if h not in text] == []
         # The strings checked above hold the placeholders, so the check is not vacuous.
         words = {word for help_text in helps for word in help_text.split()}
-        assert {"--pet.FIELD", "--config.FIELD", "--FLAG.PARAM"} <= words
+        assert {"--config.FIELD", "--FLAG.PARAM"} <= words
 
 
 # ---------------------------------------------------------------------------

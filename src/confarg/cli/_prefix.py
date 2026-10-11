@@ -71,6 +71,16 @@ def resolve_prefix(registered: str | None, given: str | None) -> str:
     return given
 
 
+def in_prefix(name: str, cli_prefix: str) -> str:
+    """Return the flag name *name* takes in the *cli_prefix* namespace.
+
+    The empty name is the scalar root, which takes the bare prefix.
+    """
+    if not cli_prefix:
+        return name
+    return f"{cli_prefix}.{name}" if name else cli_prefix
+
+
 def apply_prefix(specs: list[FlagSpec], cli_prefix: str) -> list[FlagSpec]:
     """Return *specs* renamed into the *cli_prefix* namespace.
 
@@ -82,7 +92,7 @@ def apply_prefix(specs: list[FlagSpec], cli_prefix: str) -> list[FlagSpec]:
     """
     if not cli_prefix:
         return [spec for spec in specs if spec.name]
-    return [dataclasses.replace(spec, name=f"{cli_prefix}.{spec.name}" if spec.name else cli_prefix) for spec in specs]
+    return [dataclasses.replace(spec, name=in_prefix(spec.name, cli_prefix)) for spec in specs]
 
 
 def strip_flat_prefix(flat: dict[str, Any], cli_prefix: str) -> dict[str, Any]:

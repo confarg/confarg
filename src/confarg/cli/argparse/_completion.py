@@ -38,7 +38,7 @@ from confarg.cli._build import (
     _collect_callable_field_specs,
     _whole_value_spec,
 )
-from confarg.cli._prefix import PREFIX_ATTR, strip_argv_prefix
+from confarg.cli._prefix import PREFIX_ATTR, in_prefix, strip_argv_prefix
 from confarg.cli._spec import FlagSpec, _build_help, _get_field_docstrings
 from confarg.cli.argparse._register import load_flags_into_parser
 
@@ -216,11 +216,6 @@ def _extend_walk(
     load_flags_into_parser(specs, ctx.parser)
 
 
-def _in_prefix(flag: str, cli_prefix: str) -> str:
-    """Put a field path back under *cli_prefix*, after the scans resolved it without one."""
-    return f"{cli_prefix}.{flag}" if cli_prefix else flag
-
-
 def _pre_extend_parser_for_completion(
     parser: argparse.ArgumentParser,
     target: Any,
@@ -246,7 +241,7 @@ def _pre_extend_parser_for_completion(
         config_tags = _tags_from_config(config_dict, target, prefix="", union_tag=union_tag)
 
         # CLI wins over config
-        all_tags = {_in_prefix(flag, cli_prefix): tag for flag, tag in {**config_tags, **cli_tags}.items()}
+        all_tags = {in_prefix(flag, cli_prefix): tag for flag, tag in {**config_tags, **cli_tags}.items()}
 
         walk_ctx = _WalkCtx(parser=parser, union_tag=union_tag, existing_dests={a.dest for a in parser._actions})
 
@@ -264,7 +259,7 @@ def _pre_extend_parser_for_completion(
         for field_flag, target_path, mode, grouped in _callable_argument_targets(target, argv, config_dict, union_tag):
             try:
                 sibling_specs = _collect_callable_field_specs(
-                    _in_prefix(field_flag, cli_prefix),
+                    in_prefix(field_flag, cli_prefix),
                     target_path,
                     mode,
                     walk_ctx.existing_dests,

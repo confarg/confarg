@@ -729,8 +729,33 @@ class TestMakeParser:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _PrefixVariantA:
+    x: int = 0
+
+
+@dataclass
+class _PrefixVariantB:
+    y: int = 0
+
+
+@dataclass
+class _WithPrefixedHelp:
+    pet: _PrefixVariantA | _PrefixVariantB = field(default_factory=_PrefixVariantA)
+
+
 class TestCliPrefixArgparse:
     """The prefix registered by populate_parser reaches from_namespace on its own."""
+
+    def test_help_names_only_flags_the_prefix_registers(self) -> None:
+        """A flag the help spells is one the parser has: ``--app.config.FIELD``, never ``--config.FIELD``."""
+        parser = make_parser(_WithPrefixedHelp, cli_prefix="app")
+        text = " ".join(parser.format_help().split())
+        assert "Use --app.config.FIELD FILE to scope" in text
+        assert "(e.g. --app.config.db db.toml merges" in text
+        assert "Once set, use that class's field flags." in text
+        assert "--config." not in text.replace("--app.config.", "")
+        assert "--pet." not in text.replace("--app.pet.", "")
 
     def test_coexists_with_host_flags(self) -> None:
         """The host application's own flags are untouched, and confarg ignores them."""
