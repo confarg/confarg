@@ -62,6 +62,5 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-201 — An environment variable below a dict appends, though the environment has no append](BUG-201-an-environment-variable-below-a-dict-appends-though-the-environment-has-no-append.md) | minor | FEAT-18 | S | medium | config | PR-5 |
 | [BUG-119 — `_defaults.py` says four front-ends must agree; there are five](BUG-119-defaults-module-counts-four-front-ends.md) | trivial |  | S | low | none | BUG-7 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
-| [BUG-208 — REF-90's own file carries the two citations it quotes as live links, and neither resolves from the board folder](BUG-208-ref-90-quotes-two-links-that-resolve-nowhere.md) | trivial |  | S | low | none | unknown |
 
 <!-- tickets:end -->
