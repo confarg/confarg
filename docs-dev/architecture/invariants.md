@@ -130,6 +130,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "is this segment the union tag, reached by the walk's fallback?" | `_parse_cli._names_tag_by_fallback` — the walk asked with and without its tag rule (`_resolve_field_type(..., tag_fallback=False)`) |
 | "does the walk answer this struct member from the subclasses?" | `_types._answered_by_subclasses` — only a name the struct does not declare; a declared field keeps its own annotation however a subclass overrides it. `_types._struct_member_type` composes it with the subclasses' answer, and is what vanilla's `_advance_field_type` asks for a segment's type and the member predicates `_segment_names_real_field` / `_union_tag_shadowed` ask for its existence; registration's subclass recursion asks its path form `_types._base_declares_path` of a flag path (BUG-86) |
 | reconciling a registered `cli_prefix` with one passed to `merge_*` | `cli._prefix.resolve_prefix` |
+| "what flag name does this path take under `cli_prefix`?" | `cli._prefix.in_prefix` — the bare prefix for the empty path (the scalar root, a root union's tag); `apply_prefix`, argparse completion and the root `--config` help all spell it ([CLI adapters](cli-adapters/cli-prefix-boundaries.md#help-names-a-flag-as-typed)) |
 | "does this argv flag occurrence carry an item?" | `cli._argv._bare_occurrence` |
 | "which argv tokens does a host framework parse?" | `cli._argv.drop_bare_occurrences` |
 | "does this field's flag consume many tokens, and so stand bare?" | `cli._build._takes_multi_tokens` |

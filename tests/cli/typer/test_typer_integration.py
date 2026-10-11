@@ -354,7 +354,7 @@ class TestHelpReadsUnderEveryMarkupMode:
 
     @pytest.mark.parametrize("markup_mode", ["markdown", "rich", None])
     def test_the_placeholders_survive(self, markup_mode: Any) -> None:
-        """``--pet.FIELD`` and ``--config.FIELD`` are not eaten as markup."""
+        """``--config.FIELD`` is not eaten as markup."""
         app = typer.Typer(add_completion=False, rich_markup_mode=markup_mode)
 
         @app.command()
@@ -365,7 +365,6 @@ class TestHelpReadsUnderEveryMarkupMode:
         populate_command(_WithVariants, command, argv=[])
         out = _invoke(command, ["--help"])
         text = " ".join(" ".join(line.strip("│ ") for line in out.splitlines()).split())
-        assert "use --pet.FIELD flags for that class's fields" in text
         assert "Use --config.FIELD FILE to scope" in text
 
 

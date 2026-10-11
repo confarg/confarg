@@ -173,6 +173,23 @@ class TestPreExtendParser:
         populate_parser(_AppConfig, parser)
         return parser
 
+    def test_a_root_tag_under_a_prefix_extends_the_prefix_itself(self) -> None:
+        """``--app.class`` on a root union lands its variant's flags at ``--app.<field>``, never ``--app..``."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_ServerDB | _SQLiteDB, parser, argv=[], cli_prefix="app")
+        with patch("confarg.cli.argparse._completion._extend_walk", wraps=_extend_walk) as walk:
+            _pre_extend_parser_for_completion(
+                parser,
+                _ServerDB | _SQLiteDB,
+                union_tag="class",
+                config_flag="config",
+                argv=["--app.class", f"{_ServerDB.__module__}._ServerDB"],
+            )
+        assert [c.args[3] for c in walk.call_args_list] == ["app"]
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert "--app.host" in flags
+        assert not [f for f in flags if f.startswith("--app..")]
+
     def test_extends_with_variant_fields_from_cli_argv(self) -> None:
         """Test that variant fields are added to parser when class tag is in argv."""
         parser = self._make_parser()

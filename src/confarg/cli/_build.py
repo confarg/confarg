@@ -77,7 +77,7 @@ from confarg._types import (
     _unwrap_optional,
     _var_params,
 )
-from confarg.cli._prefix import apply_prefix, strip_argv_prefix
+from confarg.cli._prefix import apply_prefix, in_prefix, strip_argv_prefix
 from confarg.cli._spec import FlagSpec, _build_help, _get_field_docstrings, _get_field_meta
 from confarg.exceptions import ConfargWarning, SymbolImportError
 from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_registered_leaf
@@ -353,7 +353,7 @@ def _build_union_tag_spec(
         help=(
             f"Fully-qualified class path selecting the variant for '{flag}' "
             f"(e.g. mypackage.MyClass). "
-            f"Once set, use --{flag}.FIELD flags for that class's fields."
+            "Once set, use that class's field flags."
         ),
         group=group,
         group_description=group_description,
@@ -1336,6 +1336,8 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
         flags.insert(0, _scalar_root_spec(target))
 
     if config_flag:
+        # The help names the flag as typed, prefix included: apply_prefix renames specs, not their help.
+        typed_flag = in_prefix(config_flag, cli_prefix)
         flags.append(
             _config_file_spec(
                 config_flag,
@@ -1343,8 +1345,8 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
                 "Config file(s) to merge at lowest priority (below env vars and CLI flags). "
                 "Multiple files are merged left-to-right; later files override earlier ones. "
                 "Supports TOML, YAML, and JSON. "
-                f"Use --{config_flag}.FIELD FILE to scope a file's contents under a specific field "
-                f"(e.g. --{config_flag}.db db.toml merges db.toml as if its keys were nested under 'db').",
+                f"Use --{typed_flag}.FIELD FILE to scope a file's contents under a specific field "
+                f"(e.g. --{typed_flag}.db db.toml merges db.toml as if its keys were nested under 'db').",
             ),
         )
         if config_subkeys:
