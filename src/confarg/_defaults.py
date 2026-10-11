@@ -4,7 +4,7 @@
 
 """Defaults and reserved key names shared by ``confarg.load`` and every CLI adapter.
 
-Always reference these constants instead of repeating the literals, so the four front-ends
+Always reference these constants instead of repeating the literals, so the five front-ends
 cannot drift apart.
 
 Dev Notes:
@@ -61,7 +61,7 @@ Dev Notes:
 ROOT_KEY: Final[str] = "__root__"
 """Reserved key under which a non-struct target's value is stored in the merged dict.
 
-Every channel writes it and ``build`` reads it, so all four front-ends have to agree on the
+Every channel writes it and ``build`` reads it, so all five front-ends have to agree on the
 spelling.
 
 Dev Notes:
