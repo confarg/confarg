@@ -13,9 +13,12 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 if TYPE_CHECKING:
     from tests._loaders import ConfargLoader
 
+import re
+
 import pytest
 
 import confarg
+from confarg._merge import LIST_REPLACE_BASE_KEY
 from tests.conftest import (
     AppConfig,
     Color,
@@ -320,6 +323,62 @@ class TestUnionWithNoneOffersTheRemedyOnlyToAToken:
             "Cannot coerce str 'abc' to int | float | None at 'value'."
             " To set this field to None, pass 'none' or 'null'."
         )
+
+
+class TestUnionWithACarriedBaseFailsAsItsSequenceVariant:
+    """A union refusing a base-carrying patch fails as its sequence variant (BUG-200).
+
+    The merge defers a name patch over a list as ``{__base__: base, **patch}``; when no union
+    variant takes that dict, the refusal is the sequence variant's own, which names the key it
+    cannot place instead of printing the merge's internal base key.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
+    """
+
+    @staticmethod
+    def _failure(fn: Callable[[], object]) -> confarg.exceptions.ConfargError:
+        with pytest.raises(confarg.exceptions.ConfargError) as excinfo:
+            fn()
+        return excinfo.value
+
+    @pytest.mark.parametrize(
+        ("annotation", "default_factory", "key"),
+        [
+            (list[int], list, "z"),
+            (list[int], list, "*"),
+            (tuple[int, int], tuple, "z"),
+        ],
+        ids=["list-name-key", "list-star-key", "fixed-tuple-name-key"],
+    )
+    def test_a_patch_over_a_unions_sequence_fails_as_the_sequence_variant(
+        self,
+        annotation: Any,
+        default_factory: Callable[[], Any],
+        key: str,
+    ) -> None:
+        """A key the sequence cannot take is refused naming it, as the sequence's own target does."""
+        data: dict[str, Any] = {"u": {LIST_REPLACE_BASE_KEY: [1, 2], key: 5}}
+        plain = self._failure(
+            lambda: confarg.build(make_target("u", annotation, default_factory=default_factory), data),
+        )
+        union = self._failure(
+            lambda: confarg.build(
+                make_target("u", annotation | dict[str, int], default_factory=default_factory),
+                data,
+            ),
+        )
+        assert (type(union), str(union)) == (type(plain), str(plain))
+        assert LIST_REPLACE_BASE_KEY not in str(union)
+
+    def test_a_name_patch_from_the_command_line_over_a_files_list(self, loader: ConfargLoader, tmp_path: Any) -> None:
+        """A ``--u.z`` over a file's list at a union field names the key, on every front-end."""
+        base = tmp_path / "base.json"
+        base.write_text('{"u": [1, 2]}')
+        WithUnion = make_target("u", list[int] | dict[str, int], default_factory=list)
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("non-integer key 'z'")) as excinfo:
+            loader.load(WithUnion, argv=["--u.z", "5"], files=[str(base)], env={})
+        assert LIST_REPLACE_BASE_KEY not in str(excinfo.value)
 
 
 class TestTokensStayOutOfMessages:

@@ -41,6 +41,16 @@ multi-variant refusal to offer the remedy. Whether such a value does select `Non
 bare rather than as a one-item list
 ([design decisions](../design-decisions/a-lone-none-word-nulls-an-optional-sequence.md#a-lone-none-word-nulls-an-optional-sequence)).
 
+The rule also answers a multi-variant union offered a patch the merge deferred with its list
+base (`{__base__: base, **patch}`, [merge/build
+contract](../pipeline/merge-build-contract.md#merge-build-contract)): when no variant takes it, the
+refusal is the first sequence variant's own — the list's "Cannot patch … with non-integer key",
+the fixed tuple's "dict keys must be integer indices" — naming the key the user spelled, where the
+generic "Cannot coerce dict {'__base__': …}" would print the merge's internal base key (BUG-200).
+First is the try order's own: a fixed-arity variant before a variable-length one. The alternative
+the ticket offered, keeping the generic refusal but spelling the patch without its base, was not
+taken: it says what the value is not, not which key failed to place.
+
 The remedy is appended to the variant's error rather than replacing it, so a token keeps
 what the variant had to say: a callable shorthand's arity refusal, the element of a list a
 whole-value token failed on (maintainer-chosen). Replacing it with one generic "Cannot
