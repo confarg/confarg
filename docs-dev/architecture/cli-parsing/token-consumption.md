@@ -44,8 +44,9 @@
   ([design decisions](../design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence)).
 - A token starting with `{` or `[` is decoded as JSON when the field type accepts an object
   or a list. `_accepts_object_value` owns the object half, because the adapters must register
-  and decode the same bare flags ([04](../cli-adapters/whole-value-flags.md#whole-value-flags)). The `{`-prefix
-  guard runs *before* the arity path, so a namedtuple takes a whole object without ever
+  and decode the same bare flags
+  ([whole-value flags](../cli-adapters/whole-value-flags.md#whole-value-flags)). The `{`-prefix guard
+  runs *before* the arity path, so a namedtuple takes a whole object without ever
   competing with its own positional form.
 - The `[` half is a **whole-value** spelling, so `_lone_json_array` grants it only to a flag
   carrying exactly one token: `--tags '["a","b"]'` decodes, and `--tags '["a","b"]' z` or a second
