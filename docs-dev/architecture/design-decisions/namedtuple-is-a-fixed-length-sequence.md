@@ -71,4 +71,4 @@ A note on the ID: `BUG-16` was used twice. The first one —
 [an explicit tag opts a leaf back in](an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in) — closed long
 before the namedtuple ticket was filed under the same number, against
 [todo/README.md](../../todo/README.md)'s rule that IDs are never reused. Both are closed, and the
-next free number on `bugs.md` is what the rule intends.
+next free number on `bugs/` is what the rule intends.
