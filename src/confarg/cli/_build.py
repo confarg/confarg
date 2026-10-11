@@ -1537,6 +1537,7 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
     argv: Sequence[str],
     union_tag: str,
     config_flag: str,
+    existing_names: set[str],
 ) -> list[FlagSpec]:
     """Build FlagSpecs for collection-patch flags found in argv.
 
@@ -1572,7 +1573,6 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
     target = _walk_target(target, _locals_keys(target, union_tag))
 
     specs: list[FlagSpec] = []
-    seen: set[str] = set()
     args = _normalize_eq_args(list(argv))
     for tok in args:
         if not _looks_like_flag(tok):
@@ -1580,14 +1580,14 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
         key = tok[2:]
         if _addresses_key(key, config_flag):
             continue  # config files are registered by _collect_config_argv_specs
-        if key in seen:
+        if key in existing_names:
             continue
         path, append_mode, delete_mode, _delete_idx, _is_list_delete = _parse_flag_mode(key)
         if not (append_mode or delete_mode):
             path, force_cast = detect_force_cast(path, target, union_tag)
             if force_cast == "json":
                 # .json is registered only when typed. An empty path is the root `--json` cast.
-                seen.add(key)
+                existing_names.add(key)
                 target_desc = f"'{'.'.join(path)}'" if path else "the whole config"
                 specs.append(
                     FlagSpec(name=key, metavar="JSON", help=f"Parse the value as JSON for {target_desc}."),
@@ -1600,7 +1600,7 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
                 # own spellings, and their cast spelling stays refused (BUG-93).
                 at = _resolve_field_type(target, path, union_tag)
                 if at is not None and _scalar_cast_parent_is_leaf(at):
-                    seen.add(key)
+                    existing_names.add(key)
                     specs.append(
                         FlagSpec(
                             name=key,
@@ -1613,7 +1613,7 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
             # dynamic collection-patch registration below.
         if not (delete_mode or append_mode or _registered_when_typed(target, path, union_tag)):
             continue
-        seen.add(key)
+        existing_names.add(key)
         target_path = ".".join(path)
         if delete_mode:
             specs.append(
@@ -1781,7 +1781,7 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         result.extend(_collect_leaf_tag_argv_specs(target, argv_list, union_tag, existing_names))
         if config_flag:
             result.extend(_collect_config_argv_specs(argv_list, config_flag))
-        result.extend(_collect_patch_argv_specs(target, argv_list, union_tag, config_flag))
+        result.extend(_collect_patch_argv_specs(target, argv_list, union_tag, config_flag, existing_names))
     except Exception as exc:  # noqa: BLE001 — best-effort; must not crash populate_parser
         warnings.warn(
             f"Dynamic CLI flag registration failed ({type(exc).__name__}: {exc});"
