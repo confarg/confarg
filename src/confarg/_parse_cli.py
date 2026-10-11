@@ -478,7 +478,7 @@ def _typed_call_openings(
         docs-dev/architecture/callables.md#cli
     """
     found: set[tuple[str, ...]] = set()
-    for parts in _paths_argv_spells(argv, config_flag):
+    for parts in _paths_argv_spells(target, argv, union_tag, config_flag):
         for branch in _walk_path(target, parts, union_tag):
             for k, (stone, part) in enumerate(zip(branch.stones, parts, strict=False)):
                 if not _is_callable(stone.node) and _opens_target(stone, part, k):
@@ -486,9 +486,10 @@ def _typed_call_openings(
     return frozenset(found)
 
 
-def _paths_argv_spells(argv: Sequence[str], config_flag: str) -> list[list[str]]:
+def _paths_argv_spells(target: Any, argv: Sequence[str], union_tag: str, config_flag: str) -> list[list[str]]:
     """Return every path *argv* writes: its flags', each key of a whole ``{…}`` value, each key of a root config file.
 
+    A value is read whole only where the loop decodes it (:func:`_takes_whole_value`).
     A best-effort scan, as the tag scan's: a value that does not parse, or a file that does
     not load, spells nothing here, and the real error belongs to the parse.
     """
@@ -508,7 +509,7 @@ def _paths_argv_spells(argv: Sequence[str], config_flag: str) -> list[list[str]]
         path = _parse_flag_mode(token[2:])[0]
         paths.append(path)
         value = args[i + 1] if i + 1 < len(args) else ""
-        if not _looks_like_flag(value) and value.startswith("{"):
+        if _takes_whole_value(_resolve_field_type(target, path, union_tag), value):
             with contextlib.suppress(ValueError):
                 add_leaves(path, json.loads(value))
     if config_flag:
@@ -1476,6 +1477,21 @@ def _accepts_object_value(ft: Any) -> bool:
     return accepts(ft) or (_is_union(ft) and any(accepts(v) for v in _union_args_no_none(ft)))
 
 
+def _takes_whole_value(ft: Any | None, value: str) -> bool:
+    """Return whether the token *value*, typed after a flag whose field is *ft*, is decoded as a whole ``{...}`` value.
+
+    The one answer for the loop that decodes it and for the scans that read argv ahead of
+    it: the typed-call openings (:func:`_typed_call_openings`) and the adapters' argument
+    flags (``cli._build._blob_document_from_argv``). A ``{``-led value at a field
+    :func:`_accepts_object_value` refuses is text, as the loop stores it, so it opens
+    nothing (BUG-216). *ft* is None at a path no branch accepts.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
+    """
+    return not _looks_like_flag(value) and value.startswith("{") and ft is not None and _accepts_object_value(ft)
+
+
 def _takes_callable_shorthand(ft: Any) -> bool:
     """Return whether a bare string at a field of type *ft* is a callable spec shorthand.
 
@@ -1542,7 +1558,7 @@ def _consume_typed_arg(
     """
     args = ctx.argv
     # JSON object → dataclass / dict / callable / union-with-dc
-    if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("{") and _accepts_object_value(ft):
+    if i < len(args) and _takes_whole_value(ft, args[i]):
         _set_nested(ctx.data, path, _parse_json_arg(args[i], token))
         return i + 1
 
