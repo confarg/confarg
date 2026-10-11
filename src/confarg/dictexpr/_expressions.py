@@ -26,7 +26,7 @@ from itertools import accumulate
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
 
 from confarg.exceptions import (
     CircularReferenceError,
@@ -107,6 +107,22 @@ def _find_expressions(text: str) -> Iterator[_ExpressionSpan]:
         else:
             yield _ExpressionSpan(opening, end + 1, text[opening + 2 : end])
         search = end + 1
+
+
+def _rewrite_spans(text: str, spans: Iterable[_ExpressionSpan], replace: Callable[[_ExpressionSpan], str]) -> str:
+    """Rebuild *text*, each span of *spans* replaced by what *replace* answers for it.
+
+    The text before the first span, between two spans and after the last is kept as
+    written. What one span becomes — an escape included — is *replace*'s to answer.
+    """
+    out: list[str] = []
+    last = 0
+    for span in spans:
+        out.append(text[last : span.start])
+        out.append(replace(span))
+        last = span.end
+    out.append(text[last:])
+    return "".join(out)
 
 
 def contains_expression(value: object) -> bool:
@@ -913,26 +929,17 @@ def _resolve_single(expr_str: str, namespace: dict[str, Any], node_path: _Path =
         return _eval_expr(tree, namespace, expr_str)
 
     # Interpolation or escape mode: build string from parts
-    result_parts: list[str] = []
-    last_end = 0
-    for span in spans:
-        # Add literal text before this match
-        result_parts.append(expr_str[last_end : span.start])
 
+    def replace(span: _ExpressionSpan) -> str:
         if span.body is None:
             # Escaped $${...} — strip one $, producing the literal ${...}
-            result_parts.append(expr_str[span.start + 1 : span.end])
-        else:
-            # Real expression — evaluate and stringify
-            tree = _parse_anchored(span.body, node_path)
-            value = _eval_expr(tree, namespace, expr_str[span.start : span.end])
-            result_parts.append(str(value))
+            return expr_str[span.start + 1 : span.end]
+        # Real expression — evaluate and stringify
+        tree = _parse_anchored(span.body, node_path)
+        value = _eval_expr(tree, namespace, expr_str[span.start : span.end])
+        return str(value)
 
-        last_end = span.end
-
-    # Add any trailing literal text
-    result_parts.append(expr_str[last_end:])
-    return "".join(result_parts)
+    return _rewrite_spans(expr_str, spans, replace)
 
 
 def _get_nested(data: dict[str, Any], parts: Sequence[str]) -> Any:
@@ -1547,14 +1554,13 @@ def _prefix_content(expr_content: str, prefix: _Path) -> str:
 
 def _map_expressions(value: str, fn: Callable[[str], str]) -> str:
     """Apply *fn* to the body of each real ``${...}``, leaving ``$${...}`` escapes alone."""
-    out: list[str] = []
-    last = 0
-    for span in _find_expressions(value):
-        out.append(value[last : span.start])
-        out.append(value[span.start : span.end] if span.body is None else "${" + fn(span.body) + "}")
-        last = span.end
-    out.append(value[last:])
-    return "".join(out)
+
+    def replace(span: _ExpressionSpan) -> str:
+        if span.body is None:  # an escape, kept as written
+            return value[span.start : span.end]
+        return "${" + fn(span.body) + "}"
+
+    return _rewrite_spans(value, _find_expressions(value), replace)
 
 
 def _map_strings(data: Any, fn: Callable[[str], str]) -> Any:
