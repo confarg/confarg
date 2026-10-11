@@ -7096,8 +7096,38 @@ class TestDashPrefixedValueContract:
         assert loader.load(_DashValued, argv=["--key=--value"], env={}).key == "--value"
 
     def test_scalar_single_dash(self, loader: ConfargLoader) -> None:
-        """A single-dash value needs no escape but must keep working through the ``=`` form."""
+        """``--key=-v`` delivers a single-dash value: the one spelling all five take (BUG-223)."""
         assert loader.load(_DashValued, argv=["--key=-v"], env={}).key == "-v"
+
+    def test_list_element_single_dash(self, loader: ConfargLoader) -> None:
+        """``--tags=-a`` gives a one-element list of a single-dash item (BUG-223)."""
+        assert loader.load(_DashValued, argv=["--tags=-a"], env={}).tags == ["-a"]
+
+    def test_negative_number_needs_no_escape(self, loader: ConfargLoader) -> None:
+        """A negative number in the space form is a value on all five, a string field's included (BUG-223)."""
+        assert loader.load(_DashValued, argv=["--key", "-5"], env={}).key == "-5"
+
+    def test_single_dash_space_form_is_a_value_where_no_option_reads_it(self) -> None:
+        """``--key -x`` sets ``-x`` on vanilla, click and typer (BUG-223).
+
+        Vanilla has no single-dash flags and click takes the next token for a one-value
+        option, so the token has nothing else to be
+        (docs-dev/architecture/design-decisions/equals-escapes-a-dashed-value.md#a-single-dash-value-is-the-backends-to-read).
+        """
+        for loader in (VanillaLoader(), ClickLoader(), TyperLoader()):
+            assert loader.load(_DashValued, argv=["--key", "-x"], env={}).key == "-x", loader.id
+
+    def test_single_dash_space_form_is_refused_where_the_backend_reads_an_option(self) -> None:
+        """Argparse and cyclopts refuse ``--key -x`` in their own words, as for their own options (BUG-223).
+
+        The approved divergence
+        (docs-dev/architecture/design-decisions/equals-escapes-a-dashed-value.md#a-single-dash-value-is-the-backends-to-read):
+        each reads ``-x`` as an option by its own rule, and ``--key=-x`` is the escape.
+        """
+        for loader in (ArgparseLoader(), CycloptsLoader()):
+            with pytest.raises(SystemExit) as excinfo:
+                loader.load(_DashValued, argv=["--key", "-x"], env={})
+            assert excinfo.value.code != 0, loader.id
 
     def test_dict_subkey(self, loader: ConfargLoader) -> None:
         """``--d.x=--v`` keys a dict with a dashed value."""

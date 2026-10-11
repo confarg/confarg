@@ -91,7 +91,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | Decision | In one line |
 |---|---|
 | [cli_prefix is given at registration and recovered at merge](cli-prefix-at-registration.md) | `populate_*` owns flag naming, so it owns the prefix |
-| [The `=` form is the escape for a dashed value](equals-escapes-a-dashed-value.md) | `--key=--value`, because shape alone cannot decide |
+| [The `=` form is the escape for a dashed value](equals-escapes-a-dashed-value.md) | `--key=--value`, because shape alone cannot decide; a single-dash value is each backend's to read |
 | [allow_abbrev disabled](allow-abbrev-disabled.md) | adding a field must not silently change what an abbreviation means |
 | [Optionality does not change what a whole value accepts](optionality-and-whole-values.md) | `\| None` says what a field may be unset to, not what its syntax is |
 | [A whole-value flag needs its value](a-whole-value-flag-needs-its-value.md) | `--db` with nothing after it is an error, like `--port` with nothing after it |

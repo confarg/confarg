@@ -29,7 +29,7 @@ multi-file spelling
 ([locals](locals.md#declare-in-files-modify-anywhere)); the mount keyword and the form its path
 takes, spelled per channel
 ([design decisions](design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel)); a `--help` ahead of a refused bare flag, which shows help on argparse and cyclopts and which only the two clicklike front-ends answer with their own usage error — their parser refuses a missing value before any eager flag runs
-([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)). Known unapproved gaps
+([CLI adapters](cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare)); a single-dash token after a value-taking flag, a value on vanilla, click and typer, which argparse and cyclopts read by their own option-like rule and refuse — `--key=-x` is the spelling all five take ([design decisions](design-decisions/equals-escapes-a-dashed-value.md#a-single-dash-value-is-the-backends-to-read)). Known unapproved gaps
 are listed in [../todo/bugs/](../todo/bugs/README.md).
 
 ## Delegate to the canonical function

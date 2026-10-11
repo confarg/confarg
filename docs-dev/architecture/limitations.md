@@ -125,6 +125,7 @@ A field default is the layer below every source only where the class declares it
 - There is no end-of-options separator: a bare `--` is an ordinary token everywhere. A value
   that starts with `--` is written `--key=--value`, the form every front-end honors
   ([design decisions](design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value)).
+  argparse and cyclopts also refuse most values that start with a single dash in the space form (`--host -x`), each by its own option-like rule, so `--host=-x` is the portable spelling there too; a negative number such as `--port -5` works everywhere ([design decisions](design-decisions/equals-escapes-a-dashed-value.md#a-single-dash-value-is-the-backends-to-read)).
 - A fixed-arity flag (`tuple[X, Y]`, namedtuple) takes one whole-value token — `--pair
   '[13, 42]'`, `--pair '{"x": 13}'` — everywhere except click and typer, whose options cannot
   vary their token count at parse time. They keep `--pair 13 42`, which is the spelling a CLI
