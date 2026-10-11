@@ -906,6 +906,30 @@ class TestEnvSubclassOnlyTagCollision:
 # ---------------------------------------------------------------------------
 
 
+#: The two iteration orders a pair of variables can come in.
+_ORDERS = ["as given", "reversed"]
+
+
+def _ordered(env: dict[str, str], order: str) -> dict[str, str]:
+    """Return *env* in *order*: as given, or with its iteration order reversed."""
+    return dict(reversed(env.items())) if order == "reversed" else env
+
+
+@_dc
+class _DefaultDb:
+    """Database section whose every field has a default."""
+
+    host: str = "dflthost"
+    port: int = 0
+
+
+@_dc
+class _WithDefaultDb:
+    """Root holding a defaulted struct field."""
+
+    db: _DefaultDb = field(default_factory=_DefaultDb)
+
+
 class TestEnvDelete:
     """Tests for the env var deletion suffix: FIELD- (dict key) and FIELD__N- (list index)."""
 
@@ -984,22 +1008,59 @@ class TestEnvDelete:
                 files=[path],
             )
 
-    def test_delete_list_index_after_whole_field_delete(self, loader: ConfargLoader, tmp_toml) -> None:
-        """An index delete met after a whole-field delete replaces it, as on the CLI (BUG-77).
+    @pytest.mark.parametrize("order", _ORDERS)
+    def test_delete_list_index_after_whole_field_delete(self, loader: ConfargLoader, tmp_toml, order: str) -> None:
+        """An index delete beside a whole-field delete has no list left to delete from (BUG-116).
 
-        Its descent read the delete sentinel as a dict.  Which of the two variables the
-        mapping yields first is the open question of BUG-116.
+        The broader variable applies first, as ``--items- --items.0-``: the whole-field
+        delete cuts the field off from the file, so the index delete meets no base list,
+        whichever of the two the mapping yields first.  Its descent once read the delete
+        sentinel as a dict (BUG-77).
         """
         WithList = make_target("items", list[str], default_factory=list)
         path = tmp_toml('items = ["a", "b", "c"]\n')
-        result = loader.load(
-            WithList,
-            argv=[],
-            env={"MYAPP_ITEMS-": "x", "MYAPP_ITEMS__0-": "x"},
-            env_prefix="MYAPP_",
-            files=[path],
-        )
-        assert result.items == ["b", "c"]
+        env = _ordered({"MYAPP_ITEMS-": "x", "MYAPP_ITEMS__0-": "x"}, order)
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="requires a base list"):
+            loader.load(WithList, argv=[], env=env, env_prefix="MYAPP_", files=[path])
+
+    @pytest.mark.parametrize("order", _ORDERS)
+    def test_index_set_beside_a_whole_field_delete_builds_from_nothing(
+        self,
+        loader: ConfargLoader,
+        tmp_toml,
+        order: str,
+    ) -> None:
+        """An index set beside a whole-field delete builds the list as if no file held it (BUG-116)."""
+        WithList = make_target("items", list[str], default_factory=list)
+        path = tmp_toml('items = ["a", "b", "c"]\n')
+        env = _ordered({"MYAPP_ITEMS-": "x", "MYAPP_ITEMS__0": "x"}, order)
+        assert loader.load(WithList, argv=[], env=env, env_prefix="MYAPP_", files=[path]).items == ["x"]
+
+    @pytest.mark.parametrize("order", _ORDERS)
+    def test_sub_field_beside_a_whole_struct_delete_keeps_the_delete(
+        self,
+        loader: ConfargLoader,
+        tmp_toml,
+        order: str,
+    ) -> None:
+        """A field set beside a whole-struct delete refines the default, not the file (BUG-116)."""
+        path = tmp_toml("[db]\nhost = 'filehost'\nport = 1\n")
+        env = _ordered({"MYAPP_DB-": "x", "MYAPP_DB__HOST": "envhost"}, order)
+        db = loader.load(_WithDefaultDb, argv=[], env=env, env_prefix="MYAPP_", files=[path]).db
+        assert db == _DefaultDb(host="envhost", port=0)
+
+    @pytest.mark.parametrize("order", _ORDERS)
+    def test_whole_value_beside_a_sub_path_is_refined_by_it(self, loader: ConfargLoader, order: str) -> None:
+        """A sub-path variable refines a whole value set at its parent, in either mapping order (BUG-116)."""
+        WithList = make_target("items", list[str], default_factory=list)
+        env = _ordered({"MYAPP_ITEMS": '["q", "r"]', "MYAPP_ITEMS__0": "x"}, order)
+        assert loader.load(WithList, argv=[], env=env, env_prefix="MYAPP_").items == ["x", "r"]
+
+    @pytest.mark.parametrize("order", _ORDERS)
+    def test_json_cast_beside_a_sub_path_is_refined_by_it(self, loader: ConfargLoader, order: str) -> None:
+        """A sub-path variable refines a nested ``json`` cast at its parent, in either mapping order (BUG-116)."""
+        env = _ordered({"MYAPP_DB__json": '{"host": "h", "port": 1}', "MYAPP_DB__PORT": "2"}, order)
+        assert loader.load(_WithDefaultDb, argv=[], env=env, env_prefix="MYAPP_").db == _DefaultDb(host="h", port=2)
 
     def test_delete_out_of_range_raises(self, loader: ConfargLoader, tmp_toml) -> None:
         """Deleting an out-of-range list index raises ConfargError."""
@@ -1145,31 +1206,23 @@ class TestEnvUnionSequenceStrict:
 
 
 class TestEnvScalarThenSubkey:
-    """A scalar env var followed by a deeper one for the same field resolves, never crashes.
+    """A scalar env var beside a deeper one for the same field resolves, never crashes.
 
-    The two orders disagree by design — the later variable wins — but neither escapes a
-    bare ``TypeError`` out of the merge core.
+    The deeper variable applies after the broader one, whichever the mapping yields first
+    (BUG-116), so it opens the scalar away as ``--db oops --db.host db1`` does; neither
+    order escapes a bare ``TypeError`` out of the merge core.
     """
 
-    def test_struct_field_scalar_then_subkey(self, loader: ConfargLoader) -> None:
+    @pytest.mark.parametrize("order", _ORDERS)
+    def test_struct_field_scalar_beside_subkey(self, loader: ConfargLoader, order: str) -> None:
         """A dataclass field has no scalar shorthand: the subkey opens the scalar away."""
         result = loader.merge(
             AppConfig,
             argv=[],
-            env={"APP_DB": "oops", "APP_DB__HOST": "db1"},
+            env=_ordered({"APP_DB": "oops", "APP_DB__HOST": "db1"}, order),
             env_prefix="APP_",
         )
         assert result == {"db": {"host": "db1"}}
-
-    def test_struct_field_subkey_then_scalar(self, loader: ConfargLoader) -> None:
-        """The reverse order is unchanged: the whole value wins, as it always has."""
-        result = loader.merge(
-            AppConfig,
-            argv=[],
-            env={"APP_DB__HOST": "db1", "APP_DB": "oops"},
-            env_prefix="APP_",
-        )
-        assert result == {"db": "oops"}
 
 
 # ---------------------------------------------------------------------------

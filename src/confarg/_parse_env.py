@@ -16,7 +16,7 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
 
 from confarg import _defaults
 from confarg._cast import JSON_CAST_NAME, fold_root_json, resolve_forced_value
@@ -173,6 +173,45 @@ def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: dict[
         _set_nested(data, del_parts, DICT_DELETE)
 
 
+def _is_env_delete(parts: list[str]) -> bool:
+    """Whether the variable spelled *parts* is a delete (``FOO__BAR-``, ``FOO__ITEMS__1-``)."""
+    return parts[-1].endswith("-") and len(parts[-1]) > 1
+
+
+def _env_cast(parts: list[str], walk_target: Any, union_tag: str) -> tuple[list[str], str] | None:
+    """Return the path a ``json`` force-cast variable writes and the cast's name, or None if it is no cast.
+
+    Whether the trailing ``json`` segment is a cast at all is decided by the canonical
+    :func:`~confarg._parse_cli.detect_force_cast` (a real field/key named ``json`` wins),
+    asked of the *walk_target* a flag's path resolves against. So a dict root's
+    ``FOO_JSON`` is its cast: no key of a root set whole is a member.
+    """
+    if parts[-1].lower() != JSON_CAST_NAME:
+        return None
+    parent_parts, _ = _resolve_env_parts(walk_target, parts[:-1], union_tag) if parts[:-1] else ([], None)
+    path, cast_name = detect_force_cast([*parent_parts, JSON_CAST_NAME], walk_target, union_tag)
+    return None if cast_name is None else (path, cast_name)
+
+
+def _env_order(parts: list[str], key: str, walk_target: Any, union_tag: str) -> tuple[int, int]:
+    """Return where the variable spelled *parts* falls in the order the environment is applied in.
+
+    First the depth of the path it writes, so a variable is applied after every variable
+    whose path holds its own and refines what they wrote; then, at one path, a delete, a
+    ``json`` cast and a plain value, in that order. The variables then merge as the flags
+    of the same paths merge when typed in that order, whatever order the mapping yields
+    them in.
+
+    Dev Notes:
+        docs-dev/architecture/environment-parsing.md#the-broader-variable-applies-first
+    """
+    if _is_env_delete(parts):
+        return len(parts), 0
+    if (cast := _env_cast(parts, walk_target, union_tag)) is not None:
+        return len(cast[0]), 1
+    return (len(parts) if key else 0), 2
+
+
 def _apply_env_json_cast(  # noqa: PLR0913  # root and nested placement need distinct sinks
     orig_key: str,
     parts: list[str],
@@ -186,32 +225,25 @@ def _apply_env_json_cast(  # noqa: PLR0913  # root and nested placement need dis
 ) -> bool:
     """Apply a ``json`` force-cast (``FOO__DB__json``, or ``FOO_JSON`` at the root).
 
-    Mirrors the CLI ``.json`` suffix, including the bare root form: whether the trailing
-    segment is a cast at all is decided by the canonical
-    :func:`~confarg._parse_cli.detect_force_cast` (a real field/key named ``json`` wins),
-    asked of the *walk_target* a flag's path resolves against. So a dict root's
-    ``FOO_JSON`` is its cast: no key of a root set whole is a member.
-    A nested cast is stored at the parent path; a root cast injects the whole
+    Mirrors the CLI ``.json`` suffix, including the bare root form; whether it is a cast
+    at all is :func:`_env_cast`'s to answer. A nested cast is stored at the parent path;
+    on a non-struct root it sets the value whole; on a struct root it injects the whole
     configuration — collected into ``root_json`` and folded in as a base by
     :func:`~confarg._cast.fold_root_json`, so per-field env vars win over it.  Returns
     True when handled.  Hard-errors on invalid JSON, matching the CLI's explicit-intent
     semantics.
     """
-    if parts[-1].lower() != JSON_CAST_NAME:
+    if (cast := _env_cast(parts, walk_target, union_tag)) is None:
         return False
-    parent_parts, _ = _resolve_env_parts(walk_target, parts[:-1], union_tag) if parts[:-1] else ([], None)
-    path, cast_name = detect_force_cast([*parent_parts, JSON_CAST_NAME], walk_target, union_tag)
-    if cast_name is None:
-        return False
+    path, cast_name = cast
     decoded = resolve_forced_value(cast_name, value, flag=orig_key)
     if path:
         _set_nested(data, path, decoded)
         return True
     if not is_struct:
         # Non-struct root: the decoded value *is* the configuration, whatever its shape.
-        # The environment has no order for "last typed wins" to read, so the plain
-        # variable refines the cast, as a per-field one does on a struct root.
-        data.setdefault(_defaults.ROOT_KEY, decoded)
+        # The plain bare variable is applied after it (_env_order) and replaces it.
+        data[_defaults.ROOT_KEY] = decoded
         return True
     if not isinstance(decoded, dict):
         raise ConfargError.root_cast_not_object(orig_key, decoded)
@@ -297,6 +329,23 @@ def _store_env_value(parts: list[str], ft: Any, value: str, data: dict[str, Any]
     _set_nested(data, parts, _try_coerce(ft, _StrToken(value)))
 
 
+def _prefixed_variables(
+    env: Mapping[str, str],
+    prefix: str,
+    separator: str,
+) -> Iterator[tuple[str, str, list[str], str]]:
+    """Yield ``(name, key, segments, value)`` for each variable of *env* carrying *prefix*.
+
+    *key* is the name with the prefix and the separator after it removed, *segments* the
+    key split on *separator*.
+    """
+    for orig_key, value in env.items():
+        if prefix and not orig_key.startswith(prefix):
+            continue
+        key = orig_key.removeprefix(prefix).removeprefix(separator) if prefix else orig_key
+        yield orig_key, key, key.split(separator) if separator in key else [key], value
+
+
 def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env channel must intercept
     env: Mapping[str, str],
     prefix: str,
@@ -344,20 +393,17 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
     # Paths resolve against the locals-grafted target, as a flag's do; root classification keeps `target`.
     walk_target = _walk_target(target, _locals_keys(target, union_tag))
 
-    for orig_key, value in env.items():
-        key = orig_key
-        if prefix:
-            if not key.startswith(prefix):
-                continue
-            key = key.removeprefix(prefix).removeprefix(separator)
-
-        parts = key.split(separator) if separator in key else [key]
-
+    variables: list[tuple[tuple[int, int], str, str, list[str], str]] = []
+    for orig_key, key, parts, value in _prefixed_variables(env, prefix, separator):
         if config_flag and parts[0].lower() == config_flag.lower():
+            # File pointers: ordered by the pipeline, which loads them.
             _handle_env_config_flag(parts, target, env_configs, value, union_tag, orig_key)
             continue
+        variables.append((_env_order(parts, key, walk_target, union_tag), orig_key, key, parts, value))
 
-        if parts[-1].endswith("-") and len(parts[-1]) > 1:
+    # The environment has no typing order, so it is given one: the broader variable first.
+    for _, orig_key, key, parts, value in sorted(variables):
+        if _is_env_delete(parts):
             _handle_env_delete(orig_key, parts, walk_target, data, union_tag)
             continue
 
@@ -369,20 +415,20 @@ def _parse_env(  # noqa: PLR0913  # one parameter per reserved name the env chan
             data[_defaults.ROOT_KEY] = _try_coerce(_resolve_type(target), _StrToken(value))
             continue
 
-        parts, ft = _resolve_env_parts(walk_target, parts, union_tag)
+        path, ft = _resolve_env_parts(walk_target, parts, union_tag)
         # Locals are not target fields: skip the unknown-field warning and store the raw
         # token; _pipeline checks and coerces them (docs-dev/architecture/locals.md).
-        is_locals = _locals_segment_index(target, parts, union_tag) is not None
-        if not is_locals and _warn_unknown_env_field(orig_key, parts, target, walk_target, union_tag):
+        is_locals = _locals_segment_index(target, path, union_tag) is not None
+        if not is_locals and _warn_unknown_env_field(orig_key, path, target, walk_target, union_tag):
             continue
         if is_locals:
             ft = None
         else:
-            _refuse_below_a_sequence(orig_key, parts, walk_target, union_tag)
+            _refuse_below_a_sequence(orig_key, path, walk_target, union_tag)
 
         # Same rule as the CLI: a bare callable shorthand already stored at a prefix of
         # this path is a spec this variable refines, not a scalar it replaces.
-        _open_callable_shorthand(data, parts, walk_target, union_tag)
-        _store_env_value(parts, ft, value, data)
+        _open_callable_shorthand(data, path, walk_target, union_tag)
+        _store_env_value(path, ft, value, data)
 
     return fold_root_json(data, root_json, union_tag), env_configs

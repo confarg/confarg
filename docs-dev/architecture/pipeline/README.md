@@ -9,4 +9,4 @@ promises the next one. Implementation: `_api.py`, `_pipeline.py`, `_merge.py`.
 | [api-seams.md](api-seams.md) | which public function stops where, and what round-trips at which seam |
 | [merge-build-contract.md](merge-build-contract.md) | `merge()` returns an unvalidated dict: what a parser may reject, and what it must defer |
 | [merge-order.md](merge-order.md) | source precedence, file-loading order, and the one module that implements them |
-| [deep-merge.md](deep-merge.md) | dict-wins merging, the list-patch sentinel vocabulary, and what a scalar in the way means |
+| [deep-merge.md](deep-merge.md) | dict-wins merging, the list-patch sentinel vocabulary, what a scalar in the way means, and what an op after a whole-field delete applies to |

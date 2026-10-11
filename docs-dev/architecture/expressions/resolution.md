@@ -160,3 +160,32 @@ Rejected:
   would pass through unquoted.
 - **The reason first, the quote after it** (simpleeval). It reads the reason first, but a refusal
   and a runtime failure would then read in two shapes (maintainer-chosen).
+
+## Calls and expressions share one graph
+
+Today every expression resolves before any construction, so a `call:` argument can read an
+expression's value, but an expression cannot read a `call:` result. Resolution sees only merged
+values, and construction runs afterwards.
+
+The planned order (FEAT-28) puts `call:` specs in the same graph as expressions: a `call:` node
+depends on what its arguments reach, and an expression depends on what its references reach, as
+in the section above. Kahn's sort then yields one order, and a cycle through a call is a
+`CircularReferenceError` naming its members, the same as a cycle between expressions. An
+expression reading a call result waits for that call. A call reading an expression waits for
+that expression. Nothing that works today is lost.
+
+Rejected:
+
+- **Keep the merged, unresolved tree as the only input to expressions.** Simplest, and no
+  dispatch order is needed. It forbids `${...}` over a call result, which FEAT-28 relies on
+  to make `call:` work in every typed field.
+- **Two passes: plain expressions, then calls, then expressions that read calls.** It keeps
+  both directions for one level only. A call whose argument reads an expression that reads
+  another call fails, so it needs a graph anyway, plus a second rule to explain.
+- **Expressions after construction, per field.** It needs a separate ordering and cycle rule
+  beside the expression graph, which already exists, and it moves expression evaluation onto the
+  typed object, which this note's algorithm does not assume.
+
+Open cost (to check when FEAT-28 is built): an expression that reads a call result reads it
+after the call has been checked against its annotation. Whether that value is typed or raw in
+the expression namespace is not decided here.

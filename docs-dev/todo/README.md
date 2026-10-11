@@ -52,9 +52,8 @@ it when `PATH` is a directory, or through a glob:
 
 ```console
 $ uv run python docs-dev/todo/index.py --where src/confarg/_parse_env.py
-bugs/BUG-116-an-env-whole-field-delete-beside-a-sub-path-var-depends-on-mapping-order.md
-  BUG-116 — An env whole-field delete beside a sub-path variable depends on the mapping's order
-  where: src/confarg/_parse_env.py::_parse_env
+bugs/BUG-174-an-index-delete-on-a-dict-writes-the-list-delete-key.md
+  BUG-174 — An index delete on a dict writes the list-delete key into the dict
   where: src/confarg/_parse_env.py::_handle_env_delete
 …
 ```
@@ -64,8 +63,8 @@ first `N` (10 by default) unblocked tickets across every board, in [work order](
 
 ```console
 $ uv run python docs-dev/todo/index.py --next 1
- 1. BUG-116 — An env whole-field delete beside a sub-path variable depends on the mapping's order
-    critical · S · bugs/BUG-116-an-env-whole-field-delete-beside-a-sub-path-var-depends-on-mapping-order.md
+ 1. BUG-155 — A `call:` spec naming a class passes its kwargs uncoerced
+    critical · S · bugs/BUG-155-a-call-spec-naming-a-class-passes-its-kwargs-uncoerced.md
 ```
 
 Documentation defects go on these same boards, sorted the same way: documentation wrong about

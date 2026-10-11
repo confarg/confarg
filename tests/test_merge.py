@@ -476,6 +476,39 @@ class TestConfigFileDeleteSyntax:
         result = loader.load(WithList, argv=[], env={}, files=[base, derived])
         assert result.items == ["a", "b"]
 
+    @pytest.mark.parametrize(
+        ("derived", "expected"),
+        [
+            ("items-: ~\nitems+:\n  - x\n", ["x"]),
+            ("items-: ~\nitems:\n  '0': x\n", ["x"]),
+            ("items+:\n  - x\nitems-: ~\n", []),
+        ],
+    )
+    def test_op_after_a_whole_field_delete_in_one_file(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        derived: str,
+        expected: list[str],
+    ) -> None:
+        """A key written after ``items-`` in the same file applies to nothing below, as on the CLI (BUG-116)."""
+        WithList = make_target("items", list[str], default_factory=list)
+        base = tmp_yaml("items:\n  - a\n  - b\n", "base.yaml")
+        top = tmp_yaml(derived, "derived.yaml")
+        assert loader.load(WithList, argv=[], env={}, files=[base, top]).items == expected
+
+    def test_index_delete_after_a_whole_field_delete_in_one_file_has_no_base(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+    ) -> None:
+        """``items-`` then ``items: {0-: ~}`` in one file fails as ``--items- --items.0-`` does (BUG-116)."""
+        WithList = make_target("items", list[str], default_factory=list)
+        base = tmp_yaml("items:\n  - a\n  - b\n", "base.yaml")
+        top = tmp_yaml("items-: ~\nitems:\n  0-: ~\n", "derived.yaml")
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="requires a base list"):
+            loader.load(WithList, argv=[], env={}, files=[base, top])
+
     def test_negative_index_without_base_raises(self) -> None:
         """from_dict with a negative index key and no base list raises TypeCoercionError."""
         WithList = make_target("items", list[int], default_factory=list)
