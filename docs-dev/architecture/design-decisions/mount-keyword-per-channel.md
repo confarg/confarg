@@ -37,7 +37,7 @@ Four costs decide it against:
 - It collides where the feature matters most. `_segment_names_real_field` counts every segment
   under a dict as a real key ([real field wins over reserved words](real-field-wins.md#real-field-wins-over-reserved-words)),
   so `--plugins.config f.yaml` would set `plugins["config"]`, and a dict node could not be mounted
-  without an escape spelling (`--plugins._config`, on the `_fn` precedent). The same holds for the
+  without an escape spelling (`--plugins._config`, on the `_bind` precedent). The same holds for the
   locals namespace, whose member names are declared in files and therefore open — and
   `--config.locals FILE` is the documented CLI route to a local
   ([locals](../locals.md#declare-in-files-modify-anywhere)). Exempting this one word from

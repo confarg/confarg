@@ -10,7 +10,6 @@ icon: lucide/rocket
 
 It can handle deeply nested configurations, type unions, derived classes, expressions and variable interpolation, configuration compositions, and more, and can integrate with your favorite argument parser library such as `argparse`, `click`, `typer` or `cyclopts`.
 
-
 !!! note "`confarg` is not a framework"
     No decorator, base class, or special annotation type required: none are provided. It is just a tool for the deserialization and serialization of complex configurations. Its footprint in your code is typically a few lines of code.
 
@@ -29,7 +28,6 @@ It can handle deeply nested configurations, type unions, derived classes, expres
     ```
 
 `confarg` comes with no dependency, but installing additional libraries such as `pyyaml` enables support for extra configuration file formats.
-
 
 ## Configuration deserialization
 

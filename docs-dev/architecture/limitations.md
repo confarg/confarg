@@ -57,7 +57,7 @@ the boundary moves here.
 
 - A whole value and a deeper key for the same field resolve last-write-wins, and the loser
   goes quietly. Only a `Callable` field's bare string survives the pair, being the shorthand
-  for `{fn: …}`; at a union like `dict[str, str] | str`, where a scalar is legitimate but
+  for `{bind: …}`; at a union like `dict[str, str] | str`, where a scalar is legitimate but
   abbreviates nothing, `--d oops --d.c x` keeps only the subkey
   ([design decisions](design-decisions/whole-value-then-subkey.md#a-whole-value-followed-by-a-subkey-opens-rather-than-collides)).
 - List deletion and negative indices need a base list to apply to: they are patches, and a
@@ -137,7 +137,7 @@ the boundary moves here.
 
 ## Callables and serialization
 
-- Owning-class detection for `fn: Class.method` fails for lambdas and for functions defined in
+- Owning-class detection for `bind: Class.method` fails for lambdas and for functions defined in
   nested scopes; a callable confarg did not build may not be serializable at all
   ([callables](callables.md#round-trip)).
 - Plain (non-dataclass) classes cannot be dumped by `dump()`. To serialize as fields, a class

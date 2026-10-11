@@ -15,7 +15,7 @@ unregistered `Enum`. That is the one variant kind `dump()` cannot pin when a sib
 scalar back — `str | LogLevel` holding a member dumps `"debug"` and rebuilds as a `str`, and
 `dump()` can only warn ([design-decisions/a-stolen-leaf-dumps-with-its-cast.md#a-stolen-leaf-dumps-with-its-cast](../../architecture/design-decisions/a-stolen-leaf-dumps-with-its-cast.md#a-stolen-leaf-dumps-with-its-cast)).
 Accepting `{__cast__: "mymod.LogLevel"}` would close it: `_coerce_leaf` already builds any
-`Enum`, and a dotted path in a file is what the `class` tag and a callable `fn:` already are.
+`Enum`, and a dotted path in a file is what the `class` tag and a callable `bind:` already are.
 
 What the design pass has to settle:
 

@@ -83,8 +83,9 @@ def _detect_owning_class(func: Any) -> type | None:
 def _maybe_bind_method(func: Any, path: str) -> Any:
     """If func is an unbound instance method, auto-instantiate its owning class (no args) and return the bound method.
 
-    Returns func unchanged when it is not an instance method or the class
-    requires constructor arguments.
+    Returns func unchanged when it is not an instance method. Raises when the owning class
+    requires constructor arguments: the message lists them and points to ``call:``, the one
+    form that can build the owner with arguments.
     """
     if getattr(func, "__name__", None) == "__init__":
         return func
@@ -94,11 +95,12 @@ def _maybe_bind_method(func: Any, path: str) -> Any:
     try:
         instance = cls()
     except TypeError as e:
-        fn_path = dotted_name(func)
         msg = (
             f"Cannot instantiate {cls.__qualname__!r} with no arguments at '{path}': {e}.\n"
-            f"Use the dict form and supply {cls.__qualname__}'s constructor arguments as sibling keys:\n"
-            f"{_format_fn_dict_example(fn_path, cls)}"
+            f"{dotted_name(func)} is an instance method, so its owner is built with no arguments."
+            f" To build {cls.__qualname__} with arguments, give the field a 'call:' spec naming a"
+            f" factory that returns the bound method. {cls.__qualname__}'s constructor takes:\n"
+            f"{_format_constructor_params(cls)}"
         )
         raise TypeCoercionError(msg) from e
     return getattr(instance, func.__name__)
@@ -123,14 +125,14 @@ def _fillable_params(
     ]
 
 
-def _format_fn_dict_example(fn_path: str, cls: type) -> str:
-    """Return a YAML-like snippet showing the fn: dict form with required constructor kwargs."""
+def _format_constructor_params(cls: type) -> str:
+    """Return a YAML-like listing of *cls*'s constructor parameters, the required ones first."""
     try:
         sig = inspect.signature(cls)
     except (ValueError, TypeError):
-        return f"  fn: {fn_path}\n  # (add constructor arguments here)"
+        return "  # (constructor parameters cannot be inspected)"
 
-    lines = [f"  fn: {fn_path}"]
+    lines = []
     for p in _fillable_params(sig.parameters, required=True):
         type_hint = f"  # {p.annotation.__name__}" if isinstance(p.annotation, type) else ""
         lines.append(f"  {p.name}: <value>{type_hint}")
@@ -151,34 +153,28 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, union_tag: str, 
         this raises and points at the 'class:' form.
       - Otherwise (function/method) → use as-is.
 
-    Dict with 'fn' key:
-      - The referenced function or method (or class, used factory-like) is the callable.
-      - If it is an instance method, the owning class is auto-instantiated
-        (with sibling kwargs as constructor args, or no args if none are given).
-      - 'bind' → functools.partial applied to the resulting callable (e.g. 'fn: SomeClass'
-        + 'bind: {lr: 0.1}' is a factory with pre-applied constructor args).
+    Dict with 'bind' key:
+      - The target, resolved as a bare string is (or, when it is a dict, as a callable spec
+        of its own), with the sibling kwargs partially applied: functools.partial(target,
+        **siblings). With no sibling, the target itself, so '{bind: T}' and 'T' are one spec.
 
     Dict with 'class' key:
       - Instantiate the class with the sibling kwargs; the instance is the callable
-        (it must define __call__). 'bind' → functools.partial applied to the instance.
+        (it must define __call__).
 
     Dict with 'call' key:
       - Call the referenced factory function; its return value is the callable.
 
     Escaped mode (collision escape):
-      - Each directive also has a single-underscore form ('_fn', '_class', '_call',
-        '_bind'). Using an escaped *opener* ('_fn'/'_class'/'_call') switches the whole
-        spec to escaped mode, where the underscore forms are the directives and every
-        plain word — including 'bind', 'fn', 'call' — is an ordinary constructor kwarg
-        (e.g. '_class: H' with a plain 'bind:' init arg and '_bind:' to partial-apply
-        __call__). Do not mix forms within one spec: the opener alone selects the mode,
-        so a stray '_bind' under a plain opener is treated as data.
+      - Each opener also has a single-underscore form ('_bind', '_class', '_call'). Using
+        an escaped opener switches the whole spec to escaped mode, where every plain word
+        — including 'bind', 'class', 'call' — is an ordinary kwarg of the target.
     """
     where = _spell_field_path(path)
     if isinstance(spec, str):
         result = _resolve_bare_string(str(spec), where, tp)
     elif isinstance(spec, dict):
-        result = _resolve_dict_spec(spec, _SpecContext(path, union_tag, construct_fn))
+        result = _resolve_dict_spec(spec, tp, _SpecContext(path, union_tag, construct_fn))
     elif callable(spec):
         result = spec
     else:
@@ -191,32 +187,44 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, union_tag: str, 
     return result
 
 
-def _resolve_bare_string(path_str: str, path: str, callable_tp: Any = None) -> Any:
-    """Resolve a bare import-path string to a callable.
+def _import_target(path_str: str, path: str, callable_tp: Any) -> Any:
+    """Import the target a bare string or a ``bind:`` spec names: a class, or a function.
 
-    A class resolves to the class itself, used factory-like: return
-    functools.partial(cls) with no pre-bound kwargs, so calling it constructs an
-    instance. To use an instance as the callable, use the 'class:' dict form.
-
-    Raises ``TypeCoercionError`` pointing at the 'class:' form when the Callable
-    declares a concrete return type (including ``None``) that the class cannot
-    produce. A bare or abstractly-typed Callable is not checked.
-
-    Functions and methods are used as-is.
+    A class is returned as it is, to be used factory-like. Raises ``TypeCoercionError``
+    pointing at the 'class:' form when the Callable declares a concrete return type
+    (including ``None``) that the class cannot produce; a bare or abstractly-typed
+    Callable is not checked. An instance method is bound to an owner built with no
+    arguments (:func:`_maybe_bind_method`); any other function is returned as it is.
     """
     obj = _import_dotted(path_str)
     if isinstance(obj, type):
         required = _unproducible_return(obj, callable_tp)
         if required is not None:
             msg = (
-                f"Callable at '{path}': bare class {path_str!r} would be used as a factory,"
+                f"Callable at '{path}': class {path_str!r} would be used as a factory,"
                 f" but its instances are not {required} (the Callable's declared return type)."
                 f" To use an instance of {path_str} as the callable, use the dict form:"
                 f" 'class: {path_str}'."
             )
             raise TypeCoercionError(msg)
-        return functools.partial(obj)
+        return obj
     return _maybe_bind_method(obj, path)
+
+
+def _as_callable(target: Any) -> Any:
+    """Return *target* as the callable a spec with nothing to apply yields: a class as a bare factory."""
+    return functools.partial(target) if isinstance(target, type) else target
+
+
+def _resolve_bare_string(path_str: str, path: str, callable_tp: Any = None) -> Any:
+    """Resolve a bare import-path string to a callable.
+
+    A class resolves to the class itself, used factory-like: return
+    functools.partial(cls) with no pre-bound kwargs, so calling it constructs an
+    instance. To use an instance as the callable, use the 'class:' dict form.
+    Functions and methods are used as-is (see :func:`_import_target`).
+    """
+    return _as_callable(_import_target(path_str, path, callable_tp))
 
 
 def _issubclass_safe(cls: type, other: type) -> bool:
@@ -354,31 +362,36 @@ def _resolve_call_spec(fn_path: str, call_kwargs: dict, original_spec: dict, ctx
 class _Directives:
     """The directive key names active for a spec, in either plain or escaped mode.
 
-    A callable dict names its target with an *opener* (``fn``/``class``/``call``)
-    and may partially apply the result with ``bind``. The escaped mode uses the
-    single-underscore forms (``_fn``/``_class``/``_call``/``_bind``) and treats every
-    plain word as an ordinary kwarg. The opener's form selects the mode for the whole spec.
+    A callable dict names its target with exactly one *opener*: ``bind`` (a partial of
+    the target), ``class`` (an instance) or ``call`` (a return value). Every other key is
+    an argument of the target. The escaped mode uses the single-underscore forms
+    (``_bind``/``_class``/``_call``) and treats every plain word as an ordinary kwarg. The
+    opener's form selects the mode for the whole spec.
 
     Dev Notes:
         docs-dev/architecture/callables.md#plain-and-escaped-directives
     """
 
-    fn: str
+    bind: str
     cls: str
     call: str
-    bind: str
 
     @property
     def openers(self) -> tuple[str, str, str]:
-        return (self.fn, self.cls, self.call)
+        return (self.bind, self.cls, self.call)
 
     @property
     def reserved(self) -> frozenset[str]:
-        return frozenset({self.fn, self.cls, self.call, self.bind})
+        return frozenset(self.openers)
+
+    @property
+    def by_mode(self) -> dict[str, str]:
+        """Return each opener's name in this form, keyed by its plain spelling (the mode)."""
+        return dict(zip(_PLAIN_DIRECTIVES.openers, self.openers, strict=True))
 
 
-_PLAIN_DIRECTIVES = _Directives(fn="fn", cls="class", call="call", bind="bind")
-_ESCAPED_DIRECTIVES = _Directives(fn="_fn", cls="_class", call="_call", bind="_bind")
+_PLAIN_DIRECTIVES = _Directives(bind="bind", cls="class", call="call")
+_ESCAPED_DIRECTIVES = _Directives(bind="_bind", cls="_class", call="_call")
 
 
 def active_directives(has_key: Callable[[str], bool]) -> _Directives:
@@ -388,9 +401,9 @@ def active_directives(has_key: Callable[[str], bool]) -> _Directives:
     ``spec.__contains__``; the CLI passes a probe over its flat ``{flag}.{name}``
     namespace. Use this everywhere plain-vs-escaped must be decided.
 
-    Escaped mode is selected when an escaped *opener* (``_fn``/``_class``/``_call``) is
+    Escaped mode is selected when an escaped opener (``_bind``/``_class``/``_call``) is
     present; otherwise plain mode. A directive word in the *other* form is ordinary
-    data: a plain opener with a stray ``_bind`` leaves that ``_bind`` a kwarg.
+    data: beside an escaped opener, a plain ``bind`` is a kwarg.
 
     Dev Notes:
         docs-dev/architecture/callables.md#plain-and-escaped-directives
@@ -422,39 +435,25 @@ def names_a_bind(name: str) -> bool:
     return name in (_PLAIN_DIRECTIVES.bind, _ESCAPED_DIRECTIVES.bind)
 
 
-_DIRECTIVE_COUNTERPARTS: dict[str, str] = dict(
-    zip(
-        (*_PLAIN_DIRECTIVES.openers, _PLAIN_DIRECTIVES.bind),
-        (*_ESCAPED_DIRECTIVES.openers, _ESCAPED_DIRECTIVES.bind),
-        strict=True,
-    ),
-)
-_DIRECTIVE_COUNTERPARTS.update({escaped: plain for plain, escaped in list(_DIRECTIVE_COUNTERPARTS.items())})
-
-
 def _mixed_form_hint(names: Iterable[str]) -> str:
-    """Explain rejected kwargs that are directive words in the form the opener did not select.
+    """Explain rejected kwargs that are plain opener words beside an escaped opener.
 
-    A directive in the *active* form never reaches a kwarg rejection — it was consumed as
-    a directive — so a directive word that does is the other form, left as ordinary data
-    by :func:`active_directives`. The rejection is correct either way; the hint says why
-    the word ended up a kwarg, which is what the likely typo needs to hear. Returns ``""``
-    when no name is a directive word.
+    Every directive is an opener, and any escaped opener selects the escaped mode
+    (:func:`active_directives`), so only a *plain* word can be left as ordinary data: an
+    escaped word always selects its own mode. The rejection is correct either way; the hint
+    says why the word ended up a kwarg, which is what the likely typo needs to hear. Returns
+    ``""`` when no name is a plain opener.
 
     Dev Notes:
         docs-dev/architecture/callables.md#plain-and-escaped-directives
     """
-    clauses = []
-    for name in sorted(set(names) & set(_DIRECTIVE_COUNTERPARTS)):
-        escaped = name in _ESCAPED_DIRECTIVES.reserved
-        form, mode = ("escaped", "plain") if escaped else ("plain", "escaped")
-        openers = "/".join(repr(o) for o in (_ESCAPED_DIRECTIVES if escaped else _PLAIN_DIRECTIVES).openers)
-        clauses.append(
-            f" {name!r} is the {form} spelling of the {_DIRECTIVE_COUNTERPARTS[name]!r} directive,"
-            f" but this spec's opener is {mode}, so {name!r} is ordinary data here:"
-            f" use {_DIRECTIVE_COUNTERPARTS[name]!r}, or spell the opener {openers}.",
-        )
-    return "".join(clauses)
+    return "".join(
+        f" {name!r} is the plain spelling of the {escaped!r} opener, but this spec's opener is"
+        f" escaped, so {name!r} is ordinary data here. A spec has one opener, and its form"
+        f" selects how every other key reads."
+        for name, escaped in zip(_PLAIN_DIRECTIVES.openers, _ESCAPED_DIRECTIVES.openers, strict=True)
+        if name in set(names)
+    )
 
 
 def _reject_mixed_form_kwargs(target: Any, kwargs: dict, path: str) -> None:
@@ -465,7 +464,7 @@ def _reject_mixed_form_kwargs(target: Any, kwargs: dict, path: str) -> None:
     A name the target *does* accept is left alone — reaching a parameter that collides
     with a directive word is exactly what the escaped form exists for.
     """
-    stray = set(kwargs) & set(_DIRECTIVE_COUNTERPARTS)
+    stray = set(kwargs) & _PLAIN_DIRECTIVES.reserved
     if not stray:
         return
     try:
@@ -484,16 +483,16 @@ def _reject_mixed_form_kwargs(target: Any, kwargs: dict, path: str) -> None:
 def promote_bare_spec(spec: str) -> dict[str, Any]:
     """Return the dict spec that the bare-string shorthand *spec* is the shorthand for.
 
-    ``"pkg.func"`` and ``{fn: "pkg.func"}`` are two spellings of one spec and resolve to
+    ``"pkg.func"`` and ``{bind: "pkg.func"}`` are two spellings of one spec and resolve to
     the same object, so a bare string that a sibling key refines is opened into its dict
     form rather than discarded. The bare string is itself a *plain* opener — it has no
     escaped spelling — so the plain directive names are the active ones, and an escaped
-    key sitting beside it is ordinary data, exactly as it is beside a plain ``fn:``.
+    key sitting beside it is ordinary data, exactly as it is beside a plain ``bind:``.
 
     Dev Notes:
         docs-dev/architecture/callables.md#spec-grammar
     """
-    return {_PLAIN_DIRECTIVES.fn: spec}
+    return {_PLAIN_DIRECTIVES.bind: spec}
 
 
 def _select_directives(spec: dict) -> _Directives:
@@ -501,35 +500,33 @@ def _select_directives(spec: dict) -> _Directives:
     return active_directives(spec.__contains__)
 
 
-def _resolve_dict_spec(spec: dict, ctx: _SpecContext) -> Any:
-    """Resolve a dict callable spec (fn/class/call + sibling kwargs + bind).
+def _single_opener(spec: dict, d: _Directives, where: str) -> str:
+    """Return the one opener *spec* holds in the form *d* names, raising unless there is exactly one."""
+    present = [k for k in d.openers if k in spec]
+    if len(present) > 1:
+        msg = f"Callable dict at '{where}' must not specify more than one of {list(d.openers)} (got: {present})"
+        raise TypeCoercionError(msg)
+    if not present:
+        msg = f"Callable dict at '{where}' must specify one of 'bind', 'class', or 'call' (or their _-prefixed forms)"
+        raise TypeCoercionError(msg)
+    return present[0]
+
+
+def _resolve_dict_spec(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
+    """Resolve a dict callable spec: one opener (bind/class/call), its sibling keys the target's arguments.
 
     Directive keys come in a plain and a single-underscore-escaped form; the opener
-    selects which (see :func:`_select_directives`).
+    selects which (see :func:`_select_directives`). *tp* is the Callable annotation, which
+    a ``bind:`` target that is a class is checked against.
     """
     d = _select_directives(spec)
-    has_fn = d.fn in spec
-    has_class = d.cls in spec
-    has_call = d.call in spec
-    exclusive = [k for k in d.openers if k in spec]
-    if len(exclusive) > 1:
-        msg = f"Callable dict at '{ctx.where}' must not specify more than one of {list(d.openers)} (got: {exclusive})"
-        raise TypeCoercionError(msg)
-    if not has_fn and not has_class and not has_call:
-        msg = f"Callable dict at '{ctx.where}' must specify one of 'fn', 'class', or 'call' (or their _-prefixed forms)"
-        raise TypeCoercionError(msg)
-    bind_raw = spec.get(d.bind, {})
-    if not isinstance(bind_raw, dict):
-        msg = f"{d.bind!r} in Callable dict at '{ctx.where}' must be a dict, got {_src_type(bind_raw)}"
-        raise TypeCoercionError(msg)
-    init_kwargs = {k: v for k, v in spec.items() if k not in d.reserved}
-
-    if has_call:
-        call_kwargs = {**init_kwargs, **bind_raw}
-        return _resolve_call_spec(spec[d.call], call_kwargs, spec, ctx)
-    if has_fn:
-        return _resolve_fn_spec(spec[d.fn], init_kwargs, bind_raw, ctx)
-    return _resolve_class_spec(_ClassSpec(spec[d.cls], init_kwargs, bind_raw, spec), ctx)
+    opener = _single_opener(spec, d, ctx.where)
+    kwargs = {k: v for k, v in spec.items() if k not in d.reserved}
+    if opener == d.call:
+        return _resolve_call_spec(spec[d.call], kwargs, spec, ctx)
+    if opener == d.bind:
+        return _resolve_bind_spec(spec[d.bind], kwargs, tp, ctx.at(d.bind), ctx)
+    return _resolve_class_spec(_ClassSpec(spec[d.cls], kwargs, spec), ctx)
 
 
 def _accepts(tp: Any, value: Any) -> bool:
@@ -552,18 +549,16 @@ def resolve_typed_call(spec: dict, tp: Any, path: FieldPath, union_tag: str, con
 
     The sibling keys are the function's arguments. A value the annotation already accepts is
     returned as it is; any other is built as ``tp`` from the raw value, so a wrong type fails the
-    way a wrong literal does. ``bind`` is refused, since it only applies to a Callable.
+    way a wrong literal does. A second opener beside ``call`` is refused, as in a Callable spec.
 
     Dev Notes:
         docs-dev/architecture/callables.md#call-in-a-typed-field
     """
     ctx = _SpecContext(path, union_tag, construct_fn)
     d = _select_directives(spec)
-    if d.bind in spec:
-        msg = f"'{d.bind}' at '{ctx.where}' applies to a Callable; a '{d.call}' spec for {tp!r} takes none"
-        raise TypeCoercionError(msg)
-    init_kwargs = {k: v for k, v in spec.items() if k not in d.reserved}
-    value = _call_factory(spec[d.call], init_kwargs, ctx)
+    _single_opener(spec, d, ctx.where)
+    kwargs = {k: v for k, v in spec.items() if k not in d.reserved}
+    value = _call_factory(spec[d.call], kwargs, ctx)
     if _accepts(tp, value):
         return value
     return ctx.construct(tp, value)
@@ -586,7 +581,7 @@ def _bind_hints_source(callable_obj: Any) -> Any:
 
 
 def _resolve_bind_kwargs(callable_obj: Any, bind: dict, ctx: _SpecContext) -> dict:
-    """Validate and typed-construct 'bind' kwargs against callable_obj's signature.
+    """Validate and typed-construct a ``bind:`` spec's sibling kwargs against callable_obj's signature.
 
     Values go through :func:`_coerce_kwargs`, so bound arguments get full typed
     construction (enums, dataclasses, lists, unions) and bad values raise.
@@ -600,50 +595,39 @@ def _resolve_bind_kwargs(callable_obj: Any, bind: dict, ctx: _SpecContext) -> di
         callable_obj,
         _bind_hints_source(callable_obj),
         bind,
-        ctx.at("bind"),
+        ctx,
         kind="bind parameter(s)",
         subject=subject,
     )
 
 
-def _resolve_fn_spec(fn_path: str, init_kwargs: dict, bind: dict, ctx: _SpecContext) -> Any:
-    """Resolve a 'fn:' callable spec.
+def _resolve_bind_spec(target: Any, kwargs: dict, tp: Any, target_ctx: _SpecContext, ctx: _SpecContext) -> Any:
+    """Resolve a ``bind:`` spec: ``functools.partial(target, **kwargs)``.
 
-    If init_kwargs are provided, detect the owning class via __qualname__,
-    construct the instance, then retrieve the method. Otherwise use the
-    imported object directly.
+    *target* is a dotted path, imported as a bare string is (:func:`_import_target`), or a
+    callable spec of its own, resolved at *target_ctx*, one key below the spec. The sibling
+    *kwargs* are built at *ctx*, the spec's own path, against the target's signature. With
+    no sibling the target is the result, so ``{bind: T}`` and the bare ``"T"`` are one spec.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#spec-grammar
     """
-    func = _import_dotted(fn_path)
-    if init_kwargs and getattr(func, "__name__", None) == "__init__":
-        # The hint replaces the generic advice rather than following it: when the kwarg is
-        # a directive in the other form, "use bind" without saying why is the confusing half.
+    if isinstance(target, str):
+        obj = _import_target(target, ctx.where, tp)
+    elif isinstance(target, dict):
+        obj = _resolve_dict_spec(target, tp, target_ctx)
+        if not callable(obj):
+            msg = f"'bind' target at '{target_ctx.where}': {target!r} resolved to {obj!r}, which is not callable."
+            raise TypeCoercionError(msg)
+    else:
         msg = (
-            f"Constructor kwargs {sorted(init_kwargs)} are not valid for '__init__' at '{ctx.where}':"
-            " '__init__' is treated as a plain function."
-            + (_mixed_form_hint(init_kwargs) or " Use 'bind:' to partially apply arguments.")
+            f"'bind' at '{ctx.where}' takes a dotted path or a callable spec, got {_src_type(target)}."
+            " The target's arguments are the spec's other keys: {bind: <target>, <arg>: <value>}."
         )
         raise TypeCoercionError(msg)
-    if init_kwargs:
-        cls = _detect_owning_class(func)
-        if cls is None:
-            msg = (
-                f"Constructor kwargs {sorted(init_kwargs)} provided for {fn_path!r} at '{ctx.where}',"
-                " but it does not appear to be an instance method."
-                + (
-                    _mixed_form_hint(init_kwargs)
-                    or " Use 'bind' to partially apply arguments to a plain function or class."
-                )
-            )
-            raise TypeCoercionError(msg)
-        _reject_mixed_form_kwargs(cls, init_kwargs, ctx.where)
-        instance = ctx.construct(cls, init_kwargs)
-        result: Any = getattr(instance, func.__name__)
-    else:
-        result = _maybe_bind_method(func, ctx.where)
-    if bind:
-        bind = _resolve_bind_kwargs(result, bind, ctx)
-        result = functools.partial(result, **bind)
-    return result
+    if not kwargs:
+        return _as_callable(obj)
+    return functools.partial(obj, **_resolve_bind_kwargs(obj, kwargs, ctx))
 
 
 @dataclass
@@ -652,7 +636,6 @@ class _ClassSpec:
 
     cls_path: str
     init_kwargs: dict
-    bind: dict
     original: dict
 
 
@@ -660,10 +643,11 @@ def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
     """Resolve a 'class:' callable spec: instantiate the class; the instance is the callable.
 
     ``init_kwargs`` (sibling keys) are the constructor arguments; the instance must be
-    callable (define ``__call__``). ``bind`` is then partially applied to the instance.
+    callable (define ``__call__``). A partial over the instance is a ``bind:`` spec whose
+    target is this one.
 
     To use a class as a *factory* (calling it constructs an instance), give its bare
-    fully-qualified name, or ``fn: <class>`` with ``bind:`` for pre-applied constructor args.
+    fully-qualified name, or ``bind: <class>`` with sibling keys for pre-applied constructor args.
     """
     cls = _import_dotted(spec.cls_path)
     if not isinstance(cls, type):
@@ -677,18 +661,12 @@ def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
             f"Instance of {spec.cls_path!r} at '{ctx.where}' is not callable: the class must define"
             f" __call__ to be used as a Callable via 'class:'. To use {spec.cls_path} as a"
             f" factory (calling it constructs an instance), give its bare name"
-            f" '{spec.cls_path}', or 'fn: {spec.cls_path}' with 'bind:' for constructor args."
+            f" '{spec.cls_path}', or 'bind: {spec.cls_path}' with its constructor args as sibling keys."
         )
         raise TypeCoercionError(msg)
-    result: Any
-    if spec.bind:
-        bind = _resolve_bind_kwargs(instance, spec.bind, ctx)
-        result = functools.partial(instance, **bind)
-    else:
-        result = instance
     with contextlib.suppress(AttributeError, TypeError):
-        cast("Any", result).__confarg_spec__ = spec.original
-    return result
+        cast("Any", instance).__confarg_spec__ = spec.original
+    return instance
 
 
 def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
@@ -729,7 +707,8 @@ def _serialize_callable(value: Any) -> str | dict:
     """Serialize a callable value back to its config representation.
 
     Class instance with __confarg_spec__ → stored spec dict (e.g. {class: ...}).
-    Partial with pre-bound kwargs (factory or bound function) → {fn: "module.qualname", bind: {k: v}}.
+    Partial with pre-bound kwargs → {bind: <its target, serialized>, k: v}, in the escaped
+    form when a kwarg is spelled like a plain opener.
     Bare partial (a class used factory-like, no kwargs) → "module.qualname" string.
     Plain callable → "module.qualname" string.
     """
@@ -738,11 +717,11 @@ def _serialize_callable(value: Any) -> str | dict:
         return spec
 
     if isinstance(value, functools.partial):
-        func = value.func
-        path = dotted_name(func)
+        target = _serialize_callable(value.func)
         if value.keywords:
-            return {"fn": path, "bind": dict(value.keywords)}
-        return path
+            d = _ESCAPED_DIRECTIVES if set(value.keywords) & _PLAIN_DIRECTIVES.reserved else _PLAIN_DIRECTIVES
+            return {d.bind: target, **value.keywords}
+        return target
 
     if getattr(value, "__module__", None) and getattr(value, "__qualname__", None):
         return dotted_name(value)

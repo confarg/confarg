@@ -249,7 +249,7 @@ def populate_app(  # noqa: PLR0913
             for each direct struct field of the root dataclass (default
             ``True``).
         argv: CLI argument list scanned to register argv-derived dynamic
-            parameters: ``--<field>.bind.*`` for resolved ``--<field>.fn`` /
+            parameters: ``--<field>.<param>`` for resolved ``--<field>.bind`` /
             ``--<field>.class`` callables, ``--<config_flag>.<subpath>[+]``
             scoped/append config files, and list-index / append / delete /
             dict-subkey patch parameters.  Defaults to ``sys.argv[1:]`` (matching

@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     import argparse
 
 from confarg import _defaults
+from confarg._callable import _PLAIN_DIRECTIVES
 from confarg._tags import _partial_config_from_argv, _tags_from_argv, _tags_from_config
 from confarg._types import (
     _is_callable,
@@ -33,7 +34,7 @@ from confarg.cli._build import (
     _build_callable_fn_specs,
     _build_leaf_spec,
     _build_union_tag_spec,
-    _collect_callable_bind_specs,
+    _collect_callable_field_specs,
     _collect_fn_paths_from_argv,
     _collect_fn_paths_from_config,
     _whole_value_spec,
@@ -107,7 +108,7 @@ def _extend_walk_field(  # noqa: PLR0913, C901
             specs.append(_build_leaf_spec(flag, raw_type, core, help_text, group, group_description))
             ctx.existing_dests.add(flag)
         specs.extend(_build_callable_fn_specs(flag, group, group_description))
-        ctx.existing_dests.update({f"{flag}.fn", f"{flag}.class"})
+        ctx.existing_dests.update(f"{flag}.{opener}" for opener in _PLAIN_DIRECTIVES.openers)
         return specs
 
     if _is_struct(core):
@@ -264,17 +265,17 @@ def _pre_extend_parser_for_completion(
 
         config_fns = _collect_fn_paths_from_config(config_dict, target, "", union_tag)
         argv_fns = _collect_fn_paths_from_argv(argv, target, union_tag)
-        for field_flag, (fn_path, _mode, bind_key) in {**config_fns, **argv_fns}.items():
+        for field_flag, (target_path, mode, _directives) in {**config_fns, **argv_fns}.items():
             try:
-                bind_specs = _collect_callable_bind_specs(
+                sibling_specs = _collect_callable_field_specs(
                     _in_prefix(field_flag, cli_prefix),
-                    fn_path,
-                    bind_key,
+                    target_path,
+                    mode,
                     walk_ctx.existing_dests,
                 )
-                load_flags_into_parser(bind_specs, parser)
+                load_flags_into_parser(sibling_specs, parser)
             except Exception:  # noqa: BLE001 — completion must never crash
-                _log.debug("callable bind flags: skipping %r", fn_path, exc_info=True)
+                _log.debug("callable argument flags: skipping %r", target_path, exc_info=True)
                 continue
 
     except Exception:  # noqa: BLE001 — completion must never crash; failure here silently degrades suggestions

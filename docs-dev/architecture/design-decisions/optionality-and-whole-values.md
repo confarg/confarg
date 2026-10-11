@@ -28,7 +28,7 @@ this rule (`list[str] | None` takes a JSON array in the environment, and the CLI
   namedtuple a sequence everywhere
   ([a namedtuple is a fixed-length sequence](namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence)).
 - Decoding the blob was not yet registering the flags it implies: the adapters learned a
-  callable's factory and `bind` flags from a `--<field>.class` opener on argv only, so a class
+  callable's argument flags from a `--<field>.class` opener on argv only, so a class
   named inside the blob left them unregistered, fixed the same way — by widening an
   existing walk, not by adding a scan. Vanilla, which re-reads argv, was
   never affected; the divergence was in the scan, not in this predicate, which is why it

@@ -31,10 +31,10 @@ $ uv run print_greetings.py --greet_fn greetings.print_greetings
 Hello, world!
 ```
 
-An expanded dict form can also be used, where the FQN of the function is given under the `fn` key.
+An expanded dict form can also be used, where the FQN of the function is given under the `bind` key (what it binds is the subject of [Tutorial #19](https://confarg.github.io/confarg/examples/19_bindings/)).
 
 ```console
-$ uv run print_greetings.py --greet_fn.fn greetings.print_greetings
+$ uv run print_greetings.py --greet_fn.bind greetings.print_greetings
 Hello, world!
 ```
 
@@ -56,23 +56,3 @@ Hi, world!
 
 > [!NOTE]
 > In case you wonder why we explicitly use the `class` key here to specify the class FQN as such, we will see in [Tutorial #20](https://confarg.github.io/confarg/examples/20_factories/) what happens when we use the class as a callable.
-
-## Class methods
-
-Like functions, class methods can be specified as callables. In the simplest case, when the object can be instantiated without arguments, the FQN of the method is passed either directly under the field key or under the `fn` key of an expanded dict definition.
-
-```console
-$ # 1. Directly under the key
-$ uv run print_greetings.py --greet_fn greetings.Greetings_printer.print
-Hello, world!
-$ # 2. In an expanded dict definition under the `fn` key
-$ uv run print_greetings.py --greet_fn.fn greetings.Greetings_printer.print
-Hello, world!
-```
-
-When parameters are needed to initialize the object, they are given alongside the `fn` key.
-
-```console
-$ uv run print_greetings.py --greet_fn.fn greetings.Greetings_printer.print --greet_fn.greetings Hi
-Hi, world!
-```

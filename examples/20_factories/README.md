@@ -32,9 +32,9 @@ $ uv run trainer.py --optimizer optimizer.Optimizer
 Optimizer(lr=0.1, momentum=0.99)
 ```
 
-Should we need to specify initialization arguments, we resort to the expanded dict definition. Note that the FQN of the class goes under the `fn` key, not `class` — we are not instantiating the class here, but pointing to the type itself as a callable factory — and that the extra arguments are bound to it with `bind`.
+Should we need to specify initialization arguments, we resort to the expanded dict definition. Note that the FQN of the class goes under the `bind` key, not `class` — we are not instantiating the class here, but pointing to the type itself as a callable factory — and that the extra arguments, given alongside it, are bound to it.
 
 ```console
-$ uv run trainer.py --optimizer.fn optimizer.Optimizer --optimizer.bind.lr 0.25
+$ uv run trainer.py --optimizer.bind optimizer.Optimizer --optimizer.lr 0.25
 Optimizer(lr=0.25, momentum=0.99)
 ```

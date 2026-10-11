@@ -28,7 +28,7 @@ from confarg._callable import (
     _check_callable_signature,
     _ClassSpec,
     _detect_owning_class,
-    _format_fn_dict_example,
+    _format_constructor_params,
     _import_dotted,
     _issubclass_safe,
     _resolve_bare_string,
@@ -423,10 +423,10 @@ class TestCallableEdgeCases:
         )
         assert result is my_func
 
-    def test_resolve_dict_spec_non_dict_bind_raises(self) -> None:
-        """A non-dict bind: value in the fn: dict form raises TypeCoercionError."""
-        spec = {"fn": "os.path.join", "bind": "not_a_dict"}
-        with pytest.raises(confarg.exceptions.TypeCoercionError, match="must be a dict"):
+    def test_resolve_dict_spec_bind_target_of_another_type_raises(self) -> None:
+        """A bind: target that is neither a dotted path nor a spec raises TypeCoercionError."""
+        spec = {"bind": 12345, "x": 1}
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="takes a dotted path or a callable spec"):
             _resolve_callable_spec(spec, Callable, path=("test",), union_tag="class", construct_fn=construct)
 
     def test_resolve_class_spec_not_a_class_raises(self) -> None:
@@ -1144,7 +1144,7 @@ class TestCallableBranches:
         cls_path = f"{_NotCallableClass.__module__}.{_NotCallableClass.__qualname__}"
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="is not callable"):
             _resolve_class_spec(
-                _ClassSpec(cls_path, {}, {}, {"class": cls_path}),
+                _ClassSpec(cls_path, {}, {"class": cls_path}),
                 _SpecContext(("test_path",), "class", construct),
             )
 
@@ -1152,7 +1152,7 @@ class TestCallableBranches:
         """A slotted callable class resolves successfully in _resolve_class_spec."""
         cls_path = f"{_SlottedCallableClass.__module__}.{_SlottedCallableClass.__qualname__}"
         result = _resolve_class_spec(
-            _ClassSpec(cls_path, {"value": 5}, {}, {"class": cls_path, "value": 5}),
+            _ClassSpec(cls_path, {"value": 5}, {"class": cls_path, "value": 5}),
             _SpecContext(("test_path",), "class", construct),
         )
         assert callable(result)
@@ -1598,22 +1598,22 @@ class TestCallableGaps:
         with pytest.raises(SymbolImportError, match="error loading module"):
             _import_dotted("fake_exploding_module.something")
 
-    def test_format_fn_dict_example_uninspectable(self) -> None:
-        """_format_fn_dict_example falls back gracefully when signature inspection raises."""
+    def test_format_constructor_params_uninspectable(self) -> None:
+        """_format_constructor_params falls back gracefully when signature inspection raises."""
 
         class _NoSig:
             def __init__(self):
                 pass
 
         _NoSig.__init__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __init__ to trigger fallback path
-        result = _format_fn_dict_example("some.path", _NoSig)
-        assert "some.path" in result
+        result = _format_constructor_params(_NoSig)
+        assert "cannot be inspected" in result
 
-    def test_format_fn_dict_example_optional_params(self) -> None:
-        """_format_fn_dict_example formats optional constructor params (lines 128-130)."""
+    def test_format_constructor_params_optional_params(self) -> None:
+        """_format_constructor_params lists optional constructor params after the required ones."""
         # _CovOptMethod has required=int, optional=str; calling it with no args raises TypeError
-        # → _format_fn_dict_example is called → optional params loop runs
-        with pytest.raises(TypeCoercionError, match="Cannot instantiate"):
+        # → _format_constructor_params is called → optional params loop runs
+        with pytest.raises(TypeCoercionError, match=r"(?s)required: <value>.*# optional: 'default'"):
             _resolve_bare_string(f"{_COV_MOD}._CovOptMethod.method", "test_path")
 
     def test_resolve_call_kwargs_uninspectable(self, monkeypatch) -> None:

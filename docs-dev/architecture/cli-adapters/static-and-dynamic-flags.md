@@ -4,7 +4,7 @@
 namedtuples (whole, then per name, per index and per negative index whatever that field type
 takes as a struct's field, recursively — the index spellings hidden from `--help`: BUG-68, BUG-80,
 BUG-112), union tags and variant fields, plain callable
-openers (`.fn`/`.class`/`.call`), `--config` and `--config.<mount point>` (a struct field, a dict field — where a fragment of
+openers (`.bind`/`.class`/`.call`), `--config` and `--config.<mount point>` (a struct field, a dict field — where a fragment of
 unknown keys belongs — or a union whose variants are all structs, whose help entry says the
 fragment's top level must name its variant with the tag, because the field's own flags are
 per-variant), and
@@ -15,11 +15,12 @@ from it, so `argv=[]` still describes exactly the declared type.
 **Dynamic flags** (`build_dynamic_flags`) are those whose existence depends on what the
 user typed, found by scanning argv (and config files named on argv):
 
-- bind/factory parameters of callables, whether the class is named by `--f.fn/.class/.call`,
-  by a whole-value `--f '{"class": …}'` blob, or by a config file;
+- the target's parameters (`--f.<p>`) of callables, whether the target is named by
+  `--f.bind/.class/.call`, by a whole-value `--f '{"class": …}'` blob, or by a config file;
 - escaped openers (`--f._class`) actually typed;
-- bind subkeys typed in argv in either spelling (`--f.bind.p`, `--f._bind.p`), including the
-  one the opener left inactive, whose keys are ordinary data and so describe no signature
+- keys typed in argv below a callable that no signature describes: a nested `bind` target
+  spec's keys in either spelling (`--f.bind.class`, `--f._bind.x`), and a directive word the
+  opener left inactive, which is ordinary data
   ([callables](../callables.md#plain-and-escaped-directives));
 - `--config.<any.depth>[+]`;
 - collection patches (`--f.N`, `--f+`, `--f.N-`, `--f.key`) and `.json` casts;
@@ -82,5 +83,5 @@ half of BUG-28 was the adapters' own collector, which gathered sibling `--<field
 only when an opener was present.)
 
 The predicate answers about a *path*, so the caller strips an append/delete suffix before
-asking. Those flags are registered by the patch-flag scan, in the shape their mode demands; claiming `--f.bind.<key>-` here registered a value-less delete as if it took an
+asking. Those flags are registered by the patch-flag scan, in the shape their mode demands; claiming `--f.<key>-` here registered a value-less delete as if it took an
 argument (BUG-29).

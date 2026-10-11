@@ -38,8 +38,8 @@ restricted to compatible classes. `call:` is the general "run this and use its v
 - Named targets only. `call:` does not evaluate expression strings. Evaluation order is decided in [resolution.md](../../architecture/expressions/resolution.md#calls-and-expressions-share-one-graph).
 - `bind:` takes a target, never a kwargs dict. The old `bind:` kwargs form is removed, not kept
   alongside.
-- Migration is a breaking config change (`impact: config`), so the old forms get a deprecation
-  period, or a note in the changelog, before removal. FEAT-30 decides which.
+- The old forms are removed outright, with no deprecation period: decided and landed with
+  FEAT-30 ([bind yields a partial](../../architecture/design-decisions/bind-yields-a-partial-of-its-target.md)).
 
 **Not decided here**
 

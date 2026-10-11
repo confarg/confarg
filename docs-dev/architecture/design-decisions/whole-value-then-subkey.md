@@ -9,7 +9,7 @@ different at each field:
 |---|---|---|
 | provably meaningless | `dict[str, str] \| None`, a dataclass | already headed for a build error on its own |
 | a legitimate value | `dict[str, str] \| str` | builds fine on its own |
-| a documented shorthand | `Callable[…]` | `"pkg.func"` ≡ `{fn: "pkg.func"}` |
+| a documented shorthand | `Callable[…]` | `"pkg.func"` ≡ `{bind: "pkg.func"}` |
 
 The rule chosen: **open the scalar into whatever it means to its field, then let the subkey
 refine it**; where it means nothing, the subkey replaces it. Only `Callable` has such a

@@ -134,7 +134,7 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911  # o
             _, vt = _dict_kv(tp)
             return vt
         case _TypeKind.CALLABLE:
-            # "fn"/"class"/"call" are recognized sub-keys; flat kwargs also accepted
+            # "bind"/"class"/"call" are recognized sub-keys; flat kwargs also accepted
             return str
         case _TypeKind.ANY | _TypeKind.UNION | _TypeKind.LEAF:
             return None
@@ -221,9 +221,10 @@ def _walk_path(target: Any, parts: list[str], union_tag: str, *, tag_fallback: b
         for node in _union_branches(reached):
             here = (*stones, _Stone(reached, node))
             if str_subtree or (_is_callable(node) and names_a_bind(part)):
-                # A callable's bind key is addressable as a str-leaf subtree (--field.bind.key)
-                # and, in escaped mode, as a plain scalar init-kwarg (--field.bind 5). Whether the
-                # active-mode bind must be a dict is validated in construct, not here (lenient parse).
+                # A callable's bind key holds a target: a dotted path (--field.bind pkg.f) or a
+                # callable spec of its own, addressable as a str-leaf subtree (--field.bind.class
+                # pkg.C). In escaped mode a plain 'bind' is a scalar kwarg (--field.bind 5). Which it
+                # is, construction decides from the opener, not here (lenient parse).
                 yield from walk(str, here, str_subtree=True)
             elif part in _locals_keys_nested(node, union_tag):
                 yield from walk(dict[str, Any], here, str_subtree=False)
@@ -1290,10 +1291,10 @@ def _takes_callable_shorthand(ft: Any) -> bool:
 def _open_callable_shorthand(data: dict[str, Any], path: list[str], target: Any, union_tag: str) -> None:
     """Open a bare-string callable value into its dict form before *path* descends into it.
 
-    ``--fn pkg.func`` is the shorthand for ``--fn.fn pkg.func``, so a later
-    ``--fn.bind.<param>`` must refine the target the shorthand named, not erase it.  This is
+    ``--fn pkg.func`` is the shorthand for ``--fn.bind pkg.func``, so a later
+    ``--fn.<param>`` must refine the target the shorthand named, not erase it.  This is
     the one place that decides it, for every channel: the CLI parse loop and the env parse
-    loop both call it before they store, so ``FN=pkg.func`` plus ``FN__BIND__SEP=-`` reads
+    loop both call it before they store, so ``FN=pkg.func`` plus ``FN__SEP=-`` reads
     the same as the two flags.
 
     A segment that names an *opener* is not a refinement but a second spelling of the

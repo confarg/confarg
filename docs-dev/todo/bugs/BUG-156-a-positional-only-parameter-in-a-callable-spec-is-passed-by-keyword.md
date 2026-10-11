@@ -2,7 +2,7 @@
 filed: 2026-10-05
 where:
   - src/confarg/_callable.py::_acceptable_kwarg_names
-  - src/confarg/_callable.py::_resolve_fn_spec
+  - src/confarg/_callable.py::_resolve_bind_spec
   - src/confarg/_callable.py::_resolve_call_spec
 effort: S
 risk: high
@@ -46,7 +46,7 @@ class Config:
     f: Callable[..., int]
 
 
-cfg = confarg.load(Config, argv=["--f.fn", "__main__.scale", "--f.bind.v", "3"])
+cfg = confarg.load(Config, argv=["--f.bind", "__main__.scale", "--f.v", "3"])
 print(cfg.f(factor=2))
 # expected: 6, or a ConfargError from load() naming 'v'
 # actual:   TypeError: scale() got some positional-only arguments passed as keyword arguments: 'v'
