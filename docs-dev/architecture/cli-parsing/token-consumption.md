@@ -71,6 +71,11 @@ choice to `construct`. Two refinements:
   accepts it, `construct` can still build a one-element list (`--input hello` for
   `bool | list[str]` → `['hello']`). Env and file scalars get no such fallback: they express
   lists explicitly, so they stay strict;
+- a **single** none word is stored bare too, as the environment stores it, when the union
+  counts `None`. An optional sequence (`list[int] | None`) is dispatched as such a union, so
+  `--xs none` nulls it, whatever the element type. Whether the token is one is
+  construction's `_construct._selects_none`, asked rather than repeated
+  ([design decisions](../design-decisions/a-lone-none-word-nulls-an-optional-sequence.md#a-lone-none-word-nulls-an-optional-sequence));
 - **no** token builds `[]` only if the union has a variable-length variant. For a
   fixed-tuple-only union an empty list can build nothing, so this is rejected at parse time —
   one of the few provable-at-parse-time errors.

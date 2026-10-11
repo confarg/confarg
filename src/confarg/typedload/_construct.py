@@ -762,6 +762,18 @@ def _reads_none_word(all_args: list[Any], data: Any) -> bool:
     return types.NoneType in all_args and isinstance(data, _StrToken)
 
 
+def _selects_none(all_args: list[Any], data: Any) -> bool:
+    """Return whether a union of *all_args* reads *data* as ``None``: a token spelling a none word.
+
+    The one test for selecting ``None`` off a value. The CLI parser asks it too, to store a
+    lone none-word run bare, as the environment stores it, rather than as a one-item list.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
+    """
+    return _reads_none_word(all_args, data) and str(data).lower() in _NONE_TOKENS
+
+
 def _construct_single_variant_union(
     all_args: list[Any],
     non_none: list[Any],
@@ -777,9 +789,9 @@ def _construct_single_variant_union(
     Dev Notes:
         docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
     """
-    reads_none_word = _reads_none_word(all_args, data)
-    if reads_none_word and data.lower() in _NONE_TOKENS:
+    if _selects_none(all_args, data):
         return None
+    reads_none_word = _reads_none_word(all_args, data)
     try:
         return construct(non_none[0], data, path=path, union_tag=union_tag)
     except (TypeCoercionError, MissingFieldError) as e:
@@ -884,7 +896,7 @@ def _coerce_scalar_variants(
     for var in ordered:
         vr = _resolve_type(var)
         if vr is types.NoneType:
-            if str(data).lower() in _NONE_TOKENS:
+            if _selects_none(all_args, data):
                 return None
             continue
         try:

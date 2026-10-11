@@ -34,6 +34,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [Environment variables off by default](environment-variables-off-by-default.md) | `env_prefix=None`, because the environment is shared with every other process |
 | [Double underscore separator](double-underscore-separator.md) | `__` splits nesting so single underscores stay usable in names |
 | [Explicit boolean values](explicit-boolean-values.md) | `--verbose true`, not `--verbose`/`--no-verbose` |
+| [A lone none word nulls an optional sequence](a-lone-none-word-nulls-an-optional-sequence.md) | `--xs none` is `None` for `list[X] \| None`, as `APP_XS=none` is, whatever `X` |
 | [Real field wins over reserved words](real-field-wins.md) | a reserved name is reserved only where it shadows nothing |
 | [A shadowed tag warns on use](a-shadowed-tag-warns-on-use.md) | the structural selection is named where the tag could have dispatched, and nowhere else |
 | [Strict CLI, lenient environment](strict-cli-lenient-environment.md) | an unknown flag is an error, an unknown variable a warning |

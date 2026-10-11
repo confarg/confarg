@@ -56,6 +56,7 @@ from confarg._types import (
     _struct_member_names,
     _struct_member_type,
     _tuple_types,
+    _union_args,
     _union_args_no_none,
     _union_has_scalar_variant,
     _union_has_seq_variant,
@@ -64,6 +65,7 @@ from confarg._types import (
 )
 from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce, _type_kind, _TypeKind
+from confarg.typedload._construct import _selects_none
 
 
 def _step_tuple_type(tp: Any, part: str) -> Any | None:
@@ -950,7 +952,9 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str) -> Any:
     ``_UnionSeqToken`` so that, if every scalar variant rejects it, ``construct``
     can still fall back to filling the sequence variant as a one-element list
     (so ``--input hello`` for ``bool | list[str]`` becomes ``['hello']``).
-    Otherwise the tokens form a list and tuple/list/set disambiguation is
+    A single none word the union reads as ``None`` is stored bare too, the
+    environment's shape, so ``--xs none`` nulls a ``list[int] | None`` as
+    ``APP_XS=none`` does (BUG-163). Otherwise the tokens form a list and tuple/list/set disambiguation is
     deferred to ``construct``. No tokens builds the empty list when the union has
     a varlen variant (e.g. ``int | list[int]`` → ``[]``); otherwise it is a
     missing-value error.
@@ -967,6 +971,8 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str) -> Any:
         raise ConfargError.missing_value(token)
     if len(tokens) == 1 and _union_has_scalar_variant(ft):
         return _UnionSeqToken(_StrToken(tokens[0]))
+    if len(tokens) == 1 and _selects_none(_union_args(ft), _StrToken(tokens[0])):
+        return _StrToken(tokens[0])
     return [_StrToken(t) for t in tokens]
 
 
