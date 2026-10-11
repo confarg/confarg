@@ -153,7 +153,12 @@ def build[T](
         raw = resolved.get(_defaults.ROOT_KEY, _MISSING)
         if raw is _MISSING:
             raise MissingFieldError(path=(), field_type=target_r)
-        return _tc(target_r, raw, union_tag=union_tag)
+        try:
+            return _tc(target_r, raw, union_tag=union_tag)
+        except MissingFieldError as e:
+            # Its remedy names the whole root's flag: no flag addresses a path below it.
+            e._in_root_value = True
+            raise
     return _tc(target_r, resolved, union_tag=union_tag)
 
 

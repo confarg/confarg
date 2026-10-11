@@ -84,6 +84,13 @@ the machinery real dict fields already use — including adapter patch-flag regi
   searches every variant, so grafting a name that is also a real field silently routes
   `--<name>.x` to the synthetic dict instead of the field — the one mistake here that changes
   parsing without any error.
+- **The graft answers its keys and nothing else.** No class is dispatched on it, so the walk
+  never answers the union tag at it by its fallback. It once did, and its `str` branch then
+  disagreed with a real field named like the tag, so the walk's fold typed `--kind 5` as a
+  string on a struct root with a `kind: int` field.
+- A **non-struct root** is set whole, from `__root__`, so its walk target is the graft alone:
+  the namespace beside its value is all a dotted path reaches there
+  ([CLI parsing](cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole)).
 
 ## Stripping
 
