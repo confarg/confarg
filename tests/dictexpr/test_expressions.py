@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 import confarg
 from confarg._merge import ListOp
@@ -40,6 +42,7 @@ from confarg.dictexpr._expressions import (
     _validate_ast,
     canonicalize_references,
     contains_expression,
+    escape_expressions,
     prefix_references,
     resolve_expressions,
 )
@@ -2233,3 +2236,43 @@ class TestABodyTooDeepToParse:
         monkeypatch.setattr(ast, "parse", give_up)
         with pytest.raises(SyntaxError):
             _parse_expression(body)
+
+
+class TestEscapeExpressions:
+    """A string escaped by ``escape_expressions`` resolves back to itself, byte for byte.
+
+    A field default enters the data a reference reads as a literal, whatever ``${...}`` it
+    holds: resolution must give back the text the class declared.
+    """
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "${x}",
+            "$${x}",
+            "$$${x}",
+            "a ${x} b $${y} c",
+            "${}",
+            "$${}",
+            "${'a",
+            "${a + '}'}",
+            "$",
+            "$$",
+            "{x}",
+            "plain",
+            "${x}${y}",
+            "a$${x}",
+        ],
+    )
+    def test_resolution_gives_the_text_back(self, text: str) -> None:
+        """Each spelling, expression or escape or neither, resolves to what it was."""
+        assert resolve_expressions({"s": escape_expressions(text)})["s"] == text
+
+    @given(st.text(alphabet="${}'\" ax", max_size=24))
+    def test_any_text_resolves_back(self, text: str) -> None:
+        """No arrangement of dollars, braces and quotes escapes the escape."""
+        assert resolve_expressions({"s": escape_expressions(text)})["s"] == text
+
+    def test_an_escaped_string_reads_no_reference(self) -> None:
+        """An escaped expression names no field, so nothing is missing from the data."""
+        assert resolve_expressions({"s": escape_expressions("${missing.path}")}) == {"s": "${missing.path}"}

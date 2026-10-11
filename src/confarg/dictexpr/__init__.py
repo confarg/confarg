@@ -20,11 +20,13 @@ Typical use::
 (``${...}`` or the ``$${...}`` escape); code inspecting values before resolution
 uses it to leave such values untouched.
 
+:func:`escape_expressions` spells a string so that resolution gives it back unchanged.
+
 Dev Notes:
     docs-dev/architecture/expressions/README.md
 """
 
-from confarg.dictexpr._expressions import contains_expression, resolve_expressions
+from confarg.dictexpr._expressions import contains_expression, escape_expressions, resolve_expressions
 from confarg.exceptions import (
     CircularReferenceError,
     ExpressionEvalError,
@@ -38,5 +40,6 @@ __all__ = [
     "MissingReferenceError",
     "UnsafeExpressionError",
     "contains_expression",
+    "escape_expressions",
     "resolve_expressions",
 ]
