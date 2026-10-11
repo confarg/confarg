@@ -6,7 +6,7 @@ deliberately (non-alphabetical, hence `noqa: RUF022`):
 | Group | Functions | Stops after |
 |---|---|---|
 | two-step | `merge`, `build` | collection / resolution + construction |
-| three-step (dict-centric) | `merge`, `resolve`, `from_dict` | collection / resolution / construction |
+| three-step (dict-centric) | `merge`, `resolve(target, data)`, `from_dict` | collection / resolution / construction |
 | one-step | `load` | everything |
 | dump | `dump`, `dump_file` | serialization |
 
@@ -56,6 +56,11 @@ writes them back, so a merged config can be saved as written: how its values are
 `dump(instance)` serializes the *constructed* object, the values the program ran with: every
 expression resolved, and every `call:` replaced by what it produced. There is deliberately no
 "un-resolve" step.
+
+**The field defaults enter after `merge()`.** `build()`, `resolve()` and `from_dict()` lay the
+target's defaults under the data, so a `merge()` result holds only what the sources said, and a
+saved merge keeps following the class's defaults; `resolve()` takes the target for that reason
+([design decisions](../design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer)).
 
 The raw dict is not made of file-native values, though: `_try_coerce` coerces CLI, env and
 CSV leaves eagerly ([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)), so it can hold a `Path` or an

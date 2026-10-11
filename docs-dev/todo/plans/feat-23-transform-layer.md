@@ -46,7 +46,7 @@ how-to steers instead.
 | Decision | Choice |
 |---|---|
 | Scope | The admission test above, as guidance rather than enforcement |
-| Stage | Post-resolve, in the shared helper behind `build()` and `resolve()` |
+| Stage | Post-resolve, in the shared helper behind `build()` and `resolve()` (`_api._resolve_over_defaults` since FEAT-37: decide whether a transform sees the untouched defaults, i.e. runs before `drop_untouched`) |
 | Precedence | Sources merge by precedence, then transforms rewrite the result. No conflict check |
 | Semantics | Sequential, RFC 6902: one pass, later rules see earlier effects |
 | Ordering | Depth-first walk of the merged document in key order; declaration order within a block |

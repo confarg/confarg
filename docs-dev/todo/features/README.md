@@ -21,6 +21,7 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 | [FEAT-17 — An end-of-options separator (`--`)](FEAT-17-end-of-options-separator.md) | minor |  | M | medium | behavior |
 | [FEAT-18 — The environment channel has no append spelling](FEAT-18-no-append-spelling-in-the-environment.md) | minor |  | M | low | behavior |
 | [FEAT-24 — Writing a configuration back to a URL](FEAT-24-writing-a-configuration-to-a-url.md) | minor |  | M | low | behavior |
+| [FEAT-38 — A `default_factory` default is no base layer](FEAT-38-a-factory-default-is-no-base.md) | minor |  | M | medium | behavior |
 | [FEAT-1 — Uneven shell-completion coverage](FEAT-1-uneven-shell-completion-coverage.md) | minor |  | L | low | behavior |
 | [FEAT-2 — Protocol-typed callables and `**kwargs`](FEAT-2-protocol-callables-and-kwargs.md) | minor |  | L | medium | behavior |
 | [FEAT-6 — `Annotated` field metadata read by all three channels](FEAT-6-annotated-field-metadata.md) | minor |  | L | medium | behavior |
@@ -33,8 +34,8 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 | [FEAT-35 — Let `${...}` read a `call:` result](FEAT-35-expressions-read-call-results.md) | minor |  | L | high | behavior |
 | [FEAT-23 — A post-resolve transform layer](FEAT-23-post-resolve-transform-layer.md) | minor |  | XL | high | config |
 | [FEAT-20 — Derived values that cannot be made inconsistent](FEAT-20-enforced-derived-values.md) | minor | FEAT-19 | M | medium | behavior |
+| [FEAT-39 — A struct instance default is no base layer](FEAT-39-a-struct-instance-default-is-no-base.md) | minor | FEAT-38 | M | medium | none |
 | [FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin](FEAT-10-confarg-explain-command.md) | minor | FEAT-8 | XL | low | behavior |
-| [FEAT-36 — The test-routing table has no row for `_sources.py` or `_defaults.py`](FEAT-36-the-test-routing-table-has-no-row-for-sources-or-defaults.md) | trivial |  | S | low | none |
 | [FEAT-4 — An explicit ordered patch-op stream](FEAT-4-ordered-patch-op-stream.md) | trivial |  | M | high | none |
 
 <!-- tickets:end -->

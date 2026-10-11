@@ -6,6 +6,10 @@ A string that is exactly one `${expr}` keeps the expression's Python type (int, 
 Anything with surrounding text, including surrounding whitespace, is string interpolation.
 `$${...}` is an escape producing the literal `${...}`.
 
+A field default the target declares is a value a reference reads, laid below the data before
+resolution; a default string is laid escaped, so it reads as the text the class declared and is
+never evaluated ([design decisions](../design-decisions/a-field-default-is-the-base-layer.md#a-default-string-stays-text)).
+
 Whitespace *inside* the braces is layout: `${ a }` is `${a}`, as `{ a }` is in an f-string and
 `" a "` is to `eval()`. Every parse goes through `_parse_body`, which strips it, because
 `ast.parse` alone reads a leading blank as an indent.

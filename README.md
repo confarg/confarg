@@ -383,6 +383,8 @@ Config(db=SQLiteConfig(dbpath='db.sqlite'),
 
 Note that variable interpolation occurs after all configuration data is read. This means here that you can override `memory_gb` from the command line, and `max_heap_size_mb` will be adjusted accordingly, even though the expression is defined in the configuration file.
 
+An expression reads default values too: had `Resources` declared `memory_gb: int = 16`, a configuration leaving `memory_gb` out would still compute the heap from it. A default is the base the sources build on, so a `+` append or an index patch on a defaulted tuple applies over the default, as it would over a value read from a lower configuration file.
+
 ```console
 $ # Max heap is recomputed according to the expression in the config file
 $ myapp.py --config expression_config.yaml --resources.memory_gb 8

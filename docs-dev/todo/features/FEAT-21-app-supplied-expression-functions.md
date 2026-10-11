@@ -61,7 +61,7 @@ the key. The table only has to reach validation and evaluation, in `resolve()`:
 | Spelling | What mount time needs | Cost |
 |---|---|---|
 | `${label_count(db)}`, global registry | nothing | `resolve()` stops being a pure function of its dict; a merged dict resolves in one application and not in another |
-| `${label_count(db)}`, a `functions=` parameter | nothing | threaded through `resolve`, `build`, `load` **and** the five front-ends, not `merge`; `resolve(data)`'s deliberately type-blind signature grows |
+| `${label_count(db)}`, a `functions=` parameter | nothing | threaded through `resolve`, `build`, `load` **and** the five front-ends, not `merge`; `resolve(target, data)`'s signature grows |
 | `${fn.label_count(db)}`, a reserved namespace | a lexical exemption for `fn` beside `_ROOT_ANCHOR` in `visit_Name`, and the matching skip in `_collect_names` | one more reserved name in `_defaults.py` ([shared reserved names](../../architecture/design-decisions/shared-reserved-key-names.md#shared-reserved-key-names-live-in-_defaultspy)), derived by *real field wins* |
 
 The namespace was the one to start from while it was the only spelling that mounted correctly and

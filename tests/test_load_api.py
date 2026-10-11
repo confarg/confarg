@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
-from typing import Any
+from pathlib import Path
+from typing import Any, NamedTuple
 
 import pytest
 
@@ -18,6 +19,7 @@ import confarg.cli.click as confargclick
 import confarg.cli.cyclopts as confargcyclopts
 import confarg.cli.typer as confargtyper
 from confarg import _defaults
+from confarg._merge import ListOp
 from tests.conftest import (
     AppConfig,
     CacheConfig,
@@ -218,3 +220,79 @@ class TestMergeOptions:
         fields = {f.name for f in dataclasses.fields(_defaults._Options)}
         assert fields == confarg.MergeOptions.__optional_keys__
         assert not confarg.MergeOptions.__required_keys__
+
+
+# ---------------------------------------------------------------------------
+# A field default is the base layer (FEAT-37)
+# ---------------------------------------------------------------------------
+
+
+class _DefaultPair(NamedTuple):
+    x: int
+    y: int
+
+
+_SHARED_PATH = Path("/srv")
+_DEFAULT_PAIR = _DefaultPair(1, 2)
+
+
+@dataclasses.dataclass
+class _Defaults:
+    """Defaults an expression reads, a patch applies over, or construction alone applies."""
+
+    n: int = 42
+    m: int = 0
+    v: tuple[int, ...] = (0, 1)
+    pt: _DefaultPair = _DEFAULT_PAIR
+    d: tuple[dict[str, int], int] = ({"a": 1}, 0)
+    literal: str = "$${a} and ${b}"
+    sloppy_float: float = 1
+    sloppy_int: int = None  # ty: ignore[invalid-assignment]  # a sloppy default the class declares
+    shared: Path = _SHARED_PATH
+
+
+class TestAFieldDefaultIsTheBaseLayer:
+    """``build()``, ``resolve()`` and ``from_dict()`` lay the target's defaults below the data."""
+
+    def test_resolve_reads_a_default_and_leaves_it_out(self) -> None:
+        """``${n}`` reads 42; the untouched default is construction's to apply."""
+        assert confarg.resolve(_Defaults, {"m": "${n}"}) == {"m": 42}
+
+    def test_resolve_applies_a_pending_patch_over_a_default(self) -> None:
+        """The pending append lands on the default, as over a lower file's list."""
+        assert confarg.resolve(_Defaults, {"v": {ListOp.APPEND: [3]}}) == {"v": [0, 1, 3]}
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            {"v": {ListOp.APPEND: [3]}},
+            {"pt": {"y": 5}},
+            {"d": {"0": {"b": 2}}},
+            {"m": "${n}"},
+        ],
+        ids=["append", "namedtuple-name", "refinement", "expression"],
+    )
+    def test_the_three_steps_build_what_build_builds(self, raw: dict[Any, Any]) -> None:
+        """``from_dict(resolve())`` lays the defaults again without changing what resolve applied."""
+        assert confarg.from_dict(_Defaults, confarg.resolve(_Defaults, raw)) == confarg.build(_Defaults, raw)
+
+    def test_from_dict_patches_a_default_it_does_not_resolve(self) -> None:
+        """No resolution follows, so nothing is escaped and a pending op still applies."""
+        assert confarg.from_dict(_Defaults, {"v": {ListOp.APPEND: [3]}}).v == (0, 1, 3)
+
+    def test_a_default_spelled_like_an_expression_comes_out_as_written(self) -> None:
+        """The escape and the expression in the default both survive byte for byte."""
+        assert confarg.resolve(_Defaults, {"m": "${literal}"})["m"] == "$${a} and ${b}"
+        assert confarg.build(_Defaults, {}).literal == "$${a} and ${b}"
+
+    def test_a_default_construction_would_refuse_still_builds(self) -> None:
+        """An untouched default is never built through ``construct()``: the class's object is kept."""
+        built = confarg.build(_Defaults, {})
+        assert built.sloppy_float == 1
+        assert built.sloppy_int is None
+        assert built.shared is _SHARED_PATH
+
+    def test_from_dict_unwraps_a_non_struct_root(self) -> None:
+        """``from_dict(list[int], resolve(...))`` builds what ``build()`` does (5c)."""
+        raw = confarg.merge(list[int], argv=["--json", "[1, 2]"], env={})
+        assert confarg.from_dict(list[int], confarg.resolve(list[int], raw)) == confarg.build(list[int], raw) == [1, 2]

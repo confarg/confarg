@@ -45,7 +45,6 @@ from confarg._types import (
     _is_seq_variant,
     _is_set,
     _is_struct,
-    _is_tuple,
     _is_type_ref,
     _is_union,
     _is_varlen_collection,
@@ -569,8 +568,6 @@ def _indexed_dict_to_positions(
     length: int,
     path: FieldPath,
     what: str,
-    *,
-    tolerate_non_int: bool = False,
 ) -> dict[int, Any]:
     """Map an index-keyed dict to ``{abs_index: value}`` for a sequence of known *length*.
 
@@ -581,14 +578,11 @@ def _indexed_dict_to_positions(
         length: The known length of the target sequence.
         path: The construction path, which error messages name.
         what: Human-readable description of the target type for error messages.
-        tolerate_non_int: when True, silently skip non-integer keys instead of raising — used
-            when patching a default in place, where stray segments (e.g. an arbitrary env var
-            path like ``COORDS__BAD``) are ignored rather than treated as an error.
 
     Raises:
         TypeCoercionError: on a key spelling one of the reserved list ops (``_merge.MERGE_OP_KEYS``
-            — a marker, never the plain string, is the op), on a non-integer key (unless
-            *tolerate_non_int*) or an index out of range for *length*.
+            — a marker, never the plain string, is the op), on a non-integer key or an index
+            out of range for *length*.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
@@ -604,8 +598,6 @@ def _indexed_dict_to_positions(
         try:
             ik = int(k)
         except (TypeError, ValueError):
-            if tolerate_non_int:
-                continue
             msg = f"Cannot construct {what} at '{_spell_field_path(path)}': dict keys must be integer indices"
             raise TypeCoercionError(msg) from None
         idx = ik + length if ik < 0 else ik
@@ -614,24 +606,6 @@ def _indexed_dict_to_positions(
             raise TypeCoercionError(msg)
         out[idx] = v
     return out
-
-
-def _resolve_tuple_partial(field_data: MergeDict, ft: Any, default: Any, path: FieldPath) -> Any:
-    """If field_data is an index-keyed dict for a tuple field at *path*, patch its *default* in place.
-
-    Returns the (possibly patched) data — unchanged if the conditions don't apply.
-    """
-    tup_tp: Any = ft if _is_tuple(ft) else None
-    if tup_tp is None and _is_union(ft):
-        tup_vars = [_resolve_type(v) for v in _union_args_no_none(ft) if _is_tuple(_resolve_type(v))]
-        if len(tup_vars) == 1:
-            tup_tp = tup_vars[0]
-    if tup_tp is None or default is None:
-        return field_data
-    base = list(default)
-    for idx, iv in _indexed_dict_to_positions(field_data, len(base), path, f"{tup_tp}", tolerate_non_int=True).items():
-        base[idx] = iv
-    return base
 
 
 def _call_with_var_positional(
@@ -716,19 +690,7 @@ def _construct_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str)
     for name, ft in flds.items():
         fp = (*path, name)
         if name in data:
-            field_data = data[name]
-            if (
-                isinstance(field_data, dict)
-                and name in defs
-                and ListOp.BASE not in field_data
-                and not _is_pin_dict(field_data)
-            ):
-                # A carried base (deferred from merge) wins over the default — let
-                # _construct_tuple resolve it rather than patching the default in place.
-                # A pin is no index patch: it reaches construct() — the one reader —
-                # whether the field carries a default or not (BUG-210).
-                field_data = _resolve_tuple_partial(field_data, ft, defs[name], fp)
-            kwargs[name] = construct(ft, field_data, path=fp, union_tag=union_tag)
+            kwargs[name] = construct(ft, data[name], path=fp, union_tag=union_tag)
         elif name in defs:
             kwargs[name] = defs[name]
         elif _is_struct_variant(ft) and _all_have_defaults(ft):

@@ -153,7 +153,7 @@ class TestAMalformedExpressionInAMountedFile:
         node, prefix = (merged, "") if route == "root" else (merged["db"], "db.")
         assert node == {"p": 1, "q": "${p +}", "r": "${" + prefix + "p} and ${p +}"}
         with pytest.raises(UnsafeExpressionError, match=r"^Error in expression '\$\{p \+\}': Invalid syntax$"):
-            confarg.resolve(merged)
+            confarg.resolve(Mounts, merged)
 
     def test_a_body_too_deep_to_parse_is_carried_as_written(self, tmp_path: Path) -> None:
         """The parser's own give-up is a body that does not parse, not a crash of ``merge()`` (BUG-137)."""
@@ -165,7 +165,7 @@ class TestAMalformedExpressionInAMountedFile:
             UnsafeExpressionError,
             match=r"^Error in expression '\$\{---.*: Too deeply nested to parse$",
         ):
-            confarg.resolve(merged)
+            confarg.resolve(Mounts, merged)
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +190,7 @@ class TestDocumentRootReferences:
         merged = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
         # Once every file is mounted the root marker is dropped, its parentheses kept.
         assert merged["db"]["p"] == "${db." + body.replace("::", "") + "}"
-        assert confarg.resolve(merged)["db"]["p"] == 7
+        assert confarg.resolve(dict[str, Any], merged)["db"]["p"] == 7
 
     def test_bare_reference_cannot_reach_out(self, tmp_path: Path) -> None:
         """Without the marker the same name is looked for inside the fragment."""
@@ -239,7 +239,7 @@ class TestCanonicalForm:
         cfg = write(tmp_path, "app.yaml", f"web-1: h\ndb:\n  {INCLUDE_KEY}: ./db.yaml\n")
         data = confarg.merge(dict, argv=["--config", str(cfg)], env={})
         assert data["db"] == {"host": "${::['web-1']}", "port": "${.['p-1']}", "p-1": 1}
-        assert confarg.resolve(data)["db"] == {"host": "h", "port": 1, "p-1": 1}
+        assert confarg.resolve(dict, data)["db"] == {"host": "h", "port": 1, "p-1": 1}
 
     def test_merged_dict_is_itself_includable(self, tmp_path: Path) -> None:
         """The canonical form is still a fragment: mount it again and it re-anchors."""
@@ -292,7 +292,7 @@ class TestAMountPathIsSpelledSegmentBySegment:
         cfg = write(tmp_path, "app.yaml", mount)
         data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
         assert spelled in str(data)
-        assert "'p': 1, 'q': 1" in str(confarg.resolve(data))
+        assert "'p': 1, 'q': 1" in str(confarg.resolve(dict[str, Any], data))
 
     def test_an_integer_key_reads_the_node_it_names(self, tmp_path: Path) -> None:
         """A YAML integer key is spelled ``[0]``, whose subscript reaches the integer key."""
@@ -300,7 +300,7 @@ class TestAMountPathIsSpelledSegmentBySegment:
         cfg = write(tmp_path, "app.yaml", f"a:\n  0:\n    {INCLUDE_KEY}: ./frag.yaml\n")
         data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
         assert data == {"a": {0: {"p": 1, "q": "${a[0].p}"}}}
-        assert confarg.resolve(data) == {"a": {0: {"p": 1, "q": 1}}}
+        assert confarg.resolve(dict[str, Any], data) == {"a": {0: {"p": 1, "q": 1}}}
 
     def test_a_file_mounted_twice_over_is_prefixed_by_its_whole_path(self, tmp_path: Path) -> None:
         """The ``::`` a root segment needs is written once, by the absolute mount path."""
@@ -309,7 +309,7 @@ class TestAMountPathIsSpelledSegmentBySegment:
         cfg = write(tmp_path, "app.yaml", f"a:\n  {INCLUDE_KEY}: ./mid.yaml\n")
         data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
         assert data == {"a": {"web-1": {"p": 1, "q": "${a['web-1'].p}"}}}
-        assert confarg.resolve(data) == {"a": {"web-1": {"p": 1, "q": 1}}}
+        assert confarg.resolve(dict[str, Any], data) == {"a": {"web-1": {"p": 1, "q": 1}}}
 
     def test_a_flag_mount_prefixes_by_the_whole_path(self, tmp_path: Path) -> None:
         """``--config.<path>`` mounts a file whose own includes land below that path."""
@@ -317,7 +317,7 @@ class TestAMountPathIsSpelledSegmentBySegment:
         mid = write(tmp_path, "mid.yaml", f"web-1:\n  {INCLUDE_KEY}: ./frag.yaml\n")
         data = confarg.merge(Mounts, argv=["--config.a", str(mid)], env={})
         assert data == {"a": {"web-1": {"p": 1, "q": "${a['web-1'].p}"}}}
-        assert confarg.resolve(data) == {"a": {"web-1": {"p": 1, "q": 1}}}
+        assert confarg.resolve(Mounts, data) == {"a": {"web-1": {"p": 1, "q": 1}}}
 
     def test_a_root_key_inside_a_subscript_stays_a_root_reference(self, tmp_path: Path) -> None:
         """The ``::`` a root segment hangs off is parenthesized inside brackets, as a slice it is not (BUG-138)."""
@@ -325,7 +325,7 @@ class TestAMountPathIsSpelledSegmentBySegment:
         cfg = write(tmp_path, "app.yaml", f"web-1:\n  {INCLUDE_KEY}: ./frag.yaml\n")
         data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
         assert data["web-1"]["p"] == "${::['web-1'].items[(::)['web-1'].k]}"
-        assert confarg.resolve(data)["web-1"]["p"] == 7
+        assert confarg.resolve(dict[str, Any], data)["web-1"]["p"] == 7
 
     def test_a_user_root_marker_is_not_prefixed(self, tmp_path: Path) -> None:
         """Only bare references move with the mount; ``::`` still names the configuration root."""
@@ -333,7 +333,7 @@ class TestAMountPathIsSpelledSegmentBySegment:
         write(tmp_path, "mid.yaml", f"web-1:\n  {INCLUDE_KEY}: ./frag.yaml\n")
         cfg = write(tmp_path, "app.yaml", f"web-1: top\na:\n  {INCLUDE_KEY}: ./mid.yaml\n")
         data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
-        assert confarg.resolve(data)["a"] == {"web-1": {"q": "top"}}
+        assert confarg.resolve(dict[str, Any], data)["a"] == {"web-1": {"q": "top"}}
 
 
 # ---------------------------------------------------------------------------

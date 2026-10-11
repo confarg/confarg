@@ -14,7 +14,7 @@ no schema, no model.
 Three findings shape the design:
 
 1. **confarg already documents this workflow.** `_api.py:199` (`resolve()`) has it in its own
-   docstring: `merge()` → `resolve()` → `dump_file()`. The architecture states the split
+   docstring: `merge()` → `resolve()` → `dump_file()` (since FEAT-37 `resolve()` takes the target, whose field defaults lie below the data; an untyped document passes `dict`, which lays none). The architecture states the split
    explicitly: *"The merge layer is type-unaware; `build()` is type-aware"*
    ([pipeline/merge-build-contract.md](../../architecture/pipeline/merge-build-contract.md#merge-build-contract)),
    with plain dicts at every seam.

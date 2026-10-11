@@ -12,7 +12,7 @@
   is empty — an empty one suppresses the shell's own suggestions.
 
   The argparse completion pre-extend resolves the tags it reads through
-  `_collect._tag_named_struct`.
+  `_tags._tag_named_struct`.
 - A path whose type shows no subclass accepts the tag too, and so does any other path the
   walk reaches the tag at: a struct with no subclasses, a leaf field, a namedtuple, a
   scalar root. Vanilla's tag rule answers the segment whatever the parent, and `build()`

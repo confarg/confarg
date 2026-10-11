@@ -62,11 +62,12 @@ Ownership is transitive, so `Config` may wire anything in its subtree at any dep
 `Project` still cannot reach the root, because it does not know where it is mounted. **You can only
 wire what you own**, and the anchor enforces that rather than documenting it.
 
-`Default` is also the only way to make a value *referenceable*: a Python default never enters the
-merged dict (`construct` applies it last), so `${data.batch_size}` over a Python-defaulted field
-raises `MissingReferenceError`. A Python default is how a class defaults its own field; a declared
-default is how a composer defaults its children's, and it is visible to expressions. The split is
-ownership, not value kind.
+Since FEAT-37 a Python default the class declares as a value is laid below the data in `build()`
+and `resolve()`, so `${data.batch_size}` over a Python-defaulted field reads it
+([a field default is the base layer](../../architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer));
+a `default_factory` or struct-instance default still is not (FEAT-38, FEAT-39). A Python default is
+how a class defaults its own field; a declared default is how a composer defaults its children's.
+The split is ownership, not value kind.
 
 ## Fill holes, never materialize
 
@@ -90,10 +91,11 @@ every channel, with no new syntax.
 
 ## What decides the implementation
 
-- **`resolve()` is type-blind** — it takes a dict and no target — so an app-supplied `${...}` has to
-  be in the dict before it runs, i.e. injected by `merge()`. Injecting in `build()` alone breaks the
-  three-step seam `merge → resolve → from_dict`
-  ([01](../../architecture/pipeline/api-seams.md#public-api-seams)). `build()` applies the
+- **`resolve()` takes the target since FEAT-37**, which lays the class's own defaults there rather
+  than in `merge()` ([api seams](../../architecture/pipeline/api-seams.md#public-api-seams)), so a
+  declared default could join the same layer in `build()`, `resolve()` and `from_dict()`
+  (`_default_layer.lay_defaults`) instead of being injected by `merge()`; which of the two this
+  feature takes is open again. `build()` applies the
   same pass for a hand-assembled dict; over `merge()`'s output it is idempotent.
 - The pass belongs beside `_apply_locals_layer` in `_pipeline._merge_sources`, which is the
   precedent for a target-guided walk over the three source dicts and the one place all five

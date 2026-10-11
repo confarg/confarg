@@ -109,14 +109,24 @@ indifferent to both.
   not twice. Every missing field raises the one `MissingFieldError(path, type)`, so its type never changes
   the message ([invariants](../invariants.md#delegate-to-the-canonical-function)).
 - The root takes the same rule (BUG-184): `build()` builds a struct root from the empty merged dict when no channel supplied anything, and a `TypeError` out of that call is the missing root — `MissingFieldError((), target)`, the error a scalar root nothing supplied raises, whose remedy is the root's own ([above](#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)). The catch sits in `build()` rather than at `_construct_struct`'s final `tp(**kwargs)`, because a tag or an opener reaches that call with an empty dict too (`--field.class x.S` and nothing else), and there the value *was* supplied, so "missing" would be wrong — that route refuses as a coercion instead ([below](#a-class-built-from-nothing)). And it is gated on nothing having been supplied at all, so a constructor's own `TypeError` about data a channel did supply still escapes as its own.
-- An index-keyed dict for a tuple field with a default patches the default in place, unless
-  the merge layer carried a base (`__base__`), which wins.
+- A field default is the base a patch applies over, for every type: `build()` lays it under the
+  data before construction, as a lower file holding it would be
+  ([design decisions](../design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer)).
+  A base the merge carried (`__base__`) replaces it, as it replaces a lower file's list.
+- A list op on a fixed tuple or a namedtuple applies over the `__base__` it carries, and the list
+  it leaves is checked against the arity (`--t 1 2 --t.0-` is "expected 2 elements, got 1"); with
+  no base it is refused naming the op, as on a dict (BUG-221).
+- A fixed tuple's position neither a base nor a patch filled is a missing field,
+  `MissingFieldError` naming `t[0]` and its flag `--t.0`, as a namedtuple's field is; an Optional
+  position is `None`. A list shorter than the arity is still the arity refusal: it states its
+  length.
 - A `__base__` with an index patch beside it builds as the merge would have built it, had no
   index escaped the base: each patch value refines what the base holds at its position through
   `_merge._merge_existing_value`, and fills a slot past the base's end. So `--t.1 5` beside
   `--t.0.a 9` over a file's `t: [[1, 2]]` defers the patch without turning the refinement of
   `t[0]` into a replacement (BUG-164). A fixed tuple and a namedtuple lay their positions alike.
-- Lists accept a list or an index-keyed dict. Index-keyed lists must be gap-free unless the
+- Lists accept a list or an index-keyed dict, whose keys are read once as integers, so a YAML
+  `{0: 9}` and a flag's `"0"` are one index. Index-keyed lists must be gap-free unless the
   element type is Optional. Deletes and negative indices need a base list; without one they
   are errors that say so.
 - Negative indices count from the end wherever a sequence's length is known
