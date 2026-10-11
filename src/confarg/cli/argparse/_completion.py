@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import inspect
 import logging
 import sys
 from dataclasses import dataclass, field
@@ -39,7 +38,7 @@ from confarg.cli._build import (
     _whole_value_spec,
 )
 from confarg.cli._prefix import PREFIX_ATTR, in_prefix, strip_argv_prefix
-from confarg.cli._spec import FlagSpec, _build_help, _get_field_docstrings
+from confarg.cli._spec import FlagSpec, _build_help, _get_field_docstrings, _struct_doc
 from confarg.cli.argparse._register import load_flags_into_parser
 
 _log = logging.getLogger(__name__)
@@ -128,7 +127,7 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
                 flag,
                 concrete=concrete,
                 group=flag,
-                group_description=inspect.getdoc(core) or "",
+                group_description=_struct_doc(core),
             ),
         )
         return specs

@@ -78,7 +78,7 @@ from confarg._types import (
     _var_params,
 )
 from confarg.cli._prefix import apply_prefix, in_prefix, strip_argv_prefix
-from confarg.cli._spec import FlagSpec, HelpParts, _build_help, _get_field_docstrings, _get_field_meta
+from confarg.cli._spec import FlagSpec, HelpParts, _build_help, _get_field_docstrings, _get_field_meta, _struct_doc
 from confarg.exceptions import ConfargWarning, SymbolImportError
 from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_registered_leaf
 from confarg.typedload._construct import _is_typed_call
@@ -973,7 +973,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
                     flag,
                     union_tag,
                     group=variant.__name__,
-                    group_description=inspect.getdoc(variant) or "",
+                    group_description=_struct_doc(variant),
                     descent=below,
                 ):
                     _merge_or_append_spec(specs, by_name, spec)
@@ -1045,7 +1045,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
         below = descent.into(flag, [resolved])
         if below is None:
             return [whole]
-        return [whole, *_collect_struct_specs(core, flag, union_tag, flag, inspect.getdoc(core) or "", descent=below)]
+        return [whole, *_collect_struct_specs(core, flag, union_tag, flag, _struct_doc(core), descent=below)]
 
     if _is_dict(core):
         # A dict has no statically known keys, so the bare flag is its only static form;
@@ -1103,7 +1103,7 @@ def _collect_union_root_specs(
             prefix,
             union_tag,
             group=variant.__name__,
-            group_description=inspect.getdoc(variant) or "",
+            group_description=_struct_doc(variant),
             descent=descent,
         ):
             _merge_or_append_spec(result, by_name, spec)
