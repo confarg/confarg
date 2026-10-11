@@ -4,6 +4,7 @@ where:
   - src/confarg/_parse_cli.py::_handle_scalar_root
   - src/confarg/cli/_build.py::_scalar_root_spec
   - src/confarg/exceptions.py::MissingFieldError
+  - src/confarg/_parse_env.py::_parse_env  # the bare-prefix branch
 effort: M
 risk: medium
 impact: behavior
@@ -22,6 +23,12 @@ name the root `json` cast for a collection root
 ([cli_prefix](../../architecture/cli-parsing/cli-prefix.md#cli_prefix),
 [construction](../../architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
 
+The environment has the same gap: the bare `<PREFIX>` variable stores its value as a token,
+never decoded, so `APP_='[1, 2]'` is refused on a `list[int]` root where `APP_XS='[1, 2]'`
+sets a field of that type ([environment parsing](../../architecture/environment-parsing.md#environment-parsing)).
+Its fix direction is to store the root as a field variable is stored (`_store_env_value` at
+`__root__`). Only `<PREFIX>JSON` sets such a root from the environment today.
+
 Origin: latent since the initial version (PR-5), whose bare-prefix root handler consumes exactly one
 token for any non-struct root, as a scalar takes it; a collection root was never given its field's
 token rule. It reproduces at PR-28, and BUG-172's fix, which settled that a non-struct root is set
@@ -39,16 +46,23 @@ class Cfg:
 
 
 print(confarg.load(Cfg, argv=["--xs", "1", "2"], env={}))
+print(confarg.load(Cfg, argv=[], env={"APP_XS": "[1, 2]"}, env_prefix="APP_"))
+try:
+    print(confarg.load(list[int], argv=[], env={"APP_": "[1, 2]"}, env_prefix="APP_"))
+except Exception as e:
+    print(type(e).__name__, e)
 for argv in ([], ["--app", "1"], ["--app", "1", "2"]):
     try:
         print(confarg.load(list[int], argv=argv, env={}, cli_prefix="app"))
     except Exception as e:
         print(type(e).__name__, e)
 
-# expected: [1] and [1, 2] for the last two, as the field takes them; the remedy names a flag
-#   that sets the root
+# expected: [1, 2] from the bare variable, as the field takes it; [1] and [1, 2] for the last
+#   two, as the field takes them; the remedy names a flag that sets the root
 # actual:
 #   Cfg(xs=[1, 2])
+#   Cfg(xs=[1, 2])
+#   TypeCoercionError Cannot construct list at '': expected list or dict with integer keys, got str '[1, 2]'
 #   MissingFieldError No value provided for target type list[int]. Provide a value via CLI flag (--app <value>), environment variable, or config file.
 #   TypeCoercionError Cannot construct list at '': expected list or dict with integer keys, got str '1'
 #   UnknownArgumentError Unexpected positional argument: '2'. All arguments must be named flags (e.g. --fieldname value).

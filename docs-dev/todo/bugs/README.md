@@ -12,9 +12,9 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-115 — Every prefixed environment variable overwrites a scalar root](BUG-115-every-prefixed-env-var-overwrites-a-scalar-root.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-116 — An env whole-field delete beside a sub-path variable depends on the mapping's order](BUG-116-an-env-whole-field-delete-beside-a-sub-path-var-depends-on-mapping-order.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-155 — A `call:` spec naming a class passes its kwargs uncoerced](BUG-155-a-call-spec-naming-a-class-passes-its-kwargs-uncoerced.md) | critical |  | S | high | behavior | PR-5 |
+| [BUG-182 — An env delete naming no member is dropped without a warning](BUG-182-an-env-delete-naming-no-member-is-dropped-without-a-warning.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-179 — An element flag on a scalar swallows a stray token on argparse and cyclopts](BUG-179-an-element-flag-on-a-scalar-swallows-a-stray-token-on-argparse-and-cyclopts.md) | critical |  | M | medium | config | PR-72 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
 | [BUG-114 — Cyclopts cannot register subclasses that share a struct field name](BUG-114-cyclopts-cannot-register-subclasses-that-share-a-struct-field-name.md) | major |  | S | medium | behavior | PR-38 |
@@ -42,6 +42,8 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-175 — A file's list-delete key holding no index list escapes as a raw TypeError](BUG-175-a-files-list-delete-key-holding-no-index-list-escapes-as-a-typeerror.md) | minor |  | S | low | none | PR-5, PR-9 |
 | [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | minor |  | S | low | behavior | PR-77 |
 | [BUG-178 — A bare-prefix append is told it lacks the prefix](BUG-178-a-bare-prefix-append-is-told-it-lacks-the-prefix.md) | minor |  | S | low | behavior | PR-5 |
+| [BUG-183 — The bare prefix variable on a struct root is warned about as segment ''](BUG-183-the-bare-prefix-variable-on-a-struct-root-is-warned-about-as-segment-empty.md) | minor |  | S | low | none | PR-5 |
+| [BUG-184 — A struct root that refuses an empty call escapes `build()` as a `TypeError`](BUG-184-a-struct-root-that-refuses-an-empty-call-escapes-build-as-a-typeerror.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | minor |  | M | low | behavior | PR-5, PR-13, PR-26 |
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | minor |  | M | medium | behavior | PR-38 |
 | [BUG-177 — A collection root's bare flag takes one token, which construction refuses](BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md) | minor |  | M | medium | behavior | PR-5 |

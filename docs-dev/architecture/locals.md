@@ -91,6 +91,9 @@ the machinery real dict fields already use — including adapter patch-flag regi
 - A **non-struct root** is set whole, from `__root__`, so its walk target is the graft alone:
   the namespace beside its value is all a dotted path reaches there
   ([CLI parsing](cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole)).
+- The **environment** spells its segments against the same graft (BUG-115), case-insensitively,
+  so a root field that differs from a namespace name only by case (`Locals`) is an ambiguous
+  segment there ([environment parsing](environment-parsing.md#environment-parsing)).
 
 ## Stripping
 

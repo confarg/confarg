@@ -1080,7 +1080,7 @@ class TestNonDataclassTargetCornerCases:
 
     def test_int_from_env(self) -> None:
         """Plain int target from env var."""
-        result = confarg.load(int, argv=[], env={"MYAPP_VALUE": "42"}, env_prefix="MYAPP_", cli_prefix="confarg")
+        result = confarg.load(int, argv=[], env={"MYAPP_": "42"}, env_prefix="MYAPP_", cli_prefix="confarg")
         assert result == 42
 
     def test_bool_from_cli_bare_flag(self) -> None:
