@@ -186,11 +186,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
             # Field-name-keyed form (possibly mixed): {"x": val_x, "y": val_y}
             extra = {k for k in data if k not in flds}
             if extra:
-                msg = (
-                    f"Unknown field(s) {sorted(extra)} for {tp.__name__} at '{_spell_field_path(path)}'"
-                    f". Valid fields: {field_names}"
-                )
-                raise TypeCoercionError(msg)
+                raise TypeCoercionError.unknown_fields(extra, tp.__name__, _spell_field_path(path), field_names)
             for fname, ft in flds.items():
                 if fname in data:
                     kwargs[fname] = construct(ft, data[fname], path=(*path, fname), union_tag=union_tag)
@@ -447,11 +443,24 @@ def _is_typed_call(data: Any, tp: Any) -> bool:
     d = _select_directives(data)
     if d.call not in data or d.cls in data:
         return False
+    return _takes_typed_call(tp, d.call)
+
+
+def _takes_typed_call(tp: Any, call_key: str) -> bool:
+    """True if a ``call:`` spec opened by *call_key* (``call`` or ``_call``) fills a field of type *tp*.
+
+    The type half of :func:`_is_typed_call`, which the CLI walk asks of a path, where there
+    is no spec to read yet: no member of the annotation may hold the key as data.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#call-in-a-typed-field
+    """
+    tp = _resolve_type(tp)
     members = [_resolve_type(arg) for arg in _union_args_no_none(tp)] if _is_union(tp) else [tp]
     for member in members:
         if _type_kind(member) in (_TypeKind.ANY, _TypeKind.DICT, _TypeKind.CALLABLE) or member is dict:
             return False
-        if _is_struct(member) and d.call in _struct_member_names(member):
+        if _is_struct(member) and call_key in _struct_member_names(member):
             return False
     return True
 
@@ -586,11 +595,7 @@ def _construct_struct(tp: Any, data: dict[str, Any], path: FieldPath, union_tag:
 
     extra = {k for k in data if k not in flds and k != union_tag}
     if extra:
-        msg = (
-            f"Unknown field(s) {sorted(extra)} for {tp.__name__} at '{_spell_field_path(path)}'"
-            f". Valid fields: {sorted(flds.keys())}"
-        )
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.unknown_fields(extra, tp.__name__, _spell_field_path(path), sorted(flds))
 
     for name, ft in flds.items():
         fp = (*path, name)
@@ -1211,3 +1216,23 @@ def _construct_by_class_path(tp: type, data: dict[str, Any], path: FieldPath, un
         raise TypeCoercionError.tag_not_a_subclass(tag, dotted_name(tp), _spell_field_path(path), call)
     cleaned = {k: v for k, v in data.items() if k != union_tag}
     return _construct_struct(cls, cleaned, path, union_tag)
+
+
+def construct_named_class(cls: type, data: dict[str, Any], *, path: FieldPath, union_tag: str) -> Any:
+    """Build exactly *cls* from *data*, whatever subclasses it has.
+
+    *cls* is the class a callable spec names: the one ``class:`` names, or the owner a
+    ``classfn:`` path names. Subclass dispatch has nothing left to choose, as after a union
+    tag selected the class. A tag key in *data* would name a second class, so it is refused
+    as an unknown field, unless *cls* declares a field of that spelling. A class that is no
+    struct is built as :func:`construct` builds it.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/class-names-the-type-it-builds.md#class-names-the-type-it-builds
+    """
+    if not _is_struct(cls):
+        return construct(cls, data, path=path, union_tag=union_tag)
+    flds = _struct_fields(cls)
+    if union_tag in data and union_tag not in flds:
+        raise TypeCoercionError.unknown_fields([union_tag], cls.__name__, _spell_field_path(path), sorted(flds))
+    return _construct_struct(cls, data, path, union_tag)

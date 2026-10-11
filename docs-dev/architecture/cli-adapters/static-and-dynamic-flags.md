@@ -16,11 +16,21 @@ from it, so `argv=[]` still describes exactly the declared type.
 user typed, found by scanning argv (and config files named on argv):
 
 - the target's parameters (`--f.<p>`) of callables, whether the target is named by
-  `--f.bind/.class/.call`, by a whole-value `--f '{"class": …}'` blob, or by a config file;
+  `--f.bind/.class/.call`, by a whole-value `--f '{"class": …}'` blob, or by a config file.
+  A nested target spec names two: its own parameters below the opener (`--f.call.<p>`), and
+  the arguments of the callable it yields beside it (`--f.<p>`). One function,
+  `_callable_argument_targets`, lists them for registration and for argparse's completion
+  ([callables](../callables.md#cli));
 - escaped openers (`--f._class`) actually typed;
-- keys typed in argv below a callable that no signature describes: a nested `bind` target
-  spec's keys in either spelling (`--f.bind.class`, `--f._bind.x`), and a directive word the
-  opener left inactive, which is ordinary data
+- a typed call's opener (`--n.call`) and its siblings, on a field that is no Callable,
+  registered only when typed, on the same help-noise ground as the escaped openers: a sibling
+  only where argv opens the call (`_parse_cli._typed_call_openings`, the answer vanilla's
+  loop reads too). Its discovered flags carry no group, since a struct field's own flags
+  already hold the field's group name, and cyclopts refuses two groups of one name
+  ([design decision](../design-decisions/a-typed-call-sibling-needs-its-opener-on-the-command-line.md));
+- keys typed in argv below a callable that no signature describes: a nested `bind` or `call`
+  target spec's keys in either spelling (`--f.bind.class`, `--f._call.x`), and a directive word
+  the opener left inactive, which is ordinary data
   ([callables](../callables.md#plain-and-escaped-directives));
 - `--config.<any.depth>[+]`;
 - collection patches (`--f.N`, `--f+`, `--f.N-`, `--f.key`) and `.json` casts;
@@ -66,8 +76,8 @@ identically; vanilla `load()` registers nothing and has no analogue.
 Escaped opener specs carry no group: sharing a group name with a different description
 trips cyclopts' "2 distinct Group objects with same name" check.
 
-Everything below a callable field is the one family registered from the **path** rather than
-from a signature (BUG-25, BUG-28). `_parse_cli._addresses_callable_key` is the shared
+Everything below a callable field, and below a typed call, is the one family registered
+from the **path** rather than from a signature (BUG-25, BUG-28). `_parse_cli._addresses_callable_key` is the shared
 predicate, so whatever the vanilla parser accepts below the field the host framework accepts
 too. A signature cannot answer here at all: not for a bind subkey in the spelling the opener
 left inactive, whose keys are data ([callables](../callables.md#plain-and-escaped-directives)); not
@@ -75,7 +85,7 @@ for a sibling kwarg the named target does not carry; and not for a field with no
 anywhere, which names no target to inspect. Letting the framework reject those first is what
 made the five front-ends disagree — the flag is the adapter's to accept and the kwarg is
 construction's to judge, so the user hears the real complaint (`Unknown kwargs [...]`,
-`must specify one of 'fn', 'class', or 'call'`) instead of `unrecognized arguments`.
+`must specify one of 'bind', 'class', 'call' or 'classfn'`) instead of `unrecognized arguments`.
 
 The values are vanilla's loop's to write, and it has always written every key below a
 callable field — the opener decides what a key *means*, never whether it is stored. (The other

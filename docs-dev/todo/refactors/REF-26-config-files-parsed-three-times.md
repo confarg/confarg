@@ -19,7 +19,8 @@ again), before the pipeline reads the files a fourth time for their actual conte
 wrong with the result — the reads are idempotent and only happen when `--config` is present —
 but the same bytes are parsed once per caller. A small argv-keyed cache, or threading one
 pre-parsed dict through the registration path, would collapse them. Grew from one caller to
-three when BUG-6 closed.
+three when BUG-6 closed, and FEAT-32 added `_parse_cli._typed_call_openings`, which reads them
+once more in `_parse_cli` and once more in `build_dynamic_flags`.
 
 **A location can now be a URL, so each of those reads can be a network fetch.** Two per run for a root `--config` URL (the pre-scan, then the pipeline), and the same for every `__include__` inside it. Nothing is incorrect — the rule that no caching happens is deliberate ([11](../../architecture/limitations.md#remote-sources)) — but it raises the value of collapsing the passes from tidiness to latency.
 

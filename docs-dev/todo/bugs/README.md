@@ -12,11 +12,11 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-155 — A `call:` spec naming a class passes its kwargs uncoerced](BUG-155-a-call-spec-naming-a-class-passes-its-kwargs-uncoerced.md) | critical |  | S | high | behavior | PR-5 |
 | [BUG-182 — An env delete naming no member is dropped without a warning](BUG-182-an-env-delete-naming-no-member-is-dropped-without-a-warning.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-185 — A dict key `*` from a higher layer wipes the dict's other keys](BUG-185-a-dict-key-star-from-a-higher-layer-wipes-the-dicts-other-keys.md) | critical |  | S | high | behavior | BUG-160 |
 | [BUG-186 — A root `json` cast swallows a field delete meant for the layers below](BUG-186-a-root-json-cast-swallows-a-field-delete-meant-for-the-layers-below.md) | critical |  | S | high | behavior | PR-87, BUG-3 |
 | [BUG-179 — An element flag on a scalar swallows a stray token on argparse and cyclopts](BUG-179-an-element-flag-on-a-scalar-swallows-a-stray-token-on-argparse-and-cyclopts.md) | critical |  | M | medium | config | PR-72 |
+| [BUG-190 — A typed `call:` spec merges with the lower layer's value instead of replacing it](BUG-190-a-typed-call-spec-merges-with-the-lower-layers-value.md) | critical |  | M | medium | behavior | FEAT-28 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
 | [BUG-114 — Cyclopts cannot register subclasses that share a struct field name](BUG-114-cyclopts-cannot-register-subclasses-that-share-a-struct-field-name.md) | major |  | S | medium | behavior | PR-38 |
 | [BUG-152 — A positional-only `__init__` parameter fails `build()` with a raw `TypeError`](BUG-152-a-positional-only-init-parameter-fails-build-with-a-raw-typeerror.md) | major |  | S | high | behavior | PR-5 |
@@ -56,5 +56,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
 | [BUG-150 — The protocols count four front-ends and leave typer out](BUG-150-the-protocols-count-four-front-ends-and-leave-typer-out.md) | trivial |  | S | low | none | BUG-7 |
 | [BUG-151 — The namedtuple decision names the bugs board by its old file](BUG-151-the-namedtuple-decision-names-the-bugs-board-by-its-old-file.md) | trivial |  | S | low | none | PR-162 |
+| [BUG-189 — A `bind:` test calls a one-argument callable by keyword, which `ty check` refuses](BUG-189-a-bind-test-calls-a-one-argument-callable-by-keyword-which-ty-refuses.md) | trivial |  | S | low | none | FEAT-30 |
 
 <!-- tickets:end -->

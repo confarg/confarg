@@ -65,3 +65,25 @@ greet_fn:
 > ```
 >
 > Each spec picks its own set: here only the nested `class` spec, whose keys are the constructor's, is spelled with `_`.
+## To class methods
+
+When binding arguments to a class method, the FQN of the method is given under the `bind` key. The object is created without arguments, and the arguments beside `bind` are bound to the method.
+
+```console
+$ uv run print_greetings.py --greet_fn.bind greetings.Greetings_printer.print --greet_fn.adjective beautiful
+Hello, beautiful world!
+```
+
+If the object needs initialization parameters, `bind` names a nested spec instead, where the FQN of the method is given under the `classfn` key and the initialization parameters alongside it. The arguments beside `bind` are still bound to the method.
+
+```console
+$ uv run print_greetings.py --greet_fn.bind.classfn greetings.Greetings_printer.print --greet_fn.bind.greetings Hi --greet_fn.adjective beautiful
+Hi, beautiful world!
+```
+
+In configuration files, this translates as — an object method used as-is, in the short form:
+
+<!-- snippet: greet_fn_method.yaml -->
+```yaml title="greet_fn_method.yaml"
+greet_fn: greetings.Greetings_printer.print
+```

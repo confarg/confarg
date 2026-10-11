@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import builtins
+from collections.abc import Callable  # noqa: TC003  # a runtime dataclass annotation
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
@@ -288,6 +289,39 @@ class TestPreExtendParser:
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--db.host" in flags
         assert "--db.cache.class" in flags
+
+
+class _Scaler:
+    """An owner whose method shares its parameter name with the constructor."""
+
+    def __init__(self, k: int) -> None:
+        self.k = k
+
+    def by(self, k: int) -> Callable[[int], int]:
+        return lambda v: v * self.k * k
+
+
+@dataclass
+class _CallableApp:
+    fn: Callable[[int], int] | None = None
+
+
+class TestPreExtendNestedTargetSpec:
+    """A nested target spec typed on argv buys its flags for completion too (FEAT-32)."""
+
+    def test_classfn_below_call_registers_owner_and_method(self) -> None:
+        """``--fn.call.classfn`` buys the owner's ``--fn.call.k`` and the method's ``--fn.k``."""
+        parser = argparse.ArgumentParser()
+        populate_parser(_CallableApp, parser)
+        _pre_extend_parser_for_completion(
+            parser,
+            _CallableApp,
+            union_tag="class",
+            config_flag="config",
+            argv=["--fn.call.classfn", f"{__name__}._Scaler.by"],
+        )
+        flags = {s for a in parser._actions for s in a.option_strings}
+        assert {"--fn.call.k", "--fn.k"} <= flags
 
 
 # ---------------------------------------------------------------------------

@@ -34,16 +34,20 @@ type it reached at the end, `None` if it refused a segment. A stone holds two ty
 the walk *reached* there, a union left unexpanded, which is what a walk of that prefix alone
 answers; and the *node* the branch stands on, the resolved variant it took. The steps between
 stones are the walk's own and every question gets them: a member, an index or a dict value
-(`_advance_field_type`); a local-variables namespace, entered as a `dict[str, Any]`; a
-callable's bind key, below which every segment is a `str`; and the union tag, reached only
-where no member of its spelling is
-([real field wins](casts-and-reserved-words.md#real-field-wins)).
+(`_advance_field_type`); a local-variables namespace, entered as a `dict[str, Any]`; an
+opener whose value is a target (`_opens_target`: a callable's `bind` or `call` key, the
+`call` key of a field that takes a typed call), below which every segment is a `str`; the
+union tag, reached only where no member of its spelling is
+([real field wins](casts-and-reserved-words.md#real-field-wins)); and, last, a segment no
+member reaches below a path where the command line opens a typed call, a `str` leaf
+([callables](../callables.md#cli)).
 
 Each question reads the part of a branch it needs, and states its own difference in its own
 lines:
 
 - `_field_types` reads the ends of the branches that accept the path.
-- `_addresses_callable_key`: does any branch stand on a callable before the path ends.
+- `_addresses_callable_key`: does any branch stand on a callable, or step into a typed call,
+  before the path ends.
 - `_is_collection_patch_path`: does a branch stand on a list, tuple, set or dict, or enter a
   namespace, before it stands on a callable. A namedtuple stops nothing: the static walk lists
   its own fields and indices, so a path ending on one is no patch, but a list, a dict or a
@@ -73,7 +77,9 @@ so the cross-channel contract suite pins each question at a union
 This is the collapse
 [look-alike code that behaves differently stays apart](../design-decisions/look-alike-code-that-behaves-differently-stays-apart.md#look-alike-code-that-behaves-differently-stays-apart)
 keeps: the copies were the same code, and the walk takes no parameter for any caller's
-difference (`tag_fallback` is the walk's own, asked by `_names_tag_by_fallback`). Rejected:
+difference (`tag_fallback` is the walk's own, asked by `_names_tag_by_fallback`; `calls` is
+what the command line opens, `_typed_call_openings`, which every CLI question about the same
+argv gets alike, and which a caller with no argv leaves empty). Rejected:
 handing the walk the question as a callback, which would need a three-way answer — yes, no,
 keep walking — to stop one branch, and walking breadth-first by depth, which serves the fold
 but cannot stop one branch either. The shape is `os.walk`'s and `ast.walk`'s: one traversal as

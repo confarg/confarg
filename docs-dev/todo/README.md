@@ -63,8 +63,8 @@ first `N` (10 by default) unblocked tickets across every board, in [work order](
 
 ```console
 $ uv run python docs-dev/todo/index.py --next 1
- 1. BUG-155 — A `call:` spec naming a class passes its kwargs uncoerced
-    critical · S · bugs/BUG-155-a-call-spec-naming-a-class-passes-its-kwargs-uncoerced.md
+ 1. BUG-182 — An env delete naming no member is dropped without a warning
+    critical · S · bugs/BUG-182-an-env-delete-naming-no-member-is-dropped-without-a-warning.md
 ```
 
 Documentation defects go on these same boards, sorted the same way: documentation wrong about

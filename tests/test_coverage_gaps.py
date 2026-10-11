@@ -27,9 +27,9 @@ import confarg._callable as callable_mod
 from confarg._callable import (
     _check_callable_signature,
     _ClassSpec,
-    _detect_owning_class,
     _format_constructor_params,
     _import_dotted,
+    _instance_method_owner,
     _issubclass_safe,
     _resolve_bare_string,
     _resolve_bind_kwargs,
@@ -386,27 +386,17 @@ class TestFileErrors:
 class TestCallableEdgeCases:
     """Edge cases in callable resolution and serialization."""
 
-    def test_detect_owning_class_module_not_in_sys_modules(self) -> None:
-        """_detect_owning_class returns None when the function's module is not in sys.modules."""
+    def test_instance_method_owner_of_an_unimportable_parent(self) -> None:
+        """_instance_method_owner returns None when the path's parent imports nothing."""
+        assert _instance_method_owner("nonexistent_module_xyz_abc.SomeClass.method") is None
 
-        def fake_method():
-            pass
+    def test_instance_method_owner_of_a_path_without_a_parent(self) -> None:
+        """_instance_method_owner returns None for a one-segment path."""
+        assert _instance_method_owner("len") is None
 
-        fake_method.__qualname__ = "SomeClass.method"
-        fake_method.__module__ = "nonexistent_module_xyz_abc"
-        result = _detect_owning_class(fake_method)
-        assert result is None
-
-    def test_detect_owning_class_attr_not_found(self) -> None:
-        """_detect_owning_class returns None when the class attribute is missing from the module."""
-
-        def fake_method():
-            pass
-
-        fake_method.__qualname__ = "NonExistentClass9999.method"
-        fake_method.__module__ = "confarg"
-        result = _detect_owning_class(fake_method)
-        assert result is None
+    def test_instance_method_owner_of_a_builtin_method(self) -> None:
+        """A method a C class defines is no function, so it is used unbound, as it always was."""
+        assert _instance_method_owner("str.upper") is None
 
     def test_resolve_spec_already_callable(self) -> None:
         """A callable value passed directly to _resolve_callable_spec is returned unchanged."""
@@ -1630,7 +1620,13 @@ class TestCallableGaps:
     def test_resolve_call_spec_raises_on_call_failure(self) -> None:
         """_resolve_call_spec raises TypeCoercionError when the called function raises."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="Failed to call"):
-            _resolve_call_spec(f"{_COV_MOD}._cov_raise_fn", {"x": 1}, {}, _SpecContext(("test",), "class", construct))
+            _resolve_call_spec(
+                f"{_COV_MOD}._cov_raise_fn",
+                {"x": 1},
+                {},
+                _SpecContext(("test",), "class", construct),
+                "call",
+            )
 
     def test_resolve_bind_kwargs_string_values(self) -> None:
         """_resolve_bind_kwargs coerces _StrToken bind values to annotated parameter types."""

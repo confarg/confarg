@@ -20,8 +20,8 @@ import pytest
 import confarg
 from confarg._callable import (
     _check_callable_signature,
-    _detect_owning_class,
     _import_dotted,
+    _instance_method_owner,
     _resolve_bind_kwargs,
     _serialize_callable,
     _SpecContext,
@@ -152,6 +152,66 @@ class _OwnerWithBind:
 def _with_fn_param(fn: int, x: int) -> int:
     """A function with a parameter named 'fn', which is no directive word."""
     return fn + x
+
+
+def _with_classfn_param(classfn: int, x: int) -> int:
+    """A function with a parameter named like the classfn opener."""
+    return classfn + x
+
+
+class _Scaler:
+    """Owner and method that share the parameter name ``k``, with a static and a class method.
+
+    The constructor needs ``k``, so building it with no arguments fails: a path that does
+    not need an owner must not try to build one.
+    """
+
+    def __init__(self, k: int) -> None:
+        self.k = k
+
+    def scale(self, k: int) -> int:
+        return self.k * k
+
+    def adder(self, k: int) -> Callable[[int], int]:
+        return lambda x: x + self.k + k
+
+    @staticmethod
+    def static_double(x: int) -> int:
+        return x * 2
+
+    @classmethod
+    def class_triple(cls, x: int) -> int:
+        return x * 3
+
+
+class _ProcessorSub(_Processor):
+    """Inherits ``process`` from a base whose constructor needs an argument; its own has a default.
+
+    It doubles the offset, so a result shows which constructor ran.
+    """
+
+    def __init__(self, offset: int = 50) -> None:
+        super().__init__(offset=offset * 2)
+
+
+class _Shifter:
+    """A callable class with a subclass: a spec naming it must build it, not ask which subclass."""
+
+    def __init__(self, by: int) -> None:
+        self.by = by
+
+    def __call__(self, x: int) -> int:
+        return x + self.by
+
+    def shift(self, x: int) -> int:
+        return x + self.by
+
+
+class _NegShifter(_Shifter):
+    """Subclass of _Shifter, which a spec naming _Shifter must not need to rule out."""
+
+    def __call__(self, x: int) -> int:
+        return x - self.by
 
 
 # Module path prefix used throughout tests
@@ -287,26 +347,33 @@ class TestImportDotted:
 
 
 # ---------------------------------------------------------------------------
-# _detect_owning_class
+# _instance_method_owner
 # ---------------------------------------------------------------------------
 
 
-class TestDetectOwningClass:
-    """Tests for the _detect_owning_class helper."""
+class TestInstanceMethodOwner:
+    """The owner of an instance method is the class its dotted path names."""
 
     def test_instance_method(self) -> None:
-        """An instance method's owning class is detected."""
-        cls = _detect_owning_class(_Processor.process)
-        assert cls is _Processor
+        """An instance method's owner is the class before its last segment."""
+        assert _instance_method_owner(f"{_MOD}._Processor.process") is _Processor
+
+    def test_inherited_method_is_owned_by_the_named_class(self) -> None:
+        """A method a base defines is owned by the class the path names, not by the base."""
+        assert _instance_method_owner(f"{_MOD}._ProcessorSub.process") is _ProcessorSub
 
     def test_module_level_fn(self) -> None:
-        """A module-level function returns None."""
-        assert _detect_owning_class(_double) is None
+        """A module-level function has no owner."""
+        assert _instance_method_owner(f"{_MOD}._double") is None
 
-    def test_lambda(self) -> None:
-        """A lambda returns None."""
-        lam = lambda x: x  # noqa: E731
-        assert _detect_owning_class(lam) is None
+    @pytest.mark.parametrize("name", ["static_double", "class_triple", "__init__"])
+    def test_methods_that_need_no_instance(self, name: str) -> None:
+        """A static method, a class method and ``__init__`` have no owner to build."""
+        assert _instance_method_owner(f"{_MOD}._Scaler.{name}") is None
+
+    def test_a_class_has_no_owner(self) -> None:
+        """A class named by a path is no method."""
+        assert _instance_method_owner(f"{_MOD}._Scaler") is None
 
 
 # ---------------------------------------------------------------------------
@@ -359,8 +426,8 @@ class TestBareString:
         assert result.fn.func is _Multiplier
         assert result.fn(factor=3)(4) == 12
 
-    def test_method_requiring_args_error_points_to_call(self) -> None:
-        """The error for a method needing constructor args lists them and points to call:."""
+    def test_method_requiring_args_error_points_to_classfn(self) -> None:
+        """The error for a method needing constructor args gives the classfn: spec to paste."""
         # _Processor.process is an instance method whose __init__ requires `offset`.
         with pytest.raises(TypeCoercionError) as exc_info:
             confarg.load(
@@ -370,8 +437,7 @@ class TestBareString:
             )
         msg = str(exc_info.value)
         assert "Cannot instantiate" in msg
-        assert "'call:'" in msg
-        assert "offset: <value>" in msg  # required constructor kwarg listed
+        assert f"  classfn: {_MOD}._Processor.process\n  offset: <value>" in msg
 
     def test_from_toml(self, tmp_toml: Any) -> None:
         """A dotted function path from TOML resolves correctly."""
@@ -453,7 +519,6 @@ class TestBindDictForm:
         with pytest.raises(TypeCoercionError, match=r"used as a factory.*class: "):
             confarg.load(WithCallable, argv=[], env={}, files=[cfg])
 
-    @pytest.mark.xfail(strict=True, reason="FEAT-31: classfn: builds the owner with arguments")
     def test_classfn_instance_method_with_init(self, tmp_json: Any) -> None:
         """classfn: with an instance method builds its owner from the sibling keys."""
         cfg = tmp_json(json.dumps({"fn": {"classfn": f"{_MOD}._Processor.process", "offset": 7}}))
@@ -478,15 +543,15 @@ class TestBindDictForm:
             confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_no_opener_raises(self, tmp_json: Any) -> None:
-        """A dict without an opener raises TypeCoercionError naming the three."""
+        """A dict without an opener raises TypeCoercionError naming the four."""
         cfg = tmp_json(json.dumps({"fn": {"x": 1}}))
-        with pytest.raises(TypeCoercionError, match=r"one of 'bind', 'class', or 'call'"):
+        with pytest.raises(TypeCoercionError, match=r"one of 'bind', 'class', 'call' or 'classfn'"):
             confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_fn_is_no_opener(self, tmp_json: Any) -> None:
         """The removed fn: opener is an ordinary key, so a spec holding only it has no opener."""
         cfg = tmp_json(json.dumps({"fn": {"fn": f"{_MOD}._double"}}))
-        with pytest.raises(TypeCoercionError, match=r"must specify one of 'bind', 'class', or 'call'"):
+        with pytest.raises(TypeCoercionError, match=r"must specify one of 'bind', 'class', 'call' or 'classfn'"):
             confarg.load(WithCallable, argv=[], env={}, files=[cfg])
 
     def test_fn_is_an_ordinary_argument(self, tmp_json: Any) -> None:
@@ -579,8 +644,8 @@ class TestBindTargetSpec:
 class TestBindAutoInstantiation:
     """An instance method named by bind: (or bare) is bound to an owner built with no arguments.
 
-    With constructor arguments for the owner, the spec is classfn: (FEAT-31); until then, the
-    no-argument owner is the only one these forms build.
+    With constructor arguments for the owner, the spec is classfn:, whose siblings are the
+    owner's constructor arguments.
     """
 
     def test_bind_instance_method_auto_instantiates(self, tmp_json: Any) -> None:
@@ -608,7 +673,6 @@ class TestBindAutoInstantiation:
         result = confarg.load(Target, argv=[], env={}, files=[cfg])
         assert result.fn() == 12
 
-    @pytest.mark.xfail(strict=True, reason="FEAT-31: classfn: builds the owner with arguments")
     def test_classfn_with_sibling_kwargs_constructs_owning_class(self, tmp_json: Any) -> None:
         """classfn: with sibling kwargs builds the owning class from them, then takes the bound method."""
         cfg = tmp_json(json.dumps({"fn": {"classfn": f"{_MOD}._Processor.process", "offset": 5}}))
@@ -622,14 +686,150 @@ class TestBindAutoInstantiation:
         with pytest.raises(TypeCoercionError, match="Cannot instantiate"):
             confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
-    def test_bind_instance_method_owner_error_lists_ctor_and_points_to_call(self, tmp_json: Any) -> None:
-        """The failed auto-instantiation lists the owner's constructor and names call:."""
+    def test_bind_instance_method_owner_error_gives_the_classfn_spec(self, tmp_json: Any) -> None:
+        """The failed auto-instantiation gives the classfn: spec, the owner's constructor listed in it."""
         cfg = tmp_json(json.dumps({"fn": {"bind": f"{_MOD}._Processor.process"}}))
         with pytest.raises(TypeCoercionError) as exc_info:
             confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
         msg = str(exc_info.value)
-        assert "'call:'" in msg
-        assert "offset: <value>" in msg  # required ctor kwarg listed in the hint
+        assert f"  classfn: {_MOD}._Processor.process\n  offset: <value>" in msg
+        assert "'bind:'" in msg  # the spec is the target the method's own arguments sit beside
+
+    def test_inherited_method_builds_the_named_class(self) -> None:
+        """A method a base defines is bound to an instance of the class the path names."""
+        cfg = confarg.build(WithBareCallable, {"fn": f"{_MOD}._ProcessorSub.process"})
+        assert cfg.fn(1) == 101  # _ProcessorSub(), offset 100
+
+    def test_call_binds_an_instance_method_as_bind_does(self) -> None:
+        """call: naming an instance method calls it on an owner built with no arguments."""
+        cfg = confarg.build(_TypedCallHolder, {"n": {"call": f"{_MOD}._NoArgProcessor.transform", "x": 2}})
+        assert cfg.n == 6
+
+
+class TestOwnerlessMethods:
+    """A static or a class method needs no owner, so no form builds one for it."""
+
+    @pytest.mark.parametrize(("name", "expected"), [("static_double", 8), ("class_triple", 12)])
+    def test_bare_path(self, name: str, expected: int) -> None:
+        """The bare path names the method itself; the owner, which needs an argument, is not built."""
+        cfg = confarg.build(WithCallable, {"fn": f"{_MOD}._Scaler.{name}"})
+        assert cfg.fn(4) == expected
+
+    @pytest.mark.parametrize(("name", "expected"), [("static_double", 8), ("class_triple", 12)])
+    def test_bind(self, name: str, expected: int) -> None:
+        """bind: applies its siblings to the method itself."""
+
+        @dataclass
+        class Target:
+            fn: Callable[[], int]
+
+        cfg = confarg.build(Target, {"fn": {"bind": f"{_MOD}._Scaler.{name}", "x": 4}})
+        assert cfg.fn() == expected
+
+    @pytest.mark.parametrize(("name", "expected"), [("static_double", 8), ("class_triple", 12)])
+    def test_call(self, name: str, expected: int) -> None:
+        """call: calls the method itself with its siblings."""
+        cfg = confarg.build(_TypedCallHolder, {"n": {"call": f"{_MOD}._Scaler.{name}", "x": 4}})
+        assert cfg.n == expected
+
+
+class TestClassfn:
+    """classfn: names an instance method; its siblings are the owner's constructor arguments (FEAT-31)."""
+
+    def test_without_siblings_builds_the_owner_with_no_arguments(self) -> None:
+        """With no sibling, the owner is built with no arguments, as for the bare path."""
+        cfg = confarg.build(WithBareCallable, {"fn": {"classfn": f"{_MOD}._NoArgProcessor.transform"}})
+        assert inspect.ismethod(cfg.fn)
+        assert cfg.fn(4) == 12
+
+    def test_siblings_build_the_owner_not_the_method(self) -> None:
+        """The owner takes k; the method, which also has a k, is left for the caller."""
+        cfg = confarg.build(WithCallable, {"fn": {"classfn": f"{_MOD}._Scaler.scale", "k": 3}})
+        assert cfg.fn(5) == 15
+
+    def test_an_owner_with_subclasses_is_built_as_named(self) -> None:
+        """The owner is the class the path names, whatever subclasses it has."""
+        cfg = confarg.build(WithCallable, {"fn": {"classfn": f"{_MOD}._Shifter.shift", "by": 2}})
+        assert inspect.ismethod(cfg.fn)
+        assert type(cfg.fn.__self__) is _Shifter
+        assert cfg.fn(1) == 3
+
+    def test_inherited_method_builds_the_named_class(self) -> None:
+        """The owner is the class the path names, built with that class's constructor."""
+        cfg = confarg.build(WithCallable, {"fn": {"classfn": f"{_MOD}._ProcessorSub.process", "offset": 5}})
+        assert cfg.fn(1) == 11  # _ProcessorSub(offset=5) doubles it
+
+    def test_bind_over_classfn_applies_the_method_arguments(self) -> None:
+        """bind: over a classfn: spec: the inner k builds the owner, the outer k is the method's."""
+
+        @dataclass
+        class Target:
+            fn: Callable[[], int]
+
+        spec = {"bind": {"classfn": f"{_MOD}._Scaler.scale", "k": 3}, "k": 5}
+        cfg = confarg.build(Target, {"fn": spec})
+        assert cfg.fn() == 15
+
+    def test_call_over_classfn_in_a_typed_field(self) -> None:
+        """call: over a classfn: spec calls C(**init).m(**args) and takes its value as the field."""
+        spec = {"call": {"classfn": f"{_MOD}._Scaler.scale", "k": 3}, "k": 5}
+        cfg = confarg.build(_TypedCallHolder, {"n": spec})
+        assert cfg.n == 15
+
+    def test_call_over_classfn_in_a_callable_field(self) -> None:
+        """call: over a classfn: spec in a Callable field: the method's return value is the callable."""
+        spec = {"call": {"classfn": f"{_MOD}._Scaler.adder", "k": 1}, "k": 10}
+        cfg = confarg.build(WithCallable, {"fn": spec})
+        assert cfg.fn(100) == 111
+
+    def test_call_target_may_be_any_callable_spec(self) -> None:
+        """call: takes a callable spec as its target, as bind: does: here a class: instance."""
+        spec = {"call": {"class": f"{_MOD}._Multiplier", "factor": 3}, "x": 4}
+        cfg = confarg.build(_TypedCallHolder, {"n": spec})
+        assert cfg.n == 12
+
+    def test_call_target_of_another_shape_is_refused(self) -> None:
+        """call: takes a dotted path or a callable spec, nothing else."""
+        with pytest.raises(TypeCoercionError, match=r"'call' at 'n' takes a dotted path or a callable spec"):
+            confarg.build(_TypedCallHolder, {"n": {"call": 3}})
+
+    @pytest.mark.parametrize("name", ["_double", "_Scaler.static_double", "_Scaler.class_triple", "_Multiplier"])
+    def test_a_target_that_is_no_instance_method_is_refused(self, name: str) -> None:
+        """A function, a static or class method, or a class needs no owner, and is pointed to bind:."""
+        with pytest.raises(TypeCoercionError, match=r"instance method.*'bind: ") as exc_info:
+            confarg.build(WithBareCallable, {"fn": {"classfn": f"{_MOD}.{name}"}})
+        assert f"{_MOD}.{name}" in str(exc_info.value)
+
+    def test_a_target_that_is_no_dotted_path_is_refused(self) -> None:
+        """classfn: names a method by its dotted path; a nested spec is refused."""
+        with pytest.raises(TypeCoercionError, match=r"'classfn' at 'fn' takes the dotted path"):
+            confarg.build(WithBareCallable, {"fn": {"classfn": {"bind": f"{_MOD}._double"}}})
+
+    def test_unknown_owner_argument_is_refused(self) -> None:
+        """A sibling the owner's constructor does not take is refused."""
+        with pytest.raises(TypeCoercionError, match="bad"):
+            confarg.build(WithBareCallable, {"fn": {"classfn": f"{_MOD}._Scaler.scale", "k": 1, "bad": 2}})
+
+    def test_classfn_beside_another_opener_is_refused(self) -> None:
+        """Classfn is an opener, so beside bind: it is a second one."""
+        spec = {"classfn": f"{_MOD}._Scaler.scale", "bind": f"{_MOD}._double"}
+        with pytest.raises(TypeCoercionError, match="more than one of"):
+            confarg.build(WithBareCallable, {"fn": spec})
+
+    def test_round_trip(self) -> None:
+        """The bound method dumps as the classfn: spec it was built from."""
+        spec = {"classfn": f"{_MOD}._Scaler.scale", "k": 3}
+        assert confarg.dump(confarg.build(WithCallable, {"fn": spec}))["fn"] == spec
+
+    def test_round_trip_of_a_bind_over_classfn(self) -> None:
+        """A partial over a classfn: method dumps the classfn: spec as its target."""
+
+        @dataclass
+        class Target:
+            fn: Callable[[], int]
+
+        spec = {"bind": {"classfn": f"{_MOD}._Scaler.scale", "k": 3}, "k": 5}
+        assert confarg.dump(confarg.build(Target, {"fn": spec}))["fn"] == spec
 
 
 # ---------------------------------------------------------------------------
@@ -639,6 +839,18 @@ class TestBindAutoInstantiation:
 
 class TestClassDictForm:
     """Tests for the class: dict form callable specification."""
+
+    def test_class_with_subclasses_builds_the_named_class(self) -> None:
+        """class: names the type wanted, so a class that has subclasses is built as named."""
+        cfg = confarg.build(WithCallable, {"fn": {"class": f"{_MOD}._Shifter", "by": 2}})
+        assert type(cfg.fn) is _Shifter
+        assert cfg.fn(1) == 3
+
+    def test_a_tag_beside_class_selects_nothing(self) -> None:
+        """With a union tag other than class, a tag key beside class: is an unknown argument."""
+        spec = {"class": f"{_MOD}._Shifter", "type": f"{_MOD}._NegShifter", "by": 2}
+        with pytest.raises(TypeCoercionError, match=r"Unknown field\(s\) \['type'\] for _Shifter at 'fn'"):
+            confarg.build(WithCallable, {"fn": spec}, union_tag="type")
 
     def test_class_no_args(self, tmp_json: Any) -> None:
         """Test class: dict with a no-arg class instantiates correctly."""
@@ -738,7 +950,6 @@ class TestBindParamChecking:
         with pytest.raises(TypeCoercionError, match="Unknown bind parameter"):
             confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
-    @pytest.mark.xfail(strict=True, reason="FEAT-31: classfn: builds the owner with arguments")
     def test_bind_over_classfn_unknown_key_raises_via_load(self, tmp_json: Any) -> None:
         """An unknown sibling of bind: over a classfn: spec raises via confarg.load."""
         cfg = tmp_json(
@@ -827,6 +1038,15 @@ class TestSerialization:
         assert _serialize_callable(p) == {"bind": f"{_MOD}._with_fn_param", "fn": 1}
         p = functools.partial(_OwnerWithBind, bind=1)
         assert _serialize_callable(p) == {"_bind": f"{_MOD}._OwnerWithBind", "bind": 1}
+        p = functools.partial(_with_classfn_param, classfn=1)
+        assert _serialize_callable(p) == {"_bind": f"{_MOD}._with_classfn_param", "classfn": 1}
+
+    def test_a_classfn_keyword_round_trips_through_the_escaped_form(self) -> None:
+        """A parameter named classfn is reached through an escaped opener, and dumps back that way."""
+        spec = {"_bind": f"{_MOD}._with_classfn_param", "classfn": 2}
+        cfg = confarg.build(WithBareCallable, {"fn": spec})
+        assert cfg.fn(x=3) == 5
+        assert confarg.dump(cfg)["fn"] == spec
 
     def test_partial_no_bind(self) -> None:
         """A partial with no bound args serializes to the bare dotted path (round-trips to the callable)."""
@@ -909,7 +1129,6 @@ class TestCallableObjectModeCLI:
         assert isinstance(result.fn, _Multiplier)
         assert result.fn(3) == 12
 
-    @pytest.mark.xfail(strict=True, reason="FEAT-31: classfn: builds the owner with arguments")
     def test_classfn_method_path_with_constructor_kwarg(self) -> None:
         """--<flag>.classfn with a method path + --<flag>.<kwarg> for owning class constructor."""
         result = confarg.load(
@@ -1076,7 +1295,6 @@ class TestEscapedDirectiveMode:
         with pytest.raises(TypeCoercionError, match="more than one of"):
             confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
-    @pytest.mark.xfail(strict=True, reason="FEAT-31: classfn: builds the owner with arguments")
     def test_escaped_mode_frees_bind_as_owner_kwarg(self, tmp_json: Any) -> None:
         """_classfn opener: a plain 'bind' key is a constructor kwarg of the method's owning class."""
         cfg = tmp_json(json.dumps({"fn": {"_classfn": f"{_MOD}._OwnerWithBind.method", "bind": 100}}))

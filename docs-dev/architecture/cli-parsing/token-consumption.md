@@ -92,7 +92,8 @@ choice to `construct`. Two refinements:
 
 ## Callable paths
 
-`--f.bind`, `--f.class`, `--f.call`, a nested target's `--f.bind.<key>`, the target's
-`--f.<p>` and their escaped `_bind`/… forms are parsed
+`--f.bind`, `--f.class`, `--f.call`, a nested target's `--f.bind.<key>` or `--f.call.<key>`,
+the target's `--f.<p>`, a typed call's `--n.call` and its opened siblings, and their escaped
+`_bind`/… forms are parsed
 leniently as string leaves; whether a spec is well-formed is decided in `construct`
 ([callables](../callables.md)).

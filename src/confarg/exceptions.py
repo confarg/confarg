@@ -238,6 +238,18 @@ class TypeCoercionError(ConfargError):
         return cls(f"Cannot construct {what} at '{path}': expected {accepted}, got {src} {value!r}")
 
     @classmethod
+    def unknown_fields(cls, names: Any, what: str, path: str, valid: list[str]) -> TypeCoercionError:
+        """Return the error for keys a struct or a namedtuple declares no field for.
+
+        *names* are the refused keys, listed sorted; *valid* is the field list as the caller
+        orders it.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
+        """
+        return cls(f"Unknown field(s) {sorted(names)} for {what} at '{path}'. Valid fields: {valid}")
+
+    @classmethod
     def base_not_a_list(cls, src: str, value: Any, path: str) -> TypeCoercionError:
         """Return the error for a list patch whose ``'*'`` key holds no base list.
 

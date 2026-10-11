@@ -13,9 +13,7 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 | Ticket | Severity | Blocked by | Effort | Risk | Impact |
 |---|---|---|---|---|---|
 | [FEAT-14 — Dataclass fields that are not `__init__` parameters](FEAT-14-dataclass-fields-outside-init.md) | major |  | L | high | behavior |
-| [FEAT-31 — `classfn:` names an instance method and takes the owner's constructor arguments](FEAT-31-classfn-for-instance-methods.md) | major |  | L | medium | config |
 | [FEAT-27 — Replace the callable openers with `bind`, `call`, `class` and `classfn`](FEAT-27-callable-openers-redesign.md) | major |  | XL | high | config |
-| [FEAT-32 — CLI parity for `bind`, `call`, `class` and `classfn` in all five adapters](FEAT-32-cli-parity-for-callable-openers.md) | major | FEAT-31 | L | medium | behavior |
 | [FEAT-3 — A registry of reserved sentinel keys](FEAT-3-reserved-sentinel-key-registry.md) | minor |  | S | high | config |
 | [FEAT-5 — Optional structural validation right after `merge()`](FEAT-5-structural-validation-after-merge.md) | minor |  | S | low | behavior |
 | [FEAT-26 — The expression whitelist is not documented for users](FEAT-26-the-expression-whitelist-is-not-documented-for-users.md) | minor |  | S | low | none |
@@ -41,7 +39,7 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 | [FEAT-20 — Derived values that cannot be made inconsistent](FEAT-20-enforced-derived-values.md) | minor | FEAT-19 | M | medium | behavior |
 | [FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin](FEAT-10-confarg-explain-command.md) | minor | FEAT-8 | XL | low | behavior |
 | [FEAT-25 — Nothing in CI runs the board and anchor checks](FEAT-25-nothing-in-ci-runs-the-board-and-anchor-checks.md) | trivial |  | S | low | none |
+| [FEAT-34 — Rewrite the callables architecture note and write the migration table](FEAT-34-callables-architecture-note-and-migration.md) | trivial |  | S | low | none |
 | [FEAT-4 — An explicit ordered patch-op stream](FEAT-4-ordered-patch-op-stream.md) | trivial |  | M | high | none |
-| [FEAT-34 — Rewrite the callables architecture note and write the migration table](FEAT-34-callables-architecture-note-and-migration.md) | trivial | FEAT-31, FEAT-32 | S | low | none |
 
 <!-- tickets:end -->
