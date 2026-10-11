@@ -1217,12 +1217,6 @@ class TestParseCLIBranches:
         with pytest.raises(confarg.exceptions.TypeCoercionError):
             confarg.load(DCWithDict, argv=["--mapping.subkey.deeper", "hello"])
 
-    def test_dict_at_path_bare_flag(self) -> None:
-        """A bare CLI flag (no value) at a dict sub-path is skipped without error."""
-        DCWithDict = make_target("mapping", dict[str, int], default_factory=dict)
-        # Bare flag (no value) after dict-at-path: i+1 is end or flag, skip value
-        confarg.load(DCWithDict, argv=["--mapping.subkey.deeper", "--mapping.key", "42"])
-
     def test_non_bool_optional_bare_flag_sets_none(self) -> None:
         """'none' token for a str | None non-struct target resolves to None."""
         # Non-struct optional target with cli_prefix + "none" token → __root__ = None

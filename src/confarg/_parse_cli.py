@@ -1037,17 +1037,19 @@ def _handle_unknown_field(
 ) -> int:
     """Handle a flag whose field path could not be resolved.
 
-    For dict-typed paths, consumes an optional value and returns the new index.
-    Otherwise always raises UnknownArgumentError.
+    A path below a dict is a key, which takes its value as any value-taking flag does
+    (:func:`_require_value`, BUG-161); the new index is returned. Otherwise always raises
+    UnknownArgumentError.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
     if append_mode:
         raise UnknownArgumentError.no_such_field(token, path)
     if _is_dict_at_path(ctx.target, path, ctx.union_tag):
-        i += 1
-        if i < len(ctx.argv) and not _looks_like_flag(ctx.argv[i]):
-            _set_nested(ctx.data, path, _StrToken(ctx.argv[i]))
-            i += 1
-        return i
+        _require_value(ctx.argv, i + 1, token)
+        _set_nested(ctx.data, path, _StrToken(ctx.argv[i + 1]))
+        return i + 2
     if len(path) > 1 and path[-1] in ("", "+"):
         dot_pos = token.rfind(".")
         msg = f"Missing field name after '{token[: dot_pos + 1]}'"

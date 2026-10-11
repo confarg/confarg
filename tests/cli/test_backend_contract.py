@@ -5222,6 +5222,23 @@ class TestWholeValueFlagContract:
         with pytest.raises(_REJECTS_BARE_FLAG):
             loader.load(_WholeValue, argv=["--opt"], env={})
 
+    @pytest.mark.parametrize(
+        "argv",
+        [["--env.a.b"], ["--env.a.b", "--env.k", "1"], ["--opt.a.b"]],
+        ids=["alone", "before-a-flag", "optional-dict"],
+    )
+    def test_bare_flag_two_segments_below_a_dict_is_rejected(self, loader: ConfargLoader, argv: list[str]) -> None:
+        """A key path no type reaches below a dict needs its value like any other (BUG-161).
+
+        ``--env.a`` reaches the dict's value type and is refused bare; one segment deeper the
+        walk reaches nothing and the path is taken as a key below the dict, which must not
+        turn the missing value into a flag dropped without a word.
+        """
+        with pytest.raises(_REJECTS_BARE_FLAG) as excinfo:
+            loader.merge(_WholeValue, argv=argv, env={})
+        if isinstance(excinfo.value, ConfargError):
+            assert f"Missing value for '{argv[0]}'" in str(excinfo.value)
+
     def test_whole_value_flags_registered(self, populating_loader: ConfargLoader) -> None:
         """Every adapter registers the bare flag, so it is visible in --help."""
         flags = populating_loader.registered_flags(_WholeValue)
