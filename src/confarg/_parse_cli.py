@@ -1044,15 +1044,16 @@ def _handle_unknown_field(
     """Handle a flag whose field path could not be resolved.
 
     A path below a dict is a key, which takes its value as any value-taking flag does
-    (:func:`_require_value`, BUG-161); the new index is returned. Otherwise always raises
-    UnknownArgumentError.
+    (:func:`_require_value`, BUG-161); the new index is returned. No declaration types the
+    key, so its append is :func:`_handle_append_token`'s to refuse, as for an ``Any`` value
+    one segment up (BUG-166). Otherwise always raises UnknownArgumentError.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
-    if append_mode:
-        raise UnknownArgumentError.no_such_field(token, path)
     if _is_dict_at_path(ctx.target, path, ctx.union_tag):
+        if append_mode:
+            return _handle_append_token(ctx, i + 1, token, Any, path)
         _require_value(ctx.argv, i + 1, token)
         _set_nested(ctx.data, path, _StrToken(ctx.argv[i + 1]))
         return i + 2

@@ -5622,6 +5622,24 @@ class TestUnionPathWalkContract:
         first, second, third = path.split(".")
         assert cli == env == {first: {second: {third: "1"}}}
 
+    @pytest.mark.parametrize("path", ["od.a", "od.a.b", "deep.a.b", "deep.a.b.c"])
+    def test_an_append_below_a_dict_is_refused_as_an_append(self, loader: ConfargLoader, path: str) -> None:
+        """An append onto a key below a dict is refused for its type, however deep the key (BUG-166).
+
+        ``--od.a+`` reaches the dict's value type, ``Any``, and is refused as no list, set or
+        frozenset. One segment deeper the walk reaches nothing and the path is taken as a key
+        no declaration types, which ``--od.a.b 1`` writes: its append is refused for the same
+        reason, never as a field that does not exist.
+        """
+        token = f"--{path}+"
+        with pytest.raises(ConfargError) as excinfo:
+            loader.merge(_WalkUnions, argv=[token, "1"], env={})
+        assert not isinstance(excinfo.value, UnknownArgumentError)
+        assert str(excinfo.value) == (
+            f"Cannot use + (append) syntax on {token!r}: field {path!r} has type typing.Any,"
+            " which is not a list, set, or frozenset."
+        )
+
     def test_keys_below_an_optional_callable(self, loader: ConfargLoader) -> None:
         """A kwarg no signature names, and a bind subkey, are keys inside the spec of ``Callable | None``."""
         sibling = ["--fn.fn", f"{__name__}._shout", "--fn.punct", "!"]

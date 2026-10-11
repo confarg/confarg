@@ -20,7 +20,11 @@
   the fixed-arity branch asks it once per positional token, so a short token run is a missing
   value rather than a shorter tuple. A key path below a dict that the walk types as nothing
   (`--d.a.b` on `dict[str, Any]`) is a value-taking flag too, so it asks the same guard rather
-  than being dropped when bare (BUG-161).
+  than being dropped when bare (BUG-161). No declaration types that key, so it is typed as
+  `Any` — the raw token it stores is what an `Any` field takes — and its append spelling
+  (`--d.a.b+`) goes to the append handler, which refuses it as it refuses `--d.a+`: an `Any`
+  value is no list, set or frozenset. It is no unknown field, since the plain spelling writes
+  it (BUG-166).
 - **Repeating** a multi-token flag extends it rather than replacing it: `--f x --f y` is a second
   spelling of `--f x y`, which is what the clicklike front-ends have no other way to write
   ([CLI adapters](../cli-adapters/list-syntax-divergence.md#list-syntax-divergence)). The occurrences are joined as *tokens*
