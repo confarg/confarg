@@ -39,7 +39,11 @@ Details that are intended:
 `{__cast__: <type name>, __value__: <raw>}` is the file-side escape hatch. The dict must have
 **exactly** these two keys, so a real struct with those fields plus others is never
 hijacked. The type name is a scalar cast name or the `__name__` of a registered leaf. A
-string `__value__` re-enters coercion as a token; a native value does not.
+string `__value__` re-enters coercion as a token; a native value does not. `_cast` owns both
+directions of that vocabulary — `type_for_cast_name` reads a name, `cast_name_for_type` writes
+one — so the reader and the writer cannot drift apart. The reader needs the leaf registry,
+which lives in `typedload._coerce`, and imports it inside the function: `typedload`'s package
+init reaches `_cast` through `_construct`, so the import at module level would be a cycle.
 
 It is also the spelling a `_Pinned` **leaves** by. A `.str`/`.int`/… cast on the CLI stores a
 `_Pinned` in the merged dict, and no writer can represent one, so `_serialize_untyped` emits the

@@ -91,6 +91,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 |---|---|
 | [Shared reserved key names live in `_defaults.py`](shared-reserved-key-names.md) | any literal the five front-ends must agree on, not only the keyword defaults |
 | [A user-facing message lives on the exception that raises it](messages-live-on-exceptions.md) | a message raised from more than one site is a classmethod factory |
+| [Look-alike code that behaves differently stays apart](look-alike-code-that-behaves-differently-stays-apart.md) | a collapse that has to take every difference as a parameter is declined; the scalar coercions and the two anchor rewrites stay as written |
 
 ## Repository
 

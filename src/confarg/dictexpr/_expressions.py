@@ -776,31 +776,19 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: dict[str, Any]
 def _eval_binop(node: ast.BinOp, namespace: dict[str, Any]) -> Any:
     left = _evaluate_ast(node.left, namespace)
     right = _evaluate_ast(node.right, namespace)
-    op_func = _BINOP_MAP.get(type(node.op))
-    if op_func is None:
-        msg = f"Unsupported binary operator: {type(node.op).__name__}"
-        raise ExpressionEvalError(msg)
-    return op_func(left, right)
+    return _BINOP_MAP[type(node.op)](left, right)
 
 
 def _eval_unaryop(node: ast.UnaryOp, namespace: dict[str, Any]) -> Any:
     operand = _evaluate_ast(node.operand, namespace)
-    op_func = _UNARYOP_MAP.get(type(node.op))
-    if op_func is None:
-        msg = f"Unsupported unary operator: {type(node.op).__name__}"
-        raise ExpressionEvalError(msg)
-    return op_func(operand)
+    return _UNARYOP_MAP[type(node.op)](operand)
 
 
 def _eval_compare(node: ast.Compare, namespace: dict[str, Any]) -> Any:
     left = _evaluate_ast(node.left, namespace)
     for op, comparator in zip(node.ops, node.comparators, strict=False):
         right = _evaluate_ast(comparator, namespace)
-        op_func = _CMPOP_MAP.get(type(op))
-        if op_func is None:
-            msg = f"Unsupported comparison: {type(op).__name__}"
-            raise ExpressionEvalError(msg)
-        if not op_func(left, right):
+        if not _CMPOP_MAP[type(op)](left, right):
             return False
         left = right
     return True
@@ -874,12 +862,12 @@ _AST_EVALUATORS: dict[type, Any] = {
 
 
 def _evaluate_ast(node: ast.AST, namespace: dict[str, Any]) -> Any:
-    """Recursively evaluate AST node against namespace."""
-    evaluator = _AST_EVALUATORS.get(type(node))
-    if evaluator is None:
-        msg = f"Cannot evaluate node type: {type(node).__name__}"
-        raise ExpressionEvalError(msg)
-    return evaluator(node, namespace)
+    """Recursively evaluate AST node against namespace.
+
+    Only a node :func:`_validate_ast` accepted reaches here, and every one it accepts has an
+    evaluator, as every operator it accepts has an entry in its operator map.
+    """
+    return _AST_EVALUATORS[type(node)](node, namespace)
 
 
 def _eval_expr(tree: ast.Expression, namespace: dict[str, Any], context: str) -> Any:

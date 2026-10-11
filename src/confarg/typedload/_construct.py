@@ -17,7 +17,7 @@ from typing import Any
 
 from confarg import _defaults
 from confarg._callable import _resolve_callable_spec
-from confarg._cast import SCALAR_CAST_TYPES
+from confarg._cast import type_for_cast_name
 from confarg._import import _import_dotted, dotted_name
 from confarg._merge import LIST_APPEND_KEY, LIST_DELETE_KEY, LIST_REPLACE_BASE_KEY, _apply_list_ops
 from confarg._types import (
@@ -65,7 +65,6 @@ from confarg.exceptions import (
 )
 from confarg.typedload._coerce import (
     _FALSY,
-    _LEAF_COERCIONS,
     _NONE_TOKENS,
     _TRUTHY,
     _coerce_leaf,
@@ -100,16 +99,7 @@ def _try_pinned_dict(data: Any) -> _Pinned | None:
     """
     if not (isinstance(data, dict) and data.keys() == {"__cast__", "__value__"}):
         return None
-    typename = data["__cast__"]
-    tp: type | None = SCALAR_CAST_TYPES.get(typename)
-    if tp is None:
-        tp = next((t for t in _LEAF_COERCIONS if getattr(t, "__name__", None) == typename), None)
-    if tp is None:
-        valid = sorted(SCALAR_CAST_TYPES) + sorted(
-            t.__name__ for t in _LEAF_COERCIONS if t not in SCALAR_CAST_TYPES.values()
-        )
-        msg = f"Unknown __cast__ type: {typename!r}. Valid: {valid}"
-        raise TypeCoercionError(msg)
+    tp = type_for_cast_name(data["__cast__"])
     raw = data["__value__"]
     value = _StrToken(str(raw)) if isinstance(raw, str) else raw
     return _Pinned(tp, value)
@@ -709,6 +699,16 @@ def _construct_dict(tp: Any, data: Any, path: str, union_tag: str) -> dict[Any, 
 _UNION_NO_MATCH: object = object()
 
 
+def _first_constructible(variants: list[Any], data: Any, path: str, union_tag: str) -> Any:
+    """Construct *data* as the first of *variants* that accepts it, or return _UNION_NO_MATCH."""
+    for var in variants:
+        try:
+            return construct(var, data, path=path, union_tag=union_tag)
+        except (ConfargError, TypeError):
+            continue
+    return _UNION_NO_MATCH
+
+
 def _construct_single_variant_union(
     all_args: list[Any],
     non_none: list[Any],
@@ -766,12 +766,7 @@ def _try_construct_union_struct(dc_vars: list[Any], data: dict[str, Any], path: 
         return construct(matches[0], data, path=path, union_tag=union_tag)
     if len(matches) > 1:
         raise AmbiguousUnionError(_ambiguous_union_msg(matches, data, path, union_tag))
-    for var in dc_vars:
-        try:
-            return construct(var, data, path=path, union_tag=union_tag)
-        except (ConfargError, TypeError):
-            continue
-    return _UNION_NO_MATCH
+    return _first_constructible(dc_vars, data, path, union_tag)
 
 
 def _try_fixed_seq_variants(fixed_vars: list[Any], data: Any, path: str, union_tag: str) -> Any:
@@ -795,24 +790,14 @@ def _try_fixed_seq_variants(fixed_vars: list[Any], data: Any, path: str, union_t
     candidates = (
         [v for v in fixed_vars if len(_fixed_seq_types(_resolve_type(v)) or ()) == data_len] if data_len >= 0 else []
     ) or fixed_vars
-    for var in candidates:
-        try:
-            return construct(var, data, path=path, union_tag=union_tag)
-        except (ConfargError, TypeError):
-            continue
-    return _UNION_NO_MATCH
+    return _first_constructible(candidates, data, path, union_tag)
 
 
 def _try_coll_variants(coll_vars: list[Any], data: Any, path: str, union_tag: str) -> Any:
     """Try constructing from collection variants; returns _UNION_NO_MATCH if none accept data."""
     if not (coll_vars and isinstance(data, dict | list | set | frozenset)):
         return _UNION_NO_MATCH
-    for var in coll_vars:
-        try:
-            return construct(var, data, path=path, union_tag=union_tag)
-        except (ConfargError, TypeError):
-            continue
-    return _UNION_NO_MATCH
+    return _first_constructible(coll_vars, data, path, union_tag)
 
 
 def _coerce_scalar_variants(

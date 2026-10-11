@@ -20,7 +20,12 @@ import pytest
 import confarg
 from confarg._types import _StrToken
 from confarg.dictexpr._expressions import (
+    _ALLOWED_NODES,
+    _AST_EVALUATORS,
+    _BINOP_MAP,
+    _CMPOP_MAP,
     _SAFE_FUNCTIONS,
+    _UNARYOP_MAP,
     _anchor_markers,
     _anchor_prefix,
     _extract_references,
@@ -352,6 +357,20 @@ class TestAstValidation:
         """Unsafe expression constructs are refused, for resolution to quote the expression around."""
         with pytest.raises(_RefusedError):
             _validate_ast(expr)
+
+    @pytest.mark.parametrize("expr", ["a @ b", "~a", "a is b", "a in b"], ids=["matmul", "invert", "is", "in"])
+    def test_operator_without_an_evaluator_rejected(self, expr: str) -> None:
+        """An operator the evaluator has no entry for is refused before evaluation."""
+        with pytest.raises(_RefusedError, match="Disallowed construct"):
+            _validate_ast(expr)
+
+    def test_every_allowed_node_has_an_evaluator(self) -> None:
+        """What validation accepts, evaluation can evaluate: the evaluators raise on no other node."""
+        operator_bases = (ast.operator, ast.unaryop, ast.cmpop, ast.boolop)
+        operators = {node for node in _ALLOWED_NODES if issubclass(node, operator_bases)}
+        evaluated = _ALLOWED_NODES - operators - {ast.Load}
+        assert evaluated <= set(_AST_EVALUATORS)
+        assert operators <= {*_BINOP_MAP, *_UNARYOP_MAP, *_CMPOP_MAP, ast.And, ast.Or}
 
 
 # ---------------------------------------------------------------------------
