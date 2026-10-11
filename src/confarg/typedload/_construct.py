@@ -699,8 +699,10 @@ def _construct_tuple(tp: Any, data: Any, path: str, union_tag: str) -> tuple[Any
                 msg = f"Cannot construct {tp} at '{path}': expected {len(tt)} elements, got {len(base_seq)}"
                 raise TypeCoercionError(msg)
             patches = {k: v for k, v in data.items() if k != LIST_REPLACE_BASE_KEY}
-        pos = _indexed_dict_to_positions(patches, len(tt), path, f"{tp}")
-        seq = [pos.get(i, base_seq[i] if i < len(base_seq) else None) for i in range(len(tt))]
+        seq = [base_seq[i] if i < len(base_seq) else None for i in range(len(tt))]
+        # A patch refines what the base holds at its position, as the merge would have.
+        for i, v in _indexed_dict_to_positions(patches, len(tt), path, f"{tp}").items():
+            seq[i] = _merge_existing_value(seq[i], v, f"{path}[{i}]", union_tag) if i < len(base_seq) else v
     return tuple(
         construct(et, seq[i] if i < len(seq) else None, path=f"{path}[{i}]", union_tag=union_tag)
         for i, et in enumerate(tt)

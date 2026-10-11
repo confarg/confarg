@@ -118,7 +118,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "which `__init__` parameters are `*args` / `**kwargs`?" | `_types._var_params` |
 | "what does a plain class's `__init__` declare?" | `_types._init_params` — the one signature walk, cached per class; `_is_plain_class`, `_init_fields`, `_init_defaults`, `_var_params`, `_struct_required` and construction's `*args` call read it (REF-48, [types](types/introspection.md#introspection-is-cached-per-class)) |
 | "which of this struct's fields have no default?" | `_types._struct_required` — without building a default, so no `default_factory` runs to answer it |
-| combine existing value with override | `_merge._merge_existing_value` |
+| combine existing value with override | `_merge._merge_existing_value` — in the merge, and in `build()` wherever a deferred `'*'` base meets its patch: a fixed tuple (`_construct_tuple`) and a namedtuple (`_lay_patch_over_positions`) refine each position through it, so deferring a patch never turns a refinement into a replacement (BUG-164, [pipeline](pipeline/merge-build-contract.md#merge-build-contract)) |
 | how a leaf value leaves the library | `_serialize._serialize_leaf` |
 | "which union variant does this instance belong to?" | `_serialize._variant_holds` |
 | "which shape does this type dispatch as?" | `typedload._coerce._type_kind` — the one ordered table of shape predicates (`_KIND_ORDER`); construction, serialization, `_variant_holds` and the CLI walk's `_advance_field_type` / `_is_collection_patch_path` each `match` on it (REF-47) |

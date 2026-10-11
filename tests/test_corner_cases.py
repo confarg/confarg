@@ -530,6 +530,17 @@ class TestFixedTupleEdgeCases:
         """A deferred index patch carrying a shorter base fills the remaining declared slots."""
         assert construct(tuple[int, int, int], {LIST_REPLACE_BASE_KEY: [1, 2], "2": _StrToken("3")}) == (1, 2, 3)
 
+    def test_base_carrying_dict_refines_a_nested_position(self) -> None:
+        """A patch below a position refines what the base holds there, as a namedtuple's does (BUG-164).
+
+        The merge refines an in-range element through ``_merge_existing_value``; deferring
+        the patch for an index past the end must not turn that refinement into a replacement.
+        """
+        data = {LIST_REPLACE_BASE_KEY: [{"a": 1, "b": 2}], "0": {"a": 9}, "1": 5}
+        assert construct(tuple[dict[str, int], int], data) == ({"a": 9, "b": 2}, 5)
+        nested = {LIST_REPLACE_BASE_KEY: [[1, 2]], "0": {"0": 9}, "1": 5}
+        assert construct(tuple[tuple[int, int], int], nested) == ((9, 2), 5)
+
     def test_base_carrying_dict_longer_than_tuple_raises(self) -> None:
         """A carried base longer than the declared tuple length is an error."""
         with pytest.raises(TypeCoercionError, match="expected 3 elements"):

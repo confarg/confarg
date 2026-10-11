@@ -19,7 +19,9 @@ target. Convertibility is decided only in `build()`/`construct()`, which raise
     field of a namedtuple but nothing in a list, so `_merge_list_base` carries it the same way,
     `{"*": [1, 2], "x": 9}` (BUG-160). Both deferrals are one question,
     `_merge._patch_needs_the_type`; a patch that also appends or deletes is a list operation
-    and is still refused in the merge;
+    and is still refused in the merge. Deferring changes who applies the patch, never what it
+    means: construction refines each position the base holds through the merge's own
+    combiner, `_merge._merge_existing_value`, as the merge would have (BUG-164);
   - `_parse_cli._resolve_field_type` returns a field type only when all union variants agree,
     otherwise `str` (the raw token is stored, coerced in `construct`), on the CLI and env
     channels alike.
