@@ -247,6 +247,41 @@ class TestOptionalReportsItsVariantsError:
         assert str(optional) == f"{plain}. To set this field to None, pass 'none' or 'null'."
 
 
+class TestUnionWithNoneOffersTheRemedyOnlyToAToken:
+    """A union of several variants and ``None`` adds the none-word remedy as ``X | None`` does (BUG-162).
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("none", "Cannot coerce str 'none' to int | float | None at 'value'"),
+            ("abc", "Cannot coerce str 'abc' to int | float | None at 'value'"),
+            ([1, 2], "Cannot coerce list [1, 2] to int | float | None at 'value'"),
+            ({"a": 1}, "Cannot coerce dict {'a': 1} to int | float | None at 'value'"),
+        ],
+        ids=["file-none-word", "file-string", "list", "dict"],
+    )
+    def test_a_value_no_none_word_reads_gets_no_remedy(self, value: object, expected: str) -> None:
+        """A file's string, a list or a dict could not have meant None: the remedy would mislead."""
+        Target = make_target("value", int | float | None, default=None)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+            confarg.build(Target, {"value": value})
+        assert str(excinfo.value) == expected
+
+    def test_a_token_gets_the_remedy(self, loader: ConfargLoader) -> None:
+        """A token is where a none word is read, so its refusal says how to pass None."""
+        Target = make_target("value", int | float | None, default=None)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+            loader.load(Target, argv=["--value", "abc"], env={})
+        assert str(excinfo.value) == (
+            "Cannot coerce str 'abc' to int | float | None at 'value'."
+            " To set this field to None, pass 'none' or 'null'."
+        )
+
+
 class TestTokensStayOutOfMessages:
     """A channel token is named as the ``str`` it is, never as the private wrapper.
 

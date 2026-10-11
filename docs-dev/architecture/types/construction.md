@@ -31,6 +31,13 @@ ends with the remedy (`… To set this field to None, pass 'none' or 'null'.`). 
 or a file's string could not have meant `None` — a file writes it as its own null, and its
 `"none"` stays a string — so there the remedy would only mislead (BUG-159).
 
+A union of several variants and `None` follows the same rule when no variant accepts the
+value: its "Cannot coerce … to int | float | None" gains the remedy for a token and for
+nothing else (BUG-162). One predicate, `_construct._reads_none_word`, answers whether the
+value could have been a none word, and every union site asks it: the single-variant union to
+select `None` and to offer the remedy, the scalar variants to rank `None` among them, the
+multi-variant refusal to offer the remedy.
+
 The remedy is appended to the variant's error rather than replacing it, so a token keeps
 what the variant had to say: a callable shorthand's arity refusal, the element of a list a
 whole-value token failed on (maintainer-chosen). Replacing it with one generic "Cannot

@@ -130,7 +130,8 @@ class TypeCoercionError(ConfargError):
         """Return an error for a value that cannot be coerced to the target type.
 
         *none_sentinel* appends the remedy for a union field whose ``None`` a channel spells
-        as a none word, offered only when the union counts ``None`` among its variants.
+        as a none word, offered only when *value* is a token and the union counts ``None``
+        among its variants: anywhere else the remedy would ask for the value just refused.
         """
         msg = f"Cannot coerce {src} {value!r} to {tp} at '{path}'"
         return cls(_append_none_remedy(msg) if none_sentinel else msg)
