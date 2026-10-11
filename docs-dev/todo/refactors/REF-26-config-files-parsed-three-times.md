@@ -8,6 +8,7 @@ where:
 effort: M
 risk: low
 impact: none
+severity: minor  # a --config URL is fetched twice per run
 ---
 # REF-26 — The `--config` files named on argv are parsed three times per run
 

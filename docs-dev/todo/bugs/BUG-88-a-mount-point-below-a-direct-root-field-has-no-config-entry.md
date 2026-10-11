@@ -5,6 +5,8 @@ where:
 effort: L
 risk: medium
 impact: behavior
+severity: minor  # the mount works; only --help omits it
+introduced_by: [PR-13]  # dropped the recursion of the initial version's _register_subconfig_flags
 ---
 # BUG-88 — A mount point below a direct root field has no `--config.<path>` entry
 
@@ -23,6 +25,13 @@ Fix direction: recurse into struct fields — the dead `prefix` parameter of
 removed instead if the decision is not to recurse. The decision to record first is the noise
 trade-off: full recursion adds one entry per struct node, where `config_subkeys=False` gates
 only the root's entries today; a depth gate is the middle option.
+
+Origin: regression from PR-13, by a deliberate choice. The initial version (PR-5) registered
+`--config.<subpath>` recursively, for every nested struct (`_register_subconfig_flags`). PR-13,
+which moved registration into the framework-neutral `FlagSpec` builder, kept the root's direct
+fields only and added `config_subkeys` to turn even those off; the dead `prefix` parameter is what
+is left of the recursion. The depth limit was a decision about `--help` noise, not a missed case,
+which is the trade-off the fix has to settle first.
 
 ```python
 from dataclasses import dataclass, field

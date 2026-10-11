@@ -5,6 +5,8 @@ where:
 effort: S
 risk: medium
 impact: behavior
+severity: minor  # workaround: spell every position
+introduced_by: [PR-39]  # feat: Add namedtuple support, which left _resolve_tuple_partial gated on _is_tuple
 ---
 # BUG-109 — A namedtuple index patch ignores the field's default, where a tuple patch keeps it
 
@@ -16,6 +18,11 @@ default, but it gates on `_is_tuple(ft)`, which a namedtuple does not pass. The 
 ([a namedtuple is a fixed-length sequence](../../architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence)).
 Fix direction: gate on it, and accept name keys beside index keys when the field is a
 namedtuple.
+
+Origin: latent since PR-39, which added namedtuple support and left `_resolve_tuple_partial`,
+written for plain tuples, gated on `_is_tuple`; the reproduction fails the same way at PR-39.
+BUG-112 and BUG-142 also come from PR-39, each a place where a namedtuple does not take the path a
+tuple or a struct takes.
 
 ```python
 from dataclasses import dataclass

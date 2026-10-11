@@ -5,6 +5,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-68 — the scalar root spec undoes the multi-token shape one attribute at a time
 

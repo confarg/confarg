@@ -9,6 +9,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-75 — `cli/_collect.py` no longer collects, and `_merge_from_flat` no longer merges from the flat result
 

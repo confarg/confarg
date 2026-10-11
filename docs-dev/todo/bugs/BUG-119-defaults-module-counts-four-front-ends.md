@@ -6,6 +6,8 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
+introduced_by: [BUG-7]  # PR-194, which added typer and updated the counts in docs-dev/ only
 ---
 # BUG-119 — `_defaults.py` says four front-ends must agree; there are five
 
@@ -15,6 +17,10 @@ The module docstring says the constants exist "so the four front-ends cannot dri
 ([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity),
 [pipeline/api-seams.md#public-api-seams](../../architecture/pipeline/api-seams.md#public-api-seams)) —
 and the constants are read by all five. Fix direction: say five, or drop the count.
+
+Origin: regression from BUG-7, which added the typer front-end. Both docstrings were right when
+written (PR-111, REF-25), with four front-ends; BUG-7 changed "four" to "five" across
+`docs-dev/architecture/` and missed `_defaults.py`. BUG-150 shares this origin.
 
 ```console
 $ grep -n "four front-ends" src/confarg/_defaults.py

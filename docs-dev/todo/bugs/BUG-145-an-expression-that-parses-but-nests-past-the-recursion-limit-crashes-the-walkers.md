@@ -10,6 +10,8 @@ where:
 effort: M
 risk: high
 impact: behavior
+severity: major
+introduced_by: [PR-5]  # every walker after the parse recurses in Python
 ---
 # BUG-145 — An expression that parses but nests past the recursion limit crashes the walkers
 
@@ -28,6 +30,11 @@ on which bodies parse. The bound is the decision to record. For precedents, CPyt
 caps nested brackets at 200, `serde_json` caps recursion at 128, and Go's `regexp/syntax` caps
 nesting at 1000. A bound below what works today, about 300 levels in `resolve()`, would turn
 `behavior` into `config`.
+
+Origin: latent since the initial version (PR-5), whose expression walkers all recurse in Python with
+no depth bound; the `resolve()` lines of the reproduction read the same at PR-28. The mounting
+`merge()` reaches the limit sooner through `_prefix_content`, added by PR-105. BUG-137's fix bounded
+the parser's side only.
 
 ```python
 import pathlib

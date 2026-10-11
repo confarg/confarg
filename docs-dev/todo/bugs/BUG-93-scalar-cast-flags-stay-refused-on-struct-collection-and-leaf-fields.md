@@ -6,6 +6,8 @@ where:
 effort: S
 risk: medium
 impact: behavior
+severity: minor
+introduced_by: [PR-50]  # feat: Enum priority in stealing rule, which made vanilla accept a typed cast on any field
 ---
 # BUG-93 — Scalar cast flags stay refused on struct, collection and registered-leaf fields
 
@@ -22,6 +24,12 @@ prefer to refuse the whole family in vanilla — the spellings disambiguate noth
 either; BUG-72 chose registration for leaves, which sets the precedent.
 Rationale: [cli-parsing/casts-and-reserved-words.md#real-field-wins](../../architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins),
 [cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags](../../architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags).
+
+Origin: parity gap since PR-50, a feature that taught vanilla's loop to accept a typed scalar cast
+wherever the trailing segment names no member, and registered on the adapters only the casts of a
+union's own scalars. Bisected with `parse_args`: before PR-50 vanilla could not build `--nested.str
+x` or `--items.str 3` either; from PR-50 it builds them and every adapter refuses them. BUG-72's fix
+then registered the casts on plain leaf fields only. BUG-94 shares this origin.
 
 ```python
 from dataclasses import dataclass

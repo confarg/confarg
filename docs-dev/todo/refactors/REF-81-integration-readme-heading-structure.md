@@ -5,6 +5,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-81 — `90_integration/README.md` opens at h3 and sandwiches a lone h2 between h3 sections
 

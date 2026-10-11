@@ -9,6 +9,7 @@ where:
 effort: M
 risk: medium
 impact: none
+severity: trivial
 ---
 # REF-71 — Four functions answer "does this segment name a member?", and they disagree at the edges
 

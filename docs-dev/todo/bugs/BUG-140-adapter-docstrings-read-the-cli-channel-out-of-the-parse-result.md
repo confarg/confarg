@@ -8,6 +8,8 @@ where:
 effort: S
 risk: low
 impact: behavior
+severity: minor
+introduced_by: [REF-72]  # PR-274, which also closed BUG-87
 ---
 # BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result
 
@@ -22,6 +24,11 @@ from the Context … fall back", and `populate_parser` says "type coercion happe
 hand-built Namespace should carry values in. Fix direction: say the CLI channel is read off argv
 by vanilla's loop and the parse result only has to agree with it, in all four docstrings, see
 [model.md#argv-is-the-only-writer](../../architecture/cli-adapters/model.md#argv-is-the-only-writer).
+
+Origin: regression from REF-72, a refactor that made argv the only writer of the adapters' CLI
+channel and left these docstrings describing the flow it replaced. They were right when written: by
+PR-60 (argparse and click `from_*`), BUG-1's fix (`populate_parser`) and BUG-7 (typer, copied from
+click).
 
 ```python
 from dataclasses import dataclass

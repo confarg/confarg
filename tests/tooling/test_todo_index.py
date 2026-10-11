@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "docs-dev" / "todo" / "index.py"
 
-SIZING = "effort: S\nrisk: low\nimpact: none\n"
+SIZING = "effort: S\nrisk: low\nimpact: none\nseverity: minor\n"
 WHERE = "where:\n  - src/confarg/_merge.py::_merge\n"
 
 
@@ -139,8 +139,24 @@ class TestFrontMatter:
 
     def test_an_effort_off_the_scale_is_refused(self, boards, capsys):
         """Effort is an enum like risk and impact, not free text."""
-        err = _errors(boards, capsys, "REF-1-a.md", _ticket("REF-1", sizing="effort: XXL\nrisk: low\nimpact: none\n"))
+        err = _errors(boards, capsys, "REF-1-a.md", _ticket("REF-1", sizing=SIZING.replace("effort: S", "effort: XXL")))
         assert "effort is 'XXL'" in err
+
+    def test_a_sized_ticket_must_carry_a_severity(self, boards, capsys):
+        """Severity is required beside effort, risk and impact: the work order reads it."""
+        err = _errors(boards, capsys, "REF-1-a.md", _ticket("REF-1", sizing="effort: S\nrisk: low\nimpact: none\n"))
+        assert "missing severity" in err
+
+    def test_a_severity_off_the_scale_is_refused(self, boards, capsys):
+        """``high`` is a risk rung, not a severity one."""
+        err = _errors(boards, capsys, "REF-1-a.md", _ticket("REF-1", sizing=SIZING.replace("minor", "high")))
+        assert "severity is 'high'" in err
+
+    def test_a_question_carries_no_severity(self, boards, capsys):
+        """A question only ever inherits a severity from the tickets it blocks."""
+        _write(boards / "questions" / "Q-1-a.md", _ticket("Q-1", sizing="severity: major\n"))
+        assert todo_index.main([]) == 1
+        assert "must not carry severity" in capsys.readouterr().err
 
     def test_a_filed_that_is_not_a_date_is_refused(self, boards, capsys):
         """``filed`` must parse as a YAML date, so the board can sort and age by it."""
@@ -207,6 +223,131 @@ class TestBlockedBy:
         """Closing the blocker deletes its file, which is the moment the dependent is unblocked."""
         err = _errors(boards, capsys, "REF-1-a.md", _ticket("REF-1", sizing=SIZING + "blocked_by: [FEAT-9]\n"))
         assert "blocked by FEAT-9, which is no longer open" in err
+
+    def test_a_cycle_is_reported(self, boards, capsys):
+        """Two tickets blocking each other can never start, and leave no order to inherit along."""
+        _write(boards / "refactors" / "REF-1-a.md", _ticket("REF-1", sizing=SIZING + "blocked_by: [REF-2]\n"))
+        err = _errors(boards, capsys, "REF-2-a.md", _ticket("REF-2", sizing=SIZING + "blocked_by: [REF-1]\n"))
+        assert "blocked_by forms a cycle" in err
+
+
+def _bug(tid: str, origin: str = "", filed: str = "2026-09-28") -> str:
+    """Return a bug ticket filed on ``filed``, its front matter ending in ``origin`` if given."""
+    return _ticket(tid, sizing=SIZING + origin, repro=True).replace("filed: 2026-09-28", f"filed: {filed}")
+
+
+class TestIntroducedBy:
+    """A bug ticket names the revision that introduced the bug, by its ticket or its PR."""
+
+    def test_a_bug_filed_since_the_rule_must_name_its_origin(self, boards, capsys):
+        """From the day the rule took effect, a bug is not filed until its history has been read."""
+        _write(boards / "bugs" / "BUG-1-a.md", _bug("BUG-1", filed=todo_index.ORIGIN_SINCE.isoformat()))
+        assert todo_index.main([]) == 1
+        assert "missing introduced_by" in capsys.readouterr().err
+
+    def test_a_bug_filed_before_the_rule_may_wait_for_a_sweep(self, boards):
+        """Older tickets gain an origin when a sweep reaches them, not all at once."""
+        _write(boards / "bugs" / "BUG-1-a.md", _bug("BUG-1"))
+        assert todo_index.main([]) == 0
+
+    @pytest.mark.parametrize("origin", ["[BUG-97]", "[PR-268]", "[REF-72, BUG-97]", "unknown  # searched"])
+    def test_ticket_ids_pr_numbers_and_unknown_are_accepted(self, boards, origin):
+        """A closed ticket is a valid origin: the revision that introduced the bug usually closed one."""
+        _write(boards / "bugs" / "BUG-1-a.md", _bug("BUG-1", f"introduced_by: {origin}\n", filed="2026-10-07"))
+        assert todo_index.main([]) == 0
+
+    @pytest.mark.parametrize("origin", ["[d76854c6e]", "['#268']", "[]", "BUG-97", "maybe"])
+    def test_anything_else_is_refused(self, boards, capsys, origin):
+        """A commit ID is rewritten by a rebase or a squash merge, so it is no stable origin."""
+        _write(boards / "bugs" / "BUG-1-a.md", _bug("BUG-1", f"introduced_by: {origin}\n"))
+        assert todo_index.main([]) == 1
+        assert "introduced_by must be" in capsys.readouterr().err
+
+    def test_only_a_bug_carries_an_origin(self, boards, capsys):
+        """A missing feature or an untidy module was never introduced by a revision that broke it."""
+        err = _errors(boards, capsys, "REF-1-a.md", _ticket("REF-1", sizing=SIZING + "introduced_by: [BUG-1]\n"))
+        assert "must not carry introduced_by" in err
+
+    def test_the_bugs_table_shows_the_origin(self, boards):
+        """Two open bugs from one revision sit side by side in one column, where a reader sees them."""
+        _write(boards / "bugs" / "BUG-1-a.md", _bug("BUG-1", "introduced_by: [PR-268]\n"))
+        _write(boards / "bugs" / "BUG-2-a.md", _bug("BUG-2"))
+        assert todo_index.main([]) == 0
+        lines = (boards / "bugs" / "README.md").read_text(encoding="utf-8").splitlines()
+        assert lines[lines.index(todo_index.START) + 2].endswith("| Introduced by |")
+        assert [line.rsplit("|", 2)[1] for line in lines if line.startswith("| [")] == [" PR-268 ", "  "]
+
+
+def _rows(readme: Path) -> list[str]:
+    """Return the ticket IDs of a board table, in the order its rows are written."""
+    text = readme.read_text(encoding="utf-8")
+    return [line.split(" — ")[0].removeprefix("| [") for line in text.splitlines() if line.startswith("| [")]
+
+
+def _sized(severity: str, effort: str = "S", blocked_by: str = "") -> str:
+    """Return front matter sized at ``severity`` and ``effort``, blocked by ``blocked_by`` if given."""
+    sizing = f"effort: {effort}\nrisk: low\nimpact: none\nseverity: {severity}\n"
+    return f"{sizing}blocked_by: [{blocked_by}]\n" if blocked_by else sizing
+
+
+class TestWorkOrder:
+    """The tables, and ``--next``, sort by effective severity, readiness, effort, then filing order."""
+
+    def test_a_table_sorts_by_severity_then_readiness_then_effort(self, boards):
+        """Filing order only breaks the last tie."""
+        refactors = boards / "refactors"
+        _write(refactors / "REF-1-a.md", _ticket("REF-1", sizing=_sized("trivial")))
+        _write(refactors / "REF-2-a.md", _ticket("REF-2", sizing=_sized("major", effort="L")))
+        _write(refactors / "REF-3-a.md", _ticket("REF-3", sizing=_sized("major", effort="M")))
+        _write(refactors / "REF-4-a.md", _ticket("REF-4", sizing=_sized("major", effort="S", blocked_by="REF-1")))
+        _write(refactors / "REF-5-a.md", _ticket("REF-5", sizing=_sized("major", effort="M")))
+
+        assert todo_index.main([]) == 0
+        # REF-1 blocks a major ticket, so it sorts as major too, and its S effort puts it first.
+        assert _rows(refactors / "README.md") == ["REF-1", "REF-3", "REF-5", "REF-2", "REF-4"]
+
+    def test_a_blocker_inherits_the_highest_severity_it_blocks_across_boards(self, boards):
+        """Inheritance is transitive, crosses boards, and names the ticket it comes from."""
+        _write(
+            boards / "bugs" / "BUG-1-a.md",
+            _ticket("BUG-1", sizing=_sized("critical", blocked_by="FEAT-1"), repro=True),
+        )
+        _write(boards / "features" / "FEAT-1-a.md", _ticket("FEAT-1", sizing=_sized("minor", blocked_by="REF-1")))
+        _write(boards / "refactors" / "REF-1-a.md", _ticket("REF-1", sizing=_sized("trivial")))
+
+        assert todo_index.main([]) == 0
+        assert "| critical (via BUG-1) |" in (boards / "features" / "README.md").read_text(encoding="utf-8")
+        assert "| critical (via BUG-1) |" in (boards / "refactors" / "README.md").read_text(encoding="utf-8")
+        assert "| critical | FEAT-1 |" in (boards / "bugs" / "README.md").read_text(encoding="utf-8")
+
+    def test_a_question_inherits_a_severity_and_has_none_otherwise(self, boards):
+        """A question blocking a major ticket is major; one blocking nothing carries a blank cell."""
+        _write(boards / "questions" / "Q-1-a.md", _ticket("Q-1", sizing=""))
+        _write(boards / "questions" / "Q-2-a.md", _ticket("Q-2", sizing=""))
+        _write(boards / "features" / "FEAT-1-a.md", _ticket("FEAT-1", sizing=_sized("major", blocked_by="Q-2")))
+
+        assert todo_index.main([]) == 0
+        readme = boards / "questions" / "README.md"
+        assert _rows(readme) == ["Q-2", "Q-1"]
+        assert "| major (via FEAT-1) |" in readme.read_text(encoding="utf-8")
+
+    def test_next_lists_unblocked_tickets_across_boards(self, boards, capsys):
+        """``--next N`` skips a blocked ticket however severe, and stops after N."""
+        _write(
+            boards / "bugs" / "BUG-1-a.md",
+            _ticket("BUG-1", sizing=_sized("critical", blocked_by="REF-1"), repro=True),
+        )
+        _write(boards / "features" / "FEAT-1-a.md", _ticket("FEAT-1", sizing=_sized("major")))
+        _write(boards / "features" / "FEAT-2-a.md", _ticket("FEAT-2", sizing=_sized("minor")))
+        _write(boards / "refactors" / "REF-1-a.md", _ticket("REF-1", sizing=_sized("trivial")))
+
+        assert todo_index.main(["--next", "2"]) == 0
+        out = capsys.readouterr().out
+        assert " 1. REF-1 — " in out
+        assert "critical (via BUG-1) · S · refactors/REF-1-a.md" in out
+        assert " 2. FEAT-1 — " in out
+        assert "BUG-1" not in out.replace("via BUG-1", "")
+        assert "FEAT-2" not in out
 
 
 class TestQuery:

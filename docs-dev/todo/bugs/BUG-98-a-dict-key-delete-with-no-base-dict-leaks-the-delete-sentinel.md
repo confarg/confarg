@@ -5,6 +5,8 @@ where:
 effort: S
 risk: low
 impact: behavior
+severity: minor
+introduced_by: [PR-5]  # the dict-key delete stores its sentinel and relies on a base to meet it
 ---
 # BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`
 
@@ -22,6 +24,10 @@ BUG-78.
 Fix direction: detect the surviving sentinel where the list delete detects its baseless case
 and raise the same style of purposeful error
 ([collection-patches.md](../../architecture/cli-parsing/collection-patches.md#collection-patch-operations)).
+
+Origin: latent since the initial version (PR-5): a dict-key delete stores its sentinel in the merged
+dict and relies on the deep merge to meet a base, with no check for a sentinel that survives. It
+reproduces unchanged at PR-28, the oldest revision the reproduction runs on.
 
 ```python
 from dataclasses import dataclass, field

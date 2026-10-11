@@ -8,6 +8,7 @@ where:
 effort: M
 risk: low
 impact: behavior
+severity: minor
 ---
 # FEAT-24 — Writing a configuration back to a URL
 

@@ -5,6 +5,7 @@ where:
 effort: M
 risk: medium
 impact: behavior
+severity: minor
 needs_design: true  # the effort sizes the design pass; the implementation is not sized
 ---
 # FEAT-17 — An end-of-options separator (`--`)

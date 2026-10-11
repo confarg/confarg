@@ -5,6 +5,7 @@ where:
 effort: S
 risk: medium
 impact: none
+severity: trivial
 ---
 # REF-77 — The four "expected N elements" refusals have drifted on the type's name
 

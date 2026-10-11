@@ -5,6 +5,8 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
+introduced_by: [BUG-52]  # PR-225, which deleted tests/examples/
 ---
 # BUG-149 — The testing protocol routes example tests to a folder that does not exist
 
@@ -18,6 +20,10 @@ An agent following the table creates a test file in a folder nothing else uses. 
 route the row to the example's own `README.md` console blocks. `docs-agents/` is `.gitignore`d,
 so the stale row is the same on every revision; editing it means running
 `uv run python docs-agents/archive.py` afterwards.
+
+Origin: regression from BUG-52's fix, which deleted `tests/examples/` and updated
+`docs-dev/architecture/testing.md` but not this row. `docs-agents/` is `.gitignore`d, so the fix's
+diff could not show the row it left stale; BUG-150 went stale the same way.
 
 ```console
 $ grep -n "tests/examples" docs-agents/testing.md

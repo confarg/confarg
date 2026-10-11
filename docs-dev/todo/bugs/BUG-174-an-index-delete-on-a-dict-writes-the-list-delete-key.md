@@ -7,6 +7,8 @@ where:
 effort: S
 risk: medium
 impact: behavior
+severity: major
+introduced_by: [PR-5]  # both channels decide a list delete with int() on the last segment
 ---
 # BUG-174 — An index delete on a dict writes the list-delete key into the dict
 
@@ -18,6 +20,10 @@ a list-index delete only where the walk stands on a sequence, the rest are key d
 is the one decoder [REF-84](../refactors/REF-84-env-delete-suffix-decoded-twice.md) asks for,
 and the merge vocabulary it protects is in
 [deep merge](../../architecture/pipeline/deep-merge.md#deep-merge-semantics).
+
+Origin: latent since the initial version (PR-5), where the CLI and the environment channel each
+decided "list-index delete?" with `int()` on the segment, in two copies of the same `try`, never
+asking the type. Both copies are still there, which is what REF-84 is about.
 
 ```python
 import tempfile

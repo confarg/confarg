@@ -26,8 +26,19 @@ in ``README.md`` are otherwise enforced by nobody: a ticket whose filename disag
 heading, a board holding another board's prefix, a missing, unknown or misspelled field, a bug
 ticket with no reproduction, two tickets claiming one ID — which is not hypothetical, REF-26 was
 issued twice and went unnoticed because the duplicates sat in different sections of one long
-file — a ``where`` naming a file or symbol that no longer exists, and a ``blocked_by`` naming a
-ticket that is no longer open.
+file — a ``where`` naming a file or symbol that no longer exists, a ``blocked_by`` naming a
+ticket that is no longer open, or that closes a cycle of them, and a bug ticket that does not say
+which revision introduced the bug.
+
+The tables are sorted in *work order*, not by ID, and ``--next`` prints the head of that order
+across every board::
+
+    uv run python docs-dev/todo/index.py --next
+
+The order is computed, never stored: a ticket carries its own ``severity``, and inherits the
+highest severity of every ticket it transitively blocks, so a refactor blocking a critical bug
+sorts as critical. A stored priority would go stale the moment *another* ticket gained a
+blocker, which is the same drift a hand-maintained table suffers.
 
 Validation *gates* the rewrite: when anything is wrong, every table is left exactly as it was
 and the run exits non-zero. A table written beside an error is a table missing the row of a
@@ -39,6 +50,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import fnmatch
+import graphlib
 import io
 import re
 import sys
@@ -51,8 +63,8 @@ TODO = Path(__file__).resolve().parent
 #: What a ``where`` path is relative to.
 ROOT = TODO.parents[1]
 
-#: Boards carrying effort, risk and impact. ``questions`` is exempt: a question is answered,
-#: not implemented, so there is nothing to size.
+#: Boards carrying effort, risk, impact and severity. ``questions`` is exempt: a question is
+#: answered, not implemented, so there is nothing to size.
 SIZED = ("bugs", "features", "refactors")
 BOARDS = (*SIZED, "questions")
 PREFIXES = {"bugs": "BUG", "features": "FEAT", "refactors": "REF", "questions": "Q"}
@@ -60,10 +72,16 @@ PREFIXES = {"bugs": "BUG", "features": "FEAT", "refactors": "REF", "questions": 
 EFFORTS = ("S", "M", "L", "XL")
 RISKS = ("low", "medium", "high")
 IMPACTS = ("none", "behavior", "api", "config")
+#: Highest first, which is the order the work order reads them in.
+SEVERITIES = ("critical", "major", "minor", "trivial")
 
 #: The front matter keys only a sized board may carry.
-SIZING = ("effort", "risk", "impact", "needs_design")
-KEYS = ("filed", "where", *SIZING, "inferred", "blocked_by")
+SIZING = ("effort", "risk", "impact", "severity", "needs_design")
+KEYS = ("filed", "where", *SIZING, "inferred", "blocked_by", "introduced_by")
+
+#: The day bug tickets started naming their origin. One filed since must carry ``introduced_by``;
+#: an older one gains it when a sweep reaches it.
+ORIGIN_SINCE = datetime.date(2026, 10, 7)
 
 #: The agent-facing files are ``.gitignore``d, so they exist in a contributor's checkout but not
 #: in the repository: a ``where`` naming one is not checked against the working tree.
@@ -74,6 +92,9 @@ END = "<!-- tickets:end -->"
 
 _HEADING = re.compile(r"^# ((?:BUG|FEAT|REF|Q)-\d+) — (.+)$")
 _TICKET_ID = re.compile(r"(?:BUG|FEAT|REF|Q)-\d+")
+#: A revision is named by the ticket it closed or the PR that merged it: both survive a rebase
+#: and a squash merge, which rewrite its commit ID.
+_ORIGIN = re.compile(r"(?:BUG|FEAT|REF|Q|PR)-\d+")
 _FENCE = re.compile(r"^\s*(?:`{3,}|~{3,})")
 _GLOB = re.compile(r"[*?\[]")
 
@@ -88,10 +109,12 @@ class Ticket:
     effort: str
     risk: str
     impact: str
+    severity: str
     filename: str
     board: str
     where: tuple[str, ...]
     blocked_by: tuple[str, ...]
+    introduced_by: tuple[str, ...]
 
 
 def _front(where: str, text: str, errors: list[str]) -> tuple[dict[str, object], list[str]] | None:
@@ -148,17 +171,32 @@ def _check_fields(where: str, board: str, meta: dict[str, object], errors: list[
         errors.append(f"{where}: filed must be a date, YYYY-MM-DD")
     flags = ("needs_design", "inferred")
     errors.extend(f"{where}: {key} must be true or false" for key in flags if not isinstance(meta.get(key, True), bool))
+    _check_origin(where, board, filed, meta.get("introduced_by"), errors)
 
     if board not in SIZED:
         errors.extend(
             f"{where}: {board}/ is exempt from sizing, so it must not carry {key}" for key in SIZING if key in meta
         )
         return
-    for key, allowed in (("effort", EFFORTS), ("risk", RISKS), ("impact", IMPACTS)):
+    for key, allowed in (("effort", EFFORTS), ("risk", RISKS), ("impact", IMPACTS), ("severity", SEVERITIES)):
         if key not in meta:
             errors.append(f"{where}: missing {key}")
         elif meta[key] not in allowed:
             errors.append(f"{where}: {key} is {meta[key]!r}, expected one of {', '.join(allowed)}")
+
+
+def _check_origin(where: str, board: str, filed: object, origin: object, errors: list[str]) -> None:
+    """Check ``introduced_by``: bugs only, required since ``ORIGIN_SINCE``, IDs or ``unknown``."""
+    if board != "bugs":
+        if origin is not None:
+            errors.append(f"{where}: only a bug has an origin, so {board}/ must not carry introduced_by")
+    elif origin is None:
+        if isinstance(filed, datetime.date) and filed >= ORIGIN_SINCE:
+            errors.append(f"{where}: missing introduced_by; name the revision that introduced the bug, or unknown")
+    elif origin != "unknown" and not (
+        isinstance(origin, list) and origin and all(isinstance(o, str) and _ORIGIN.fullmatch(o) for o in origin)
+    ):
+        errors.append(f"{where}: introduced_by must be a list of ticket IDs and PR-<n> numbers, or unknown")
 
 
 def _parse(path: Path, board: str, errors: list[str]) -> Ticket | None:
@@ -186,6 +224,8 @@ def _parse(path: Path, board: str, errors: list[str]) -> Ticket | None:
     entries = _strings(where, "where", meta.get("where", []), errors)
     _check_where(where, entries, errors)
     blocked_by = _strings(where, "blocked_by", meta.get("blocked_by", []), errors)
+    origin = meta.get("introduced_by", [])
+    introduced_by = tuple(map(str, origin)) if isinstance(origin, list) else (str(origin),)
     if board == "bugs" and not any(_FENCE.match(line) for line in lines):
         errors.append(f"{where}: a bug ticket ends with a reproduction, and this one has no fenced block")
 
@@ -196,10 +236,12 @@ def _parse(path: Path, board: str, errors: list[str]) -> Ticket | None:
         effort=str(meta.get("effort", "")),
         risk=str(meta.get("risk", "")),
         impact=str(meta.get("impact", "")),
+        severity=str(meta.get("severity", "")),
         filename=path.name,
         board=board,
         where=entries,
         blocked_by=blocked_by,
+        introduced_by=introduced_by,
     )
 
 
@@ -242,15 +284,74 @@ def _check_blockers(tickets: list[Ticket], errors: list[str]) -> None:
                 errors.append(f"{where}: blocked by {blocker}, which is no longer open; drop it from blocked_by")
 
 
-def _table(board: str, tickets: list[Ticket]) -> str:
-    """Render a board's tickets as a markdown table."""
+@dataclass(frozen=True)
+class _Severity:
+    """A ticket's effective severity, and the ticket it comes from: itself, or one it blocks."""
+
+    rank: int
+    origin: str
+
+    def label(self, tid: str) -> str:
+        """Spell it for a table cell: the rung, and where it was inherited from if not ``tid``."""
+        if self.rank == len(SEVERITIES):
+            return ""
+        rung = SEVERITIES[self.rank]
+        return rung if self.origin == tid else f"{rung} (via {self.origin})"
+
+
+def _effective(tickets: list[Ticket], errors: list[str]) -> dict[str, _Severity]:
+    """Return each ticket's effective severity: its own, or a higher one it blocks, transitively.
+
+    A question has no severity of its own and only ever inherits one; with nothing to inherit it
+    ranks after ``trivial``. A ``blocked_by`` cycle is reported, and the tickets then keep their
+    own severity, since a cycle leaves no order to inherit along.
+    """
+    unranked = len(SEVERITIES)
+    own = {
+        t.tid: _Severity(SEVERITIES.index(t.severity) if t.severity in SEVERITIES else unranked, t.tid) for t in tickets
+    }
+    graph = {t.tid: [b for b in t.blocked_by if b in own and b != t.tid] for t in tickets}
+    try:
+        # Blockers come before the tickets they block; reversed, every dependent is settled
+        # before the blocker that inherits from it.
+        order = list(graphlib.TopologicalSorter(graph).static_order())
+    except graphlib.CycleError as exc:
+        errors.append(f"blocked_by forms a cycle: {' -> '.join(exc.args[1])}")
+        return own
+    dependents: dict[str, list[str]] = {tid: [] for tid in own}
+    for tid, blockers in graph.items():
+        for blocker in blockers:
+            dependents[blocker].append(tid)
+    effective = dict(own)
+    for tid in reversed(order):
+        effective[tid] = min([own[tid], *(effective[d] for d in dependents[tid])], key=lambda s: s.rank)
+    return effective
+
+
+def _work_order(ticket: Ticket, effective: dict[str, _Severity]) -> tuple[int, bool, int, int, int]:
+    """Sort key: most severe first, unblocked before blocked, cheapest first, then filing order."""
+    effort = EFFORTS.index(ticket.effort) if ticket.effort in EFFORTS else len(EFFORTS)
+    return (effective[ticket.tid].rank, bool(ticket.blocked_by), effort, ticket.number, BOARDS.index(ticket.board))
+
+
+def _table(board: str, tickets: list[Ticket], effective: dict[str, _Severity]) -> str:
+    """Render a board's tickets as a markdown table, in work order."""
     if not tickets:
         return "*No open tickets.*"
+    ordered = sorted(tickets, key=lambda t: _work_order(t, effective))
+    leads = [
+        f"| [{t.tid} — {t.headline}]({t.filename}) | {effective[t.tid].label(t.tid)} | {', '.join(t.blocked_by)} |"
+        for t in ordered
+    ]
     if board not in SIZED:
-        rows = [f"| [{t.tid} — {t.headline}]({t.filename}) |" for t in tickets]
-        return "\n".join(["| Ticket |", "|---|", *rows])
-    rows = [f"| [{t.tid} — {t.headline}]({t.filename}) | {t.effort} | {t.risk} | {t.impact} |" for t in tickets]
-    return "\n".join(["| Ticket | Effort | Risk | Impact |", "|---|---|---|---|", *rows])
+        return "\n".join(["| Ticket | Severity | Blocked by |", "|---|---|---|", *leads])
+    rows = [f"{lead} {t.effort} | {t.risk} | {t.impact} |" for lead, t in zip(leads, ordered, strict=True)]
+    header = "| Ticket | Severity | Blocked by | Effort | Risk | Impact |"
+    if board != "bugs":
+        return "\n".join([header, "|---|---|---|---|---|---|", *rows])
+    # Bugs from one revision share a cell value, so a reader scanning the column sees them together.
+    rows = [f"{row} {', '.join(t.introduced_by)} |" for row, t in zip(rows, ordered, strict=True)]
+    return "\n".join([f"{header} Introduced by |", "|---|---|---|---|---|---|---|", *rows])
 
 
 def _rewrite(readme: Path, table: str, errors: list[str]) -> str | None:
@@ -273,14 +374,14 @@ class _Board:
     count: int
 
 
-def _plan(board: str, tickets: list[Ticket], errors: list[str]) -> _Board | None:
+def _plan(board: str, tickets: list[Ticket], effective: dict[str, _Severity], errors: list[str]) -> _Board | None:
     """Return what one board's README should hold, or None if it cannot be read."""
     readme = TODO / board / "README.md"
     if not readme.is_file():
         errors.append(f"{board}/README.md: missing")
         return None
 
-    updated = _rewrite(readme, _table(board, tickets), errors)
+    updated = _rewrite(readme, _table(board, tickets, effective), errors)
     return None if updated is None else _Board(board, readme, updated, len(tickets))
 
 
@@ -298,26 +399,55 @@ def _touches(entry: str, query: str) -> bool:
 def _query(tickets: list[Ticket], queries: list[str], errors: list[str]) -> int:
     """Print the open tickets whose ``where`` touches any of ``queries``."""
     wanted = [query.replace("\\", "/").removeprefix("./").rstrip("/") for query in queries]
-    # Headlines carry an em dash, which a Windows pipe would otherwise encode in its code page.
-    if isinstance(sys.stdout, io.TextIOWrapper):
-        sys.stdout.reconfigure(encoding="utf-8")
+    _utf8_stdout()
     for ticket in sorted(tickets, key=lambda t: (BOARDS.index(t.board), t.number)):
         hits = [entry for entry in ticket.where if any(_touches(entry, query) for query in wanted)]
         if hits:
             print(f"{ticket.board}/{ticket.filename}")
             print(f"  {ticket.tid} — {ticket.headline}")
             print("".join(f"  where: {entry}\n" for entry in hits), end="")
-    # A stale entry elsewhere on a board must not hide the answer, but it must not go unseen.
-    for error in errors:
-        print(f"warning: {error}", file=sys.stderr)
+    _warn(errors)
     return 0
 
 
+def _next(tickets: list[Ticket], effective: dict[str, _Severity], count: int, errors: list[str]) -> int:
+    """Print the first ``count`` unblocked tickets across every board, in work order."""
+    _utf8_stdout()
+    ready = sorted((t for t in tickets if not t.blocked_by), key=lambda t: _work_order(t, effective))
+    for position, ticket in enumerate(ready[:count], start=1):
+        severity = effective[ticket.tid].label(ticket.tid) or "no severity"
+        facts = [severity, ticket.effort, f"{ticket.board}/{ticket.filename}"]
+        print(f"{position:>2}. {ticket.tid} — {ticket.headline}")
+        print(f"    {' · '.join(fact for fact in facts if fact)}")
+    _warn(errors)
+    return 0
+
+
+def _utf8_stdout() -> None:
+    """Headlines carry an em dash, which a Windows pipe would otherwise encode in its code page."""
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
+
+
+def _warn(errors: list[str]) -> None:
+    """A stale entry elsewhere on a board must not hide a query's answer, nor go unseen."""
+    for error in errors:
+        print(f"warning: {error}", file=sys.stderr)
+
+
 def main(argv: list[str]) -> int:
-    """Regenerate every board table, check them with ``--check``, or query them with ``--where``."""
+    """Regenerate every board table, check them with ``--check``, or query them with ``--where`` or ``--next``."""
     parser = argparse.ArgumentParser(prog="index.py", description="Regenerate, check or query the ticket boards.")
     parser.add_argument("--check", action="store_true", help="write nothing; exit non-zero on a stale table")
     parser.add_argument("--where", nargs="+", metavar="PATH", help="list the open tickets touching PATH")
+    parser.add_argument(
+        "--next",
+        nargs="?",
+        const=10,
+        type=int,
+        metavar="N",
+        help="list the first N (10) unblocked tickets in work order",
+    )
     args = parser.parse_args(argv)
 
     # Every board is read and validated before anything is written.  A ticket `_parse` rejects is
@@ -328,10 +458,13 @@ def main(argv: list[str]) -> int:
     boards = {board: _collect(board, errors) for board in BOARDS}
     tickets = [ticket for board in BOARDS for ticket in boards[board]]
     _check_blockers(tickets, errors)
+    effective = _effective(tickets, errors)
     if args.where:
         return _query(tickets, args.where, errors)
+    if args.next is not None:
+        return _next(tickets, effective, args.next, errors)
 
-    plans = [plan for board in BOARDS for plan in (_plan(board, boards[board], errors),) if plan is not None]
+    plans = [plan for board in BOARDS for plan in (_plan(board, boards[board], effective, errors),) if plan is not None]
     if errors:
         for error in errors:
             print(f"error: {error}", file=sys.stderr)

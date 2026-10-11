@@ -7,6 +7,8 @@ where:
 effort: S
 risk: high
 impact: behavior
+severity: major
+introduced_by: [PR-5]  # bind: and call: pass every kwarg by keyword
 ---
 # BUG-156 — A positional-only parameter in a callable spec is passed by keyword
 
@@ -18,6 +20,11 @@ same `TypeError`. Fix direction: decide as [BUG-152](BUG-152-a-positional-only-i
 does for `__init__`. Either fill positional-only parameters by position, or refuse them at load
 by leaving them out of `_acceptable_kwarg_names`. `_fillable_params` is where the rule belongs
 ([callables](../../architecture/callables.md#one-coercion-route)).
+
+Origin: latent since the initial version (PR-5), which already counted a positional-only parameter
+among the names a spec may fill and passed every kwarg by keyword; the `bind:` half reproduces
+unchanged at PR-28. BUG-25's fix moved the count into `_acceptable_kwarg_names` and kept it. BUG-152
+is the same miss in `__init__`, from the same revision.
 
 ```python
 from collections.abc import Callable

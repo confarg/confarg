@@ -5,6 +5,7 @@ where:
 effort: S
 risk: low
 impact: behavior
+severity: trivial
 ---
 # REF-49 — `graphlib.TopologicalSorter` replaces the hand-written Kahn loop
 

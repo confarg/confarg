@@ -5,6 +5,8 @@ where:
 effort: S
 risk: medium
 impact: config
+severity: minor  # the odd spellings build the right position
+introduced_by: [PR-39, BUG-97]  # PR-39 wrote the isdigit() test; PR-268, which closed BUG-97, narrowed the CLI alone
 ---
 # BUG-142 — A namedtuple built from a dict accepts index keys the CLI refuses
 
@@ -19,6 +21,13 @@ admits `²`, which `int()` then rejects, so that key gets the misleading
 (`dictexpr._expressions._list_index`), and BUG-108 tracks the CLI's plain fixed tuple. Fix
 direction: one canonical index rule, `str(int(k)) == k` within the field count, asked by both
 construction and the CLI walk.
+
+Origin: two revisions. PR-39 added namedtuple support with construction's `isdigit()` test for an
+index key (moved into `_is_index_key` by BUG-80's fix); the CLI read positions as loosely, so the
+channels agreed. BUG-97's fix then limited the CLI to the canonical spellings through
+`_namedtuple_index_spellings` and left construction on `isdigit()`, which opened the gap (bisected:
+before it, `--pt.01` builds as the file does). BUG-108 is the same rule missing from the CLI's fixed
+tuple, and BUG-109 and BUG-112 also come from PR-39.
 
 ```python
 from dataclasses import dataclass

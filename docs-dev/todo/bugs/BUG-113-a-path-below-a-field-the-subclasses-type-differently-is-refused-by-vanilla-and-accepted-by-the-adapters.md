@@ -5,6 +5,8 @@ where:
 effort: M
 risk: medium
 impact: behavior
+severity: minor
+introduced_by: [PR-38]  # fix: Fix inheritance-based dispatch in CLI integrations
 ---
 # BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters
 
@@ -22,6 +24,12 @@ the container for the full path and register nothing where it answers `None`. Se
 and
 [invariants.md#delegate-to-the-canonical-function](../../architecture/invariants.md#delegate-to-the-canonical-function).
 Cyclopts cannot register this target at all (BUG-114).
+
+Origin: regression from PR-38, a bug fix that made the adapters register each subclass's fields so
+that a base-typed field can be dispatched from the CLI. Bisected with `parse_args`: before PR-38
+argparse refuses `--item.inner.a`, as vanilla does; from PR-38 it accepts it. The fix registered the
+fields subclass by subclass instead of asking the walk what the path resolves to. BUG-114 comes from
+the same revision.
 
 ```python
 from dataclasses import dataclass, field

@@ -5,6 +5,7 @@ where:
 effort: L
 risk: medium
 impact: behavior
+severity: minor
 ---
 # FEAT-2 — Protocol-typed callables and `**kwargs`
 

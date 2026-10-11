@@ -5,6 +5,8 @@ where:
 effort: S
 risk: medium
 impact: behavior
+severity: minor
+introduced_by: [PR-50]  # wrote _scalar_cast_types_in_union beside vanilla's member-based cast rule
 ---
 # BUG-94 — Multi-variant unions refuse the scalar casts beyond the union's own scalars
 
@@ -20,6 +22,11 @@ the union's variants; the second is a breaking change to the documented member-b
 [cli-parsing/casts-and-reserved-words.md#real-field-wins](../../architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins),
 which argues for the first.
 See also [cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags](../../architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags).
+
+Origin: parity gap since PR-50, a feature that made vanilla accept every scalar cast on a
+multi-variant union and, in the same revision, wrote `_scalar_cast_types_in_union` to register only
+the union's own scalar variants, and only when the stealing rule is non-obvious. Bisected: before
+PR-50 vanilla refused `--a.float` as an unknown argument. BUG-93 shares this origin.
 
 ```python
 from dataclasses import dataclass

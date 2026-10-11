@@ -5,6 +5,8 @@ where:
 effort: S
 risk: medium
 impact: behavior
+severity: minor
+introduced_by: [PR-5]  # the walk reads a fixed tuple's position with int(part)
 ---
 # BUG-108 — A plain fixed tuple accepts the index spellings a namedtuple refuses
 
@@ -21,6 +23,11 @@ follows. Since BUG-170 a list, a set and a variadic tuple take only the canonica
 (`dictexpr._expressions._list_index`), which leaves the fixed tuple the one sequence still
 reading its position with `int()`; the env refusal that fix added below a sequence already
 covers `APP_PAIR__*` and `APP_PAIR__FOO`, not `APP_PAIR__01`.
+
+Origin: latent since the initial version (PR-5), whose walk read a fixed tuple's position with
+`int()`. A namedtuple already refused `--pt.+1`, at build, before BUG-97's fix gave it the canonical
+spellings; BUG-170's fix gave lists, sets and variadic tuples `_list_index`. Neither routed the
+fixed tuple, the last sequence still on `int()`. BUG-142 is the same gap in construction.
 
 ```python
 from dataclasses import dataclass

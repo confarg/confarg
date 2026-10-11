@@ -5,6 +5,8 @@ where:
 effort: S
 risk: medium
 impact: behavior
+severity: minor
+introduced_by: [PR-5]  # the tag fallback reads every segment after the tag as a str
 ---
 # BUG-110 — The walk accepts a path that continues past the union tag
 
@@ -16,6 +18,10 @@ Fix direction: let the fallback continue the walk at `str` as an ordinary step
 (`str_subtree=False`), so a segment after the tag finds nothing and vanilla raises its
 unknown-field error. See
 [a tag is a replayed write](../../architecture/cli-adapters/collection-patch-parity.md#a-tag-is-a-replayed-write).
+
+Origin: latent since the initial version (PR-5): the reproduction merges the same dict there,
+spelled `merge(args=…)`. The adapters refuse the flag at parse time both before and after BUG-97's
+fix, which gave them `_names_tag_by_fallback`.
 
 ```python
 from dataclasses import dataclass

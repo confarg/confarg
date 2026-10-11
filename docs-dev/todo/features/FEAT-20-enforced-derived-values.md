@@ -6,6 +6,7 @@ where:
 effort: M
 risk: medium
 impact: behavior
+severity: minor
 inferred: true  # design settled with the maintainer, no code written
 blocked_by: [FEAT-19]
 ---

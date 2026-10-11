@@ -7,6 +7,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-46 — Near-duplicate helper pairs in the merge core
 

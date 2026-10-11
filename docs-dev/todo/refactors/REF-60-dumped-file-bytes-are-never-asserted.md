@@ -7,6 +7,7 @@ where:
 effort: S
 risk: medium
 impact: none
+severity: trivial
 ---
 # REF-60 — Nothing asserts the bytes `dump_file` writes
 

@@ -4,6 +4,7 @@ where: []  # new console script, shared with FEAT-9
 effort: XL
 risk: low
 impact: behavior
+severity: minor
 blocked_by: [FEAT-8]
 ---
 # FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin

@@ -5,6 +5,8 @@ where:
 effort: S
 risk: low
 impact: behavior
+severity: critical  # an unrelated variable silently replaces the root
+introduced_by: [PR-5]  # the initial version's `if not is_struct:` branch in _parse_env
 ---
 # BUG-115 — Every prefixed environment variable overwrites a scalar root
 
@@ -20,6 +22,11 @@ warning, so no channel gets a rule of its own. Found while closing REF-44.
 The CLI side is settled: a non-struct root is
 [set whole](../../architecture/cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole), and
 no flag addresses a path below it (BUG-172).
+
+Origin: latent since the initial version (PR-5), whose `_parse_env` stored every prefixed variable
+at the root of a non-struct target without reading the rest of its name. It has not changed since;
+REF-44 made the root's JSON cast order-independent beside it, and BUG-172 settled the CLI side, both
+without narrowing this branch.
 
 ```python
 import warnings

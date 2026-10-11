@@ -6,6 +6,8 @@ where:
 effort: S
 risk: low
 impact: behavior
+severity: critical  # silent, though only when the variables contradict each other
+introduced_by: [PR-5]  # each variable written into one dict in env.items() order
 ---
 # BUG-116 — An env whole-field delete beside a sub-path variable depends on the mapping's order
 
@@ -25,6 +27,12 @@ as a conflict. Whichever is chosen, `tests/test_env.py::TestEnvDelete::test_dele
 pins one order today and should pin both.
 
 [pipeline/deep-merge.md#scalar-intermediates](../../architecture/pipeline/deep-merge.md#scalar-intermediates)
+
+Origin: latent since the initial version (PR-5): `_parse_env` writes each variable into one dict in
+the mapping's order, so a whole-field delete and a sub-path variable overwrite each other. At PR-28,
+the oldest revision the reproduction runs on, one of the two orders crashed with a raw `TypeError`
+(`'_DeleteSentinel' object does not support item assignment`); that crash has since gone, leaving
+the silent order dependence below.
 
 ```python
 from dataclasses import dataclass, field

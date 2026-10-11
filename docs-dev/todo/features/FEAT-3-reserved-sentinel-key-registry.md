@@ -3,6 +3,7 @@ filed: 2026-09-12
 effort: S
 risk: high
 impact: config
+severity: minor
 needs_design: true  # the effort sizes the design pass; the implementation is not sized
 ---
 # FEAT-3 — A registry of reserved sentinel keys

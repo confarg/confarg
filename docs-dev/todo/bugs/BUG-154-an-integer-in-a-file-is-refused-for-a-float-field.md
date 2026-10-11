@@ -5,6 +5,8 @@ where:
 effort: S
 risk: high
 impact: behavior
+severity: minor  # workaround: write 1.0
+introduced_by: [PR-5]  # the float coercion has no branch for a native int
 ---
 # BUG-154 — An integer in a file is refused for a `float` field
 
@@ -16,6 +18,9 @@ what PEP 484's numeric tower allows: an `int` is acceptable wherever `float` is 
 pydantic and msgspec both accept one for a `float` field. Fix direction: accept a native `int`
 (never a `bool`) and convert it to `float`, then check that a union holding a `float` variant
 still picks the variant it picks today for a native `int`.
+
+Origin: latent since the initial version (PR-5), whose float coercion passed a native `float` and
+parsed a token, but had no branch for a native `int`. No revision since has revisited it.
 
 ```python
 import json

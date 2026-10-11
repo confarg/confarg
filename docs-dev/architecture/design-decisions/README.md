@@ -103,3 +103,5 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [Quoted code keeps the formatter's spacing](quoted-code-keeps-formatter-spacing.md) | one blank line between blocks in prose, the formatter's spacing inside a fenced code block |
 | [Some quoted blocks stay hand-copied](quoted-blocks-stay-hand-copied.md) | a bare expression, a staged variant, a run-time-written file: no honest source to quote, so the drift risk is accepted |
 | [A ticket's fields live in YAML front matter](ticket-fields-in-front-matter.md) | bare values a script reads, qualifiers in comments; `where` is checked against the tree, `blocked_by` against the open tickets |
+| [A ticket carries a severity; its priority is derived](ticket-severity-and-work-order.md) | four rungs anchored to what a user meets; `index.py` orders work by severity inherited through `blocked_by`, then effort |
+| [A bug ticket names the revision that introduced it](ticket-origin.md) | `introduced_by` and an `Origin:` paragraph, so a fix can go to the cause; the fixing revision keeps it as a trailer |

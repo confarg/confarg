@@ -5,6 +5,7 @@ where:
 effort: S
 risk: low
 impact: none
+severity: trivial
 ---
 # REF-78 — `.ruff.toml` selects "PL" twice
 

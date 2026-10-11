@@ -1,8 +1,8 @@
 # A ticket's fields live in YAML front matter
 
 A board ticket opens with YAML front matter holding the fields a script reads — `filed`,
-`where`, `effort`, `risk`, `impact`, and `needs_design`, `inferred` and `blocked_by` when they
-apply — and only those
+`where`, `effort`, `risk`, `impact`, `severity`, `introduced_by` on a bug, and `needs_design`,
+`inferred` and `blocked_by` when they apply — and only those
 ([todo/README.md § Front matter](../../todo/README.md#front-matter)). It replaced a preamble of
 bold `**Where:** … · **Filed:** …` lines that `docs-dev/todo/index.py` read with patterns.
 
@@ -38,9 +38,10 @@ lists and enums chosen to avoid YAML's surprises (`none` stays a string; nothing
 
 **Keys deliberately left out.** No `id` or `title`: the filename and the heading hold them, and
 a third copy would drift from both. No `status`: a ticket is open until its file is deleted.
-No `priority`: the boards have always refused one. No `board` or `type`: the folder says it. No
-`component` or `labels`: `where` says where the work is. No `author` or `updated`: version
-control knows. No `related`: a "see also" is a link in the body, and no query needs it.
+No `priority`: it is derived from `severity`, `blocked_by` and `effort`
+([ticket-severity-and-work-order.md](ticket-severity-and-work-order.md)), so a written one would
+drift. No `board` or `type`: the folder says it. No `component` or `labels`: `where` says where
+the work is. No `author` or `updated`: version control knows. No `related`: a "see also" is a link in the body, and no query needs it.
 
 Cost: filing a ticket means writing YAML, and a `where` must name what exists, so a ticket
 filed against a module that is about to be created says so in a comment

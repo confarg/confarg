@@ -5,6 +5,8 @@ where:
 effort: S
 risk: low
 impact: none
+severity: minor  # only a file writing a reserved key meets it
+introduced_by: [PR-5, PR-9]  # the '-' reader, then the '~' reader written the same way beside it
 ---
 # BUG-175 — A file's list-delete key holding no index list escapes as a raw TypeError
 
@@ -15,6 +17,11 @@ the user typed (BUG-170), so only a file reaches it. `'*'` has had one reader th
 value holding no list since BUG-170 (`_merge._replace_base`); the two delete keys want the same,
 or the general guard [FEAT-3](../features/FEAT-3-reserved-sentinel-key-registry.md) proposes.
 See [deep merge](../../architecture/pipeline/deep-merge.md#deep-merge-semantics).
+
+Origin: latent since the initial version (PR-5), whose merge iterated the `'-'` key's value as
+indices without checking that it holds a list; PR-9 added `'~'` with the same read. BUG-170's fix
+gave `'*'` a guard and stopped every channel's parser from writing these keys from what the user
+typed, which left a file as the only way in.
 
 ```python
 import json
