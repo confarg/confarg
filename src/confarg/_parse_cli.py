@@ -174,6 +174,13 @@ _SEQUENCE_KINDS = frozenset(
     {_TypeKind.LIST, _TypeKind.SET, _TypeKind.FROZENSET, _TypeKind.TUPLE, _TypeKind.NAMEDTUPLE},
 )
 
+#: The kinds a collection patch stands on: the merge reads every key below one as an index,
+#: an op or a dict key. A namedtuple is none of them: the static walk lists its own fields
+#: and indices (BUG-157).
+_COLLECTION_KINDS = frozenset(
+    {_TypeKind.LIST, _TypeKind.SET, _TypeKind.FROZENSET, _TypeKind.TUPLE, _TypeKind.DICT},
+)
+
 
 def _refuses_at_a_sequence(branch: _Branch) -> bool:
     """Return True if *branch* refuses its path standing on a sequence, at a segment naming no element of it.
@@ -416,16 +423,11 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str) -> 
     Dev Notes:
         docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
     """
-    for branch in _walk_path(target, parts, union_tag):
-        for stone, part in zip(branch.stones, parts, strict=False):
-            match _type_kind(stone.node):
-                case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET | _TypeKind.TUPLE | _TypeKind.DICT:
-                    return True
-                case _TypeKind.CALLABLE:
-                    break  # this branch answers no
-            if part in _locals_keys_nested(stone.node, union_tag):
-                return True  # a nested namespace is a dict[str, Any]
-    return False
+    return any(
+        _type_kind(stone.node) in _COLLECTION_KINDS or part in _locals_keys_nested(stone.node, union_tag)
+        for branch in _walk_path(target, parts, union_tag)
+        for stone, part in zip(branch.stones, parts, strict=False)
+    )
 
 
 def _registered_when_typed(target: Any, parts: list[str], union_tag: str) -> bool:
