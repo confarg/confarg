@@ -221,20 +221,19 @@ A callable therefore dumps as what it is, opener by opener:
 | Built from | Dumps as |
 |---|---|
 | a function, a class, a static or class method | its dotted path, when it reads back as the callable |
-| an instance method, whoever built its owner | the path through its owner's class beside the fields the owner holds, as a `classfn:` spec; the bare path when the owner's constructor takes no argument ([a bound method dumps its owner's state](#a-bound-method-dumps-its-owners-state)) |
+| an instance method, whoever built its owner | the path through its owner's class beside the fields the owner holds, as a `classfn:` spec; the bare path when the owner's constructor takes no argument ([an object dumps the state it holds](#an-object-dumps-the-state-it-holds)) |
 | `bind:` | `{bind: <target>, args: {<keywords>}}`, whatever the keywords spell; a bare path when nothing is bound. The target is serialized by these same rules |
-| `class:` | the spec stamped on the instance as `__confarg_spec__` |
+| a callable instance, `class:` or whoever built it | its class's path beside the fields it holds, as a `class:` spec ([an object dumps the state it holds](#an-object-dumps-the-state-it-holds)) |
 | `classfn:` | the instance method it yields, by the row above |
 | `call:` | the callable it returned, by the rows above |
 
-The stamp is best effort, since some objects refuse attributes. A partial over a `class:`
-instance dumps the stamp as its nested target. The stamp holds the arguments the instance was
-built with ([limitations](limitations.md#callables-and-serialization)). A stamp is merged data,
-so it leaves through `_serialize_untyped`, which unwraps the CLI's tokens as it does in a raw
-dict.
+A partial over a callable instance dumps the instance's `class:` spec as its nested target. A
+partial's keywords carry no declared type, so the spec leaves through `_serialize_untyped`, which
+writes an `Enum` or a `Path` as a raw dict's value; a struct keyword is not written that way
+(BUG-194).
 
-A callable that no configuration spells, such as a closure, a lambda or an instance no spec
-built, cannot be dumped. The merged dict keeps the `call:` that produced it, and
+A callable that no configuration spells, such as a closure, a lambda, or an instance whose
+fields cannot be read, cannot be dumped. The merged dict keeps the spec that produced it, and
 `dump_file(merge(...))` writes it as written.
 
 ### A path is written only when it reads back
@@ -254,26 +253,43 @@ bound to the same class.
 `dotted_name` spells a bound method through the class it is bound to: a method a base defines
 has the base in its qualified name, and `"pkg.Sub.m"` loaded through auto-binding would dump as
 `pkg.Base.m`, bound to a base on read-back. The check does not see an owner's state, which is
-written beside the path ([a bound method dumps its owner's state](#a-bound-method-dumps-its-owners-state)).
+written beside the path ([an object dumps the state it holds](#an-object-dumps-the-state-it-holds)).
 
 Precedent: `pickle` writes a function by reference the same way, which catches every
 unimportable or shadowed name, not only the two markers
 ([dotted imports](types/dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back)).
 
-### A bound method dumps its owner's state
+### An object dumps the state it holds
 
-The path of an instance method reads back bound to an owner built with no arguments, which is the owner again only when the owner holds nothing such a build lacks. So a method dumps as the `classfn:` spec that builds its owner with the state it holds: the owner is read as a struct field is, each constructor parameter off the same-named attribute (`_serialize._serialize_struct`, handed to `_serialize_callable` by the serializer, which knows the path, the union tag and the tag policy). Whoever built the owner — auto-binding, a `classfn:` spec, a `call:` factory or the program — and whatever changed in it after `build()`, the dump holds what the owner holds ([the object dump writes state](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)). `_callable._bound_method_spec` is the one place that decides it.
+The two object openers build an object and dump it back by the state it holds: a `class:` instance is the callable, and a `classfn:` owner is the object its method is bound to. Each is read as a struct field is, each constructor parameter off the same-named attribute (`_serialize._serialize_struct`, handed to `_serialize_callable` by the serializer, which knows the path, the union tag and the tag policy), and written beside its opener: `{class: <its class>, <fields>}`, `{classfn: <the method's path>, <the owner's fields>}`. Whoever built the object — a spec, auto-binding, a `call:` factory or the program — and whatever changed in it after `build()`, the dump holds what the object holds, and reads back as an equal object ([the object dump writes state](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)). `_callable._object_spec` is the one place that decides it for both openers.
 
-An owner whose constructor takes no argument dumps as the bare path, since a no-argument build is the only one it has. That is asked of `inspect.signature(owner)`, not of the struct introspection, which reads an inherited `object.__init__` as `*args` and `**kwargs` fields. Two owners are refused, since no spec builds them: one whose class is no struct, such as an `Enum` member, and one with a field named `classfn`, which a spec cannot hold beside its opener ([an opener's word is never an argument](#an-openers-word-is-never-an-argument)). An owner that keeps a constructor argument under another name is refused as a plain class field is.
+An object whose constructor takes no argument holds nothing a no-argument build lacks, so its opener stands alone: `{class: pkg.C}`, and for a method the bare path, which reads back bound to such an owner by [auto-binding](#auto-binding). A `class:` instance never dumps as its bare path, which reads back as the class used as a factory. That the constructor takes no argument is asked of `inspect.signature(cls)`, not of the struct introspection, which reads an inherited `object.__init__` as `*args` and `**kwargs` fields. Three objects are refused, since no spec builds them: one whose class is no struct, such as an `Enum` member; one with a field named `classfn`, which a spec cannot hold beside its opener ([an opener's word is never an argument](#an-openers-word-is-never-an-argument)); and one that keeps a constructor argument under another name, refused as a plain class field is. A `class:` instance's class is also checked to import back from its path, as a class tag is ([dotted imports](types/dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back)).
 
-The `classfn:` owner used to be stamped with its spec, as a `class:` instance still is. The stamp held the arguments the owner was built with, so a change made after `build()` was lost; a frozen owner refused it; and an owner the program or a factory built had none, so its method dumped as the bare path and read back bound to a fresh owner, its state gone with no error (BUG-229).
+Both objects used to be stamped with the spec that built them (`__confarg_spec__`), and the dump wrote the stamp: the `classfn:` owner until BUG-229, the `class:` instance until BUG-192. A stamp looks right at first, since it reads back as exactly what the configuration asked for, but it records the build, not the object, so it misses every change the program makes:
+
+```python
+class Hidden:  # keeps its argument under another name
+    def __init__(self, factor):
+        self._factor = factor
+
+    def __call__(self, x):
+        return x * self._factor
+
+
+cfg = confarg.build(Config, {"f": {"class": "pkg.Hidden", "factor": 3}})
+cfg.f._factor = 5  # case 6: stamped {class: pkg.Hidden, factor: 3}, stale, no error
+confarg.dump(Config(f=Hidden(3)))  # case 7: no stamp, so refused, though the class is the same
+```
+
+A stamp is stale as soon as the program changes the object after `build()` (case 6), and absent from every object the program or a factory built (case 7), so the same class dumped or failed depending on who built it. A frozen dataclass or a `__slots__` class also refused the stamp, and then had nothing to dump from. Reading state has none of those holes: case 6 and case 7 are refused alike, at `dump()`, naming the field it cannot read, and a class that stores its arguments dumps whatever its instance holds.
 
 Rejected:
 
-- **Write the bare path only for an owner auto-binding built**, marked as it is built, and refuse any other. A method of an owner the program built with no arguments would be refused though its path reads back, and a change made after `build()` would still be lost.
-- **Write the bare path when the owner's fields equal a no-argument build's.** `dump()` would build an object to compare with, and the path check builds nothing.
+- **Keep the stamp as a fallback** for an object whose fields cannot be read. It is the class that hides its argument that needs the fallback, and that is exactly the class whose later changes the stamp cannot see (case 6); its instances the program built would still be refused (case 7). Two dump paths for one opener would also disagree for the same class.
+- **Read state only for an object a spec built**, marked as it is built, and refuse any other. An object `{class: …}` spells perfectly well would be refused because the program built it, and the mark needs an attribute that a frozen or a slotted object refuses, as the stamp did.
+- **Write the bare path when a method's owner equals a no-argument build.** `dump()` would build an object to compare with, and the path check builds nothing.
 
-Precedent: `pickle` reduces a bound method to `getattr(owner, name)` and pickles the owner by the state it holds, never by replaying its constructor; pydantic's `model_dump` and cattrs' `unstructure` read attributes the same way.
+Precedent: `pickle` reduces an object to its class and the state it holds, and a bound method to `getattr(owner, name)` over the owner pickled that way, never by replaying a constructor; pydantic's `model_dump` and cattrs' `unstructure` read attributes the same way. Hydra and jsonargparse keep the `_target_` / `class_path` configuration and never serialize the instance back, which is the merged dict's job here ([the object dump writes state](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
 
 ## CLI
 

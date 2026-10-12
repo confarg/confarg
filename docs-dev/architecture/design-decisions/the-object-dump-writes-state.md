@@ -22,10 +22,8 @@ not replay the constructor call ([limitations](../limitations.md#callables-and-s
 
 A reference to code is still state: a function, a class or a `type[X]` value is dumped as its
 dotted path, since naming that code is all a field holding it holds. The arguments a `bind:`
-partial holds are dumped as values, and a bound method's owner as the fields it holds
-([callables](../callables.md#a-bound-method-dumps-its-owners-state)). `class:` instances still
-dump the arguments they were built with, not the values they hold after `build()`
-([limitations](../limitations.md#callables-and-serialization)).
+partial holds are dumped as values, and a callable instance or a bound method's owner as the
+fields it holds ([callables](../callables.md#an-object-dumps-the-state-it-holds)), never as the spec it was built from.
 
 Rejected:
 

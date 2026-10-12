@@ -89,8 +89,8 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
         case _TypeKind.DICT:
             return _serialize_dict(tp, instance, path, union_tag, tag_policy)
         case _TypeKind.CALLABLE:
-            # A stamped spec is merged data, tokens included: it leaves as the raw dict does. A
-            # method's owner is a struct, its fields serialized as their types say.
+            # A partial's keywords carry no declared type: they leave as a raw dict's values do. A
+            # callable instance, or a method's owner, is a struct, its fields serialized as their types say.
             spec = _serialize_callable(
                 instance,
                 lambda owner: _serialize_struct(type(owner), owner, path, union_tag, tag_policy),
@@ -190,7 +190,9 @@ def _serialize_union(
             serialized[union_tag] = _class_path(variant_tp)
         return serialized
 
-    if _reads_back(tp, instance, serialized, union_tag):
+    # With one variant beside None, no other variant can take the dump: only a token selects
+    # None, and a dump holds none. Reading it back would only build the value again.
+    if len(_union_args_no_none(tp)) == 1 or _reads_back(tp, instance, serialized, union_tag):
         return serialized
     cast = _cast_dict(variant_tp, serialized)
     if _reads_back(tp, instance, cast, union_tag):

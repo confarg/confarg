@@ -80,6 +80,13 @@ native values keep, would be a second model of `_construct_union` that drifts th
 first one changes ([invariants](../invariants.md#delegate-to-the-canonical-function)). The same function
 vets the cast before it is written, so a cast that would not read back either is never emitted.
 
+A union with one variant beside `None` is not read back at all: only a token selects `None`, and a
+dump holds no token, so nothing can take the dump from its variant. Running the reader there
+would only rebuild the value, and compare it by an equality that a partial, a bound method or a
+callable instance does not have: an `Optional[Callable]` warned on every such value, and built
+it again inside `dump()`, which otherwise builds nothing
+([callables](../callables.md#a-path-is-written-only-when-it-reads-back)).
+
 A struct variant is unaffected: it is disambiguated by the class tag (`_needs_tag`) as before,
 and `tag_policy` stays a class-tag policy — `"always"` tags structs and never casts leaves
 ([design decisions](../design-decisions/a-stolen-leaf-dumps-with-its-cast.md#a-stolen-leaf-dumps-with-its-cast)).

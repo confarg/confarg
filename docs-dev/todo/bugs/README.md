@@ -13,7 +13,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
 | [BUG-227 — A delete beside an include never reaches the files below](BUG-227-a-delete-beside-an-include-never-reaches-the-files-below.md) | critical |  | S | medium | behavior | PR-5, PR-97 |
-| [BUG-192 — A `class:` instance dumps the arguments it was built with, not the values it holds](BUG-192-a-class-instance-dumps-the-arguments-it-was-built-with.md) | critical |  | M | low | behavior | PR-5 |
 | [BUG-231 — A callable opener merges with the spec a lower layer set instead of replacing it](BUG-231-a-callable-opener-merges-with-the-spec-a-lower-layer-set.md) | critical |  | M | high | behavior | PR-5 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
 | [BUG-232 — The merge decides by shape what only the type can tell](BUG-232-the-merge-decides-by-shape-what-only-the-type-can-tell.md) | critical |  | L | high | behavior | PR-5, BUG-102, BUG-23 |
@@ -28,6 +27,8 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-145 — An expression that parses but nests past the recursion limit crashes the walkers](BUG-145-an-expression-that-parses-but-nests-past-the-recursion-limit-crashes-the-walkers.md) | major |  | M | high | behavior | PR-5 |
 | [BUG-180 — Cyclopts refuses a flag whose name ends in a star](BUG-180-cyclopts-refuses-a-flag-whose-name-ends-in-a-star.md) | major |  | M | medium | behavior | PR-72 |
 | [BUG-219 — A fragment appended to a list loses its `locals`](BUG-219-a-fragment-appended-to-a-list-loses-its-locals.md) | major |  | M | high | behavior | PR-105 |
+| [BUG-233 — The CLI refuses a nested spec below a `class:` constructor argument](BUG-233-the-cli-refuses-a-nested-spec-below-a-class-constructor-argument.md) | major |  | M | medium | behavior | PR-11 |
+| [BUG-234 — A Callable beside another union variant is never built from a spec](BUG-234-a-callable-beside-another-union-variant-is-never-built-from-a-spec.md) | major |  | M | medium | behavior | PR-5 |
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-107 — A real field named like the tag, nested inside a union variant, is stripped by the type check](BUG-107-a-nested-real-field-named-like-the-tag-is-stripped-by-the-union-type-check.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-108 — A plain fixed tuple accepts the index spellings a namedtuple refuses](BUG-108-a-plain-fixed-tuple-accepts-the-index-spellings-a-namedtuple-refuses.md) | minor |  | S | medium | behavior | PR-5 |
