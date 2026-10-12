@@ -17,6 +17,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-192 — A `class:` instance dumps the arguments it was built with, not the values it holds](BUG-192-a-class-instance-dumps-the-arguments-it-was-built-with.md) | critical |  | M | low | behavior | PR-5 |
 | [BUG-231 — A callable opener merges with the spec a lower layer set instead of replacing it](BUG-231-a-callable-opener-merges-with-the-spec-a-lower-layer-set.md) | critical |  | M | high | behavior | PR-5 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
+| [BUG-232 — The merge decides by shape what only the type can tell](BUG-232-the-merge-decides-by-shape-what-only-the-type-can-tell.md) | critical |  | L | high | behavior | PR-5, BUG-102, BUG-23 |
 | [BUG-228 — A JSON cast's `key-` shorthand deletes below only in some positions](BUG-228-a-json-casts-delete-shorthand-deletes-below-only-in-some-positions.md) | critical | Q-7 | S | high | behavior | PR-87, BUG-3 |
 | [BUG-114 — Cyclopts cannot register subclasses that share a struct field name](BUG-114-cyclopts-cannot-register-subclasses-that-share-a-struct-field-name.md) | major |  | S | medium | behavior | PR-38 |
 | [BUG-152 — A positional-only `__init__` parameter fails `build()` with a raw `TypeError`](BUG-152-a-positional-only-init-parameter-fails-build-with-a-raw-typeerror.md) | major |  | S | high | behavior | PR-5 |
