@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import enum
 import functools
 import inspect
 import json
@@ -214,11 +215,12 @@ class _ScalerSub(_Scaler):
 class _ProcessorSub(_Processor):
     """Inherits ``process`` from a base whose constructor needs an argument; its own has a default.
 
-    It doubles the offset, so a result shows which constructor ran.
+    Only its own constructor builds it with no arguments, so a result shows which one ran. It
+    stores its argument as it is, as an owner whose state dumps must.
     """
 
     def __init__(self, offset: int = 50) -> None:
-        super().__init__(offset=offset * 2)
+        super().__init__(offset=offset)
 
 
 class _Shifter:
@@ -241,8 +243,57 @@ class _NegShifter(_Shifter):
         return x - self.by
 
 
+def _processor_method(offset: int) -> Callable[[int], int]:
+    """Factory function: returns a method bound to an owner it built itself, with state."""
+    return _Processor(offset).process
+
+
+@dataclass(frozen=True)
+class _FrozenProcessor:
+    """An owner that refuses attributes, so nothing can be stamped on it."""
+
+    offset: int
+
+    def process(self, x: int) -> int:
+        return x + self.offset
+
+
+class _HiddenProcessor:
+    """An owner that keeps its argument under another name, so its state cannot be read."""
+
+    def __init__(self, offset: int) -> None:
+        self._offset = offset
+
+    def process(self, x: int) -> int:
+        return x + self._offset
+
+
+class _Tone(enum.Enum):
+    """An owner whose class is no struct: no spec builds a member from fields."""
+
+    LOW = 1
+
+    def shift(self, x: int) -> int:
+        return x + self.value
+
+
+class _OwnerWithClassfn:
+    """An owner whose constructor parameter is named like the opener a ``classfn:`` spec holds."""
+
+    def __init__(self, classfn: int) -> None:
+        self.classfn = classfn
+
+    def method(self, x: int) -> int:
+        return x + self.classfn
+
+
 # Module path prefix used throughout tests
 _MOD = "tests.test_callables"
+
+
+def _no_owner(owner: Any) -> dict[str, Any]:
+    """Stand in for the owner-field reader where no callable serialized is a bound method."""
+    pytest.fail(f"no owner to read, got {owner!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -743,7 +794,7 @@ class TestBindAutoInstantiation:
     def test_inherited_method_builds_the_named_class(self) -> None:
         """A method a base defines is bound to an instance of the class the path names."""
         cfg = confarg.build(WithBareCallable, {"fn": f"{_MOD}._ProcessorSub.process"})
-        assert cfg.fn(1) == 101  # _ProcessorSub(), offset 100
+        assert cfg.fn(1) == 51  # _ProcessorSub(), offset 50
 
     def test_call_binds_an_instance_method_as_bind_does(self) -> None:
         """call: naming an instance method calls it on an owner built with no arguments."""
@@ -802,7 +853,9 @@ class TestClassfn:
     def test_inherited_method_builds_the_named_class(self) -> None:
         """The owner is the class the path names, built with that class's constructor."""
         cfg = confarg.build(WithCallable, {"fn": {"classfn": f"{_MOD}._ProcessorSub.process", "offset": 5}})
-        assert cfg.fn(1) == 11  # _ProcessorSub(offset=5) doubles it
+        assert inspect.ismethod(cfg.fn)
+        assert type(cfg.fn.__self__) is _ProcessorSub
+        assert cfg.fn(1) == 6
 
     def test_bind_over_classfn_applies_the_method_arguments(self) -> None:
         """bind: over a classfn: spec: the inner k builds the owner, the outer k is the method's."""
@@ -1075,12 +1128,12 @@ class TestSerialization:
 
     def test_plain_function(self) -> None:
         """A plain function serializes to its dotted path."""
-        assert _serialize_callable(_double) == f"{_MOD}._double"
+        assert _serialize_callable(_double, _no_owner) == f"{_MOD}._double"
 
     def test_partial(self) -> None:
         """A partial serializes to a bind: dict with its keywords under args."""
         p = functools.partial(_add, y=5)
-        out = _serialize_callable(p)
+        out = _serialize_callable(p, _no_owner)
         assert out == {"bind": f"{_MOD}._add", "args": {"y": 5}}
 
     @pytest.mark.parametrize(
@@ -1101,7 +1154,7 @@ class TestSerialization:
     def test_partial_no_bind(self) -> None:
         """A partial with no bound args serializes to the bare dotted path (round-trips to the callable)."""
         p = functools.partial(_double)
-        out = _serialize_callable(p)
+        out = _serialize_callable(p, _no_owner)
         assert out == f"{_MOD}._double"
 
     def test_class_instance_with_spec(self, tmp_json: Any) -> None:
@@ -1129,16 +1182,19 @@ class TestSerialization:
             pytest.param(f"{_MOD}._Scaler.class_triple", id="class-method"),
             pytest.param(f"{_MOD}._NoArgProcessor.transform", id="instance-method"),
             pytest.param(f"{_MOD}._ScalerSub.class_triple", id="inherited-class-method"),
-            pytest.param(f"{_MOD}._ProcessorSub.process", id="inherited-instance-method"),
         ],
     )
     def test_a_path_that_reads_back_dumps_as_itself(self, path: str) -> None:
-        """A callable loaded from a path dumps as that path, a method bound to its owner included.
-
-        A method a base defines is named through the class it is bound to, not by its qualified
-        name, which names the base and would read back bound to it.
-        """
+        """A callable loaded from a path dumps as that path, a method bound to an owner with no fields included."""
         assert confarg.dump(confarg.build(WithBareCallable, {"fn": path}))["fn"] == path
+
+    def test_an_inherited_method_dumps_through_the_class_it_is_bound_to(self) -> None:
+        """A method a base defines is named through its owner's class, not by its qualified name.
+
+        The qualified name names the base, and would read back bound to it (BUG-193).
+        """
+        cfg = confarg.build(WithBareCallable, {"fn": f"{_MOD}._ProcessorSub.process"})
+        assert confarg.dump(cfg)["fn"] == {"classfn": f"{_MOD}._ProcessorSub.process", "offset": 50}
 
     @pytest.mark.parametrize(
         "fn",
@@ -1229,6 +1285,70 @@ class TestDumpOfACallResult:
         cfg = confarg.build(WithCallable, {"fn": {"call": f"{_MOD}._multiplier", "args": {"factor": 3}}})
         with pytest.raises(ConfargError, match=r"no configuration spells it.*Dump the merged configuration"):
             confarg.dump(cfg)
+
+
+class TestDumpOfABoundMethod:
+    """A bound method dumps the state its owner holds, as a ``classfn:`` spec (BUG-229).
+
+    Its bare path reads back bound to an owner built with no arguments, which is the owner
+    again only when that owner has no fields.
+    """
+
+    def test_an_owner_built_in_python_dumps_its_fields(self) -> None:
+        """An owner the program built with arguments dumps them beside the path, and reads back as itself."""
+        dumped = confarg.dump(WithCallable(fn=_Processor(100).process))["fn"]
+        assert dumped == {"classfn": f"{_MOD}._Processor.process", "offset": 100}
+        assert confarg.build(WithCallable, {"fn": dumped}).fn(1) == 101
+
+    def test_an_owner_a_call_built_dumps_its_fields(self) -> None:
+        """A method a factory returned dumps its owner's state, never the call."""
+        cfg = confarg.build(WithCallable, {"fn": {"call": f"{_MOD}._processor_method", "args": {"offset": 100}}})
+        assert confarg.dump(cfg)["fn"] == {"classfn": f"{_MOD}._Processor.process", "offset": 100}
+
+    def test_a_change_after_build_is_dumped(self) -> None:
+        """The owner's fields are read when dumping, so a change made after build() is kept."""
+        cfg = confarg.build(WithCallable, {"fn": {"classfn": f"{_MOD}._Processor.process", "offset": 1}})
+        assert inspect.ismethod(cfg.fn)
+        owner = cfg.fn.__self__
+        assert isinstance(owner, _Processor)
+        owner.offset = 7
+        assert confarg.dump(cfg)["fn"] == {"classfn": f"{_MOD}._Processor.process", "offset": 7}
+
+    def test_an_owner_that_refuses_attributes_dumps_its_fields(self) -> None:
+        """A frozen owner holds no stamp, and dumps from its fields all the same."""
+        spec = {"classfn": f"{_MOD}._FrozenProcessor.process", "offset": 3}
+        assert confarg.dump(confarg.build(WithCallable, {"fn": spec}))["fn"] == spec
+
+    def test_an_owner_with_no_fields_dumps_as_the_path(self) -> None:
+        """An owner built in Python with no fields holds what auto-binding builds, so the path stands."""
+        dumped = confarg.dump(WithCallable(fn=_NoArgProcessor().transform))["fn"]
+        assert dumped == f"{_MOD}._NoArgProcessor.transform"
+
+    def test_a_partial_over_a_method_dumps_its_owner_as_the_target(self) -> None:
+        """A partial's target is serialized by the same rules, its owner's fields included."""
+
+        @dataclass
+        class Target:
+            fn: Callable[[], int]
+
+        dumped = confarg.dump(Target(fn=functools.partial(_Processor(4).process, x=1)))["fn"]
+        assert dumped == {"bind": {"classfn": f"{_MOD}._Processor.process", "offset": 4}, "args": {"x": 1}}
+        assert confarg.build(Target, {"fn": dumped}).fn() == 5
+
+    def test_an_owner_whose_state_cannot_be_read_is_refused(self) -> None:
+        """An owner that keeps an argument under another name is refused, as a plain class field is."""
+        with pytest.raises(ConfargError, match=r"_HiddenProcessor at 'fn': field 'offset' is declared"):
+            confarg.dump(WithCallable(fn=_HiddenProcessor(3).process))
+
+    def test_an_owner_that_is_no_struct_is_refused(self) -> None:
+        """An enum member's method names no owner a spec could build, nor one a bare path reads back as."""
+        with pytest.raises(ConfargError, match=r"no configuration spells it.*no fields a 'classfn:' spec could set"):
+            confarg.dump(WithCallable(fn=_Tone.LOW.shift))
+
+    def test_an_owner_field_named_classfn_is_refused(self) -> None:
+        """A field named like the opener cannot sit beside it, so no spec spells the owner."""
+        with pytest.raises(ConfargError, match=r"no configuration spells it.*'classfn'"):
+            confarg.dump(WithCallable(fn=_OwnerWithClassfn(1).method))
 
 
 # ---------------------------------------------------------------------------

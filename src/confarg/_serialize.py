@@ -89,8 +89,13 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
         case _TypeKind.DICT:
             return _serialize_dict(tp, instance, path, union_tag, tag_policy)
         case _TypeKind.CALLABLE:
-            # A stamped spec is merged data, tokens included: it leaves as the raw dict does.
-            return _serialize_untyped(_serialize_callable(instance))
+            # A stamped spec is merged data, tokens included: it leaves as the raw dict does. A
+            # method's owner is a struct, its fields serialized as their types say.
+            spec = _serialize_callable(
+                instance,
+                lambda owner: _serialize_struct(type(owner), owner, path, union_tag, tag_policy),
+            )
+            return _serialize_untyped(spec)
         case _TypeKind.ANY | _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
             return _serialize_leaf(tp, instance)
 
@@ -147,7 +152,8 @@ def _serialize_struct(
             value = getattr(instance, name)
         except AttributeError:
             msg = (
-                f"Field '{name}' is declared in {type(instance).__name__}.__init__"
+                f"Cannot serialize {type(instance).__name__} at '{_spell_field_path(path) or _defaults.ROOT_KEY}':"
+                f" field '{name}' is declared in {type(instance).__name__}.__init__"
                 f" but not accessible on the instance as self.{name}."
                 f" Plain classes must store every __init__ parameter as a same-named instance attribute."
             )
