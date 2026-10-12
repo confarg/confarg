@@ -173,6 +173,10 @@ A field default is the layer below every source only where the class declares it
   its fields, several matches are an error, and a subclass needing more fields than provided
   is refused — a build-time `ConfargWarning` names the substitution when the spelling is used
   ([CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)).
+- The union tag replaces what lower layers set at its node by key alone, so where the type
+  holds the key as data — a struct owning a field spelled like the tag, a `dict` or `Any`
+  field — a higher layer writing it drops the keys the lower layers gave
+  ([design decision](design-decisions/class-tag-replaces.md)).
 
 ## Callables and serialization
 
@@ -180,6 +184,10 @@ A field default is the layer below every source only where the class declares it
   module-level alias of a method (`m = C.m`, named as `pkg.m`) is a plain function, used
   unbound ([callables](callables.md#auto-binding)). A callable confarg did not build may not be
   serializable at all ([callables](callables.md#round-trip)).
+- A `call` key replaces what lower layers set at its node, by key alone, so where the type
+  holds it as data — a `dict` or `Any` field, a struct with a member named `call`, the root
+  included — a higher layer writing it drops the keys the lower layers gave
+  ([design decision](design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)).
 - A `call:` on a field whose struct has a member named `args` holds its arguments as files and
   the environment write them, but the CLI cannot spell them: `--n.args.<p>` reaches the member
   ([design decision](design-decisions/a-computations-arguments-nest-under-args.md#a-computations-arguments-nest-under-args)).

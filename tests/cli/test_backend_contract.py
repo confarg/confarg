@@ -5492,6 +5492,17 @@ class TestCallOnTheCliContract:
         base = tmp_yaml(f"n:\n  call: {__name__}._twice\n")
         assert loader.load(_TypedCallConfig, argv=argv, env={}, files=[base]).n == 8
 
+    def test_a_call_replaces_what_a_lower_layer_set(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A call from the CLI or the environment drops the struct a file set, as a union tag does (BUG-190)."""
+        base = tmp_yaml("p:\n  a: 9\n  b: 9\n")
+        argv = ["--p.call", f"{__name__}._scaled_point", "--p.args.a", "2", "--p.args.scale", "3"]
+        assert loader.load(_TypedCallConfig, argv=argv, env={}, files=[base]).p == _CallPoint(a=6, b=3)
+        env = {"APP_P__CALL": f"{__name__}._scaled_point", "APP_P__ARGS__A": "2", "APP_P__ARGS__SCALE": "3"}
+        assert loader.load(_TypedCallConfig, argv=[], env=env, env_prefix="APP_", files=[base]).p == _CallPoint(
+            a=6,
+            b=3,
+        )
+
     def test_call_opened_by_a_whole_value(self, loader: ConfargLoader) -> None:
         """A whole ``{…}`` value opens the call too."""
         cfg = loader.load(

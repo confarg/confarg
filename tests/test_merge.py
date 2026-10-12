@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from dataclasses import dataclass
@@ -714,3 +715,65 @@ class TestAnOverrideThatReplacesTheListBelow:
         """Over a lower dict, the pin's keys are not merged into it."""
         pin = {"__cast__": "int", "__value__": 5}
         assert _deep_merge({"u": {"a": 1}}, {"u": pin}) == {"u": pin}
+
+
+@dataclass
+class _CallPoint:
+    a: int = 0
+    b: int = 0
+
+
+def _square(a: int = 1) -> _CallPoint:
+    return _CallPoint(a, a)
+
+
+def _pair(a: int) -> list[int]:
+    return [a, a]
+
+
+@dataclass
+class _CallLayers:
+    p: _CallPoint = dataclasses.field(default_factory=_CallPoint)
+    xs: list[int] = dataclasses.field(default_factory=list)
+
+
+class TestACallReplacesWhatLiesBelow:
+    """A ``call:`` is a finished value, so it replaces what a lower layer set, as a union tag does (BUG-190).
+
+    No key beside it but ``args`` belongs to it, so a lower layer's keys merged beside it were
+    read as nothing a call takes, or, before ``args``, silently as its arguments.
+    """
+
+    def test_a_call_replaces_a_dict_below(self) -> None:
+        """A lower layer's struct keys are not merged beside the call."""
+        assert _deep_merge({"p": {"a": 5}}, {"p": {"call": "m.square"}}) == {"p": {"call": "m.square"}}
+
+    def test_a_call_replaces_a_list_below(self) -> None:
+        """A lower layer's list does not become the call's ``__base__``."""
+        call = {"call": "m.pair", "args": {"a": 3}}
+        assert _deep_merge({"xs": [1, 2]}, {"xs": call}) == {"xs": call}
+
+    def test_a_call_replaces_a_call_below(self) -> None:
+        """The lower call's arguments belong to its own target, not to the one above it."""
+        merged = _deep_merge({"p": {"call": "m.f", "args": {"a": 1}}}, {"p": {"call": "m.g"}})
+        assert merged == {"p": {"call": "m.g"}}
+
+    def test_a_call_at_the_root_replaces_the_root_below(self) -> None:
+        """The root follows the same rule as every node, as the union tag does there."""
+        assert _deep_merge({"a": 5}, {"call": "m.f"}) == {"call": "m.f"}
+
+    def test_args_without_a_call_refine_the_call_below(self) -> None:
+        """A layer holding only ``args`` patches the arguments of the call below it."""
+        below: MergeDict = {"p": {"call": "m.f", "args": {"a": 1, "b": 2}}}
+        merged = _deep_merge(below, {"p": {"args": {"a": 3}}})
+        assert merged == {"p": {"call": "m.f", "args": {"a": 3, "b": 2}}}
+
+    def test_load_builds_the_call_alone(self, tmp_path) -> None:
+        """The ticket's reproduction: a struct and a list field each take the call, not what lay below."""
+        base = tmp_path / "base.yaml"
+        base.write_text("p: {a: 5}\nxs: [1, 2]\n")
+        over = tmp_path / "over.yaml"
+        over.write_text(f"p: {{call: {__name__}._square}}\nxs: {{call: {__name__}._pair, args: {{a: 3}}}}\n")
+        cfg = confarg.load(_CallLayers, argv=[], env={}, files=[base, over])
+        assert cfg.p == _CallPoint(a=1, b=1)
+        assert cfg.xs == [3, 3]

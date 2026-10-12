@@ -122,6 +122,10 @@ another ([design decision](design-decisions/call-yields-to-the-data-a-type-holds
 On the CLI the key is spelled where it is a spec: `--n.call pkg.f` opens the call, and its
 arguments are `--n.args.<p>`, whatever opened it ([CLI](#cli)).
 
+A call is a finished value, so in the merge it replaces what a lower layer set at its node, as a
+union tag does; a layer holding only `args` refines the call below it
+([a call replaces what lies below](design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)).
+
 ### Class builds an instance
 
 `{class: C, <args>}` builds exactly `C`, through `typedload._construct.construct_named_class`,
