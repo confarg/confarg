@@ -418,6 +418,22 @@ class TestConfigFileDeleteSyntax:
         with pytest.raises(confarg.exceptions.MissingFieldError):
             loader.load(Flat, argv=[], env={}, files=[base, derived])
 
+    def test_delete_of_a_key_set_earlier_in_the_file_needs_nothing_below(self, tmp_yaml) -> None:
+        """A delete that met its key in its own document is done: with no file below it does not leak (BUG-98).
+
+        Found fixing BUG-227: the same delete beside an include met its key and was kept spent.
+        """
+        WithMap = make_target("data", dict[str, int], default_factory=dict)
+        path = tmp_yaml("data:\n  x: 1\n  y: 2\n  x-: ~\n")
+        assert confarg.load(WithMap, argv=[], env={}, files=[path]).data == {"y": 2}
+
+    def test_append_after_a_delete_of_a_key_set_earlier_ignores_the_file_below(self, tmp_yaml) -> None:
+        """``items``, then ``items-``, then ``items+`` in one file append to nothing, the lower file's list included."""
+        WithList = make_target("items", list[str], default_factory=list)
+        base = tmp_yaml("items: [a, b]\n", "base.yaml")
+        derived = tmp_yaml("items: [c]\nitems-: ~\nitems+: [d]\n", "derived.yaml")
+        assert confarg.load(WithList, argv=[], env={}, files=[base, derived]).items == ["d"]
+
     def test_delete_list_index_yaml(self, loader: ConfargLoader, tmp_yaml) -> None:
         """1-: ~ syntax removes the element at original index 1 from a list."""
         WithList = make_target("items", list[str], default_factory=list)

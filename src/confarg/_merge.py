@@ -91,6 +91,14 @@ DICT_DELETE: _DeleteSentinel = _DeleteSentinel()
 _SPENT_DELETE: _DeleteSentinel = _DeleteSentinel()
 
 
+def _spent_if_met(below: MergeDict, key: str) -> _DeleteSentinel:
+    """Return the delete of *key* written over *below*, the part of its own source before it.
+
+    Spent when *below* gave it a key to remove (a spent delete there had one too), plain otherwise.
+    """
+    return DICT_DELETE if below.get(key, DICT_DELETE) is DICT_DELETE else _SPENT_DELETE
+
+
 def _to_append_list(val: Any) -> list[Any]:
     """Convert the value stored under ListOp.APPEND to a flat list of items.
 
@@ -122,7 +130,7 @@ def _apply_append_key(plain_key: str, new_val: Any, result: MergeDict) -> None:
         result[plain_key] = {ListOp.APPEND: existing[ListOp.APPEND] + items}
     elif isinstance(existing, dict) and ListOp.DELETE in existing:
         result[plain_key] = {**existing, ListOp.APPEND: items}
-    elif existing is DICT_DELETE:
+    elif isinstance(existing, _DeleteSentinel):
         result[plain_key] = {**_open_for_ops(existing), ListOp.APPEND: items}
     else:
         result[plain_key] = {ListOp.APPEND: items}
@@ -171,7 +179,7 @@ def _normalize_merge_ops(d: Any) -> Any:
             try:
                 delete_indices.append(int(plain_key))
             except ValueError:
-                result[plain_key] = DICT_DELETE
+                result[plain_key] = _spent_if_met(result, plain_key)
 
         else:
             # Regular key: preserve any append spec when overwriting with a delete-spec.
@@ -478,10 +486,12 @@ def _merge_within_source(base: MergeDict, override: MergeDict, *, union_tag: str
     :func:`_deep_merge` spends a delete on its base and drops it, which is right between two
     layers, where the base is everything below. Within one source, the base is only the part
     *override* refines: the layers the source is merged over later lie below both, so every
-    delete *override* holds stays in the result, at its path, to delete there too. One that
-    removed a key of *base* is kept spent: it had its base, so no layer below need hold the
-    key. A delete below a node the merge made a list is not kept: that list replaces the
-    layers below whole.
+    delete either part holds stays in the result, at its path, to delete there too. One of
+    *override* that removed a key of *base* is kept spent: it had its base, so no layer below
+    need hold the key. One of *base* gives way to a value *override* writes at its key, and a
+    dict written there keeps it as its base, cutting the layers below off as within one file
+    (:func:`_written_over`). A delete below a node the merge made a list, or that a call, a
+    union tag or a pin replaced, is not kept: that value replaces the layers below whole.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too
@@ -491,24 +501,50 @@ def _merge_within_source(base: MergeDict, override: MergeDict, *, union_tag: str
 
 
 def _keep_deletes(merged: MergeDict, override: MergeDict, base: MergeDict, union_tag: str | None) -> MergeDict:
-    """Return *merged* with each key delete *override* holds put back, at any depth.
+    """Return *merged* with each key delete *base* and *override* hold put back, at any depth.
 
-    A delete that met a key of *base* is put back spent, any other as it was. An override naming
-    the union tag or a call discarded *base*, so nothing below it met one.
+    A delete of *override* that met a key of *base* is put back spent, any other as it was. A
+    delete of *base* is put back where *override* says nothing at its key, and written over
+    where it does. An override naming the union tag or a call discarded *base*, so nothing
+    below it met one or survives.
     """
     if _starts_afresh(override, union_tag):
         base = {}
     out = dict(merged)
+    for key, val in base.items():
+        if isinstance(val, _DeleteSentinel) and not isinstance(key, ListOp):
+            out[key] = _written_over(val, out[key]) if key in override else val
     for key, val in override.items():
         if isinstance(key, ListOp):
             continue
-        if val is DICT_DELETE:
-            met = key in base and not isinstance(base[key], _DeleteSentinel)
-            out[key] = _SPENT_DELETE if met else DICT_DELETE
+        if isinstance(val, _DeleteSentinel):
+            out[key] = val if val is _SPENT_DELETE else _spent_if_met(base, key)
         elif isinstance(val, dict) and isinstance(out.get(key), dict):
             below = base.get(key)
-            out[key] = _keep_deletes(out[key], val, below if isinstance(below, dict) else {}, union_tag)
+            if not isinstance(below, dict) or _replaces_what_lies_below(below, val):
+                below = {}
+            out[key] = _keep_deletes(out[key], val, below, union_tag)
     return out
+
+
+def _without_key_deletes(node: Any) -> Any:
+    """Return *node* with every key delete it holds removed, at any depth.
+
+    For a value no layer lies below, an item of a list: a delete kept for the layers below
+    has nothing left to delete.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too
+    """
+    if isinstance(node, list):
+        return [_without_key_deletes(v) for v in node]
+    if not isinstance(node, dict):
+        return node
+    return {
+        k: _without_key_deletes(v)
+        for k, v in node.items()
+        if isinstance(k, ListOp) or not isinstance(v, _DeleteSentinel)
+    }
 
 
 def _navigate_append_spec(d: MergeDict, part: str) -> MergeDict | None:
@@ -575,7 +611,8 @@ def _set_nested(d: MergeDict, path: list[str], value: Any) -> None:
     from different sources).  A scalar that *means* something to its field is opened into
     that meaning before it gets here — see
     :func:`~confarg._parse_cli._open_callable_shorthand`.  The value itself is written by
-    :func:`_written_over`, so a dict written over a whole-field delete keeps it as its base.
+    :func:`_written_over`, so a dict written over a whole-field delete keeps it as its base,
+    and a delete written over a value an earlier write left is kept spent (:func:`_spent_if_met`).
 
     Args:
         d: The root dict to modify in place.
@@ -587,7 +624,8 @@ def _set_nested(d: MergeDict, path: list[str], value: Any) -> None:
     """
     if path:
         parent = _descend_creating(d, path[:-1])
-        parent[path[-1]] = _written_over(parent.get(path[-1]), value)
+        key = path[-1]
+        parent[key] = _spent_if_met(parent, key) if value is DICT_DELETE else _written_over(parent.get(key), value)
 
 
 def _written_over(existing: Any, value: Any) -> Any:
@@ -600,7 +638,7 @@ def _written_over(existing: Any, value: Any) -> Any:
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#an-op-after-a-whole-field-delete-has-nothing-below-it
     """
-    if isinstance(value, dict) and existing is DICT_DELETE:
+    if isinstance(value, dict) and isinstance(existing, _DeleteSentinel):
         return {**_open_for_ops(existing), **value}
     return value
 
@@ -619,8 +657,10 @@ def _open_for_ops(node: Any) -> MergeDict:
     """
     if isinstance(node, dict):
         return node
-    if isinstance(node, list) or node is DICT_DELETE:
+    if isinstance(node, list):
         return {ListOp.BASE: node}
+    if isinstance(node, _DeleteSentinel):
+        return {ListOp.BASE: DICT_DELETE}
     return {}
 
 

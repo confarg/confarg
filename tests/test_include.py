@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 import pytest
 
+import confarg
 from confarg._files import INCLUDE_KEY, _load_file
 from confarg.exceptions import ConfargError, InvalidConfigFileError
 
@@ -786,3 +787,111 @@ class TestRemoteIncludes:
 
         url = (tmp_path / "config.yaml").as_uri()
         assert _load_file(url) == {"db": {"host": "via-file-url"}}
+
+
+# ---------------------------------------------------------------------------
+# Deletes: one document's parts, then the files below it
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Sec:
+    a: int = 1
+    b: int = 2
+
+
+@dataclass
+class _Row:
+    k: int = 0
+    j: int = 0
+
+
+@dataclass
+class _Layered:
+    name: str = "default"
+    other: int = 0
+    sec: _Sec = field(default_factory=_Sec)
+    rows: list[_Row] = field(default_factory=list)
+    m: dict[str, list[str]] = field(default_factory=dict)
+
+
+def _load_over_base(tmp_path: Path, top: str, *, base: bool = True) -> _Layered:
+    """Load ``top.yaml`` over ``base.yaml``, with every fragment the delete tests include written."""
+    write(tmp_path, "base.yaml", "name: file\nsec: {a: 5}\nm: {note: [hi]}\n")
+    write(tmp_path, "inc.yaml", "name: inc\n")
+    write(tmp_path, "oth.yaml", "other: 3\n")
+    write(tmp_path, "del.yaml", "name-: null\n")
+    write(tmp_path, "chain.yaml", f"{INCLUDE_KEY}: ./inc.yaml\nname-: null\n")
+    write(tmp_path, "seca.yaml", "a: 7\n")
+    write(tmp_path, "delsec.yaml", "sec-: null\n")
+    write(tmp_path, "secb.yaml", "sec: {b: 3}\n")
+    write(tmp_path, "row.yaml", "k: 4\nj: 9\n")
+    write(tmp_path, "delnote.yaml", "note-: null\n")
+    write(tmp_path, "x.csv", "ts\n01\n")
+    write(tmp_path, "top.yaml", top)
+    files = [tmp_path / "base.yaml", tmp_path / "top.yaml"] if base else [tmp_path / "top.yaml"]
+    return confarg.load(_Layered, argv=[], files=files, env={})
+
+
+class TestDeleteBesideAnInclude:
+    """A delete in any part of a document deletes in the files below it too (BUG-227).
+
+    The parts were merged as layers, so a delete was spent on the part below it and dropped,
+    and the lower file's value came back.
+    """
+
+    @pytest.mark.parametrize(
+        "top",
+        [
+            pytest.param(f"{INCLUDE_KEY}: ./inc.yaml\nname-: null\n", id="sibling-met-in-the-include"),
+            pytest.param(f"{INCLUDE_KEY}: ./oth.yaml\nname-: null\n", id="sibling-unmet-in-the-include"),
+            pytest.param(f"{INCLUDE_KEY}: [./inc.yaml, ./del.yaml]\n", id="later-entry"),
+            pytest.param(f"{INCLUDE_KEY}: ./del.yaml\nother: 1\n", id="included-beside-a-sibling"),
+            pytest.param(f"{INCLUDE_KEY}: [./del.yaml, ./oth.yaml]\n", id="earlier-entry"),
+            pytest.param(f"{INCLUDE_KEY}: ./chain.yaml\n", id="included-file-with-a-sibling-delete"),
+            pytest.param(f"{INCLUDE_KEY}: ./chain.yaml\nother: 1\n", id="same-beside-a-sibling"),
+        ],
+    )
+    def test_delete_reaches_the_file_below(self, tmp_path: Path, top: str) -> None:
+        """Wherever the delete stands in the document, the lower file's ``name`` is gone, as in a flat one."""
+        assert _load_over_base(tmp_path, top).name == "default"
+
+    def test_nested_sibling_delete_reaches_the_file_below(self, tmp_path: Path) -> None:
+        """A delete beside an include at a nested node deletes the lower file's key there."""
+        top = f"sec:\n  {INCLUDE_KEY}: ./seca.yaml\n  a-: null\n"
+        assert _load_over_base(tmp_path, top).sec == _Sec(a=1, b=2)
+
+    def test_later_value_wins_over_an_earlier_entrys_delete(self, tmp_path: Path) -> None:
+        """A later entry setting the key overrides the delete before it, as a later key does in one file."""
+        assert _load_over_base(tmp_path, f"{INCLUDE_KEY}: [./del.yaml, ./inc.yaml]\n").name == "inc"
+
+    @pytest.mark.parametrize(
+        "top",
+        [
+            pytest.param("sec-: null\nsec: {b: 3}\n", id="flat"),
+            pytest.param(f"{INCLUDE_KEY}: [./delsec.yaml, ./secb.yaml]\n", id="entries"),
+            pytest.param(f"{INCLUDE_KEY}: ./delsec.yaml\nsec: {{b: 3}}\n", id="sibling"),
+        ],
+    )
+    def test_dict_written_over_a_delete_cuts_the_files_below_off(self, tmp_path: Path, top: str) -> None:
+        """A dict after a whole-field delete of one document starts from nothing, its parts split or not."""
+        assert _load_over_base(tmp_path, top).sec == _Sec(a=1, b=3)
+
+    def test_delete_that_met_its_key_needs_nothing_below(self, tmp_path: Path) -> None:
+        """A delete the included part gave a key to is done: with no file below it does not leak (BUG-98)."""
+        top = f"sec:\n  {INCLUDE_KEY}: ./seca.yaml\n  a-: null\n"
+        assert _load_over_base(tmp_path, top, base=False).sec == _Sec(a=1, b=2)
+
+    @pytest.mark.parametrize(
+        ("delete", "expected"),
+        [pytest.param("k", _Row(k=0, j=9), id="met"), pytest.param("zz", _Row(k=4, j=9), id="unmet")],
+    )
+    def test_delete_in_a_list_item_has_nothing_below(self, tmp_path: Path, delete: str, expected: _Row) -> None:
+        """A list replaces the layers below whole, so a delete in one of its items ends there."""
+        top = f"rows:\n  - {INCLUDE_KEY}: ./row.yaml\n    {delete}-: null\n"
+        assert _load_over_base(tmp_path, top).rows == [expected]
+
+    def test_csv_entry_replaces_an_earlier_entrys_delete(self, tmp_path: Path) -> None:
+        """A data entry replaces what the earlier entries said, their deletes included."""
+        top = f"m:\n  {INCLUDE_KEY}:\n    - ./delnote.yaml\n    - {{path: ./x.csv, orient: columns}}\n"
+        assert _load_over_base(tmp_path, top).m == {"note": ["hi"], "ts": ["01"]}

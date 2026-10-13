@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from confarg import _defaults, _sources
-from confarg._merge import MergeDict, _deep_merge
+from confarg._merge import MergeDict, _deep_merge, _merge_within_source, _without_key_deletes
 from confarg._types import _StrToken
 from confarg.dictexpr._expressions import check_anchor_depth, contains_expression, prefix_references
 from confarg.exceptions import ConfargError, InvalidConfigFileError
@@ -331,7 +331,7 @@ def _load_includes(
         if i == 0 or is_data or not (isinstance(result, dict) and isinstance(loaded, dict)):
             result = loaded
         else:
-            result = _deep_merge(result, loaded, union_tag=union_tag)
+            result = _merge_within_source(result, loaded, union_tag=union_tag)
     return result
 
 
@@ -343,7 +343,7 @@ def _include_with_siblings(included: Any, siblings: MergeDict, union_tag: str | 
     """
     if not isinstance(included, dict):
         raise ConfargError.include_siblings_need_a_dict(INCLUDE_KEY, included)
-    return _deep_merge(included, siblings, union_tag=union_tag)
+    return _merge_within_source(included, siblings, union_tag=union_tag)
 
 
 def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycle guard, position, tag, mount
@@ -379,8 +379,9 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     if isinstance(data, dict):
         return _resolve_dict(data, base, seen, path_in_file, union_tag, mount)
     if isinstance(data, list):
+        # A list replaces the layers below whole: a delete an item's include kept for them ends here.
         return [
-            _resolve_node(item, base, seen, (*path_in_file, str(index)), union_tag, mount)
+            _without_key_deletes(_resolve_node(item, base, seen, (*path_in_file, str(index)), union_tag, mount))
             for index, item in enumerate(data)
         ]
     if contains_expression(data):
