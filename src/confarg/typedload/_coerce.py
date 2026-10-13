@@ -384,6 +384,28 @@ def _is_eagerly_coercible(tp: Any) -> bool:
     return _is_literal(tp) or _is_enum(tp) or tp in (bool, int, float) or tp in _LEAF_COERCIONS or _is_none_type(tp)
 
 
+def _held_by_any(value: Any) -> Any:
+    """Return what an ``Any`` field holds of *value*: the value itself, each token as its text.
+
+    The one pass-through of ``Any``, construction's and a dict key's alike. A token, a CSV
+    cell's keys included, becomes the plain ``str`` it spells; a value holding none is
+    returned as the very object given.
+
+    Dev Notes:
+        docs-dev/architecture/types/leaf-coercion.md#leaf-coercion
+    """
+    if isinstance(value, _StrToken):
+        return str(value)
+    if isinstance(value, dict):
+        held = {_held_by_any(k): _held_by_any(v) for k, v in value.items()}
+        changed = any(hk is not k or hv is not v for (hk, hv), (k, v) in zip(held.items(), value.items(), strict=True))
+        return held if changed else value
+    if isinstance(value, list):
+        held_items = [_held_by_any(v) for v in value]
+        return held_items if any(h is not v for h, v in zip(held_items, value, strict=True)) else value
+    return value
+
+
 def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  # one branch per leaf type
     """Coerce a raw value to the target leaf type.
 
@@ -405,9 +427,7 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  
     """
     tp = _resolve_type(tp)
     if tp is Any:
-        # The one leaf every value holds; a token leaves as written, as construct()'s
-        # ANY branch leaves it.
-        return value
+        return _held_by_any(value)
     if _is_none_type(tp):
         if value is None:
             return None

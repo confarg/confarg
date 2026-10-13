@@ -111,6 +111,9 @@ A field default is the layer below every source only where the class declares it
   and `--u.str 16` is refused for naming a type the field does not hold — a type-level rule
   cannot promise the coerced value stays a member
   ([design decisions](design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds)).
+- A cast names only a scalar or a registered leaf, so a container an `Any` variant holds cannot
+  be pinned: `S | Any` holding the dict `{a: 1}` dumps it bare with a `ConfargWarning`, and it
+  reads back as `S(a=1)` ([stealing rule](types/stealing-rule.md#casting-a-stolen-leaf)).
 
 ## CLI front-ends
 

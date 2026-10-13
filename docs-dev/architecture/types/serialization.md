@@ -10,7 +10,9 @@ through the same `_serialize_leaf` — plus the one thing only a raw dict holds,
   back in; `"always"` tags every struct union member. A subclass of the declared type is
   always tagged.
 - Which union variant an instance belongs to is `_variant_holds`, asked once per variant in
-  declaration order. It dispatches on the same `_type_kind` as `_serialize_by_type`
+  declaration order, `Any` last: it holds every instance, so it is asked after every other
+  variant, as construction offers it a value only after every other variant refused it
+  ([construction](construction.md#an-any-variant-is-tried-last)). It dispatches on the same `_type_kind` as `_serialize_by_type`
   ([shape dispatch](introspection.md#shape-dispatch)), so the variant it picks is the one that
   then serializes the value, and each
   shape answers with the concrete class construction builds for it — `list` for `Sequence[X]`,

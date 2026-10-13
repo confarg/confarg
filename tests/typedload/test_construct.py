@@ -9,6 +9,7 @@ import re
 import warnings
 from dataclasses import dataclass
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Literal, NamedTuple
 from uuid import UUID
 
@@ -850,3 +851,93 @@ class TestClassKeyOnAScalarField:
         """A dict carrying no tag key still fails the leaf's own coercion message."""
         with pytest.raises(TypeCoercionError, match=r"Cannot coerce dict \{'a': 1\} to int at 'n'"):
             construct(int, {"a": 1}, path=("n",))
+
+
+# ---------------------------------------------------------------------------
+# An Any variant is tried last (BUG-117)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _AnyPeer:
+    a: int = 0
+
+
+@dataclass
+class _AnyBase:
+    a: int = 0
+
+
+@dataclass
+class _AnyBaseSub(_AnyBase):
+    b: int = 0
+
+
+class TestUnionWithAny:
+    """``Any`` beside other variants takes only what every other variant refused (BUG-117).
+
+    Each union is written in both declaration orders: like the stealing rank, the order a union
+    is spelled in does not decide which variant takes a value.
+    """
+
+    @pytest.mark.parametrize("tp", [int | Any, Any | int])
+    def test_a_token_another_variant_takes_is_not_kept_as_text(self, tp: Any) -> None:
+        """'3' is the int; 'abc', which int refuses, is the text, as a plain str."""
+        assert construct(tp, _StrToken("3")) == 3
+        result = construct(tp, _StrToken("abc"))
+        assert result == "abc"
+        assert type(result) is str
+
+    @pytest.mark.parametrize("tp", [int | Any | None, Any | int | None])
+    def test_a_none_word_selects_none(self, tp: Any) -> None:
+        """None ranks among the typed variants, so a none word is None, not the text 'none'."""
+        assert construct(tp, _StrToken("none")) is None
+
+    @pytest.mark.parametrize("tp", [Path | Any, Any | Path])
+    def test_a_native_value_goes_to_the_typed_variant_first(self, tp: Any) -> None:
+        """A file's string is a Path whichever side of the union Any is written on."""
+        assert construct(tp, "a") == Path("a")
+
+    @pytest.mark.parametrize("tp", [_AnyPeer | Any, Any | _AnyPeer])
+    def test_a_struct_variant_keeps_its_fields(self, tp: Any) -> None:
+        """A dict the struct takes builds the struct; one it refuses stays the dict."""
+        assert construct(tp, {"a": 1}) == _AnyPeer(a=1)
+        assert construct(tp, {"z": 1}) == {"z": 1}
+
+    @pytest.mark.parametrize("tp", [list[int] | Any, Any | list[int]])
+    def test_a_lone_cli_token_still_falls_back_to_the_list(self, tp: Any) -> None:
+        """The one-element-list fallback of a lone CLI token comes before Any."""
+        assert construct(tp, _UnionSeqToken("3")) == [3]
+
+    def test_a_tag_naming_a_variant_still_selects_it(self) -> None:
+        """The tag keeps picking the struct variant's subclass it names."""
+        data = {"class": f"{__name__}._AnyBaseSub", "a": 1, "b": 2}
+        assert construct(_AnyBase | Any, data) == _AnyBaseSub(a=1, b=2)
+
+
+class TestAnyHoldsNoToken:
+    """What an ``Any`` field holds is plain text, never a channel's token."""
+
+    def test_a_token_is_held_as_a_str(self) -> None:
+        """A bare Any field built from a token holds a plain str."""
+        result = construct(Any, _StrToken("x"))
+        assert result == "x"
+        assert type(result) is str
+
+    def test_tokens_inside_a_container_are_held_as_str(self) -> None:
+        """A CSV-shaped value of tokens, keys included, is held as plain strings."""
+        result = construct(Any, [{_StrToken("a"): _StrToken("1")}])
+        assert result == [{"a": "1"}]
+        ((key, value),) = result[0].items()
+        assert type(key) is str
+        assert type(value) is str
+
+    def test_a_value_holding_no_token_is_the_same_object(self) -> None:
+        """A native value passes through as the very object a caller gave."""
+        data = {"a": [1, {"b": "c"}]}
+        assert construct(Any, data) is data
+
+    def test_a_list_of_any_holds_str(self) -> None:
+        """Each element of a list[Any] built from tokens is a plain str."""
+        result = construct(list[Any], [_StrToken("a")])
+        assert [type(v) for v in result] == [str]

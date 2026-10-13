@@ -23,7 +23,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-174 — An index delete on a dict writes the list-delete key into the dict](BUG-174-an-index-delete-on-a-dict-writes-the-list-delete-key.md) | major |  | S | medium | behavior | PR-5 |
 | [BUG-202 — `dump_file` of a merged key delete escapes as a raw writer error](BUG-202-dump-file-of-a-merged-key-delete-escapes-as-a-raw-writer-error.md) | major |  | S | low | behavior | PR-5 |
 | [BUG-230 — A `type[X]` field refuses the dotted path a file holds, so its own dump does not load](BUG-230-a-type-field-refuses-the-dotted-path-a-file-holds.md) | major |  | S | medium | behavior | PR-5 |
-| [BUG-117 — A union with an `Any` variant refuses to load and crashes `dump()`](BUG-117-a-union-with-an-any-variant-refuses-to-load-and-crashes-dump.md) | major |  | M | high | behavior | PR-5 |
 | [BUG-145 — An expression that parses but nests past the recursion limit crashes the walkers](BUG-145-an-expression-that-parses-but-nests-past-the-recursion-limit-crashes-the-walkers.md) | major |  | M | high | behavior | PR-5 |
 | [BUG-180 — Cyclopts refuses a flag whose name ends in a star](BUG-180-cyclopts-refuses-a-flag-whose-name-ends-in-a-star.md) | major |  | M | medium | behavior | PR-72 |
 | [BUG-219 — A fragment appended to a list loses its `locals`](BUG-219-a-fragment-appended-to-a-list-loses-its-locals.md) | major |  | M | high | behavior | PR-105 |
@@ -46,6 +45,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-197 — A typed call's opener flag is described as a value, not as the function to call](BUG-197-a-typed-calls-opener-flag-is-described-as-a-spec-value.md) | minor |  | S | low | behavior | FEAT-32 |
 | [BUG-198 — A fixed-arity element flag takes one token on click and typer](BUG-198-a-fixed-arity-element-flag-takes-one-token-on-click-and-typer.md) | minor |  | S | low | config | PR-72 |
 | [BUG-222 — A registered `NewType` crashes with a raw `TypeError`](BUG-222-a-registered-newtype-crashes-with-a-raw-typeerror.md) | minor |  | S | medium | behavior | PR-37 |
+| [BUG-235 — A union tag that is no string escapes `build()` as a raw `AttributeError`](BUG-235-a-tag-that-is-no-string-escapes-as-a-raw-attributeerror.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | minor |  | M | low | behavior | PR-5, PR-13, PR-26, BUG-179 |
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | minor |  | M | medium | behavior | PR-38 |
 | [BUG-177 — A collection root's bare flag takes one token, which construction refuses](BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md) | minor |  | M | medium | behavior | PR-5 |

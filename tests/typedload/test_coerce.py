@@ -130,10 +130,11 @@ class TestCoerceLeafAny:
         assert _coerce_leaf(Any, 1) == 1
         assert _coerce_leaf(Any, None) is None
 
-    def test_token_passes_through(self) -> None:
-        """A string token is returned as written, as construct()'s ANY branch does."""
-        token = _StrToken("x")
-        assert _coerce_leaf(Any, token) is token
+    def test_token_passes_through_as_its_text(self) -> None:
+        """A string token is returned as the plain str it spells, as construct()'s ANY branch does."""
+        result = _coerce_leaf(Any, _StrToken("x"))
+        assert result == "x"
+        assert type(result) is str
 
 
 # ---------------------------------------------------------------------------
