@@ -32,7 +32,17 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from confarg import _defaults, _sources
-from confarg._merge import _SHAPE, MergeAt, MergeDict, _deep_merge, _merge_within_source, _without_key_deletes
+from confarg._merge import (
+    _SHAPE,
+    APPEND_SUFFIX,
+    ListOp,
+    MergeAt,
+    MergeDict,
+    _deep_merge,
+    _merge_within_source,
+    _to_append_list,
+    _without_key_deletes,
+)
 from confarg._types import _StrToken
 from confarg.dictexpr._expressions import check_anchor_depth, contains_expression, prefix_references
 from confarg.exceptions import ConfargError, InvalidConfigFileError
@@ -585,10 +595,21 @@ def _load_mount(value: Any, subpath: str, base: str | None = None, root: MergeAt
     layer and a data file has nothing to contribute. A non-empty one mounts at a node, where
     -- as for a pure ``__include__`` -- the result may be any type.
 
+    A *subpath* ending in ``+`` appends instead of replacing, and appending is the one thing
+    that spreads a fragment over several elements: a list extends the target list, anything
+    else lands as one item. References in an appended fragment stay unanchored, because an
+    appended element has no index until the merge is over
+    (docs-dev/architecture/limitations.md#expressions); the node each part merges at is an
+    element of the field.
+
     Dev Notes:
         docs-dev/architecture/config-files/mounting.md#mounting
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
+    if subpath.endswith(APPEND_SUFFIX):
+        real_subpath = subpath.removesuffix(APPEND_SUFFIX)
+        loaded = _load_mount_value(value, base, root.at_path((*real_subpath.split("."), "0")))
+        return _nest({ListOp.APPEND: _to_append_list(loaded)}, real_subpath)
     if subpath:
         return _nest(_load_mount_value(value, base, root, tuple(subpath.split("."))), subpath)
     locations = [_sources._join(base, path_str) for path_str, _ in _parse_mount_value(value)]

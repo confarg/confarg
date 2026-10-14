@@ -142,9 +142,8 @@ Wraps the composed dict and answers what the target used to answer:
 
 `src/confarg/untyped/_parse_env.py` — same spellings as `_parse_env.py`, Document-driven:
 prefix strip incl. `removeprefix(separator)` (`_parse_env.py:405-410`), separator split, trailing
-`-` delete (`:416`), `__json` cast and root `JSON`, `CONFIG[__SUBPATH]` pointers. **Add the append
-spelling the typed path lacks** (`FOO__ITEMS+`), closing FEAT-18 on this channel for free — the
-`"+"` sentinel is already understood by `_merge._apply_append_key`.
+`-` delete (`:416`), the trailing `+` append (`FOO__ITEMS+`, as the typed path has since FEAT-18),
+`__json` cast and root `JSON`, `CONFIG[__SUBPATH][+]` pointers.
 
 `src/confarg/untyped/_parse_cli.py` — `--a.b.c V`, `--a.b=V`, `--f+ V…`, `--f.N-`, `--f.key-`,
 negative indices, `--f.int V`, root `--json '{…}'`, `--config[.sub][+] FILE`. Arity, which the

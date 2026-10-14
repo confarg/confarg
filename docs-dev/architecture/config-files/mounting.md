@@ -39,6 +39,8 @@ Two things do differ, both on purpose:
   author wrote, so the file route has nothing to intercept — the same mistake there is data,
   and `build()` is what reports it.
 
+A trailing `+` on the subpath appends the fragment instead of mounting it, on argv and in the environment alike (`--config.<path>+`, `<PREFIX>CONFIG__<PATH>+`, FEAT-18): `_load_mount` reads the suffix, so the two routes cannot disagree on what appending spreads ([design decisions](../design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling)). A `+` naming no field, `--config+` or `<PREFIX>CONFIG+`, is refused by each channel in its own spelling.
+
 One consequence is not yet handled: an appended fragment (`--config.<path>+`) keeps its bare
 references anchored at the merged root rather than at the element it lands on, because that
 element has no index until the merge is over ([limitations](../limitations.md)).

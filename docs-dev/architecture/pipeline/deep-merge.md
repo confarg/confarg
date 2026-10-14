@@ -33,7 +33,7 @@ string key quoted, `'*'`:
 
 | Op | Meaning | Produced by |
 |---|---|---|
-| `__append__` | append items | `--f+`, `key+:`, `--config.<f>+` |
+| `__append__` | append items | `--f+`, `F+`, `key+:`, `--config.<f>+`, `CONFIG__F+` |
 | `__delete__` | delete original indices (before appends) | `--f.N-`, `"N-":`, `F__N-` |
 | `__base__` | replacement base list, or `DICT_DELETE`: no base at all | a whole-list value followed by a patch in the same source, or a deferred patch (an index past the base, or a key that is no index); `DICT_DELETE` when a whole-field delete is followed by an op at or below its path |
 | `__delete_after__` | delete indices *after* appends | `--f.N-` appearing after `--f+` on the CLI |
@@ -53,13 +53,13 @@ refuse a value of the wrong shape, as only a file can write one (BUG-170, BUG-17
 
 The value stored under `__append__` is always a list or a scalar (single-value append). Every
 producer — `_apply_append_key` (file `key+:`), `_merge_append_ops` (CLI `--f+`),
-`_load_cli_config` (`--config.<f>+`) and the `_merge_existing_value` combiner — stores one
+`_files._load_mount` (`--config.<f>+`, `CONFIG__F+`) and the `_merge_existing_value` combiner — stores one
 of those two shapes. `_to_append_list` normalizes either to a flat list. An index-keyed
 dict (`{"0": …, "1": …}`) is a *construct-time* concern — `typedload._construct` reads it
 directly to build a sequence — not an append value, and the merge layer never produces one
 under `__append__`. A dict branch that once accepted that shape there was speculative
-("for future env-var support" that never arrived) and has been dropped; env has no append
-concept, so there is no path that could reach it.
+("for future env-var support" that never arrived) and has been dropped; the environment
+appends by a variable's name (FEAT-18), with the CLI's own writer, so it stores the same two shapes.
 
 ## No channel types an op
 

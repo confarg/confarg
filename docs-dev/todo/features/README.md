@@ -19,7 +19,6 @@ whether to do it at all is the next actionable step, and its effort sizes that d
 | [FEAT-15 — No way to inspect the flags of a class the tag has not named yet](FEAT-15-inspect-flags-of-unnamed-class.md) | minor |  | M | low | behavior |
 | [FEAT-16 — Let `__cast__` name a leaf type by dotted path](FEAT-16-dotted-cast-names.md) | minor |  | M | medium | behavior |
 | [FEAT-17 — An end-of-options separator (`--`)](FEAT-17-end-of-options-separator.md) | minor |  | M | medium | behavior |
-| [FEAT-18 — The environment channel has no append spelling](FEAT-18-no-append-spelling-in-the-environment.md) | minor |  | M | low | behavior |
 | [FEAT-24 — Writing a configuration back to a URL](FEAT-24-writing-a-configuration-to-a-url.md) | minor |  | M | low | behavior |
 | [FEAT-38 — A `default_factory` default is no base layer](FEAT-38-a-factory-default-is-no-base.md) | minor |  | M | medium | behavior |
 | [FEAT-40 — A field accepts a wider input than the type it holds](FEAT-40-a-field-accepts-a-wider-input-than-it-holds.md) | minor |  | M | high | behavior |

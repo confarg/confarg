@@ -74,6 +74,7 @@ between the two other channels in priority: above
   on a struct root. That is one case of the order every variable is applied in
   ([below](#the-broader-variable-applies-first)).
 - `FOO__BAR-` / `FOO__ITEMS__1-` are deletes, mirroring `--bar-` / `--items.1-`. A delete's path, its `-` dropped, is spelled, typed and checked exactly as a value variable's of the same path: the first-segment check and the refusal below a sequence, both below.
+- `FOO__ITEMS+` appends, mirroring `--items+`, at any depth (FEAT-18, [design decisions](design-decisions/plus-is-a-merge-operator.md#the-environment-spells-it-in-the-variables-name)). Its path is checked as a delete's is, and what it may append to and how its value becomes items are the flag's: `_parse_cli._appended_element_type` refuses a path holding no list, set or variadic tuple, and `_parse_cli._collect_append_items` reads the value as the flag's single token, a JSON array several items. `CONFIG__ITEMS+` appends a fragment's items, as `--config.items+` does ([mounting](config-files/mounting.md#mounting)).
 - `<PREFIX>CONFIG[__SUBPATH]` are file pointers, collected and loaded by the pipeline. Their
   value is read as an `__include__` value, so `<PREFIX>CONFIG__USERS={"path": "users.csv",
   "orient": "columns"}` says in the environment what a file says with a mapping
@@ -104,8 +105,8 @@ between the two other channels in priority: above
 The CLI settles two flags whose paths nest by "last typed wins". The environment has no typing
 order — a mapping's iteration order is an accident of how it was built — so `_parse_env` gives
 it one before writing anything: `_parse_env._env_order` sorts the variables by the depth of the
-path each one writes, then, at one path, a delete before a `json` cast before a plain value,
-then by name. A deeper variable therefore always refines a broader one, exactly as its flag
+path each one writes, then, at one path, a delete before a `json` cast before a plain value
+before an append, then by name. A deeper variable therefore always refines a broader one, exactly as its flag
 does when typed after the broader flag:
 
 | variables, either order | as the CLI's | merges to |
@@ -114,6 +115,7 @@ does when typed after the broader flag:
 | `APP_DB__json='{"host": "h"}'`, `APP_DB__PORT=2` | `--db.json '{"host": "h"}' --db.port 2` | `host=h, port=2` |
 | `APP_USERS-`, `APP_USERS__0-` | `--users- --users.0-` | error: no base list ([deep merge](pipeline/deep-merge.md#an-op-after-a-whole-field-delete-has-nothing-below-it)) |
 | `APP_DB=oops`, `APP_DB__HOST=db1` | `--db oops --db.host db1` | `{host: db1}` |
+| `APP_USERS='["q"]'`, `APP_USERS+=r` | `--users '["q"]' --users+ r` | `[q, r]` |
 | `<PREFIX>JSON`, `<PREFIX>` on a scalar root | `--json … --<prefix> …` | the plain value |
 
 The depth of a cast is that of the path it writes, its parent's: `_env_cast` answers both the
