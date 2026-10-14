@@ -139,6 +139,15 @@ def _apply_append_key(plain_key: str, new_val: Any, result: MergeDict) -> None:
         result[plain_key] = {ListOp.APPEND: items}
 
 
+def _normalize_items(items: list[Any]) -> list[Any]:
+    """Return *items* with each one normalized, and the key deletes they hold dropped; *items* itself when unchanged.
+
+    An item has no layer below it, so a delete has removed its key from the item and ends there.
+    """
+    out = [_without_key_deletes(_normalize_merge_ops(v)) for v in items]
+    return out if any(new is not old for new, old in zip(out, items, strict=True)) else items
+
+
 def _normalize_merge_ops(d: Any) -> Any:
     """Recursively normalise ``key+`` / ``key-`` shorthand and the reserved op keys in file-sourced dicts.
 
@@ -148,14 +157,21 @@ def _normalize_merge_ops(d: Any) -> Any:
     - ``"N-": val``        → accumulated ``{ListOp.DELETE: [N]}``  (delete list index N)
     - ``__append__: val`` and the other keys of ``MERGE_OP_KEYS`` → the op's marker
 
-    Only dict keys are inspected; list items are left untouched.
+    A list's items are read too, wherever the list stands; an item has no layer below it, so a
+    key delete one holds is dropped once it has removed its key from the item.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
     """
-    if not isinstance(d, dict):
-        return d
+    if isinstance(d, list):
+        return _normalize_items(d)
+    if isinstance(d, dict):
+        return _normalize_dict(d)
+    return d
 
+
+def _normalize_dict(d: dict[Any, Any]) -> MergeDict:
+    """Return the dict *d* with its keys read as :func:`_normalize_merge_ops` says; *d* itself when unchanged."""
     has_change = False
     result: MergeDict = {}
     delete_indices: list[int] = []
@@ -555,7 +571,7 @@ def _keep_deletes(merged: MergeDict, override: MergeDict, base: MergeDict, at: M
 
 
 def _without_key_deletes(node: Any) -> Any:
-    """Return *node* with every key delete it holds removed, at any depth.
+    """Return *node* with every key delete it holds removed, at any depth; *node* itself when it holds none.
 
     For a value no layer lies below, an item of a list: a delete kept for the layers below
     has nothing left to delete.
@@ -564,14 +580,16 @@ def _without_key_deletes(node: Any) -> Any:
         docs-dev/architecture/pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too
     """
     if isinstance(node, list):
-        return [_without_key_deletes(v) for v in node]
+        items = [_without_key_deletes(v) for v in node]
+        return items if any(new is not old for new, old in zip(items, node, strict=True)) else node
     if not isinstance(node, dict):
         return node
-    return {
+    kept = {
         k: _without_key_deletes(v)
         for k, v in node.items()
         if isinstance(k, ListOp) or not isinstance(v, _DeleteSentinel)
     }
+    return node if len(kept) == len(node) and all(kept[k] is v for k, v in node.items()) else kept
 
 
 def _navigate_append_spec(d: MergeDict, part: str) -> MergeDict | None:
