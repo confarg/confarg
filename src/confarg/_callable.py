@@ -138,6 +138,24 @@ def _target_signature(path_str: str) -> inspect.Signature:
     return inspect.signature(obj)
 
 
+def target_parameter_types(path_str: str) -> dict[str, Any]:
+    """Return the annotation of each parameter a dotted ``bind:`` or ``call:`` target takes, building nothing.
+
+    The parameters :func:`_target_signature` lists, read from the object :func:`_hints_source`
+    names, as :func:`_coerce_kwargs` reads them to build the arguments under ``args``. A
+    parameter with no annotation is left out: its argument is kept as written.
+
+    Raises:
+        SymbolImportError: If *path_str* does not import.
+        ValueError: If the callable cannot be inspected.
+        TypeError: If what *path_str* names is not callable.
+        NameError: If an annotation names nothing.
+    """
+    params = _target_signature(path_str).parameters
+    hints = get_type_hints(_hints_source(_import_dotted(path_str)))
+    return {p.name: hints[p.name] for p in _fillable_params(params) if p.name in hints}
+
+
 def _maybe_bind_method(func: Any, path_str: str, where: str) -> Any:
     """Bind *func* to an owner built with no arguments when *path_str* names an instance method.
 

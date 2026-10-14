@@ -34,8 +34,9 @@ spelling of the same operation. A patch mixing names and indices still reaches t
 form with its index key, which refuses it — the open
 [Q-1](../../todo/questions/Q-1-should-a-mixed-name-index-spelling-of-a-namedtuple-build.md).
 
-The shape reaches `build()` from every channel because the merge cannot do better: it is
-type-unaware ([merge/build contract](../pipeline/merge-build-contract.md#merge-build-contract)),
+The shape reaches `build()` from every channel because the merge does not apply a list
+patch by type: it reads the type only to tell a value from a patch
+([merge/build contract](../pipeline/merge-build-contract.md#merge-build-contract)),
 so a file's `pt: [1, 2]` under `--pt.x 9` or `APP_PT__X=9` is a list patched by a key that is
 no index — a field for a namedtuple, an error for a list. `_merge._patch_needs_the_type`
 defers it as `{__base__: [1, 2], 'x': 9}`, beside the out-of-range index it already deferred for

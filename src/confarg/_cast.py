@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from confarg._merge import MergeDict, _deep_merge, _merge_within_source
+from confarg._merge import MergeAt, MergeDict, _deep_merge, _merge_within_source
 from confarg._types import _is_union, _Pinned, _resolve_type, _StrToken, _union_args_no_none
 from confarg.exceptions import ConfargError, TypeCoercionError
 
@@ -87,7 +87,7 @@ def holds_the_cast(field_tp: Any, cast_tp: Any) -> bool:
     return field_tp is Any or field_tp == cast_tp
 
 
-def fold_root_json(data: MergeDict, root_json: list[MergeDict], union_tag: str) -> MergeDict:
+def fold_root_json(data: MergeDict, root_json: list[MergeDict], root: MergeAt) -> MergeDict:
     """Fold the objects root ``json`` casts decoded in as a base under *data*.
 
     The one fold every channel's root cast goes through -- vanilla's ``--json``, the
@@ -100,7 +100,7 @@ def fold_root_json(data: MergeDict, root_json: list[MergeDict], union_tag: str) 
     Args:
         data: The values the channel collected at fields.
         root_json: The decoded root objects, earliest first.
-        union_tag: Field name used as a discriminator tag in unions.
+        root: Where the merge stands at the configuration root, which reads its type.
 
     Returns:
         *data* when there is nothing to fold, otherwise a new merged dict.
@@ -113,8 +113,8 @@ def fold_root_json(data: MergeDict, root_json: list[MergeDict], union_tag: str) 
         return data
     base: MergeDict = {}
     for obj in root_json:
-        base = _deep_merge(base, obj, union_tag=union_tag)
-    return _merge_within_source(base, data, union_tag=union_tag)
+        base = _deep_merge(base, obj, at=root)
+    return _merge_within_source(base, data, at=root)
 
 
 def cast_name_for_type(tp: type) -> str:

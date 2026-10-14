@@ -19,14 +19,16 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 from confarg import _defaults
-from confarg._callable import _resolve_callable_spec, holds_an_opener, resolve_held_spec, resolve_typed_call
+from confarg._callable import _OPENERS, _resolve_callable_spec, holds_an_opener, resolve_held_spec, resolve_typed_call
 from confarg._cast import cast_name_for_type, holds_the_cast, type_for_cast_name
 from confarg._import import _import_dotted, dotted_name
 from confarg._merge import (
     MERGE_OP_KEYS,
     ListOp,
+    MergeAt,
     MergeDict,
     _apply_list_ops,
+    _DeleteSentinel,
     _is_pin_dict,
     _merge_existing_value,
     _replace_base,
@@ -143,7 +145,14 @@ def _check_namedtuple_length(tp: Any, got: int, path: FieldPath) -> None:
 _LENGTH_OPS = (ListOp.APPEND, ListOp.DELETE, ListOp.DELETE_AFTER)
 
 
-def _apply_carried_ops(data: MergeDict, what: str, path: FieldPath, union_tag: str) -> MergeDict | list[Any]:
+def _merge_at(tp: Any, union_tag: str) -> MergeAt:
+    """Return where the merge stands at a node of type *tp*, for a patch construction applies in its place."""
+    from confarg._typed_merge import merge_at  # noqa: PLC0415  # import cycle: the typed merge asks this module
+
+    return merge_at(tp, union_tag)
+
+
+def _apply_carried_ops(data: MergeDict, tp: Any, what: str, path: FieldPath, union_tag: str) -> MergeDict | list[Any]:
     """Apply the list ops *data* carries over the ``ListOp.BASE`` beside them, for a fixed-arity sequence.
 
     A fixed tuple or a namedtuple (*what* names it for the message) has no length an op
@@ -160,7 +169,7 @@ def _apply_carried_ops(data: MergeDict, what: str, path: FieldPath, union_tag: s
     spelled = _spell_field_path(path)
     if ListOp.BASE not in data:
         raise TypeCoercionError.list_op_on(str(op), what, spelled)
-    return _apply_list_ops(_replace_base(data, spelled), data, spelled, union_tag)
+    return _apply_list_ops(_replace_base(data, spelled), data, spelled, _merge_at(tp, union_tag))
 
 
 def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, union_tag: str) -> dict[Any, Any]:
@@ -183,8 +192,12 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, un
         positions = _indexed_dict_to_positions(patch, len(field_names), path, tp.__name__)
         patch = {field_names[i]: v for i, v in positions.items()}
     laid: dict[Any, Any] = dict(zip(field_names, base, strict=False))
+    at = _merge_at(tp, union_tag)
     for k, v in patch.items():
-        laid[k] = _merge_existing_value(laid[k], v, _spell_field_path((*path, k)), union_tag) if k in laid else v
+        if k in laid:
+            laid[k] = _merge_existing_value(laid[k], v, _spell_field_path((*path, k)), at.child(k, None, None))
+        else:
+            laid[k] = v
     return laid
 
 
@@ -206,7 +219,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
     n = len(field_names)
 
     if isinstance(data, dict):
-        data = _apply_carried_ops(data, f"namedtuple {tp.__name__}", path, union_tag)
+        data = _apply_carried_ops(data, tp, f"namedtuple {tp.__name__}", path, union_tag)
     if isinstance(data, dict) and ListOp.BASE in data:
         data = _lay_patch_over_positions(tp, data, path, union_tag)
 
@@ -555,6 +568,55 @@ def _takes_typed_call(tp: Any, key: str = _defaults.CALL_KEY) -> bool:
     return True
 
 
+def reads_as_new_value(data: MergeDict, tp: Any, union_tag: str) -> bool:  # noqa: PLR0911  # one return per kind
+    """True if construction reads the dict *data*, at a field of type *tp*, as naming what it builds.
+
+    So a key a lower layer set beside it cannot belong to it, and the merge lets *data* replace
+    what lies below rather than refine it. It does where construction dispatches on a key
+    rather than reading it as data: a typed call (:func:`_is_typed_call`), an opener on a
+    Callable or an ``Any`` node, and the union tag on a struct, a union of several members or a
+    leaf, unless a member owns its spelling (``_union_tag_shadowed``). A union of several
+    members reads an opener as its Callable or ``Any`` member would. An opener whose target is
+    a dict holding no opener of its own (``{call: {k: 3}}``) refines the target below; a dict,
+    a sequence and a struct owning the key hold it as data.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
+    """
+    tp = _resolve_type(tp)
+    if _is_typed_call(data, tp):
+        return _names_a_target(data, (_defaults.CALL_KEY,))
+    match _type_kind(tp):
+        case _TypeKind.CALLABLE | _TypeKind.ANY:
+            return _names_a_target(data, _OPENERS)
+        case _TypeKind.UNION:
+            members = [_resolve_type(m) for m in _union_args_no_none(tp)]
+            if len(members) == 1:
+                return reads_as_new_value(data, members[0], union_tag)
+            if union_tag in data and not _union_tag_shadowed(tp, union_tag):
+                return True
+            return any(
+                _type_kind(m) in (_TypeKind.CALLABLE, _TypeKind.ANY) and reads_as_new_value(data, m, union_tag)
+                for m in members
+            )
+        case _TypeKind.STRUCT | _TypeKind.TAGGABLE_LEAF:
+            return union_tag in data and not _union_tag_shadowed(tp, union_tag)
+        case _TypeKind.LEAF:
+            return union_tag in data
+        case _:
+            return False
+
+
+def _names_a_target(data: MergeDict, openers: Sequence[str]) -> bool:
+    """True if *data* names a target under one of *openers*: anything but a delete or a dict holding no opener."""
+    return any(
+        k in data
+        and not isinstance(data[k], _DeleteSentinel)
+        and not (isinstance(data[k], dict) and not holds_an_opener(data[k]))
+        for k in openers
+    )
+
+
 def construct(tp: Any, data: Any, *, path: FieldPath = (), union_tag: str = _defaults.UNION_TAG) -> Any:
     """Construct a typed value from raw data.
 
@@ -754,11 +816,12 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
     if isinstance(data, dict):
         if ListOp.BASE in data:
             # CLI-produced dict with an explicit base list; apply ops in order.
-            working = _apply_list_ops(_replace_base(data, _spell_field_path(path)), data, _spell_field_path(path), None)
+            at = _merge_at(list[et], union_tag)
+            working = _apply_list_ops(_replace_base(data, _spell_field_path(path)), data, _spell_field_path(path), at)
             return [construct(et, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(working)]
         if ListOp.APPEND in data:
             # Append-only dict: apply all list ops (appends, deletions, index patches) against an empty base.
-            working = _apply_list_ops([], data, _spell_field_path(path), None)
+            working = _apply_list_ops([], data, _spell_field_path(path), _merge_at(list[et], union_tag))
             return [construct(et, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(working)]
         if ListOp.DELETE in data or ListOp.DELETE_AFTER in data:
             msg = (
@@ -833,7 +896,7 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
             _spell_field_path(path),
         )
     if isinstance(data, dict):
-        data = _apply_carried_ops(data, f"{tp}", path, union_tag)
+        data = _apply_carried_ops(data, tp, f"{tp}", path, union_tag)
     if isinstance(data, list | tuple):
         if len(data) > len(tt):
             msg = f"Cannot construct {tp} at '{_spell_field_path(path)}': expected {len(tt)} elements, got {len(data)}"
@@ -868,8 +931,12 @@ def _patched_positions(tp: Any, tt: Sequence[Any], data: MergeDict, path: FieldP
         patches = {k: v for k, v in data.items() if k != ListOp.BASE}
     seq = [base_seq[i] if i < len(base_seq) else _UNSET for i in range(len(tt))]
     # A patch refines what the base holds at its position, as the merge would have.
+    at = _merge_at(tp, union_tag)
     for i, v in _indexed_dict_to_positions(patches, len(tt), path, f"{tp}").items():
-        seq[i] = _merge_existing_value(seq[i], v, _spell_field_path((*path, i)), union_tag) if i < len(base_seq) else v
+        if i < len(base_seq):
+            seq[i] = _merge_existing_value(seq[i], v, _spell_field_path((*path, i)), at.child(str(i), None, None))
+        else:
+            seq[i] = v
     return seq
 
 

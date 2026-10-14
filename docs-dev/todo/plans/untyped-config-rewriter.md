@@ -15,7 +15,7 @@ Three findings shape the design:
 
 1. **confarg already documents this workflow.** `_api.py:199` (`resolve()`) has it in its own
    docstring: `merge()` → `resolve()` → `dump_file()` (since FEAT-37 `resolve()` takes the target, whose field defaults lie below the data; an untyped document passes `dict`, which lays none). The architecture states the split
-   explicitly: *"The merge layer is type-unaware; `build()` is type-aware"*
+   explicitly: the merge reads the type only to tell a value from a patch, falling back to the shape with no target, and `build()` does the rest
    ([pipeline/merge-build-contract.md](../../architecture/pipeline/merge-build-contract.md#merge-build-contract)),
    with plain dicts at every seam.
 2. **The reusable core is already import-isolated.** `_merge.py` (445 lines) imports nothing but

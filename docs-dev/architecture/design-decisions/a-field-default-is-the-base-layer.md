@@ -18,7 +18,7 @@ Only a value the class declares is laid: a dataclass field's `default` and a pla
 - A struct instance default (`sub: Sub = field(default_factory=Sub)`, a frozen instance) is not laid either: laying it means building the instance and serializing it back into merged-dict form.
 - A struct field with no default whose class defaults every field is laid as its class's defaults, since construction builds it from `{}` anyway; one with a required field is not, so no `MissingFieldError` moves from `db` to `db.host`.
 - Below a node, the defaults laid are those of the class construction will build there: the class a `class:` tag names (`_tags._tag_named_struct`, as construction dispatches), the one non-`None` variant of an optional, the variant a tag selects in a union. Where that is not certain — a tag that is an expression, a union a structural match decides, a struct with subclasses and no tag — nothing is laid below.
-- A node that replaces what lies below is never combined with a default: one carrying its own `__base__`, a union tag, a cast pin or a typed `call:`.
+- A node that replaces what lies below is never combined with a default: one carrying its own `__base__`, a cast pin, or one construction reads as naming what it builds, a union tag or a typed `call:` (`typedload._construct.reads_as_new_value`).
 
 ## Untouched defaults are taken out again
 

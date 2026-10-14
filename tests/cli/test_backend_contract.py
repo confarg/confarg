@@ -5771,6 +5771,72 @@ class TestShorthandRefinementContract:
         assert merged == {"inner": {"hook": {"bind": f"{__name__}._shout", "args": {"punct": DICT_DELETE}}}}
 
 
+def _exclaim(name: str) -> str:
+    """A target with no ``punct`` parameter, which a stale argument would not fit."""
+    return f"{name}!"
+
+
+@dataclass
+class _LayeredTypes:
+    """A field of each type whose keys the merge reads differently."""
+
+    labels: dict[str, str] = dataclasses_field(default_factory=dict)
+    fn: Callable[[str], str] | None = None
+    n: int = 0
+
+
+class TestTheTypeDecidesAcrossLayersContract:
+    """What a key above means to what a lower layer set is the type's to say, in every channel and front-end.
+
+    The merge decided by the key alone: a tag-spelled key replaced a dict's entries, a
+    shorthand a file set was replaced by the arguments that refined it (BUG-232), and a
+    ``bind:`` merged with the spec below it (BUG-231).
+    """
+
+    def test_a_tag_key_in_a_dict_refines_the_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--labels.class`` and ``APP_LABELS__CLASS`` add an entry: a dict holds ``class`` as data."""
+        base = tmp_yaml("labels: {team: ml}\n")
+        expected = {"team": "ml", "class": "confidential"}
+        cli = loader.load(_LayeredTypes, argv=["--labels.class", "confidential"], env={}, files=[base])
+        assert cli.labels == expected
+        env = {"APP_LABELS__CLASS": "confidential"}
+        assert loader.load(_LayeredTypes, argv=[], env=env, env_prefix="APP_", files=[base]).labels == expected
+
+    def test_a_tag_key_refines_a_root_json(self, loader: ConfargLoader) -> None:
+        """Within one source too: a field folds over the root ``--json`` object by its type."""
+        argv = ["--json", json.dumps({"labels": {"team": "ml"}}), "--labels.class", "x"]
+        assert loader.load(_LayeredTypes, argv=argv, env={}).labels == {"team": "ml", "class": "x"}
+
+    def test_args_refine_the_shorthand_a_file_set(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The target a file named by its bare path stays under the arguments a flag or a variable adds."""
+        base = tmp_yaml(f"fn: {__name__}._shout\n")
+        cli = loader.load(_LayeredTypes, argv=["--fn.args.punct", "!"], env={}, files=[base])
+        assert cli.fn is not None
+        assert cli.fn("hi") == "HI!"
+        env = {"APP_FN__ARGS__PUNCT": "!"}
+        from_env = loader.load(_LayeredTypes, argv=[], env=env, env_prefix="APP_", files=[base])
+        assert from_env.fn is not None
+        assert from_env.fn("hi") == "HI!"
+
+    def test_an_opener_replaces_the_spec_a_file_set(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--fn.bind`` names a new target: the file's arguments were the old one's."""
+        base = tmp_yaml(f"fn: {{bind: {__name__}._shout, args: {{punct: '?'}}}}\n")
+        cli = loader.load(_LayeredTypes, argv=["--fn.bind", f"{__name__}._exclaim"], env={}, files=[base])
+        assert cli.fn is not None
+        assert cli.fn("hi") == "hi!"
+        env = {"APP_FN__BIND": f"{__name__}._exclaim"}
+        from_env = loader.load(_LayeredTypes, argv=[], env=env, env_prefix="APP_", files=[base])
+        assert from_env.fn is not None
+        assert from_env.fn("hi") == "hi!"
+
+    def test_a_path_through_a_call_refines_the_target_a_file_set(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--n.call.k`` refines the nested target: it names none, so the file's spec stays."""
+        base = tmp_yaml(f"n: {{call: {{classfn: {__name__}._ClassfnOwner.scale, k: 1}}, args: {{k: 2}}}}\n")
+        assert loader.load(_LayeredTypes, argv=["--n.call.k", "3"], env={}, files=[base]).n == 6
+        env = {"APP_N__CALL__K": "3"}
+        assert loader.load(_LayeredTypes, argv=[], env=env, env_prefix="APP_", files=[base]).n == 6
+
+
 # ---------------------------------------------------------------------------
 # An opener's word as a field of a class: or classfn: spec, parity across channels
 # ---------------------------------------------------------------------------

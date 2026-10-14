@@ -11,10 +11,13 @@ Dev Notes:
 from __future__ import annotations
 
 import enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from confarg import _defaults
 from confarg.exceptions import ConfargError, TypeCoercionError
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 class ListOp(enum.Enum):
@@ -253,9 +256,9 @@ def _apply_list_ops(
     working: list[Any],
     ops: MergeDict,
     key: str,
-    union_tag: str | None,
+    at: MergeAt,
 ) -> list[Any]:
-    """Apply list mutation operations from *ops* onto *working* in order.
+    """Apply list mutation operations from *ops* onto *working* in order, *at* where the list stands.
 
     Operations are applied in a fixed semantic order regardless of dict iteration:
     1. Pre-append deletions (ListOp.DELETE): remove indices from *working*.
@@ -297,7 +300,7 @@ def _apply_list_ops(
         working = list(working)  # ensure mutability
         # A list/tuple element + index-keyed dict recurses through _apply_list_ops, a dict
         # element + dict patch deep-merges, and anything else is replaced by iv.
-        working[idx] = _merge_existing_value(working[idx], iv, key, union_tag)
+        working[idx] = _merge_existing_value(working[idx], iv, key, at.child(ik, None, None))
 
     return working
 
@@ -341,59 +344,78 @@ def _is_pin_dict(data: Any) -> bool:
     return isinstance(data, dict) and data.keys() == {_defaults.CAST_KEY, _defaults.VALUE_KEY}
 
 
-def _is_call_dict(data: Any) -> bool:
-    """Return whether *data* spells a ``call:`` spec: a dict holding the ``call`` key.
+class MergeAt:
+    """What the merge knows of the type where it stands, which decides whether a value replaces or refines.
 
-    The shape half of ``typedload._construct._is_typed_call``, which also asks the type. A call
-    is a finished value, so the merge lets it replace what lies below, as a union tag does: no
-    key beside it but ``args`` belongs to it (BUG-190). The merge cannot tell where the type
-    holds ``call`` as data, so there too it replaces.
+    This one knows no type, so it reads the shape alone: a dict naming the union tag or
+    holding a ``call`` key is a new value, which replaces what lies below. It is the rule
+    for a merge given no target, and the fallback of the typed reading
+    (:class:`confarg._typed_merge.TypedAt`) where the type cannot tell.
 
     Dev Notes:
-        docs-dev/architecture/design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below
+        docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
     """
-    return isinstance(data, dict) and _defaults.CALL_KEY in data
+
+    __slots__ = ("union_tag",)
+
+    def __init__(self, union_tag: str | None = None) -> None:
+        self.union_tag = union_tag
+
+    def replaces(self, override: MergeDict) -> bool:
+        """Return whether the dict *override* is a value of its own, which replaces what lies below."""
+        return (self.union_tag is not None and self.union_tag in override) or _defaults.CALL_KEY in override
+
+    def opened(self, below: Any) -> Any:
+        """Return what *below* is to a dict that refines it: here, itself."""
+        return below
+
+    def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # the typed reading's signature
+        """Return where the merge stands at *key* of the node *below* and *over* merge at."""
+        return self
+
+    def at_path(self, path: Sequence[str]) -> MergeAt:
+        """Return where the merge stands at *path* below this node, knowing nothing of what the data holds."""
+        at = self
+        for part in path:
+            at = at.child(part, None, None)
+        return at
 
 
-def _starts_afresh(override: MergeDict, union_tag: str | None) -> bool:
-    """Return whether the dict *override* is a new value, not a patch of the dict below.
-
-    It is when it names the union tag, or holds a call (:func:`_is_call_dict`).
-    """
-    return (union_tag is not None and union_tag in override) or _is_call_dict(override)
-
-
-def _replaces_what_lies_below(bv: Any, val: Any) -> bool:
+def _replaces_what_lies_below(bv: Any, val: Any, at: MergeAt) -> bool:
     """Whether the override *val* replaces *bv* outright rather than patching it.
 
-    An override carrying its own base (``ListOp.BASE``) replaces a dict base, as a union tag
-    does: the patches beside that base address it, not whatever an earlier layer held. A base
-    that is a whole-field delete replaces a list base too. A cast pin and a call are values, so
-    they replace a list or a dict below them as a scalar would.
+    A cast pin is a value, and so is a dict *at* reads as one (a union tag, an opener), so
+    they replace a list or a dict below them as a scalar would. An override carrying its own
+    base (``ListOp.BASE``) replaces a dict base: the patches beside that base address it, not
+    whatever an earlier layer held. A base that is a whole-field delete replaces a list base too.
     """
-    if _is_pin_dict(val) or _is_call_dict(val):
+    if _is_pin_dict(val) or (isinstance(val, dict) and at.replaces(val)):
         return True
     return isinstance(val, dict) and ListOp.BASE in val and (val[ListOp.BASE] is DICT_DELETE or isinstance(bv, dict))
 
 
-def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) -> Any:
-    """Compute the merged value when *key* exists in both base and override.
+def _merge_existing_value(bv: Any, val: Any, key: str, at: MergeAt) -> Any:
+    """Compute the merged value when *key* exists in both base and override, *at* where it stands.
 
     An override that replaces what lies below (:func:`_replaces_what_lies_below`) is kept
-    whole. A dict's own key ``'*'`` is no base, whatever it holds: no channel spells the marker.
+    whole. A scalar below a dict that refines it is first opened into what it means there
+    (:meth:`MergeAt.opened`), so the dict refines it rather than replacing it. A dict's own
+    key ``'*'`` is no base, whatever it holds: no channel spells the marker.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#deep-merge-semantics
     """
-    if _replaces_what_lies_below(bv, val):
+    if _replaces_what_lies_below(bv, val, at):
         return val
+    if isinstance(val, dict):
+        bv = at.opened(bv)
     if isinstance(bv, dict) and isinstance(val, dict):
         if ListOp.APPEND in bv and ListOp.APPEND in val:
             combined = _to_append_list(bv[ListOp.APPEND]) + _to_append_list(val[ListOp.APPEND])
             rest = _deep_merge(
                 {k: v for k, v in bv.items() if k != ListOp.APPEND},
                 {k: v for k, v in val.items() if k != ListOp.APPEND},
-                union_tag=union_tag,
+                at=at,
             )
             return {**rest, ListOp.APPEND: combined}
         if ListOp.DELETE in bv and ListOp.DELETE in val:
@@ -403,35 +425,39 @@ def _merge_existing_value(bv: Any, val: Any, key: str, union_tag: str | None) ->
             rest = _deep_merge(
                 {k: v for k, v in bv.items() if k != ListOp.DELETE},
                 {k: v for k, v in val.items() if k != ListOp.DELETE},
-                union_tag=union_tag,
+                at=at,
             )
             return {**rest, ListOp.DELETE: combined_del}
-        return _deep_merge(bv, val, union_tag=union_tag)
+        return _deep_merge(bv, val, at=at)
     if isinstance(bv, list) and isinstance(val, dict):
-        return _merge_list_base(bv, val, key, union_tag)
+        return _merge_list_base(bv, val, key, at)
     return val
 
 
-def _merge_list_base(bv: list[Any], val: MergeDict, key: str, union_tag: str | None) -> Any:
+def _merge_list_base(bv: list[Any], val: MergeDict, key: str, at: MergeAt) -> Any:
     """Combine a list base *bv* with an override patch dict *val*."""
     if ListOp.BASE in val:
         base = _replace_base(val, key)
         if _patch_needs_the_type(base, val):
             # The override's own base replaces *bv*; what its patch means is still the type's.
             return val
-        return _apply_list_ops(base, val, key, union_tag)
+        return _apply_list_ops(base, val, key, at)
     if _patch_needs_the_type(bv, val):
         # Defer to build(): an out-of-range index is an error for a list, a slot for a tuple;
         # a name key is an error for a list, a field for a namedtuple.
         return {ListOp.BASE: list(bv), **val}
-    return _apply_list_ops(list(bv), val, key, union_tag)
+    return _apply_list_ops(list(bv), val, key, at)
+
+
+#: The merge with no type to read: the shape rule, with no union tag.
+_SHAPE = MergeAt()
 
 
 def _deep_merge(
     base: MergeDict,
     override: MergeDict,
     *,
-    union_tag: str | None = None,
+    at: MergeAt = _SHAPE,
 ) -> MergeDict:
     """Recursively merge override into base, with override winning on conflict.
 
@@ -444,14 +470,14 @@ def _deep_merge(
     - ``{ListOp.DELETE: [i, j]}`` as a value for a list base → deletes original indices i, j.
     - ``{"N": v}`` (integer string keys) as a value for a list base → patches by index.
 
-    When ``union_tag`` is set and the override dict contains that key, or the override holds
-    a ``call`` (:func:`_starts_afresh`), the override is treated as a fresh value and the base
-    is discarded entirely.
+    An override that *at* reads as a value of its own (:meth:`MergeAt.replaces`: a union
+    tag, an opener) discards the base entirely, at every depth.
 
     Args:
         base: The base dict to merge into.
         override: The dict whose values take precedence.
-        union_tag: The discriminator key used for union disambiguation.
+        at: Where the two dicts stand, which reads the type there; the shape rule with no
+            union tag by default.
 
     Returns:
         A new dict containing the merged result.
@@ -463,7 +489,7 @@ def _deep_merge(
     base = _normalize_merge_ops(base)
     override = _normalize_merge_ops(override)
 
-    if _starts_afresh(override, union_tag):
+    if at.replaces(override):
         return dict(override)
 
     # Copy base, skipping any DICT_DELETE sentinels left over from normalization -- but not
@@ -474,13 +500,13 @@ def _deep_merge(
         if isinstance(val, _DeleteSentinel):
             result.pop(key, None)
         elif key in result:
-            result[key] = _merge_existing_value(result[key], val, key, union_tag)
+            result[key] = _merge_existing_value(result[key], val, key, at.child(key, base, override))
         else:
             result[key] = val
     return result
 
 
-def _merge_within_source(base: MergeDict, override: MergeDict, *, union_tag: str | None) -> MergeDict:
+def _merge_within_source(base: MergeDict, override: MergeDict, *, at: MergeAt) -> MergeDict:
     """Merge *override* over *base* where both are parts of one source, keeping its deletes.
 
     :func:`_deep_merge` spends a delete on its base and drops it, which is right between two
@@ -496,19 +522,19 @@ def _merge_within_source(base: MergeDict, override: MergeDict, *, union_tag: str
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too
     """
-    merged = _deep_merge(base, override, union_tag=union_tag)
-    return _keep_deletes(merged, _normalize_merge_ops(override), _normalize_merge_ops(base), union_tag)
+    merged = _deep_merge(base, override, at=at)
+    return _keep_deletes(merged, _normalize_merge_ops(override), _normalize_merge_ops(base), at)
 
 
-def _keep_deletes(merged: MergeDict, override: MergeDict, base: MergeDict, union_tag: str | None) -> MergeDict:
+def _keep_deletes(merged: MergeDict, override: MergeDict, base: MergeDict, at: MergeAt) -> MergeDict:
     """Return *merged* with each key delete *base* and *override* hold put back, at any depth.
 
     A delete of *override* that met a key of *base* is put back spent, any other as it was. A
     delete of *base* is put back where *override* says nothing at its key, and written over
-    where it does. An override naming the union tag or a call discarded *base*, so nothing
+    where it does. An override *at* reads as a value of its own discarded *base*, so nothing
     below it met one or survives.
     """
-    if _starts_afresh(override, union_tag):
+    if at.replaces(override):
         base = {}
     out = dict(merged)
     for key, val in base.items():
@@ -521,9 +547,10 @@ def _keep_deletes(merged: MergeDict, override: MergeDict, base: MergeDict, union
             out[key] = val if val is _SPENT_DELETE else _spent_if_met(base, key)
         elif isinstance(val, dict) and isinstance(out.get(key), dict):
             below = base.get(key)
-            if not isinstance(below, dict) or _replaces_what_lies_below(below, val):
+            child = at.child(key, base, override)
+            if not isinstance(below, dict) or _replaces_what_lies_below(below, val, child):
                 below = {}
-            out[key] = _keep_deletes(out[key], val, below, union_tag)
+            out[key] = _keep_deletes(out[key], val, below, child)
     return out
 
 

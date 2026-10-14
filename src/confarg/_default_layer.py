@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from confarg import _defaults
 from confarg._merge import ListOp, _is_pin_dict, _merge_existing_value
 from confarg._tags import _tag_named_struct
+from confarg._typed_merge import merge_at
 from confarg._types import (
     _all_have_defaults,
     _dict_kv,
@@ -43,7 +44,7 @@ from confarg._types import (
 from confarg.dictexpr import contains_expression, escape_expressions
 from confarg.exceptions import _spell_field_path
 from confarg.typedload._coerce import _LEAF_COERCIONS, _is_struct_variant, _type_kind, _TypeKind
-from confarg.typedload._construct import _is_typed_call
+from confarg.typedload._construct import _is_typed_call, reads_as_new_value
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -214,7 +215,7 @@ def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> MergeDict
         if name in node:
             value = node[name]
             if isinstance(laid, list) and _patches_a_list(value, ft, walk.union_tag):
-                value = _merge_existing_value(laid, value, _spelled(fpath), walk.union_tag)
+                value = _merge_existing_value(laid, value, _spelled(fpath), merge_at(ft, walk.union_tag))
             out[name] = _node(ft, value, fpath, walk)
         elif not walk.for_resolution:
             continue
@@ -232,16 +233,16 @@ def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> MergeDict
 def _patches_a_list(value: Any, ft: Any, union_tag: str) -> bool:
     """Whether *value*, at a field of type *ft*, is a patch the field's list default is the base of.
 
-    A dict carrying its own base, a tag, a cast pin or a typed call replaces what lies
-    below rather than patching it, so the default is not laid under it.
+    A dict carrying its own base, a cast pin, or one construction reads as a value of its own
+    (a tag, a typed call: :func:`~confarg.typedload._construct.reads_as_new_value`) replaces
+    what lies below rather than patching it, so the default is not laid under it.
     """
     return (
         isinstance(value, dict)
         and (_is_seq_variant(ft) or _union_has_seq_variant(ft))
         and ListOp.BASE not in value
-        and union_tag not in value
         and not _is_pin_dict(value)
-        and not _is_typed_call(value, ft)
+        and not reads_as_new_value(value, ft, union_tag)
     )
 
 

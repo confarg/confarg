@@ -1714,4 +1714,6 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             # the host's: it is the stray vanilla refuses.
             raise UnknownArgumentError.unexpected_positional(argv[i])
 
-    return fold_root_json(ctx.data, root_json, union_tag), config_files
+    from confarg._typed_merge import merge_root  # noqa: PLC0415  # import cycle: it walks types with this module
+
+    return fold_root_json(ctx.data, root_json, merge_root(target, union_tag)), config_files
