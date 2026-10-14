@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
 from confarg import _defaults
-from confarg._callable import names_an_opener, opens_a_subtree, promote_bare_spec
+from confarg._callable import _competing_openers, names_an_opener, opens_a_subtree, promote_bare_spec
 from confarg._cast import (
     FORCE_CAST_NAMES,
     JSON_CAST_NAME,
@@ -1487,6 +1487,43 @@ def _open_callable_shorthand(data: MergeDict, path: list[str], target: Any, unio
             _set_nested(data, path[:n], promote_bare_spec(existing))
 
 
+def _restart_restated_node(data: MergeDict, path: list[str], target: Any, union_tag: str) -> None:
+    """Empty the node whose opener or tag the value about to be stored at *path* restates.
+
+    A node that already names what it builds (an opener's target, the union tag's class:
+    :func:`~confarg.typedload._construct.reads_as_new_value`) and gets a second one starts
+    afresh, as it does when a higher layer names one: what it held was written for the first.
+    The first opener restates nothing, so the keys written before it stay, in any order; nor
+    does an object opener (``class``, ``classfn``) written beside a computation word, which it
+    reads as a field, as one dict holding both would. A whole-field delete the node carries
+    stays, as it cuts the layers below off either way. The CLI and the environment loop both
+    ask it before they store a value.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
+    """
+    from confarg._typed_merge import merge_root  # noqa: PLC0415  # import cycle: it walks types with this module
+
+    if not path:
+        return
+    at, node = merge_root(target, union_tag), data
+    for part in path[:-1]:
+        at = at.child(part, node, None)
+        node = node.get(part) if isinstance(node, dict) else None
+    # A key naming a target ("" stands for whatever is written) restates a node naming one.
+    key = path[-1]
+    if not isinstance(node, dict) or not at.replaces({key: ""}) or not at.replaces(node):
+        return
+    # Among the openers, it restates one that still competes beside it: an object opener
+    # takes a computation word as a field, whichever was written first.
+    after = _competing_openers({**node, key: ""})
+    if names_an_opener(key) and (key not in after or not set(_competing_openers(node)) & set(after)):
+        return
+    kept = {ListOp.BASE: DICT_DELETE} if node.get(ListOp.BASE) is DICT_DELETE else {}
+    node.clear()
+    node.update(kept)
+
+
 def _consume_typed_arg(
     ctx: _ParseCtx,
     i: int,
@@ -1670,6 +1707,10 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             _handle_delete_token(ctx, token, path, is_list_delete=is_list_delete, delete_idx=delete_idx)
             i += 1
             continue
+
+        # A second opener or tag at a node names a new target, which the first one's keys
+        # are not written for.
+        _restart_restated_node(ctx.data, path, walk_target, union_tag)
 
         if force_cast is not None and not path:  # root-level `--json`: inject the whole config
             i = _handle_root_cast(
