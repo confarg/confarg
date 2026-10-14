@@ -1999,3 +1999,119 @@ class TestClassTagNamesASubclass:
         ) as info:
             confarg.build(_TagHolder, {"base": {"class": f"{__name__}._TagUnrelated", "z": 9}})
         assert "with a factory" not in str(info.value)
+
+
+# ---------------------------------------------------------------------------
+# Arguments go by position where a keyword cannot reach (BUG-156)
+# ---------------------------------------------------------------------------
+
+
+def _scale(v: int, /, factor: int) -> int:
+    return v * factor
+
+
+def _make_scaler(factor: int, /) -> Callable[[int], int]:
+    return functools.partial(_scale, factor=factor)
+
+
+def _defaulted_pair(a: int = 1, b: int = 2, /) -> tuple[int, int]:
+    return a, b
+
+
+def _required_pair(a: int, b: int, /) -> tuple[int, int]:
+    return a, b
+
+
+def _positional_only_beside_kwargs(a: int, /, **kw: int) -> tuple[int, dict[str, int]]:
+    return a, kw
+
+
+@dataclass
+class _WithAny:
+    value: Any = None
+
+
+@dataclass
+class _WithFloat:
+    n: float = 0.0
+
+
+class TestPositionalArguments:
+    """``bind:`` and ``call:`` pass an argument by position where its parameter takes no keyword (BUG-156)."""
+
+    def test_bind_fills_a_positional_only_parameter(self) -> None:
+        """The ticket's ``bind:``: the positional-only ``v`` is bound by position."""
+        cfg = confarg.load(WithBareCallable, argv=["--fn.bind", f"{_MOD}._scale", "--fn.args.v", "3"], env={})
+        assert cfg.fn(factor=2) == 6
+
+    def test_call_fills_a_positional_only_parameter(self) -> None:
+        """The ticket's ``call:``: the positional-only ``factor`` is passed by position."""
+        cfg = confarg.load(
+            WithBareCallable, argv=["--fn.call", f"{_MOD}._make_scaler", "--fn.args.factor", "2"], env={}
+        )
+        assert cfg.fn(3) == 6
+
+    def test_call_in_a_typed_field_fills_a_builtin_positional_only_parameter(self) -> None:
+        """``math.sqrt(x, /)`` is reachable by name under ``args``."""
+        cfg = confarg.build(_WithFloat, {"n": {"call": "math.sqrt", "args": {"x": 16}}})
+        assert cfg.n == 4.0
+
+    def test_a_leading_parameter_is_bound_by_position(self) -> None:
+        """A bound leading parameter goes by position, so the partial takes the Callable's own argument positionally."""
+        cfg = confarg.build(WithCallable, {"fn": {"bind": f"{_MOD}._add", "args": {"x": 3}}})
+        assert isinstance(cfg.fn, functools.partial)
+        assert cfg.fn.args == (3,)
+        assert cfg.fn(5) == 8
+
+    def test_a_later_parameter_alone_stays_a_keyword(self) -> None:
+        """No run of positional names is set from the start, so the parameter goes by keyword."""
+        cfg = confarg.build(WithCallable, {"fn": {"bind": f"{_MOD}._add", "args": {"y": 10}}})
+        assert isinstance(cfg.fn, functools.partial)
+        assert (cfg.fn.args, cfg.fn.keywords) == ((), {"y": 10})
+
+    def test_a_positional_only_gap_takes_its_default(self) -> None:
+        """An unset positional-only parameter before a set one is filled from its declared default."""
+        cfg = confarg.build(WithBareCallable, {"fn": {"bind": f"{_MOD}._defaulted_pair", "args": {"b": 5}}})
+        assert cfg.fn() == (1, 5)
+        assert confarg.dump(cfg)["fn"] == {"bind": f"{_MOD}._defaulted_pair", "args": {"a": 1, "b": 5}}
+
+    @pytest.mark.parametrize("opener", ["bind", "call"])
+    def test_a_positional_only_gap_with_no_default_is_refused(self, opener: str) -> None:
+        """No call reaches a positional-only parameter past an unset one with no default: refused at load, naming it."""
+        with pytest.raises(TypeCoercionError, match=r"'a' of _required_pair at 'value\.args'.*reaches 'b'"):
+            confarg.build(_WithAny, {"value": {opener: f"{_MOD}._required_pair", "args": {"b": 2}}})
+
+    def test_a_name_shared_with_kwargs_fills_the_declared_parameter(self) -> None:
+        """Under the flat ``args`` mapping a name means the declared parameter, never a ``**kwargs`` key."""
+        cfg = confarg.build(
+            WithBareCallable, {"fn": {"bind": f"{_MOD}._positional_only_beside_kwargs", "args": {"a": 1}}}
+        )
+        assert cfg.fn() == (1, {})
+
+
+class TestDumpOfPositionalArguments:
+    """A partial's positional arguments dump under the names of the parameters they fill."""
+
+    def test_a_partial_s_positional_arguments_are_named(self) -> None:
+        """``partial(_scale, 3)`` dumps its ``3`` as ``v``, and reads back as the same partial."""
+        dumped = confarg.dump(WithBareCallable(fn=functools.partial(_scale, 3)))["fn"]
+        assert dumped == {"bind": f"{_MOD}._scale", "args": {"v": 3}}
+        back = confarg.build(WithBareCallable, {"fn": dumped}).fn
+        assert isinstance(back, functools.partial)
+        assert (back.args, back(factor=2)) == ((3,), 6)
+
+    def test_positional_and_keyword_arguments_are_named_together(self) -> None:
+        """Positional arguments are named first, then the keywords."""
+        dumped = confarg.dump(WithBareCallable(fn=functools.partial(_scale, 3, factor=2)))["fn"]
+        assert dumped == {"bind": f"{_MOD}._scale", "args": {"v": 3, "factor": 2}}
+
+    def test_a_positional_argument_past_the_named_ones_cannot_be_dumped(self) -> None:
+        """An argument that fills no named parameter has no name for ``args`` to hold."""
+        spilled = functools.partial(_add, 1, 2, 3)  # ty: ignore[too-many-positional-arguments]  # the spill is the case
+        with pytest.raises(ConfargError, match=r"no configuration spells it"):
+            confarg.dump(WithBareCallable(fn=spilled))
+
+    def test_a_positional_argument_of_an_unreadable_signature_cannot_be_dumped(self) -> None:
+        """With no signature to read, a positional argument has no name."""
+        with pytest.raises(ConfargError, match=r"no configuration spells it"):
+            confarg.dump(WithBareCallable(fn=functools.partial(dict, [(1, 2)])))

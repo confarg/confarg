@@ -10,6 +10,7 @@ import dataclasses
 import enum
 import functools
 import inspect
+import itertools
 import types
 import weakref
 from collections import deque
@@ -642,6 +643,75 @@ class _VarParams:
         return frozenset(name for name in (self.positional, self.keyword) if name is not None)
 
 
+class _PositionalGapError(TypeError):
+    """A positional-only parameter is unset, with no default, before one a call sets.
+
+    Attributes:
+        unset: The parameter no value reaches.
+        later: The set parameter past it.
+    """
+
+    def __init__(self, unset: str, later: str) -> None:
+        super().__init__(f"positional-only parameter {unset!r} is unset before {later!r}")
+        self.unset = unset
+        self.later = later
+
+
+@dataclasses.dataclass(frozen=True)
+class _PositionalParams:
+    """The parameters of a signature that a positional argument fills.
+
+    Attributes:
+        names: The positional-only parameters, then the positional-or-keyword ones, in
+            order; all of them precede ``*args``.
+        positional_only: How many of *names*, from the first, take no keyword.
+        defaults: The declared default of each of *names* that has one.
+    """
+
+    names: tuple[str, ...]
+    positional_only: int
+    defaults: Mapping[str, Any]
+
+    @classmethod
+    def of(cls, params: Iterable[inspect.Parameter]) -> _PositionalParams:
+        """Return the positional parameters among *params*, a signature's parameters in order."""
+        kinds = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        positional = [p for p in params if p.kind in kinds]
+        return cls(
+            names=tuple(p.name for p in positional),
+            positional_only=sum(p.kind is inspect.Parameter.POSITIONAL_ONLY for p in positional),
+            defaults=types.MappingProxyType(
+                {p.name: p.default for p in positional if p.default is not inspect.Parameter.empty},
+            ),
+        )
+
+    def split(self, values: Mapping[str, Any]) -> tuple[list[Any], dict[str, Any]]:
+        """Return *values*, keyed by parameter name, as the arguments a call passes by position and by keyword.
+
+        The one answer to "which arguments go by position". A positional-only parameter left
+        unset before a set one takes its declared default, since no keyword reaches the later
+        one past it. Then the longest run of set names from the first goes by position, and
+        every other value by keyword. A partial built from the split therefore names its
+        positional arguments back to the same values, which split the same way.
+
+        Raises:
+            _PositionalGapError: If a positional-only parameter before a set one has no default.
+
+        Dev Notes:
+            docs-dev/architecture/callables.md#arguments-go-by-position-where-they-can
+        """
+        by_keyword = dict(values)
+        only = self.names[: self.positional_only]
+        last_set = max((i for i, name in enumerate(only) if name in by_keyword), default=-1)
+        for name in only[:last_set]:
+            if name not in by_keyword:
+                if name not in self.defaults:
+                    raise _PositionalGapError(name, only[last_set])
+                by_keyword[name] = self.defaults[name]
+        filled = list(itertools.takewhile(by_keyword.__contains__, self.names))
+        return [by_keyword.pop(name) for name in filled], by_keyword
+
+
 @dataclasses.dataclass(frozen=True)
 class _InitParams:
     """What a plain class's ``__init__`` signature declares, ``self`` excluded.
@@ -651,14 +721,13 @@ class _InitParams:
         defaults: The declared default of each parameter that has one; ``*args`` and
             ``**kwargs`` have none here.
         var: The ``*args`` and ``**kwargs`` names.
-        positional: The names a positional argument fills, in order: the positional-only and
-            positional-or-keyword parameters, all of which precede ``*args``.
+        positional: The parameters a positional argument fills.
     """
 
     names: tuple[str, ...]
     defaults: Mapping[str, Any]
     var: _VarParams
-    positional: tuple[str, ...]
+    positional: _PositionalParams
 
     @property
     def required(self) -> frozenset[str]:
@@ -688,11 +757,7 @@ def _init_params(tp: Any) -> _InitParams:
             {p.name: p.default for p in params if p.default is not inspect.Parameter.empty},
         ),
         var=_VarParams(variadic.get(inspect.Parameter.VAR_POSITIONAL), variadic.get(inspect.Parameter.VAR_KEYWORD)),
-        positional=tuple(
-            p.name
-            for p in params
-            if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-        ),
+        positional=_PositionalParams.of(params),
     )
 
 

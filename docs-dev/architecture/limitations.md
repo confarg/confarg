@@ -192,6 +192,8 @@ A field default is the layer below every source only where the class declares it
   the environment write them, but the CLI cannot spell them: `--n.args.<p>` reaches the member
   ([design decision](design-decisions/a-computations-arguments-nest-under-args.md#a-computations-arguments-nest-under-args)).
   A typed call at the root is spelled in files only ([callables](callables.md#cli)).
+- Under the `args` of a `bind:` or `call:`, a name always fills the declared parameter: with `def f(a, /, **kw)`, `{a: 1}` is `a`, and no spec puts a key `a` into `kw`. A struct can, since its `**kwargs` is a field of its own (`--item.kw.a`) ([callables](callables.md#arguments-go-by-position-where-they-can)).
+- A partial built in code with a later positional-or-keyword parameter bound by keyword behind one bound by position, `partial(g, 3, factor=2)`, dumps as `{v: 3, factor: 2}` and reads back as `partial(g, 3, 2)`: every call computes the same value, except one that passes `factor` again by keyword ([callables](callables.md#arguments-go-by-position-where-they-can)).
 - A constructor parameter named `classfn` cannot be filled beside a `class:` or `classfn:`
   opener, since two object openers are refused; it is reached under the `args` of a `call:` or
   a `bind:` of the class ([callables](callables.md#an-openers-word-is-never-an-argument)).

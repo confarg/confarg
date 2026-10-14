@@ -10,7 +10,6 @@ Dev Notes:
 
 from __future__ import annotations
 
-import itertools
 import types
 import warnings
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -40,6 +39,7 @@ from confarg._types import (
     _elem_type,
     _fixed_seq_types,
     _init_params,
+    _is_dc,
     _is_dict,
     _is_frozenset,
     _is_list,
@@ -697,16 +697,17 @@ def _indexed_dict_to_positions(
     return out
 
 
-def _call_with_var_positional(
+def _call_plain_class(
     tp: Any,
     kwargs: dict[str, Any],
-    var_pos_name: str,
+    var_pos_name: str | None,
     var_kw: dict[str, Any],
 ) -> Any:
-    """Call tp(*pos_args, *var_pos, **kwargs, **var_kw) with *args support.
+    """Call the plain class *tp* with *kwargs* by name, the list under *var_pos_name* as its ``*args``, and *var_kw*.
 
-    The positional parameters are passed by position, in order, up to the first one
-    *kwargs* has no value for; the rest go by keyword.
+    The named arguments go by position or by keyword as
+    :meth:`~confarg._types._PositionalParams.split` decides, so a positional-only parameter
+    is reached (BUG-152), and the ``*args`` values follow the positional ones.
 
     Raises:
         TypeError: If *var_pos_name* holds values while a positional parameter is unfilled,
@@ -715,15 +716,14 @@ def _call_with_var_positional(
     Dev Notes:
         docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
     """
-    var_pos = list(kwargs.pop(var_pos_name, []))
+    var_pos = list(kwargs.pop(var_pos_name, [])) if var_pos_name else []
     positional = _init_params(tp).positional
-    filled = list(itertools.takewhile(kwargs.__contains__, positional))
-    if var_pos and len(filled) < len(positional):
-        unset = positional[len(filled)]
+    pos_args, by_keyword = positional.split(kwargs)
+    if var_pos and len(pos_args) < len(positional.names):
+        unset = positional.names[len(pos_args)]
         msg = f"{tp.__name__}() cannot take *{var_pos_name} while positional parameter {unset!r} is unset"
         raise TypeError(msg)
-    pos_args = [kwargs.pop(name) for name in filled]
-    return tp(*pos_args, *var_pos, **kwargs, **var_kw)
+    return tp(*pos_args, *var_pos, **by_keyword, **var_kw)
 
 
 class _Naming(NamedTuple):
@@ -787,13 +787,11 @@ def _construct_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str)
         else:
             raise MissingFieldError(fp, ft)
 
+    if _is_dc(tp):
+        return tp(**kwargs)
     var = _var_params(tp)
     var_kw = dict(kwargs.pop(var.keyword, {})) if var.keyword else {}
-
-    if var.positional is None:
-        return tp(**kwargs, **var_kw)
-
-    return _call_with_var_positional(tp, kwargs, var.positional, var_kw)
+    return _call_plain_class(tp, kwargs, var.positional, var_kw)
 
 
 def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[Any]:
