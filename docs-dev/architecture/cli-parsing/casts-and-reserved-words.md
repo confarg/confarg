@@ -69,7 +69,7 @@ ambiguity, none a loud refusal. The walk asks it as "member first, tag fallback"
 that one walk), and every site that has
 only the type and the key — construction's struct, union and taggable-leaf dispatches, the
 tag collectors in `_tags.py`, the adapters' tag flags — asks `_union_tag_shadowed`
-(`_types.py`), the one predicate for "does a real field own the tag's spelling here?". The
+(`_types.py`), the one predicate for "does a real field own the tag's spelling here?". The union's structural check reads a variant's keys through one helper, `typedload._construct._field_keys`, at the variant and at a nested struct value alike; the nested check once dropped the tag-shaped key unconditionally, so a real field one level below a variant was read as the tag and the union reported an ambiguity it should have resolved (BUG-107). The merge asks the same predicate, so a key a member owns refines what lower layers set rather than replacing it ([the type decides](../design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)). The
 tag still counts as a member for the casts and the locals (`_segment_names_real_field`
 answers it so), and the CLI keeps a case-differing field distinguishable, exact matching
 being what it is: `--Kind` the tag, `--kind` the field.
