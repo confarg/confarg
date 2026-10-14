@@ -150,8 +150,8 @@ negative indices, `--f.int V`, root `--json '{…}'`, `--config[.sub][+] FILE`. 
 typed parser derives from the field type, comes instead from the Document (an existing list takes
 greedy tokens; anything else takes one) — with `--f='[1,2]'` as the always-available escape.
 
-Both emit the existing sentinel vocabulary (`+ - * ~ N`, `DICT_DELETE`) so `_merge._deep_merge`
-and `_apply_list_ops` apply unchanged, and both raise a new
+Both emit the typed parsers' ops (the `ListOp` markers, index keys, `DICT_DELETE`), since no merge
+reads a key as an op, so `_merge._deep_merge` and `_apply_list_ops` apply unchanged, and both raise a new
 `exceptions.UnknownKeyError` (modeled on `LocalsError.not_declared`) for a path absent from the
 Document unless `--allow-new` is set.
 

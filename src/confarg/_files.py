@@ -40,6 +40,7 @@ from confarg._merge import (
     MergeDict,
     _deep_merge,
     _merge_within_source,
+    _normalize_merge_ops,
     _to_append_list,
     _without_key_deletes,
 )
@@ -364,6 +365,8 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     path_in_file: tuple[str, ...] = (),
     root: MergeAt = _SHAPE,
     mount: tuple[str, ...] = (),
+    *,
+    read_ops: bool = True,
 ) -> Any:
     """Resolve the includes of one document's own nodes, and anchor its own references.
 
@@ -384,16 +387,23 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     With sibling keys it must yield a dict, and the siblings, resolved as this document's own
     nodes, merge on top. A present but unusable value (``__include__: null``) raises.
 
+    With *read_ops*, a configuration document's, each dict's keys are read as the merge ops
+    they spell (``_merge._normalize_merge_ops``) once its values are resolved, so ``key+:``
+    appends the items an include under it brings, and a delete beside an include deletes in
+    it. A data file's are not: its header is data.
+
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
         docs-dev/architecture/config-files/include-semantics.md#include-semantics
     """
     if isinstance(data, dict):
-        return _resolve_dict(data, base, seen, path_in_file, root, mount)
+        return _resolve_dict(data, base, seen, path_in_file, root, mount, read_ops=read_ops)
     if isinstance(data, list):
-        # A list replaces the layers below whole: a delete an item's include kept for them ends here.
+        # A list replaces the layers below whole: a delete an item kept for them ends here.
         return [
-            _without_key_deletes(_resolve_node(item, base, seen, (*path_in_file, str(index)), root, mount))
+            _without_key_deletes(
+                _resolve_node(item, base, seen, (*path_in_file, str(index)), root, mount, read_ops=read_ops),
+            )
             for index, item in enumerate(data)
         ]
     if contains_expression(data):
@@ -409,6 +419,8 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     path_in_file: tuple[str, ...],
     root: MergeAt,
     mount: tuple[str, ...],
+    *,
+    read_ops: bool,
 ) -> Any:
     """Resolve a dict node, the one place INCLUDE_KEY is read (see :func:`_resolve_node`).
 
@@ -417,7 +429,11 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     visits what was included. A key that is no string (a YAML integer) is one segment.
     """
     if INCLUDE_KEY not in data:
-        return {k: _resolve_node(v, base, seen, (*path_in_file, str(k)), root, mount) for k, v in data.items()}
+        resolved = {
+            k: _resolve_node(v, base, seen, (*path_in_file, str(k)), root, mount, read_ops=read_ops)
+            for k, v in data.items()
+        }
+        return _normalize_merge_ops(resolved) if read_ops else resolved
     entries = _parse_include_val(data[INCLUDE_KEY])
     here = (*mount, *path_in_file)
     included = _load_includes(entries, base, seen, root, here)
@@ -426,7 +442,7 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
         return included
     return _include_with_siblings(
         included,
-        _resolve_dict(siblings, base, seen, path_in_file, root, mount),
+        _resolve_dict(siblings, base, seen, path_in_file, root, mount, read_ops=read_ops),
         root.at_path(here),
     )
 
@@ -458,7 +474,8 @@ def _load_any(
         docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies
         docs-dev/architecture/expressions/reference-anchoring.md#why-the-node-anchor-resolves-late
     """
-    return _resolve_node(_load_document(loc, options), loc, seen, (), root, mount)
+    read_ops = _sources._suffix(loc) not in _DATA_SUFFIXES  # a data file's header is data
+    return _resolve_node(_load_document(loc, options), loc, seen, (), root, mount, read_ops=read_ops)
 
 
 def _require_layer(value: Any, loc: str) -> MergeDict:

@@ -938,6 +938,12 @@ class TestDeleteBesideAnInclude:
         top = f"rows:\n  - {INCLUDE_KEY}: ./row.yaml\n    {delete}-: null\n"
         assert _load_over_base(tmp_path, top).rows == [expected]
 
+    def test_csv_header_names_columns_only(self, tmp_path: Path) -> None:
+        """A data file's header is data: a column whose name ends in ``-`` deletes nothing (Q-7)."""
+        write(tmp_path, "cols.csv", "note-\nx\n")
+        top = f"m:\n  {INCLUDE_KEY}: {{path: ./cols.csv, orient: columns}}\n  note: [hi]\n"
+        assert _load_over_base(tmp_path, top, base=False).m == {"note-": ["x"], "note": ["hi"]}
+
     def test_csv_entry_replaces_an_earlier_entrys_delete(self, tmp_path: Path) -> None:
         """A data entry replaces what the earlier entries said, their deletes included."""
         top = f"m:\n  {INCLUDE_KEY}:\n    - ./delnote.yaml\n    - {{path: ./x.csv, orient: columns}}\n"

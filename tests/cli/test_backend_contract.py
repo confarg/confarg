@@ -4563,14 +4563,17 @@ class TestCollectionPatchContract:
         argv = ["--config", str(base), "--json", root_json, delete]
         assert loader.load(_WithDefaultedSection, argv=argv, env={}).sec == expected
 
-    def test_delete_in_a_root_json_cast_refined_by_a_flag_deletes_below(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """A key delete nested in the root ``json`` object survives a flag refining its node (BUG-227).
+    def test_delete_beside_a_root_json_cast_refined_by_a_flag_deletes_below(
+        self, loader: ConfargLoader, tmp_yaml
+    ) -> None:
+        """A key delete beside the root ``json`` object survives a flag refining its node (BUG-227).
 
-        The object and the flags are one source, so the flag's dict no longer spends the object's delete:
-        it deletes the file's ``sec.a`` as it does with no flag beside it (BUG-228's third spelling).
+        The object and the flags are one source, so the flag's dict does not spend the delete: it
+        deletes the file's ``sec.a`` as it does with no flag after it. The delete was spelled in the
+        object until a decoded value became data (Q-7).
         """
         base = tmp_yaml("sec: {a: 5, b: 6}\n")
-        argv = ["--config", str(base), "--json", '{"sec": {"a-": null}}', "--sec.b", "3"]
+        argv = ["--config", str(base), "--json", '{"sec": {"b": 8}}', "--sec.a-", "--sec.b", "3"]
         assert loader.load(_WithDefaultedSection, argv=argv, env={}).sec == _DefaultedSection(a=1, b=3)
 
     @pytest.mark.parametrize(
@@ -4974,6 +4977,118 @@ class TestCollectionPatchContract:
         with pytest.raises(ConfargError) as excinfo:
             loader.merge(_SequenceSegments, argv=["--config.d.__base__", str(part)], env={})
         assert str(excinfo.value) == f"Cannot set '--config.d.__base__': '__base__' {_RESERVED_KEY_REASON}"
+
+
+@dataclass
+class _DecodedInto:
+    """A struct, a dict, an ``Any`` and a list of structs, each with a file value below."""
+
+    name: str = "default"
+    sec: _DefaultedSection = dataclasses.field(default_factory=_DefaultedSection)
+    d: dict[str, int] = dataclasses.field(default_factory=dict)
+    anything: Any = None
+    rows: list[_DefaultedSection] = dataclasses.field(default_factory=list)
+
+
+class TestADecodedValueIsData:
+    """A JSON value on argv is data: its keys never spell a merge op, only a file's do (Q-7, BUG-228).
+
+    A decoded object was normalized like a file's document, so ``{"a-": null}`` deleted, but only
+    in some positions: at the root cast's top level the objects' own fold spent the delete, and
+    the file's value came back.
+    """
+
+    @pytest.fixture
+    def base(self, tmp_yaml) -> Path:
+        """The file every spelling applies over."""
+        return tmp_yaml("name: file\nsec: {a: 5}\nd: {k: 1}\n")
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["--d", '{"k-": 5, "z+": 6}'], id="whole-value-flag"),
+            pytest.param(["--json", '{"d": {"k-": 5, "z+": 6}}'], id="root-cast"),
+            pytest.param(["--json", '{"d": {"k-": 5, "z+": 6}}', "--d.k", "1"], id="root-cast-refined-by-a-flag"),
+        ],
+    )
+    def test_suffixed_keys_are_a_dicts_keys(self, loader: ConfargLoader, base: Path, argv: list[str]) -> None:
+        """``k-`` and ``z+`` are two more keys of the dict, beside the file's ``k``."""
+        d = loader.load(_DecodedInto, argv=["--config", str(base), *argv], env={}).d
+        assert d == {"k": 1, "k-": 5, "z+": 6}
+
+    def test_suffixed_keys_reach_merge_as_written(self, loader: ConfargLoader) -> None:
+        """``merge()`` hands them on as keys, no op made of them."""
+        merged = loader.merge(_DecodedInto, argv=["--anything.json", '{"a-": 1, "b+": [2]}'], env={})
+        assert merged == {"anything": {"a-": 1, "b+": [2]}}
+
+    @pytest.mark.parametrize(
+        ("argv", "key"),
+        [
+            pytest.param(["--sec.json", '{"a-": null}'], "a-", id="field-cast"),
+            pytest.param(["--json", '{"sec": {"a-": null}}'], "a-", id="nested-in-the-root-cast"),
+            pytest.param(["--json", '{"sec": {"a-": null}}', "--sec.b", "3"], "a-", id="refined-by-a-flag"),
+            pytest.param(["--json", '{"name-": null}'], "name-", id="top-level-of-the-root-cast"),
+            pytest.param(["--sec", '{"a-": null}'], "a-", id="whole-value-flag"),
+        ],
+    )
+    def test_a_suffixed_key_at_a_struct_is_an_unknown_field_in_every_position(
+        self,
+        loader: ConfargLoader,
+        base: Path,
+        argv: list[str],
+        key: str,
+    ) -> None:
+        """No spelling deletes the file's value: each is a key the struct does not have (BUG-228)."""
+        with pytest.raises(TypeCoercionError, match=re.escape(f"Unknown field(s) [{key!r}]")):
+            loader.load(_DecodedInto, argv=["--config", str(base), *argv], env={})
+
+    def test_an_appended_items_keys_are_data(self, loader: ConfargLoader) -> None:
+        """An item appended as JSON is a value too."""
+        with pytest.raises(TypeCoercionError, match=re.escape("Unknown field(s) ['a-']")):
+            loader.load(_DecodedInto, argv=["--rows+", '{"a-": 1}'], env={})
+
+    @pytest.mark.parametrize(
+        ("argv", "flag", "key"),
+        [
+            pytest.param(["--json", '{"rows": {"__append__": [{}]}}'], "--json", "__append__", id="op-in-root-cast"),
+            pytest.param(["--d", '{"__base__": 1}'], "--d", "__base__", id="op-in-whole-value"),
+            pytest.param(
+                ["--anything.json", '{"__cast__": "int", "__value__": "5"}'],
+                "--anything.json",
+                "__cast__",
+                id="pin-in-field-cast",
+            ),
+            pytest.param(
+                ["--anything.json", '{"__include__": "x.yaml"}'],
+                "--anything.json",
+                "__include__",
+                id="include",
+            ),
+            pytest.param(
+                ["--anything.json", '[{"x": {"__root__": 1}}]'],
+                "--anything.json",
+                "__root__",
+                id="in-a-list",
+            ),
+            pytest.param(["--rows+", '{"__delete__": [0]}'], "--rows+", "__delete__", id="appended-item"),
+            pytest.param(
+                ["--rows", '[{"__delete_after__": [0]}]'],
+                "--rows",
+                "__delete_after__",
+                id="whole-list",
+            ),
+        ],
+    )
+    def test_a_reserved_key_in_a_decoded_value_is_refused(
+        self,
+        loader: ConfargLoader,
+        argv: list[str],
+        flag: str,
+        key: str,
+    ) -> None:
+        """A key confarg reserves is refused in a value as on a flag's path: only a file writes one."""
+        with pytest.raises(ConfargError, match=re.escape(f"Cannot set {flag!r}: {key!r} is a key confarg reserves")):
+            loader.load(_DecodedInto, argv=argv, env={})
 
 
 class TestCollectionPatchListSyntax:

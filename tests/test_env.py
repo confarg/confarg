@@ -1229,6 +1229,78 @@ class TestEnvAppend:
             loader.load(_EnvAppendable, argv=[], env={"APP_CONFIG+": str(items)}, env_prefix="APP_")
 
 
+@_dc
+class _EnvDecodedInto:
+    """A scalar, a dict, an ``Any`` and a list, each with a file value below."""
+
+    name: str = "default"
+    d: dict[str, int] = field(default_factory=dict)
+    anything: Any = None
+    xs: list[int] = field(default_factory=list)
+
+
+class TestEnvDecodedValueIsData:
+    """A JSON value in the environment is data: its keys never spell a merge op (Q-7, BUG-228)."""
+
+    @pytest.fixture
+    def base(self, tmp_yaml) -> Path:
+        """The file every variable applies over."""
+        return tmp_yaml("name: file\nd: {k: 1}\nxs: [1]\n")
+
+    @pytest.mark.parametrize(
+        "env",
+        [
+            pytest.param({"APP_D": '{"k-": 5, "z+": 6}'}, id="whole-value"),
+            pytest.param({"APP_JSON": '{"d": {"k-": 5, "z+": 6}}'}, id="root-cast"),
+        ],
+    )
+    def test_suffixed_keys_are_a_dicts_keys(self, loader: ConfargLoader, base: Path, env: dict[str, str]) -> None:
+        """``k-`` and ``z+`` are two more keys of the dict, beside the file's ``k``."""
+        result = loader.load(_EnvDecodedInto, argv=[], env=env, env_prefix="APP_", files=[base])
+        assert result.d == {"k": 1, "k-": 5, "z+": 6}
+
+    @pytest.mark.parametrize(
+        "env",
+        [
+            pytest.param({"APP_JSON": '{"name-": null}'}, id="root-cast"),
+            pytest.param({"APP_JSON": '{"xs+": [9]}'}, id="root-cast-append"),
+        ],
+    )
+    def test_a_suffixed_key_at_the_root_struct_is_an_unknown_field(
+        self,
+        loader: ConfargLoader,
+        base: Path,
+        env: dict[str, str],
+    ) -> None:
+        """The root cast neither deletes the file's ``name`` nor appends to its ``xs`` (BUG-228)."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=re.escape("Unknown field(s)")):
+            loader.load(_EnvDecodedInto, argv=[], env=env, env_prefix="APP_", files=[base])
+
+    @pytest.mark.parametrize(
+        ("name", "value", "key"),
+        [
+            pytest.param("APP_JSON", '{"xs": {"__append__": [9]}}', "__append__", id="op-in-root-cast"),
+            pytest.param("APP_D", '{"__base__": 1}', "__base__", id="op-in-whole-value"),
+            pytest.param("APP_ANYTHING__JSON", '{"__cast__": "int", "__value__": "5"}', "__cast__", id="pin-in-cast"),
+            pytest.param("APP_ANYTHING__JSON", '[{"__include__": "x.yaml"}]', "__include__", id="in-a-list"),
+            pytest.param("APP_XS+", '[{"__root__": 1}]', "__root__", id="appended-item"),
+        ],
+    )
+    def test_a_reserved_key_in_a_decoded_value_is_refused(
+        self,
+        loader: ConfargLoader,
+        name: str,
+        value: str,
+        key: str,
+    ) -> None:
+        """A key confarg reserves is refused in a value as in a variable's name: only a file writes one."""
+        with pytest.raises(
+            confarg.exceptions.ConfargError,
+            match=re.escape(f"Cannot set {name!r}: {key!r} is a key confarg reserves"),
+        ):
+            loader.load(_EnvDecodedInto, argv=[], env={name: value}, env_prefix="APP_")
+
+
 class _EnvSeqPt(NamedTuple):
     x: int
     y: int
