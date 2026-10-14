@@ -21,7 +21,9 @@ anything that is not a dict-on-dict, which is merged recursively.
   replaces a list or a dict a lower layer held, as a scalar would, rather than being merged
   into it as a patch (5b: two files, `u: [1, 2]` then a pin, deferred the pin's keys as a
   patch of the list). The merge tells it by shape alone (`_is_pin_dict`), whatever the
-  type; construction resolves the pin, as it does wherever one stands (BUG-210).
+  type; construction resolves the pin, as it does wherever one stands (BUG-210). A pin below
+  is a value too: a dict over it replaces it, as a dict over the plain `5` does, rather than
+  merging into the pin's two keys, which an `Any` field then held as data (BUG-239).
 - `DICT_DELETE` (from `key-` in files, `--field.key-`, `FOO__KEY-`) removes a key.
 - File-sourced shorthand `key+:` / `key-:` / `"N-":`, and the reserved keys below, are
   normalized to the ops by `_normalize_merge_ops`, the ops argv and the environment spell on their paths, so the three channels share one patch vocabulary. Only a configuration document is read, each of its dicts once, as the include walk leaves it (`_files._resolve_dict`); no merge reads a key, so a value argv or the environment decodes is data ([design decisions](../design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data)). Every dict of a document is read, one standing in a list included: an item has no layer below it, so it reads as a document merged over nothing, and a delete in it removes its key from the item and ends there (`_without_key_deletes`). Until BUG-237 a list's items were skipped, so `rows: [{k: 4, k-: null}]` kept `k-` as a field, which construction refused, while the same item beside an `__include__` read it through the merge of the include's siblings.

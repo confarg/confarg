@@ -388,11 +388,13 @@ def _replaces_what_lies_below(bv: Any, val: Any, at: MergeAt) -> bool:
     """Whether the override *val* replaces *bv* outright rather than patching it.
 
     A cast pin is a value, and so is a dict *at* reads as one (a union tag, an opener), so
-    they replace a list or a dict below them as a scalar would. An override carrying its own
-    base (``ListOp.BASE``) replaces a dict base: the patches beside that base address it, not
-    whatever an earlier layer held. A base that is a whole-field delete replaces a list base too.
+    they replace a list or a dict below them as a scalar would. A pin below is a value too,
+    so a dict over it replaces it as a dict over a scalar does, rather than merging into the
+    pin's two keys (BUG-239). An override carrying its own base (``ListOp.BASE``) replaces a
+    dict base: the patches beside that base address it, not whatever an earlier layer held. A
+    base that is a whole-field delete replaces a list base too.
     """
-    if _is_pin_dict(val) or (isinstance(val, dict) and at.replaces(val)):
+    if _is_pin_dict(val) or (isinstance(val, dict) and (_is_pin_dict(bv) or at.replaces(val))):
         return True
     return isinstance(val, dict) and ListOp.BASE in val and (val[ListOp.BASE] is DICT_DELETE or isinstance(bv, dict))
 
