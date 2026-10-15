@@ -965,6 +965,19 @@ class TestFixedSequenceContract:
         """An index flag and a name flag each fill the position they spell (Q-1)."""
         assert loader.load(_WithPoint, argv=["--pair.0", "1", "--pair.y", "2"], env={}).pair == _Point(x=1, y=2)
 
+    @pytest.mark.parametrize("flag", ["--pair.0-", "--pair.x-", "--pair.-2-"])
+    def test_namedtuple_position_delete_unsets_it(self, loader: ConfargLoader, tmp_yaml, flag: str) -> None:
+        """Every front-end unsets the position in place: ``y`` stays, ``x`` takes its class default (BUG-243)."""
+        cfg = tmp_yaml("pair: [7, 8]\n")
+        assert loader.load(_WithDefPoint, files=[str(cfg)], argv=[flag], env={}).pair == _DefPoint(x=0, y=8)
+
+    def test_fixed_tuple_position_delete_unsets_it(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A fixed tuple's unset ``int`` position is missing on every front-end, and a later flag sets it (BUG-243)."""
+        cfg = tmp_yaml("pair: [7, 8]\n")
+        with pytest.raises(MissingFieldError, match=re.escape("'pair[0]'")):
+            loader.load(_WithIntPair, files=[str(cfg)], argv=["--pair.0-"], env={})
+        assert loader.load(_WithIntPair, files=[str(cfg)], argv=["--pair.0-", "--pair.0", "9"], env={}).pair == (9, 8)
+
     def test_namedtuple_later_spelling_of_one_position_wins(self, loader: ConfargLoader) -> None:
         """Two spellings of one position: the later flag wins, as a repeated flag does (Q-1)."""
         cfg = loader.load(_WithPoint, argv=["--pair.x", "13", "--pair.y", "1", "--pair.0", "9"], env={})
@@ -8766,9 +8779,9 @@ class TestAFieldDefaultIsTheBaseLayer:
         assert loader.load(_DefaultedTuples, argv=["--v.0-"], env={}).v == (1,)
         assert loader.load(_DefaultedTuples, argv=[], env={"APP_V__0-": "1"}, env_prefix="APP_").v == (1,)
 
-    def test_a_delete_from_a_fixed_default_is_refused(self, loader: ConfargLoader) -> None:
-        """``--t.0-`` leaves one element for two positions."""
-        with pytest.raises(ConfargError, match=re.escape("expected 2 elements, got 1")):
+    def test_a_delete_from_a_fixed_default_unsets_the_position(self, loader: ConfargLoader) -> None:
+        """``--t.0-`` unsets position 0 of the default, which an ``int`` position cannot leave unset (BUG-243)."""
+        with pytest.raises(MissingFieldError, match=re.escape("Missing required field 't[0]'")):
             loader.load(_DefaultedTuples, argv=["--t.0-"], env={})
 
     def test_an_expression_reads_a_default(self, loader: ConfargLoader, tmp_yaml) -> None:

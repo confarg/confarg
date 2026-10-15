@@ -14,7 +14,7 @@ from typing import Any, NamedTuple
 import pytest
 
 import confarg
-from confarg._merge import ListOp
+from confarg._merge import DICT_DELETE, ListOp
 from confarg.cli.argparse import from_namespace, populate_parser
 from confarg.exceptions import ConfargError, MissingFieldError, TypeCoercionError
 from confarg.typedload import construct
@@ -747,3 +747,150 @@ class TestNamedtupleFieldsCache:
         assert dict(_namedtuple_fields(Pending)) == {"x": Any}
         monkeypatch.setitem(globals(), "_NotYetDefined", int)
         assert dict(_namedtuple_fields(Pending)) == {"x": int}
+
+
+# ---------------------------------------------------------------------------
+# A delete on a fixed-length position unsets it (BUG-243)
+# ---------------------------------------------------------------------------
+
+
+class _DefPt(NamedTuple):
+    """A namedtuple whose fields default, so an unset position falls back to its class default."""
+
+    x: int = 1
+    y: int = 2
+
+
+@dataclass
+class _Positions:
+    """Fixed-length fields of each kind, their defaults laid by the default layer."""
+
+    pt: _DefPt = _DefPt()  # noqa: RUF009  # a tuple default, laid as the bottom layer
+    pf: _DefPt = _DefPt(5, 6)  # noqa: RUF009  # a field default that disagrees with the class's
+    rq: Point = Point(5, 6)  # noqa: RUF009  # a namedtuple whose fields have no default
+    t: tuple[int, int] = (1, 2)
+    to: tuple[int | None, int] = (1, 2)
+    opt: _DefPt | None = None
+    m: int | None = None
+
+
+def _base(
+    tmp_path, body: str = "pt: [7, 8]\npf: [7, 8]\nrq: [7, 8]\nt: [7, 8]\nto: [7, 8]\nopt: [7, 8]\n"
+) -> list[str]:
+    path = tmp_path / "base.yaml"
+    path.write_text(body)
+    return [str(path)]
+
+
+class TestAPositionDeleteUnsetsIt:
+    """A delete at a namedtuple's or a fixed tuple's position unsets it; nothing slides (BUG-243)."""
+
+    @pytest.mark.parametrize("flag", ["--pt.0-", "--pt.x-", "--pt.-2-"])
+    def test_every_spelling_unsets_the_namedtuple_position(self, tmp_path, flag: str) -> None:
+        """``y`` stays where it is, and ``x`` falls back to its class default."""
+        assert confarg.load(_Positions, files=_base(tmp_path), argv=[flag], env={}).pt == _DefPt(1, 8)
+
+    @pytest.mark.parametrize("name", ["APP_PT__0-", "APP_PT__X-"])
+    def test_the_environment_unsets_it_too(self, tmp_path, name: str) -> None:
+        """A variable's delete is read as the flag's is."""
+        cfg = confarg.load(_Positions, files=_base(tmp_path), argv=[], env={name: ""}, env_prefix="APP_")
+        assert cfg.pt == _DefPt(1, 8)
+
+    def test_a_position_with_no_default_is_missing(self, tmp_path) -> None:
+        """A namedtuple field with no default is a missing field once unset."""
+        with pytest.raises(MissingFieldError, match=r"rq\.x"):
+            confarg.load(_Positions, files=_base(tmp_path), argv=["--rq.x-"], env={})
+
+    def test_a_later_set_fills_the_unset_position(self, tmp_path) -> None:
+        """``--rq.x- --rq.x 1`` sets what the delete cleared, and nothing else moves."""
+        assert confarg.load(_Positions, files=_base(tmp_path), argv=["--rq.x-", "--rq.x", "1"], env={}).rq == Point(
+            1, 8
+        )
+
+    def test_a_fixed_tuple_position_is_missing(self, tmp_path) -> None:
+        """A fixed tuple's position has no default of its own: unset, it is missing."""
+        with pytest.raises(MissingFieldError, match=r"t\[0\]"):
+            confarg.load(_Positions, files=_base(tmp_path), argv=["--t.0-"], env={})
+        with pytest.raises(MissingFieldError, match=r"t\[0\]"):
+            confarg.load(_Positions, argv=["--t.0-"], env={})
+
+    def test_a_fixed_tuple_position_that_takes_none_is_none(self, tmp_path) -> None:
+        """A position whose type takes ``None`` is ``None`` once unset, with a file or without."""
+        assert confarg.load(_Positions, files=_base(tmp_path), argv=["--to.0-"], env={}).to == (None, 8)
+        assert confarg.load(_Positions, argv=["--to.0-"], env={}).to == (None, 2)
+
+    def test_a_fixed_tuple_delete_then_set(self, tmp_path) -> None:
+        """``--t.0- --t.0 9`` sets position 0 and keeps position 1."""
+        assert confarg.load(_Positions, files=_base(tmp_path), argv=["--t.0-", "--t.0", "9"], env={}).t == (9, 8)
+
+    def test_the_field_default_is_unset_too(self, tmp_path) -> None:
+        """The delete removes the position from the field default: the class's own default shows."""
+        assert confarg.load(_Positions, argv=["--pf.x-"], env={}).pf == _DefPt(1, 6)
+        assert confarg.load(_Positions, files=_base(tmp_path), argv=["--pf.x-"], env={}).pf == _DefPt(1, 8)
+
+    def test_an_optional_namedtuple_takes_its_variant(self, tmp_path) -> None:
+        """A union whose one variant is fixed-length unsets as the variant does."""
+        assert confarg.load(_Positions, files=_base(tmp_path), argv=["--opt.0-"], env={}).opt == _DefPt(1, 8)
+
+    def test_spellings_combine_within_one_source(self) -> None:
+        """A name and an index name one position within argv, the later write winning."""
+        assert confarg.load(_Positions, argv=["--pt.0-", "--pt.y", "5"], env={}).pt == _DefPt(1, 5)
+        assert confarg.load(_Positions, argv=["--pt.0", "9", "--pt.x-"], env={}).pt == _DefPt(1, 2)
+        assert confarg.load(_Positions, argv=["--pf.0", "9", "--pf.x-"], env={}).pf == _DefPt(1, 6)
+
+    def test_the_delete_survives_a_higher_layer(self, tmp_path) -> None:
+        """The environment's delete is still a delete under a flag that patches the other position."""
+        cfg = confarg.load(
+            _Positions, files=_base(tmp_path), argv=["--pt.y", "5"], env={"APP_PT__X-": ""}, env_prefix="APP_"
+        )
+        assert cfg.pt == _DefPt(1, 5)
+        cfg = confarg.load(
+            _Positions, files=_base(tmp_path), argv=["--pt.x", "3"], env={"APP_PT__X-": ""}, env_prefix="APP_"
+        )
+        assert cfg.pt == _DefPt(3, 8)
+
+    def test_the_merge_keeps_the_delete_in_the_keyed_form(self, tmp_path) -> None:
+        """Over a base list the position delete keys the base and stays in it, for the default below."""
+        merged = confarg.merge(
+            _Positions, files=_base(tmp_path, "pt: [7, 8]\nt: [7, 8]\n"), argv=["--pt.0-", "--t.0-"], env={}
+        )
+        assert merged == {"pt": {"x": DICT_DELETE, "y": 8}, "t": {"0": DICT_DELETE, "1": 8}}
+
+    def test_a_dumped_merge_reads_back(self, tmp_path) -> None:
+        """``dump_file(merge(...))`` writes the delete as ``{__unset__: true}``, which reads back the same."""
+        merged = confarg.merge(_Positions, files=_base(tmp_path), argv=["--pf.x-"], env={})
+        saved = tmp_path / "saved.yaml"
+        confarg.dump_file(merged, saved)
+        assert confarg.merge(_Positions, files=[str(saved)], argv=[], env={}) == merged
+        assert confarg.load(_Positions, files=[str(saved)], argv=[], env={}).pf == _DefPt(1, 8)
+
+    @pytest.mark.parametrize("key", ['"0"', "x"])
+    def test_a_file_unsets_a_position(self, tmp_path, key: str) -> None:
+        """A file writes the same delete as ``{__unset__: true}`` at the position, by index or by name."""
+        (tmp_path / "del.yaml").write_text(f"pt: {{{key}: {{__unset__: true}}}}\n")
+        files = [*_base(tmp_path), str(tmp_path / "del.yaml")]
+        assert confarg.load(_Positions, files=files, argv=[], env={}).pt == _DefPt(1, 8)
+
+    @pytest.mark.parametrize("field", ["pt", "t"])
+    @pytest.mark.parametrize("op", ["__delete__", "__delete_after__"])
+    def test_a_file_list_delete_is_refused(self, tmp_path, field: str, op: str) -> None:
+        """A fixed-length position is unset in place, so a file's list delete there is refused, naming ``__unset__``."""
+        (tmp_path / "del.yaml").write_text(f"{field}: {{{op}: [0]}}\n")
+        for files in ([*_base(tmp_path), str(tmp_path / "del.yaml")], [str(tmp_path / "del.yaml")]):
+            with pytest.raises(ConfargError, match="__unset__"):
+                confarg.load(_Positions, files=files, argv=[], env={})
+
+    def test_a_reference_reads_the_built_value(self, tmp_path) -> None:
+        """``${pt.x}`` reads what ``pt.x`` builds to once unset: its class default."""
+        (tmp_path / "ref.yaml").write_text("m: '${pf.x}'\n")
+        files = [*_base(tmp_path), str(tmp_path / "ref.yaml")]
+        cfg = confarg.load(_Positions, files=files, argv=["--pf.x-"], env={})
+        assert cfg.m == cfg.pf.x == 1
+
+    def test_a_reference_reads_none_at_an_unset_optional_position(self, tmp_path) -> None:
+        """``${to[0]}`` reads the ``None`` construction fills an unset optional position with."""
+        (tmp_path / "ref.yaml").write_text("m: '${to[0]}'\n")
+        files = [*_base(tmp_path), str(tmp_path / "ref.yaml")]
+        cfg = confarg.load(_Positions, files=files, argv=["--to.0-"], env={})
+        assert cfg.m is None
+        assert cfg.to == (None, 8)

@@ -124,12 +124,15 @@ indifferent to both.
   data before construction, as a lower file holding it would be
   ([design decisions](../design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer)).
   A base the merge carried (`__base__`) replaces it, as it replaces a lower file's list.
-- A list op on a fixed tuple or a namedtuple applies over the `__base__` it carries, and the list
-  it leaves is checked against the arity (`--t 1 2 --t.0-` is "expected 2 elements, got 1"); with
-  no base it is refused naming the op, as on a dict (BUG-221).
+- An append on a fixed tuple or a namedtuple applies over the `__base__` it carries, and the list
+  it leaves is checked against the arity; with no base it is refused naming the op, as on a dict
+  (BUG-221). A list delete is refused there either way, naming `{__unset__: true}`: a delete at a
+  position unsets it in place, under a carried base too
+  ([design decisions](../design-decisions/a-fixed-length-delete-unsets-a-position.md#a-fixed-length-delete-unsets-a-position)).
 - A fixed tuple's position neither a base nor a patch filled is a missing field,
   `MissingFieldError` naming `t[0]` and its flag `--t.0`, as a namedtuple's field is; an Optional
-  position is `None`. A list shorter than the arity is still the arity refusal: it states its
+  position is `None`. `unset_position` is the one answer to what an unset position holds, a
+  namedtuple field's class default included, which the default layer asks too. A list shorter than the arity is still the arity refusal: it states its
   length.
 - A `__base__` with an index patch beside it builds as the merge would have built it, had no
   index escaped the base: each patch value refines what the base holds at its position through

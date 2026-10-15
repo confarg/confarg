@@ -101,8 +101,6 @@ A field default is the layer below every source only where the class declares it
 - Below a tag that is an expression, a union a structural match decides, or a struct with
   subclasses and no tag, no default is laid: which class's defaults apply is not known before
   construction.
-- A namedtuple node a source spells by field name gets no defaults laid inside it; its fields'
-  defaults are read only when the whole namedtuple is the default.
 - An expression that produces a patch dict replaces the default rather than patching it: the
   defaults are combined with the data before expressions resolve.
 
