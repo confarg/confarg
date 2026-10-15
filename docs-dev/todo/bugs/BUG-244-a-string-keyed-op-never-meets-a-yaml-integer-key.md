@@ -14,6 +14,8 @@ introduced_by: [PR-5]  # _deep_merge has matched keys by equality since the init
 
 YAML reads `{1: 5}` with an integer key, while argv, the environment and JSON spell every key as a string, and `_deep_merge` matches keys by equality. So on a `dict[int, int]` loaded from YAML, a key delete, `--d.1-` or a JSON layer's `{"1": {__unset__: true}}`, meets nothing and silently deletes nothing. A value patch, `--d.1 9`, sits beside the integer key as a second key, `{1: 5, '1': 9}`, and builds right only because `_construct_dict` coerces both to `1` and the later one wins. Fix direction: decide one key identity for the merge, either the dict's key type (the merge already has its typed context, `merge_at`) or the key's spelling, and say how a YAML integer key and a string key that spell the same are combined ([deep merge](../../architecture/pipeline/deep-merge.md#deep-merge-semantics)). Expressions already settled the read side: a dot path falls back on the integer key ([values and references](../../architecture/expressions/values-and-references.md#spelling-a-path)).
 
+The settled design and its build order: [fixed-length deletes and key identity](../plans/fixed-length-deletes-and-key-identity.md).
+
 Origin: latent since the initial version (PR-5), whose `_deep_merge` matched keys by equality while YAML loaded integer keys and argv spelled strings.
 
 ```python
