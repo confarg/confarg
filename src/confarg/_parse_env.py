@@ -24,6 +24,7 @@ from confarg._merge import (
     APPEND_SUFFIX,
     DELETE_SUFFIX,
     DICT_DELETE,
+    MergeAt,
     MergeDict,
     _accumulate_list_delete,
     _set_nested,
@@ -206,18 +207,27 @@ def _refuse_reserved_key(orig_key: str, parts: list[str]) -> None:
         raise ConfargError.reserved_key(orig_key, reserved)
 
 
-def _handle_env_delete(orig_key: str, del_parts: list[str], data: MergeDict, walk_target: Any, union_tag: str) -> None:
+def _handle_env_delete(  # noqa: PLR0913  # the delete, where it lands, and the walk that types it
+    orig_key: str,
+    del_parts: list[str],
+    data: MergeDict,
+    walk_target: Any,
+    union_tag: str,
+    *,
+    at: MergeAt,
+) -> None:
     """Apply a delete (FOO__BAR- or FOO__ITEMS__1-) at *del_parts* in data, as an index or a key delete.
 
     *del_parts* is the resolved path the delete names, its ``-`` suffix dropped, already
     checked by :func:`_parse_env` as a value variable's path is. Which of the two deletes it
-    is, a flag's delete asks too (:func:`~confarg._parse_cli._delete_index`).
+    is, a flag's delete asks too (:func:`~confarg._parse_cli._delete_index`). *at* is where
+    *data* stands, which reads the identity of the key it deletes.
     """
     delete_idx = _delete_index(walk_target, del_parts, union_tag)
     if delete_idx is not None:
-        _accumulate_list_delete(data, del_parts[:-1], delete_idx, orig_key)
+        _accumulate_list_delete(data, del_parts[:-1], delete_idx, orig_key, at=at)
     else:
-        _set_nested(data, del_parts, DICT_DELETE)
+        _set_nested(data, del_parts, DICT_DELETE, at)
 
 
 def _is_env_delete(parts: list[str]) -> bool:
@@ -304,7 +314,7 @@ def _apply_env_json_cast(  # noqa: PLR0913, PLR0917  # root and nested placement
     path, cast_name = cast
     decoded = resolve_forced_value(cast_name, value, flag=orig_key)
     if path:
-        _set_nested(data, path, decoded)
+        _set_nested(data, path, decoded, _typed_root(walk_target, union_tag))
         return True
     if not is_struct:
         # Non-struct root: the decoded value *is* the configuration, whatever its shape.
@@ -385,8 +395,8 @@ def _accepts_json_for(ft: Any, value: str) -> bool:
     return False
 
 
-def _store_env_value(parts: list[str], ft: Any, value: str, data: MergeDict, orig_key: str) -> None:
-    """Parse an env var string value and store it at the resolved path in data.
+def _store_env_value(parts: list[str], ft: Any, value: str, data: MergeDict, orig_key: str, at: MergeAt) -> None:  # noqa: PLR0913, PLR0917  # where it lands is typed by at
+    """Parse an env var string value and store it at the resolved path in data, *at* where *data* stands.
 
     A JSON value is data (:func:`~confarg._cast.decode_json`), refused naming *orig_key* if it
     holds a key confarg reserves.
@@ -395,9 +405,9 @@ def _store_env_value(parts: list[str], ft: Any, value: str, data: MergeDict, ori
         with contextlib.suppress(json.JSONDecodeError):
             parsed = decode_json(value, orig_key)
             if isinstance(parsed, list | dict):
-                _set_nested(data, parts, parsed)
+                _set_nested(data, parts, parsed, at)
                 return
-    _set_nested(data, parts, _try_coerce(ft, _StrToken(value)))
+    _set_nested(data, parts, _try_coerce(ft, _StrToken(value)), at)
 
 
 def _prefixed_variables(
@@ -473,6 +483,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
             continue
         variables.append((_env_order(parts, key, walk_target, union_tag), orig_key, key, parts, value))
 
+    at = _typed_root(walk_target, union_tag)
     # The environment has no typing order, so it is given one: the broader variable first.
     for _, orig_key, key, parts, value in sorted(variables):
         _refuse_reserved_key(orig_key, parts)
@@ -498,7 +509,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         else:
             _refuse_below_a_sequence(orig_key, path, walk_target, union_tag)
         if is_delete:
-            _handle_env_delete(orig_key, path, data, walk_target, union_tag)
+            _handle_env_delete(orig_key, path, data, walk_target, union_tag, at=at)
             continue
 
         # Same rule as the CLI: a bare callable shorthand already stored at a prefix of
@@ -508,10 +519,15 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         if is_append:
             # One value, read as the flag's single token is: a JSON array is several items.
             et = _appended_element_type(walk_target, path, union_tag, orig_key, ft)
-            _write_append(data, path, _collect_append_items([_EqValue(value)], 0, et, orig_key)[0])
+            _write_append(data, path, _collect_append_items([_EqValue(value)], 0, et, orig_key)[0], at)
             continue
-        _store_env_value(path, ft, value, data, orig_key)
+        _store_env_value(path, ft, value, data, orig_key, at)
 
+    return fold_root_json(data, root_json, _typed_root(target, union_tag)), env_configs
+
+
+def _typed_root(target: Any, union_tag: str) -> MergeAt:
+    """Return where the merge stands at the root of a configuration of type *target*, as the pipeline types it."""
     from confarg._typed_merge import merge_root  # noqa: PLC0415  # import cycle: it walks types with _parse_cli
 
-    return fold_root_json(data, root_json, merge_root(target, union_tag)), env_configs
+    return merge_root(target, union_tag)

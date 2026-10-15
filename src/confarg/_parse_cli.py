@@ -39,6 +39,7 @@ from confarg._merge import (
     DELETE_SUFFIX,
     DICT_DELETE,
     ListOp,
+    MergeAt,
     MergeDict,
     _accumulate_list_delete,
     _open_for_ops,
@@ -1037,6 +1038,8 @@ class _ParseCtx:
     argv: Sequence[str]
     target: Any
     union_tag: str
+    #: Where ``data`` stands, which reads the identity of each key a flag writes (BUG-244).
+    at: MergeAt = field(default_factory=MergeAt)
     data: MergeDict = field(default_factory=dict)
     multi_tokens: dict[tuple[str, ...], list[str]] = field(default_factory=dict)
     """Tokens every plain multi-token occurrence contributed, keyed by field path.
@@ -1063,13 +1066,13 @@ def _handle_delete_token(ctx: _ParseCtx, token: str, path: list[str]) -> None:
         for _p in parent_path:
             node = node[_p] if isinstance(node, dict) and _p in node else {}
         del_key = ListOp.DELETE_AFTER if isinstance(node, dict) and ListOp.APPEND in node else ListOp.DELETE
-        _accumulate_list_delete(ctx.data, parent_path, delete_idx, token, delete_key=del_key)
+        _accumulate_list_delete(ctx.data, parent_path, delete_idx, token, delete_key=del_key, at=ctx.at)
     else:
         # A whole-field delete ends the value at this path, so a later multi-token occurrence
         # starts a new list rather than extending the one the delete just discarded. An index
         # delete is a patch *within* the list and leaves the accumulation alone.
         ctx.multi_tokens.pop(tuple(path), None)
-        _set_nested(ctx.data, path, DICT_DELETE)
+        _set_nested(ctx.data, path, DICT_DELETE, ctx.at)
 
 
 def _collect_append_items(args: Sequence[str], i: int, et: Any, spelling: str) -> tuple[list[Any], int]:
@@ -1148,13 +1151,10 @@ def _appended_element_type(target: Any, path: list[str], union_tag: str, spellin
     return et
 
 
-def _write_append(data: MergeDict, path: list[str], items: list[Any]) -> None:
-    """Append *items* at *path* of *data*, after whatever the path already holds there."""
-    node: Any = data
-    for p in path[:-1]:
-        node = node.get(p, {}) if isinstance(node, dict) else {}
-    existing = node.get(path[-1]) if path and isinstance(node, dict) else None
-    _set_nested(data, path, _merge_append_ops(existing, items))
+def _write_append(data: MergeDict, path: list[str], items: list[Any], at: MergeAt) -> None:
+    """Append *items* at *path* of *data*, after whatever the path already holds there, *at* where *data* stands."""
+    existing = _peek_nested(data, path, at) if path else None
+    _set_nested(data, path, _merge_append_ops(existing, items), at)
 
 
 def _handle_append_token(
@@ -1167,7 +1167,7 @@ def _handle_append_token(
     """Process an append-mode flag (--foo+ items...) and return the new arg index."""
     et = _appended_element_type(ctx.target, path, ctx.union_tag, token, ft)
     append_items, i = _collect_append_items(ctx.argv, i, et, token)
-    _write_append(ctx.data, path, append_items)
+    _write_append(ctx.data, path, append_items, ctx.at)
     return i
 
 
@@ -1177,7 +1177,7 @@ def _consume_fixed_tuple_args(  # noqa: PLR0913, PLR0917  # token only names the
     token: str,
     ft: Any,
     path: list[str],
-    data: MergeDict,
+    ctx: _ParseCtx,
 ) -> int:
     """Consume exactly one argument per position of the fixed-length sequence *ft*.
 
@@ -1194,7 +1194,7 @@ def _consume_fixed_tuple_args(  # noqa: PLR0913, PLR0917  # token only names the
         _require_value(args, i, token, usage)
         items.append(_try_coerce(et, _StrToken(args[i])))
         i += 1
-    _set_nested(data, path, items)
+    _set_nested(ctx.data, path, items, ctx.at)
     return i
 
 
@@ -1273,7 +1273,7 @@ def _handle_force_cast(  # noqa: PLR0913, PLR0917  # cast_name is a necessary di
     args: list[str],
     i: int,
     token: str,
-    data: MergeDict,
+    ctx: _ParseCtx,
     path: list[str],
     cast_name: str,
 ) -> int:
@@ -1283,7 +1283,7 @@ def _handle_force_cast(  # noqa: PLR0913, PLR0917  # cast_name is a necessary di
     raises ``ConfargError`` on invalid JSON (via :func:`resolve_forced_value`).
     """
     _require_value(args, i, token)
-    _set_nested(data, path, resolve_forced_value(cast_name, args[i], flag=token))
+    _set_nested(ctx.data, path, resolve_forced_value(cast_name, args[i], flag=token), ctx.at)
     return i + 1
 
 
@@ -1309,7 +1309,7 @@ def _handle_unknown_field(
         if append_mode:
             return _handle_append_token(ctx, i + 1, token, Any, path)
         _require_value(ctx.argv, i + 1, token)
-        _set_nested(ctx.data, path, _StrToken(ctx.argv[i + 1]))
+        _set_nested(ctx.data, path, _StrToken(ctx.argv[i + 1]), ctx.at)
         return i + 2
     if len(path) > 1 and path[-1] in ("", "+"):
         dot_pos = token.rfind(".")
@@ -1401,28 +1401,28 @@ def _consume_collection_or_scalar(
         and not _looks_like_flag(args[i])
         and (parsed := _lone_json_array([args[i]], token)) is not None
     ):
-        _set_nested(ctx.data, path, parsed)
+        _set_nested(ctx.data, path, parsed, ctx.at)
         return i + 1
 
     # Variable-length collection → consume until the next flag, extending a prior occurrence
     if _is_varlen_collection(ft):
         tokens, i = _consume_multi_tokens(ctx, i, path)
-        _set_nested(ctx.data, path, _varlen_value(ft, tokens, token))
+        _set_nested(ctx.data, path, _varlen_value(ft, tokens, token), ctx.at)
         return i
 
     # Fixed-length sequence (tuple[X, Y] or a namedtuple) → consume exact count
     if tt is not None:
-        return _consume_fixed_tuple_args(args, i, token, ft, path, ctx.data)
+        return _consume_fixed_tuple_args(args, i, token, ft, path, ctx)
 
     # Union with a sequence variant → consume greedily (disambiguation deferred to construct)
     if _union_has_seq_variant(ft):
         tokens, i = _consume_multi_tokens(ctx, i, path)
-        _set_nested(ctx.data, path, _union_seq_value(ft, tokens, token))
+        _set_nested(ctx.data, path, _union_seq_value(ft, tokens, token), ctx.at)
         return i
 
     # Default: consume one scalar value
     _require_value(args, i, token)
-    _set_nested(ctx.data, path, _try_coerce(ft, _StrToken(args[i])))
+    _set_nested(ctx.data, path, _try_coerce(ft, _StrToken(args[i])), ctx.at)
     return i + 1
 
 
@@ -1569,7 +1569,7 @@ def _consume_typed_arg(
     args = ctx.argv
     # JSON object → dataclass / dict / callable / union-with-dc
     if i < len(args) and _takes_whole_value(ft, args[i]):
-        _set_nested(ctx.data, path, _parse_json_arg(args[i], token))
+        _set_nested(ctx.data, path, _parse_json_arg(args[i], token), ctx.at)
         return i + 1
 
     return _consume_collection_or_scalar(ctx, i, token, ft, path)
@@ -1686,7 +1686,9 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
 
     # Paths resolve against the locals-grafted target; root classification keeps `target`.
     walk_target = _walk_target(target, _locals_keys(target, union_tag))
-    ctx = _ParseCtx(argv=argv, target=walk_target, union_tag=union_tag)
+    from confarg._typed_merge import merge_root  # noqa: PLC0415  # import cycle: it walks types with this module
+
+    ctx = _ParseCtx(argv=argv, target=walk_target, union_tag=union_tag, at=merge_root(walk_target, union_tag))
     config_files: list[tuple[str, str]] = []
     root_json: list[MergeDict] = []  # objects from root `--json`, folded in below fields
     target_r = _resolve_type(target)
@@ -1769,7 +1771,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         i += 1
 
         if force_cast:
-            i = _handle_force_cast(argv, i, token, ctx.data, path, force_cast)
+            i = _handle_force_cast(argv, i, token, ctx, path, force_cast)
             continue
 
         if append_mode:
@@ -1781,7 +1783,5 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             # The host bound the token after the run to this flag, so it is no positional of
             # the host's: it is the stray vanilla refuses.
             raise UnknownArgumentError.unexpected_positional(argv[i])
-
-    from confarg._typed_merge import merge_root  # noqa: PLC0415  # import cycle: it walks types with this module
 
     return fold_root_json(ctx.data, root_json, merge_root(target, union_tag)), config_files

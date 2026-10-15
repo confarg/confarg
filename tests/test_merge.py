@@ -7,13 +7,16 @@
 from __future__ import annotations
 
 import dataclasses
+import enum
 import json
 import re
 from collections.abc import Callable  # noqa: TC003  # the dataclasses below are read at runtime
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from tests._loaders import ConfargLoader
 
 import pytest
@@ -1254,3 +1257,142 @@ class TestALowerShorthandOpensUnderTheArgumentsAbove:
     def test_a_string_in_an_any_field_is_text(self, tmp_path) -> None:
         """An ``Any`` node reads a bare string as text (FEAT-42), so the dict above replaces it."""
         assert _layered(tmp_path, "extra: some.path\n", "extra: {a: 1}\n").extra == {"a": 1}
+
+
+# ---------------------------------------------------------------------------
+# Key identity: which keys are the same key is the type's to say (BUG-244)
+# ---------------------------------------------------------------------------
+
+
+class _Hue(enum.Enum):
+    RED = 1
+    BLUE = 2
+
+
+class _KeyedPt(NamedTuple):
+    x: int = 1
+    y: int = 2
+
+
+@dataclass
+class _Keyed:
+    d: dict[int, int] = dataclasses.field(default_factory=dict)
+    od: dict[int, int] | None = None
+    e: dict[_Hue, int] = dataclasses.field(default_factory=dict)
+    b: dict[bool, int] = dataclasses.field(default_factory=dict)
+    s: dict[str, int] = dataclasses.field(default_factory=dict)
+    a: Any = None
+    mixed: dict[int, int] | dict[_Hue, int] | None = None
+    pt: _KeyedPt = dataclasses.field(default_factory=_KeyedPt)
+
+
+def _yaml(tmp_path: Path, body: str, name: str = "base.yaml") -> str:
+    path = tmp_path / name
+    path.write_text(body)
+    return str(path)
+
+
+class TestKeyIdentityIsTheTypes:
+    """Two keys are one key when the type reads them as one, whatever spells them (BUG-244)."""
+
+    def test_a_file_key_delete_meets_a_yaml_integer_key(self, tmp_path: Path) -> None:
+        """BUG-244's reproduction: a JSON layer's ``"1"`` deletes the YAML ``1``."""
+        files = [_yaml(tmp_path, "d: {1: 5, 2: 6}\n"), _yaml(tmp_path, '{"d": {"1": {"__unset__": true}}}', "del.json")]
+        assert confarg.load(_Keyed, files=files, argv=[], env={}).d == {2: 6}
+
+    def test_an_argv_key_delete_meets_a_yaml_integer_key(self, tmp_path: Path) -> None:
+        """``--d.1-`` deletes the YAML ``1`` of a ``dict[int, int]``."""
+        files = [_yaml(tmp_path, "d: {1: 5, 2: 6}\n")]
+        assert confarg.merge(_Keyed, files=files, argv=["--d.1-"], env={}) == {"d": {2: 6}}
+
+    def test_a_patch_keeps_the_base_key_and_its_place(self, tmp_path: Path) -> None:
+        """``--d.1 9`` refines the YAML ``1`` in place rather than adding ``'1'`` beside it."""
+        files = [_yaml(tmp_path, "d: {1: 5, 2: 6}\n")]
+        merged = confarg.merge(_Keyed, files=files, argv=["--d.1", "9"], env={})
+        assert merged == {"d": {1: 9, 2: 6}}
+        assert list(merged["d"]) == [1, 2]
+
+    def test_an_optional_dict_reads_its_one_variant(self, tmp_path: Path) -> None:
+        """A union with one non-None variant takes that variant's identity."""
+        files = [_yaml(tmp_path, "od: {1: 5, 2: 6}\n")]
+        assert confarg.merge(_Keyed, files=files, argv=["--od.1-"], env={}) == {"od": {2: 6}}
+
+    def test_an_enum_key_meets_its_value_spelling(self, tmp_path: Path) -> None:
+        """``RED`` and ``1`` are one key of a ``dict[_Hue, int]``, as construction builds both as RED."""
+        files = [_yaml(tmp_path, "e: {RED: 5}\n")]
+        assert confarg.merge(_Keyed, files=files, argv=["--e.1", "9"], env={}) == {"e": {"RED": 9}}
+
+    def test_a_bool_key_meets_every_spelling_its_coercion_takes(self, tmp_path: Path) -> None:
+        """A typed key coerces as construction does, so ``yes`` meets YAML's ``true``."""
+        files = [_yaml(tmp_path, "b: {true: 5, false: 6}\n")]
+        assert confarg.load(_Keyed, files=files, argv=["--b.yes-"], env={}).b == {False: 6}
+
+    def test_a_key_that_does_not_coerce_meets_by_equality(self, tmp_path: Path) -> None:
+        """A YAML integer key under ``dict[str, int]`` coerces to no ``str``, so ``'1'`` does not meet it."""
+        files = [_yaml(tmp_path, "s: {1: 5}\n")]
+        assert confarg.merge(_Keyed, files=files, argv=["--s.1", "9"], env={}) == {"s": {1: 5, "1": 9}}
+
+    def test_a_namedtuple_position_is_one_key(self, tmp_path: Path) -> None:
+        """An index meets the field name a lower layer wrote, which keeps its spelling (Q-1, BUG-244)."""
+        files = [_yaml(tmp_path, "pt: {x: 7, y: 8}\n")]
+        assert confarg.merge(_Keyed, files=files, argv=["--pt.0", "9"], env={}) == {"pt": {"x": 9, "y": 8}}
+        assert confarg.load(_Keyed, files=files, argv=["--pt.0", "9"], env={}).pt == _KeyedPt(9, 8)
+
+
+class TestKeyIdentityOnAnUntypedNode:
+    """With no key type, a string meets a non-string key only as JSON spells that key (BUG-244)."""
+
+    def test_the_index_spelling_meets_an_integer_key(self, tmp_path: Path) -> None:
+        """``"1"`` is JSON's spelling of the YAML ``1``, so ``--a.1`` refines it."""
+        files = [_yaml(tmp_path, "a: {1: 5, 2: 6}\n")]
+        assert confarg.merge(_Keyed, files=files, argv=["--a.1", "9"], env={}) == {"a": {1: "9", 2: 6}}
+
+    def test_another_spelling_of_the_integer_is_another_key(self, tmp_path: Path) -> None:
+        """``"01"`` is no spelling JSON writes, so it is a key of its own."""
+        files = [_yaml(tmp_path, "a: {1: 5}\n")]
+        assert confarg.merge(_Keyed, files=files, argv=["--a.01", "9"], env={}) == {"a": {1: 5, "01": "9"}}
+
+    def test_json_spells_a_bool_and_null_key(self, tmp_path: Path) -> None:
+        """``true``, ``null`` and ``1.5`` meet the string JSON writes them as."""
+        files = [_yaml(tmp_path, "a: {true: 5, null: 6, 1.5: 7}\n")]
+        merged = confarg.merge(
+            _Keyed, files=files, argv=["--a.true", "9", "--a.null-"], env={"APP_A__1.5": "8"}, env_prefix="APP_"
+        )
+        assert merged == {"a": {True: "9", 1.5: "8"}}
+
+    def test_a_spelling_json_does_not_write_is_another_key(self, tmp_path: Path) -> None:
+        """``"True"`` is not how JSON writes ``True``, so it stays a key of its own."""
+        files = [_yaml(tmp_path, "a: {true: 5}\n")]
+        assert confarg.merge(_Keyed, files=files, argv=["--a.True", "9"], env={}) == {"a": {True: 5, "True": "9"}}
+
+    def test_a_union_whose_variants_disagree_reads_the_untyped_rule(self, tmp_path: Path) -> None:
+        """``dict[int, int] | dict[_Hue, int]``: the variants disagree, so only JSON's spelling meets."""
+        files = [_yaml(tmp_path, "mixed: {1: 5}\n")]
+        assert confarg.merge(_Keyed, files=files, argv=["--mixed.1", "9"], env={}) == {"mixed": {1: 9}}
+
+
+class TestKeyIdentityWithinOneSource:
+    """A source's later spelling of a key writes over its earlier one (BUG-244)."""
+
+    def test_a_later_delete_meets_an_earlier_spelling(self) -> None:
+        """``--e.RED-`` deletes what ``--e.1`` wrote: ``1`` is RED's value."""
+        assert confarg.load(_Keyed, argv=["--e.1", "6", "--e.RED-"], env={}).e == {}
+
+    def test_a_later_write_lands_on_an_earlier_delete(self) -> None:
+        """A later value written over an earlier delete of the same key wins."""
+        assert confarg.load(_Keyed, argv=["--e.RED-", "--e.1", "6"], env={}).e == {_Hue.RED: 6}
+
+    def test_a_later_write_keeps_the_earlier_spelling(self) -> None:
+        """The key the source spelled first is the one it keeps."""
+        assert confarg.merge(_Keyed, argv=["--e.1", "6", "--e.RED", "7"], env={}) == {"e": {"1": 7}}
+
+    def test_the_environment_orders_a_delete_first_at_one_key(self) -> None:
+        """The environment applies a delete before a value at one path, whatever spells the key."""
+        env = {"APP_E__1": "6", "APP_E__RED-": ""}
+        assert confarg.load(_Keyed, argv=[], env=env, env_prefix="APP_").e == {_Hue.RED: 6}
+
+    def test_an_included_part_meets_its_sibling(self, tmp_path: Path) -> None:
+        """An include's YAML integer key meets the string key written beside the include."""
+        _yaml(tmp_path, "d: {1: 5, 2: 6}\n", "inc.yaml")
+        (tmp_path / "main.json").write_text('{"__include__": "inc.yaml", "d": {"1": {"__unset__": true}}}')
+        assert confarg.load(_Keyed, files=[str(tmp_path / "main.json")], argv=[], env={}).d == {2: 6}

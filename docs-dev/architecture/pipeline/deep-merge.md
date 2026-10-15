@@ -61,6 +61,26 @@ under `__append__`. A dict branch that once accepted that shape there was specul
 ("for future env-var support" that never arrived) and has been dropped; the environment
 appends by a variable's name (FEAT-18), with the CLI's own writer, so it stores the same two shapes.
 
+## Which keys are one key
+
+A key a higher layer writes meets every key below it that the type reads as the same key, whatever spelled them. `MergeAt.key_identity` answers what a key is where the merge stands, and every place keys meet asks it: `_deep_merge` between layers, the writers within one source (`_set_nested` and the descent `_descend_creating`, `_keep_deletes`, `_spent_if_met`), which the CLI and the environment hand the typed root (`merge_root` of the walk target) (BUG-244).
+
+- **A dict's key is its key type.** At a `dict[K, V]` two keys are one when they coerce to the same `K`, by the coercion construction builds the dict with (`_coerce_leaf` on the key as a token). A YAML file reads `{1: 5}` with an integer key and argv spells `--d.1-` as text, so the delete met nothing until BUG-244, and `--d.1 9` put `'1'` beside `1`, which built right only because construction let the later win. `RED` and `1` are one key of a `dict[Color, int]` whose `RED` is 1, and `yes` meets YAML's `true` on a `dict[bool, int]`. A key that does not coerce matches by equality, and construction refuses it as before: YAML's `1` under a `dict[str, V]` stays apart from `'1'`.
+- **A fixed-length sequence's key is its position.** A namedtuple's field name and its indices, a fixed tuple's two indices, are one key (`_types._fixed_position`): `--pt.0 9` over a file's `pt: {x: 7, y: 8}` writes `x`.
+- **With no key type, a key is what JSON writes.** On an `Any`, a bare `dict`, a `dict[Any, V]` or an unannotated argument, a key that is no string is JSON's spelling of it, `json.dumps` (`_merge._key_spelling`): YAML's `1`, `true`, `null`, `1.5` meet `"1"`, `"true"`, `"null"`, `"1.5"`, and nothing else. JSON is the format whose keys are all text, so its spelling is what such a key becomes in every string-keyed channel. `01` and `True` stay keys of their own, as no type says they mean `1` or `true`; a key JSON cannot write, a date, matches by equality.
+- **A union reads its keys as all its branches do.** A single non-`None` variant gives its own reading, and so do branches that agree; branches that disagree, `dict[int, V] | dict[Color, V]` or a namedtuple beside a fixed tuple, read by spelling.
+
+Where two spellings meet, **the lower one's key is kept**, in its place, and the higher value merges into it: `--d.1 9` over YAML's `{1: 5, 2: 6}` merges `{1: 9, 2: 6}`. Python's own dict does this (`d = {1: "a"}; d[1.0] = "b"` leaves the key `1`), the order of the keys survives the layers, and `merge()` stays as written, holding no coerced key no writer spells. Within one source the same holds: a later spelling writes over the earlier key, so `--e.1 6 --e.RED 7` stores `{'1': 7}` and `--e.1 6 --e.RED-` deletes it. A delete removes every key below it reads as its own.
+
+The alternatives weighed:
+
+- **Identity by spelling, `str(key)`**: it would meet `1` and `"1"` and miss `true` and `True`, `RED` and `1`, `1.0` and `1`, every one of which construction builds as one key.
+- **Storing the coerced key**: `merge()` would hold `Color.RED`, which no writer spells, and `dump_file` would have to.
+- **Coercion on an untyped node** (`yes` meets `true`, `+1` meets `1`): with no type, nothing says `+1` means a number; the one spelling JSON writes is the one every string channel produces from such a key.
+- **YAML's spelling on an untyped node**: it differs from JSON's only for `1.0e+20` and `.inf`, which only YAML writes.
+
+Precedent: pydantic validates a dict's keys to the key type, a later duplicate winning; Python keeps the first key object of two equal keys.
+
 ## No channel types an op
 
 The four ops are the members of `confarg.ListOp`, an enum whose `str()` is the reserved key a file writes the op with, and which no string equals. A flag, a variable or a file can spell a dict key `*`, `+`, `-` or `~`, and even `__base__`; none of them spells a marker, so the merge cannot read a user's key as an op. The merged dict is typed `MergeDict` (`dict[str | ListOp, Any]`) along its whole path, so code that assumes a key is text fails the type checker rather than reading `__append__` as a field. Until FEAT-3 the ops were the plain strings `+`, `-`, `*` and `~`, and every channel could type them as a dict's keys: `--d.* 5` wiped the dict's other keys (BUG-185), `--d.* 1 2` and `--d.*-` still did once the merge told the two apart by the value (BUG-199), and of two files giving `d: {"+": 1}` and `d: {"+": 5}` the second appended where it meant to replace.

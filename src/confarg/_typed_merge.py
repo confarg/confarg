@@ -16,8 +16,9 @@ Dev Notes:
 
 from __future__ import annotations
 
+import enum
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NamedTuple
 
 from confarg import _defaults
 from confarg._callable import (
@@ -28,20 +29,23 @@ from confarg._callable import (
     spec_opener,
     target_parameter_types,
 )
-from confarg._merge import ListOp, MergeAt, MergeDict
+from confarg._merge import ListOp, MergeAt, MergeDict, _key_spelling
 from confarg._parse_cli import _advance_field_type, _takes_callable_shorthand, _union_branches
 from confarg._tags import _tag_named_struct
 from confarg._types import (
+    _dict_kv,
+    _fixed_position,
     _fixed_seq_types,
     _is_struct,
     _is_struct_like,
     _resolve_type,
+    _StrToken,
     _struct_member_type,
     _union_tag_shadowed,
 )
 from confarg.dictexpr import contains_expression
 from confarg.exceptions import ConfargError
-from confarg.typedload._coerce import _type_kind, _TypeKind
+from confarg.typedload._coerce import _coerce_leaf, _type_kind, _TypeKind
 from confarg.typedload._construct import _is_typed_call, reads_as_new_value
 
 #: What importing a target or a class, or reading its annotations, may raise; the node is then untyped.
@@ -72,13 +76,14 @@ class TypedAt(MergeAt):
         docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
     """
 
-    __slots__ = ("tp",)
+    __slots__ = ("_reading", "tp")
 
     union_tag: str
 
     def __init__(self, tp: Any, union_tag: str) -> None:
         super().__init__(union_tag)
         self.tp = _resolve_type(tp)
+        self._reading: _KeyReading | None = None
 
     def replaces(self, override: MergeDict) -> bool:
         """Return whether construction reads *override* as naming what it builds (:func:`reads_as_new_value`)."""
@@ -105,6 +110,71 @@ class TypedAt(MergeAt):
         if first is None or any(b != first for b in branches[1:]) or _fixed_seq_types(first) is None:
             return None
         return first
+
+    def key_identity(self, key: Any) -> Any:
+        """Return what *key* is to the node's type, so two keys with one identity are one key.
+
+        A dict's key is the key type construction coerces it to, a fixed-length sequence's the
+        position it names (:func:`~confarg._types._fixed_position`); a key neither reads, and
+        any key of a node whose branches disagree on how to read one, is its spelling
+        (:func:`~confarg._merge._key_spelling`).
+
+        Dev Notes:
+            docs-dev/architecture/pipeline/deep-merge.md#which-keys-are-one-key
+        """
+        if isinstance(key, ListOp):
+            return key
+        if self._reading is None:
+            self._reading = _key_reading(self.tp)
+        reading = self._reading
+        if reading.kind is _KeyKind.KEY:
+            try:
+                value = _coerce_leaf(reading.tp, _StrToken(key) if isinstance(key, str) else key)
+                hash(value)
+            except (ConfargError, TypeError, ValueError):
+                return _key_spelling(key)
+            return (_KeyKind.KEY, value)
+        if reading.kind is _KeyKind.POSITION and (position := _fixed_position(reading.tp, key)) is not None:
+            return (_KeyKind.POSITION, position)
+        return _key_spelling(key)
+
+
+class _KeyKind(enum.Enum):
+    """What a node reads its keys by."""
+
+    KEY = enum.auto()
+    POSITION = enum.auto()
+    SPELLING = enum.auto()
+
+
+class _KeyReading(NamedTuple):
+    """How a node reads its keys: its kind, and the key type or the fixed-length type it reads them by."""
+
+    kind: _KeyKind
+    tp: Any = None
+
+
+_BY_SPELLING = _KeyReading(_KeyKind.SPELLING)
+
+
+def _key_reading(tp: Any) -> _KeyReading:
+    """Return how a node of type *tp* reads its keys: as every branch reads them, by spelling where they disagree."""
+    try:
+        readings = [_branch_key_reading(b) for b in _union_branches(tp)]
+    except _UNREADABLE:
+        return _BY_SPELLING
+    first = readings[0] if readings else _BY_SPELLING
+    return first if all(r == first for r in readings[1:]) else _BY_SPELLING
+
+
+def _branch_key_reading(tp: Any) -> _KeyReading:
+    """Return how one non-union type reads its keys: a dict by a key type, a fixed-length sequence by position."""
+    if _type_kind(tp) is _TypeKind.DICT:
+        kt = _resolve_type(_dict_kv(tp)[0])
+        return _BY_SPELLING if _type_kind(kt) is _TypeKind.ANY else _KeyReading(_KeyKind.KEY, kt)
+    if _fixed_seq_types(tp) is not None:
+        return _KeyReading(_KeyKind.POSITION, tp)
+    return _BY_SPELLING
 
 
 class _RootAt(MergeAt):
