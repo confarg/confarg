@@ -2,8 +2,8 @@
 
 `_serialize` is the inverse of construction for `dump()`; `_serialize_untyped` is its
 counterpart for the raw dict `dump_file()` accepts, walking containers and routing every leaf
-through the same `_serialize_leaf` — plus the one thing only a raw dict holds, a force-cast
-`_Pinned` ([cast pinning in files](stealing-rule.md#cast-pinning-in-files)).
+through the same `_serialize_leaf` — plus what only a raw dict holds: a force-cast
+`_Pinned` ([cast pinning in files](stealing-rule.md#cast-pinning-in-files)), a pending list op, written by its reserved key, and a delete, written as a file's node delete, `{__unset__: true}` for a key delete and `__unset__: true` beside the keys of a node whose base is deleted ([a file spells an op in its value](../design-decisions/a-file-spells-an-op-in-its-value.md#the-node-delete)). Until BUG-202 a delete reached the writer, which raised its own error.
 
 - `tag_policy="auto"` emits the union tag only when `_needs_tag` shows that structural
   disambiguation of the serialized data would not select exactly one variant on the way

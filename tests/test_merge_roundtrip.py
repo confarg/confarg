@@ -12,9 +12,11 @@ from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
 import pytest
+import yaml
 from hypothesis import HealthCheck, given, settings
 
 import confarg
+from confarg._merge import DICT_DELETE
 from tests.conftest import WithDefaults, cli_safe_strs, leaf_bools, leaf_floats, leaf_ints, leaf_strs
 
 # ---------------------------------------------------------------------------
@@ -228,3 +230,37 @@ class TestAFileKeyIsData:
         confarg.dump_file(raw, out)
         assert confarg.merge(_WithData, argv=[], env={}, files=[out]) == raw == {"d": {"c++": 1, "a-": 2, "0-": 3}}
         assert confarg.load(_WithData, argv=[], env={}, files=[out]).d == {"c++": 1, "a-": 2, "0-": 3}
+
+
+@dataclass
+class _Sec:
+    a: int = 0
+    b: int = 0
+
+
+@dataclass
+class _WithKeyDeletes:
+    data: dict[str, int] = field(default_factory=dict)
+    sec: _Sec = field(default_factory=_Sec)
+
+
+class TestAKeyDeleteSurvivesDumpFile:
+    """A key delete the merged dict still holds is dumped as the ``__unset__`` a file writes it with (BUG-202)."""
+
+    @pytest.mark.parametrize("suffix", [".yaml", ".toml", ".json"])
+    def test_a_key_delete_with_nothing_below_reads_back(self, tmp_path, suffix: str) -> None:
+        """``dump_file(merge(...))`` writes the delete BUG-98 leaves, and reads back as the merged dict."""
+        raw = confarg.merge(_WithKeyDeletes, argv=["--data.x-"], env={})
+        out = tmp_path / f"snap{suffix}"
+        confarg.dump_file(raw, out)
+        assert confarg.merge(_WithKeyDeletes, argv=[], env={}, files=[out]) == raw
+        assert "__unset__" in out.read_text(encoding="utf-8")
+
+    def test_a_deleted_base_is_dumped_beside_its_keys(self, tmp_path) -> None:
+        """A node whose layers below were cut off keeps that meaning in the file: it replaces a lower file's node."""
+        out = tmp_path / "snap.yaml"
+        confarg.dump_file({"sec": {confarg.ListOp.BASE: DICT_DELETE, "a": 1}}, out)
+        assert yaml.safe_load(out.read_text(encoding="utf-8")) == {"sec": {"__unset__": True, "a": 1}}
+        lower = tmp_path / "lower.yaml"
+        lower.write_text("sec: {a: 5, b: 6}\n", encoding="utf-8")
+        assert confarg.load(_WithKeyDeletes, argv=[], env={}, files=[lower, out]).sec == _Sec(a=1)

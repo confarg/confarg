@@ -15,7 +15,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
 | [BUG-114 — Cyclopts cannot register subclasses that share a struct field name](BUG-114-cyclopts-cannot-register-subclasses-that-share-a-struct-field-name.md) | major |  | S | medium | behavior | PR-38 |
 | [BUG-174 — An index delete on a dict writes the list-delete key into the dict](BUG-174-an-index-delete-on-a-dict-writes-the-list-delete-key.md) | major |  | S | medium | behavior | PR-5 |
-| [BUG-202 — `dump_file` of a merged key delete escapes as a raw writer error](BUG-202-dump-file-of-a-merged-key-delete-escapes-as-a-raw-writer-error.md) | major |  | S | low | behavior | PR-5 |
 | [BUG-230 — A `type[X]` field refuses the dotted path a file holds, so its own dump does not load](BUG-230-a-type-field-refuses-the-dotted-path-a-file-holds.md) | major |  | S | medium | behavior | PR-5 |
 | [BUG-145 — An expression that parses but nests past the recursion limit crashes the walkers](BUG-145-an-expression-that-parses-but-nests-past-the-recursion-limit-crashes-the-walkers.md) | major |  | M | high | behavior | PR-5 |
 | [BUG-180 — Cyclopts refuses a flag whose name ends in a star](BUG-180-cyclopts-refuses-a-flag-whose-name-ends-in-a-star.md) | major |  | M | medium | behavior | PR-72 |
