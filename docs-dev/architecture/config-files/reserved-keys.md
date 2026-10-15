@@ -23,3 +23,5 @@ locals namespace) therefore avoids the dunder form. A field named like a reserve
 set, which [real field wins](../design-decisions/real-field-wins.md) does not rescue: a file
 always read the key as its own
 ([design decisions](../design-decisions/merge-ops-are-markers-no-channel-types.md#merge-ops-are-markers-no-channel-types)).
+
+`dump()` refuses a dict key named like one, at any depth, naming its path (`_serialize._data_key`, asked by a typed dict's writer and an `Any` node's), and so does `dump_file` of an instance, which goes through it: a file would read the key back as its own, the op or the include, rather than as data. Until BUG-241 it wrote the key, and the reload failed or meant something else. A raw dict passed to `dump_file` is a document, so it is never refused: its `__append__` is the op and its `xs+` a key, as a file reads them. Precedent: `tomli_w` refuses a value TOML cannot represent rather than writing an approximation of it.

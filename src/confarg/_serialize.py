@@ -135,7 +135,7 @@ def _serialize_any(
         return _serialize_any(value, (*path, key), union_tag, tag_policy, checked=checked)
 
     if isinstance(instance, dict):
-        out = {_serialize_leaf(None, k): item(v, str(k)) for k, v in instance.items()}
+        out = {_data_key(_serialize_leaf(None, k), (*path, str(k))): item(v, str(k)) for k, v in instance.items()}
         if checked and holds_an_opener(out):
             _warn_unread_any(instance, path, "it holds an opener key, so it reads back as the spec it spells")
         return out
@@ -454,8 +454,26 @@ def _serialize_dict(
     """Serialize a typed dict."""
     kt, vt = _dict_kv(tp)
     return {
-        _serialize_leaf(kt, k): _serialize(vt, v, (*path, str(k)), union_tag, tag_policy) for k, v in instance.items()
+        _data_key(_serialize_leaf(kt, k), (*path, str(k))): _serialize(vt, v, (*path, str(k)), union_tag, tag_policy)
+        for k, v in instance.items()
     }
+
+
+def _data_key(key: Any, path: FieldPath) -> Any:
+    """Return the serialized *key*, at *path*, as a data key of the dict ``dump()`` writes.
+
+    The one check both dict writers make, a typed dict's and an ``Any`` node's; a raw dict is a
+    document, whose reserved keys are the file's own, and ``_serialize_untyped`` writes it as it stands.
+
+    Raises:
+        ConfargError: If *key* is one ``_defaults.RESERVED_KEYS`` lists, which a file reads as its own.
+
+    Dev Notes:
+        docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
+    """
+    if isinstance(key, str) and key in _defaults.RESERVED_KEYS:
+        raise ConfargError.reserved_data_key(key, _spell_field_path(path))
+    return key
 
 
 def _serialize_leaf(tp: Any, value: Any) -> Any:

@@ -100,6 +100,20 @@ class ConfargError(Exception):
         return cls(f"{flag} for a structured target must be a JSON object, got {type(value).__name__}.")
 
     @classmethod
+    def reserved_data_key(cls, key: str, path: str) -> ConfargError:
+        """Return the error for a dict key ``dump()`` would write that a file reads as its own.
+
+        *path* is the key's construction path, spelled; the key ends it.
+
+        Dev Notes:
+            docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
+        """
+        return cls(
+            f"Cannot dump the key {key!r} at '{path}': confarg reserves it, so a configuration file"
+            " would read it as its own rather than as data.",
+        )
+
+    @classmethod
     def include_siblings_need_a_dict(cls, include_key: str, included: Any) -> ConfargError:
         """Return an error for sibling keys beside an include that produced a non-mapping."""
         return cls(

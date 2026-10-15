@@ -74,7 +74,7 @@ the boundary moves here.
   `__cast__`, `__value__`, `__root__`, the node delete `__unset__`, and the list ops `__append__`,
   `__delete__`, `__delete_after__`, `__base__`) are no data key anywhere: a file reads one as its own, and a
   flag, a variable, a mount point or a JSON value naming one is refused. A field or a dict key spelled like
-  one cannot be set.
+  one cannot be set, and `dump()` refuses to write such a dict key.
 - A configuration file cannot order two ops on one key within one dict: it spells an op in the value, and YAML, TOML and JSON hold a key once, so `{xs: [1], xs+: [2]}` or a delete written after an append has no spelling. The ops of one value apply in a fixed order, the node delete first ([design decisions](design-decisions/a-file-spells-an-op-in-its-value.md#what-it-costs)); two files, or argv, order them.
 - A file deletes a list's index with `__delete__: [N]` only: a bare `"N": {__unset__: true}` under a list is refused, as a delete is wherever it would delete nothing, a list item and a document root included ([design decisions](design-decisions/a-file-spells-an-op-in-its-value.md#where-a-delete-has-no-meaning)).
 - `build()` reads a merged dict, not a file's: the list ops and the node delete a parsed file
