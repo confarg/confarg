@@ -28,15 +28,16 @@ from confarg._types import (
     _all_have_defaults,
     _dict_kv,
     _elem_type,
+    _fixed_position,
+    _fixed_seq_types,
     _is_seq_variant,
     _is_struct,
     _is_struct_like,
-    _namedtuple_fields,
     _resolve_type,
+    _spelled_position,
     _struct_declared_defaults,
     _struct_fields,
     _struct_required,
-    _tuple_types,
     _union_args_no_none,
     _union_has_seq_variant,
     _union_tag_shadowed,
@@ -350,12 +351,11 @@ def _lay_index_patches(
     for k, v in list(out.items()):
         if isinstance(k, ListOp):
             continue
-        position = _index(k)
         if isinstance(v, _DeleteSentinel):
-            if named and not isinstance(position, int):
+            if named and _spelled_position(k) is None:
                 del out[k]
             continue
-        laid = _node(element(position), v, (*path, k), walk)
+        laid = _node(element(k), v, (*path, k), walk)
         if laid is _PRUNED:
             del out[k]
         else:
@@ -374,29 +374,20 @@ def _item(tp: Any, item: Any, path: DataPath, walk: _Walk) -> Any:
 
 
 def _element_type(tp: Any) -> Callable[[Any], Any]:
-    """Return what a sequence of type *tp* holds at a position, a namedtuple's field name included."""
-    if _type_kind(tp) is _TypeKind.NAMEDTUPLE:
-        fields = _namedtuple_fields(tp)
-        names, positions = list(fields), list(fields.values())
-    else:
-        names, positions = [], (_tuple_types(tp) if _type_kind(tp) is _TypeKind.TUPLE else None)
+    """Return what a sequence of type *tp* holds at a key: a position, or a namedtuple's field name.
 
-    def element(i: Any) -> Any:
+    A fixed-length sequence reads the key by :func:`~confarg._types._fixed_position`, as
+    construction does; a key naming no position holds ``Any``.
+    """
+    positions = _fixed_seq_types(tp)
+
+    def element(key: Any) -> Any:
         if positions is None:
             return _elem_type(tp)
-        if isinstance(i, int) and -len(positions) <= i < len(positions):
-            return positions[i]
-        return positions[names.index(i)] if i in names else Any
+        position = _fixed_position(tp, key)
+        return Any if position is None else positions[position]
 
     return element
-
-
-def _index(key: Any) -> Any:
-    """The position an index key spells, or the key itself (a namedtuple's field name)."""
-    try:
-        return int(key)
-    except (TypeError, ValueError):
-        return key
 
 
 def _copied_if_changed(original: Any, rebuilt: Any) -> Any:

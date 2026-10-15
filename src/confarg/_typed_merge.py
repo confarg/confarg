@@ -31,7 +31,14 @@ from confarg._callable import (
 from confarg._merge import ListOp, MergeAt, MergeDict
 from confarg._parse_cli import _advance_field_type, _takes_callable_shorthand, _union_branches
 from confarg._tags import _tag_named_struct
-from confarg._types import _is_struct, _is_struct_like, _resolve_type, _struct_member_type, _union_tag_shadowed
+from confarg._types import (
+    _fixed_seq_types,
+    _is_struct,
+    _is_struct_like,
+    _resolve_type,
+    _struct_member_type,
+    _union_tag_shadowed,
+)
 from confarg.dictexpr import contains_expression
 from confarg.exceptions import ConfargError
 from confarg.typedload._coerce import _type_kind, _TypeKind
@@ -90,6 +97,14 @@ class TypedAt(MergeAt):
     def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:
         """Return where the merge stands at *key*, read from the spec or the tag *below* and *over* hold."""
         return _child(self.tp, str(key), _node_view(below, over), self.union_tag)
+
+    def fixed_length(self) -> Any:
+        """Return the fixed tuple or namedtuple every branch of the node is, None where they are not one such type."""
+        branches = _union_branches(self.tp)
+        first = branches[0] if branches else None
+        if first is None or any(b != first for b in branches[1:]) or _fixed_seq_types(first) is None:
+            return None
+        return first
 
 
 class _RootAt(MergeAt):

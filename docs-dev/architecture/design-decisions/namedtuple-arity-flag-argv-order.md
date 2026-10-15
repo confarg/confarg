@@ -27,12 +27,11 @@ the adapters first used (`_arity_flag_writes_last`) could not describe (BUG-111)
 
 `typedload._construct._lay_patch_over_positions` is the one place a namedtuple's positional
 base meets a patch, whichever channel wrote them: it keys the `__base__` list by field name and
-lays the patch over it — an all-index patch by position, as a fixed tuple's, a name patch by
-name, each value refining what the base holds at its position through
+lays each patch key at the field whose position it names, a name and an index alike
+(`_types._fixed_position`), each value refining what the base holds at its position through
 `_merge._merge_existing_value`. That is `Pt(*base)._replace(**patch)`, the stdlib's own
-spelling of the same operation. A patch mixing names and indices still reaches the by-name
-form with its index key, which refuses it — the open
-[Q-1](../../todo/questions/Q-1-should-a-mixed-name-index-spelling-of-a-namedtuple-build.md).
+spelling of the same operation. A patch mixing names and indices builds, two spellings of
+one position resolving in the patch's order ([a position is one key](namedtuple-is-a-fixed-length-sequence.md#a-position-is-one-key-whatever-spells-it)).
 
 The shape reaches `build()` from every channel because the merge does not apply a list
 patch by type: it reads the type only to tell a value from a patch

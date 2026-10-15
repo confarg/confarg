@@ -49,6 +49,7 @@ from confarg._tags import import_tagged_classes
 from confarg._types import (
     _dict_kv,
     _elem_type,
+    _fixed_position,
     _fixed_seq_types,
     _is_callable,
     _is_dict,
@@ -80,15 +81,15 @@ from confarg.typedload._construct import _selects_none, _takes_typed_call
 def _step_tuple_type(tp: Any, part: str) -> Any | None:
     """Advance one step into a tuple type by numeric index.
 
-    A variadic tuple takes an index as a list does, only as ``str()`` writes one.
+    A variadic tuple takes an index as a list does, only as ``str()`` writes one; a fixed
+    tuple takes a position as a namedtuple does (:func:`~confarg._types._fixed_position`,
+    BUG-108).
     """
     et = _tuple_types(tp)
     if et is None:
         return _elem_type(tp) if _list_index(part) is not None else None
-    try:
-        return et[int(part)]
-    except (ValueError, IndexError):
-        return None
+    position = _fixed_position(tp, part)
+    return None if position is None else et[position]
 
 
 def _namedtuple_index_spellings(n: int) -> dict[str, int]:
@@ -127,11 +128,8 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911  # o
     """
     match _type_kind(tp):
         case _TypeKind.NAMEDTUPLE:
-            flds = _namedtuple_fields(tp)
-            if part in flds:
-                return flds[part]
-            spellings = _namedtuple_index_spellings(len(flds))
-            return list(flds.values())[spellings[part]] if part in spellings else None
+            position = _fixed_position(tp, part)
+            return None if position is None else list(_namedtuple_fields(tp).values())[position]
         case _TypeKind.STRUCT | _TypeKind.TAGGABLE_LEAF:
             return _struct_member_type(tp, part)
         case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET:

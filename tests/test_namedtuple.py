@@ -189,10 +189,33 @@ class TestConstruct:
         with pytest.raises(TypeCoercionError, match="index -3 out of range"):
             construct(Point, {"-3": 1})
 
-    def test_negative_index_beside_a_field_name_is_refused(self) -> None:
-        """A negative key beside a field-name key stays the mixed form build() refuses (BUG-65)."""
+    def test_negative_index_beside_a_field_name_builds(self) -> None:
+        """A negative key beside a field-name key names the other position (Q-1)."""
+        assert construct(Point, {"x": 1, "-1": 2}) == Point(x=1, y=2)
+
+    def test_index_beside_a_field_name_builds(self) -> None:
+        """An index and a name each fill the position they spell (Q-1)."""
+        assert construct(Point, {"0": 7, "y": 9}) == Point(x=7, y=9)
+
+    def test_two_spellings_of_one_position_resolve_in_order(self) -> None:
+        """Two spellings of one position: the later in the dict wins, as a later write does (Q-1)."""
+        assert construct(Point, {"x": 13, "y": 2, "0": 9}) == Point(x=9, y=2)
+        assert construct(Point, {"0": 9, "y": 2, "x": 13}) == Point(x=13, y=2)
+        assert construct(Point, {"x": 1, "y": 2, "-1": 3}) == Point(x=1, y=3)
+
+    @pytest.mark.parametrize("key", ["01", "-0", "+1", "1_0", " 1", "\u0661", "\u00b2"])
+    def test_an_odd_index_spelling_names_no_position(self, key: str) -> None:
+        """Only ``str(i)`` and ``str(i - n)`` name a position, as on the CLI (BUG-142)."""
         with pytest.raises(TypeCoercionError, match="Unknown field"):
-            construct(Point, {"x": 1, "-1": 2})
+            construct(Point, {"x": 1, key: 2})
+        with pytest.raises(TypeCoercionError, match="Unknown field"):
+            construct(Point, {key: 2})
+
+    @pytest.mark.parametrize("key", ["01", "-0", "+1", "1_0", " 1", "\u0661"])
+    def test_an_odd_index_spelling_names_no_tuple_position(self, key: str) -> None:
+        """A fixed tuple reads its positions by the same rule (BUG-142)."""
+        with pytest.raises(TypeCoercionError, match="dict keys must be integer indices"):
+            construct(tuple[int, int], {"0": 1, key: 2})
 
     def test_from_dict_integer_keys(self) -> None:
         """Integer keys (a YAML file's own int parsing) index like their string spellings."""
@@ -339,20 +362,19 @@ class TestCLIArgparse:
         # x=99 from sub-flag; y=2 from nargs position 1
         assert result.pair == Point(x=99, y=2)
 
-    def test_index_beside_name_sub_flag_is_refused_as_vanilla(self) -> None:
-        """A --pair.0 beside --pair.x keeps both keys, and build() refuses the mix.
+    def test_index_beside_name_sub_flag_builds_as_vanilla(self) -> None:
+        """A --pair.0 beside --pair.x keeps both keys, and the later one wins at build (Q-1).
 
         The collector used to re-key the index flag under its field name — name
-        winning over index, a collection-time priority vanilla never makes.
-        Vanilla stores both keys as spelled and lets construction refuse the mixed
-        spelling (BUG-65).
+        winning over index, a collection-time priority vanilla never makes (BUG-65).
+        Vanilla stores both keys as spelled, in argv order, and construction reads them
+        as one position, the later write winning.
         """
         parser = argparse.ArgumentParser()
         populate_parser(WithPoint, parser)
         argv = ["--pair.0", "1", "--pair.x", "99", "--pair.y", "2"]
         ns = parser.parse_args(argv)
-        with pytest.raises(TypeCoercionError, match="Unknown field"):
-            from_namespace(WithPoint, ns, argv=argv)
+        assert from_namespace(WithPoint, ns, argv=argv).pair == Point(x=99, y=2)
 
     def test_all_sub_flags_no_nargs(self) -> None:
         """All fields set via sub-flags without the combined nargs flag."""
@@ -531,6 +553,21 @@ class TestEnvVars:
 class TestConfigFiles:
     """Tests for namedtuple in config files (list and dict forms)."""
 
+    @pytest.mark.parametrize("key", ["01", "-0", "+1"])
+    def test_an_odd_index_over_a_file_list_names_no_position(self, tmp_path, key: str) -> None:
+        """Over an earlier file's list, a later file's odd index is refused as without it (BUG-142).
+
+        The merge applies a fixed-length patch over a base list itself only where every key
+        names a position as construction reads it; any other key defers to construction.
+        """
+        (tmp_path / "a.yaml").write_text("pair: [1, 2]\n")
+        (tmp_path / "b.json").write_text(f'{{"pair": {{"{key}": 5}}}}')
+        files = [str(tmp_path / "a.yaml"), str(tmp_path / "b.json")]
+        with pytest.raises(TypeCoercionError, match="Unknown field"):
+            confarg.load(WithPoint, argv=[], files=files, env={})
+        with pytest.raises(TypeCoercionError, match="dict keys must be integer indices"):
+            confarg.load(WithIntPair, argv=[], files=files, env={})
+
     def test_list_form_toml(self, tmp_path) -> None:
         """TOML: pair = [13, 42] constructs a namedtuple."""
         p = tmp_path / "config.toml"
@@ -636,10 +673,10 @@ class TestPatchOverAPositionalBase:
         with pytest.raises(TypeCoercionError, match="expected 2 elements, got 3"):
             construct(Point, {ListOp.BASE: [1, 2, 3], "x": 9})
 
-    def test_construct_still_refuses_a_mixed_patch(self) -> None:
-        """A patch mixing names and indices stays the refusal Q-1 asks about."""
-        with pytest.raises(TypeCoercionError, match="Unknown field"):
-            construct(Point, {ListOp.BASE: [1, 2], "x": 9, "1": 8})
+    def test_construct_lays_a_mixed_patch(self) -> None:
+        """A patch mixing names and indices lays each over the position it spells (Q-1)."""
+        assert construct(Point, {ListOp.BASE: [1, 2], "x": 9, "1": 8}) == Point(x=9, y=8)
+        assert construct(Point, {ListOp.BASE: [1, 2], "x": 9, "0": 8}) == Point(x=8, y=2)
 
     def test_name_patch_on_the_cli_over_a_file_list(self, tmp_path) -> None:
         """``--pair.x`` over a file's ``pair: [1, 2]`` builds as over ``--pair 1 2``."""
