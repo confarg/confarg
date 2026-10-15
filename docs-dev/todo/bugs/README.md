@@ -12,6 +12,8 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
+| [BUG-243 — A delete on a fixed-length sequence has no settled meaning](BUG-243-a-delete-on-a-fixed-length-sequence-has-no-settled-meaning.md) | critical |  | M | high | config | PR-39 |
+| [BUG-244 — A string-keyed op never meets a YAML integer key](BUG-244-a-string-keyed-op-never-meets-a-yaml-integer-key.md) | critical |  | M | high | behavior | PR-5 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
 | [BUG-114 — Cyclopts cannot register subclasses that share a struct field name](BUG-114-cyclopts-cannot-register-subclasses-that-share-a-struct-field-name.md) | major |  | S | medium | behavior | PR-38 |
 | [BUG-174 — An index delete on a dict writes the list-delete key into the dict](BUG-174-an-index-delete-on-a-dict-writes-the-list-delete-key.md) | major |  | S | medium | behavior | PR-5 |

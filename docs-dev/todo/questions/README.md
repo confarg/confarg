@@ -16,5 +16,6 @@ Questions carry no effort, risk or impact — a question is answered, not implem
 | [Q-3 — How should an agent run the hooks from a jj workspace, where pre-commit cannot?](Q-3-how-should-an-agent-run-the-hooks-from-a-jj-workspace.md) |  |  |
 | [Q-5 — Should a `Path` dump with POSIX separators?](Q-5-should-a-path-dump-with-posix-separators.md) |  |  |
 | [Q-6 — The untyped-config-rewriter plan is an unapproved proposal no ticket cites — where does it belong?](Q-6-the-untyped-config-rewriter-plan-is-uncited-and-unsettled.md) |  |  |
+| [Q-8 — Should a delete on an untyped node be read by its content?](Q-8-should-a-delete-on-an-untyped-node-be-read-by-its-content.md) |  |  |
 
 <!-- tickets:end -->
