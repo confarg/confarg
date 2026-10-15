@@ -70,6 +70,7 @@ the boundary moves here.
   config file's key is read by the merge's `int()`: `--xs.01` is refused and `xs: {"01": 5}`
   patches index 1. A file is not walked against the type
   ([CLI parsing](cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index)).
+- On a node no type describes (an `Any`, a callable's spec, a union whose list and dict variants both take the segment), argv and the environment read a delete of a segment spelling an index as an index delete: `--a.1-` cannot delete the key `1` of an `Any` holding a dict, where a file's `a: {"1": {__unset__: true}}` can ([design decisions](design-decisions/an-argv-delete-is-shaped-by-the-type.md#what-it-costs)).
 - The [reserved keys](config-files/reserved-keys.md#reserved-file-only-keys) (`__include__`,
   `__cast__`, `__value__`, `__root__`, the node delete `__unset__`, and the list ops `__append__`,
   `__delete__`, `__delete_after__`, `__base__`) are no data key anywhere: a file reads one as its own, and a

@@ -65,5 +65,5 @@ An index patch with keys beside the delete, `xs: {"0": {__unset__: true, k: 5}}`
 - **A delete spelled from the parent**, `{__delete__: [name]}`: a `dict[int, …]` key and a list index collide.
 - **`__patch__: delete`**, Kubernetes' spelling: a second key whose values are themselves a vocabulary.
 - **`__unset__` alone only**: a file would lose the replace it spelled with `k-:` then `k:`.
-- **`"N": {__unset__: true}` as an index delete**, matching `--xs.N-`: the merge would need the type to tell a list from a dict, which [BUG-174](../../todo/bugs/BUG-174-an-index-delete-on-a-dict-writes-the-list-delete-key.md) shows the CLI getting wrong, and it would count its index unlike `__delete__` ([above](#where-a-delete-has-no-meaning)).
+- **`"N": {__unset__: true}` as an index delete**, matching `--xs.N-`: the merge would need the type to tell a list from a dict, which argv's delete takes from the walk at parse time ([an argv delete is shaped by the type](an-argv-delete-is-shaped-by-the-type.md#an-argv-delete-is-shaped-by-the-type)), and it would count its index unlike `__delete__` ([above](#where-a-delete-has-no-meaning)).
 - **Refuse an index patch with keys beside the delete too**, for one rule at an index: a file would lose the one spelling of replacing an item whole.

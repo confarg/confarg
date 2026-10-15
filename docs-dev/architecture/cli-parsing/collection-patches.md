@@ -4,8 +4,8 @@
 |---|---|
 | `--f.N v`, `--f.-1 v` | replace element N (negative from the end) |
 | `--f+ v…` | append ([design decisions](../design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling)) |
-| `--f.N-` | delete element N |
-| `--f.key v` / `--f.key-` | set / delete a dict key |
+| `--f.N-` | delete element N of a list, set or tuple ([which delete](#the-type-decides-what-a-delete-removes)) |
+| `--f.key v` / `--f.key-` | set / delete a dict key, `--f.1-` included on a dict |
 | `--f.N.sub v` | patch inside an element |
 
 They accumulate into the sentinel vocabulary of [pipeline](../pipeline/deep-merge.md#deep-merge-semantics)
@@ -75,6 +75,16 @@ Configuration files are not walked, so a file key below a list is still read by 
 of each op that holds a list, `_merge._replace_base` for the base and `_merge._delete_indices`
 for either delete, refuses a value of the wrong shape rather than reading it with `list()` or
 iterating it (BUG-170, BUG-175).
+
+## The type decides what a delete removes
+
+A delete is written in one of two shapes, and the merge reads them differently: an index delete is a list op of the node above (`{__delete__: [1]}`, or `__delete_after__` after an append in the same source), a key delete is the delete sentinel at the key itself (`{"1": DICT_DELETE}`). Argv and the environment spell both with one suffix (`--d.1-`, `APP_D__1-`), so a parser must choose, and `_parse_cli._delete_index` is the one decoder both channels call: the flag's loop through `_handle_delete_token`, the environment through `_handle_env_delete`.
+
+- A segment spelling no index as `str()` writes one (`_list_index`, as [above](#a-segment-below-a-sequence-is-an-index)) is a key: `--d.a-`, but also `--d.+1-` and `--d.01-`, which name the keys `+1` and `01`.
+- A segment spelling an index is a key where every branch of the walk taking the path stands on a dict or a struct: `--d.1-` on a `dict[str, int]` deletes the key `1`.
+- Anywhere else it is an index: on a list, a set or a tuple, on a namedtuple (whose field name, `--pt.x-`, is a key), and on a node no type describes, an `Any`, a callable's spec, or a union whose list and dict variants both take the segment. There the merge applies it to the list below and refuses it on a dict.
+
+Until BUG-174 each channel ran its own `int()` on the segment and never asked the type (REF-84), so `--d.1-` wrote `__delete__: [1]` beside the dict's keys and `build()` refused it, and `int()` read `+1` and `01` as indices where a patch below a sequence refuses them. Why the two shapes stay and the content of the node does not choose between them is in [design decisions](../design-decisions/an-argv-delete-is-shaped-by-the-type.md#an-argv-delete-is-shaped-by-the-type).
 
 ## An append reaches every sequence variant
 

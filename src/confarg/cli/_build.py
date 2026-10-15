@@ -1399,7 +1399,7 @@ def _collect_callable_key_argv_specs(
         if not _looks_like_flag(tok):
             continue
         key = tok[2:]
-        _path, append_mode, delete_mode, _delete_idx, _is_list_delete = _parse_flag_mode(key)
+        _path, append_mode, delete_mode = _parse_flag_mode(key)
         if append_mode or delete_mode:
             continue
         if key in existing_names or not _addresses_callable_key(target, key.split("."), union_tag):
@@ -1449,7 +1449,7 @@ def _collect_leaf_tag_argv_specs(
         if not _looks_like_flag(tok):
             continue
         key = tok[2:]
-        _path, append_mode, delete_mode, _delete_idx, _is_list_delete = _parse_flag_mode(key)
+        _path, append_mode, delete_mode = _parse_flag_mode(key)
         if append_mode or delete_mode or key in existing_names:
             # Patch flags are registered by _collect_patch_argv_specs, in the shape
             # their mode demands.
@@ -1547,7 +1547,7 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
             continue  # config files are registered by _collect_config_argv_specs
         if key in existing_names:
             continue
-        path, append_mode, delete_mode, _delete_idx, _is_list_delete = _parse_flag_mode(key)
+        path, append_mode, delete_mode = _parse_flag_mode(key)
         if not (append_mode or delete_mode):
             path, force_cast = detect_force_cast(path, target, union_tag)
             if force_cast == "json":
