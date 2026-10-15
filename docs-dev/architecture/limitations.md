@@ -64,6 +64,7 @@ the boundary moves here.
   ([design decisions](design-decisions/whole-value-then-subkey.md#a-whole-value-followed-by-a-subkey-opens-rather-than-collides)).
 - List deletion and negative indices need a base list to apply to: they are patches, and a
   patch has nothing to bite on in an empty document.
+- A key delete that meets nothing in any layer, the defaults included, deletes nothing and says nothing: a misspelled `--data.kye-` is not refused below a dict, as it is not over a dict that lacks the key, and a delete below a `default_factory` default, which is no base yet, leaves that default whole ([design decisions](design-decisions/a-field-default-is-the-base-layer.md#a-delete-meets-the-defaults-last)).
 - Index-keyed lists must be gap-free, unless the element type is Optional — a gap would
   otherwise have to invent an element of an unknown type.
 - Below a sequence, argv and the environment take an index only as `str()` writes one, while a

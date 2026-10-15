@@ -16,7 +16,7 @@ import pytest
 
 from confarg import _defaults
 from confarg._default_layer import drop_untouched, lay_defaults
-from confarg._merge import ListOp
+from confarg._merge import DICT_DELETE, ListOp
 
 _TAG = _defaults.UNION_TAG
 
@@ -118,6 +118,21 @@ class _HoldsList:
     items: list[_Inner] = field(default_factory=list)
     by_name: dict[str, _Inner] = field(default_factory=dict)
     t: tuple[int, ...] = (0, 1)
+
+
+@dataclass
+class _Deletes:
+    """A field of each kind a key delete can stand below, none with a laid default."""
+
+    d: dict[str, int] = field(default_factory=dict)
+    dd: dict[str, dict[str, int]] = field(default_factory=dict)
+    a: Any = None
+    inner: _Inner = field(default_factory=_Inner)
+    opt: _Inner | None = None
+    either: _Inner | _Other | None = None
+    ld: list[dict[str, int]] = field(default_factory=list)
+    xs: list[int] = field(default_factory=list)
+    pair: _Pair | None = None
 
 
 def _lay(target: Any, data: dict[Any, Any], *, for_resolution: bool = True) -> tuple[dict[Any, Any], set[Any]]:
@@ -260,6 +275,76 @@ class TestWhereItIsLaid:
         """No declaration, no default."""
         given = {"a": 1}
         assert _lay(dict[str, Any], given) == (given, set())
+
+
+class TestAKeyDeleteThatMetNothing:
+    """A key delete no layer met, the defaults included, deletes nothing (BUG-98).
+
+    It is dropped, and so is every dict it alone filled, so the data reads as if no source
+    had spelled it.
+    """
+
+    @pytest.mark.parametrize(
+        ("data", "laid"),
+        [
+            ({"d": {"x": DICT_DELETE, "y": 1}}, {"d": {"y": 1}}),
+            ({"d": {"x": DICT_DELETE}}, {}),
+            ({"dd": {"k": {"x": DICT_DELETE}, "j": {"x": 1}}}, {"dd": {"j": {"x": 1}}}),
+            ({"a": {"k": {"z": DICT_DELETE}}}, {}),
+            ({"inner": {"port": DICT_DELETE}}, {}),
+            ({"opt": {"port": DICT_DELETE}}, {}),
+            ({"either": {"size": DICT_DELETE}}, {}),
+            ({"either": {_TAG: f"{__name__}._Other", "size": DICT_DELETE}}, {"either": {_TAG: f"{__name__}._Other"}}),
+            ({"ld": {"0": {"k": DICT_DELETE}}}, {}),
+            ({"pair": {"x": DICT_DELETE}}, {}),
+            ({"d": {}}, {"d": {}}),
+        ],
+        ids=[
+            "dict-key",
+            "dict-emptied",
+            "nested-dict",
+            "any",
+            "struct-field",
+            "optional-struct",
+            "unsettled-union",
+            "tagged-union",
+            "list-item-patch",
+            "namedtuple-field",
+            "an-empty-dict-written-stays",
+        ],
+    )
+    @pytest.mark.parametrize("for_resolution", [True, False])
+    def test_it_is_dropped_with_the_dicts_it_alone_filled(
+        self,
+        data: dict[Any, Any],
+        laid: dict[Any, Any],
+        for_resolution: bool,  # noqa: FBT001  # a parametrized mode, not a call's flag
+    ) -> None:
+        """The delete goes, and a dict left empty by it goes too, before any default is laid."""
+        result = lay_defaults(_Deletes, data, _TAG, for_resolution=for_resolution)
+        assert drop_untouched(result.data, result.untouched) == laid
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {"xs": {"0": DICT_DELETE}},
+            {"pair": {ListOp.BASE: [7, 8], "x": DICT_DELETE}},
+        ],
+        ids=["bare-index-delete", "namedtuple-field-over-a-base"],
+    )
+    def test_a_delete_a_sequence_reads_is_left_to_construction(self, data: dict[Any, Any]) -> None:
+        """An index's bare delete is construction's to refuse, and a namedtuple's over a base is BUG-243's."""
+        assert _lay(_Deletes, data, for_resolution=False)[0] == data
+
+    def test_a_struct_field_deleted_gets_its_default_laid(self) -> None:
+        """A deleted field reads as one no source set, so an expression reads its default."""
+        data, untouched = _lay(_Outer, {"inner": {"port": DICT_DELETE}, "needy": {"host": "h"}})
+        assert data["inner"] == {"port": 80}
+        assert ("inner",) in untouched
+
+    def test_a_non_struct_root_left_empty_is_no_root(self) -> None:
+        """A root its deletes alone filled reads as no root value at all."""
+        assert _lay(dict[str, int], {_defaults.ROOT_KEY: {"x": DICT_DELETE}})[0] == {}
 
 
 class TestDropUntouched:

@@ -296,3 +296,73 @@ class TestAFieldDefaultIsTheBaseLayer:
         """``from_dict(list[int], resolve(...))`` builds what ``build()`` does (5c)."""
         raw = confarg.merge(list[int], argv=["--json", "[1, 2]"], env={})
         assert confarg.from_dict(list[int], confarg.resolve(list[int], raw)) == confarg.build(list[int], raw) == [1, 2]
+
+
+@dataclasses.dataclass
+class _Port:
+    """A section whose one field has a default."""
+
+    p: int = 3
+
+
+@dataclasses.dataclass
+class _Deleted:
+    """Fields a key delete may find nothing below (BUG-98)."""
+
+    data: dict[str, int] = dataclasses.field(default_factory=dict)
+    sub: _Port = dataclasses.field(default_factory=_Port)
+    opt: _Port | None = None
+    a: Any = None
+    ld: list[dict[str, int]] = dataclasses.field(default_factory=list)
+    xs: list[int] = dataclasses.field(default_factory=list)
+    s: str = "s"
+
+
+class TestAKeyDeleteThatMeetsNothingDeletesNothing:
+    """A key delete no layer met, the defaults included, is dropped by ``build()`` (BUG-98).
+
+    It once reached construction as the merge's sentinel, which a typed field refused as
+    ``Cannot coerce _DeleteSentinel _DELETE_``, an ``Any`` built into its value, and an
+    expression read.
+    """
+
+    @pytest.mark.parametrize(
+        ("argv", "field", "built"),
+        [
+            (["--data.x-"], "data", {}),
+            (["--sub.p-"], "sub", _Port(3)),
+            (["--opt.p-"], "opt", None),
+            (["--a.k-"], "a", None),
+            (["--a.k.z-"], "a", None),
+            (["--ld.0.k-"], "ld", []),
+            (["--json", '{"data": {}}', "--data.x-"], "data", {}),
+        ],
+        ids=["dict-key", "struct-field", "optional-struct", "any-key", "any-nested", "list-item-key", "written-empty"],
+    )
+    def test_it_builds_as_if_not_given(self, argv: list[str], field: str, built: Any) -> None:
+        """Each builds what the target builds with no flag at all, a dict a source wrote kept."""
+        assert getattr(confarg.load(_Deleted, argv=argv, env={}), field) == built
+
+    def test_the_environment_alike(self) -> None:
+        """``APP_DATA__X-`` with no base builds the empty default, as ``--data.x-`` does."""
+        assert confarg.load(_Deleted, argv=[], env={"APP_DATA__X-": "x"}, env_prefix="APP_").data == {}
+
+    def test_merge_keeps_it_for_a_layer_below(self) -> None:
+        """``merge()`` keeps the delete, so a dumped merge still deletes what a lower file holds (BUG-202)."""
+        assert confarg.merge(_Deleted, argv=["--data.x-"], env={}) == {"data": {"x": confarg._merge.DICT_DELETE}}
+
+    def test_an_expression_reads_the_key_as_absent(self) -> None:
+        """``${data.x}`` misses, as with no flag, rather than reading the sentinel."""
+        with pytest.raises(confarg.exceptions.MissingReferenceError):
+            confarg.load(_Deleted, argv=["--data.x-", "--s", "${data.x}"], env={})
+
+    def test_resolve_holds_no_delete(self) -> None:
+        """``resolve()`` hands ``from_dict()`` what ``build()`` constructs from."""
+        raw = confarg.merge(_Deleted, argv=["--sub.p-", "--data.x-", "--data.y", "1"], env={})
+        assert confarg.resolve(_Deleted, raw) == {"data": {"y": 1}}
+        assert confarg.from_dict(_Deleted, raw) == confarg.build(_Deleted, raw) == _Deleted(data={"y": 1})
+
+    def test_an_index_delete_with_no_base_list_is_still_refused(self) -> None:
+        """An index names a position, which nothing below gives it."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="requires a base list"):
+            confarg.load(_Deleted, argv=["--xs.0-"], env={})
