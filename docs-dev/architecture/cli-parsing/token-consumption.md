@@ -53,8 +53,10 @@
   occurrence makes every token an ordinary item. On a multi-token flag the question is therefore
   asked of the *accumulated* tokens
   ([CLI adapters](../cli-adapters/list-syntax-divergence.md#list-syntax-divergence)).
-- Leaves are coerced eagerly with `_try_coerce` so the merged dict has the same types
-  whichever channel supplied them (and so CLI numbers work inside expressions).
+- Leaves are coerced eagerly with `_try_coerce`, to a value a file holds natively only, so the
+  merged dict has the same types whichever channel supplied them (and so CLI numbers work
+  inside expressions); an `Enum` or registered leaf stays as typed
+  ([token model](../types/token-model.md#a-leaf-reaches-the-merged-dict-as-written)).
 - Bool fields take an explicit value: `--verbose true` ([design decisions](../design-decisions/explicit-boolean-values.md#explicit-boolean-values)).
 - A whole value already stored at a field is **opened, not overwritten**, when a later
   `--<field>.<sub>` has to descend through it. `--fn pkg.func` is the shorthand for

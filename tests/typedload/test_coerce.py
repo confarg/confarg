@@ -24,6 +24,7 @@ from confarg.typedload._coerce import (
     _try_coerce,
     _type_kind,
     _TypeKind,
+    read_as_object,
 )
 from confarg.typedload._construct import construct
 from tests.conftest import Release
@@ -145,13 +146,11 @@ class TestCoerceLeafAny:
 class TestTryCoerceCustomType:
     """Tests for _try_coerce() with registered custom leaf types."""
 
-    def test_registered_type_is_eagerly_coerced(self) -> None:
-        """Registered types are eagerly coerced by _try_coerce (not deferred to construct)."""
+    def test_registered_type_is_left_as_written(self) -> None:
+        """A registered type's value is an object no file holds, so its token stays as written (BUG-246)."""
         confarg.register_leaf_type(UUID, UUID)
         token = _StrToken(_UUID_STR)
-        result = _try_coerce(UUID, token)
-        assert result == _UUID_OBJ
-        assert isinstance(result, UUID)
+        assert _try_coerce(UUID, token) is token
 
     def test_unregistered_type_returns_token(self) -> None:
         """Unregistered types are not eagerly coerced — token passes through unchanged."""
@@ -159,12 +158,11 @@ class TestTryCoerceCustomType:
         result = _try_coerce(UUID, token)
         assert result is token
 
-    def test_optional_registered_type_coerced(self) -> None:
-        """Optional[T] with registered T is eagerly coerced."""
+    def test_registered_type_is_read_as_its_object(self) -> None:
+        """An expression reads it as the object, an optional included, whatever the spelling (BUG-246)."""
         confarg.register_leaf_type(UUID, UUID)
-        token = _StrToken(_UUID_STR)
-        result = _try_coerce(UUID | None, token)
-        assert result == _UUID_OBJ
+        assert read_as_object(UUID | None, _UUID_STR) == _UUID_OBJ
+        assert read_as_object(UUID | str, _UUID_STR) == _UUID_STR
 
     def test_invalid_registered_returns_token(self) -> None:
         """When coercion fails, _try_coerce returns the original token unchanged."""

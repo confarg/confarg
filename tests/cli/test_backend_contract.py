@@ -28,7 +28,7 @@ from collections.abc import (
 from dataclasses import dataclass
 from dataclasses import field as dataclasses_field
 from decimal import Decimal
-from enum import Enum
+from enum import Enum, IntEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple
 from uuid import UUID
@@ -3945,7 +3945,7 @@ class TestUnionRootContract:
 
 @dataclass
 class _CoercedLeaves:
-    """Leaves whose eager coercion yields a non-native type (``Path``, ``Enum``)."""
+    """Leaves whose value is an object no file holds (``Path``, ``Enum``)."""
 
     out: Path = Path("default.txt")
     color: Color = Color.RED
@@ -4014,18 +4014,17 @@ class TestMergeContract:
         tmp_path: Path,
         suffix: str,
     ) -> None:
-        """A merged dict holding an eagerly coerced ``Path``/``Enum`` leaf dumps in every format.
+        """A merged dict holding a ``Path`` and an ``Enum`` leaf round-trips through every format.
 
-        Leaves are coerced at merge time, so the dict carries a ``Path`` and an
-        ``Enum`` member that no config-file writer accepts; both must leave as
-        the scalars a config file would have carried.
+        The tokens stay as written (BUG-246), so the dump reads back as the very dict
+        that was merged, whichever front-end merged it.
         """
         out = tmp_path / f"snap{suffix}"
         raw = loader.merge(_CoercedLeaves, argv=["--out", "sub/x.txt", "--color", "blue"], env={})
         confarg.dump_file(raw, out)
 
         reloaded = loader.merge(_CoercedLeaves, argv=[], env={}, files=[out])
-        assert reloaded == {"out": str(Path("sub/x.txt")), "color": "blue"}
+        assert reloaded == raw == {"out": "sub/x.txt", "color": "blue"}
         assert confarg.build(_CoercedLeaves, raw) == confarg.build(_CoercedLeaves, reloaded)
 
     @pytest.mark.parametrize("suffix", [".yaml", ".json", ".toml"])
@@ -4045,7 +4044,7 @@ class TestMergeContract:
         confarg.register_leaf_type(UUID, UUID)
         out = tmp_path / f"snap{suffix}"
         raw = loader.merge(_RegisteredLeaf, argv=["--id", _UUID_TEXT], env={})
-        assert raw == {"id": UUID(_UUID_TEXT)}
+        assert raw == {"id": _UUID_TEXT}
         confarg.dump_file(raw, out)
 
         reloaded = loader.merge(_RegisteredLeaf, argv=[], env={}, files=[out])
@@ -5375,6 +5374,59 @@ log: '${base}/logs'
         from_env = loader.load(_LeafConfig, argv=[], env={"X_BASE": "/app", "X_LOG": "${base}/logs"}, env_prefix="X_")
         from_cli = loader.load(_LeafConfig, argv=["--base", "/app", "--log", "${base}/logs"], env={})
         assert from_file.log == from_env.log == from_cli.log == Path("/app/logs")
+
+
+class _Level(IntEnum):
+    """An enum an expression computes with, spelled by name or by value."""
+
+    LOW = 1
+
+
+@dataclass
+class _TypedLeaves:
+    """Enum and registered leaves an expression reads, and the fields it writes them to."""
+
+    p: Path = Path("/a")
+    colour: _Colour = _Colour.RED
+    level: _Level = _Level.LOW
+    tag: str = ""
+    copy: str = ""
+    low: bool = False
+    sub: Path = Path()
+
+
+_TYPED_LEAF_EXPRESSIONS = {"tag": "${colour}@${p}", "copy": "${colour}", "low": "${level == 1}", "sub": "${p / 'sub'}"}
+
+
+class TestTypedLeafReadContract:
+    """An expression reads an Enum or registered leaf as its object, whichever channel wrote it (BUG-246).
+
+    The argv and env channels coerced such a token eagerly while a file kept its string, so
+    an interpolation wrote ``Color.RED`` from one channel and ``red`` from another. Each
+    source spells the leaves differently, the enums by name or by value; every one reads
+    the same object, and writes its dump form, never ``str()``.
+    """
+
+    @pytest.mark.parametrize("source", ["default", "argv", "env", "file"])
+    def test_every_channel_reads_the_same_object(self, loader: ConfargLoader, tmp_yaml, source: str) -> None:
+        """The enum spelled ``RED`` or ``red``, ``LOW`` or ``1``, reads as its member; a path as its object."""
+        exprs = {f"--{k}": v for k, v in _TYPED_LEAF_EXPRESSIONS.items()}
+        argv = [token for pair in exprs.items() for token in pair]
+        env: dict[str, str] = {}
+        if source == "argv":
+            argv += ["--p", "/b", "--colour", "RED", "--level", "1"]
+        elif source == "env":
+            env = {"X_P": "/b", "X_COLOUR": "red", "X_LEVEL": "LOW"}
+        elif source == "file":
+            argv += ["--config", str(tmp_yaml("p: /b\ncolour: RED\nlevel: 1\n"))]
+        cfg = loader.load(_TypedLeaves, argv=argv, env=env, env_prefix="X_")
+        where = "/a" if source == "default" else "/b"
+        assert (cfg.tag, cfg.copy, cfg.low, cfg.sub) == (f"red@{where}", "red", True, Path(where) / "sub")
+
+    def test_merge_holds_the_tokens_as_written(self, loader: ConfargLoader) -> None:
+        """``merge()`` keeps what was typed, as it keeps a file's string; ``build()`` reads the object."""
+        merged = loader.merge(_TypedLeaves, argv=["--p", "/b", "--colour", "RED", "--level", "1"], env={})
+        assert (merged["p"], merged["colour"], merged["level"]) == ("/b", "RED", "1")
 
 
 # ---------------------------------------------------------------------------

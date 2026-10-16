@@ -13,6 +13,10 @@ the boundary moves here.
 
 - The grammar cannot express collection literals, slices, comprehensions or lambdas. The whitelist is the safety model, not an unfinished parser
   ([expressions](expressions/safety-model.md#safety-model)).
+- A plain `Enum` member equals no text: `${c == 'red'}` is `False` on every channel, since an
+  expression reads the member, and no expression can name the class. Compare two fields, or
+  declare a `StrEnum` or an `IntEnum`, which equals its value
+  ([expressions](expressions/values-and-references.md#a-typed-leaf-reads-as-its-object)).
 - No attribute of a value is reachable, only keys and indices: `${d.year}` on a YAML date or
   `${n.real}` on a number is a missing field, and no whitelisted function reads it instead
   ([expressions](expressions/safety-model.md#a-dot-reads-a-key-never-an-attribute)).

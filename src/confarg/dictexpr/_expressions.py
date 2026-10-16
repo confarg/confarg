@@ -348,13 +348,44 @@ def _refuse_normalized_names(body: str) -> None:
             raise _NormalizedNameError(tstr)
 
 
+#: How an expression reads a value: given the data, the position it is read at (one segment
+#: per key or list position, as the data names it) and the value held there, what it reads.
+type Reader = Callable[[MergeDict, Sequence[str | ListOp], Any], Any]
+
+#: How a resolved expression is written: given what it evaluated to, what the data holds and
+#: an interpolation stringifies.
+type Writer = Callable[[Any], Any]
+
+
+class _Namespace(dict[Any, Any]):
+    """The data expressions read and are written back into, with how a value is read and written.
+
+    Without a reader or a writer, a value is read and written as it is: the engine knows no
+    type, and a caller that does (``build()``, ``resolve()``) gives both.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
+    """
+
+    def __init__(self, data: MergeDict, read: Reader | None = None, write: Writer | None = None) -> None:
+        super().__init__(data)
+        self.read = read
+        self.write: Writer = write or (lambda value: value)
+
+
 def resolve_expressions(
     data: dict[Any, Any],
+    *,
+    read: Reader | None = None,
+    write: Writer | None = None,
 ) -> MergeDict:
     """Resolve ${...} expressions in a merged config dict.
 
     Args:
         data: The merged configuration dict.
+        read: What an expression reads of the value at a position; the value itself when omitted.
+        write: What a resolved expression leaves in the data, and an interpolation stringifies;
+            the value itself when omitted.
 
     Returns:
         A new dict with all ${...} expression strings replaced by their values.
@@ -371,7 +402,7 @@ def resolve_expressions(
     if not expr_fields:
         return data
 
-    data = copy.deepcopy(data)
+    data = _Namespace(copy.deepcopy(data), read, write)
 
     # 2. Extract references and build dependency graph
     deps = _dependency_graph(data, expr_fields)
@@ -395,7 +426,7 @@ def resolve_expressions(
         result = _resolve_single(raw_str, data, path)
         _set_nested_by_path(data, path, result)
 
-    return data
+    return dict(data)
 
 
 def _scan_expressions(data: MergeDict) -> dict[_Path, str]:
@@ -606,12 +637,13 @@ def _subscript_segment(index: ast.expr) -> str | ListOp | None:
     return _key_segment(index.value if isinstance(index, ast.Constant) else _ast_int_value(index))
 
 
-def _segment(node: ast.Attribute | ast.Subscript, namespace: MergeDict | None = None) -> str | ListOp | None:
+def _segment(node: ast.Attribute | ast.Subscript, namespace: _Namespace | None = None) -> str | ListOp | None:
     """Return the one path segment *node* adds to its base, or ``None`` when it spells none.
 
     A dot's name, or what :func:`_subscript_segment` reads in a subscript's index. A computed
     index spells no segment, unless *namespace* is given: it is then evaluated against it and
-    spells what :func:`_key_segment` reads in its value. Asked of each link by
+    spells what :func:`_key_segment` reads in its value as the namespace writes it, so an
+    enum member spells the key its dump form is. Asked of each link by
     :func:`_attribute_chain`, and of the first segment after a root stand-in by
     :class:`_AnchorResolver`.
     """
@@ -619,12 +651,12 @@ def _segment(node: ast.Attribute | ast.Subscript, namespace: MergeDict | None = 
         return node.attr
     segment = _subscript_segment(node.slice)
     if segment is None and namespace is not None:
-        return _key_segment(_evaluate_ast(node.slice, namespace))
+        return _key_segment(namespace.write(_evaluate_ast(node.slice, namespace)))
     return segment
 
 
 def _attribute_chain(
-    node: ast.Attribute | ast.Subscript, namespace: MergeDict | None = None
+    node: ast.Attribute | ast.Subscript, namespace: _Namespace | None = None
 ) -> list[str | ListOp] | None:
     """Return the config path *node* reads, segment by segment, or ``None`` when it reads none.
 
@@ -775,7 +807,7 @@ def _validate_path_call(node: ast.Call, function: str) -> None:
         raise _RefusedError(msg)
 
 
-def _eval_key(arg: ast.expr, namespace: MergeDict) -> Any:
+def _eval_key(arg: ast.expr, namespace: _Namespace) -> Any:
     """Return the key the path *arg* spells is filed under: a dict key, or a list element's position.
 
     The value at the path is never read, only the container holding it. An anchor stand-in
@@ -814,11 +846,23 @@ def _eval_key(arg: ast.expr, namespace: MergeDict) -> Any:
     return segment
 
 
-def _eval_name(node: ast.Name, namespace: MergeDict) -> Any:
+def _eval_name(node: ast.Name, namespace: _Namespace) -> Any:
     """Read the config key *node* names; a callee never reaches here (see :func:`_function_name`)."""
     if (node.id in _SAFE_FUNCTIONS or node.id in _PATH_FUNCTIONS) and node.id not in namespace:
         raise MissingReferenceError.uncalled(node.id, "function", node.id, node.id)
-    return _get_nested(namespace, [node.id])
+    return _read_value(namespace, [node.id])
+
+
+def _read_value(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
+    """Return what an expression reads at the config path *parts*: the value there, as the namespace reads it.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
+    """
+    value = _get_nested(namespace, parts)
+    if namespace.read is None:
+        return value
+    return namespace.read(namespace, _scan_path(namespace, parts), value)
 
 
 class _ValueMissError(LookupError):
@@ -833,7 +877,7 @@ class _ValueMissError(LookupError):
         super().__init__(f"index {key!r} out of range" if isinstance(miss, IndexError) else f"key {key!r} not found")
 
 
-def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: MergeDict) -> Any:
+def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: _Namespace) -> Any:
     """Read the config path *node* spells; failing that, index its evaluated base by the key it spells.
 
     The path comes first, so ``svc['web'].host`` reads what ``svc.web.host`` reads, and a
@@ -858,11 +902,11 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: MergeDict) -> 
     missing: MissingReferenceError | None = None
     if parts is not None:
         try:
-            return _get_nested(namespace, parts)
+            return _read_value(namespace, parts)
         except MissingReferenceError as exc:
             missing = exc
     base = _evaluate_ast(node.value, namespace)
-    key = node.attr if isinstance(node, ast.Attribute) else _evaluate_ast(node.slice, namespace)
+    key = node.attr if isinstance(node, ast.Attribute) else namespace.write(_evaluate_ast(node.slice, namespace))
     try:
         return base[key]
     except (AttributeError, LookupError, TypeError) as exc:
@@ -876,18 +920,18 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: MergeDict) -> 
         raise missing from None
 
 
-def _eval_binop(node: ast.BinOp, namespace: MergeDict) -> Any:
+def _eval_binop(node: ast.BinOp, namespace: _Namespace) -> Any:
     left = _evaluate_ast(node.left, namespace)
     right = _evaluate_ast(node.right, namespace)
     return _BINOP_MAP[type(node.op)](left, right)
 
 
-def _eval_unaryop(node: ast.UnaryOp, namespace: MergeDict) -> Any:
+def _eval_unaryop(node: ast.UnaryOp, namespace: _Namespace) -> Any:
     operand = _evaluate_ast(node.operand, namespace)
     return _UNARYOP_MAP[type(node.op)](operand)
 
 
-def _eval_compare(node: ast.Compare, namespace: MergeDict) -> Any:
+def _eval_compare(node: ast.Compare, namespace: _Namespace) -> Any:
     left = _evaluate_ast(node.left, namespace)
     for op, comparator in zip(node.ops, node.comparators, strict=False):
         right = _evaluate_ast(comparator, namespace)
@@ -897,7 +941,7 @@ def _eval_compare(node: ast.Compare, namespace: MergeDict) -> Any:
     return True
 
 
-def _eval_boolop(node: ast.BoolOp, namespace: MergeDict) -> Any:
+def _eval_boolop(node: ast.BoolOp, namespace: _Namespace) -> Any:
     if isinstance(node.op, ast.And):
         result: Any = True
         for value in node.values:
@@ -914,13 +958,13 @@ def _eval_boolop(node: ast.BoolOp, namespace: MergeDict) -> Any:
     return result
 
 
-def _eval_ifexp(node: ast.IfExp, namespace: MergeDict) -> Any:
+def _eval_ifexp(node: ast.IfExp, namespace: _Namespace) -> Any:
     if _evaluate_ast(node.test, namespace):
         return _evaluate_ast(node.body, namespace)
     return _evaluate_ast(node.orelse, namespace)
 
 
-def _eval_method(node: ast.Call, method: str, namespace: MergeDict) -> Any:
+def _eval_method(node: ast.Call, method: str, namespace: _Namespace) -> Any:
     """Return the bound string method *node* calls, refusing any receiver that is no string.
 
     The receiver is evaluated, never the callee's path, and its type is known only now: a
@@ -937,7 +981,7 @@ def _eval_method(node: ast.Call, method: str, namespace: MergeDict) -> Any:
     return getattr(receiver, method)
 
 
-def _eval_call(node: ast.Call, namespace: MergeDict) -> Any:
+def _eval_call(node: ast.Call, namespace: _Namespace) -> Any:
     if _function_name(node) in _PATH_FUNCTIONS:
         return _eval_key(node.args[0], namespace)
     if (function := _function_name(node)) is not None:
@@ -966,7 +1010,7 @@ _AST_EVALUATORS: dict[type, Any] = {
 }
 
 
-def _evaluate_ast(node: ast.AST, namespace: MergeDict) -> Any:
+def _evaluate_ast(node: ast.AST, namespace: _Namespace) -> Any:
     """Recursively evaluate AST node against namespace.
 
     Only a node :func:`_validate_ast` accepted reaches here, and every one it accepts has an
@@ -975,7 +1019,7 @@ def _evaluate_ast(node: ast.AST, namespace: MergeDict) -> Any:
     return _AST_EVALUATORS[type(node)](node, namespace)
 
 
-def _eval_expr(tree: ast.Expression, namespace: MergeDict, context: str) -> Any:
+def _eval_expr(tree: ast.Expression, namespace: _Namespace, context: str) -> Any:
     """Evaluate a parsed expression, wrapping any runtime failure in ``ExpressionEvalError``.
 
     ``MissingReferenceError`` propagates unchanged. A :class:`_RefusedError` — a method off
@@ -1001,7 +1045,7 @@ def _eval_expr(tree: ast.Expression, namespace: MergeDict, context: str) -> Any:
         raise ExpressionEvalError.failed(context, exc) from exc
 
 
-def _resolve_single(expr_str: str, namespace: MergeDict, node_path: _Path = ()) -> Any:
+def _resolve_single(expr_str: str, namespace: _Namespace, node_path: _Path = ()) -> Any:
     """Resolve a single expression string.
 
     Handles three cases:
@@ -1017,7 +1061,7 @@ def _resolve_single(expr_str: str, namespace: MergeDict, node_path: _Path = ()) 
     if len(spans) == 1 and spans[0].body is not None and (spans[0].start, spans[0].end) == (0, len(expr_str)):
         # Pure expression — return typed result
         tree = _parse_anchored(spans[0].body, node_path)
-        return _eval_expr(tree, namespace, expr_str)
+        return namespace.write(_eval_expr(tree, namespace, expr_str))
 
     # Interpolation or escape mode: build string from parts
 
@@ -1028,7 +1072,7 @@ def _resolve_single(expr_str: str, namespace: MergeDict, node_path: _Path = ()) 
         # Real expression — evaluate and stringify
         tree = _parse_anchored(span.body, node_path)
         value = _eval_expr(tree, namespace, expr_str[span.start : span.end])
-        return str(value)
+        return str(namespace.write(value))
 
     return _rewrite_spans(expr_str, spans, replace)
 

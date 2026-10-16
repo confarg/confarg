@@ -62,6 +62,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 |---|---|
 | [Expressions resolved after merging, by a whitelisted interpreter](expressions-resolved-after-merging.md) | any channel can override an input of a file-defined formula, and nothing calls `eval` |
 | [`::` spells the configuration root, a leading dot counts upwards](anchor-spellings.md) | the three anchor spellings, and what was rejected for each |
+| [An expression reads a typed leaf as its object](an-expression-reads-a-typed-leaf-as-its-object.md) | `merge()` holds an `Enum` or registered leaf as written on every channel; an expression reads it as its object and leaves its dump form, never `str()` |
 | [An entry reads its key with an expression](an-entry-reads-its-key-with-an-expression.md) | `name: ${key(.)}` names an entry after the key it is filed under; the link lives in the configuration, not in the type |
 
 ## Types and construction

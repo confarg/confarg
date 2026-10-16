@@ -18,7 +18,7 @@ import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Optional, Protocol, Union
+from typing import Any, Literal, Optional, Protocol, Union
 
 import pytest
 
@@ -73,6 +73,7 @@ from confarg.dictexpr._expressions import (
     _eval_expr,
     _extract_references,
     _get_nested,
+    _Namespace,
     _set_nested_by_path,
     resolve_expressions,
 )
@@ -86,6 +87,10 @@ from tests.conftest import WithDefaults, make_target
 # Module-level dataclasses (needed to avoid `from __future__ import annotations`
 # breaking `get_type_hints` for locally-defined classes)
 # ---------------------------------------------------------------------------
+
+
+class _Status(enum.Enum):
+    ACTIVE = "active"
 
 
 @dataclass
@@ -608,7 +613,6 @@ class TestTypeHelpers:
             (int, _StrToken("-7"), -7),
             (float, _StrToken("3.14"), 3.14),
             (float, _StrToken("-0.5"), -0.5),
-            (Path, _StrToken("/tmp/foo"), Path("/tmp/foo")),
         ],
         ids=[
             "bool-true",
@@ -619,11 +623,10 @@ class TestTypeHelpers:
             "int-negative",
             "float-positive",
             "float-negative",
-            "path",
         ],
     )
     def test_try_coerce_concrete_types(self, ft, raw, expected) -> None:
-        """_try_coerce actively coerces bool, int, float, and Path tokens."""
+        """_try_coerce actively coerces bool, int and float tokens."""
         result = _try_coerce(ft, raw)
         assert result == expected
 
@@ -639,16 +642,11 @@ class TestTypeHelpers:
         result = _try_coerce(Literal[1, 2, 3], token)
         assert result == 1
 
-    def test_try_coerce_enum_value(self) -> None:
-        """_try_coerce coerces a token to an Enum member by value."""
-
-        class Status(enum.Enum):
-            ACTIVE = "active"
-            INACTIVE = "inactive"
-
+    @pytest.mark.parametrize("ft", [Path, Path | None, Literal[_Status.ACTIVE], _Status])
+    def test_try_coerce_leaves_an_object_token_as_written(self, ft: Any) -> None:
+        """An Enum, a registered type and a Literal over an Enum hold an object no file holds (BUG-246)."""
         token = _StrToken("active")
-        result = _try_coerce(Status, token)
-        assert result is Status.ACTIVE
+        assert _try_coerce(ft, token) is token
 
     def test_try_coerce_invalid_bool_returns_token(self) -> None:
         """When coercion fails (e.g. bad bool string), _try_coerce returns the original token."""
@@ -943,7 +941,7 @@ class TestExpressionBranches:
         tree = ast.parse("f[0]()", mode="eval")
         message = r"^Error in expression '\$\{f\[0\]\(\)\}': Indirect function calls are not allowed$"
         with pytest.raises(confarg.exceptions.UnsafeExpressionError, match=message):
-            _eval_expr(tree, {"f": [print]}, "${f[0]()}")
+            _eval_expr(tree, _Namespace({"f": [print]}), "${f[0]()}")
 
 
 # ---------------------------------------------------------------------------

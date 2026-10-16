@@ -183,7 +183,10 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "which leaf variant steals a token?" | `typedload._coerce._steal_rank` |
 | "does this type get taken apart into fields?" | `typedload._coerce._is_struct_variant` |
 | "may an explicit class tag still open this leaf?" | `typedload._coerce._is_taggable_leaf` |
-| "is this leaf type eager-coerced from a token?" | `typedload._coerce._is_eagerly_coercible` |
+| "is this leaf type eager-coerced from a token?" | `typedload._coerce._is_eagerly_coercible` — only a type whose value a file holds natively, so a token holds in `merge()` what a file would (BUG-246, [types](types/token-model.md#a-leaf-reaches-the-merged-dict-as-written)) |
+| "is this leaf's value an object no file holds?" | `typedload._coerce._reads_as_object` — an `Enum`, a registered type, a `Literal` over an `Enum`: never coerced eagerly, read as the object by an expression (BUG-246) |
+| "what does an expression read at this position?" | `_typed_read.TypedReading`, the reader `build()` and `resolve()` give `resolve_expressions` — the type `TypedAt` steps to, and `typedload._coerce.read_as_object` at the leaf: the object where one such type is certain, as written anywhere else ([expressions](expressions/values-and-references.md#a-typed-leaf-reads-as-its-object)) |
+| "what does an expression leave behind?" | `_serialize.written_form` — each object in its dump form, never `str()`: a pure result, an interpolated piece, a computed subscript key; `_serialize_leaf` dumps through the same `_object_form` ([expressions](expressions/values-and-references.md#a-typed-leaf-reads-as-its-object)) |
 | "what dotted path names this object?" | `_import.dotted_name` — a bound method through the class it is bound to, never its qualified name (BUG-193, [types](types/dotted-imports.md#dotted-imports)) |
 | "what type is this value, to a reader?" | `_types._src_type` |
 | "which type does this annotation stand for, its wrappers aside?" | `_types._resolve_type` — `TypeAliasType`, `Annotated` and `Final` unwrapped in any nesting, a bare `Final` as `Any`; no walk unwraps a wrapper at its own site ([types](types/introspection.md#wrappers-are-transparent)) |

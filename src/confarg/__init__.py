@@ -43,12 +43,14 @@ def register_leaf_type(
     config files — and must return an instance of ``tp``, raising ``ValueError``,
     ``TypeError`` or ``OSError`` on failure.  Values that already are instances of
     ``tp`` are used as-is.  Unresolved ``${...}`` expressions are never passed to
-    ``coerce``; it receives their resolved value.
+    ``coerce``; it receives their resolved value.  It is called when the value is
+    built, and also when an expression reads it: an expression computes with the
+    instance, and writes it back through ``serialize``, never ``str()``.
 
     ``serialize`` is the inverse: it is called with an instance of ``tp`` and must
     return a value a config file can hold (a string, number or bool), which
     ``coerce`` accepts back.  It defaults to ``str``, which is right for types
-    whose ``str()`` is their wire form (``UUID``, ``Decimal``, ``Path``) and wrong
+    whose ``str()`` is their wire form (``UUID``, ``Decimal``) and wrong
     for types whose ``__str__`` is a ``repr``-style debugging aid — pass an
     explicit callable for those, or dumps will not load back.
 

@@ -14,6 +14,24 @@ Whitespace *inside* the braces is layout: `${ a }` is `${a}`, as `{ a }` is in a
 `" a "` is to `eval()`. Every parse goes through `_parse_body`, which strips it, because
 `ast.parse` alone reads a leading blank as an indent.
 
+## A typed leaf reads as its object
+
+The merged dict holds an `Enum` or registered leaf as it was written, on every channel ([token model](../types/token-model.md#a-leaf-reaches-the-merged-dict-as-written)). `build()` and `resolve()` hand `resolve_expressions` a reader and a writer, and an expression reads such a leaf as its object wherever one type is certain:
+
+| Expression, `c: Color` (`RED = "red"`) set by `RED`, `red` or the default | Value |
+|---|---|
+| `${c}` into a `str` field, `"${c}@x"` | `'red'`, `'red@x'`: the dump form, never `str()` |
+| `${c == other}`, `${lvl == 1}` on an `IntEnum` spelled `LOW` | `True` |
+| `${p / 'sub'}`, `p: Path` | `Path('…/sub')`, left in the data as `'…/sub'` |
+| `${svc[c]}`, `svc` keyed by `red` | the entry `red`: a computed key is spelled in its dump form |
+| `${c == 'red'}` on a plain `Enum` | `False`: a member equals no text |
+
+- **The reader** (`_typed_read.TypedReading`) steps from the root to the position read by the typed merge's own walk (`TypedAt`, which reads the tag or spec each node holds), and coerces the value there with `_coerce.read_as_object` where that type, an optional included, is one `Enum`, registered or `Literal`-over-`Enum` type. A union of several variants, `Any` and a base with untagged subclasses read as written, as do a value the type refuses and a pending op's items. It applies to every read, a source's value, an earlier expression's result and each leaf of a subtree alike, so an expression never sees one leaf as text and another as the object.
+- **The writer** (`_serialize.written_form`) gives what an expression leaves behind — a pure result, an interpolated piece, a computed subscript key — in the form `dump()` writes: an `Enum` member's value, a registered type's serializer. `resolve()` rewrites only what expressions produced, so a source's `RED` comes out as `RED`.
+- **Without them**, `resolve_expressions` reads and writes values as they are: the engine knows no type ([resolution](resolution.md#resolution-algorithm)).
+
+Why objects inside and the dump form at the edges, and what was rejected: [design decisions](../design-decisions/an-expression-reads-a-typed-leaf-as-its-object.md#an-expression-reads-a-typed-leaf-as-its-object).
+
 ## Delimiting an expression
 
 An expression ends at the first `}` that is neither inside a string literal nor closing a brace
@@ -177,7 +195,8 @@ builds a value, not an object graph: sharing one instance between two fields is 
 dependency-injection concern and stays out of scope, which is the same boundary that keeps the
 library free of a container ([design decisions](../design-decisions/no-custom-types-required.md#no-custom-types-required)).
 
-**The substituted node is the live sub-dict, not a copy.** `_get_nested` hands back the node
+**The substituted node is the live sub-dict, not a copy**, unless it holds a leaf read as its object
+([above](#a-typed-leaf-reads-as-its-object)), which is substituted as a copy. `_get_nested` hands back the node
 itself, so after `resolve()` the referencing path and the referenced path are one dict.
 `build()` hides that — it constructs from the dict and drops it — but the three-step seam
 ([pipeline](../pipeline/api-seams.md#public-api-seams)) exposes it: mutating `resolved["db"]` in

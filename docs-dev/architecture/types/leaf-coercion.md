@@ -43,7 +43,8 @@ generic alias, so `str | Point` landed among the scalars and refused the list
 ([design decisions](../design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence)).
 
 Coerce functions may raise `ValueError`, `TypeError` or `OSError`;
-`serialize` defaults to `str` and must return something a config writer accepts and `coerce`
+`serialize` defaults to `str` (`Path`'s is `as_posix`, so a dump is portable) and must return
+something a config writer accepts and `coerce`
 reads back ([design decisions](../design-decisions/registered-leaf-serializer.md#registered-leaf-types-dump-through-a-registered-serializer)).
 
 `_try_coerce` (eager, used by parsers) never raises: it coerces only unambiguous targets and
@@ -52,5 +53,11 @@ raises. Pick deliberately: overrides of locals use `_coerce_leaf` because a fail
 an error there ([locals](../locals.md#declare-in-files-modify-anywhere)). Expression tokens are
 skipped by rule ([expressions](../expressions/deferral-rule.md#deferral-rule)). The two share one predicate for
 "is this leaf type coerced eagerly?" — `_is_eagerly_coercible`, the eager subset of
-`_coerce_leaf`'s domain (str excluded) — and diverge only on raise-vs-return
+`_coerce_leaf`'s domain: the types whose value a file holds natively, so `str` and every type
+`_reads_as_object` names are excluded — and diverge only on raise-vs-return
 ([invariants](../invariants.md#delegate-to-the-canonical-function)).
+
+`read_as_object` is the third reader: what an expression reads of a leaf, the object where one
+`_reads_as_object` type is certain, the value as written anywhere else and wherever the type
+refuses it. It never raises either
+([design decisions](../design-decisions/an-expression-reads-a-typed-leaf-as-its-object.md#an-expression-reads-a-typed-leaf-as-its-object)).

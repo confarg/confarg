@@ -482,23 +482,54 @@ def _serialize_leaf(tp: Any, value: Any) -> Any:
     Dev Notes:
         docs-dev/architecture/types/serialization.md#serialization
     """
-    if isinstance(value, enum.Enum):
-        return value.value
-    # Before the registry loop: a token is a str subclass, and registering ``str`` must not
-    # let one leak out. isinstance, so a token subclass (_UnionSeqToken) is caught too; it
-    # still spares a caller's own str subclass, which cannot inherit from a private type.
-    # See docs-dev/architecture/invariants.md#tokens-mean-untyped-text.
     if isinstance(value, _StrToken):
         return str(value)
-    for leaf_tp, serialize in _LEAF_SERIALIZERS.items():
-        # isinstance, not an exact type test: a real Path is a WindowsPath or a PosixPath.
-        if isinstance(value, leaf_tp):
-            return serialize(value)
+    if (form := _object_form(value)) is not value:
+        return form
     if tp is float and isinstance(value, int) and not isinstance(value, bool):
         return float(value)
     if isinstance(value, type):
         return _class_path(value)
     return value
+
+
+def _object_form(value: Any) -> Any:
+    """Return the form a file holds an object in: an Enum member's value, a registered leaf's serialized form.
+
+    Any other value is returned as it is, a token included: a token is a str subclass, and
+    registering ``str`` must not let one leak out. isinstance, so a token subclass
+    (_UnionSeqToken) is caught too; it still spares a caller's own str subclass, which cannot
+    inherit from a private type. See docs-dev/architecture/invariants.md#tokens-mean-untyped-text.
+    """
+    if isinstance(value, enum.Enum):
+        return value.value
+    if isinstance(value, _StrToken):
+        return value
+    for leaf_tp, serialize in _LEAF_SERIALIZERS.items():
+        # isinstance, not an exact type test: a real Path is a WindowsPath or a PosixPath.
+        if isinstance(value, leaf_tp):
+            return serialize(value)
+    return value
+
+
+def written_form(value: Any) -> Any:
+    """Return *value* as an expression writes it: each Enum member and registered leaf in its dump form.
+
+    What a resolved expression leaves in the data, and what an interpolation stringifies: the
+    form :func:`_serialize_leaf` dumps such an object in, never its ``str()``, so ``${c}``
+    writes ``red`` and a path its forward slashes. A dict or a list is walked, and copied only
+    where something in it changed; anything else is returned as it is.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
+    """
+    if isinstance(value, dict):
+        items = {k: written_form(v) for k, v in value.items()}
+        return value if all(items[k] is v for k, v in value.items()) else items
+    if isinstance(value, list):
+        elements = [written_form(v) for v in value]
+        return value if all(a is b for a, b in zip(elements, value, strict=True)) else elements
+    return _object_form(value)
 
 
 def _class_path(cls: type) -> str:

@@ -19,3 +19,9 @@
   type added later. Other `str` subclasses stay untouched all the same: `_StrToken` is private,
   so nothing a caller writes — a registered `str` leaf type included — can inherit from it, and
   the registry loop below the unwrap stays reachable for it.
+
+## A leaf reaches the merged dict as written
+
+A token is coerced before `build()` only to a value a self-describing file holds natively: `bool`, `int`, `float`, `None` and a `Literal` over them (`_coerce._is_eagerly_coercible`), so `--port 8080` holds the `int` a file's `port: 8080` does, and a CLI number works in an expression. A token for a type whose value is an object no file holds — an `Enum` member, a registered leaf type such as `Path`, a `Literal` member that is an `Enum` — stays as typed (`_coerce._reads_as_object`), as a file's string stays as written. So every channel delivers the same type for a leaf, and `merge()` reads back unchanged from its own dump.
+
+Until BUG-246, `_try_coerce` also coerced an `Enum` or a registered token to the object, while a file kept its text: an expression read `Color.RED` from argv and `'red'` from a file. Where the object is needed, an expression reads it from every channel alike ([design decisions](../design-decisions/an-expression-reads-a-typed-leaf-as-its-object.md#an-expression-reads-a-typed-leaf-as-its-object)).

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import dataclasses
+import enum
 import inspect
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -296,6 +297,72 @@ class TestAFieldDefaultIsTheBaseLayer:
         """``from_dict(list[int], resolve(...))`` builds what ``build()`` does (5c)."""
         raw = confarg.merge(list[int], argv=["--json", "[1, 2]"], env={})
         assert confarg.from_dict(list[int], confarg.resolve(list[int], raw)) == confarg.build(list[int], raw) == [1, 2]
+
+
+class _Colour(enum.Enum):
+    """An enum whose name and value are spelled apart."""
+
+    RED = "red"
+
+
+@dataclasses.dataclass
+class _Dirs:
+    """A section holding a registered leaf."""
+
+    root: Path = Path("/r")
+    kind: _Colour = _Colour.RED
+
+
+@dataclasses.dataclass
+class _Typed:
+    """Leaves an expression reads as their object only where one Enum or registered type is certain."""
+
+    colour: _Colour = _Colour.RED
+    again: _Colour = _Colour.RED
+    other: _Colour = _Colour.RED
+    ps: list[Path] = dataclasses.field(default_factory=list)
+    opt: Path | None = None
+    either: Path | str = ""
+    anything: Any = None
+    dirs: _Dirs = dataclasses.field(default_factory=_Dirs)
+    out: Any = None
+    same: bool = False
+
+
+class TestAnExpressionReadsATypedLeaf:
+    """``build()`` and ``resolve()`` read an Enum or registered leaf as its object, and write its dump form."""
+
+    def test_resolve_writes_a_result_in_its_dump_form_and_keeps_the_rest_as_written(self) -> None:
+        """Only what an expression produced is rewritten; ``RED`` stays as the source spelled it."""
+        assert confarg.resolve(_Typed, {"colour": "RED", "out": "${colour}"}) == {"colour": "RED", "out": "red"}
+
+    @pytest.mark.parametrize(
+        ("raw", "out"),
+        [
+            ({"ps": ["/x"], "out": "${ps[0] / 'y'}"}, "/x/y"),
+            ({"opt": "/x", "out": "${opt / 'y'}"}, "/x/y"),
+            ({"dirs": {"root": "/x"}, "out": "${dirs.root / 'y'}"}, "/x/y"),
+            ({"dirs": {"kind": "RED"}, "out": "${dirs}"}, {"root": "/r", "kind": "red"}),
+        ],
+        ids=["list-item", "optional", "struct-field", "subtree"],
+    )
+    def test_a_single_certain_type_reads_the_object(self, raw: dict[str, Any], out: Any) -> None:
+        """Below a list, an optional and a struct, and through a subtree read, the leaf is its object."""
+        assert confarg.resolve(_Typed, raw)["out"] == out
+
+    @pytest.mark.parametrize("field", ["either", "anything"])
+    def test_an_uncertain_type_reads_as_written(self, field: str) -> None:
+        """A union of several variants and ``Any`` leave the string a string, as a token is left there."""
+        with pytest.raises(confarg.exceptions.ExpressionEvalError, match="'str' and 'str'"):
+            confarg.resolve(_Typed, {field: "/x", "out": f"${{{field} / 'y'}}"})
+
+    def test_an_earlier_result_is_read_as_its_object_too(self) -> None:
+        """``again`` holds the dump form ``red`` once resolved, and still reads as the member ``other`` is."""
+        assert confarg.build(_Typed, {"colour": "RED", "again": "${colour}", "same": "${again == other}"}).same
+
+    def test_a_value_the_type_refuses_reads_as_written(self) -> None:
+        """No coercion error at resolution: the text is left for construction to refuse."""
+        assert confarg.resolve(_Typed, {"colour": "purple", "out": "${colour}"})["out"] == "purple"
 
 
 @dataclasses.dataclass
