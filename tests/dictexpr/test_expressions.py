@@ -1402,7 +1402,7 @@ class TestMethodCalls:
     )
     def test_a_method_off_anything_but_a_string_is_refused(self, receiver: object, call: str, type_name: str) -> None:
         """The receiver must be a string; a key spelled like the method is never what is called."""
-        with pytest.raises(UnsafeExpressionError, match=rf"Method '\w+' is called on a {type_name}"):
+        with pytest.raises(UnsafeExpressionError, match=rf"Method '\w+' is called on {type_name} "):
             resolve_expressions({"x": receiver, "v": "${" + call + "}"})
 
     def test_a_method_off_a_string_subclass_runs(self) -> None:
@@ -2168,13 +2168,13 @@ class TestARefusalNamesItsExpression:
             pytest.param(
                 "${n.upper()}",
                 "${n.upper()}",
-                "Method 'upper' is called on a int; it is allowed only on a string",
+                "Method 'upper' is called on int 1; it is allowed only on a string",
                 id="receiver",
             ),
             pytest.param(
                 "<${n.upper()}>",
                 "${n.upper()}",
-                "Method 'upper' is called on a int; it is allowed only on a string",
+                "Method 'upper' is called on int 1; it is allowed only on a string",
                 id="interpolated-receiver",
             ),
         ],

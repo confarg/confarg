@@ -134,7 +134,7 @@ def _coerce_override(value: Any, declared: Any, path: str) -> Any:
         got = type(value).__name__ if value_is_container else repr(str(value))
         msg = (
             f"Cannot set local variable {path!r} to {got}:"
-            f" it is declared as a {type(declared).__name__}, and a local's type cannot change."
+            f" it is declared as {type(declared).__name__} {declared!r}, and a local's type cannot change."
         )
         raise TypeCoercionError(msg)
     return _coerce_leaf(type(declared), value, path)
