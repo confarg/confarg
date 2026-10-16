@@ -20,6 +20,33 @@ subscript (an index into a string), and a miss is reported as a missing field ra
 reaches `getattr` ([below](#a-dot-reads-a-key-never-an-attribute)), so `['__class__']` is a key
 like any other.
 
+## A computed value is bounded
+
+Expressions come from argv and the environment as well as files, so a value a few characters long must not stall the host. Before BUG-146 nothing bounded what an expression computed: `${10 ** 10 ** 7}` took 17 s and `${9 ** 9 ** 9}` never finished, `${'ab' * 10 ** 8}` allocated 200 MB, and so did `%` formatting (`'%0100000000d' % 1`), `replace` (`s.replace('', s)`), `join`, a list repeated, and chains across keys, each doubling or squaring the one before. Every value an expression **computes** is now bounded, and so is their total:
+
+| Bound | Limit | Measured as |
+|---|---|---|
+| a computed `int` (a `bool` included) | `sys.get_int_max_str_digits()` digits, read when the expression runs (4 300 by default); the length cap when that limit is off (0) | its decimal digits |
+| a computed `str`, `bytes`, list, tuple, dict or set | 1 000 000 | its characters, bytes or items |
+| a computed `Path` | 1 000 000 | the characters of its text |
+| everything one resolution computes | 10 000 000 | each computed value's size, summed |
+
+- **What counts** is a result an operator, a function or method call, or an interpolation produces (`_charged`, the one place a value is measured, against its cap and the budget). A read (`${a.b}`, `${s[0]}`) and a selection (`${a if c else b}`, `${a or b}`) hand back a value that already exists, and count nothing: a hundred `${big}` cost no more than one. A comparison yields a `bool`, which is not counted either. Every result counts whatever object Python returns, so `${big + ''}` costs `len(big)` though CPython hands `big` back: the rule reads the syntax, not the allocator.
+- **Estimated before computing, where computing is the cost** (`_check_binop`, `_check_method`): a power of two ints, by `exponent × log10|base|` digits, computed and measured exactly within a digit of the cap; a repetition, by `len × times`; `%` on a `str` or `bytes`, by the template's length plus every width and precision it writes or takes for a `*`, the arguments' own text being bounded by their caps; `replace`, by the occurrences found times the growth; `join`, by the items' lengths and the separator's. Everything else costs no more than its operands, and is measured once computed.
+- **A type no source can produce is trusted.** A file, a variable and a flag produce `str`, `bytes`, numbers, `bool`, `None`, dates, lists and dicts, and an `Enum` or registered leaf only as the object an expression reads it as ([values and references](values-and-references.md#a-typed-leaf-reads-as-its-object)). Any other object — a `Fraction` in a caller's data, a registered type's instance — came from the application: its operators run, and it measures 1 ([limitations](../limitations.md#expressions)).
+- **A refusal is an `UnsafeExpressionError`**, quoting the expression and naming the size and the limit (`Result would hold 20000000 characters, over the limit of 1000000 characters`); the budget's names the expression that crossed it.
+- **The limits are fixed.** No channel may raise one, since every channel can carry the value they protect against; the `int` limit moves with the interpreter's own, which the application sets.
+
+Precedents: simpleeval caps an exponent at `MAX_POWER` (4 000 000, timed: `9**9**6` took over 30 s) and a string produced by `+` or `*` at `MAX_STRING_LENGTH` (100 000, a round default with no recorded rationale, meant to be overridden); CPython limits int↔str conversion to 4 300 digits (CVE-2020-10735); Kubernetes CEL bounds one expression's cost (`PerCallLimit`, 1 000 000) and an object's total (`RuntimeCELCostBudget`, 10 000 000).
+
+Rejected:
+
+- **Capping the operands of `**` and `*` alone** (simpleeval). `%`, `replace`, `join`, a repeated list and every chain across keys stay unbounded, and the operand cap refuses cheap powers (`2 ** 5_000_000`) while it lets an expensive one through (`999999 ** 3_999_999`).
+- **A cap per value without a total.** Each key interpolating a value just under the cap (`k: ${big}x`) uses another megabyte: a 1 MB file of such lines asks for 100 GB.
+- **Refusing operators on every type confarg does not measure.** No source can produce one, so the refusal guards against nothing a configuration can write, and it refuses the application's own `Decimal` arithmetic.
+- **Refusing `%` on strings.** It is the one way to zero-pad (`'%04d' % i`); bounding its widths is a short parser.
+- **Configurable limits.** A knob is an API surface with five front-ends to reach, and none was asked for; the `int` limit already follows the interpreter.
+
 ## A function is named only by a call
 
 A name is a whitelisted function only as the callee of a call; anywhere else — an operand, an
