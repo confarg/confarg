@@ -15,7 +15,7 @@ from datetime import date
 from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import pytest
 from hypothesis import given
@@ -59,6 +59,8 @@ from tests.conftest import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from confarg._merge import MergeDict
 
 # ---------------------------------------------------------------------------
@@ -2238,6 +2240,38 @@ class TestABodyTooDeepToParse:
         monkeypatch.setattr(ast, "parse", give_up)
         with pytest.raises(SyntaxError):
             _parse_expression(body)
+
+
+class TestABodyNestedPastTheBoundDoesNotParse:
+    """A body nesting over 100 expression levels is refused as one that does not parse (BUG-145).
+
+    Python's parser accepts a few hundred levels, but every walker after it recurses in Python
+    (reference collection, the transformers, ``copy.deepcopy``, ``ast.unparse``, the
+    evaluator), so such a body reached ``resolve()`` and a mounting ``merge()`` as a raw
+    ``RecursionError``.
+    """
+
+    SHAPES: ClassVar[dict[str, Callable[[int], str]]] = {
+        "unary": lambda n: "-" * (n - 1) + "a",
+        "sum": lambda n: "+".join(["a"] * n),
+        "conditional": lambda n: "a if c else " * (n - 1) + "a",
+    }
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_one_hundred_levels_resolve(self, shape: str) -> None:
+        """The bound refuses only what is deeper."""
+        resolve_expressions({"a": 1, "c": True, "v": "${" + self.SHAPES[shape](100) + "}"})
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("depth", [101, 500, 1000])
+    def test_a_deeper_body_is_refused_as_written(self, shape: str, depth: int) -> None:
+        """Refused at validation whatever its depth, never a ``RecursionError``."""
+        with pytest.raises(UnsafeExpressionError, match=r"Too deeply nested to parse$"):
+            resolve_expressions({"a": 1, "c": True, "v": "${" + self.SHAPES[shape](depth) + "}"})
+
+    def test_it_contributes_no_reference(self) -> None:
+        """Reference extraction skips it, as any body that does not parse."""
+        assert _extract_references("${" + self.SHAPES["sum"](101) + "} ${b}") == {("b",)}
 
 
 class TestEscapeExpressions:
