@@ -60,6 +60,30 @@ def _in_expression(expression: str, reason: object) -> str:
     return f"Error in expression {expression!r}: {reason}"
 
 
+def _failure_text(exc: BaseException) -> str:
+    """Return the text of Python's *exc* as an expression's failure gives it: its own, when it names a cause.
+
+    An exception whose arguments are no one string, and that keeps ``BaseException``'s
+    ``str()``, reads as the repr of its arguments: a ``decimal`` signal as the list of signal
+    classes it raised, a float overflow as an errno tuple. Such an exception is named instead,
+    module-qualified outside the builtins, followed by its string arguments and, in
+    parentheses, the signal classes it lists besides its own: ``decimal.InvalidOperation
+    (DivisionUndefined)``, ``OverflowError: Result too large`` (the C library's ``strerror``
+    text, which varies by platform).
+
+    Dev Notes:
+        docs-dev/architecture/expressions/resolution.md#a-failure-whose-text-names-no-cause-names-its-exception
+    """
+    tp = type(exc)
+    if tp.__str__ is not BaseException.__str__ or (len(exc.args) == 1 and isinstance(exc.args[0], str)):
+        return str(exc)
+    name = tp.__qualname__ if tp.__module__ == "builtins" else f"{tp.__module__}.{tp.__qualname__}"
+    texts = [arg for arg in exc.args if isinstance(arg, str)]
+    listed = [item for arg in exc.args if isinstance(arg, list | tuple) for item in arg]
+    signals = [s.__qualname__ for s in listed if isinstance(s, type) and issubclass(s, BaseException) and s is not tp]
+    return name + (f": {'; '.join(texts)}" if texts else "") + (f" ({', '.join(signals)})" if signals else "")
+
+
 class ConfargError(Exception):
     """Base exception for all confarg errors."""
 
@@ -689,7 +713,7 @@ class ExpressionEvalError(ConfargError):
     @classmethod
     def failed(cls, expression: str, exc: Exception) -> ExpressionEvalError:
         """Return the runtime failure of *expression*, as written, with Python's own *exc* as the reason."""
-        return cls(_in_expression(expression, exc))
+        return cls(_in_expression(expression, _failure_text(exc)))
 
 
 class ConfargWarning(UserWarning):

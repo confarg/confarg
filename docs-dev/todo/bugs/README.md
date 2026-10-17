@@ -26,7 +26,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-235 — A union tag that is no string escapes `build()` as a raw `AttributeError`](BUG-235-a-tag-that-is-no-string-escapes-as-a-raw-attributeerror.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-242 — A lone `__root__` in a root configuration file is unwrapped as a fragment's](BUG-242-a-lone-root-key-in-a-root-file-is-unwrapped-as-a-fragments.md) | minor |  | S | low | behavior | PR-209 |
 | [BUG-245 — Dumping a non-string key to TOML or JSON escapes as a raw `TypeError`](BUG-245-dumping-a-non-string-key-to-toml-or-json-escapes-as-a-raw-typeerror.md) | minor |  | S | low | behavior | PR-5 |
-| [BUG-247 — A decimal signal fails an expression with a list of classes](BUG-247-a-decimal-signal-fails-an-expression-with-a-list-of-classes.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-250 — A Callable in a union does not advertise its openers](BUG-250-a-callable-in-a-union-does-not-advertise-its-openers.md) | minor |  | S | medium | behavior | PR-13 |
 | [BUG-251 — An object no configuration spells fails in the file writer, with the writer's own error](BUG-251-an-object-no-configuration-spells-fails-in-the-file-writer.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-252 — A class tag on a union with no struct variant lists no candidate](BUG-252-a-class-tag-on-a-union-with-no-struct-variant-lists-no-candidate.md) | minor |  | S | low | behavior | PR-5 |
