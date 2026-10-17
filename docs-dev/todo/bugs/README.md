@@ -11,10 +11,10 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 |---|---|---|---|---|---|---|
 | [BUG-180 — Cyclopts refuses a flag whose name ends in a star](BUG-180-cyclopts-refuses-a-flag-whose-name-ends-in-a-star.md) | major |  | M | medium | behavior | PR-72 |
 | [BUG-219 — A fragment appended to a list loses its `locals`](BUG-219-a-fragment-appended-to-a-list-loses-its-locals.md) | major |  | M | high | behavior | PR-105 |
+| [BUG-253 — A dict subclass reads as a struct of its constructor's parameters](BUG-253-a-dict-subclass-reads-as-a-struct-of-its-constructors-parameters.md) | major |  | M | high | config | PR-5 |
 | [BUG-248 — Data nested a few hundred levels deep crashes the walkers](BUG-248-data-nested-a-few-hundred-levels-deep-crashes-the-walkers.md) | major |  | L | high | behavior | PR-5 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |
-| [BUG-153 — A class without its own `__init__` is a struct with `args` and `kwargs` fields](BUG-153-a-class-without-its-own-init-is-a-struct-with-args-and-kwargs-fields.md) | minor |  | S | high | config | PR-5 |
 | [BUG-154 — An integer in a file is refused for a `float` field](BUG-154-an-integer-in-a-file-is-refused-for-a-float-field.md) | minor |  | S | high | behavior | PR-5 |
 | [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | minor |  | S | low | behavior | PR-77 |
 | [BUG-178 — A bare-prefix append is told it lacks the prefix](BUG-178-a-bare-prefix-append-is-told-it-lacks-the-prefix.md) | minor |  | S | low | behavior | PR-5 |
@@ -28,6 +28,8 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-245 — Dumping a non-string key to TOML or JSON escapes as a raw `TypeError`](BUG-245-dumping-a-non-string-key-to-toml-or-json-escapes-as-a-raw-typeerror.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-247 — A decimal signal fails an expression with a list of classes](BUG-247-a-decimal-signal-fails-an-expression-with-a-list-of-classes.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-250 — A Callable in a union does not advertise its openers](BUG-250-a-callable-in-a-union-does-not-advertise-its-openers.md) | minor |  | S | medium | behavior | PR-13 |
+| [BUG-251 — An object no configuration spells fails in the file writer, with the writer's own error](BUG-251-an-object-no-configuration-spells-fails-in-the-file-writer.md) | minor |  | S | low | behavior | PR-5 |
+| [BUG-252 — A class tag on a union with no struct variant lists no candidate](BUG-252-a-class-tag-on-a-union-with-no-struct-variant-lists-no-candidate.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | minor |  | M | low | behavior | PR-5, PR-13, PR-26, BUG-179 |
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | minor |  | M | medium | behavior | PR-38 |
 | [BUG-177 — A collection root's bare flag takes one token, which construction refuses](BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md) | minor |  | M | medium | behavior | PR-5 |

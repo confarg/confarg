@@ -876,8 +876,8 @@ class TestSerializationCornerCases:
             confarg.dump(data)
 
     def test_dump_scalar_raises(self) -> None:
-        """dump() with a non-dataclass value raises TypeError."""
-        with pytest.raises(TypeError, match="dataclass instance"):
+        """dump() with a value that is no struct raises TypeError."""
+        with pytest.raises(TypeError, match="dataclass or plain-class instance"):
             confarg.dump(42)
 
     def test_dump_dataclass_class_raises(self) -> None:
@@ -1645,9 +1645,8 @@ class TestVarParams:
         obj = confarg.build(Stored, raw)
         assert obj.x == 5
         assert list(obj.items) == ["a", "b"]
-        # Plain classes: dump the raw dict, not the object
-        with pytest.raises(TypeError, match="plain class"):
-            confarg.dump(obj)
+        # A plain-class root dumps by the rule a plain-class field follows
+        assert confarg.dump(obj) == raw
 
 
 # ===========================================================================

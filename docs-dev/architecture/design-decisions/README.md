@@ -84,6 +84,7 @@ A decision lands here when a ticket closes and the answer turns out to be "we wi
 | [A Callable beside another variant reads its spec](a-callable-beside-another-variant-reads-its-spec.md) | a string in rank below type references, an opener before any variant's data unless a struct owns the key, a `call:` the union's to take |
 | [A union ranks every value](a-union-ranks-every-value.md) | a file's value meets the rank a token does; only a token is converted, any value is recognized |
 | [A registered leaf is never a struct variant](registered-leaf-is-never-a-struct-variant.md) | registration is a promise that the type is opaque to every implicit decision |
+| [A struct's members are its constructor's parameters](a-structs-members-are-its-constructors-parameters.md) | a dataclass is set through its `__init__` as a plain class is: `init=False` is no member, an `InitVar` is one, a class taking nothing is a struct with no fields |
 | [An explicit tag opts a leaf back in](an-explicit-tag-opts-a-leaf-back-in.md) | …and the tag is the one thing that may take that promise back |
 | [A named tag is imported before registration](a-named-tag-is-imported-before-registration.md) | five readers of `__subclasses__()` agree because the import happens first |
 | [A namedtuple is a fixed-length sequence](namedtuple-is-a-fixed-length-sequence.md) | one classification, not three special cases |
@@ -92,7 +93,7 @@ A decision lands here when a ticket closes and the answer turns out to be "we wi
 
 | Decision | In one line |
 |---|---|
-| [The object dump writes state](the-object-dump-writes-state.md) | the merged dict dumps as written, the built object as the values it holds: no `${...}`, no `call:` |
+| [The object dump writes state](the-object-dump-writes-state.md) | the merged dict dumps as written, the built object as the state it holds, forensically: a dataclass its stored fields, a plain class its parameters as held |
 | [Dump round-trips at the built object](dump-round-trips-at-the-built-object.md) | not at the merged dict: a file's values are never re-interpreted |
 | [A stolen leaf dumps with its cast](a-stolen-leaf-dumps-with-its-cast.md) | `{__cast__, __value__}` exactly where the bare scalar would be taken back |
 | [Registered leaf types dump through a registered serializer](registered-leaf-serializer.md) | registration is two directions; `str` is only the default for the second |

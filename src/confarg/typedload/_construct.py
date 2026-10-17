@@ -40,7 +40,6 @@ from confarg._types import (
     _fixed_position,
     _fixed_seq_types,
     _init_params,
-    _is_dc,
     _is_dict,
     _is_frozenset,
     _is_list,
@@ -754,13 +753,13 @@ def _indexed_dict_to_positions(
     return out
 
 
-def _call_plain_class(
+def _call_struct(
     tp: Any,
     kwargs: dict[str, Any],
     var_pos_name: str | None,
     var_kw: dict[str, Any],
 ) -> Any:
-    """Call the plain class *tp* with *kwargs* by name, the list under *var_pos_name* as its ``*args``, and *var_kw*.
+    """Call the struct *tp* with *kwargs* by name, the list under *var_pos_name* as its ``*args``, and *var_kw*.
 
     The named arguments go by position or by keyword as
     :meth:`~confarg._types._PositionalParams.split` decides, so a positional-only parameter
@@ -844,11 +843,9 @@ def _construct_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str)
         else:
             raise MissingFieldError(fp, ft)
 
-    if _is_dc(tp):
-        return tp(**kwargs)
     var = _var_params(tp)
     var_kw = dict(kwargs.pop(var.keyword, {})) if var.keyword else {}
-    return _call_plain_class(tp, kwargs, var.positional, var_kw)
+    return _call_struct(tp, kwargs, var.positional, var_kw)
 
 
 def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[Any]:

@@ -10,7 +10,6 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact |
 |---|---|---|---|---|---|
-| [FEAT-14 — Dataclass fields that are not `__init__` parameters](FEAT-14-dataclass-fields-outside-init.md) | major |  | L | high | behavior |
 | [FEAT-5 — Optional structural validation right after `merge()`](FEAT-5-structural-validation-after-merge.md) | minor |  | S | low | behavior |
 | [FEAT-26 — The expression whitelist is not documented for users](FEAT-26-the-expression-whitelist-is-not-documented-for-users.md) | minor |  | S | low | none |
 | [FEAT-7 — Lazy resolution between `merge` and `build`](FEAT-7-lazy-resolution-merge-to-build.md) | minor |  | M | high | behavior |
@@ -23,6 +22,9 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-40 — A field accepts a wider input than the type it holds](FEAT-40-a-field-accepts-a-wider-input-than-it-holds.md) | minor |  | M | high | behavior |
 | [FEAT-41 — A tyro adapter](FEAT-41-a-tyro-adapter.md) | minor |  | M | medium | behavior |
 | [FEAT-46 — A union's refusal names each variant's reason](FEAT-46-a-union-refusal-names-each-variants-reason.md) | minor |  | M | low | behavior |
+| [FEAT-48 — A resolved dictionary that replays a run](FEAT-48-a-resolved-dictionary-that-replays-a-run.md) | minor |  | M | medium | behavior |
+| [FEAT-49 — Registering how a class dumps](FEAT-49-registering-how-a-class-dumps.md) | minor |  | M | medium | behavior |
+| [FEAT-50 — A `**kwargs` forwarded to the parent sets the parent's members](FEAT-50-a-kwargs-forwarded-to-the-parent-sets-its-members.md) | minor |  | M | high | config |
 | [FEAT-1 — Uneven shell-completion coverage](FEAT-1-uneven-shell-completion-coverage.md) | minor |  | L | low | behavior |
 | [FEAT-2 — Protocol-typed callables and `**kwargs`](FEAT-2-protocol-callables-and-kwargs.md) | minor |  | L | medium | behavior |
 | [FEAT-6 — `Annotated` field metadata read by all three channels](FEAT-6-annotated-field-metadata.md) | minor |  | L | medium | behavior |

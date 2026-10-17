@@ -437,3 +437,36 @@ class TestAKeyDeleteThatMeetsNothingDeletesNothing:
         """An index names a position, which nothing below gives it."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="requires a base list"):
             confarg.load(_Deleted, argv=["--xs.0-"], env={})
+
+
+@dataclasses.dataclass
+class _ComputedLayer:
+    n: int = 1
+    derived: int = dataclasses.field(init=False, default=0)
+    echo: int = -1
+
+    def __post_init__(self) -> None:
+        self.derived = self.n * 10
+
+
+@dataclasses.dataclass
+class _SeededLayer:
+    n: int = 1
+    seed: dataclasses.InitVar[int] = 4
+    echo: int = -1
+
+    def __post_init__(self, seed: int) -> None:
+        self.n += seed
+
+
+class TestOnlyAMemberIsLaid:
+    """The default layer lays the defaults of the parameters a struct is built from, nothing else (FEAT-14)."""
+
+    def test_an_init_false_default_is_not_laid(self) -> None:
+        """A computed field is not data, so no reference reads its declared default as if it were built."""
+        with pytest.raises(confarg.exceptions.MissingReferenceError, match="derived"):
+            confarg.build(_ComputedLayer, {"n": 3, "echo": "${derived}"})
+
+    def test_an_init_var_default_is_laid(self) -> None:
+        """An ``InitVar`` is a parameter, so a reference reads its default as construction passes it."""
+        assert confarg.build(_SeededLayer, {"echo": "${seed}"}).echo == 4

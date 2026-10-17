@@ -390,6 +390,25 @@ _SCALAR_COERCIONS: dict[type, Any] = {
 }
 
 
+def _is_coercible_leaf(tp: Any) -> bool:
+    """True if :func:`_coerce_leaf` coerces a value to the resolved leaf type *tp*.
+
+    The one answer to "Unsupported leaf type": construction refuses every other leaf, and
+    ``dump()`` refuses to write a value typed by one, since it would not read back.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
+    """
+    return (
+        tp is Any
+        or _is_none_type(tp)
+        or tp in _SCALAR_COERCIONS
+        or _is_literal(tp)
+        or _is_enum(tp)
+        or tp in _LEAF_COERCIONS
+    )
+
+
 def _coerce_registered(tp: Any, value: Any, path: str) -> Any:
     """Coerce value to a type registered in _LEAF_COERCIONS, passing instances through."""
     if isinstance(value, tp):
@@ -506,6 +525,9 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  
         TypeCoercionError: If the value cannot be coerced to the target type.
     """
     tp = _resolve_type(tp)
+    if not _is_coercible_leaf(tp):
+        msg = f"Unsupported leaf type {tp} at '{path}'"
+        raise TypeCoercionError(msg)
     if tp is Any:
         return _held_by_any(value)
     if _is_none_type(tp):
@@ -520,10 +542,7 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  
         return _coerce_literal_value(tp, value, path)
     if _is_enum(tp):
         return _coerce_enum_value(tp, value, path)
-    if tp in _LEAF_COERCIONS:
-        return _coerce_registered(tp, value, path)
-    msg = f"Unsupported leaf type {tp} at '{path}'"
-    raise TypeCoercionError(msg)
+    return _coerce_registered(tp, value, path)
 
 
 def _try_coerce(ft: Any, token: _StrToken) -> Any:

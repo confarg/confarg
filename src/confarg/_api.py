@@ -22,10 +22,11 @@ from confarg._parse_cli import _config_pairs_in, _locals_keys_at, _parse_cli
 from confarg._pipeline import _merge_sources
 from confarg._serialize import _serialize, _serialize_untyped, written_form
 from confarg._typed_read import TypedReading
-from confarg._types import _MISSING, TagPolicy, _is_dc, _is_struct, _is_struct_like, _resolve_type
+from confarg._types import _MISSING, TagPolicy, _is_struct_like, _resolve_type
 from confarg.dictexpr import resolve_expressions
 from confarg.exceptions import MissingFieldError
 from confarg.typedload import construct as _tc
+from confarg.typedload._coerce import _type_kind, _TypeKind
 from confarg.typedload._construct import build_from_nothing
 
 
@@ -323,17 +324,20 @@ def dump(
     union_tag: str = _defaults.UNION_TAG,
     tag_policy: TagPolicy = "auto",
 ) -> dict[str, Any]:
-    """Serialize a dataclass instance to a config-compatible plain dict.
+    """Serialize a dataclass or plain-class instance to a config-compatible plain dict.
 
-    The dump records the values the instance holds, not how they were produced:
+    The dump records the state the instance holds, not how it was produced:
     ``${...}`` expressions are written as their resolved values, and a value a ``call:``
-    spec computed is written as that value, not as the call. To save a configuration as
-    written, with its expressions and its ``call:`` specs, pass the dict returned by
-    ``merge()`` to ``dump_file()`` instead. Plain (non-dataclass) classes are not
-    supported.
+    spec computed is written as that value, not as the call. A dataclass is written as the
+    fields it stores, a field computed in ``__post_init__`` (``field(init=False)``)
+    included and an ``InitVar`` left out, so such a dump records what the program ran with
+    but does not load back as it stands. A plain class is written as its ``__init__``
+    parameters, each read from the same-named attribute, property or slot the instance
+    holds. To save a configuration as written, with its expressions and its ``call:``
+    specs, pass the dict returned by ``merge()`` to ``dump_file()`` instead.
 
     Args:
-        value: A dataclass instance.
+        value: A dataclass or plain-class instance.
         union_tag: The field name used as a discriminator tag in unions.
         tag_policy: ``"auto"`` (tag only when needed) or ``"always"`` (tag every union member).
 
@@ -341,25 +345,17 @@ def dump(
         A plain dict representation.
 
     Raises:
-        TypeError: If value is not a dataclass instance.
+        TypeError: If value is not a dataclass or plain-class instance.
+        ConfargError: If the instance does not hold a field or a parameter it is dumped from.
     """
     if isinstance(value, dict):
         msg = (
-            "dump() takes a dataclass instance, not a dict."
+            "dump() takes a dataclass or plain-class instance, not a dict."
             " To write a raw config dict to a file, use dump_file() directly."
         )
         raise TypeError(msg)
-    if isinstance(value, type) or not _is_dc(type(value)):
-        tp_name = type(value).__name__
-        if _is_struct(type(value)):
-            msg = (
-                f"dump() only supports dataclass instances, not plain classes.\n"
-                f"{tp_name} is a plain class — keep the merged dict and dump that instead:\n"
-                f"  raw = confarg.merge(...)\n"
-                f"  confarg.dump_file(raw, path)"
-            )
-            raise TypeError(msg)
-        msg = f"Expected a dataclass instance, got {tp_name}"
+    if isinstance(value, type) or _type_kind(type(value)) is not _TypeKind.STRUCT:
+        msg = f"Expected a dataclass or plain-class instance, got {type(value).__name__}"
         raise TypeError(msg)
     tp = type(value)
     return _serialize(tp, value, (), union_tag, tag_policy)
@@ -374,20 +370,20 @@ def dump_file(
 ) -> None:
     """Serialize and write to a config file.
 
-    Accepts a dataclass instance or a raw config dict (e.g. from ``merge()``
+    Accepts a dataclass or plain-class instance or a raw config dict (e.g. from ``merge()``
     or ``resolve()``). A dict is written as it stands, so the dict ``merge()``
     returns keeps its ``${...}`` expressions and ``call:`` specs; an instance is
     written as ``dump()`` serializes it, as the values it holds. The output
     format is determined by the file extension (.toml, .yaml, .yml, .json).
 
     Args:
-        value: A dataclass instance or a raw config dict.
+        value: A dataclass or plain-class instance, or a raw config dict.
         path: Path to the output file.
         union_tag: The field name used as a discriminator tag in unions.
         tag_policy: ``"auto"`` or ``"always"``.
 
     Raises:
-        TypeError: If value is not a dataclass instance or a dict.
+        TypeError: If value is not a dataclass or plain-class instance, or a dict.
         InvalidConfigFileError: If the format is unsupported or the required library is not installed.
     """
     if isinstance(value, dict):

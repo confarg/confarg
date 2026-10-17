@@ -68,4 +68,4 @@ class Config:
 
 pydantic and tyro show that a converter alone is not enough here: confarg's CLI arity, help, completion and environment coercion all parse against the input type, so the type must be visible rather than hidden inside a function.
 
-Related: [FEAT-6](FEAT-6-annotated-field-metadata.md) reads `Annotated` metadata in all three channels and is the natural home of the accessor; [FEAT-21](FEAT-21-app-supplied-expression-functions.md) is an expression-side route to a registry; [FEAT-14](FEAT-14-dataclass-fields-outside-init.md) is the `InitVar` route some users take today.
+Related: [FEAT-6](FEAT-6-annotated-field-metadata.md) reads `Annotated` metadata in all three channels and is the natural home of the accessor; [FEAT-21](FEAT-21-app-supplied-expression-functions.md) is an expression-side route to a registry; an `InitVar` is the route some users take today, a member every channel sets since FEAT-14 ([a struct's members are its constructor's parameters](../../architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#a-dataclass-is-read-by-its-__init__)).

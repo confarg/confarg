@@ -6,13 +6,14 @@
 
 from __future__ import annotations
 
+import datetime
 import enum
 import math
 import re
 import sys
 import warnings
+from dataclasses import InitVar, field
 from dataclasses import dataclass as _dc
-from dataclasses import field
 from pathlib import Path
 from typing import Any, Final, Literal, Optional, Union
 from unittest import mock
@@ -1421,3 +1422,176 @@ class TestDumpRefusesAReservedDataKey:
         assert confarg.merge(_WithReservedKeys, argv=[], env={}, files=[out]) == {
             "nested": {"x": {confarg.ListOp.APPEND: [1]}},
         }
+
+
+@_dc
+class _StateDerived:
+    n: int = 1
+    derived: int = field(init=False, default=0)
+
+    def __post_init__(self) -> None:
+        self.derived = self.n * 10
+
+
+@_dc
+class _StateNeverSet:
+    n: int = 1
+    late: int = field(init=False)
+
+
+@_dc
+class _StateSeeded:
+    n: int = 1
+    seed: InitVar[int] = 0
+
+    def __post_init__(self, seed: int) -> None:
+        self.n += seed
+
+
+@_dc(init=False)
+class _StateHandInit:
+    a: int
+    b: int = 2
+
+    def __init__(self, total: int) -> None:
+        self.a = total - 2
+        self.b = 2
+
+
+class _StatePlain:
+    def __init__(self, host: str = "h", port: int = 1) -> None:
+        self.host = host
+        self.port = port
+        self.conn = None
+
+
+class _StateShadowed:
+    """A class attribute spelled like the parameter the instance does not keep."""
+
+    seed = 0
+
+    def __init__(self, n: int = 1, seed: int = 0) -> None:
+        self.n = n + seed
+
+
+class _StateProperty:
+    def __init__(self, total: int = 7) -> None:
+        self.a = total - 2
+
+    @property
+    def total(self) -> int:
+        return self.a + 2
+
+
+class _StateSlots:
+    __slots__ = ("x",)
+
+    def __init__(self, x: int = 0) -> None:
+        self.x = x
+
+
+class _StateDynamic:
+    """Answers for its parameter through ``__getattr__``, with no static attribute."""
+
+    def __init__(self, x: int = 0) -> None:
+        self._values = {"x": x}
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self.__dict__["_values"][name]
+        except KeyError:
+            raise AttributeError(name) from None
+
+
+class _StateNoInit:
+    """No ``__init__`` of its own."""
+
+
+class _StateNewOnly:
+    x: int
+
+    def __new__(cls, x: int = 0) -> _StateNewOnly:
+        obj = super().__new__(cls)
+        obj.x = x
+        return obj
+
+
+@_dc
+class _StateHolder:
+    v: Any = None
+    shadowed: _StateShadowed | None = None
+    prop: _StateProperty | None = None
+    slots: _StateSlots | None = None
+    dynamic: _StateDynamic | None = None
+    nothing: _StateNoInit | None = None
+    new: _StateNewOnly | None = None
+
+
+class TestDumpWritesWhatTheObjectHolds:
+    """``dump(obj)`` is forensic: a dataclass writes its fields, a plain class its parameters as held."""
+
+    def test_an_init_false_field_is_written(self) -> None:
+        """A computed field is state the object holds, so it is written though no channel sets it."""
+        assert confarg.dump(_StateDerived(n=2)) == {"n": 2, "derived": 20}
+
+    def test_an_init_false_field_never_set_is_refused(self) -> None:
+        """A field the instance does not hold cannot be written, and the refusal says so."""
+        with pytest.raises(ConfargError, match=r"field 'late' of _StateNeverSet is not set on the instance"):
+            confarg.dump(_StateNeverSet())
+
+    def test_an_init_var_is_not_written(self) -> None:
+        """An ``InitVar`` is no state: its effect is in the fields."""
+        assert confarg.dump(_StateSeeded(seed=5)) == {"n": 6}
+
+    def test_a_handwritten_init_dataclass_writes_its_fields(self) -> None:
+        """A dataclass's state is its fields, whatever its ``__init__`` takes."""
+        assert confarg.dump(_StateHandInit(7)) == {"a": 5, "b": 2}
+
+    def test_a_plain_class_root_is_dumped(self) -> None:
+        """A plain-class root dumps by the rule a plain-class field follows."""
+        assert confarg.dump(_StatePlain("a", 2)) == {"host": "a", "port": 2}
+
+    def test_a_class_attribute_is_not_held(self) -> None:
+        """A parameter that only the class attribute spells is refused, not written as the class's value."""
+        with pytest.raises(ConfargError, match=r"only the class attribute _StateShadowed\.seed is set"):
+            confarg.dump(_StateHolder(shadowed=_StateShadowed(seed=5)))
+
+    @pytest.mark.parametrize(
+        ("holder", "expected"),
+        [
+            pytest.param(_StateHolder(prop=_StateProperty(9)), {"prop": {"total": 9}}, id="property"),
+            pytest.param(_StateHolder(slots=_StateSlots(3)), {"slots": {"x": 3}}, id="slot"),
+            pytest.param(_StateHolder(dynamic=_StateDynamic(5)), {"dynamic": {"x": 5}}, id="getattr"),
+            pytest.param(_StateHolder(nothing=_StateNoInit()), {"nothing": {}}, id="takes-nothing"),
+            pytest.param(_StateHolder(new=_StateNewOnly(4)), {"new": {"x": 4}}, id="new-parameters"),
+        ],
+    )
+    def test_what_a_plain_class_holds_is_written(self, holder: _StateHolder, expected: dict[str, Any]) -> None:
+        """A property, a slot, ``__getattr__``, ``__new__``'s parameters and a class taking nothing all dump."""
+        written = {k: v for k, v in confarg.dump(holder).items() if v is not None}
+        assert written == expected
+
+
+@_dc
+class _StateDated:
+    when: datetime.date = datetime.date(2020, 1, 1)
+
+
+class TestDumpRefusesAnUnsupportedLeaf:
+    """``dump()`` refuses a value typed by a leaf construction does not build, as construction refuses it."""
+
+    def test_a_date_field_is_refused(self) -> None:
+        """``date`` is no struct and no registered leaf, so it is refused, naming the remedy."""
+        with pytest.raises(ConfargError, match=r"Cannot serialize date at 'when'.*register_leaf_type"):
+            confarg.dump(_StateDated())
+
+    def test_construction_refuses_the_same_type(self) -> None:
+        """The refusal is construction's: a date value does not build either."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="Unsupported leaf type"):
+            confarg.build(_StateDated, {"when": datetime.date(2021, 1, 1)})
+
+    @pytest.mark.usefixtures("leaf_registry")
+    def test_a_registered_date_is_written(self) -> None:
+        """Registered, the same field is written by its serializer."""
+        confarg.register_leaf_type(datetime.date, datetime.date.fromisoformat, serialize=datetime.date.isoformat)
+        assert confarg.dump(_StateDated()) == {"when": "2020-01-01"}
