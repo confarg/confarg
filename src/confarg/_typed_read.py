@@ -19,7 +19,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from confarg._typed_merge import TypedAt, merge_root
+from confarg._types import _is_union, _resolve_type, _union_args_no_none
+from confarg.dictexpr import contains_expression
 from confarg.typedload._coerce import read_as_object
+from confarg.typedload._construct import read_union_leaf
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -65,4 +68,18 @@ def _read(at: MergeAt, value: Any) -> Any:
     if isinstance(value, list):
         elements = [_read(at.child(str(i), value, None), v) for i, v in enumerate(value)]
         return value if all(a is b for a, b in zip(elements, value, strict=True)) else elements
-    return read_as_object(at.tp, value) if isinstance(at, TypedAt) else value
+    if not isinstance(at, TypedAt):
+        return value
+    return _read_leaf(at.tp, value)
+
+
+def _read_leaf(ft: Any, value: Any) -> Any:
+    """Return what an expression reads of the leaf *value* at a field of type *ft*: the object construction builds.
+
+    A union of several variants reads it as the variant construction picks
+    (:func:`read_union_leaf`); one type, an optional included, by :func:`read_as_object`.
+    """
+    tp = _resolve_type(ft)
+    if _is_union(tp) and len(_union_args_no_none(tp)) > 1 and not contains_expression(value):
+        return read_union_leaf(tp, value)
+    return read_as_object(tp, value)

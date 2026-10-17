@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from confarg._import import _import_dotted
-from confarg.exceptions import SymbolImportError
+from confarg.exceptions import SymbolImportError, SymbolNotFoundError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -117,3 +117,63 @@ class TestImportDotted:
         with pytest.raises(SymbolImportError) as exc_info:
             _import_dotted("ref5_initerr_pkg.broken.Thing")
         assert "ref5 custom init failure" in str(exc_info.value)
+
+
+def _purge_modules(name: str) -> None:
+    """Drop the module *name* and its submodules from ``sys.modules``."""
+    for key in [k for k in sys.modules if k == name or k.startswith(name + ".")]:
+        sys.modules.pop(key, None)
+
+
+class TestSymbolNotFound:
+    """A path that names nothing is a ``SymbolNotFoundError``; a module that fails is not (BUG-230).
+
+    A union lets its next variant read a string that names nothing, and propagates a failure
+    raised inside a module that does exist, so the two must be told apart.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        ["hello", "no.such.module.Class", "os.nope", "hello world", "x/y", "1.5", "", ".hidden", "a..b", "pkg."],
+    )
+    def test_a_path_naming_nothing_is_not_found(self, path: str) -> None:
+        """No module, no attribute, or a string that is no dotted path of identifiers at all."""
+        with pytest.raises(SymbolNotFoundError):
+            _import_dotted(path)
+
+    def test_a_module_that_fails_while_importing_is_not_a_not_found(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
+    ) -> None:
+        """A broken dependency stays a plain SymbolImportError: the module exists."""
+        pkg_dir = tmp_path / "bug230_broken_pkg"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text("")
+        (pkg_dir / "broken.py").write_text("import bug230_missing_dependency_xyz\n")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        request.addfinalizer(lambda: _purge_modules("bug230_broken_pkg"))
+
+        with pytest.raises(SymbolImportError) as exc_info:
+            _import_dotted("bug230_broken_pkg.broken.Thing")
+        assert not isinstance(exc_info.value, SymbolNotFoundError)
+
+    def test_an_undotted_name_imports_no_module(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
+    ) -> None:
+        """A bare word is looked up in builtins only: a module would be no class and no callable.
+
+        So a plain word a union tries as a reference never runs a module's code.
+        """
+        (tmp_path / "bug230_undotted_mod.py").write_text("RAN = True\n")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        request.addfinalizer(lambda: _purge_modules("bug230_undotted_mod"))
+
+        with pytest.raises(SymbolNotFoundError):
+            _import_dotted("bug230_undotted_mod")
+        assert "bug230_undotted_mod" not in sys.modules
+        assert _import_dotted("bug230_undotted_mod.RAN") is True

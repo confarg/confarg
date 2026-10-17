@@ -12,7 +12,7 @@ severity: minor  # dump() warns, so the loss is not silent
 
 `__cast__` accepts a scalar cast name or a registered leaf's `__name__`, so it cannot name an
 unregistered `Enum`. That is the one variant kind `dump()` cannot pin when a sibling steals its
-scalar back — `str | LogLevel` holding a member dumps `"debug"` and rebuilds as a `str`, and
+scalar back. Since a union ranks every value ([a union ranks every value](../../architecture/design-decisions/a-union-ranks-every-value.md#a-union-ranks-every-value)), a `str` sibling no longer does — `str | LogLevel` holding a member dumps `"debug"` and reads back as the member — so the case left is another `Enum` of the same rank that shares the value: `Color | Paint` holding `Paint.RED` dumps `"red"`, rebuilds as `Color.RED`, and
 `dump()` can only warn ([design-decisions/a-stolen-leaf-dumps-with-its-cast.md#a-stolen-leaf-dumps-with-its-cast](../../architecture/design-decisions/a-stolen-leaf-dumps-with-its-cast.md#a-stolen-leaf-dumps-with-its-cast)).
 Accepting `{__cast__: "mymod.LogLevel"}` would close it: `_coerce_leaf` already builds any
 `Enum`, and a dotted path in a file is what the `class` tag and a callable `bind:` already are.

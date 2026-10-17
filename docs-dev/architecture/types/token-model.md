@@ -1,9 +1,11 @@
 # Token model
 
 - `_StrToken` (a `str` subclass) marks **untyped text from a channel that carries no types**:
-  CLI, environment, CSV/TSV cells. Only tokens are coerced from text. A plain `str` came from
-  a self-describing file and is never re-interpreted, so YAML's `"yes"` stays a string (no
-  "Norway problem" for files).
+  CLI, environment, CSV/TSV cells. Only tokens are converted from text. A plain `str` came from
+  a self-describing file and is never converted, so YAML's `"yes"` stays a string (no
+  "Norway problem" for files). It is still *recognized*, as a token is, by a variant that names
+  it — a class path, an `Enum` member, a `Literal` member, a registered leaf
+  ([a union ranks every value](../design-decisions/a-union-ranks-every-value.md#a-union-ranks-every-value)).
 - `_UnionSeqToken` (a `_StrToken`) marks a lone CLI token for a scalar+sequence union; it
   alone may fall back to a one-element list ([CLI parsing](../cli-parsing/token-consumption.md#unions-with-sequence-variants)).
 - `_Pinned(tp, value)` carries an explicitly cast value through the merge dict; `construct`

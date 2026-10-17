@@ -36,7 +36,7 @@ from confarg._types import (
     _union_args_no_none,
 )
 from confarg.dictexpr import contains_expression
-from confarg.exceptions import SymbolImportError, TypeCoercionError
+from confarg.exceptions import SymbolImportError, SymbolNotFoundError, TypeCoercionError
 
 _TRUTHY = frozenset({"true", "1", "yes", "on"})
 _FALSY = frozenset({"false", "0", "no", "off"})
@@ -72,22 +72,39 @@ def _coerce_bool(s: str) -> bool:
 
 
 def _coerce_type_ref(tp: Any, value: Any, path: str = "") -> type:
-    """Coerce a dotted-path string or class object to a class, validated against type[X]."""
+    """Coerce a dotted-path string or class object to a class, validated against type[X].
+
+    Any string is read, a token or a file's text alike: a dotted path is recognized, never
+    converted, so a file sets a ``type`` field as the CLI does and reads back its own dump.
+
+    Raises:
+        TypeCoercionError: If *value* is no class and no string, if nothing answers to the
+            path, or if the class is not one *tp* admits.
+        SymbolImportError: If a module on the path exists but fails while it is imported: the
+            path names real code, so a union's other variants do not get to read it as text.
+
+    Dev Notes:
+        docs-dev/architecture/types/stealing-rule.md#stealing-rule
+        docs-dev/architecture/types/dotted-imports.md#a-path-names-nothing-or-a-module-fails
+    """
     if isinstance(value, type):
         constraint = _type_ref_constraint(tp)
         if constraint is not object and not issubclass(value, constraint):
             raise TypeCoercionError.not_a_subclass(dotted_name(value), dotted_name(constraint), path)
         return value
-    if not isinstance(value, _StrToken):
+    if not isinstance(value, str):
         raise TypeCoercionError.cannot_coerce(_src_type(value), value, "type", path)
     try:
         obj = _import_dotted(str(value))
-    except SymbolImportError as e:
+    except SymbolNotFoundError as e:
         msg = (
             f"Cannot import class {str(value)!r} at '{path}': {e}."
             f" Use a fully-qualified dotted path, e.g. 'mypackage.MyClass'."
         )
         raise TypeCoercionError(msg) from e
+    except SymbolImportError as e:
+        msg = f"Cannot import class {str(value)!r} at '{path}': {e}"
+        raise SymbolImportError(msg) from e
     if not isinstance(obj, type):
         msg = f"Cannot coerce {str(value)!r} at '{path}': expected a class, got {type(obj).__name__!r}."
         raise TypeCoercionError(msg)
@@ -142,6 +159,11 @@ _RANKED_LEAF_TYPES: tuple[type, ...] = (float, int, bool, types.NoneType, str)
 #: Rank of each ranked leaf type. Dict lookup on a type object is identity-based: ``bool`` is
 #: a subclass of ``int`` and ranks on its own.
 _LEAF_TYPE_RANKS: dict[type, int] = {tp: 3 + i for i, tp in enumerate(_RANKED_LEAF_TYPES)}
+
+
+#: The lowest rank an object kind (:func:`_reads_as_object`) holds: a registered leaf ranks 0, an
+#: Enum 1, a ``Literal`` over an Enum 2. Every rank below it is a kind whose value a file holds.
+_LAST_OBJECT_RANK = 2
 
 
 def _steal_rank(tp: Any) -> int:
@@ -229,9 +251,9 @@ def _match_literal_str_token(vals: tuple[Any, ...], value: _StrToken, path: str)
 def _coerce_literal_value(tp: Any, value: Any, path: str) -> Any:
     """Coerce a raw value to a Literal type.
 
-    Tokens are matched through the stealing rule; native file values keep
-    declaration order. Both use ``_match_literal_member`` — one rule — so a
-    ``Literal`` over ``Enum`` accepts the same text in both channels.
+    Every value meets the members in stealing rank, a token and a file's value alike, through
+    ``_match_literal_member`` — one rule — so a ``Literal`` over ``Enum`` accepts the same
+    text in both channels and reads it as the same member. Only a token reads a none word.
 
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#stealing-rule
@@ -239,7 +261,7 @@ def _coerce_literal_value(tp: Any, value: Any, path: str) -> Any:
     vals = _literal_values(tp)
     if isinstance(value, _StrToken):
         return _match_literal_str_token(vals, value, path)
-    for v in vals:
+    for v in _steal_order(list(vals), key=type):
         if _match_literal_member(v, value, path):
             return v
     raise TypeCoercionError.cannot_coerce(_src_type(value), value, f"Literal{vals}", path)
@@ -426,7 +448,9 @@ def read_as_object(ft: Any, value: Any) -> Any:
     Where *ft* is one type whose value is an object no file holds (:func:`_reads_as_object`),
     an optional included, *value* is read as that object, whichever channel wrote it and
     however it spelled it: ``RED``, ``red`` and ``Color.RED`` are one member. Anywhere else,
-    and for a value the type refuses, *value* is read as written: construction refuses it.
+    and for a value the type refuses, *value* is read as written: construction refuses it. A
+    union of several variants is read by the variant construction picks, which
+    ``_typed_read`` asks :func:`~confarg.typedload._construct.read_union_leaf` for.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object

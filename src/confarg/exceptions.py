@@ -245,6 +245,18 @@ class SymbolImportError(ConfargError):
     """
 
 
+class SymbolNotFoundError(SymbolImportError):
+    """Raised when nothing answers to a dotted import path: no such module or attribute, or no path at all.
+
+    A :class:`SymbolImportError` that is *not* this subclass comes from a module that does exist
+    but fails while it is imported, a broken dependency or a circular import, as
+    ``ModuleNotFoundError`` is the ``ImportError`` that says a module is absent.
+
+    Dev Notes:
+        docs-dev/architecture/types/dotted-imports.md#a-path-names-nothing-or-a-module-fails
+    """
+
+
 class TypeCoercionError(ConfargError):
     """Raised when a value cannot be coerced to the target type."""
 

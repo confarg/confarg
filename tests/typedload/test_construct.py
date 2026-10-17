@@ -305,9 +305,72 @@ class TestStealOrder:
 
     @pytest.mark.parametrize("tp", [int | float, float | int])
     def test_native_values_keep_their_own_type(self, tp: Any) -> None:
-        """The rank orders tokens only: a native value from a file is never re-interpreted."""
+        """Only a token is converted: a native number from a file is never re-interpreted."""
         assert type(construct(tp, 5)) is int
         assert type(construct(tp, 5.0)) is float
+
+
+class _Level(enum.IntEnum):
+    """Enum whose values a file holds as native integers."""
+
+    ONE = 1
+    FIVE = 5
+
+
+class TestStealOrderForNativeValues:
+    """A native value meets a union's leaf variants in the same rank a token does (BUG-230).
+
+    Only a token is *converted*, to a number, a bool or ``None``; any value is *recognized* by a
+    variant that names it, a type reference, an Enum member, a ``Literal`` member or a registered
+    leaf. Each union is written in both declaration orders: the order decides nothing, for a
+    file's value no more than for a token.
+    """
+
+    @pytest.mark.parametrize("tp", [str | type, type | str])
+    def test_a_type_path_steals_over_str(self, tp: Any) -> None:
+        """A file's dotted path to a class is the class, as the same text on the CLI is."""
+        assert construct(tp, "builtins.int") is int
+
+    @pytest.mark.parametrize("tp", [str | type, type | str])
+    def test_a_string_naming_no_class_stays_a_str(self, tp: Any) -> None:
+        """Text that imports nothing is left to the str variant."""
+        assert construct(tp, "hello world") == "hello world"
+
+    @pytest.mark.parametrize("tp", [str | _Grade, _Grade | str])
+    def test_an_enum_steals_over_str(self, tp: Any) -> None:
+        """A file's member name is the member, whichever side of the union the Enum is on."""
+        assert construct(tp, "FOO") is _Grade.FOO
+
+    @pytest.mark.parametrize("tp", [int | _Level, _Level | int])
+    def test_an_enum_steals_a_native_number_over_int(self, tp: Any) -> None:
+        """A file's number that is a member's value is the member, as the token '5' is."""
+        assert construct(tp, 5) is _Level.FIVE
+
+    @pytest.mark.usefixtures("_registered")
+    @pytest.mark.parametrize("tp", [str | _Word, _Word | str])
+    def test_a_registered_leaf_steals_over_str(self, tp: Any) -> None:
+        """A registered leaf outranks str for a file's string too."""
+        assert construct(tp, "abc") == _Word("abc")
+
+    @pytest.mark.parametrize("tp", [Literal[_Grade.FOO, "FOO"], Literal["FOO", _Grade.FOO]])
+    def test_an_enum_literal_member_steals_over_a_str_member(self, tp: Any) -> None:
+        """The members of a Literal are ranked for a file's value as for a token."""
+        assert construct(tp, "FOO") is _Grade.FOO
+
+    @pytest.mark.parametrize("tp", [int | str, str | int])
+    def test_a_file_string_is_never_converted_to_a_number(self, tp: Any) -> None:
+        """No Norway problem: a file's "5" is text, only a token is converted."""
+        assert construct(tp, "5") == "5"
+
+    @pytest.mark.parametrize("tp", [str | None, None | str])
+    def test_a_file_none_word_stays_a_str(self, tp: Any) -> None:
+        """Only a token's none word selects None: a file writes None as its own null."""
+        assert construct(tp, "none") == "none"
+
+    @pytest.mark.parametrize("tp", [bool | _Level, _Level | bool])
+    def test_a_native_bool_is_no_enum_value(self, tp: Any) -> None:
+        """An Enum compares a native value by its exact type, so true never selects the member 1."""
+        assert construct(tp, data=True) is True
 
 
 # ---------------------------------------------------------------------------

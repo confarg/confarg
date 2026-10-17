@@ -20,14 +20,15 @@ Rejected alternatives:
   it breaks the token model, in which a self-describing
   file is never re-interpreted ([types](../types/token-model.md#token-model)).
 - **Decide by mirroring the stealing rule** rather than by calling `construct`. That is a second
-  model of variant selection, and wrong for native values — which keep declaration order — on
-  the day it is written ([invariants](../invariants.md#delegate-to-the-canonical-function)).
+  model of variant selection, and it was wrong for native values — which kept declaration order
+  until [a union ranks every value](a-union-ranks-every-value.md) — on the day it was written
+  ([invariants](../invariants.md#delegate-to-the-canonical-function)).
 
 The cost is one `construct()` call per leaf union value at dump time, and two where a cast is
 emitted, since the cast is vetted the same way before it is written. `dump()` is not a hot path,
 and the alternative is a rule that can be wrong in silence.
 
-A variant `__cast__` cannot name — an unregistered `Enum` beside a `str`, a collection
+A variant `__cast__` cannot name — an unregistered `Enum` beside another `Enum` sharing its value, a collection
 variant — gets a `ConfargWarning` and the bare value, rather than an error or a cast no reader accepts:
 `dump()` of a working object must not start raising, and the value stays correct for every consumer
 that does not feed it back into `build()`. A `Literal` over `Enum` members no longer joins them: its

@@ -16,7 +16,9 @@ Covers:
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -24,9 +26,12 @@ import confarg
 import confarg.cli.argparse as confarg_ap
 from confarg._serialize import _serialize_leaf
 from confarg._types import _StrToken
-from confarg.exceptions import ConfargError, TypeCoercionError
+from confarg.exceptions import ConfargError, SymbolImportError, TypeCoercionError
 from confarg.typedload._coerce import _coerce_type_ref
 from confarg.typedload._construct import construct
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Module-level helper classes
@@ -132,10 +137,14 @@ class TestCoerceTypeRef:
         with pytest.raises(TypeCoercionError, match="not a subclass"):
             _coerce_type_ref(type[Base], Unrelated)
 
-    def test_plain_str_not_accepted(self) -> None:
-        """A plain str (not _StrToken) is rejected — only _StrToken triggers import."""
-        with pytest.raises(TypeCoercionError):
-            _coerce_type_ref(type[Base], _DERIVED_PATH)  # plain str, not _StrToken
+    def test_plain_str_accepted(self) -> None:
+        """A plain str, what a file and from_dict() hold, imports as a token does (BUG-230)."""
+        assert _coerce_type_ref(type[Base], _DERIVED_PATH) is Derived
+
+    def test_plain_str_subclass_violation_raises(self) -> None:
+        """A plain str is checked against the constraint as a token is."""
+        with pytest.raises(TypeCoercionError, match="not a subclass"):
+            _coerce_type_ref(type[Base], "builtins.int")
 
 
 # ---------------------------------------------------------------------------
@@ -263,13 +272,52 @@ class TestBuildRoundtrip:
                 confarg.dump(ConfigWithTypeRef(worker=cls))
 
     def test_dump_and_build_roundtrip(self) -> None:
-        """Invariant: dump then build() round-trips to the same class."""
+        """Invariant: dump then build() round-trips to the same class, from the plain dump (BUG-230)."""
         instance = ConfigWithTypeRef(worker=Derived)
-        serialized = confarg.dump(instance)
-        # build() needs _StrToken to trigger coercion; simulate what the pipeline does
-        token_data = {k: _StrToken(v) if isinstance(v, str) else v for k, v in serialized.items()}
-        restored = confarg.build(ConfigWithTypeRef, token_data)
+        restored = confarg.build(ConfigWithTypeRef, confarg.dump(instance))
         assert restored.worker is instance.worker
+
+    def test_a_file_sets_a_type_field(self, tmp_path: Path) -> None:
+        """A dump_file() of a type field loads back from the file (BUG-230)."""
+        path = tmp_path / "config.json"
+        confarg.dump_file(ConfigWithTypeRef(worker=Derived), path)
+        assert confarg.load(ConfigWithTypeRef, argv=[], env={}, files=[path]).worker is Derived
+
+    def test_a_file_sets_a_list_of_types(self) -> None:
+        """Each element of a list[type] reads a plain str (BUG-230)."""
+
+        @dataclass
+        class Holder:
+            kinds: list[type]
+
+        assert confarg.from_dict(Holder, {"kinds": ["builtins.int", _DERIVED_PATH]}).kinds == [int, Derived]
+
+
+class TestBrokenModuleInAUnion:
+    """A module that exists but fails while importing stops the union rather than becoming text (BUG-230)."""
+
+    def test_a_broken_module_propagates_past_the_str_variant(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
+    ) -> None:
+        """`type | str` refuses the path of a broken module instead of holding it as a string."""
+        pkg_dir = tmp_path / "bug230_union_broken_pkg"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text("")
+        (pkg_dir / "broken.py").write_text("import bug230_union_missing_dependency\n")
+        monkeypatch.syspath_prepend(str(tmp_path))
+
+        def _purge() -> None:
+            for key in [k for k in sys.modules if k.startswith("bug230_union_broken_pkg")]:
+                sys.modules.pop(key, None)
+
+        request.addfinalizer(_purge)
+        for value in ("bug230_union_broken_pkg.broken.Thing", _StrToken("bug230_union_broken_pkg.broken.Thing")):
+            with pytest.raises(SymbolImportError, match="bug230_union_missing_dependency"):
+                construct(type | str, value)
+        assert construct(type | str, "bug230_union_broken_pkg.nope") == "bug230_union_broken_pkg.nope"
 
 
 # ---------------------------------------------------------------------------

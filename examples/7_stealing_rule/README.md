@@ -2,14 +2,14 @@
 
 > [!TIP]
 
-Now that we have learned in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/) how confarg can handle unions, we need to go back to leaf types and talk about the stealing rule, that is, the precedence of leaf types in unions for inputs provided as CLI arguments or environment variables.
+Now that we have learned in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/) how confarg can handle unions, we need to go back to leaf types and talk about the stealing rule, that is, the precedence of leaf types in unions. It matters most for inputs provided as CLI arguments or environment variables, which are plain text, but it applies to configuration files too, as we will see [at the end of this page](#values-from-configuration-files).
 
 For plain leaf types, we saw how confarg relies on the target type to understand how to coerce input strings provided from the command line or the environment. However, type unions make the whole process ambiguous, in particular when one of the union variants is `str`.
 
 Confarg relies on the following priority order to resolve leaf type arguments, called the stealing rule:
 
 ```
-Custom leaf type > Enum > [float, int, bool, None] > str
+Custom leaf type > Enum > [type, Literal] > [float, int, bool, None] > str
 ```
 
 That is, in case of a union between those types, the coercion is done in this order, and the first successful coercion wins. This means for example that the scalar coercions we saw in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/) work in unions and have a higher priority over keeping the input as a string.
@@ -78,3 +78,45 @@ $ # input is explicitly coerced to `int`
 $ uv run enum_or_int.py --input.int 2
 Config(input=2)
 ```
+
+## Values from configuration files
+
+A configuration file is self-describing: its values already have a type, so confarg never converts a string from a file into a number, a boolean or `None`. A file's `inf` stays a string for `str | float`, where the same text on the command line is the float infinity:
+
+<!-- snippet: str_or_float.yaml -->
+```yaml title="str_or_float.yaml"
+input: inf
+```
+
+```console
+$ uv run str_or_float.py --config str_or_float.yaml
+Config(input='inf')
+```
+
+A file's value is still *recognized* by the variants that name it, in the same priority order: an enumeration's key or value, a class path for a `type`, a `Literal` member, a custom leaf type. The order the union is written in does not matter, for a file no more than for the command line:
+
+<!-- snippet: enum_or_str.yaml -->
+```yaml title="enum_or_str.yaml"
+input: FOO
+```
+
+```console
+$ uv run enum_or_str.py --config enum_or_str.yaml
+Config(input=<Value.FOO: 1>)
+```
+
+The file's way to override the stealing rule is a `__cast__`, the counterpart of the `.str` suffix:
+
+<!-- snippet: enum_or_str_cast.yaml -->
+```yaml title="enum_or_str_cast.yaml"
+input:
+  __cast__: str
+  __value__: FOO
+```
+
+```console
+$ uv run enum_or_str.py --config enum_or_str_cast.yaml
+Config(input='FOO')
+```
+
+`confarg.dump()` writes that `__cast__` on its own wherever the plain value would be recognized as another variant, so a dumped configuration always loads back as the same object.

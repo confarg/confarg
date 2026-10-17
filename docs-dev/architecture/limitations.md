@@ -222,10 +222,12 @@ A field default is the layer below every source only where the class declares it
   ([expressions](expressions/resolution.md#calls-and-expressions-share-one-graph)).
 - Attribute docstrings used as `--help` text require the class source, which is unavailable for
   dynamically created classes ([CLI adapters](cli-adapters/flag-model.md#framework-neutral-flag-model)).
-- A union leaf `__cast__` cannot name does not round-trip: an unregistered `Enum` beside a
-  `str` variant, a `Literal` holding `Enum` members, a collection variant a fixed-arity sibling
+- A union leaf `__cast__` cannot name does not round-trip: an unregistered `Enum` beside
+  another `Enum` of its rank that shares its value, a `Literal` holding `Enum` members, a collection variant a fixed-arity sibling
   takes back. `dump()` writes the bare value and warns with the field path
   ([design decisions](design-decisions/a-stolen-leaf-dumps-with-its-cast.md#a-stolen-leaf-dumps-with-its-cast)).
+
+- A dotted string a union tries as a type reference imports the module its path names, from any channel: `"json.loads"` in a `type | str` field imports `json` before the type variant refuses a function. A bare word imports nothing ([dotted imports](types/dotted-imports.md#a-bare-word-is-never-imported)). A file that means the text writes `{__cast__: str, __value__: …}`.
 
 ## Remote sources
 
