@@ -6,14 +6,18 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Literal, NamedTuple
 from uuid import UUID
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 import confarg
 from confarg._types import _StrToken
@@ -22,6 +26,11 @@ from confarg.typedload._coerce import (
     _LEAF_COERCIONS,
     _LEAF_SERIALIZERS,
     _coerce_leaf,
+    _coerce_timezone,
+    _format_duration,
+    _format_offset,
+    _parse_duration,
+    _registered_leaf_of,
     _try_coerce,
     _type_kind,
     _TypeKind,
@@ -561,3 +570,169 @@ class TestRegistrationAfterIntrospection:
         assert confarg.build(_HoldsLater, {"item": {"raw": "a"}}).item == _Later("a")
         confarg.register_leaf_type(_Later, _Later)
         assert confarg.build(_HoldsLater, {"item": "b"}).item == _Later("b")
+
+
+# ---------------------------------------------------------------------------
+# The date and time types — the grammars their coercions read (FEAT-51)
+# ---------------------------------------------------------------------------
+
+_H = timedelta(hours=1)
+
+
+class TestParseDuration:
+    """A duration is ISO 8601 text in its fixed units, read exactly."""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("PT1H30M", timedelta(hours=1, minutes=30)),
+            ("P1DT2H30M", timedelta(days=1, hours=2, minutes=30)),
+            ("P2W", timedelta(days=14)),
+            ("P1W2D", timedelta(days=9)),
+            ("PT36H", timedelta(hours=36)),
+            ("PT90M", timedelta(minutes=90)),
+            ("PT1.5H", timedelta(hours=1.5)),
+            ("P1.5D", timedelta(days=1, hours=12)),
+            ("P1.1D", timedelta(days=1, seconds=8640)),
+            ("PT0,5S", timedelta(milliseconds=500)),
+            ("PT0.0000009S", timedelta(microseconds=1)),
+            ("PT0.0000005S", timedelta(0)),
+            ("PT0.0000015S", timedelta(microseconds=2)),
+            ("-PT1H", -_H),
+            ("-P1W", timedelta(days=-7)),
+            ("pt1h", _H),
+            ("Pt1H", _H),
+            ("PT0S", timedelta(0)),
+        ],
+    )
+    def test_reads(self, text: str, expected: timedelta) -> None:
+        """Each part in its unit, a fraction on the last part only, rounded half-even to the microsecond."""
+        assert _parse_duration(text) == expected
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "P",
+            "PT",
+            "P1DT",
+            "-P",
+            "P1M",
+            "P1Y",
+            "PT1.5H30M",
+            "P-1D",
+            "PT-1H",
+            "+PT1H",
+            "PT01:30:00",
+            "1:30",
+            "1:30:00",
+            "90",
+            "2 days, 0:00:00",
+            "P1D2W",
+            "PT1H ",
+            " PT1H",
+            "P999999999999D",
+        ],
+    )
+    def test_refuses(self, text: str) -> None:
+        """A variable unit, a fraction before the last part, a misplaced sign, any other form, an overflow."""
+        with pytest.raises(ValueError, match=f"^{re.escape(text)}$"):
+            _parse_duration(text)
+
+
+class TestFormatDuration:
+    """A duration is written as ISO 8601 text, days then the clock, each zero part left out."""
+
+    @pytest.mark.parametrize(
+        ("value", "text"),
+        [
+            (timedelta(days=1, hours=2), "P1DT2H"),
+            (timedelta(days=1, hours=12), "P1DT12H"),
+            (timedelta(minutes=1, seconds=30.5), "PT1M30.5S"),
+            (timedelta(days=14), "P14D"),
+            (timedelta(days=-1, seconds=1), "-PT23H59M59S"),
+            (timedelta(hours=-1, minutes=-30), "-PT1H30M"),
+            (timedelta(microseconds=1), "PT0.000001S"),
+            (timedelta(0), "PT0S"),
+            (timedelta.min, "-P999999999D"),
+            (timedelta.max, "P999999999DT23H59M59.999999S"),
+        ],
+    )
+    def test_writes(self, value: timedelta, text: str) -> None:
+        """The text names the length, after a minus when negative."""
+        assert _format_duration(value) == text
+
+    @given(st.timedeltas())
+    def test_reads_back(self, value: timedelta) -> None:
+        """Every duration reads back from its text as itself."""
+        assert _parse_duration(_format_duration(value)) == value
+
+
+class TestTimezone:
+    """A timezone is the UTC offset a datetime's text ends with."""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("Z", UTC),
+            ("z", UTC),
+            ("+00:00", UTC),
+            ("-00:00", UTC),
+            ("+02:00", timezone(2 * _H)),
+            ("+0200", timezone(2 * _H)),
+            ("+02", timezone(2 * _H)),
+            ("-05:30", timezone(-timedelta(hours=5, minutes=30))),
+            ("+02:00:30.5", timezone(timedelta(hours=2, seconds=30.5))),
+            ("+23:59", timezone(timedelta(hours=23, minutes=59))),
+        ],
+    )
+    def test_reads(self, text: str, expected: timezone) -> None:
+        """``Z`` in either case, or a signed offset as ``datetime.fromisoformat`` reads one."""
+        assert _coerce_timezone(text) == expected
+
+    @pytest.mark.parametrize("text", ["UTC", "UTC+02:00", "+2", "02:00", "+24:00", "", ":30+02:00", "Zulu"])
+    def test_refuses(self, text: str) -> None:
+        """Python's ``str()`` of a timezone, an unsigned or short offset, and text around an offset."""
+        with pytest.raises(ValueError, match="offset"):
+            _coerce_timezone(text)
+
+    @pytest.mark.parametrize(
+        ("value", "text"),
+        [
+            (UTC, "+00:00"),
+            (timezone(2 * _H, "CEST"), "+02:00"),
+            (timezone(-timedelta(hours=5, minutes=30)), "-05:30"),
+            (timezone(timedelta(seconds=30)), "+00:00:30"),
+            (timezone(timedelta(seconds=30, microseconds=5)), "+00:00:30.000005"),
+        ],
+    )
+    def test_writes_as_isoformat_does(self, value: timezone, text: str) -> None:
+        """The offset ``datetime.isoformat()`` writes, a name never, and it reads back equal."""
+        assert _format_offset(value) == text
+        assert _coerce_timezone(text) == value
+
+
+class TestRegisteredLeafOf:
+    """An instance is its most specific registered leaf type (FEAT-51)."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (datetime(2021, 2, 3, 10), datetime),
+            (date(2021, 2, 3), date),
+            (Path("a"), Path),
+            (Decimal(1), Decimal),
+            (True, None),
+            ("2021-02-03", None),
+        ],
+        ids=["datetime-not-date", "date", "path-subclass", "decimal", "bool", "str"],
+    )
+    def test_the_first_registered_class_of_the_mro(self, value: object, expected: type | None) -> None:
+        """A ``datetime`` is no ``date`` here, a ``WindowsPath`` is a ``Path``, and a str is none."""
+        assert _registered_leaf_of(value) is expected
+
+    def test_an_instance_passes_through_its_own_type_only(self) -> None:
+        """A ``datetime`` meets the ``date`` coercion, which refuses it, where a ``date`` passes through."""
+        day = date(2021, 2, 3)
+        assert _coerce_leaf(date, day) is day
+        with pytest.raises(TypeCoercionError, match=r"Cannot coerce datetime .* to date"):
+            _coerce_leaf(date, datetime(2021, 2, 3))

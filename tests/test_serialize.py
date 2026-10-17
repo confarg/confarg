@@ -1577,25 +1577,142 @@ class TestDumpWritesWhatTheObjectHolds:
 
 
 @_dc
-class _StateDated:
-    when: datetime.date = datetime.date(2020, 1, 1)
+class _StateComplex:
+    z: complex = 1j
 
 
 class TestDumpRefusesAnUnsupportedLeaf:
     """``dump()`` refuses a value typed by a leaf construction does not build, as construction refuses it."""
 
-    def test_a_date_field_is_refused(self) -> None:
-        """``date`` is no struct and no registered leaf, so it is refused, naming the remedy."""
-        with pytest.raises(ConfargError, match=r"Cannot serialize date at 'when'.*register_leaf_type"):
-            confarg.dump(_StateDated())
+    def test_a_complex_field_is_refused(self) -> None:
+        """``complex`` is no struct and no registered leaf, so it is refused, naming the remedy."""
+        with pytest.raises(ConfargError, match=r"Cannot serialize complex at 'z'.*register_leaf_type"):
+            confarg.dump(_StateComplex())
 
     def test_construction_refuses_the_same_type(self) -> None:
-        """The refusal is construction's: a date value does not build either."""
+        """The refusal is construction's: a complex value does not build either."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="Unsupported leaf type"):
-            confarg.build(_StateDated, {"when": datetime.date(2021, 1, 1)})
+            confarg.build(_StateComplex, {"z": 2j})
 
     @pytest.mark.usefixtures("leaf_registry")
-    def test_a_registered_date_is_written(self) -> None:
+    def test_a_registered_complex_is_written(self) -> None:
         """Registered, the same field is written by its serializer."""
-        confarg.register_leaf_type(datetime.date, datetime.date.fromisoformat, serialize=datetime.date.isoformat)
-        assert confarg.dump(_StateDated()) == {"when": "2020-01-01"}
+        confarg.register_leaf_type(complex, complex)
+        assert confarg.dump(_StateComplex()) == {"z": "1j"}
+
+
+# ---------------------------------------------------------------------------
+# The date and time types, and the types a writer holds natively (FEAT-51)
+# ---------------------------------------------------------------------------
+
+_PLUS_2 = datetime.timezone(datetime.timedelta(hours=2))
+
+
+@_dc
+class _Schedule:
+    when: datetime.date = datetime.date(2021, 2, 3)
+    at: datetime.datetime = datetime.datetime(2021, 2, 3, 10, 20, 30, tzinfo=_PLUS_2)
+    t: datetime.time = datetime.time(10, 20, 30, 500)
+    span: datetime.timedelta = datetime.timedelta(days=-1, seconds=1)
+    tz: datetime.timezone = datetime.UTC
+
+
+_SCHEDULE_TEXT = {
+    "when": "2021-02-03",
+    "at": "2021-02-03T10:20:30+02:00",
+    "t": "10:20:30.000500",
+    "span": "-PT23H59M59S",
+    "tz": "+00:00",
+}
+
+
+class TestDateAndTimeDump:
+    """Each date and time type dumps as the ISO 8601 text its coercion reads back."""
+
+    def test_written_as_iso_text(self) -> None:
+        """A date, a datetime and a time as ``isoformat()``, a duration and an offset in ISO form."""
+        assert confarg.dump(_Schedule()) == _SCHEDULE_TEXT
+
+    def test_reads_back(self) -> None:
+        """The dump builds the instance it came from."""
+        assert confarg.build(_Schedule, confarg.dump(_Schedule())) == _Schedule()
+
+    def test_a_datetime_is_written_by_its_own_type(self) -> None:
+        """A datetime held where a date is declared keeps its time: it is a datetime, not the date it subclasses."""
+        held = _Schedule(when=datetime.datetime(2021, 2, 3, 10))
+        assert confarg.dump(held)["when"] == "2021-02-03T10:00:00"
+
+
+class TestNativeTypes:
+    """``native_types`` keeps the values of the registered leaf types it names as their objects."""
+
+    def test_dump_writes_text_by_default(self) -> None:
+        """The default dump is ready for any writer, JSON's included."""
+        assert all(isinstance(v, str) for v in confarg.dump(_Schedule()).values())
+
+    def test_named_types_are_kept(self) -> None:
+        """``YAML_NATIVE_TYPES`` keeps a date and a datetime, and every other type stays text."""
+        dumped = confarg.dump(_Schedule(), native_types=confarg.YAML_NATIVE_TYPES)
+        assert dumped == {**_SCHEDULE_TEXT, "when": _Schedule().when, "at": _Schedule().at}
+
+    def test_a_value_matches_by_its_own_type(self) -> None:
+        """``(date,)`` keeps a date and still writes a datetime as text."""
+        held = _Schedule(when=datetime.datetime(2021, 2, 3, 10))
+        dumped = confarg.dump(held, native_types=(datetime.date,))
+        assert dumped["when"] == "2021-02-03T10:00:00"
+        assert confarg.dump(_Schedule(), native_types=(datetime.date,))["when"] == datetime.date(2021, 2, 3)
+
+    @pytest.mark.parametrize("tp", [int, _Schedule, Optional[datetime.date]], ids=["int", "struct", "optional"])
+    def test_a_type_no_registry_names_is_refused(self, tp: Any) -> None:
+        """Nothing but a registered leaf is serialized to a form it could be kept from."""
+        with pytest.raises(TypeError, match=r"native_types names .* which is no registered leaf type"):
+            confarg.dump(_Schedule(), native_types=(tp,))
+
+    def test_the_format_constants(self) -> None:
+        """YAML and TOML hold a date and a datetime, JSON nothing; no writer holds every time."""
+        assert (datetime.date, datetime.datetime) == confarg.YAML_NATIVE_TYPES
+        assert (datetime.date, datetime.datetime) == confarg.TOML_NATIVE_TYPES
+        assert confarg.JSON_NATIVE_TYPES == ()
+
+    @pytest.mark.parametrize(
+        ("name", "when_line"),
+        [("c.yaml", "when: 2021-02-03"), ("c.toml", "when = 2021-02-03"), ("c.json", '"when": "2021-02-03"')],
+    )
+    def test_dump_file_writes_its_format_s_native_dates(self, tmp_path: Path, name: str, when_line: str) -> None:
+        """YAML and TOML write their own dates, JSON a string, and each file reads back."""
+        path = tmp_path / name
+        confarg.dump_file(_Schedule(), path)
+        assert when_line in path.read_text(encoding="utf-8")
+        assert confarg.load(_Schedule, argv=[], env={}, files=[path]) == _Schedule()
+
+    def test_dump_file_takes_a_set_of_its_own(self, tmp_path: Path) -> None:
+        """``native_types=()`` writes every date as text, quoted in YAML."""
+        path = tmp_path / "c.yaml"
+        confarg.dump_file(_Schedule(), path, native_types=())
+        assert "when: '2021-02-03'" in path.read_text(encoding="utf-8")
+
+    def test_a_raw_dict_keeps_a_yaml_date_native(self, tmp_path: Path) -> None:
+        """``merge()``'s dict of a YAML file writes its date back as a date, as it did before dates were leaves."""
+        source = tmp_path / "in.yaml"
+        source.write_text("when: 2021-02-03\n", encoding="utf-8")
+        out = tmp_path / "out.yaml"
+        confarg.dump_file(confarg.merge(_Schedule, argv=[], env={}, files=[source]), out)
+        assert out.read_text(encoding="utf-8") == "when: 2021-02-03\n"
+
+    def test_a_raw_dict_writes_text_to_json(self, tmp_path: Path) -> None:
+        """The same dict written to JSON holds the date's text, which JSON's writer accepts."""
+        source = tmp_path / "in.yaml"
+        source.write_text("when: 2021-02-03\n", encoding="utf-8")
+        out = tmp_path / "out.json"
+        confarg.dump_file(confarg.merge(_Schedule, argv=[], env={}, files=[source]), out)
+        assert '"when": "2021-02-03"' in out.read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("name", ["c.yaml", "c.toml"])
+    def test_a_sub_minute_offset_is_written_as_text(self, tmp_path: Path, name: str) -> None:
+        """No writer reads back an offset with seconds, Paris' mean time before 1911, so that datetime stays text."""
+        lmt = datetime.timezone(datetime.timedelta(minutes=9, seconds=21))
+        held = _Schedule(at=datetime.datetime(1890, 1, 1, tzinfo=lmt))
+        assert confarg.dump(held, native_types=confarg.YAML_NATIVE_TYPES)["at"] == "1890-01-01T00:00:00+00:09:21"
+        path = tmp_path / name
+        confarg.dump_file(held, path)
+        assert confarg.load(_Schedule, argv=[], env={}, files=[path]) == held

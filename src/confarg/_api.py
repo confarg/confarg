@@ -10,17 +10,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Unpack, cast, overload
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from types import UnionType
     from typing import TypeAliasType
 
 from confarg import _defaults
 from confarg._default_layer import drop_untouched, lay_defaults
 from confarg._defaults import MergeOptions, _Options, _resolve_options
-from confarg._files import _dump_file
+from confarg._files import _dump_file, _native_types_of
 from confarg._merge import ListOp, MergeDict
 from confarg._parse_cli import _config_pairs_in, _locals_keys_at, _parse_cli
 from confarg._pipeline import _merge_sources
-from confarg._serialize import _serialize, _serialize_untyped, written_form
+from confarg._serialize import _check_native_types, _DumpOptions, _serialize, _serialize_untyped, written_form
 from confarg._typed_read import TypedReading
 from confarg._types import _MISSING, TagPolicy, _is_struct_like, _resolve_type
 from confarg.dictexpr import resolve_expressions
@@ -323,6 +324,7 @@ def dump(
     *,
     union_tag: str = _defaults.UNION_TAG,
     tag_policy: TagPolicy = "auto",
+    native_types: Iterable[type] = (),
 ) -> dict[str, Any]:
     """Serialize a dataclass or plain-class instance to a config-compatible plain dict.
 
@@ -336,16 +338,26 @@ def dump(
     holds. To save a configuration as written, with its expressions and its ``call:``
     specs, pass the dict returned by ``merge()`` to ``dump_file()`` instead.
 
+    A value of a registered leaf type — a ``Path``, a ``Decimal``, a ``date`` — is written as
+    the text its type reads back, so the dict is ready for any writer, JSON's included.
+    *native_types* keeps the values of the types it names as the objects they are, for a
+    writer that holds them: ``confarg.dump(cfg, native_types=confarg.YAML_NATIVE_TYPES)``
+    leaves each ``date`` and ``datetime`` a date. A value matches by its own type, so
+    ``(date,)`` keeps a ``date`` and still writes a ``datetime`` as text; a datetime whose UTC
+    offset has seconds, which no writer reads back, is always written as text.
+
     Args:
         value: A dataclass or plain-class instance.
         union_tag: The field name used as a discriminator tag in unions.
         tag_policy: ``"auto"`` (tag only when needed) or ``"always"`` (tag every union member).
+        native_types: Registered leaf types written as the objects they are, not as text.
 
     Returns:
         A plain dict representation.
 
     Raises:
-        TypeError: If value is not a dataclass or plain-class instance.
+        TypeError: If value is not a dataclass or plain-class instance, or *native_types*
+            names a type that is no registered leaf type.
         ConfargError: If the instance does not hold a field or a parameter it is dumped from.
     """
     if isinstance(value, dict):
@@ -357,8 +369,8 @@ def dump(
     if isinstance(value, type) or _type_kind(type(value)) is not _TypeKind.STRUCT:
         msg = f"Expected a dataclass or plain-class instance, got {type(value).__name__}"
         raise TypeError(msg)
-    tp = type(value)
-    return _serialize(tp, value, (), union_tag, tag_policy)
+    options = _DumpOptions(union_tag, tag_policy, _check_native_types(native_types))
+    return _serialize(type(value), value, (), options)
 
 
 def dump_file(
@@ -367,6 +379,7 @@ def dump_file(
     *,
     union_tag: str = _defaults.UNION_TAG,
     tag_policy: TagPolicy = "auto",
+    native_types: Iterable[type] | None = None,
 ) -> None:
     """Serialize and write to a config file.
 
@@ -376,17 +389,26 @@ def dump_file(
     written as ``dump()`` serializes it, as the values it holds. The output
     format is determined by the file extension (.toml, .yaml, .yml, .json).
 
+    A value of a registered leaf type is written as its text, except for the types the
+    format holds natively: a YAML or a TOML file writes a ``date`` and a ``datetime`` as its
+    own dates (``confarg.YAML_NATIVE_TYPES``, ``confarg.TOML_NATIVE_TYPES``), a JSON file
+    none. *native_types* replaces that set, as :func:`dump`'s does.
+
     Args:
         value: A dataclass or plain-class instance, or a raw config dict.
         path: Path to the output file.
         union_tag: The field name used as a discriminator tag in unions.
         tag_policy: ``"auto"`` or ``"always"``.
+        native_types: Registered leaf types written as the objects they are; None for the
+            set the format holds natively.
 
     Raises:
-        TypeError: If value is not a dataclass or plain-class instance, or a dict.
+        TypeError: If value is not a dataclass or plain-class instance, or a dict, or
+            *native_types* names a type that is no registered leaf type.
         InvalidConfigFileError: If the format is unsupported or the required library is not installed.
     """
+    native = _native_types_of(Path(path)) if native_types is None else _check_native_types(native_types)
     if isinstance(value, dict):
-        _dump_file(_serialize_untyped(value), Path(path))
+        _dump_file(_serialize_untyped(value, native), Path(path))
     else:
-        _dump_file(dump(value, union_tag=union_tag, tag_policy=tag_policy), Path(path))
+        _dump_file(dump(value, union_tag=union_tag, tag_policy=tag_policy, native_types=native), Path(path))

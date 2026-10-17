@@ -7,8 +7,11 @@
 from __future__ import annotations
 
 import enum
+import re
 import types
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -75,13 +78,225 @@ def _coerce_uuid(value: Any) -> UUID:
     return UUID(value)
 
 
+class _LeafRefusal(ValueError):
+    """A built-in leaf's refusal of a value, carrying the *hint* its error message ends with."""
+
+    def __init__(self, hint: str) -> None:
+        super().__init__(hint)
+        self.hint = hint
+
+
+def _base_60(n: int) -> str:
+    """Spell *n* as the colon-separated base-60 number YAML 1.1 reads as it: 620 is ``10:20``."""
+    digits: list[int] = []
+    while n:
+        n, digit = divmod(n, 60)
+        digits.append(digit)
+    head, *tail = reversed(digits)
+    return ":".join([str(head), *(f"{d:02d}" for d in tail)])
+
+
+def _refusal(hint: str, value: Any, *, yaml_base_60: bool = False, remedy: str = "") -> _LeafRefusal:
+    """Return the refusal of *value* ending with *hint*, and, with *yaml_base_60*, YAML's reading of an int.
+
+    An int of 60 or more may be what YAML 1.1 made of an unquoted ``10:20``, so the message
+    spells it back that way, followed by *remedy*.
+    """
+    if yaml_base_60 and type(value) is int and value >= 60:  # noqa: PLR2004  # the first base-60 number with a colon
+        hint += f"; YAML reads an unquoted {_base_60(value)} as the base-60 number {value}{remedy}"
+    return _LeafRefusal(hint)
+
+
+_DATE_HINT = "a date is ISO 8601 text, such as '2021-02-03'"
+_DATETIME_HINT = "a datetime is ISO 8601 text, such as '2021-02-03T10:20:30+02:00'"
+_TIME_HINT = "a time is ISO 8601 text, such as '10:20:30'"
+_DURATION_HINT = "a duration is ISO 8601 text, such as 'PT1H30M'"
+_OFFSET_HINT = "a timezone is an ISO 8601 offset, such as '+02:00' or 'Z'"
+
+
+def _coerce_date(value: Any) -> date:
+    """Read a ``date`` from the text ``date.fromisoformat`` reads.
+
+    A ``datetime`` is refused, a midnight one included, as its text is.
+
+    Raises:
+        _LeafRefusal: If *value* is no str, or the text spells no date.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-files-native-value-reads-as-its-text
+    """
+    if not isinstance(value, str):
+        raise _refusal(_DATE_HINT, value)
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise _refusal(_DATE_HINT, value) from None
+
+
+def _coerce_datetime(value: Any) -> datetime:
+    """Read a ``datetime`` from the text ``datetime.fromisoformat`` reads, or a ``date`` as its midnight.
+
+    Raises:
+        _LeafRefusal: If *value* is no str and no date, or the text spells no datetime.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-files-native-value-reads-as-its-text
+    """
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return datetime(value.year, value.month, value.day)
+    if not isinstance(value, str):
+        raise _refusal(_DATETIME_HINT, value)
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        raise _refusal(_DATETIME_HINT, value) from None
+
+
+def _coerce_time(value: Any) -> time:
+    """Read a ``time`` from the text ``time.fromisoformat`` reads.
+
+    Raises:
+        _LeafRefusal: If *value* is no str, or the text spells no time; an int may be YAML's
+            base-60 reading of an unquoted time, which the hint says.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-number-is-no-time-and-no-duration
+    """
+    if not isinstance(value, str):
+        raise _refusal(_TIME_HINT, value, yaml_base_60=True, remedy=", so quote it")
+    try:
+        return time.fromisoformat(value)
+    except ValueError:
+        raise _refusal(_TIME_HINT, value) from None
+
+
+_DURATION_NUMBER = r"\d+(?:[.,]\d+)?"
+_DURATION_UNITS = {"W": 7 * 86_400_000_000, "D": 86_400_000_000, "H": 3_600_000_000, "M": 60_000_000, "S": 1_000_000}
+_DURATION = re.compile(
+    rf"(?P<sign>-)?P(?!$)(?:(?P<W>{_DURATION_NUMBER})W)?(?:(?P<D>{_DURATION_NUMBER})D)?"
+    rf"(?:T(?!$)(?:(?P<H>{_DURATION_NUMBER})H)?(?:(?P<M>{_DURATION_NUMBER})M)?(?:(?P<S>{_DURATION_NUMBER})S)?)?",
+    re.IGNORECASE,
+)
+
+
+def _parse_duration(text: str) -> timedelta:
+    """Read the ISO 8601 duration *text* in its fixed units: ``[-]P[<n>W][<n>D][T[<n>H][<n>M][<n>S]]``.
+
+    Case-insensitive; only the last part may carry a fraction, after ``.`` or ``,``. The sum
+    is exact, rounded half-even to the microsecond as ``timedelta`` rounds.
+
+    Raises:
+        ValueError: If *text* is no such duration, or one ``timedelta`` cannot hold.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-duration-is-iso-8601-text
+    """
+    match = _DURATION.fullmatch(text)
+    if match is None:
+        raise ValueError(text)
+    parts = [(unit, match[unit]) for unit in _DURATION_UNITS if match[unit] is not None]
+    if any(not number.isdigit() for _, number in parts[:-1]):
+        raise ValueError(text)
+    micros = sum(Fraction(number.replace(",", ".")) * _DURATION_UNITS[unit] for unit, number in parts)
+    try:
+        duration = timedelta(microseconds=round(micros))
+    except OverflowError:
+        raise ValueError(text) from None
+    return -duration if match["sign"] else duration
+
+
+def _format_duration(value: timedelta) -> str:
+    """Write *value* as the ISO 8601 duration :func:`_parse_duration` reads back: ``P1DT2H``, ``-PT1M30.5S``.
+
+    Days, then hours, minutes and seconds, a zero part left out, the seconds' fraction
+    trimmed; a negative duration is a minus before its length, and zero is ``PT0S``.
+    """
+    micros = value // timedelta(microseconds=1)
+    sign, micros = ("-" if micros < 0 else ""), abs(micros)
+    seconds, fraction = divmod(micros, 1_000_000)
+    days, seconds = divmod(seconds, 86_400)
+    hours, seconds = divmod(seconds, 3_600)
+    minutes, seconds = divmod(seconds, 60)
+    clock = f"{hours}H" if hours else ""
+    clock += f"{minutes}M" if minutes else ""
+    if seconds or fraction:
+        clock += f"{seconds}" + (f".{fraction:06d}".rstrip("0") if fraction else "") + "S"
+    if not (days or clock):
+        return "PT0S"
+    return f"{sign}P" + (f"{days}D" if days else "") + (f"T{clock}" if clock else "")
+
+
+def _coerce_timedelta(value: Any) -> timedelta:
+    """Read a ``timedelta`` from an ISO 8601 duration (:func:`_parse_duration`); a number is refused.
+
+    Raises:
+        _LeafRefusal: If *value* is no str, or the text spells no duration; an int may be
+            YAML's base-60 reading of an unquoted ``1:30:00``, which the hint says.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-number-is-no-time-and-no-duration
+    """
+    if not isinstance(value, str):
+        raise _refusal(_DURATION_HINT, value, yaml_base_60=True)
+    try:
+        return _parse_duration(value)
+    except ValueError:
+        raise _refusal(_DURATION_HINT, value) from None
+
+
+def _coerce_timezone(value: Any) -> timezone:
+    """Read a fixed-offset ``timezone`` from the UTC offset ``datetime.fromisoformat`` reads: ``Z``, ``+02:00``.
+
+    ``Z`` is read in either case.
+
+    Raises:
+        _LeafRefusal: If *value* is no str, or the text spells no offset.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-timezone-is-an-iso-8601-offset
+    """
+    if not isinstance(value, str) or value[:1] not in {"+", "-", "Z", "z"}:
+        raise _refusal(_OFFSET_HINT, value)
+    try:
+        offset = datetime.fromisoformat(f"2000-01-01T00:00{value.upper()}").tzinfo
+    except ValueError:
+        raise _refusal(_OFFSET_HINT, value) from None
+    if not isinstance(offset, timezone):  # pragma: no cover  # fromisoformat reads an offset as a timezone
+        raise _refusal(_OFFSET_HINT, value)
+    return offset
+
+
+def _format_offset(value: timezone) -> str:
+    """Write *value* as the UTC offset ``datetime.isoformat()`` writes: ``+02:00``, ``+00:00``, ``+00:00:30``."""
+    return datetime.min.replace(tzinfo=value).isoformat()[len("0001-01-01T00:00:00") :]
+
+
 # register_leaf_type writes both registries at runtime, so nothing that reads them is ever
 # cached: not _is_registered_leaf, _is_struct_variant, _is_taggable_leaf, _is_eagerly_coercible
 # nor _type_kind (docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class).
-_LEAF_COERCIONS: dict[type, Any] = {Path: Path, Decimal: _coerce_decimal, UUID: _coerce_uuid}
+_LEAF_COERCIONS: dict[type, Any] = {
+    Path: Path,
+    Decimal: _coerce_decimal,
+    UUID: _coerce_uuid,
+    date: _coerce_date,
+    datetime: _coerce_datetime,
+    time: _coerce_time,
+    timedelta: _coerce_timedelta,
+    timezone: _coerce_timezone,
+}
 #: A Path is written with forward slashes, which every OS reads, so a dump is portable; a
-#: Decimal and a UUID as their str(), which their coercions read back.
-_LEAF_SERIALIZERS: dict[type, Any] = {Path: Path.as_posix, Decimal: str, UUID: str}
+#: Decimal and a UUID as their str(), the date and time types as ISO 8601 text: each as the
+#: text its coercion reads back.
+_LEAF_SERIALIZERS: dict[type, Any] = {
+    Path: Path.as_posix,
+    Decimal: str,
+    UUID: str,
+    date: date.isoformat,
+    datetime: datetime.isoformat,
+    time: time.isoformat,
+    timedelta: _format_duration,
+    timezone: _format_offset,
+}
 
 
 def _coerce_bool(s: str) -> bool:
@@ -342,6 +557,19 @@ def _is_registered_leaf(tp: Any) -> bool:
     return tp in _LEAF_COERCIONS
 
 
+def _registered_leaf_of(value: Any) -> type | None:
+    """Return the registered leaf type *value* is an instance of, the most specific one; None if none.
+
+    A ``datetime`` is a ``datetime``, not the ``date`` it subclasses, and a ``WindowsPath`` a
+    ``Path``: the first registered class in the value's MRO. The one answer to "which leaf
+    is this value?", asked when an instance passes through coercion and when it is serialized.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-date-and-time-types-are-built-in-leaves.md#an-instance-is-its-most-specific-registered-type
+    """
+    return next((cls for cls in type(value).__mro__ if cls in _LEAF_COERCIONS), None)
+
+
 def _is_struct_variant(tp: Any) -> bool:
     """True if tp is a struct for dispatch and union disambiguation — a registered leaf is not.
 
@@ -445,11 +673,17 @@ def _is_coercible_leaf(tp: Any) -> bool:
 
 
 def _coerce_registered(tp: Any, value: Any, path: str) -> Any:
-    """Coerce value to a type registered in _LEAF_COERCIONS, passing instances through."""
-    if isinstance(value, tp):
+    """Coerce value to a type registered in _LEAF_COERCIONS, passing its own instances through.
+
+    An instance passes through when *tp* is its most specific registered type
+    (:func:`_registered_leaf_of`), so a ``datetime`` meets the ``date`` coercion, which refuses it.
+    """
+    if _registered_leaf_of(value) is tp:
         return value
     try:
         return _LEAF_COERCIONS[tp](value)
+    except _LeafRefusal as exc:
+        raise TypeCoercionError.cannot_coerce_because(_src_type(value), value, tp.__name__, path, exc.hint) from None
     except (TypeError, ValueError, OSError):
         raise TypeCoercionError.cannot_coerce(_src_type(value), value, tp.__name__, path) from None
 

@@ -44,7 +44,7 @@ from confarg._types import (
 )
 from confarg.dictexpr import contains_expression, escape_expressions
 from confarg.exceptions import _spell_field_path
-from confarg.typedload._coerce import _LEAF_COERCIONS, _is_struct_variant, _type_kind, _TypeKind
+from confarg.typedload._coerce import _is_struct_variant, _registered_leaf_of, _type_kind, _TypeKind
 from confarg.typedload._construct import _UNSET as _UNSET_POSITION
 from confarg.typedload._construct import _is_typed_call, reads_as_new_value, unset_position
 
@@ -454,7 +454,7 @@ def _element_form(value: Any, walk: _Walk) -> Any:
         return value
     if isinstance(value, str):
         return escape_expressions(value) if walk.for_resolution else value
-    if value is None or isinstance(value, (bool, int, float, *_LEAF_COERCIONS)):
+    if value is None or isinstance(value, (bool, int, float)) or _registered_leaf_of(value) is not None:
         return value
     if isinstance(value, tuple | list):
         items = [_element_form(v, walk) for v in value]

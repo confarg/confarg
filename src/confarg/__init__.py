@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 from confarg import exceptions
 from confarg._api import build, dump, dump_file, from_dict, load, merge, resolve
 from confarg._defaults import MergeOptions
+from confarg._files import JSON_NATIVE_TYPES, TOML_NATIVE_TYPES, YAML_NATIVE_TYPES
 from confarg._merge import ListOp
 from confarg._sources import register_scheme as _register_scheme
 from confarg._sources import unregister_scheme as _unregister_scheme
@@ -144,6 +145,9 @@ __all__ = [  # noqa: RUF022
     # Dump
     "dump",
     "dump_file",
+    "JSON_NATIVE_TYPES",
+    "TOML_NATIVE_TYPES",
+    "YAML_NATIVE_TYPES",
     # Types
     "ListOp",
     "MergeOptions",

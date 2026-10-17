@@ -51,6 +51,35 @@ Config(price=Decimal('1.10'), id=UUID('12345678-1234-5678-1234-567812345678'))
 
 A number in a configuration file is read as it is written, so `price: 1.1` is `Decimal('1.1')`, not the binary expansion of the float the file's parser produced.
 
+## Dates, times and durations
+
+`date`, `datetime`, `time`, `timedelta` and `timezone` are leaf types too, each written as ISO 8601 text.
+
+<!-- snippet: dates.py#Config -->
+```python
+@dataclass
+class Config:
+    day: date
+    start: datetime
+    every: timedelta
+```
+
+```console
+$ uv run dates.py --day 2021-02-03 --start 2021-02-03T10:00+02:00 --every PT1H30M
+Config(day=datetime.date(2021, 2, 3), start=datetime.datetime(2021, 2, 3, 10, 0, tzinfo=datetime.timezone(datetime.timedelta(seconds=7200))), every=datetime.timedelta(seconds=5400))
+{'day': '2021-02-03', 'start': '2021-02-03T10:00:00+02:00', 'every': 'PT1H30M'}
+```
+
+A date, a datetime and a time read whatever their `fromisoformat` reads, and an offset is kept as written.
+A duration is an ISO 8601 duration in days, hours, minutes and seconds (`PT1H30M`, `P1DT12H`, `-PT30S`, weeks too); a bare number is refused, since it carries no unit.
+A timezone is a UTC offset, `+02:00` or `Z`.
+
+YAML and TOML files hold dates natively, and a date there is read as its text would be: `start: 2021-02-03` is that day's midnight for a `datetime`, and a `datetime` is refused for a `date`, as on the command line.
+Quote a time of day in YAML: YAML reads an unquoted `10:20` as the number 620, which the error points out.
+
+`dump()` writes each as its ISO text, as above, so its output suits any file format.
+`dump_file()` writes dates and datetimes as the native dates of a YAML or TOML file, and `confarg.dump(config, native_types=confarg.YAML_NATIVE_TYPES)` does the same for a YAML writer of your own.
+
 ## Types
 
 Types can be specified as leaf types.

@@ -304,6 +304,11 @@ class TypeCoercionError(ConfargError):
         return cls(_append_none_remedy(msg) if none_sentinel else msg)
 
     @classmethod
+    def cannot_coerce_because(cls, src: str, value: Any, tp: str, path: str, hint: str) -> TypeCoercionError:
+        """Return :meth:`cannot_coerce`'s error followed by *hint*, what the type reads, after a colon."""
+        return cls(f"{cls.cannot_coerce(src, value, tp, path)}: {hint}")
+
+    @classmethod
     def wrong_shape(cls, src: str, value: Any, what: str, accepted: str, path: str) -> TypeCoercionError:
         """Return the error for raw data no constructor of *what* accepts on shape.
 
