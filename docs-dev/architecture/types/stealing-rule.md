@@ -7,7 +7,7 @@ When a value meets a union of leaf types, the **highest-ranked** variant that ac
 (maintainer-confirmed, and what `examples/7_stealing_rule/README.md` teaches):
 
 ```
-custom (registered) leaf type > Enum > every other leaf kind > float > int > bool > None > str
+custom (registered) leaf type > Enum > every other leaf kind > Callable > float > int > bool > None > str
 ```
 
 `_coerce._steal_rank` is the one place that order is written down and `_steal_order` sorts by
@@ -16,6 +16,8 @@ it, stably — so declaration order still breaks ties *within* a rank, and nowhe
 walk of a union (`_construct._ranked_scalar_variants`, walked by `_first_scalar_variant_taking`) and the members of a `Literal`
 (`_coerce._coerce_literal_value` and `_match_literal_str_token`, ranking each member by the type of its value). The union walk is also what an expression reads a union's leaf through (`_construct.read_union_leaf`), so `${v}` reads the variant construction builds ([values and references](../expressions/values-and-references.md#a-typed-leaf-reads-as-its-object)).
 
+A Callable ranks on its own below them, since it takes anything callable, classes included
+([a Callable beside another variant reads its spec](../design-decisions/a-callable-beside-another-variant-reads-its-spec.md#a-string-meets-the-callable-in-rank-just-below-type-references-and-literal)).
 The kinds the rule does not name — type references (`type`, `type[X]`), `Literal`, a `bytes`
 Literal member — share the one rank below `Enum`, ahead of the numbers
 ([design decisions](../design-decisions/stealing-rule-for-text-in-unions.md#stealing-rule-for-text-in-unions)).

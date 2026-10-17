@@ -227,7 +227,8 @@ A field default is the layer below every source only where the class declares it
   takes back. `dump()` writes the bare value and warns with the field path
   ([design decisions](design-decisions/a-stolen-leaf-dumps-with-its-cast.md#a-stolen-leaf-dumps-with-its-cast)).
 
-- A dotted string a union tries as a type reference imports the module its path names, from any channel: `"json.loads"` in a `type | str` field imports `json` before the type variant refuses a function. A bare word imports nothing ([dotted imports](types/dotted-imports.md#a-bare-word-is-never-imported)). A file that means the text writes `{__cast__: str, __value__: …}`.
+- In `Callable | str`, a bare builtin name (`help`, `format`, `print`) is the builtin and a typo'd path is the text; a file that means the text writes `{__cast__: str, __value__: …}` ([a Callable beside another variant reads its spec](design-decisions/a-callable-beside-another-variant-reads-its-spec.md#what-it-costs)).
+- A dotted string a union tries as a type reference or a Callable imports the module its path names, from any channel: `"json.loads"` in a `type | str` field imports `json` before the type variant refuses a function. A bare word imports nothing ([dotted imports](types/dotted-imports.md#a-bare-word-is-never-imported)). A file that means the text writes `{__cast__: str, __value__: …}`.
 
 ## Remote sources
 

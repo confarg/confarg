@@ -24,6 +24,7 @@ from confarg._types import (
     _dict_kv,
     _elem_type,
     _fixed_seq_types,
+    _is_callable,
     _is_list,
     _is_literal,
     _is_struct,
@@ -327,9 +328,13 @@ def _serialize_union(
     expected = _any_reading(serialized, union_tag) if holds_anything else instance
 
     def dumps_as(back: Any) -> Any:
-        return _serialize_any(back, path, union_tag, tag_policy, checked=False)
+        if holds_anything:
+            return _serialize_any(back, path, union_tag, tag_policy, checked=False)
+        return _serialize(variant_tp, back, path, union_tag, tag_policy)
 
-    by_state = dumps_as if holds_anything else None
+    # A callable read back from its spec, an instance, a partial or a bound method, compares
+    # equal to nothing but itself: it is the same value when it dumps back as the same spec.
+    by_state = dumps_as if holds_anything or _is_callable(variant_tp) else None
     if _reads_back(tp, expected, serialized, union_tag, dumps_as=by_state):
         return serialized
     cast = _cast_dict(type(serialized) if holds_anything else variant_tp, serialized)

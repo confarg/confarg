@@ -12,9 +12,11 @@ import inspect
 import json
 import math
 import pathlib
+import sys
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -27,7 +29,7 @@ from confarg._callable import (
     _serialize_callable,
     _SpecContext,
 )
-from confarg._types import _callable_param_types, _is_callable
+from confarg._types import _callable_param_types, _is_callable, _StrToken
 from confarg.exceptions import ConfargError, SymbolImportError, TypeCoercionError
 from confarg.typedload._construct import construct
 
@@ -2115,3 +2117,213 @@ class TestDumpOfPositionalArguments:
         """With no signature to read, a positional argument has no name."""
         with pytest.raises(ConfargError, match=r"no configuration spells it"):
             confarg.dump(WithBareCallable(fn=functools.partial(dict, [(1, 2)])))
+
+
+# ---------------------------------------------------------------------------
+# A Callable beside another union variant (BUG-234)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Level:
+    """A struct variant beside a Callable."""
+
+    level: int = 0
+
+
+@dataclass
+class _OwnsBind:
+    """A struct variant owning a field spelled like the ``bind`` opener."""
+
+    bind: str = ""
+    other: int = 0
+
+
+def _make_double() -> Callable[[int], int]:
+    return _double
+
+
+def _make_level(level: int) -> _Level:
+    return _Level(level)
+
+
+def _make_five() -> int:
+    return 5
+
+
+_DOUBLE = f"{__name__}._double"
+_MULTIPLIER = f"{__name__}._Multiplier"
+_IntFn = Callable[[int], int]
+
+
+class TestCallableBesideAnotherVariant:
+    """A union holding a Callable builds it from every spelling of a spec (BUG-234).
+
+    A string is offered to the variants in stealing rank, Callable just below type references
+    and ``Literal``; a dict holding an opener is the Callable's spec unless a struct variant
+    owns the opener's key; a ``call:`` runs once and the union takes its value.
+    """
+
+    @pytest.mark.parametrize("tp", [_IntFn | str, str | _IntFn, _IntFn | _Level, _IntFn | int])
+    @pytest.mark.parametrize("wrap", [str, _StrToken], ids=["file", "token"])
+    def test_a_dotted_path_is_the_callable(self, tp: Any, wrap: Any) -> None:
+        """The path to a function builds it, from a file's string and a token alike."""
+        assert construct(tp, wrap(_DOUBLE)) is _double
+
+    @pytest.mark.parametrize("wrap", [str, _StrToken], ids=["file", "token"])
+    def test_text_naming_nothing_stays_a_str(self, wrap: Any) -> None:
+        """A string that imports nothing is the str variant's."""
+        assert construct(_IntFn | str, wrap("hello")) == "hello"
+        assert construct(_IntFn | str, wrap("pkg.dubble")) == "pkg.dubble"
+
+    def test_a_number_is_the_int_variant(self) -> None:
+        """A number imports nothing, whether native or a token."""
+        assert construct(_IntFn | int, 3) == 3
+        assert construct(_IntFn | int, _StrToken("3")) == 3
+
+    @pytest.mark.parametrize("tp", [Callable[..., object] | type, type | Callable[..., object]])
+    def test_a_class_is_the_type_variant(self, tp: Any) -> None:
+        """A type reference ranks above a Callable: a class path is the class, not a factory of it."""
+        assert construct(tp, _MULTIPLIER) is _Multiplier
+        assert construct(tp, _DOUBLE) is _double
+
+    def test_a_literal_member_ranks_above_a_callable(self) -> None:
+        """A Literal's member is the narrower recognition: `print` is the text it lists."""
+        assert construct(Callable[..., object] | Literal["print", "log"], "print") == "print"
+
+    def test_a_bind_spec_is_the_callable(self) -> None:
+        """`{bind: f, args: …}` builds the partial in `Callable | Struct`, from a file and from argv."""
+        built = construct(_IntFn | _Level, {"bind": f"{__name__}._add", "args": {"y": 3}})
+        assert built(4) == 7
+        built = construct(_IntFn | _Level, {"bind": f"{__name__}._add", "args": {"y": _StrToken("3")}})
+        assert built(4) == 7
+
+    def test_a_class_spec_naming_no_struct_variant_is_the_callable(self) -> None:
+        """`{class: C}` builds the callable instance when no struct variant holds C, as an Any variant would."""
+        built = construct(_IntFn | _Level, {"class": _MULTIPLIER, "factor": 3})
+        assert isinstance(built, _Multiplier)
+        assert built(2) == 6
+
+    def test_a_class_spec_naming_a_struct_variant_is_the_struct(self) -> None:
+        """The union tag still selects a struct variant it names."""
+        assert construct(_IntFn | _Level, {"class": f"{__name__}._Level", "level": 2}) == _Level(2)
+
+    def test_a_classfn_spec_is_the_callable(self) -> None:
+        """`{classfn: C.m, …}` builds the owner and yields its bound method."""
+        built = construct(_IntFn | _Level, {"classfn": f"{_MULTIPLIER}.__call__", "factor": 2})
+        assert built(5) == 10
+
+    def test_a_struct_owning_the_opener_key_keeps_it_as_data(self) -> None:
+        """A struct variant with a member named `bind` reads `{bind: …}` as its field, as the union tag yields."""
+        assert construct(_IntFn | _OwnsBind, {"bind": _DOUBLE}) == _OwnsBind(bind=_DOUBLE)
+
+    @pytest.mark.parametrize("tp", [_IntFn | dict[str, str], Any | dict[str, str]])
+    def test_an_opener_is_read_before_a_dict_variant(self, tp: Any) -> None:
+        """A dict holding an opener is the spec, not a dict variant's data; a plain dict stays data."""
+        assert construct(tp, {"bind": _DOUBLE}) is _double
+        assert construct(tp, {"a": "b"}) == {"a": "b"}
+
+    def test_a_call_returning_a_callable_is_the_callable(self) -> None:
+        """`{call: f}` runs once, and a callable value is taken by the Callable variant."""
+        assert construct(_IntFn | _Level, {"call": f"{__name__}._make_double"}) is _double
+
+    def test_a_call_returning_a_struct_is_the_struct(self) -> None:
+        """A value the struct variant accepts is taken as it is, as a typed call takes it."""
+        built = construct(_IntFn | _Level, {"call": f"{__name__}._make_level", "args": {"level": 3}})
+        assert built == _Level(3)
+
+    def test_a_call_returning_what_no_variant_accepts_is_refused(self) -> None:
+        """An int is no Callable and no _Level: the union refuses it, naming what the call returned."""
+        with pytest.raises(TypeCoercionError):
+            construct(_IntFn | _Level, {"call": f"{__name__}._make_five"})
+        assert construct(_IntFn | int, {"call": f"{__name__}._make_five"}) == 5
+
+    def test_a_broken_module_stops_the_union(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
+    ) -> None:
+        """A module that fails while importing is raised, not read as text by the str variant."""
+        pkg = tmp_path / "bug234_broken_pkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        (pkg / "handlers.py").write_text("import bug234_missing_dependency\n")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        request.addfinalizer(lambda: _purge_modules("bug234_broken_pkg"))
+        with pytest.raises(SymbolImportError, match="bug234_missing_dependency"):
+            construct(_IntFn | str, "bug234_broken_pkg.handlers.run")
+
+
+def _purge_modules(name: str) -> None:
+    """Drop the module *name* and its submodules from ``sys.modules``."""
+    for key in [k for k in sys.modules if k == name or k.startswith(name + ".")]:
+        sys.modules.pop(key, None)
+
+
+@dataclass
+class _CallableOrLevel:
+    f: Callable[[int], int] | _Level = field(default_factory=_Level)
+
+
+@dataclass
+class _CallableOrStr:
+    f: Callable[[int], int] | str = ""
+
+
+class TestDumpOfACallableBesideAnotherVariant:
+    """A Callable variant dumps the spec that rebuilds it, and reads back without a warning (BUG-234)."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [_double, _Multiplier(3), functools.partial(_add, y=3)],
+        ids=["function", "instance", "partial"],
+    )
+    def test_the_dump_reads_back_through_a_file(self, tmp_path: pathlib.Path, value: Any) -> None:
+        """A function, a callable instance and a partial each load back as an equal callable."""
+        path = tmp_path / "out.json"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            confarg.dump_file(_CallableOrLevel(f=value), path)
+        back = confarg.load(_CallableOrLevel, argv=[], env={}, files=[path]).f
+        assert not isinstance(back, _Level)
+        assert back(4) == value(4)
+
+    def test_a_str_naming_a_callable_dumps_with_its_cast(self) -> None:
+        """The text `pkg._double` in `Callable | str` would read back as the function, so it is cast."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dumped = confarg.dump(_CallableOrStr(f=_DOUBLE))
+        assert dumped == {"f": {"__cast__": "str", "__value__": _DOUBLE}}
+        assert confarg.from_dict(_CallableOrStr, dumped).f == _DOUBLE
+
+
+@dataclass
+class _CallableOrOwnsBind:
+    f: Callable[[int], int] | _OwnsBind = field(default_factory=_OwnsBind)
+
+
+class TestCallableBesideAnotherVariantAcrossLayers:
+    """The merge reads an opener in such a union as construction does (BUG-234)."""
+
+    def test_an_opener_over_a_spec_replaces_it(self, tmp_path: pathlib.Path) -> None:
+        """A later `{bind: g}` names a new target: the lower layer's arguments are not g's."""
+        lower, upper = tmp_path / "lower.json", tmp_path / "upper.json"
+        lower.write_text(json.dumps({"f": {"bind": f"{__name__}._add", "args": {"y": 1}}}))
+        upper.write_text(json.dumps({"f": {"bind": _DOUBLE}}))
+        assert confarg.load(_CallableOrLevel, argv=[], env={}, files=[lower, upper]).f is _double
+
+    def test_arguments_over_a_spec_refine_it(self, tmp_path: pathlib.Path) -> None:
+        """`--f.args.y 5` over a file's bind keeps the file's target."""
+        lower = tmp_path / "lower.json"
+        lower.write_text(json.dumps({"f": {"bind": f"{__name__}._add", "args": {"y": 1}}}))
+        cfg = confarg.load(_CallableOrLevel, argv=["--config", str(lower), "--f.args.y", "5"], env={})
+        assert not isinstance(cfg.f, _Level)
+        assert cfg.f(1) == 6
+
+    def test_a_struct_owning_the_key_refines_as_data(self, tmp_path: pathlib.Path) -> None:
+        """`{bind: y}` over `{bind: x, other: 1}` is the struct's field, so `other` stays."""
+        lower, upper = tmp_path / "lower.json", tmp_path / "upper.json"
+        lower.write_text(json.dumps({"f": {"bind": "x", "other": 1}}))
+        upper.write_text(json.dumps({"f": {"bind": "y"}}))
+        assert confarg.load(_CallableOrOwnsBind, argv=[], env={}, files=[lower, upper]).f == _OwnsBind("y", 1)

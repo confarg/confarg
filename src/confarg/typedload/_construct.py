@@ -79,6 +79,7 @@ from confarg.exceptions import (
     FieldPath,
     MissingFieldError,
     SymbolImportError,
+    SymbolNotFoundError,
     TypeCoercionError,
     _spell_field_path,
 )
@@ -540,19 +541,61 @@ def _takes_typed_call(tp: Any, key: str = _defaults.CALL_KEY) -> bool:
 
     The type half of :func:`_is_typed_call`, which the CLI walk asks of a path, where there
     is no spec to read yet: no member of the annotation may hold ``call`` as data, nor *key*,
-    which a member reached by that name keeps.
+    which a member reached by that name keeps. A lone Callable has a ``call:`` of its own, and
+    a dict type holds the key as data; in a union beside a member that reads specs, a Callable
+    or ``Any``, neither does, and the call's value is the union's to take.
 
     Dev Notes:
         docs-dev/architecture/callables.md#call-in-a-typed-field
+        docs-dev/architecture/callables.md#a-callable-beside-another-variant
     """
     tp = _resolve_type(tp)
     members = [_resolve_type(arg) for arg in _union_args_no_none(tp)] if _is_union(tp) else [tp]
+    reads_specs = len(members) > 1 and any(_reads_specs(m) for m in members)
     for member in members:
-        if _type_kind(member) in (_TypeKind.DICT, _TypeKind.CALLABLE):
+        if not reads_specs and _type_kind(member) in (_TypeKind.DICT, _TypeKind.CALLABLE):
             return False
         if _is_struct(member) and not {_defaults.CALL_KEY, key}.isdisjoint(_struct_member_names(member)):
             return False
     return True
+
+
+def _reads_specs(tp: Any) -> bool:
+    """True if a value of type *tp* is built from a callable spec it holds: a Callable or an ``Any``."""
+    return _type_kind(_resolve_type(tp)) in (_TypeKind.CALLABLE, _TypeKind.ANY)
+
+
+def spec_reading_variant(tp: Any, data: Any, union_tag: str) -> Any:
+    """Return the variant of the union *tp* that reads the dict *data* as a callable spec, None when none does.
+
+    The one answer for construction and the merge. A union reads a dict holding an opener as
+    its Callable variant's spec, or its ``Any`` variant's when it has no Callable, before any
+    struct or dict variant tries it as data, unless a struct variant owns the key of an opener
+    *data* holds, as a member owns the union tag's spelling. The union tag is not an opener
+    here: it selects a struct variant first, and only a class no struct variant holds is the
+    spec (:func:`_construct_union_by_tag`). A ``call:`` is no variant's: the union takes its
+    value (:func:`_takes_typed_call`).
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#a-callable-beside-another-variant
+    """
+    if not isinstance(data, dict):
+        return None
+    present = {k for k in _OPENERS if k in data} - {union_tag, _defaults.CALL_KEY}
+    if not present:
+        return None
+    members = _union_args_no_none(tp)
+    if any(
+        _is_struct_variant(_resolve_type(m)) and present & set(_struct_member_names(_resolve_type(m))) for m in members
+    ):
+        return None
+    return _first_spec_reader(members)
+
+
+def _first_spec_reader(members: Sequence[Any]) -> Any:
+    """Return the Callable among *members*, else the ``Any``, else None: the variant that builds what a spec names."""
+    callables = [m for m in members if _type_kind(_resolve_type(m)) is _TypeKind.CALLABLE]
+    return next(iter(callables), None) or next((m for m in members if _holds_anything(m)), None)
 
 
 def reads_as_new_value(data: MergeDict, tp: Any, union_tag: str) -> bool:  # noqa: PLR0911  # one return per kind
@@ -582,10 +625,8 @@ def reads_as_new_value(data: MergeDict, tp: Any, union_tag: str) -> bool:  # noq
                 return reads_as_new_value(data, members[0], union_tag)
             if union_tag in data and not _union_tag_shadowed(tp, union_tag):
                 return True
-            return any(
-                _type_kind(m) in (_TypeKind.CALLABLE, _TypeKind.ANY) and reads_as_new_value(data, m, union_tag)
-                for m in members
-            )
+            reader = spec_reading_variant(tp, data, union_tag)
+            return reader is not None and reads_as_new_value(data, reader, union_tag)
         case _TypeKind.STRUCT | _TypeKind.TAGGABLE_LEAF:
             return union_tag in data and not _union_tag_shadowed(tp, union_tag)
         case _TypeKind.LEAF:
@@ -1095,8 +1136,8 @@ def _construct_union_by_tag(non_none: list[Any], data: MergeDict, path: FieldPat
 
     The candidates are every ``_is_struct`` variant, registered leaves included: a tag names a
     class to build from fields, which is the one thing a leaf stays open to. A class no
-    candidate holds is an ``Any`` variant's spec when the union has one; a tag that does not
-    import is refused either way.
+    candidate holds is the spec of the variant that reads specs, a Callable or else an ``Any``,
+    when the union has one; a tag that does not import is refused either way.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in
@@ -1113,10 +1154,10 @@ def _construct_union_by_tag(non_none: list[Any], data: MergeDict, path: FieldPat
     if matching:
         cleaned = {k: v2 for k, v2 in data.items() if k != union_tag}
         return _construct_named_struct(cls, cleaned, path, union_tag, _Naming(tag, "tag"))
-    any_var = next((v for v in non_none if _holds_anything(v)), None)
-    if any_var is not None:
-        # A class no variant holds is the Any variant's spec, which builds the class it names.
-        return construct(any_var, data, path=path, union_tag=union_tag)
+    reader = _first_spec_reader(non_none)
+    if reader is not None:
+        # A class no variant holds is the spec of the variant that reads one, which builds the class it names.
+        return construct(reader, data, path=path, union_tag=union_tag)
     valid_variants = sorted(dotted_name(_resolve_type(v)) for v in non_none if _is_struct(_resolve_type(v)))
     msg = (
         f"Class {tag!r} at '{_spell_field_path(path)}' is not compatible with any union variant."
@@ -1230,12 +1271,24 @@ def _first_scalar_variant_taking(
                 return var, None
             continue
         try:
-            # Not _coerce_leaf: it cannot build type refs (`type`, `type[X]`).
-            # See docs-dev/architecture/types/stealing-rule.md#stealing-rule.
-            return var, _construct_scalar(var, data, path, union_tag)
-        except (TypeCoercionError, ValueError, TypeError):
+            return var, _construct_scalar_variant(var, data, path, union_tag)
+        except (TypeCoercionError, SymbolNotFoundError, ValueError, TypeError):
             continue
     return None
+
+
+def _construct_scalar_variant(var: Any, data: Any, path: FieldPath, union_tag: str) -> Any:
+    """Build *data* as the scalar variant *var*: a Callable from the spec it names, any other leaf as one.
+
+    Raises:
+        SymbolNotFoundError: If a Callable's path names nothing, which the walk reads as a refusal.
+        SymbolImportError: If a module on a path exists but fails while it is imported.
+    """
+    if _type_kind(_resolve_type(var)) is _TypeKind.CALLABLE:
+        return _resolve_callable_spec(data, var, path=path, union_tag=union_tag, construct_fn=construct)
+    # Not _coerce_leaf: it cannot build type refs (`type`, `type[X]`).
+    # See docs-dev/architecture/types/stealing-rule.md#stealing-rule.
+    return _construct_scalar(var, data, path, union_tag)
 
 
 def _coerce_scalar_variants(
@@ -1370,6 +1423,10 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
         # The tag route was a real alternative; the member's value forces the
         # structural route instead, so say so once, on use.
         _warn_shadowed_tag_key(path, union_tag, "variant")
+
+    reader = spec_reading_variant(tp, data, union_tag)
+    if reader is not None:
+        return construct(reader, data, path=path, union_tag=union_tag)
 
     dc_vars = [v for v in non_none if _is_struct_variant(_resolve_type(v))]
     if isinstance(data, dict) and dc_vars:

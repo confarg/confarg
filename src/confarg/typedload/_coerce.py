@@ -158,11 +158,16 @@ _RANKED_LEAF_TYPES: tuple[type, ...] = (float, int, bool, types.NoneType, str)
 
 #: Rank of each ranked leaf type. Dict lookup on a type object is identity-based: ``bool`` is
 #: a subclass of ``int`` and ranks on its own.
-_LEAF_TYPE_RANKS: dict[type, int] = {tp: 3 + i for i, tp in enumerate(_RANKED_LEAF_TYPES)}
+_LEAF_TYPE_RANKS: dict[type, int] = {tp: 4 + i for i, tp in enumerate(_RANKED_LEAF_TYPES)}
+
+#: A Callable's rank: below the kinds that recognize a narrower set, a class (type references)
+#: or listed members (``Literal``), since a Callable takes anything callable, classes included.
+_CALLABLE_RANK = 3
 
 
 #: The lowest rank an object kind (:func:`_reads_as_object`) holds: a registered leaf ranks 0, an
-#: Enum 1, a ``Literal`` over an Enum 2. Every rank below it is a kind whose value a file holds.
+#: Enum 1, a ``Literal`` over an Enum 2. Every rank after it is a kind an expression reads as
+#: written: a Callable, which the reading never builds, and the kinds whose value a file holds.
 _LAST_OBJECT_RANK = 2
 
 
@@ -170,8 +175,9 @@ def _steal_rank(tp: Any) -> int:
     """Return the stealing priority of a leaf type — lower steals first.
 
     A registered leaf ranks first, then ``Enum``, then every kind the rule does not name
-    (type references, ``Literal``, a ``bytes`` Literal member), then float, int, bool, None
-    and str. Types sharing a rank keep their declaration order, ``_steal_order`` being stable.
+    (type references, ``Literal``, a ``bytes`` Literal member), then a Callable, then float,
+    int, bool, None and str. Types sharing a rank keep their declaration order,
+    ``_steal_order`` being stable.
 
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#stealing-rule
@@ -180,6 +186,8 @@ def _steal_rank(tp: Any) -> int:
         return 0
     if _is_enum(tp):
         return 1
+    if _is_callable(tp):
+        return _CALLABLE_RANK
     return _LEAF_TYPE_RANKS.get(tp, 2)
 
 

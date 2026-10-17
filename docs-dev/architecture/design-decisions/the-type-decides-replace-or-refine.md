@@ -7,7 +7,7 @@ Between two layers, and between two parts of one source, a dict written over wha
 | a Callable, an `Any` | an opener (`bind`, `class`, `call`, `classfn`) naming a target |
 | a struct, a union of several members, a leaf | the union tag, unless a member owns its spelling ([real field wins](../cli-parsing/casts-and-reserved-words.md#real-field-wins)) |
 | any field that takes a typed call | `call` ([call in a typed field](../callables.md#call-in-a-typed-field)) |
-| a union of several members | also an opener its Callable or `Any` member reads |
+| a union of several members | also an opener its Callable or `Any` member reads, unless a struct member owns the opener's key ([a Callable beside another variant](../callables.md#a-callable-beside-another-variant)) |
 | a `dict`, a sequence, a struct owning the key | nothing: the key is data, and the dict refines |
 
 So `labels: {class: confidential}` adds an entry to a `dict[str, str]` a lower file filled, `--job.kind stream` refines a `Job` whose own field is spelled like a custom tag, and `{bind: g}` over `{bind: f, args: {a: 1}}` is `g` alone. A lower layer's union tag, call or opener is replaced as before ([a class tag replaces](class-tag-replaces.md), [a call replaces what lies below](a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)), and the rule is the same at every depth, the root included, a list element reached by an index patch, an include and the keys beside it, and the root `json` fold.
