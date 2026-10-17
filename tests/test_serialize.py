@@ -14,6 +14,7 @@ import sys
 import warnings
 from dataclasses import InitVar, field
 from dataclasses import dataclass as _dc
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Final, Literal, Optional, Union
 from unittest import mock
@@ -62,6 +63,8 @@ class _Paint(enum.Enum):
 _DL_WithEnum = make_target("color", Color, default=Color.RED)
 _DL_WithIntEnum = make_target("color", IntColor, default=IntColor.RED)
 _DL_WithPath = make_target("location", Path, default=Path())
+_DL_WithDecimal = make_target("price", Decimal, default=Decimal(0))
+_DL_WithUuid = make_target("id", UUID, default=UUID(int=0))
 _DL_WithLiteral = make_target("mode", Literal["fast", "slow"], default="fast")
 _DL_WithNone = make_target("nothing", type(None), default=None)
 
@@ -145,10 +148,12 @@ class TestDumpLeafTypes:
             (_DL_WithEnum(color=Color.GREEN), "color", "green"),
             (_DL_WithIntEnum(color=IntColor.BLUE), "color", 3),
             (_DL_WithPath(location=Path("/tmp/foo")), "location", "/tmp/foo"),
+            (_DL_WithDecimal(price=Decimal("1.10")), "price", "1.10"),
+            (_DL_WithUuid(id=UUID(int=1)), "id", "00000000-0000-0000-0000-000000000001"),
             (_DL_WithLiteral(mode="slow"), "mode", "slow"),
             (_DL_WithNone(), "nothing", None),
         ],
-        ids=["int", "float", "bool", "str", "enum", "int-enum", "path", "literal", "none"],
+        ids=["int", "float", "bool", "str", "enum", "int-enum", "path", "decimal", "uuid", "literal", "none"],
     )
     def test_leaf_passthrough(self, obj, field, expected) -> None:
         """Test that leaf fields are serialized to their native Python values."""
@@ -166,6 +171,14 @@ class TestDumpLeafTypes:
         """Test that special float values (inf, nan) are preserved during serialization."""
         result = confarg.dump(Flat(name="x", count=0, rate=rate, verbose=False))
         assert check(result["rate"])
+
+    @pytest.mark.parametrize("suffix", [".toml", ".yaml", ".json"])
+    @pytest.mark.parametrize("price", ["1.1", "1.10", "1E+2", "-0", "NaN", "Infinity"])
+    def test_a_decimal_round_trips_through_a_file(self, tmp_path: Path, suffix: str, price: str) -> None:
+        """A decimal is written as its text, which reads back as the same decimal, digits and exponent kept."""
+        path = tmp_path / f"out{suffix}"
+        confarg.dump_file(_DL_WithDecimal(price=Decimal(price)), path)
+        assert str(confarg.load(_DL_WithDecimal, argv=[], env={}, files=[path]).price) == price
 
 
 # ---------------------------------------------------------------------------
@@ -1216,14 +1229,12 @@ class TestDumpRegisteredLeafTypes:
 
     def test_dump_instance(self) -> None:
         """dump() emits the scalar form, not the type's attributes."""
-        confarg.register_leaf_type(UUID, UUID)
         WithUuid = make_target("id", UUID, default=UUID(int=0))
         assert confarg.dump(WithUuid(id=UUID(_UUID_TEXT))) == {"id": _UUID_TEXT}
 
     @pytest.mark.parametrize("suffix", [".toml", ".yaml", ".json"])
     def test_dump_file_from_raw_dict(self, tmp_path: Path, suffix: str) -> None:
         """A registered leaf a dict holds is written as a scalar, in every format."""
-        confarg.register_leaf_type(UUID, UUID)
         WithUuid = make_target("id", UUID, default=UUID(int=0))
         raw = {"id": UUID(_UUID_TEXT)}
 
@@ -1235,7 +1246,6 @@ class TestDumpRegisteredLeafTypes:
 
     def test_dump_file_from_instance(self, tmp_path: Path) -> None:
         """The typed path round-trips through a file as well."""
-        confarg.register_leaf_type(UUID, UUID)
         WithUuid = make_target("id", UUID, default=UUID(int=0))
         path = tmp_path / "out.yaml"
         confarg.dump_file(WithUuid(id=UUID(_UUID_TEXT)), path)
@@ -1243,7 +1253,6 @@ class TestDumpRegisteredLeafTypes:
 
     def test_inside_containers(self, tmp_path: Path) -> None:
         """Registered leaves are converted wherever they sit, not only at the top level."""
-        confarg.register_leaf_type(UUID, UUID)
         WithUuids = make_target("ids", list[UUID], default_factory=list)
         raw = confarg.merge(WithUuids, argv=["--ids", _UUID_TEXT], env={})
 
@@ -1253,14 +1262,12 @@ class TestDumpRegisteredLeafTypes:
 
     def test_as_dict_value_and_key(self) -> None:
         """A registered leaf serializes as a dict value and as a dict key."""
-        confarg.register_leaf_type(UUID, UUID)
         WithMap = make_target("ids", dict[UUID, UUID], default_factory=dict)
         dumped = confarg.dump(WithMap(ids={UUID(_UUID_TEXT): UUID(int=0)}))
         assert dumped == {"ids": {_UUID_TEXT: str(UUID(int=0))}}
 
     def test_optional(self) -> None:
         """A registered leaf in a union is serialized through its variant."""
-        confarg.register_leaf_type(UUID, UUID)
         WithOptional = make_target("id", Union[UUID, None], default=None)
         assert confarg.dump(WithOptional(id=UUID(_UUID_TEXT))) == {"id": _UUID_TEXT}
         assert confarg.dump(WithOptional(id=None)) == {"id": None}
@@ -1299,13 +1306,11 @@ class TestDumpRegisteredLeafTypes:
         ``version``, so ``_needs_tag`` used to see two candidates for a
         ``Release | UUID`` field and tag a union with only one struct in it.
         """
-        confarg.register_leaf_type(UUID, UUID)
         WithRelease = make_target("v", Union[Release, UUID], default_factory=Release)
         assert confarg.dump(WithRelease(v=Release(version=2))) == {"v": {"version": 2}}
 
     def test_struct_union_round_trips_untagged(self) -> None:
         """Both variants survive dump() -> build() with no tag in between."""
-        confarg.register_leaf_type(UUID, UUID)
         WithRelease = make_target("v", Union[Release, UUID], default_factory=Release)
         for value in (Release(version=2), UUID(_UUID_TEXT)):
             instance = WithRelease(v=value)
@@ -1313,7 +1318,6 @@ class TestDumpRegisteredLeafTypes:
 
     def test_struct_union_still_tagged_when_policy_is_always(self) -> None:
         """tag_policy="always" is unaffected: the one struct variant is still tagged."""
-        confarg.register_leaf_type(UUID, UUID)
         WithRelease = make_target("v", Union[Release, UUID], default_factory=Release)
         dumped = confarg.dump(WithRelease(v=Release(version=2)), tag_policy="always")
         assert dumped == {"v": {"version": 2, "class": "tests.conftest.Release"}}

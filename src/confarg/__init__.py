@@ -50,14 +50,17 @@ def register_leaf_type(
     ``serialize`` is the inverse: it is called with an instance of ``tp`` and must
     return a value a config file can hold (a string, number or bool), which
     ``coerce`` accepts back.  It defaults to ``str``, which is right for types
-    whose ``str()`` is their wire form (``UUID``, ``Decimal``) and wrong
-    for types whose ``__str__`` is a ``repr``-style debugging aid — pass an
-    explicit callable for those, or dumps will not load back.
+    whose ``str()`` is their wire form and wrong for types whose ``__str__`` is a
+    ``repr``-style debugging aid — pass an explicit callable for those, or dumps
+    will not load back.
+
+    ``Path``, ``Decimal`` and ``UUID`` are registered already; registering one of
+    them again replaces how confarg reads and writes it.
 
     Example::
 
-        from uuid import UUID
-        confarg.register_leaf_type(UUID, UUID)            # str() is the wire form
+        from ipaddress import IPv4Address
+        confarg.register_leaf_type(IPv4Address, IPv4Address)  # str() is the wire form
 
         confarg.register_leaf_type(Int, coerce_int, serialize=lambda i: i.value)
     """

@@ -32,6 +32,25 @@ $ uv run path_value.py --value /foo/bar.txt
 Config(value=Path('/foo/bar.txt'))
 ```
 
+## `Decimal` and `UUID`
+
+`Decimal` and `UUID` are leaf types too, each constructed from its text.
+
+<!-- snippet: decimal_value.py#Config -->
+```python
+@dataclass
+class Config:
+    price: Decimal
+    id: UUID
+```
+
+```console
+$ uv run decimal_value.py --price 1.10 --id 12345678-1234-5678-1234-567812345678
+Config(price=Decimal('1.10'), id=UUID('12345678-1234-5678-1234-567812345678'))
+```
+
+A number in a configuration file is read as it is written, so `price: 1.1` is `Decimal('1.1')`, not the binary expansion of the float the file's parser produced.
+
 ## Types
 
 Types can be specified as leaf types.
@@ -129,5 +148,5 @@ Registration then takes the coercion and the serializer together:
 confarg.register_leaf_type(Int, coerce_int, serialize=serialize_int)
 ```
 
-`serialize` defaults to `str`, which is the wire form of types like `UUID`, `Decimal`, or `Path`.
+`serialize` defaults to `str`, which is the wire form of types like `IPv4Address`.
 Our `Int` is not one of them — `str(Int(42))` is the debugging form `Int(value=42)`, which `coerce_int` would refuse on the way back in — so we pass an explicit serializer, and a dumped configuration loads again unchanged.

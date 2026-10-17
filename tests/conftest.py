@@ -60,6 +60,17 @@ def make_target(
     return cast("type[Any]", make_dataclass("Target", fields))
 
 
+class OneOf:
+    """A plain class defaulting every constructor parameter that still refuses an empty call."""
+
+    def __init__(self, a: int | None = None, b: int | None = None) -> None:
+        """Hold *a* or *b*, refusing both and neither."""
+        if (a is None) == (b is None):
+            msg = "exactly one of a or b must be given"
+            raise TypeError(msg)
+        self.a, self.b = a, b
+
+
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------

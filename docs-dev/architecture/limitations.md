@@ -62,7 +62,7 @@ A field default is the layer below every source only where the class declares it
 
 - A `default_factory` is never called to be laid, so a list, dict or set default is no base: a `list[int]` defaulting to `[0]` with `--xs+ 1` builds `[1]`, and `${xs}` misses (tier 2).
 - A struct instance default is not laid, nor its fields: `${sub.a}` misses under `sub: Sub = field(default_factory=Sub)` unless a source names `sub` (tier 3).
-- A default of a leaf type confarg has no registration for (`Decimal`, `datetime`) is not laid.
+- A default of a leaf type confarg has no registration for (`datetime`, `date`) is not laid.
 - Below a tag that is an expression, a union a structural match decides, or a struct with subclasses and no tag, no default is laid: which class's defaults apply is not known before construction.
 - An expression that produces a patch dict replaces the default rather than patching it: the defaults are combined with the data before expressions resolve.
 

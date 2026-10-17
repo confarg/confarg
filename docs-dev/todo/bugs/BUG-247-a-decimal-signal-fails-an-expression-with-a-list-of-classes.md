@@ -13,7 +13,7 @@ introduced_by: [PR-5]  # the initial evaluator reported an operator's failure as
 # BUG-247 — A decimal signal fails an expression with a list of classes
 
 An expression's runtime failure ends with Python's own text ([an evaluation failure names its expression](../../architecture/expressions/resolution.md#an-evaluation-failure-names-its-expression)).
-A `decimal` signal carries no text, only the list of signals raised, so `${d ** 10 ** 9}` on a registered `Decimal` reads `[<class 'decimal.Overflow'>]`.
+A `decimal` signal carries no text, only the list of signals raised, so `${d ** 10 ** 9}` on a `Decimal` reads `[<class 'decimal.Overflow'>]`.
 Fix direction: when an exception's text names no cause, as a `decimal.DecimalException`'s does, name the exception instead (`decimal Overflow`).
 
 Origin: latent since the initial version (PR-5), whose evaluator raised `ExpressionEvalError(str(exc))` for any operator failure; BUG-135 kept Python's own text after the quoted expression.
@@ -25,8 +25,6 @@ from typing import Any
 
 import confarg
 from confarg.exceptions import ConfargError
-
-confarg.register_leaf_type(Decimal, Decimal)
 
 
 @dataclass

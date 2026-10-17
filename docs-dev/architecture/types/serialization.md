@@ -36,7 +36,7 @@ A form is kept only if an `Any` node reads it back as the value it came from, wh
 An object that does not compare equal to the one rebuilt — a plain class with no `__eq__`, a bound method, a partial — is the same value when the rebuilt one dumps back as the same form: it holds the same state ([an object dumps the state it holds](../callables.md#an-object-dumps-the-state-it-holds)).
 Any other value is written untyped (`_serialize_untyped`), with a `ConfargWarning` naming its path and the reason: a `Path` that reads back as text, an `Enum` that reads back as its value, a `datetime`, an object no spec spells, such as a closure or a class that keeps an argument under another name.
 A dict holding an opener key reads back as the spec it spells, and a tuple or a set as a list, so they warn too.
-What a struct's fields warn is said only when the struct's spec is kept, so a `UUID`, which the plain-class test takes for a struct and no spec rebuilds, warns once, not once per attribute.
+What a struct's fields warn is said only when the struct's spec is kept, so a plain class no spec rebuilds, such as one holding every alternative its constructor takes, warns once, not once per attribute.
 
 In a union, the `Any` variant's form is what a bare `Any` reads back; the union must read it back the same way, or it is written with its own type's cast, as a stolen leaf is ([stealing rule](stealing-rule.md#casting-a-stolen-leaf)).
 An object only `Any` holds beside a struct variant is written with its `class:` tag, which names no variant and so is the `Any` variant's spec.
