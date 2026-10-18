@@ -15,7 +15,8 @@ The work is spread over the edges:
 | `_parse_cli._resolve_field_type` | step through a nested namespace as `dict[str, Any]` |
 | `_parse_env._parse_env` | store `PFX_DB__LOCALS__X` raw, without the unknown-field warning |
 | `_build.build_static_flags` | register `--config.<locals>` (declaring from the CLI) |
-| `_pipeline._apply_locals_layer` and helpers | declared-ness, types, add/remove refusal |
+| `_pipeline._apply_locals_layer` and helpers | declared-ness, types, add/remove refusal, each layer read by `_LayerReading` |
+| `_default_layer._with_namespaces_applied` | apply a list op a namespace holds before resolution |
 | `_api._strip_locals` | drop every namespace in `build()` / `from_dict()` |
 
 ## Derived name
@@ -37,6 +38,26 @@ A file's root — and its `locals:` block — lands wherever the file is mounted
 Every consumer asks `_locals_keys_at(target, path)` at each node.
 Only struct-like nodes can hold one (a dict treats every name as data; lists address children by index).
 With anchoring ([expressions](expressions/reference-anchoring.md#reference-anchoring)), a mounted fragment reads its own variables with the same bare `${locals.x}` it would use standing alone.
+
+## A namespace in an item a list op holds
+
+An item a list op holds is a node like any other, so its namespace is found, checked and stripped as a mounted fragment's is (BUG-219).
+`build()` applies the op before resolution ([design decisions](design-decisions/a-pending-list-op-is-applied-before-resolution.md#a-pending-list-op-is-applied-before-resolution)), so the item reads its own `${.locals.n}` at the index it lands at, and its bare `${locals.n}` too, which the loader spells as that dot run ([reference anchoring](expressions/reference-anchoring.md#a-document-a-list-op-holds-is-anchored-by-dot-runs)); `_strip_locals` then meets the item as a list element.
+
+The checks in `merge()` run before any op is applied, so `_apply_locals_layer` reads each layer through `_LayerReading`: a node of ops is the list it makes over the layers below that layer, the lower layers' items standing as placeholders the layer says nothing of.
+So an item appended by a file (`--config.items+`, `CONFIG__ITEMS+`, a file's `__append__`) is at the position `build()` gives it, after the base below: its namespace is a declaration, and the typed-formats check covers a CSV row appended there.
+An index patch addresses the same position, so `--items.0.locals.n c` overrides the local of a fragment `--config.items+` appended with no base, as construction applies the append before the patch.
+An item appended on argv or in the environment is new, and a namespace in it declares nothing: `--items+ '{"locals": {…}}'` is the `LocalsError` that `--items '[{"locals": {…}}]'` already was.
+Over a layer that only overrides, the reading leaves each namespace as the layer holds it, the very dict, so the overrides are coerced in place and an op in one is refused, never read as a list.
+
+Before, every walker skipped what an op held: the append's fragment kept its `locals` key into construction, which refused it as an unknown field, an override of its local was refused as undeclared, and a namespace in an item appended on argv escaped both checks.
+Index positions in the merge and in `build()` agree because no default laid below a list holds an item that can hold a namespace: only a tuple of leaves is laid ([FEAT-38](../todo/features/FEAT-38-a-factory-default-is-no-base.md) would change that).
+
+## A list op in a namespace is its list
+
+A namespace has no annotation, and an op means a list whatever it stands in, so `build()` applies a file's `locals: {xs: {__append__: [2, 3]}}` before resolution as the list it makes over the layers below, untyped (`_default_layer._with_namespaces_applied`): `${len(locals.xs)}` counts two.
+Until then it did only with a lower file declaring `xs`, where the merge had applied the op, and counted the op dict's keys otherwise.
+The declaration is read the same way in `merge()`, so `--locals.xs.0 9` modifies the first item the declared append makes.
 
 ## Declare in files, modify anywhere
 

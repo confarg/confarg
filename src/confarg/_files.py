@@ -38,6 +38,7 @@ from confarg._merge import (
     _SHAPE,
     APPEND_SUFFIX,
     DICT_DELETE,
+    MERGE_OP_KEYS,
     ListOp,
     MergeAt,
     MergeDict,
@@ -51,7 +52,12 @@ from confarg._merge import (
 )
 from confarg._serialize import _serialize_leaf
 from confarg._types import _StrToken
-from confarg.dictexpr._expressions import check_anchor_depth, contains_expression, prefix_references
+from confarg.dictexpr._expressions import (
+    check_anchor_depth,
+    contains_expression,
+    prefix_references,
+    relative_references,
+)
 from confarg.exceptions import ConfargError, FieldPath, InvalidConfigFileError, _spell_field_path
 
 INCLUDE_KEY = _defaults.INCLUDE_KEY
@@ -316,12 +322,14 @@ def _unwrap_root_key(value: Any) -> Any:
     return value
 
 
-def _load_includes(
+def _load_includes(  # noqa: PLR0913  # the walk's state: entries, location, cycle guard, root, mount, anchor
     entries: list[tuple[str, dict[str, Any]]],
     base: str | None,
     seen: frozenset[str],
     root: MergeAt = _SHAPE,
     mount: tuple[str, ...] = (),
+    *,
+    relative: bool = False,
 ) -> Any:
     """Load every include entry and layer them left to right, later entries winning.
 
@@ -338,7 +346,8 @@ def _load_includes(
     *base* is the location of the including document, which each entry resolves against; it is
     ``None`` for the channel routes, which have no including document and resolve against the
     process working directory instead. *mount* is where the result lands in the configuration
-    (see :func:`_load_any`).
+    (see :func:`_load_any`), and *relative* says that a list op holds it, so no absolute path
+    reaches it yet.
 
     Dev Notes:
         docs-dev/architecture/config-files/include-semantics.md#include-semantics
@@ -351,7 +360,9 @@ def _load_includes(
         if key in seen:
             msg = f"Circular include detected: {inc_loc}"
             raise ConfargError(msg)
-        loaded = _unwrap_root_key(_load_any(inc_loc, seen | {key}, options=options, root=root, mount=mount))
+        loaded = _unwrap_root_key(
+            _load_any(inc_loc, seen | {key}, options=options, root=root, mount=mount, relative=relative),
+        )
         is_data = _sources._suffix(inc_loc) in _DATA_SUFFIXES
         result = loaded if i == 0 or is_data else _written_within_source(result, loaded, at=root.at_path(mount))
     return result
@@ -378,6 +389,7 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     mount: tuple[str, ...] = (),
     *,
     read_ops: bool = True,
+    relative: bool = False,
 ) -> Any:
     """Resolve the includes of one document's own nodes, and anchor its own references.
 
@@ -388,7 +400,10 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     *mount* is where that document's root lands in the configuration: each of its bare
     references is prefixed by it, here and only here, since the walk visits the document's
     own nodes and nothing an include brought in. *root* is where the merge stands at the
-    configuration root, which types the node an include and its siblings merge at.
+    configuration root, which types the node an include and its siblings merge at. With
+    *relative*, a list op holds the document, so no absolute path reaches its root while it
+    loads: each bare reference is spelled instead as the dot run climbing to that root from
+    where it is written, and *mount* only types the nodes.
 
     A dict holding INCLUDE_KEY may name one document or a list of them; a list is layered left
     to right by :func:`_load_includes` first. A pure include (no siblings) may yield any type,
@@ -408,17 +423,18 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
         docs-dev/architecture/config-files/include-semantics.md#include-semantics
     """
     if isinstance(data, dict):
-        return _resolve_dict(data, base, seen, path_in_file, root, mount, read_ops=read_ops)
+        return _resolve_dict(data, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative)
     if isinstance(data, list):
         # A list replaces the layers below whole: a delete an item kept for them ends here.
         items = []
         for index, item in enumerate(data):
             at = (*path_in_file, str(index))
-            items.append(_as_list_item(_resolve_node(item, base, seen, at, root, mount, read_ops=read_ops), base, at))
+            resolved = _resolve_node(item, base, seen, at, root, mount, read_ops=read_ops, relative=relative)
+            items.append(_as_list_item(resolved, base, at))
         return items
     if contains_expression(data):
         check_anchor_depth(data, path_in_file)
-        return prefix_references(data, mount)
+        return relative_references(data, path_in_file) if relative else prefix_references(data, mount)
     return data
 
 
@@ -431,12 +447,16 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     mount: tuple[str, ...],
     *,
     read_ops: bool,
+    relative: bool = False,
 ) -> Any:
     """Resolve a dict node, the one place INCLUDE_KEY and UNSET_KEY are read (see :func:`_resolve_node`).
 
     The included documents land at ``mount + path_in_file``, which their own walk prefixes
     them by; the siblings are resolved before they are merged on top, so that walk never
-    visits what was included. A key that is no string (a YAML integer) is one segment.
+    visits what was included. A key that is no string (a YAML integer) is one segment. An
+    include below one of the file's op keys (``__append__``, ``__base__``) lands at a position
+    the op gives only once the merge applies it, so it is anchored as a relative document
+    is, and typed by the element it lands at.
 
     A configuration document's ``__unset__: true`` deletes the node from the layers below: the
     rest of the dict, an include and its siblings included, is resolved first and written over
@@ -460,34 +480,45 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
         rest = {k: v for k, v in data.items() if k != UNSET_KEY}
         if not rest:
             return DICT_DELETE
-        resolved_rest = _resolve_dict(rest, base, seen, path_in_file, root, mount, read_ops=read_ops)
-        return _written_within_source(DICT_DELETE, resolved_rest, at=root.at_path((*mount, *path_in_file)))
+        resolved_rest = _resolve_dict(rest, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative)
+        return _written_within_source(DICT_DELETE, resolved_rest, at=root.at_path(_typed_path((*mount, *path_in_file))))
     if INCLUDE_KEY not in data:
         resolved = {
-            k: _resolve_node(v, base, seen, (*path_in_file, str(k)), root, mount, read_ops=read_ops)
+            k: _resolve_node(v, base, seen, (*path_in_file, str(k)), root, mount, read_ops=read_ops, relative=relative)
             for k, v in data.items()
         }
         return _read_file_ops(resolved, base, path_in_file) if read_ops else resolved
     entries = _parse_include_val(data[INCLUDE_KEY])
-    here = (*mount, *path_in_file)
-    included = _load_includes(entries, base, seen, root, here)
+    here = _typed_path((*mount, *path_in_file))
+    under_an_op = relative or (read_ops and any(segment in MERGE_OP_KEYS for segment in path_in_file))
+    included = _load_includes(entries, base, seen, root, here, relative=under_an_op)
     siblings = {k: v for k, v in data.items() if k != INCLUDE_KEY}
     if not siblings:
         return included
     return _include_with_siblings(
         included,
-        _resolve_dict(siblings, base, seen, path_in_file, root, mount, read_ops=read_ops),
+        _resolve_dict(siblings, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative),
         root.at_path(here),
     )
 
 
-def _load_any(
+def _typed_path(path: tuple[str, ...]) -> tuple[str, ...]:
+    """Return the path that types a node at *path*: a file's op key, which names no field, left out.
+
+    An item an op holds is typed as an element of the list the op makes, at the position it
+    has in the op's own list, which types it as any other position does.
+    """
+    return tuple(segment for segment in path if segment not in MERGE_OP_KEYS)
+
+
+def _load_any(  # noqa: PLR0913  # the walk's state: location, cycle guard, options, root, mount, anchor
     loc: str,
     seen: frozenset[str],
     *,
     options: dict[str, Any] | None = None,
     root: MergeAt = _SHAPE,
     mount: tuple[str, ...] = (),
+    relative: bool = False,
 ) -> Any:
     """Load one config source as any type (dict, list, or scalar), with its includes resolved.
 
@@ -502,14 +533,16 @@ def _load_any(
     segment per key or list index: an include's is the including document's own plus the
     position it sits at, so each document's bare references are prefixed once, by the whole
     path, and a first segment that only ``::`` can spell (``::['web-1'].p``) is never
-    prefixed again by an outer mount.
+    prefixed again by an outer mount. With *relative*, a list op holds the document, and its
+    bare references are spelled as dot runs to its root instead (see :func:`_resolve_node`).
 
     Dev Notes:
         docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies
         docs-dev/architecture/expressions/reference-anchoring.md#why-the-node-anchor-resolves-late
     """
     read_ops = _sources._suffix(loc) not in _DATA_SUFFIXES  # a data file's header is data
-    return _resolve_node(_load_document(loc, options), loc, seen, (), root, mount, read_ops=read_ops)
+    document = _load_document(loc, options)
+    return _resolve_node(document, loc, seen, (), root, mount, read_ops=read_ops, relative=relative)
 
 
 def _require_layer(value: Any, loc: str) -> MergeDict:
@@ -623,6 +656,8 @@ def _load_mount_value(
     base: str | None = None,
     root: MergeAt = _SHAPE,
     mount: tuple[str, ...] = (),
+    *,
+    relative: bool = False,
 ) -> Any:
     """Resolve one channel-supplied mount value to the value it contributes.
 
@@ -630,13 +665,13 @@ def _load_mount_value(
     layer its entries. Relative locations resolve against *base* -- the including document for
     ``__include__`` and, for these routes, the process working directory, which is what the
     default ``None`` names and the one difference between them. *mount* is where the value
-    lands (see :func:`_load_any`).
+    lands (see :func:`_load_any`), *relative* that a list op holds it.
 
     Dev Notes:
         docs-dev/architecture/config-files/mounting.md#mounting
         docs-dev/architecture/design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel
     """
-    return _load_includes(_parse_mount_value(value), base, frozenset(), root, mount)
+    return _load_includes(_parse_mount_value(value), base, frozenset(), root, mount, relative=relative)
 
 
 def _load_mount(value: Any, subpath: str, base: str | None = None, root: MergeAt = _SHAPE) -> MergeDict:
@@ -653,10 +688,10 @@ def _load_mount(value: Any, subpath: str, base: str | None = None, root: MergeAt
 
     A *subpath* ending in ``+`` appends instead of replacing, and appending is the one thing
     that spreads a fragment over several elements: a list extends the target list, anything
-    else lands as one item. References in an appended fragment stay unanchored, because an
-    appended element has no index until the merge is over
-    (docs-dev/architecture/limitations.md#expressions); the node each part merges at is an
-    element of the field.
+    else lands as one item. An appended element has no index until the merge is over, so the
+    fragment's bare references are anchored by the dot runs that climb to its root
+    (:func:`~confarg.dictexpr._expressions.relative_references`); the node each part merges
+    at is an element of the field.
 
     Dev Notes:
         docs-dev/architecture/config-files/mounting.md#mounting
@@ -664,7 +699,7 @@ def _load_mount(value: Any, subpath: str, base: str | None = None, root: MergeAt
     """
     if subpath.endswith(APPEND_SUFFIX):
         real_subpath = subpath.removesuffix(APPEND_SUFFIX)
-        loaded = _load_mount_value(value, base, root.at_path((*real_subpath.split("."), "0")))
+        loaded = _load_mount_value(value, base, root.at_path((*real_subpath.split("."), "0")), relative=True)
         if not isinstance(loaded, list):  # a list's items were read as items by its own walk
             loaded = _as_list_item(loaded, _sources._join(base, _parse_mount_value(value)[-1][0]), ())
         return _nest({ListOp.APPEND: _to_append_list(loaded)}, real_subpath)

@@ -118,12 +118,25 @@ The file loader holds a node's position within its file the same way, for the cl
 A key holding a dot (`example.com`, which every format can spell as a quoted key) is then one segment like any other: `{"a.b": …}` and `{"a": {"b": …}}` are `("a.b",)` and `("a", "b")`, two nodes that cannot collide.
 Joining to a dotted string and splitting it again made them one node, wrote a result back to the wrong key, and climbed one level too many from inside such a key (BUG-124).
 
-A segment is a key or an index, or a pending list op: an expression inside an item `merge()` has yet to append sits at `("servers", ListOp.APPEND, "0", "url")`, the op being the key the merged dict holds the item under ([deep merge](../pipeline/deep-merge.md#no-channel-types-an-op)).
+A segment is a key or an index, or a pending list op: an expression inside an item a list op still holds sits at `("servers", ListOp.APPEND, "0", "url")`, the op being the key the merged dict holds the item under ([deep merge](../pipeline/deep-merge.md#no-channel-types-an-op)).
+`build()` applies most such ops before resolution, so the item is at `("servers", "0", "url")` by then ([below](#a-pending-list-op-is-read-as-its-list)); the op segment remains for an op left pending, and for `resolve_expressions` called on a merged dict directly.
 The walk takes it as any dict key, so a node anchor reads through it (`${.host}` beside `url` reads `host` in the same item), and `_spell_path`, the one spelling of a position in a message, writes it as a file does (`servers.__append__.0.url`).
 It is never a list index, and a path spells it as a constant subscript, which no source expression can write.
 
 The dotted form survives only in messages, `Field 'a.b' not found`, which a person reads and nothing parses back.
 Precedents keep paths structured for the same reason: jq's `path()`, `getpath` and `setpath` work on arrays of keys (`["a.b"]`), and JSON Pointer (RFC 6901) escapes its separator inside a segment rather than let a key hold it.
+
+## A pending list op is read as its list
+
+An expression reads the list a pending op makes, never the op dict ([design decisions](../design-decisions/a-pending-list-op-is-applied-before-resolution.md#a-pending-list-op-is-applied-before-resolution)).
+The default layer applies the ops over what lies below them before resolution wherever the type settles the node is a variable-length sequence (`_default_layer._over_nothing`), so most reach resolution as a list.
+Two kinds still hold ops while expressions resolve:
+
+- **A node whose base is an expression**, which settles into its list once that expression has resolved (`resolve_expressions`' `settle` hook, [deep merge](../pipeline/deep-merge.md#a-patch-over-an-expression-patches-its-value)).
+  A reference that crosses it by a data key, or reads it whole, depends on every expression below it (`_pending_prefixes` with `crossed`), so it is evaluated after the node settled.
+  A path stepping through the op itself, which only an anchor spells from inside an item the op holds, reads that item and depends on nothing more.
+- **A node no type settles**, an `Any` or a union with a fixed-length variant, which construction applies or refuses.
+  A read crossing or reaching it is refused (`_read_through`, `MissingReferenceError.pending_list_ops`): the op dict is never handed out as the value, so `${len(a)}` is an error rather than the count of its keys.
 
 ## Referencing a whole subtree
 

@@ -3,6 +3,7 @@ filed: 2026-10-10
 where:
   - src/confarg/_default_layer.py::_merged_form
   - src/confarg/_types.py::_struct_declared_defaults
+  - src/confarg/_pipeline.py::_LayerReading
 effort: M
 risk: medium
 impact: behavior  # an append on a list field with a non-empty default would keep the default
@@ -24,3 +25,6 @@ Once laid, such a default is also the last layer a key delete meets: today `--d.
 A delete a source already met is spent there and never reaches the defaults: over a file's `d: {x: 2}`, `--d.x-` removes the file's `x`, and a laid default holding `x` would fill it again.
 A fixed-length position keeps its delete for the default below so that it does not ([a fixed-length delete unsets a position](../../architecture/design-decisions/a-fixed-length-delete-unsets-a-position.md#the-delete-removes-the-position-from-the-default-too), BUG-243).
 Whether a laid factory default follows that rule, or lets a key a source deleted come back from the default, is part of this design.
+
+A laid list default also shifts the index an appended item lands at in `build()`, which the locals checks in `merge()` do not see: they read a layer's ops over the layers below it and over nothing else ([a namespace in an item a list op holds](../../architecture/locals.md#a-namespace-in-an-item-a-list-op-holds)).
+Today no laid default holds an item that can hold a namespace, so the two agree; once a factory list of structs is laid, `--items.0.locals.n` after `--config.items+ frag.yaml` would name the default's item in `build()` and the fragment in `merge()`, and the design has to bring the two back together.

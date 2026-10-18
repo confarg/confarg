@@ -28,7 +28,8 @@ import pytest
 
 import confarg
 from confarg._files import INCLUDE_KEY
-from confarg.exceptions import MissingReferenceError, UnsafeExpressionError
+from confarg._merge import ListOp
+from confarg.exceptions import CircularReferenceError, MissingReferenceError, UnsafeExpressionError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -404,8 +405,16 @@ class TestAnchorDetection:
 
 
 # ---------------------------------------------------------------------------
-# Known limit
+# A document whose position a list op holds
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class Sub:
+    """A block nested inside an appended item."""
+
+    label: str = ""
+    tag: str = ""
 
 
 @dataclass
@@ -414,6 +423,8 @@ class Item:
 
     name: str = ""
     label: str = ""
+    sub: Sub = field(default_factory=Sub)
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -421,27 +432,86 @@ class Holder:
     """Root owning the list an appended fragment lands in."""
 
     items: list[Item] = field(default_factory=list)
+    names: list[str] = field(default_factory=list)
+    name: str = "top"
     title: str = "top"
+    s: str = ""
 
 
 class TestAppendedFragment:
-    """``--config.<path>+`` appends at an index only the merge knows.
+    """A document a list op holds has no absolute position while it loads.
 
-    Where an appended fragment lands depends on how long the target list already
-    is, which is not knowable while the file is being loaded, so its references
-    are left anchored at the merged root rather than prefixed by a guess.
+    Its bare references are anchored at its own root all the same, spelled as the dot run
+    that climbs there from each expression, so they move with the item to whatever index
+    it lands at.
     """
 
-    def test_appended_fragment_uses_document_paths(self, tmp_path: Path) -> None:
-        """A bare reference in an appended item resolves from the merged root."""
-        base = write(tmp_path, "base.yaml", "title: top\nitems: []\n")
-        extra = write(tmp_path, "extra.yaml", "name: one\nlabel: ${title}\n")
-        result = confarg.load(
-            Holder,
-            argv=["--config", str(base), "--config.items+", str(extra)],
-            env={},
-        )
-        assert result.items[0].label == "top"
+    @pytest.mark.parametrize("below", [False, True], ids=["no-base", "over-a-base"])
+    def test_a_bare_reference_reads_the_fragment(
+        self,
+        tmp_path: Path,
+        below: bool,  # noqa: FBT001  # a parametrized layer, not a call's flag
+    ) -> None:
+        """``${name}`` is the fragment's own, never the root's, whatever lies below."""
+        extra = write(tmp_path, "extra.yaml", "name: one\nlabel: ${name}\n")
+        files = [write(tmp_path, "base.yaml", "items: [{name: zero}]\n")] if below else []
+        result = confarg.load(Holder, argv=["--config.items+", str(extra)], env={}, files=files)
+        assert result.items[-1].label == "one"
+
+    def test_merge_spells_the_dot_run(self, tmp_path: Path) -> None:
+        """The depth is counted from each expression: one dot at the root, two a level below."""
+        extra = write(tmp_path, "extra.yaml", "name: one\nlabel: ${name}\nsub: {label: '${name}'}\ntags: ['${name}']\n")
+        raw = confarg.merge(Holder, argv=["--config.items+", str(extra)], env={})
+        assert raw["items"][ListOp.APPEND] == [
+            {"name": "one", "label": "${.name}", "sub": {"label": "${..name}"}, "tags": ["${..name}"]},
+        ]
+        item = confarg.build(Holder, raw).items[0]
+        assert (item.label, item.sub.label, item.tags) == ("one", "one", ["one"])
+
+    def test_the_root_marker_reads_the_configuration_root(self, tmp_path: Path) -> None:
+        """``::`` is the marked way out, appended or not."""
+        extra = write(tmp_path, "extra.yaml", "name: one\nlabel: ${::title}\n")
+        assert confarg.load(Holder, argv=["--config.items+", str(extra)], env={}).items[0].label == "top"
+
+    def test_the_environment_pointer_appends_alike(self, tmp_path: Path) -> None:
+        """``CONFIG__ITEMS+`` is the same mount."""
+        extra = write(tmp_path, "extra.yaml", "name: one\nlabel: ${name}\n")
+        env = {"APP_CONFIG__ITEMS+": str(extra)}
+        assert confarg.load(Holder, argv=[], env=env, env_prefix="APP_").items[0].label == "one"
+
+    def test_an_include_inside_the_fragment_reads_its_own_root(self, tmp_path: Path) -> None:
+        """Each document is anchored at its own root, so an include below needs no item path."""
+        write(tmp_path, "sub.yaml", "label: ${tag}\ntag: inner\n")
+        extra = write(tmp_path, "extra.yaml", f"name: one\nsub:\n  {INCLUDE_KEY}: ./sub.yaml\n")
+        assert confarg.load(Holder, argv=["--config.items+", str(extra)], env={}).items[0].sub.label == "inner"
+
+    @pytest.mark.parametrize(
+        "items",
+        [
+            pytest.param(f"{{__append__: [{{{INCLUDE_KEY}: ./frag.yaml}}]}}", id="under-an-append"),
+            pytest.param(
+                f"{{__base__: [{{name: zero}}, {{{INCLUDE_KEY}: ./frag.yaml}}], __delete__: [0]}}",
+                id="under-a-base-a-delete-shifts",
+            ),
+        ],
+    )
+    def test_an_include_under_a_files_op_reads_itself(self, tmp_path: Path, items: str) -> None:
+        """The mount crossed the op's key, which no data holds: ``items['__append__'][0].name``."""
+        write(tmp_path, "frag.yaml", "name: one\nlabel: ${name}\n")
+        cfg = write(tmp_path, "app.yaml", f"items: {items}\n")
+        assert [i.label for i in confarg.load(Holder, argv=["--config", str(cfg)], env={}).items] == ["one"]
+
+    def test_a_bare_reference_at_a_scalar_documents_root_is_refused(self, tmp_path: Path) -> None:
+        """No dot run climbs to a document that is the expression itself; it read the root's ``name``."""
+        value = write(tmp_path, "v.yaml", "'${name}-tail'\n")
+        with pytest.raises(MissingReferenceError, match=r"'name'.*appended document.*'::name'"):
+            confarg.merge(Holder, argv=["--config.names+", str(value)], env={})
+
+    def test_a_scalar_document_mounted_at_a_field_is_a_cycle(self, tmp_path: Path) -> None:
+        """The general refusal of a value reading inside itself, unchanged."""
+        value = write(tmp_path, "v.yaml", "'${name}-tail'\n")
+        with pytest.raises(CircularReferenceError, match=r"among: s"):
+            confarg.load(Holder, argv=["--config.s", str(value)], env={})
 
 
 # ---------------------------------------------------------------------------

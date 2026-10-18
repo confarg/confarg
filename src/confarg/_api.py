@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from typing import TypeAliasType
 
 from confarg import _defaults
-from confarg._default_layer import drop_untouched, lay_defaults
+from confarg._default_layer import drop_untouched, lay_defaults, settle_pending
 from confarg._defaults import MergeOptions, _Options, _resolve_options
 from confarg._files import _dump_file, _native_types_of
 from confarg._merge import ListOp, MergeDict
@@ -114,7 +114,7 @@ def _strip_locals_node(node: Any, target: Any, union_tag: str, path: list[str]) 
         return node
     drop = {key for key in _locals_keys_at(target, path, union_tag) if key in node}
     kept = {
-        # A pending op names no field: what it holds is not walked (BUG-219).
+        # An op build() applied no list for is no field: what it holds is not walked.
         k: v if isinstance(k, ListOp) else _strip_locals_node(v, target, union_tag, [*path, k])
         for k, v in node.items()
         if k not in drop
@@ -172,7 +172,8 @@ def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str) -> Me
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
     """
     laid = lay_defaults(target_r, data, union_tag, for_resolution=True)
-    resolved = resolve_expressions(laid.data, read=TypedReading(target_r, union_tag), write=written_form)
+    settle = settle_pending(target_r, union_tag)
+    resolved = resolve_expressions(laid.data, read=TypedReading(target_r, union_tag), write=written_form, settle=settle)
     return drop_untouched(resolved, laid.untouched)
 
 

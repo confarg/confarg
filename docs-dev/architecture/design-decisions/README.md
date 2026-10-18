@@ -63,6 +63,8 @@ A decision lands here when a ticket closes and the answer turns out to be "we wi
 | [`::` spells the configuration root, a leading dot counts upwards](anchor-spellings.md) | the three anchor spellings, and what was rejected for each |
 | [An expression reads a typed leaf as its object](an-expression-reads-a-typed-leaf-as-its-object.md) | `merge()` holds an `Enum` or registered leaf as written on every channel; an expression reads it as its object and leaves its dump form, never `str()` |
 | [An entry reads its key with an expression](an-entry-reads-its-key-with-an-expression.md) | `name: ${key(.)}` names an entry after the key it is filed under; the link lives in the configuration, not in the type |
+| [A pending list op is applied before resolution](a-pending-list-op-is-applied-before-resolution.md) | `build()` applies an op `merge()` left pending over what lies below, nothing included, wherever the type settles a list, so an expression reads the list; a scalar append is one item; an op left pending is refused to every read |
+| [A patch over an expression patches its value](a-patch-over-an-expression-patches-its-value.md) | the merge carries a whole-value expression as the `__base__` of any patch over it, and `build()` applies the patch to what it resolves to, as over a lower file holding the value |
 
 ## Types and construction
 

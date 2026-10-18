@@ -29,13 +29,17 @@ if TYPE_CHECKING:
 
 from confarg._files import _load_mount, _load_subpath_files
 from confarg._merge import (
+    _SHAPE,
     APPEND_SUFFIX,
     ListOp,
     MergeAt,
     MergeDict,
+    _apply_list_ops,
     _deep_merge,
     _DeleteSentinel,
     _drop_deleted_bases,
+    _resolve_index,
+    _to_append_list,
 )
 from confarg._parse_cli import _locals_keys, _locals_keys_at
 from confarg._parse_env import _env_config_pointers, _parse_env
@@ -220,12 +224,106 @@ def _iter_namespace_nodes(
             if name in keys:
                 continue  # inside a namespace everything is free-form data
             if isinstance(name, ListOp):
-                continue  # a pending op names no field: what it holds is not walked (BUG-219)
+                continue  # an op no layer below gave a list to make: no position to walk at
             yield from _iter_namespace_nodes([d.get(name) for d in dicts], target, union_tag, [*path, name])
     if lists:
         for i in range(max(len(x) for x in lists)):
             items = [x[i] for x in lists if i < len(x)]
             yield from _iter_namespace_nodes(items, target, union_tag, [*path, str(i)])
+
+
+#: A position the layers below a layer hold, of which that layer says nothing.
+_BELOW: Any = object()
+
+
+class _LayerReading:
+    """How the locals walk reads one layer: each node of pending list ops as the list it makes over the layers below.
+
+    An item an op appends lands at the position ``build()`` gives it, after what lies below,
+    so a namespace in it is found at the path a flag spells to reach it, and an index patch
+    meets the item the op made. What a lower layer holds there stands as ``_BELOW``: the layer
+    says nothing of it. A layer that only overrides leaves every namespace as it holds it, the
+    very dict, so the checks coerce it in place and a list op in one is refused, never read.
+
+    Dev Notes:
+        docs-dev/architecture/locals.md#a-namespace-in-an-item-a-list-op-holds
+    """
+
+    def __init__(self, target: Any, union_tag: str, *, declaring: bool) -> None:
+        self.target = target
+        self.union_tag = union_tag
+        self.declaring = declaring
+
+    def read(self, node: Any, below: Any, path: list[str]) -> Any:
+        """Return *node*, at *path*, read over *below*, the same path of the layers below it."""
+        if isinstance(node, list):
+            items = [self.read(v, None, [*path, str(i)]) for i, v in enumerate(node)]
+            return node if all(a is b for a, b in zip(items, node, strict=True)) else items
+        if not isinstance(node, dict):
+            return node
+        if any(isinstance(k, ListOp) for k in node) and (listed := self._listed(node, below, path)) is not None:
+            return listed
+        keys = () if self.declaring else _locals_keys_at(self.target, path, self.union_tag)
+        out = {
+            k: v if isinstance(k, ListOp) or k in keys else self.read(v, _below_at(below, k), [*path, str(k)])
+            for k, v in node.items()
+        }
+        return node if all(out[k] is v for k, v in node.items()) else out
+
+    def _listed(self, node: MergeDict, below: Any, path: list[str]) -> list[Any] | None:
+        """Return the list the ops *node* holds make over *below*, None where its positions are unknown.
+
+        A base carried as an expression is unknown until resolution, and an op that does not
+        apply is the merge's and construction's to refuse, with their own message.
+        """
+        base = node.get(ListOp.BASE, _BELOW)
+        if isinstance(base, list):
+            working = [self.read(v, None, [*path, str(i)]) for i, v in enumerate(base)]
+        elif base is _BELOW:
+            working = [_BELOW] * (len(below) if isinstance(below, list) else 0)
+        elif isinstance(base, _DeleteSentinel):
+            working = []
+        else:
+            return None
+        ops: MergeDict = {k: v for k, v in node.items() if isinstance(k, ListOp) and k is not ListOp.BASE}
+        if ListOp.APPEND in ops:
+            appended = _to_append_list(ops[ListOp.APPEND])
+            ops[ListOp.APPEND] = [self.read(v, None, [*path, str(len(working) + i)]) for i, v in enumerate(appended)]
+        spelled = ".".join(path)
+        try:
+            working = _apply_list_ops(working, ops, spelled, _SHAPE)
+            self._lay_index_patches(working, node, path)
+        except (ConfargError, ValueError):
+            return None
+        return working
+
+    def _lay_index_patches(self, working: list[Any], node: MergeDict, path: list[str]) -> None:
+        """Lay each index patch *node* holds over the item of *working* it reaches, in place.
+
+        Raises:
+            ConfargError: If an index reaches no item.
+            ValueError: If a key spells no index.
+        """
+        spelled = ".".join(path)
+        for k, v in node.items():
+            if isinstance(k, ListOp):
+                continue
+            index = _resolve_index(int(k), len(working), spelled, "patch")
+            patch = self.read(v, None, [*path, str(index)])
+            item = working[index]
+            working[index] = {**item, **patch} if isinstance(item, dict) and isinstance(patch, dict) else patch
+
+
+def _below_at(below: Any, key: Any) -> Any:
+    """Return what *below* holds at *key*, a list by the index *key* spells, None where it holds nothing."""
+    if isinstance(below, dict):
+        return below.get(key)
+    if isinstance(below, list):
+        try:
+            return below[int(key)]
+        except (ValueError, IndexError):
+            return None
+    return None
 
 
 def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two names they are read against
@@ -236,17 +334,26 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
     *,
     union_tag: str,
     config_flag: str,
+    below_cli: MergeDict,
 ) -> None:
     """Validate and coerce every local-variables namespace across the three layers.
 
     *config_data* declares the locals; overrides in *env_data* and *cli_data* are
-    checked against it and coerced in place. Namespaces are found at every node.
+    checked against it and coerced in place. Namespaces are found at every node, an item
+    a list op holds at the position ``build()`` gives it, each layer read over the layers
+    below it, *below_cli* being what lies under the command line.
 
     Dev Notes:
         docs-dev/architecture/locals.md
+        docs-dev/architecture/locals.md#a-namespace-in-an-item-a-list-op-holds
     """
-    for path, keys in _iter_namespace_nodes([config_data, env_data, cli_data], target, union_tag):
-        node = _lookup_path(config_data, path)
+    declaring = _LayerReading(target, union_tag, declaring=True)
+    overriding = _LayerReading(target, union_tag, declaring=False)
+    config_read = declaring.read(config_data, None, [])
+    env_read = overriding.read(env_data, config_read, [])
+    cli_read = overriding.read(cli_data, declaring.read(below_cli, None, []), [])
+    for path, keys in _iter_namespace_nodes([config_read, env_read, cli_read], target, union_tag):
+        node = _lookup_path(config_read, path)
         node = node if isinstance(node, dict) else {}
         declaring = [key for key in keys if key in node]
         if len(declaring) > 1:
@@ -256,7 +363,7 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
             if key in node:
                 _check_locals_are_typed(node[key], where, where)
             declared = node.get(key, {})
-            for source, source_data in (("environment", env_data), ("command line", cli_data)):
+            for source, source_data in (("environment", env_read), ("command line", cli_read)):
                 sub = _lookup_path(source_data, path)
                 if isinstance(sub, dict) and key in sub:
                     _apply_locals_overrides(declared, sub[key], where, config_flag, source)
@@ -314,7 +421,8 @@ def _merge_sources(
     config_data, env_data = _lower_layers(target, cli_configs, options)
     root = merge_root(target, union_tag)
     # 2. argv over both
-    cli_data = parse_cli(_deep_merge(config_data, env_data, at=root))
+    below_cli = _deep_merge(config_data, env_data, at=root)
+    cli_data = parse_cli(below_cli)
 
     _apply_locals_layer(
         target,
@@ -323,6 +431,7 @@ def _merge_sources(
         cli_data,
         union_tag=union_tag,
         config_flag=config_flag,
+        below_cli=below_cli,
     )
 
     # 3. Merge: config (lowest) → env → CLI (highest)

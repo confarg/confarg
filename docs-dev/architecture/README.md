@@ -80,7 +80,7 @@ Open the topics that match the code you are touching; the reading guide maps sou
 ## Source map
 
 Dependencies flow downwards: the public API uses the pipeline, the pipeline uses the parsers and the merge core, and the two engines at the bottom (`typedload`, `dictexpr`) know nothing about channels.
-`dictexpr` imports only the standard library and `confarg.exceptions`.
+`dictexpr` imports only the standard library, `confarg.exceptions`, and the list-op markers and `MergeDict` of `confarg._merge`, a position in the data crossing a pending op; what the merge means stays with callers, handed in as hooks (`read`, `write`, `settle`).
 
 ```text
 confarg/

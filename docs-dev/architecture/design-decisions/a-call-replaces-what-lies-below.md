@@ -15,7 +15,7 @@ BUG-232 moved the decision to the type, which removed that cost; the alternative
 Rejected:
 
 - **Defer to `build()`**, the merge carrying the lower value under a marker for the type-aware default layer to drop under a typed call and merge back otherwise.
-  It loses no data where the type holds `call` as data, but it needs a new marker in what `merge()` returns, a reserved file key so `dump_file(merge())` reads back, and every `${...}` that reads a key under the marker would have to see through it, the cost BUG-220 already shows for deferred list patches.
+  It loses no data where the type holds `call` as data, but it needs a new marker in what `merge()` returns, a reserved file key so `dump_file(merge())` reads back, and every `${...}` that reads a key under the marker would have to see through it, the cost deferred list patches had until BUG-220, where `build()` now applies them before resolution ([a pending list op is applied before resolution](a-pending-list-op-is-applied-before-resolution.md#a-pending-list-op-is-applied-before-resolution)).
 - **Replace on nested nodes only**, leaving the root to merge.
   It would break the rule the union tag already follows at the root.
 - **Let plain data over a call replace it.**

@@ -6,11 +6,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pytest
 
 import confarg
+from confarg._merge import ListOp
 from confarg._types import _StrToken
 from confarg.exceptions import TypeCoercionError
 from tests.conftest import AppConfig, DbConfig, WithDefaults
@@ -283,3 +284,108 @@ class TestPostInitIsolation:
 
         assert raw["name"] == "hello"
         assert instance.name == "HELLO"
+
+
+# ---------------------------------------------------------------------------
+# A patch over an expression patches the value it resolves to
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _ExprDb:
+    """A struct an expression stands for as a whole."""
+
+    host: str = "h0"
+    port: int = 0
+
+
+@dataclass
+class _ExprBases:
+    """Fields a file sets to an expression another layer then patches."""
+
+    other: list[str] = field(default_factory=list)
+    names: list[str] = field(default_factory=list)
+    proto: _ExprDb = field(default_factory=_ExprDb)
+    db: _ExprDb = field(default_factory=_ExprDb)
+    src: dict[str, int] = field(default_factory=dict)
+    m: dict[str, int] = field(default_factory=dict)
+    dbs: list[_ExprDb] = field(default_factory=list)
+    count: int = 0
+
+
+_EXPR_BASES = (
+    "other: [x, y]\nproto: {host: ph, port: 5}\nsrc: {a: 1, b: 2}\nnames: '${other}'\ndb: '${proto}'\nm: '${src}'\n"
+)
+
+
+class TestAPatchOverAnExpression:
+    """An expression standing for a whole value is the base a patch over it refines."""
+
+    @pytest.mark.parametrize(
+        ("argv", "attr", "expected"),
+        [
+            pytest.param(["--names+", "c"], "names", ["x", "y", "c"], id="append"),
+            pytest.param(["--names.0", "q"], "names", ["q", "y"], id="index-patch"),
+            pytest.param(["--names.0-"], "names", ["y"], id="index-delete"),
+            pytest.param(["--db.host", "x"], "db", _ExprDb("x", 5), id="struct-field"),
+            pytest.param(["--m.c", "3"], "m", {"a": 1, "b": 2, "c": 3}, id="dict-key"),
+            pytest.param(["--m.a-"], "m", {"b": 2}, id="dict-key-delete"),
+        ],
+    )
+    def test_a_flag_patches_the_resolved_value(self, tmp_yaml, argv: list[str], attr: str, expected: object) -> None:
+        """The patch replaced the expression, the rest of its value lost."""
+        cfg = tmp_yaml(_EXPR_BASES)
+        assert getattr(confarg.load(_ExprBases, argv=["--config", str(cfg), *argv], env={}), attr) == expected
+
+    def test_merge_keeps_the_expression_as_the_base(self, tmp_yaml) -> None:
+        """``merge()`` stays as written: the expression below, the patch beside it."""
+        cfg = tmp_yaml(_EXPR_BASES)
+        raw = confarg.merge(_ExprBases, argv=["--config", str(cfg), "--names+", "c", "--db.host", "x"], env={})
+        assert raw["names"] == {ListOp.BASE: "${other}", ListOp.APPEND: ["c"]}
+        assert raw["db"] == {ListOp.BASE: "${proto}", "host": "x"}
+
+    def test_a_later_file_patches_the_resolved_value(self, tmp_yaml) -> None:
+        """A file is a layer like any other."""
+        cfg = tmp_yaml(_EXPR_BASES)
+        over = tmp_yaml("db: {port: 9}\n", "over.yaml")
+        assert confarg.load(_ExprBases, argv=["--config", str(cfg), "--config", str(over)], env={}).db == _ExprDb(
+            "ph", 9
+        )
+
+    def test_an_item_that_is_an_expression_is_patched_too(self, tmp_yaml) -> None:
+        """An index patch meets an item standing for a whole struct."""
+        cfg = tmp_yaml("proto: {host: ph, port: 5}\ndbs: ['${proto}']\n")
+        result = confarg.load(_ExprBases, argv=["--config", str(cfg), "--dbs.0.host", "x"], env={})
+        assert result.dbs == [_ExprDb("x", 5)]
+
+    def test_within_one_source(self, tmp_yaml) -> None:
+        """The environment writes the whole value, then a key below it."""
+        cfg = tmp_yaml("proto: {host: ph, port: 5}\n")
+        env = {"APP_DB": "${proto}", "APP_DB__HOST": "x"}
+        assert confarg.load(_ExprBases, argv=["--config", str(cfg)], env=env, env_prefix="APP_").db == _ExprDb("x", 5)
+
+    def test_a_reader_sees_the_patched_list(self, tmp_yaml) -> None:
+        """A reference to the list reads it once its base resolved and the ops applied."""
+        cfg = tmp_yaml(_EXPR_BASES)
+        argv = ["--config", str(cfg), "--names+", "c", "--count", "${len(names)}"]
+        assert confarg.load(_ExprBases, argv=argv, env={}).count == 3
+
+    def test_a_files_own_base_expression_still_applies(self, tmp_yaml) -> None:
+        """``__base__: '${other}'`` built before, with construction applying the ops after resolution."""
+        cfg = tmp_yaml("other: [x, y]\nnames: {__base__: '${other}', __append__: [c]}\n")
+        assert confarg.load(_ExprBases, argv=["--config", str(cfg)], env={}).names == ["x", "y", "c"]
+
+    @pytest.mark.skipif(not _YAML_AVAILABLE, reason="PyYAML is not installed")
+    def test_a_dumped_merge_reads_back(self, tmp_yaml, tmp_path) -> None:
+        """The carried base is written by its reserved key and read back as the same merge."""
+        cfg = tmp_yaml(_EXPR_BASES)
+        raw = confarg.merge(_ExprBases, argv=["--config", str(cfg), "--db.host", "x", "--names+", "c"], env={})
+        saved = tmp_path / "saved.yaml"
+        confarg.dump_file(raw, saved)
+        assert confarg.merge(_ExprBases, argv=[], env={}, files=[saved]) == raw
+        assert confarg.load(_ExprBases, argv=[], env={}, files=[saved]).db == _ExprDb("x", 5)
+
+    def test_a_whole_value_over_the_expression_replaces_it(self, tmp_yaml) -> None:
+        """A list is no patch: it replaces the expression as it replaces any value."""
+        cfg = tmp_yaml(_EXPR_BASES)
+        assert confarg.load(_ExprBases, argv=["--config", str(cfg), "--names", "z"], env={}).names == ["z"]

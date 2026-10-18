@@ -160,6 +160,21 @@ def contains_expression(value: object) -> bool:
     return isinstance(value, str) and next(_find_expressions(value), None) is not None
 
 
+def is_whole_expression(value: object) -> bool:
+    """Return ``True`` when *value* is one ``${...}`` and nothing around it, which resolves to whatever it reads.
+
+    Only such a string can stand for a list, a dict or a struct: an interpolation always
+    resolves to a string, and an escape to its literal text.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#a-patch-over-an-expression-patches-its-value
+    """
+    if not isinstance(value, str):
+        return False
+    spans = list(_find_expressions(value))
+    return len(spans) == 1 and spans[0].body is not None and (spans[0].start, spans[0].end) == (0, len(value))
+
+
 # Whitelisted free functions
 _SAFE_FUNCTIONS: dict[str, Any] = {
     "abs": abs,
@@ -521,6 +536,10 @@ type Reader = Callable[[MergeDict, Sequence[str | ListOp], Any], Any]
 #: an interpolation stringifies.
 type Writer = Callable[[Any], Any]
 
+#: What a node holding a pending list op becomes once every expression below it resolved: given
+#: the data, the node's position and the node, the value to stand there (the node itself for none).
+type Settler = Callable[[MergeDict, _Path, MergeDict], Any]
+
 
 class _Namespace(dict[Any, Any]):
     """The data expressions read and are written back into, with how a value is read and written.
@@ -545,6 +564,7 @@ def resolve_expressions(
     *,
     read: Reader | None = None,
     write: Writer | None = None,
+    settle: Settler | None = None,
 ) -> MergeDict:
     """Resolve ${...} expressions in a merged config dict.
 
@@ -553,6 +573,8 @@ def resolve_expressions(
         read: What an expression reads of the value at a position; the value itself when omitted.
         write: What a resolved expression leaves in the data, and an interpolation stringifies;
             the value itself when omitted.
+        settle: What a node holding a pending list op becomes once the last expression below
+            it resolved, before anything reading the node does; left as it is when omitted.
 
     Returns:
         A new dict with all ${...} expression strings replaced by their values.
@@ -587,13 +609,74 @@ def resolve_expressions(
                 except _RefusedError as exc:
                     raise UnsafeExpressionError.refused(raw_str[span.start : span.end], str(exc)) from exc.__cause__
 
-    # 5. Resolve in order, building namespace incrementally
+    # 5. Resolve in order, building namespace incrementally; a node of pending ops settles
+    # once the last expression below it has, and every reader of it is ordered after that one.
+    unresolved = _pending_counts(data, expr_fields) if settle is not None else {}
     for path in order:
         raw_str = expr_fields[path]
         result = _resolve_single(raw_str, data, path)
         _set_nested_by_path(data, path, result)
+        if settle is not None:
+            _settle_pending(data, path, unresolved, settle)
 
     return dict(data)
+
+
+def _holds_list_ops(node: Any) -> bool:
+    """Whether *node* is a dict holding a pending list op, which only the list it makes means anything as."""
+    return isinstance(node, dict) and any(isinstance(k, ListOp) for k in node)
+
+
+def _pending_prefixes(data: MergeDict, path: Sequence[str | ListOp], *, crossed: bool = False) -> list[_Path]:
+    """Return the prefixes of *path* at which *data* holds a node of pending list ops, outermost first.
+
+    The walk follows the data as it stands, a list element by its position, and stops where
+    the path leaves it. With *crossed*, only the nodes the path reads as the value they settle
+    into: one it ends at, or leaves by a segment that is no op. A path stepping through the op
+    itself, as an anchor spells one from inside an item the op holds, reads the op's own items.
+    """
+    found: list[_Path] = []
+    node: Any = data
+    for depth, part in enumerate(path):
+        if _holds_list_ops(node) and not (crossed and isinstance(part, ListOp)):
+            found.append(tuple(path[:depth]))
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        elif isinstance(node, list) and (index := _list_index(part)) is not None and 0 <= index < len(node):
+            node = node[index]
+        else:
+            return found
+    if _holds_list_ops(node):
+        found.append(tuple(path))
+    return found
+
+
+def _pending_counts(data: MergeDict, expr_fields: dict[_Path, str]) -> dict[_Path, int]:
+    """Count, for each node of pending list ops, the expressions below it still to resolve."""
+    counts: dict[_Path, int] = {}
+    for path in expr_fields:
+        for prefix in _pending_prefixes(data, path):
+            counts[prefix] = counts.get(prefix, 0) + 1
+    return counts
+
+
+def _settle_pending(data: _Namespace, path: _Path, unresolved: dict[_Path, int], settle: Settler) -> None:
+    """Settle each node of pending ops above *path* that the expression just resolved was the last below.
+
+    The innermost first, so an outer node settles over what its inner ones became.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#a-patch-over-an-expression-patches-its-value
+    """
+    for prefix in sorted((p for p in unresolved if path[: len(p)] == p), key=len, reverse=True):
+        unresolved[prefix] -= 1
+        if unresolved[prefix]:
+            continue
+        del unresolved[prefix]
+        node = _get_nested(data, prefix)
+        settled = settle(data, prefix, node)
+        if settled is not node:
+            _set_nested_by_path(data, prefix, settled)
 
 
 def _scan_expressions(data: MergeDict) -> dict[_Path, str]:
@@ -650,6 +733,9 @@ def _dependency_graph(data: MergeDict, expr_fields: dict[_Path, str]) -> dict[_P
             segments = _scan_path(data, ref)
             read.update(below.get(segments, ()))
             read.update(segments[:depth] for depth in range(1, len(segments)) if segments[:depth] in expr_fields)
+            # A node of pending ops is read as the value it settles into, which every
+            # expression below it makes.
+            read.update(p for prefix in _pending_prefixes(data, segments, crossed=True) for p in below.get(prefix, ()))
         deps[path] = read
     return deps
 
@@ -1026,10 +1112,44 @@ def _read_value(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
     """
-    value = _get_nested(namespace, parts)
+    value = _read_through(namespace, parts)
     if namespace.read is None:
         return value
     return namespace.read(namespace, _scan_path(namespace, parts), value)
+
+
+def _read_through(data: MergeDict, parts: Sequence[str | ListOp]) -> Any:
+    """Return the value at *parts*, refusing one that a pending list op holds or that holds one.
+
+    A node of ops no type applied before resolution has no list to read: the op dict is never
+    handed out as if it were the value. A segment naming the op itself, which only an anchor
+    spells from inside an item the op holds, steps through it.
+
+    Raises:
+        MissingReferenceError: If *parts* reaches nothing, or crosses or reaches pending list ops.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#a-pending-list-op-is-read-as-its-list
+    """
+    current: Any = data
+    for depth, part in enumerate(parts):
+        if not isinstance(part, ListOp) and _holds_list_ops(current):
+            raise MissingReferenceError.pending_list_ops(_spell_path(parts[:depth]))
+        _, current = _step(current, part, parts)
+    if (inner := _list_ops_within(current)) is not None:
+        raise MissingReferenceError.pending_list_ops(_spell_path((*parts, *inner)))
+    return current
+
+
+def _list_ops_within(value: Any) -> _Path | None:
+    """Return where, relative to *value*, the first node of pending list ops stands, ``None`` for none."""
+    if _holds_list_ops(value):
+        return ()
+    children = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for key, child in children:
+        if (inner := _list_ops_within(child)) is not None:
+            return (str(key) if isinstance(key, int) else key, *inner)
+    return None
 
 
 class _ValueMissError(LookupError):
@@ -1227,10 +1347,9 @@ def _resolve_single(expr_str: str, namespace: _Namespace, node_path: _Path = ())
     (``.``, ``::``) is resolved against.
     """
     spans = list(_find_expressions(expr_str))
-    # Check if the entire string is a single ${expr}
-    if len(spans) == 1 and spans[0].body is not None and (spans[0].start, spans[0].end) == (0, len(expr_str)):
+    if is_whole_expression(expr_str):
         # Pure expression — return typed result
-        tree = _parse_anchored(spans[0].body, node_path)
+        tree = _parse_anchored(cast("str", spans[0].body), node_path)
         return namespace.write(_eval_expr(tree, namespace, expr_str))
 
     # Interpolation or escape mode: build string from parts, as one computed value
@@ -1848,8 +1967,44 @@ class _Prefixer(ast.NodeTransformer):
         return ast.copy_location(_path_to_ast([*self._parts, node.id]), node)
 
 
+class _DotRunPrefixer(_Prefixer):
+    """Rewrite each file-anchored reference base ``name`` into the dot run climbing to its document's root.
+
+    For a document no absolute path reaches while it loads: one a list op holds, at an index
+    only the merge gives it. *levels* is the depth of the expression in its document, one
+    dot per segment, so ``name`` at ``sub.label`` becomes ``..name``, which moves with the
+    item to whatever index it lands at. The dot run never climbs past the document's root,
+    so :func:`check_anchor_depth` holds it as it holds one the file wrote.
+
+    Raises:
+        MissingReferenceError: At the root of the document (no *levels*), where the
+            document is the expression itself and no dot run climbs to it.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/reference-anchoring.md#a-document-a-list-op-holds-is-anchored-by-dot-runs
+    """
+
+    def __init__(self, levels: int) -> None:
+        super().__init__(())
+        self._levels = levels
+
+    def visit_Name(self, node: ast.Name) -> ast.AST:  # NodeTransformer dispatches on the AST class name
+        """Return *node* unchanged for an anchor, else hung off the dot run to the document's root."""
+        if _anchor_dot_count(node.id) is not None:
+            return node
+        if not self._levels:
+            raise MissingReferenceError.unanchorable(node.id)
+        stand_in = ast.Name(id=_StandIn(_marker_text(self._levels)), ctx=ast.Load())
+        return ast.copy_location(ast.Attribute(value=stand_in, attr=node.id, ctx=ast.Load()), node)
+
+
 def _prefix_content(expr_content: str, prefix: _Path) -> str:
-    """Prefix every file-anchored reference in one ``${...}`` body by *prefix*.
+    """Prefix every file-anchored reference in one ``${...}`` body by *prefix*."""
+    return _rewrite_content(expr_content, _Prefixer(prefix))
+
+
+def _rewrite_content(expr_content: str, prefixer: _Prefixer) -> str:
+    """Rewrite every file-anchored reference in one ``${...}`` body with *prefixer*.
 
     A body that does not parse is returned as written: the merge never validates an
     expression, so it reaches resolution, which refuses it quoting the file's own text, as
@@ -1862,8 +2017,8 @@ def _prefix_content(expr_content: str, prefix: _Path) -> str:
         tree = _parse_expression(expr_content)
     except SyntaxError:
         return expr_content
-    # The parse cache is shared, and _Prefixer rewrites the tree in place.
-    tree = _Prefixer(prefix).visit(copy.deepcopy(tree))
+    # The parse cache is shared, and the prefixer rewrites the tree in place.
+    tree = prefixer.visit(copy.deepcopy(tree))
     return _unparse(tree)
 
 
@@ -1909,6 +2064,24 @@ def prefix_references(data: Any, prefix: _Path) -> Any:
     if not prefix:
         return data
     return _map_strings(data, lambda content: _prefix_content(content, prefix))
+
+
+def relative_references(data: Any, node_path: _Path) -> Any:
+    """Return *data*, at *node_path* in its document, with every file-anchored reference spelled as a dot run.
+
+    The anchor of a document no absolute path reaches while it loads, one a list op holds:
+    each bare reference climbs to the document's root from where it is written
+    (:class:`_DotRunPrefixer`), so it means what :func:`prefix_references` makes it mean
+    for a document mounted at a key. Anchored references are left untouched, as there.
+
+    Raises:
+        MissingReferenceError: For a bare reference at the document's root, which only a
+            document that is a single string holds.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/reference-anchoring.md#a-document-a-list-op-holds-is-anchored-by-dot-runs
+    """
+    return _map_strings(data, lambda content: _rewrite_content(content, _DotRunPrefixer(len(node_path))))
 
 
 def canonicalize_references(data: Any) -> Any:

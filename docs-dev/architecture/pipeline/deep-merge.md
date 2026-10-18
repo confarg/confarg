@@ -17,6 +17,8 @@
   An override holding the `__base__` op is "this list, then these patches", so it replaces a name dict or an earlier deferred patch rather than merging into it ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#a-base-list-carried-with-its-patch-replaces-what-lay-below)).
   A `__base__` of `DICT_DELETE` discards a list base too: it is a whole-field delete with ops after it ([below](#an-op-after-a-whole-field-delete-has-nothing-below-it)).
   Over a list base, the override's own base replaces it as well; a patch beside it whose meaning is the type's — a name key, an index past the base — stays deferred with it rather than being applied as list ops, as the same override over no lower layer is (5a, found fixing BUG-221: `--pt 1 2 --pt.y 5` over `APP_PT='[7, 8]'` read `y` as a list index).
+- **An expression standing for a whole value is the base of a patch over it.**
+  A dict over `'${proto}'` is carried over it as `{__base__: '${proto}', …}`, which `build()` applies once the expression resolves, rather than replacing it as a scalar ([below](#a-patch-over-an-expression-patches-its-value)).
 - **A cast pin replaces what lies below.**
   A file's `{__cast__, __value__}` is a value, so it replaces a list or a dict a lower layer held, as a scalar would, rather than being merged into it as a patch (5b: two files, `u: [1, 2]` then a pin, deferred the pin's keys as a patch of the list).
   The merge tells it by shape alone (`_is_pin_dict`), whatever the type; construction resolves the pin, as it does wherever one stands (BUG-210).
@@ -36,7 +38,7 @@ These notes write a marker bare, `__append__`, and a plain string key quoted, `'
 |---|---|---|
 | `__append__` | append items | `--f+`, `F+`, `--config.<f>+`, `CONFIG__F+` |
 | `__delete__` | delete original indices (before appends) | `--f.N-`, `F__N-` |
-| `__base__` | replacement base list, or `DICT_DELETE`: no base at all | a whole-list value followed by a patch in the same source, or a deferred patch (an index past the base, or a key that is no index); `DICT_DELETE` when a whole-field delete is followed by an op at or below its path |
+| `__base__` | replacement base list, or `DICT_DELETE`: no base at all, or an expression standing for the whole value below the patch | a whole-list value followed by a patch in the same source, or a deferred patch (an index past the base, or a key that is no index); `DICT_DELETE` when a whole-field delete is followed by an op at or below its path; a patch of any kind over an expression |
 | `__delete_after__` | delete indices *after* appends | `--f.N-` appearing after `--f+` on the CLI |
 | `"N"` | index patch (negative counts from the end) | `--f.N`, `F__N`, index-keyed dicts |
 
@@ -52,6 +54,19 @@ Every producer — `_read_file_ops` (a file's `__append__`, as written), `_merge
 `_to_append_list` normalizes either to a flat list.
 An index-keyed dict (`{"0": …, "1": …}`) is a *construct-time* concern — `typedload._construct` reads it directly to build a sequence — not an append value, and the merge layer never produces one under `__append__`.
 A dict branch that once accepted that shape there was speculative ("for future env-var support" that never arrived) and has been dropped; the environment appends by a variable's name (FEAT-18), with the CLI's own writer, so it stores the same two shapes.
+
+## A patch over an expression patches its value
+
+A patch over an expression that stands for a whole value refines what the expression resolves to ([design decisions](../design-decisions/a-patch-over-an-expression-patches-its-value.md#a-patch-over-an-expression-patches-its-value)).
+The merge keeps the expression as the patch's base, `{__base__: '${proto}', host: x}`, where a patch replaced a scalar until then, and `build()` settles the node once the expression has resolved.
+
+- **Between layers**, `_merge._merge_existing_value` hands a dict written over a value that is no dict to `_patched`: a list is the base its ops apply to (`_merge_list_base`), an expression the base it is carried over (`_over_an_expression`), anything else is replaced.
+- **Within one source**, the one descent opens an expression the way it opens a list (`_open_for_ops`), so `APP_DB='${proto}'` beside `APP_DB__HOST=x` carries the key over it.
+- **What is an expression standing for a value** is `dictexpr.is_whole_expression`, asked through `_merge._stands_for_a_value`: one `${...}` and nothing around it, the only string that may resolve to a list, a dict or a struct.
+- **In `build()`**, the default layer lays nothing below such a node (`_default_layer._carries_an_expression`), resolution calls `_default_layer.settle_pending` on it once the last expression below it has resolved, and every reference to the node is ordered after that one (`_pending_prefixes`).
+  The settled value is the base and the patch combined by `_merge_existing_value`, typed by where the node stands, with any op the patch still holds applied over nothing.
+
+Until then `--db.host x` over a file's `db: '${proto}'` built `host='x'` and every other field at its default, and a list op over `names: '${other}'` dropped the expression's items.
 
 ## Which keys are one key
 

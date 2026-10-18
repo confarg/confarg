@@ -237,20 +237,28 @@ class TestWhereItIsLaid:
         assert data["either"]["size"] == 5
 
     def test_containers_are_walked(self) -> None:
-        """A list item, an appended item and a dict value each get the item's defaults."""
+        """A list item, an appended item and a dict value each get the item's defaults.
+
+        The append is applied over nothing first, so the item is laid at the index it builds at.
+        """
         data, untouched = _lay(
             _HoldsList,
             {"items": {ListOp.APPEND: [{}]}, "by_name": {"a": {}}},
         )
-        assert data["items"] == {ListOp.APPEND: [{"port": 80}]}
+        assert data["items"] == [{"port": 80}]
         assert data["by_name"] == {"a": {"port": 80}}
-        assert ("items", ListOp.APPEND, 0, "port") in untouched
+        assert ("items", 0, "port") in untouched
 
-    def test_a_carried_base_is_left_as_it_is(self) -> None:
-        """A ``__base__`` replaces what lies below: the default is not combined with it."""
-        node = {ListOp.BASE: [5], ListOp.APPEND: [6]}
+    def test_a_carried_base_is_not_combined_with_the_default(self) -> None:
+        """A ``__base__`` replaces what lies below: the ops apply over it, never over the default ``(0, 1)``."""
+        data, _ = _lay(_HoldsList, {"t": {ListOp.BASE: [5], ListOp.APPEND: [6]}})
+        assert data["t"] == [5, 6]
+
+    def test_a_carried_expression_is_left_as_it_is(self) -> None:
+        """What lies below the patch is unknown until resolution: no default is laid under it."""
+        node = {ListOp.BASE: "${other}", ListOp.APPEND: [6]}
         data, _ = _lay(_HoldsList, {"t": node})
-        assert data["t"] == node
+        assert data["t"] is node
 
     def test_a_pin_is_left_as_it_is(self) -> None:
         """A cast pin is a value, read by construction."""
