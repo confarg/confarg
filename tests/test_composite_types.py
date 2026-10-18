@@ -392,22 +392,22 @@ class TestUnion:
 class TestUnionLeafDisambiguation:
     """Leaf union disambiguation: int vs float, bool vs int, three-way.
 
-    The rank is ``float > int > bool``, so ``Union[int, float]`` takes an integral token as a
-    float and ``Union[bool, int]`` takes a numeric one as an int.
+    The rank is ``int > float > bool``, so ``Union[int, float]`` takes an integral token as an
+    int and any other number as a float, and ``Union[bool, int]`` takes a numeric one as an int.
     """
 
     @pytest.mark.parametrize(
         ("target_cls", "source", "expected", "expected_type"),
         [
-            # int vs float — float outranks int, so an integral token still lands on float
-            (make_target("value", Union[int, float], default=0), {"args": ["--value", "42"]}, 42, float),
+            # int vs float — int outranks float, so only an integral token lands on int
+            (make_target("value", Union[int, float], default=0), {"args": ["--value", "42"]}, 42, int),
             (make_target("value", Union[int, float], default=0), {"args": ["--value", "3.14"]}, 3.14, float),
             # bool vs int
             (make_target("value", Union[bool, int], default=0), {"env": {"MYAPP_VALUE": "true"}}, True, bool),
             (make_target("value", Union[bool, int], default=0), {"env": {"MYAPP_VALUE": "false"}}, False, bool),
             (make_target("value", Union[bool, int], default=0), {"args": ["--value", "42"]}, 42, int),
             # three-way
-            (make_target("value", Union[int, float, str], default=0), {"args": ["--value", "7"]}, 7, float),
+            (make_target("value", Union[int, float, str], default=0), {"args": ["--value", "7"]}, 7, int),
             (make_target("value", Union[int, float, str], default=0), {"args": ["--value", "1.5"]}, 1.5, float),
             (make_target("value", Union[int, float, str], default=0), {"args": ["--value", "hello"]}, "hello", str),
         ],

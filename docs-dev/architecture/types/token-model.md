@@ -13,6 +13,7 @@
 ## A leaf reaches the merged dict as written
 
 A token is coerced before `build()` only to a value a self-describing file holds natively: `bool`, `int`, `float`, `None` and a `Literal` over them (`_coerce._is_eagerly_coercible`), so `--port 8080` holds the `int` a file's `port: 8080` does, and a CLI number works in an expression.
+A number too large for a float is coerced too, to the infinity a file's parser makes of it, so `merge()` reads back from its own dump; the warning it emits names the flag or variable, since the parser has no field path yet ([design decisions](../design-decisions/a-float-reads-an-int-as-its-digits.md#a-number-too-large-for-a-float-reads-as-infinity)).
 A token for a type whose value is an object no file holds — an `Enum` member, a registered leaf type such as `Path`, a `Literal` member that is an `Enum` — stays as typed (`_coerce._reads_as_object`), as a file's string stays as written.
 So every channel delivers the same type for a leaf, and `merge()` reads back unchanged from its own dump.
 

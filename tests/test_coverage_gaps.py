@@ -575,7 +575,7 @@ class TestTypeHelpers:
     def test_try_coerce_none_ft_returns_token(self) -> None:
         """_try_coerce with ft=None returns the token unchanged."""
         token = _StrToken("hello")
-        assert _try_coerce(None, token) is token
+        assert _try_coerce(None, token, "--value") is token
 
     # -----------------------------------------------------------------
     # _try_coerce: str passthrough — _StrToken is already a str subclass,
@@ -589,13 +589,13 @@ class TestTypeHelpers:
         so the token is passed back as-is rather than being actively coerced.
         """
         token = _StrToken("hello world")
-        result = _try_coerce(str, token)
+        result = _try_coerce(str, token, "--value")
         assert result is token
 
     def test_try_coerce_str_token_is_still_str(self) -> None:
         """_StrToken IS a str subclass — passthrough means the caller gets a str-compatible value."""
         token = _StrToken("something")
-        result = _try_coerce(str, token)
+        result = _try_coerce(str, token, "--value")
         assert isinstance(result, str)
 
     # -----------------------------------------------------------------
@@ -627,43 +627,43 @@ class TestTypeHelpers:
     )
     def test_try_coerce_concrete_types(self, ft, raw, expected) -> None:
         """_try_coerce actively coerces bool, int and float tokens."""
-        result = _try_coerce(ft, raw)
+        result = _try_coerce(ft, raw, "--value")
         assert result == expected
 
     def test_try_coerce_literal_str_matches_value(self) -> None:
         """_try_coerce with a Literal type coerces the token to the matching literal value."""
         token = _StrToken("fast")
-        result = _try_coerce(Literal["fast", "slow"], token)
+        result = _try_coerce(Literal["fast", "slow"], token, "--value")
         assert result == "fast"
 
     def test_try_coerce_literal_int_value(self) -> None:
         """_try_coerce coerces a token to an integer literal."""
         token = _StrToken("1")
-        result = _try_coerce(Literal[1, 2, 3], token)
+        result = _try_coerce(Literal[1, 2, 3], token, "--value")
         assert result == 1
 
     @pytest.mark.parametrize("ft", [Path, Path | None, Literal[_Status.ACTIVE], _Status])
     def test_try_coerce_leaves_an_object_token_as_written(self, ft: Any) -> None:
         """An Enum, a registered type and a Literal over an Enum hold an object no file holds (BUG-246)."""
         token = _StrToken("active")
-        assert _try_coerce(ft, token) is token
+        assert _try_coerce(ft, token, "--value") is token
 
     def test_try_coerce_invalid_bool_returns_token(self) -> None:
         """When coercion fails (e.g. bad bool string), _try_coerce returns the original token."""
         token = _StrToken("not-a-bool")
-        result = _try_coerce(bool, token)
+        result = _try_coerce(bool, token, "--value")
         assert result is token
 
     def test_try_coerce_invalid_int_returns_token(self) -> None:
         """When coercion fails for int, _try_coerce returns the original token unchanged."""
         token = _StrToken("abc")
-        result = _try_coerce(int, token)
+        result = _try_coerce(int, token, "--value")
         assert result is token
 
     def test_try_coerce_optional_single_variant_coerces(self) -> None:
         """Optional[int] / int | None — _try_coerce unwraps the single non-None variant and coerces."""
         token = _StrToken("99")
-        result = _try_coerce(Optional[int], token)
+        result = _try_coerce(Optional[int], token, "--value")
         assert result == 99
 
     def test_try_coerce_multi_union_returns_token(self) -> None:
@@ -672,14 +672,14 @@ class TestTypeHelpers:
         construct() is responsible for handling union disambiguation.
         """
         token = _StrToken("42")
-        result = _try_coerce(int | str, token)
+        result = _try_coerce(int | str, token, "--value")
         assert result is token
 
     def test_try_coerce_unrecognised_type_returns_token(self) -> None:
         """A type that is not bool/int/float/Path/Literal/Enum → token returned unchanged."""
         # dict is not in the coercible set
         token = _StrToken("{}")
-        result = _try_coerce(dict, token)
+        result = _try_coerce(dict, token, "--value")
         assert result is token
 
 

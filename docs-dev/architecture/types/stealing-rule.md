@@ -6,7 +6,7 @@ When a value meets a union of leaf types, the **highest-ranked** variant that ac
 The rank is fixed; the order the union happens to be declared in decides nothing (maintainer-confirmed, and what `examples/7_stealing_rule/README.md` teaches):
 
 ```text
-custom (registered) leaf type > Enum > every other leaf kind > Callable > float > int > bool > None > str
+custom (registered) leaf type > Enum > every other leaf kind > Callable > int > float > bool > None > str
 ```
 
 `_coerce._steal_rank` is the one place that order is written down and `_steal_order` sorts by it, stably — so declaration order still breaks ties *within* a rank, and nowhere else ([invariants](../invariants.md#delegate-to-the-canonical-function)).
@@ -20,6 +20,7 @@ Details that are intended:
 
 - the order applies to every value, but only a token is *converted*: a file's `"5"` meets `int | str` as text, which `int` refuses, so it is the string.
   A file's string is *recognized* by a variant that names it — a type reference, an `Enum` member, a `Literal` member, a registered leaf — exactly as the same text on the CLI is;
+- `int` ranks above `float`, so a whole number is an `int` and anything else a `float`, a file's `1` and the token `1` alike: `1` is `1` and `1.5` is `1.5` for `int | float` ([design decisions](../design-decisions/int-ranks-above-float.md#int-ranks-above-float));
 - `bool` ranks below `int`, so a numeric token is a number and a bool word is a bool: `1` is `1` and `yes` is `True` for `bool | int`.
   No case handles this: the rank does;
 - `None` is ranked like the rest rather than taken first, so an `Enum` member or a registered leaf that accepts `none` outranks it.

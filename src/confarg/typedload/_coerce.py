@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import enum
+import math
 import re
 import types
+import warnings
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
@@ -41,7 +43,7 @@ from confarg._types import (
     _union_args_no_none,
 )
 from confarg.dictexpr import contains_expression
-from confarg.exceptions import SymbolImportError, SymbolNotFoundError, TypeCoercionError
+from confarg.exceptions import FloatOverflowWarning, SymbolImportError, SymbolNotFoundError, TypeCoercionError
 
 _TRUTHY = frozenset({"true", "1", "yes", "on"})
 _FALSY = frozenset({"false", "0", "no", "off"})
@@ -386,15 +388,51 @@ def _coerce_int_value(value: Any, path: str) -> int:
 
 
 def _coerce_float_value(value: Any, path: str) -> float:
-    """Coerce a raw value to float."""
-    if isinstance(value, float) and not isinstance(value, bool):
+    """Coerce a raw value to float: a native float as it is, a native int and a token as their digits read.
+
+    A finite spelling too large for a float reads as the infinity of its sign, as ``float()``
+    reads the text, and emits a :class:`~confarg.exceptions.FloatOverflowWarning`; an infinity
+    word (``inf``, ``-Infinity``) is meant, and does not. A bool is never a number.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-float-reads-an-int-as-its-digits.md#a-float-reads-an-int-as-its-digits
+    """
+    if isinstance(value, bool):
+        raise TypeCoercionError.cannot_coerce(_src_type(value), value, "float", path)
+    if isinstance(value, float):
         return value
+    if isinstance(value, int):
+        try:
+            return float(value)
+        except OverflowError:
+            return _overflowed(_int_text(value), math.inf if value > 0 else -math.inf, path)
     if isinstance(value, _StrToken):
         try:
-            return float(str(value))
+            result = float(str(value))
         except (ValueError, TypeError):
             raise TypeCoercionError.cannot_coerce(_src_type(value), value, "float", path) from None
+        if math.isinf(result) and str(value).strip().lstrip("+-").lower() not in _INFINITY_WORDS:
+            return _overflowed(str(value).strip(), result, path)
+        return result
     raise TypeCoercionError.cannot_coerce(_src_type(value), value, "float", path)
+
+
+#: The words ``float()`` reads as an infinity, a sign and the case aside.
+_INFINITY_WORDS = frozenset({"inf", "infinity"})
+
+
+def _int_text(value: int) -> str:
+    """Return the digits of *value*, or its size where Python refuses to spell an int that long."""
+    try:
+        return str(value)
+    except ValueError:  # past sys.get_int_max_str_digits(); no file parser reads one that long
+        return f"an integer of {value.bit_length()} bits"
+
+
+def _overflowed(text: str, infinity: float, path: str) -> float:
+    """Warn that *text*, a finite number, reads as *infinity* at *path*, and return it."""
+    warnings.warn(FloatOverflowWarning.at_path(text, infinity, path), stacklevel=4)
+    return infinity
 
 
 def _coerce_str_value(value: Any, path: str) -> str:
@@ -404,7 +442,10 @@ def _coerce_str_value(value: Any, path: str) -> str:
     raise TypeCoercionError.cannot_coerce(_src_type(value), value, "str", path)
 
 
-_RANKED_LEAF_TYPES: tuple[type, ...] = (float, int, bool, types.NoneType, str)
+#: The ranked leaf types, highest first. ``int`` is the more specific number, so a whole number
+#: is an ``int`` and anything else a ``float``; ``bool`` follows, so ``1`` is a number and ``yes``
+#: a bool.
+_RANKED_LEAF_TYPES: tuple[type, ...] = (int, float, bool, types.NoneType, str)
 
 #: Rank of each ranked leaf type. Dict lookup on a type object is identity-based: ``bool`` is
 #: a subclass of ``int`` and ranks on its own.
@@ -415,18 +456,12 @@ _LEAF_TYPE_RANKS: dict[type, int] = {tp: 4 + i for i, tp in enumerate(_RANKED_LE
 _CALLABLE_RANK = 3
 
 
-#: The lowest rank an object kind (:func:`_reads_as_object`) holds: a registered leaf ranks 0, an
-#: Enum 1, a ``Literal`` over an Enum 2. Every rank after it is a kind an expression reads as
-#: written: a Callable, which the reading never builds, and the kinds whose value a file holds.
-_LAST_OBJECT_RANK = 2
-
-
 def _steal_rank(tp: Any) -> int:
     """Return the stealing priority of a leaf type — lower steals first.
 
     A registered leaf ranks first, then ``Enum``, then every kind the rule does not name
-    (type references, ``Literal``, a ``bytes`` Literal member), then a Callable, then float,
-    int, bool, None and str. Types sharing a rank keep their declaration order,
+    (type references, ``Literal``, a ``bytes`` Literal member), then a Callable, then int,
+    float, bool, None and str. Types sharing a rank keep their declaration order,
     ``_steal_order`` being stable.
 
     Dev Notes:
@@ -739,23 +774,28 @@ def _certain_leaf(ft: Any) -> Any:
 
 
 def read_as_object(ft: Any, value: Any) -> Any:
-    """Return what an expression reads of *value*, at a field of type *ft*: the object, where one is certain.
+    """Return what an expression reads of *value*, at a field of type *ft*: the built value, where one type is certain.
 
     Where *ft* is one type whose value is an object no file holds (:func:`_reads_as_object`),
     an optional included, *value* is read as that object, whichever channel wrote it and
-    however it spelled it: ``RED``, ``red`` and ``Color.RED`` are one member. Anywhere else,
-    and for a value the type refuses, *value* is read as written: construction refuses it. A
+    however it spelled it: ``RED``, ``red`` and ``Color.RED`` are one member. Where it is a
+    number, a bool, ``None`` or a ``Literal`` over them (:func:`_is_eagerly_coercible`), *value*
+    is read as the one construction builds: a file's ``1`` at a ``float`` is ``1.0``. Text, an
+    ``Any`` and a value the type refuses are read as written: construction refuses the last. A
     union of several variants is read by the variant construction picks, which
-    ``_typed_read`` asks :func:`~confarg.typedload._construct.read_union_leaf` for.
+    ``_typed_read`` asks :func:`~confarg.typedload._construct.read_union_leaf` for. The reading
+    never warns: construction warns of what it builds.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
     """
     tp = _certain_leaf(ft)
-    if tp is None or not _reads_as_object(tp) or contains_expression(value):
+    if tp is None or not (_reads_as_object(tp) or _is_eagerly_coercible(tp)) or contains_expression(value):
         return value
     try:
-        return _coerce_leaf(tp, value)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FloatOverflowWarning)
+            return _coerce_leaf(tp, value)
     except TypeCoercionError:
         return value
 
@@ -814,7 +854,7 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  
     return _coerce_registered(tp, value, path)
 
 
-def _try_coerce(ft: Any, token: _StrToken) -> Any:
+def _try_coerce(ft: Any, token: _StrToken, spelling: str) -> Any:
     """Coerce a string token to the target type if unambiguous.
 
     Coerces immediately to a value a file holds natively (:func:`_is_eagerly_coercible`:
@@ -823,7 +863,9 @@ def _try_coerce(ft: Any, token: _StrToken) -> Any:
     so are tokens for an Enum or a registered leaf type, which a file holds as text too.
     For multi-variant unions, returns token unchanged for construct() to handle.  Never
     raises: a failed coercion also returns the token.  Expression tokens are always
-    returned unchanged.
+    returned unchanged.  A number too large for a float reads as its infinity, as
+    construction reads it, and warns naming *spelling*, the flag or variable that gave it:
+    the field's path is construction's to spell.
 
     Dev Notes:
         docs-dev/architecture/expressions/deferral-rule.md#deferral-rule
@@ -835,6 +877,12 @@ def _try_coerce(ft: Any, token: _StrToken) -> Any:
     if tp is None or not _is_eagerly_coercible(tp):
         return token
     try:
-        return _coerce_leaf(tp, token)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FloatOverflowWarning)
+            return _coerce_leaf(tp, token)
     except TypeCoercionError:
         return token
+    except FloatOverflowWarning:
+        infinity = float(token)
+        warnings.warn(FloatOverflowWarning.for_spelling(token.strip(), infinity, spelling), stacklevel=3)
+        return infinity

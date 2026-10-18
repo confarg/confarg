@@ -11,6 +11,9 @@ from typing import TYPE_CHECKING, Any, Self
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+#: How many characters of an overflowing number a warning shows before eliding the rest.
+_SHOWN_DIGITS = 20
+
 
 def _locals_file_flag(config_flag: str, locals_key: str) -> str | None:
     """Return the ``--<config_flag>.<locals_key> FILE`` flag, or None when there is no flag.
@@ -727,9 +730,10 @@ class ConfargWarning(UserWarning):
     Currently raised when an environment variable matches the configured prefix
     but does not correspond to any known field on the target type, when dynamic
     CLI flag registration fails (the flags are skipped, not the parse), when a
-    dumped value will not read back as its own variant, and when a tag-shaped
+    dumped value will not read back as its own variant, when a tag-shaped
     key is a member's value at a position where a class-path tag could have
-    dispatched. Convert to errors in your test-suite via::
+    dispatched, and when a number too large for a float reads as infinity
+    (:class:`FloatOverflowWarning`). Convert to errors in your test-suite via::
 
         warnings.filterwarnings("error", category=confarg.exceptions.ConfargWarning)
     """
@@ -753,3 +757,39 @@ class ConfargWarning(UserWarning):
             f" and the {what} is selected structurally. Rename the field or pass"
             " a different union_tag to keep the tag's spelling available.",
         )
+
+
+class FloatOverflowWarning(ConfargWarning):
+    """Emitted when a finite number too large for a float reads as infinity.
+
+    A file's integer and a CLI or environment token are read as their digits read, so
+    ``1e400`` and a 400-digit integer are ``inf`` on every channel; an infinity word
+    (``inf``, ``-Infinity``) is meant and never warns. Cancel it alone via::
+
+        warnings.filterwarnings("ignore", category=confarg.exceptions.FloatOverflowWarning)
+    """
+
+    @classmethod
+    def at_path(cls, text: str, infinity: float, path: str) -> FloatOverflowWarning:
+        """Return the warning for *text*, a finite number construction reads as *infinity* at *path*."""
+        return cls(
+            f"{_elided(text)} is too large for a float and reads as {infinity} at '{path}'."
+            " Write inf to mean infinity.",
+        )
+
+    @classmethod
+    def for_spelling(cls, text: str, infinity: float, spelling: str) -> FloatOverflowWarning:
+        """Return the warning for *text*, a finite number the flag or variable *spelling* gives, read as *infinity*.
+
+        A parser reads a token before the field's path is spelled, so the warning names
+        what the user typed instead.
+        """
+        return cls(
+            f"{_elided(text)} for {spelling} is too large for a float and reads as {infinity}."
+            " Write inf to mean infinity.",
+        )
+
+
+def _elided(text: str) -> str:
+    """Return *text*, cut after its first characters when an overflowing number is too long to show."""
+    return text if len(text) <= _SHOWN_DIGITS else f"{text[:_SHOWN_DIGITS]}... ({len(text)} characters)"

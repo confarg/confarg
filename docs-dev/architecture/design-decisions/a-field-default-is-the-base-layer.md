@@ -57,7 +57,7 @@ Followed: RFC 7396 (JSON Merge Patch) and Helm, where `null` for an absent membe
 
 Every tier-1 default is laid so an expression can read it, and each one no source touched is recorded and taken out once expressions are resolved (`drop_untouched`), before construction.
 Construction then applies it from the class (`_construct_struct`'s `defs`), as it always did.
-Building it through `construct()` instead would refuse defaults that work today — `x: float = 1` (an `int` is not coerced to `float`, BUG-154) and `x: int = None` — and would replace the class's own object with a copy.
+Building it through `construct()` instead would refuse defaults that work today — `x: int = None` — would change others — `x: float = 1` would build `1.0` where the class wrote `1` ([a float reads an int as its digits](a-float-reads-an-int-as-its-digits.md#a-float-reads-an-int-as-its-digits)) — and would replace the class's own object with a copy.
 `resolve()` therefore returns the patched defaults (`{"v": [0, 1, 3]}`) and leaves out the untouched ones, so `from_dict(T, resolve(T, raw))` builds what `build(T, raw)` builds.
 
 ## A default string stays text

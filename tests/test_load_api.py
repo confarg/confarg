@@ -327,6 +327,8 @@ class _Typed:
     dirs: _Dirs = dataclasses.field(default_factory=_Dirs)
     out: Any = None
     same: bool = False
+    real: float = 0.0
+    real_or_text: float | str = ""
 
 
 class TestAnExpressionReadsATypedLeaf:
@@ -363,6 +365,19 @@ class TestAnExpressionReadsATypedLeaf:
     def test_an_earlier_result_is_read_as_its_object_too(self) -> None:
         """``again`` holds the dump form ``red`` once resolved, and still reads as the member ``other`` is."""
         assert confarg.build(_Typed, {"colour": "RED", "again": "${colour}", "same": "${again == other}"}).same
+
+    @pytest.mark.parametrize(
+        ("raw", "out"),
+        [
+            ({"real": 1, "out": "${str(real)}"}, "1.0"),
+            ({"real_or_text": 1, "out": "${str(real_or_text)}"}, "1.0"),
+            ({"real": "${1 + 1}", "out": "${str(real)}"}, "2.0"),
+        ],
+        ids=["float", "float-or-str", "an-expression-result"],
+    )
+    def test_a_file_int_reads_as_the_float_it_builds(self, raw: dict[str, Any], out: str) -> None:
+        """A reference reads the built value: an int at a ``float`` position builds and reads ``1.0`` (BUG-154)."""
+        assert confarg.build(_Typed, raw).out == out
 
     def test_a_value_the_type_refuses_reads_as_written(self) -> None:
         """No coercion error at resolution: the text is left for construction to refuse."""

@@ -1640,7 +1640,8 @@ def _collect_loop_typed_specs(  # noqa: PLR0913, PLR0917  # the loop's own input
     registration runs that loop over argv, as the merge will, and registers each flag the
     naming typed apart from the declared types in the shape of its widest occurrence: argv
     restating a naming may type one flag twice, and the framework must bind at least the
-    tokens vanilla takes. The run stops at the first error, which the merge raises.
+    tokens vanilla takes. The run stops at the first error, which the merge raises, and
+    warns of nothing, which the merge warns of: a token too large for a float warns once.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters
@@ -1653,7 +1654,8 @@ def _collect_loop_typed_specs(  # noqa: PLR0913, PLR0917  # the loop's own input
     def observe(path: list[str], ft: Any) -> None:
         typed.setdefault(".".join(path), []).append(ft)
 
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(Exception), warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConfargWarning)
         _parse_cli(argv, target, "", config_flag, union_tag, host_parsed=True, below=below, observe=observe)
     specs: list[FlagSpec] = []
     for name, types in typed.items():

@@ -12,10 +12,11 @@ However, type unions make the whole process ambiguous, in particular when one of
 Confarg relies on the following priority order to resolve leaf type arguments, called the stealing rule:
 
 ```text
-Custom leaf type > Enum > [type, Literal] > [float, int, bool, None] > str
+Custom leaf type > Enum > [type, Literal] > [int, float, bool, None] > str
 ```
 
 That is, in case of a union between those types, the coercion is done in this order, and the first successful coercion wins.
+So for `int | float`, a whole number such as `1` is an `int`, and any other number such as `1.5` or `1e3` a `float`, from the command line and a config file alike.
 This means for example that the scalar coercions we saw in [Tutorial #6](https://confarg.github.io/confarg/examples/6_unions/) work in unions and have a higher priority over keeping the input as a string.
 
 ```console

@@ -1233,9 +1233,9 @@ def _collect_append_items(args: Sequence[str], i: int, et: Any, spelling: str) -
             try:
                 items.append(decode_json(tok, spelling))
             except json.JSONDecodeError:
-                items.append(_try_coerce(et, _StrToken(tok)))
+                items.append(_try_coerce(et, _StrToken(tok), spelling))
         else:
-            items.append(_try_coerce(et, _StrToken(tok)))
+            items.append(_try_coerce(et, _StrToken(tok), spelling))
         i += 1
     return items, i
 
@@ -1336,7 +1336,7 @@ def _consume_fixed_tuple_args(  # noqa: PLR0913, PLR0917  # token only names the
     items: list[Any] = []
     for et in _fixed_seq_types(ft) or ():
         _require_value(args, i, token, usage)
-        items.append(_try_coerce(et, _StrToken(args[i])))
+        items.append(_try_coerce(et, _StrToken(args[i]), token))
         i += 1
     _set_nested(ctx.data, path, items, ctx.at)
     return i
@@ -1378,7 +1378,7 @@ def _handle_scalar_root(args: list[str], i: int, token: str, target_r: Any, data
     """Consume the single value for a non-struct scalar target. Returns new arg index."""
     i += 1
     _require_value(args, i, token)
-    data[_defaults.ROOT_KEY] = _try_coerce(target_r, _StrToken(args[i]))
+    data[_defaults.ROOT_KEY] = _try_coerce(target_r, _StrToken(args[i]), token)
     return i + 1
 
 
@@ -1506,7 +1506,7 @@ def _varlen_value(ft: Any, tokens: list[str], spelling: str) -> Any:
     if parsed is not None:
         return parsed
     et = _elem_type(ft)
-    return [_try_coerce(et, _StrToken(t)) for t in tokens]
+    return [_try_coerce(et, _StrToken(t), spelling) for t in tokens]
 
 
 def _consume_multi_tokens(ctx: _ParseCtx, i: int, path: list[str]) -> tuple[list[str], int]:
@@ -1566,7 +1566,7 @@ def _consume_collection_or_scalar(
 
     # Default: consume one scalar value
     _require_value(args, i, token)
-    _set_nested(ctx.data, path, _try_coerce(ft, _StrToken(args[i])), ctx.at)
+    _set_nested(ctx.data, path, _try_coerce(ft, _StrToken(args[i]), token), ctx.at)
     return i + 1
 
 
