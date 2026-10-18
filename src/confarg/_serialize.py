@@ -17,7 +17,7 @@ from typing import Any
 from confarg import _defaults
 from confarg._callable import _serialize_callable
 from confarg._cast import cast_name_for_type
-from confarg._import import dotted_name
+from confarg._import import dotted_name, imports_back
 from confarg._merge import ListOp, MergeDict
 from confarg._types import (
     TagPolicy,
@@ -138,7 +138,7 @@ def _serialize_struct(
     actual_tp = type(instance)
     if actual_tp is not tp and _is_struct(actual_tp) and issubclass(actual_tp, tp):
         out = _serialize_struct(actual_tp, instance, path, union_tag, tag_policy)
-        out[union_tag] = dotted_name(actual_tp)
+        out[union_tag] = _class_path(actual_tp)
         return out
     flds = _struct_fields(tp)
     out: dict[str, Any] = {}
@@ -181,7 +181,7 @@ def _serialize_union(
 
     if _is_struct_variant(variant_tp):
         if isinstance(serialized, dict) and (tag_policy == "always" or _needs_tag(tp, serialized, union_tag)):
-            serialized[union_tag] = dotted_name(variant_tp)
+            serialized[union_tag] = _class_path(variant_tp)
         return serialized
 
     if _reads_back(tp, instance, serialized, union_tag):
@@ -294,8 +294,28 @@ def _serialize_leaf(tp: Any, value: Any) -> Any:
     if tp is float and isinstance(value, int) and not isinstance(value, bool):
         return float(value)
     if isinstance(value, type):
-        return dotted_name(value)
+        return _class_path(value)
     return value
+
+
+def _class_path(cls: type) -> str:
+    """Return the dotted path a class is written as, a class tag or a type leaf.
+
+    Raises:
+        ConfargError: If the path does not import back as *cls* (:func:`imports_back`), as for a
+            class defined in a function or a name its module rebinds.
+
+    Dev Notes:
+        docs-dev/architecture/types/dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back
+    """
+    path = dotted_name(cls)
+    if not imports_back(path, cls):
+        msg = (
+            f"Cannot serialize class {cls!r}: {path!r} does not import back as it. A class defined"
+            " in a function, or one its module no longer holds under that name, has no dotted path."
+        )
+        raise ConfargError(msg)
+    return path
 
 
 def _serialize_untyped(value: Any) -> Any:

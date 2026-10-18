@@ -24,7 +24,7 @@ import confarg
 import confarg.cli.argparse as confarg_ap
 from confarg._serialize import _serialize_leaf
 from confarg._types import _StrToken
-from confarg.exceptions import TypeCoercionError
+from confarg.exceptions import ConfargError, TypeCoercionError
 from confarg.typedload._coerce import _coerce_type_ref
 from confarg.typedload._construct import construct
 
@@ -45,6 +45,13 @@ class Derived(Base):
 
 class Unrelated:
     """Class unrelated to Base — invalid for type[Base]."""
+
+
+class Impostor(Base):
+    """A class whose qualified name is another class's, so its dotted path imports that one."""
+
+
+Impostor.__qualname__ = "Derived"
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +248,19 @@ class TestBuildRoundtrip:
         instance = ConfigWithTypeRef(worker=Derived)
         serialized = confarg.dump(instance)
         assert serialized == {"worker": _DERIVED_PATH}
+
+    def test_a_class_its_path_does_not_import_back_as_cannot_be_dumped(self) -> None:
+        """A class defined in a function, or a shadowed name, is refused at dump(), not on read-back.
+
+        Its dotted path holds ``<locals>``, or imports another class (BUG-193).
+        """
+
+        class Local(Base):
+            pass
+
+        for cls in (Local, Impostor):
+            with pytest.raises(ConfargError, match=r"does not import back as it"):
+                confarg.dump(ConfigWithTypeRef(worker=cls))
 
     def test_dump_and_build_roundtrip(self) -> None:
         """Invariant: dump then build() round-trips to the same class."""

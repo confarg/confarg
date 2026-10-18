@@ -30,7 +30,9 @@ for such a class is the design question.
 Origin: the initial version stamped every `class:` instance with its spec, so that `dump()` could
 write a Callable field back at all. A callable instance has no field list a dataclass would give
 it. The bug is latent: the stamp never tracked later changes, and the rule it breaks was only
-written down when FEAT-33 was declined.
+written down when FEAT-33 was declined. BUG-229 shares the origin from the auto-binding side: a
+method bound to an owner with state dumps as its bare path, and the same answer probably settles
+both.
 
 ```python
 from collections.abc import Callable

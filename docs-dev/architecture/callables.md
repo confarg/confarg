@@ -220,7 +220,8 @@ A callable therefore dumps as what it is, opener by opener:
 
 | Built from | Dumps as |
 |---|---|
-| a function, a class, a static or class method | its dotted path |
+| a function, a class, a static or class method | its dotted path, when it reads back as the callable |
+| an instance method, bound by [auto-binding](#auto-binding) | the path through its owner's class, which reads back bound to a new owner |
 | `bind:` | `{bind: <target>, <keywords>}`, in the form `active_directives` reads back with every keyword an argument (`_form_holding`): the escaped form when a keyword is spelled like a plain opener; a bare path when nothing is bound. A keyword spelled like an escaped opener opens a spec in either form, so no spec holds it and the dump is refused (BUG-217). The target is serialized by these same rules |
 | `class:` | the spec stamped on the instance as `__confarg_spec__` |
 | `classfn:` | the spec stamped on the owner: a bound method refuses attributes, so a method bound to an owner whose stamp holds a `classfn` opener dumps as that stamp |
@@ -235,6 +236,29 @@ dict.
 A callable that no configuration spells, such as a closure, a lambda or an instance no spec
 built, cannot be dumped. The merged dict keeps the `call:` that produced it, and
 `dump_file(merge(...))` writes it as written.
+
+### A path is written only when it reads back
+
+Having a module and a qualified name does not make a callable importable by them: a closure's
+qualified name holds `<locals>`, a lambda's `<lambda>`, and a module may hold another object
+under the name, or none. So `_serialize_callable` imports the path it is about to write and
+checks that it names the callable (`_reads_back_from`), refusing at `dump()` what used to fail
+only on read-back (BUG-193). A class tag and a `type[X]` leaf are checked the same way,
+through the `imports_back` they share ([dotted imports](types/dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back)). The check imports rather than resolves, so nothing is built: an
+instance method reads back by [auto-binding](#auto-binding), and stands only when the value is
+that method bound to an instance of exactly the class the path names. That is also why a bare
+instance method function, `C.m` unbound, is refused: its path reads back bound. A class method is
+a new bound method on each access, so it is compared with `==`, which holds for the same function
+bound to the same class.
+
+`dotted_name` spells a bound method through the class it is bound to: a method a base defines
+has the base in its qualified name, and `"pkg.Sub.m"` loaded through auto-binding would dump as
+`pkg.Base.m`, bound to a base on read-back. The check does not see an owner's state: a method
+bound to an instance with other values than its no-argument construction dumps as the same path.
+
+Precedent: `pickle` writes a function by reference the same way, which catches every
+unimportable or shadowed name, not only the two markers
+([dotted imports](types/dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back)).
 
 ## CLI
 

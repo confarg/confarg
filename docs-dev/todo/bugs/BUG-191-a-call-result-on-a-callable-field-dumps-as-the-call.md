@@ -8,7 +8,6 @@ effort: S
 risk: low
 impact: behavior
 severity: critical  # the dump re-runs the factory on read-back; a changed factory yields other values, silently
-blocked_by: [BUG-193]
 introduced_by: [PR-5]  # the initial version stamps every call: result with its spec
 ---
 # BUG-191 — A `call:` result on a Callable field dumps as the call, not as what it produced
@@ -23,8 +22,8 @@ including one that named the function directly.
 
 Fix direction: drop the stamp, so the result dumps through the rules for what it is: a
 function as its path, a partial as `bind:`, a stamped `class:` instance as its spec. A result
-with no configuration spelling must then be refused at `dump()`, which is BUG-193. Fixed alone,
-this ticket would turn a closure's call spec into an unimportable path, hence `blocked_by`. The
+with no configuration spelling is then refused at `dump()`, as a path that does not read back
+([round-trip](../../architecture/callables.md#a-path-is-written-only-when-it-reads-back)). The
 CLI token test's `call` case dumps such a closure (`_make_adder`), and needs another target.
 
 Origin: the initial version stamped `call:` results the way it stamped `class:` instances, so

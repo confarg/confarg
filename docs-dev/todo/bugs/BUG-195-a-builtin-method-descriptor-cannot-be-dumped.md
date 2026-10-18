@@ -24,8 +24,10 @@ back.
 Origin: the initial version took a callable without `__module__` to be an instance no spec
 built, and wrote the error message for that case. Latent since then. The builtins fallback of
 PR-91 made the short path `str.upper` load, but `builtins.str.upper` loaded before it *(inferred)*
-and fails to dump the same way. BUG-193 shares the origin: the same check also lets an unimportable
-closure through as a path.
+and fails to dump the same way. BUG-193 shared the origin from the other side, the same check letting
+an unimportable closure through as a path; its fix imports every path back before writing it
+([round-trip](../../architecture/callables.md#a-path-is-written-only-when-it-reads-back)), so the
+path `dotted_name` derives for a descriptor is checked the same way.
 
 ```python
 from collections.abc import Callable

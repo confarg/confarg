@@ -116,6 +116,14 @@ def _make_multiplier(factor: int) -> Callable[[int], int]:
     return _mul
 
 
+def _impostor(x: int) -> int:
+    """A function whose qualified name is another function's, so its dotted path imports that one."""
+    return x
+
+
+_impostor.__qualname__ = "_double"
+
+
 def _bad_factory(x: int) -> int:
     """Factory that returns a non-callable (used to test error path)."""
     return x * 2
@@ -182,6 +190,10 @@ class _Scaler:
     @classmethod
     def class_triple(cls, x: int) -> int:
         return x * 3
+
+
+class _ScalerSub(_Scaler):
+    """Inherits ``_Scaler``'s class method, which a path through it binds to the subclass."""
 
 
 class _ProcessorSub(_Processor):
@@ -1087,6 +1099,43 @@ class TestSerialization:
         )
         dumped = confarg.dump(result)
         assert dumped["fn"] == f"{_MOD}._double"
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            pytest.param("math.sqrt", id="builtin"),
+            pytest.param(f"{_MOD}._Scaler.static_double", id="static-method"),
+            pytest.param(f"{_MOD}._Scaler.class_triple", id="class-method"),
+            pytest.param(f"{_MOD}._NoArgProcessor.transform", id="instance-method"),
+            pytest.param(f"{_MOD}._ScalerSub.class_triple", id="inherited-class-method"),
+            pytest.param(f"{_MOD}._ProcessorSub.process", id="inherited-instance-method"),
+        ],
+    )
+    def test_a_path_that_reads_back_dumps_as_itself(self, path: str) -> None:
+        """A callable loaded from a path dumps as that path, a method bound to its owner included.
+
+        A method a base defines is named through the class it is bound to, not by its qualified
+        name, which names the base and would read back bound to it.
+        """
+        assert confarg.dump(confarg.build(WithBareCallable, {"fn": path}))["fn"] == path
+
+    @pytest.mark.parametrize(
+        "fn",
+        [
+            pytest.param(_make_multiplier(2), id="closure"),
+            pytest.param(_make_adder(1), id="lambda"),
+            pytest.param(_impostor, id="shadowed"),
+            pytest.param(_NoArgProcessor.transform, id="unbound-method"),
+        ],
+    )
+    def test_a_callable_whose_path_does_not_read_back_cannot_be_dumped(self, fn: Callable[[int], int]) -> None:
+        """A callable its dotted path does not import back as is refused at dump(), not on read-back.
+
+        A closure's path holds ``<locals>`` and a lambda's ``<lambda>``; a shadowed name imports
+        another object; an instance method's function reads back bound to a new owner (BUG-193).
+        """
+        with pytest.raises(ConfargError, match=r"no configuration spells it"):
+            confarg.dump(WithBareCallable(fn=fn))
 
     def test_round_trip_partial(self, tmp_json: Any) -> None:
         """A partial round-trips through load and dump."""
