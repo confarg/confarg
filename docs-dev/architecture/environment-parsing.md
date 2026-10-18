@@ -73,7 +73,7 @@ between the two other channels in priority: above
   mapping's order (REF-44): the plain value refines the cast, as a per-field variable does
   on a struct root. That is one case of the order every variable is applied in
   ([below](#the-broader-variable-applies-first)).
-- `FOO__BAR-` / `FOO__ITEMS__1-` are deletes, mirroring `--bar-` / `--items.1-`.
+- `FOO__BAR-` / `FOO__ITEMS__1-` are deletes, mirroring `--bar-` / `--items.1-`. A delete's path, its `-` dropped, is spelled, typed and checked exactly as a value variable's of the same path: the first-segment check and the refusal below a sequence, both below.
 - `<PREFIX>CONFIG[__SUBPATH]` are file pointers, collected and loaded by the pipeline. Their
   value is read as an `__include__` value, so `<PREFIX>CONFIG__USERS={"path": "users.csv",
   "orient": "columns"}` says in the environment what a file says with a mapping
@@ -86,7 +86,7 @@ between the two other channels in priority: above
   CLI and file channels accepted the same configuration — and nothing names one below a
   non-struct root, the tag included (BUG-115). The check asked `_segment_names_real_field` of
   the bare target until then, which counts every key of a dict root and the tag of any root
-  as a member. *(inferred)* The
+  as a member. A delete is checked as the value variable of the path it deletes: until BUG-182 its branch ended ahead of the check, so `APP_NAEM-` was dropped without a word while `APP_NAEM=y` was warned about and `--naem-` refused. *(inferred)* The
   environment is ambient and shared with other software, while argv is an explicit request; a
   stray variable should not stop the program. Tests can escalate the warning with
   `warnings.filterwarnings("error", …)`.

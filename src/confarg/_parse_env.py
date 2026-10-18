@@ -181,13 +181,14 @@ def _refuse_reserved_key(orig_key: str, parts: list[str]) -> None:
         raise ConfargError.reserved_key(orig_key, reserved)
 
 
-def _handle_env_delete(orig_key: str, parts: list[str], target: Any, data: MergeDict, union_tag: str) -> None:
-    """Apply a delete sentinel (FOO__BAR- or FOO__ITEMS__1-) to data."""
-    raw_last = parts[-1][:-1]
-    del_parts, _ = _resolve_env_parts(target, [*parts[:-1], raw_last], union_tag)
-    _refuse_below_a_sequence(orig_key, del_parts, target, union_tag)
+def _handle_env_delete(orig_key: str, del_parts: list[str], data: MergeDict) -> None:
+    """Apply a delete sentinel (FOO__BAR- or FOO__ITEMS__1-) at *del_parts* in data.
+
+    *del_parts* is the spelled path the delete names, its ``-`` suffix dropped, already
+    checked by :func:`_parse_env` as a value variable's path is.
+    """
     try:
-        delete_idx = int(raw_last)
+        delete_idx = int(del_parts[-1])
         is_list_delete = True
     except ValueError:
         is_list_delete = False
@@ -284,7 +285,8 @@ def _warn_unknown_env_field(orig_key: str, parts: list[str], target: Any, walk_t
     asked of the *walk_target* every flag resolves against, so a segment is warned about
     here exactly when the CLI refuses it as unknown: the union tag and a subclass-only
     field name a member (BUG-90), and nothing below a non-struct root does, since that
-    root is set whole (BUG-115).
+    root is set whole (BUG-115). A delete is asked it of the path it deletes, as the
+    value variable of that path is (BUG-182).
 
     Dev Notes:
         docs-dev/architecture/environment-parsing.md#environment-parsing
@@ -430,10 +432,6 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
     # The environment has no typing order, so it is given one: the broader variable first.
     for _, orig_key, key, parts, value in sorted(variables):
         _refuse_reserved_key(orig_key, parts)
-        if _is_env_delete(parts):
-            _handle_env_delete(orig_key, parts, walk_target, data, union_tag)
-            continue
-
         if _apply_env_json_cast(orig_key, parts, walk_target, value, data, root_json, union_tag, is_struct=is_struct):
             continue
 
@@ -442,7 +440,9 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
             data[_defaults.ROOT_KEY] = _try_coerce(_resolve_type(target), _StrToken(value))
             continue
 
-        path, ft = _resolve_env_parts(walk_target, parts, union_tag)
+        # A delete is checked as the value variable of its path is (BUG-182).
+        is_delete = _is_env_delete(parts)
+        path, ft = _resolve_env_parts(walk_target, [*parts[:-1], parts[-1][:-1]] if is_delete else parts, union_tag)
         # Locals are not target fields: skip the unknown-field warning and store the raw
         # token; _pipeline checks and coerces them (docs-dev/architecture/locals.md).
         is_locals = _locals_segment_index(target, path, union_tag) is not None
@@ -452,6 +452,9 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
             ft = None
         else:
             _refuse_below_a_sequence(orig_key, path, walk_target, union_tag)
+        if is_delete:
+            _handle_env_delete(orig_key, path, data)
+            continue
 
         # Same rule as the CLI: a bare callable shorthand already stored at a prefix of
         # this path is a spec this variable refines, not a scalar it replaces.

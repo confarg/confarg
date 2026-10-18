@@ -14,11 +14,13 @@ Going back once again to our database example, this time let's make `DBConfig` t
 class DBBaseConfig:
     """Base database configuration."""
 
+
 @dataclass(kw_only=True)
 class PostgreSQLConfigChild(DBBaseConfig):
     host: str
     port: int = 5432
     schema_name: str
+
 
 @dataclass
 class SQLiteConfigChild(DBBaseConfig):
@@ -79,6 +81,7 @@ You can mix union and inheritance scenarios. Here, we add to the previous exampl
 class APIConfig:
     url: str
     token: str
+
 
 type Config = APIConfig | DBBaseConfig
 ```

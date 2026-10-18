@@ -579,6 +579,19 @@ class TestConfargWarning:
         assert "naem" in msg
         assert "name" in msg  # known fields listed
 
+    @pytest.mark.parametrize("var", ["APP_NAEM-", "APP_NAEM__1-"])
+    def test_typo_in_deleted_field_name_warns(self, loader: ConfargLoader, var: str) -> None:
+        """A delete naming no field is warned about and ignored, as the value variable is (BUG-182)."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = loader.merge(WithDefaults, argv=[], env={var: ""}, env_prefix="APP_")
+        assert result == {}
+        warns = [w for w in caught if issubclass(w.category, confarg.exceptions.ConfargWarning)]
+        assert len(warns) == 1
+        msg = str(warns[0].message)
+        assert repr(var) in msg
+        assert "'naem'" in msg
+
     def test_correct_field_no_warning(self, loader: ConfargLoader) -> None:
         """A correctly spelled prefixed var produces no warning."""
         with warnings.catch_warnings(record=True) as caught:
@@ -1439,6 +1452,11 @@ class TestEnvNonStructRoot:
             (list[int], "APP_0"),
             (dict[str, int], "APP_A"),
             (_EnvSeqPt, "APP_X"),
+            # A delete goes through the same check (BUG-182).
+            (int, "APP_DEBUG-"),
+            (list[int], "APP_0-"),
+            (dict[str, int], "APP_A-"),
+            (_EnvSeqPt, "APP_X-"),
         ],
     )
     def test_variable_below_a_value_root_is_ignored(self, loader: ConfargLoader, target: Any, var: str) -> None:
