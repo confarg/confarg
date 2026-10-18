@@ -1,10 +1,11 @@
 # Classfn names an instance method
 
-`{classfn: C.m, <init>}` builds `C(**init)` and yields its bound method `m`. The siblings of
-`classfn` are the owner's constructor arguments. The method's own arguments sit beside a
-`bind:` or a `call:` whose target is the `classfn` spec: `{bind: {classfn: C.m, k: 1}, k: 2}`
-is `partial(C(k=1).m, k=2)`, and `{call: {classfn: C.m, k: 1}, k: 2}` is `C(k=1).m(k=2)`. So
-the two namespaces never meet, even when the owner and the method share a parameter name.
+`{classfn: C.m, <init>}` builds `C(**init)` and yields its bound method `m`. The other keys
+of a `classfn` spec are the owner's constructor arguments. The method's own arguments sit under
+the `args` of a `bind:` or a `call:` whose target is the `classfn` spec:
+`{bind: {classfn: C.m, k: 1}, args: {k: 2}}` is `partial(C(k=1).m, k=2)`, and
+`{call: {classfn: C.m, k: 1}, args: {k: 2}}` is `C(k=1).m(k=2)`. So the two namespaces never
+meet, even when the owner and the method share a parameter name ([a computation's arguments nest under args](a-computations-arguments-nest-under-args.md#a-computations-arguments-nest-under-args)).
 
 The surrounding rules, settled with it:
 
@@ -44,5 +45,5 @@ Precedent: neither Hydra's `instantiate` nor jsonargparse has a method form, whi
 `classfn` is new. Hydra's `_target_` names a callable to call, and its arguments sit beside it,
 which is the shape `classfn` follows for the owner.
 
-Cost: `classfn` is reserved beside the other openers, so a target with a parameter named
-`classfn` needs the escaped form.
+Cost: a constructor parameter named `classfn` cannot be filled beside the opener, since two
+object openers are refused; it is reached under the `args` of a `call` or a `bind` of the class.

@@ -5187,23 +5187,23 @@ class TestCallableBindContract:
     """``bind:`` over a ``class:`` spec partially applies the instance's ``__call__``, everywhere (FEAT-30).
 
     The inner spec's keys (``--field.bind.class``, ``--field.bind.<ctor arg>``) build the
-    instance, and the outer siblings (``--field.<param>``) are applied to its ``__call__``.
+    instance, and the outer arguments (``--field.args.<param>``) are applied to its ``__call__``.
     """
 
     def test_bind_call_param(self, loader: ConfargLoader) -> None:
-        """A class chosen via .bind.class binds a __call__ param through --field.<param>."""
+        """A class chosen via .bind.class binds a __call__ param through --field.args.<param>."""
         cfg = loader.load(
             _CallableConfig,
-            argv=["--fn.bind.class", f"{__name__}._Greeter", "--fn.bind.greeting", "Hi", "--fn.punct", "!"],
+            argv=["--fn.bind.class", f"{__name__}._Greeter", "--fn.bind.greeting", "Hi", "--fn.args.punct", "!"],
             env={},
         )
         assert cfg.fn("world") == "Hi, world!"
 
 
 class TestCallableOpenerRegistrationContract:
-    """Registration advertises the openers and each mode's sibling flags, and nothing that refuses (FEAT-30).
+    """Registration advertises the openers and each mode's argument flags, and nothing that refuses (FEAT-30).
 
-    A sibling of any opener is an argument of its target, so the discovered flags sit
+    A ``bind`` or ``call`` target's arguments sit under ``args``, a ``class`` target's fields
     directly below the field; no front-end registers the removed ``fn`` opener or a
     ``--<field>.bind.<param>`` namespace.
     """
@@ -5217,19 +5217,19 @@ class TestCallableOpenerRegistrationContract:
 
     @pytest.mark.parametrize("opener", ["bind", "call"])
     def test_bind_and_call_register_the_targets_parameters(self, populating_loader: ConfargLoader, opener: str) -> None:
-        """``--fn.bind`` and ``--fn.call`` both buy ``--fn.<param>`` for the function they name."""
+        """``--fn.bind`` and ``--fn.call`` both buy ``--fn.args.<param>`` for the function they name."""
         flags = populating_loader.registered_flags(
             _CallableConfig,
             argv=[f"--fn.{opener}", f"{__name__}._shout"],
             config_flag="",
         )
         assert flags is not None
-        assert {"fn.name", "fn.punct"} <= flags
+        assert {"fn.args.name", "fn.args.punct"} <= flags
         assert not any(f.startswith("fn.bind.") for f in flags)
 
     @pytest.mark.parametrize("opener", ["bind", "call"])
     def test_a_declared_self_is_an_argument_flag(self, populating_loader: ConfargLoader, opener: str) -> None:
-        """A function that declares ``self`` takes it as an argument, so ``--fn.self`` is registered (BUG-218).
+        """A function that declares ``self`` takes it as an argument, so ``--fn.args.self`` is registered (BUG-218).
 
         Construction counts parameters through ``_fillable_params``, which drops no name.
         """
@@ -5239,7 +5239,7 @@ class TestCallableOpenerRegistrationContract:
             config_flag="",
         )
         assert flags is not None
-        assert {"fn.self", "fn.event"} <= flags
+        assert {"fn.args.self", "fn.args.event"} <= flags
 
     @pytest.mark.parametrize("opener", ["bind", "call"])
     def test_an_instance_methods_receiver_is_no_flag(self, populating_loader: ConfargLoader, opener: str) -> None:
@@ -5250,8 +5250,8 @@ class TestCallableOpenerRegistrationContract:
             config_flag="",
         )
         assert flags is not None
-        assert "fn.x" in flags
-        assert "fn.this" not in flags
+        assert "fn.args.x" in flags
+        assert "fn.args.this" not in flags
 
     def test_class_registers_only_constructor_parameters(self, populating_loader: ConfargLoader) -> None:
         """``--fn.class`` buys the constructor's flags; its ``__call__`` parameters take a ``bind:`` over it."""
@@ -5263,7 +5263,7 @@ class TestCallableOpenerRegistrationContract:
         assert flags is not None
         assert "fn.greeting" in flags
         assert "fn.punct" not in flags
-        assert "fn.bind.punct" not in flags
+        assert "fn.args.punct" not in flags
 
     def test_removed_fn_opener_is_refused_by_construction(self, loader: ConfargLoader) -> None:
         """``--fn.fn X`` is an ordinary key below the field, so the spec has no opener."""
@@ -5328,7 +5328,7 @@ class TestClassfnContract:
         assert cfg.fn(5) == 15
 
     def test_bind_over_classfn_via_cli(self, loader: ConfargLoader) -> None:
-        """The owner's ``k`` sits in the nested spec and the method's ``k`` beside ``bind``."""
+        """The owner's ``k`` sits in the nested spec and the method's ``k`` under ``args``."""
         cfg = loader.load(
             _NullaryCallableConfig,
             argv=[
@@ -5336,7 +5336,7 @@ class TestClassfnContract:
                 f"{__name__}._ClassfnOwner.scale",
                 "--fn.bind.k",
                 "3",
-                "--fn.k",
+                "--fn.args.k",
                 "5",
             ],
             env={},
@@ -5357,7 +5357,7 @@ class TestClassfnContract:
         """``call:`` of a class builds its arguments as ``class:`` does (BUG-155)."""
         cfg = loader.load(
             _IntCallableConfig,
-            argv=["--fn.call", f"{__name__}._Adder", "--fn.k", "2"],
+            argv=["--fn.call", f"{__name__}._Adder", "--fn.args.k", "2"],
             env={},
         )
         assert cfg.fn.k == 2
@@ -5417,22 +5417,25 @@ class _TypedCallConfig:
 class TestCallOnTheCliContract:
     """``call:`` is a subtree like ``bind:``, and fills a field of any type, in every front-end (FEAT-32).
 
-    A sibling of a typed call is accepted where the command line opens the call: a flag, a
-    whole value or a ``--config`` file it names.
+    The target's arguments sit under ``args``, which is a subtree below every field a call
+    fills, so a flag refines a call whatever opened it: a flag, a whole value, a
+    ``--config`` file, the environment.
     """
 
     def test_nested_classfn_target_fills_an_int(self, loader: ConfargLoader) -> None:
-        """``--n.call.k`` builds the owner and ``--n.k`` is the method's own ``k``."""
+        """``--n.call.k`` builds the owner and ``--n.args.k`` is the method's own ``k``."""
         argv = [
             "--n.call.classfn",
             f"{__name__}._ClassfnOwner.scale",
             "--n.call.k",
             "3",
-            "--n.k",
+            "--n.args.k",
             "5",
         ]
         merged = loader.merge(_TypedCallConfig, argv=argv, env={})
-        assert merged == {"n": {"call": {"classfn": f"{__name__}._ClassfnOwner.scale", "k": "3"}, "k": "5"}}
+        assert merged == {
+            "n": {"call": {"classfn": f"{__name__}._ClassfnOwner.scale", "k": "3"}, "args": {"k": "5"}},
+        }
         assert loader.load(_TypedCallConfig, argv=argv, env={}).n == 15
 
     def test_nested_classfn_target_fills_an_int_via_env(self, loader: ConfargLoader) -> None:
@@ -5440,7 +5443,7 @@ class TestCallOnTheCliContract:
         env = {
             "APP_N__CALL__CLASSFN": f"{__name__}._ClassfnOwner.scale",
             "APP_N__CALL__K": "3",
-            "APP_N__K": "5",
+            "APP_N__ARGS__K": "5",
         }
         assert loader.load(_TypedCallConfig, argv=[], env=env, env_prefix="APP_").n == 15
 
@@ -5448,43 +5451,52 @@ class TestCallOnTheCliContract:
         """On a Callable field the method is called, and its value is the callable."""
         cfg = loader.load(
             _TypedCallConfig,
-            argv=["--fn.call.classfn", f"{__name__}._Multiplier.by", "--fn.call.k", "3", "--fn.k", "5"],
+            argv=["--fn.call.classfn", f"{__name__}._Multiplier.by", "--fn.call.k", "3", "--fn.args.k", "5"],
             env={},
         )
         assert cfg.fn is not None
         assert cfg.fn(2) == 30
 
     def test_call_fills_an_int(self, loader: ConfargLoader) -> None:
-        """``--n.call`` opens the call, so ``--n.x`` is an argument of its target."""
-        argv = ["--n.call", f"{__name__}._twice", "--n.x", "4"]
-        assert loader.merge(_TypedCallConfig, argv=argv, env={}) == {"n": {"call": f"{__name__}._twice", "x": "4"}}
+        """``--n.call`` opens the call, and ``--n.args.x`` is an argument of its target."""
+        argv = ["--n.call", f"{__name__}._twice", "--n.args.x", "4"]
+        merged = loader.merge(_TypedCallConfig, argv=argv, env={})
+        assert merged == {"n": {"call": f"{__name__}._twice", "args": {"x": "4"}}}
         assert loader.load(_TypedCallConfig, argv=argv, env={}).n == 8
 
     def test_call_fills_a_struct(self, loader: ConfargLoader) -> None:
-        """A sibling the struct has no member for is an argument of the factory."""
+        """An argument is the factory's, whether or not the struct has a member of its name."""
         cfg = loader.load(
             _TypedCallConfig,
-            argv=["--p.call", f"{__name__}._scaled_point", "--p.a", "2", "--p.scale", "3"],
+            argv=["--p.call", f"{__name__}._scaled_point", "--p.args.a", "2", "--p.args.scale", "3"],
             env={},
         )
         assert cfg.p == _CallPoint(a=6, b=3)
 
-    def test_sibling_order_does_not_matter(self, loader: ConfargLoader) -> None:
-        """A sibling typed before the opener is accepted too."""
-        cfg = loader.load(_TypedCallConfig, argv=["--n.x", "4", "--n.call", f"{__name__}._twice"], env={})
+    def test_argument_order_does_not_matter(self, loader: ConfargLoader) -> None:
+        """An argument typed before the opener is accepted too."""
+        cfg = loader.load(_TypedCallConfig, argv=["--n.args.x", "4", "--n.call", f"{__name__}._twice"], env={})
         assert cfg.n == 8
 
     def test_call_opened_by_a_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
         """A root ``--config`` file opens the call the CLI refines."""
-        base = tmp_yaml(f"n:\n  call: {__name__}._twice\n  x: 1\n")
-        cfg = loader.load(_TypedCallConfig, argv=["--config", str(base), "--n.x", "4"], env={})
+        base = tmp_yaml(f"n:\n  call: {__name__}._twice\n  args:\n    x: 1\n")
+        cfg = loader.load(_TypedCallConfig, argv=["--config", str(base), "--n.args.x", "4"], env={})
         assert cfg.n == 8
+
+    def test_call_opened_by_a_lower_layer(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A call the environment or a ``files=`` file opens is refined from flags too."""
+        argv = ["--n.args.x", "4"]
+        env = {"APP_N__CALL": f"{__name__}._twice"}
+        assert loader.load(_TypedCallConfig, argv=argv, env=env, env_prefix="APP_").n == 8
+        base = tmp_yaml(f"n:\n  call: {__name__}._twice\n")
+        assert loader.load(_TypedCallConfig, argv=argv, env={}, files=[base]).n == 8
 
     def test_call_opened_by_a_whole_value(self, loader: ConfargLoader) -> None:
         """A whole ``{…}`` value opens the call too."""
         cfg = loader.load(
             _TypedCallConfig,
-            argv=["--p", json.dumps({"call": f"{__name__}._scaled_point", "a": 2}), "--p.scale", "3"],
+            argv=["--p", json.dumps({"call": f"{__name__}._scaled_point", "args": {"a": 2}}), "--p.args.scale", "3"],
             env={},
         )
         assert cfg.p == _CallPoint(a=6, b=3)
@@ -5505,19 +5517,25 @@ class TestCallOnTheCliContract:
         blob = json.dumps({"call": f"{__name__}._twice"})
         flags = populating_loader.registered_flags(_TypedCallConfig, argv=["--n", blob])
         assert flags is not None
-        assert "n.x" not in flags
+        assert "n.args.x" not in flags
         flags = populating_loader.registered_flags(_TypedCallConfig, argv=["--p", blob])
         assert flags is not None
-        assert "p.x" in flags
+        assert "p.args.x" in flags
 
-    def test_sibling_delete(self, loader: ConfargLoader) -> None:
-        """A sibling of an opened call deletes as a Callable field's sibling does."""
+    def test_argument_delete(self, loader: ConfargLoader) -> None:
+        """An argument of a call deletes as a Callable field's argument does."""
         merged = loader.merge(
             _TypedCallConfig,
-            argv=["--n.call", f"{__name__}._twice", "--n.x", "4", "--n.x-"],
+            argv=["--n.call", f"{__name__}._twice", "--n.args.x", "4", "--n.args.x-"],
             env={},
         )
-        assert merged == {"n": {"call": f"{__name__}._twice", "x": DICT_DELETE}}
+        assert merged == {"n": {"call": f"{__name__}._twice", "args": {"x": DICT_DELETE}}}
+
+    def test_arguments_with_no_call_anywhere_fail_in_build(self, loader: ConfargLoader) -> None:
+        """``args`` is accepted below a field a call can fill; with no call opened, construction refuses it."""
+        assert loader.merge(_TypedCallConfig, argv=["--n.args.x", "4"], env={}) == {"n": {"args": {"x": "4"}}}
+        with pytest.raises(TypeCoercionError):
+            loader.load(_TypedCallConfig, argv=["--n.args.x", "4"], env={})
 
     @pytest.mark.parametrize("argv", [["--n.x", "4"], ["--p.scale", "3"]])
     def test_sibling_without_an_opener_is_refused(self, loader: ConfargLoader, argv: list[str]) -> None:
@@ -5527,10 +5545,10 @@ class TestCallOnTheCliContract:
             loader.merge(_TypedCallConfig, argv=argv, env={})
 
     def test_a_member_named_call_keeps_its_data(self, loader: ConfargLoader) -> None:
-        """``--h.call`` is the member, so nothing is opened and ``--h.x`` is refused."""
+        """``--h.call`` is the member, so nothing is opened and ``--h.args.x`` is refused."""
         assert loader.load(_TypedCallConfig, argv=["--h.call", "5"], env={}).h == _HasCallMember(call=5)
         with pytest.raises((UnknownArgumentError, SystemExit)):
-            loader.merge(_TypedCallConfig, argv=["--h.call", "5", "--h.x", "1"], env={})
+            loader.merge(_TypedCallConfig, argv=["--h.call", "5", "--h.args.x", "1"], env={})
 
     def test_a_dict_keeps_call_as_a_key(self, loader: ConfargLoader) -> None:
         """A dict field holds ``call`` as data."""
@@ -5546,14 +5564,14 @@ class TestCallOnTheCliRegistrationContract:
     """A typed call's and a nested target spec's flags are discovered from the signatures they name (FEAT-32)."""
 
     def test_typed_call_registers_its_targets_parameters(self, populating_loader: ConfargLoader) -> None:
-        """``--n.call`` is registered when typed and buys ``--n.<param>``."""
+        """``--n.call`` is registered when typed and buys ``--n.args.<param>``."""
         flags = populating_loader.registered_flags(
             _TypedCallConfig,
             argv=["--n.call", f"{__name__}._twice"],
             config_flag="",
         )
         assert flags is not None
-        assert {"n.call", "n.x"} <= flags
+        assert {"n.call", "n.args.x"} <= flags
 
     def test_typed_call_is_not_registered_untyped(self, populating_loader: ConfargLoader) -> None:
         """``--help`` lists no ``call`` flag per field."""
@@ -5563,24 +5581,24 @@ class TestCallOnTheCliRegistrationContract:
         assert "p.call" not in flags
 
     def test_nested_classfn_target_registers_owner_and_method(self, populating_loader: ConfargLoader) -> None:
-        """The owner's constructor sits below the opener and the method's parameters beside it."""
+        """The owner's constructor sits below the opener and the method's parameters under ``args``."""
         flags = populating_loader.registered_flags(
             _TypedCallConfig,
             argv=["--fn.call.classfn", f"{__name__}._Multiplier.by"],
             config_flag="",
         )
         assert flags is not None
-        assert {"fn.call.k", "fn.k"} <= flags
+        assert {"fn.call.k", "fn.args.k"} <= flags
 
     def test_nested_class_target_registers_constructor_and_call(self, populating_loader: ConfargLoader) -> None:
-        """A ``bind:`` over a ``class:`` buys the constructor below it and ``__call__`` beside it."""
+        """A ``bind:`` over a ``class:`` buys the constructor below it and ``__call__`` under ``args``."""
         flags = populating_loader.registered_flags(
             _CallableConfig,
             argv=["--fn.bind.class", f"{__name__}._Greeter"],
             config_flag="",
         )
         assert flags is not None
-        assert {"fn.bind.greeting", "fn.name", "fn.punct"} <= flags
+        assert {"fn.bind.greeting", "fn.args.name", "fn.args.punct"} <= flags
         assert "fn.greeting" not in flags
 
 
@@ -5618,30 +5636,30 @@ class _NestedCallable:
 class TestShorthandRefinementContract:
     """A whole value followed by a sibling subkey resolves, in every channel and front-end.
 
-    ``--fn <path>`` is the documented shorthand for ``--fn.bind <path>``, so a sibling
-    ``--fn.<param>`` refines it exactly as it refines the explicit opener.  A field
+    ``--fn <path>`` is the documented shorthand for ``--fn.bind <path>``, so an argument
+    ``--fn.args.<param>`` refines it exactly as it refines the explicit opener.  A field
     with no such shorthand keeps last-write-wins: the subkey opens the scalar away.
     """
 
     def test_shorthand_then_bind_via_cli(self, loader: ConfargLoader) -> None:
-        """The shorthand names the target; ``--fn.<param>`` partially applies it."""
+        """The shorthand names the target; ``--fn.args.<param>`` partially applies it."""
         cfg = loader.load(
             _CallableConfig,
-            argv=["--fn", f"{__name__}._shout", "--fn.punct", "!"],
+            argv=["--fn", f"{__name__}._shout", "--fn.args.punct", "!"],
             env={},
         )
         assert cfg.fn("hi") == "HI!"
 
     def test_shorthand_matches_explicit_opener(self, loader: ConfargLoader) -> None:
-        """``--fn X`` and ``--fn.bind X`` merge to the same dict once a sibling flag joins them."""
+        """``--fn X`` and ``--fn.bind X`` merge to the same dict once an argument flag joins them."""
         shorthand = loader.merge(
             _CallableConfig,
-            argv=["--fn", f"{__name__}._shout", "--fn.punct", "!"],
+            argv=["--fn", f"{__name__}._shout", "--fn.args.punct", "!"],
             env={},
         )
         explicit = loader.merge(
             _CallableConfig,
-            argv=["--fn.bind", f"{__name__}._shout", "--fn.punct", "!"],
+            argv=["--fn.bind", f"{__name__}._shout", "--fn.args.punct", "!"],
             env={},
         )
         assert shorthand == explicit
@@ -5651,7 +5669,7 @@ class TestShorthandRefinementContract:
         cfg = loader.load(
             _CallableConfig,
             argv=[],
-            env={"APP_FN": f"{__name__}._shout", "APP_FN__PUNCT": "!"},
+            env={"APP_FN": f"{__name__}._shout", "APP_FN__ARGS__PUNCT": "!"},
             env_prefix="APP_",
         )
         assert cfg.fn("hi") == "HI!"
@@ -5675,32 +5693,31 @@ class TestShorthandRefinementContract:
         merged = loader.merge(_CallableConfig, argv=["--fn", f"{__name__}._shout", "--fn.bind-"], env={})
         assert merged == {"fn": {"bind": DICT_DELETE}}
 
-    def test_shorthand_survives_a_sibling_kwarg_delete(self, loader: ConfargLoader) -> None:
+    def test_shorthand_survives_an_argument_delete(self, loader: ConfargLoader) -> None:
         """A delete travels with the patch ops, and must still open the shorthand (BUG-24)."""
-        merged = loader.merge(_CallableConfig, argv=["--fn", f"{__name__}._shout", "--fn.punct-"], env={})
-        assert merged == {"fn": {"bind": f"{__name__}._shout", "punct": DICT_DELETE}}
+        merged = loader.merge(_CallableConfig, argv=["--fn", f"{__name__}._shout", "--fn.args.punct-"], env={})
+        assert merged == {"fn": {"bind": f"{__name__}._shout", "args": {"punct": DICT_DELETE}}}
 
     def test_nested_shorthand_survives_a_delete(self, loader: ConfargLoader) -> None:
         """The shorthand is opened wherever it sits, not only at the root."""
         merged = loader.merge(
             _NestedCallable,
-            argv=["--inner.hook", f"{__name__}._shout", "--inner.hook.punct-"],
+            argv=["--inner.hook", f"{__name__}._shout", "--inner.hook.args.punct-"],
             env={},
         )
-        assert merged == {"inner": {"hook": {"bind": f"{__name__}._shout", "punct": DICT_DELETE}}}
+        assert merged == {"inner": {"hook": {"bind": f"{__name__}._shout", "args": {"punct": DICT_DELETE}}}}
 
 
 # ---------------------------------------------------------------------------
-# Escaped directive mode (_bind/_class/_call) — collision escape, parity across channels
+# An opener's word as a field of a class: or classfn: spec, parity across channels
 # ---------------------------------------------------------------------------
 
 
-class _EscBinder:
+class _BindFieldCallable:
     """__init__ takes a parameter literally named ``bind``; __call__ takes ``lr``.
 
-    Escaped mode lets the ``__init__`` ``bind`` arg be set (plain ``bind``) inside a
-    ``_class`` spec that a ``_bind`` spec partially applies — the collision the plain
-    directive names cannot express.
+    Beside ``class``, every other key is a field, so the ``bind`` argument is set inside a
+    ``class`` spec that an outer ``bind`` partially applies.
     """
 
     def __init__(self, bind: int) -> None:
@@ -5710,8 +5727,8 @@ class _EscBinder:
         return self.bind + lr
 
 
-class _EscOwner:
-    """__init__ takes a parameter named ``bind`` (the opener residual), with an instance method."""
+class _BindFieldOwner:
+    """__init__ takes a parameter named ``bind``, with an instance method."""
 
     def __init__(self, bind: int) -> None:
         self.bind = bind
@@ -5721,93 +5738,46 @@ class _EscOwner:
 
 
 @dataclass
-class _EscCallableConfig:
+class _BareCallableConfig:
     """Config with a bare Callable field (skips arity checks after binding)."""
 
     fn: Callable
 
 
-class TestEscapedCallableContract:
-    """Escaped directive mode reaches parity across config, env, and CLI (all five front-ends)."""
+class TestOpenerWordAsFieldContract:
+    """A field named like an opener is reached beside ``class`` or ``classfn``, in every channel and front-end."""
 
-    def test_compound_init_bind_and_call_bind_via_cli(self, loader: ConfargLoader) -> None:
-        """`_bind` over a `_class` spec: the inner plain `bind` sets __init__, `--fn.lr` binds __call__."""
+    def test_class_field_named_bind_below_an_outer_bind_via_cli(self, loader: ConfargLoader) -> None:
+        """The inner ``bind`` sets __init__, ``--fn.args.lr`` binds __call__."""
         cfg = loader.load(
-            _EscCallableConfig,
-            argv=["--fn._bind._class", f"{__name__}._EscBinder", "--fn._bind.bind", "5", "--fn.lr", "10"],
+            _BareCallableConfig,
+            argv=["--fn.bind.class", f"{__name__}._BindFieldCallable", "--fn.bind.bind", "5", "--fn.args.lr", "10"],
             env={},
         )
-        assert cfg.fn() == 15  # _EscBinder(bind=5), partial(lr=10) -> 5 + 10
+        assert cfg.fn() == 15  # _BindFieldCallable(bind=5), partial(lr=10) -> 5 + 10
 
-    def test_opener_residual_via_cli(self, loader: ConfargLoader) -> None:
-        """`_classfn` opener frees a plain `bind` key to be the owning class's constructor kwarg."""
+    def test_owner_field_named_bind_via_cli(self, loader: ConfargLoader) -> None:
+        """Beside ``classfn``, ``--fn.bind`` is the owning class's constructor argument."""
         cfg = loader.load(
-            _EscCallableConfig,
-            argv=["--fn._classfn", f"{__name__}._EscOwner.method", "--fn.bind", "100"],
+            _BareCallableConfig,
+            argv=["--fn.classfn", f"{__name__}._BindFieldOwner.method", "--fn.bind", "100"],
             env={},
         )
-        assert cfg.fn(1) == 101  # _EscOwner(bind=100).method(1) -> 1 + 100
+        assert cfg.fn(1) == 101  # _BindFieldOwner(bind=100).method(1) -> 1 + 100
 
-    def test_compound_via_env(self, loader: ConfargLoader) -> None:
-        """Env expresses escaped keys via the triple-underscore form (no env code change)."""
+    def test_class_field_named_bind_via_env(self, loader: ConfargLoader) -> None:
+        """The env channel spells the same spec."""
         cfg = loader.load(
-            _EscCallableConfig,
+            _BareCallableConfig,
             argv=[],
             env={
-                "APP_FN___BIND___CLASS": f"{__name__}._EscBinder",
-                "APP_FN___BIND__BIND": "5",
-                "APP_FN__LR": "10",
+                "APP_FN__BIND__CLASS": f"{__name__}._BindFieldCallable",
+                "APP_FN__BIND__BIND": "5",
+                "APP_FN__ARGS__LR": "10",
             },
             env_prefix="APP_",
         )
         assert cfg.fn() == 15
-
-
-class TestMixedDirectiveFormContract:
-    """A plain directive word beside an escaped opener is ordinary data, in every front-end.
-
-    Any escaped opener selects the escaped mode, so ``bind`` beside ``_bind`` is a kwarg,
-    not a directive.  The adapters must accept the flag and let construction reject the
-    kwarg, exactly as vanilla does (BUG-25).
-    """
-
-    def test_plain_bind_beside_escaped_opener_merges_as_data(self, loader: ConfargLoader) -> None:
-        """``--fn._bind X --fn.bind.p V`` merges with ``bind`` left as a kwarg."""
-        merged = loader.merge(
-            _EscCallableConfig,
-            argv=["--fn._bind", f"{__name__}._shout", "--fn.bind.punct", "!"],
-            env={},
-        )
-        assert merged == {"fn": {"_bind": f"{__name__}._shout", "bind": {"punct": "!"}}}
-
-    def test_plain_bind_beside_escaped_opener_names_the_mixed_form(self, loader: ConfargLoader) -> None:
-        """Construction rejects the stray kwarg and the message names both spellings."""
-        with pytest.raises(TypeCoercionError, match="plain spelling") as exc_info:
-            loader.load(
-                _EscCallableConfig,
-                argv=["--fn._bind", f"{__name__}._shout", "--fn.bind.punct", "!"],
-                env={},
-            )
-        assert "'bind'" in str(exc_info.value)
-        assert "'_bind'" in str(exc_info.value)
-
-    def test_escaped_opener_replaces_the_bare_shorthand(self, loader: ConfargLoader) -> None:
-        """An escaped opener is a rival spelling of the target too, so it replaces the shorthand."""
-        merged = loader.merge(
-            _EscCallableConfig,
-            argv=["--fn", f"{__name__}._shout", "--fn._bind", "str.upper"],
-            env={},
-        )
-        assert merged == {"fn": {"_bind": "str.upper"}}
-
-    def test_active_bind_beside_escaped_opener_still_binds(self, loader: ConfargLoader) -> None:
-        """Guard rail: the *active* form keeps working and buys no mixed-form complaint."""
-        cfg = loader.load(
-            _EscCallableConfig,
-            argv=["--fn._bind", f"{__name__}._shout", "--fn.punct", "!"],
-            env={},
-        )
-        assert cfg.fn("hi") == "HI!"
 
 
 # ---------------------------------------------------------------------------
@@ -5825,19 +5795,15 @@ class TestCallableSiblingKwargContract:
     fail the same way: not at the parser, but in ``build()``.
     """
 
-    def test_inactive_bind_word_as_a_scalar_merges_as_data(self, loader: ConfargLoader) -> None:
-        """``--fn.bind 5`` beside an escaped opener is an ordinary kwarg."""
-        merged = loader.merge(
-            _CallableConfig,
-            argv=["--fn._bind", f"{__name__}._shout", "--fn.bind", "5"],
-            env={},
-        )
-        assert merged == {"fn": {"_bind": f"{__name__}._shout", "bind": "5"}}
+    def test_an_underscored_opener_word_merges_as_data(self, loader: ConfargLoader) -> None:
+        """``--fn._bind X`` is an ordinary key below the field, the former escaped opener."""
+        merged = loader.merge(_CallableConfig, argv=["--fn._bind", f"{__name__}._shout"], env={})
+        assert merged == {"fn": {"_bind": f"{__name__}._shout"}}
 
-    def test_inactive_bind_word_as_a_scalar_is_rejected_by_construction(self, loader: ConfargLoader) -> None:
-        """The error comes from ``build()``, and names the mixed spelling."""
-        with pytest.raises(TypeCoercionError, match="plain spelling"):
-            loader.load(_CallableConfig, argv=["--fn._bind", f"{__name__}._shout", "--fn.bind", "5"], env={})
+    def test_an_underscored_opener_word_is_rejected_by_construction(self, loader: ConfargLoader) -> None:
+        """The spec holds no opener, and ``build()`` says so in every front-end."""
+        with pytest.raises(TypeCoercionError, match="must specify one of"):
+            loader.load(_CallableConfig, argv=["--fn._bind", f"{__name__}._shout"], env={})
 
     def test_active_bind_word_beside_another_opener_merges_as_data(self, loader: ConfargLoader) -> None:
         """The mirror: the *active* bind word beside a call opener is data the parser stores."""
@@ -5866,23 +5832,23 @@ class TestCallableSiblingKwargContract:
         with pytest.raises(TypeCoercionError, match="must specify one of"):
             loader.load(_CallableConfig, argv=["--fn.greeting", "Hi"], env={})
 
-    def test_sibling_kwarg_beside_a_call_opener(self, loader: ConfargLoader) -> None:
-        """A kwarg the ``.call`` target's signature does not name still merges."""
+    def test_argument_beside_a_call_opener(self, loader: ConfargLoader) -> None:
+        """An argument the ``.call`` target's signature does not name still merges."""
         merged = loader.merge(
             _CallableConfig,
-            argv=["--fn.call", f"{__name__}._shout", "--fn.greeting", "Hi"],
+            argv=["--fn.call", f"{__name__}._shout", "--fn.args.greeting", "Hi"],
             env={},
         )
-        assert merged == {"fn": {"call": f"{__name__}._shout", "greeting": "Hi"}}
+        assert merged == {"fn": {"call": f"{__name__}._shout", "args": {"greeting": "Hi"}}}
 
-    def test_sibling_kwarg_beside_the_bare_shorthand(self, loader: ConfargLoader) -> None:
-        """The shorthand is opened first, so the stray kwarg refines it instead of erasing it."""
+    def test_argument_beside_the_bare_shorthand(self, loader: ConfargLoader) -> None:
+        """The shorthand is opened first, so the stray argument refines it instead of erasing it."""
         merged = loader.merge(
             _CallableConfig,
-            argv=["--fn", f"{__name__}._shout", "--fn.greeting", "Hi"],
+            argv=["--fn", f"{__name__}._shout", "--fn.args.greeting", "Hi"],
             env={},
         )
-        assert merged == {"fn": {"bind": f"{__name__}._shout", "greeting": "Hi"}}
+        assert merged == {"fn": {"bind": f"{__name__}._shout", "args": {"greeting": "Hi"}}}
 
     def test_sibling_kwarg_below_a_nested_callable(self, loader: ConfargLoader) -> None:
         """The rule holds wherever the callable sits, not only at the root."""
@@ -5897,10 +5863,10 @@ class TestCallableSiblingKwargContract:
         """
         merged = loader.merge(
             _CallableConfig,
-            argv=["--fn.bind", f"{__name__}._shout", "--fn.punct-"],
+            argv=["--fn.bind", f"{__name__}._shout", "--fn.args.punct-"],
             env={},
         )
-        assert merged == {"fn": {"bind": f"{__name__}._shout", "punct": DICT_DELETE}}
+        assert merged == {"fn": {"bind": f"{__name__}._shout", "args": {"punct": DICT_DELETE}}}
 
 
 @dataclass
@@ -5922,8 +5888,8 @@ class TestOpenerScanTypeGuidedContract:
 
     ``build_dynamic_flags`` pattern-matches ``--<field>.bind/.class/.call`` against argv,
     which a struct field literally named ``bind`` (or ``class``/``call``) trips: the scan
-    read ``--inner.bind`` as an opener for ``inner`` and registered ``inner.<param>``
-    beside the correct ``inner.bind.<param>`` the type-guided blob walk already found.
+    read ``--inner.bind`` as an opener for ``inner`` and registered ``inner.args.<param>``
+    beside the correct ``inner.bind.args.<param>`` the type-guided blob walk already found.
     The scan asks the target type whether ``<path>`` is callable-typed before treating the
     suffix as an opener, so a plain struct field named like an opener is a value, not an
     opener (BUG-30).
@@ -5937,15 +5903,15 @@ class TestOpenerScanTypeGuidedContract:
             config_flag="",
         )
         assert flags is not None
-        assert "inner.bind.name" in flags
-        assert "inner.bind.punct" in flags
-        assert "inner.name" not in flags
-        assert "inner.punct" not in flags
+        assert "inner.bind.args.name" in flags
+        assert "inner.bind.args.punct" in flags
+        assert "inner.args.name" not in flags
+        assert "inner.args.punct" not in flags
 
     def test_field_named_bind_merges_as_the_callable_shorthand(self, loader: ConfargLoader) -> None:
         """``--inner.bind <path>`` is the shorthand for the ``inner.bind`` callable field.
 
-        The bare string stays bare until a sibling subkey joins it, exactly as
+        The bare string stays bare until a subkey joins it, exactly as
         ``--fn <path>`` does for a root callable field (the opener opens at build, not
         at merge, unless a sibling flag forces it).
         """
@@ -5957,10 +5923,10 @@ class TestOpenerScanTypeGuidedContract:
         assert merged == {"inner": {"bind": f"{__name__}._shout"}}
 
     def test_field_named_bind_binds(self, loader: ConfargLoader) -> None:
-        """A sibling ``--inner.bind.<param>`` opens the shorthand, as for any callable."""
+        """An argument ``--inner.bind.args.<param>`` opens the shorthand, as for any callable."""
         cfg = loader.load(
             _StructWithCallableFieldNamedBind,
-            argv=["--inner.bind", f"{__name__}._shout", "--inner.bind.punct", "!"],
+            argv=["--inner.bind", f"{__name__}._shout", "--inner.bind.args.punct", "!"],
             env={},
         )
         assert cfg.inner.bind("hi") == "HI!"
@@ -6618,7 +6584,10 @@ class TestWholeValueFlagContract:
         """A callable field decodes its blob into a spec rather than keeping the string."""
         cfg = loader.load(
             _CallableConfig,
-            argv=["--fn", f'{{"bind": {{"class": "{__name__}._Greeter", "greeting": "Hi"}}, "punct": "!"}}'],
+            argv=[
+                "--fn",
+                f'{{"bind": {{"class": "{__name__}._Greeter", "greeting": "Hi"}}, "args": {{"punct": "!"}}}}',
+            ],
             env={},
         )
         assert cfg.fn("world") == "Hi, world!"
@@ -6627,16 +6596,19 @@ class TestWholeValueFlagContract:
         """An optional callable decodes the blob its non-optional peer decodes (BUG-17)."""
         cfg = loader.load(
             _OptCallableConfig,
-            argv=["--fn", f'{{"bind": {{"class": "{__name__}._Greeter", "greeting": "Hi"}}, "punct": "!"}}'],
+            argv=[
+                "--fn",
+                f'{{"bind": {{"class": "{__name__}._Greeter", "greeting": "Hi"}}, "args": {{"punct": "!"}}}}',
+            ],
             env={},
         )
         assert cfg.fn is not None
         assert cfg.fn("world") == "Hi, world!"
 
     def test_bind_flag_registers_from_whole_callable_blob(self, loader: ConfargLoader) -> None:
-        """A target named inside the blob still buys its --fn.<param> flag (BUG-22)."""
+        """A target named inside the blob still buys its --fn.args.<param> flag (BUG-22)."""
         blob = json.dumps({"bind": f"{__name__}._shout"})
-        cfg = loader.load(_CallableConfig, argv=["--fn", blob, "--fn.punct", "!"], env={})
+        cfg = loader.load(_CallableConfig, argv=["--fn", blob, "--fn.args.punct", "!"], env={})
         assert cfg.fn("world") == "WORLD!"
 
     def test_factory_flag_registers_from_whole_optional_callable_blob(self, loader: ConfargLoader) -> None:
@@ -6644,7 +6616,7 @@ class TestWholeValueFlagContract:
         blob = json.dumps({"bind": {"class": f"{__name__}._Greeter"}})
         cfg = loader.load(
             _OptCallableConfig,
-            argv=["--fn", blob, "--fn.bind.greeting", "Hi", "--fn.punct", "!"],
+            argv=["--fn", blob, "--fn.bind.greeting", "Hi", "--fn.args.punct", "!"],
             env={},
         )
         assert cfg.fn is not None
@@ -7052,13 +7024,13 @@ class TestUnionPathWalkContract:
         )
 
     def test_keys_below_an_optional_callable(self, loader: ConfargLoader) -> None:
-        """A sibling kwarg, and a key of a nested bind target, are keys inside the spec of ``Callable | None``."""
-        sibling = ["--fn.bind", f"{__name__}._shout", "--fn.punct", "!"]
-        assert loader.merge(_OptCallableConfig, argv=sibling, env={}) == {
-            "fn": {"bind": f"{__name__}._shout", "punct": "!"},
+        """An argument, and a key of a nested bind target, are keys inside the spec of ``Callable | None``."""
+        argument = ["--fn.bind", f"{__name__}._shout", "--fn.args.punct", "!"]
+        assert loader.merge(_OptCallableConfig, argv=argument, env={}) == {
+            "fn": {"bind": f"{__name__}._shout", "args": {"punct": "!"}},
         }
-        assert loader.load(_OptCallableConfig, argv=sibling, env={}).fn("hi") == "HI!"
-        nested = ["--fn.bind.class", f"{__name__}._Greeter", "--fn.bind.greeting", "Hi", "--fn.punct", "!"]
+        assert loader.load(_OptCallableConfig, argv=argument, env={}).fn("hi") == "HI!"
+        nested = ["--fn.bind.class", f"{__name__}._Greeter", "--fn.bind.greeting", "Hi", "--fn.args.punct", "!"]
         assert loader.load(_OptCallableConfig, argv=nested, env={}).fn("world") == "Hi, world!"
 
     def test_nested_namespace_below_an_optional_struct(self, loader: ConfargLoader, tmp_path, tmp_yaml) -> None:

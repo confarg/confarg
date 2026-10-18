@@ -16,9 +16,9 @@ registered by the catch-all for keys that no signature describes, as `VALUE` wit
 'n.call' in the callable spec": it names neither a dotted path nor a function whose result
 becomes the field, and the field holds no callable spec. The opener is registered only when
 typed ([CLI](../../architecture/callables.md#cli)), but once it is, its help should read as the
-opener it is, in either spelling (`call`, `_call`).
+opener it is.
 
-Origin: FEAT-32 registered the typed opener and its siblings through
+Origin: FEAT-32 registered the typed opener and its arguments through
 `_collect_callable_key_argv_specs`, the pass BUG-25 wrote for keys with no signature to describe,
 since both are registered only when typed. The opener was the one key there that does have a
 known meaning. Latent since FEAT-32.

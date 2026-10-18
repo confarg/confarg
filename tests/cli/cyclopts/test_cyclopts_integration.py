@@ -434,7 +434,7 @@ class TestHelpReadsUnderEveryFormat:
         assert [h for h in sorted(helps) if h not in text] == []
         # The strings checked above hold the placeholders and the data, so the check is not vacuous.
         words = {word for help_text in helps for word in help_text.split()}
-        assert {"--config.FIELD", "--FLAG.PARAM", "'*.py|*.pyi*')", ":warning:", "'[/x]"} <= words
+        assert {"--config.FIELD", "--FLAG.args.PARAM", "'*.py|*.pyi*')", ":warning:", "'[/x]"} <= words
 
     @pytest.mark.parametrize("help_format", ["markdown", "restructuredtext", "rich", "plaintext"])
     def test_a_default_prints_as_written(

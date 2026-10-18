@@ -5,10 +5,9 @@ does a `classfn:` spec for the owner its path names. Both go through
 `typedload._construct.construct_named_class`. It builds a struct with `_construct_struct`, the
 route a union tag takes once it has selected its class, and it never asks the subclass
 dispatch of `_construct_struct_dispatch` which subclass to build. A union-tag key among the
-siblings would name a second class, so it is refused as an unknown field, unless the named
+fields would name a second class, so it is refused as an unknown field, unless the named
 class declares a field of that spelling. The key only reaches construction when `union_tag`
-is not `class`: under the default, a plain `class` is the opener itself, and an escaped spec
-refuses a plain `class` sibling as a mixed form.
+is not `class`: under the default, `class` is the opener itself.
 
 Why: `class:` is a type conversion. The configuration asks for an `X`, and `class:` gives a
 compatible `Y`. Once the spec has named `Y`, nothing is left to choose. Running subclass

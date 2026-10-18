@@ -424,7 +424,7 @@ class TestCallableEdgeCases:
 
     def test_resolve_dict_spec_bind_target_of_another_type_raises(self) -> None:
         """A bind: target that is neither a dotted path nor a spec raises TypeCoercionError."""
-        spec = {"bind": 12345, "x": 1}
+        spec = {"bind": 12345, "args": {"x": 1}}
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="takes a dotted path or a callable spec"):
             _resolve_callable_spec(spec, Callable, path=("test",), union_tag="class", construct_fn=construct)
 
@@ -1143,7 +1143,7 @@ class TestCallableBranches:
         cls_path = f"{_NotCallableClass.__module__}.{_NotCallableClass.__qualname__}"
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="is not callable"):
             _resolve_class_spec(
-                _ClassSpec(cls_path, {}, {"class": cls_path}, "class"),
+                _ClassSpec(cls_path, {}, {"class": cls_path}),
                 _SpecContext(("test_path",), "class", construct),
             )
 
@@ -1151,7 +1151,7 @@ class TestCallableBranches:
         """A slotted callable class resolves successfully in _resolve_class_spec."""
         cls_path = f"{_SlottedCallableClass.__module__}.{_SlottedCallableClass.__qualname__}"
         result = _resolve_class_spec(
-            _ClassSpec(cls_path, {"value": 5}, {"class": cls_path, "value": 5}, "class"),
+            _ClassSpec(cls_path, {"value": 5}, {"class": cls_path, "value": 5}),
             _SpecContext(("test_path",), "class", construct),
         )
         assert callable(result)
@@ -1624,7 +1624,6 @@ class TestCallableGaps:
                 f"{_COV_MOD}._cov_raise_fn",
                 {"x": 1},
                 _SpecContext(("test",), "class", construct),
-                "call",
             )
 
     def test_resolve_bind_kwargs_string_values(self) -> None:

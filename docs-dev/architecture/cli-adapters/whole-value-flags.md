@@ -58,11 +58,11 @@ A decoded callable blob buys the argument flags its target implies, exactly as a
 `--<field>.class` opener does. Neither half of that is a
 second decision: `_blob_document_from_argv` nests argv's `{`-prefixed tokens into one
 config-file-shaped document and hands it to the *same* target walk that reads a `--config`
-file's openers, so a blob's `class` selects the directive form and registers the sibling
-`--<field>.<param>` init kwargs the opener flag registers. Feeding the walk rather than
+file's openers, so a blob's `class` registers the `--<field>.<param>` init kwargs the opener
+flag registers, and a blob's `bind` or `call` the `--<field>.args.<param>` ones. Feeding the walk rather than
 pattern-matching argv is what keeps a mapping field whose value happens to carry a `class` key
 from being read as a callable spec — the walk is type-guided. The opener scan
-(`_collect_fn_paths_from_argv`) pattern-matches the `.bind`/`.class`/`.call` suffix too,
+(`_collect_fn_paths_from_argv`) pattern-matches the `.bind`/`.class`/`.call`/`.classfn` suffix too,
 so a struct field literally named like an opener would be misread as an opener for its
 parent; it now asks the same type-guided question — does the path resolve to a
 callable-typed field? — before accepting the match, so a plain struct field named `bind`
@@ -70,7 +70,7 @@ callable-typed field? — before accepting the match, so a plain struct field na
 `--<field> some.module.fn` buys them too: it is the spelling `{bind: …}` abbreviates, so the argv
 scan collects a bare string as a whole value beside a `{`-prefixed blob and hands both to the
 same type-guided walk, which has always read a config file's string spec that way. What the
-flags then write — the shorthand opened into the spec its sibling flags refine, a delete flag
+flags then write — the shorthand opened into the spec its argument flags refine, a delete flag
 included — is vanilla's loop's answer
 ([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)).
 

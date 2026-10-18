@@ -180,15 +180,16 @@ A field default is the layer below every source only where the class declares it
   module-level alias of a method (`m = C.m`, named as `pkg.m`) is a plain function, used
   unbound ([callables](callables.md#auto-binding)). A callable confarg did not build may not be
   serializable at all ([callables](callables.md#round-trip)).
-- A sibling of a `call:` on a field that is no Callable (`--n.x`) is accepted on the CLI only
-  where the command line opens the call: an opener flag, a whole value, or a root `--config`
-  file argv names. A call opened only by the environment, by a `config_files=` file or by a
-  `--config.<path>` mount is refined from the environment or from files, not from flags
-  ([design decision](design-decisions/a-typed-call-sibling-needs-its-opener-on-the-command-line.md)).
+- A `call:` on a field whose struct has a member named `args` holds its arguments as files and
+  the environment write them, but the CLI cannot spell them: `--n.args.<p>` reaches the member
+  ([design decision](design-decisions/a-computations-arguments-nest-under-args.md#a-computations-arguments-nest-under-args)).
   A typed call at the root is spelled in files only ([callables](callables.md#cli)).
-- The flags a nested target spec's outer siblings take are described only when the nested
+- A constructor parameter named `classfn` cannot be filled beside a `class:` or `classfn:`
+  opener, since two object openers are refused; it is reached under the `args` of a `call:` or
+  a `bind:` of the class ([callables](callables.md#an-openers-word-is-never-an-argument)).
+- The flags a nested target spec's outer arguments take are described only when the nested
   spec yields a callable with a signature: a `call:` yields whatever its target returns, so
-  `--f.<p>` beside `--f.call.call` is accepted with a generic help line ([callables](callables.md#cli)).
+  `--f.args.<p>` beside `--f.call.call` is accepted with a generic help line ([callables](callables.md#cli)).
 - Plain (non-dataclass) classes cannot be dumped by `dump()`. To serialize as fields, a class
   must store its `__init__` parameters as same-named attributes — confarg reads attributes, it
   does not replay constructor calls.

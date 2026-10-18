@@ -35,12 +35,11 @@ the walk *reached* there, a union left unexpanded, which is what a walk of that 
 answers; and the *node* the branch stands on, the resolved variant it took. The steps between
 stones are the walk's own and every question gets them: a member, an index or a dict value
 (`_advance_field_type`); a local-variables namespace, entered as a `dict[str, Any]`; an
-opener whose value is a target (`_opens_target`: a callable's `bind` or `call` key, the
-`call` key of a field that takes a typed call), below which every segment is a `str`; the
-union tag, reached only where no member of its spelling is
-([real field wins](casts-and-reserved-words.md#real-field-wins)); and, last, a segment no
-member reaches below a path where the command line opens a typed call, a `str` leaf
-([callables](../callables.md#cli)).
+subtree of a computation's spec (`_opens_spec_subtree`: a callable's `bind`, `call` or `args`
+key, the `call` or `args` key of a field that takes a typed call where no member holds it),
+below which every segment is a `str` ([callables](../callables.md#cli)); and, last, the union
+tag, reached only where no member of its spelling is
+([real field wins](casts-and-reserved-words.md#real-field-wins)).
 
 Each question reads the part of a branch it needs, and states its own difference in its own
 lines:
@@ -76,9 +75,7 @@ so the cross-channel contract suite pins each question at a union
 This is the collapse
 [look-alike code that behaves differently stays apart](../design-decisions/look-alike-code-that-behaves-differently-stays-apart.md#look-alike-code-that-behaves-differently-stays-apart)
 keeps: the copies were the same code, and the walk takes no parameter for any caller's
-difference (`tag_fallback` is the walk's own, asked by `_names_tag_by_fallback`; `calls` is
-what the command line opens, `_typed_call_openings`, which every CLI question about the same
-argv gets alike, and which a caller with no argv leaves empty). No question stops a branch
+difference (`tag_fallback` is the walk's own, asked by `_names_tag_by_fallback`). No question stops a branch
 since the callable's stop went (REF-86), so the questions are asked of every stone of every
 branch; what still needs branches is the pairing of stones and end, which a flat stream of
 nodes loses: `_field_types` reads each accepting branch's end, in variant order, and a
