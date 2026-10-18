@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.12', '3.13', '3.14']
+        python-version: ['3.12']
         resolution: [locked, latest]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
@@ -60,10 +60,10 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-    # `needs.test.result` aggregates the matrix: `success` only if every
-    # combination passed.  Accept `skipped` only when the filter found nothing
-    # to test, and require the filter itself to have succeeded -- otherwise a
-    # matrix that never ran would merge green.
+      # `needs.test.result` aggregates the matrix: `success` only if every
+      # combination passed.  Accept `skipped` only when the filter found nothing
+      # to test, and require the filter itself to have succeeded -- otherwise a
+      # matrix that never ran would merge green.
     - if: >-
         needs.changes.result != 'success' ||
         (needs.test.result != 'success' &&

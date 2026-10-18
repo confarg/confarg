@@ -18,9 +18,16 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 from confarg import _defaults
-from confarg._callable import _OPENERS, _resolve_callable_spec, holds_an_opener, resolve_held_spec, resolve_typed_call
+from confarg._callable import (
+    _OPENERS,
+    _import_class_by_path,
+    _resolve_callable_spec,
+    holds_an_opener,
+    resolve_held_spec,
+    resolve_typed_call,
+)
 from confarg._cast import cast_name_for_type, holds_the_cast, type_for_cast_name
-from confarg._import import _import_dotted, dotted_name
+from confarg._import import dotted_name
 from confarg._merge import (
     MERGE_OP_KEYS,
     ListOp,
@@ -80,7 +87,6 @@ from confarg.exceptions import (
     FieldPath,
     FloatOverflowWarning,
     MissingFieldError,
-    SymbolImportError,
     SymbolNotFoundError,
     TypeCoercionError,
     _spell_field_path,
@@ -1148,7 +1154,7 @@ def _construct_union_by_tag(non_none: list[Any], data: MergeDict, path: FieldPat
         docs-dev/architecture/callables.md#an-any-node-reads-every-opener
     """
     tag = data[union_tag]
-    cls = _import_class_by_path(tag, path, union_tag)
+    cls = _import_class_by_path(tag, _spell_field_path(path), union_tag)
     matching = [v for v in non_none if _is_struct(_resolve_type(v)) and issubclass(cls, _resolve_type(v))]
     if len(matching) > 1:
         raise AmbiguousUnionError(
@@ -1594,34 +1600,10 @@ def _disambiguate_struct(variants: list[Any], data: MergeDict, union_tag: str) -
     return refined
 
 
-def _import_class_by_path(tag: str, path: FieldPath, union_tag: str) -> type:
-    """Import and validate a class by its full dotted module path.
-
-    Raises TypeCoercionError if the path cannot be imported or does not resolve
-    to a class. The tag must be a fully-qualified dotted path such as
-    ``'mypackage.mymodule.MyClass'``.
-    """
-    try:
-        obj = _import_dotted(tag)
-    except SymbolImportError as e:
-        msg = (
-            f"Cannot import class {tag!r} from {union_tag!r} tag at '{_spell_field_path(path)}': {e}."
-            f" The value must be a full dotted path, e.g. 'mypackage.mymodule.MyClass'."
-        )
-        raise TypeCoercionError(msg) from e
-    if not isinstance(obj, type):
-        msg = (
-            f"Value of {union_tag!r} tag at '{_spell_field_path(path)}' must be a class path,"
-            f" but {tag!r} resolved to {type(obj).__name__!r}, not a class."
-        )
-        raise TypeCoercionError(msg)
-    return obj
-
-
 def _construct_by_class_path(tp: type, data: MergeDict, path: FieldPath, union_tag: str) -> Any:
     """Import the class named by union_tag, validate it is a subclass of tp, and construct it."""
     tag = data[union_tag]
-    cls = _import_class_by_path(tag, path, union_tag)
+    cls = _import_class_by_path(tag, _spell_field_path(path), union_tag)
     if not issubclass(cls, tp):
         call = _defaults.CALL_KEY
         raise TypeCoercionError.tag_not_a_subclass(tag, dotted_name(tp), _spell_field_path(path), call)

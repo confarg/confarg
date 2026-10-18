@@ -42,7 +42,6 @@ from confarg._callable import (
 )
 from confarg._files import (
     _dump_file,
-    _dump_json,
     _load_any,
     _load_file,
     _load_json_item,
@@ -368,7 +367,7 @@ class TestFileErrors:
     def test_dump_json_writes_file(self, tmp_path: Path) -> None:
         """JSON dump writes a valid JSON file to disk."""
         p = tmp_path / "out.json"
-        _dump_json({"key": "value", "num": 42}, p)
+        _dump_file({"key": "value", "num": 42}, p)
 
         data = json.loads(p.read_text())
         assert data == {"key": "value", "num": 42}
@@ -423,7 +422,7 @@ class TestCallableEdgeCases:
     def test_resolve_class_spec_not_a_class_raises(self) -> None:
         """A non-class path in the class: dict form raises TypeCoercionError."""
         spec = {"class": "os.path.join"}
-        with pytest.raises(confarg.exceptions.TypeCoercionError, match="must reference a class"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="must be a class path"):
             _resolve_callable_spec(spec, Callable, path=("test",), union_tag="class", construct_fn=construct)
 
     def test_resolve_spec_invalid_type_raises(self) -> None:

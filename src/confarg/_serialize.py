@@ -590,8 +590,23 @@ def _serialize_dict(
     path: FieldPath,
     opts: _DumpOptions,
 ) -> dict[Any, Any]:
-    """Serialize a typed dict."""
+    """Serialize a typed dict.
+
+    Raises:
+        ConfargError: If it holds a key, and its key type is one construction does not coerce a key to.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
+    """
     kt, vt = _dict_kv(tp)
+    if instance and not _is_coercible_leaf(_resolve_type(kt)):
+        where = _spell_field_path(path) or _defaults.ROOT_KEY
+        name = kt.__name__ if isinstance(kt, type) else repr(kt)
+        msg = (
+            f"Cannot serialize {name} keys at '{where}': construction reads no key as one,"
+            " so the dict would not load back."
+        )
+        raise ConfargError(msg)
     return {
         _data_key(_serialize_leaf(kt, k, opts.native_types), (*path, str(k))): _serialize(vt, v, (*path, str(k)), opts)
         for k, v in instance.items()

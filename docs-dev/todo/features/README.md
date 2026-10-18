@@ -27,6 +27,8 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-50 — A `**kwargs` forwarded to the parent sets the parent's members](FEAT-50-a-kwargs-forwarded-to-the-parent-sets-its-members.md) | minor |  | M | high | config |
 | [FEAT-52 — A file's float literal that overflows reads as `inf` silently](FEAT-52-a-file-float-literal-that-overflows-reads-as-inf-silently.md) | minor |  | M | medium | behavior |
 | [FEAT-53 — A `collections.abc` implementer reads as a struct](FEAT-53-a-collections-abc-implementer-reads-as-a-struct.md) | minor |  | M | medium | config |
+| [FEAT-54 — A TOML file spells a `None`](FEAT-54-a-toml-file-spells-a-none.md) | minor |  | M | medium | behavior |
+| [FEAT-55 — Dumping a configuration whose root is no struct](FEAT-55-dumping-a-configuration-whose-root-is-no-struct.md) | minor |  | M | low | behavior |
 | [FEAT-1 — Uneven shell-completion coverage](FEAT-1-uneven-shell-completion-coverage.md) | minor |  | L | low | behavior |
 | [FEAT-2 — Protocol-typed callables and `**kwargs`](FEAT-2-protocol-callables-and-kwargs.md) | minor |  | L | medium | behavior |
 | [FEAT-6 — `Annotated` field metadata read by all three channels](FEAT-6-annotated-field-metadata.md) | minor |  | L | medium | behavior |

@@ -122,7 +122,7 @@ A value is bare; what qualifies it goes in a YAML comment on the same line, wher
 | Key | Boards | Value |
 |---|---|---|
 | `filed` | all, required | The filing date, `YYYY-MM-DD`. |
-| `where` | all | A list of repository-root paths the work touches, each optionally followed by `::` and a symbol the file defines (`src/confarg/_files.py::_dump_yaml`, as pytest spells a node). A directory ends with `/`; a glob (`src/confarg/cli/*/_register.py`) must match a file. `where: []  # a new console script` when the code does not exist yet. |
+| `where` | all | A list of repository-root paths the work touches, each optionally followed by `::` and a symbol the file defines (`src/confarg/_files.py::_render_yaml`, as pytest spells a node). A directory ends with `/`; a glob (`src/confarg/cli/*/_register.py`) must match a file. `where: []  # a new console script` when the code does not exist yet. |
 | `effort` | sized, required | `S`, `M`, `L` or `XL` — see [Effort](#effort). |
 | `risk` | sized, required | `low`, `medium` or `high` — see [Risk](#risk). |
 | `impact` | sized, required | `none`, `behavior`, `api` or `config` — see [Impact](#impact). |

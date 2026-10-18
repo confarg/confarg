@@ -46,3 +46,14 @@ A class or a function defined in a function has `<locals>` in its qualified name
 So a dump imports the path it is about to write, through `imports_back`, and refuses at `dump()` what would otherwise fail only on read-back (BUG-193): a class tag or a `type[X]` leaf through `_serialize._class_path`, and a callable in `_serialize_callable`, which models auto-binding on top ([callables](../callables.md#a-path-is-written-only-when-it-reads-back)).
 The comparison is `is`, or `==` for a class method, which is a new bound method on each access.
 Precedent: `pickle`'s `save_global` looks the qualified name up in its module and refuses an object it does not find there as itself ("not the same object as").
+
+## A tag is a dotted path
+
+One function reads a class tag, `_callable._import_class_by_path`, for the four places one is written: a union's and a struct field's under the union tag, and a `class:` spec on an `Any` node or a Callable field, under the key `class` whatever the union tag.
+The tag is text, the spelling every channel shares; any other value, a number, a list, a null or a class object `from_dict()` was handed, is refused naming the key and the path, as `call:` and `bind:` refuse a target that is no text (BUG-235).
+A `type[X]` field takes a class object, since its value is the class; a tag only names the class to build.
+A path that names nothing is a `TypeCoercionError` and a module that fails while it is imported a `SymbolImportError`, both naming the tag and the path, as a `type` field tells them apart ([above](#a-path-names-nothing-or-a-module-fails)).
+
+Until BUG-235 two functions read a tag.
+The `Any` node and the Callable field imported the path themselves, so a tag that is no string escaped as Python's `AttributeError`, and an unimportable one as a bare `SymbolNotFoundError` naming no field; the union's reader wrapped a module that fails into the `TypeCoercionError` a typo gets.
+The pre-readers that import a tag before construction (`_tags._tag_named_struct`, `_tags.import_tagged_classes`) leave every failure to it, a tag that is no string included.

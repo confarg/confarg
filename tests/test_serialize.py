@@ -1771,3 +1771,33 @@ class TestANewTypeDumpsAsItsSupertype:
         obj = _WithDumpedNewTypes(u=_DumpedUserId(3), t=_DumpedTags(["z"]))
         assert confarg.dump(obj) == {"u": 3, "t": ["z"]}
         assert confarg.build(_WithDumpedNewTypes, confarg.dump(obj)) == obj
+
+
+@_dc
+class _UnreadKeys:
+    pair: dict[tuple[int, int], int] = field(default_factory=dict)
+    maybe: dict[int | None, int] = field(default_factory=dict)
+    kind: dict[type, int] = field(default_factory=dict)
+
+
+class TestDumpRefusesAKeyTypeConstructionRefuses:
+    """``dump()`` refuses a dict whose key type construction refuses, as it refuses such a value."""
+
+    @pytest.mark.parametrize(
+        ("name", "key", "spelled"),
+        [
+            pytest.param("pair", (1, 2), r"tuple\[int, int\]", id="tuple"),
+            pytest.param("maybe", None, r"int \| None", id="union"),
+            pytest.param("kind", int, "type", id="type-reference"),
+        ],
+    )
+    def test_refused_naming_the_key_type(self, name: str, key: Any, spelled: str) -> None:
+        """Each key type ``_coerce_leaf`` refuses is refused, naming the dict's path."""
+        with pytest.raises(ConfargError, match=rf"Cannot serialize {spelled} keys at '{name}'"):
+            confarg.dump(_UnreadKeys(**{name: {key: 5}}))
+
+    @pytest.mark.parametrize("name", ["pair", "maybe", "kind"])
+    def test_construction_refuses_the_same_key_type(self, name: str) -> None:
+        """The refusal is construction's: such a dict does not build either."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="Unsupported leaf type"):
+            confarg.build(_UnreadKeys, {name: {"1": 5}})

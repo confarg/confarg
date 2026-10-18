@@ -6,7 +6,9 @@
 
 import enum
 import re
+import sys
 import warnings
+from collections.abc import Callable
 from dataclasses import InitVar, dataclass, field
 from decimal import Decimal
 from pathlib import Path
@@ -22,7 +24,7 @@ from confarg._merge import (
     ListOp,
 )
 from confarg._types import _StrToken, _UnionSeqToken
-from confarg.exceptions import ConfargWarning, MissingFieldError, TypeCoercionError
+from confarg.exceptions import ConfargWarning, MissingFieldError, SymbolImportError, TypeCoercionError
 from confarg.typedload._construct import _construct_struct_dispatch, construct
 from tests.conftest import OneOf
 
@@ -1273,3 +1275,59 @@ class TestAClassTakingNothingIsAStructWithNoFields:
     def test_a_forwarding_new_does_not_hide_init(self) -> None:
         """A class defining ``__init__`` is read by it, whatever ``__new__`` takes."""
         assert construct(_ForwardingNew, {"x": 5}).x == 5
+
+
+@dataclass
+class _TagA:
+    a: int = 0
+
+
+@dataclass
+class _TagB:
+    b: int = 0
+
+
+@dataclass
+class _TagHolder:
+    union: _TagA | _TagB | None = None
+    field: _TagA | None = None
+    anything: Any = None
+    fn: Callable[..., Any] | None = None
+
+
+class TestATagThatIsNoStringIsRefused:
+    """A ``class:`` tag is a dotted path; any other value is refused as ``call:`` refuses one (BUG-235)."""
+
+    @pytest.mark.parametrize("where", ["union", "field", "anything", "fn"])
+    @pytest.mark.parametrize(
+        ("tag", "src"),
+        [
+            pytest.param(3, "int", id="int"),
+            pytest.param(1.5, "float", id="float"),
+            pytest.param(True, "bool", id="bool"),
+            pytest.param(None, "NoneType", id="null"),
+            pytest.param(["a"], "list", id="list"),
+            pytest.param({"a": 1}, "dict", id="dict"),
+            pytest.param(_TagB, "type", id="class-object"),
+        ],
+    )
+    def test_refused_naming_the_tag_and_the_path(self, where: str, tag: Any, src: str) -> None:
+        """A union's, a struct field's, an ``Any`` node's and a Callable's tag are refused alike."""
+        with pytest.raises(TypeCoercionError, match=rf"^'class' tag at '{where}' takes a dotted path, got {src}\."):
+            construct(_TagHolder, {where: {"class": tag}})
+
+    @pytest.mark.parametrize("where", ["union", "field", "anything", "fn"])
+    def test_a_broken_module_stays_an_import_error(
+        self,
+        where: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
+    ) -> None:
+        """A module that fails while importing is no typo: a ``SymbolImportError`` naming the tag, as for a ``type``."""
+        (tmp_path / "bug235_broken.py").write_text("import bug235_missing_dependency\n")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        request.addfinalizer(lambda: sys.modules.pop("bug235_broken", None))
+        with pytest.raises(SymbolImportError, match=rf"from 'class' tag at '{where}'.*bug235_missing_dependency") as e:
+            construct(_TagHolder, {where: {"class": "bug235_broken.Thing"}})
+        assert not isinstance(e.value, TypeCoercionError)
