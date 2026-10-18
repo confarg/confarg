@@ -83,6 +83,7 @@ from confarg.typedload._coerce import (
     _TRUTHY,
     _coerce_leaf,
     _coerce_type_ref,
+    _held_by_any,
     _is_struct_variant,
     _is_taggable_leaf,
     _steal_order,
@@ -470,7 +471,7 @@ def _construct_typed(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
     """Dispatch construction on the shape :func:`_type_kind` names, after a pin and None are handled."""
     match _type_kind(tp):
         case _TypeKind.ANY:
-            return data
+            return _held_by_any(data)
         case _TypeKind.UNION:
             return _construct_union(tp, data, path, union_tag)
         case _TypeKind.NAMEDTUPLE:
@@ -893,6 +894,15 @@ def _construct_dict(tp: Any, data: Any, path: FieldPath, union_tag: str) -> dict
 _UNION_NO_MATCH: object = object()
 
 
+def _holds_anything(variant: Any) -> bool:
+    """Return whether union *variant* is ``Any``, the variant every value is held by.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
+    """
+    return _type_kind(_resolve_type(variant)) is _TypeKind.ANY
+
+
 def _first_constructible(variants: list[Any], data: Any, path: FieldPath, union_tag: str) -> Any:
     """Construct *data* as the first of *variants* that accepts it, or return _UNION_NO_MATCH."""
     for var in variants:
@@ -1065,13 +1075,16 @@ def _coerce_scalar_variants(
 def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, path: FieldPath, union_tag: str) -> Any:
     """Construct a union value by trying leaf variants in priority order.
 
-    A value no variant accepts fails naming the whole union; for a token, the refusal also says
-    how to pass ``None`` (BUG-162).
+    An ``Any`` variant is the last rung: it takes what every other variant refused. A value no
+    variant accepts fails naming the whole union; for a token, the refusal also says how to pass
+    ``None`` (BUG-162).
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
+        docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
     """
-    leaf_vars = [v for v in non_none if not _is_struct_variant(_resolve_type(v))]
+    any_vars = [v for v in non_none if _holds_anything(v)]
+    leaf_vars = [v for v in non_none if not _is_struct_variant(_resolve_type(v)) and v not in any_vars]
     fixed_vars = [v for v in leaf_vars if _fixed_seq_types(_resolve_type(v)) is not None]
     coll_vars = [
         v
@@ -1098,6 +1111,9 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
         result = _try_coll_variants(coll_vars, [_StrToken(data)], path, union_tag)
         if result is not _UNION_NO_MATCH:
             return result
+
+    if any_vars:
+        return construct(any_vars[0], data, path=path, union_tag=union_tag)
 
     variant_names = " | ".join(
         "None" if v is types.NoneType else getattr(_resolve_type(v), "__name__", repr(v)) for v in all_args

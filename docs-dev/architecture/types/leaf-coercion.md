@@ -10,7 +10,7 @@ leaf types (`Final[T]` reaches it as `T`, [introspection](introspection.md#wrapp
 - Enum: member name first, then `str(value)`;
 - tokens only: a native value from a file must already have the right type.
 
-`Any` is the one leaf every value holds: the value passes through, a token as written, exactly as `construct()`'s `ANY` branch passes one. A dict's key coercion asks `_coerce_leaf` of an `Any` key annotation directly, without the shape dispatch that handles `ANY` everywhere else, which is the one site that needs the branch (BUG-212).
+`Any` is the one leaf every value holds: the value passes through, each token in it as the plain `str` it spells, CSV keys included ([tokens never leak](token-model.md#token-model)). `_coerce._held_by_any` is that pass-through, and the only one: `construct()`'s `ANY` branch returns it, and so does `_coerce_leaf`, which a dict's key coercion asks of an `Any` key annotation directly, without the shape dispatch that handles `ANY` everywhere else (BUG-212). A value holding no token is returned as the very object given, so a caller's dict passed to `from_dict()` stays that dict.
 
 **Registry**: `_LEAF_COERCIONS` maps a type to a coerce function and `_LEAF_SERIALIZERS` maps
 it to the inverse; `register_leaf_type` writes both, and `Path` is simply the first entry of

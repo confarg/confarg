@@ -509,6 +509,14 @@ class _WithAnyField:
 
 
 @dataclass
+class _WithAnyVariants:
+    """Typed variants beside ``Any``, which takes only what they refuse (BUG-117)."""
+
+    x: int | Any = None
+    p: Path | Any = None
+
+
+@dataclass
 class _WithJsonNamedField:
     """A field literally named ``json`` (a cast word): the real field must win."""
 
@@ -6016,6 +6024,47 @@ class TestJsonCastContract:
         cli = loader.merge(_WithAnyField, argv=["--data", '{"a": 1}'], env={})
         env = loader.merge(_WithAnyField, argv=[], env={"MYAPP_DATA": '{"a": 1}'}, env_prefix="MYAPP_")
         assert cli["data"] == env["data"] == '{"a": 1}'
+
+
+class TestUnionWithAnyContract:
+    """``Any`` beside typed variants takes only the text they refuse, in every front-end (BUG-117)."""
+
+    def test_a_number_goes_to_the_int_variant(self, loader: ConfargLoader) -> None:
+        """--x 3 builds the int 3, not the text '3'."""
+        cfg = loader.load(_WithAnyVariants, argv=["--x", "3"], env={})
+        assert cfg.x == 3
+        assert type(cfg.x) is int
+
+    def test_text_the_int_refuses_is_a_plain_str(self, loader: ConfargLoader) -> None:
+        """--x abc is the str 'abc': the int variant refuses it, Any keeps it."""
+        cfg = loader.load(_WithAnyVariants, argv=["--x", "abc"], env={})
+        assert cfg.x == "abc"
+        assert type(cfg.x) is str
+
+    def test_the_environment_agrees(self, loader: ConfargLoader) -> None:
+        """MYAPP_X=3 builds the int 3, as --x 3 does."""
+        cfg = loader.load(_WithAnyVariants, argv=[], env={"MYAPP_X": "3"}, env_prefix="MYAPP_")
+        assert cfg.x == 3
+
+    def test_a_str_cast_is_admitted(self, loader: ConfargLoader) -> None:
+        """--p.str a keeps 'a' a str: Any holds every cast's type, so Path cannot steal it."""
+        cfg = loader.load(_WithAnyVariants, argv=["--p.str", "a"], env={})
+        assert cfg.p == "a"
+        assert type(cfg.p) is str
+
+
+class TestAnyHoldsNoTokenContract:
+    """An ``Any`` field built from argv or the environment holds a plain str, never a token."""
+
+    def test_cli(self, loader: ConfargLoader) -> None:
+        """--data abc is the plain str 'abc'."""
+        cfg = loader.load(_WithAnyField, argv=["--data", "abc"], env={})
+        assert type(cfg.data) is str
+
+    def test_env(self, loader: ConfargLoader) -> None:
+        """MYAPP_DATA=abc is the plain str 'abc'."""
+        cfg = loader.load(_WithAnyField, argv=[], env={"MYAPP_DATA": "abc"}, env_prefix="MYAPP_")
+        assert type(cfg.data) is str
 
 
 class TestRootJsonContract:

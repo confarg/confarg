@@ -72,20 +72,19 @@ def holds_the_cast(field_tp: Any, cast_tp: Any) -> bool:
     """Return whether *field_tp* holds *cast_tp* among the types it accepts.
 
     The one admission rule every cast asks, on every channel: a leaf field holds
-    its own type, a union holds its variants, and ``Any`` holds everything. A cast
-    naming anything else would place a value the field's type does not accept —
-    an int where the config asked for a ``tuple[int, int]`` — so it is refused,
-    by construction reading a pin and by the CLI detecting and registering a cast
-    flag alike.
+    its own type, a union what its variants hold, and ``Any`` everything, so a
+    union holding ``Any`` holds every cast. A cast naming anything else would
+    place a value the field's type does not accept — an int where the config
+    asked for a ``tuple[int, int]`` — so it is refused, by construction reading a
+    pin and by the CLI detecting and registering a cast flag alike.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds
     """
     field_tp = _resolve_type(field_tp)
-    if field_tp is Any:
-        return True
-    members = [_resolve_type(v) for v in _union_args_no_none(field_tp)] if _is_union(field_tp) else [field_tp]
-    return any(m == cast_tp for m in members)
+    if _is_union(field_tp):
+        return any(holds_the_cast(v, cast_tp) for v in _union_args_no_none(field_tp))
+    return field_tp is Any or field_tp == cast_tp
 
 
 def fold_root_json(data: MergeDict, root_json: list[MergeDict], union_tag: str) -> MergeDict:

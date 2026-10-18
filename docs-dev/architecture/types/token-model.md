@@ -8,7 +8,8 @@
   alone may fall back to a one-element list ([CLI parsing](../cli-parsing/token-consumption.md#unions-with-sequence-variants)).
 - `_Pinned(tp, value)` carries an explicitly cast value through the merge dict; `construct`
   honors it before anything else, including `None` handling.
-- Tokens must never leak out: error messages print them as `str` (`_src_type`, which lives in
+- Tokens must never leak out: an `Any` field holds a token's text, not the token
+  (`_coerce._held_by_any`, [leaf coercion](leaf-coercion.md#leaf-coercion)), error messages print them as `str` (`_src_type`, which lives in
   `_types.py` beside `_StrToken` rather than in `typedload/`, so every module that formats a
   channel value can reach it without importing an engine — BUG-57 was the fifth site to print
   `type(value).__name__` instead), the dump path

@@ -34,7 +34,7 @@ from confarg._callable import (
     _target_signature,
     spec_opener,
 )
-from confarg._cast import SCALAR_CAST_TYPES
+from confarg._cast import SCALAR_CAST_TYPES, holds_the_cast
 from confarg._import import _import_dotted, dotted_name
 from confarg._merge import (
     MergeDict,
@@ -86,15 +86,16 @@ def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
     """Return the scalar cast types the union holds, to offer as explicit cast flags.
 
     A cast is admitted only where the field's type holds it, so a multi-variant
-    union offers exactly its own scalar variants: the flags disambiguate the
-    stealing among them, and registration and vanilla's parse agree because both
-    ask the one admission rule (BUG-94).
+    union offers exactly the scalars it holds -- its own scalar variants, or all of
+    them beside ``Any``: the flags disambiguate the stealing among them, and
+    registration and vanilla's parse agree because both ask the one admission rule
+    (BUG-94).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags
         docs-dev/architecture/design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds
     """
-    return [t for t in (_resolve_type(v) for v in _union_args_no_none(resolved)) if t in SCALAR_CAST_TYPES.values()]
+    return [t for t in SCALAR_CAST_TYPES.values() if holds_the_cast(resolved, t)]
 
 
 def _literal_cli_choices(vals: tuple[Any, ...]) -> list[str]:

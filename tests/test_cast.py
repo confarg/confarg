@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from confarg._cast import FORCE_CAST_NAMES, SCALAR_CAST_TYPES, resolve_forced_value
+import confarg
+from confarg._cast import FORCE_CAST_NAMES, SCALAR_CAST_TYPES, holds_the_cast, resolve_forced_value
 from confarg._parse_cli import detect_force_cast
 from confarg._types import _Pinned
 from confarg.exceptions import ConfargError
@@ -97,3 +99,21 @@ def test_detect_root_real_json_field_wins() -> None:
 def test_detect_root_scalar_cast_is_ignored(name: str) -> None:
     """Root-level scalar casts have no struct to attach to, so they are left untouched."""
     assert detect_force_cast([name], _NoJson, "class") == ([name], None)
+
+
+@dataclass
+class _PathOrAny:
+    p: Path | Any = None
+
+
+def test_a_file_cast_on_a_union_holding_any_is_admitted() -> None:
+    """A file's ``__cast__: str`` on ``Path | Any`` keeps the str: Any holds every type (BUG-117)."""
+    built = confarg.build(_PathOrAny, {"p": {"__cast__": "str", "__value__": "a"}})
+    assert built.p == "a"
+    assert type(built.p) is str
+
+
+def test_a_union_holding_any_holds_every_cast() -> None:
+    """holds_the_cast admits a cast on a union with an Any member, as on a bare Any."""
+    assert holds_the_cast(Path | Any, str)
+    assert holds_the_cast(int | Any | None, float)

@@ -39,7 +39,7 @@ from confarg._types import (
 )
 from confarg.exceptions import ConfargError, ConfargWarning, FieldPath, _spell_field_path
 from confarg.typedload._coerce import _LEAF_SERIALIZERS, _is_struct_variant, _type_kind, _TypeKind
-from confarg.typedload._construct import _disambiguate_struct, construct
+from confarg.typedload._construct import _disambiguate_struct, _holds_anything, construct
 
 
 def _serialize(
@@ -192,10 +192,16 @@ def _serialize_union(
 
     # With one variant beside None, no other variant can take the dump: only a token selects
     # None, and a dump holds none. Reading it back would only build the value again.
-    if len(_union_args_no_none(tp)) == 1 or _reads_back(tp, instance, serialized, union_tag):
+    if len(_union_args_no_none(tp)) == 1:
         return serialized
-    cast = _cast_dict(variant_tp, serialized)
-    if _reads_back(tp, instance, cast, union_tag):
+    # Any holds what it is given: the value it reads back is the dump itself, its cast the
+    # dump's own type, as for a bare Any field.
+    holds_anything = _holds_anything(variant_tp)
+    expected = serialized if holds_anything else instance
+    if _reads_back(tp, expected, serialized, union_tag):
+        return serialized
+    cast = _cast_dict(type(serialized) if holds_anything else variant_tp, serialized)
+    if _reads_back(tp, expected, cast, union_tag):
         return cast
     _warn_unpinnable_leaf(variant_tp, serialized, path)
     return serialized
@@ -222,15 +228,16 @@ def _warn_unpinnable_leaf(variant_tp: Any, serialized: Any, path: FieldPath) -> 
     )
 
 
-def _reads_back(tp: Any, instance: Any, data: Any, union_tag: str) -> bool:
-    """Check that reading *data* back as *tp* produces *instance* again.
+def _reads_back(tp: Any, expected: Any, data: Any, union_tag: str) -> bool:
+    """Check that reading *data* back as *tp* produces *expected*.
 
     Runs the reader itself instead of modelling a second time what selects a variant, so the
     answer follows whatever decides it — the stealing rule, declaration order or a tag.
 
     Args:
         tp: The declared type the value would be read back as.
-        instance: The value that produced *data*.
+        expected: What reading *data* back must produce: the value that produced it, or, for
+            an ``Any`` variant, which holds what it is given, *data* itself.
         data: The serialized form to read back.
         union_tag: The field name used as a discriminator tag in unions.
 
@@ -244,7 +251,7 @@ def _reads_back(tp: Any, instance: Any, data: Any, union_tag: str) -> bool:
         back = construct(tp, data, union_tag=union_tag)
         # `is` first: a value that passes through unchanged round-trips even when it does not
         # compare equal to itself (float('nan')).
-        return type(back) is type(instance) and bool(back is instance or back == instance)
+        return type(back) is type(expected) and bool(back is expected or back == expected)
     except (ConfargError, TypeError, ValueError):
         return False
 
@@ -380,12 +387,18 @@ def _cast_dict(tp: Any, value: Any) -> dict[str, Any]:
 
 
 def _find_variant_type(tp: Any, instance: Any) -> Any | None:
-    """Find which Union variant the instance belongs to, in declaration order."""
-    args = _union_args_no_none(tp)
-    for arg in args:
-        arg_r = _resolve_type(arg)
-        if _variant_holds(arg_r, instance):
-            return arg_r
+    """Find which Union variant the instance belongs to, in declaration order, ``Any`` last.
+
+    ``Any`` holds every instance, so it is asked after every other variant, as construction
+    offers it a value only after every other variant refused it.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
+    """
+    args = [_resolve_type(arg) for arg in _union_args_no_none(tp)]
+    for arg in sorted(args, key=_holds_anything):
+        if _variant_holds(arg, instance):
+            return arg
     return None
 
 
@@ -419,9 +432,11 @@ def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one retu
             return isinstance(instance, dict)
         case _TypeKind.LEAF if _is_literal(tp):
             return any(type(m) is type(instance) and m == instance for m in _literal_values(tp))
-        case _TypeKind.ANY | _TypeKind.UNION | _TypeKind.TAGGABLE_LEAF | _TypeKind.CALLABLE | _TypeKind.LEAF:
+        case _TypeKind.ANY:
+            return True
+        case _TypeKind.UNION | _TypeKind.TAGGABLE_LEAF | _TypeKind.CALLABLE | _TypeKind.LEAF:
             # What is left is a class, or is parameterized over one (``type[X]``,
-            # ``Callable[..., X]``); ``Any`` is neither, and holds nothing in particular.
+            # ``Callable[..., X]``).
             origin = _origin(tp)
             checkable = origin if isinstance(origin, type) else tp
             return isinstance(checkable, type) and isinstance(instance, checkable)

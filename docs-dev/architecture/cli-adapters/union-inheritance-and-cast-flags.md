@@ -42,10 +42,11 @@
   variant coerces by that variant's type, writes in declaration order, and drops what no
   variant it walked owns. A tag a `--config` file sets is imported before the loop walks
   (`_tags.import_tagged_classes`), for the adapters exactly as for vanilla.
-- Force-cast flags (`--f.int`, …) are registered statically for exactly the union's own
-  scalar variants: a cast is admitted only where the field's type holds it, and registration
-  and vanilla's parse ask the one admission rule, `_cast.holds_the_cast` via
-  `detect_force_cast`, so no spellings diverge (BUG-94,
+- Force-cast flags (`--f.int`, …) are registered statically for exactly the scalars the union
+  holds — its own scalar variants, or every one beside `Any`: a cast is admitted only where the
+  field's type holds it, and registration (`cli._build._scalar_cast_types_in_union`) and
+  vanilla's parse (`detect_force_cast`) both ask the one admission rule, `_cast.holds_the_cast`,
+  so no spellings diverge (BUG-94, BUG-117,
   [design decisions](../design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds)).
   On a plain leaf field the field's own cast registers dynamically, only when typed
   (BUG-72) — a leaf holds nothing to disambiguate, so static registration would be pure

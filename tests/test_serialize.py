@@ -11,7 +11,7 @@ import sys
 from dataclasses import dataclass as _dc
 from dataclasses import field
 from pathlib import Path
-from typing import Final, Literal, Union
+from typing import Any, Final, Literal, Optional, Union
 from unittest import mock
 from uuid import UUID
 
@@ -422,6 +422,58 @@ class TestDumpStolenLeaf:
         path = tmp_path / "out.yaml"
         confarg.dump_file(obj, path)
         assert confarg.load(WithColorOrStr, argv=[], env={}, files=[path]) == obj
+
+
+# ---------------------------------------------------------------------------
+# A union with an Any variant (BUG-117)
+# ---------------------------------------------------------------------------
+
+
+@_dc
+class _AnyPeer:
+    a: int = 0
+
+
+class TestDumpUnionWithAny:
+    """``Any`` holds every value, so ``dump()`` picks it last and writes it as a bare ``Any`` field does."""
+
+    def test_the_ticket_reproduction(self) -> None:
+        """``list[int] | Any`` holding 3 dumps the 3 and builds back, not a TypeError."""
+        WithListOrAny = make_target("x", Union[list[int], Any], default=None)
+        obj = WithListOrAny(x=3)
+        assert confarg.dump(obj) == {"x": 3}
+        assert confarg.build(WithListOrAny, confarg.dump(obj)) == obj
+
+    @pytest.mark.parametrize("tp", [Optional[Any], Union[int, Any], Union[Any, int]])
+    def test_a_value_only_any_holds_dumps_as_itself(self, tp: Any) -> None:
+        """A str nothing else holds dumps bare and builds back."""
+        Target = make_target("x", tp, default=None)
+        obj = Target(x="abc")
+        assert confarg.dump(obj) == {"x": "abc"}
+        assert confarg.build(Target, confarg.dump(obj)) == obj
+
+    @pytest.mark.parametrize("tp", [Union[_AnyPeer, Any], Union[Any, _AnyPeer]])
+    def test_a_struct_dumps_as_its_variant(self, tp: Any) -> None:
+        """A struct held beside Any dumps its fields, whichever side Any is written on."""
+        Target = make_target("x", tp, default=None)
+        obj = Target(x=_AnyPeer(a=1))
+        assert confarg.dump(obj) == {"x": {"a": 1}}
+        assert confarg.build(Target, confarg.dump(obj)) == obj
+
+    @pytest.mark.parametrize("tp", [Union[Path, Any], Union[Any, Path]])
+    def test_a_str_the_typed_variant_would_steal_dumps_cast(self, tp: Any) -> None:
+        """A str that Path would take back dumps with its cast, and reads back as the str."""
+        Target = make_target("x", tp, default=None)
+        obj = Target(x="a")
+        assert confarg.dump(obj) == {"x": {"__cast__": "str", "__value__": "a"}}
+        assert confarg.build(Target, confarg.dump(obj)) == obj
+
+    def test_a_dict_a_struct_variant_would_take_warns(self) -> None:
+        """No __cast__ names a dict, so a dict the struct would take back is written bare, with a warning."""
+        Target = make_target("x", Union[_AnyPeer, Any], default=None)
+        with pytest.warns(ConfargWarning, match="'x'"):
+            result = confarg.dump(Target(x={"a": 1}))
+        assert result == {"x": {"a": 1}}
 
 
 # ---------------------------------------------------------------------------
