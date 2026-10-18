@@ -46,6 +46,7 @@ print(config.f("abc"))  # ABC
 print(confarg.dump(config))
 # expected: {'f': 'builtins.str.upper'}
 # actual:   confarg.exceptions.ConfargError: Cannot serialize callable <method 'upper' of 'str'
-#     objects>: no __module__/__qualname__ available. For class instances, ensure the instance
-#     was constructed via confarg (which stores the spec for round-trip serialization).
+#     objects>: no configuration spells it, since it has no dotted path and holds no 'class:'
+#     spec it was built from. Dump the merged configuration instead, which keeps the spec that
+#     produced it.
 ```

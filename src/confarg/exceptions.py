@@ -147,6 +147,22 @@ class ConfargError(Exception):
             f"Cannot set {spelling!r}: {key!r} is a key confarg reserves, which only a configuration file may write.",
         )
 
+    @classmethod
+    def callable_not_spelled(cls, value: Any, reason: str) -> ConfargError:
+        """Return the error for a callable ``dump()`` refuses, since no configuration spells it.
+
+        The one spelling for a callable whose dotted path does not read back and for one with
+        no path at all, which differ only in *reason*. *value* is the callable itself, never a
+        channel token.
+
+        Dev Notes:
+            docs-dev/architecture/callables.md#round-trip
+        """
+        return cls(
+            f"Cannot serialize callable {value!r}: no configuration spells it, since {reason}."
+            " Dump the merged configuration instead, which keeps the spec that produced it.",
+        )
+
 
 class MissingFieldError(ConfargError):
     """Raised when a required field is not provided by any source.

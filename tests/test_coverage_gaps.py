@@ -470,7 +470,7 @@ class TestCallableEdgeCases:
         obj = Proxy()
         obj.__module__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __module__ to trigger fallback path
         obj.__qualname__ = None  # ty: ignore[unresolved-attribute]  # deliberately clobber __qualname__ to trigger fallback path
-        with pytest.raises(confarg.exceptions.ConfargError, match="no __module__"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="has no dotted path"):
             _serialize_callable(obj)
 
 
@@ -1623,7 +1623,6 @@ class TestCallableGaps:
             _resolve_call_spec(
                 f"{_COV_MOD}._cov_raise_fn",
                 {"x": 1},
-                {},
                 _SpecContext(("test",), "class", construct),
                 "call",
             )
