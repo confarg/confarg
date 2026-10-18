@@ -33,8 +33,9 @@ variant at every union it met. A branch carries a *stone* per segment it stood b
 type it reached at the end, `None` if it refused a segment. A stone holds two types: the one
 the walk *reached* there, a union left unexpanded, which is what a walk of that prefix alone
 answers; and the *node* the branch stands on, the resolved variant it took. The steps between
-stones are the walk's own and every question gets them: a member, an index or a dict value
-(`_advance_field_type`); a local-variables namespace, entered as a `dict[str, Any]`; an
+stones are the walk's own and every question gets them: a member, an index, a dict value, or
+any key below an `Any`, which is a `dict[Any, Any]` and answers `Any` again
+([callables](../callables.md#an-any-node-reads-every-opener)) (`_advance_field_type`); a local-variables namespace, entered as a `dict[str, Any]`; an
 subtree of a computation's spec (`_opens_spec_subtree`: a callable's `bind`, `call` or `args`
 key, the `call` or `args` key of a field that takes a typed call where no member holds it),
 below which every segment is a `str` ([callables](../callables.md#cli)); and, last, the union

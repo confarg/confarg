@@ -67,7 +67,8 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [A class tag replaces, not merges](class-tag-replaces.md) | naming a class says "this is a new object" |
 | [A call replaces what lies below](a-call-replaces-what-lies-below.md) | a `call:` is a finished value, so the merge drops what lower layers set at its node, by key alone, the root included |
 | [No implicit subclass inference](no-implicit-subclass-inference.md) | a subclass exists only once imported, so confarg never scans for one |
-| [A call spec yields to data the annotation can hold](call-yields-to-the-data-a-type-holds.md) | `call:` fills any typed field, except where a dict type, `Any` or a member named `call` holds the key as data |
+| [A call spec yields to data the annotation can hold](call-yields-to-the-data-a-type-holds.md) | `call:` fills any typed field, except where a dict type or a member named `call` holds the key as data |
+| [An `Any` node reads every opener](an-any-node-reads-every-opener.md) | `class:`, `classfn:`, `bind:` and `call:` build on an `Any` field at any depth, a bare string stays text; `dump()` writes the spec back when it reads back, untyped with a warning otherwise |
 | [Class names a subclass; call computes](class-names-a-subclass-call-computes.md) | `class:` on a typed field names a subclass of it, and an unrelated class is refused; `call:` computes a value the annotation accepts, so it is no way around the refusal |
 | [Bind yields a partial of its target](bind-yields-a-partial-of-its-target.md) | `bind:` is an opener whose `args` are its target's arguments; `fn:` and the `bind:` kwargs dict are removed outright, with no migration table |
 | [A computation's arguments nest under args](a-computations-arguments-nest-under-args.md) | `bind:` and `call:` hold their arguments under `args`, `class:` and `classfn:` their fields beside them; the escaped openers and the CLI's opener scan are gone |

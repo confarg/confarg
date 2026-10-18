@@ -385,25 +385,17 @@ def _is_eagerly_coercible(tp: Any) -> bool:
 
 
 def _held_by_any(value: Any) -> Any:
-    """Return what an ``Any`` field holds of *value*: the value itself, each token as its text.
+    """Return what an ``Any`` leaf holds of *value*: the value itself, a token as its text.
 
-    The one pass-through of ``Any``, construction's and a dict key's alike. A token, a CSV
-    cell's keys included, becomes the plain ``str`` it spells; a value holding none is
-    returned as the very object given.
+    The leaf half of what an ``Any`` node holds, construction's and a dict key's alike: a
+    token, a CSV cell's keys included, becomes the plain ``str`` it spells. A container is
+    construction's to walk, each item an ``Any`` node in turn
+    (:func:`~confarg.typedload._construct._construct_any`).
 
     Dev Notes:
         docs-dev/architecture/types/leaf-coercion.md#leaf-coercion
     """
-    if isinstance(value, _StrToken):
-        return str(value)
-    if isinstance(value, dict):
-        held = {_held_by_any(k): _held_by_any(v) for k, v in value.items()}
-        changed = any(hk is not k or hv is not v for (hk, hv), (k, v) in zip(held.items(), value.items(), strict=True))
-        return held if changed else value
-    if isinstance(value, list):
-        held_items = [_held_by_any(v) for v in value]
-        return held_items if any(h is not v for h, v in zip(held_items, value, strict=True)) else value
-    return value
+    return str(value) if isinstance(value, _StrToken) else value
 
 
 def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  # one branch per leaf type

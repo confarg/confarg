@@ -184,9 +184,12 @@ A field default is the layer below every source only where the class declares it
   unbound ([callables](callables.md#auto-binding)). A callable confarg did not build may not be
   serializable at all ([callables](callables.md#round-trip)).
 - A `call` key replaces what lower layers set at its node, by key alone, so where the type
-  holds it as data — a `dict` or `Any` field, a struct with a member named `call`, the root
+  holds it as data — a `dict` field, a struct with a member named `call`, the root
   included — a higher layer writing it drops the keys the lower layers gave
   ([design decision](design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)).
+- Every `Any` field, and every value nested in what one holds, lets a file, an environment variable or a flag build any importable class with `class:` and call any importable function with `call:`, as a `call:` already can on any field that takes a typed call. A configuration source that is not trusted must not reach a field typed `Any` ([design decision](design-decisions/an-any-node-reads-every-opener.md)).
+- A dict a program puts in an `Any` field with a `class`, `classfn`, `bind` or `call` key cannot be loaded back as that dict: it reads back as the spec it spells, and `dump()` warns when it writes one. An object no spec rebuilds, such as a `Path`, an `Enum` member, a `datetime`, a tuple or a closure, is written untyped with a `ConfargWarning` ([serialization](types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it)).
+- On the command line, a flag below an `Any` takes one token, since no declaration types its key before construction reads the opener: a list field of the class `--x.class` names is set by index or by a `.json` cast, not by `--x.tags a b` ([callables](callables.md#an-any-node-reads-every-opener)).
 - A `call:` on a field whose struct has a member named `args` holds its arguments as files and
   the environment write them, but the CLI cannot spell them: `--n.args.<p>` reaches the member
   ([design decision](design-decisions/a-computations-arguments-nest-under-args.md#a-computations-arguments-nest-under-args)).

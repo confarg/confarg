@@ -517,6 +517,19 @@ class _WithAnyVariants:
 
 
 @dataclass
+class _AnyBuilt:
+    """A class an ``Any`` field builds from a ``class:`` spec (FEAT-42)."""
+
+    a: int = 0
+    tags: list[str] = dataclasses.field(default_factory=list)
+
+
+def _any_triple(x: int) -> int:
+    """A function an ``Any`` field calls from a ``call:`` spec (FEAT-42)."""
+    return 3 * x
+
+
+@dataclass
 class _WithJsonNamedField:
     """A field literally named ``json`` (a cast word): the real field must win."""
 
@@ -6065,6 +6078,53 @@ class TestAnyHoldsNoTokenContract:
         """MYAPP_DATA=abc is the plain str 'abc'."""
         cfg = loader.load(_WithAnyField, argv=[], env={"MYAPP_DATA": "abc"}, env_prefix="MYAPP_")
         assert type(cfg.data) is str
+
+
+class TestAnyReadsSpecsContract:
+    """An ``Any`` field reads ``class:`` and ``call:`` from argv and the environment, in every front-end (FEAT-42)."""
+
+    _CLASS = f"{__name__}._AnyBuilt"
+    _FN = f"{__name__}._any_triple"
+
+    def test_class_builds_the_named_class(self, loader: ConfargLoader) -> None:
+        """--data.class names the class, --data.a its field, typed as the class declares it."""
+        cfg = loader.load(_WithAnyField, argv=["--data.class", self._CLASS, "--data.a", "2"], env={})
+        assert cfg.data == _AnyBuilt(a=2)
+
+    def test_call_takes_its_arguments_under_args(self, loader: ConfargLoader) -> None:
+        """--data.call names the function, --data.args.x its argument."""
+        cfg = loader.load(_WithAnyField, argv=["--data.call", self._FN, "--data.args.x", "4"], env={})
+        assert cfg.data == 12
+
+    def test_the_environment_agrees(self, loader: ConfargLoader) -> None:
+        """MYAPP_DATA__CLASS and MYAPP_DATA__A build what the flags build."""
+        env = {"MYAPP_DATA__CLASS": self._CLASS, "MYAPP_DATA__A": "2"}
+        cfg = loader.load(_WithAnyField, argv=[], env=env, env_prefix="MYAPP_")
+        assert cfg.data == _AnyBuilt(a=2)
+
+    def test_a_spec_below_a_key(self, loader: ConfargLoader) -> None:
+        """A key below an Any field is an Any node in turn, so it reads a spec too."""
+        argv = ["--data.k.class", self._CLASS, "--data.k.a", "5"]
+        cfg = loader.load(_WithAnyField, argv=argv, env={})
+        assert cfg.data == {"k": _AnyBuilt(a=5)}
+
+    def test_a_key_with_no_opener_is_a_dict_of_text(self, loader: ConfargLoader) -> None:
+        """--data.k v is the dict {k: 'v'}, its value a plain str."""
+        cfg = loader.load(_WithAnyField, argv=["--data.k", "v"], env={})
+        assert cfg.data == {"k": "v"}
+        assert type(cfg.data["k"]) is str
+
+    def test_a_class_beside_a_scalar_variant(self, loader: ConfargLoader) -> None:
+        """In int | Any, --x.class builds the class the int cannot hold."""
+        cfg = loader.load(_WithAnyVariants, argv=["--x.class", self._CLASS, "--x.a", "1"], env={})
+        assert cfg.x == _AnyBuilt(a=1)
+
+    def test_the_named_class_fields_are_registered(self, populating_loader: ConfargLoader) -> None:
+        """The adapters register the fields of the class argv names."""
+        flags = populating_loader.registered_flags(_WithAnyField, argv=["--data.class", self._CLASS, "--data.a", "1"])
+        assert flags is not None
+        assert "data.class" in flags
+        assert "data.a" in flags
 
 
 class TestRootJsonContract:

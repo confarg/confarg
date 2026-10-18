@@ -2,8 +2,9 @@
 
 A `call:` key dispatches on any typed field, not only on a Callable: `n: {call: pkg.f, args: {x: 4}}`
 fills an `int`, and a dataclass field takes its function's value. The key stops being a spec
-where the annotation could hold it as data: a `dict` type, `Any`, and a struct with a member
-named `call` keep the value as written. The decision is
+where the annotation could hold it as data: a `dict` type and a struct with a member
+named `call` keep the value as written. `Any` was on this list until FEAT-42, which made an `Any`
+node read every opener ([an `Any` node reads every opener](an-any-node-reads-every-opener.md)). The decision is
 taken per construction, so the same key means a call on one field and data on another.
 
 Why: a `call:` spec on a field that takes a plain value is the function-returns-the-value form

@@ -532,6 +532,15 @@ def _competing_openers(spec: dict) -> list[str]:
     return objects or [k for k in _COMPUTATION_OPENERS if k in spec]
 
 
+def holds_an_opener(data: dict) -> bool:
+    """Return whether the dict *data* holds an opener key, so that an ``Any`` node reads it as a spec.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#an-any-node-reads-every-opener
+    """
+    return any(k in data for k in _OPENERS)
+
+
 def spec_opener(spec: dict) -> str | None:
     """Return the opener construction reads *spec* by (:func:`_spec_parts`), None when it holds no single one."""
     present = _competing_openers(spec)
@@ -616,6 +625,25 @@ def resolve_typed_call(spec: dict, tp: Any, path: FieldPath, union_tag: str, con
     if _accepts(tp, value):
         return value
     return ctx.construct(tp, value)
+
+
+def resolve_held_spec(spec: dict, path: FieldPath, union_tag: str, construct_fn: Any) -> Any:
+    """Build what a spec an ``Any`` node holds yields: an instance, a bound method, a partial or a value.
+
+    Every opener is read, as on a Callable field (:func:`_spec_parts`), with no Callable to
+    check the result against: ``class:`` builds any class, callable or not, and ``call:``
+    takes its target's value as it is.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#an-any-node-reads-every-opener
+    """
+    ctx = _SpecContext(path, union_tag, construct_fn)
+    opener, args = _spec_parts(spec, ctx.where)
+    if opener == _defaults.CALL_KEY:
+        return _call_factory(spec[opener], args, ctx)
+    if opener == _defaults.CLASS_KEY:
+        return _instantiate_class_spec(_ClassSpec(spec[opener], args), ctx)
+    return _resolve_dict_spec(spec, None, ctx)
 
 
 def _hints_source(callable_obj: Any) -> Any:
@@ -708,6 +736,19 @@ class _ClassSpec:
     init_kwargs: dict
 
 
+def _instantiate_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
+    """Build the instance a 'class:' spec names, from the other keys as its constructor arguments.
+
+    Raises:
+        TypeCoercionError: If the path names no class.
+    """
+    cls = _import_dotted(spec.cls_path)
+    if not isinstance(cls, type):
+        msg = f"'class' key at '{ctx.where}' must reference a class, got {type(cls).__name__} {spec.cls_path!r}"
+        raise TypeCoercionError(msg)
+    return ctx.instantiate(cls, spec.init_kwargs, spec.cls_path, _defaults.CLASS_KEY)
+
+
 def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
     """Resolve a 'class:' callable spec: instantiate the class; the instance is the callable.
 
@@ -718,12 +759,7 @@ def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
     To use a class as a *factory* (calling it constructs an instance), give its bare
     fully-qualified name, or ``bind: <class>`` with pre-applied constructor args under ``args``.
     """
-    cls = _import_dotted(spec.cls_path)
-    if not isinstance(cls, type):
-        msg = f"'class' key at '{ctx.where}' must reference a class, got {type(cls).__name__} {spec.cls_path!r}"
-        raise TypeCoercionError(msg)
-
-    instance = ctx.instantiate(cls, spec.init_kwargs, spec.cls_path, _defaults.CLASS_KEY)
+    instance = _instantiate_class_spec(spec, ctx)
     if not callable(instance):
         msg = (
             f"Instance of {spec.cls_path!r} at '{ctx.where}' is not callable: the class must define"

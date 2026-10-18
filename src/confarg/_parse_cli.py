@@ -144,7 +144,11 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911  # o
         case _TypeKind.CALLABLE:
             # The openers ("bind", "class", "call", "classfn") and flat kwargs alike
             return str
-        case _TypeKind.ANY | _TypeKind.UNION | _TypeKind.LEAF:
+        case _TypeKind.ANY:
+            # A keyed Any is a dict[Any, Any]: an opener, a field of the class it names, an
+            # argument under args or a plain key, each an Any node in turn.
+            return Any
+        case _TypeKind.UNION | _TypeKind.LEAF:
             return None
 
 
@@ -175,9 +179,9 @@ _SEQUENCE_KINDS = frozenset(
 
 #: The kinds a collection patch stands on: the merge reads every key below one as an index,
 #: an op or a dict key. A namedtuple is none of them: the static walk lists its own fields
-#: and indices (BUG-157).
+#: and indices (BUG-157). A keyed ``Any`` is a ``dict[Any, Any]``, whose keys no walk lists.
 _COLLECTION_KINDS = frozenset(
-    {_TypeKind.LIST, _TypeKind.SET, _TypeKind.FROZENSET, _TypeKind.TUPLE, _TypeKind.DICT},
+    {_TypeKind.LIST, _TypeKind.SET, _TypeKind.FROZENSET, _TypeKind.TUPLE, _TypeKind.DICT, _TypeKind.ANY},
 )
 
 

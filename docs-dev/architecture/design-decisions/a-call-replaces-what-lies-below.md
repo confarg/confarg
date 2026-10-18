@@ -13,4 +13,4 @@ Rejected:
 
 Precedents: confarg's own union tag and cast pin, which the merge also tells by shape and lets replace what lies below. Kubernetes' strategic merge patch spells a replacement by a key in the patch itself (`$patch: replace`). OmegaConf, under Hydra, merges a node holding `_target_` key by key, so switching the target in a later config keeps the old target's arguments, which then fail as unexpected keywords: the pitfall this rule removes.
 
-Cost: where the type holds `call` as data, a `dict` or `Any` field or a struct with a member named `call`, a higher layer writing that key drops what the lower layers gave the node, at the root as anywhere ([limitations](../limitations.md#callables-and-serialization)). The union tag has the same cost where a struct owns a field of its spelling.
+Cost: where the type holds `call` as data, a `dict` field or a struct with a member named `call`, a higher layer writing that key drops what the lower layers gave the node, at the root as anywhere ([limitations](../limitations.md#callables-and-serialization)). The union tag has the same cost where a struct owns a field of its spelling.

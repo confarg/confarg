@@ -44,7 +44,8 @@ so beside `class` or `classfn` a `bind` or `call` key is a field, not a second o
 `bind` or `call`, a key other than `args` is refused, the message saying the arguments go under
 `args`. `_callable._spec_parts` is the one reader of a spec's opener and arguments, and
 `spec_opener` its answer for registration, which must not raise. A spec is resolved on a
-Callable field whatever opener it holds. On a field of any other type, only `call:` is
+Callable field whatever opener it holds, and so is one an `Any` node holds
+([an `Any` node reads every opener](#an-any-node-reads-every-opener)). On a field of any other type, only `call:` is
 dispatched ([call in a typed field](#call-in-a-typed-field)), and `class:` is the union tag.
 
 Why two kinds: an object is its fields, which is how a tagged struct is written everywhere else
@@ -113,11 +114,13 @@ built as the annotation, so a wrong type fails the way a wrong literal does. A `
 it is a second opener, and any other key beside it is refused, as in a Callable spec. `dump()` writes the value, not the spec
 ([the object dump writes state](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
 
-The key stops being a spec where the annotation could hold it as data: a `dict` type, `Any`, a
+The key stops being a spec where the annotation could hold it as data: a `dict` type, a
 Callable (which has its own rules), and a struct with a member named `call`. Those keep the
 value as written. The check is per construction in
 `typedload._construct._is_typed_call`, so a `call` key means a call on one field and data on
-another ([design decision](design-decisions/call-yields-to-the-data-a-type-holds.md)).
+another ([design decision](design-decisions/call-yields-to-the-data-a-type-holds.md)). An `Any`
+field held the key as data too until FEAT-42; it now reads every opener
+([an `Any` node reads every opener](#an-any-node-reads-every-opener)).
 
 On the CLI the key is spelled where it is a spec: `--n.call pkg.f` opens the call, and its
 arguments are `--n.args.<p>`, whatever opened it ([CLI](#cli)).
@@ -149,6 +152,14 @@ They go through the same construction as a `class:` spec's constructor arguments
 target that is no instance method, and a target that is no dotted path, are both refused. The
 method's own arguments belong under the `args` of a `bind:` or `call:` whose target is the
 `classfn` spec, so the owner's arguments and the method's never meet, even when they share a name.
+
+## An `Any` node reads every opener
+
+An `Any` field reads a dict holding an opener (`_callable.holds_an_opener`) as the spec it is, through the same `_spec_parts` a Callable field reads: `{class: pkg.S, a: 1}` builds `S(a=1)`, `{call: pkg.f, args: {x: 4}}` takes `f(x=4)` as it is, `{bind: pkg.f}` yields `f` and `{classfn: pkg.C.m, k: 1}` the bound method. `_callable.resolve_held_spec` is that reader: it checks nothing against a Callable, so `class:` builds any class, callable or not, through `construct_named_class` as a Callable's `class:` does ([class builds an instance](#class-builds-an-instance)). A dict holding no opener is a `dict[Any, Any]` and a list a `list[Any]`, so every value below is an `Any` node in turn and a spec at any depth is read (`typedload._construct._construct_any`); a bare `dict` or `list` annotation reads the same way, being `dict[Any, Any]` and `list[Any]` (BUG-187). A bare dotted string stays a string: the shorthand applies only where the type asks for a callable. A class that does not import, or a path that names no class, is refused, not kept as data. In a union, a tag naming a struct variant selects it as before, and one naming no variant is the `Any` variant's spec (`_construct_union_by_tag`); a tag that does not import is refused there too.
+
+On the command line a keyed `Any` is a `dict[Any, Any]` as well: `_parse_cli._advance_field_type` answers `Any` for any segment below one, so `--x.class pkg.S --x.a 1`, `--x.call pkg.f --x.args.x 4`, and their environment spellings (`APP_X__CLASS`, `APP_X__A`) reach the same spec a file writes. Since `_takes_typed_call` no longer yields on `Any`, `call` and `args` open a subtree below it as below any typed field, and the adapters describe `--x.args.<p>` from the target's signature. Every other flag below an `Any` is registered when argv types it, as a dict's keys are (`_parse_cli._COLLECTION_KINDS`), so the fields of the class argv names are accepted in all five front-ends. No declaration types such a key until construction reads the opener, so each of those flags takes one token: a list field of the class named is set by index (`--x.tags.0 a`) or by a `.json` cast, not by `--x.tags a b`, as below a Callable's `class:`.
+
+`dump()` writes what an `Any` holds back as the spec that rebuilds it ([serialization](types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it)). The decision and its rejected alternatives are in [an `Any` node reads every opener](design-decisions/an-any-node-reads-every-opener.md).
 
 ## Auto-binding
 
@@ -235,6 +246,8 @@ writes an `Enum` or a `Path` as a raw dict's value; a struct keyword is not writ
 A callable that no configuration spells, such as a closure, a lambda, or an instance whose
 fields cannot be read, cannot be dumped. The merged dict keeps the spec that produced it, and
 `dump_file(merge(...))` writes it as written.
+
+An object an `Any` field holds is written by the same rules, a bare path opened into its `bind:` form, which an `Any` node reads where it reads a bare string as text ([serialization](types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it)).
 
 ### A path is written only when it reads back
 
