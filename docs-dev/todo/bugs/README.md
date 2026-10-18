@@ -11,7 +11,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 |---|---|---|---|---|---|---|
 | [BUG-180 — Cyclopts refuses a flag whose name ends in a star](BUG-180-cyclopts-refuses-a-flag-whose-name-ends-in-a-star.md) | major |  | M | medium | behavior | PR-72 |
 | [BUG-219 — A fragment appended to a list loses its `locals`](BUG-219-a-fragment-appended-to-a-list-loses-its-locals.md) | major |  | M | high | behavior | PR-105 |
-| [BUG-253 — A dict subclass reads as a struct of its constructor's parameters](BUG-253-a-dict-subclass-reads-as-a-struct-of-its-constructors-parameters.md) | major |  | M | high | config | PR-5 |
 | [BUG-248 — Data nested a few hundred levels deep crashes the walkers](BUG-248-data-nested-a-few-hundred-levels-deep-crashes-the-walkers.md) | major |  | L | high | behavior | PR-5 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |

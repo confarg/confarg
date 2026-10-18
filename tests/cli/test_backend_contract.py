@@ -17,6 +17,8 @@ visible: ``TestListSpaceSeparated`` runs on vanilla/argparse/cyclopts and
 
 from __future__ import annotations
 
+import collections
+import collections.abc
 import dataclasses
 import json
 import math
@@ -9826,3 +9828,87 @@ class TestANewTypeIsItsSupertypeContract:
     def test_a_struct_registers_its_members(self, loader: ConfargLoader) -> None:
         """``--inner.x`` sets the member of the dataclass the ``NewType`` names."""
         assert loader.load(_WithNewTypes, argv=["--inner.x", "5"], env={}).inner == _NewTypeLeaf(x=5)
+
+
+class _ScoresDict(dict[str, int]):
+    pass
+
+
+class _TagList(list[str]):
+    pass
+
+
+class _PortInt(int):
+    def __new__(cls, value: int) -> _PortInt:
+        if not 0 < value < 65536:  # the TCP port range
+            msg = f"port out of range: {value}"
+            raise ValueError(msg)
+        return super().__new__(cls, value)
+
+
+class _PairTuple(tuple[int, int]):
+    __slots__ = ()
+
+
+_PORT = _PortInt(80)
+_PAIR = _PairTuple((0, 0))
+
+
+@dataclass
+class _WithBuiltinSubclasses:
+    od: collections.OrderedDict[str, int] = dataclasses_field(default_factory=collections.OrderedDict)
+    counts: collections.Counter[str] = dataclasses_field(default_factory=collections.Counter)
+    scores: _ScoresDict = dataclasses_field(default_factory=_ScoresDict)
+    tags: _TagList = dataclasses_field(default_factory=_TagList)
+    port: _PortInt = _PORT
+    pair: _PairTuple = _PAIR
+    seq: collections.abc.Sequence[int] = ()
+    bare_seq: collections.abc.Sequence = ()
+    bare_map: collections.abc.Mapping = dataclasses_field(default_factory=dict)
+
+
+class TestABuiltinSubclassIsThatBuiltinContract:
+    """A subclass of a builtin reads as the builtin on every front-end, and is built as the subclass."""
+
+    def test_a_dict_subclass_takes_key_flags(self, loader: ConfargLoader) -> None:
+        """``--od.a 1`` sets a key, typed by the subclass's parameters, where it was an unknown argument."""
+        cfg = loader.load(_WithBuiltinSubclasses, argv=["--od.a", "1", "--scores.b", "2"], env={})
+        assert cfg.od == collections.OrderedDict(a=1)
+        assert type(cfg.od) is collections.OrderedDict
+        assert cfg.scores == {"b": 2}
+        assert type(cfg.scores) is _ScoresDict
+
+    def test_a_counter_counts_in_ints(self, loader: ConfargLoader) -> None:
+        """A Counter's values are its counts, ints, as typeshed declares them."""
+        cfg = loader.load(_WithBuiltinSubclasses, argv=["--counts.a", "3"], env={})
+        assert cfg.counts == collections.Counter(a=3)
+        assert type(cfg.counts) is collections.Counter
+
+    def test_a_list_subclass_takes_its_tokens(self, space_sep_loader: ConfargLoader) -> None:
+        """``--tags a b`` fills the list subclass."""
+        cfg = space_sep_loader.load(_WithBuiltinSubclasses, argv=["--tags", "a", "b"], env={})
+        assert cfg.tags == ["a", "b"]
+        assert type(cfg.tags) is _TagList
+
+    def test_a_scalar_subclass_reads_as_its_builtin(self, loader: ConfargLoader) -> None:
+        """``--port 8080`` builds the int subclass, which the merged dict holds as the plain int."""
+        assert loader.load(_WithBuiltinSubclasses, argv=["--port", "8080"], env={}).port == _PortInt(8080)
+        assert type(loader.load(_WithBuiltinSubclasses, argv=["--port", "8080"], env={}).port) is _PortInt
+        assert type(loader.merge(_WithBuiltinSubclasses, argv=["--port", "8080"], env={})["port"]) is int
+
+    def test_the_subclass_refusal_is_a_coercion_error(self, loader: ConfargLoader) -> None:
+        """The subclass's own validation runs, its refusal naming the class and the field."""
+        with pytest.raises(TypeCoercionError, match=re.escape("to _PortInt at 'port': port out of range: 70000")):
+            loader.load(_WithBuiltinSubclasses, argv=["--port", "70000"], env={})
+
+    def test_a_fixed_tuple_subclass_takes_its_arity(self, loader: ConfargLoader) -> None:
+        """A ``tuple[int, int]`` subclass is a fixed-length sequence of two."""
+        cfg = loader.load(_WithBuiltinSubclasses, argv=["--pair.0", "1", "--pair.1", "2"], env={})
+        assert cfg.pair == (1, 2)
+        assert type(cfg.pair) is _PairTuple
+
+    def test_a_bare_abstract_collection_reads_as_its_concrete_one(self, space_sep_loader: ConfargLoader) -> None:
+        """A bare ``collections.abc.Sequence`` is a list, as ``typing.Sequence`` is, where it read as a struct."""
+        cfg = space_sep_loader.load(_WithBuiltinSubclasses, argv=["--bare_seq", "a", "b", "--bare_map.k", "v"], env={})
+        assert cfg.bare_seq == ["a", "b"]
+        assert cfg.bare_map == {"k": "v"}

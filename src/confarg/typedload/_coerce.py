@@ -11,18 +11,22 @@ import math
 import re
 import types
 import warnings
+from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NewType
+from typing import TYPE_CHECKING, Any, NewType, get_origin
 from uuid import UUID
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 from confarg._import import _import_dotted, dotted_name
+from confarg._registry import LEAF_COERCIONS, LEAF_SERIALIZERS
 from confarg._types import (
+    _builtin_read_as,
+    _dict_kv,
     _forbidden_literal_member,
     _is_callable,
     _is_dict,
@@ -40,8 +44,10 @@ from confarg._types import (
     _literal_members,
     _literal_values,
     _resolve_type,
+    _scalar_read_as,
     _src_type,
     _StrToken,
+    _subclassed_builtin,
     _type_ref_constraint,
     _union_args_no_none,
 )
@@ -279,29 +285,35 @@ def _format_offset(value: timezone) -> str:
 # register_leaf_type writes both registries at runtime, so nothing that reads them is ever
 # cached: not _is_registered_leaf, _is_struct_variant, _is_taggable_leaf, _is_eagerly_coercible
 # nor _type_kind (docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class).
-_LEAF_COERCIONS: dict[type, Any] = {
-    Path: Path,
-    Decimal: _coerce_decimal,
-    UUID: _coerce_uuid,
-    date: _coerce_date,
-    datetime: _coerce_datetime,
-    time: _coerce_time,
-    timedelta: _coerce_timedelta,
-    timezone: _coerce_timezone,
-}
+_LEAF_COERCIONS = LEAF_COERCIONS
+_LEAF_COERCIONS.update(
+    {
+        Path: Path,
+        Decimal: _coerce_decimal,
+        UUID: _coerce_uuid,
+        date: _coerce_date,
+        datetime: _coerce_datetime,
+        time: _coerce_time,
+        timedelta: _coerce_timedelta,
+        timezone: _coerce_timezone,
+    }
+)
 #: A Path is written with forward slashes, which every OS reads, so a dump is portable; a
 #: Decimal and a UUID as their str(), the date and time types as ISO 8601 text: each as the
 #: text its coercion reads back.
-_LEAF_SERIALIZERS: dict[type, Any] = {
-    Path: Path.as_posix,
-    Decimal: str,
-    UUID: str,
-    date: date.isoformat,
-    datetime: datetime.isoformat,
-    time: time.isoformat,
-    timedelta: _format_duration,
-    timezone: _format_offset,
-}
+_LEAF_SERIALIZERS = LEAF_SERIALIZERS
+_LEAF_SERIALIZERS.update(
+    {
+        Path: Path.as_posix,
+        Decimal: str,
+        UUID: str,
+        date: date.isoformat,
+        datetime: datetime.isoformat,
+        time: time.isoformat,
+        timedelta: _format_duration,
+        timezone: _format_offset,
+    }
+)
 
 
 def _coerce_bool(s: str) -> bool:
@@ -476,7 +488,7 @@ def _steal_rank(tp: Any) -> int:
         return 1
     if _is_callable(tp):
         return _CALLABLE_RANK
-    return _LEAF_TYPE_RANKS.get(tp, 2)
+    return _LEAF_TYPE_RANKS.get(_scalar_read_as(tp) or tp, 2)
 
 
 def _steal_order(variants: list[Any], *, key: Any) -> list[Any]:
@@ -709,6 +721,7 @@ def _is_coercible_leaf(tp: Any) -> bool:
         tp is Any
         or _is_none_type(tp)
         or tp in _SCALAR_COERCIONS
+        or _scalar_read_as(tp) is not None
         or (_is_literal(tp) and bool(_literal_values(tp)) and _forbidden_literal_member(tp) is None)
         or _is_enum(tp)
         or tp in _LEAF_COERCIONS
@@ -728,7 +741,7 @@ _CLAIMING_KINDS = {
 }
 
 
-def _registration_refusal(tp: Any) -> str | None:
+def _registration_refusal(tp: Any) -> str | None:  # noqa: PLR0911  # one return per refusal
     """Return why a registration of *tp* would never run, None when construction reaches it.
 
     The one answer to "can ``register_leaf_type`` key on this?": a class construction asks
@@ -749,9 +762,67 @@ def _registration_refusal(tp: Any) -> str | None:
         return f"{tp!r} is no class"
     if tp is object:
         return "every value is an object, so the registration would take every value as its own"
+    if _subclassed_builtin(tp) is not None:
+        return None  # a registration takes a builtin's subclass out of the builtin's reading
     claimed = _CLAIMING_KINDS.get(_type_kind(tp))
     if claimed is not None or _is_type_ref(tp):
         return f"confarg reads {tp.__name__} as {claimed or 'a type reference'}"
+    return None
+
+
+def as_subclass(tp: Any, value: Any, path: str) -> Any:
+    """Return *value*, built as the builtin the subclass *tp* reads as, given to *tp*; *value* for any other type.
+
+    The class is called with the value (a ``defaultdict`` with its factory first), so its own
+    validation runs: what it raises is a ``TypeCoercionError`` naming the class.
+
+    Raises:
+        TypeCoercionError: If the class refuses the value, by a ``ValueError`` naming why or a
+            ``TypeError`` from a constructor that takes no such value.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-builtins-subclass-is-that-builtin.md#a-subclass-is-built-by-its-constructor
+    """
+    builtin = _builtin_read_as(tp)
+    if builtin is None:
+        return value
+    resolved = _resolve_type(tp)
+    cls = resolved if isinstance(resolved, type) else get_origin(resolved)
+    try:
+        if issubclass(cls, defaultdict):
+            return cls(_default_factory(resolved), value)
+        return cls(value)
+    except ValueError as exc:
+        raise TypeCoercionError.cannot_coerce_because(_src_type(value), value, cls.__name__, path, str(exc)) from None
+    except TypeError as exc:
+        raise TypeCoercionError.subclass_refuses(cls.__name__, builtin.__name__, path, str(exc)) from None
+
+
+def _default_factory(tp: Any) -> Any:
+    """Return the factory a ``defaultdict`` typed *tp* is built with: the class its values are built as.
+
+    ``list`` for ``list[int]``, ``dict`` for a mapping, the class itself for a struct, a scalar
+    or a registered leaf. None where no one class builds a value from nothing: ``Any``, a
+    union, a ``Literal``, an ``Enum``, a type reference, a callable.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-builtins-subclass-is-that-builtin.md#a-defaultdicts-factory-is-its-value-types-class
+    """
+    value_tp = _resolve_type(_dict_kv(tp)[1])
+    kind = _type_kind(value_tp)
+    concrete = {
+        _TypeKind.LIST: list,
+        _TypeKind.SET: set,
+        _TypeKind.FROZENSET: frozenset,
+        _TypeKind.TUPLE: tuple,
+        _TypeKind.DICT: dict,
+    }
+    if kind in concrete:
+        cls = value_tp if isinstance(value_tp, type) else get_origin(value_tp)
+        return cls if _builtin_read_as(value_tp) is not None else concrete[kind]
+    if kind in (_TypeKind.STRUCT, _TypeKind.TAGGABLE_LEAF, _TypeKind.NAMEDTUPLE, _TypeKind.LEAF):
+        plain = isinstance(value_tp, type) and not _is_none_type(value_tp) and not _is_enum(value_tp)
+        return value_tp if plain and not _is_type_ref(value_tp) else None
     return None
 
 
@@ -825,7 +896,8 @@ def _is_eagerly_coercible(tp: Any) -> bool:
         docs-dev/architecture/expressions/deferral-rule.md#deferral-rule
         docs-dev/architecture/types/token-model.md#a-leaf-reaches-the-merged-dict-as-written
     """
-    return (_is_literal(tp) or tp in (bool, int, float) or _is_none_type(tp)) and not _reads_as_object(tp)
+    eager = _is_literal(tp) or tp in (bool, int, float) or _scalar_read_as(tp) in (int, float) or _is_none_type(tp)
+    return eager and not _reads_as_object(tp)
 
 
 def _certain_leaf(ft: Any) -> Any:
@@ -916,6 +988,8 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  
         raise TypeCoercionError.cannot_coerce(_src_type(value), value, "None", path)
     if tp in _SCALAR_COERCIONS:
         return _SCALAR_COERCIONS[tp](value, path)
+    if (builtin := _scalar_read_as(tp)) is not None:
+        return as_subclass(tp, _SCALAR_COERCIONS[builtin](value, path), path)
     if _is_literal(tp):
         return _coerce_literal_value(tp, value, path)
     if _is_enum(tp):
@@ -948,7 +1022,7 @@ def _try_coerce(ft: Any, token: _StrToken, spelling: str) -> Any:
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", FloatOverflowWarning)
-            return _coerce_leaf(tp, token)
+            return _coerce_leaf(_scalar_read_as(tp) or tp, token)  # the builtin a file holds, not the subclass
     except TypeCoercionError:
         return token
     except FloatOverflowWarning:

@@ -70,6 +70,19 @@ class _Pt(NamedTuple):
 _UserId = NewType("_UserId", int)
 
 
+class _Flags(dict):
+    """A dict subclass registered as a leaf, read from and written as comma-separated names."""
+
+
+def _parse_flags(text: Any) -> _Flags:
+    return _Flags(dict.fromkeys(str(text).split(","), True))
+
+
+@dataclass
+class _WithFlags:
+    f: _Flags
+
+
 class _Ticket:
     """A class no registry names, registered by the tests of the registration API itself."""
 
@@ -157,6 +170,14 @@ class TestRegisterLeafType:
         """An unsupported class, a plain class, and a built-in leaf being replaced all register."""
         confarg.register_leaf_type(key, lambda v: v)
         assert key in _LEAF_COERCIONS
+
+    def test_a_builtin_subclass_registration_wins(self) -> None:
+        """A registered dict subclass is a leaf both ways, read through its coercion rather than as a dict."""
+        confarg.register_leaf_type(_Flags, _parse_flags, serialize=",".join)
+        built = confarg.build(_WithFlags, {"f": "a,b"})
+        assert built.f == {"a": True, "b": True}
+        assert type(built.f) is _Flags
+        assert confarg.dump(built) == {"f": "a,b"}
 
     def test_register_overrides_both_halves(self) -> None:
         """Re-registering the same type replaces the coercion and the serializer together."""

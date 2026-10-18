@@ -629,9 +629,26 @@ def _serialize_leaf(tp: Any, value: Any, native_types: tuple[type, ...] = ()) ->
         return form
     if tp is float and isinstance(value, int) and not isinstance(value, bool):
         return float(value)
+    if (builtin := _subclassed_scalar(value)) is not None:
+        return builtin(value)  # the builtin a writer holds, which reads back as the subclass
     if isinstance(value, type):
         return _class_path(value)
     return value
+
+
+def _subclassed_scalar(value: Any) -> type | None:
+    """Return str, int or float when *value* is an instance of a subclass of one, None otherwise.
+
+    Asked of the value, not the declared type, so a subclass instance in a ``str`` or an ``Any``
+    field leaves as the builtin too: PyYAML's writer refuses a subclass it has no representer
+    for. A bool is no subclass here, and an Enum member and a token are written before.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-builtins-subclass-is-that-builtin.md#a-subclass-is-built-by-its-constructor
+    """
+    if type(value) is bool:
+        return None
+    return next((b for b in (str, int, float) if isinstance(value, b) and type(value) is not b), None)
 
 
 def _object_form(value: Any, native_types: tuple[type, ...] = ()) -> Any:

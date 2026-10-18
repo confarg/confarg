@@ -62,7 +62,9 @@ def register_leaf_type(
     reads as its supertype and a generic alias such as ``tuple[int, int]`` as its
     shape, so neither can be registered, and neither can a class confarg reads
     itself: ``int``, ``str``, ``bool``, ``float``, ``None``, ``Any``, ``object``,
-    ``type``, an ``Enum``, a namedtuple, a builtin or abstract collection.
+    ``type``, an ``Enum``, a namedtuple, a builtin or abstract collection. A
+    subclass of a builtin can be: registering it makes it a leaf, read and written
+    through ``coerce`` and ``serialize`` rather than as the builtin it subclasses.
 
     Raises:
         TypeError: If ``tp`` is a key no value would ever be coerced through.

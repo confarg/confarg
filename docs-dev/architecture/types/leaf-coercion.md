@@ -8,6 +8,7 @@ Policies:
 - a real `bool` is never accepted as an int or float;
 - a `float` reads a native `int` as its digits read, and a finite number too large for a float as the infinity of its sign, with a `FloatOverflowWarning`; an `int` never reads a native `float` ([design decisions](../design-decisions/a-float-reads-an-int-as-its-digits.md#a-float-reads-an-int-as-its-digits));
 - Enum: member name first, then `str(value)`;
+- a subclass of `str`, `int` or `float`: coerced as that builtin, then given to the class, which may refuse it; it ranks as the builtin, and a token is coerced eagerly to the plain builtin, which the merged dict holds as a file would ([design decisions](../design-decisions/a-builtins-subclass-is-that-builtin.md#a-subclass-is-built-by-its-constructor));
 - Literal: the members a value spells, an int, str, bool, `Enum` member or `None` (`_types._literal_values`); a `bytes` member reads as nothing, and any other member PEP 586 forbids makes the annotation invalid, refused wherever a value reaches it ([design decisions](../design-decisions/a-literal-member-is-what-pep-586-allows.md#a-literal-member-is-what-pep-586-allows));
 - tokens only: any other native value from a file must already have the right type.
 

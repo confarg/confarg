@@ -6,12 +6,16 @@
 
 from __future__ import annotations
 
+import collections
+import enum
+import re
 from dataclasses import dataclass
-from typing import Any, Optional, Union
+from typing import Any, Optional, TypedDict, Union
 
 import pytest
 
 import confarg
+from confarg.exceptions import ConfargWarning, TypeCoercionError
 from tests.conftest import (
     AppConfig,
     BoolVariantA,
@@ -1352,3 +1356,199 @@ class TestUnionFloatStrAmbiguity:
         )
         assert isinstance(result.item, FloatHolder)
         assert result.item.value == float("inf")
+
+
+# ---------------------------------------------------------------------------
+# A builtin's subclass is that builtin
+# ---------------------------------------------------------------------------
+
+
+class _Scores(dict[str, int]):
+    pass
+
+
+class _Registry[T](dict[str, T]):
+    pass
+
+
+class _Votes(collections.Counter[str]):
+    pass
+
+
+class _OrderedScores(collections.OrderedDict[str, int]):
+    pass
+
+
+class _OwnDict(dict):
+    def __init__(self, mapping: dict | None = None, *, strict: bool = False) -> None:
+        super().__init__(mapping or {})
+        self.strict = strict
+
+
+class _KeywordOnlyDict(dict):
+    def __init__(self, *, tag: str) -> None:
+        super().__init__()
+        self.tag = tag
+
+
+class _Words(str):
+    __slots__ = ()
+
+
+class _Pair(tuple):
+    __slots__ = ()
+
+
+class _Bag(frozenset):
+    __slots__ = ()
+
+
+class _TypedMap(TypedDict):
+    a: int
+
+
+class _Mode(enum.StrEnum):
+    FAST = "fast"
+
+
+@dataclass
+class _Sub:
+    n: int = 0
+
+
+@dataclass
+class _DataclassDict(dict):
+    a: int = 0
+
+
+class TestABuiltinSubclassIsThatBuiltin:
+    """A subclass of dict, list, set, frozenset, tuple, str, int or float reads as it and is built as itself."""
+
+    @pytest.mark.parametrize(
+        ("tp", "data", "expected"),
+        [
+            pytest.param(collections.OrderedDict[str, int], {"a": 1}, collections.OrderedDict(a=1), id="ordereddict"),
+            pytest.param(collections.OrderedDict, {"a": "x"}, collections.OrderedDict(a="x"), id="bare-ordereddict"),
+            pytest.param(collections.Counter[str], {"a": -2}, collections.Counter(a=-2), id="counter"),
+            pytest.param(_Scores, {"a": 1}, _Scores(a=1), id="parameterized-base"),
+            pytest.param(_Registry[int], {"a": 1}, _Registry(a=1), id="typevar-bound"),
+            pytest.param(_Registry, {"a": "x"}, _Registry(a="x"), id="typevar-unbound"),
+            pytest.param(_Votes, {"a": 2}, _Votes(a=2), id="counter-subclass"),
+            pytest.param(_OrderedScores, {"a": 1}, _OrderedScores(a=1), id="ordereddict-subclass"),
+            pytest.param(_OwnDict, {"strict": True}, _OwnDict({"strict": True}), id="own-constructor"),
+            pytest.param(_Words, "ab", _Words("ab"), id="str"),
+            pytest.param(_Pair, [1, "a"], _Pair((1, "a")), id="bare-tuple"),
+            pytest.param(_Bag, [1, 1], _Bag({1}), id="frozenset"),
+        ],
+    )
+    def test_a_file_value_builds_the_subclass(self, tp: Any, data: Any, expected: Any) -> None:
+        """The value is read as the builtin, typed by the subclass's parameters, then given to the class."""
+        Target = make_target("x", tp, default=None)
+        built = confarg.build(Target, {"x": data}).x
+        assert built == expected
+        assert type(built) is type(expected)
+
+    @pytest.mark.parametrize(
+        ("tp", "data", "message"),
+        [
+            pytest.param(_Scores, {"a": "x"}, "Cannot coerce str 'x' to int at 'x.a'", id="base-parameter"),
+            pytest.param(_Registry[int], {"a": "x"}, "Cannot coerce str 'x' to int at 'x.a'", id="typevar"),
+            pytest.param(collections.Counter[str], {"a": 2.5}, "Cannot coerce float 2.5 to int at 'x.a'", id="count"),
+        ],
+    )
+    def test_the_items_are_typed_by_the_subclass(self, tp: Any, data: Any, message: str) -> None:
+        """The item types come from the subclass's arguments, its parameterized bases, or a Counter's counts."""
+        Target = make_target("x", tp, default=None)
+        with pytest.raises(TypeCoercionError, match=re.escape(message)):
+            confarg.build(Target, {"x": data})
+
+    def test_a_constructor_refusing_the_value_is_named(self) -> None:
+        """A class whose constructor takes no dict is refused naming it, and the registration that reads it."""
+        Target = make_target("x", _KeywordOnlyDict, default=None)
+        with pytest.raises(TypeCoercionError, match=re.escape("_KeywordOnlyDict at 'x' does not take a dict")):
+            confarg.build(Target, {"x": {"a": 1}})
+
+    @pytest.mark.parametrize(
+        ("value_type", "factory"),
+        [
+            pytest.param(list[int], list, id="list"),
+            pytest.param(int, int, id="int"),
+            pytest.param(_Sub, _Sub, id="struct"),
+            pytest.param(dict[str, int], dict, id="dict"),
+            pytest.param(Any, None, id="any"),
+            pytest.param(int | str, None, id="union"),
+        ],
+    )
+    def test_a_defaultdict_factory_is_the_value_types_class(self, value_type: Any, factory: Any) -> None:
+        """The factory is the class construction builds a value as, None where no one class is it."""
+        Target = make_target("x", collections.defaultdict[str, value_type], default=None)
+        built = confarg.build(Target, {"x": {}}).x
+        assert type(built) is collections.defaultdict
+        assert built.default_factory is factory
+
+    def test_a_dataclass_keeps_its_fields(self) -> None:
+        """A dataclass subclassing dict is a struct, its declared fields winning over the base."""
+        Target = make_target("x", _DataclassDict, default_factory=_DataclassDict)
+        built = confarg.build(Target, {"x": {"a": 3}}).x
+        assert built.a == 3
+        assert dict(built) == {}
+
+    @pytest.mark.parametrize("suffix", [".json", ".toml", ".yaml"])
+    @pytest.mark.parametrize(
+        ("tp", "value", "written"),
+        [
+            pytest.param(str, _Words("hi"), "hi", id="str-field"),
+            pytest.param(Any, collections.OrderedDict(a=1), {"a": 1}, id="any-mapping"),
+        ],
+    )
+    def test_a_subclass_value_is_written_as_its_builtin(
+        self,
+        tmp_path: Any,
+        suffix: str,
+        tp: Any,
+        value: Any,
+        written: Any,
+    ) -> None:
+        """Whatever the field's type, a subclass instance leaves as the builtin, which every writer holds."""
+        Target = make_target("x", tp, default=None)
+        dumped = confarg.dump(Target(x=value))
+        assert dumped == {"x": written}
+        assert type(dumped["x"]) is type(written)
+        confarg.dump_file(Target(x=value), tmp_path / f"c{suffix}")
+        assert confarg.load(Target, argv=[], env={}, files=[tmp_path / f"c{suffix}"]).x == written
+
+    @pytest.mark.parametrize("suffix", [".json", ".toml", ".yaml"])
+    def test_an_any_field_writes_a_subclass_as_its_builtin(self, tmp_path: Any, suffix: str) -> None:
+        """An ``Any`` field reads the builtin back, not the subclass, and its dump says so."""
+        Target = make_target("x", Any, default=None)
+        with pytest.warns(ConfargWarning, match=re.escape("will not read back as the _Words it holds")):
+            confarg.dump_file(Target(x=_Words("hi")), tmp_path / f"c{suffix}")
+        assert confarg.load(Target, argv=[], env={}, files=[tmp_path / f"c{suffix}"]).x == "hi"
+
+    def test_a_typeddict_is_left_to_its_own_reading(self) -> None:
+        """A ``TypedDict`` subclasses dict at runtime, yet types each key: it is no untyped dict (FEAT-45)."""
+        Target = make_target("x", _TypedMap, default=None)
+        with pytest.raises(TypeCoercionError, match=re.escape("Unknown field(s) ['a'] for _TypedMap at 'x'")):
+            confarg.build(Target, {"x": {"a": 3}})
+
+    def test_a_str_enum_stays_an_enum(self) -> None:
+        """A ``StrEnum`` subclasses str, and reads as its members still."""
+        Target = make_target("x", _Mode, default=_Mode.FAST)
+        assert confarg.build(Target, {"x": "FAST"}).x is _Mode.FAST
+
+    @pytest.mark.parametrize(
+        ("tp", "value", "written"),
+        [
+            pytest.param(collections.OrderedDict[str, int], collections.OrderedDict(a=1), {"a": 1}, id="ordereddict"),
+            pytest.param(collections.Counter[str], collections.Counter(a=2), {"a": 2}, id="counter"),
+            pytest.param(_Words, _Words("ab"), "ab", id="str"),
+            pytest.param(_Pair, _Pair((1, 2)), [1, 2], id="tuple"),
+        ],
+    )
+    def test_a_dump_writes_the_builtin(self, tp: Any, value: Any, written: Any) -> None:
+        """The dump holds the plain builtin a writer knows, and reads back as the subclass."""
+        Target = make_target("x", tp, default=None)
+        dumped = confarg.dump(Target(x=value))
+        assert dumped == {"x": written}
+        assert type(dumped["x"]) is type(written)
+        assert type(confarg.build(Target, dumped).x) is type(value)

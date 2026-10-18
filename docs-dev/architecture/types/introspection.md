@@ -3,12 +3,13 @@
 All type knowledge is derived at runtime from ordinary annotations (`_types.py`), because confarg requires no base class, decorator or field marker ([design decisions](../design-decisions/no-custom-types-required.md#no-custom-types-required)).
 
 - `TypeAliasType`, `Annotated`, `Final` and `NewType` are unwrapped everywhere (`_resolve_type`; see [wrappers are transparent](#wrappers-are-transparent)).
-- Abstract collection types map to concrete ones: `Sequence`/`Iterable`/`Collection` → list, `AbstractSet`/`MutableSet` → set, `Mapping`/`MutableMapping` → dict.
+- Abstract collection types map to concrete ones: `Sequence`/`Iterable`/`Collection` → list, `AbstractSet`/`MutableSet` → set, `Mapping`/`MutableMapping` → dict, bare or parameterized ([design decisions](../design-decisions/a-builtins-subclass-is-that-builtin.md#a-builtins-subclass-is-that-builtin)).
+- A subclass of `dict`, `list`, `set`, `frozenset`, `tuple`, `str`, `int` or `float` reads as that builtin and is built as the subclass, unless it is a dataclass, a namedtuple, an `Enum` or registered (`_builtin_read_as`); its item types are the ones a type checker gives it (`_builtin_args`, [design decisions](../design-decisions/a-builtins-subclass-is-that-builtin.md#a-subclass-is-typed-as-a-type-checker-types-it)).
 - A bare collection annotation (`dict`, `list`, `set`, `frozenset`, `tuple`) reads as its `Any`-parameterized form, PEP 484's reading of it: `dict` is `dict[Any, Any]` — `_dict_kv`'s default for the unparameterized form — and `tuple` is `tuple[Any, ...]`, variadic (`_is_varlen_collection`, `_tuple_types`).
   `get_origin` of a bare class is `None`, so each shape predicate names the class itself before asking the origin (BUG-187, BUG-211). pydantic and msgspec read a bare collection the same way.
 - A **struct** is a dataclass or a *plain class*, a class whose constructor signature reads; one taking nothing is a struct with no fields.
   Its members are its constructor's parameters, a dataclass's too ([design decisions](../design-decisions/a-structs-members-are-its-constructors-parameters.md#a-structs-members-are-its-constructors-parameters)).
-  Builtins, `Enum`, `PurePath` and tuple subclasses are never plain classes.
+  Builtins, a builtin's subclass, a bare abstract collection, `Enum`, `PurePath` and tuple subclasses are never plain classes.
   `*args` becomes `list[T]`, `**kwargs` becomes `dict[str, T]`, both with empty defaults (never required).
 - Since Python 3.11 `typing.Any` is a subclassable class and would pass the plain-class test; `_is_plain_class` guards it explicitly, and `_type_kind` names it `ANY` before any shape test runs.
 - `_unwrap_optional` returns Python `None` (not `NoneType`) to mean "multi-variant union"; callers must handle that sentinel.
@@ -78,7 +79,7 @@ What is never cached, and why:
   A question that only needs to know *whether* a field has a default asks `_struct_required`, which builds none.
 - **Nothing that reads the leaf registry.**
   `register_leaf_type` writes `_LEAF_COERCIONS` at runtime ([leaf coercion](leaf-coercion.md#leaf-coercion)), so `_is_registered_leaf`, `_is_struct_variant`, `_is_taggable_leaf`, `_is_eagerly_coercible` and `_type_kind` would keep answering for the registry as it was.
-  Nothing in `_types.py` reads the registry, which is what lets its answers be cached.
+  In `_types.py` only `_builtin_read_as` reads the registry, since a registered subclass of a builtin is a leaf; nothing caches it, and the cached struct test asks `_subclassed_builtin`, which reads none ([design decisions](../design-decisions/a-builtins-subclass-is-that-builtin.md#a-registration-wins)).
 - **An annotation that does not resolve.**
   A plain class's or a namedtuple's annotation that `get_type_hints` cannot resolve reads as `Any`, but that answer is not cached: a forward reference to a name the module defines later resolves on a later call.
   A dataclass's unresolvable annotation raises, and an exception is never cached. pydantic does the same with a model whose forward references are not yet defined: it stays incomplete, and is rebuilt on use rather than frozen with the missing type.
