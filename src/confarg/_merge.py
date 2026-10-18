@@ -85,6 +85,11 @@ class _DeleteSentinel:
 # Singleton sentinel stored as a dict value to mark that key for deletion.
 DICT_DELETE: _DeleteSentinel = _DeleteSentinel()
 
+# A delete that already removed its key from the part of its source below it, kept to delete in
+# the layers below too (_merge_within_source). Every merge reads it as DICT_DELETE; once every
+# layer is in, one no layer met is dropped (_drop_deleted_bases), where DICT_DELETE survives.
+_SPENT_DELETE: _DeleteSentinel = _DeleteSentinel()
+
 
 def _to_append_list(val: Any) -> list[Any]:
     """Convert the value stored under ListOp.APPEND to a flat list of items.
@@ -444,6 +449,45 @@ def _deep_merge(
     return result
 
 
+def _merge_within_source(base: MergeDict, override: MergeDict, *, union_tag: str | None) -> MergeDict:
+    """Merge *override* over *base* where both are parts of one source, keeping its deletes.
+
+    :func:`_deep_merge` spends a delete on its base and drops it, which is right between two
+    layers, where the base is everything below. Within one source, the base is only the part
+    *override* refines: the layers the source is merged over later lie below both, so every
+    delete *override* holds stays in the result, at its path, to delete there too. One that
+    removed a key of *base* is kept spent: it had its base, so no layer below need hold the
+    key. A delete below a node the merge made a list is not kept: that list replaces the
+    layers below whole.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too
+    """
+    merged = _deep_merge(base, override, union_tag=union_tag)
+    return _keep_deletes(merged, _normalize_merge_ops(override), _normalize_merge_ops(base), union_tag)
+
+
+def _keep_deletes(merged: MergeDict, override: MergeDict, base: MergeDict, union_tag: str | None) -> MergeDict:
+    """Return *merged* with each key delete *override* holds put back, at any depth.
+
+    A delete that met a key of *base* is put back spent, any other as it was. An override naming
+    the union tag discarded *base*, so nothing below it met one.
+    """
+    if union_tag is not None and union_tag in override:
+        base = {}
+    out = dict(merged)
+    for key, val in override.items():
+        if isinstance(key, ListOp):
+            continue
+        if val is DICT_DELETE:
+            met = key in base and not isinstance(base[key], _DeleteSentinel)
+            out[key] = _SPENT_DELETE if met else DICT_DELETE
+        elif isinstance(val, dict) and isinstance(out.get(key), dict):
+            below = base.get(key)
+            out[key] = _keep_deletes(out[key], val, below if isinstance(below, dict) else {}, union_tag)
+    return out
+
+
 def _navigate_append_spec(d: MergeDict, part: str) -> MergeDict | None:
     """Return the appended item that a negative-index part points into, or None.
 
@@ -591,20 +635,22 @@ def _drop_deleted_bases(node: Any) -> Any:
 
     Run once every layer is merged: the deleted base has cut its ops off from the layers
     below, so what remains is the ops alone, which ``build()`` applies to nothing, as it
-    does when no layer set the field.  Nodes holding none are returned as they are.
+    does when no layer set the field.  A spent key delete no layer below met is removed
+    too: it had its base in its own source.  Nodes holding neither are returned as they are.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#an-op-after-a-whole-field-delete-has-nothing-below-it
+        docs-dev/architecture/pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too
     """
     if isinstance(node, list):
         items = [_drop_deleted_bases(v) for v in node]
         return items if any(a is not b for a, b in zip(items, node, strict=True)) else node
     if not isinstance(node, dict):
         return node
-    out = {k: _drop_deleted_bases(v) for k, v in node.items()}
+    out = {k: _drop_deleted_bases(v) for k, v in node.items() if v is not _SPENT_DELETE}
     if out.get(ListOp.BASE) is DICT_DELETE:
         del out[ListOp.BASE]
-    elif all(out[k] is node[k] for k in node):
+    elif len(out) == len(node) and all(out[k] is node[k] for k in node):
         return node
     return out
 

@@ -29,10 +29,10 @@ if TYPE_CHECKING:
 from confarg._files import _load_mount, _load_mount_value, _load_subpath_files, _nest
 from confarg._merge import (
     APPEND_SUFFIX,
-    DICT_DELETE,
     ListOp,
     MergeDict,
     _deep_merge,
+    _DeleteSentinel,
     _drop_deleted_bases,
     _to_append_list,
 )
@@ -167,8 +167,9 @@ def _apply_locals_overrides(  # noqa: PLR0913, PLR0917  # recursive walk: carrie
         raise LocalsError.not_assignable(locals_key, config_flag, source)
     prefix = prefix or []
     for key, value in override.items():
-        # Merge-op markers would add or remove a local: refused with their own error.
-        if value is DICT_DELETE or isinstance(key, ListOp):
+        # Merge-op markers would add or remove a local: refused with their own error. A delete
+        # the root json fold kept spent is a delete too.
+        if isinstance(value, _DeleteSentinel) or isinstance(key, ListOp):
             raise LocalsError.not_restructurable(".".join(prefix) or str(key), locals_key, source)
         path = [*prefix, key]
         found = _lookup_declared(declared, path)

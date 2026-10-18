@@ -132,3 +132,16 @@ the scalar branch to `_set_nested` for whole *values* left behind, which the sen
 through the same descent and wrote the side effect down as the rule. The alternatives weighed
 are in
 [design decisions](../design-decisions/an-op-after-a-whole-field-delete-applies-to-nothing-below.md#an-op-after-a-whole-field-delete-applies-to-nothing-below).
+
+## A delete within one source deletes below it too
+
+`--name-` deletes `name` in every layer below the CLI. Beside a root `--json` (or `<PREFIX>JSON` in the environment) it has to delete twice: in the decoded object, which the channel's fields refine, and in the files and channels below. `_deep_merge` cannot do both: it is the merge *between* layers, where the base is everything below, so it spends a delete on its base and drops it. Before BUG-186 the root fold used it, so the delete removed the object's `name`, never reached the files, and the file's value came back.
+
+Two parts of one source are merged by `_merge._merge_within_source`, which `_cast.fold_root_json` calls: `_deep_merge`, then every key delete the override holds put back at its path (`_keep_deletes`), so the source's result still deletes in the layers it is merged over. A delete below a node the merge turned into a list is not put back, since that list replaces the layers below whole; nor is a list op's own `__base__` delete, which `_deep_merge` already keeps.
+
+A delete put back that met a key of the base is put back *spent*, as a second instance of the sentinel, `_merge._SPENT_DELETE`. Every merge reads it as `DICT_DELETE` (`_deep_merge` tells a delete by `isinstance`), and `_drop_deleted_bases` drops one no layer below met once every layer is in. The plain sentinel is kept for a delete that found nothing in its own source, so `--json '{"data": {"x": 1}}' --data.x-` with no file builds `data={}` as before, while `--data.x-` alone still leaves the sentinel that a delete with no base leaves (BUG-98). The alternatives weighed:
+
+- **Put back the plain sentinel everywhere.** Rejected: the first spelling became BUG-98's error, though the decoded object had given the delete its base.
+- **Drop every surviving delete silently**, as RFC 7396's JSON Merge Patch does with a `null` for an absent member. Rejected here because it decides, as a side effect, how a delete with no base in any layer ends, which is BUG-98's question and not this fold's.
+
+Precedent: Helm coalesces chart values in stages and once lost a `null` (its delete) in an intermediate stage, so it never reached the defaults below. Its `chartutil` now keeps the `null` through the intermediate merge (`MergeValues`) and removes it only in the final one (`CoalesceValues`). `_merge_within_source` and `_drop_deleted_bases` split the work the same way.

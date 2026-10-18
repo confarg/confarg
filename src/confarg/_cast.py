@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from confarg._merge import MergeDict, _deep_merge
+from confarg._merge import MergeDict, _deep_merge, _merge_within_source
 from confarg._types import _is_union, _Pinned, _resolve_type, _StrToken, _union_args_no_none
 from confarg.exceptions import ConfargError, TypeCoercionError
 
@@ -93,8 +93,10 @@ def fold_root_json(data: MergeDict, root_json: list[MergeDict], union_tag: str) 
 
     The one fold every channel's root cast goes through -- vanilla's ``--json``, the
     adapters' and the environment's ``<PREFIX>JSON``: the fields *data* holds refine the
-    injected objects, and of several objects the later wins.  Only a struct-like root
-    folds; a scalar root's cast writes the value itself, by each channel's own rule.
+    injected objects, and of several objects the later wins.  The objects and the fields
+    are one source, so a field's delete stays in the result and deletes in the layers below
+    as well.  Only a struct-like root folds; a scalar root's cast writes the value itself,
+    by each channel's own rule.
 
     Args:
         data: The values the channel collected at fields.
@@ -106,13 +108,14 @@ def fold_root_json(data: MergeDict, root_json: list[MergeDict], union_tag: str) 
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#force-casts
+        docs-dev/architecture/pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too
     """
     if not root_json:
         return data
     base: MergeDict = {}
     for obj in root_json:
         base = _deep_merge(base, obj, union_tag=union_tag)
-    return _deep_merge(base, data, union_tag=union_tag)
+    return _merge_within_source(base, data, union_tag=union_tag)
 
 
 def cast_name_for_type(tp: type) -> str:

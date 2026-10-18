@@ -228,6 +228,13 @@ class TestLocalsDeclarationAndModification:
         with pytest.raises(LocalsError, match="cannot be added or removed"):
             confarg.load(Cfg, argv=["--config", str(cfg), "--locals.base-"], env={})
 
+    def test_a_local_cannot_be_deleted_beside_a_root_json_cast(self, tmp_path: Path) -> None:
+        """The root ``json`` fold keeps the delete for the files below, so it is refused too (BUG-186)."""
+        cfg = write(tmp_path, "config.yaml", "locals:\n  base: /srv\nroot: ${locals.base}\n")
+        argv = ["--config", str(cfg), "--json", '{"locals": {"base": "/opt"}}', "--locals.base-"]
+        with pytest.raises(LocalsError, match="cannot be added or removed"):
+            confarg.load(Cfg, argv=argv, env={})
+
     def test_a_declared_list_cannot_be_restructured(self, tmp_path: Path) -> None:
         """Element delete is rejected for the same reason; assignment by index is not."""
         cfg = write(tmp_path, "config.yaml", "locals:\n  xs: [1, 2]\nn: ${locals.xs[1]}\n")
