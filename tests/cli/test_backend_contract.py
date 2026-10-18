@@ -4563,6 +4563,34 @@ class TestCollectionPatchContract:
         argv = ["--config", str(base), "--json", root_json, delete]
         assert loader.load(_WithDefaultedSection, argv=argv, env={}).sec == expected
 
+    def test_delete_in_a_root_json_cast_refined_by_a_flag_deletes_below(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A key delete nested in the root ``json`` object survives a flag refining its node (BUG-227).
+
+        The object and the flags are one source, so the flag's dict no longer spends the object's delete:
+        it deletes the file's ``sec.a`` as it does with no flag beside it (BUG-228's third spelling).
+        """
+        base = tmp_yaml("sec: {a: 5, b: 6}\n")
+        argv = ["--config", str(base), "--json", '{"sec": {"a-": null}}', "--sec.b", "3"]
+        assert loader.load(_WithDefaultedSection, argv=argv, env={}).sec == _DefaultedSection(a=1, b=3)
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["--data.x", "1", "--data.y", "2", "--data.x-"], id="subfield-flags"),
+            pytest.param(["--data", '{"x": 1, "y": 2}', "--data.x-"], id="whole-value-flag"),
+        ],
+    )
+    def test_key_delete_that_met_its_key_on_the_cli_needs_nothing_below(
+        self,
+        loader: ConfargLoader,
+        argv: list[str],
+    ) -> None:
+        """A key delete an earlier flag gave a key to is done, whatever lies below (BUG-98).
+
+        Found fixing BUG-227, which keeps the same delete spent in a file and beside an include.
+        """
+        assert loader.load(_WithMap, argv=argv, env={}).data == {"y": 2}
+
     def test_key_delete_that_met_its_key_in_a_root_json_cast_needs_nothing_below(self, loader: ConfargLoader) -> None:
         """A key delete the root ``json`` object gave a key to is done, whatever lies below (BUG-186).
 
@@ -5555,13 +5583,16 @@ class TestCallOnTheCliContract:
         assert "p.args.x" in flags
 
     def test_argument_delete(self, loader: ConfargLoader) -> None:
-        """An argument of a call deletes as a Callable field's argument does."""
+        """An argument of a call deletes as a Callable field's argument does.
+
+        The delete met the argument an earlier flag set, so nothing below need hold it (BUG-227).
+        """
         merged = loader.merge(
             _TypedCallConfig,
             argv=["--n.call", f"{__name__}._twice", "--n.args.x", "4", "--n.args.x-"],
             env={},
         )
-        assert merged == {"n": {"call": f"{__name__}._twice", "args": {"x": DICT_DELETE}}}
+        assert merged == {"n": {"call": f"{__name__}._twice", "args": {}}}
 
     def test_arguments_with_no_call_anywhere_fail_in_build(self, loader: ConfargLoader) -> None:
         """``args`` is accepted below a field a call can fill; with no call opened, construction refuses it."""

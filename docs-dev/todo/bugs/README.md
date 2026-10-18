@@ -12,7 +12,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-227 — A delete beside an include never reaches the files below](BUG-227-a-delete-beside-an-include-never-reaches-the-files-below.md) | critical |  | S | medium | behavior | PR-5, PR-97 |
 | [BUG-231 — A callable opener merges with the spec a lower layer set instead of replacing it](BUG-231-a-callable-opener-merges-with-the-spec-a-lower-layer-set.md) | critical |  | M | high | behavior | PR-5 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
 | [BUG-232 — The merge decides by shape what only the type can tell](BUG-232-the-merge-decides-by-shape-what-only-the-type-can-tell.md) | critical |  | L | high | behavior | PR-5, BUG-102, BUG-23 |
@@ -46,6 +45,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-198 — A fixed-arity element flag takes one token on click and typer](BUG-198-a-fixed-arity-element-flag-takes-one-token-on-click-and-typer.md) | minor |  | S | low | config | PR-72 |
 | [BUG-222 — A registered `NewType` crashes with a raw `TypeError`](BUG-222-a-registered-newtype-crashes-with-a-raw-typeerror.md) | minor |  | S | medium | behavior | PR-37 |
 | [BUG-235 — A union tag that is no string escapes `build()` as a raw `AttributeError`](BUG-235-a-tag-that-is-no-string-escapes-as-a-raw-attributeerror.md) | minor |  | S | medium | behavior | PR-5 |
+| [BUG-237 — A list item reads the files' merge shorthand only beside an include](BUG-237-a-list-item-reads-the-files-merge-shorthand-only-beside-an-include.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | minor |  | M | low | behavior | PR-5, PR-13, PR-26, BUG-179 |
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | minor |  | M | medium | behavior | PR-38 |
 | [BUG-177 — A collection root's bare flag takes one token, which construction refuses](BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md) | minor |  | M | medium | behavior | PR-5 |
