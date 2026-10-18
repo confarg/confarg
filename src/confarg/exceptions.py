@@ -307,6 +307,36 @@ class TypeCoercionError(ConfargError):
         return cls(_append_none_remedy(msg) if none_sentinel else msg)
 
     @classmethod
+    def cannot_coerce_to_union(  # noqa: PLR0913  # cannot_coerce's arguments, and the branches skipped
+        cls,
+        src: str,
+        value: Any,
+        tp: str,
+        path: str,
+        *,
+        unread: Sequence[str] = (),
+        none_sentinel: bool = False,
+    ) -> TypeCoercionError:
+        """Return :meth:`cannot_coerce`'s error for a union, naming the branches *unread* that read no value.
+
+        A branch confarg reads nothing as is skipped, so the refusal says why no value could
+        reach it, ahead of the none remedy :meth:`cannot_coerce` offers.
+        """
+        msg = f"Cannot coerce {src} {value!r} to {tp} at '{path}'"
+        if unread:
+            names = " and ".join(unread)
+            msg += f"; {names} {'is no leaf type' if len(unread) == 1 else 'are no leaf types'} confarg reads"
+        return cls(_append_none_remedy(msg) if none_sentinel else msg)
+
+    @classmethod
+    def forbidden_literal_member(cls, literal: str, member: Any, path: str) -> TypeCoercionError:
+        """Return the error for a ``Literal`` holding *member*, which PEP 586 forbids, *literal* spelling it whole."""
+        return cls(
+            f"Invalid annotation {literal} at '{path}': its member {member!r} is a {type(member).__name__};"
+            " a Literal member is an int, str, bytes, bool, Enum member or None (PEP 586)",
+        )
+
+    @classmethod
     def cannot_coerce_because(cls, src: str, value: Any, tp: str, path: str, hint: str) -> TypeCoercionError:
         """Return :meth:`cannot_coerce`'s error followed by *hint*, what the type reads, after a colon."""
         return cls(f"{cls.cannot_coerce(src, value, tp, path)}: {hint}")

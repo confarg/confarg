@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import enum
 import math
+import re
 from dataclasses import field, make_dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
 import pytest
 
 import confarg
+from confarg.exceptions import TypeCoercionError
 from tests.conftest import (
     AliasInt,
     CacheConfig,
@@ -999,6 +1001,65 @@ class TestLiteral:
         dumped = confarg.dump(obj)
         assert dumped == {"color": "red"}
         assert confarg.build(WithEnumLiteral, dumped) == obj
+
+
+# Members PEP 586 forbids, on purpose: the tests below check that confarg refuses them.
+_FLOAT_LITERAL = Literal[1.0, 2.5]  # ty: ignore[invalid-type-form]  # a float member, on purpose
+_ONE_FLOAT_LITERAL = Literal[1.0]  # ty: ignore[invalid-type-form]  # a float member, on purpose
+_COMPLEX_LITERAL = Literal[1j]  # ty: ignore[invalid-type-form]  # a complex member, on purpose
+_FLOAT_BESIDE_STR_LITERAL = Literal["a", 1.5]  # ty: ignore[invalid-type-form]  # a float member, on purpose
+
+
+class TestALiteralMemberIsWhatPep586Allows:
+    """A member PEP 586 forbids is refused wherever a value reaches it; a bytes member reads as nothing."""
+
+    @pytest.mark.parametrize("value", [1, 1.0, "1.0"])
+    def test_a_file_value_meets_the_forbidden_member(self, value: object) -> None:
+        """Every value is refused naming the member, a file's as a token's."""
+        WithFloatLiteral = make_target("x", _FLOAT_LITERAL, default=2.5)
+        with pytest.raises(TypeCoercionError, match=re.escape("Literal[1.0, 2.5] at 'x': its member 1.0 is a float")):
+            confarg.build(WithFloatLiteral, {"x": value})
+
+    @pytest.mark.parametrize(
+        ("tp", "value"),
+        [
+            pytest.param(_COMPLEX_LITERAL, 1j, id="complex"),
+            pytest.param(_FLOAT_BESIDE_STR_LITERAL, "a", id="beside-a-str-member"),
+            pytest.param(dict[str, _ONE_FLOAT_LITERAL], {"k": 1.0}, id="dict-value"),
+            pytest.param(list[_ONE_FLOAT_LITERAL] | list[str], ["a"], id="below-a-union-branch"),
+            pytest.param(Optional[_ONE_FLOAT_LITERAL], None, id="optional-none"),
+        ],
+    )
+    def test_the_forbidden_member_is_refused_wherever_it_is_reached(self, tp: object, value: object) -> None:
+        """No other branch takes the value instead, and a None does not slip past the annotation."""
+        Target = make_target("x", tp, default=None)
+        with pytest.raises(TypeCoercionError, match=r"is a (float|complex); a Literal member is"):
+            confarg.build(Target, {"x": value})
+
+    def test_a_lone_bytes_member_is_an_unsupported_leaf(self) -> None:
+        """``Literal[b'ab']`` holds nothing confarg reads, as ``bytes`` does not."""
+        WithBytesLiteral = make_target("x", Literal[b"ab"], default=b"ab")
+        with pytest.raises(TypeCoercionError, match=re.escape("Unsupported leaf type typing.Literal[b'ab'] at 'x'")):
+            confarg.load(WithBytesLiteral, argv=["--x", "ab"], env={})
+        assert confarg.load(WithBytesLiteral, argv=[], env={}).x == b"ab"
+
+    def test_a_bytes_member_is_spelled_by_no_token(self) -> None:
+        """The bytes member is skipped: the token its ``str()`` spells no longer matches it."""
+        WithBytesMember = make_target("x", Literal[b"ab", "cd"], default="cd")
+        with pytest.raises(TypeCoercionError, match=re.escape("to Literal['cd'] at 'x'")):
+            confarg.load(WithBytesMember, argv=["--x", "b'ab'"], env={})
+
+    def test_a_bytes_member_is_held_by_no_file(self) -> None:
+        """A file's bytes value, which YAML's ``!!binary`` spells, is refused naming the members left."""
+        WithBytesMember = make_target("x", Literal[b"ab", "cd"], default="cd")
+        with pytest.raises(TypeCoercionError, match=re.escape("to Literal['cd'] at 'x'")):
+            confarg.build(WithBytesMember, {"x": b"ab"})
+
+    def test_a_union_refusal_names_the_branch_it_skipped(self) -> None:
+        """``bytes | int`` refuses ``b'ab'`` saying no value reads as bytes, not that the value is wrong."""
+        WithBytesOrInt = make_target("x", bytes | int, default=0)
+        with pytest.raises(TypeCoercionError, match=re.escape("at 'x'; bytes is no leaf type confarg reads")):
+            confarg.build(WithBytesOrInt, {"x": b"ab"})
 
 
 # ---------------------------------------------------------------------------

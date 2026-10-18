@@ -749,6 +749,26 @@ class TestDumpSubscriptedUnionVariant:
         assert confarg.dump(obj) == {"flag": True}
         assert confarg.build(WithIntLiteralOrBool, confarg.dump(obj)) == obj
 
+    @pytest.mark.parametrize(
+        ("tp", "value"),
+        [
+            pytest.param(Literal[1.0, 2.5], 2.5, id="leaf"),  # ty: ignore[invalid-type-form]  # a float member, on purpose
+            pytest.param(Union[Literal[1.0], str], "a", id="union"),  # ty: ignore[invalid-type-form]  # on purpose
+        ],
+    )
+    def test_a_forbidden_literal_member_is_refused(self, tp: object, value: object) -> None:
+        """The annotation is invalid whatever the value, so no dump is written that could not load back."""
+        Target = make_target("x", tp, default=value)
+        with pytest.raises(ConfargError, match=re.escape("member 1.0 is a float")):
+            confarg.dump(Target(x=value))
+
+    def test_a_bytes_literal_member_is_refused(self) -> None:
+        """A bytes member's value is refused as a bytes field's is; a readable member still dumps."""
+        WithBytesMember = make_target("x", Literal[b"ab", "cd"], default="cd")
+        with pytest.raises(ConfargError, match=re.escape("Cannot serialize b'ab' at 'x'")):
+            confarg.dump(WithBytesMember(x=b"ab"))
+        assert confarg.dump(WithBytesMember(x="cd")) == {"x": "cd"}
+
     def test_list_variant_beside_a_struct_variant(self) -> None:
         """A struct variant still wins its own instances when a generic sits beside it."""
         WithListOrCfg = make_target("item", Union[list[str], CacheConfig], default_factory=list)

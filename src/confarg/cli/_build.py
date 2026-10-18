@@ -80,7 +80,7 @@ from confarg._types import (
 from confarg.cli._prefix import apply_prefix, in_prefix, strip_argv_prefix
 from confarg.cli._spec import FlagSpec, HelpParts, _build_help, _get_field_docstrings, _get_field_meta, _struct_doc
 from confarg.exceptions import ConfargWarning, SymbolImportError
-from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_registered_leaf
+from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_coercible_leaf, _is_registered_leaf
 from confarg.typedload._construct import _is_typed_call
 
 
@@ -249,7 +249,9 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913 PLR0917
                 metavar=metavar or "VALUE",
             )
 
-    if _is_literal(core):
+    if _is_literal(core) and _is_coercible_leaf(core):
+        # A Literal construction refuses offers no choice: confarg refuses its value itself, as
+        # vanilla does, rather than the framework naming members no value reads as.
         return dataclasses.replace(base, choices=_literal_cli_choices(_literal_values(core)))
 
     if _is_enum(core):
