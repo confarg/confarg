@@ -10,8 +10,7 @@ target. Convertibility is decided only in `build()`/`construct()`, which raise
   merges cleanly and fails in `build()`.
 - **Do not add convertibility validation to the merge layer.** It would make channels
   disagree (a CLI check that env/files skip) and it cannot see expression results.
-- The merge layer is **type-unaware; `build()` is type-aware.** When the right behavior
-  depends on the type, the merge layer defers instead of guessing:
+- The merge layer **reads the type for one question only: whether a value replaces what lies below or refines it** (a union tag, an opener, a call where the type reads one; a key the type holds as data refines; a callable shorthand below a refining dict opens), and falls back to the shape where it cannot type a node ([design decisions](../design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)). Everything else the type decides is `build()`'s. When the right behavior depends on the type in any other way, the merge layer defers instead of guessing:
   - an index patch past the end of a base list (`--input.2 3` over `[1, 2]`) is an error for a
     `list` but fills a slot for a fixed `tuple`, so `_merge_list_base` carries the base as
     `{__base__: base, "2": 3}` and lets construction decide;

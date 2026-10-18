@@ -115,6 +115,53 @@ class TestSiblingOverride:
         assert _load_file(tmp_path / "config.yaml") == {"xs": [{"db": {"host": "db_host", "port": 5432}}]}
 
 
+@dataclass
+class _Labelled:
+    labels: dict[str, str] = field(default_factory=dict)
+    db: DbConfig | None = None
+
+
+class TestPartsOfAFileMergeByType:
+    """The parts of one file merge by the type at their position, as layers do (BUG-232).
+
+    A ``dict`` field holds ``class`` as data, so a part writing it adds an entry rather than
+    dropping the entries another part gave.
+    """
+
+    def test_a_sibling_refines_the_included_dict(self, tmp_path: Path) -> None:
+        """The keys beside an include merge into what it brings in."""
+        write(tmp_path, "base.yaml", "labels: {team: ml}\n")
+        config = write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: ./base.yaml\nlabels: {{class: x}}\n")
+        assert confarg.load(_Labelled, argv=[], env={}, files=[config]).labels == {"team": "ml", "class": "x"}
+
+    def test_a_sibling_refines_an_include_below_the_root(self, tmp_path: Path) -> None:
+        """An include inside the field merges by the field's type too."""
+        write(tmp_path, "lab.yaml", "team: ml\n")
+        config = write(tmp_path, "config.yaml", f"labels: {{{INCLUDE_KEY}: ./lab.yaml, class: x}}\n")
+        assert confarg.load(_Labelled, argv=[], env={}, files=[config]).labels == {"team": "ml", "class": "x"}
+
+    def test_a_later_entry_of_an_include_list_refines(self, tmp_path: Path) -> None:
+        """So do the entries of an ``__include__`` list."""
+        write(tmp_path, "a.yaml", "labels: {team: ml}\n")
+        write(tmp_path, "b.yaml", "labels: {class: x}\n")
+        config = write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: [./a.yaml, ./b.yaml]\n")
+        assert confarg.load(_Labelled, argv=[], env={}, files=[config]).labels == {"team": "ml", "class": "x"}
+
+    def test_a_later_entry_naming_a_class_replaces_the_earlier(self, tmp_path: Path) -> None:
+        """Where the type reads the key as the tag, a later entry still starts the node afresh."""
+        write(tmp_path, "a.yaml", "host: a\nport: 1\n")
+        write(tmp_path, "b.yaml", f"class: {__name__}.DbConfig\nhost: b\n")
+        config = write(tmp_path, "config.yaml", f"db: {{{INCLUDE_KEY}: [./a.yaml, ./b.yaml]}}\n")
+        assert confarg.load(_Labelled, argv=[], env={}, files=[config]).db == DbConfig(host="b")
+
+    def test_a_mounted_file_refines_by_its_mount_point(self, tmp_path: Path) -> None:
+        """A file mounted at the field (``--config.labels``) merges over a lower file by the field's type."""
+        base = write(tmp_path, "base.yaml", "labels: {team: ml}\n")
+        write(tmp_path, "lab.yaml", "class: x\n")
+        argv = ["--config.labels", str(tmp_path / "lab.yaml")]
+        assert confarg.load(_Labelled, argv=argv, env={}, files=[base]).labels == {"team": "ml", "class": "x"}
+
+
 # ---------------------------------------------------------------------------
 # Relative path resolution
 # ---------------------------------------------------------------------------

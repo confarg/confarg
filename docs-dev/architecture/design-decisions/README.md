@@ -65,7 +65,8 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | Decision | In one line |
 |---|---|
 | [A class tag replaces, not merges](class-tag-replaces.md) | naming a class says "this is a new object" |
-| [A call replaces what lies below](a-call-replaces-what-lies-below.md) | a `call:` is a finished value, so the merge drops what lower layers set at its node, by key alone, the root included |
+| [A call replaces what lies below](a-call-replaces-what-lies-below.md) | a `call:` is a finished value, so the merge drops what lower layers set at its node, the root included |
+| [The type decides whether a value replaces or refines](the-type-decides-replace-or-refine.md) | a tag, an opener or a call replaces what lies below only where the type reads it so; a key the type holds as data refines, and a lower shorthand opens under the arguments above it |
 | [No implicit subclass inference](no-implicit-subclass-inference.md) | a subclass exists only once imported, so confarg never scans for one |
 | [A call spec yields to data the annotation can hold](call-yields-to-the-data-a-type-holds.md) | `call:` fills any typed field, except where a dict type or a member named `call` holds the key as data |
 | [An `Any` node reads every opener](an-any-node-reads-every-opener.md) | `class:`, `classfn:`, `bind:` and `call:` build on an `Any` field at any depth, a bare string stays text; `dump()` writes the spec back when it reads back, untyped with a warning otherwise |

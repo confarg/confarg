@@ -23,6 +23,7 @@ import pytest
 import confarg
 from confarg._merge import (
     ListOp,
+    MergeAt,
     MergeDict,
     _deep_merge,
 )
@@ -1665,21 +1666,21 @@ class TestUnionTypeSwitchViaClassTag:
         """Test that _deep_merge discards the base when the override has a union_tag."""
         base: MergeDict = {"host": "prod", "port": 5432, "name": "mydb"}
         override: MergeDict = {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "db.sqlite"}
-        result = _deep_merge(base, override, union_tag="class")
+        result = _deep_merge(base, override, at=MergeAt("class"))
         assert result == override
 
     def test_deep_merge_normal_merge_when_no_union_tag(self) -> None:
         """Test that _deep_merge performs a normal merge when no union_tag is present."""
         base: MergeDict = {"host": "prod", "port": 5432, "name": "mydb"}
         override: MergeDict = {"port": 9999}
-        result = _deep_merge(base, override, union_tag="class")
+        result = _deep_merge(base, override, at=MergeAt("class"))
         assert result == {"host": "prod", "port": 9999, "name": "mydb"}
 
     def test_deep_merge_nested_discard(self) -> None:
         """Test that _deep_merge discards a nested base when a nested override has a union_tag."""
         base: MergeDict = {"db": {"host": "prod", "port": 5432, "name": "mydb"}}
         override: MergeDict = {"db": {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "x.sqlite"}}
-        result = _deep_merge(base, override, union_tag="class")
+        result = _deep_merge(base, override, at=MergeAt("class"))
         assert result == {"db": {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "x.sqlite"}}
 
     def test_load_cross_type_switch_via_config_file_and_cli(self, tmp_yaml) -> None:
@@ -1722,6 +1723,6 @@ class TestUnionTypeSwitchViaClassTag:
         # a class tag and SqliteVariant fields.
         file_data: MergeDict = {"host": "prod", "port": 5432, "name": "mydb"}
         override: MergeDict = {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "override.sqlite"}
-        merged = _deep_merge(file_data, override, union_tag="class")
+        merged = _deep_merge(file_data, override, at=MergeAt("class"))
         # The class tag in the override discards the ServerVariant fields entirely.
         assert merged == override

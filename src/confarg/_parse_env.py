@@ -461,4 +461,6 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         _open_callable_shorthand(data, path, walk_target, union_tag)
         _store_env_value(path, ft, value, data)
 
-    return fold_root_json(data, root_json, union_tag), env_configs
+    from confarg._typed_merge import merge_root  # noqa: PLC0415  # import cycle: it walks types with _parse_cli
+
+    return fold_root_json(data, root_json, merge_root(target, union_tag)), env_configs

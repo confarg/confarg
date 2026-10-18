@@ -127,7 +127,7 @@ arguments are `--n.args.<p>`, whatever opened it ([CLI](#cli)).
 
 A call is a finished value, so in the merge it replaces what a lower layer set at its node, as a
 union tag does; a layer holding only `args` refines the call below it
-([a call replaces what lies below](design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)).
+([a call replaces what lies below](design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)). So does every opener on a Callable or an `Any`: `{bind: g}` over a lower `{bind: f, args: {a: 1}}` is `g` alone, while `{bind: {x: 5}}`, naming no target, refines the nested one ([the type decides](design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)).
 
 ### Class builds an instance
 
@@ -340,6 +340,6 @@ The bare-string shorthand takes argument flags too: `--f pkg.func --f.args.sep -
 spellings of one spec. `promote_bare_spec` is the single place that writes the equivalence
 down, and `_parse_cli._open_callable_shorthand` the single place that decides when to apply
 it — before a deeper key descends through the string, in both the CLI and the env loop
-([CLI parsing](cli-parsing/token-consumption.md#token-consumption)). An opener flag is not a
+([CLI parsing](cli-parsing/token-consumption.md#token-consumption)). Across layers the merge opens it the same way, asking the same question, so `fn: pkg.func` in a file and `--fn.args.sep -` on argv build the partial too ([the type decides](design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)). An opener flag is not a
 refinement but a rival spelling of the target, so it replaces the shorthand rather than joining
 it, matching how an opener beats the `{…}` blob it sits next to.

@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from confarg import _defaults, _sources
-from confarg._merge import MergeDict, _deep_merge, _merge_within_source, _without_key_deletes
+from confarg._merge import _SHAPE, MergeAt, MergeDict, _deep_merge, _merge_within_source, _without_key_deletes
 from confarg._types import _StrToken
 from confarg.dictexpr._expressions import check_anchor_depth, contains_expression, prefix_references
 from confarg.exceptions import ConfargError, InvalidConfigFileError
@@ -298,14 +298,15 @@ def _load_includes(
     entries: list[tuple[str, dict[str, Any]]],
     base: str | None,
     seen: frozenset[str],
-    union_tag: str | None = None,
+    root: MergeAt = _SHAPE,
     mount: tuple[str, ...] = (),
 ) -> Any:
     """Load every include entry and layer them left to right, later entries winning.
 
-    Two dicts deep-merge under *union_tag*, so a class tag in a later entry discards the
-    earlier node exactly as it does across ``--config`` files
-    (docs-dev/architecture/design-decisions/class-tag-replaces.md#a-class-tag-replaces-not-merges).
+    Two dicts merge by the type at *mount* below *root*, the configuration root, so a class
+    tag in a later entry discards the earlier node exactly as it does across ``--config``
+    files, and a key the type holds as data refines it
+    (docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines).
     Anything else is replaced by the later entry, and so is a CSV/TSV entry even when it
     loads as a dict. ``seen`` grows per
     entry, not across the list: naming the same document twice is legal, a genuine cycle raises.
@@ -326,32 +327,32 @@ def _load_includes(
         if key in seen:
             msg = f"Circular include detected: {inc_loc}"
             raise ConfargError(msg)
-        loaded = _unwrap_root_key(_load_any(inc_loc, seen | {key}, options=options, union_tag=union_tag, mount=mount))
+        loaded = _unwrap_root_key(_load_any(inc_loc, seen | {key}, options=options, root=root, mount=mount))
         is_data = _sources._suffix(inc_loc) in _DATA_SUFFIXES
         if i == 0 or is_data or not (isinstance(result, dict) and isinstance(loaded, dict)):
             result = loaded
         else:
-            result = _merge_within_source(result, loaded, union_tag=union_tag)
+            result = _merge_within_source(result, loaded, at=root.at_path(mount))
     return result
 
 
-def _include_with_siblings(included: Any, siblings: MergeDict, union_tag: str | None) -> MergeDict:
-    """Merge an include's sibling keys on top of *included*, which must be a dict.
+def _include_with_siblings(included: Any, siblings: MergeDict, at: MergeAt) -> MergeDict:
+    """Merge an include's sibling keys on top of *included*, which must be a dict, *at* where they land.
 
     Siblings were written by the including file, so they win; a non-dict include has nothing
     for them to merge into.
     """
     if not isinstance(included, dict):
         raise ConfargError.include_siblings_need_a_dict(INCLUDE_KEY, included)
-    return _merge_within_source(included, siblings, union_tag=union_tag)
+    return _merge_within_source(included, siblings, at=at)
 
 
-def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycle guard, position, tag, mount
+def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycle guard, position, root, mount
     data: Any,
     base: str,
     seen: frozenset[str],
     path_in_file: tuple[str, ...] = (),
-    union_tag: str | None = None,
+    root: MergeAt = _SHAPE,
     mount: tuple[str, ...] = (),
 ) -> Any:
     """Resolve the includes of one document's own nodes, and anchor its own references.
@@ -362,7 +363,8 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     is clamped to, which is why the check sits on this walk rather than on the mounting pass.
     *mount* is where that document's root lands in the configuration: each of its bare
     references is prefixed by it, here and only here, since the walk visits the document's
-    own nodes and nothing an include brought in.
+    own nodes and nothing an include brought in. *root* is where the merge stands at the
+    configuration root, which types the node an include and its siblings merge at.
 
     A dict holding INCLUDE_KEY may name one document or a list of them; a list is layered left
     to right by :func:`_load_includes` first. A pure include (no siblings) may yield any type,
@@ -377,11 +379,11 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
         docs-dev/architecture/config-files/include-semantics.md#include-semantics
     """
     if isinstance(data, dict):
-        return _resolve_dict(data, base, seen, path_in_file, union_tag, mount)
+        return _resolve_dict(data, base, seen, path_in_file, root, mount)
     if isinstance(data, list):
         # A list replaces the layers below whole: a delete an item's include kept for them ends here.
         return [
-            _without_key_deletes(_resolve_node(item, base, seen, (*path_in_file, str(index)), union_tag, mount))
+            _without_key_deletes(_resolve_node(item, base, seen, (*path_in_file, str(index)), root, mount))
             for index, item in enumerate(data)
         ]
     if contains_expression(data):
@@ -390,12 +392,12 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     return data
 
 
-def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycle guard, position, tag, mount
+def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycle guard, position, root, mount
     data: dict[Any, Any],
     base: str,
     seen: frozenset[str],
     path_in_file: tuple[str, ...],
-    union_tag: str | None,
+    root: MergeAt,
     mount: tuple[str, ...],
 ) -> Any:
     """Resolve a dict node, the one place INCLUDE_KEY is read (see :func:`_resolve_node`).
@@ -405,16 +407,17 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     visits what was included. A key that is no string (a YAML integer) is one segment.
     """
     if INCLUDE_KEY not in data:
-        return {k: _resolve_node(v, base, seen, (*path_in_file, str(k)), union_tag, mount) for k, v in data.items()}
+        return {k: _resolve_node(v, base, seen, (*path_in_file, str(k)), root, mount) for k, v in data.items()}
     entries = _parse_include_val(data[INCLUDE_KEY])
-    included = _load_includes(entries, base, seen, union_tag, (*mount, *path_in_file))
+    here = (*mount, *path_in_file)
+    included = _load_includes(entries, base, seen, root, here)
     siblings = {k: v for k, v in data.items() if k != INCLUDE_KEY}
     if not siblings:
         return included
     return _include_with_siblings(
         included,
-        _resolve_dict(siblings, base, seen, path_in_file, union_tag, mount),
-        union_tag,
+        _resolve_dict(siblings, base, seen, path_in_file, root, mount),
+        root.at_path(here),
     )
 
 
@@ -423,7 +426,7 @@ def _load_any(
     seen: frozenset[str],
     *,
     options: dict[str, Any] | None = None,
-    union_tag: str | None = None,
+    root: MergeAt = _SHAPE,
     mount: tuple[str, ...] = (),
 ) -> Any:
     """Load one config source as any type (dict, list, or scalar), with its includes resolved.
@@ -445,7 +448,7 @@ def _load_any(
         docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies
         docs-dev/architecture/expressions/reference-anchoring.md#why-the-node-anchor-resolves-late
     """
-    return _resolve_node(_load_document(loc, options), loc, seen, (), union_tag, mount)
+    return _resolve_node(_load_document(loc, options), loc, seen, (), root, mount)
 
 
 def _require_layer(value: Any, loc: str) -> MergeDict:
@@ -466,7 +469,7 @@ def _require_layer(value: Any, loc: str) -> MergeDict:
     return value
 
 
-def _load_raw(loc: str, seen: frozenset[str], union_tag: str | None = None) -> MergeDict:
+def _load_raw(loc: str, seen: frozenset[str], root: MergeAt = _SHAPE) -> MergeDict:
     """Load a config source whose content is a document root, so a configuration layer.
 
     A data file contributes a value rather than a layer, so it is rejected here even though
@@ -476,10 +479,10 @@ def _load_raw(loc: str, seen: frozenset[str], union_tag: str | None = None) -> M
         docs-dev/architecture/config-files/formats.md#data-files-versus-configuration-layers
     """
     _loader_for(loc, _LOADERS)  # a root is a layer: .csv/.tsv is unsupported here, not data
-    return _require_layer(_load_any(loc, seen, union_tag=union_tag), loc)
+    return _require_layer(_load_any(loc, seen, root=root), loc)
 
 
-def _load_file(loc: str | Path, union_tag: str | None = None) -> MergeDict:
+def _load_file(loc: str | Path, root: MergeAt = _SHAPE) -> MergeDict:
     """Load a config source, dispatching by extension.
 
     Supports .toml, .yaml, .yml, and .json documents, local or remote -- a data file is a
@@ -487,8 +490,9 @@ def _load_file(loc: str | Path, union_tag: str | None = None) -> MergeDict:
 
     Args:
         loc: Location of the config source -- a local path, a ``Path``, or a URL.
-        union_tag: Discriminator field name, so a class tag inside an include replaces the
-            node it lands on exactly as it does across ``--config`` files.
+        root: Where the merge stands at the configuration root, so the parts of the
+            document merge by the type where they land, as layers do; the shape rule by
+            default.
 
     Returns:
         A dict of the parsed contents with all includes resolved.
@@ -501,7 +505,7 @@ def _load_file(loc: str | Path, union_tag: str | None = None) -> MergeDict:
             is detected.
     """
     loc = _sources._location(loc)
-    return _load_raw(loc, frozenset({_sources._identity(loc)}), union_tag)
+    return _load_raw(loc, frozenset({_sources._identity(loc)}), root)
 
 
 def _nest(value: Any, subpath: str) -> Any:
@@ -551,7 +555,7 @@ def _parse_mount_value(value: Any) -> list[tuple[str, dict[str, Any]]]:
 def _load_mount_value(
     value: Any,
     base: str | None = None,
-    union_tag: str | None = None,
+    root: MergeAt = _SHAPE,
     mount: tuple[str, ...] = (),
 ) -> Any:
     """Resolve one channel-supplied mount value to the value it contributes.
@@ -566,10 +570,10 @@ def _load_mount_value(
         docs-dev/architecture/config-files/mounting.md#mounting
         docs-dev/architecture/design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel
     """
-    return _load_includes(_parse_mount_value(value), base, frozenset(), union_tag, mount)
+    return _load_includes(_parse_mount_value(value), base, frozenset(), root, mount)
 
 
-def _load_mount(value: Any, subpath: str, base: str | None = None, union_tag: str | None = None) -> MergeDict:
+def _load_mount(value: Any, subpath: str, base: str | None = None, root: MergeAt = _SHAPE) -> MergeDict:
     """Load one mount and return it nested at the dot-separated *subpath*.
 
     The one implementation of mounting a channel value: ``--config.<path>`` and
@@ -586,14 +590,14 @@ def _load_mount(value: Any, subpath: str, base: str | None = None, union_tag: st
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
     """
     if subpath:
-        return _nest(_load_mount_value(value, base, union_tag, tuple(subpath.split("."))), subpath)
+        return _nest(_load_mount_value(value, base, root, tuple(subpath.split("."))), subpath)
     locations = [_sources._join(base, path_str) for path_str, _ in _parse_mount_value(value)]
     for loc in locations:
         _loader_for(loc, _LOADERS)  # a root is a layer: .csv/.tsv is unsupported here, not data
-    return _require_layer(_load_mount_value(value, base, union_tag), locations[-1])
+    return _require_layer(_load_mount_value(value, base, root), locations[-1])
 
 
-def _load_subpath_files(entries: Sequence[tuple[str, Any]], union_tag: str) -> MergeDict:
+def _load_subpath_files(entries: Sequence[tuple[str, Any]], root: MergeAt) -> MergeDict:
     """Load and merge a sequence of (subpath, mount value) pairs into a single dict.
 
     Carries ``files=`` and the ``CONFIG[__SUBPATH]`` environment pointers. Each value is
@@ -602,8 +606,8 @@ def _load_subpath_files(entries: Sequence[tuple[str, Any]], union_tag: str) -> M
     """
     result: MergeDict = {}
     for subpath, value in entries:
-        fdata = _load_mount(value, subpath, union_tag=union_tag)
-        result = _deep_merge(result, fdata, union_tag=union_tag)
+        fdata = _load_mount(value, subpath, root=root)
+        result = _deep_merge(result, fdata, at=root)
     return result
 
 

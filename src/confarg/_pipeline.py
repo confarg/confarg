@@ -30,6 +30,7 @@ from confarg._files import _load_mount, _load_mount_value, _load_subpath_files, 
 from confarg._merge import (
     APPEND_SUFFIX,
     ListOp,
+    MergeAt,
     MergeDict,
     _deep_merge,
     _DeleteSentinel,
@@ -38,6 +39,7 @@ from confarg._merge import (
 )
 from confarg._parse_cli import _locals_keys, _locals_keys_at
 from confarg._parse_env import _parse_env
+from confarg._typed_merge import merge_root
 from confarg._types import _StrToken
 from confarg.dictexpr import contains_expression
 from confarg.dictexpr._expressions import canonicalize_references
@@ -45,7 +47,7 @@ from confarg.exceptions import ConfargError, InvalidConfigFileError, LocalsError
 from confarg.typedload._coerce import _coerce_leaf
 
 
-def _load_cli_config(value: Any, subpath: str, config_flag: str, union_tag: str | None = None) -> MergeDict:
+def _load_cli_config(value: Any, subpath: str, config_flag: str, root: MergeAt) -> MergeDict:
     """Load one CLI config source (``--config[.subpath][+] VALUE``) into a nested dict.
 
     *value* is read as an ``__include__`` value and mounted at *subpath*, so this route
@@ -57,6 +59,8 @@ def _load_cli_config(value: Any, subpath: str, config_flag: str, union_tag: str 
     fragment over several elements: a list extends the target list, anything else lands as one
     item. References in an appended fragment stay unanchored, because an appended element has
     no index until the merge is over (docs-dev/architecture/limitations.md#expressions).
+    *root*, where the merge stands at the configuration root, types the node each part
+    merges at: an appended fragment's is an element of the field.
 
     Dev Notes:
         docs-dev/architecture/config-files/mounting.md#mounting
@@ -71,10 +75,10 @@ def _load_cli_config(value: Any, subpath: str, config_flag: str, union_tag: str 
                 f" Use --{config_flag}.fieldname{APPEND_SUFFIX} /path/to/file."
             )
             raise ConfargError(msg)
-        loaded = _load_mount_value(value, union_tag=union_tag)
+        loaded = _load_mount_value(value, root=root.at_path((*real_subpath.split("."), "0")))
         return _nest({ListOp.APPEND: _to_append_list(loaded)}, real_subpath)
 
-    return _load_mount(value, subpath, union_tag=union_tag)
+    return _load_mount(value, subpath, root=root)
 
 
 def _check_locals_are_typed(node: Any, locals_key: str, path: str) -> None:
@@ -330,10 +334,11 @@ def _merge_sources(
     if env_config and (env_config_path := env.get(env_config)):
         file_entries.append(("", env_config_path))
     env_configs.sort(key=operator.itemgetter(0))
-    config_data = _load_subpath_files(file_entries + env_configs, union_tag)
+    root = merge_root(target, union_tag)
+    config_data = _load_subpath_files(file_entries + env_configs, root)
     for subpath, value in cli_configs:
-        fdata = _load_cli_config(value, subpath, config_flag, union_tag)
-        config_data = _deep_merge(config_data, fdata, union_tag=union_tag)
+        fdata = _load_cli_config(value, subpath, config_flag, root)
+        config_data = _deep_merge(config_data, fdata, at=root)
 
     _apply_locals_layer(
         target,
@@ -345,8 +350,8 @@ def _merge_sources(
     )
 
     # 3. Merge: config (lowest) → env → CLI (highest)
-    merged = _deep_merge(config_data, env_data, union_tag=union_tag)
-    merged = _deep_merge(merged, cli_data, union_tag=union_tag)
+    merged = _deep_merge(config_data, env_data, at=root)
+    merged = _deep_merge(merged, cli_data, at=root)
     # Every layer is in: a whole-field delete has cut the ops after it off from all of them.
     merged = _drop_deleted_bases(merged)
 

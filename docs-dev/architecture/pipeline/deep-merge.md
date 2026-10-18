@@ -5,13 +5,8 @@
 `_merge._deep_merge(base, override)` is recursive, **dict-wins**: the override replaces
 anything that is not a dict-on-dict, which is merged recursively.
 
-- **A union tag in the override discards the base entirely.** Naming a class says "this is
-  a new object", so fields of the previous variant must not leak in (the README's
-  `--class myapp.SQLiteConfig --dbpath …` over a server config).
-- **A call in the override discards the base entirely.** A `call:` is a finished value, so no
-  key a lower layer set beside it can belong to it, whatever lay below: a dict, a list or
-  another call (`_is_call_dict`; BUG-190, [design decisions](../design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)).
-  A layer holding only `args` refines the call below it as any dict-on-dict does.
+- **A value of its own in the override discards the base entirely.** Whether a dict is one is the type's to say, as construction will read it there (`_merge.MergeAt`, typed by `_typed_merge.TypedAt`; [design decisions](../design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)). A union tag naming a class says "this is a new object", so fields of the previous variant must not leak in (the README's `--class myapp.SQLiteConfig --dbpath …` over a server config). A `call:` is a finished value, so no key a lower layer set beside it can belong to it, whatever lay below: a dict, a list or another call (BUG-190, [design decisions](../design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)). An opener on a Callable or an `Any` names a new target, so the old target's arguments do not follow it (BUG-231). A layer holding only `args`, or an opener holding a dict with no opener of its own, refines the spec below it as any dict-on-dict does. Where the type holds the key as data, a `dict` field or a struct owning the key's spelling, the dict refines too (BUG-232); where the merge cannot type the node, the tag and `call` replace by key.
+- **A shorthand below a refining dict opens.** A bare string a Callable reads as `{bind: <string>}` is opened into that form when a higher dict refines it, so `--fn.args.punct !` over a file's `fn: pkg.shout` keeps the target (`MergeAt.opened`), as the two flags do within one argv ([below](#scalar-intermediates)).
 - **A base list carried with its patch discards a dict base.** An override holding the
   `__base__` op is "this list, then these patches", so it replaces a name dict or an earlier
   deferred patch rather than merging into it
@@ -25,8 +20,8 @@ anything that is not a dict-on-dict, which is merged recursively.
 - **A cast pin replaces what lies below.** A file's `{__cast__, __value__}` is a value, so it
   replaces a list or a dict a lower layer held, as a scalar would, rather than being merged
   into it as a patch (5b: two files, `u: [1, 2]` then a pin, deferred the pin's keys as a
-  patch of the list). The merge tells it by shape alone (`_is_pin_dict`), so it stays
-  type-unaware; construction resolves the pin, as it does wherever one stands (BUG-210).
+  patch of the list). The merge tells it by shape alone (`_is_pin_dict`), whatever the
+  type; construction resolves the pin, as it does wherever one stands (BUG-210).
 - `DICT_DELETE` (from `key-` in files, `--field.key-`, `FOO__KEY-`) removes a key.
 - File-sourced shorthand `key+:` / `key-:` / `"N-":`, and the reserved keys below, are
   normalized to the ops by `_normalize_merge_ops` so files, env and CLI share one patch
@@ -96,11 +91,7 @@ sentinel is *not* a scalar to replace: see the next section.
 Replacing is right only because the scalar meant nothing to its field. Where it *does* mean
 something — a bare string at a `Callable` field is the shorthand for `{bind: <string>}` — the
 parsers open it into that meaning before `_set_nested` ever sees it, so the later key refines
-it instead ([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)). `_set_nested` stays type-blind: it is
-merge-layer code, and asking it which scalars are meaningful would put type knowledge behind
-the [merge/build contract](merge-build-contract.md#merge-build-contract). The alternatives weighed — one blanket
-rule either way, or splitting by whether the scalar was meaningful — are in
-[design decisions](../design-decisions/whole-value-then-subkey.md#a-whole-value-followed-by-a-subkey-opens-rather-than-collides).
+it instead ([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)). `_set_nested` stays type-blind: the parsers already hold the type and open the scalar before it writes. The alternatives weighed — one blanket rule either way, or splitting by whether the scalar was meaningful — are in [design decisions](../design-decisions/whole-value-then-subkey.md#a-whole-value-followed-by-a-subkey-opens-rather-than-collides). Across layers, the merge opens it the same way, asking the same `_takes_callable_shorthand` ([above](#deep-merge-semantics)).
 
 ## An op after a whole-field delete has nothing below it
 

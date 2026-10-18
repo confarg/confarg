@@ -5,11 +5,7 @@ the other two mount routes, which read their value with the same parser ([mounti
 
 - Paths are relative to the including document's own location, local or remote
   ([relative includes resolve within one origin](locations-and-schemes.md#relative-includes-resolve-within-one-origin)).
-- A list is layered left to right into one value first, so the list form means the same in a
-  dict node and in a list item. Dict entries deep-merge, mirroring repeated `--config`, and
-  they deep-merge under `union_tag`, so a class tag in a later entry discards the earlier node
-  exactly as it does across `--config` files
-  ([design decisions](../design-decisions/class-tag-replaces.md#a-class-tag-replaces-not-merges)).
+- A list is layered left to right into one value first, so the list form means the same in a dict node and in a list item. Dict entries deep-merge, mirroring repeated `--config`, by the type at the node they land at, so a class tag in a later entry discards the earlier node exactly as it does across `--config` files, and a key the type holds as data refines it ([design decisions](../design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)). The siblings of an include merge over it by the same type. The file walk carries where each document lands (its mount and its position in the file), which types that node; a document loaded with no target merges by the shape.
 - A pure include (no sibling keys) may yield any type; with siblings the include must yield a
   dict, and siblings merge on top (they were written by the including file). They are resolved
   first, so a sibling that is itself an include wins over the included document as a plain value

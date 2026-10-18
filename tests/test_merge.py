@@ -9,6 +9,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+from collections.abc import Callable  # noqa: TC003  # the dataclasses below are read at runtime
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -793,3 +794,238 @@ class TestACallReplacesWhatLiesBelow:
         cfg = confarg.load(_CallLayers, argv=[], env={}, files=[base, over])
         assert cfg.p == _CallPoint(a=1, b=1)
         assert cfg.xs == [3, 3]
+
+
+def _shout(name: str, punct: str = ".") -> str:
+    return name.upper() + punct
+
+
+def _f(a: int = 0, b: int = 0) -> tuple[int, int]:
+    return (a, b)
+
+
+def _g(a: int = 0) -> int:
+    return a
+
+
+def _make() -> Callable[..., Any]:
+    return _f
+
+
+def _takes_labels(labels: dict[str, str]) -> dict[str, str]:
+    return labels
+
+
+class _Hold:
+    def __init__(self, x: int = 0) -> None:
+        self.x = x
+
+    def __call__(self, p: int = 0) -> tuple[int, int]:
+        return (self.x, p)
+
+
+class _Scaler:
+    def __init__(self, k: int = 1) -> None:
+        self.k = k
+
+    def scale(self, k: int) -> int:
+        return self.k * k
+
+
+@dataclass
+class _Job:
+    kind: str = "batch"
+    retries: int = 0
+
+
+@dataclass
+class _Task:
+    retries: int = 0
+
+
+@dataclass
+class _SubTask(_Task):
+    extra: int = 0
+    notes: dict[str, str] = dataclasses.field(default_factory=dict)
+
+
+@dataclass
+class _HoldsCall:
+    call: str = ""
+    n: int = 0
+
+
+@dataclass
+class _TypeLayers:
+    job: _Job = dataclasses.field(default_factory=_Job)
+    task: _Task = dataclasses.field(default_factory=_Task)
+    tasks: list[_Task] = dataclasses.field(default_factory=list)
+    labels: dict[str, str] = dataclasses.field(default_factory=dict)
+    held: _HoldsCall = dataclasses.field(default_factory=_HoldsCall)
+    extra: Any = None
+    fn: Callable[..., Any] = _shout
+    maybe: Callable[..., Any] | None = None
+    n: int = 0
+    name: str = f"{__name__}._shout"
+
+
+def _layered(tmp_path, *layers: str, **opts: Any) -> _TypeLayers:
+    files = []
+    for i, text in enumerate(layers):
+        files.append(tmp_path / f"layer{i}.yaml")
+        files[-1].write_text(text)
+    return confarg.load(_TypeLayers, argv=[], env={}, files=files, **opts)
+
+
+class TestTheTypeDecidesWhetherAKeyReplaces:
+    """A key replaces what lower layers set only where construction reads it as a new value (BUG-232).
+
+    The merge decided by the key alone, so a union tag or a ``call`` key the type holds as
+    data dropped the lower layers' keys, and the openers a Callable reads other than ``call``
+    merged key by key with the spec below them (BUG-231).
+    """
+
+    def test_a_tag_a_field_owns_refines(self, tmp_path) -> None:
+        """A struct field spelled like a custom tag is a field: the lower layers' keys stay."""
+        cfg = _layered(tmp_path, "job: {kind: batch, retries: 3}\n", "job: {kind: stream}\n", union_tag="kind")
+        assert cfg.job == _Job(kind="stream", retries=3)
+
+    def test_a_tag_key_in_a_dict_field_refines(self, tmp_path) -> None:
+        """A ``dict`` field holds ``class`` as data."""
+        cfg = _layered(tmp_path, "labels: {team: ml, tier: gold}\n", "labels: {class: confidential}\n")
+        assert cfg.labels == {"team": "ml", "tier": "gold", "class": "confidential"}
+
+    def test_a_call_key_in_a_dict_field_refines(self, tmp_path) -> None:
+        """A ``dict`` field holds ``call`` as data too: the cost BUG-190's rule had there is gone."""
+        cfg = _layered(tmp_path, "labels: {team: ml}\n", "labels: {call: me}\n")
+        assert cfg.labels == {"team": "ml", "call": "me"}
+
+    def test_a_call_key_a_member_owns_refines(self, tmp_path) -> None:
+        """A struct with a member named ``call`` keeps its other fields."""
+        cfg = _layered(tmp_path, "held: {n: 3}\n", "held: {call: me}\n")
+        assert cfg.held == _HoldsCall(call="me", n=3)
+
+    def test_a_tag_still_replaces_a_struct(self, tmp_path) -> None:
+        """Where the key is the tag, the new class takes none of the old one's fields."""
+        cfg = _layered(tmp_path, "task: {retries: 3}\n", f"task: {{class: {__name__}._SubTask, extra: 1}}\n")
+        assert cfg.task == _SubTask(retries=0, extra=1)
+
+    def test_a_tag_replaces_a_list_element(self, tmp_path) -> None:
+        """An index patch carrying the tag replaces the element, as it would the field."""
+        cfg = _layered(tmp_path, "tasks: [{retries: 3}]\n", f"tasks: {{'0': {{class: {__name__}._SubTask}}}}\n")
+        assert cfg.tasks == [_SubTask()]
+
+    def test_a_class_spec_replaces_what_an_any_field_held(self, tmp_path) -> None:
+        """An ``Any`` node reads ``class:`` as a spec (FEAT-42), so the lower data is not its fields."""
+        cfg = _layered(tmp_path, "extra: {a: 1, b: 2}\n", f"extra: {{class: {__name__}._Hold, x: 2}}\n")
+        assert isinstance(cfg.extra, _Hold)
+        assert cfg.extra.x == 2
+
+    def test_a_bind_replaces_what_an_any_field_held(self, tmp_path) -> None:
+        """So does ``bind:``, which an ``Any`` node reads since FEAT-42."""
+        assert _layered(tmp_path, "extra: {a: 1, b: 2}\n", f"extra: {{bind: {__name__}._g}}\n").extra is _g
+
+    @pytest.mark.parametrize("field", ["fn", "maybe"])
+    @pytest.mark.parametrize(
+        "lower",
+        [
+            f"{{bind: {__name__}._f, args: {{a: 1}}}}",
+            f"{{bind: {__name__}._f, args: {{a: 1, b: 2}}}}",
+            f"{{call: {__name__}._make}}",
+            f"{{class: {__name__}._Hold, x: 1}}",
+        ],
+    )
+    def test_a_bind_replaces_the_spec_below(self, tmp_path, field: str, lower: str) -> None:
+        """BUG-231: the lower spec's arguments do not follow the new target."""
+        cfg = _layered(tmp_path, f"{field}: {lower}\n", f"{field}: {{bind: {__name__}._g}}\n")
+        assert getattr(cfg, field)() == 0
+
+    def test_a_class_replaces_the_spec_below(self, tmp_path) -> None:
+        """A ``class:`` over a ``bind:`` takes none of its arguments."""
+        cfg = _layered(tmp_path, f"fn: {{bind: {__name__}._f, args: {{a: 1}}}}\n", f"fn: {{class: {__name__}._Hold}}\n")
+        assert cfg.fn(5) == (0, 5)
+
+    def test_a_classfn_replaces_the_spec_below(self, tmp_path) -> None:
+        """Nor does a ``classfn:``."""
+        lower = f"fn: {{class: {__name__}._Hold, x: 7}}\n"
+        cfg = _layered(tmp_path, lower, f"fn: {{classfn: {__name__}._Scaler.scale, k: 2}}\n")
+        assert cfg.fn(3) == 6
+
+    def test_args_still_refine_the_spec_below(self, tmp_path) -> None:
+        """A layer holding only ``args`` patches the target's arguments."""
+        cfg = _layered(tmp_path, f"fn: {{bind: {__name__}._f, args: {{a: 1, b: 2}}}}\n", "fn: {args: {b: 5}}\n")
+        assert cfg.fn() == (1, 5)
+
+    def test_a_path_through_a_bind_refines_its_target(self, tmp_path) -> None:
+        """``bind: {x: 5}`` holds no opener: it refines the nested target, it names none."""
+        lower = f"fn: {{bind: {{class: {__name__}._Hold, x: 1}}, args: {{p: 2}}}}\n"
+        assert _layered(tmp_path, lower, "fn: {bind: {x: 5}}\n").fn() == (5, 2)
+
+    def test_a_path_through_a_call_refines_its_target(self, tmp_path) -> None:
+        """The same through ``call:``, which replaced the whole spec with ``{call: {k: 3}}``."""
+        lower = f"n: {{call: {{classfn: {__name__}._Scaler.scale, k: 1}}, args: {{k: 2}}}}\n"
+        assert _layered(tmp_path, lower, "n: {call: {k: 3}}\n").n == 6
+
+    def test_a_subclass_the_tag_names_types_its_fields(self, tmp_path) -> None:
+        """Below a struct, the fields are those of the class the lower layer's tag named."""
+        lower = f"task: {{class: {__name__}._SubTask, notes: {{a: x}}}}\n"
+        cfg = _layered(tmp_path, lower, "task: {notes: {class: y}}\n")
+        assert cfg.task == _SubTask(notes={"a": "x", "class": "y"})
+
+    def test_a_spec_in_an_any_field_refines_its_fields(self, tmp_path) -> None:
+        """A layer naming no class refines the spec an ``Any`` node holds below it."""
+        cfg = _layered(tmp_path, f"extra: {{class: {__name__}._Hold, x: 1}}\n", "extra: {x: 2}\n")
+        assert isinstance(cfg.extra, _Hold)
+        assert cfg.extra.x == 2
+
+    def test_a_value_an_any_field_holds_is_any_too(self, tmp_path) -> None:
+        """Below an ``Any`` holding no opener, every value reads openers in turn."""
+        cfg = _layered(tmp_path, "extra: {inner: {a: 1}}\n", f"extra: {{inner: {{bind: {__name__}._g}}}}\n")
+        assert cfg.extra == {"inner": _g}
+
+    def test_a_target_that_does_not_import_leaves_its_args_to_the_shape(self, tmp_path) -> None:
+        """Its parameters cannot be read, so its arguments merge key by key, and construction reports the name."""
+        lower = tmp_path / "a.yaml"
+        lower.write_text("fn: {bind: nowhere.f, args: {a: 1}}\n")
+        upper = tmp_path / "b.yaml"
+        upper.write_text("fn: {args: {b: 2}}\n")
+        merged = confarg.merge(_TypeLayers, argv=[], env={}, files=[lower, upper])
+        assert merged == {"fn": {"bind": "nowhere.f", "args": {"a": 1, "b": 2}}}
+
+    def test_args_below_a_target_are_typed_by_its_signature(self, tmp_path) -> None:
+        """A ``dict`` parameter under ``args`` holds ``class`` as data, as a ``dict`` field does."""
+        lower = f"fn: {{bind: {__name__}._takes_labels, args: {{labels: {{team: ml}}}}}}\n"
+        cfg = _layered(tmp_path, lower, "fn: {args: {labels: {class: x}}}\n")
+        assert cfg.fn() == {"team": "ml", "class": "x"}
+
+
+class TestALowerShorthandOpensUnderTheArgumentsAbove:
+    """A bare string a Callable reads is ``{bind: <string>}``, so a higher layer's ``args`` refine it (BUG-232)."""
+
+    @pytest.mark.parametrize("field", ["fn", "maybe"])
+    def test_args_refine_the_shorthand_below(self, tmp_path, field: str) -> None:
+        """The target the lower layer named stays."""
+        cfg = _layered(tmp_path, f"{field}: {__name__}._shout\n", f"{field}: {{args: {{punct: '!'}}}}\n")
+        assert getattr(cfg, field)("hi") == "HI!"
+
+    def test_merge_writes_the_opened_spec(self, tmp_path) -> None:
+        """``merge()`` returns the dict form, which ``dump_file`` writes and reads back."""
+        lower = tmp_path / "a.yaml"
+        lower.write_text(f"fn: {__name__}._shout\n")
+        upper = tmp_path / "b.yaml"
+        upper.write_text("fn: {args: {punct: '!'}}\n")
+        merged = confarg.merge(_TypeLayers, argv=[], env={}, files=[lower, upper])
+        assert merged == {"fn": {"bind": f"{__name__}._shout", "args": {"punct": "!"}}}
+
+    def test_an_opener_above_replaces_the_shorthand(self, tmp_path) -> None:
+        """A higher layer naming its own target does not refine the one below."""
+        assert _layered(tmp_path, f"fn: {__name__}._shout\n", f"fn: {{bind: {__name__}._g}}\n").fn() == 0
+
+    def test_an_expression_opens_too(self, tmp_path) -> None:
+        """Whatever the expression yields, ``{bind: <it>}`` with no argument is the same spec."""
+        cfg = _layered(tmp_path, "fn: ${name}\n", "fn: {args: {punct: '!'}}\n")
+        assert cfg.fn("hi") == "HI!"
+
+    def test_a_string_in_an_any_field_is_text(self, tmp_path) -> None:
+        """An ``Any`` node reads a bare string as text (FEAT-42), so the dict above replaces it."""
+        assert _layered(tmp_path, "extra: some.path\n", "extra: {a: 1}\n").extra == {"a": 1}
