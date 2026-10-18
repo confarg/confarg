@@ -65,6 +65,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | Decision | In one line |
 |---|---|
 | [A class tag replaces, not merges](class-tag-replaces.md) | naming a class says "this is a new object" |
+| [A call replaces what lies below](a-call-replaces-what-lies-below.md) | a `call:` is a finished value, so the merge drops what lower layers set at its node, by key alone, the root included |
 | [No implicit subclass inference](no-implicit-subclass-inference.md) | a subclass exists only once imported, so confarg never scans for one |
 | [A call spec yields to data the annotation can hold](call-yields-to-the-data-a-type-holds.md) | `call:` fills any typed field, except where a dict type, `Any` or a member named `call` holds the key as data |
 | [Class names a subclass; call computes](class-names-a-subclass-call-computes.md) | `class:` on a typed field names a subclass of it, and an unrelated class is refused; `call:` computes a value the annotation accepts, so it is no way around the refusal |

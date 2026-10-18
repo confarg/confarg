@@ -333,15 +333,37 @@ def _is_pin_dict(data: Any) -> bool:
     return isinstance(data, dict) and data.keys() == {_defaults.CAST_KEY, _defaults.VALUE_KEY}
 
 
+def _is_call_dict(data: Any) -> bool:
+    """Return whether *data* spells a ``call:`` spec: a dict holding the ``call`` key.
+
+    The shape half of ``typedload._construct._is_typed_call``, which also asks the type. A call
+    is a finished value, so the merge lets it replace what lies below, as a union tag does: no
+    key beside it but ``args`` belongs to it (BUG-190). The merge cannot tell where the type
+    holds ``call`` as data, so there too it replaces.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below
+    """
+    return isinstance(data, dict) and _defaults.CALL_KEY in data
+
+
+def _starts_afresh(override: MergeDict, union_tag: str | None) -> bool:
+    """Return whether the dict *override* is a new value, not a patch of the dict below.
+
+    It is when it names the union tag, or holds a call (:func:`_is_call_dict`).
+    """
+    return (union_tag is not None and union_tag in override) or _is_call_dict(override)
+
+
 def _replaces_what_lies_below(bv: Any, val: Any) -> bool:
     """Whether the override *val* replaces *bv* outright rather than patching it.
 
     An override carrying its own base (``ListOp.BASE``) replaces a dict base, as a union tag
     does: the patches beside that base address it, not whatever an earlier layer held. A base
-    that is a whole-field delete replaces a list base too. A cast pin is a value, so it
-    replaces a list or a dict below it as a scalar would.
+    that is a whole-field delete replaces a list base too. A cast pin and a call are values, so
+    they replace a list or a dict below them as a scalar would.
     """
-    if _is_pin_dict(val):
+    if _is_pin_dict(val) or _is_call_dict(val):
         return True
     return isinstance(val, dict) and ListOp.BASE in val and (val[ListOp.BASE] is DICT_DELETE or isinstance(bv, dict))
 
@@ -414,8 +436,9 @@ def _deep_merge(
     - ``{ListOp.DELETE: [i, j]}`` as a value for a list base → deletes original indices i, j.
     - ``{"N": v}`` (integer string keys) as a value for a list base → patches by index.
 
-    When ``union_tag`` is set and the override dict contains that key, the override
-    is treated as a fresh object specification and the base is discarded entirely.
+    When ``union_tag`` is set and the override dict contains that key, or the override holds
+    a ``call`` (:func:`_starts_afresh`), the override is treated as a fresh value and the base
+    is discarded entirely.
 
     Args:
         base: The base dict to merge into.
@@ -432,7 +455,7 @@ def _deep_merge(
     base = _normalize_merge_ops(base)
     override = _normalize_merge_ops(override)
 
-    if union_tag is not None and union_tag in override:
+    if _starts_afresh(override, union_tag):
         return dict(override)
 
     # Copy base, skipping any DICT_DELETE sentinels left over from normalization -- but not
@@ -471,9 +494,9 @@ def _keep_deletes(merged: MergeDict, override: MergeDict, base: MergeDict, union
     """Return *merged* with each key delete *override* holds put back, at any depth.
 
     A delete that met a key of *base* is put back spent, any other as it was. An override naming
-    the union tag discarded *base*, so nothing below it met one.
+    the union tag or a call discarded *base*, so nothing below it met one.
     """
-    if union_tag is not None and union_tag in override:
+    if _starts_afresh(override, union_tag):
         base = {}
     out = dict(merged)
     for key, val in override.items():

@@ -8,6 +8,10 @@ anything that is not a dict-on-dict, which is merged recursively.
 - **A union tag in the override discards the base entirely.** Naming a class says "this is
   a new object", so fields of the previous variant must not leak in (the README's
   `--class myapp.SQLiteConfig --dbpath …` over a server config).
+- **A call in the override discards the base entirely.** A `call:` is a finished value, so no
+  key a lower layer set beside it can belong to it, whatever lay below: a dict, a list or
+  another call (`_is_call_dict`; BUG-190, [design decisions](../design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)).
+  A layer holding only `args` refines the call below it as any dict-on-dict does.
 - **A base list carried with its patch discards a dict base.** An override holding the
   `__base__` op is "this list, then these patches", so it replaces a name dict or an earlier
   deferred patch rather than merging into it
