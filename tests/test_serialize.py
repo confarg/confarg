@@ -16,7 +16,7 @@ from dataclasses import InitVar, field
 from dataclasses import dataclass as _dc
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Final, Literal, Optional, Union
+from typing import Any, Final, Literal, NewType, Optional, Union
 from unittest import mock
 from uuid import UUID
 
@@ -1749,3 +1749,23 @@ class TestNativeTypes:
         path = tmp_path / name
         confarg.dump_file(held, path)
         assert confarg.load(_Schedule, argv=[], env={}, files=[path]) == held
+
+
+_DumpedUserId = NewType("_DumpedUserId", int)
+_DumpedTags = NewType("_DumpedTags", list[str])
+
+
+@_dc
+class _WithDumpedNewTypes:
+    u: _DumpedUserId = _DumpedUserId(0)
+    t: _DumpedTags = field(default_factory=lambda: _DumpedTags([]))
+
+
+class TestANewTypeDumpsAsItsSupertype:
+    """A ``NewType`` field dumps as its supertype's value, which builds it back."""
+
+    def test_round_trip(self) -> None:
+        """The dump holds the int and the list, and reads back as the object it came from."""
+        obj = _WithDumpedNewTypes(u=_DumpedUserId(3), t=_DumpedTags(["z"]))
+        assert confarg.dump(obj) == {"u": 3, "t": ["z"]}
+        assert confarg.build(_WithDumpedNewTypes, confarg.dump(obj)) == obj

@@ -13,8 +13,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
+from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Literal, NamedTuple
+from typing import Annotated, Any, Literal, NamedTuple, NewType
 from uuid import UUID
 
 import pytest
@@ -56,6 +57,17 @@ def _unregistered_uuid() -> None:
     """Take the built-in UUID out of both registries, put back by ``_cleanup_registry``."""
     del _LEAF_COERCIONS[UUID]
     del _LEAF_SERIALIZERS[UUID]
+
+
+class _Color(Enum):
+    RED = "r"
+
+
+class _Pt(NamedTuple):
+    a: int = 0
+
+
+_UserId = NewType("_UserId", int)
 
 
 class _Ticket:
@@ -101,6 +113,50 @@ class TestRegisterLeafType:
         """Omitting serialize= registers str, the wire form of most leaf types."""
         confarg.register_leaf_type(_Ticket, _Ticket)
         assert _LEAF_SERIALIZERS[_Ticket] is str
+
+    @pytest.mark.parametrize(
+        ("key", "reason"),
+        [
+            pytest.param(_UserId, "_UserId is a NewType, which confarg reads as int", id="newtype"),
+            pytest.param(tuple[int, int], "tuple[int, int] is no class", id="generic-alias"),
+            pytest.param(int | str, "int | str is no class", id="union"),
+            pytest.param(Annotated[int, "m"], "is no class", id="annotated"),
+            pytest.param(Literal["a", "b"], "is no class", id="literal"),
+            pytest.param(int, "confarg reads int itself", id="int"),
+            pytest.param(str, "confarg reads str itself", id="str"),
+            pytest.param(bool, "confarg reads bool itself", id="bool"),
+            pytest.param(type(None), "confarg reads NoneType itself", id="none"),
+            pytest.param(Any, "confarg reads Any itself", id="any"),
+            pytest.param(object, "every value is an object", id="object"),
+            pytest.param(type, "confarg reads type itself", id="type"),
+            pytest.param(list, "confarg reads list as a list", id="list"),
+            pytest.param(dict, "confarg reads dict as a dict", id="dict"),
+            pytest.param(tuple, "confarg reads tuple as a tuple", id="tuple"),
+            pytest.param(_Color, "confarg reads _Color itself", id="enum"),
+            pytest.param(_Pt, "confarg reads _Pt as a namedtuple", id="namedtuple"),
+            pytest.param(Callable, "confarg reads Callable as a callable", id="callable"),
+        ],
+    )
+    def test_a_key_no_registration_reaches_is_refused(self, key: Any, reason: str) -> None:
+        """Every key whose coercion would never run is refused, naming how confarg reads it instead."""
+        with pytest.raises(TypeError, match=re.escape(reason)):
+            confarg.register_leaf_type(key, lambda v: v)
+        assert key not in _LEAF_COERCIONS
+
+    def test_the_refusal_names_the_key_as_written(self) -> None:
+        """A class is named by its name, anything else as Python writes it."""
+        with pytest.raises(TypeError, match=re.escape("register_leaf_type(int): confarg reads int itself")):
+            confarg.register_leaf_type(int, int)
+        with pytest.raises(
+            TypeError, match=re.escape("register_leaf_type(tuple[int, int]): tuple[int, int] is no class")
+        ):
+            confarg.register_leaf_type(tuple[int, int], tuple)
+
+    @pytest.mark.parametrize("key", [complex, _Ticket, Path, Decimal, datetime])
+    def test_a_key_construction_reaches_is_accepted(self, key: type) -> None:
+        """An unsupported class, a plain class, and a built-in leaf being replaced all register."""
+        confarg.register_leaf_type(key, lambda v: v)
+        assert key in _LEAF_COERCIONS
 
     def test_register_overrides_both_halves(self) -> None:
         """Re-registering the same type replaces the coercion and the serializer together."""
