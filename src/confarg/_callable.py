@@ -10,12 +10,11 @@ Dev Notes:
 
 from __future__ import annotations
 
-import contextlib
 import functools
 import inspect
 import types
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, NoReturn, cast, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, NoReturn, get_args, get_origin, get_type_hints
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -582,7 +581,7 @@ def _resolve_dict_spec(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
         return _resolve_bind_spec(spec[opener], args, tp, ctx)
     if opener == _defaults.CLASSFN_KEY:
         return _resolve_classfn_spec(spec[opener], args, ctx)
-    return _resolve_class_spec(_ClassSpec(spec[opener], args, spec), ctx)
+    return _resolve_class_spec(_ClassSpec(spec[opener], args), ctx)
 
 
 def _accepts(tp: Any, value: Any) -> bool:
@@ -707,7 +706,6 @@ class _ClassSpec:
 
     cls_path: str
     init_kwargs: dict
-    original: dict
 
 
 def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
@@ -715,7 +713,7 @@ def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
 
     ``init_kwargs`` (the other keys) are the constructor arguments; the instance must be
     callable (define ``__call__``). A partial over the instance is a ``bind:`` spec whose
-    target is this one.
+    target is this one. The instance dumps back from the fields it holds (:func:`_serialize_callable`).
 
     To use a class as a *factory* (calling it constructs an instance), give its bare
     fully-qualified name, or ``bind: <class>`` with pre-applied constructor args under ``args``.
@@ -734,8 +732,6 @@ def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
             f" '{spec.cls_path}', or 'bind: {spec.cls_path}' with its constructor args under 'args'."
         )
         raise TypeCoercionError(msg)
-    with contextlib.suppress(AttributeError, TypeError):
-        cast("Any", instance).__confarg_spec__ = spec.original
     return instance
 
 
@@ -776,29 +772,28 @@ def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
 def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]]) -> str | dict:
     """Serialize a callable value back to its config representation.
 
-    Class instance with __confarg_spec__ → stored spec dict (e.g. {class: ...}).
     Partial with pre-bound kwargs → {bind: <its target, serialized>, args: {k: v}}.
     Bare partial (a class used factory-like, no kwargs) → "module.qualname" string.
     Plain callable → "module.qualname" string, when that path reads back as it
     (:func:`_reads_back_from`); a closure, a lambda or a shadowed name is refused.
     Instance method → that path, beside its owner's fields when the owner has any
-    (:func:`_bound_method_spec`), which *owner_fields* reads off the owner.
-    Instance holding no spec, such as one a ``call:`` factory built → refused.
+    (:func:`_bound_method_spec`).
+    Callable instance → a ``class:`` spec beside the fields it holds (:func:`_object_spec`).
+    *owner_fields* reads the fields off an owner or an instance.
 
     Dev Notes:
         docs-dev/architecture/callables.md#round-trip
     """
-    spec = getattr(value, "__confarg_spec__", None)
-    if spec is not None:
-        return spec
-
     if isinstance(value, functools.partial):
         target = _serialize_callable(value.func, owner_fields)
         if value.keywords:
             return {_defaults.BIND_KEY: target, _defaults.ARGS_KEY: dict(value.keywords)}
         return target
 
-    if getattr(value, "__module__", None) and getattr(value, "__qualname__", None):
+    if not getattr(value, "__qualname__", None):
+        return _instance_spec(value, owner_fields)
+
+    if getattr(value, "__module__", None):
         path = dotted_name(value)
         if _reads_back_from(path, value):
             if _instance_method_owner(path) is None:
@@ -810,8 +805,28 @@ def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]
         )
         raise ConfargError.callable_not_spelled(value, reason)
 
-    reason = "it has no dotted path and holds no 'class:' spec it was built from"
-    raise ConfargError.callable_not_spelled(value, reason)
+    raise ConfargError.callable_not_spelled(value, "it has no dotted path")
+
+
+def _instance_spec(instance: Any, owner_fields: Callable[[Any], dict[str, Any]]) -> dict:
+    """Return the ``class:`` spec that builds a callable instance with the state it holds.
+
+    Raises:
+        ConfargError: If the instance's class does not import back from its dotted path, or if
+            :func:`_object_spec` refuses it.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#an-object-dumps-the-state-it-holds
+    """
+    cls = type(instance)
+    path_str = dotted_name(cls)
+    if not imports_back(path_str, cls):
+        reason = (
+            f"it has no dotted path of its own, and {path_str!r}, the path of its class, does not import back"
+            " as that class, as for a class defined in a function"
+        )
+        raise ConfargError.callable_not_spelled(instance, reason)
+    return _object_spec(_defaults.CLASS_KEY, path_str, instance, instance, owner_fields)
 
 
 def _bound_method_spec(path_str: str, method: Any, owner_fields: Callable[[Any], dict[str, Any]]) -> str | dict:
@@ -819,36 +834,53 @@ def _bound_method_spec(path_str: str, method: Any, owner_fields: Callable[[Any],
 
     *path_str* names *method* as an instance method, and reads back bound to an owner built
     with no arguments. An owner whose constructor takes none holds nothing that one lacks, so
-    the path is the spec. Any other owner is a struct, and dumps as a ``classfn:`` spec beside
-    the fields *owner_fields* reads off it.
-
-    Raises:
-        ConfargError: If the owner's constructor takes arguments and its class is no struct,
-            or if it has a field named like the ``classfn`` opener, which a spec cannot hold
-            beside it.
+    the path is the spec. Any other owner dumps as a ``classfn:`` spec beside its fields
+    (:func:`_object_spec`).
 
     Dev Notes:
-        docs-dev/architecture/callables.md#a-bound-method-dumps-its-owners-state
+        docs-dev/architecture/callables.md#an-object-dumps-the-state-it-holds
     """
-    owner = method.__self__
-    owner_cls = type(owner)
+    spec = _object_spec(_defaults.CLASSFN_KEY, path_str, method.__self__, method, owner_fields)
+    return path_str if spec.keys() == {_defaults.CLASSFN_KEY} else spec
+
+
+def _object_spec(
+    opener: str, path_str: str, obj: Any, value: Any, owner_fields: Callable[[Any], dict[str, Any]]
+) -> dict:
+    """Return the *opener* spec naming *path_str* that builds *obj* with the state it holds.
+
+    *obj* is a ``class:`` instance or a ``classfn:`` owner, and *value* the callable being
+    dumped, which messages name. An object whose constructor takes no argument holds nothing a
+    no-argument build lacks, so the opener stands alone. Any other is a struct, read through
+    *owner_fields* as a struct field is.
+
+    Raises:
+        ConfargError: If the constructor takes arguments and the class is no struct, or if the
+            object has a field named like the ``classfn`` opener, which no object spec can hold
+            beside its own.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#an-object-dumps-the-state-it-holds
+    """
+    cls = type(obj)
+    whose = "its" if obj is value else "its owner's"
     try:
-        takes_arguments = bool(inspect.signature(owner_cls).parameters)
+        takes_arguments = bool(inspect.signature(cls).parameters)
     except (ValueError, TypeError):
         takes_arguments = True
     if not takes_arguments:
-        return path_str
-    if not _is_struct(owner_cls):
+        return {opener: path_str}
+    if not _is_struct(cls):
         reason = (
-            f"{path_str!r} reads back bound to an owner built with no arguments, and the"
-            f" {owner_cls.__qualname__} it is bound to has no fields a 'classfn:' spec could set"
+            f"{whose} class, {cls.__qualname__}, takes constructor arguments, and has no fields a"
+            f" '{opener}:' spec could set"
         )
-        raise ConfargError.callable_not_spelled(method, reason)
-    fields = owner_fields(owner)
+        raise ConfargError.callable_not_spelled(value, reason)
+    fields = owner_fields(obj)
     if _defaults.CLASSFN_KEY in fields:
         reason = (
-            f"its owner, a {owner_cls.__qualname__}, has a field named {_defaults.CLASSFN_KEY!r},"
-            " which a 'classfn:' spec cannot hold beside its opener"
+            f"{whose} class, {cls.__qualname__}, has a field named {_defaults.CLASSFN_KEY!r},"
+            f" which a '{opener}:' spec cannot hold beside its opener"
         )
-        raise ConfargError.callable_not_spelled(method, reason)
-    return {_defaults.CLASSFN_KEY: path_str, **fields}
+        raise ConfargError.callable_not_spelled(value, reason)
+    return {opener: path_str, **fields}

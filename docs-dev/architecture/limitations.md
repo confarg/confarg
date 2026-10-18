@@ -199,12 +199,10 @@ A field default is the layer below every source only where the class declares it
   does not replay constructor calls.
 - A `call:` result is dumped from the object as the value it produced, never as the call
   ([design decision](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
-  A result that no configuration spells, such as a closure, a lambda or an instance no spec
-  built, cannot be dumped from the object. The merged dict keeps the call, and `dump_file()`
+  A result that no configuration spells, such as a closure, a lambda or an instance whose
+  fields cannot be read, cannot be dumped from the object. The merged dict keeps the call, and `dump_file()`
   writes it as written.
-- A `class:` instance dumps the arguments it was built with, stamped on it at `build()`. A
-  change made to it afterwards is not dumped ([callables](callables.md#round-trip)).
-- A bound method's owner dumps as a plain class does, its constructor parameters read off the same-named attributes: an owner that stores a parameter transformed dumps the transformed value, which the constructor transforms again on read-back ([callables](callables.md#a-bound-method-dumps-its-owners-state)).
+- A callable instance and a bound method's owner dump as a plain class does, their constructor parameters read off the same-named attributes: one that stores a parameter transformed dumps the transformed value, which the constructor transforms again on read-back, and one that keeps it under another name cannot be dumped from the object ([callables](callables.md#an-object-dumps-the-state-it-holds)).
 - An expression cannot read a `call:` result: expressions resolve before construction
   ([expressions](expressions/resolution.md#calls-and-expressions-share-one-graph)).
 - Attribute docstrings used as `--help` text require the class source, which is unavailable for

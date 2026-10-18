@@ -65,6 +65,36 @@ class _NoArgCallable:
         return x + 1
 
 
+@dataclass(frozen=True)
+class _FrozenMultiplier:
+    """A callable instance that refuses attributes, so nothing can be stamped on it."""
+
+    factor: int
+
+    def __call__(self, x: int) -> int:
+        return x * self.factor
+
+
+class _HiddenMultiplier:
+    """A callable instance that keeps its argument under another name, so its state cannot be read."""
+
+    def __init__(self, factor: int) -> None:
+        self._factor = factor
+
+    def __call__(self, x: int) -> int:
+        return x * self._factor
+
+
+class _CallableWithClassfn:
+    """A callable instance whose constructor parameter is named like the ``classfn`` opener."""
+
+    def __init__(self, classfn: int) -> None:
+        self.classfn = classfn
+
+    def __call__(self, x: int) -> int:
+        return x + self.classfn
+
+
 class _Processor:
     """Class with an instance method used as a callable."""
 
@@ -128,7 +158,7 @@ def _greeter(name: str) -> Callable[[], str]:
 
 
 def _multiplier(factor: int) -> Callable[[int], int]:
-    """Factory function: returns a callable instance it built itself, which no spec describes."""
+    """Factory function: returns a callable instance it built itself, which no ``class:`` spec built."""
     return _Multiplier(factor)
 
 
@@ -1222,7 +1252,7 @@ class TestSerialization:
         assert dumped["fn"] == {"bind": f"{_MOD}._add", "args": {"y": 7}}
 
     def test_round_trip_partial_over_a_class_spec(self, tmp_json: Any) -> None:
-        """A partial over a class: instance dumps its target as the class: spec it was built from."""
+        """A partial over a class: instance dumps its target as the class: spec of the fields it holds."""
 
         @dataclass
         class Target:
@@ -1240,14 +1270,12 @@ class TestSerialization:
             pytest.param(["--fn.bind.class", f"{_MOD}._Multiplier", "--fn.bind.factor", "2"], id="nested"),
         ],
     )
-    def test_a_stamped_spec_from_the_cli_dumps_plain_strings(self, argv: list[str]) -> None:
-        """A spec the CLI spelled dumps its text as plain str, never as the tokens it was parsed into."""
-        dumped = confarg.dump(confarg.load(WithCallable, argv=argv, env={}))
-
-        def leaves(node: Any) -> list[Any]:
-            return [x for v in node.values() for x in leaves(v)] if isinstance(node, dict) else [node]
-
-        assert {type(leaf) for leaf in leaves(dumped["fn"])} == {str}
+    def test_a_spec_from_the_cli_dumps_the_values_built_from_its_tokens(self, argv: list[str]) -> None:
+        """A spec the CLI spelled dumps what its instance holds, never the tokens it was parsed into."""
+        dumped = confarg.dump(confarg.load(WithCallable, argv=argv, env={}))["fn"]
+        assert dumped == {"class": f"{_MOD}._Multiplier", "factor": 2}
+        assert type(dumped["class"]) is str
+        assert type(dumped["factor"]) is int
 
 
 class TestDumpOfACallResult:
@@ -1280,11 +1308,10 @@ class TestDumpOfACallResult:
         confarg.dump_file(raw, out)
         assert json.loads(out.read_text())["fn"] == raw["fn"]
 
-    def test_a_returned_instance_is_refused_towards_the_merged_dict(self) -> None:
-        """An instance the factory built has no spelling: the refusal points at the merged dict, as a closure's does."""
+    def test_a_returned_instance_dumps_the_state_it_holds(self) -> None:
+        """An instance the factory built dumps as the ``class:`` spec of its fields, never as the call (BUG-192)."""
         cfg = confarg.build(WithCallable, {"fn": {"call": f"{_MOD}._multiplier", "args": {"factor": 3}}})
-        with pytest.raises(ConfargError, match=r"no configuration spells it.*Dump the merged configuration"):
-            confarg.dump(cfg)
+        assert confarg.dump(cfg)["fn"] == {"class": f"{_MOD}._Multiplier", "factor": 3}
 
 
 class TestDumpOfABoundMethod:
@@ -1349,6 +1376,118 @@ class TestDumpOfABoundMethod:
         """A field named like the opener cannot sit beside it, so no spec spells the owner."""
         with pytest.raises(ConfargError, match=r"no configuration spells it.*'classfn'"):
             confarg.dump(WithCallable(fn=_OwnerWithClassfn(1).method))
+
+
+class _Gain(enum.Enum):
+    """A callable instance whose class is no struct: no spec builds a member from fields."""
+
+    UNIT = 1
+
+    def __call__(self, x: int) -> int:
+        return x * self.value
+
+
+class TestDumpOfAClassInstance:
+    """A callable instance dumps the state it holds, as a ``class:`` spec (BUG-192).
+
+    It is read as a bound method's owner is, so the two object openers dump alike.
+    """
+
+    def test_a_change_after_build_is_dumped(self) -> None:
+        """The instance's fields are read when dumping, so a change made after build() is kept."""
+        cfg = confarg.build(WithCallable, {"fn": {"class": f"{_MOD}._Multiplier", "factor": 3}})
+        assert isinstance(cfg.fn, _Multiplier)
+        cfg.fn.factor = 5
+        assert confarg.dump(cfg)["fn"] == {"class": f"{_MOD}._Multiplier", "factor": 5}
+
+    def test_an_instance_that_refuses_attributes_dumps_its_fields(self) -> None:
+        """A frozen instance holds no stamp, and dumps from its fields all the same."""
+        spec = {"class": f"{_MOD}._FrozenMultiplier", "factor": 3}
+        assert confarg.dump(confarg.build(WithCallable, {"fn": spec}))["fn"] == spec
+
+    def test_an_instance_built_in_python_dumps_its_fields(self) -> None:
+        """An instance the program built dumps its fields, and reads back as itself."""
+        dumped = confarg.dump(WithCallable(fn=_Multiplier(4)))["fn"]
+        assert dumped == {"class": f"{_MOD}._Multiplier", "factor": 4}
+        assert confarg.build(WithCallable, {"fn": dumped}).fn(2) == 8
+
+    def test_an_instance_with_no_fields_dumps_as_its_opener_alone(self) -> None:
+        """An instance whose constructor takes no argument is a ``class:`` spec holding nothing else.
+
+        The bare path would read back as the class, used as a factory.
+        """
+        dumped = confarg.dump(WithCallable(fn=_NoArgCallable()))["fn"]
+        assert dumped == {"class": f"{_MOD}._NoArgCallable"}
+        assert confarg.build(WithCallable, {"fn": dumped}).fn(1) == 2
+
+    def test_a_partial_over_an_instance_dumps_its_state_as_the_target(self) -> None:
+        """A partial's target is serialized by the same rules, a change made after build() included."""
+
+        @dataclass
+        class Target:
+            fn: Callable[[], int]
+
+        cfg = confarg.build(Target, {"fn": {"bind": {"class": f"{_MOD}._Multiplier", "factor": 4}, "args": {"x": 2}}})
+        assert isinstance(cfg.fn, functools.partial)
+        assert isinstance(cfg.fn.func, _Multiplier)
+        cfg.fn.func.factor = 6
+        dumped = confarg.dump(cfg)["fn"]
+        assert dumped == {"bind": {"class": f"{_MOD}._Multiplier", "factor": 6}, "args": {"x": 2}}
+        assert confarg.build(Target, {"fn": dumped}).fn() == 12
+
+    def test_an_instance_whose_state_cannot_be_read_is_refused(self) -> None:
+        """An instance that keeps an argument under another name is refused, as a plain class field is."""
+        cfg = confarg.build(WithCallable, {"fn": {"class": f"{_MOD}._HiddenMultiplier", "factor": 3}})
+        with pytest.raises(ConfargError, match=r"_HiddenMultiplier at 'fn': field 'factor' is declared"):
+            confarg.dump(cfg)
+
+    def test_an_instance_that_is_no_struct_is_refused(self) -> None:
+        """An enum member names no class a ``class:`` spec could build it from."""
+        with pytest.raises(ConfargError, match=r"no configuration spells it.*no fields a 'class:' spec could set"):
+            confarg.dump(WithCallable(fn=_Gain.UNIT))
+
+    def test_a_field_named_classfn_is_refused(self) -> None:
+        """A field named like the other object opener would read back as a second opener."""
+        with pytest.raises(ConfargError, match=r"no configuration spells it.*'classfn'"):
+            confarg.dump(WithCallable(fn=_CallableWithClassfn(1)))
+
+
+class _CountedMultiplier:
+    """A callable instance that counts how many times its constructor ran."""
+
+    built = 0
+
+    def __init__(self, factor: int) -> None:
+        type(self).built += 1
+        self.factor = factor
+
+    def __call__(self, x: int) -> int:
+        return x * self.factor
+
+
+class TestDumpOfAnOptionalCallable:
+    """An optional Callable dumps as its variant does: no other variant can take the dump back."""
+
+    @pytest.mark.parametrize(
+        ("fn", "expected"),
+        [
+            pytest.param(functools.partial(_add, y=1), {"bind": f"{_MOD}._add", "args": {"y": 1}}, id="partial"),
+            pytest.param(_Processor(3).process, {"classfn": f"{_MOD}._Processor.process", "offset": 3}, id="method"),
+            pytest.param(_Multiplier(2), {"class": f"{_MOD}._Multiplier", "factor": 2}, id="instance"),
+        ],
+    )
+    @pytest.mark.filterwarnings("error::confarg.exceptions.ConfargWarning")
+    def test_it_dumps_without_warning(self, fn: Callable[[int], int], expected: dict[str, Any]) -> None:
+        """A value with no equality of its own still reads back, so no warning says it will not."""
+        assert confarg.dump(WithOptionalCallable(fn=fn))["fn"] == expected
+
+    @pytest.mark.filterwarnings("ignore::confarg.exceptions.ConfargWarning")
+    def test_dump_builds_nothing(self) -> None:
+        """No constructor runs to check the dump, as no path check builds one."""
+        cfg = WithOptionalCallable(fn=_CountedMultiplier(2))
+        _CountedMultiplier.built = 0
+        confarg.dump(cfg)
+        assert _CountedMultiplier.built == 0
 
 
 # ---------------------------------------------------------------------------

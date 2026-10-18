@@ -224,16 +224,6 @@ class _NotCallableClass:
         self.value = value
 
 
-class _SlottedCallableClass:
-    __slots__ = ("value",)
-
-    def __init__(self, value: int) -> None:
-        self.value = value
-
-    def __call__(self) -> int:
-        return self.value
-
-
 class _NonStructSubBase:
     field_a: int
 
@@ -1143,18 +1133,9 @@ class TestCallableBranches:
         cls_path = f"{_NotCallableClass.__module__}.{_NotCallableClass.__qualname__}"
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="is not callable"):
             _resolve_class_spec(
-                _ClassSpec(cls_path, {}, {"class": cls_path}),
+                _ClassSpec(cls_path, {}),
                 _SpecContext(("test_path",), "class", construct),
             )
-
-    def test_slotted_callable_confarg_spec_except_branch(self) -> None:
-        """A slotted callable class resolves successfully in _resolve_class_spec."""
-        cls_path = f"{_SlottedCallableClass.__module__}.{_SlottedCallableClass.__qualname__}"
-        result = _resolve_class_spec(
-            _ClassSpec(cls_path, {"value": 5}, {"class": cls_path, "value": 5}),
-            _SpecContext(("test_path",), "class", construct),
-        )
-        assert callable(result)
 
     def test_check_callable_signature_non_callable_type_returns_early(self) -> None:
         """_check_callable_signature is a no-op when the target type is not Callable."""
