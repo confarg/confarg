@@ -165,6 +165,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | "does this serialized value read back as itself?" | `_serialize._reads_back` |
 | "does this dotted path import back as this object?" | `_import.imports_back` — `_serialize._class_path` writes a class tag or a `type[X]` leaf, and `_serialize_callable` a callable, only when it holds (BUG-193, [types](types/dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back)) |
 | "does this dotted path read back as this callable?" | `_callable._reads_back_from` — `imports_back`, except that an instance method reads back bound to a new owner of exactly the class `_instance_method_owner` names; the path is imported, never resolved, so `dump()` builds nothing (BUG-193, [callables](callables.md#a-path-is-written-only-when-it-reads-back)) |
+| "which spec dumps a bound method with the state its owner holds?" | `_callable._bound_method_spec` — the bare path for an owner whose constructor takes no argument, else a `classfn:` spec beside the owner's fields, read as a struct's; every bound method dumps through it, whoever built its owner (BUG-229, [callables](callables.md#a-bound-method-dumps-its-owners-state)) |
 | the `{__cast__, __value__}` spelling | `_serialize._cast_dict` |
 | "which leaf variant steals a token?" | `typedload._coerce._steal_rank` |
 | "does this type get taken apart into fields?" | `typedload._coerce._is_struct_variant` |

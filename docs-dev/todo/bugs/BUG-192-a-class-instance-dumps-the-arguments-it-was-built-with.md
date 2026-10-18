@@ -2,7 +2,6 @@
 filed: 2026-10-07
 where:
   - src/confarg/_callable.py::_resolve_class_spec  # the stamp
-  - src/confarg/_callable.py::_resolve_classfn_spec  # the owner's stamp
   - src/confarg/_callable.py::_serialize_callable
 effort: M
 risk: low
@@ -15,9 +14,7 @@ introduced_by: [PR-5]  # the initial version dumps a class: instance from its st
 
 `dump()` writes the state of the built object
 ([the object dump writes state](../../architecture/design-decisions/the-object-dump-writes-state.md)).
-A `class:` instance on a Callable field, and a `classfn:` method's owner, dump from the spec
-stamped on them at `build()` instead. A change made to them afterwards is lost from the dump, as
-the limitation records ([limitations](../../architecture/limitations.md#callables-and-serialization)).
+A `class:` instance on a Callable field dumps from the spec stamped on it at `build()` instead. A change made to it afterwards is lost from the dump, as the limitation records ([limitations](../../architecture/limitations.md#callables-and-serialization)).
 An instance that refuses the stamp, such as a frozen dataclass, has nothing to dump from at all:
 `dump()` raises, and its message blames a missing `__qualname__` rather than the refused stamp.
 
@@ -27,12 +24,12 @@ would work for a frozen one. A class that does not store its constructor argumen
 would then have no dump, where it dumps its stamp today. Whether the stamp stays as a fallback
 for such a class is the design question.
 
+BUG-229 settled the same question for a bound method's owner: the `classfn:` stamp is gone, and the owner dumps the fields it holds, read as a struct's, with no fallback, so an owner that keeps an argument under another name is refused ([callables](../../architecture/callables.md#a-bound-method-dumps-its-owners-state)). Reading a `class:` instance the same way would make the two object openers dump alike.
+
 Origin: the initial version stamped every `class:` instance with its spec, so that `dump()` could
 write a Callable field back at all. A callable instance has no field list a dataclass would give
 it. The bug is latent: the stamp never tracked later changes, and the rule it breaks was only
-written down when FEAT-33 was declined. BUG-229 shares the origin from the auto-binding side: a
-method bound to an owner with state dumps as its bare path, and the same answer probably settles
-both.
+written down when FEAT-33 was declined. BUG-229, closed, shared the origin from the auto-binding side.
 
 ```python
 from collections.abc import Callable

@@ -202,9 +202,9 @@ A field default is the layer below every source only where the class declares it
   A result that no configuration spells, such as a closure, a lambda or an instance no spec
   built, cannot be dumped from the object. The merged dict keeps the call, and `dump_file()`
   writes it as written.
-- A `class:` instance and a `classfn:` owner dump the arguments they were built with, stamped
-  on them at `build()`. A change made to them afterwards is not dumped
-  ([callables](callables.md#round-trip)).
+- A `class:` instance dumps the arguments it was built with, stamped on it at `build()`. A
+  change made to it afterwards is not dumped ([callables](callables.md#round-trip)).
+- A bound method's owner dumps as a plain class does, its constructor parameters read off the same-named attributes: an owner that stores a parameter transformed dumps the transformed value, which the constructor transforms again on read-back ([callables](callables.md#a-bound-method-dumps-its-owners-state)).
 - An expression cannot read a `call:` result: expressions resolve before construction
   ([expressions](expressions/resolution.md#calls-and-expressions-share-one-graph)).
 - Attribute docstrings used as `--help` text require the class source, which is unavailable for

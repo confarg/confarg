@@ -28,9 +28,7 @@ The surrounding rules, settled with it:
   for the reason given in [bind yields a partial](bind-yields-a-partial-of-its-target.md): any
   callable spec as a target covers that case, and others too, such as calling a `class:`
   instance.
-- **A `classfn:` result dumps as its spec.** A bound method cannot carry an attribute, so the
-  owner is stamped with the spec, and `_serialize_callable` reads it back when the stamp holds
-  a `classfn` opener.
+- **A bound method dumps as a `classfn:` spec**, its owner's fields read off the owner, whoever built it ([callables](../callables.md#a-bound-method-dumps-its-owners-state)). The owner was stamped with its spec until BUG-229, which lost every change made after `build()`.
 
 Rejected:
 

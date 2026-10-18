@@ -13,7 +13,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
 | [BUG-227 — A delete beside an include never reaches the files below](BUG-227-a-delete-beside-an-include-never-reaches-the-files-below.md) | critical |  | S | medium | behavior | PR-5, PR-97 |
-| [BUG-229 — A method bound to an owner that holds state dumps as its bare path, losing the state](BUG-229-a-method-bound-to-an-owner-with-state-dumps-as-its-bare-path.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-192 — A `class:` instance dumps the arguments it was built with, not the values it holds](BUG-192-a-class-instance-dumps-the-arguments-it-was-built-with.md) | critical |  | M | low | behavior | PR-5 |
 | [BUG-231 — A callable opener merges with the spec a lower layer set instead of replacing it](BUG-231-a-callable-opener-merges-with-the-spec-a-lower-layer-set.md) | critical |  | M | high | behavior | PR-5 |
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |

@@ -471,7 +471,7 @@ class TestCallableEdgeCases:
         obj.__module__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __module__ to trigger fallback path
         obj.__qualname__ = None  # ty: ignore[unresolved-attribute]  # deliberately clobber __qualname__ to trigger fallback path
         with pytest.raises(confarg.exceptions.ConfargError, match="has no dotted path"):
-            _serialize_callable(obj)
+            _serialize_callable(obj, lambda _: pytest.fail("no owner to read"))
 
 
 # ---------------------------------------------------------------------------

@@ -221,14 +221,14 @@ A callable therefore dumps as what it is, opener by opener:
 | Built from | Dumps as |
 |---|---|
 | a function, a class, a static or class method | its dotted path, when it reads back as the callable |
-| an instance method, bound by [auto-binding](#auto-binding) | the path through its owner's class, which reads back bound to a new owner |
+| an instance method, whoever built its owner | the path through its owner's class beside the fields the owner holds, as a `classfn:` spec; the bare path when the owner's constructor takes no argument ([a bound method dumps its owner's state](#a-bound-method-dumps-its-owners-state)) |
 | `bind:` | `{bind: <target>, args: {<keywords>}}`, whatever the keywords spell; a bare path when nothing is bound. The target is serialized by these same rules |
 | `class:` | the spec stamped on the instance as `__confarg_spec__` |
-| `classfn:` | the spec stamped on the owner: a bound method refuses attributes, so a method bound to an owner whose stamp holds a `classfn` opener dumps as that stamp |
+| `classfn:` | the instance method it yields, by the row above |
 | `call:` | the callable it returned, by the rows above |
 
 The stamp is best effort, since some objects refuse attributes. A partial over a `class:`
-instance dumps the stamp as its nested target. Either stamp holds the arguments the object was
+instance dumps the stamp as its nested target. The stamp holds the arguments the instance was
 built with ([limitations](limitations.md#callables-and-serialization)). A stamp is merged data,
 so it leaves through `_serialize_untyped`, which unwraps the CLI's tokens as it does in a raw
 dict.
@@ -253,12 +253,27 @@ bound to the same class.
 
 `dotted_name` spells a bound method through the class it is bound to: a method a base defines
 has the base in its qualified name, and `"pkg.Sub.m"` loaded through auto-binding would dump as
-`pkg.Base.m`, bound to a base on read-back. The check does not see an owner's state: a method
-bound to an instance with other values than its no-argument construction dumps as the same path.
+`pkg.Base.m`, bound to a base on read-back. The check does not see an owner's state, which is
+written beside the path ([a bound method dumps its owner's state](#a-bound-method-dumps-its-owners-state)).
 
 Precedent: `pickle` writes a function by reference the same way, which catches every
 unimportable or shadowed name, not only the two markers
 ([dotted imports](types/dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back)).
+
+### A bound method dumps its owner's state
+
+The path of an instance method reads back bound to an owner built with no arguments, which is the owner again only when the owner holds nothing such a build lacks. So a method dumps as the `classfn:` spec that builds its owner with the state it holds: the owner is read as a struct field is, each constructor parameter off the same-named attribute (`_serialize._serialize_struct`, handed to `_serialize_callable` by the serializer, which knows the path, the union tag and the tag policy). Whoever built the owner — auto-binding, a `classfn:` spec, a `call:` factory or the program — and whatever changed in it after `build()`, the dump holds what the owner holds ([the object dump writes state](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)). `_callable._bound_method_spec` is the one place that decides it.
+
+An owner whose constructor takes no argument dumps as the bare path, since a no-argument build is the only one it has. That is asked of `inspect.signature(owner)`, not of the struct introspection, which reads an inherited `object.__init__` as `*args` and `**kwargs` fields. Two owners are refused, since no spec builds them: one whose class is no struct, such as an `Enum` member, and one with a field named `classfn`, which a spec cannot hold beside its opener ([an opener's word is never an argument](#an-openers-word-is-never-an-argument)). An owner that keeps a constructor argument under another name is refused as a plain class field is.
+
+The `classfn:` owner used to be stamped with its spec, as a `class:` instance still is. The stamp held the arguments the owner was built with, so a change made after `build()` was lost; a frozen owner refused it; and an owner the program or a factory built had none, so its method dumped as the bare path and read back bound to a fresh owner, its state gone with no error (BUG-229).
+
+Rejected:
+
+- **Write the bare path only for an owner auto-binding built**, marked as it is built, and refuse any other. A method of an owner the program built with no arguments would be refused though its path reads back, and a change made after `build()` would still be lost.
+- **Write the bare path when the owner's fields equal a no-argument build's.** `dump()` would build an object to compare with, and the path check builds nothing.
+
+Precedent: `pickle` reduces a bound method to `getattr(owner, name)` and pickles the owner by the state it holds, never by replaying its constructor; pydantic's `model_dump` and cattrs' `unstructure` read attributes the same way.
 
 ## CLI
 

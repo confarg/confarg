@@ -505,6 +505,38 @@ class TestNonDataclassErrors:
             confarg.load(int, argv=["42"], env={})
 
 
+class _Hidden:
+    """Plain class that keeps its argument under another name, so dump() cannot read it back."""
+
+    def __init__(self, offset: int) -> None:
+        self._offset = offset
+
+
+@dataclass
+class _HoldsHidden:
+    h: _Hidden | None
+    hs: list[_Hidden]
+
+
+class TestUnreadablePlainClassField:
+    """A plain class whose state dump() cannot read is refused at the path that holds it."""
+
+    @pytest.mark.parametrize(
+        ("value", "where"),
+        [
+            pytest.param(_HoldsHidden(h=_Hidden(1), hs=[]), "h", id="field"),
+            pytest.param(_HoldsHidden(h=None, hs=[_Hidden(1)]), "hs[0]", id="list-item"),
+        ],
+    )
+    def test_the_message_names_the_path(self, value: _HoldsHidden, where: str) -> None:
+        """The refusal says where the instance sits, not only which class it is."""
+        with pytest.raises(confarg.exceptions.ConfargError) as exc_info:
+            confarg.dump(value)
+        assert str(exc_info.value).startswith(
+            f"Cannot serialize _Hidden at '{where}': field 'offset' is declared in _Hidden.__init__"
+        )
+
+
 class TestRemoteSourceErrors:
     """Messages for the failures only a remote config source can have."""
 

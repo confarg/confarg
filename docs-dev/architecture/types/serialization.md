@@ -36,5 +36,7 @@ through the same `_serialize_leaf` — plus the one thing only a raw dict holds,
 - `_serialize` writes the state of the built object: resolved values, and never the `call:`
   that produced one
   ([design decision](../design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
-  Callables dump as what they are, a `class:` or `classfn:` stamp included, and the
-  stamp leaves through `_serialize_untyped` ([callables](../callables.md#round-trip)).
+  Callables dump as what they are, a `class:` stamp included, and the
+  stamp leaves through `_serialize_untyped` ([callables](../callables.md#round-trip)). A bound
+  method's owner is serialized as a struct, its fields typed
+  ([callables](../callables.md#a-bound-method-dumps-its-owners-state)).
