@@ -786,6 +786,46 @@ class TestAnOverrideThatReplacesTheListBelow:
 
 
 @dataclass
+class _OverAPin:
+    extra: Any = None
+    port: int | dict[str, int] = 0
+    xs: list[int] = dataclasses.field(default_factory=list)
+
+
+class TestADictOverAPinReplacesIt:
+    """A dict over a lower layer's cast pin replaces it, as it replaces the plain value the pin stands for (BUG-239).
+
+    The pin is a value; the merge read it as one in the override only, and a dict over it was
+    merged into it key by key.
+    """
+
+    @pytest.mark.parametrize(
+        ("field", "upper", "expected"),
+        [
+            pytest.param("extra", "{a: 1}", {"a": 1}, id="any"),
+            pytest.param("port", "{https: 443}", {"https": 443}, id="union-holding-a-dict"),
+        ],
+    )
+    @pytest.mark.parametrize("lower", ["{__cast__: int, __value__: '5'}", "5"], ids=["pin", "plain"])
+    def test_a_higher_dict_replaces_it(self, tmp_yaml, field: str, upper: str, expected: Any, lower: str) -> None:
+        """The pin's lines build what the plain value's do."""
+        a = tmp_yaml(f"{field}: {lower}\n", "a.yaml")
+        b = tmp_yaml(f"{field}: {upper}\n", "b.yaml")
+        assert getattr(confarg.load(_OverAPin, argv=[], env={}, files=[a, b]), field) == expected
+
+    def test_an_op_over_it_has_nothing_below(self) -> None:
+        """An append over a pin replaces it, as over a scalar, and is left for ``build()``."""
+        pin = {"__cast__": "int", "__value__": "5"}
+        assert _deep_merge({"xs": pin}, {"xs": {ListOp.APPEND: [1]}}) == {"xs": {ListOp.APPEND: [1]}}
+
+    def test_a_sibling_dict_replaces_an_included_pin(self, tmp_yaml) -> None:
+        """Within one document, keys beside an include replace the pin it brings rather than joining it."""
+        tmp_yaml("extra: {__cast__: int, __value__: '5'}\n", "pin.yaml")
+        top = tmp_yaml("__include__: pin.yaml\nextra: {a: 1}\n", "top.yaml")
+        assert confarg.load(_OverAPin, argv=[], env={}, files=[top]).extra == {"a": 1}
+
+
+@dataclass
 class _CallPoint:
     a: int = 0
     b: int = 0
