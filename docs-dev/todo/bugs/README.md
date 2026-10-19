@@ -25,6 +25,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-219 — A fragment appended to a list loses its `locals`](BUG-219-a-fragment-appended-to-a-list-loses-its-locals.md) | major |  | M | high | behavior | PR-105 |
 | [BUG-233 — The CLI refuses a nested spec below a `class:` constructor argument](BUG-233-the-cli-refuses-a-nested-spec-below-a-class-constructor-argument.md) | major |  | M | medium | behavior | PR-11 |
 | [BUG-234 — A Callable beside another union variant is never built from a spec](BUG-234-a-callable-beside-another-union-variant-is-never-built-from-a-spec.md) | major |  | M | medium | behavior | PR-5 |
+| [BUG-238 — A restated opener or tag in one source keeps what the first one took](BUG-238-a-restated-opener-or-tag-in-one-source-keeps-what-the-first-one-took.md) | major |  | M | medium | behavior | PR-5 |
 | [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-107 — A real field named like the tag, nested inside a union variant, is stripped by the type check](BUG-107-a-nested-real-field-named-like-the-tag-is-stripped-by-the-union-type-check.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-108 — A plain fixed tuple accepts the index spellings a namedtuple refuses](BUG-108-a-plain-fixed-tuple-accepts-the-index-spellings-a-namedtuple-refuses.md) | minor |  | S | medium | behavior | PR-5 |
@@ -44,6 +45,7 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-222 — A registered `NewType` crashes with a raw `TypeError`](BUG-222-a-registered-newtype-crashes-with-a-raw-typeerror.md) | minor |  | S | medium | behavior | PR-37 |
 | [BUG-235 — A union tag that is no string escapes `build()` as a raw `AttributeError`](BUG-235-a-tag-that-is-no-string-escapes-as-a-raw-attributeerror.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-237 — A list item reads the files' merge shorthand only beside an include](BUG-237-a-list-item-reads-the-files-merge-shorthand-only-beside-an-include.md) | minor |  | S | medium | behavior | PR-5 |
+| [BUG-239 — A cast pin below a dict is merged into it](BUG-239-a-cast-pin-below-a-dict-is-merged-into-it.md) | minor |  | S | low | behavior | PR-50 |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | minor |  | M | low | behavior | PR-5, PR-13, PR-26, BUG-179 |
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | minor |  | M | medium | behavior | PR-38 |
 | [BUG-177 — A collection root's bare flag takes one token, which construction refuses](BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md) | minor |  | M | medium | behavior | PR-5 |
