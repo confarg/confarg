@@ -9,7 +9,7 @@ following value is interpreted, bypassing the type-directed "magic":
 
 - ``.str`` / ``.int`` / ``.float`` / ``.bool`` — pin a scalar leaf type (overrides the
   union "stealing rule").
-- ``.json`` — parse the value as JSON, storing the decoded structure raw.
+- ``.json`` — parse the value as JSON, storing the decoded structure raw, as data.
 
 This module defines *which* names are casts, *what value* each produces, whether the field's
 type admits the cast at all (:func:`holds_the_cast` — a cast names one of the types the field
@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from confarg import _defaults
 from confarg._merge import MergeAt, MergeDict, _deep_merge, _merge_within_source
 from confarg._types import _is_union, _Pinned, _resolve_type, _StrToken, _union_args_no_none
 from confarg.exceptions import ConfargError, TypeCoercionError
@@ -40,12 +41,51 @@ _SCALAR_CAST_NAMES: dict[type, str] = {tp: name for name, tp in SCALAR_CAST_TYPE
 FORCE_CAST_NAMES: frozenset[str] = frozenset({*SCALAR_CAST_TYPES, JSON_CAST_NAME})
 
 
+def decode_json(raw: str, spelling: str) -> Any:
+    """Decode the JSON value a flag or a variable carries, as data.
+
+    The one decoder of a value argv or the environment spells as JSON: a ``.json`` cast, the
+    root cast, a whole-value flag or variable, and an item appended as JSON. A decoded value is
+    data, so none of its keys is ever read as a merge op; only a file's are. A key confarg
+    reserves is refused at any depth, as it is on a flag's path.
+
+    Args:
+        raw: The text to decode.
+        spelling: The flag or the variable as its channel writes it, for the refusal.
+
+    Returns:
+        The decoded value.
+
+    Raises:
+        json.JSONDecodeError: If *raw* is no JSON, for the caller to report or fall back on.
+        ConfargError: If an object in the value holds a key of ``_defaults.RESERVED_KEYS``.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data
+    """
+    value = json.loads(raw)
+    _refuse_reserved_keys(value, spelling)
+    return value
+
+
+def _refuse_reserved_keys(value: Any, spelling: str) -> None:
+    """Raise if an object at any depth of the decoded *value* holds a key confarg reserves."""
+    if isinstance(value, list):
+        for item in value:
+            _refuse_reserved_keys(item, spelling)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if key in _defaults.RESERVED_KEYS:
+                raise ConfargError.reserved_key(spelling, key)
+            _refuse_reserved_keys(item, spelling)
+
+
 def resolve_forced_value(cast_name: str, raw: str, *, flag: str = "") -> Any:
     """Produce the stored value for an explicit ``.<cast>`` suffix.
 
     Scalar casts yield a :class:`_Pinned` token (deferred single-type coercion that
     bypasses union stealing); ``json`` decodes the value immediately and stores the
-    structure raw, raising on invalid JSON.
+    structure raw, as data (:func:`decode_json`), raising on invalid JSON.
 
     Args:
         cast_name: One of :data:`FORCE_CAST_NAMES`.
@@ -56,11 +96,12 @@ def resolve_forced_value(cast_name: str, raw: str, *, flag: str = "") -> Any:
         A ``_Pinned`` for scalar casts, or the decoded JSON value for ``json``.
 
     Raises:
-        ConfargError: If ``cast_name`` is ``json`` and ``raw`` is not valid JSON.
+        ConfargError: If ``cast_name`` is ``json`` and ``raw`` is not valid JSON, or holds a
+            key confarg reserves.
     """
     if cast_name == JSON_CAST_NAME:
         try:
-            return json.loads(raw)
+            return decode_json(raw, flag or JSON_CAST_NAME)
         except json.JSONDecodeError as e:
             label = flag or "value"
             msg = f"Invalid JSON for {label}: {e}"

@@ -139,17 +139,8 @@ def _apply_append_key(plain_key: str, new_val: Any, result: MergeDict) -> None:
         result[plain_key] = {ListOp.APPEND: items}
 
 
-def _normalize_items(items: list[Any]) -> list[Any]:
-    """Return *items* with each one normalized, and the key deletes they hold dropped; *items* itself when unchanged.
-
-    An item has no layer below it, so a delete has removed its key from the item and ends there.
-    """
-    out = [_without_key_deletes(_normalize_merge_ops(v)) for v in items]
-    return out if any(new is not old for new, old in zip(out, items, strict=True)) else items
-
-
 def _normalize_merge_ops(d: Any) -> Any:
-    """Recursively normalise ``key+`` / ``key-`` shorthand and the reserved op keys in file-sourced dicts.
+    """Read the ``key+`` / ``key-`` shorthand and the reserved op keys of one dict of a file's document.
 
     Transforms:
     - ``key+: val``        → ``key: {ListOp.APPEND: list(val)}``   (append to list)
@@ -157,30 +148,26 @@ def _normalize_merge_ops(d: Any) -> Any:
     - ``"N-": val``        → accumulated ``{ListOp.DELETE: [N]}``  (delete list index N)
     - ``__append__: val`` and the other keys of ``MERGE_OP_KEYS`` → the op's marker
 
-    A list's items are read too, wherever the list stands; an item has no layer below it, so a
-    key delete one holds is dropped once it has removed its key from the item.
+    Only the keys of *d* are read, its values as they are: the walk that resolves a
+    configuration document's includes reads every dict of it, a list's items included, once
+    its values are resolved (``_files._resolve_dict``), so ``key+:`` appends what an include
+    under it brings. No merge reads a key as an op, so a value argv or the environment decodes
+    is data. Each dict is read once because reading is not idempotent: ``a--`` reads as a
+    delete of ``a-``, which a second reading would make a delete of ``a``.
+
+    Returns:
+        *d* itself when nothing in it spells an op, and when it is no dict.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
     """
-    if isinstance(d, list):
-        return _normalize_items(d)
-    if isinstance(d, dict):
-        return _normalize_dict(d)
-    return d
-
-
-def _normalize_dict(d: dict[Any, Any]) -> MergeDict:
-    """Return the dict *d* with its keys read as :func:`_normalize_merge_ops` says; *d* itself when unchanged."""
+    if not isinstance(d, dict):
+        return d
     has_change = False
     result: MergeDict = {}
     delete_indices: list[int] = []
 
-    for key, val in d.items():
-        new_val = _normalize_merge_ops(val)
-        if new_val is not val:
-            has_change = True
-
+    for key, new_val in d.items():
         # A reserved key is stored as the marker of the op it spells, and a key that cannot
         # carry a shorthand suffix (a marker already, or too short) is stored as it is.
         if key in MERGE_OP_KEYS or not isinstance(key, str) or len(key) <= 1:
@@ -502,9 +489,6 @@ def _deep_merge(
         ConfargError: If a delete index is out of range, or if a list patch beside an
             append or a delete uses an out-of-range index or a non-integer key.
     """
-    base = _normalize_merge_ops(base)
-    override = _normalize_merge_ops(override)
-
     if at.replaces(override):
         return dict(override)
 
@@ -516,7 +500,7 @@ def _deep_merge(
         if isinstance(val, _DeleteSentinel):
             result.pop(key, None)
         elif key in result:
-            result[key] = _merge_existing_value(result[key], val, key, at.child(key, base, override))
+            result[key] = _merge_existing_value(result[key], val, str(key), at.child(key, base, override))
         else:
             result[key] = val
     return result
@@ -539,7 +523,7 @@ def _merge_within_source(base: MergeDict, override: MergeDict, *, at: MergeAt) -
         docs-dev/architecture/pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too
     """
     merged = _deep_merge(base, override, at=at)
-    return _keep_deletes(merged, _normalize_merge_ops(override), _normalize_merge_ops(base), at)
+    return _keep_deletes(merged, override, base, at)
 
 
 def _keep_deletes(merged: MergeDict, override: MergeDict, base: MergeDict, at: MergeAt) -> MergeDict:

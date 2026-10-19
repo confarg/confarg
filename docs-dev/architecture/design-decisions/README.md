@@ -39,6 +39,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [Explicit boolean values](explicit-boolean-values.md) | `--verbose true`, not `--verbose`/`--no-verbose` |
 | [A lone none word nulls an optional sequence](a-lone-none-word-nulls-an-optional-sequence.md) | `--xs none` is `None` for `list[X] \| None`, as `APP_XS=none` is, whatever `X` |
 | [Real field wins over reserved words](real-field-wins.md) | a reserved name is reserved only where it shadows nothing |
+| [A decoded value is data](a-decoded-value-is-data.md) | a JSON value on argv or in the environment never spells a merge op, and holds no reserved key; only a file's keys spell ops |
 | [A field default is the base layer](a-field-default-is-the-base-layer.md) | `build()`, `resolve()` and `from_dict()` lay the declared defaults under the data, so a patch applies over a default and an expression reads one; `merge()` is untouched |
 | [A cast names a type the field holds](a-cast-names-a-type-the-field-holds.md) | no channel's cast places a value the field's annotation does not accept, so an unheld cast is refused everywhere alike |
 | [A shadowed tag warns on use](a-shadowed-tag-warns-on-use.md) | the structural selection is named where the tag could have dispatched, and nowhere else |

@@ -27,6 +27,12 @@ holds,
   too (BUG-95 was the read-back that once stood in for it, missing a union's cast).
 - JSON-decoded values are stored raw (not tokens), so their elements are exempt from the
   stealing rule (`"yes"` stays a string) and `null` becomes expressible inside a list.
+- A decoded value is data, as every JSON value argv and the environment decode is
+  (`_cast.decode_json`): `{"a-": null}` is the key `a-`, never a delete, and a reserved key in
+  it is refused, as on a flag's path. This is the way to give a dict a key ending in `+` or `-`
+  ([design decisions](../design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data), Q-7).
+  Until then the merge read a decoded object's keys as a file's, so a delete in one deleted the
+  layers below in some positions and not in others (BUG-228).
 - Root `--json` injects a whole config. It is folded in **under** the per-field flags (field
   flags refine it); with several `--json`, the later wins. At the root only `--json` is a
   cast; scalar casts have nothing to attach to. The environment has the same root form,

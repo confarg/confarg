@@ -9,7 +9,9 @@ whole content when mounted -- see [include semantics](include-semantics.md#inclu
 configuration file writes one. `_defaults.RESERVED_KEYS` lists them, and
 `_parse_cli._reserved_segment` is the one test the other routes are put to: a flag
 (`--d.__cast__`), an environment variable and a mount point (`--config.d.__base__`,
-`<PREFIX>CONFIG__…`) whose path spells one is refused. The default env separator is also `__`,
+`<PREFIX>CONFIG__…`) whose path spells one is refused, and so is a JSON value that holds one
+at any depth, on argv or in the environment (`_cast.decode_json`, [a decoded value is
+data](../design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data)). The default env separator is also `__`,
 so with it a variable cannot spell a dunder at all; a custom separator can, and is refused the
 same way.
 

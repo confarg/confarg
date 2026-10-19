@@ -13,7 +13,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
 | [BUG-146 — A power or a repeated string has no size bound](BUG-146-a-power-or-a-repeated-string-has-no-size-bound.md) | critical |  | L | high | config | PR-5 |
-| [BUG-228 — A JSON cast's `key-` shorthand deletes below only in some positions](BUG-228-a-json-casts-delete-shorthand-deletes-below-only-in-some-positions.md) | critical | Q-7 | S | high | behavior | PR-87, BUG-3 |
 | [BUG-114 — Cyclopts cannot register subclasses that share a struct field name](BUG-114-cyclopts-cannot-register-subclasses-that-share-a-struct-field-name.md) | major |  | S | medium | behavior | PR-38 |
 | [BUG-174 — An index delete on a dict writes the list-delete key into the dict](BUG-174-an-index-delete-on-a-dict-writes-the-list-delete-key.md) | major |  | S | medium | behavior | PR-5 |
 | [BUG-202 — `dump_file` of a merged key delete escapes as a raw writer error](BUG-202-dump-file-of-a-merged-key-delete-escapes-as-a-raw-writer-error.md) | major |  | S | low | behavior | PR-5 |

@@ -73,8 +73,12 @@ the boundary moves here.
 - The [reserved keys](config-files/reserved-keys.md#reserved-file-only-keys) (`__include__`,
   `__cast__`, `__value__`, `__root__`, and the list ops `__append__`, `__delete__`,
   `__delete_after__`, `__base__`) are no data key anywhere: a file reads one as its own, and a
-  flag, a variable or a mount point naming one is refused. A field or a dict key spelled like
+  flag, a variable, a mount point or a JSON value naming one is refused. A field or a dict key spelled like
   one cannot be set.
+- A configuration file cannot give a dict a key ending in `+` or `-`: every key of a file reads
+  the merge shorthand. A JSON value on argv or in the environment is the way to give one
+  (`--d '{"c++": 1}'`), or `build()` from Python
+  ([design decisions](design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data)).
 - `build()` reads a merged dict, not a file's: the list ops a parsed file spells by name, like
   its `key+:` shorthand, apply only once `merge()` has read the file. A merged dict saved with
   `dump_file` is read back through `merge(files=[saved])`

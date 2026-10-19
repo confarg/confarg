@@ -30,6 +30,7 @@ from confarg._cast import (
     FORCE_CAST_NAMES,
     JSON_CAST_NAME,
     SCALAR_CAST_TYPES,
+    decode_json,
     fold_root_json,
     holds_the_cast,
     resolve_forced_value,
@@ -638,7 +639,7 @@ def _parse_json_arg(token: str, flag: str) -> Any:
         ConfargError: If the token is not valid JSON.
     """
     try:
-        return json.loads(token)
+        return decode_json(token, flag)
     except json.JSONDecodeError as e:
         msg = f"Invalid JSON for {flag}: {e}"
         raise ConfargError(msg) from e
@@ -1066,15 +1067,16 @@ def _handle_delete_token(
         _set_nested(ctx.data, path, DICT_DELETE)
 
 
-def _collect_append_items(args: Sequence[str], i: int, et: Any) -> tuple[list[Any], int]:
+def _collect_append_items(args: Sequence[str], i: int, et: Any, spelling: str) -> tuple[list[Any], int]:
     """Collect append-mode values from args, returning (items, new_i).
 
     Accepts a JSON array literal as a single token, otherwise consumes space-separated
-    tokens until the next flag.
+    tokens until the next flag. A JSON item is data (:func:`~confarg._cast.decode_json`);
+    *spelling* names the flag or the variable that refuses a reserved key in one.
     """
     if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("["):
         try:
-            parsed = json.loads(args[i])
+            parsed = decode_json(args[i], spelling)
         except json.JSONDecodeError:
             parsed = None
         if isinstance(parsed, list):
@@ -1085,7 +1087,7 @@ def _collect_append_items(args: Sequence[str], i: int, et: Any) -> tuple[list[An
         tok = args[i]
         if tok.startswith("{"):
             try:
-                items.append(json.loads(tok))
+                items.append(decode_json(tok, spelling))
             except json.JSONDecodeError:
                 items.append(_try_coerce(et, _StrToken(tok)))
         else:
@@ -1159,7 +1161,7 @@ def _handle_append_token(
 ) -> int:
     """Process an append-mode flag (--foo+ items...) and return the new arg index."""
     et = _appended_element_type(ctx.target, path, ctx.union_tag, token, ft)
-    append_items, i = _collect_append_items(ctx.argv, i, et)
+    append_items, i = _collect_append_items(ctx.argv, i, et, token)
     _write_append(ctx.data, path, append_items)
     return i
 
@@ -1209,7 +1211,7 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str) -> Any:
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#unions-with-sequence-variants
     """
-    parsed = _lone_json_array(tokens)
+    parsed = _lone_json_array(tokens, token)
     if parsed is not None:
         return parsed
     if not tokens:
@@ -1311,16 +1313,20 @@ def _handle_unknown_field(
     raise UnknownArgumentError.no_such_field(token, path)
 
 
-def _try_parse_json_list(arg: str) -> list[Any] | None:
-    """Parse arg as a JSON array and return it, or None if not valid JSON or not a list."""
+def _try_parse_json_list(arg: str, spelling: str) -> list[Any] | None:
+    """Parse arg as a JSON array and return it, or None if not valid JSON or not a list.
+
+    The array is data (:func:`~confarg._cast.decode_json`); *spelling* names the flag that
+    refuses a reserved key in it.
+    """
     try:
-        parsed = json.loads(arg)
+        parsed = decode_json(arg, spelling)
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, list) else None
 
 
-def _lone_json_array(tokens: list[str]) -> list[Any] | None:
+def _lone_json_array(tokens: list[str], spelling: str) -> list[Any] | None:
     """Return the decoded array when *tokens* is one inline JSON array, else None.
 
     The inline array is a **whole-value** spelling, so it is only that when it stands
@@ -1334,10 +1340,10 @@ def _lone_json_array(tokens: list[str]) -> list[Any] | None:
     """
     if len(tokens) != 1 or not tokens[0].startswith("["):
         return None
-    return _try_parse_json_list(tokens[0])
+    return _try_parse_json_list(tokens[0], spelling)
 
 
-def _varlen_value(ft: Any, tokens: list[str]) -> Any:
+def _varlen_value(ft: Any, tokens: list[str], spelling: str) -> Any:
     """Shape a varlen collection field's accumulated tokens into its stored value.
 
     One inline JSON array standing alone is decoded as the whole value; otherwise every
@@ -1347,7 +1353,7 @@ def _varlen_value(ft: Any, tokens: list[str]) -> Any:
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
-    parsed = _lone_json_array(tokens)
+    parsed = _lone_json_array(tokens, spelling)
     if parsed is not None:
         return parsed
     et = _elem_type(ft)
@@ -1388,7 +1394,7 @@ def _consume_collection_or_scalar(
         tt is not None
         and i < len(args)
         and not _looks_like_flag(args[i])
-        and (parsed := _lone_json_array([args[i]])) is not None
+        and (parsed := _lone_json_array([args[i]], token)) is not None
     ):
         _set_nested(ctx.data, path, parsed)
         return i + 1
@@ -1396,7 +1402,7 @@ def _consume_collection_or_scalar(
     # Variable-length collection → consume until the next flag, extending a prior occurrence
     if _is_varlen_collection(ft):
         tokens, i = _consume_multi_tokens(ctx, i, path)
-        _set_nested(ctx.data, path, _varlen_value(ft, tokens))
+        _set_nested(ctx.data, path, _varlen_value(ft, tokens, token))
         return i
 
     # Fixed-length sequence (tuple[X, Y] or a namedtuple) → consume exact count

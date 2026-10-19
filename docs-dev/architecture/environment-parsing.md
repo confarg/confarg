@@ -62,8 +62,9 @@ between the two other channels in priority: above
   class apart the same way. Optionality does not change the answer either —
   `dict[str, str] | None` decodes what `dict[str, str]` decodes
   ([design decisions](design-decisions/optionality-and-whole-values.md#optionality-does-not-change-what-a-whole-value-accepts)).
-- `<PREFIX>…__json` mirrors the CLI `.json` cast, including "real field wins" and a hard
-  error on invalid JSON. `<PREFIX>JSON` is the root form: it injects a whole config, folded
+- `<PREFIX>…__json` mirrors the CLI `.json` cast, including "real field wins", a hard
+  error on invalid JSON, and a decoded value that is data, as a JSON whole value is too
+  ([design decisions](design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data)). `<PREFIX>JSON` is the root form: it injects a whole config, folded
   in **under** the per-field env vars exactly as root `--json` sits under the field flags
   ([CLI parsing](cli-parsing/casts-and-reserved-words.md#force-casts)). Whether a trailing `json` is a cast at all is
   decided by the canonical `detect_force_cast`, not by a second rule in `_parse_env`. Asked of

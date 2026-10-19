@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
 from confarg import _defaults
-from confarg._cast import JSON_CAST_NAME, fold_root_json, resolve_forced_value
+from confarg._cast import JSON_CAST_NAME, decode_json, fold_root_json, resolve_forced_value
 from confarg._merge import (
     APPEND_SUFFIX,
     DELETE_SUFFIX,
@@ -389,11 +389,15 @@ def _accepts_json_for(ft: Any, value: str) -> bool:
     return False
 
 
-def _store_env_value(parts: list[str], ft: Any, value: str, data: MergeDict) -> None:
-    """Parse an env var string value and store it at the resolved path in data."""
+def _store_env_value(parts: list[str], ft: Any, value: str, data: MergeDict, orig_key: str) -> None:
+    """Parse an env var string value and store it at the resolved path in data.
+
+    A JSON value is data (:func:`~confarg._cast.decode_json`), refused naming *orig_key* if it
+    holds a key confarg reserves.
+    """
     if _accepts_json_for(ft, value):
         with contextlib.suppress(json.JSONDecodeError):
-            parsed = json.loads(value)
+            parsed = decode_json(value, orig_key)
             if isinstance(parsed, list | dict):
                 _set_nested(data, parts, parsed)
                 return
@@ -508,9 +512,9 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         if is_append:
             # One value, read as the flag's single token is: a JSON array is several items.
             et = _appended_element_type(walk_target, path, union_tag, orig_key, ft)
-            _write_append(data, path, _collect_append_items([_EqValue(value)], 0, et)[0])
+            _write_append(data, path, _collect_append_items([_EqValue(value)], 0, et, orig_key)[0])
             continue
-        _store_env_value(path, ft, value, data)
+        _store_env_value(path, ft, value, data, orig_key)
 
     from confarg._typed_merge import merge_root  # noqa: PLC0415  # import cycle: it walks types with _parse_cli
 

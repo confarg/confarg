@@ -746,7 +746,7 @@ class TestListDeleteKeysHoldIndices:
     def test_delete_keys_of_two_layers_holding_no_index_list_are_refused(self) -> None:
         """Two layers' deletes are combined only once each is read as indices."""
         with pytest.raises(ConfargError, match=re.escape("at 'xs': '__delete__' must hold a list of indices")):
-            _deep_merge({"xs": {"__delete__": [0]}}, {"xs": {"__delete__": 1}})
+            _deep_merge({"xs": {ListOp.DELETE: [0]}}, {"xs": {ListOp.DELETE: 1}})
 
     @pytest.mark.parametrize("ops", [{"-": 0}, {"+": [3], "~": 0}], ids=["dash", "tilde"])
     def test_file_writing_the_former_delete_keys_is_refused_as_a_confarg_error(
