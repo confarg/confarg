@@ -310,6 +310,51 @@ class TestStealOrder:
 
 
 # ---------------------------------------------------------------------------
+# A field named like the tag one level below a union variant is a field (BUG-107)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _OwnsKind:
+    kind: int
+
+
+@dataclass
+class _OwnsOther:
+    other: int
+
+
+@dataclass
+class _HoldsOwnsKind:
+    v: _OwnsKind
+
+
+@dataclass
+class _HoldsOwnsOther:
+    v: _OwnsOther
+
+
+class TestANestedFieldNamedLikeTheTag:
+    """The union's type check reads a nested struct's tag-shaped key as the tag only where no member owns it (BUG-107).
+
+    It dropped the key unconditionally, so the variant whose nested struct needs that field
+    failed to match, and the union reported an ambiguity it should have resolved.
+    """
+
+    @pytest.mark.parametrize("tag", ["zz", "kind"])
+    def test_the_variant_whose_nested_struct_owns_the_key_is_chosen(self, tag: str) -> None:
+        """Whatever the tag is spelled, ``kind`` is ``_OwnsKind``'s field."""
+        tp = _HoldsOwnsKind | _HoldsOwnsOther
+        assert construct(tp, {"v": {"kind": _StrToken("1")}}, union_tag=tag) == _HoldsOwnsKind(_OwnsKind(1))
+
+    def test_a_key_no_member_owns_is_still_the_tag(self) -> None:
+        """Where no nested member owns the spelling, the key is the tag, and the structure still decides."""
+        tp = _HoldsOwnsKind | _HoldsOwnsOther
+        data = {"v": {"kind": f"{__name__}._OwnsOther", "other": _StrToken("2")}}
+        assert construct(tp, data, union_tag="kind") == _HoldsOwnsOther(_OwnsOther(2))
+
+
+# ---------------------------------------------------------------------------
 # A field named exactly like the union tag is a field (BUG-102)
 # ---------------------------------------------------------------------------
 

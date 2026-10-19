@@ -1283,7 +1283,7 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
 
 def _struct_matches_value(tp: Any, value: Any, union_tag: str) -> bool:
     """Check if value could be a valid dict for struct tp."""
-    return isinstance(value, dict) and _structurally_matches(tp, {k for k in value if k != union_tag})
+    return isinstance(value, dict) and _structurally_matches(tp, _field_keys([tp], value, union_tag))
 
 
 def _bool_matches_value(value: Any) -> bool:
@@ -1389,12 +1389,24 @@ def _type_compatible(var: Any, data: MergeDict, keys: set[str | ListOp], union_t
     return all(_value_matches_type(data[k], flds[k], union_tag) for k in keys if isinstance(k, str) and k in flds)
 
 
-def _disambiguate_struct(variants: list[Any], data: MergeDict, union_tag: str) -> list[Any]:
-    """Filter struct union variants to those matching data structurally."""
+def _field_keys(variants: list[Any], data: MergeDict, union_tag: str) -> set[str | ListOp]:
+    """Return the keys of *data* the struct *variants* would read as fields.
+
+    A tag-shaped key no variant owns as a field is the tag, not data (BUG-102); one a
+    variant owns is a field, at every depth the structural check reaches (BUG-107).
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+    """
     keys = set(data)
     if not any(_union_tag_shadowed(var, union_tag) for var in variants):
-        # A tag-shaped key no variant owns as a field is the tag, not data.
         keys.discard(union_tag)
+    return keys
+
+
+def _disambiguate_struct(variants: list[Any], data: MergeDict, union_tag: str) -> list[Any]:
+    """Filter struct union variants to those matching data structurally."""
+    keys = _field_keys(variants, data, union_tag)
     candidates = [_resolve_type(var) for var in variants if _structurally_matches(_resolve_type(var), keys)]
 
     if len(candidates) <= 1:
