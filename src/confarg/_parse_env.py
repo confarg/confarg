@@ -37,6 +37,7 @@ from confarg._parse_cli import (
     _path_unknown,
     _reserved_segment,
     _resolve_field_type,
+    _restart_restated_node,
     _sequence_refusal,
     _walk_target,
     detect_force_cast,
@@ -459,6 +460,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         # Same rule as the CLI: a bare callable shorthand already stored at a prefix of
         # this path is a spec this variable refines, not a scalar it replaces.
         _open_callable_shorthand(data, path, walk_target, union_tag)
+        _restart_restated_node(data, path, walk_target, union_tag)
         _store_env_value(path, ft, value, data)
 
     from confarg._typed_merge import merge_root  # noqa: PLC0415  # import cycle: it walks types with _parse_cli

@@ -5776,6 +5776,88 @@ def _exclaim(name: str) -> str:
     return f"{name}!"
 
 
+def _whisper(name: str, punct: str = ".") -> str:
+    """A target sharing ``_shout``'s parameters, which a stale argument would fit silently."""
+    return f"{name.lower()}{punct}"
+
+
+@dataclass
+class _RestatedTask:
+    """A struct whose subclass the tag names."""
+
+    retries: int = 0
+
+
+@dataclass
+class _RestatedSubTask(_RestatedTask):
+    """A subclass with a field its base lacks."""
+
+    extra: int = 0
+
+
+@dataclass
+class _Restated:
+    """A Callable field and a struct field, each restated within one source."""
+
+    fn: Callable[[str], str] | None = None
+    task: _RestatedTask = dataclasses_field(default_factory=_RestatedTask)
+
+
+class TestARestatedOpenerStartsAfreshContract:
+    """Within one source, a second opener or tag at a node starts it afresh, as a higher layer's does (BUG-238).
+
+    It replaced its own key only, so the arguments and fields written for the first target
+    stayed beside the second. The first opener stays order-free.
+    """
+
+    def test_a_restated_bind_drops_the_arguments(self, loader: ConfargLoader) -> None:
+        """The new target takes the same parameter, so a stale argument would bind with no error."""
+        argv = ["--fn.bind", f"{__name__}._shout", "--fn.args.punct", "!", "--fn.bind", f"{__name__}._whisper"]
+        cfg = loader.load(_Restated, argv=argv, env={})
+        assert cfg.fn is not None
+        assert cfg.fn("HI") == "hi."
+
+    def test_an_opener_after_a_whole_value_drops_its_arguments(self, loader: ConfargLoader) -> None:
+        """A ``{…}`` value names a target too, which a later opener flag replaces whole."""
+        blob = json.dumps({"bind": f"{__name__}._shout", "args": {"punct": "!"}})
+        cfg = loader.load(_Restated, argv=["--fn", blob, "--fn.bind", f"{__name__}._whisper"], env={})
+        assert cfg.fn is not None
+        assert cfg.fn("HI") == "hi."
+
+    def test_an_opener_variable_after_a_whole_value_drops_its_arguments(self, loader: ConfargLoader) -> None:
+        """The environment spells the same pair, the broader variable first."""
+        env = {
+            "APP_FN": json.dumps({"bind": f"{__name__}._shout", "args": {"punct": "!"}}),
+            "APP_FN__BIND": f"{__name__}._whisper",
+        }
+        cfg = loader.load(_Restated, argv=[], env=env, env_prefix="APP_")
+        assert cfg.fn is not None
+        assert cfg.fn("HI") == "hi."
+
+    def test_a_restated_tag_drops_the_fields(self, loader: ConfargLoader) -> None:
+        """The fields of the class first named do not reach the one named next."""
+        argv = ["--task.class", f"{__name__}._RestatedSubTask", "--task.extra", "1"]
+        argv += ["--task.class", f"{__name__}._RestatedTask"]
+        assert loader.load(_Restated, argv=argv, env={}).task == _RestatedTask()
+
+    def test_a_first_tag_keeps_the_fields_before_it(self, loader: ConfargLoader) -> None:
+        """A tag after fields restates nothing: the fields are the class's."""
+        argv = ["--task.retries", "1", "--task.class", f"{__name__}._RestatedSubTask"]
+        assert loader.load(_Restated, argv=argv, env={}).task == _RestatedSubTask(retries=1)
+
+    def test_a_first_opener_keeps_the_arguments_before_it(self, loader: ConfargLoader) -> None:
+        """Arguments typed before the opener are its arguments."""
+        cfg = loader.load(_Restated, argv=["--fn.args.punct", "!", "--fn.bind", f"{__name__}._whisper"], env={})
+        assert cfg.fn is not None
+        assert cfg.fn("HI") == "hi!"
+
+    def test_a_path_through_an_opener_restates_nothing(self, loader: ConfargLoader) -> None:
+        """``--fn.bind.x`` refines the nested target the earlier flags named."""
+        argv = ["--fn.bind.class", f"{__name__}._Multiplier", "--fn.bind.k", "2", "--fn.bind.k", "3"]
+        merged = loader.merge(_Restated, argv=argv, env={})
+        assert merged == {"fn": {"bind": {"class": f"{__name__}._Multiplier", "k": "3"}}}
+
+
 @dataclass
 class _LayeredTypes:
     """A field of each type whose keys the merge reads differently."""
@@ -5935,10 +6017,13 @@ class TestCallableSiblingKwargContract:
             loader.load(_CallableConfig, argv=["--fn._bind", f"{__name__}._shout"], env={})
 
     def test_active_bind_word_beside_another_opener_merges_as_data(self, loader: ConfargLoader) -> None:
-        """The mirror: the *active* bind word beside a call opener is data the parser stores."""
+        """The mirror: the *active* bind word beside a call opener is data the parser stores.
+
+        Spelled in one write: a second opener flag restates the spec rather than joining it (BUG-238).
+        """
         merged = loader.merge(
             _CallableConfig,
-            argv=["--fn.call", f"{__name__}._shout", "--fn.bind", "5"],
+            argv=["--fn", json.dumps({"call": f"{__name__}._shout", "bind": "5"})],
             env={},
         )
         assert merged == {"fn": {"call": f"{__name__}._shout", "bind": "5"}}
@@ -5948,8 +6033,9 @@ class TestCallableSiblingKwargContract:
         loader: ConfargLoader,
     ) -> None:
         """Two openers in one spec — construction says so, in every front-end."""
+        argv = ["--fn", json.dumps({"call": f"{__name__}._shout", "bind": "5"})]
         with pytest.raises(TypeCoercionError, match=r"must not specify more than one of"):
-            loader.load(_CallableConfig, argv=["--fn.call", f"{__name__}._shout", "--fn.bind", "5"], env={})
+            loader.load(_CallableConfig, argv=argv, env={})
 
     def test_sibling_kwarg_without_an_opener_merges(self, loader: ConfargLoader) -> None:
         """No opener names no target, so only the path can say the flag is addressable."""
