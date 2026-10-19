@@ -25,7 +25,7 @@ anything that is not a dict-on-dict, which is merged recursively.
 - `DICT_DELETE` (from `key-` in files, `--field.key-`, `FOO__KEY-`) removes a key.
 - File-sourced shorthand `key+:` / `key-:` / `"N-":`, and the reserved keys below, are
   normalized to the ops by `_normalize_merge_ops` so files, env and CLI share one patch
-  vocabulary.
+  vocabulary. Every dict is read, one standing in a list included: an item has no layer below it, so it reads as a document merged over nothing, and a delete in it removes its key from the item and ends there (`_without_key_deletes`). Until BUG-237 a list's items were skipped, so `rows: [{k: 4, k-: null}]` kept `k-` as a field, which construction refused, while the same item beside an `__include__` read it through the merge of the include's siblings.
 
 List patches travel as a dict whose op keys are markers no channel types
 ([below](#no-channel-types-an-op)). These notes write a marker bare, `__append__`, and a plain
@@ -139,7 +139,7 @@ Two parts of one source are merged by `_merge._merge_within_source`, which `_cas
 - A delete of the override stays, whether or not the base held its key.
 - A delete of the base stays where the override says nothing at its key. Where the override writes a value there, the value wins, as a later key does in one file; a dict written there keeps the delete as its `__base__`, cutting the layers below off (`_written_over`, [above](#an-op-after-a-whole-field-delete-has-nothing-below-it)). So `__include__: [delsec.yaml, secb.yaml]` builds what `{sec-: null, sec: {b: 3}}` builds.
 - A delete below a node the merge turned into a list, or that a union tag, a call or a cast pin replaced, is not put back, since that value replaces the layers below whole; nor is a list op's own `__base__` delete, which `_deep_merge` already keeps. A data entry (CSV/TSV) of an `__include__` list replaces the entries before it, deletes included.
-- A list item has no layer below it at all, so `_files._resolve_node` drops whatever delete an include inside one kept for the layers below (`_merge._without_key_deletes`): `- {__include__: row.yaml, zz-: null}` builds the row, as it did before BUG-227.
+- A list item has no layer below it at all, so `_files._resolve_node` drops whatever delete an include inside one kept for the layers below (`_merge._without_key_deletes`): `- {__include__: row.yaml, zz-: null}` builds the row, as it did before BUG-227, and as the same item written inline does ([above](#deep-merge-semantics)).
 
 A delete put back that met a key of the base is put back *spent*, as a second instance of the sentinel, `_merge._SPENT_DELETE`. Every merge reads it as `DICT_DELETE` (`_deep_merge` tells a delete by `isinstance`), and `_drop_deleted_bases` drops one no layer below met once every layer is in. The plain sentinel is kept for a delete that found nothing in its own source, so `--json '{"data": {"x": 1}}' --data.x-` with no file builds `data={}` as before, while `--data.x-` alone still leaves the sentinel that a delete with no base leaves (BUG-98).
 

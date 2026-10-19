@@ -540,6 +540,57 @@ class TestConfigFileDeleteSyntax:
             confarg.build(WithList, {"items": {"-1": 99}})
 
 
+@dataclass
+class _Item:
+    k: int = 0
+    j: int = 0
+    tags: list[str] = dataclasses.field(default_factory=list)
+
+
+@dataclass
+class _Items:
+    rows: list[_Item] = dataclasses.field(default_factory=list)
+    grid: list[list[_Item]] = dataclasses.field(default_factory=list)
+
+
+class TestAListItemReadsTheShorthand:
+    """A dict standing in a file's list reads the merge shorthand as every other dict of the file does (BUG-237).
+
+    It has no layer below it, so it reads as a document merged over nothing. Only an item beside
+    an include read it, through the merge of the include's siblings.
+    """
+
+    @pytest.mark.parametrize(
+        ("item", "expected"),
+        [
+            pytest.param("{k: 4, j: 9, k-: null}", _Item(k=0, j=9), id="delete-met"),
+            pytest.param("{k: 4, j: 9, zz-: null}", _Item(k=4, j=9), id="delete-unmet"),
+            pytest.param("{tags: [a], tags+: [b]}", _Item(tags=["a", "b"]), id="append"),
+            pytest.param("{tags: {__append__: [b]}}", _Item(tags=["b"]), id="reserved-op-key"),
+        ],
+    )
+    def test_item_reads_the_shorthand(self, tmp_yaml, item: str, expected: _Item) -> None:
+        """A key's suffix and a reserved op key in a list item are the ops they spell."""
+        path = tmp_yaml(f"rows:\n  - {item}\n")
+        assert confarg.load(_Items, argv=[], env={}, files=[path]).rows == [expected]
+
+    def test_item_reads_it_as_the_same_item_beside_an_include(self, tmp_yaml) -> None:
+        """Inline or beside an include, the item's delete removes ``k``."""
+        tmp_yaml("k: 4\nj: 9\n", "row.yaml")
+        flat = tmp_yaml("rows:\n  - {k: 4, j: 9, k-: null}\n", "flat.yaml")
+        inc = tmp_yaml("rows:\n  - {__include__: row.yaml, k-: null}\n", "inc.yaml")
+        assert (
+            confarg.load(_Items, argv=[], env={}, files=[flat]).rows
+            == confarg.load(_Items, argv=[], env={}, files=[inc]).rows
+            == [_Item(k=0, j=9)]
+        )
+
+    def test_item_of_a_nested_list_reads_it(self, tmp_yaml) -> None:
+        """An item two lists deep reads the shorthand too."""
+        path = tmp_yaml("grid:\n  - - {k: 4, k-: null, tags+: [x]}\n")
+        assert confarg.load(_Items, argv=[], env={}, files=[path]).grid == [[_Item(k=0, tags=["x"])]]
+
+
 class TestNestedIndexMerge:
     """An index patch over a list/tuple element composes recursively, not replaces.
 
