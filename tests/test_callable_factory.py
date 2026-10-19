@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import enum
 import functools
+import inspect
 from collections.abc import Callable  # noqa: TC003
 from dataclasses import dataclass
 from typing import Any
@@ -27,6 +28,11 @@ from confarg.exceptions import TypeCoercionError
 # ---------------------------------------------------------------------------
 
 _MOD = "tests.test_callable_factory"
+
+
+def _bound(partial: functools.partial) -> dict[str, Any]:
+    """Return the arguments *partial* binds, by the name of the parameter each fills, positional or keyword."""
+    return dict(inspect.signature(partial.func).bind_partial(*partial.args, **partial.keywords).arguments)
 
 
 def _no_owner(owner: Any) -> dict[str, Any]:
@@ -147,7 +153,7 @@ class TestFactoryFromDict:
         )
         assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _SGD
-        assert result.optimizer.keywords == {"lr": 0.05}
+        assert _bound(result.optimizer) == {"lr": 0.05}
 
     def test_calling_partial_produces_instance(self):
         """Calling the returned partial produces a correctly configured instance."""
@@ -176,7 +182,7 @@ class TestFactoryFromDict:
         )
         assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _SGDVariant
-        assert result.optimizer.keywords["dampening"] == pytest.approx(0.1)
+        assert _bound(result.optimizer)["dampening"] == pytest.approx(0.1)
 
     def test_bind_abstract_base(self):
         """'bind: <class>' with arguments on a Callable[..., Base] field builds a partial of the class."""
@@ -186,7 +192,7 @@ class TestFactoryFromDict:
         )
         assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _Adam
-        assert result.optimizer.keywords == {"lr": 0.003}
+        assert _bound(result.optimizer) == {"lr": 0.003}
 
     def test_class_key_instantiates_callable_object(self):
         """'class:' instantiates a callable-object class with its init kwargs."""
@@ -221,7 +227,7 @@ class TestFactoryFromDict:
         )
         assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _SGD
-        assert result.optimizer.keywords == {}
+        assert _bound(result.optimizer) == {}
 
     def test_bare_string_non_subclass_raises_guard(self):
         """A bare class that can't produce the return type is rejected, pointing at 'class:'."""
@@ -257,7 +263,7 @@ class TestFactoryFromCLI:
         )
         assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _SGD
-        assert result.optimizer.keywords["lr"] == pytest.approx(0.05)
+        assert _bound(result.optimizer)["lr"] == pytest.approx(0.05)
 
     def test_kwarg_without_fn_or_class_raises(self):
         """A bare --optimizer.<kwarg> (no opener) is a keyless dict → rejected."""
@@ -277,7 +283,7 @@ class TestFactoryFromCLI:
         )
         assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _Adam
-        assert result.optimizer.keywords["lr"] == pytest.approx(0.003)
+        assert _bound(result.optimizer)["lr"] == pytest.approx(0.003)
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +307,7 @@ class TestFactoryFromEnv:
         )
         assert isinstance(result.optimizer, functools.partial)
         assert result.optimizer.func is _SGD
-        assert result.optimizer.keywords["lr"] == pytest.approx(0.07)
+        assert _bound(result.optimizer)["lr"] == pytest.approx(0.07)
 
 
 # ---------------------------------------------------------------------------
@@ -346,7 +352,7 @@ class TestFactorySerialization:
         cfg2 = confarg.build(Cfg, dumped)
         assert isinstance(cfg2.optimizer, functools.partial)
         assert cfg2.optimizer.func is _SGD
-        assert cfg2.optimizer.keywords["lr"] == pytest.approx(0.05)
+        assert _bound(cfg2.optimizer)["lr"] == pytest.approx(0.05)
 
 
 class TestBindTypedConstruction:
@@ -364,7 +370,7 @@ class TestBindTypedConstruction:
             },
         )
         assert isinstance(result.optimizer, functools.partial)
-        kw = result.optimizer.keywords
+        kw = _bound(result.optimizer)
         assert kw["mode"] is _Mode.FAST  # enum coerced from string
         assert kw["schedule"] == _Schedule(warmup=10)  # dataclass built from mapping
         assert kw["tags"] == [1, 2]
@@ -378,7 +384,7 @@ class TestBindTypedConstruction:
         )
         # Previously this stayed the raw string "slow"; now it is the enum member.
         assert isinstance(result.optimizer, functools.partial)
-        assert result.optimizer.keywords["mode"] is _Mode.SLOW
+        assert _bound(result.optimizer)["mode"] is _Mode.SLOW
 
     def test_callable_object_bind_constructs_complex_types(self):
         """bind: over a class: callable object also coerces its arguments via the canonical route."""
@@ -392,7 +398,7 @@ class TestBindTypedConstruction:
             },
         )
         assert isinstance(result.optimizer, functools.partial)
-        assert result.optimizer.keywords["mode"] is _Mode.FAST
+        assert _bound(result.optimizer)["mode"] is _Mode.FAST
 
     def test_bad_bind_value_raises(self):
         """An uncoercible bind value fails fast, like any other config value."""
@@ -410,4 +416,4 @@ class TestBindTypedConstruction:
             env={},
         )
         assert isinstance(result.optimizer, functools.partial)
-        assert result.optimizer.keywords["lr"] == pytest.approx(0.1)
+        assert _bound(result.optimizer)["lr"] == pytest.approx(0.1)

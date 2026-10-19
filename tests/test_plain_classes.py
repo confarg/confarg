@@ -31,7 +31,7 @@ from confarg._types import (
     _var_params,
 )
 from confarg.cli._spec import _get_field_docstrings
-from confarg.typedload._construct import _call_with_var_positional
+from confarg.typedload._construct import _call_plain_class
 
 # ---------------------------------------------------------------------------
 # Minimal plain classes mimicking an albumentations-style transform hierarchy
@@ -515,6 +515,16 @@ class _PositionalOnlyWithRest:
         self.a, self.rest = a, rest
 
 
+class _PositionalOnly:
+    def __init__(self, a: int, /) -> None:
+        self.a = a
+
+
+class _PositionalOnlyWithExtra:
+    def __init__(self, a: int, /, **extra: int) -> None:
+        self.a, self.extra = a, extra
+
+
 class TestInitParams:
     """Every plain-class question reads one cached walk of ``__init__``'s signature."""
 
@@ -572,7 +582,7 @@ class TestInitParams:
     def test_record_lists_positional_names(self) -> None:
         """The names a positional argument fills, in order; ``self`` and the variadics excluded."""
         params = _init_params(_Gapped)
-        assert params.positional == ("a", "b")
+        assert params.positional.names == ("a", "b")
         assert params.required == frozenset()
 
     def test_positional_only_parameter_before_args(self) -> None:
@@ -582,13 +592,27 @@ class TestInitParams:
 
     def test_positional_gap_goes_by_keyword(self) -> None:
         """A later positional value never slides into an earlier unfilled parameter."""
-        built = _call_with_var_positional(_Gapped, {"b": 5}, "rest", {})
+        built = _call_plain_class(_Gapped, {"b": 5}, "rest", {})
         assert (built.a, built.b, built.rest) == (1, 5, ())
 
     def test_positional_gap_before_args_is_refused(self) -> None:
         """No call reaches ``*args`` past an unfilled positional parameter."""
         with pytest.raises(TypeError, match="positional parameter 'a' is unset"):
-            _call_with_var_positional(_Gapped, {"b": 5, "rest": [6]}, "rest", {})
+            _call_plain_class(_Gapped, {"b": 5, "rest": [6]}, "rest", {})
+
+    def test_positional_only_parameter_without_args(self) -> None:
+        """A positional-only parameter is passed by position with no ``*args`` beside it (BUG-152)."""
+
+        @dataclass
+        class Config:
+            item: _PositionalOnly
+
+        assert confarg.load(Config, argv=["--item.a", "1"], env={}).item.a == 1
+
+    def test_positional_only_parameter_beside_kwargs(self) -> None:
+        """A positional-only name and a ``**kwargs`` key of the same name each reach their own (BUG-152)."""
+        built = confarg.build(_PositionalOnlyWithExtra, {"a": 1, "extra": {"a": 2}})
+        assert (built.a, built.extra) == (1, {"a": 2})
 
 
 # ---------------------------------------------------------------------------

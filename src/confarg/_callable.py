@@ -26,6 +26,8 @@ from confarg._types import (
     _is_callable,
     _is_struct,
     _is_union,
+    _PositionalGapError,
+    _PositionalParams,
     _resolve_type,
     _src_type,
 )
@@ -426,6 +428,34 @@ def _coerce_kwargs(  # noqa: PLR0913  # kind and subject only word the refusal
     return coerced
 
 
+def _split_arguments(target: Any, kwargs: dict, ctx: _SpecContext) -> tuple[list[Any], dict[str, Any]]:
+    """Return the built *kwargs* of a ``bind:`` or ``call:`` as the arguments *target* takes by position and by keyword.
+
+    :meth:`~confarg._types._PositionalParams.split` decides, so a positional-only parameter is
+    reached by name (BUG-156). A target whose signature cannot be read takes them all by keyword.
+
+    Raises:
+        TypeCoercionError: If a positional-only parameter before a set one is unset and has no
+            default, so that no call reaches the later one.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#arguments-go-by-position-where-they-can
+    """
+    try:
+        sig = inspect.signature(target)
+    except (ValueError, TypeError):
+        return [], kwargs
+    try:
+        return _PositionalParams.of(sig.parameters.values()).split(kwargs)
+    except _PositionalGapError as e:
+        subject = getattr(target, "__qualname__", None) or repr(target)
+        msg = (
+            f"Positional-only parameter {e.unset!r} of {subject} at '{ctx.where}' is unset and has no"
+            f" default, so no call reaches {e.later!r} after it: set {e.unset!r} too."
+        )
+        raise TypeCoercionError(msg) from None
+
+
 def _resolve_call_kwargs(func: Any, kwargs: dict, ctx: _SpecContext) -> dict:
     """Coerce and validate kwargs against func's signature using typed construction."""
     subject = repr(getattr(func, "__qualname__", repr(func)))
@@ -440,9 +470,10 @@ def _call_factory(target: Any, call_kwargs: dict, ctx: _SpecContext) -> Any:
     are built below ``args``, where the spec holds them.
     """
     func = _resolve_target(target, None, ctx, _defaults.CALL_KEY)
-    coerced = _resolve_call_kwargs(func, call_kwargs, ctx.at(_defaults.ARGS_KEY))
+    args_ctx = ctx.at(_defaults.ARGS_KEY)
+    args, kwargs = _split_arguments(func, _resolve_call_kwargs(func, call_kwargs, args_ctx), args_ctx)
     try:
-        return func(**coerced)
+        return func(*args, **kwargs)
     except Exception as e:
         msg = f"Failed to call {target!r} at '{ctx.where}': {e}"
         raise TypeCoercionError(msg) from e
@@ -702,12 +733,13 @@ def _resolve_bind_kwargs(callable_obj: Any, bind: dict, ctx: _SpecContext) -> di
 
 
 def _resolve_bind_spec(target: Any, kwargs: dict, tp: Any, ctx: _SpecContext) -> Any:
-    """Resolve a ``bind:`` spec: ``functools.partial(target, **kwargs)``.
+    """Resolve a ``bind:`` spec: a ``functools.partial`` of its target with its arguments applied.
 
     *target* is what the ``bind`` key holds, resolved by :func:`_resolve_target`. The
     *kwargs*, the mapping under ``args``, are built below it against the target's
-    signature. With no argument the target is the result, so ``{bind: T}`` and the bare
-    ``"T"`` are one spec.
+    signature, and applied by position or by keyword as :func:`_split_arguments` decides.
+    With no argument the target is the result, so ``{bind: T}`` and the bare ``"T"`` are
+    one spec.
 
     Dev Notes:
         docs-dev/architecture/callables.md#spec-grammar
@@ -715,7 +747,9 @@ def _resolve_bind_spec(target: Any, kwargs: dict, tp: Any, ctx: _SpecContext) ->
     obj = _resolve_target(target, tp, ctx, _defaults.BIND_KEY)
     if not kwargs:
         return _as_callable(obj)
-    return functools.partial(obj, **_resolve_bind_kwargs(obj, kwargs, ctx.at(_defaults.ARGS_KEY)))
+    args_ctx = ctx.at(_defaults.ARGS_KEY)
+    args, by_keyword = _split_arguments(obj, _resolve_bind_kwargs(obj, kwargs, args_ctx), args_ctx)
+    return functools.partial(obj, *args, **by_keyword)
 
 
 def _resolve_classfn_spec(method_path: Any, init_kwargs: dict, ctx: _SpecContext) -> Any:
@@ -826,8 +860,9 @@ def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
 def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]]) -> str | dict:
     """Serialize a callable value back to its config representation.
 
-    Partial with pre-bound kwargs → {bind: <its target, serialized>, args: {k: v}}.
-    Bare partial (a class used factory-like, no kwargs) → "module.qualname" string.
+    Partial with pre-bound arguments → {bind: <its target, serialized>, args: {k: v}}, its
+    positional arguments named by the parameters they fill (:func:`_named_partial_args`).
+    Bare partial (a class used factory-like, no arguments) → "module.qualname" string.
     Plain callable → "module.qualname" string, when that path reads back as it
     (:func:`_reads_back_from`); a closure, a lambda or a shadowed name is refused.
     Instance method → that path, beside its owner's fields when the owner has any
@@ -840,8 +875,9 @@ def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]
     """
     if isinstance(value, functools.partial):
         target = _serialize_callable(value.func, owner_fields)
-        if value.keywords:
-            return {_defaults.BIND_KEY: target, _defaults.ARGS_KEY: dict(value.keywords)}
+        arguments = {**_named_partial_args(value), **value.keywords}
+        if arguments:
+            return {_defaults.BIND_KEY: target, _defaults.ARGS_KEY: arguments}
         return target
 
     if not getattr(value, "__qualname__", None):
@@ -860,6 +896,35 @@ def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]
         raise ConfargError.callable_not_spelled(value, reason)
 
     raise ConfargError.callable_not_spelled(value, "it has no dotted path")
+
+
+def _named_partial_args(value: functools.partial) -> dict[str, Any]:
+    """Return the positional arguments of the partial *value*, keyed by the parameters they fill.
+
+    ``args`` holds a target's arguments by name, and a ``bind:`` passes them back by position
+    (:func:`_split_arguments`), so naming them is what lets the partial read back.
+
+    Raises:
+        ConfargError: If the target's signature cannot be read, or if an argument fills no
+            named parameter, such as one that spills into ``*args``.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#round-trip
+    """
+    if not value.args:
+        return {}
+    try:
+        names = _PositionalParams.of(inspect.signature(value.func).parameters.values()).names
+    except (ValueError, TypeError):
+        reason = "it holds positional arguments, and the signature of its target, which would name them, cannot be read"
+        raise ConfargError.callable_not_spelled(value, reason) from None
+    if len(value.args) > len(names):
+        reason = (
+            f"it holds {len(value.args)} positional arguments, and its target names {len(names)}"
+            " parameters to hold them: 'args' takes arguments by name"
+        )
+        raise ConfargError.callable_not_spelled(value, reason)
+    return dict(zip(names, value.args, strict=False))
 
 
 def _instance_spec(instance: Any, owner_fields: Callable[[Any], dict[str, Any]]) -> dict:

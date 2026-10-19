@@ -15,8 +15,8 @@ builds. There are four openers, of two kinds, and the kind says where the argume
 
 | Spec | Its arguments are | Yields |
 |---|---|---|
-| `{bind: T, args: {<args>}}` | arguments of the target `T` | `functools.partial(T, **args)`; with no argument, `T` itself |
-| `{call: T, args: {<args>}}` | arguments of the target `T` | `T(**args)`, the value it returns |
+| `{bind: T, args: {<args>}}` | arguments of the target `T` | `functools.partial(T, …)` with the arguments applied ([by position where they can](#arguments-go-by-position-where-they-can)); with no argument, `T` itself |
+| `{call: T, args: {<args>}}` | arguments of the target `T` | `T(…)` with the arguments applied the same way, the value it returns |
 | `{class: pkg.C, <fields>}` | `C`'s constructor's | the instance `C(**fields)` |
 | `{classfn: pkg.C.m, <fields>}` | the owner's constructor's | the bound method `C(**fields).m` |
 | `"T"` | — | `{bind: T}` |
@@ -75,7 +75,7 @@ arguments in one mapping, the grammar this replaced. None has a method form, whi
 
 ### Bind yields a partial
 
-`{bind: T, args: {<args>}}` is `functools.partial(T, **args)`. With no argument it is the bare
+`{bind: T, args: {<args>}}` is a `functools.partial` of `T` with its arguments applied, by position where they can ([arguments go by position where they can](#arguments-go-by-position-where-they-can)). With no argument it is the bare
 `"T"`, not `partial(T)`, so a string and its dict form are one spec, and the shorthand rule that
 opens `"T"` into `{bind: T}` before an argument refines it never changes the value of a field
 that the argument did not touch. `{bind: T}` and the bare `"T"` resolve through the same
@@ -211,6 +211,17 @@ a class it calls is built from its `__init__` annotations, as under `class:` (BU
 Validation is skipped where it cannot work: uninspectable callables (C extensions) and
 signature arity checks for `*args` callables or `Callable[..., R]`.
 
+## Arguments go by position where they can
+
+`args` holds a target's arguments by name, but a call does not pass them all by keyword: `_types._PositionalParams.split` decides, the same rule construction applies to a plain class's `__init__` ([types](types/introspection.md#introspection-is-cached-per-class)). `_callable._split_arguments` asks it for `bind:` and `call:` alike.
+
+1. A positional-only parameter left unset before a set one takes its declared default, since no keyword reaches the later one past it: with `def f(a=1, b=2, /)`, `{b: 5}` binds `partial(f, 1, 5)`. With no default to take, the spec is refused at load, naming both parameters.
+2. Then the longest run of set positional names from the first goes by position, and every other argument by keyword. With `def g(v, factor)`, `{v: 3}` binds `partial(g, 3)`, `{factor: 2}` binds `partial(g, factor=2)`, and `{v: 3, factor: 2}` binds `partial(g, 3, 2)`.
+
+Why: a positional-only parameter takes no keyword, so it needs a position (BUG-156), as `{call: math.sqrt, args: {x: 16}}` does. Passing the leading run by position too, rather than the positional-only parameters alone, is what makes the dump exact: a partial's positional arguments dump under the names of the parameters they fill ([round-trip](#round-trip)), and those names split back to the same positions. It also lets a `Callable[[int], int]` bound by `{bind: g, args: {v: 3}}` be called `f(5)`, which `partial(g, v=3)` refused with "multiple values for 'v'". `inspect.BoundArguments.args` draws the same line, a positional-or-keyword parameter going by position for as long as every one before it is bound. Hydra's `instantiate` passes every named argument by keyword and reaches a positional parameter only through a separate `_args_` list; confarg keeps one mapping by name.
+
+Cost: a parameter a `bind:` passed by position cannot be passed again by keyword when the partial is called, as one bound by keyword could be. A name under `args` always means the declared parameter, never a key of the target's `**kwargs` ([limitations](limitations.md#callables-and-serialization)).
+
 The kwarg check, the arity check, the constructor listing a failed auto-instantiation
 prints and the CLI's `--f.args.<param>` flags for a `bind:` or `call:` target all count parameters
 the same way, through `_fillable_params`: every parameter a signature lists except `*args` and
@@ -233,7 +244,7 @@ A callable therefore dumps as what it is, opener by opener:
 |---|---|
 | a function, a class, a static or class method | its dotted path, when it reads back as the callable |
 | an instance method, whoever built its owner | the path through its owner's class beside the fields the owner holds, as a `classfn:` spec; the bare path when the owner's constructor takes no argument ([an object dumps the state it holds](#an-object-dumps-the-state-it-holds)) |
-| `bind:` | `{bind: <target>, args: {<keywords>}}`, whatever the keywords spell; a bare path when nothing is bound. The target is serialized by these same rules |
+| `bind:` | `{bind: <target>, args: {<arguments>}}`, whatever the keywords spell, each positional argument named by the parameter it fills (`_named_partial_args`); a bare path when nothing is bound. The target is serialized by these same rules. A positional argument no name holds, one spilling into `*args` or one of a target whose signature cannot be read, cannot be dumped |
 | a callable instance, `class:` or whoever built it | its class's path beside the fields it holds, as a `class:` spec ([an object dumps the state it holds](#an-object-dumps-the-state-it-holds)) |
 | `classfn:` | the instance method it yields, by the row above |
 | `call:` | the callable it returned, by the rows above |

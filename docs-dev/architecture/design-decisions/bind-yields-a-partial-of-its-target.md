@@ -1,6 +1,6 @@
 # Bind yields a partial of its target
 
-`bind:` is an opener: `{bind: T, args: {<args>}}` is `functools.partial(T, **args)`, its target a
+`bind:` is an opener: `{bind: T, args: {<args>}}` is a `functools.partial` of `T` with `args` applied, [by position where they can](../callables.md#arguments-go-by-position-where-they-can), its target a
 dotted path or a callable spec of its own, and the mapping under `args` the target's arguments
 ([a computation's arguments nest under args](a-computations-arguments-nest-under-args.md#a-computations-arguments-nest-under-args)).
 `{bind: T}` with no argument is the bare `"T"`, so a string and its dict form are still one
