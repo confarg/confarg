@@ -300,6 +300,28 @@ class _WithPointMap:
     pts: dict[str, _Point] = dataclasses_field(default_factory=dict)
 
 
+@dataclass
+class _WithPairMap:
+    """Fixed-length tuples under dict keys, set through a subkey flag (BUG-198)."""
+
+    pairs: dict[str, tuple[int, int]] = dataclasses_field(default_factory=dict)
+
+
+@dataclass
+class _Scale:
+    """A struct beside a fixed-length sequence in a union."""
+
+    n: int = 0
+
+
+@dataclass
+class _WithPointOrStruct:
+    """Unions of a fixed-length sequence and a struct, whose flags vanilla consumes greedily."""
+
+    u: _Point | _Scale = dataclasses_field(default_factory=_Scale)
+    t: tuple[int, int] | _Scale = dataclasses_field(default_factory=_Scale)
+
+
 class _Inner(NamedTuple):
     """A namedtuple nested inside another namedtuple's field."""
 
@@ -1774,6 +1796,48 @@ class TestFixedSequenceContract:
         with pytest.raises(SystemExit):
             ClickLoader().load(_WithIntPair, argv=["--pair", "[13, 42]"], env={})
 
+    def test_click_declines_the_element_whole_value_token(self) -> None:
+        """An element flag over a fixed-arity type takes the field flag's shape, its divergence too (BUG-198)."""
+        with pytest.raises(SystemExit):
+            ClickLoader().load(_WithPairMap, argv=["--pairs.a", "[13, 42]"], env={})
+
+    @pytest.mark.parametrize(
+        ("argv", "field", "built"),
+        [
+            (["--u", "1", "2"], "u", _Point(1, 2)),
+            (["--t", "1", "2"], "t", (1, 2)),
+        ],
+        ids=["namedtuple-or-struct", "tuple-or-struct"],
+    )
+    def test_a_sequence_or_struct_union_flag_takes_a_run(
+        self,
+        space_sep_loader: ConfargLoader,
+        argv: list[str],
+        field: str,
+        built: object,
+    ) -> None:
+        """A union holding a sequence takes a run beside a struct variant, as ``str | tuple`` does.
+
+        The struct variant gave the field flag one token on the adapters, where vanilla's loop
+        consumes greedily for any union with a sequence variant.
+        """
+        assert space_sep_loader.merge(_WithPointOrStruct, argv=argv, env={}) == {field: ["1", "2"]}
+        assert getattr(space_sep_loader.load(_WithPointOrStruct, argv=argv, env={}), field) == built
+
+    def test_a_sequence_or_struct_union_flag_takes_repeated_flags(self, repeated_loader: ConfargLoader) -> None:
+        """The clicklike spelling of the same run."""
+        cfg = repeated_loader.load(_WithPointOrStruct, argv=["--u", "1", "--u", "2"], env={})
+        assert cfg.u == _Point(1, 2)
+
+    def test_a_sequence_or_struct_union_flag_takes_the_struct_blob(self, loader: ConfargLoader) -> None:
+        """The whole-value token still selects the struct variant."""
+        assert loader.load(_WithPointOrStruct, argv=["--u", '{"n": 3}'], env={}).u == _Scale(3)
+
+    def test_a_sequence_or_struct_union_flag_bare_is_a_missing_value(self, loader: ConfargLoader) -> None:
+        """A bare occurrence meets an empty accumulation, which vanilla refuses with its own error."""
+        with pytest.raises(ConfargError, match=re.escape("Missing value for '--u'")):
+            loader.merge(_WithPointOrStruct, argv=["--u"], env={})
+
 
 # ---------------------------------------------------------------------------
 # The `=`-spelled run continued by bare tokens -- argparse alone declines it
@@ -1788,6 +1852,12 @@ class TestEqualsSpelledRunContinuation:
         for loader in (VanillaLoader(), ClickLoader(), TyperLoader(), CycloptsLoader()):
             assert loader.merge(_WithIntPair, argv=["--pair=1", "2"], env={}) == {"pair": [1, 2]}
             assert loader.merge(_WithPoint, argv=["--pair=1", "2"], env={}) == {"pair": [1, 2]}
+
+    def test_fixed_arity_element_run_completed_by_bare_tokens(self) -> None:
+        """An element flag over a fixed-arity type continues its ``=`` run as the field flag does (BUG-198)."""
+        for loader in (VanillaLoader(), ClickLoader(), TyperLoader(), CycloptsLoader()):
+            assert loader.merge(_WithPairMap, argv=["--pairs.a=1", "2"], env={}) == {"pairs": {"a": [1, 2]}}
+            assert loader.merge(_WithPointMap, argv=["--pts.a=1", "2"], env={}) == {"pts": {"a": [1, 2]}}
 
     def test_argparse_declines_the_continued_run(self) -> None:
         """Argparse has no spelling for continuing an ``=``-spelled run, so its parser exits.
@@ -4318,6 +4388,22 @@ class _SequenceSegments:
     u: list[int] | dict[str, int] = dataclasses.field(default_factory=list)
 
 
+@dataclass
+class _StarInner:
+    """A struct a dict value mounts a file at."""
+
+    n: int = 0
+
+
+@dataclass
+class _StarKeys:
+    """Dicts whose keys may end in a star, which cyclopts reads as its own name syntax (BUG-180)."""
+
+    d: dict[str, int] = dataclasses.field(default_factory=dict)
+    dl: dict[str, list[int]] = dataclasses.field(default_factory=dict)
+    di: dict[str, _StarInner] = dataclasses.field(default_factory=dict)
+
+
 # The merge's own list-patch keys, a name, and what int() reads but str() of no integer writes.
 _NO_INDEX_SEGMENTS = ["+", "*", "-", "~", "foo", "01", "+1", "-0", "1_0"]
 
@@ -4445,6 +4531,37 @@ class TestCollectionPatchContract:
             space_sep_loader.merge(_WithPairs, argv=["--pairs.0", "--pairs.0", "3", "4"], env={})
         with pytest.raises(ConfargError, match=re.escape("Missing value for '--pairs.0'")):
             space_sep_loader.merge(_WithPairs, argv=["--pairs.0", "1", "2", "--pairs.0"], env={})
+
+    @pytest.mark.parametrize(
+        ("target", "argv", "merged"),
+        [
+            pytest.param(_WithPairs, ["--pairs.0", "1", "2"], {"pairs": {"0": [1, 2]}}, id="tuple-list-element"),
+            pytest.param(_WithPairMap, ["--pairs.a", "1", "2"], {"pairs": {"a": [1, 2]}}, id="tuple-dict-value"),
+            pytest.param(_WithPointMap, ["--pts.a", "1", "2"], {"pts": {"a": [1, 2]}}, id="namedtuple-dict-value"),
+            pytest.param(
+                _WithPointMap,
+                ["--pts.a", "1", "2", "--pts.a", "3", "4"],
+                {"pts": {"a": [3, 4]}},
+                id="repeated-keeps-the-last",
+            ),
+        ],
+    )
+    def test_fixed_arity_element_flag_takes_its_positions(
+        self,
+        loader: ConfargLoader,
+        target: type,
+        argv: list[str],
+        merged: dict[str, Any],
+    ) -> None:
+        """An element flag over a fixed-arity type takes one token per position, as the field flag does (BUG-198).
+
+        It registered ``nargs="*"``, which click and typer read as one token per occurrence.
+        """
+        assert loader.merge(target, argv=argv, env={}) == merged
+
+    def test_fixed_arity_element_flag_builds(self, loader: ConfargLoader) -> None:
+        """The positions build the namedtuple under its key (BUG-198)."""
+        assert loader.load(_WithPointMap, argv=["--pts.a", "1", "2"], env={}).pts == {"a": _Point(1, 2)}
 
     @pytest.mark.parametrize(
         ("target", "argv"),
@@ -5044,16 +5161,11 @@ class TestCollectionPatchContract:
     def test_index_below_a_sequence_and_key_of_a_dict_variant_are_kept(
         self,
         loader: ConfargLoader,
-        request: pytest.FixtureRequest,
         argv: list[str],
         merged: dict[str, Any],
         built: dict[str, Any] | None,
     ) -> None:
         """The canonical index still patches, and a union's dict variant still takes any key (BUG-170)."""
-        if loader.id == "cyclopts" and argv[0].endswith("*"):
-            request.applymarker(
-                pytest.mark.xfail(raises=SystemExit, strict=True, reason="BUG-180: cyclopts strips a trailing '*'"),
-            )
         assert loader.merge(_SequenceSegments, argv=argv, env={}) == merged
         if built is not None:
             cfg = loader.load(_SequenceSegments, argv=argv, env={})
@@ -5062,14 +5174,9 @@ class TestCollectionPatchContract:
     def test_key_star_of_a_dict_keeps_the_files_keys(
         self,
         loader: ConfargLoader,
-        request: pytest.FixtureRequest,
         tmp_json,
     ) -> None:
         """``--u.* 5`` adds the key ``*`` beside the file's keys, as ``--u.z 5`` does (BUG-185)."""
-        if loader.id == "cyclopts":
-            request.applymarker(
-                pytest.mark.xfail(raises=SystemExit, strict=True, reason="BUG-180: cyclopts strips a trailing '*'"),
-            )
         base = tmp_json('{"u": {"k": 1}}')
         cfg = loader.load(_SequenceSegments, argv=["--config", str(base), "--u.*", "5"], env={})
         assert cfg.u == {"k": 1, "*": 5}
@@ -5077,20 +5184,48 @@ class TestCollectionPatchContract:
     def test_key_star_of_a_dict_holding_a_list_keeps_the_files_keys(
         self,
         loader: ConfargLoader,
-        request: pytest.FixtureRequest,
         tmp_json,
     ) -> None:
         """``--d.* 3`` adds the key ``*`` holding a list beside the file's keys (BUG-199, FEAT-3).
 
         A list under ``'*'`` once spelled exactly the merge's own base, which replaced the dict.
         """
-        if loader.id == "cyclopts":
-            request.applymarker(
-                pytest.mark.xfail(raises=SystemExit, strict=True, reason="BUG-180: cyclopts strips a trailing '*'"),
-            )
         base = tmp_json('{"d": {"k": [1]}}')
         cfg = loader.load(_SequenceSegments, argv=["--config", str(base), "--d.*", "3"], env={})
         assert cfg.d == {"k": [1], "*": [3]}
+
+    @pytest.mark.parametrize(
+        ("argv", "merged"),
+        [
+            (["--d.*", "1"], {"d": {"*": 1}}),
+            (["--d.a*", "1"], {"d": {"a*": 1}}),
+            (["--d.a*=1"], {"d": {"a*": 1}}),
+            (["--d.a**", "1"], {"d": {"a**": 1}}),
+            (["--dl.a*", "1"], {"dl": {"a*": [1]}}),
+        ],
+        ids=["star", "trailing-star", "equals", "two-stars", "list-value"],
+    )
+    def test_a_key_ending_in_a_star_is_kept(
+        self,
+        loader: ConfargLoader,
+        argv: list[str],
+        merged: dict[str, Any],
+    ) -> None:
+        """A flag whose name ends in ``*`` sets that key on every front-end (BUG-180).
+
+        Cyclopts strips one trailing ``*`` off a parameter name, its own flattening syntax,
+        so it refused the flag the user typed as an unknown option.
+        """
+        assert loader.merge(_StarKeys, argv=argv, env={}) == merged
+
+    def test_a_config_mount_at_a_key_ending_in_a_star(self, loader: ConfargLoader, tmp_json) -> None:
+        """``--config.di.a*`` mounts the file at the key ``a*`` (BUG-180)."""
+        path = tmp_json('{"n": 7}')
+        assert loader.merge(_StarKeys, argv=["--config.di.a*", str(path)], env={}) == {"di": {"a*": {"n": 7}}}
+
+    def test_a_scalar_root_under_a_prefix_ending_in_a_star(self, loader: ConfargLoader) -> None:
+        """The bare ``--<prefix>`` flag keeps a prefix ending in ``*`` (BUG-180)."""
+        assert loader.merge(int, argv=["--app*", "5"], env={}, cli_prefix="app*") == {"__root__": 5}
 
     @pytest.mark.parametrize("key", ["*", "+", "-", "~"])
     def test_delete_of_a_dict_key_spelled_like_a_list_op_deletes_that_key(
@@ -9366,6 +9501,32 @@ def _naming_count(parts: list[str]) -> int:
     return len(parts)
 
 
+class _NamingPoint(NamedTuple):
+    """A fixed-length sequence a named class declares."""
+
+    x: int
+    y: int
+
+
+@dataclass
+class _NamingShapes:
+    """A callable class whose fields take a fixed count of tokens, or a run under ``Optional``."""
+
+    pt: _NamingPoint = dataclasses_field(default_factory=lambda: _NamingPoint(0, 0))
+    opt: tuple[int, int] | None = None
+
+    def __call__(self) -> tuple[_NamingPoint, tuple[int, int] | None]:
+        return self.pt, self.opt
+
+
+def _naming_point(pt: _NamingPoint) -> _NamingPoint:
+    """A ``bind:`` target taking a namedtuple."""
+    return pt
+
+
+_SHAPES = f"{__name__}._NamingShapes"
+
+
 @dataclass
 class _NamingCfg:
     """A Callable, an ``Any``, an ``int`` a typed call fills, and an ``int`` leaf."""
@@ -9504,6 +9665,28 @@ class TestANodeTypesItsKeysByTheClassItNamesContract:
         """An ``Any`` reads every opener, so its keys are the named class's too."""
         argv = ["--x.class", _JOINER, "--x.parts", "a", "b"]
         assert space_sep_loader.load(_NamingCfg, argv=argv, env={}).x() == "a-b"
+
+    @pytest.mark.parametrize("field", ["x", "f"], ids=["below-an-any", "below-a-class-opener"])
+    def test_a_namedtuple_field_takes_its_positions(self, loader: ConfargLoader, field: str) -> None:
+        """The named class declares ``pt: Point``, so the flag takes one token per position.
+
+        The flag was registered as one token, which every adapter refused the second of.
+        """
+        argv = [f"--{field}.class", _SHAPES, f"--{field}.pt", "1", "2"]
+        assert loader.merge(_NamingCfg, argv=argv, env={}) == {field: {"class": _SHAPES, "pt": [1, 2]}}
+        assert getattr(loader.load(_NamingCfg, argv=argv, env={}), field)() == (_NamingPoint(1, 2), None)
+
+    @pytest.mark.parametrize("field", ["x", "f"], ids=["below-an-any", "below-a-class-opener"])
+    def test_an_optional_tuple_field_takes_a_run(self, space_sep_loader: ConfargLoader, field: str) -> None:
+        """The named class declares ``opt: tuple[int, int] | None``, a union taking a run."""
+        argv = [f"--{field}.class", _SHAPES, f"--{field}.opt", "1", "2"]
+        cfg = space_sep_loader.load(_NamingCfg, argv=argv, env={})
+        assert getattr(cfg, field)() == (_NamingPoint(0, 0), (1, 2))
+
+    def test_a_bind_target_namedtuple_argument_takes_its_positions(self, loader: ConfargLoader) -> None:
+        """``--f.args.pt`` is typed by the target's ``pt: Point`` parameter."""
+        argv = ["--f.bind", f"{__name__}._naming_point", "--f.args.pt", "1", "2"]
+        assert loader.load(_NamingCfg, argv=argv, env={}).f() == _NamingPoint(1, 2)
 
     def test_the_environment_decodes_a_list_argument(self, loader: ConfargLoader) -> None:
         """``APP_F__PARTS`` is a ``list[str]`` of the class, so its JSON array decodes."""

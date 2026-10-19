@@ -21,6 +21,15 @@ A key holding any other character left the name invalid, and with `_` unescaped 
 Rejected: **a positional name** (`p0`, `p1`, …), unique by construction.
 It would work as well, the name never reaching the user, but it ties a parameter's name to registration order, so a debugger or a traceback shows `p17` where the escape still reads as the flag.
 
+The `name` cyclopts registers is the flag itself, and one character of it is cyclopts' own syntax: a trailing `*` flattens a parameter's members into its parent (`Parameter(name="*")`, `"foo.*"`), so `resolve_parameter_name_helper` strips one, with the dots before it.
+`--d.a*` registered as `--d.a`, `--d.*` as `--d`, and cyclopts refused the flag the user typed, whatever it addressed: a dict key, a `--config` mount at one, a `cli_prefix` ending in `*` (BUG-180).
+`_register._option_name` escapes it the way the identifier escape doubles `_`, and printf's `%%`, Make's `$$` and `str.format`'s `{{` double their own escape: a name ending in `*` gets one more, which cyclopts strips again, so `--d.a**` registers `--d.a*` and help prints the flag as typed.
+The strip is single-pass on every cyclopts the project allows (checked on 4.11.2 and 4.24.0), which cyclopts does not document; the contract suite's star-ending flags are what would turn red if it changed.
+
+Rejected: **a sentinel name and an argv rewrite**, the way `merge_app` drops bare occurrences.
+It needs no cyclopts behaviour beyond the parse, but it rewrites both spellings (`--d.a* 1`, `--d.a*=1`) and prints the sentinel in help unless it is translated back.
+Rejected: **refusing such a flag** with confarg's own error, which keeps a parity gap the escape closes.
+
 ## Cyclopts repeated one-token flags
 
 A one-token flag spelled twice is the last occurrence's write on every front-end: `--port 1 --port 2` is `2`, as each later occurrence overwrites what an earlier one wrote at its path ([argv is the only writer](model.md#argv-is-the-only-writer)). argparse, click and typer keep the last occurrence on their own; a cyclopts parameter that consumes one token refuses the second with `Parameter --port specified multiple times.` unless it is registered `allow_repeating=True`.

@@ -81,6 +81,19 @@ def _pyname(name: str) -> str:
     return out
 
 
+def _option_name(name: str) -> str:
+    """Spell the CLI flag *name* as the cyclopts ``Parameter`` name that registers it as typed.
+
+    Cyclopts reads a trailing ``*`` as its own flattening syntax and strips one, with the
+    dots before it, so a name ending in ``*`` gets one more for cyclopts to strip
+    (BUG-180).
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/framework-specifics.md#cyclopts-parameter-names
+    """
+    return f"--{name}*" if name.endswith("*") else f"--{name}"
+
+
 def _spec_to_inspect_param(  # noqa: C901, PLR0912  # one branch per nargs shape (flag / choices / multi / one token), plus the hidden flag
     spec: FlagSpec,
     help_escape: Callable[[str], str] | None = None,
@@ -99,7 +112,7 @@ def _spec_to_inspect_param(  # noqa: C901, PLR0912  # one branch per nargs shape
 
     # Build cyclopts Parameter kwargs
     param_kwargs: dict[str, Any] = {
-        "name": f"--{spec.name}",
+        "name": _option_name(spec.name),
         "required": False,
         "show_default": False,
         # Suppress --no-* (bool) and --empty-* (iterable) negative flags.

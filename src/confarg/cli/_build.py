@@ -142,21 +142,41 @@ def _takes_multi_tokens(tp: Any) -> bool:
     return _is_varlen_collection(tp) or _union_has_seq_variant(tp)
 
 
-def _refusing_bare(spec: FlagSpec, tp: Any) -> FlagSpec:
-    """Return *spec* refusing its bare occurrence when *tp* has a fixed arity, as vanilla spells it.
+def _shaped(spec: FlagSpec, tp: Any) -> FlagSpec:
+    """Return *spec* with the token shape vanilla's loop consumes for a value of type *tp*.
 
-    The one ``_fixed_seq_types`` gate behind :attr:`FlagSpec.refuses_bare`, asked of the
-    type *as resolved* (``None`` when the walk resolved none), which also sets the
-    :attr:`FlagSpec.usage` vanilla's loop spells for that type (BUG-171).
+    The one decision of a flag's shape, asked of the type *as resolved* (``None`` when the
+    walk resolved none) by every flag that sets a value of that type -- a field, a
+    namedtuple's arity flag, a subkey or element, a class's field or a target's argument
+    typed by the name argv gives -- so one type registers one shape wherever it is
+    addressed (BUG-198):
+
+    * a multi-token type (:func:`_takes_multi_tokens`) takes a run and stands bare, a
+      union with a sequence variant included, beside a struct variant too;
+    * a fixed-arity type takes one token per position or one whole value, and refuses its
+      bare occurrence with the usage vanilla's loop spells for it (BUG-171);
+    * anything else takes one token (BUG-179).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
+        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
     """
     from confarg._parse_cli import _fixed_arity_usage  # noqa: PLC0415  # import cycle
 
-    if tp is None or _fixed_seq_types(tp) is None:
+    if tp is None:
         return spec
-    return dataclasses.replace(spec, refuses_bare=True, usage=_fixed_arity_usage(tp))
+    if _takes_multi_tokens(tp):
+        return dataclasses.replace(spec, nargs="*", whole_value=False, stands_bare=True)
+    positions = _fixed_seq_types(tp)
+    if positions is None:
+        return spec
+    return dataclasses.replace(
+        spec,
+        nargs=len(positions),
+        whole_value=True,
+        refuses_bare=True,
+        usage=_fixed_arity_usage(tp),
+    )
 
 
 def _binds_a_run(tp: Any) -> bool:
@@ -166,8 +186,9 @@ def _binds_a_run(tp: Any) -> bool:
     fixed-arity one (``FlagSpec.whole_value``, which needs a variable token count) greedily,
     so every token up to the next flag is the flag's; click and typer bind the exact count.
     Vanilla's loop asks it of the type it consumed for, to tell a stray it refuses from a
-    positional of the host's own, and a subkey or element flag registers greedily exactly
-    where it holds, so the two cannot disagree (BUG-179).
+    positional of the host's own; it holds exactly where :func:`_shaped` gives *tp*'s flag
+    the shape :func:`bound_runs` reads off the registered specs, so the two cannot disagree
+    (BUG-179).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/model.md#the-quartet
@@ -204,7 +225,7 @@ def _scalar_cast_parent_is_leaf(parent: Any) -> bool:
     )
 
 
-def _build_leaf_spec(  # noqa: PLR0911 PLR0913 PLR0917
+def _build_leaf_spec(  # noqa: PLR0913 PLR0917  # the flag, its type twice, and where its help goes
     flag: str,
     raw_type: Any,
     core: Any,
@@ -212,7 +233,25 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913 PLR0917
     group: str | None,
     group_description: str,
 ) -> FlagSpec:
-    """Build a FlagSpec for a single leaf field."""
+    """Build a FlagSpec for a single leaf field, in the shape :func:`_shaped` gives its type as resolved.
+
+    *core* names the metavar and the choices; the shape is asked of *raw_type* resolved,
+    so ``tuple[int, int] | None`` takes the run its union takes, and a namedtuple its
+    positions, whichever *core* a caller unwrapped.
+    """
+    spec = _leaf_spec(flag, raw_type, core, help_text, group, group_description)
+    return _shaped(spec, _resolve_type(raw_type))
+
+
+def _leaf_spec(  # noqa: PLR0911 PLR0913 PLR0917
+    flag: str,
+    raw_type: Any,
+    core: Any,
+    help_text: HelpParts,
+    group: str | None,
+    group_description: str,
+) -> FlagSpec:
+    """Build the FlagSpec of a single leaf field before its shape: its metavar and choices."""
     meta = _get_field_meta(raw_type)
     metavar: str | None = meta.metavar if meta is not None else None
     base = FlagSpec(
@@ -227,27 +266,12 @@ def _build_leaf_spec(  # noqa: PLR0911 PLR0913 PLR0917
         return dataclasses.replace(base, metavar=metavar or "true|false")
 
     if _is_varlen_collection(core):
-        # One of _takes_multi_tokens' two disjuncts, so stands_bare holds here by that rule.
         et = _resolve_type(_elem_type(core))
-        return dataclasses.replace(
-            base,
-            nargs="*",
-            stands_bare=True,
-            metavar=metavar or getattr(et, "__name__", "ITEM").upper(),
-        )
+        return dataclasses.replace(base, metavar=metavar or getattr(et, "__name__", "ITEM").upper())
 
-    if _is_tuple(core):
-        # _is_varlen_collection above absorbed tuple[X, ...], so a tuple
-        # reaching here is fixed-length and tt is non-None. The guard narrows
-        # the type; the None branch is unreachable.
-        tt = _tuple_types(core)
-        if tt is not None:
-            return dataclasses.replace(
-                base,
-                nargs=len(tt),
-                whole_value=True,
-                metavar=metavar or "VALUE",
-            )
+    if _is_tuple(core) or _is_namedtuple(core):
+        # _is_varlen_collection above absorbed tuple[X, ...], so a tuple here is fixed-length.
+        return dataclasses.replace(base, metavar=metavar or "VALUE")
 
     if _is_literal(core) and _is_coercible_leaf(core):
         # A Literal construction refuses offers no choice: confarg refuses its value itself, as
@@ -741,6 +765,7 @@ def _walked_nodes(tps: Iterable[Any]) -> frozenset[Any]:
 
 def _collect_namedtuple_specs(  # noqa: PLR0913, PLR0917  # _specs_for_field's context, plus its help
     core: Any,
+    resolved: Any,
     flag: str,
     union_tag: str,
     group: str | None,
@@ -755,7 +780,9 @@ def _collect_namedtuple_specs(  # noqa: PLR0913, PLR0917  # _specs_for_field's c
     struct's field, because vanilla resolves a path through a namedtuple's fields as
     through a struct's (BUG-68, BUG-112) and takes a fixed-length sequence's negative
     indices as a tuple's (BUG-80).  Every index-spelled flag is hidden from help, so
-    each field's help names its position.
+    each field's help names its position.  The arity flag is shaped by the field's type
+    *resolved*: ``Pt | None`` is a union with a sequence variant there, whose flag takes a
+    run and stands bare, its arity ``build()``'s to judge (BUG-79).
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
@@ -765,18 +792,15 @@ def _collect_namedtuple_specs(  # noqa: PLR0913, PLR0917  # _specs_for_field's c
     n = len(flds)
     docstrings = _get_field_docstrings(core)
     defaults = _namedtuple_defaults(core)
-    result: list[FlagSpec] = [
-        FlagSpec(
-            name=flag,
-            nargs=n,
-            whole_value=True,
-            metavar="VALUE",
-            help=help_text.prose,
-            note=f"{help_text.note} (positional order: {', '.join(flds)})".strip(),
-            group=group,
-            group_description=group_description,
-        ),
-    ]
+    arity = FlagSpec(
+        name=flag,
+        metavar="VALUE",
+        help=help_text.prose,
+        note=f"{help_text.note} (positional order: {', '.join(flds)})".strip(),
+        group=group,
+        group_description=group_description,
+    )
+    result: list[FlagSpec] = [_shaped(arity, resolved)]
     from confarg._parse_cli import _namedtuple_position_spellings  # noqa: PLC0415  # import cycle
 
     below = descent.into(flag, [core])
@@ -856,7 +880,7 @@ def _whole_value_spec(
     )
 
 
-def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one branch per type case
+def _specs_for_field(  # noqa: C901, PLR0911, PLR0913, PLR0917  # one branch per type case
     flag: str,
     name: str,
     raw_type: Any,
@@ -884,7 +908,9 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
         concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
         if concrete:
             # The bare flag first: a whole variant object carries its own discriminator.
-            whole = _whole_value_spec(flag, resolved, help_text, group, group_description)
+            # A sequence variant beside the structs makes it take a run, which vanilla's
+            # loop consumes for any union with one.
+            whole = _shaped(_whole_value_spec(flag, resolved, help_text, group, group_description), resolved)
             specs = [whole, _build_union_tag_spec(flag, union_tag, concrete, group, group_description)]
             by_name: dict[str, FlagSpec] = {s.name: s for s in specs}
             below = descent.into(flag, [resolved])
@@ -900,21 +926,17 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
                     _merge_or_append_spec(specs, by_name, spec)
             return specs
         # Union with a sequence variant (str | tuple[...], str | list[str]) →
-        # a multi-token flag; vanilla consumes greedily, so register nargs="*".
+        # a multi-token flag, which vanilla consumes greedily.
         if _union_has_seq_variant(resolved):
-            # The other _takes_multi_tokens disjunct: greedy, and legal with no token.
-            seq_specs: list[FlagSpec] = [
-                FlagSpec(
-                    name=flag,
-                    nargs="*",
-                    stands_bare=True,
-                    metavar="VALUE",
-                    help=help_text.prose,
-                    note=help_text.note,
-                    group=group,
-                    group_description=group_description,
-                ),
-            ]
+            seq_spec = FlagSpec(
+                name=flag,
+                metavar="VALUE",
+                help=help_text.prose,
+                note=help_text.note,
+                group=group,
+                group_description=group_description,
+            )
+            seq_specs: list[FlagSpec] = [_shaped(seq_spec, resolved)]
             seq_specs.extend(
                 _union_cast_flag_specs(flag, _scalar_cast_types_in_union(resolved), group, group_description),
             )
@@ -941,22 +963,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
         return specs
 
     if _is_namedtuple(core):
-        specs = _collect_namedtuple_specs(core, flag, union_tag, group, group_description, help_text, descent)
-        # The combined arity flag is first.  A bare occurrence of it is a missing
-        # value -- unless Optional wraps the field: `Pt | None` is a union with a
-        # sequence variant as resolved, which consumes greedily and stands bare,
-        # so the flag registers the way that union's own flag does and its arity
-        # is build()'s to judge (BUG-79).
-        if _union_has_seq_variant(resolved):
-            specs[0] = dataclasses.replace(
-                specs[0],
-                nargs="*",
-                whole_value=False,
-                stands_bare=True,
-            )
-        else:
-            specs[0] = _refusing_bare(specs[0], resolved)
-        return specs
+        return _collect_namedtuple_specs(core, resolved, flag, union_tag, group, group_description, help_text, descent)
 
     if _is_registered_leaf(core):
         return [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
@@ -973,23 +980,11 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0917  # one b
         # each --<flag>.<key> found in argv is registered dynamically alongside it.
         return [_whole_value_spec(flag, resolved, help_text, group, group_description)]
 
-    spec = _build_leaf_spec(flag, raw_type, core, help_text, group, group_description)
-    # `tuple[X, Y] | None` is a union with a sequence variant as resolved, so its
-    # flag registers the way that union's own flag does: greedy, bare-legal, with
-    # the arity deferred to build() exactly as vanilla's `_union_seq_value`
-    # defers it (BUG-79).
-    if _union_has_seq_variant(resolved):
-        return [
-            dataclasses.replace(
-                spec,
-                nargs="*",
-                whole_value=False,
-                stands_bare=True,
-            ),
-        ]
-    # Only the fixed-arity spelling reaches here with a fixed type: a plain
-    # `tuple[X, Y]` whose bare occurrence is a missing value.
-    return [_refusing_bare(spec, resolved)]
+    # `tuple[X, Y] | None` is a union with a sequence variant as resolved, so its flag
+    # takes the run that union's own flag takes, its arity deferred to build() as
+    # vanilla's `_union_seq_value` defers it (BUG-79); a plain `tuple[X, Y]` refuses its
+    # bare occurrence.
+    return [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
 
 
 def _collect_union_root_specs(
@@ -1596,26 +1591,18 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
                 ),
             )
         else:
-            # A subkey or element flag has the shape of the type it addresses, so it stands
-            # bare exactly when a field flag of that type would, and refuses its bare
-            # occurrence exactly when a field flag of that type would too
-            # (docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare).
-            # It registers greedily exactly where the loop is told the host binds a run,
-            # so a one-token type leaves the token after its value a stray (BUG-179).
+            # A subkey or element flag has the shape a field flag of the type it addresses
+            # has: a run, a fixed count, or one token, which leaves the token after its
+            # value a stray (BUG-179, BUG-198,
+            # docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity).
             at = _resolve_field_type(target, path, union_tag)
-            specs.append(
-                _refusing_bare(
-                    FlagSpec(
-                        name=key,
-                        nargs="*" if at is not None and _binds_a_run(at) else None,
-                        metavar="VALUE",
-                        stands_bare=at is not None and _takes_multi_tokens(at),
-                        note=f"Set the collection element at '{target_path}'.",
-                        hidden=_addresses_fixed_seq_element(target, path, union_tag),
-                    ),
-                    at,
-                ),
+            element = FlagSpec(
+                name=key,
+                metavar="VALUE",
+                note=f"Set the collection element at '{target_path}'.",
+                hidden=_addresses_fixed_seq_element(target, path, union_tag),
             )
+            specs.append(_shaped(element, at))
     return specs
 
 
@@ -1665,8 +1652,7 @@ def _collect_loop_typed_specs(  # noqa: PLR0913, PLR0917  # the loop's own input
         if name in existing_names or widest == _resolve_field_type(target, name.split("."), union_tag):
             continue
         with contextlib.suppress(Exception):
-            spec = _build_leaf_spec(name, widest, _resolve_type(widest), HelpParts(), None, "")
-            specs.append(_refusing_bare(spec, _resolve_type(widest)))
+            specs.append(_build_leaf_spec(name, widest, _resolve_type(widest), HelpParts(), None, ""))
             existing_names.add(name)
     return specs
 

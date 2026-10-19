@@ -9,7 +9,11 @@ Three flags qualify what `nargs` alone cannot say: `whole_value` ([whole-value f
 Help text priority: `FieldMeta.help` > attribute docstring (read from source with `ast`; unavailable for dynamically created classes) > empty.
 That prose is `FlagSpec.help`; what confarg adds to it — the default, the positional order, the none hint — is `FlagSpec.note`, kept apart so an adapter can escape confarg's text for its framework's help format without escaping the author's ([framework specifics](framework-specifics.md#help-text-is-format-neutral)).
 
-The model owns the inverse of that shape vocabulary, too: `FlagSpec.as_single_token()` clears `nargs`, `whole_value` and `stands_bare` in one operation, spelled beside the attributes themselves.
+Which shape a flag takes is one decision, `_build._shaped`, asked of the type the flag sets as resolved: a run that stands bare, a fixed count that takes a whole value and refuses its bare occurrence, or one token.
+Every flag that sets a value goes through it — a field, a namedtuple's arity flag, a subkey or element, a class's field or a target's argument — so a type has one shape wherever it is addressed.
+Five sites once decided it apart, and the ones that missed a shape registered one token where vanilla's loop took a run: an element flag over a fixed-arity type (BUG-198), a namedtuple or `Optional` fixed-arity field of a class argv names (BUG-233's fix had built them through a leaf builder with neither shape), and a union holding a sequence beside a struct (PR-77, BUG-21).
+
+The model owns the inverse of that shape vocabulary, too: `FlagSpec.as_single_token()` clears `nargs`, `whole_value`, `stands_bare`, `refuses_bare` and its `usage` in one operation, spelled beside the attributes themselves.
 A flag forced to a single token — a non-struct root's, which takes exactly one whatever its type collects ([CLI parsing](../cli-parsing/cli-prefix.md#cli_prefix)) — is therefore reshaped where the shape is declared, and the next shape attribute is undone where it is added rather than cleared by each caller by hand, one attribute at a time (REF-68).
 That reset is what once lapsed attribute by attribute: a fixed-tuple root kept `whole_value`, which made argparse register the bare prefix flag greedily, because nothing tied the reset to the shape it undoes.
 

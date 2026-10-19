@@ -7,10 +7,13 @@ What they write is not the framework's to say: the adapters' CLI channel is vani
 Registration asks `_parse_cli._registered_when_typed`: a collection patch (`_is_collection_patch_path`, so `--input.1.str yes`, a cast on an element, is a patch), or a union tag the walk reaches by its fallback ([a tag is a replayed write](#a-tag-is-a-replayed-write)).
 A key below an `Any` naming no class is a patch too, since a keyed `Any` is a `dict[Any, Any]`, one token each; below one that names a class, the key is that class's, typed and registered as vanilla's loop types it ([callables](../callables.md#an-any-node-reads-every-opener)).
 
-A subkey or element flag registers the arity of the type it addresses, as a field flag of that type does: greedy (`nargs="*"`) exactly where `_build._binds_a_run` holds, one token elsewhere.
+A subkey or element flag registers the shape of the type it addresses, as a field flag of that type does, through the one decision both ask (`_build._shaped`): a run for a multi-token type, the exact count and the whole value for a fixed-arity one, one token elsewhere.
+It is greedy for argparse and cyclopts exactly where `_build._binds_a_run` holds.
 That predicate is what the loop asks to tell a stray from a host positional, so the two answer together: `--d.a 2 1` on a `dict[str, int]` leaves `1` to the host's parser, which refuses it, as vanilla does.
 PR-72 registered every such flag `nargs="*"`, so argparse and cyclopts bound the `1` to the flag while the loop, told the host binds no run to an `int`, skipped it as the host's own, and the token was dropped in silence (BUG-179).
 Registered one token, a cyclopts parameter needs its repeat allowed ([cyclopts repeated one-token flags](framework-specifics.md#cyclopts-repeated-one-token-flags)).
+PR-72 registered a fixed-arity element `nargs="*"` as well, which click and typer read as one token per occurrence: `--pairs.a 1 2` was refused there while `--pairs.a '[1, 2]'` parsed, the reverse of the field flag's [approved divergence](whole-value-flags.md#whole-value-flags) (BUG-198).
+It now registers the field flag's exact count and `whole_value`, so it shares that divergence.
 
 History: patches, dict subkeys, bind-on-`__call__` and expressions over CLI numbers were vanilla-only until PR #72.
 
