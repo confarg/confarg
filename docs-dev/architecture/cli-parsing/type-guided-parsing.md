@@ -14,6 +14,7 @@ What the node *holds* is still not the scan's question: a path is accepted at an
 
 Every question the parsers ask about a dotted path is a question about one walk over the target type: which type the path reaches (`_field_types`, folded by `_resolve_field_type`), whether it keys into a callable's spec (`_addresses_callable_key`), whether it is a collection patch (`_is_collection_patch_path`), whether a dict lies above it (`_is_dict_at_path`).
 The walk is `_parse_cli._walk_path`, and the questions are short loops over what it yields (REF-43).
+Its step is `_parse_cli._step`, which a walker over data takes too, from each node to its child, carrying each state it lands on once ([locals](../locals.md#per-node-namespaces)).
 
 **The walk forks at a union and yields whole branches.**
 A union met before the path ends is walked once per non-None variant, in variant order, so each branch is the walk that took one variant at every union it met.

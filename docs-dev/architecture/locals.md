@@ -10,7 +10,8 @@ The work is spread over the edges:
 
 | Where | Responsibility |
 |---|---|
-| `_parse_cli._locals_keys` / `_locals_keys_nested` / `_locals_keys_at` | which names address a namespace, at a given node |
+| `_parse_cli._locals_keys` / `_locals_keys_nested` / `_locals_keys_reached` | which names address a namespace, at a given node |
+| `_parse_cli._step_states` | step a walker over data from a node to its child |
 | `_parse_cli._walk_target`, `_locals_walk_root` | let `--locals.x` resolve like a `dict[str, Any]` field at the root |
 | `_parse_cli._resolve_field_type` | step through a nested namespace as `dict[str, Any]` |
 | `_parse_env._parse_env` | store `PFX_DB__LOCALS__X` raw, without the unknown-field warning |
@@ -35,8 +36,12 @@ The namespace must work in every channel, unlike the file-only dunder keys.
 ## Per-node namespaces
 
 A file's root — and its `locals:` block — lands wherever the file is mounted, so a namespace can sit at any struct-like node, not only the root.
-Every consumer asks `_locals_keys_at(target, path)` at each node.
-Only struct-like nodes can hold one (a dict treats every name as data; lists address children by index).
+Only struct-like nodes can hold one (a dict treats every name as data; lists address children by index), and a name is a namespace there only where no class the node may build owns it, whatever its tag names ([real field wins](cli-parsing/casts-and-reserved-words.md#every-class-a-node-may-build-counts)).
+
+A walker over data, the strip in `build()` and the checks in `merge()`, carries the walk down the data with it: it steps from each node to its child (`_step_states`, the walk's own step), by the class the node names, and asks the names of what it reached (`_locals_keys_reached`).
+Each way the walk reaches a node is kept once, so a union met at every level never forks it again; the environment's `_locals_segment_index` folds the same steps along one path.
+The strip reads the class each node names, as construction builds it; the checks the class the highest layer naming the node names, else its own layer's, since a higher layer's tag replaces the node below it.
+Before, every walker asked `_locals_keys_at` at each node, which walked the type from the root again, naming nothing, so a union met at every level forked it into 2^depth branches per node: a 20-level tagged chain took 45 seconds to build (BUG-258).
 With anchoring ([expressions](expressions/reference-anchoring.md#reference-anchoring)), a mounted fragment reads its own variables with the same bare `${locals.x}` it would use standing alone.
 
 ## A namespace in an item a list op holds

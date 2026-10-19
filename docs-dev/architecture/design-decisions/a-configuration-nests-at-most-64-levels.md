@@ -29,7 +29,7 @@ The bound is fixed, not derived from `sys.getrecursionlimit()` or the stack in u
 It is not configurable either: a `max_depth` keyword would be carried through the five front-ends, and above about 120 it brings back the crash it lifts the refusal for.
 
 `tests/test_depth.py::TestHeadroom` builds, loads and dumps a tree at the bound of each costly shape with 300 frames already on the stack, so a change that makes a walker costlier per level fails there before a user meets it.
-A tagged union of recursive structs is left out while its locals walk is exponential in depth, a cost in time rather than stack ([BUG-258](../../todo/bugs/BUG-258-a-tagged-union-chain-takes-time-exponential-in-its-depth.md)).
+A tagged union of recursive structs is one of them since its locals walk steps each node once (BUG-258); before, it was left out, exponential in depth, a cost in time rather than stack.
 
 ## Where it is counted
 

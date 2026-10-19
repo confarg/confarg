@@ -100,7 +100,8 @@ Canonical decision-makers:
 | "which flags does this field register?" | `cli/_build._specs_for_field` — a struct's field, and a namedtuple's at each of its name and index spellings, with the help `_spec._build_help` writes for it (BUG-68, BUG-112, [CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)) |
 | "does a scalar cast land on a plain leaf field (registration)?" | `cli/_build._scalar_cast_parent_is_leaf` |
 | reserved-name shadowing | `_parse_cli._check_reserved_key_conflict` |
-| locals namespace names | `_parse_cli._locals_keys_at` |
+| locals namespace names | `_parse_cli._locals_keys_nested` below the root, of every type the node may be (BUG-258); the root's `_locals_keys`; a walker over data reaches a node by `_step_states` and asks `_locals_keys_reached`, as `_locals_segment_index` does along one path |
+| "where does one segment take the type walk?" | `_parse_cli._step` — `_walk_path` recurses over it, and a walker over data steps by it from each node to its child ([CLI parsing](cli-parsing/type-guided-parsing.md#one-walk-many-questions)) |
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |
 | "does a `+` append here, and what are its items coerced by?" | `_parse_cli._append_element_type`, through `_appended_element_type` for a flag and a variable alike (FEAT-18) — asked of each branch the walk reaches at the flag's path, a union spread into its variants, never of their fold, so `--xs+` takes every field `--xs.<i>` and a file's `__append__` take (D4, [CLI parsing](cli-parsing/collection-patches.md#an-append-reaches-every-sequence-variant)) |
 | "who writes the adapters' CLI channel and its `--config` files?" | `_parse_cli._parse_cli(..., host_parsed=True)` — vanilla's loop over the argv the framework parsed, skipping only the host's own tokens (REF-72); the parse result is only checked against argv, by `cli/_collect._require_argv_spells` |

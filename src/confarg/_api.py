@@ -20,7 +20,14 @@ from confarg._defaults import MergeOptions, _Options, _resolve_options
 from confarg._depth import refuse_overflow
 from confarg._files import _dump_file, _native_types_of
 from confarg._merge import ListOp, MergeDict
-from confarg._parse_cli import _config_pairs_in, _locals_keys_at, _parse_cli
+from confarg._parse_cli import (
+    _config_pairs_in,
+    _locals_keys_reached,
+    _parse_cli,
+    _step_states,
+    _walk_start,
+    _WalkState,
+)
 from confarg._pipeline import _merge_sources
 from confarg._serialize import _check_native_types, _DumpOptions, _serialize, _serialize_untyped, written_form
 from confarg._typed_read import TypedReading
@@ -105,20 +112,28 @@ def _strip_locals(data: MergeDict, target: Any, union_tag: str) -> MergeDict:
     Dev Notes:
         docs-dev/architecture/locals.md#stripping
     """
-    return cast("MergeDict", _strip_locals_node(data, target, union_tag, []))
+    return cast("MergeDict", _strip_locals_node(data, target, union_tag, [_walk_start(target)], 0))
 
 
-def _strip_locals_node(node: Any, target: Any, union_tag: str, path: list[str]) -> Any:
-    """Strip every namespace at or below *node*, returning *node* itself if none."""
+def _strip_locals_node(node: Any, target: Any, union_tag: str, states: list[_WalkState], depth: int) -> Any:
+    """Strip every namespace at or below *node*, which the walk reaches in *states*, returning *node* itself if none.
+
+    Each child is stepped to from *node*, by the class *node* names, as construction builds it.
+    """
     if isinstance(node, list):
-        stripped = [_strip_locals_node(v, target, union_tag, [*path, str(i)]) for i, v in enumerate(node)]
+        stripped = [
+            _strip_locals_node(v, target, union_tag, _step_states(states, str(i), depth, None, union_tag), depth + 1)
+            for i, v in enumerate(node)
+        ]
         return node if all(a is b for a, b in zip(stripped, node, strict=True)) else stripped
     if not isinstance(node, dict):
         return node
-    drop = {key for key in _locals_keys_at(target, path, union_tag) if key in node}
+    drop = {key for key in _locals_keys_reached(states, target, union_tag, depth=depth) if key in node}
     kept = {
         # An op build() applied no list for is no field: what it holds is not walked.
-        k: v if isinstance(k, ListOp) else _strip_locals_node(v, target, union_tag, [*path, k])
+        k: v
+        if isinstance(k, ListOp)
+        else _strip_locals_node(v, target, union_tag, _step_states(states, k, depth, node, union_tag), depth + 1)
         for k, v in node.items()
         if k not in drop
     }

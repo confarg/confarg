@@ -42,6 +42,22 @@ The union's structural check reads a variant's keys through one helper, `typedlo
 The merge asks the same predicate, so a key a member owns refines what lower layers set rather than replacing it ([the type decides](../design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)).
 The tag still counts as a member for the casts and the locals (`_segment_names_real_field` answers it so), and the CLI keeps a case-differing field distinguishable, exact matching being what it is: `--Kind` the tag, `--kind` the field.
 
+### Every class a node may build counts
+
+The locals names at a node are asked of every class the node may build, whatever its tag names (BUG-258): each variant of a union, each subclass of a struct, each type the walk reaches there when the data names nothing to tell them apart (`_locals_keys_nested`).
+The root and a struct already answered so, since the predicate checks a union's variants and a struct's subclass-only fields; a union below the root read each variant's names apart, so `item: A | B` took `locals` as a namespace even where `class: A` named the variant owning a `locals` field.
+`build()` stripped the field silently, and `--item.locals 5` was refused as a write of a whole namespace, while the walk's own step read it as the field.
+So in `item: A | B`, a `B` whose sibling `A` owns `locals` spells its namespace `_locals`, as a root `A | B` and a base whose subclass owns `locals` already did.
+
+Rejected:
+
+- **The names of the class the node names**, the variant's own where its tag names one.
+  More permissive, but which names are a namespace then turns on data a higher layer may rename (`--item.class A` over a file naming `B`), and the root's names, its graft and the `config_flag` check, all fixed before any data is read, would have to read it too.
+- **Each variant's names apart**, the rule below the root before.
+  It strips a field the named variant owns.
+
+Precedents reserve their names statically: Hydra's `_target_` and `_args_`, jsonargparse's `class_path` and `init_args` are never decided by the data a node holds.
+
 The trade-off is accepted the way the casts rule accepts its own: a member that shadows the tag makes the tag's class-path dispatch unreachable at that position — a variant field shadowing a union, a base field shadowing subclass dispatch, a subclass-only field turning subclass dispatch structural, a leaf parameter shadowing the only hatch into a registered leaf.
 Where the tag was a real alternative, the surprise is named instead of stayed silent: consuming a shadowed tag-shaped key at a dispatch position emits a `ConfargWarning`, once per position, on use ([design decisions](../design-decisions/a-shadowed-tag-warns-on-use.md#a-shadowed-tag-warns-on-use)); a position that never could dispatch stays quiet.
 The alternatives were refused: refusing the collision loudly would break plain structs that never use a union and contradict the env channel's settled member-wins (BUG-101), and letting the tag win everywhere is the unreachable-field bug itself.
