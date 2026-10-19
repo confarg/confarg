@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._cast import JSON_CAST_NAME, fold_root_json, resolve_forced_value
 from confarg._merge import (
+    APPEND_SUFFIX,
+    DELETE_SUFFIX,
     DICT_DELETE,
     MergeDict,
     _accumulate_list_delete,
@@ -28,7 +30,10 @@ from confarg._merge import (
 )
 from confarg._parse_cli import (
     _accepts_object_value,
+    _appended_element_type,
     _check_mount_subpath,
+    _collect_append_items,
+    _EqValue,
     _field_types,
     _locals_keys,
     _locals_segment_index,
@@ -40,6 +45,7 @@ from confarg._parse_cli import (
     _restart_restated_node,
     _sequence_refusal,
     _walk_target,
+    _write_append,
     detect_force_cast,
 )
 from confarg._types import (
@@ -134,14 +140,31 @@ def _handle_env_config_flag(  # noqa: PLR0913, PLR0917  # the check needs the ta
     """
     subpath_parts = parts[1:]
     if subpath_parts:
-        resolved_parts, _ = _resolve_env_parts(target, subpath_parts, union_tag)
-        subpath = ".".join(resolved_parts)
+        # The append suffix is no part of the field's name: the segment is spelled without it.
+        suffix = APPEND_SUFFIX if _is_env_append(subpath_parts) else ""
+        spelled = [*subpath_parts[:-1], subpath_parts[-1].removesuffix(suffix)]
+        resolved_parts, _ = _resolve_env_parts(target, spelled, union_tag)
+        subpath = ".".join(resolved_parts) + suffix
         # Resolved parts, because the env match is case-insensitive and the walk the
         # check runs is exact.
         _check_mount_subpath(target, subpath, union_tag, orig_key)
     else:
         subpath = ""
     env_configs.append((subpath, value))
+
+
+def _refuse_root_config_append(orig_key: str, parts: list[str], separator: str) -> None:
+    """Refuse a bare ``CONFIG+``, which names no field to append to.
+
+    Raises:
+        ConfargError: If *parts* is the config segment alone, with the append suffix.
+    """
+    if len(parts) == 1 and _is_env_append(parts):
+        msg = (
+            f"Environment variable {orig_key!r} requires a field path to append to."
+            f" Use {orig_key[:-1]}{separator}<FIELD>{APPEND_SUFFIX}=/path/to/file."
+        )
+        raise ConfargError(msg)
 
 
 def _refuse_below_a_sequence(orig_key: str, parts: list[str], target: Any, union_tag: str) -> None:
@@ -176,7 +199,7 @@ def _refuse_reserved_key(orig_key: str, parts: list[str]) -> None:
         docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
     """
     segments = [p.lower() for p in parts]
-    if _is_env_delete(parts):
+    if _is_env_delete(parts) or _is_env_append(parts):
         segments[-1] = segments[-1][:-1]
     if (reserved := _reserved_segment(segments)) is not None:
         raise ConfargError.reserved_key(orig_key, reserved)
@@ -203,7 +226,24 @@ def _handle_env_delete(orig_key: str, del_parts: list[str], data: MergeDict) -> 
 
 def _is_env_delete(parts: list[str]) -> bool:
     """Whether the variable spelled *parts* is a delete (``FOO__BAR-``, ``FOO__ITEMS__1-``)."""
-    return parts[-1].endswith("-") and len(parts[-1]) > 1
+    return parts[-1].endswith(DELETE_SUFFIX) and len(parts[-1]) > 1
+
+
+def _is_env_append(parts: list[str]) -> bool:
+    """Whether the variable spelled *parts* is an append (``FOO__ITEMS+``), as ``--items+`` is."""
+    return parts[-1].endswith(APPEND_SUFFIX) and len(parts[-1]) > 1
+
+
+def _addresses_config(parts: list[str], config_flag: str) -> bool:
+    """Whether the variable spelled *parts* is a config pointer, ``CONFIG[__SUBPATH][+]``.
+
+    A bare ``CONFIG+`` is one too, a mistake about this variable that
+    :func:`_refuse_root_config_append` names, as ``--config+`` is about its flag.
+    """
+    first = parts[0].lower()
+    if len(parts) == 1:
+        first = first.removesuffix(APPEND_SUFFIX)
+    return bool(config_flag) and first == config_flag.lower()
 
 
 def _env_cast(parts: list[str], walk_target: Any, union_tag: str) -> tuple[list[str], str] | None:
@@ -226,7 +266,7 @@ def _env_order(parts: list[str], key: str, walk_target: Any, union_tag: str) -> 
 
     First the depth of the path it writes, so a variable is applied after every variable
     whose path holds its own and refines what they wrote; then, at one path, a delete, a
-    ``json`` cast and a plain value, in that order. The variables then merge as the flags
+    ``json`` cast, a plain value and an append, in that order. The variables then merge as the flags
     of the same paths merge when typed in that order, whatever order the mapping yields
     them in.
 
@@ -235,6 +275,8 @@ def _env_order(parts: list[str], key: str, walk_target: Any, union_tag: str) -> 
     """
     if _is_env_delete(parts):
         return len(parts), 0
+    if _is_env_append(parts):
+        return len(parts), 3
     if (cast := _env_cast(parts, walk_target, union_tag)) is not None:
         return len(cast[0]), 1
     return (len(parts) if key else 0), 2
@@ -424,8 +466,9 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
 
     variables: list[tuple[tuple[int, int], str, str, list[str], str]] = []
     for orig_key, key, parts, value in _prefixed_variables(env, prefix, separator):
-        if config_flag and parts[0].lower() == config_flag.lower():
+        if _addresses_config(parts, config_flag):
             # File pointers: ordered by the pipeline, which loads them.
+            _refuse_root_config_append(orig_key, parts, separator)
             _handle_env_config_flag(parts, target, env_configs, value, union_tag, orig_key)
             continue
         variables.append((_env_order(parts, key, walk_target, union_tag), orig_key, key, parts, value))
@@ -441,9 +484,10 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
             data[_defaults.ROOT_KEY] = _try_coerce(_resolve_type(target), _StrToken(value))
             continue
 
-        # A delete is checked as the value variable of its path is (BUG-182).
-        is_delete = _is_env_delete(parts)
-        path, ft = _resolve_env_parts(walk_target, [*parts[:-1], parts[-1][:-1]] if is_delete else parts, union_tag)
+        # A delete or an append is checked as the value variable of its path is (BUG-182).
+        is_delete, is_append = _is_env_delete(parts), _is_env_append(parts)
+        spelled = [*parts[:-1], parts[-1][:-1]] if is_delete or is_append else parts
+        path, ft = _resolve_env_parts(walk_target, spelled, union_tag)
         # Locals are not target fields: skip the unknown-field warning and store the raw
         # token; _pipeline checks and coerces them (docs-dev/architecture/locals.md).
         is_locals = _locals_segment_index(target, path, union_tag) is not None
@@ -461,6 +505,11 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         # this path is a spec this variable refines, not a scalar it replaces.
         _open_callable_shorthand(data, path, walk_target, union_tag)
         _restart_restated_node(data, path, walk_target, union_tag)
+        if is_append:
+            # One value, read as the flag's single token is: a JSON array is several items.
+            et = _appended_element_type(walk_target, path, union_tag, orig_key, ft)
+            _write_append(data, path, _collect_append_items([_EqValue(value)], 0, et)[0])
+            continue
         _store_env_value(path, ft, value, data)
 
     from confarg._typed_merge import merge_root  # noqa: PLC0415  # import cycle: it walks types with _parse_cli

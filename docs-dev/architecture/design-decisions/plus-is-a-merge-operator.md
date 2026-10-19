@@ -8,8 +8,7 @@ Two independent questions hide behind a list flag, and only one of them is a fra
 | merge | does the lower-priority value survive, or is it replaced? | confarg |
 
 `+` names the **merge** axis alone, and names it the same way in every channel that has one:
-`--input+ 42` on argv, `input+: [42]` as a config-file key, `--config.dbs+ other.yaml` for a
-sub-configuration. Dropping it from argv to lean on a framework's own repetition instead would
+`--input+ 42` on argv, `APP_INPUT+=42` in the environment, `input+: [42]` as a config-file key, `--config.dbs+ other.yaml` or `APP_CONFIG__DBS+=other.yaml` for a sub-configuration. Dropping it from argv to lean on a framework's own repetition instead would
 split one vocabulary across three channels to save one character.
 
 The corollary is that **nothing else** spreads one value over several list elements. A mount
@@ -33,5 +32,10 @@ The spelling axis diverges per framework and always has
 reads as `--f x y` in every front-end instead of last-wins in two of them (BUG-37): repetition is a
 spelling, and a spelling never decides whether the lower-priority value survives.
 
-The environment is the one channel the suffix does not reach — an append has no env spelling at
-all, though a delete does (FEAT-18).
+## The environment spells it in the variable's name
+
+`APP_INPUT+=42` appends, at any depth, as `--input+ 42` does (FEAT-18). The suffix is on the name, the path side, where every channel spells an op, and never in the value. It is the spelling the delete already had (`APP_INPUT-`), so the environment has one vocabulary with the other channels. A variable takes one value, so the flag's several tokens become a JSON array, the flag's own single-token spelling: `APP_INPUT+='[42, 43]'`. At one path an append applies after a delete, a cast and a plain value ([environment parsing](../environment-parsing.md#the-broader-variable-applies-first)).
+
+Rejected: a value-side marker, `APP_INPUT='@merge [42]'`, the shape dynaconf chose. It keeps a variable's name exportable from a POSIX shell, which `+` is not, but `-` is not either, and confarg reads a mapping it is handed, not shell syntax. It would have spelled the append unlike the delete and unlike every other channel, needed an escape for a value that starts with the marker, and put an op in a value rather than on the path.
+
+Until then the root variable was warned about as naming no field and dropped, while one below a dict reached the merge as the key `k+`, which the merge read as a file's `k+:` and appended (BUG-201).

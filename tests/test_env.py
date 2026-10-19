@@ -1140,6 +1140,95 @@ class TestEnvDelete:
         assert result.name == "default"
 
 
+@_dc
+class _EnvAppendable:
+    """A list at the root and one below a dict, a scalar, and the file each starts from."""
+
+    xs: list[int] = field(default_factory=list)
+    d: dict[str, list[int]] = field(default_factory=dict)
+    name: str = "default"
+
+
+class TestEnvAppend:
+    """A variable whose name ends in ``+`` appends, as the flag of the same path does (FEAT-18).
+
+    The environment had no append: ``APP_XS+`` was warned about as naming no field, while
+    ``APP_D__K+`` appended, as its key reached the merge and was read there as a file's ``k+:``
+    (BUG-201).
+    """
+
+    @pytest.fixture
+    def base(self, tmp_yaml) -> Path:
+        """A file the variables apply over."""
+        return tmp_yaml("xs: [1, 2]\nd: {k: [1]}\n")
+
+    @pytest.mark.parametrize(
+        ("name", "value", "flag"),
+        [
+            pytest.param("APP_XS+", "9", ["--xs+", "9"], id="root-field"),
+            pytest.param("APP_D__K+", "9", ["--d.k+", "9"], id="below-a-dict"),
+            pytest.param("APP_XS+", "[3, 4]", ["--xs+", "[3, 4]"], id="json-array"),
+        ],
+    )
+    def test_appends_as_its_flag_does(
+        self,
+        loader: ConfargLoader,
+        base: Path,
+        name: str,
+        value: str,
+        flag: list[str],
+    ) -> None:
+        """The variable merges what the flag of the same path merges, over the file."""
+        from_env = loader.load(_EnvAppendable, argv=[], env={name: value}, env_prefix="APP_", files=[base])
+        from_cli = loader.load(_EnvAppendable, argv=flag, env={}, files=[base])
+        assert from_env == from_cli != loader.load(_EnvAppendable, argv=[], env={}, files=[base])
+
+    @pytest.mark.parametrize("order", ["given", "reversed"])
+    @pytest.mark.parametrize(
+        ("env", "expected"),
+        [
+            pytest.param({"APP_XS": "[5]", "APP_XS+": "6"}, [5, 6], id="after-a-whole-value"),
+            pytest.param({"APP_XS-": "1", "APP_XS+": "6"}, [6], id="after-a-whole-field-delete"),
+        ],
+    )
+    def test_applies_after_the_other_variables_of_its_path(
+        self,
+        loader: ConfargLoader,
+        base: Path,
+        env: dict[str, str],
+        expected: list[int],
+        order: str,
+    ) -> None:
+        """An append refines what the path's whole value or delete left, whatever the mapping's order."""
+        env = dict(reversed(env.items())) if order == "reversed" else env
+        assert loader.load(_EnvAppendable, argv=[], env=env, env_prefix="APP_", files=[base]).xs == expected
+
+    def test_append_to_a_field_holding_no_collection_is_refused(self, loader: ConfargLoader) -> None:
+        """A scalar takes no append, from the environment as from argv."""
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("'APP_NAME+'")):
+            loader.load(_EnvAppendable, argv=[], env={"APP_NAME+": "x"}, env_prefix="APP_")
+
+    def test_append_to_an_unknown_field_is_warned_about(self, loader: ConfargLoader) -> None:
+        """A first segment naming no field is warned about and ignored, as for any other variable."""
+        with pytest.warns(confarg.exceptions.ConfargWarning, match=re.escape("'APP_ZZ+'")):
+            result = loader.load(_EnvAppendable, argv=[], env={"APP_ZZ+": "1"}, env_prefix="APP_")
+        assert result == _EnvAppendable()
+
+    def test_config_pointer_appends(self, loader: ConfargLoader, base: Path, tmp_yaml) -> None:
+        """``CONFIG__XS+`` appends the items a fragment holds, as ``--config.xs+`` does."""
+        items = tmp_yaml("- 7\n- 8\n", "items.yaml")
+        env = {"APP_CONFIG__XS+": str(items)}
+        from_env = loader.load(_EnvAppendable, argv=[], env=env, env_prefix="APP_", files=[base])
+        assert from_env.xs == [1, 2, 7, 8]
+        assert from_env == loader.load(_EnvAppendable, argv=["--config.xs+", str(items)], env={}, files=[base])
+
+    def test_config_pointer_append_needs_a_field(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``CONFIG+`` names no field to append to, as ``--config+`` does not."""
+        items = tmp_yaml("- 7\n", "items.yaml")
+        with pytest.raises(confarg.exceptions.ConfargError, match="requires a field path"):
+            loader.load(_EnvAppendable, argv=[], env={"APP_CONFIG+": str(items)}, env_prefix="APP_")
+
+
 class _EnvSeqPt(NamedTuple):
     x: int
     y: int

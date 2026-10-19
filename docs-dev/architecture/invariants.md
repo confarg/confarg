@@ -47,7 +47,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | reading one document, whatever route mounts it | `_files._load_any` |
 | "which parser does this location name?" | `_files._loader_for` |
 | reading a channel value as an include value | `_files._parse_mount_value` |
-| mounting a channel value at a subpath | `_files._load_mount` — `--config.<path>` and the env pointers; `__include__` reaches the same outcome through `_files._resolve_dict` |
+| mounting a channel value at a subpath | `_files._load_mount` — `--config.<path>` and the env pointers, a trailing `+` appending on both; `__include__` reaches the same outcome through `_files._resolve_dict` |
 | "which prefix anchors this document's bare references?" | `_files._load_any`'s *mount* — the whole path from the configuration root, a tuple of segments, applied once by `_files._resolve_node` to the document's own nodes and never to what an include brought in (BUG-127, [expressions](expressions/reference-anchoring.md#a-document-is-prefixed-once-by-its-whole-mount-path)) |
 | "which scheme does this location name?" | `_sources._scheme_of` |
 | "what are this location's bytes?" | `_sources._read_bytes` |
@@ -112,7 +112,7 @@ special case; apply a rule wherever its precondition holds. Canonical decision-m
 | reserved-name shadowing | `_parse_cli._check_reserved_key_conflict` |
 | locals namespace names | `_parse_cli._locals_keys_at` |
 | "is this path a collection patch?" | `_parse_cli._is_collection_patch_path` |
-| "does a `+` append here, and what are its items coerced by?" | `_parse_cli._append_element_type` — asked of each branch the walk reaches at the flag's path, a union spread into its variants, never of their fold, so `--xs+` takes every field `--xs.<i>` and a file's `xs+:` take (D4, [CLI parsing](cli-parsing/collection-patches.md#an-append-reaches-every-sequence-variant)) |
+| "does a `+` append here, and what are its items coerced by?" | `_parse_cli._append_element_type`, through `_appended_element_type` for a flag and a variable alike (FEAT-18) — asked of each branch the walk reaches at the flag's path, a union spread into its variants, never of their fold, so `--xs+` takes every field `--xs.<i>` and a file's `xs+:` take (D4, [CLI parsing](cli-parsing/collection-patches.md#an-append-reaches-every-sequence-variant)) |
 | "who writes the adapters' CLI channel and its `--config` files?" | `_parse_cli._parse_cli(..., host_parsed=True)` — vanilla's loop over the argv the framework parsed, skipping only the host's own tokens (REF-72); the parse result is only checked against argv, by `cli/_collect._require_argv_spells` |
 | "would vanilla refuse this path as unknown?" | `_parse_cli._path_unknown` — the delete handler, the host-mode skip of a flag whose first segment names no member, and the environment's warning about a variable whose first segment names none (BUG-115) |
 | "did the host bind the token after a flag's run to that flag?" | `cli/_build._binds_a_run`, asked by the loop only for a framework that varies a flag's token count (argparse, cyclopts: `binds_runs`); a subkey or element flag registers greedily exactly where it holds, so a one-token type's flag leaves the token after its value a stray (BUG-179, [CLI adapters](cli-adapters/collection-patch-parity.md#collection-patch-parity)) |

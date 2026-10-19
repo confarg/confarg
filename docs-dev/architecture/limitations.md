@@ -66,8 +66,6 @@ the boundary moves here.
   patch has nothing to bite on in an empty document.
 - Index-keyed lists must be gap-free, unless the element type is Optional — a gap would
   otherwise have to invent an element of an unknown type.
-- A list is extended with the `+` suffix on argv and in config files, but not from the
-  environment: an append never got an env spelling, though a delete did (FEAT-18).
 - Below a sequence, argv and the environment take an index only as `str()` writes one, while a
   config file's key is read by the merge's `int()`: `--xs.01` is refused and `xs: {"01": 5}`
   patches index 1. A file is not walked against the type

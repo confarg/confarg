@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
     from confarg._defaults import _Options
 
-from confarg._files import _load_mount, _load_mount_value, _load_subpath_files, _nest
+from confarg._files import _load_mount, _load_subpath_files
 from confarg._merge import (
     APPEND_SUFFIX,
     ListOp,
@@ -35,7 +35,6 @@ from confarg._merge import (
     _deep_merge,
     _DeleteSentinel,
     _drop_deleted_bases,
-    _to_append_list,
 )
 from confarg._parse_cli import _locals_keys, _locals_keys_at
 from confarg._parse_env import _parse_env
@@ -50,17 +49,10 @@ from confarg.typedload._coerce import _coerce_leaf
 def _load_cli_config(value: Any, subpath: str, config_flag: str, root: MergeAt) -> MergeDict:
     """Load one CLI config source (``--config[.subpath][+] VALUE``) into a nested dict.
 
-    *value* is read as an ``__include__`` value and mounted at *subpath*, so this route
-    accepts exactly the fragment shapes and per-format options a document's ``__include__``
-    accepts; only the base a relative location resolves against differs, being the process
-    working directory here.
-
-    The ``+`` form appends instead of replacing, and appending is the one thing that spreads a
-    fragment over several elements: a list extends the target list, anything else lands as one
-    item. References in an appended fragment stay unanchored, because an appended element has
-    no index until the merge is over (docs-dev/architecture/limitations.md#expressions).
-    *root*, where the merge stands at the configuration root, types the node each part
-    merges at: an appended fragment's is an element of the field.
+    *value* is mounted at *subpath* by :func:`~confarg._files._load_mount`, the route every
+    channel's mount takes, the ``+`` form appending. Only a ``+`` naming no field is the
+    flag's own mistake, reported in its own spelling. *root*, where the merge stands at the
+    configuration root, types the node each part merges at.
 
     Dev Notes:
         docs-dev/architecture/config-files/mounting.md#mounting
@@ -75,9 +67,6 @@ def _load_cli_config(value: Any, subpath: str, config_flag: str, root: MergeAt) 
                 f" Use --{config_flag}.fieldname{APPEND_SUFFIX} /path/to/file."
             )
             raise ConfargError(msg)
-        loaded = _load_mount_value(value, root=root.at_path((*real_subpath.split("."), "0")))
-        return _nest({ListOp.APPEND: _to_append_list(loaded)}, real_subpath)
-
     return _load_mount(value, subpath, root=root)
 
 

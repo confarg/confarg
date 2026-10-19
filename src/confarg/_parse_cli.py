@@ -1120,6 +1120,36 @@ def _append_element_type(ends: list[Any]) -> Any | None:
     return _common_type(elements)
 
 
+def _appended_element_type(target: Any, path: list[str], union_tag: str, spelling: str, ft: Any) -> Any:
+    """Return the type an item appended at *path* is coerced by, or refuse the append.
+
+    The one check of an append's path, for a flag and a variable alike (FEAT-18). *spelling*
+    is the flag or the variable as its channel writes it, and *ft* the field's type, as the
+    message names them; what the append reaches is asked of the walk
+    (:func:`_append_element_type`).
+
+    Raises:
+        ConfargError: If nothing at *path* holds a list, a set or a variadic tuple.
+    """
+    et = _append_element_type(_field_types(target, path, union_tag))
+    if et is None:
+        msg = (
+            f"Cannot use + (append) syntax on {spelling!r}:"
+            f" field '{'.'.join(path)}' has type {ft!r}, which is not a list, set, or frozenset."
+        )
+        raise ConfargError(msg)
+    return et
+
+
+def _write_append(data: MergeDict, path: list[str], items: list[Any]) -> None:
+    """Append *items* at *path* of *data*, after whatever the path already holds there."""
+    node: Any = data
+    for p in path[:-1]:
+        node = node.get(p, {}) if isinstance(node, dict) else {}
+    existing = node.get(path[-1]) if path and isinstance(node, dict) else None
+    _set_nested(data, path, _merge_append_ops(existing, items))
+
+
 def _handle_append_token(
     ctx: _ParseCtx,
     i: int,
@@ -1127,24 +1157,10 @@ def _handle_append_token(
     ft: Any,
     path: list[str],
 ) -> int:
-    """Process an append-mode flag (--foo+ items...) and return the new arg index.
-
-    *ft* is the field's type as the message names it; what the append reaches is asked of the
-    walk (:func:`_append_element_type`).
-    """
-    et = _append_element_type(_field_types(ctx.target, path, ctx.union_tag))
-    if et is None:
-        msg = (
-            f"Cannot use + (append) syntax on {token!r}:"
-            f" field '{'.'.join(path)}' has type {ft!r}, which is not a list, set, or frozenset."
-        )
-        raise ConfargError(msg)
+    """Process an append-mode flag (--foo+ items...) and return the new arg index."""
+    et = _appended_element_type(ctx.target, path, ctx.union_tag, token, ft)
     append_items, i = _collect_append_items(ctx.argv, i, et)
-    node: Any = ctx.data
-    for p in path[:-1]:
-        node = node.get(p, {}) if isinstance(node, dict) else {}
-    existing = node.get(path[-1]) if path and isinstance(node, dict) else None
-    _set_nested(ctx.data, path, _merge_append_ops(existing, append_items))
+    _write_append(ctx.data, path, append_items)
     return i
 
 
