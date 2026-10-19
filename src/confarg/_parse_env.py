@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._callable import promote_bare_spec
 from confarg._cast import JSON_CAST_NAME, decode_json, fold_root_json, resolve_forced_value
+from confarg._depth import refuse_long_path
 from confarg._merge import (
     APPEND_SUFFIX,
     DELETE_SUFFIX,
@@ -335,7 +336,7 @@ def _apply_env_json_cast(  # noqa: PLR0913, PLR0917  # root and nested placement
     if (cast := _env_cast(parts, walk_target, union_tag)) is None:
         return False
     path, cast_name = cast
-    decoded = resolve_forced_value(cast_name, value, flag=orig_key)
+    decoded = resolve_forced_value(cast_name, value, flag=orig_key, at=path)
     if path:
         _set_nested(data, path, decoded, _typed_root(walk_target, union_tag))
         return True
@@ -426,7 +427,7 @@ def _store_env_value(parts: list[str], ft: Any, value: str, data: MergeDict, ori
     """
     if _accepts_json_for(ft, value):
         with contextlib.suppress(json.JSONDecodeError):
-            parsed = decode_json(value, orig_key)
+            parsed = decode_json(value, orig_key, parts)
             if isinstance(parsed, list | dict):
                 _set_nested(data, parts, parsed, at)
                 return
@@ -500,7 +501,7 @@ def _env_namings(
             _set_nested(named, path, value)
         elif value.startswith("{"):
             with contextlib.suppress(json.JSONDecodeError, ConfargError):
-                decoded = decode_json(value, _orig_key)
+                decoded = decode_json(value, _orig_key, path)
                 if isinstance(decoded, dict):
                     _set_nested(named, path, decoded)
         elif (
@@ -567,6 +568,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
 
     variables: list[tuple[tuple[int, int], str, str, list[str], str]] = []
     for orig_key, key, parts, value in _prefixed_variables(env, prefix, separator):
+        refuse_long_path(parts, orig_key, slack=1)  # before the walk types it; its last segment may be a cast
         if _addresses_config(parts, config_flag):
             # File pointers: ordered by the pipeline, which loads them.
             _refuse_root_config_append(orig_key, parts, separator)
@@ -592,6 +594,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         is_delete, is_append = _is_env_delete(parts), _is_env_append(parts)
         spelled = [*parts[:-1], parts[-1][:-1]] if is_delete or is_append else parts
         path, ft = _resolve_env_parts(walk_target, spelled, union_tag, named)
+        refuse_long_path(path, orig_key)
         # Locals are not target fields: skip the unknown-field warning and store the raw
         # token; _pipeline checks and coerces them (docs-dev/architecture/locals.md).
         is_locals = _locals_segment_index(target, path, union_tag) is not None
@@ -612,7 +615,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         if is_append:
             # One value, read as the flag's single token is: a JSON array is several items.
             et = _appended_element_type(walk_target, path, union_tag, orig_key, ft, named=named)
-            _write_append(data, path, _collect_append_items([_EqValue(value)], 0, et, orig_key)[0], at)
+            _write_append(data, path, _collect_append_items([_EqValue(value)], 0, et, orig_key, path)[0], at)
             continue
         _store_env_value(path, ft, value, data, orig_key, at)
 

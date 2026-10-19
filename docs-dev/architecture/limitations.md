@@ -38,6 +38,12 @@ When a ticket closes and the answer turns out to be "we will not do that", the r
 - An expression may not read a node that holds it, even through a function that would not need its own value: inside `svc`, `${len(svc)}` and `${svc[k]}` are cycles.
   The dependency graph is built from syntax and cannot see what a function reads or which key `k` names ([expressions](expressions/resolution.md#a-reference-reads-everything-its-path-reaches)).
 
+## Nesting
+
+- A configuration nests at most 64 levels from its root, a mount path, a flag's or a variable's path and the position a JSON value lands at included.
+  Deeper data is refused on every channel, by `build()`, `from_dict()`, `resolve()` and `dump()`, whatever the stack it is loaded from; the bound is fixed and no keyword lifts it ([design decisions](design-decisions/a-configuration-nests-at-most-64-levels.md#a-configuration-nests-at-most-64-levels), BUG-248).
+- A value that holds itself, a YAML anchor holding its own alias or a Python dict or instance containing itself, is refused; a part shared by several positions is not ([design decisions](design-decisions/a-configuration-nests-at-most-64-levels.md#a-value-that-holds-itself-is-refused-as-one)).
+
 ## Collections
 
 - A whole value and a deeper key for the same field resolve last-write-wins, and the loser goes quietly.

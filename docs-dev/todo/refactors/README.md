@@ -24,6 +24,7 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-82 — `greetings.py` in two examples carries a dead `Config` dataclass](REF-82-greetings-py-carries-a-dead-config-dataclass.md) | trivial |  | S | low | none |
 | [REF-85 — `api-seams.md`'s round-trip paragraphs sit under the option-set heading](REF-85-api-seams-round-trip-paragraphs-sit-under-the-option-set-heading.md) | trivial |  | S | low | none |
 | [REF-94 — Construction reads a sequence's index keys in two places](REF-94-construction-reads-a-sequences-index-keys-in-two-places.md) | trivial |  | S | medium | none |
+| [REF-95 — The tag-collision tests leave their warnings uncaptured](REF-95-the-tag-collision-tests-leave-their-warnings-uncaptured.md) | trivial |  | S | low | none |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | trivial |  | M | high | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | trivial |  | M | low | none |
 | [REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk](REF-42-argparse-completion-reimplements-the-build-walk.md) | trivial |  | M | medium | none |

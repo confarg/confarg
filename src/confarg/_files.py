@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 from confarg import _defaults, _sources
+from confarg._depth import MAX_DEPTH, refuse_overflow
 from confarg._merge import (
     _SHAPE,
     APPEND_SUFFIX,
@@ -249,7 +250,7 @@ def _load_document(loc: str, options: dict[str, Any] | None = None) -> Any:
 
     Raises:
         InvalidConfigFileError: If the location carries no extension or one no parser handles,
-            it cannot be read, or its contents are invalid.
+            it cannot be read, or its contents are invalid or nest too deeply for its parser.
         ConfargError: If the ``header`` option is not a boolean.
 
     Dev Notes:
@@ -270,7 +271,12 @@ def _load_document(loc: str, options: dict[str, Any] | None = None) -> Any:
             header=header_opt,
         )
     loader = _loader_for(loc, _LOADERS)
-    return loader(_sources._read_bytes(loc), loc)
+    data = _sources._read_bytes(loc)
+    try:
+        return loader(data, loc)
+    except RecursionError as e:  # the parser's own walk, PyYAML's and tomllib's at a few hundred levels
+        action = f"read {loc}"
+        raise InvalidConfigFileError.too_deep(action, None, MAX_DEPTH) from e
 
 
 def _parse_include_entry(val: Any) -> tuple[str, dict[str, Any]]:
@@ -403,7 +409,7 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     configuration root, which types the node an include and its siblings merge at. With
     *relative*, a list op holds the document, so no absolute path reaches its root while it
     loads: each bare reference is spelled instead as the dot run climbing to that root from
-    where it is written, and *mount* only types the nodes.
+    where it is written, and *mount*, an appended item's index in it a stand-in, only types the nodes.
 
     A dict holding INCLUDE_KEY may name one document or a list of them; a list is layered left
     to right by :func:`_load_includes` first. A pure include (no siblings) may yield any type,
@@ -534,14 +540,24 @@ def _load_any(  # noqa: PLR0913  # the walk's state: location, cycle guard, opti
     position it sits at, so each document's bare references are prefixed once, by the whole
     path, and a first segment that only ``::`` can spell (``::['web-1'].p``) is never
     prefixed again by an outer mount. With *relative*, a list op holds the document, and its
-    bare references are spelled as dot runs to its root instead (see :func:`_resolve_node`).
+    bare references are spelled as dot runs to its root instead (see :func:`_resolve_node`);
+    *mount* is still where it lands, an appended item's index included.
+
+    The document is counted from *mount* before anything walks it, so no walker meets a
+    configuration nesting deeper than ``_depth.MAX_DEPTH`` levels or a value holding itself.
+
+    Raises:
+        InvalidConfigFileError: If the document cannot be read or parsed, nests too deeply
+            counted from *mount*, or holds itself (a YAML anchor holding its own alias).
 
     Dev Notes:
         docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies
         docs-dev/architecture/expressions/reference-anchoring.md#why-the-node-anchor-resolves-late
+        docs-dev/architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#a-configuration-nests-at-most-64-levels
     """
     read_ops = _sources._suffix(loc) not in _DATA_SUFFIXES  # a data file's header is data
     document = _load_document(loc, options)
+    refuse_overflow(document, f"read {loc}", at=mount, error=InvalidConfigFileError)
     return _resolve_node(document, loc, seen, (), root, mount, read_ops=read_ops, relative=relative)
 
 
@@ -699,7 +715,7 @@ def _load_mount(value: Any, subpath: str, base: str | None = None, root: MergeAt
     """
     if subpath.endswith(APPEND_SUFFIX):
         real_subpath = subpath.removesuffix(APPEND_SUFFIX)
-        loaded = _load_mount_value(value, base, root.at_path((*real_subpath.split("."), "0")), relative=True)
+        loaded = _load_mount_value(value, base, root, (*real_subpath.split("."), "0"), relative=True)
         if not isinstance(loaded, list):  # a list's items were read as items by its own walk
             loaded = _as_list_item(loaded, _sources._join(base, _parse_mount_value(value)[-1][0]), ())
         return _nest({ListOp.APPEND: _to_append_list(loaded)}, real_subpath)
