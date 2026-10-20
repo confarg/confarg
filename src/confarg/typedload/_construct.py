@@ -148,9 +148,10 @@ def _apply_carried_ops(data: MergeDict, tp: Any, what: str, path: FieldPath, uni
     """Apply the list ops *data* carries over the ``ListOp.BASE`` beside them, for a fixed-arity sequence.
 
     A fixed tuple or a namedtuple (*what* names it for the message) has no length an op
-    could grow or shrink, so an op with no base below it is refused, as the dict field
+    could grow or shrink, so an append with no base below it is refused, as the dict field
     refuses one; with a base it applies as the merge would have, and the list it leaves is
-    checked against the arity like any other. A dict holding no op is returned unchanged.
+    checked against the arity like any other. A list delete is refused either way: a position
+    is unset in place (BUG-243). A dict holding no op is returned unchanged.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
@@ -159,6 +160,8 @@ def _apply_carried_ops(data: MergeDict, tp: Any, what: str, path: FieldPath, uni
     if op is None:
         return data
     spelled = _spell_field_path(path)
+    if deleted := next((k for k in (ListOp.DELETE, ListOp.DELETE_AFTER) if k in data), None):
+        raise TypeCoercionError.position_list_delete(str(deleted), _defaults.UNSET_KEY, what, spelled)
     if ListOp.BASE not in data:
         raise TypeCoercionError.list_op_on(str(op), what, spelled)
     return _apply_list_ops(_replace_base(data, spelled), data, spelled, _merge_at(tp, union_tag))
@@ -187,7 +190,9 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, un
             continue
         position = _fixed_position(tp, spelled)
         k = spelled if position is None else field_names[position]
-        if k in laid:
+        if isinstance(v, _DeleteSentinel):
+            laid.pop(k, None)  # the position is unset (BUG-243)
+        elif k in laid:
             laid[k] = _merge_existing_value(laid[k], v, _spell_field_path((*path, k)), at.child(k, None, None))
         else:
             laid[k] = v
@@ -206,7 +211,6 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
         docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence
     """
     flds = _namedtuple_fields(tp)
-    defs = _namedtuple_defaults(tp)
     field_names = list(flds.keys())
     field_types = list(flds.values())
 
@@ -223,16 +227,17 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
         # A name and an index each name a position, the fixed tuple's own resolver for both.
         kwargs: dict[str, Any] = {}
         for idx, v in _indexed_dict_to_positions(tp, data, path, tp.__name__).items():
+            if isinstance(v, _DeleteSentinel):
+                continue  # the position is unset (BUG-243)
             fname = field_names[idx]
             kwargs[fname] = construct(field_types[idx], v, path=(*path, fname), union_tag=union_tag)
 
-        # Fill in missing fields from defaults or raise MissingFieldError
-        for fname, ft in flds.items():
+        # Fill in each unset field as construction fills it, or raise MissingFieldError
+        for i, (fname, ft) in enumerate(flds.items()):
             if fname not in kwargs:
-                if fname in defs:
-                    kwargs[fname] = defs[fname]
-                else:
+                if (value := unset_position(tp, i)) is _UNSET:
                     raise MissingFieldError((*path, fname), ft)
+                kwargs[fname] = value
 
         return tp(**kwargs)
 
@@ -660,7 +665,8 @@ def _indexed_dict_to_positions(
     Every key is read by :func:`~confarg._types._fixed_position`: an index as ``str()``
     writes one, or an integer, a negative one counting from the end, and a namedtuple's field
     name. Two keys naming one position resolve in the dict's order, the later winning, as a
-    later write does (Q-1).
+    later write does (Q-1). A delete at a position is returned as it is, for the caller to
+    read as the position unset (BUG-243).
 
     Args:
         tp: The fixed tuple or namedtuple type.
@@ -670,14 +676,12 @@ def _indexed_dict_to_positions(
 
     Raises:
         TypeCoercionError: on a key spelling one of the reserved list ops (``_merge.MERGE_OP_KEYS``
-            — a marker, never the plain string, is the op), on an index out of range, on a key
-            naming no position (an unknown field of a namedtuple), or on an index whose value is
-            a bare node delete (a list deletes an index by ``__delete__``).
+            — a marker, never the plain string, is the op), on an index out of range, or on a key
+            naming no position (an unknown field of a namedtuple).
 
     Dev Notes:
         docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence
     """
-    _refuse_an_index_delete({k: v for k, v in data.items() if _spelled_position(k) is not None}, path)
     length = len(_fixed_seq_types(tp) or ())
     out: dict[int, Any] = {}
     unknown: list[Any] = []
@@ -921,7 +925,7 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
     else:
         seq = _patched_positions(tp, tt, data, path, union_tag)
     return tuple(
-        _construct_position(et, seq[i] if i < len(seq) else None, (*path, i), union_tag) for i, et in enumerate(tt)
+        _construct_position(tp, i, seq[i] if i < len(seq) else None, (*path, i), union_tag) for i in range(len(tt))
     )
 
 
@@ -941,7 +945,9 @@ def _patched_positions(tp: Any, tt: Sequence[Any], data: MergeDict, path: FieldP
     # A patch refines what the base holds at its position, as the merge would have.
     at = _merge_at(tp, union_tag)
     for i, v in _indexed_dict_to_positions(tp, patches, path, f"{tp}").items():
-        if i < len(base_seq):
+        if isinstance(v, _DeleteSentinel):
+            seq[i] = _UNSET  # the position is unset (BUG-243)
+        elif i < len(base_seq):
             seq[i] = _merge_existing_value(seq[i], v, _spell_field_path((*path, i)), at.child(str(i), None, None))
         else:
             seq[i] = v
@@ -952,13 +958,29 @@ def _patched_positions(tp: Any, tt: Sequence[Any], data: MergeDict, path: FieldP
 _UNSET: Any = object()
 
 
-def _construct_position(et: Any, value: Any, path: FieldPath, union_tag: str) -> Any:
-    """Construct one position of a fixed tuple, an unset one missing unless its type takes ``None``."""
-    if value is _UNSET:
-        if not _allows_none(et):
-            raise MissingFieldError(path, et)
-        value = None
+def _construct_position(tp: Any, i: int, value: Any, path: FieldPath, union_tag: str) -> Any:
+    """Construct the position *i* of the fixed tuple *tp*, an unset one as :func:`unset_position` fills it."""
+    et = (_tuple_types(tp) or [])[i]
+    if value is _UNSET and (value := unset_position(tp, i)) is _UNSET:
+        raise MissingFieldError(path, et)
     return construct(et, value, path=path, union_tag=union_tag)
+
+
+def unset_position(tp: Any, i: int) -> Any:
+    """Return what construction fills position *i* of the fixed-length *tp* with when unset, ``_UNSET`` if nothing.
+
+    A namedtuple field's class default, and a fixed tuple's ``None`` where its type takes
+    ``None``; elsewhere the position is a missing field. The one answer construction and the
+    default layer share, which lays it so that a reference reads what the field builds to
+    (BUG-243).
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-fixed-length-delete-unsets-a-position.md#a-fixed-length-delete-unsets-a-position
+    """
+    if _is_namedtuple(tp):
+        return _namedtuple_defaults(tp).get(list(_namedtuple_fields(tp))[i], _UNSET)
+    positions = _fixed_seq_types(tp) or []
+    return None if i < len(positions) and _allows_none(positions[i]) else _UNSET
 
 
 def _construct_dict(tp: Any, data: Any, path: FieldPath, union_tag: str) -> dict[Any, Any]:

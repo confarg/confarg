@@ -33,8 +33,8 @@ from confarg._types import (
     _is_seq_variant,
     _is_struct,
     _is_struct_like,
+    _namedtuple_fields,
     _resolve_type,
-    _spelled_position,
     _struct_declared_defaults,
     _struct_fields,
     _struct_required,
@@ -45,7 +45,8 @@ from confarg._types import (
 from confarg.dictexpr import contains_expression, escape_expressions
 from confarg.exceptions import _spell_field_path
 from confarg.typedload._coerce import _LEAF_COERCIONS, _is_struct_variant, _type_kind, _TypeKind
-from confarg.typedload._construct import _is_typed_call, reads_as_new_value
+from confarg.typedload._construct import _UNSET as _UNSET_POSITION
+from confarg.typedload._construct import _is_typed_call, reads_as_new_value, unset_position
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -283,11 +284,19 @@ def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> Any:
 
 
 def _held(value: Any, ft: Any, laid: Any, fpath: DataPath, walk: _Walk) -> Any:
-    """Return what a field the data sets holds with the defaults laid below it, a bare delete as it is."""
+    """Return what a field the data sets holds with the defaults laid below it, a bare delete as it is.
+
+    A fixed-length position a delete unsets is taken out of the default too: the merge keeps
+    the delete in the keyed form it leaves (:func:`~confarg._merge._unset_positions`), and,
+    having met the default, it is dropped here, the position left for construction to fill
+    as it fills an unset one (BUG-243).
+    """
     if isinstance(value, _DeleteSentinel):
         return value
     if isinstance(laid, list) and _patches_a_list(value, ft, walk.union_tag):
         value = _merge_existing_value(laid, value, _spelled(fpath), merge_at(ft, walk.union_tag))
+        if isinstance(value, dict) and ListOp.BASE not in value:
+            value = {k: v for k, v in value.items() if not isinstance(v, _DeleteSentinel)}
     return _node(ft, value, fpath, walk)
 
 
@@ -328,10 +337,36 @@ def _sequence(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
     if isinstance(base, list):
         # Beside a base, an index value refines the element it reaches, which holds its own.
         return _copied_if_changed(node, out)
-    _lay_index_patches(out, element, path, walk, named=_type_kind(tp) is _TypeKind.NAMEDTUPLE)
+    fixed = _fixed_seq_types(tp) is not None
+    _lay_index_patches(out, element, path, walk, fixed=fixed)
     if node and not out:
         return _PRUNED
+    if fixed:
+        _lay_unset_positions(tp, out, path, walk)
     return _copied_if_changed(node, out)
+
+
+def _lay_unset_positions(tp: Any, out: MergeDict, path: DataPath, walk: _Walk) -> None:
+    """Lay, at each position the keyed fixed-length node *out* leaves unset, what construction fills it with, in place.
+
+    So a reference reads what the field builds to (:func:`~confarg.typedload._construct.unset_position`):
+    a namedtuple field's class default, a fixed tuple's ``None`` where its type takes it. Each
+    is recorded as untouched, and taken out again before construction, which fills it itself.
+    Only for resolution, and only on a node holding no pending op.
+    """
+    if not walk.for_resolution or any(isinstance(k, ListOp) for k in out):
+        return
+    held = {_fixed_position(tp, k) for k in out}
+    names = list(_namedtuple_fields(tp)) if _type_kind(tp) is _TypeKind.NAMEDTUPLE else []
+    for i, et in enumerate(_fixed_seq_types(tp) or ()):
+        if i in held or (value := unset_position(tp, i)) is _UNSET_POSITION:
+            continue
+        laid = _merged_form(value, et, walk)
+        if laid is _NOT_LAID:
+            continue
+        key = names[i] if names else str(i)
+        out[key] = laid
+        walk.untouched.append((*path, key))
 
 
 def _lay_index_patches(
@@ -340,19 +375,19 @@ def _lay_index_patches(
     path: DataPath,
     walk: _Walk,
     *,
-    named: bool,
+    fixed: bool,
 ) -> None:
     """Lay defaults below each index patch of *out*, a sequence node with no base, in place.
 
-    A patch its unmet deletes alone filled is removed, and so is a namedtuple field's bare
-    delete, which reads as a field the data omits; an index's bare delete stays for
-    construction to refuse.
+    A patch its unmet deletes alone filled is removed, and so is a fixed-length position's
+    bare delete that met nothing, which reads as a position the data omits (BUG-98, BUG-243);
+    a list index's bare delete stays for construction to refuse.
     """
     for k, v in list(out.items()):
         if isinstance(k, ListOp):
             continue
         if isinstance(v, _DeleteSentinel):
-            if named and _spelled_position(k) is None:
+            if fixed:
                 del out[k]
             continue
         laid = _node(element(k), v, (*path, k), walk)

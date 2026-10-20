@@ -703,13 +703,17 @@ class TestAFileSpellsAnOpInItsValue:
         [
             pytest.param(("rows: [{k: 1}]\n", "rows: {'0': {__unset__: true}}\n"), id="over-a-list"),
             pytest.param(("rows: {'0': {__unset__: true}}\n",), id="with-nothing-below"),
-            pytest.param(("t: {'0': {__unset__: true}}\n",), id="over-a-tuple-default"),
         ],
     )
     def test_a_bare_delete_at_an_index_is_refused(self, tmp_yaml, texts: tuple[str, ...]) -> None:
         """It would leave nothing in the slot; a list deletes an index by ``__delete__``."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match=re.escape("A list deletes an index with")):
             _load_ops(tmp_yaml, *texts)
+
+    def test_a_bare_delete_at_a_fixed_tuple_index_unsets_it(self, tmp_yaml) -> None:
+        """A fixed tuple keeps its length, so the delete unsets the position of its default (BUG-243)."""
+        with pytest.raises(confarg.exceptions.MissingFieldError, match=re.escape("'t[0]'")):
+            _load_ops(tmp_yaml, "t: {'0': {__unset__: true}}\n")
 
     def test_a_bare_delete_at_a_dict_index_deletes_the_key(self, tmp_yaml) -> None:
         """Under a dict, ``"1"`` is a key like ``a``, and its delete removes it (BUG-174's file side)."""

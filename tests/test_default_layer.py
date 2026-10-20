@@ -333,7 +333,7 @@ class TestAKeyDeleteThatMetNothing:
         ids=["bare-index-delete", "namedtuple-field-over-a-base"],
     )
     def test_a_delete_a_sequence_reads_is_left_to_construction(self, data: dict[Any, Any]) -> None:
-        """An index's bare delete is construction's to refuse, and a namedtuple's over a base is BUG-243's."""
+        """A list index's bare delete is construction's to refuse, a namedtuple's over a carried base its to unset."""
         assert _lay(_Deletes, data, for_resolution=False)[0] == data
 
     def test_a_struct_field_deleted_gets_its_default_laid(self) -> None:
@@ -345,6 +345,45 @@ class TestAKeyDeleteThatMetNothing:
     def test_a_non_struct_root_left_empty_is_no_root(self) -> None:
         """A root its deletes alone filled reads as no root value at all."""
         assert _lay(dict[str, int], {_defaults.ROOT_KEY: {"x": DICT_DELETE}})[0] == {}
+
+
+@dataclass
+class _UnsetPositions:
+    """Fixed-length fields whose positions a delete or a by-name patch leaves unset."""
+
+    pf: _Pair = _Pair(5, 6)  # noqa: RUF009  # a laid default that disagrees with the class's
+    pp: _Pair = field(default_factory=_Pair)
+    t: tuple[int | None, int] = (1, 2)
+
+
+class TestAnUnsetPositionIsLaidAsItBuilds:
+    """At a position a fixed-length node leaves unset, the layer lays what construction fills it with (BUG-243).
+
+    So a reference reads the value the field builds to: a namedtuple field's class default, a
+    fixed tuple's ``None`` where its type takes it, each recorded untouched.
+    """
+
+    def test_a_deleted_position_takes_its_class_default_not_the_fields(self) -> None:
+        """The delete takes the position out of the laid ``Pair(5, 6)``; ``x`` reads the class's 1."""
+        data, untouched = _lay(_UnsetPositions, {"pf": {"x": DICT_DELETE}})
+        assert data["pf"] == {"y": 6, "x": 1}
+        assert ("pf", "x") in untouched
+
+    def test_a_by_name_node_gets_its_class_defaults(self) -> None:
+        """A namedtuple a source spells by field name reads its other fields' defaults."""
+        data, untouched = _lay(_UnsetPositions, {"pp": {"y": 5}})
+        assert data["pp"] == {"y": 5, "x": 1}
+        assert ("pp", "x") in untouched
+
+    def test_an_unset_optional_tuple_position_is_none(self) -> None:
+        """A fixed tuple's position that takes ``None`` is laid ``None``."""
+        data, untouched = _lay(_UnsetPositions, {"t": {"0": DICT_DELETE}})
+        assert data["t"] == {"1": 2, "0": None}
+        assert ("t", "0") in untouched
+
+    def test_nothing_is_laid_without_resolution(self) -> None:
+        """``from_dict()`` resolves nothing, so only the delete is consumed."""
+        assert _lay(_UnsetPositions, {"pf": {"x": DICT_DELETE}}, for_resolution=False)[0] == {"pf": {"y": 6}}
 
 
 class TestDropUntouched:

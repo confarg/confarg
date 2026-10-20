@@ -17,6 +17,7 @@ import pytest
 
 import confarg
 from confarg._merge import (
+    DICT_DELETE,
     MERGE_OP_KEYS,
     ListOp,
 )
@@ -706,51 +707,52 @@ class TestListOpOnADict:
             construct(dict[str, list[int]], {"a": [1], ListOp.DELETE: [1]}, path=("d",))
 
 
-_OPS = [ListOp.APPEND, ListOp.DELETE, ListOp.DELETE_AFTER]
-
-
 class TestListOpOnAFixedArity:
-    """A list op on a fixed-arity sequence applies over the base it carries, or is refused (BUG-221).
+    """An append on a fixed-arity sequence applies over the base it carries, or is refused (BUG-221).
 
-    A fixed tuple and a namedtuple have no length to grow or shrink into, so an op with no
+    A fixed tuple and a namedtuple have no length to grow or shrink into, so an append with no
     base below it is refused as the dict field refuses one, naming the op; one carried with
-    its base applies, and the result's length is checked as a list's would be.
+    its base applies, and the result's length is checked as a list's would be. A list delete
+    is refused either way: a position is unset in place, by a delete at it (BUG-243).
     """
 
-    @pytest.mark.parametrize("op", _OPS, ids=str)
-    def test_a_fixed_tuple_refuses_an_op_with_no_base(self, op: ListOp) -> None:
+    def test_a_fixed_tuple_refuses_an_append_with_no_base(self) -> None:
         """The op is named, not read as a key that is no index."""
-        msg = f"Cannot apply {str(op)!r} to the tuple[int, int] at 't': it is an operation on a list."
+        msg = "Cannot apply '__append__' to the tuple[int, int] at 't': it is an operation on a list."
         with pytest.raises(TypeCoercionError, match=re.escape(msg)):
-            construct(tuple[int, int], {op: [0]}, path=("t",))
+            construct(tuple[int, int], {ListOp.APPEND: [0]}, path=("t",))
 
-    @pytest.mark.parametrize("op", _OPS, ids=str)
-    def test_a_namedtuple_refuses_an_op_with_no_base(self, op: ListOp) -> None:
+    def test_a_namedtuple_refuses_an_append_with_no_base(self) -> None:
         """The op is named, not reported as an unknown field."""
-        msg = f"Cannot apply {str(op)!r} to the namedtuple _BasePt at 'p': it is an operation on a list."
+        msg = "Cannot apply '__append__' to the namedtuple _BasePt at 'p': it is an operation on a list."
         with pytest.raises(TypeCoercionError, match=re.escape(msg)):
-            construct(_BasePt, {op: [0]}, path=("p",))
+            construct(_BasePt, {ListOp.APPEND: [0]}, path=("p",))
 
-    def test_a_delete_over_a_carried_base_shortens_it(self) -> None:
-        """``--t 1 2 --t.0-`` leaves one element for two positions: the arity refusal, not a key one."""
-        with pytest.raises(TypeCoercionError, match=re.escape("expected 2 elements, got 1")):
-            construct(tuple[int, int], {ListOp.BASE: [1, 2], ListOp.DELETE: [0]}, path=("t",))
+    @pytest.mark.parametrize("op", [ListOp.DELETE, ListOp.DELETE_AFTER], ids=str)
+    @pytest.mark.parametrize("base", [{}, {ListOp.BASE: [1, 2]}], ids=["no-base", "carried-base"])
+    def test_a_list_delete_is_refused_naming_the_unset(self, op: ListOp, base: dict[Any, Any]) -> None:
+        """A delete would shift the positions after it; the message names the delete a position takes."""
+        msg = f"Cannot apply {str(op)!r} to the tuple[int, int] at 't': a fixed-length sequence keeps its length"
+        with pytest.raises(TypeCoercionError, match=re.escape(msg)):
+            construct(tuple[int, int], {**base, op: [0]}, path=("t",))
+        with pytest.raises(TypeCoercionError, match=re.escape("{__unset__: true}")):
+            construct(_BasePt, {**base, op: [0]}, path=("p",))
+
+    def test_a_delete_at_a_position_unsets_it(self) -> None:
+        """A delete at a position leaves it to be filled as an unset one is (BUG-243)."""
+        assert construct(tuple[int | None, int], {ListOp.BASE: [1, 2], "0": DICT_DELETE}, path=("t",)) == (None, 2)
+        with pytest.raises(MissingFieldError) as ei:
+            construct(_BasePt, {ListOp.BASE: [1, 2], "x": DICT_DELETE}, path=("p",))
+        assert ei.value._path == ("p", "x")
 
     def test_an_append_over_a_carried_base_overruns_it(self) -> None:
         """An append past the arity is refused as the list it makes."""
         with pytest.raises(TypeCoercionError, match=re.escape("expected 2 elements, got 3")):
             construct(tuple[int, int], {ListOp.BASE: [1, 2], ListOp.APPEND: [3]}, path=("t",))
 
-    def test_ops_over_a_carried_base_build_when_the_arity_holds(self) -> None:
-        """A delete after an append keeps two elements, which a fixed tuple builds."""
-        data = {ListOp.BASE: [1, 2], ListOp.APPEND: [3], ListOp.DELETE_AFTER: [0]}
-        assert construct(tuple[int, int], data, path=("t",)) == (2, 3)
-
-    def test_a_namedtuple_shortened_by_a_delete_misses_its_field(self) -> None:
-        """The positions left fill the first fields; the last one is missing."""
-        with pytest.raises(MissingFieldError) as ei:
-            construct(_BasePt, {ListOp.BASE: [1, 2], ListOp.DELETE: [0]}, path=("p",))
-        assert ei.value._path == ("p", "y")
+    def test_an_append_completing_a_short_base_builds(self) -> None:
+        """An append that fills the arity over a carried base builds, as the list it makes."""
+        assert construct(tuple[int, int], {ListOp.BASE: [1], ListOp.APPEND: [3]}, path=("t",)) == (1, 3)
 
 
 class TestIndexKeyedList:

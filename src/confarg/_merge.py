@@ -100,9 +100,13 @@ def _spent_if_met(below: MergeDict, key: Any, at: MergeAt | None = None) -> _Del
     """Return the delete of *key* written over *below*, the part of its own source before it, *at* where they stand.
 
     Spent when *below* gave it a key to remove (a spent delete there had one too), any key
-    *at* reads as *key* included (:meth:`MergeAt.key_identity`), plain otherwise.
+    *at* reads as *key* included (:meth:`MergeAt.key_identity`), plain otherwise. A delete at
+    a fixed-length sequence's position is never spent: the field's default below still holds
+    the position, and the delete unsets it there too (BUG-243).
     """
     at = at or MergeAt()
+    if at.fixed_length() is not None:
+        return DICT_DELETE
     identity = at.key_identity(key)
     met = [below[k] for k in below if at.key_identity(k) == identity]
     return _SPENT_DELETE if any(v is not DICT_DELETE for v in met) else DICT_DELETE
@@ -453,7 +457,17 @@ def _merge_existing_value(bv: Any, val: Any, key: str, at: MergeAt) -> Any:
 
 
 def _merge_list_base(bv: list[Any], val: MergeDict, key: str, at: MergeAt) -> Any:
-    """Combine a list base *bv* with an override patch dict *val*."""
+    """Combine a list base *bv* with an override patch dict *val*.
+
+    At a fixed-length node a patch that unsets a position turns the base into its keyed form
+    (:func:`_unset_positions`), and a list delete is refused.
+    """
+    fixed = at.fixed_length()
+    if fixed is not None:
+        _refuse_a_position_list_delete(val, fixed, key)
+        if _unsets_a_position(val):
+            items = _replace_base(val, key) if ListOp.BASE in val else bv
+            return _unset_positions(fixed, items, val, at)
     if ListOp.BASE in val:
         base = _replace_base(val, key)
         if _patch_needs_the_type(base, val, at):
@@ -469,6 +483,42 @@ def _merge_list_base(bv: list[Any], val: MergeDict, key: str, at: MergeAt) -> An
 
 #: The merge with no type to read: the shape rule, with no union tag.
 _SHAPE = MergeAt()
+
+
+def _unsets_a_position(val: MergeDict) -> bool:
+    """Whether the patch *val* holds a key delete, which at a fixed-length node unsets a position."""
+    return any(isinstance(v, _DeleteSentinel) for k, v in val.items() if not isinstance(k, ListOp))
+
+
+def _unset_positions(fixed: Any, items: list[Any], val: MergeDict, at: MergeAt) -> MergeDict:
+    """Return the base *items* of the fixed-length type *fixed*, keyed, with the patch *val* merged over it.
+
+    A list holds no hole, so a position a delete unsets cannot stay positional: the base is
+    keyed as construction reads a fixed-length dict, a namedtuple's by field name, a fixed
+    tuple's by index, and the delete stays at the position it unsets, for the field default
+    below (:func:`_deep_merge` keeps it there).
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-fixed-length-delete-unsets-a-position.md#a-fixed-length-delete-unsets-a-position
+    """
+    from confarg._types import _is_namedtuple, _namedtuple_fields  # noqa: PLC0415  # import cycle: _types reads _list_index
+
+    names = list(_namedtuple_fields(fixed)) if _is_namedtuple(fixed) else []
+    keyed: MergeDict = {(names[i] if i < len(names) else str(i)): v for i, v in enumerate(items)}
+    return _deep_merge(keyed, {k: v for k, v in val.items() if k is not ListOp.BASE}, at=at)
+
+
+def _refuse_a_position_list_delete(val: MergeDict, fixed: Any, key: str) -> None:
+    """Refuse a list delete in the patch *val* of the fixed-length type *fixed*, which unsets a position in place.
+
+    Raises:
+        TypeCoercionError: If *val* holds ``ListOp.DELETE`` or ``ListOp.DELETE_AFTER``.
+    """
+    from confarg._types import _is_namedtuple  # noqa: PLC0415  # import cycle: _types reads _list_index
+
+    if op := next((k for k in (ListOp.DELETE, ListOp.DELETE_AFTER) if k in val), None):
+        what = f"namedtuple {fixed.__name__}" if _is_namedtuple(fixed) else f"{fixed}"
+        raise TypeCoercionError.position_list_delete(str(op), _defaults.UNSET_KEY, what, key)
 
 
 def _key_spelling(key: Any) -> Any:
@@ -548,16 +598,30 @@ def _deep_merge(
     if at.replaces(override):
         return dict(override)
 
+    # At a fixed-length node a delete unsets a position, which the layers below, the field's
+    # default the last of them, must not fill again: it is kept where it stands (BUG-243).
+    fixed = at.fixed_length()
+    if fixed is not None and _unsets_a_position(override) and isinstance(base.get(ListOp.BASE), list):
+        base = _unset_positions(fixed, _replace_base(base, ""), base, at)
+
     # Copy base, skipping any DICT_DELETE sentinels left over from normalization -- but not
     # a deleted base, which still cuts its node off from the layers merged under it later.
-    result = {k: v for k, v in base.items() if k == ListOp.BASE or not isinstance(v, _DeleteSentinel)}
+    result = {
+        k: v for k, v in base.items() if k == ListOp.BASE or fixed is not None or not isinstance(v, _DeleteSentinel)
+    }
 
     # A key meets every key of the base it is one key with to the type (BUG-244).
     index = _key_index(result, at)
     for key, val in override.items():
         identity = at.key_identity(key)
         met = index.get(identity, [])
-        if isinstance(val, _DeleteSentinel):
+        if isinstance(val, _DeleteSentinel) and fixed is not None:
+            for k in met[:-1]:
+                result.pop(k)
+            kept = met[-1] if met else key
+            result[kept] = DICT_DELETE
+            index[identity] = [kept]
+        elif isinstance(val, _DeleteSentinel):
             for k in met:
                 result.pop(k, None)
             index.pop(identity, None)
@@ -609,7 +673,7 @@ def _keep_deletes(merged: MergeDict, override: MergeDict, base: MergeDict, at: M
         if isinstance(key, ListOp):
             continue
         if isinstance(val, _DeleteSentinel):
-            out[key] = val if val is _SPENT_DELETE else _spent_if_met(base, key, at)
+            out[_met_key(out, key, at)] = val if val is _SPENT_DELETE else _spent_if_met(base, key, at)
             continue
         met = values.get(at.key_identity(key))
         merged_key = met[-1] if met else key

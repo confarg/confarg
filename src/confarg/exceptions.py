@@ -340,6 +340,23 @@ class TypeCoercionError(ConfargError):
         )
 
     @classmethod
+    def position_list_delete(cls, key: str, unset_key: str, what: str, path: str) -> TypeCoercionError:
+        """Return the error for a list delete (*key*) on a fixed-length sequence, which unsets a position in place.
+
+        *what* names the type as the message reads it, a fixed tuple or a namedtuple; *unset_key*
+        is the reserved key a file unsets a position with, passed in, this module importing
+        nothing from ``confarg``.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-fixed-length-delete-unsets-a-position.md#a-fixed-length-delete-unsets-a-position
+        """
+        return cls(
+            f"Cannot apply {key!r} to the {what} at '{path}': a fixed-length sequence keeps its length,"
+            f" so a position is unset in place rather than deleted. Write {{{unset_key}: true}} at the position:"
+            f' {{"0": {{{unset_key}: true}}}}.',
+        )
+
+    @classmethod
     def list_op_on(cls, key: str, what: str, path: str) -> TypeCoercionError:
         """Return the error for a list op the merge recorded where the type has no list to apply it to.
 

@@ -499,9 +499,10 @@ def _delete_index(target: Any, parts: list[str], union_tag: str) -> int | None:
     The one decoder of a delete's last segment, for a flag (``--xs.1-``) and a variable
     (``XS__1-``) alike. A segment spelling no index as ``str()`` writes one
     (:func:`~confarg.dictexpr._expressions._list_index`) is a key. One spelling an index is a
-    key where every branch of the walk taking the path stands on a dict or a struct, and an
-    index anywhere else: a sequence, a node no type describes (an ``Any``, a callable's spec),
-    or a union whose branches disagree.
+    key where every branch of the walk taking the path stands on a dict, a struct or a
+    fixed-length sequence, whose position a delete unsets in place (BUG-243), and an index
+    anywhere else: a list, a set or a variadic tuple, a node no type describes (an ``Any``, a
+    callable's spec), or a union whose branches disagree.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/collection-patches.md#the-type-decides-what-a-delete-removes
@@ -509,8 +510,9 @@ def _delete_index(target: Any, parts: list[str], union_tag: str) -> int | None:
     index = _list_index(parts[-1])
     if index is None:
         return None
-    stands_on = [_type_kind(b.stones[-1].node) for b in _walk_path(target, parts, union_tag) if b.end is not None]
-    return None if stands_on and all(kind in _KEYED_KINDS for kind in stands_on) else index
+    stands_on = [b.stones[-1].node for b in _walk_path(target, parts, union_tag) if b.end is not None]
+    keyed = all(_type_kind(node) in _KEYED_KINDS or _fixed_seq_types(node) is not None for node in stands_on)
+    return None if stands_on and keyed else index
 
 
 def _member_names(pt: Any) -> list[str]:
