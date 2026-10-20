@@ -22,7 +22,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-219 — A fragment appended to a list loses its `locals`](BUG-219-a-fragment-appended-to-a-list-loses-its-locals.md) | major |  | M | high | behavior | PR-105 |
 | [BUG-233 — The CLI refuses a nested spec below a `class:` constructor argument](BUG-233-the-cli-refuses-a-nested-spec-below-a-class-constructor-argument.md) | major |  | M | medium | behavior | PR-11 |
 | [BUG-234 — A Callable beside another union variant is never built from a spec](BUG-234-a-callable-beside-another-union-variant-is-never-built-from-a-spec.md) | major |  | M | medium | behavior | PR-5 |
-| [BUG-98 — A dict-key delete with no base dict errors on the leaked `_DeleteSentinel`](BUG-98-a-dict-key-delete-with-no-base-dict-leaks-the-delete-sentinel.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-108 — A plain fixed tuple accepts the index spellings a namedtuple refuses](BUG-108-a-plain-fixed-tuple-accepts-the-index-spellings-a-namedtuple-refuses.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-110 — The walk accepts a path that continues past the union tag](BUG-110-the-walk-accepts-a-path-that-continues-past-the-tag.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |

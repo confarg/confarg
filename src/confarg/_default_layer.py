@@ -21,7 +21,7 @@ import enum
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from confarg import _defaults
-from confarg._merge import ListOp, _is_pin_dict, _merge_existing_value
+from confarg._merge import ListOp, _DeleteSentinel, _is_pin_dict, _merge_existing_value
 from confarg._tags import _tag_named_struct
 from confarg._typed_merge import merge_at
 from confarg._types import (
@@ -92,6 +92,11 @@ def lay_defaults(target: Any, data: MergeDict, union_tag: str, *, for_resolution
     the class's text back. Without it (``from_dict()``, which resolves nothing), only the
     patches are combined.
 
+    A key delete no layer met is met by none here either, so it deletes nothing: it is
+    dropped, and so is a dict it alone filled, before any default is laid where it stood
+    (:func:`_kept`). Below a sequence, a bare delete at an index is left for construction to
+    refuse, and a namedtuple field's beside a base is left as it is.
+
     Dev Notes:
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
     """
@@ -99,9 +104,14 @@ def lay_defaults(target: Any, data: MergeDict, union_tag: str, *, for_resolution
     target = _resolve_type(target)
     if _is_struct_like(target):
         laid = _node(target, data, (), walk)
+        if laid is _PRUNED:
+            laid = _node(target, {}, (), walk)
     elif _defaults.ROOT_KEY in data:
         root = _node(target, data[_defaults.ROOT_KEY], (_defaults.ROOT_KEY,), walk)
-        laid = data if root is data[_defaults.ROOT_KEY] else {**data, _defaults.ROOT_KEY: root}
+        if root is _PRUNED:
+            laid = {k: v for k, v in data.items() if k != _defaults.ROOT_KEY}
+        else:
+            laid = data if root is data[_defaults.ROOT_KEY] else {**data, _defaults.ROOT_KEY: root}
     else:
         laid = data
     return LaidDefaults(laid, tuple(walk.untouched))
@@ -142,25 +152,58 @@ def _spelled(path: DataPath) -> str:
     return _spell_field_path(tuple(str(s) if not isinstance(s, int) else s for s in segments))
 
 
-def _node(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
-    """Lay the defaults below *node*, which the data holds where the type is *tp*."""
+def _node(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:  # noqa: PLR0911  # one return per kind
+    """Lay the defaults below *node*, which the data holds where the type is *tp*.
+
+    ``_PRUNED`` when *node* is a dict its unmet deletes alone filled (:func:`_kept`).
+    """
     tp = _resolve_type(tp)
-    if not isinstance(node, dict | list) or _is_pin_dict(node) or _is_typed_call(node, tp):
+    if not isinstance(node, dict | list) or _is_pin_dict(node):
         return node
+    if _is_typed_call(node, tp):
+        return _untyped(node)
     kind = _type_kind(tp)
     if kind is _TypeKind.STRUCT:
         cls = _struct_built_from(tp, node, walk.union_tag) if isinstance(node, dict) else None
-        return node if cls is None else _struct(cls, node, path, walk)
+        return _untyped(node) if cls is None else _struct(cls, node, path, walk)
     if kind is _TypeKind.UNION:
         return _union(tp, node, path, walk)
     if kind in _SEQUENCE_KINDS:
         return _sequence(tp, node, path, walk)
     if kind is _TypeKind.DICT and isinstance(node, dict):
         _, vt = _dict_kv(tp)
-        return _copied_if_changed(
-            node, {k: v if isinstance(k, ListOp) else _node(vt, v, (*path, k), walk) for k, v in node.items()}
-        )
-    return node
+        return _kept(node, {k: v if isinstance(k, ListOp) else _node(vt, v, (*path, k), walk) for k, v in node.items()})
+    return _untyped(node)
+
+
+# What a node holding nothing but key deletes no layer met reads as: no node at all.
+_PRUNED: Any = object()
+
+
+def _is_gone(value: Any) -> bool:
+    """Whether *value* is a key delete no layer met, or a dict holding nothing but such deletes."""
+    return isinstance(value, _DeleteSentinel) or value is _PRUNED
+
+
+def _kept(original: MergeDict, rebuilt: MergeDict) -> Any:
+    """Return *rebuilt* without the keys whose value :func:`_is_gone`, ``_PRUNED`` if that empties it.
+
+    A dict the data held empty stays: it was written so, not filled by a delete.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-delete-meets-the-defaults-last
+    """
+    kept = {k: v for k, v in rebuilt.items() if not _is_gone(v)}
+    if original and not kept:
+        return _PRUNED
+    return _copied_if_changed(original, kept)
+
+
+def _untyped(node: Any) -> Any:
+    """Drop the unmet key deletes below a node no type settles, as :func:`_kept` does, at every depth."""
+    if not isinstance(node, dict):
+        return node
+    return _kept(node, {k: _untyped(v) for k, v in node.items()})
 
 
 def _tagged_class(tag: Any) -> Any:
@@ -194,32 +237,40 @@ def _union(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
     if len(variants) == 1:
         return _node(variants[0], node, path, walk)
     if not isinstance(node, dict) or walk.union_tag not in node or _union_tag_shadowed(tp, walk.union_tag):
-        return node
+        return _untyped(node)
     cls = _tagged_class(node[walk.union_tag])
     matching = [v for v in variants if cls is not None and _is_struct(v) and issubclass(cls, v)]
-    return _struct(cls, node, path, walk) if len(matching) == 1 else node
+    return _struct(cls, node, path, walk) if len(matching) == 1 else _untyped(node)
 
 
-def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> MergeDict:
-    """Lay the defaults *cls* declares at its fields under *node*."""
+def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> Any:
+    """Lay the defaults *cls* declares at its fields under *node*.
+
+    A field holding only an unmet key delete reads as one the data omits; ``_PRUNED`` when
+    every key of *node* is such a field, before any default is laid (:func:`_kept`).
+    """
     try:
         fields = _struct_fields(cls)
         defaults = _struct_declared_defaults(cls)
         required = _struct_required(cls)
     except _INTROSPECTION_ERRORS:
-        return node
-    out = dict(node)
+        return _untyped(node)
+    laid_at = {
+        name: _merged_form(defaults[name], ft, walk) if name in defaults else _NOT_LAID for name, ft in fields.items()
+    }
+    held = {
+        name: _held(node[name], ft, laid_at[name], (*path, name), walk) for name, ft in fields.items() if name in node
+    }
+    kept = _kept(node, {**node, **held})
+    if kept is _PRUNED:
+        return kept
+    out = dict(kept)
     for name, ft in fields.items():
         fpath = (*path, name)
-        laid = _merged_form(defaults[name], ft, walk) if name in defaults else _NOT_LAID
-        if name in node:
-            value = node[name]
-            if isinstance(laid, list) and _patches_a_list(value, ft, walk.union_tag):
-                value = _merge_existing_value(laid, value, _spelled(fpath), merge_at(ft, walk.union_tag))
-            out[name] = _node(ft, value, fpath, walk)
-        elif not walk.for_resolution:
+        laid = laid_at[name]
+        if name in out or not walk.for_resolution:
             continue
-        elif laid is not _NOT_LAID:
+        if laid is not _NOT_LAID:
             out[name] = laid
             walk.untouched.append(fpath)
         elif name in required and _is_struct_variant(ft) and _all_have_defaults(ft):
@@ -228,6 +279,15 @@ def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> MergeDict
             out[name] = _struct(_resolve_type(ft), {}, fpath, _Walk(walk.union_tag, for_resolution=True))
             walk.untouched.append(fpath)
     return _copied_if_changed(node, out)
+
+
+def _held(value: Any, ft: Any, laid: Any, fpath: DataPath, walk: _Walk) -> Any:
+    """Return what a field the data sets holds with the defaults laid below it, a bare delete as it is."""
+    if isinstance(value, _DeleteSentinel):
+        return value
+    if isinstance(laid, list) and _patches_a_list(value, ft, walk.union_tag):
+        value = _merge_existing_value(laid, value, _spelled(fpath), merge_at(ft, walk.union_tag))
+    return _node(ft, value, fpath, walk)
 
 
 def _patches_a_list(value: Any, ft: Any, union_tag: str) -> bool:
@@ -247,7 +307,11 @@ def _patches_a_list(value: Any, ft: Any, union_tag: str) -> bool:
 
 
 def _sequence(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
-    """Lay defaults below each element a sequence node holds: a list's items, a patch's values."""
+    """Lay defaults below each element a sequence node holds: a list's items, a patch's values.
+
+    ``_PRUNED`` when, with no base, its index patches held nothing but unmet deletes
+    (:func:`_lay_index_patches`).
+    """
     element = _element_type(tp)
     if isinstance(node, list):
         return _items(node, element, path, walk)
@@ -259,18 +323,54 @@ def _sequence(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
     if isinstance(appended, list):
         out[ListOp.APPEND] = _items(appended, lambda _: element(None), (*path, ListOp.APPEND), walk)
     elif isinstance(appended, dict):
-        out[ListOp.APPEND] = _node(element(None), appended, (*path, ListOp.APPEND), walk)
-    if not isinstance(base, list):
+        out[ListOp.APPEND] = _item(element(None), appended, (*path, ListOp.APPEND), walk)
+    if isinstance(base, list):
         # Beside a base, an index value refines the element it reaches, which holds its own.
-        for k, v in node.items():
-            if not isinstance(k, ListOp):
-                out[k] = _node(element(_index(k)), v, (*path, k), walk)
+        return _copied_if_changed(node, out)
+    _lay_index_patches(out, element, path, walk, named=_type_kind(tp) is _TypeKind.NAMEDTUPLE)
+    if node and not out:
+        return _PRUNED
     return _copied_if_changed(node, out)
+
+
+def _lay_index_patches(
+    out: MergeDict,
+    element: Callable[[Any], Any],
+    path: DataPath,
+    walk: _Walk,
+    *,
+    named: bool,
+) -> None:
+    """Lay defaults below each index patch of *out*, a sequence node with no base, in place.
+
+    A patch its unmet deletes alone filled is removed, and so is a namedtuple field's bare
+    delete, which reads as a field the data omits; an index's bare delete stays for
+    construction to refuse.
+    """
+    for k, v in list(out.items()):
+        if isinstance(k, ListOp):
+            continue
+        position = _index(k)
+        if isinstance(v, _DeleteSentinel):
+            if named and not isinstance(position, int):
+                del out[k]
+            continue
+        laid = _node(element(position), v, (*path, k), walk)
+        if laid is _PRUNED:
+            del out[k]
+        else:
+            out[k] = laid
 
 
 def _items(items: list[Any], element: Callable[[Any], Any], path: DataPath, walk: _Walk) -> list[Any]:
     """Lay defaults below each item of *items*, typed by its position."""
-    return _copied_if_changed(items, [_node(element(i), v, (*path, i), walk) for i, v in enumerate(items)])
+    return _copied_if_changed(items, [_item(element(i), v, (*path, i), walk) for i, v in enumerate(items)])
+
+
+def _item(tp: Any, item: Any, path: DataPath, walk: _Walk) -> Any:
+    """Lay defaults below one item, which keeps its place: an item has no layer below for a delete to meet."""
+    laid = _node(tp, item, path, walk)
+    return item if laid is _PRUNED else laid
 
 
 def _element_type(tp: Any) -> Callable[[Any], Any]:
