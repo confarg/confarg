@@ -45,7 +45,8 @@ _NONE_TOKENS = frozenset({"none", "null"})
 # cached: not _is_registered_leaf, _is_struct_variant, _is_taggable_leaf, _is_eagerly_coercible
 # nor _type_kind (docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class).
 _LEAF_COERCIONS: dict[type, Any] = {Path: Path}
-_LEAF_SERIALIZERS: dict[type, Any] = {Path: str}
+#: A Path is written with forward slashes, which every OS reads, so a dump is portable.
+_LEAF_SERIALIZERS: dict[type, Any] = {Path: Path.as_posix}
 
 
 def _coerce_bool(s: str) -> bool:
@@ -369,19 +370,74 @@ def _coerce_registered(tp: Any, value: Any, path: str) -> Any:
         raise TypeCoercionError.cannot_coerce(_src_type(value), value, tp.__name__, path) from None
 
 
+def _reads_as_object(tp: Any) -> bool:
+    """True if a value of the leaf type *tp* is an object no configuration file holds.
+
+    An Enum member, an instance of a registered leaf type, and a ``Literal`` member that is
+    one: a file holds such a value as the text or the number ``dump()`` writes for it. The
+    one answer for both sides of it: a parser leaves such a token as written
+    (:func:`_is_eagerly_coercible`), and an expression reads the leaf as its object
+    (:func:`read_as_object`).
+
+    Dev Notes:
+        docs-dev/architecture/types/token-model.md#a-leaf-reaches-the-merged-dict-as-written
+    """
+    return (
+        _is_enum(tp)
+        or tp in _LEAF_COERCIONS
+        or (_is_literal(tp) and any(isinstance(v, enum.Enum) for v in _literal_values(tp)))
+    )
+
+
 def _is_eagerly_coercible(tp: Any) -> bool:
     """True if a string token for *tp* should be coerced before ``build()``.
 
-    The set of leaf types whose coercion is unambiguous enough to run eagerly in
-    the parsers: Literal, Enum, the scalar numbers (bool, int, float), registered
-    leaf types and None. ``str`` is excluded — a ``str`` token is already a str
-    subclass and passes through. This mirrors the branches of :func:`_coerce_leaf`; the two
-    diverge on raise-vs-return, so share only the predicate, not the behavior.
+    The leaf types whose coerced value is one a file holds natively, so a token holds in the
+    merged dict what a file would: the scalar numbers (bool, int, float), None, and a
+    Literal over them. ``str`` is excluded — a ``str`` token is already a str subclass and
+    passes through — and so is a type whose value is an object no file holds
+    (:func:`_reads_as_object`), which stays as written. This mirrors the branches of
+    :func:`_coerce_leaf`; the two diverge on raise-vs-return, so share only the predicate,
+    not the behavior.
 
     Dev Notes:
         docs-dev/architecture/expressions/deferral-rule.md#deferral-rule
+        docs-dev/architecture/types/token-model.md#a-leaf-reaches-the-merged-dict-as-written
     """
-    return _is_literal(tp) or _is_enum(tp) or tp in (bool, int, float) or tp in _LEAF_COERCIONS or _is_none_type(tp)
+    return (_is_literal(tp) or tp in (bool, int, float) or _is_none_type(tp)) and not _reads_as_object(tp)
+
+
+def _certain_leaf(ft: Any) -> Any:
+    """Return the one type a leaf of field type *ft* is coerced to, None for a union of several.
+
+    An optional is its one other variant; any other union is construction's to decide, by
+    the value it is given.
+    """
+    ft = _resolve_type(ft)
+    if not _is_union(ft):
+        return ft
+    non_none = _union_args_no_none(ft)
+    return _resolve_type(non_none[0]) if len(non_none) == 1 else None
+
+
+def read_as_object(ft: Any, value: Any) -> Any:
+    """Return what an expression reads of *value*, at a field of type *ft*: the object, where one is certain.
+
+    Where *ft* is one type whose value is an object no file holds (:func:`_reads_as_object`),
+    an optional included, *value* is read as that object, whichever channel wrote it and
+    however it spelled it: ``RED``, ``red`` and ``Color.RED`` are one member. Anywhere else,
+    and for a value the type refuses, *value* is read as written: construction refuses it.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
+    """
+    tp = _certain_leaf(ft)
+    if tp is None or not _reads_as_object(tp) or contains_expression(value):
+        return value
+    try:
+        return _coerce_leaf(tp, value)
+    except TypeCoercionError:
+        return value
 
 
 def _held_by_any(value: Any) -> Any:
@@ -441,29 +497,24 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  
 def _try_coerce(ft: Any, token: _StrToken) -> Any:
     """Coerce a string token to the target type if unambiguous.
 
-    Coerces immediately for concrete leaf types (bool, int, float, registered
-    types in _LEAF_COERCIONS, Literal, Enum) so the merged dict has consistent
-    types regardless of source.  str tokens are returned unchanged — _StrToken
-    is already a str subclass.  For multi-variant unions, returns token
-    unchanged for construct() to handle.  Never raises: a failed coercion also
-    returns the token.  Expression tokens are always returned unchanged.
+    Coerces immediately to a value a file holds natively (:func:`_is_eagerly_coercible`:
+    bool, int, float, None, a Literal over them) so the merged dict holds what a file
+    would.  str tokens are returned unchanged — _StrToken is already a str subclass — and
+    so are tokens for an Enum or a registered leaf type, which a file holds as text too.
+    For multi-variant unions, returns token unchanged for construct() to handle.  Never
+    raises: a failed coercion also returns the token.  Expression tokens are always
+    returned unchanged.
 
     Dev Notes:
         docs-dev/architecture/expressions/deferral-rule.md#deferral-rule
+        docs-dev/architecture/types/token-model.md#a-leaf-reaches-the-merged-dict-as-written
     """
-    if ft is None:
+    if ft is None or contains_expression(token):
         return token
-    if contains_expression(token):
-        return token
-    ft = _resolve_type(ft)
-    if _is_union(ft):
-        non_none = _union_args_no_none(ft)
-        if len(non_none) != 1:
-            return token
-        ft = _resolve_type(non_none[0])
-    if not _is_eagerly_coercible(ft):
+    tp = _certain_leaf(ft)
+    if tp is None or not _is_eagerly_coercible(tp):
         return token
     try:
-        return _coerce_leaf(ft, token)
+        return _coerce_leaf(tp, token)
     except TypeCoercionError:
         return token

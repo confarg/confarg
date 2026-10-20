@@ -62,19 +62,21 @@ target's defaults under the data, so a `merge()` result holds only what the sour
 saved merge keeps following the class's defaults; `resolve()` takes the target for that reason
 ([design decisions](../design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer)).
 
-The raw dict is not made of file-native values, though: `_try_coerce` coerces CLI, env and
-CSV leaves eagerly ([CLI parsing](../cli-parsing/token-consumption.md#token-consumption)), so it can hold a `Path` or an
-`Enum` member that no config-file writer accepts. `dump_file` therefore applies the same leaf
-rules as `dump()` — `_serialize_untyped` walks the containers and hands every leaf to
-`_serialize_leaf` ([types](../types/serialization.md#serialization)) — rather than unwrapping
-`_StrToken` alone. A coerced leaf is written in its scalar form, exactly as the same key would
-have been written had a file supplied it, which is what keeps the channels equivalent.
+The raw dict is made of file-native values: `_try_coerce` coerces a CLI, env or CSV token
+eagerly only to a value a file holds natively, and leaves an `Enum` or registered leaf as
+typed ([types](../types/token-model.md#a-leaf-reaches-the-merged-dict-as-written)), so
+`merge()` reads back unchanged from its own dump (BUG-246). A dict a caller builds may still
+hold a `Path` or an `Enum` member that no config-file writer accepts, so `dump_file` applies
+the same leaf rules as `dump()` — `_serialize_untyped` walks the containers and hands every
+leaf to `_serialize_leaf` ([types](../types/serialization.md#serialization)) — rather than
+unwrapping `_StrToken` alone. Such a leaf is written in its scalar form, exactly as the same
+key would have been written had a file supplied it.
 
-**A coerced leaf therefore round-trips at `build()`, not at `merge()`.** Re-reading the dump
-yields the plain scalar, because file values are never re-interpreted
-([types](../types/token-model.md#token-model)): `merge() != merge(dumped)` for such a key,
-while `build(merge()) == build(merge(dumped))`. Re-coercing on read-back to close that gap
-was rejected ([design decisions](../design-decisions/dump-round-trips-at-the-built-object.md#dump-round-trips-at-the-built-object)).
+**Such an object round-trips at `build()`, not as a dict.** Re-reading the dump yields the
+plain scalar, because file values are never re-interpreted
+([types](../types/token-model.md#token-model)): the dicts differ, while the built objects are
+equal. Re-coercing on read-back to close that gap was rejected
+([design decisions](../design-decisions/dump-round-trips-at-the-built-object.md#dump-round-trips-at-the-built-object)).
 
 `dump()` accepts dataclass instances only; plain classes cannot be dumped reliably (their
 state is not guaranteed to mirror `__init__`), so the error message steers users to dumping

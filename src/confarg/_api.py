@@ -20,7 +20,8 @@ from confarg._files import _dump_file
 from confarg._merge import ListOp, MergeDict
 from confarg._parse_cli import _locals_keys_at, _parse_cli
 from confarg._pipeline import _merge_sources
-from confarg._serialize import _serialize, _serialize_untyped
+from confarg._serialize import _serialize, _serialize_untyped, written_form
+from confarg._typed_read import TypedReading
 from confarg._types import _MISSING, TagPolicy, _is_dc, _is_struct, _is_struct_like, _resolve_type
 from confarg.dictexpr import resolve_expressions
 from confarg.exceptions import MissingFieldError
@@ -162,11 +163,16 @@ def build[T](
 def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str) -> MergeDict:
     """Resolve *data*'s expressions over *target_r*'s field defaults, the defaults nobody touched taken out again.
 
+    An expression reads an Enum or registered leaf as its object, and what it resolves to is
+    left in its dump form.
+
     Dev Notes:
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
+        docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
     """
     laid = lay_defaults(target_r, data, union_tag, for_resolution=True)
-    return drop_untouched(resolve_expressions(laid.data), laid.untouched)
+    resolved = resolve_expressions(laid.data, read=TypedReading(target_r, union_tag), write=written_form)
+    return drop_untouched(resolved, laid.untouched)
 
 
 def _construct_resolved(target_r: Any, resolved: MergeDict, union_tag: str) -> Any:
