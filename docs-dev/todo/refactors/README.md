@@ -11,6 +11,7 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact |
 |---|---|---|---|---|---|
+| [REF-96 — The copy-budget refusal message is built on every expression read](REF-96-the-copy-budget-refusal-message-is-built-on-every-read.md) | minor |  | S | low | none |
 | [REF-26 — The `--config` files named on argv are parsed three times per run](REF-26-config-files-parsed-three-times.md) | minor |  | M | low | none |
 | [REF-41 — `cli/click/_context.py` and `cli/typer/_context.py` are the same file](REF-41-click-and-typer-context-are-the-same-file.md) | trivial |  | S | low | none |
 | [REF-46 — Near-duplicate helper pairs in the merge core](REF-46-near-duplicate-helpers-in-the-merge-core.md) | trivial |  | S | low | none |
@@ -25,6 +26,23 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-85 — `api-seams.md`'s round-trip paragraphs sit under the option-set heading](REF-85-api-seams-round-trip-paragraphs-sit-under-the-option-set-heading.md) | trivial |  | S | low | none |
 | [REF-94 — Construction reads a sequence's index keys in two places](REF-94-construction-reads-a-sequences-index-keys-in-two-places.md) | trivial |  | S | medium | none |
 | [REF-95 — The tag-collision tests leave their warnings uncaptured](REF-95-the-tag-collision-tests-leave-their-warnings-uncaptured.md) | trivial |  | S | low | none |
+| [REF-97 — How a message names a type is spelled by hand in a dozen places](REF-97-how-a-message-names-a-type-is-spelled-by-hand.md) | trivial |  | S | low | none |
+| [REF-98 — `_typed_read._read` and `_serialize.written_form` are one walk spelled twice](REF-98-typed_read-read-and-written-form-are-one-walk.md) | trivial |  | S | low | none |
+| [REF-99 — `read_union_leaf` reads a union's variants under the default `union_tag`](REF-99-read_union_leaf-spells-the-default-union-tag.md) | trivial |  | S | low | none |
+| [REF-100 — A class tag is read silently by three functions, one of them past the canonical one](REF-100-a-class-tag-is-read-silently-by-three-functions.md) | trivial |  | S | medium | none |
+| [REF-101 — `_coerce_type_ref` repeats the class-tag import step for step](REF-101-coerce-type-ref-repeats-the-class-tag-import.md) | trivial |  | S | low | none |
+| [REF-102 — `make_parser` tells a merge option from a parser keyword by its own test](REF-102-make-parser-tells-a-merge-option-by-its-own-test.md) | trivial |  | S | low | none |
+| [REF-103 — `_pending_prefixes` walks the data by its own steps rather than `_step`](REF-103-pending-prefixes-walks-the-data-without-step.md) | trivial |  | S | medium | none |
+| [REF-104 — The locals layer reading combines a list item and its patch shallowly](REF-104-the-locals-layer-reading-combines-an-item-and-its-patch-shallowly.md) | trivial |  | S | medium | none |
+| [REF-106 — `named_member_names` repeats `named_child`'s dispatch, and has drifted from it](REF-106-named-member-names-repeats-named-child-dispatch.md) | trivial |  | S | medium | none |
+| [REF-107 — `Copies` is both the copy budget and the read cache](REF-107-copies-is-both-the-copy-budget-and-the-read-cache.md) | trivial |  | S | low | none |
+| [REF-109 — A message names the root position by hand eleven times](REF-109-a-message-names-the-root-position-by-hand.md) | trivial |  | S | low | none |
+| [REF-112 — `_arity_rank` repeats the shape decision `_shaped` owns](REF-112-arity-rank-repeats-the-shape-decision.md) | trivial |  | S | low | none |
+| [REF-113 — A format's `holds` predicate restates its native types](REF-113-a-formats-holds-predicate-restates-its-native-types.md) | trivial |  | S | low | none |
+| [REF-114 — Each adapter reconciles its registration by hand](REF-114-each-adapter-reconciles-its-registration-by-hand.md) | trivial |  | S | low | none |
+| [REF-115 — `_format_offset` slices an `isoformat()` string where `strftime("%:z")` says it](REF-115-format-offset-slices-an-isoformat-string.md) | trivial |  | S | low | none |
+| [REF-116 — The dump opens and closes an instance by hand, twice](REF-116-the-dump-opens-and-closes-an-instance-by-hand-twice.md) | trivial |  | S | low | none |
+| [REF-117 — Two depth bounds share a name, and two rules elide a long path](REF-117-two-depth-bounds-share-a-name-and-two-rules-elide-a-path.md) | trivial |  | S | low | none |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | trivial |  | M | high | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | trivial |  | M | low | none |
 | [REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk](REF-42-argparse-completion-reimplements-the-build-walk.md) | trivial |  | M | medium | none |
@@ -33,5 +51,9 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-71 — Four functions answer "does this segment name a member?", and they disagree at the edges](REF-71-three-answers-to-is-this-a-member.md) | trivial |  | M | medium | none |
 | [REF-83 — The registration walk dispatches on shape outside `_type_kind`](REF-83-registration-walk-dispatches-outside-the-kind-table.md) | trivial |  | M | medium | none |
 | [REF-91 — The documentation written before the no-hard-wrap rule is still hard-wrapped](REF-91-the-older-documentation-is-hard-wrapped.md) | trivial |  | M | low | none |
+| [REF-105 — A fixed-length position is read and spelled by hand around `_fixed_position`](REF-105-a-fixed-length-position-is-read-and-spelled-per-site.md) | trivial |  | M | low | none |
+| [REF-108 — The library steers by process-wide warning filters](REF-108-the-library-steers-by-process-wide-warning-filters.md) | trivial |  | M | medium | none |
+| [REF-111 — `_merge`, `_types` and `dictexpr` import each other, through two small leaves](REF-111-merge-types-and-dictexpr-import-each-other.md) | trivial |  | M | low | none |
+| [REF-110 — A node of pending list ops is told by hand beside `_holds_list_ops`](REF-110-a-node-of-list-ops-is-told-by-hand-beside-holds-list-ops.md) | trivial | REF-111 | S | low | none |
 
 <!-- tickets:end -->
