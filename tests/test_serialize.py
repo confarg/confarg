@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import math
+import re
 import sys
 from dataclasses import dataclass as _dc
 from dataclasses import field
@@ -1364,3 +1365,46 @@ class TestFinalRoundTrip:
     def test_dumps_to_dict(self) -> None:
         """The struct inside ``Final`` is dumped field by field, not passed through."""
         assert confarg.dump(_WithFinalStruct(_FinalInner(5))) == {"inner": {"x": 5}}
+
+
+@_dc
+class _WithReservedKeys:
+    d: dict[str, int] = field(default_factory=dict)
+    nested: dict[str, dict[str, int]] = field(default_factory=dict)
+    anything: Any = None
+
+
+class TestDumpRefusesAReservedDataKey:
+    """A data key named like a reserved key would be read back as the file's own, so ``dump()`` refuses it (BUG-241)."""
+
+    @pytest.mark.parametrize("key", sorted(confarg._defaults.RESERVED_KEYS))
+    def test_a_dict_fields_key(self, key: str) -> None:
+        """The refusal names the key's path, as argv and the environment refuse the key on theirs."""
+        with pytest.raises(ConfargError, match=re.escape(f"Cannot dump the key {key!r} at 'd.{key}'")):
+            confarg.dump(_WithReservedKeys(d={key: 1}))
+
+    @pytest.mark.parametrize(
+        ("cfg", "path"),
+        [
+            pytest.param(_WithReservedKeys(nested={"x": {"__include__": 1}}), "nested.x.__include__", id="nested-dict"),
+            pytest.param(_WithReservedKeys(anything={"__cast__": "int"}), "anything.__cast__", id="any"),
+            pytest.param(_WithReservedKeys(anything=[{"__root__": 1}]), "anything[0].__root__", id="any-in-a-list"),
+        ],
+    )
+    def test_at_any_depth(self, cfg: _WithReservedKeys, path: str) -> None:
+        """Below a dict, inside an ``Any``, in a list: wherever a file would read the key."""
+        with pytest.raises(ConfargError, match=re.escape(f"at '{path}'")):
+            confarg.dump(cfg)
+
+    def test_dump_file_of_an_instance_refuses_it(self, tmp_path: Path) -> None:
+        """``dump_file`` writes an instance as ``dump()`` serializes it."""
+        with pytest.raises(ConfargError, match="Cannot dump the key '__append__'"):
+            confarg.dump_file(_WithReservedKeys(d={"__append__": 1}), tmp_path / "out.yaml")
+
+    def test_dump_file_of_a_raw_dict_writes_the_key_as_the_op(self, tmp_path: Path) -> None:
+        """A raw dict is a document: its ``__append__`` is the op, as a file reads it."""
+        out = tmp_path / "out.yaml"
+        confarg.dump_file({"nested": {"x": {"__append__": [1]}}}, out)
+        assert confarg.merge(_WithReservedKeys, argv=[], env={}, files=[out]) == {
+            "nested": {"x": {confarg.ListOp.APPEND: [1]}},
+        }

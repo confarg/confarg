@@ -21,7 +21,7 @@ Hydra parses its override grammar (`+key`, `~key`, `++key`) on the key side of a
 
 - `--json '{"xs+": [9]}'` and `APP_JSON='{"xs+": [9]}'` no longer append. The CLI spells it `--xs+ 9`, and the environment `APP_XS+=9` since FEAT-18, whose root variable the root cast had been the only way around.
 - A pin, `{"__cast__": "int", "__value__": "5"}`, no longer resolves in a decoded value: it is refused with the other reserved keys. The scalar casts say the same on the path (`--x.int 5`), and JSON types its own scalars.
-- No file can hold a reserved key as data, so a configuration that holds one does not survive a `dump_file` and a reload ([BUG-241](../../todo/bugs/BUG-241-a-dict-key-named-like-a-reserved-key-dumps-as-the-key-a-file-reads.md)). Until FEAT-43 a key ending in `+` or `-` did not either.
+- No file can hold a reserved key as data, so `dump()` refuses to write a configuration that holds one ([reserved keys](../config-files/reserved-keys.md#reserved-file-only-keys)). Until FEAT-43 a key ending in `+` or `-` did not survive a `dump_file` and a reload either.
 
 ## Rejected
 
