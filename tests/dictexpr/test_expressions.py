@@ -9,9 +9,11 @@ from __future__ import annotations
 import ast
 import math
 import re
+import sys
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -2364,3 +2366,102 @@ class TestKeyReadsAPosition:
         """A mounted fragment's bare path is prefixed, its last segment kept; a dot run is left alone."""
         assert _prefix_content("key(foo)", ("sub",)) == "key(sub.foo)"
         assert _prefix_content("key(.)", ("sub",)) == "key(.)"
+
+
+class TestAComputedValueIsBounded:
+    """Every value an expression computes is bounded, and so is their total (BUG-146).
+
+    A value a few characters long could stall the host: ``${10 ** 10 ** 7}`` took 17 s, and
+    ``'ab' * 10 ** 8`` allocated 200 MB. A result too large is refused before it is computed
+    wherever computing it is the cost, and measured once computed everywhere else.
+    """
+
+    S = "a" * 10_000
+
+    @pytest.mark.parametrize(
+        ("data", "size"),
+        [
+            ({"v": "${10 ** 10 ** 7}"}, "digits"),
+            ({"v": "${10 ** 4300}"}, "digits"),
+            ({"v": "${'ab' * 10 ** 7}"}, "characters"),
+            ({"v": "${10 ** 7 * 'ab'}"}, "characters"),
+            ({"v": "${'a' * 1000001}"}, "characters"),
+            ({"xs": [1, 2], "v": "${xs * 10 ** 7}"}, "items"),
+            ({"v": "${'%0100000000d' % 1}"}, "characters"),
+            ({"v": "${'%.*f' % xs}", "xs": (100_000_000, 1.0)}, "characters"),
+            ({"s": S, "v": "${s.replace('', s)}"}, "characters"),
+            ({"s": "a " * 5_000, "v": "${(s * 200).join(s.split())}"}, "characters"),
+        ],
+        ids=[
+            "pow",
+            "pow-just-over",
+            "repeat",
+            "repeat-reversed",
+            "repeat-just-over",
+            "list",
+            "width",
+            "star-precision",
+            "replace",
+            "join",
+        ],
+    )
+    def test_a_result_over_its_cap_is_refused(self, data: dict[str, Any], size: str) -> None:
+        """Refused as unsafe, naming the size and the limit, before the value is built."""
+        with pytest.raises(UnsafeExpressionError, match=f"over the limit of [0-9]+ {size}"):
+            resolve_expressions(data)
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            ("10 ** 4299", 10**4299),
+            ("len('a' * 1000000)", 1_000_000),
+            ("'%04d' % 7", "0007"),
+            ("'%-6s|' % 'ab'", "ab    |"),
+            ("'abc'.replace('b', 'xyz')", "axyzc"),
+            ("','.join('abc')", "a,b,c"),
+        ],
+        ids=["pow-at-cap", "repeat-at-cap", "zero-pad", "pad-left", "replace", "join"],
+    )
+    def test_a_result_at_its_cap_computes(self, body: str, expected: Any) -> None:
+        """The caps refuse only what exceeds them."""
+        assert resolve_expressions({"v": "${" + body + "}"})["v"] == expected
+
+    def test_a_doubling_chain_is_refused_at_the_step_past_the_cap(self) -> None:
+        """Each key doubles the one before, by ``+`` or by interpolation; the chain stops at the cap."""
+        for spell in ("${{k{0} + k{0}}}", "${{k{0}}}${{k{0}}}"):
+            data: dict[str, Any] = {"k0": "x" * 10}
+            data.update({f"k{i}": spell.format(i - 1) for i in range(1, 24)})
+            with pytest.raises(UnsafeExpressionError, match="over the limit of 1000000 characters"):
+                resolve_expressions(data)
+
+    def test_a_squaring_chain_is_refused_at_the_step_past_the_cap(self) -> None:
+        """An int squared key after key reaches the digit cap in a few steps, never minutes."""
+        data: dict[str, Any] = {"k0": "${10 ** 1000}"}
+        data.update({f"k{i}": f"${{k{i - 1} * k{i - 1}}}" for i in range(1, 14)})
+        with pytest.raises(UnsafeExpressionError, match="digits"):
+            resolve_expressions(data)
+
+    def test_the_total_over_the_budget_is_refused(self) -> None:
+        """Values each under the cap add up: one configuration computes at most 10 000 000 characters."""
+        data: dict[str, Any] = {"big": "x" * 999_000}
+        data.update({f"k{i}": "${big}y" for i in range(11)})
+        with pytest.raises(UnsafeExpressionError, match="over 10000000 characters in total"):
+            resolve_expressions(data)
+
+    def test_a_read_costs_nothing(self) -> None:
+        """A reference computes nothing: a hundred reads of a large value stay under the budget."""
+        data: dict[str, Any] = {"big": "x" * 999_000}
+        data.update({f"k{i}": "${big}" for i in range(100)})
+        assert resolve_expressions(data)["k99"] == data["big"]
+
+    def test_the_int_cap_follows_the_interpreter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Raised with ``sys.set_int_max_str_digits``; unlimited, the length cap bounds the digits instead."""
+        monkeypatch.setattr(sys, "get_int_max_str_digits", lambda: 10_000)
+        assert resolve_expressions({"v": "${10 ** 9999}"})["v"] == 10**9999
+        monkeypatch.setattr(sys, "get_int_max_str_digits", lambda: 0)
+        with pytest.raises(UnsafeExpressionError, match="over the limit of 1000000 digits"):
+            resolve_expressions({"v": "${10 ** 1000000}"})
+
+    def test_an_object_the_application_supplied_computes_with_its_own_operators(self) -> None:
+        """A type no source can produce came from the application, and is trusted."""
+        assert resolve_expressions({"f": Fraction(1, 3), "v": "${f * 3}"})["v"] == 1

@@ -18,11 +18,13 @@ import keyword
 import math
 import operator
 import re
+import sys
 import tokenize
 import unicodedata
 from functools import lru_cache
 from graphlib import CycleError, TopologicalSorter
 from itertools import accumulate
+from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 if TYPE_CHECKING:
@@ -252,6 +254,141 @@ _CMPOP_MAP: dict[type, Any] = {
 }
 
 
+#: The most characters, bytes or items a computed str, bytes or collection may hold.
+_MAX_LENGTH = 1_000_000
+
+#: The most one resolution may compute in total, every computed value's size summed.
+_BUDGET = 10_000_000
+
+#: One conversion of a printf-style format: its mapping key, width and precision, and type.
+_FORMAT_SPEC_RE = re.compile(
+    r"%(?:\((?P<key>[^)]*)\))?[#0\- +]*(?P<width>\*|\d+)?(?:\.(?P<precision>\*|\d*))?[hlL]?(?P<type>.)"
+)
+
+
+def _max_digits() -> int:
+    """Return the most digits a computed int may have: the interpreter's own int-to-str limit.
+
+    An int with more digits cannot be interpolated nor dumped, which both call ``str()``.
+    With the limit off (0), :data:`_MAX_LENGTH` bounds the digits instead.
+    """
+    return sys.get_int_max_str_digits() or _MAX_LENGTH
+
+
+@lru_cache(maxsize=8)
+def _power_of_ten(exponent: int) -> int:
+    """Return ``10 ** exponent``, which an int has more than *exponent* digits from."""
+    return 10**exponent
+
+
+class _Size(NamedTuple):
+    """How large a value is, in which unit, and the most an expression may compute of it."""
+
+    size: int
+    unit: str
+    limit: int | None
+
+
+def _measure(value: Any) -> _Size:
+    """Return the size of *value*: a str's or a collection's length, an int's digits, a path's text.
+
+    The one measure of a computed value, for its cap and for the budget. A value of any other
+    type has no size of its own (1, no cap): no source can produce one, so it came from the
+    application, whose types are trusted.
+    """
+    if isinstance(value, int):
+        magnitude = abs(value)
+        digits = max(1, math.ceil(magnitude.bit_length() * math.log10(2)))
+        cap = _max_digits()
+        if digits > cap and magnitude < _power_of_ten(cap):  # the estimate can be one too high
+            digits = cap
+        return _Size(digits, "digits", cap)
+    if isinstance(value, str | PurePath):
+        return _Size(len(str(value)), "characters", _MAX_LENGTH)
+    if isinstance(value, bytes | bytearray):
+        return _Size(len(value), "bytes", _MAX_LENGTH)
+    if isinstance(value, list | tuple | dict | set | frozenset):
+        return _Size(len(value), "items", _MAX_LENGTH)
+    return _Size(1, "", None)
+
+
+def _refuse_over(size: int, unit: str, limit: int, *, about: bool = False) -> None:
+    """Raise the refusal of a value holding *size* of *unit*, when that is over *limit*."""
+    if size > limit:
+        msg = f"Result would hold {'about ' if about else ''}{size} {unit}, over the limit of {limit} {unit}"
+        raise _RefusedError(msg)
+
+
+def _charged(namespace: _Namespace, value: Any) -> Any:
+    """Return *value*, a value an expression computed, once it is within its cap and the budget.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/safety-model.md#a-computed-value-is-bounded
+    """
+    size, unit, limit = _measure(value)
+    if limit is not None:
+        _refuse_over(size, unit, limit)
+    namespace.spent += size
+    if namespace.spent > _BUDGET:
+        msg = f"Expressions computed over {_BUDGET} characters in total, the limit for one configuration"
+        raise _RefusedError(msg)
+    return value
+
+
+def _check_binop(op: type, left: Any, right: Any) -> None:
+    """Refuse a power or a repetition whose result would be over its cap, before computing it.
+
+    Computing it is the cost: ``10 ** 10 ** 7`` takes seconds and ``'ab' * 10 ** 8`` allocates
+    200 MB, while the operands are a few characters. Every other result is measured once
+    computed (:func:`_charged`), which costs no more than its operands did.
+    """
+    if op is ast.Pow and type(left) in {int, bool} and type(right) in {int, bool} and right > 0 and abs(left) > 1:
+        cap = _max_digits()
+        digits = right * math.log10(abs(left))
+        if digits > cap + 1:  # a result just about the cap is computed, then measured exactly
+            _refuse_over(math.floor(digits) + 1, "digits", cap, about=True)
+    elif op is ast.Mult:
+        for seq, times in ((left, right), (right, left)):
+            if isinstance(seq, str | bytes | list | tuple) and isinstance(times, int):
+                size, unit, limit = _measure(seq)
+                _refuse_over(size * times, unit, cast("int", limit))
+    elif op is ast.Mod and isinstance(left, str | bytes):
+        _refuse_over(_format_floor(left, right), _measure(left).unit, _MAX_LENGTH)
+
+
+def _format_floor(template: str | bytes, args: Any) -> int:
+    """Return the fewest characters printf-style *template* formats *args* to: its length and every width and precision.
+
+    What a conversion adds beyond its width and precision is bounded by its argument's own
+    size, so the result is measured once computed; only these numbers, written in the
+    template or passed for a ``*``, cost more than the operands.
+    """
+    text = template.decode("latin-1") if isinstance(template, bytes) else template
+    positional = list(args) if isinstance(args, tuple) else [args]
+    floor = len(text)
+    for spec in _FORMAT_SPEC_RE.finditer(text):
+        for part in (spec["width"], spec["precision"]):
+            if part == "*":
+                star = positional.pop(0) if positional else 0
+                floor += star if isinstance(star, int) else 0
+            elif part:
+                floor += int(part)
+    return floor
+
+
+def _check_method(method: str, receiver: str, args: Sequence[Any]) -> None:
+    """Refuse a ``replace`` or a ``join`` whose result would be over the length cap, before computing it."""
+    if method == "replace" and len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], str):  # noqa: PLR2004  # old and new
+        old, new = args[0], args[1]
+        found = receiver.count(old) if old else len(receiver) + 1
+        if len(args) > 2 and isinstance(args[2], int) and args[2] >= 0:  # noqa: PLR2004  # the count
+            found = min(found, args[2])
+        _refuse_over(len(receiver) + found * max(0, len(new) - len(old)), "characters", _MAX_LENGTH)
+    elif method == "join" and len(args) == 1 and isinstance(args[0], str | list | tuple):
+        items = [item for item in args[0] if isinstance(item, str)]
+        _refuse_over(sum(map(len, items)) + len(receiver) * max(0, len(items) - 1), "characters", _MAX_LENGTH)
+
+
 def _parse_body(body: str) -> ast.Expression:
     """Parse the text of one ``${...}`` as a Python expression.
 
@@ -371,6 +508,8 @@ class _Namespace(dict[Any, Any]):
         super().__init__(data)
         self.read = read
         self.write: Writer = write or (lambda value: value)
+        #: The size of everything this resolution has computed so far (:func:`_charged`).
+        self.spent = 0
 
 
 def resolve_expressions(
@@ -923,12 +1062,13 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: _Namespace) ->
 def _eval_binop(node: ast.BinOp, namespace: _Namespace) -> Any:
     left = _evaluate_ast(node.left, namespace)
     right = _evaluate_ast(node.right, namespace)
-    return _BINOP_MAP[type(node.op)](left, right)
+    _check_binop(type(node.op), left, right)
+    return _charged(namespace, _BINOP_MAP[type(node.op)](left, right))
 
 
 def _eval_unaryop(node: ast.UnaryOp, namespace: _Namespace) -> Any:
     operand = _evaluate_ast(node.operand, namespace)
-    return _UNARYOP_MAP[type(node.op)](operand)
+    return _charged(namespace, _UNARYOP_MAP[type(node.op)](operand))
 
 
 def _eval_compare(node: ast.Compare, namespace: _Namespace) -> Any:
@@ -992,7 +1132,9 @@ def _eval_call(node: ast.Call, namespace: _Namespace) -> Any:
         raise _RefusedError.indirect_call()
     args = [_evaluate_ast(a, namespace) for a in node.args]
     kwargs = {cast("str", kw.arg): _evaluate_ast(kw.value, namespace) for kw in node.keywords}
-    return func(*args, **kwargs)
+    if (method := _method_name(node)) is not None:
+        _check_method(method, func.__self__, [*args, *kwargs.values()])
+    return _charged(namespace, func(*args, **kwargs))
 
 
 _AST_EVALUATORS: dict[type, Any] = {
@@ -1063,7 +1205,7 @@ def _resolve_single(expr_str: str, namespace: _Namespace, node_path: _Path = ())
         tree = _parse_anchored(spans[0].body, node_path)
         return namespace.write(_eval_expr(tree, namespace, expr_str))
 
-    # Interpolation or escape mode: build string from parts
+    # Interpolation or escape mode: build string from parts, as one computed value
 
     def replace(span: _ExpressionSpan) -> str:
         if span.body is None:
@@ -1074,7 +1216,11 @@ def _resolve_single(expr_str: str, namespace: _Namespace, node_path: _Path = ())
         value = _eval_expr(tree, namespace, expr_str[span.start : span.end])
         return str(namespace.write(value))
 
-    return _rewrite_spans(expr_str, spans, replace)
+    text = _rewrite_spans(expr_str, spans, replace)
+    try:
+        return _charged(namespace, text)
+    except _RefusedError as exc:
+        raise UnsafeExpressionError.refused(expr_str, str(exc)) from None
 
 
 def _get_nested(data: MergeDict, parts: Sequence[str | ListOp]) -> Any:

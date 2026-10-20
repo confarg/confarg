@@ -13,6 +13,11 @@ the boundary moves here.
 
 - The grammar cannot express collection literals, slices, comprehensions or lambdas. The whitelist is the safety model, not an unfinished parser
   ([expressions](expressions/safety-model.md#safety-model)).
+- A computed value is bounded: an `int` to `sys.get_int_max_str_digits()` digits, a `str`,
+  `bytes` or collection to 1 000 000 characters or items, and one resolution to 10 000 000 in
+  total. An object no source can produce — a `Fraction` in a caller's data, a registered type —
+  computes with its own operators, unbounded: the application that put it there is trusted
+  ([expressions](expressions/safety-model.md#a-computed-value-is-bounded)).
 - A plain `Enum` member equals no text: `${c == 'red'}` is `False` on every channel, since an
   expression reads the member, and no expression can name the class. Compare two fields, or
   declare a `StrEnum` or an `IntEnum`, which equals its value
