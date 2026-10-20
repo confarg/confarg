@@ -5,8 +5,9 @@
 
 Handling a configuration is two jobs. **Composing** one is well served: `__include__` at any node,
 subpath mounting, `locals:`, the expression engine, and the designs in FEAT-19/20/21/22.
-**Manipulating** an existing one is not. The whole vocabulary is `+`, `-`, `~`, `*`, index patches
-and `DICT_DELETE` — per-channel sigils that grew by accretion, unordered as a set, with no rename at
+**Manipulating** an existing one is not. The whole vocabulary is the list ops (append, index
+deletes, a base), index patches and the node delete — suffixes on argv's and the environment's paths,
+reserved keys in a file's values, grown by accretion, unordered as a set, with no rename at
 all ([01](../../architecture/pipeline/deep-merge.md#deep-merge-semantics)).
 
 ## What bounds the feature

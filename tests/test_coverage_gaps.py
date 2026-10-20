@@ -53,10 +53,7 @@ from confarg._merge import (
     ListOp,
     MergeDict,
     _accumulate_list_delete,
-    _apply_append_key,
     _deep_merge,
-    _merge_regular_key,
-    _normalize_merge_ops,
     _set_nested,
     _to_append_list,
 )
@@ -1388,34 +1385,6 @@ class TestMergeGaps:
     def test_delete_sentinel_repr(self) -> None:
         """DICT_DELETE sentinel has repr '_DELETE_'."""
         assert repr(DICT_DELETE) == "_DELETE_"
-
-    def test_merge_regular_key_delete_preserves_append(self) -> None:
-        """When a delete-spec arrives and existing value has an append-spec, the append is preserved."""
-        result: dict = {"key": {ListOp.APPEND: [1, 2]}}
-        _merge_regular_key("key", {ListOp.DELETE: [0]}, result)
-        assert ListOp.APPEND in result["key"]
-        assert ListOp.DELETE in result["key"]
-
-    def test_apply_append_key_existing_list(self) -> None:
-        """When the existing value is a plain list, items are appended to it directly."""
-        result: dict = {"key": [1, 2]}
-        _apply_append_key("key", 3, result)
-        assert result["key"] == [1, 2, 3]
-
-    def test_apply_append_key_existing_append_dict(self) -> None:
-        """When the existing value is a {__append__: [...]} dict, items are merged into the append list."""
-        result: dict = {"key": {ListOp.APPEND: [1, 2]}}
-        _apply_append_key("key", 3, result)
-        assert result["key"][ListOp.APPEND] == [1, 2, 3]
-
-    def test_normalize_merge_ops_double_delete_indices(self) -> None:
-        """Two 'N-' keys in the same dict merge their delete indices (hits line 132)."""
-        # the delete marker is stored as it is → result[ListOp.DELETE] = [1]
-        # "3-" key → delete_indices = [3]
-        # At end: existing_del = [1] → sorted({1, 3}) = [1, 3]
-        result = _normalize_merge_ops({ListOp.DELETE: [1], "3-": "x"})
-        assert 3 in result[ListOp.DELETE]
-        assert 1 in result[ListOp.DELETE]
 
     def test_deep_merge_list_delete_both_sides(self) -> None:
         """Merging two dicts both having ListOp.DELETE combines deletion indices."""

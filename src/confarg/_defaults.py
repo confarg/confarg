@@ -89,14 +89,22 @@ DELETE_AFTER_KEY: Final[str] = "__delete_after__"
 BASE_KEY: Final[str] = "__base__"
 """How a file writes the merge's base op: the list the other ops apply to, replacing the one below."""
 
+UNSET_KEY: Final[str] = "__unset__"
+"""How a file deletes the node it stands in, from the layers below: ``name: {__unset__: true}``.
+
+Beside other keys, the node is deleted below them first: ``{__unset__: true, a: 1}`` replaces what
+lies below with ``{a: 1}``.
+"""
+
 RESERVED_KEYS: Final[frozenset[str]] = frozenset(
-    {ROOT_KEY, INCLUDE_KEY, CAST_KEY, VALUE_KEY, APPEND_KEY, DELETE_KEY, DELETE_AFTER_KEY, BASE_KEY},
+    {ROOT_KEY, INCLUDE_KEY, CAST_KEY, VALUE_KEY, APPEND_KEY, DELETE_KEY, DELETE_AFTER_KEY, BASE_KEY, UNSET_KEY},
 )
 """Keys that mean something other than data to the merge or to ``build()``.
 
 A configuration file writes them; a flag, an environment variable or a mount point naming one is
 refused, through ``confarg._parse_cli._reserved_segment``. The four ops are held in the merged dict
-as markers no channel can type, built from these spellings in ``confarg._merge``.
+as markers no channel can type, built from these spellings in ``confarg._merge``, and ``UNSET_KEY``
+as the delete sentinel every channel's key delete leaves.
 
 Dev Notes:
     docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys

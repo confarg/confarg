@@ -540,10 +540,10 @@ class TestIncludeList:
         result = _load_file(tmp_path / "config.yaml")
         assert result == {"host": "c_host", "port": 1, "extra": True}
 
-    def test_append_shorthand_composes_across_entries(self, tmp_path: Path) -> None:
-        """Test that a later entry's key+ appends to a list an earlier entry defined."""
+    def test_append_composes_across_entries(self, tmp_path: Path) -> None:
+        """Test that a later entry's ``__append__`` appends to a list an earlier entry defined."""
         write(tmp_path, "a.yaml", "plugins:\n  - core\n")
-        write(tmp_path, "b.yaml", "plugins+:\n  - auth\n")
+        write(tmp_path, "b.yaml", "plugins:\n  __append__: [auth]\n")
         write(tmp_path, "config.yaml", f"{INCLUDE_KEY}: [./a.yaml, ./b.yaml]\n")
 
         assert _load_file(tmp_path / "config.yaml") == {"plugins": ["core", "auth"]}
@@ -867,13 +867,15 @@ def _load_over_base(tmp_path: Path, top: str, *, base: bool = True) -> _Layered:
     write(tmp_path, "base.yaml", "name: file\nsec: {a: 5}\nm: {note: [hi]}\n")
     write(tmp_path, "inc.yaml", "name: inc\n")
     write(tmp_path, "oth.yaml", "other: 3\n")
-    write(tmp_path, "del.yaml", "name-: null\n")
-    write(tmp_path, "chain.yaml", f"{INCLUDE_KEY}: ./inc.yaml\nname-: null\n")
+    write(tmp_path, "del.yaml", "name: {__unset__: true}\n")
+    write(tmp_path, "chain.yaml", f"{INCLUDE_KEY}: ./inc.yaml\nname: {{__unset__: true}}\n")
     write(tmp_path, "seca.yaml", "a: 7\n")
-    write(tmp_path, "delsec.yaml", "sec-: null\n")
+    write(tmp_path, "delsec.yaml", "sec: {__unset__: true}\n")
     write(tmp_path, "secb.yaml", "sec: {b: 3}\n")
     write(tmp_path, "row.yaml", "k: 4\nj: 9\n")
-    write(tmp_path, "delnote.yaml", "note-: null\n")
+    write(tmp_path, "delnote.yaml", "note: {__unset__: true}\n")
+    write(tmp_path, "unset.yaml", "__unset__: true\n")
+    write(tmp_path, "b3.yaml", "b: 3\n")
     write(tmp_path, "x.csv", "ts\n01\n")
     write(tmp_path, "top.yaml", top)
     files = [tmp_path / "base.yaml", tmp_path / "top.yaml"] if base else [tmp_path / "top.yaml"]
@@ -890,13 +892,15 @@ class TestDeleteBesideAnInclude:
     @pytest.mark.parametrize(
         "top",
         [
-            pytest.param(f"{INCLUDE_KEY}: ./inc.yaml\nname-: null\n", id="sibling-met-in-the-include"),
-            pytest.param(f"{INCLUDE_KEY}: ./oth.yaml\nname-: null\n", id="sibling-unmet-in-the-include"),
+            pytest.param(f"{INCLUDE_KEY}: ./inc.yaml\nname: {{__unset__: true}}\n", id="sibling-met-in-the-include"),
+            pytest.param(f"{INCLUDE_KEY}: ./oth.yaml\nname: {{__unset__: true}}\n", id="sibling-unmet-in-the-include"),
             pytest.param(f"{INCLUDE_KEY}: [./inc.yaml, ./del.yaml]\n", id="later-entry"),
             pytest.param(f"{INCLUDE_KEY}: ./del.yaml\nother: 1\n", id="included-beside-a-sibling"),
             pytest.param(f"{INCLUDE_KEY}: [./del.yaml, ./oth.yaml]\n", id="earlier-entry"),
             pytest.param(f"{INCLUDE_KEY}: ./chain.yaml\n", id="included-file-with-a-sibling-delete"),
             pytest.param(f"{INCLUDE_KEY}: ./chain.yaml\nother: 1\n", id="same-beside-a-sibling"),
+            pytest.param(f"name:\n  {INCLUDE_KEY}: ./unset.yaml\n", id="included-fragment"),
+            pytest.param(f"name:\n  {INCLUDE_KEY}: [./inc.yaml, ./unset.yaml]\n", id="later-fragment-entry"),
         ],
     )
     def test_delete_reaches_the_file_below(self, tmp_path: Path, top: str) -> None:
@@ -905,7 +909,7 @@ class TestDeleteBesideAnInclude:
 
     def test_nested_sibling_delete_reaches_the_file_below(self, tmp_path: Path) -> None:
         """A delete beside an include at a nested node deletes the lower file's key there."""
-        top = f"sec:\n  {INCLUDE_KEY}: ./seca.yaml\n  a-: null\n"
+        top = f"sec:\n  {INCLUDE_KEY}: ./seca.yaml\n  a: {{__unset__: true}}\n"
         assert _load_over_base(tmp_path, top).sec == _Sec(a=1, b=2)
 
     def test_later_value_wins_over_an_earlier_entrys_delete(self, tmp_path: Path) -> None:
@@ -915,9 +919,12 @@ class TestDeleteBesideAnInclude:
     @pytest.mark.parametrize(
         "top",
         [
-            pytest.param("sec-: null\nsec: {b: 3}\n", id="flat"),
+            pytest.param("sec: {__unset__: true, b: 3}\n", id="flat"),
             pytest.param(f"{INCLUDE_KEY}: [./delsec.yaml, ./secb.yaml]\n", id="entries"),
             pytest.param(f"{INCLUDE_KEY}: ./delsec.yaml\nsec: {{b: 3}}\n", id="sibling"),
+            pytest.param(f"sec:\n  {INCLUDE_KEY}: ./unset.yaml\n  b: 3\n", id="fragment-sibling"),
+            pytest.param(f"sec:\n  {INCLUDE_KEY}: [./unset.yaml, ./b3.yaml]\n", id="fragment-entries"),
+            pytest.param(f"sec:\n  __unset__: true\n  {INCLUDE_KEY}: ./b3.yaml\n", id="beside-the-include"),
         ],
     )
     def test_dict_written_over_a_delete_cuts_the_files_below_off(self, tmp_path: Path, top: str) -> None:
@@ -926,7 +933,7 @@ class TestDeleteBesideAnInclude:
 
     def test_delete_that_met_its_key_needs_nothing_below(self, tmp_path: Path) -> None:
         """A delete the included part gave a key to is done: with no file below it does not leak (BUG-98)."""
-        top = f"sec:\n  {INCLUDE_KEY}: ./seca.yaml\n  a-: null\n"
+        top = f"sec:\n  {INCLUDE_KEY}: ./seca.yaml\n  a: {{__unset__: true}}\n"
         assert _load_over_base(tmp_path, top, base=False).sec == _Sec(a=1, b=2)
 
     @pytest.mark.parametrize(
@@ -935,7 +942,7 @@ class TestDeleteBesideAnInclude:
     )
     def test_delete_in_a_list_item_has_nothing_below(self, tmp_path: Path, delete: str, expected: _Row) -> None:
         """A list replaces the layers below whole, so a delete in one of its items ends there."""
-        top = f"rows:\n  - {INCLUDE_KEY}: ./row.yaml\n    {delete}-: null\n"
+        top = f"rows:\n  - {INCLUDE_KEY}: ./row.yaml\n    {delete}: {{__unset__: true}}\n"
         assert _load_over_base(tmp_path, top).rows == [expected]
 
     def test_csv_header_names_columns_only(self, tmp_path: Path) -> None:

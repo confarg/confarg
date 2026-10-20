@@ -29,7 +29,7 @@ holds,
   stealing rule (`"yes"` stays a string) and `null` becomes expressible inside a list.
 - A decoded value is data, as every JSON value argv and the environment decode is
   (`_cast.decode_json`): `{"a-": null}` is the key `a-`, never a delete, and a reserved key in
-  it is refused, as on a flag's path. This is the way to give a dict a key ending in `+` or `-`
+  it is refused, as on a flag's path. It gives a dict a key ending in `+` or `-`, as a file does
   ([design decisions](../design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data), Q-7).
   Until then the merge read a decoded object's keys as a file's, so a delete in one deleted the
   layers below in some positions and not in others (BUG-228).

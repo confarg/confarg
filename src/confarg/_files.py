@@ -35,20 +35,23 @@ from confarg import _defaults, _sources
 from confarg._merge import (
     _SHAPE,
     APPEND_SUFFIX,
+    DICT_DELETE,
     ListOp,
     MergeAt,
     MergeDict,
+    _as_list_item,
     _deep_merge,
-    _merge_within_source,
-    _normalize_merge_ops,
+    _DeleteSentinel,
+    _read_file_ops,
     _to_append_list,
-    _without_key_deletes,
+    _written_within_source,
 )
 from confarg._types import _StrToken
 from confarg.dictexpr._expressions import check_anchor_depth, contains_expression, prefix_references
 from confarg.exceptions import ConfargError, InvalidConfigFileError
 
 INCLUDE_KEY = _defaults.INCLUDE_KEY
+UNSET_KEY = _defaults.UNSET_KEY
 
 
 def _load_toml(data: bytes, loc: str) -> dict[str, Any]:
@@ -154,6 +157,10 @@ def _load_csv_with_header(all_rows: list[list[_StrToken]], orient: str, path: st
     dupes = [n for n, count in Counter(names).items() if count > 1]
     if dupes:
         raise InvalidConfigFileError.duplicate_csv_columns(path, dupes)
+    # The names are keys only in a dict the file builds: several columns, or one per column.
+    reserved = [n for n in names if n in _defaults.RESERVED_KEYS]
+    if reserved and (orient == "columns" or len(names) > 1):
+        raise InvalidConfigFileError.reserved_csv_columns(path, reserved)
     _check_rectangular(rows, len(names), path, offset=1)
     if orient == "columns":
         return {name: [row[i] for row in rows] for i, name in enumerate(names)}
@@ -314,12 +321,14 @@ def _load_includes(
 ) -> Any:
     """Load every include entry and layer them left to right, later entries winning.
 
-    Two dicts merge by the type at *mount* below *root*, the configuration root, so a class
-    tag in a later entry discards the earlier node exactly as it does across ``--config``
-    files, and a key the type holds as data refines it
+    The entries are parts of one source (``_merge._written_within_source``): two dicts merge
+    by the type at *mount* below *root*, the configuration root, so a class tag in a later
+    entry discards the earlier node exactly as it does across ``--config`` files, and a key
+    the type holds as data refines it
     (docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines).
-    Anything else is replaced by the later entry, and so is a CSV/TSV entry even when it
-    loads as a dict. ``seen`` grows per
+    A dict over an entry that deletes its node keeps the delete as its base; anything else
+    replaces the earlier entry, and so does a CSV/TSV entry even when it loads as a dict.
+    ``seen`` grows per
     entry, not across the list: naming the same document twice is legal, a genuine cycle raises.
 
     *base* is the location of the including document, which each entry resolves against; it is
@@ -340,22 +349,20 @@ def _load_includes(
             raise ConfargError(msg)
         loaded = _unwrap_root_key(_load_any(inc_loc, seen | {key}, options=options, root=root, mount=mount))
         is_data = _sources._suffix(inc_loc) in _DATA_SUFFIXES
-        if i == 0 or is_data or not (isinstance(result, dict) and isinstance(loaded, dict)):
-            result = loaded
-        else:
-            result = _merge_within_source(result, loaded, at=root.at_path(mount))
+        result = loaded if i == 0 or is_data else _written_within_source(result, loaded, at=root.at_path(mount))
     return result
 
 
 def _include_with_siblings(included: Any, siblings: MergeDict, at: MergeAt) -> MergeDict:
-    """Merge an include's sibling keys on top of *included*, which must be a dict, *at* where they land.
+    """Merge an include's sibling keys on top of *included*, *at* where they land.
 
-    Siblings were written by the including file, so they win; a non-dict include has nothing
-    for them to merge into.
+    Siblings were written by the including file, so they win. *included* must be a dict, or a
+    delete of the node, which the siblings are written over as over a delete in the same
+    file; a list or a scalar has nothing for them to merge into.
     """
-    if not isinstance(included, dict):
+    if not isinstance(included, dict | _DeleteSentinel):
         raise ConfargError.include_siblings_need_a_dict(INCLUDE_KEY, included)
-    return _merge_within_source(included, siblings, at=at)
+    return _written_within_source(included, siblings, at=at)
 
 
 def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycle guard, position, root, mount
@@ -382,15 +389,15 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     A dict holding INCLUDE_KEY may name one document or a list of them; a list is layered left
     to right by :func:`_load_includes` first. A pure include (no siblings) may yield any type,
     in a dict node and in a list item alike: an include contributes a value, and extending a
-    list is the ``+`` merge operator's job
+    list is the append op's job, ``__append__`` in a file
     (docs-dev/architecture/design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling).
-    With sibling keys it must yield a dict, and the siblings, resolved as this document's own
+    With sibling keys it must yield a dict or a delete, and the siblings, resolved as this document's own
     nodes, merge on top. A present but unusable value (``__include__: null``) raises.
 
-    With *read_ops*, a configuration document's, each dict's keys are read as the merge ops
-    they spell (``_merge._normalize_merge_ops``) once its values are resolved, so ``key+:``
-    appends the items an include under it brings, and a delete beside an include deletes in
-    it. A data file's are not: its header is data.
+    With *read_ops*, a configuration document's, each dict's op keys are read as the merge
+    ops they spell (``_merge._read_file_ops``) once its values are resolved, so an
+    ``__append__`` appends the items an include under it brings, and ``__unset__`` beside an
+    include deletes below it. A data file's are not: its header is data.
 
     Dev Notes:
         docs-dev/architecture/expressions/reference-anchoring.md#reference-anchoring
@@ -400,12 +407,11 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
         return _resolve_dict(data, base, seen, path_in_file, root, mount, read_ops=read_ops)
     if isinstance(data, list):
         # A list replaces the layers below whole: a delete an item kept for them ends here.
-        return [
-            _without_key_deletes(
-                _resolve_node(item, base, seen, (*path_in_file, str(index)), root, mount, read_ops=read_ops),
-            )
-            for index, item in enumerate(data)
-        ]
+        items = []
+        for index, item in enumerate(data):
+            at = (*path_in_file, str(index))
+            items.append(_as_list_item(_resolve_node(item, base, seen, at, root, mount, read_ops=read_ops), base, at))
+        return items
     if contains_expression(data):
         check_anchor_depth(data, path_in_file)
         return prefix_references(data, mount)
@@ -422,18 +428,42 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     *,
     read_ops: bool,
 ) -> Any:
-    """Resolve a dict node, the one place INCLUDE_KEY is read (see :func:`_resolve_node`).
+    """Resolve a dict node, the one place INCLUDE_KEY and UNSET_KEY are read (see :func:`_resolve_node`).
 
     The included documents land at ``mount + path_in_file``, which their own walk prefixes
     them by; the siblings are resolved before they are merged on top, so that walk never
     visits what was included. A key that is no string (a YAML integer) is one segment.
+
+    A configuration document's ``__unset__: true`` deletes the node from the layers below: the
+    rest of the dict, an include and its siblings included, is resolved first and written over
+    the delete, as over a key delete in the same file, so ``{__unset__: true, a: 1}`` replaces
+    what lies below with ``{a: 1}``.
+
+    Raises:
+        InvalidConfigFileError: If ``__unset__`` holds anything but ``true``, or stands beside
+            ``__base__``, which says what lies below the node too.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-file-spells-an-op-in-its-value.md#a-file-spells-an-op-in-its-value
     """
+    if read_ops and UNSET_KEY in data:
+        if data[UNSET_KEY] is not True:
+            reason = f"it must be true, got {data[UNSET_KEY]!r}"
+            raise InvalidConfigFileError.misplaced_unset(UNSET_KEY, base, path_in_file, reason)
+        if _defaults.BASE_KEY in data:
+            reason = f"{_defaults.BASE_KEY!r} beside it already replaces what lies below the node"
+            raise InvalidConfigFileError.misplaced_unset(UNSET_KEY, base, path_in_file, reason)
+        rest = {k: v for k, v in data.items() if k != UNSET_KEY}
+        if not rest:
+            return DICT_DELETE
+        resolved_rest = _resolve_dict(rest, base, seen, path_in_file, root, mount, read_ops=read_ops)
+        return _written_within_source(DICT_DELETE, resolved_rest, at=root.at_path((*mount, *path_in_file)))
     if INCLUDE_KEY not in data:
         resolved = {
             k: _resolve_node(v, base, seen, (*path_in_file, str(k)), root, mount, read_ops=read_ops)
             for k, v in data.items()
         }
-        return _normalize_merge_ops(resolved) if read_ops else resolved
+        return _read_file_ops(resolved, base, path_in_file) if read_ops else resolved
     entries = _parse_include_val(data[INCLUDE_KEY])
     here = (*mount, *path_in_file)
     included = _load_includes(entries, base, seen, root, here)
@@ -484,13 +514,18 @@ def _require_layer(value: Any, loc: str) -> MergeDict:
     The one place the root-is-a-mapping rule is applied, so every format, every
     ``__include__`` that rewrites a root and every mount route answers to the same check and
     the same error. An empty document (``None`` -- an empty YAML file, or an explicit
-    ``null``) contributes nothing, matching an empty TOML file.
+    ``null``) contributes nothing, matching an empty TOML file. A root that deletes itself
+    (``__unset__``, alone or beside keys) is refused: a layer is merged over the layers below
+    it and cannot cut them off.
 
     Dev Notes:
         docs-dev/architecture/config-files/formats.md#format-dispatch-and-optional-dependencies
     """
     if value is None:
         return {}
+    if isinstance(value, _DeleteSentinel) or (isinstance(value, dict) and value.get(ListOp.BASE) is DICT_DELETE):
+        reason = "a configuration layer is merged over the layers below it and cannot delete them"
+        raise InvalidConfigFileError.misplaced_unset(UNSET_KEY, loc, (), reason)
     if not isinstance(value, dict):
         raise InvalidConfigFileError.non_dict_root(loc, value)
     return value
@@ -626,6 +661,8 @@ def _load_mount(value: Any, subpath: str, base: str | None = None, root: MergeAt
     if subpath.endswith(APPEND_SUFFIX):
         real_subpath = subpath.removesuffix(APPEND_SUFFIX)
         loaded = _load_mount_value(value, base, root.at_path((*real_subpath.split("."), "0")))
+        if not isinstance(loaded, list):  # a list's items were read as items by its own walk
+            loaded = _as_list_item(loaded, _sources._join(base, _parse_mount_value(value)[-1][0]), ())
         return _nest({ListOp.APPEND: _to_append_list(loaded)}, real_subpath)
     if subpath:
         return _nest(_load_mount_value(value, base, root, tuple(subpath.split("."))), subpath)

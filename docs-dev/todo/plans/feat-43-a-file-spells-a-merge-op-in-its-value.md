@@ -1,6 +1,6 @@
 # Plan — A file spells a merge op in its value
 
-**Drafted:** 2026-10-14 · **Status:** approved · **Ticket:** [FEAT-43](../features/FEAT-43-a-file-spells-a-merge-op-in-its-value.md), then [BUG-202](../bugs/BUG-202-dump-file-of-a-merged-key-delete-escapes-as-a-raw-writer-error.md) and [BUG-241](../bugs/BUG-241-a-dict-key-named-like-a-reserved-key-dumps-as-the-key-a-file-reads.md)
+**Drafted:** 2026-10-14 · **Status:** FEAT-43 built ([a file spells an op in its value](../../architecture/design-decisions/a-file-spells-an-op-in-its-value.md#a-file-spells-an-op-in-its-value)) · **Ticket:** FEAT-43, then [BUG-202](../bugs/BUG-202-dump-file-of-a-merged-key-delete-escapes-as-a-raw-writer-error.md) and [BUG-241](../bugs/BUG-241-a-dict-key-named-like-a-reserved-key-dumps-as-the-key-a-file-reads.md)
 
 ## Where the problem comes from
 
@@ -110,7 +110,7 @@ Corners settled with the decisions above, since each follows from one of them:
 6. Tests: migrate every file shorthand (`tests/test_merge.py`, `tests/test_include.py`, `tests/cli/test_backend_contract.py`, `tests/test_coverage_gaps.py`, `tests/test_env.py`'s file fixtures); add the decisions above, each corner included, with a `c++` and an `a-` key round-tripping through a file; the backend contract suite for the channel parity of `__unset__` against `--name-` and `APP_NAME-`.
 7. Examples: `examples/16_appending_items/more_ints.yaml` and its README, `examples/11_include/README.md`.
 8. Architecture notes: a new design decision, `a-file-spells-an-op-in-its-value.md`, carrying this plan's rationale, rejected alternatives and precedents, with its row in the design-decisions README; then [deep merge](../../architecture/pipeline/deep-merge.md) (the shorthand bullet, the op table's "produced by" column, the within-source and list-item paragraphs), [reserved keys](../../architecture/config-files/reserved-keys.md), [a decoded value is data](../../architecture/design-decisions/a-decoded-value-is-data.md), [plus is a merge operator](../../architecture/design-decisions/plus-is-a-merge-operator.md), [merge ops are markers](../../architecture/design-decisions/merge-ops-are-markers-no-channel-types.md), [include semantics](../../architecture/config-files/include-semantics.md), [a field default is the base layer](../../architecture/design-decisions/a-field-default-is-the-base-layer.md), [limitations](../../architecture/limitations.md), [invariants](../../architecture/invariants.md), and whatever `grep -rnE '[A-Za-z0-9_"]+[+-]"?:'` still finds in `docs-dev/` and in the docstrings of `src/`. The FEAT-23 and untyped-config-rewriter plans name the vocabulary; correct them where they name a file's shorthand.
-9. File the YAML-tags FEAT. Close [REF-87](../refactors/REF-87-an-append-is-combined-with-the-path-in-two-functions.md) in the same revision: `_apply_append_key`, one of its two combiners, is gone.
+9. File the YAML-tags FEAT ([FEAT-44](../features/FEAT-44-yaml-tags-for-a-files-merge-ops.md)). Close REF-87 in the same revision: `_apply_append_key`, one of its two combiners, is gone.
 
 ### 2. BUG-202: the dump writes a key delete
 

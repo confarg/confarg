@@ -14,7 +14,7 @@ import enum
 from typing import TYPE_CHECKING, Any
 
 from confarg import _defaults
-from confarg.exceptions import ConfargError, TypeCoercionError
+from confarg.exceptions import ConfargError, InvalidConfigFileError, TypeCoercionError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -70,8 +70,9 @@ type MergeDict = dict[str | ListOp, Any]
 #: Every list op, keyed by the reserved key a file writes it with.
 MERGE_OP_KEYS: dict[str, ListOp] = {op.value: op for op in ListOp}
 
-# The suffixes a flag, a variable or a file key carries to append to the field it names
-# (``--xs+``, ``xs+:``) or to delete it (``--d.k-``, ``k-:``, ``"0-":``).
+# The suffixes a flag or a variable carries on its path to append to the field it names
+# (``--xs+``, ``APP_XS+``) or to delete it (``--d.k-``, ``--xs.0-``). A file spells both in the
+# value (``_read_file_ops``), since its keys are its data.
 APPEND_SUFFIX = "+"
 DELETE_SUFFIX = "-"
 
@@ -102,6 +103,24 @@ def _spent_if_met(below: MergeDict, key: str) -> _DeleteSentinel:
     return DICT_DELETE if below.get(key, DICT_DELETE) is DICT_DELETE else _SPENT_DELETE
 
 
+def _written_within_source(below: Any, over: Any, *, at: MergeAt) -> Any:
+    """Return what writing *over* where *below* lies leaves there, both parts of one source, *at* where they stand.
+
+    Two dicts merge by :func:`_merge_within_source`, which keeps their deletes for the layers
+    below. A delete over a value is kept spent (:func:`_spent_if_met`), and anything else is
+    written by :func:`_written_over`: a dict over a delete keeps it as its base, a list or a
+    scalar replaces what lay there.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too
+    """
+    if isinstance(below, dict) and isinstance(over, dict):
+        return _merge_within_source(below, over, at=at)
+    if isinstance(over, _DeleteSentinel):
+        return over if over is _SPENT_DELETE else _spent_if_met({"": below}, "")
+    return _written_over(below, over)
+
+
 def _to_append_list(val: Any) -> list[Any]:
     """Convert the value stored under ListOp.APPEND to a flat list of items.
 
@@ -114,91 +133,54 @@ def _to_append_list(val: Any) -> list[Any]:
     return [val]  # scalar single-value append
 
 
-def _merge_regular_key(key: str, new_val: Any, result: MergeDict) -> None:
-    """Store new_val under key, preserving any existing append spec when new_val is a delete-spec."""
-    prev = result.get(key)
-    if isinstance(new_val, dict) and ListOp.DELETE in new_val and isinstance(prev, dict) and ListOp.APPEND in prev:
-        result[key] = {**new_val, ListOp.APPEND: prev[ListOp.APPEND]}
-    else:
-        result[key] = _written_over(prev, new_val)
+def _read_file_ops(d: Any, loc: str, path: tuple[str, ...]) -> Any:
+    """Read the reserved op keys of one dict of a file's document, at *path* in the document *loc*, as their markers.
 
+    ``__append__``, ``__delete__``, ``__delete_after__`` and ``__base__`` become the keys of
+    ``MERGE_OP_KEYS``; every other key is data, whatever its spelling. ``__unset__`` is read
+    before, by the walk (``_files._resolve_dict``), which hands the rest of its dict here. Only
+    a configuration document's dicts are read, each once its values are resolved, so an
+    ``__append__`` appends what an include under it brings; no merge reads a key as an op, so
+    a value argv or the environment decodes is data.
 
-def _apply_append_key(plain_key: str, new_val: Any, result: MergeDict) -> None:
-    """Apply a ``key+`` shorthand entry, accumulating appends under ``plain_key``."""
-    items = list(new_val) if isinstance(new_val, list) else [new_val]
-    existing = result.get(plain_key)
-    if isinstance(existing, list):
-        result[plain_key] = existing + items
-    elif isinstance(existing, dict) and ListOp.APPEND in existing:
-        result[plain_key] = {ListOp.APPEND: existing[ListOp.APPEND] + items}
-    elif isinstance(existing, dict) and ListOp.DELETE in existing:
-        result[plain_key] = {**existing, ListOp.APPEND: items}
-    elif isinstance(existing, _DeleteSentinel):
-        result[plain_key] = {**_open_for_ops(existing), ListOp.APPEND: items}
-    else:
-        result[plain_key] = {ListOp.APPEND: items}
-
-
-def _normalize_merge_ops(d: Any) -> Any:
-    """Read the ``key+`` / ``key-`` shorthand and the reserved op keys of one dict of a file's document.
-
-    Transforms:
-    - ``key+: val``        → ``key: {ListOp.APPEND: list(val)}``   (append to list)
-    - ``key-: val``        → ``key: DICT_DELETE``                    (remove dict key)
-    - ``"N-": val``        → accumulated ``{ListOp.DELETE: [N]}``  (delete list index N)
-    - ``__append__: val`` and the other keys of ``MERGE_OP_KEYS`` → the op's marker
-
-    Only the keys of *d* are read, its values as they are: the walk that resolves a
-    configuration document's includes reads every dict of it, a list's items included, once
-    its values are resolved (``_files._resolve_dict``), so ``key+:`` appends what an include
-    under it brings. No merge reads a key as an op, so a value argv or the environment decodes
-    is data. Each dict is read once because reading is not idempotent: ``a--`` reads as a
-    delete of ``a-``, which a second reading would make a delete of ``a``.
+    An append's items are list items (:func:`_as_list_item`): a single one is checked here, a
+    list's by the walk. A base is a list, so a delete standing as one is refused.
 
     Returns:
-        *d* itself when nothing in it spells an op, and when it is no dict.
+        *d* itself when it holds no op key, and when it is no dict.
+
+    Raises:
+        InvalidConfigFileError: If the base, or a single appended item, is a bare node delete.
 
     Dev Notes:
-        docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
+        docs-dev/architecture/design-decisions/a-file-spells-an-op-in-its-value.md#a-file-spells-an-op-in-its-value
     """
-    if not isinstance(d, dict):
+    if not isinstance(d, dict) or not any(key in MERGE_OP_KEYS for key in d):
         return d
-    has_change = False
-    result: MergeDict = {}
-    delete_indices: list[int] = []
+    result: MergeDict = {MERGE_OP_KEYS.get(key, key): value for key, value in d.items()}
+    if isinstance(result.get(ListOp.BASE), _DeleteSentinel):
+        reason = f"{str(ListOp.BASE)!r} holds a list; a node is deleted below its ops by writing the delete beside them"
+        raise InvalidConfigFileError.misplaced_unset(_defaults.UNSET_KEY, loc, (*path, str(ListOp.BASE)), reason)
+    if ListOp.APPEND in result and not isinstance(result[ListOp.APPEND], list):
+        result[ListOp.APPEND] = _as_list_item(result[ListOp.APPEND], loc, (*path, str(ListOp.APPEND)))
+    return result
 
-    for key, new_val in d.items():
-        # A reserved key is stored as the marker of the op it spells, and a key that cannot
-        # carry a shorthand suffix (a marker already, or too short) is stored as it is.
-        if key in MERGE_OP_KEYS or not isinstance(key, str) or len(key) <= 1:
-            has_change = has_change or key in MERGE_OP_KEYS
-            result[MERGE_OP_KEYS.get(key, key)] = new_val
-            continue
 
-        if key.endswith(APPEND_SUFFIX):
-            has_change = True
-            _apply_append_key(key[:-1], new_val, result)
+def _as_list_item(value: Any, loc: str, path: tuple[str, ...]) -> Any:
+    """Return *value*, at *path* in the document *loc*, as an item of a list.
 
-        elif key.endswith(DELETE_SUFFIX):
-            has_change = True
-            plain_key = key[:-1]
-            try:
-                delete_indices.append(int(plain_key))
-            except ValueError:
-                result[plain_key] = _spent_if_met(result, plain_key)
+    An item has no layer below it, so every delete it holds is dropped (:func:`_without_key_deletes`).
 
-        else:
-            # Regular key: preserve any append spec when overwriting with a delete-spec.
-            _merge_regular_key(key, new_val, result)
+    Raises:
+        InvalidConfigFileError: If *value* is a node delete itself, which would leave nothing in the item's place.
 
-    if delete_indices:
-        existing_del = result.get(ListOp.DELETE)
-        if isinstance(existing_del, list):
-            result[ListOp.DELETE] = sorted(set(existing_del) | set(delete_indices))
-        else:
-            result[ListOp.DELETE] = sorted(delete_indices)
-
-    return result if has_change else d
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-file-spells-an-op-in-its-value.md#where-a-delete-has-no-meaning
+    """
+    if isinstance(value, _DeleteSentinel):
+        reason = "a list item has no layer below it, so it would delete nothing"
+        raise InvalidConfigFileError.misplaced_unset(_defaults.UNSET_KEY, loc, path, reason)
+    return _without_key_deletes(value)
 
 
 def _resolve_index(orig_idx: int, length: int, key: str, kind: str) -> int:
@@ -271,6 +253,11 @@ def _apply_list_ops(
     4. Index patches (integer string keys, including negative): replace elements.
 
     ListOp.BASE is ignored here; the caller already used it to set *working*.
+
+    Raises:
+        ConfargError: If an index is out of range, or a patch key is no integer.
+        TypeCoercionError: If an index patch is a bare node delete, which a list spells as a
+            ``ListOp.DELETE`` instead.
     """
     # 1. Pre-append deletions
     if ListOp.DELETE in ops:
@@ -299,6 +286,8 @@ def _apply_list_ops(
                 " List patches must use integer string keys (e.g. {'0': ..., '1': ...})."
             )
             raise ConfargError(msg) from None
+        if isinstance(iv, _DeleteSentinel):
+            raise TypeCoercionError.index_unset(_defaults.UNSET_KEY, str(ListOp.DELETE), ik, key)
         idx = _resolve_index(orig_idx, len(working), key, "patch")
         working = list(working)  # ensure mutability
         # A list/tuple element + index-keyed dict recurses through _apply_list_ops, a dict
@@ -557,10 +546,11 @@ def _keep_deletes(merged: MergeDict, override: MergeDict, base: MergeDict, at: M
 
 
 def _without_key_deletes(node: Any) -> Any:
-    """Return *node* with every key delete it holds removed, at any depth; *node* itself when it holds none.
+    """Return *node* with every delete it holds removed, at any depth; *node* itself when it holds none.
 
-    For a value no layer lies below, an item of a list: a delete kept for the layers below
-    has nothing left to delete.
+    For a value no layer lies below, an item of a list: a key delete kept for the layers below
+    has nothing left to delete, and a deleted base (``{ListOp.BASE: DICT_DELETE}``) nothing to
+    cut off.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too
@@ -570,11 +560,7 @@ def _without_key_deletes(node: Any) -> Any:
         return items if any(new is not old for new, old in zip(items, node, strict=True)) else node
     if not isinstance(node, dict):
         return node
-    kept = {
-        k: _without_key_deletes(v)
-        for k, v in node.items()
-        if isinstance(k, ListOp) or not isinstance(v, _DeleteSentinel)
-    }
+    kept = {k: _without_key_deletes(v) for k, v in node.items() if not isinstance(v, _DeleteSentinel)}
     return node if len(kept) == len(node) and all(kept[k] is v for k, v in node.items()) else kept
 
 

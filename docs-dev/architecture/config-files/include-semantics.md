@@ -12,11 +12,11 @@ the other two mount routes, which read their value with the same parser ([mounti
   would: `{__include__: base.yaml, db: {__include__: db.yaml}}` keeps `db.yaml`'s `host` over
   `base.yaml`'s. Merged first and resolved after, the included document's keys would have become
   siblings of the inner include and won instead.
-- A document is one source, whatever it includes: its included parts, its sibling keys and the entries of an `__include__` list merge as parts of one source, so a `key-:` anywhere in them deletes in the files below as it does in a flat document ([deep merge](../pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too)).
+- A document is one source, whatever it includes: its included parts, its sibling keys and the entries of an `__include__` list merge as parts of one source, so a `key: {__unset__: true}` anywhere in them deletes in the files below as it does in a flat document, and a fragment that is a delete itself has its siblings and later entries written over it, as `{__unset__: true, …}` does ([deep merge](../pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too)).
 - In a list, an include lands as **one** element, whatever type it yields. Spreading a value
-  over several elements is the `+` operator's job and nothing else's
+  over several elements is the append op's job and nothing else's
   ([design decisions](../design-decisions/plus-is-a-merge-operator.md#the--suffix-is-a-merge-operator-not-a-list-spelling)), so
-  `items+: {__include__: rows.yaml}` extends the list with the fragment's items while
+  `items: {__append__: {__include__: rows.yaml}}` extends the list with the fragment's items while
   `items: [{__include__: rows.yaml}]` adds the fragment itself. `--config.items+ rows.yaml` is
   the first of those, in the CLI channel.
 - A fragment whose whole content is one value names it under `__root__`. TOML has no list or
