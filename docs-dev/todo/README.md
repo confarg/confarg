@@ -53,9 +53,9 @@ it when `PATH` is a directory, or through a glob:
 
 ```console
 $ uv run python docs-dev/todo/index.py --where src/confarg/_parse_env.py
-bugs/BUG-174-an-index-delete-on-a-dict-writes-the-list-delete-key.md
-  BUG-174 — An index delete on a dict writes the list-delete key into the dict
-  where: src/confarg/_parse_env.py::_handle_env_delete
+bugs/BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md
+  BUG-177 — A collection root's bare flag takes one token, which construction refuses
+  where: src/confarg/_parse_env.py::_parse_env
 …
 ```
 

@@ -14,7 +14,6 @@ Dev Notes:
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import functools
 import json
@@ -489,6 +488,30 @@ def _sequence_refusal(target: Any, parts: list[str], union_tag: str) -> int | No
         return None
     refused = (len(b.stones) - 1 for b in _walk_path(target, parts, union_tag) if _refuses_at_a_sequence(b))
     return next(refused, None)
+
+
+#: The kinds whose members are named: a segment below one names a key, never an index.
+_KEYED_KINDS = frozenset({_TypeKind.DICT, _TypeKind.STRUCT, _TypeKind.TAGGABLE_LEAF})
+
+
+def _delete_index(target: Any, parts: list[str], union_tag: str) -> int | None:
+    """Return the index a delete at *parts* removes, None when it removes the key its last segment names.
+
+    The one decoder of a delete's last segment, for a flag (``--xs.1-``) and a variable
+    (``XS__1-``) alike. A segment spelling no index as ``str()`` writes one
+    (:func:`~confarg.dictexpr._expressions._list_index`) is a key. One spelling an index is a
+    key where every branch of the walk taking the path stands on a dict or a struct, and an
+    index anywhere else: a sequence, a node no type describes (an ``Any``, a callable's spec),
+    or a union whose branches disagree.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/collection-patches.md#the-type-decides-what-a-delete-removes
+    """
+    index = _list_index(parts[-1])
+    if index is None:
+        return None
+    stands_on = [_type_kind(b.stones[-1].node) for b in _walk_path(target, parts, union_tag) if b.end is not None]
+    return None if stands_on and all(kind in _KEYED_KINDS for kind in stands_on) else index
 
 
 def _member_names(pt: Any) -> list[str]:
@@ -992,31 +1015,21 @@ def _consume_config_paths(args: list[str], i: int, key: str, config_flag: str) -
     return i, pairs
 
 
-def _parse_flag_mode(
-    key: str,
-) -> tuple[list[str], bool, bool, int, bool]:
+def _parse_flag_mode(key: str) -> tuple[list[str], bool, bool]:
     """Decode append/delete mode flags from a flag key.
 
-    Returns ``(path, append_mode, delete_mode, delete_idx, is_list_delete)``.  Force-cast
-    suffixes are *not* decoded here; see :func:`detect_force_cast`.
+    Returns ``(path, append_mode, delete_mode)``, the suffix dropped from *path*. Whether a
+    delete removes an index or a key is the type's to say (:func:`_delete_index`), and
+    force-cast suffixes are *not* decoded here either; see :func:`detect_force_cast`.
     """
     path = key.split(".") if key else []
 
     append_mode = bool(path) and path[-1].endswith(APPEND_SUFFIX) and len(path[-1]) > 1
-    if append_mode:
+    delete_mode = not append_mode and bool(path) and path[-1].endswith(DELETE_SUFFIX) and len(path[-1]) > 1
+    if append_mode or delete_mode:
         path[-1] = path[-1][:-1]
 
-    delete_mode = not append_mode and bool(path) and path[-1].endswith(DELETE_SUFFIX) and len(path[-1]) > 1
-    delete_idx = -1
-    is_list_delete = False
-    if delete_mode:
-        raw_last = path[-1][:-1]
-        path[-1] = raw_last
-        with contextlib.suppress(ValueError):
-            delete_idx = int(raw_last)
-            is_list_delete = True
-
-    return path, append_mode, delete_mode, delete_idx, is_list_delete
+    return path, append_mode, delete_mode
 
 
 @dataclass
@@ -1039,27 +1052,21 @@ class _ParseCtx:
     """
 
 
-def _handle_delete_token(
-    ctx: _ParseCtx,
-    token: str,
-    path: list[str],
-    *,
-    is_list_delete: bool,
-    delete_idx: int,
-) -> None:
-    """Apply a delete-mode flag (--foo.1- or --foo.bar-) to data."""
-    if is_list_delete:
+def _handle_delete_token(ctx: _ParseCtx, token: str, path: list[str]) -> None:
+    """Apply a delete-mode flag (--foo.1- or --foo.bar-) to data, an index or a key delete (:func:`_delete_index`)."""
+    if _path_unknown(ctx.target, path, ctx.union_tag):
+        if _list_index(path[-1]) is not None:
+            raise UnknownArgumentError.not_indexable(token, path[:-1])
+        raise UnknownArgumentError.no_such_field(token, path)
+    delete_idx = _delete_index(ctx.target, path, ctx.union_tag)
+    if delete_idx is not None:
         parent_path = path[:-1]
-        if _path_unknown(ctx.target, path, ctx.union_tag):
-            raise UnknownArgumentError.not_indexable(token, parent_path)
         node: Any = ctx.data
         for _p in parent_path:
             node = node[_p] if isinstance(node, dict) and _p in node else {}
         del_key = ListOp.DELETE_AFTER if isinstance(node, dict) and ListOp.APPEND in node else ListOp.DELETE
         _accumulate_list_delete(ctx.data, parent_path, delete_idx, token, delete_key=del_key)
     else:
-        if _path_unknown(ctx.target, path, ctx.union_tag):
-            raise UnknownArgumentError.no_such_field(token, path)
         # A whole-field delete ends the value at this path, so a later multi-token occurrence
         # starts a new list rather than extending the one the delete just discarded. An index
         # delete is a patch *within* the list and leaves the accumulation alone.
@@ -1707,7 +1714,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             config_files.extend(new_cfgs)
             continue
 
-        path, append_mode, delete_mode, delete_idx, is_list_delete = _parse_flag_mode(key)
+        path, append_mode, delete_mode = _parse_flag_mode(key)
 
         force_cast: str | None = None
         if not append_mode and not delete_mode:
@@ -1726,7 +1733,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         _open_callable_shorthand(ctx.data, path, walk_target, union_tag)
 
         if delete_mode:
-            _handle_delete_token(ctx, token, path, is_list_delete=is_list_delete, delete_idx=delete_idx)
+            _handle_delete_token(ctx, token, path)
             i += 1
             continue
 

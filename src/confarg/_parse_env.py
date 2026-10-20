@@ -33,6 +33,7 @@ from confarg._parse_cli import (
     _appended_element_type,
     _check_mount_subpath,
     _collect_append_items,
+    _delete_index,
     _EqValue,
     _field_types,
     _locals_keys,
@@ -205,20 +206,15 @@ def _refuse_reserved_key(orig_key: str, parts: list[str]) -> None:
         raise ConfargError.reserved_key(orig_key, reserved)
 
 
-def _handle_env_delete(orig_key: str, del_parts: list[str], data: MergeDict) -> None:
-    """Apply a delete sentinel (FOO__BAR- or FOO__ITEMS__1-) at *del_parts* in data.
+def _handle_env_delete(orig_key: str, del_parts: list[str], data: MergeDict, walk_target: Any, union_tag: str) -> None:
+    """Apply a delete (FOO__BAR- or FOO__ITEMS__1-) at *del_parts* in data, as an index or a key delete.
 
-    *del_parts* is the spelled path the delete names, its ``-`` suffix dropped, already
-    checked by :func:`_parse_env` as a value variable's path is.
+    *del_parts* is the resolved path the delete names, its ``-`` suffix dropped, already
+    checked by :func:`_parse_env` as a value variable's path is. Which of the two deletes it
+    is, a flag's delete asks too (:func:`~confarg._parse_cli._delete_index`).
     """
-    try:
-        delete_idx = int(del_parts[-1])
-        is_list_delete = True
-    except ValueError:
-        is_list_delete = False
-        delete_idx = -1
-
-    if is_list_delete:
+    delete_idx = _delete_index(walk_target, del_parts, union_tag)
+    if delete_idx is not None:
         _accumulate_list_delete(data, del_parts[:-1], delete_idx, orig_key)
     else:
         _set_nested(data, del_parts, DICT_DELETE)
@@ -502,7 +498,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         else:
             _refuse_below_a_sequence(orig_key, path, walk_target, union_tag)
         if is_delete:
-            _handle_env_delete(orig_key, path, data)
+            _handle_env_delete(orig_key, path, data, walk_target, union_tag)
             continue
 
         # Same rule as the CLI: a bare callable shorthand already stored at a prefix of

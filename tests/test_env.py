@@ -1114,6 +1114,20 @@ class TestEnvDelete:
         )
         assert result.items == ["a", "b"]
 
+    def test_delete_of_a_dict_key_spelled_like_an_index_deletes_that_key(self, loader: ConfargLoader, tmp_json) -> None:
+        """``D__1-`` deletes the key ``1`` of a dict, as ``D__A-`` deletes ``a`` (BUG-174)."""
+        WithMap = make_target("d", dict[str, int], default_factory=dict)
+        path = tmp_json('{"d": {"1": 5, "a": 6}}')
+        result = loader.load(WithMap, argv=[], env={"MYAPP_D__1-": "x"}, env_prefix="MYAPP_", files=[path])
+        assert result.d == {"a": 6}
+
+    def test_index_delete_on_an_any_holding_a_list_removes_the_item(self, loader: ConfargLoader, tmp_json) -> None:
+        """Where the type cannot tell, a segment spelling an index is an index delete (BUG-174)."""
+        WithAny = make_target("a", Any, default=None)
+        path = tmp_json('{"a": [10, 20, 30]}')
+        result = loader.load(WithAny, argv=[], env={"MYAPP_A__1-": "x"}, env_prefix="MYAPP_", files=[path])
+        assert result.a == [10, 30]
+
     def test_env_delete_overrides_config(self, loader: ConfargLoader, tmp_toml) -> None:
         """Env deletion (higher priority) wins over a config-file value."""
         path = tmp_toml("name = 'from_config'\n")

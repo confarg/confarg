@@ -41,6 +41,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [Real field wins over reserved words](real-field-wins.md) | a reserved name is reserved only where it shadows nothing |
 | [A decoded value is data](a-decoded-value-is-data.md) | a JSON value on argv or in the environment never spells a merge op, and holds no reserved key; only a file's reserved keys spell ops |
 | [A file spells an op in its value](a-file-spells-an-op-in-its-value.md) | a file's op is a reserved key of the value at its path (`xs: {__append__: …}`, `name: {__unset__: true}`), every other key data; argv and the environment keep their suffixes on the path |
+| [An argv delete is shaped by the type](an-argv-delete-is-shaped-by-the-type.md) | `--xs.1-` and `--d.1-` share a suffix but not a shape: the walk's type picks an index delete (`__delete__`) or a key delete, so a list keeps its delete-then-patch chains |
 | [A field default is the base layer](a-field-default-is-the-base-layer.md) | `build()`, `resolve()` and `from_dict()` lay the declared defaults under the data, so a patch applies over a default and an expression reads one; `merge()` is untouched |
 | [A cast names a type the field holds](a-cast-names-a-type-the-field-holds.md) | no channel's cast places a value the field's annotation does not accept, so an unheld cast is refused everywhere alike |
 | [A shadowed tag warns on use](a-shadowed-tag-warns-on-use.md) | the structural selection is named where the tag could have dispatched, and nowhere else |

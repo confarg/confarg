@@ -4961,6 +4961,44 @@ class TestCollectionPatchContract:
         cfg = loader.load(_SequenceSegments, argv=["--config", str(base), f"--d.{key}-"], env={})
         assert cfg.d == {"k": [1]}
 
+    @pytest.mark.parametrize("key", ["1", "-1", "+1", "01"])
+    def test_delete_of_a_dict_key_spelled_like_an_index_deletes_that_key(
+        self,
+        loader: ConfargLoader,
+        tmp_json,
+        key: str,
+    ) -> None:
+        """``--data.1-`` deletes the key ``1`` of a dict, as ``--data.a-`` deletes ``a`` (BUG-174).
+
+        The delete once read any segment ``int()`` takes as a list index, never asking the
+        type, and wrote ``__delete__: [1]`` beside the dict's keys, which ``build()`` refused.
+        """
+        base = tmp_json(json.dumps({"data": {key: 5, "a": 6}}))
+        cfg = loader.load(_WithMap, argv=["--config", str(base), f"--data.{key}-"], env={})
+        assert cfg.data == {"a": 6}
+
+    def test_index_delete_on_an_any_holding_a_list_removes_the_item(self, loader: ConfargLoader, tmp_json) -> None:
+        """Where the type cannot tell, a segment spelling an index is an index delete (BUG-174)."""
+        base = tmp_json('{"data": [10, 20, 30]}')
+        cfg = loader.load(_WithAnyField, argv=["--config", str(base), "--data.1-"], env={})
+        assert cfg.data == [10, 30]
+
+    def test_delete_of_a_segment_no_index_spells_on_an_any_deletes_that_key(
+        self,
+        loader: ConfargLoader,
+        tmp_json,
+    ) -> None:
+        """``--data.01-`` on an ``Any`` deletes the key ``01``: an index is what ``str()`` writes (REF-84)."""
+        base = tmp_json('{"data": {"01": 1, "k": 2}}')
+        cfg = loader.load(_WithAnyField, argv=["--config", str(base), "--data.01-"], env={})
+        assert cfg.data == {"k": 2}
+
+    def test_index_delete_on_a_list_or_dict_union_holding_a_list(self, loader: ConfargLoader, tmp_json) -> None:
+        """A union whose list and dict variants both take the segment reads it as an index (BUG-174)."""
+        base = tmp_json('{"u": [1, 2, 3]}')
+        cfg = loader.load(_SequenceSegments, argv=["--config", str(base), "--u.1-"], env={})
+        assert cfg.u == [1, 3]
+
     @pytest.mark.parametrize("key", _RESERVED_KEYS)
     def test_reserved_key_typed_as_a_dict_key_is_refused(self, loader: ConfargLoader, key: str) -> None:
         """A key the merge or ``build()`` reads as its own is no flag's to write (FEAT-3).
