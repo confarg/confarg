@@ -16,6 +16,8 @@ introduced_by: [PR-39]  # namedtuple support carried a namedtuple's patch in the
 
 A namedtuple and a fixed tuple are fixed-length sequences ([namedtuple is a fixed-length sequence](../../architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md)), yet their deletes go through the list ops, which shorten a list. `--pt.0-` removes position 0 and the namedtuple's defaults fill the end, so `y` silently moves into `x`. `--pt.x-` spells the same position by name and fails on the leaked delete sentinel, since a namedtuple's field-name key over a base (a file's `pt: [7, 8]`, or the class's own tuple default, which the [default layer](../../architecture/design-decisions/a-field-default-is-the-base-layer.md) lays as `[1, 2]`) is neither applied nor dropped. A fixed tuple's `--t.0-` is refused by arity. Fix direction, to decide first: a delete on a fixed-length sequence either unsets the position (its default, `None` where the type allows, else a missing field), whichever spelling names it, or is refused at parse with a hint to set the position instead. The baseless `--pt.x-` (no file, no laid default) already falls back to the field default, as any key delete that meets nothing does (BUG-98).
 
+The settled design and its build order: [fixed-length deletes and key identity](../plans/fixed-length-deletes-and-key-identity.md).
+
 Origin: latent since namedtuple support (PR-39), which carried a namedtuple's patch in the list ops so that its index flags would patch as a list's do, and with them the index delete, which no revision since has given a fixed-length meaning.
 
 ```python
