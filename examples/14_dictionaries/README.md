@@ -22,6 +22,8 @@ Config(input={'foo': 42, 'bar': -13})
 
 In dictionaries, keys are not limited to strings.
 They can be of any hashable type.
+A key is read from its text by its type, whatever channel spells it: `--input.42`, `"42" = "hello"` in TOML and `42: hello` in YAML are the same key.
+A plain YAML key is that text too, so a `dict[str, ...]` takes `1:` or `off:` as the string it reads, where YAML would read a number or a boolean.
 
 ```console
 $ uv run dict_of_strs_int_index.py --input.42 hello --input.-0xF world

@@ -244,6 +244,140 @@ class TestYamlLoading:
         assert result.metadata == {"x": 1, "y": 2}
 
 
+@dataclass
+class _Words:
+    off: int = 0
+    on: int = 0
+    yes: int = 0
+    no: int = 0
+    true: int = 0
+    false: int = 0
+    null: int = 0
+
+
+@dataclass
+class _KeyedBy:
+    s: dict[str, int] = field(default_factory=dict)
+    i: dict[int, int] = field(default_factory=dict)
+    b: dict[bool, int] = field(default_factory=dict)
+    a: dict[Any, Any] = field(default_factory=dict)
+
+
+def _load_yaml(tmp_path: Path, text: str, target: Any = _KeyedBy) -> Any:
+    path = tmp_path / "c.yaml"
+    path.write_text(text)
+    return confarg.load(target, argv=[], env={}, files=[path])
+
+
+class TestAYamlKeyIsItsText:
+    """A plain YAML key reaches confarg as its text, typed by the target as a TOML or JSON key is (BUG-254)."""
+
+    @pytest.mark.parametrize("word", ["off", "on", "yes", "no", "true", "false", "null"])
+    def test_a_field_is_named_by_a_word_yaml_reads_as_a_bool_or_null(self, tmp_path: Path, word: str) -> None:
+        """``off: 5`` sets the field ``off``, where YAML 1.1 read the key as ``False``."""
+        assert getattr(_load_yaml(tmp_path, f"{word}: 5\n", _Words), word) == 5
+
+    @pytest.mark.parametrize(
+        ("key", "text"),
+        [
+            pytest.param("1", "1", id="int"),
+            pytest.param("1.5", "1.5", id="float"),
+            pytest.param("2001-01-01", "2001-01-01", id="date"),
+            pytest.param("null", "null", id="null"),
+            pytest.param("~", "~", id="tilde"),
+            pytest.param("off", "off", id="bool-word"),
+            pytest.param("1:30", "1:30", id="base-60"),
+        ],
+    )
+    def test_a_str_keyed_dict_holds_the_text(self, tmp_path: Path, key: str, text: str) -> None:
+        """A ``dict[str, int]`` takes every plain key as written."""
+        assert _load_yaml(tmp_path, f"s: {{{key}: 5}}\n").s == {text: 5}
+
+    @pytest.mark.parametrize(
+        ("key", "expected"),
+        [
+            pytest.param("1", 1, id="decimal"),
+            pytest.param("-1", -1, id="negative"),
+            pytest.param("0x1f", 31, id="hex"),
+            pytest.param("0o17", 15, id="octal-1.2"),
+            pytest.param("1_000", 1000, id="underscores"),
+        ],
+    )
+    def test_an_int_key_reads_as_its_text_does(self, tmp_path: Path, key: str, expected: int) -> None:
+        """An ``int`` key is the text coerced as a TOML key, a flag or a variable is."""
+        assert _load_yaml(tmp_path, f"i: {{{key}: 5}}\n").i == {expected: 5}
+
+    @pytest.mark.parametrize("key", ["01", "017", "1:30"])
+    def test_yaml_11_int_readings_are_no_key_spelling(self, tmp_path: Path, key: str) -> None:
+        """YAML 1.1's leading-zero octal and base-60 readings are refused, as ``--i.017`` is."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=rf"Cannot coerce str '{key}' to int at 'i'"):
+            _load_yaml(tmp_path, f"i: {{{key}: 5}}\n")
+
+    @pytest.mark.parametrize(
+        ("key", "expected"),
+        [
+            pytest.param("true", True, id="true"),
+            pytest.param("yes", True, id="yes"),
+            pytest.param("1", True, id="one"),
+            pytest.param("off", False, id="off"),
+            pytest.param("0", False, id="zero"),
+        ],
+    )
+    def test_a_bool_key_reads_as_its_text_does(self, tmp_path: Path, key: str, *, expected: bool) -> None:
+        """A ``bool`` key is the text coerced as a TOML key is, so ``1`` and ``0`` are taken as well."""
+        assert _load_yaml(tmp_path, f"b: {{{key}: 5}}\n").b == {expected: 5}
+
+    @pytest.mark.parametrize(
+        ("key", "text"),
+        [
+            pytest.param("1", "1", id="int"),
+            pytest.param("true", "true", id="bool"),
+            pytest.param("~", "~", id="tilde"),
+            pytest.param("? ", "", id="empty"),
+        ],
+    )
+    def test_an_untyped_key_is_its_text(self, tmp_path: Path, key: str, text: str) -> None:
+        """Under ``Any`` a plain key is the text, as a TOML or a JSON file gives it; ``? :`` is the empty key."""
+        assert _load_yaml(tmp_path, f"a: {{{key}: 5}}\n").a == {text: 5}
+
+    def test_an_explicit_tag_keeps_its_type(self, tmp_path: Path) -> None:
+        """A key the author tagged is typed by the tag, as a tagged value is."""
+        assert _load_yaml(tmp_path, "a: {!!int 1: 5}\n").a == {1: 5}
+
+    def test_an_explicitly_tagged_key_is_refused_where_its_type_is_not_taken(self, tmp_path: Path) -> None:
+        """``!!int 1`` under a ``dict[str, int]`` is the int the author wrote, refused as before."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"Cannot coerce int 1 to str at 's'"):
+            _load_yaml(tmp_path, "s: {!!int 1: 5}\n")
+
+    def test_a_quoted_key_is_unchanged(self, tmp_path: Path) -> None:
+        """A quoted key was text already."""
+        assert _load_yaml(tmp_path, "a: {'1': 5, \"off\": 6}\n").a == {"1": 5, "off": 6}
+
+    def test_a_merge_key_still_merges(self, tmp_path: Path) -> None:
+        """``<<`` is no key but YAML's merge: the anchored mapping's keys land in the one holding it."""
+        loaded = _load_yaml(tmp_path, "base: &b {1: x, off: y}\na: {<<: *b, 2: z}\n", _AnyHolderMapping)
+        assert loaded.a == {"1": "x", "off": "y", "2": "z"}
+
+    def test_values_keep_their_yaml_reading(self, tmp_path: Path) -> None:
+        """Only keys change: a value is kept as the file typed it."""
+        assert _load_yaml(tmp_path, "a: {k: off, n: 1, z: ~}\n").a == {"k": False, "n": 1, "z": None}
+
+    def test_an_anchor_written_as_a_key_is_text_where_it_is_aliased(self, tmp_path: Path) -> None:
+        """A scalar is read where it is written: an anchored key aliased as a value is the same text."""
+        assert _load_yaml(tmp_path, "a: {? &k 1 : x, v: *k}\n").a == {"1": "x", "v": "1"}
+
+    def test_a_key_of_an_included_fragment_is_its_text(self, tmp_path: Path) -> None:
+        """Every YAML mapping reads its keys so, an included fragment's as well as a root's."""
+        (tmp_path / "frag.yaml").write_text("off: 1\n2: 3\n")
+        assert _load_yaml(tmp_path, "a: {__include__: frag.yaml}\n").a == {"off": 1, "2": 3}
+
+
+@dataclass
+class _AnyHolderMapping:
+    base: Any = None
+    a: Any = None
+
+
 # ---------------------------------------------------------------------------
 # Multiple config files
 # ---------------------------------------------------------------------------
@@ -966,11 +1100,11 @@ class _Numbers:
 
 
 _FORMATS = [".toml", ".json", ".yaml"]
-_TEXT_KEYED = {".toml": "TOML", ".json": "JSON"}
+_FORMAT_NAMES = {".toml": "TOML", ".json": "JSON", ".yaml": "YAML"}
 
 
 class TestAFileWritesAKeyAsItsFormatHoldsIt:
-    """A TOML or a JSON file writes a key that is no string as the text the other channels spell it by (BUG-245)."""
+    """Every format writes a key that is no string as the text the other channels spell it by (BUG-245, BUG-254)."""
 
     @pytest.mark.parametrize("suffix", _FORMATS)
     @pytest.mark.parametrize(
@@ -999,7 +1133,7 @@ class TestAFileWritesAKeyAsItsFormatHoldsIt:
             pytest.param(date(2020, 1, 1), "2020-01-01", id="date"),
         ],
     )
-    @pytest.mark.parametrize("suffix", list(_TEXT_KEYED))
+    @pytest.mark.parametrize("suffix", _FORMATS)
     def test_a_raw_key_is_written_as_its_spelling(self, tmp_path: Path, suffix: str, key: Any, spelled: str) -> None:
         """A raw dict's key, as a YAML file loads it, is written as JSON spells it, a date as its ISO text."""
         out = tmp_path / f"c{suffix}"
@@ -1013,20 +1147,20 @@ class TestAFileWritesAKeyAsItsFormatHoldsIt:
         confarg.dump_file(merged, tmp_path / "out.toml")
         assert (tmp_path / "out.toml").read_text() == "[d]\n1 = 5\n\n[a]\n2020-01-01 = 6\n"
 
-    @pytest.mark.parametrize("suffix", list(_TEXT_KEYED))
+    @pytest.mark.parametrize("suffix", _FORMATS)
     def test_two_keys_spelled_alike_are_refused(self, tmp_path: Path, suffix: str) -> None:
         """``1`` and ``'1'`` would both be written ``"1"``: refused, naming both keys and the path."""
         out = tmp_path / f"c{suffix}"
-        fmt = _TEXT_KEYED[suffix]
+        fmt = _FORMAT_NAMES[suffix]
         with pytest.raises(ConfargError, match=rf"keys 1 and '1' at 'a' to {fmt}"):
             confarg.dump_file(_AnyHolder({1: 5, "1": 6}), out)
         assert not out.exists()
 
-    def test_yaml_holds_two_keys_spelled_alike(self, tmp_path: Path) -> None:
-        """A YAML file holds both keys as they are."""
+    def test_a_yaml_key_is_written_quoted(self, tmp_path: Path) -> None:
+        """PyYAML quotes text another YAML reader would type, so every reader reads the key confarg does."""
         out = tmp_path / "c.yaml"
-        confarg.dump_file(_AnyHolder({1: 5, "1": 6}), out)
-        assert confarg.load(_AnyHolder, argv=[], env={}, files=[out]).a == {1: 5, "1": 6}
+        confarg.dump_file(_AnyHolder({1: 6, None: 7}), out)
+        assert out.read_text() == "a:\n  '1': 6\n  'null': 7\n"
 
     @pytest.mark.parametrize("suffix", _FORMATS)
     def test_a_key_no_reader_reads_back_is_refused(self, tmp_path: Path, suffix: str) -> None:

@@ -75,13 +75,13 @@ A key a higher layer writes meets every key below it that the type reads as the 
 
 - **A dict's key is its key type.**
   At a `dict[K, V]` two keys are one when they coerce to the same `K`, by the coercion construction builds the dict with (`_coerce_leaf` on the key as a token).
-  A YAML file reads `{1: 5}` with an integer key and argv spells `--d.1-` as text, so the delete met nothing until BUG-244, and `--d.1 9` put `'1'` beside `1`, which built right only because construction let the later win.
+  A YAML file read `{1: 5}` with an integer key (a plain key is its text since BUG-254, a tagged `!!int 1` still is one) and argv spells `--d.1-` as text, so the delete met nothing until BUG-244, and `--d.1 9` put `'1'` beside `1`, which built right only because construction let the later win.
   `RED` and `1` are one key of a `dict[Color, int]` whose `RED` is 1, and `yes` meets YAML's `true` on a `dict[bool, int]`.
-  A key that does not coerce matches by equality, and construction refuses it as before: YAML's `1` under a `dict[str, V]` stays apart from `'1'`.
+  A key that does not coerce matches by equality, and construction refuses it as before: YAML's `!!int 1` under a `dict[str, V]` stays apart from `'1'`.
 - **A fixed-length sequence's key is its position.**
   A namedtuple's field name and its indices, a fixed tuple's two indices, are one key (`_types._fixed_position`): `--pt.0 9` over a file's `pt: {x: 7, y: 8}` writes `x`.
 - **With no key type, a key is what JSON writes.**
-  On an `Any`, a bare `dict`, a `dict[Any, V]` or an unannotated argument, a key that is no string is JSON's spelling of it, `json.dumps` (`_merge._key_spelling`): YAML's `1`, `true`, `null`, `1.5` meet `"1"`, `"true"`, `"null"`, `"1.5"`, and nothing else.
+  On an `Any`, a bare `dict`, a `dict[Any, V]` or an unannotated argument, a key that is no string is JSON's spelling of it, `json.dumps` (`_merge._key_spelling`): a caller's or a tagged YAML `1`, `true`, `null`, `1.5` meet `"1"`, `"true"`, `"null"`, `"1.5"`, and nothing else.
   JSON is the format whose keys are all text, so its spelling is what such a key becomes in every string-keyed channel.
   `01` and `True` stay keys of their own, as no type says they mean `1` or `true`; a key JSON cannot write, a date, matches by equality.
 - **A union reads its keys as all its branches do.**

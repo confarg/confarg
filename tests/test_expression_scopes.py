@@ -307,10 +307,18 @@ class TestAMountPathIsSpelledSegmentBySegment:
     def test_an_integer_key_reads_the_node_it_names(self, tmp_path: Path) -> None:
         """A YAML integer key is spelled ``[0]``, whose subscript reaches the integer key."""
         write(tmp_path, "frag.yaml", SELF_READING)
-        cfg = write(tmp_path, "app.yaml", f"a:\n  0:\n    {INCLUDE_KEY}: ./frag.yaml\n")
+        cfg = write(tmp_path, "app.yaml", f"a:\n  !!int 0:\n    {INCLUDE_KEY}: ./frag.yaml\n")
         data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
         assert data == {"a": {0: {"p": 1, "q": "${a[0].p}"}}}
         assert confarg.resolve(dict[str, Any], data) == {"a": {0: {"p": 1, "q": 1}}}
+
+    def test_a_digit_key_reads_the_node_it_names(self, tmp_path: Path) -> None:
+        """A plain YAML ``0`` is the text ``'0'`` (BUG-254), and the ``[0]`` subscript reaches it as well."""
+        write(tmp_path, "frag.yaml", SELF_READING)
+        cfg = write(tmp_path, "app.yaml", f"a:\n  0:\n    {INCLUDE_KEY}: ./frag.yaml\n")
+        data = confarg.merge(dict[str, Any], argv=["--config", str(cfg)], env={})
+        assert data == {"a": {"0": {"p": 1, "q": "${a[0].p}"}}}
+        assert confarg.resolve(dict[str, Any], data) == {"a": {"0": {"p": 1, "q": 1}}}
 
     def test_a_file_mounted_twice_over_is_prefixed_by_its_whole_path(self, tmp_path: Path) -> None:
         """The ``::`` a root segment needs is written once, by the absolute mount path."""

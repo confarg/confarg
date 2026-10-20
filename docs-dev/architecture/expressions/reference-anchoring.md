@@ -117,7 +117,7 @@ No plain path reads a root key that is no identifier — `${['web-1']}` is a lis
   The base name is a string, so a non-string key at the root is not reachable ([limitations](../limitations.md#expressions)).
   A stand-in still in the tree after that names the root whole (`${::}`, `${..}` from one level down, `${::[k]}`); `_collect_names` reads it as the empty path, and since the root holds every expression, it is the cycle any reference to an ancestor is ([resolution](resolution.md#a-reference-reads-everything-its-path-reaches)).
 - **A spelled path parses back as itself.**
-  `_path_to_ast` writes a segment with a dot only when it is an identifier that is no keyword, no dunder and that Python reads as written (`_reads_as_written`: `ﬁle` would read back as `file`, and a body writing it is refused); everything else is a subscript, by the integer when the segment spells an index (`[0]`, which also reaches a YAML integer key below the root), else by the string.
+  `_path_to_ast` writes a segment with a dot only when it is an identifier that is no keyword, no dunder and that Python reads as written (`_reads_as_written`: `ﬁle` would read back as `file`, and a body writing it is refused); everything else is a subscript, by the integer when the segment spells an index (`[0]`, which also reaches an integer key below the root), else by the string.
   It is what `_Prefixer` unparses, and what `_AnchorResolver` builds the path of a dot run with, so the two agree with `_attribute_chain` on every segment.
 - `_Prefixer` rewrites only `ast.Name` bases.
   That is correct only because lambdas and comprehensions are not in `_ALLOWED_NODES`, so every non-function `Name` is a reference base.
