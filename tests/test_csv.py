@@ -14,13 +14,22 @@ from typing import TYPE_CHECKING, Any, Literal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from confarg._merge import MergeDict
+
 import pytest
 
 import confarg
-from confarg._files import INCLUDE_KEY, _load_csv, _load_file
+from confarg._depth import Copies
+from confarg._files import INCLUDE_KEY, _load_csv
+from confarg._files import _load_file as _load_file_in
 from confarg._sources import _read_bytes
 from confarg._types import _StrToken
 from confarg.exceptions import ConfargError, InvalidConfigFileError
+
+
+def _load_file(loc: str | Path) -> MergeDict:
+    """Load *loc* as a public call does, with a copy budget of its own."""
+    return _load_file_in(loc, copies=Copies())
 
 
 def write(tmp_path: Path, name: str, content: str) -> Path:

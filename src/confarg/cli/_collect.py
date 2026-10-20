@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from confarg._defaults import _Options
+    from confarg._depth import Copies
     from confarg._merge import MergeDict
 
 from confarg._api import _build_for_cli
@@ -70,6 +71,7 @@ def _merge_from_flat(  # noqa: PLR0913  # the parse result, then how the framewo
     cli_prefix: str,
     binds_runs: bool,
     runs: frozenset[str] | None = None,
+    copies: Copies,
 ) -> MergeDict:
     """Merge every source into a raw dict, the CLI channel written from ``options.argv``.
 
@@ -92,6 +94,7 @@ def _merge_from_flat(  # noqa: PLR0913  # the parse result, then how the framewo
             (:func:`~confarg.cli._build.bound_runs`), which the framework bound one to
             whatever vanilla's loop types the flag as; ``None`` when confarg did not
             register them, the type vanilla consumes for then answering.
+        copies: The copy budget of the configuration being read, which every document read charges.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact. A list
@@ -119,7 +122,7 @@ def _merge_from_flat(  # noqa: PLR0913  # the parse result, then how the framewo
         )[0]
 
     configs = _config_pairs_in(options.argv, target, cli_prefix, options.config_flag, options.union_tag)
-    return _merge_sources(target, parse_cli, configs, options)
+    return _merge_sources(target, parse_cli, configs, options, copies=copies)
 
 
 def _host_binds_run(runs: frozenset[str] | None) -> Callable[[list[str], Any], bool]:
@@ -129,9 +132,10 @@ def _host_binds_run(runs: frozenset[str] | None) -> Callable[[list[str], Any], b
     return lambda path, ft: ".".join(path) in runs or _binds_a_run(ft)
 
 
-def _construct_from_merged(target: object, merged: MergeDict, union_tag: str, cli_prefix: str) -> Any:
+def _construct_from_merged(target: object, merged: MergeDict, union_tag: str, cli_prefix: str, copies: Copies) -> Any:
     """Construct *target* from an already-merged dict; the shared tail of every ``from_*``.
 
-    *cli_prefix* is the one the merge resolved, which a missing field's remedy is spelled under.
+    *cli_prefix* is the one the merge resolved, which a missing field's remedy is spelled under,
+    and *copies* the budget the merge charged.
     """
-    return _build_for_cli(target, merged, union_tag, cli_prefix)
+    return _build_for_cli(target, merged, union_tag, cli_prefix, copies)

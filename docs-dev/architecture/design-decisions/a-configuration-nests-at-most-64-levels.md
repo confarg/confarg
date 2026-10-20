@@ -33,7 +33,8 @@ A tagged union of recursive structs is one of them since its locals walk steps e
 
 ## Where it is counted
 
-`_depth.overflow` is the one count, without recursing: a dict, a list and a tuple are levels, a stored cast pin holds its value at its own position, and a container met again at no greater depth is not walked again, so a value sharing its parts (YAML aliases) is walked once per part, not once per path.
+`_depth._shape` is the one count, without recursing (`_depth.overflow` reads its answer): a dict, a list and a tuple are levels, a stored cast pin holds its value at its own position, and a container met again at no greater depth is not walked again, so a value sharing its parts (YAML aliases) is walked once per part, not once per path.
+The same walk counts what those parts copy, each meeting past the first, for the bound on copies ([a configuration copies at most 100 000 positions](a-configuration-copies-at-most-100000-positions.md#what-copies)).
 `_depth.refuse_overflow` raises with it, the class following the channel: `InvalidConfigFileError` for a document, as for one that does not parse, `ConfargError` elsewhere, as for a reserved key.
 It is asked wherever a value enters, before the first walker meets it:
 

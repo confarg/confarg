@@ -42,6 +42,8 @@ When a ticket closes and the answer turns out to be "we will not do that", the r
 
 - A configuration nests at most 64 levels from its root, a mount path, a flag's or a variable's path and the position a JSON value lands at included.
   Deeper data is refused on every channel, by `build()`, `from_dict()`, `resolve()` and `dump()`, whatever the stack it is loaded from; the bound is fixed and no keyword lifts it ([design decisions](design-decisions/a-configuration-nests-at-most-64-levels.md#a-configuration-nests-at-most-64-levels), BUG-248).
+- A configuration copies at most 100 000 positions: a YAML alias or merge key, a location read again, a reference and a part a caller's data shares copy what they name past its first occurrence, and the copy past the bound is refused on every channel; what an author writes is never counted, and no keyword lifts the bound ([design decisions](design-decisions/a-configuration-copies-at-most-100000-positions.md#a-configuration-copies-at-most-100-000-positions), BUG-259).
+  A location is read once per configuration, so a document that changes while one `load()` reads it is read as it first was.
 - A value that holds itself, a YAML anchor holding its own alias or a Python dict or instance containing itself, is refused; a part shared by several positions is not ([design decisions](design-decisions/a-configuration-nests-at-most-64-levels.md#a-value-that-holds-itself-is-refused-as-one)).
 
 ## Collections
@@ -166,10 +168,10 @@ A field default is the layer below every source only where the class declares it
 
 ## Remote sources
 
-- **Nothing is cached.**
-  A root `--config` location is read twice per run — once by the union-tag pre-scan in `_tags.py`, once by the pipeline — as local files already are (REF-26).
+- **Nothing is cached across configurations.**
+  Within one, a location is read once, its document kept in the configuration's copy budget ([design decisions](design-decisions/a-configuration-copies-at-most-100000-positions.md#what-copies), BUG-259); across calls, a caching handler is three lines through `register_scheme`, which is why no cache is built in.
+  The union-tag pre-scan in `_tags.py` reads with a budget of its own, so a root `--config` location is still read twice per run, once by it and once by the pipeline, as local files are (REF-26).
   Over the network that is two fetches.
-  A caching handler is three lines through `register_scheme`, which is why no cache is built in.
 - **No retries, no timeouts you can configure, no authentication.**
   The built-in `http`/`https` reader is `urlopen` with a fixed timeout; anything more — a proxy, a bearer token, a retry policy — is a handler the application registers over the built-in one.
 - **Writing stays local.**

@@ -18,6 +18,7 @@ A decision lands here when a ticket closes and the answer turns out to be "we wi
 | [Zero runtime dependencies](zero-runtime-dependencies.md) | YAML, TOML writing, completion and the adapters are extras |
 | [Adapter argument names keep the framework's noun](adapter-argument-names-keep-the-framework-noun.md) | `populate_*` and `merge_*` name the object the user holds, `ctx` or `app`, not one generic `cli` |
 | [A configuration nests at most 64 levels](a-configuration-nests-at-most-64-levels.md) | counted from the root wherever a value enters, before a walker recurses through it; a value holding itself is refused as one |
+| [A configuration copies at most 100 000 positions](a-configuration-copies-at-most-100000-positions.md) | an alias, a merge key, a location read again, a reference and a shared part of a caller's data copy what they name; one fixed budget per configuration, charged before any walker meets the copy |
 
 ## Parity, and where it has to give
 

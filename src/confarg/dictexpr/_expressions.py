@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
+from confarg._depth import Copies, positions_below
 from confarg._merge import ListOp, MergeDict
 from confarg.exceptions import (
     CircularReferenceError,
@@ -551,12 +552,16 @@ class _Namespace(dict[Any, Any]):
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
     """
 
-    def __init__(self, data: MergeDict, read: Reader | None = None, write: Writer | None = None) -> None:
+    def __init__(
+        self, data: MergeDict, read: Reader | None = None, write: Writer | None = None, copies: Copies | None = None
+    ) -> None:
         super().__init__(data)
         self.read = read
         self.write: Writer = write or (lambda value: value)
         #: The size of everything this resolution has computed so far (:func:`_charged`).
         self.spent = 0
+        #: The copy budget of the configuration being resolved, which every read charges (:func:`_read_through`).
+        self.copies = Copies() if copies is None else copies
 
 
 def resolve_expressions(
@@ -565,6 +570,7 @@ def resolve_expressions(
     read: Reader | None = None,
     write: Writer | None = None,
     settle: Settler | None = None,
+    copies: Copies | None = None,
 ) -> MergeDict:
     """Resolve ${...} expressions in a merged config dict.
 
@@ -575,6 +581,8 @@ def resolve_expressions(
             the value itself when omitted.
         settle: What a node holding a pending list op becomes once the last expression below
             it resolved, before anything reading the node does; left as it is when omitted.
+        copies: The copy budget of the configuration being resolved, which each read charges;
+            one of its own when omitted.
 
     Returns:
         A new dict with all ${...} expression strings replaced by their values.
@@ -591,7 +599,7 @@ def resolve_expressions(
     if not expr_fields:
         return data
 
-    data = _Namespace(copy.deepcopy(data), read, write)
+    data = _Namespace(copy.deepcopy(data), read, write, copies)
 
     # 2. Extract references and build dependency graph
     deps = _dependency_graph(data, expr_fields)
@@ -1118,24 +1126,37 @@ def _read_value(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
     return namespace.read(namespace, _scan_path(namespace, parts), value)
 
 
-def _read_through(data: MergeDict, parts: Sequence[str | ListOp]) -> Any:
+def _read_through(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
     """Return the value at *parts*, refusing one that a pending list op holds or that holds one.
 
     A node of ops no type applied before resolution has no list to read: the op dict is never
     handed out as if it were the value. A segment naming the op itself, which only an anchor
     spells from inside an item the op holds, steps through it.
 
+    The positions below the value are charged to the configuration's copy budget before
+    anything walks it, whatever the expression makes of it.
+
     Raises:
         MissingReferenceError: If *parts* reaches nothing, or crosses or reaches pending list ops.
+        _RefusedError: If the read takes the configuration past ``_depth.MAX_COPIED`` copied positions.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#a-pending-list-op-is-read-as-its-list
+        docs-dev/architecture/design-decisions/a-configuration-copies-at-most-100000-positions.md#what-copies
     """
-    current: Any = data
+    current: Any = namespace
     for depth, part in enumerate(parts):
         if not isinstance(part, ListOp) and _holds_list_ops(current):
             raise MissingReferenceError.pending_list_ops(_spell_path(parts[:depth]))
         _, current = _step(current, part, parts)
+    copies = namespace.copies
+    copied = positions_below(current)
+    spent = copies.spent
+    msg = (
+        f"Reading {_spell_path(parts)!r} copies {copied} positions, over the limit of {copies.bound} positions"
+        f" one configuration copies ({spent} already copied)"
+    )
+    copies.charge(copied, lambda: _RefusedError(msg))
     if (inner := _list_ops_within(current)) is not None:
         raise MissingReferenceError.pending_list_ops(_spell_path((*parts, *inner)))
     return current

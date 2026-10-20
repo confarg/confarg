@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from confarg._defaults import MergeOptions
     from confarg._merge import ListOp
 
+from confarg._depth import Copies
 from confarg.cli import _clicklike
 
 
@@ -41,7 +42,7 @@ def merge_context(target: object, ctx: typer.Context, **opts: Unpack[MergeOption
     Config file loading order:
         Same as :func:`confarg.merge`.
     """
-    return _clicklike.merge_from_ctx(target, ctx, _clicklike.ctx_options(ctx, "merge_context", opts))
+    return _clicklike.merge_from_ctx(target, ctx, _clicklike.ctx_options(ctx, "merge_context", opts), Copies())
 
 
 def from_context(target: object, ctx: typer.Context, **opts: Unpack[MergeOptions]) -> Any:

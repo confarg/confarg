@@ -39,13 +39,22 @@ import pytest
 
 import confarg
 import confarg.cli._build as build_mod
+from confarg import _depth
 from confarg._files import INCLUDE_KEY
 from confarg._merge import (
     DICT_DELETE,
     ListOp,
 )
 from confarg.cli._build import _scalar_root_spec, build_static_flags
-from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError, UnknownArgumentError
+from confarg.exceptions import (
+    ConfargError,
+    ConfargWarning,
+    InvalidConfigFileError,
+    MissingFieldError,
+    TypeCoercionError,
+    UnknownArgumentError,
+    UnsafeExpressionError,
+)
 from tests._loaders import ArgparseLoader, ClickLoader, CycloptsLoader, TyperLoader, VanillaLoader
 from tests.conftest import AppConfig, CacheConfig, DbConfig, OneOf, WithCollections, make_target
 
@@ -10327,3 +10336,40 @@ class TestDepthContract:
         with pytest.raises(ConfargError, match="deeper than 64 levels") as info:
             loader.load(_Deep, argv=["--config.d" + ".m" * 31, str(frag)], env={})
         assert "frag.yaml" in str(info.value)
+
+
+# ---------------------------------------------------------------------------
+# A configuration copies at most 100 000 positions, on every front-end (BUG-259)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def _bound_100(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lower the copy bound to 100 positions, so a test reaches it without building 100 000."""
+    monkeypatch.setattr(_depth, "MAX_COPIED", 100)
+
+
+@pytest.mark.usefixtures("_bound_100")
+class TestCopiesContract:
+    """Every front-end opens one copy budget per configuration, its merge and its build sharing it."""
+
+    def test_a_location_read_again_through_argv_copies(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """Two reads of a 61-position file copy 61; three copy 122, past the bound."""
+        a = tmp_path / "a.json"
+        a.write_text(json.dumps({f"k{j}": j for j in range(61)}))
+        twice = ["--config.d.x", str(a), "--config.d.y", str(a)]
+        assert len(loader.load(_Deep, argv=twice, env={}).d["y"]) == 61
+        with pytest.raises(InvalidConfigFileError, match=r"a\.json again: it copies more than 100 positions"):
+            loader.load(_Deep, argv=[*twice, "--config.d.z", str(a)], env={})
+
+    def test_the_merge_and_the_build_share_one_budget(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A file's 90 alias copies and two reads of ten positions argv writes are 110 in one configuration."""
+        path = tmp_yaml("d:\n  l0: &l0 [x, x, x, x, x, x, x, x, x, x]\n  refs: [" + ", ".join(["*l0"] * 9) + "]\n")
+        argv = ["--d.r", "${d.l0}", "--d.s", "${d.l0}"]
+        with pytest.raises(UnsafeExpressionError, match=r"\(100 already copied\)"):
+            loader.load(_Deep, argv=argv, env={}, files=[path])
+
+    def test_registration_reads_with_a_budget_of_its_own(self, populating_loader: ConfargLoader, tmp_yaml) -> None:
+        """``populate_*`` reads ``files=`` before the merge reads it again: 60 alias copies each, not 120."""
+        path = tmp_yaml("d:\n  l0: &l0 [x, x, x, x, x, x, x, x, x, x]\n  refs: [" + ", ".join(["*l0"] * 6) + "]\n")
+        assert len(populating_loader.load(_Deep, argv=[], env={}, files=[path]).d["refs"]) == 6

@@ -20,3 +20,4 @@ So do the other two mount routes, which read their value with the same parser ([
 - `__include__` with a value it cannot use (`null`) raises in a dict node and in a list item alike: one key, one rule.
 - Cycle detection: `seen` grows **per entry**, not across a list.
   Sibling entries are sequential layers, not nesting, so naming the same file twice is legal while a genuine cycle still raises.
+- A location is read once per configuration: its join, its identity and its document are kept in the configuration's copy budget, so naming it again costs no read, and is charged every position it copies ([a configuration copies at most 100 000 positions](../design-decisions/a-configuration-copies-at-most-100000-positions.md#what-copies)).

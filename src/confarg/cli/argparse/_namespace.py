@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from confarg._merge import ListOp, MergeDict
 
 from confarg._defaults import _resolve_options
+from confarg._depth import Copies
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 from confarg.cli._sources import REGISTRATION_ATTR, Registration, reconcile
@@ -54,11 +55,11 @@ def merge_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[Merge
     Config file loading order:
         Same as :func:`confarg.merge`.
     """
-    return _merge_namespace(target, ns, _options(ns, "merge_namespace", opts))
+    return _merge_namespace(target, ns, _options(ns, "merge_namespace", opts), Copies())
 
 
-def _merge_namespace(target: object, ns: argparse.Namespace, options: _Options) -> MergeDict:
-    """Merge every source into a raw dict; :func:`merge_namespace` with its options resolved."""
+def _merge_namespace(target: object, ns: argparse.Namespace, options: _Options, copies: Copies) -> MergeDict:
+    """Merge every source into a raw dict; :func:`merge_namespace` with its options resolved, charging *copies*."""
     registration = _registration(ns)
     return _merge_from_flat(
         {key: value for key, value in vars(ns).items() if key != REGISTRATION_ATTR},
@@ -67,6 +68,7 @@ def _merge_namespace(target: object, ns: argparse.Namespace, options: _Options) 
         cli_prefix=_namespace_prefix(ns, options),
         binds_runs=True,
         runs=None if registration is None else registration.runs,
+        copies=copies,
     )
 
 
@@ -100,5 +102,6 @@ def from_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeO
         An instance of ``target`` populated from all sources.
     """
     options = _options(ns, "from_namespace", opts)
-    merged = _merge_namespace(target, ns, options)
-    return _construct_from_merged(target, merged, options.union_tag, _namespace_prefix(ns, options))
+    copies = Copies()
+    merged = _merge_namespace(target, ns, options, copies)
+    return _construct_from_merged(target, merged, options.union_tag, _namespace_prefix(ns, options), copies)

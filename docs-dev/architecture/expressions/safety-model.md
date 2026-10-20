@@ -25,7 +25,8 @@ Every value an expression **computes** is now bounded, and so is their total:
 | everything one resolution computes | 10 000 000 | each computed value's size, summed |
 
 - **What counts** is a result an operator, a function or method call, or an interpolation produces (`_charged`, the one place a value is measured, against its cap and the budget).
-  A read (`${a.b}`, `${s[0]}`) and a selection (`${a if c else b}`, `${a or b}`) hand back a value that already exists, and count nothing: a hundred `${big}` cost no more than one.
+  A read (`${a.b}`, `${s[0]}`) and a selection (`${a if c else b}`, `${a or b}`) hand back a value that already exists, and count nothing here.
+  A read charges the configuration's copy budget instead, with every position below what it reads, so a hundred `${big}` cost a hundred times one: the evaluator hands a value back for free, but every walker after it copies it ([a configuration copies at most 100 000 positions](../design-decisions/a-configuration-copies-at-most-100000-positions.md#what-copies), BUG-259).
   A comparison yields a `bool`, which is not counted either.
   Every result counts whatever object Python returns, so `${big + ''}` costs `len(big)` though CPython hands `big` back: the rule reads the syntax, not the allocator.
 - **Estimated before computing, where computing is the cost** (`_check_binop`, `_check_method`): a power of two ints, by `exponent × log10|base|` digits, computed and measured exactly within a digit of the cap; a repetition, by `len × times`; `%` on a `str` or `bytes`, by the template's length plus every width and precision it writes or takes for a `*`, the arguments' own text being bounded by their caps; `replace`, by the occurrences found times the growth; `join`, by the items' lengths and the separator's.
