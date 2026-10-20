@@ -1144,7 +1144,7 @@ def _eval_method(node: ast.Call, method: str, namespace: _Namespace) -> Any:
     """
     receiver = _evaluate_ast(cast("ast.Attribute", node.func).value, namespace)
     if not isinstance(receiver, str):
-        msg = f"Method '{method}' is called on a {type(receiver).__name__}; it is allowed only on a string"
+        msg = f"Method '{method}' is called on {type(receiver).__name__} {receiver!r}; it is allowed only on a string"
         raise _RefusedError(msg)
     return getattr(receiver, method)
 

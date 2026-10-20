@@ -196,7 +196,7 @@ class TestLocalsDeclarationAndModification:
     def test_scalar_over_a_declared_container_raises(self, tmp_path: Path) -> None:
         """The rule holds for containers too, with a message naming the declared kind."""
         cfg = write(tmp_path, "config.yaml", "locals:\n  d:\n    b: 1\nn: ${locals.d.b}\n")
-        with pytest.raises(TypeCoercionError, match="declared as a dict"):
+        with pytest.raises(TypeCoercionError, match=r"declared as dict \{'b': 1\}, and"):
             confarg.load(Cfg, argv=["--config", str(cfg), "--locals.d", "x"], env={})
 
     def test_nested_local_can_be_modified(self, tmp_path: Path) -> None:
