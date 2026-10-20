@@ -955,6 +955,23 @@ class TestFixedSequenceContract:
         with pytest.raises((UnknownArgumentError, SystemExit)):
             loader.merge(_WithPoint, argv=["--pair.007", "5"], env={})
 
+    @pytest.mark.parametrize("key", ["-0", "+0", "+1", "01", "1_0"])
+    def test_fixed_tuple_odd_index_spellings_refused(self, loader: ConfargLoader, key: str) -> None:
+        """A fixed tuple takes only the canonical index spellings a namedtuple takes (BUG-108)."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_WithIntPair, argv=[f"--pair.{key}", "5"], env={})
+
+    def test_namedtuple_index_beside_name_builds(self, loader: ConfargLoader) -> None:
+        """An index flag and a name flag each fill the position they spell (Q-1)."""
+        assert loader.load(_WithPoint, argv=["--pair.0", "1", "--pair.y", "2"], env={}).pair == _Point(x=1, y=2)
+
+    def test_namedtuple_later_spelling_of_one_position_wins(self, loader: ConfargLoader) -> None:
+        """Two spellings of one position: the later flag wins, as a repeated flag does (Q-1)."""
+        cfg = loader.load(_WithPoint, argv=["--pair.x", "13", "--pair.y", "1", "--pair.0", "9"], env={})
+        assert cfg.pair == _Point(x=9, y=1)
+        cfg = loader.load(_WithPoint, argv=["--pair.0", "9", "--pair.y", "1", "--pair.x", "13"], env={})
+        assert cfg.pair == _Point(x=13, y=1)
+
     def test_tuple_whole_value(self, whole_value_arity_loader: ConfargLoader) -> None:
         """--pair '[13, 42]' fills a tuple[int, int] in one token (click declines it)."""
         cfg = whole_value_arity_loader.load(_WithIntPair, argv=["--pair", "[13, 42]"], env={})
@@ -1273,17 +1290,15 @@ class TestFixedSequenceContract:
         assert loader.load(_WithPoint, argv=["--pair.0", "13", "--pair.1", "42"], env={}).pair == _Point(13, 42)
 
     def test_namedtuple_index_sub_flag_beside_a_name_keeps_both(self, loader: ConfargLoader) -> None:
-        """A ``--pair.0`` beside ``--pair.x`` is not dropped, and both refuse alike (BUG-65).
+        """A ``--pair.0`` beside ``--pair.x`` is not dropped, and both build alike (BUG-65, Q-1).
 
         The re-keying made the index flag vanish under the name flag on the
-        adapters, while vanilla stores both keys and lets ``build()`` refuse the
-        mixed spelling.
+        adapters, while vanilla stores both keys as spelled, in argv order, and lets
+        ``build()`` read them as one position, the later winning.
         """
-        assert loader.merge(_WithPoint, argv=["--pair.x", "13", "--pair.0", "9"], env={}) == {
-            "pair": {"x": 13, "0": 9},
-        }
-        with pytest.raises(TypeCoercionError, match=re.escape("Unknown field(s) ['0'] for _Point")):
-            loader.load(_WithPoint, argv=["--pair.x", "13", "--pair.0", "9"], env={})
+        argv = ["--pair.x", "13", "--pair.0", "9", "--pair.y", "1"]
+        assert loader.merge(_WithPoint, argv=argv, env={}) == {"pair": {"x": 13, "0": 9, "y": 1}}
+        assert loader.load(_WithPoint, argv=argv, env={}).pair == _Point(9, 1)
 
     def test_namedtuple_arity_then_index_sub_flag_keeps_both(self, loader: ConfargLoader) -> None:
         """An index sub-flag after the arity flag rides the positions as its own key (BUG-65).

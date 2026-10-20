@@ -1345,8 +1345,8 @@ class TestEnvSequenceSegment:
         ("path", "segment"),
         [
             *[(path, seg) for path in ("XS", "S", "T", "PAIR", "PT", "D__K") for seg in ("+", "*", "-", "~", "FOO")],
-            # A fixed tuple still reads its position with int(): BUG-108.
-            *[(path, seg) for path in ("XS", "S", "T", "PT", "D__K") for seg in ("01", "+1", "-0", "1_0")],
+            # A fixed tuple reads its position by the namedtuple's canonical rule (BUG-108).
+            *[(path, seg) for path in ("XS", "S", "T", "PAIR", "PT", "D__K") for seg in ("01", "+1", "-0", "1_0")],
         ],
     )
     def test_segment_spelling_no_index_is_refused(self, loader: ConfargLoader, path: str, segment: str) -> None:

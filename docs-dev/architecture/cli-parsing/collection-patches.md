@@ -46,7 +46,8 @@ Below a list, a set or a variadic tuple the walk (`_advance_field_type`) steps i
 only on a segment that spells an index as `str()` writes one: `0`, `3`, `-1`, and not `01`,
 `+1`, `-0` or `1_0`. It asks `dictexpr._expressions._list_index`, the one answer to "does this
 segment spell a list index?" that a `${xs.0}` reference already reads by (BUG-133), and the
-one the namedtuple's generated spellings agree with (BUG-97). Any other segment is no path:
+one a fixed tuple's and a namedtuple's positions are read by too (`_types._fixed_position`,
+BUG-97, BUG-108). Any other segment is no path:
 the loop refuses `--xs.foo 5` as unknown, and `--xs. 5` as a missing name, as it refuses
 `--sub.` (BUG-170).
 

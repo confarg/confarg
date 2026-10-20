@@ -28,6 +28,8 @@ from collections.abc import (
 from pathlib import PurePath
 from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
 
+from confarg.dictexpr._expressions import _list_index
+
 type TagPolicy = Literal["auto", "always"]
 
 _MISSING = object()
@@ -470,6 +472,41 @@ def _fixed_seq_types(tp: Any) -> list[Any] | None:
     if _is_tuple(tp):
         return _tuple_types(tp)
     return None
+
+
+def _spelled_position(key: Any) -> int | None:
+    """Return the index *key* spells as a key of a fixed-length sequence, None when it spells none.
+
+    An integer, which a YAML file parses a bare ``-1:`` key as (never a ``bool``), or a string
+    spelling one as ``str()`` writes it (:func:`~confarg.dictexpr._expressions._list_index`):
+    ``0`` and ``-1``, never ``01``, ``+1``, ``-0`` or a non-ASCII digit. The range is not checked.
+    """
+    if isinstance(key, bool):
+        return None
+    if isinstance(key, int):
+        return key
+    return _list_index(key) if isinstance(key, str) else None
+
+
+def _fixed_position(tp: Any, key: Any) -> int | None:
+    """Return the position *key* names in the fixed-length sequence *tp*, None when it names none.
+
+    The one reader of a fixed tuple's and a namedtuple's position, for the type walk, the merge
+    and construction alike: a namedtuple field's name, or an index :func:`_spelled_position`
+    reads within the arity, a negative one counting from the end. None too for a *tp* that is
+    no fixed-length sequence (:func:`_fixed_seq_types`).
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence
+    """
+    tp = _resolve_type(tp)
+    if _is_namedtuple(tp) and isinstance(key, str) and key in (names := _namedtuple_fields(tp)):
+        return list(names).index(key)
+    positions = _fixed_seq_types(tp)
+    index = _spelled_position(key)
+    if positions is None or index is None or not -len(positions) <= index < len(positions):
+        return None
+    return index % len(positions)
 
 
 def _union_has_seq_variant(tp: Any) -> bool:

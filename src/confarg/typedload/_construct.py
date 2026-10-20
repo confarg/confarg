@@ -37,6 +37,7 @@ from confarg._types import (
     _allows_none,
     _dict_kv,
     _elem_type,
+    _fixed_position,
     _fixed_seq_types,
     _init_params,
     _is_dc,
@@ -44,6 +45,7 @@ from confarg._types import (
     _is_frozenset,
     _is_list,
     _is_literal,
+    _is_namedtuple,
     _is_seq_variant,
     _is_set,
     _is_struct,
@@ -55,6 +57,7 @@ from confarg._types import (
     _namedtuple_fields,
     _Pinned,
     _resolve_type,
+    _spelled_position,
     _src_type,
     _StrToken,
     _struct_defaults,
@@ -123,17 +126,6 @@ def _refuse_unheld_cast(tp: Any, cast_tp: Any, path: FieldPath) -> None:
         raise TypeCoercionError.cast_not_held(cast_name_for_type(cast_tp), str(tp), _spell_field_path(path))
 
 
-def _is_index_key(k: Any) -> bool:
-    """Return True if *k* is an integer, or a string spelling of one.
-
-    A YAML file parses a bare ``-1:`` key as the integer, while an index patch
-    arrives as its string; both are the same index to a namedtuple.
-    """
-    if isinstance(k, int):  # bool is an int subclass, but spells no position
-        return not isinstance(k, bool)
-    return isinstance(k, str) and (k.isdigit() or (k.startswith("-") and k[1:].isdigit()))
-
-
 def _check_namedtuple_length(tp: Any, got: int, path: FieldPath) -> None:
     """Refuse *got* positions for a namedtuple that has fewer fields."""
     n = len(_namedtuple_fields(tp))
@@ -177,9 +169,10 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, un
 
     The merge carries a positional list under ``ListOp.BASE`` beside a patch it
     cannot apply without the type, and the CLI's arity flag leaves one under its sub-flags.
-    An all-index patch takes its positions as a fixed tuple's does; any other patch lays
-    its keys by name, so a mixed one keeps the index key the by-name form refuses. A patch
-    value refines what the base holds at its position, through the merge's own combiner.
+    Each patch key is laid at the field whose position it names
+    (:func:`~confarg._types._fixed_position`), a name and an index alike, in the patch's
+    order (Q-1); a key naming no position is kept as spelled, for construction to refuse. A
+    patch value refines what the base holds at its position, through the merge's own combiner.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/namedtuple-arity-flag-argv-order.md#build-reconciles-the-positions-with-the-patch
@@ -187,13 +180,13 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, un
     field_names = list(_namedtuple_fields(tp))
     base = _replace_base(data, _spell_field_path(path))
     _check_namedtuple_length(tp, len(base), path)
-    patch = {k: v for k, v in data.items() if k != ListOp.BASE}
-    if patch and all(_is_index_key(k) for k in patch):
-        positions = _indexed_dict_to_positions(patch, len(field_names), path, tp.__name__)
-        patch = {field_names[i]: v for i, v in positions.items()}
     laid: dict[Any, Any] = dict(zip(field_names, base, strict=False))
     at = _merge_at(tp, union_tag)
-    for k, v in patch.items():
+    for spelled, v in data.items():
+        if spelled is ListOp.BASE:
+            continue
+        position = _fixed_position(tp, spelled)
+        k = spelled if position is None else field_names[position]
         if k in laid:
             laid[k] = _merge_existing_value(laid[k], v, _spell_field_path((*path, k)), at.child(k, None, None))
         else:
@@ -201,7 +194,7 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, un
     return laid
 
 
-def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:  # noqa: C901 PLR0912
+def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:
     """Construct a namedtuple from a list (positional) or dict (by name or index).
 
     An index key counts from the end when negative, exactly as a fixed tuple's
@@ -216,7 +209,6 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
     defs = _namedtuple_defaults(tp)
     field_names = list(flds.keys())
     field_types = list(flds.values())
-    n = len(field_names)
 
     if isinstance(data, dict):
         data = _apply_carried_ops(data, tp, f"namedtuple {tp.__name__}", path, union_tag)
@@ -228,24 +220,11 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
         data = dict(zip(field_names, data, strict=False))
 
     if isinstance(data, dict):
-        # Determine if keys are field names or integer indices.
-        # A key is an index key if it is an integer, or a string spelling of one.
-        all_int_keys = all(_is_index_key(k) for k in data) if data else False
+        # A name and an index each name a position, the fixed tuple's own resolver for both.
         kwargs: dict[str, Any] = {}
-        if all_int_keys and data:
-            # Index-keyed form: {"0": val0, "-1": val_last, ...} — one resolver for
-            # "a negative key counts from the end", the fixed tuple's own.
-            for idx, v in _indexed_dict_to_positions(data, n, path, f"{tp.__name__}").items():
-                fname = field_names[idx]
-                kwargs[fname] = construct(field_types[idx], v, path=(*path, fname), union_tag=union_tag)
-        else:
-            # Field-name-keyed form (possibly mixed): {"x": val_x, "y": val_y}
-            extra = {k for k in data if k not in flds}
-            if extra:
-                raise TypeCoercionError.unknown_fields(extra, tp.__name__, _spell_field_path(path), field_names)
-            for fname, ft in flds.items():
-                if fname in data:
-                    kwargs[fname] = construct(ft, data[fname], path=(*path, fname), union_tag=union_tag)
+        for idx, v in _indexed_dict_to_positions(tp, data, path, tp.__name__).items():
+            fname = field_names[idx]
+            kwargs[fname] = construct(field_types[idx], v, path=(*path, fname), union_tag=union_tag)
 
         # Fill in missing fields from defaults or raise MissingFieldError
         for fname, ft in flds.items():
@@ -671,32 +650,37 @@ def _refuse_an_index_delete(data: dict[Any, Any], path: FieldPath) -> None:
 
 
 def _indexed_dict_to_positions(
+    tp: Any,
     data: dict[Any, Any],
-    length: int,
     path: FieldPath,
     what: str,
 ) -> dict[int, Any]:
-    """Map an index-keyed dict to ``{abs_index: value}`` for a sequence of known *length*.
+    """Map the keyed form of the fixed-length sequence *tp* to ``{position: value}``.
 
-    Negative keys count from the end (``-1`` → ``length - 1``), as list patches do.
+    Every key is read by :func:`~confarg._types._fixed_position`: an index as ``str()``
+    writes one, or an integer, a negative one counting from the end, and a namedtuple's field
+    name. Two keys naming one position resolve in the dict's order, the later winning, as a
+    later write does (Q-1).
 
     Args:
-        data: The index-keyed dict to normalise.
-        length: The known length of the target sequence.
+        tp: The fixed tuple or namedtuple type.
+        data: The keyed dict to normalise.
         path: The construction path, which error messages name.
         what: Human-readable description of the target type for error messages.
 
     Raises:
         TypeCoercionError: on a key spelling one of the reserved list ops (``_merge.MERGE_OP_KEYS``
-            — a marker, never the plain string, is the op), on a non-integer key, on an index
-            whose value is a bare node delete (a list deletes an index by ``__delete__``) or an
-            index out of range for *length*.
+            — a marker, never the plain string, is the op), on an index out of range, on a key
+            naming no position (an unknown field of a namedtuple), or on an index whose value is
+            a bare node delete (a list deletes an index by ``__delete__``).
 
     Dev Notes:
-        docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
+        docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence
     """
-    _refuse_an_index_delete(data, path)
+    _refuse_an_index_delete({k: v for k, v in data.items() if _spelled_position(k) is not None}, path)
+    length = len(_fixed_seq_types(tp) or ())
     out: dict[int, Any] = {}
+    unknown: list[Any] = []
     for k, v in data.items():
         if isinstance(k, str) and k in MERGE_OP_KEYS:
             msg = (
@@ -704,16 +688,21 @@ def _indexed_dict_to_positions(
                 f" {k!r} spells a list op, which only a configuration file writes"
             )
             raise TypeCoercionError(msg)
-        try:
-            ik = int(k)
-        except (TypeError, ValueError):
-            msg = f"Cannot construct {what} at '{_spell_field_path(path)}': dict keys must be integer indices"
-            raise TypeCoercionError(msg) from None
-        idx = ik + length if ik < 0 else ik
-        if not 0 <= idx < length:
-            msg = f"Cannot construct {what} at '{_spell_field_path(path)}': index {ik} out of range for length {length}"
+        position = _fixed_position(tp, k)
+        if position is not None:
+            out[position] = v
+        elif (index := _spelled_position(k)) is not None:
+            spelled = _spell_field_path(path)
+            msg = f"Cannot construct {what} at '{spelled}': index {index} out of range for length {length}"
             raise TypeCoercionError(msg)
-        out[idx] = v
+        else:
+            unknown.append(k)
+    if unknown and _is_namedtuple(tp):
+        fields = list(_namedtuple_fields(tp))
+        raise TypeCoercionError.unknown_fields(set(unknown), tp.__name__, _spell_field_path(path), fields)
+    if unknown:
+        msg = f"Cannot construct {what} at '{_spell_field_path(path)}': dict keys must be integer indices"
+        raise TypeCoercionError(msg)
     return out
 
 
@@ -951,7 +940,7 @@ def _patched_positions(tp: Any, tt: Sequence[Any], data: MergeDict, path: FieldP
     seq = [base_seq[i] if i < len(base_seq) else _UNSET for i in range(len(tt))]
     # A patch refines what the base holds at its position, as the merge would have.
     at = _merge_at(tp, union_tag)
-    for i, v in _indexed_dict_to_positions(patches, len(tt), path, f"{tp}").items():
+    for i, v in _indexed_dict_to_positions(tp, patches, path, f"{tp}").items():
         if i < len(base_seq):
             seq[i] = _merge_existing_value(seq[i], v, _spell_field_path((*path, i)), at.child(str(i), None, None))
         else:

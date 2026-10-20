@@ -297,28 +297,33 @@ def _apply_list_ops(
     return working
 
 
-def _patch_needs_the_type(base: list[Any], ops: MergeDict) -> bool:
-    """Whether *ops* is a pure patch whose meaning over *base* depends on the target type.
+def _patch_needs_the_type(base: list[Any], ops: MergeDict, at: MergeAt) -> bool:
+    """Whether *ops* is a pure patch whose meaning over *base* depends on the target type, *at* where it stands.
 
     A key that is no integer names a namedtuple field or nothing, and an index outside
-    *base* fills a fixed tuple's slot or overruns a list. Such a patch is deferred to
+    *base* fills a fixed tuple's slot or overruns a list. At a fixed-length node, a key is
+    an index only as construction reads one (:func:`~confarg._types._spelled_position`,
+    BUG-142), so ``01`` is left to construction to refuse. Such a patch is deferred to
     ``build()`` with the base carried along. Patches with append/delete keys return
     False so ``_apply_list_ops`` handles them (and raises its specific errors).
 
     Dev Notes:
         docs-dev/architecture/pipeline/merge-build-contract.md#merge-build-contract
     """
+    from confarg._types import _spelled_position  # noqa: PLC0415  # import cycle: _types reads _list_index
+
     if any(k in ops for k in (ListOp.APPEND, ListOp.DELETE, ListOp.DELETE_AFTER)):
         return False
     n = len(base)
+    fixed = at.fixed_length() is not None
     for k in ops:
         if isinstance(k, ListOp):  # the base, as every other op returned above
             continue
         try:
-            i = int(k)
+            i = _spelled_position(k) if fixed else int(k)
         except (TypeError, ValueError):
             return True
-        if not -n <= i < n:
+        if i is None or not -n <= i < n:
             return True
     return False
 
@@ -360,6 +365,10 @@ class MergeAt:
     def opened(self, below: Any) -> Any:
         """Return what *below* is to a dict that refines it: here, itself."""
         return below
+
+    def fixed_length(self) -> Any:
+        """Return the fixed tuple or namedtuple type this node is, None where it is none: here, None."""
+        return None
 
     def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # the typed reading's signature
         """Return where the merge stands at *key* of the node *below* and *over* merge at."""
@@ -432,11 +441,11 @@ def _merge_list_base(bv: list[Any], val: MergeDict, key: str, at: MergeAt) -> An
     """Combine a list base *bv* with an override patch dict *val*."""
     if ListOp.BASE in val:
         base = _replace_base(val, key)
-        if _patch_needs_the_type(base, val):
+        if _patch_needs_the_type(base, val, at):
             # The override's own base replaces *bv*; what its patch means is still the type's.
             return val
         return _apply_list_ops(base, val, key, at)
-    if _patch_needs_the_type(bv, val):
+    if _patch_needs_the_type(bv, val, at):
         # Defer to build(): an out-of-range index is an error for a list, a slot for a tuple;
         # a name key is an error for a list, a field for a namedtuple.
         return {ListOp.BASE: list(bv), **val}
