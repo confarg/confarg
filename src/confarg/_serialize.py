@@ -18,7 +18,7 @@ from confarg import _defaults
 from confarg._callable import _serialize_callable, holds_an_opener, promote_bare_spec
 from confarg._cast import cast_name_for_type
 from confarg._import import dotted_name, imports_back
-from confarg._merge import ListOp, MergeDict
+from confarg._merge import ListOp, MergeDict, _DeleteSentinel
 from confarg._types import (
     TagPolicy,
     _dict_kv,
@@ -514,13 +514,20 @@ def _serialize_untyped(value: Any) -> Any:
     A force-cast is written back as the ``{__cast__, __value__}`` dict a file spells it
     with, rather than as the value it pins: nothing here knows the declared type, and a
     bare scalar is re-read by declaration order. A list op the merge still holds is written
-    as the plain reserved key a file writes it with (``__append__``, ``__base__``, ...).
+    as the plain reserved key a file writes it with (``__append__``, ``__base__``, ...), and a
+    delete as the file's node delete: a key delete as ``{__unset__: true}``, a deleted base
+    (``{ListOp.BASE: DICT_DELETE}``) as ``__unset__: true`` beside the node's other keys.
 
     Dev Notes:
         docs-dev/architecture/types/serialization.md#serialization
     """
     if isinstance(value, _Pinned):
         return _serialize_pinned(value)
+    if isinstance(value, _DeleteSentinel):
+        return {_defaults.UNSET_KEY: True}
+    if isinstance(value, dict) and isinstance(value.get(ListOp.BASE), _DeleteSentinel):
+        rest = {k: v for k, v in value.items() if k is not ListOp.BASE}
+        return {_defaults.UNSET_KEY: True, **_serialize_untyped(rest)}
     if isinstance(value, dict):
         return {(str(k) if isinstance(k, ListOp) else k): _serialize_untyped(v) for k, v in value.items()}
     if isinstance(value, list):

@@ -1,6 +1,6 @@
 # Plan — A file spells a merge op in its value
 
-**Drafted:** 2026-10-14 · **Status:** FEAT-43 built ([a file spells an op in its value](../../architecture/design-decisions/a-file-spells-an-op-in-its-value.md#a-file-spells-an-op-in-its-value)) · **Ticket:** FEAT-43, then [BUG-202](../bugs/BUG-202-dump-file-of-a-merged-key-delete-escapes-as-a-raw-writer-error.md) and [BUG-241](../bugs/BUG-241-a-dict-key-named-like-a-reserved-key-dumps-as-the-key-a-file-reads.md)
+**Drafted:** 2026-10-14 · **Status:** FEAT-43 and BUG-202 built ([a file spells an op in its value](../../architecture/design-decisions/a-file-spells-an-op-in-its-value.md#a-file-spells-an-op-in-its-value)) · **Ticket:** FEAT-43, then BUG-202 and [BUG-241](../bugs/BUG-241-a-dict-key-named-like-a-reserved-key-dumps-as-the-key-a-file-reads.md)
 
 ## Where the problem comes from
 
