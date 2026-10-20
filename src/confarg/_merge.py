@@ -11,6 +11,7 @@ Dev Notes:
 from __future__ import annotations
 
 import enum
+import json
 from typing import TYPE_CHECKING, Any
 
 from confarg import _defaults
@@ -95,12 +96,16 @@ DICT_DELETE: _DeleteSentinel = _DeleteSentinel()
 _SPENT_DELETE: _DeleteSentinel = _DeleteSentinel()
 
 
-def _spent_if_met(below: MergeDict, key: str) -> _DeleteSentinel:
-    """Return the delete of *key* written over *below*, the part of its own source before it.
+def _spent_if_met(below: MergeDict, key: Any, at: MergeAt | None = None) -> _DeleteSentinel:
+    """Return the delete of *key* written over *below*, the part of its own source before it, *at* where they stand.
 
-    Spent when *below* gave it a key to remove (a spent delete there had one too), plain otherwise.
+    Spent when *below* gave it a key to remove (a spent delete there had one too), any key
+    *at* reads as *key* included (:meth:`MergeAt.key_identity`), plain otherwise.
     """
-    return DICT_DELETE if below.get(key, DICT_DELETE) is DICT_DELETE else _SPENT_DELETE
+    at = at or MergeAt()
+    identity = at.key_identity(key)
+    met = [below[k] for k in below if at.key_identity(k) == identity]
+    return _SPENT_DELETE if any(v is not DICT_DELETE for v in met) else DICT_DELETE
 
 
 def _written_within_source(below: Any, over: Any, *, at: MergeAt) -> Any:
@@ -370,6 +375,16 @@ class MergeAt:
         """Return the fixed tuple or namedtuple type this node is, None where it is none: here, None."""
         return None
 
+    def key_identity(self, key: Any) -> Any:
+        """Return what *key* is to this node, so two keys with one identity are one key: here, its spelling.
+
+        No type reads the node, so a key is what JSON writes it as (:func:`_key_spelling`).
+
+        Dev Notes:
+            docs-dev/architecture/pipeline/deep-merge.md#which-keys-are-one-key
+        """
+        return _key_spelling(key)
+
     def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # the typed reading's signature
         """Return where the merge stands at *key* of the node *below* and *over* merge at."""
         return self
@@ -456,6 +471,47 @@ def _merge_list_base(bv: list[Any], val: MergeDict, key: str, at: MergeAt) -> An
 _SHAPE = MergeAt()
 
 
+def _key_spelling(key: Any) -> Any:
+    """Return JSON's spelling of a key that is no string, *key* itself otherwise.
+
+    What a key is where no type reads it. JSON writes every key as text, as argv and the
+    environment spell theirs, so a YAML file's ``1``, ``true``, ``null`` and ``1.5`` are
+    ``"1"``, ``"true"``, ``"null"`` and ``"1.5"``, and a string meets them only so spelled:
+    ``01`` and ``True`` stay other keys. A key JSON cannot write (a date) is itself, and so
+    is a list op's marker.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#which-keys-are-one-key
+    """
+    if key is None or (isinstance(key, bool | int | float) and not isinstance(key, enum.Enum)):
+        return json.dumps(key)
+    return key
+
+
+def _key_index(node: MergeDict, at: MergeAt) -> dict[Any, list[Any]]:
+    """Return the keys of *node* by their identity *at* reads (:meth:`MergeAt.key_identity`), in *node*'s order."""
+    index: dict[Any, list[Any]] = {}
+    for k in node:
+        index.setdefault(at.key_identity(k), []).append(k)
+    return index
+
+
+def _met_key(node: MergeDict, key: Any, at: MergeAt) -> Any:
+    """Return the key of *node* that *key* is to the type *at* reads, *key* itself when *node* holds none.
+
+    The last such key, which construction builds the value of, so a write refines what it
+    will read. The key a lower part spelled is kept, and with it its place.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#which-keys-are-one-key
+    """
+    if key in node:
+        return key
+    identity = at.key_identity(key)
+    met = [k for k in node if at.key_identity(k) == identity]
+    return met[-1] if met else key
+
+
 def _deep_merge(
     base: MergeDict,
     override: MergeDict,
@@ -496,13 +552,21 @@ def _deep_merge(
     # a deleted base, which still cuts its node off from the layers merged under it later.
     result = {k: v for k, v in base.items() if k == ListOp.BASE or not isinstance(v, _DeleteSentinel)}
 
+    # A key meets every key of the base it is one key with to the type (BUG-244).
+    index = _key_index(result, at)
     for key, val in override.items():
+        identity = at.key_identity(key)
+        met = index.get(identity, [])
         if isinstance(val, _DeleteSentinel):
-            result.pop(key, None)
-        elif key in result:
-            result[key] = _merge_existing_value(result[key], val, str(key), at.child(key, base, override))
+            for k in met:
+                result.pop(k, None)
+            index.pop(identity, None)
+        elif met:
+            k = met[-1]
+            result[k] = _merge_existing_value(result[k], val, str(k), at.child(k, base, override))
         else:
             result[key] = val
+            index[identity] = [key]
     return result
 
 
@@ -536,21 +600,41 @@ def _keep_deletes(merged: MergeDict, override: MergeDict, base: MergeDict, at: M
     """
     if at.replaces(override):
         base = {}
-    out = dict(merged)
-    for key, val in base.items():
-        if isinstance(val, _DeleteSentinel) and not isinstance(key, ListOp):
-            out[key] = _written_over(val, out[key]) if key in override else val
+    out = _with_base_deletes(dict(merged), override, base, at)
+    values = {
+        identity: [k for k in keys if not isinstance(base[k], _DeleteSentinel)]
+        for identity, keys in _key_index(base, at).items()
+    }
     for key, val in override.items():
         if isinstance(key, ListOp):
             continue
         if isinstance(val, _DeleteSentinel):
-            out[key] = val if val is _SPENT_DELETE else _spent_if_met(base, key)
-        elif isinstance(val, dict) and isinstance(out.get(key), dict):
-            below = base.get(key)
-            child = at.child(key, base, override)
+            out[key] = val if val is _SPENT_DELETE else _spent_if_met(base, key, at)
+            continue
+        met = values.get(at.key_identity(key))
+        merged_key = met[-1] if met else key
+        if isinstance(val, dict) and isinstance(out.get(merged_key), dict):
+            below = base.get(merged_key)
+            child = at.child(merged_key, base, override)
             if not isinstance(below, dict) or _replaces_what_lies_below(below, val, child):
                 below = {}
-            out[key] = _keep_deletes(out[key], val, below, child)
+            out[merged_key] = _keep_deletes(out[merged_key], val, below, child)
+    return out
+
+
+def _with_base_deletes(out: MergeDict, override: MergeDict, base: MergeDict, at: MergeAt) -> MergeDict:
+    """Put each key delete of *base* back in *out*, or write *override*'s value at its key over it.
+
+    The key *override* writes is any key *at* reads as the deleted one (:meth:`MergeAt.key_identity`).
+    """
+    written = _key_index(override, at)
+    for key, val in base.items():
+        if isinstance(val, _DeleteSentinel) and not isinstance(key, ListOp):
+            over = written.get(at.key_identity(key), [])
+            if not over:
+                out[key] = val
+            elif over[-1] in out:
+                out[over[-1]] = _written_over(val, out[over[-1]])
     return out
 
 
@@ -597,7 +681,7 @@ def _navigate_append_spec(d: MergeDict, part: str) -> MergeDict | None:
     return None
 
 
-def _peek_nested(d: MergeDict, path: list[str]) -> Any:
+def _peek_nested(d: MergeDict, path: list[str], at: MergeAt | None = None) -> Any:
     """Return the value stored at *path*, or ``None`` when the path is not (fully) there.
 
     The read-only twin of :func:`_descend_creating`: it navigates append-specs the
@@ -607,24 +691,27 @@ def _peek_nested(d: MergeDict, path: list[str]) -> Any:
     Args:
         d: The root dict to read from.
         path: A list of keys forming the path to the target location.
+        at: Where *d* stands, which reads each key's identity; the shape rule by default.
 
     Returns:
         The value at ``path``, or ``None`` if any segment is absent or not traversable.
     """
     node: Any = d
+    at = at or MergeAt()
     for part in path:
         if not isinstance(node, dict):
             return None
         if (target := _navigate_append_spec(node, part)) is not None:
-            node = target
+            node, at = target, at.child(part, node, None)
             continue
-        if part not in node:
+        key = _met_key(node, part, at)
+        if key not in node:
             return None
-        node = node[part]
+        node, at = node[key], at.child(key, node, None)
     return node
 
 
-def _set_nested(d: MergeDict, path: list[str], value: Any) -> None:
+def _set_nested(d: MergeDict, path: list[str], value: Any, at: MergeAt | None = None) -> None:
     """Set a value in a nested dict by following a list of keys.
 
     Intermediate nodes are opened by :func:`_open_for_ops`: a missing one is created, a
@@ -639,19 +726,26 @@ def _set_nested(d: MergeDict, path: list[str], value: Any) -> None:
     :func:`~confarg._parse_cli._open_callable_shorthand`.  The value itself is written by
     :func:`_written_over`, so a dict written over a whole-field delete keeps it as its base,
     and a delete written over a value an earlier write left is kept spent (:func:`_spent_if_met`).
+    Each segment lands on the key the source already wrote that the type reads as the same
+    key, whatever spelled it (:func:`_met_key`), so a later spelling writes over an earlier one.
 
     Args:
         d: The root dict to modify in place.
         path: A list of keys forming the path to the target location.
         value: The value to set at the target path.
+        at: Where *d* stands, which reads each key's identity; the shape rule by default.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#scalar-intermediates
+        docs-dev/architecture/pipeline/deep-merge.md#which-keys-are-one-key
     """
     if path:
-        parent = _descend_creating(d, path[:-1])
-        key = path[-1]
-        parent[key] = _spent_if_met(parent, key) if value is DICT_DELETE else _written_over(parent.get(key), value)
+        parent, at = _descend(d, path[:-1], at or MergeAt())
+        key = _met_key(parent, path[-1], at)
+        if value is DICT_DELETE:
+            parent[key] = _spent_if_met(parent, key, at)
+        else:
+            parent[key] = _written_over(parent.get(key), value)
 
 
 def _written_over(existing: Any, value: Any) -> Any:
@@ -690,7 +784,7 @@ def _open_for_ops(node: Any) -> MergeDict:
     return {}
 
 
-def _descend_creating(d: MergeDict, path: list[str]) -> MergeDict:
+def _descend_creating(d: MergeDict, path: list[str], at: MergeAt | None = None) -> MergeDict:
     """Return the dict at *path* inside *d*, opening every node on the way into one.
 
     The one descent every writer into a parse result shares, so an op recorded below a
@@ -700,6 +794,7 @@ def _descend_creating(d: MergeDict, path: list[str]) -> MergeDict:
     Args:
         d: The root dict to modify in place.
         path: A list of keys forming the path to descend; empty returns *d*.
+        at: Where *d* stands, which reads each key's identity; the shape rule by default.
 
     Returns:
         The dict now stored at *path*.
@@ -707,16 +802,23 @@ def _descend_creating(d: MergeDict, path: list[str]) -> MergeDict:
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#scalar-intermediates
     """
+    return _descend(d, path, at or MergeAt())[0]
+
+
+def _descend(d: MergeDict, path: list[str], at: MergeAt) -> tuple[MergeDict, MergeAt]:
+    """Return the dict at *path* inside *d* and where it stands, as :func:`_descend_creating` opens it."""
     for part in path:
         # Negative index into an active append-spec: navigate directly into the
         # appended item so multiple --field+ / --field.-1.sub sequences each
         # patch their own newly-added item rather than colliding on the "-N" key.
         if (target := _navigate_append_spec(d, part)) is not None:
-            d = target
+            d, at = target, at.child(part, d, None)
             continue
-        d[part] = _open_for_ops(d.get(part))
-        d = d[part]
-    return d
+        key = _met_key(d, part, at)
+        child = at.child(key, d, None)
+        d[key] = _open_for_ops(d.get(key))
+        d, at = d[key], child
+    return d, at
 
 
 def _drop_deleted_bases(node: Any) -> Any:
@@ -744,12 +846,14 @@ def _drop_deleted_bases(node: Any) -> Any:
     return out
 
 
-def _accumulate_list_delete(
+def _accumulate_list_delete(  # noqa: PLR0913  # the node's place, the op and where the walk stands
     d: MergeDict,
     path: list[str],
     idx: int,
     source: str,
+    *,
     delete_key: ListOp = ListOp.DELETE,
+    at: MergeAt | None = None,
 ) -> None:
     """Add a list-deletion index at ``path`` inside ``d``, raising on duplicates.
 
@@ -760,11 +864,12 @@ def _accumulate_list_delete(
         source: Human-readable description of the source (for error messages).
         delete_key: Which key to accumulate under — ListOp.DELETE for pre-append
             deletions, ListOp.DELETE_AFTER for deletions that follow an append.
+        at: Where *d* stands, which reads each key's identity; the shape rule by default.
 
     Raises:
         ConfargError: If ``idx`` has already been scheduled for deletion.
     """
-    node = _descend_creating(d, path)
+    node = _descend_creating(d, path, at)
     existing = node.get(delete_key)
     if isinstance(existing, list):
         if idx in existing:

@@ -1,6 +1,6 @@
 # Fixed-length deletes and key identity
 
-The plan for [BUG-243](../bugs/BUG-243-a-delete-on-a-fixed-length-sequence-has-no-settled-meaning.md) and [BUG-244](../bugs/BUG-244-a-string-keyed-op-never-meets-a-yaml-integer-key.md), with BUG-108, BUG-142 and Q-1 folded in (closed by step 1, whose rationale is in [a position is one key](../../architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-position-is-one-key-whatever-spells-it)). Every decision below was settled with the maintainer on 2026-10-15; the examples are the agreed outcomes.
+The plan for [BUG-243](../bugs/BUG-243-a-delete-on-a-fixed-length-sequence-has-no-settled-meaning.md) and BUG-244 (closed by step 2, whose rationale is in [which keys are one key](../../architecture/pipeline/deep-merge.md#which-keys-are-one-key)), with BUG-108, BUG-142 and Q-1 folded in (closed by step 1, whose rationale is in [a position is one key](../../architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-position-is-one-key-whatever-spells-it)). Every decision below was settled with the maintainer on 2026-10-15; the examples are the agreed outcomes.
 
 ## One question underneath
 
@@ -40,7 +40,7 @@ Both bugs ask which keys are the same key, and what a delete does to a position 
 ## Build order
 
 1. **Canonical position** (BUG-108, BUG-142, Q-1), landed: one reader of "which position does this key name?" for a fixed-length type, asked by the walk, `_indexed_dict_to_positions`, `_construct_namedtuple` and the default layer; construction reconciles a mixed dict in order.
-2. **Key identity** (BUG-244): `MergeAt` answers a key's identity; `_deep_merge`, the within-source writers and `_set_nested` (given the parse's typed root) match by it.
+2. **Key identity** (BUG-244), landed: `MergeAt` answers a key's identity; `_deep_merge`, the within-source writers and `_set_nested` (given the parse's typed root) match by it.
 3. **Position delete** (BUG-243): the delete decoder, the keyed form with its kept delete, the `__delete__` refusal, the default layer's consumption, and construction's unset position.
 
 Each step lands as its own revision, test-first.

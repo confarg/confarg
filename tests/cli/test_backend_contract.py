@@ -1290,14 +1290,14 @@ class TestFixedSequenceContract:
         assert loader.load(_WithPoint, argv=["--pair.0", "13", "--pair.1", "42"], env={}).pair == _Point(13, 42)
 
     def test_namedtuple_index_sub_flag_beside_a_name_keeps_both(self, loader: ConfargLoader) -> None:
-        """A ``--pair.0`` beside ``--pair.x`` is not dropped, and both build alike (BUG-65, Q-1).
+        """A ``--pair.0`` beside ``--pair.x`` is not dropped: it writes over it (BUG-65, BUG-244).
 
         The re-keying made the index flag vanish under the name flag on the
-        adapters, while vanilla stores both keys as spelled, in argv order, and lets
-        ``build()`` read them as one position, the later winning.
+        adapters. Every front-end now reads the two as one position, the later
+        write landing on the key the earlier one spelled.
         """
         argv = ["--pair.x", "13", "--pair.0", "9", "--pair.y", "1"]
-        assert loader.merge(_WithPoint, argv=argv, env={}) == {"pair": {"x": 13, "0": 9, "y": 1}}
+        assert loader.merge(_WithPoint, argv=argv, env={}) == {"pair": {"x": 9, "y": 1}}
         assert loader.load(_WithPoint, argv=argv, env={}).pair == _Point(9, 1)
 
     def test_namedtuple_arity_then_index_sub_flag_keeps_both(self, loader: ConfargLoader) -> None:
@@ -1342,10 +1342,14 @@ class TestFixedSequenceContract:
         """The index spelling descends a level too, keeping its own key (BUG-68)."""
         assert loader.merge(_WithNestedPoint, argv=["--pt.0.a", "5"], env={}) == {"pt": {"0": {"a": 5}}}
 
-    def test_namedtuple_deep_sub_flags_keep_their_spelled_keys(self, loader: ConfargLoader) -> None:
-        """Name and index spellings each keep their own key one level deeper (BUG-68)."""
+    def test_namedtuple_deep_sub_flags_write_one_position(self, loader: ConfargLoader) -> None:
+        """Name and index spellings write one position one level deeper, under the first spelling (BUG-68, BUG-244).
+
+        Every front-end stores the same dict (BUG-68): the later spelling of the position
+        lands in the node the earlier one opened, as a later write of one key does.
+        """
         assert loader.merge(_WithNestedPoint, argv=["--pt.0.a", "5", "--pt.inner.b", "y"], env={}) == {
-            "pt": {"0": {"a": 5}, "inner": {"b": "y"}},
+            "pt": {"0": {"a": 5, "b": "y"}},
         }
 
     def test_namedtuple_deep_sub_flag_builds(self, loader: ConfargLoader) -> None:
