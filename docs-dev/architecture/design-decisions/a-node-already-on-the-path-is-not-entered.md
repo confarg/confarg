@@ -9,7 +9,11 @@ One decision-maker answers for both walks that recurse through the type: `cli._b
 The listing stopped at a repeated struct before the flag walk did ([every mount point has a help entry](every-mount-point-has-a-help-entry.md#every-mount-point-has-a-help-entry)), but it counted only structs, so a namedtuple that holds itself sent it into the same `RecursionError`.
 Since a node counts a namedtuple too, `--help` lists `--config.child` once, as it lists `--child` once.
 
-The dynamic half is the same walk again with the stop lifted along each typed path (`_Descent.typed`): below a node already on the path, the walk continues wherever argv types a flag deeper still, and stops everywhere else, so it is bounded by the deepest typed flag.
+The dynamic half is the same walk again with the stop lifted along each typed path (`_Descent.typed`): below a node already on the path, the walk continues wherever argv types a flag deeper still, and stops everywhere else, so its depth is bounded by the deepest typed flag.
+
+Its breadth is bounded by registering each struct once per prefix and place of the walk (`_Descent.registered`, shared by every descent of one walk).
+The variants of a union each holding the next union reach that union's variants again, under the same prefix and with the same nodes on the path, since a union puts all its variants on it at once; walked again for each, the subtree doubled at every level, in the dynamic half along a typed path below `child: A | B | None` and in the static one below a ladder of unions no class repeats on, which no stop cuts (BUG-260).
+A struct registered again gets copies of its flags, since a union merges its variants' `choices` into the first flag of a name.
 Of what it registers, only the typed names the static walk did not reach are kept (`_collect_unentered_argv_specs`).
 They carry no group, as every argv-scanned flag does.
 It runs before the other argv scans, since the static flags it stands in for are loaded before every dynamic one, and a static spec wins over a dynamic one of the same name.

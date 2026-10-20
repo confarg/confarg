@@ -10185,6 +10185,58 @@ class _Deep:
     d: Any = None
 
 
+@dataclass
+class _UnionChainA:
+    """A variant of a recursive union that no node holding ``child`` alone builds: ``a`` is required."""
+
+    a: int
+    child: _UnionChainA | _UnionChainB | None = None
+
+
+@dataclass
+class _UnionChainB:
+    """The variant every level of the chain builds, the walk forking at its union all the same."""
+
+    child: _UnionChainA | _UnionChainB | None = None
+    x: int = 0
+
+
+def _union_ladder(n: int) -> Any:
+    """Return a root over *n* levels of ``X_k | Y_k | None``, each variant holding the next level's union.
+
+    No class repeats on a path, so the registration walk enters every level. The classes belong
+    to a module no source backs: before Python 3.13, looking for a field docstring in this
+    module's source parses all of it once per class, half a second each.
+    """
+    below: Any = None
+    for k in reversed(range(n)):
+        fields: list[Any] = [("v", int, dataclasses_field(default=0))]
+        if below is not None:
+            fields.insert(0, ("n", below | None, dataclasses_field(default=None)))
+        extra = ("w", int, dataclasses_field(default=0))
+        x = dataclasses.make_dataclass(f"_LadderX{k}", fields, module="_ladder")
+        y = dataclasses.make_dataclass(f"_LadderY{k}", [*fields, extra], module="_ladder")
+        below = x | y
+    root_fields = [("n", below | None, dataclasses_field(default=None))]
+    return dataclasses.make_dataclass("_LadderRoot", root_fields, module="_ladder")
+
+
+def _registration_work(register: Callable[[], object]) -> int:
+    """Count the fields *register* registers flags for."""
+    real = build_mod._specs_for_field
+    count = 0
+
+    def counting(*args: Any, **kwargs: Any) -> Any:
+        nonlocal count
+        count += 1
+        return real(*args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(build_mod, "_specs_for_field", counting)
+        register()
+    return count
+
+
 def _chain(n: int, leaf: Any = 1) -> Any:
     """Return *leaf* held *n* levels down a chain of ``{"a": ...}``."""
     value = leaf
@@ -10216,6 +10268,47 @@ class TestDepthContract:
         else:
             with pytest.raises(ConfargError, match="deeper than 64 levels"):
                 loader.load(_Deep, argv=argv, env={})
+
+    @pytest.mark.parametrize("channel", ["flag", "variable"])
+    def test_a_path_through_a_union_at_every_level_loads(self, loader: ConfargLoader, channel: str) -> None:
+        """A path of 64 segments, each below ``A | B | None``, is walked level by level (BUG-260).
+
+        The walk forked at each union and kept every branch, 2^63 of them here.
+        """
+        path = ["child"] * 63 + ["x"]
+        if channel == "flag":
+            cfg = loader.load(_UnionChainB, argv=["--" + ".".join(path), "1"], env={})
+        else:
+            env = {"APP_" + "__".join(p.upper() for p in path): "1"}
+            cfg = loader.load(_UnionChainB, argv=[], env=env, env_prefix="APP_")
+        node: Any = cfg
+        for _ in range(63):
+            node = node.child
+        assert node == _UnionChainB(x=1)
+
+    def test_a_ladder_of_unions_registers_each_level_once(self, loader: ConfargLoader) -> None:
+        """Both variants of a union hold the next one: its flags are registered once, not once per variant (BUG-260).
+
+        The registration walk went into each variant's subtree under the same prefix, 2^40 of them here.
+        """
+        assert loader.merge(_union_ladder(40), argv=["--n.v", "1"], env={}) == {"n": {"v": 1}}
+
+    def test_doubling_a_ladder_at_most_quadruples_the_registration(self) -> None:
+        """The same promise, counted: it fails in seconds where the test above would hang."""
+
+        def ladder(n: int) -> int:
+            return _registration_work(lambda: build_static_flags(_union_ladder(n)))
+
+        assert ladder(12) <= 4 * ladder(6)
+
+    def test_doubling_a_typed_chain_at_most_quadruples_the_registration(self) -> None:
+        """The walk lifting its stop along a typed flag enters the chain's union once per level, not per variant."""
+
+        def chain(n: int) -> int:
+            argv = ["--" + ".".join(["child"] * n + ["x"]), "1"]
+            return _registration_work(lambda: build_mod.build_dynamic_flags(_UnionChainB, argv))
+
+        assert chain(12) <= 4 * chain(6)
 
     def test_a_very_long_flag_is_refused_before_it_is_typed(self, loader: ConfargLoader) -> None:
         """The type walk recurses once per segment, so the path is refused before it; it was a raw RecursionError."""

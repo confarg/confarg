@@ -1329,6 +1329,34 @@ class _EnvSequenceSegments:
     sub: WithDefaults = field(default_factory=WithDefaults)
 
 
+@_dc
+class _EnvListBelow:
+    """A struct holding a list one level down."""
+
+    b: list[int] = field(default_factory=list)
+
+
+@_dc
+class _EnvListDeep:
+    """``u.a.b`` is a list: it refuses the segment below it."""
+
+    a: _EnvListBelow = field(default_factory=_EnvListBelow)
+
+
+@_dc
+class _EnvListShallow:
+    """``u.a`` is a list: it refuses ``b`` already."""
+
+    a: list[int] = field(default_factory=list)
+
+
+@_dc
+class _EnvTwoRefusals:
+    """Each variant refuses a path standing on a list, at a different segment."""
+
+    u: _EnvListDeep | _EnvListShallow = field(default_factory=_EnvListDeep)
+
+
 class TestEnvSequenceSegment:
     """Below a sequence an env segment is an index as ``str()`` writes one, or is refused at parse (BUG-170).
 
@@ -1350,6 +1378,15 @@ class TestEnvSequenceSegment:
         name = f"APP_{path}__{segment}"
         with pytest.raises(confarg.exceptions.ConfargError, match=re.escape(f"Environment variable {name!r}")):
             loader.merge(_EnvSequenceSegments, argv=[], env={name: "12"}, env_prefix="APP_")
+
+    def test_the_shallowest_refusal_is_named(self, loader: ConfargLoader) -> None:
+        """Two variants refuse at different segments: the message names the earlier one (BUG-260).
+
+        The walk keeps the states each segment reaches, not each variant's history, so the first
+        refusal it meets is the shallowest, whichever variant is declared first.
+        """
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("segment 'b' names no element of 'u.a'")):
+            loader.merge(_EnvTwoRefusals, argv=[], env={"APP_U__A__B__C": "1"}, env_prefix="APP_")
 
     @pytest.mark.parametrize("name", ["APP_XS__*-", "APP_XS__01-", "APP_PAIR__+-", "APP_D__K__~-"])
     def test_delete_of_a_segment_spelling_no_index_is_refused(self, loader: ConfargLoader, name: str) -> None:

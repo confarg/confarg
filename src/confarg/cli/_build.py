@@ -741,6 +741,14 @@ class _Descent:
 
     on_path: frozenset[Any] = frozenset()
     typed: frozenset[str] = frozenset()
+    #: What the walk registered for a struct at a prefix, standing where it stood (:func:`_collect_struct_specs`).
+    #: Shared by every descent of one walk: no part of where the walk stands.
+    registered: dict[tuple[Any, ...], list[FlagSpec]] = dataclasses.field(
+        default_factory=dict,
+        compare=False,
+        hash=False,
+        repr=False,
+    )
 
     def entering(self, tps: Iterable[Any]) -> _Descent:
         """Return the descent below a node walked as *tps*, entered whatever is on the path."""
@@ -1037,13 +1045,18 @@ def _collect_struct_specs(  # noqa: C901, PLR0913  # a root call starts its own 
 ) -> list[FlagSpec]:
     """Recursively build FlagSpecs for all fields of a struct type.
 
-    *descent* is where the walk stands; ``None`` starts it at *target*, the root.
+    *descent* is where the walk stands; ``None`` starts it at *target*, the root. A struct
+    is registered once per prefix and place of the walk: the variants of a union each
+    holding the next union reach it again, which forked the walk at every level (BUG-260).
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-node-already-on-the-path-is-not-entered.md#a-node-already-on-the-path-is-not-entered
     """
     if descent is None:
         descent = _Descent().entering([target])
+    key = (target, prefix, union_tag, group, group_description, descent)
+    if isinstance(target, type) and (known := descent.registered.get(key)) is not None:
+        return _copied_specs(known)
     setup = _resolve_struct(target)
     if setup is None:
         tp = _resolve_type(target)
@@ -1110,7 +1123,14 @@ def _collect_struct_specs(  # noqa: C901, PLR0913  # a root call starts its own 
             for spec in (s for s in specs if not _base_declares_path(tp, prefix, s.name)):
                 _merge_or_append_spec(result, by_name, spec)
 
+    if isinstance(target, type):
+        descent.registered[key] = _copied_specs(result)
     return result
+
+
+def _copied_specs(specs: list[FlagSpec]) -> list[FlagSpec]:
+    """Return copies of *specs*, which a caller may merge more ``choices`` into (:func:`_merge_or_append_spec`)."""
+    return [dataclasses.replace(spec, choices=None if spec.choices is None else list(spec.choices)) for spec in specs]
 
 
 def _config_file_spec(name: str, config_flag: str, note: str) -> FlagSpec:
@@ -1434,17 +1454,15 @@ def _collect_leaf_tag_argv_specs(
             continue
         parts = key.split(".")
         # Which prefix of the path names a registered leaf? The walk's own answer: the
-        # shortest one a branch accepting the whole path stood on a registered leaf at,
+        # shortest one a way accepting the whole path stood on a registered leaf at,
         # the walk having forked at every union on the way (``UUID | None``). Stone 0 is
         # the root target itself (BUG-71); a struct field answers no -- its sub-flags are
         # registered statically.
         found = min(
             (
-                (k, stone.node)
-                for branch in _walk_path(target, parts, union_tag)
-                if branch.end is not None
-                for k, stone in enumerate(branch.stones)
-                if _is_registered_leaf(stone.node)
+                (k, e.stone.node)
+                for k, e in _walk_path(target, parts, union_tag).edges_on_ways(lambda _refusal: False)
+                if _is_registered_leaf(e.stone.node)
             ),
             key=operator.itemgetter(0),
             default=None,

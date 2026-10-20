@@ -46,6 +46,8 @@ The same holds wherever leniency would otherwise store the segment.
 Below a dict a path the walk refuses is a key path, left to `build()` (BUG-161) — except when the branch refuses it standing on a sequence, which `_refuses_at_a_sequence` names and `_is_dict_at_path` excludes: `--d.k.* 5` on a `dict[str, list[int]]` addresses the list, not a key of the dict.
 Fixed tuples and namedtuples count as sequences there, since the merge carries their patches in the same `__base__` shape.
 The environment, which leaves any other unknown path below its first segment to `build()`, refuses such a variable at parse through `_sequence_refusal` ([environment parsing](../environment-parsing.md#environment-parsing)).
+Where the variants of a union refuse it at different segments, the message names the shallowest one any of them refuses: `u: P | Q` with `P.a.b` and `Q.a` lists refuses `APP_U__A__B__C` as "segment 'b' names no element of 'u.a'", whichever variant is declared first.
+That is the first refusal the walk meets, segment by segment; naming the first variant's, as it did when the walk followed each branch in turn, would rank every state by the variants that led to it, for this message alone (BUG-260).
 
 Configuration files are not walked, so a file key below a list is still read by the merge's `int()`: `xs: {"01": 5}` patches index 1.
 Only a file writes a list op by name (`__base__`, `__append__`, ...), which no other channel may ([reserved keys](../config-files/reserved-keys.md#reserved-file-only-keys)), and the one reader of each op that holds a list, `_merge._replace_base` for the base and `_merge._delete_indices` for either delete, refuses a value of the wrong shape rather than reading it with `list()` or iterating it (BUG-170, BUG-175).

@@ -22,6 +22,7 @@ import pytest
 import tomli_w
 
 import confarg
+from confarg import _parse_cli
 from confarg._depth import MAX_DEPTH, overflow
 from confarg.exceptions import ConfargError, InvalidConfigFileError
 
@@ -455,3 +456,41 @@ class TestHeadroom:
             node = Node(child=node)
         assert called_from(HEADROOM, lambda: confarg.dump(node)) is not None
         assert called_from(HEADROOM, lambda: confarg.dump(Config(d=chain(AT)))) is not None
+
+
+# ---------------------------------------------------------------------------
+# A path through a union at every level (BUG-260)
+# ---------------------------------------------------------------------------
+
+
+def steps_to_merge(n: int, channel: str) -> int:
+    """Count the steps the type walk takes to merge one flag or variable *n* unions down ``Tagged``."""
+    path = ["child"] * n + ["v"]
+    real = _parse_cli._step
+    count = 0
+
+    def counting(*args: Any, **kw: Any) -> Any:
+        nonlocal count
+        count += 1
+        return real(*args, **kw)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_parse_cli, "_step", counting)
+        if channel == "flag":
+            confarg.merge(Tagged, argv=["--" + ".".join(path), "1"], env={})
+        else:
+            env = {"APP_" + "__".join(p.upper() for p in path): "1"}
+            confarg.merge(Tagged, argv=[], env=env, env_prefix="APP_")
+    return count
+
+
+class TestWalkCost:
+    """A path forking at a union on every level costs steps polynomial in its depth, not one walk per branch.
+
+    The walk kept every branch with its history, 2^depth of them: 14 levels took a second, 30 hours.
+    """
+
+    @pytest.mark.parametrize("channel", ["flag", "variable"])
+    def test_doubling_the_depth_at_most_quadruples_the_steps(self, channel: str) -> None:
+        """The environment spells each segment by walking the path above it: quadratic, which the bound caps."""
+        assert steps_to_merge(12, channel) <= 4 * steps_to_merge(6, channel)
