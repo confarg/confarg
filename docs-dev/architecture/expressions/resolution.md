@@ -39,6 +39,8 @@ a mounting `merge()` as a raw interpreter error. Python itself only documents th
 `compile()` and `ast.literal_eval`; Go's `regexp/syntax` is the precedent for reporting it as the
 parser's own error (`ErrNestingDepth`, "expression nests too deeply").
 
+**Nor does a body nesting over 100 expression levels.** The parser accepts a few hundred, but every step after it walks the tree recursively in Python — reference collection, the transformers, `copy.deepcopy`, `ast.unparse`, the evaluator — so such a body reached `resolve()` and a mounting `merge()` as a raw `RecursionError`, the mount at about 250 levels from an empty stack and earlier from a deep one (BUG-145). `_parse_body` counts the levels without recursing (`_nests_deeper_than`: an operator, a context or a keyword is no level) and refuses a deeper body as the same `_TooDeepError`, so no walker meets a tree it cannot recurse through, and `resolve()` and `merge()` agree on which bodies parse. The bound is fixed, not derived from `sys.getrecursionlimit()`: whether a body parses is cached by its text and must depend on the text alone. 100 is half of where the cheapest walker gave up, which leaves the caller's own stack its room, and far beyond a written expression (a 100-term sum, 100 nested conditionals). Precedents: CPython's tokenizer caps nested brackets at 200, `serde_json` recursion at 128, Go's `regexp/syntax` nesting at 1000.
+
 Resolution happens **after** all sources are merged. That is the point of the design:
 overriding `resources.memory_gb` on the CLI recomputes a `${resources.memory_gb * 0.8}`
 written in a file.

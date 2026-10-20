@@ -14,7 +14,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 |---|---|---|---|---|---|---|
 | [BUG-114 — Cyclopts cannot register subclasses that share a struct field name](BUG-114-cyclopts-cannot-register-subclasses-that-share-a-struct-field-name.md) | major |  | S | medium | behavior | PR-38 |
 | [BUG-230 — A `type[X]` field refuses the dotted path a file holds, so its own dump does not load](BUG-230-a-type-field-refuses-the-dotted-path-a-file-holds.md) | major |  | S | medium | behavior | PR-5 |
-| [BUG-145 — An expression that parses but nests past the recursion limit crashes the walkers](BUG-145-an-expression-that-parses-but-nests-past-the-recursion-limit-crashes-the-walkers.md) | major |  | M | high | behavior | PR-5 |
 | [BUG-180 — Cyclopts refuses a flag whose name ends in a star](BUG-180-cyclopts-refuses-a-flag-whose-name-ends-in-a-star.md) | major |  | M | medium | behavior | PR-72 |
 | [BUG-219 — A fragment appended to a list loses its `locals`](BUG-219-a-fragment-appended-to-a-list-loses-its-locals.md) | major |  | M | high | behavior | PR-105 |
 | [BUG-233 — The CLI refuses a nested spec below a `class:` constructor argument](BUG-233-the-cli-refuses-a-nested-spec-below-a-class-constructor-argument.md) | major |  | M | medium | behavior | PR-11 |

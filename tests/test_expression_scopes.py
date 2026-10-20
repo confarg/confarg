@@ -167,6 +167,15 @@ class TestAMalformedExpressionInAMountedFile:
         ):
             confarg.resolve(Mounts, merged)
 
+    def test_a_body_nested_past_the_bound_is_carried_as_written(self, tmp_path: Path) -> None:
+        """A body the parser accepts but the walkers could not recurse through is left as written (BUG-145)."""
+        body = "-" * 500 + "p"
+        frag = write(tmp_path, "frag.yaml", f"p: 1\nq: ${{{body}}}\n")
+        merged = confarg.merge(Mounts, argv=["--config.db", str(frag)], env={})
+        assert merged == {"db": {"p": 1, "q": "${" + body + "}"}}
+        with pytest.raises(UnsafeExpressionError, match=r"Too deeply nested to parse$"):
+            confarg.resolve(Mounts, merged)
+
 
 # ---------------------------------------------------------------------------
 # Reaching out of the file
