@@ -19,8 +19,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-from confarg._depth import Copies
-from confarg._files import _load_file
+from confarg._files import Reads, _load_file
 from confarg._import import _import_dotted
 from confarg._merge import MergeDict, _deep_merge
 from confarg._types import (
@@ -54,10 +53,10 @@ def _partial_config_from_argv(argv: Sequence[str], config_flag: str) -> MergeDic
 
     Only the root flag, not its ``--<config_flag>.<subpath>`` variants.  Missing files and
     parse failures are ignored: callers run before the pipeline has had its say, and the real
-    error belongs to the pipeline. The scan reads with a copy budget of its own, as the
+    error belongs to the pipeline. The scan reads with a :class:`~confarg._files.Reads` of its own, as the
     pipeline reads the files again.
     """
-    copies = Copies()
+    reads = Reads()
     merged: MergeDict = {}
     flag_prefix = f"--{config_flag}"
     i = 0
@@ -68,14 +67,14 @@ def _partial_config_from_argv(argv: Sequence[str], config_flag: str) -> MergeDic
             i += 1
             while i < len(argv) and not argv[i].startswith("--"):
                 with contextlib.suppress(Exception):
-                    merged = _deep_merge(merged, _load_file(argv[i], copies=copies))
+                    merged = _deep_merge(merged, _load_file(argv[i], reads=reads))
                 i += 1
         elif tok.startswith(f"{flag_prefix}="):
             # Equals form: --config=file
             path_str = tok.removeprefix(f"{flag_prefix}=")
             if path_str:
                 with contextlib.suppress(Exception):
-                    merged = _deep_merge(merged, _load_file(path_str, copies=copies))
+                    merged = _deep_merge(merged, _load_file(path_str, reads=reads))
             i += 1
         else:
             i += 1

@@ -18,7 +18,7 @@ from confarg import _defaults
 from confarg._default_layer import drop_untouched, lay_defaults, settle_pending
 from confarg._defaults import MergeOptions, _Options, _resolve_options
 from confarg._depth import Copies, refuse_overflow
-from confarg._files import _dump_file, _native_types_of
+from confarg._files import Reads, _dump_file, _native_types_of
 from confarg._merge import ListOp, MergeDict
 from confarg._parse_cli import (
     _config_pairs_in,
@@ -85,18 +85,18 @@ def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]
         UnknownArgumentError: If an unrecognized CLI argument is encountered.
         ConfargError: If a flag or a variable writes deeper than 64 levels.
     """
-    return _merge(target, _resolve_options("merge", opts), Copies())
+    return _merge(target, _resolve_options("merge", opts), Reads())
 
 
-def _merge(target: type | TypeAliasType | UnionType, options: _Options, copies: Copies) -> MergeDict:
-    """Merge every source into a raw dict; :func:`merge` with its options resolved, charging *copies*."""
+def _merge(target: type | TypeAliasType | UnionType, options: _Options, reads: Reads) -> MergeDict:
+    """Merge every source into a raw dict; :func:`merge` with its options resolved, read through *reads*."""
     prefix = _cli_prefix(options)
 
     def parse_cli(below: MergeDict) -> MergeDict:
         return _parse_cli(options.argv, target, prefix, options.config_flag, options.union_tag, below=below)[0]
 
     configs = _config_pairs_in(options.argv, target, prefix, options.config_flag, options.union_tag)
-    return _merge_sources(target, parse_cli, configs, options, copies=copies)
+    return _merge_sources(target, parse_cli, configs, options, reads=reads)
 
 
 def _cli_prefix(options: _Options) -> str:
@@ -375,8 +375,9 @@ def load[T](target: type[T] | TypeAliasType | UnionType, **opts: Unpack[MergeOpt
         ExpressionEvalError: If an expression fails at runtime.
     """
     options = _resolve_options("load", opts)
-    copies = Copies()  # one configuration: its merge and its build share the budget
-    return _build_for_cli(target, _merge(target, options, copies), options.union_tag, _cli_prefix(options), copies)
+    reads = Reads()  # one configuration: its merge and its build share the budget
+    merged = _merge(target, options, reads)
+    return _build_for_cli(target, merged, options.union_tag, _cli_prefix(options), reads.copies)
 
 
 def dump(

@@ -11,7 +11,6 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact |
 |---|---|---|---|---|---|
-| [REF-96 — The copy-budget refusal message is built on every expression read](REF-96-the-copy-budget-refusal-message-is-built-on-every-read.md) | minor |  | S | low | none |
 | [REF-26 — The `--config` files named on argv are parsed three times per run](REF-26-config-files-parsed-three-times.md) | minor |  | M | low | none |
 | [REF-41 — `cli/click/_context.py` and `cli/typer/_context.py` are the same file](REF-41-click-and-typer-context-are-the-same-file.md) | trivial |  | S | low | none |
 | [REF-46 — Near-duplicate helper pairs in the merge core](REF-46-near-duplicate-helpers-in-the-merge-core.md) | trivial |  | S | low | none |
@@ -35,7 +34,6 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-103 — `_pending_prefixes` walks the data by its own steps rather than `_step`](REF-103-pending-prefixes-walks-the-data-without-step.md) | trivial |  | S | medium | none |
 | [REF-104 — The locals layer reading combines a list item and its patch shallowly](REF-104-the-locals-layer-reading-combines-an-item-and-its-patch-shallowly.md) | trivial |  | S | medium | none |
 | [REF-106 — `named_member_names` repeats `named_child`'s dispatch, and has drifted from it](REF-106-named-member-names-repeats-named-child-dispatch.md) | trivial |  | S | medium | none |
-| [REF-107 — `Copies` is both the copy budget and the read cache](REF-107-copies-is-both-the-copy-budget-and-the-read-cache.md) | trivial |  | S | low | none |
 | [REF-109 — A message names the root position by hand eleven times](REF-109-a-message-names-the-root-position-by-hand.md) | trivial |  | S | low | none |
 | [REF-112 — `_arity_rank` repeats the shape decision `_shaped` owns](REF-112-arity-rank-repeats-the-shape-decision.md) | trivial |  | S | low | none |
 | [REF-113 — A format's `holds` predicate restates its native types](REF-113-a-formats-holds-predicate-restates-its-native-types.md) | trivial |  | S | low | none |

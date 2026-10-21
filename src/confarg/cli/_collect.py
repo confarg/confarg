@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
     from confarg._defaults import _Options
     from confarg._depth import Copies
+    from confarg._files import Reads
     from confarg._merge import MergeDict
 
 from confarg._api import _build_for_cli
@@ -71,7 +72,7 @@ def _merge_from_flat(  # noqa: PLR0913  # the parse result, then how the framewo
     cli_prefix: str,
     binds_runs: bool,
     runs: frozenset[str] | None = None,
-    copies: Copies,
+    reads: Reads,
 ) -> MergeDict:
     """Merge every source into a raw dict, the CLI channel written from ``options.argv``.
 
@@ -94,7 +95,7 @@ def _merge_from_flat(  # noqa: PLR0913  # the parse result, then how the framewo
             (:func:`~confarg.cli._build.bound_runs`), which the framework bound one to
             whatever vanilla's loop types the flag as; ``None`` when confarg did not
             register them, the type vanilla consumes for then answering.
-        copies: The copy budget of the configuration being read, which every document read charges.
+        reads: What the configuration being read has read, and the copy budget every document read charges.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact. A list
@@ -122,7 +123,7 @@ def _merge_from_flat(  # noqa: PLR0913  # the parse result, then how the framewo
         )[0]
 
     configs = _config_pairs_in(options.argv, target, cli_prefix, options.config_flag, options.union_tag)
-    return _merge_sources(target, parse_cli, configs, options, copies=copies)
+    return _merge_sources(target, parse_cli, configs, options, reads=reads)
 
 
 def _host_binds_run(runs: frozenset[str] | None) -> Callable[[list[str], Any], bool]:
