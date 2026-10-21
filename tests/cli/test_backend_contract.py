@@ -5556,6 +5556,93 @@ class TestCallableBindContract:
         assert cfg.fn("world") == "Hi, world!"
 
 
+def _union_add(x: int, y: int) -> int:  # a target with a dotted path of its own
+    """A target with an argument to bind."""
+    return x + y
+
+
+def _union_double(x: int) -> int:
+    """A function a bare path names."""
+    return 2 * x
+
+
+def _union_make_double() -> Callable[[int], int]:
+    """A factory returning a callable."""
+    return _union_double
+
+
+class _UnionScale:
+    """A callable instance built from a field."""
+
+    def __init__(self, factor: int) -> None:
+        self.factor = factor
+
+    def __call__(self, x: int) -> int:
+        return x * self.factor
+
+
+@dataclass
+class _UnionLevel:
+    """The struct variant beside the Callable."""
+
+    level: int = 0
+
+
+@dataclass
+class _CallableOrLevelCfg:
+    """A Callable beside a struct variant."""
+
+    f: Callable[[int], int] | _UnionLevel = dataclasses_field(default_factory=_UnionLevel)
+
+
+_SPECS_BESIDE_A_STRUCT = {
+    "path": ([("f", f"{__name__}._union_double")], 8),
+    "bind": ([("f.bind", f"{__name__}._union_add"), ("f.args.y", "3")], 7),
+    "shorthand": ([("f", f"{__name__}._union_add"), ("f.args.y", "3")], 7),
+    "class": ([("f.class", f"{__name__}._UnionScale"), ("f.factor", "3")], 12),
+    "call": ([("f.call", f"{__name__}._union_make_double")], 8),
+}
+
+
+class TestCallableBesideAnotherVariantContract:
+    """A Callable beside a struct variant is built from every channel's spelling of a spec (BUG-234).
+
+    The CLI and the environment already merged the spec a file writes; construction routed it to
+    the struct variant's tag, or tried the Callable as a scalar that resolves no spec.
+    """
+
+    @pytest.mark.parametrize("source", ["argv", "env", "file"])
+    @pytest.mark.parametrize("spec", list(_SPECS_BESIDE_A_STRUCT))
+    def test_every_spelling_builds_the_callable(self, loader: ConfargLoader, tmp_json, source: str, spec: str) -> None:
+        """A path, a bind and its args, a shorthand with args, a class and its field, and a call."""
+        pairs, expected = _SPECS_BESIDE_A_STRUCT[spec]
+        argv: list[str] = []
+        env: dict[str, str] = {}
+        if source == "argv":
+            argv = [token for key, value in pairs for token in (f"--{key}", value)]
+        elif source == "env":
+            env = {"X_" + key.upper().replace(".", "__"): value for key, value in pairs}
+        else:
+            doc: dict[str, Any] = {}
+            for key, value in pairs:
+                node = doc
+                *parents, leaf = key.split(".")
+                for part in parents:
+                    child = node.get(part)
+                    if not isinstance(child, dict):
+                        child = {"bind": child} if isinstance(child, str) else {}
+                        node[part] = child
+                    node = child
+                node[leaf] = int(value) if value.isdigit() else value
+            argv = ["--config", str(tmp_json(json.dumps(doc)))]
+        cfg = loader.load(_CallableOrLevelCfg, argv=argv, env=env, env_prefix="X_")
+        assert cfg.f(4) == expected
+
+    def test_the_struct_variant_still_reads_its_fields(self, loader: ConfargLoader) -> None:
+        """`--f.level 2` builds the struct variant, as before."""
+        assert loader.load(_CallableOrLevelCfg, argv=["--f.level", "2"], env={}).f == _UnionLevel(2)
+
+
 class TestCallableOpenerRegistrationContract:
     """Registration advertises the openers and each mode's argument flags, and nothing that refuses (FEAT-30).
 
