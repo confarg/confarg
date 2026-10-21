@@ -17,6 +17,7 @@ It sits between the two other channels in priority: above [config files](config-
   Before BUG-115 such a field silently won, and the namespace could not be reached from the environment.
 - A **non-struct root** is [set whole](cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole): by the bare `<PREFIX>` variable, or by its `<PREFIX>JSON` cast.
   Every other variable names a path below the root, and no flag reaches one, so the first-segment check below warns about it and ignores it.
+  On a struct-like root the bare `<PREFIX>` names nothing, and `<PREFIX>+` and `<PREFIX>-` patch no root of any kind: each is warned about with the cause the CLI refuses `--<prefix>` and `--<prefix>+` with ([the bare prefix names the root](cli-parsing/cli-prefix.md#the-bare-prefix-names-the-root), BUG-183, BUG-178).
   The locals namespace beside the root is the exception: `<PREFIX>LOCALS__N` reaches it, as `--<prefix>.locals.n` does.
   Until BUG-115 a branch of its own wrote every prefixed variable to `__root__`, so `MYAPP_DEBUG` replaced the root, and when several were set the mapping's order chose the winner.
 - A segment that names no member but names the union tag resolves to the tag's **exact spelling**, whatever case the variable spelled it in (BUG-101): the walks downstream — the mount-subpath check, `build()` — compare the tag exactly, so a lowercased custom tag such as `Kind` would be warned away and dropped while the CLI channel's `--Kind` merged.

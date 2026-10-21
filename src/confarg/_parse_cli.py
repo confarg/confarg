@@ -1071,12 +1071,32 @@ def _in_cli_prefix(raw_key: str, cli_prefix: str) -> bool:
 
 
 def _strip_cli_prefix(raw_key: str, cli_prefix: str, token: str) -> str:
-    """Return raw_key with cli_prefix stripped, or raise UnknownArgumentError."""
+    """Return raw_key with cli_prefix stripped, or raise UnknownArgumentError.
+
+    The bare prefix with a merge suffix (``app+``) is no flag of the namespace, but the
+    mistake is about the root, not about the prefix: it strips to the suffix alone, which
+    :func:`_merge_suffix_on_root` tells the caller to refuse as such.
+    """
     if not cli_prefix:
         return raw_key
     if not _in_cli_prefix(raw_key, cli_prefix):
+        if raw_key.startswith(cli_prefix) and _merge_suffix_on_root(suffix := raw_key.removeprefix(cli_prefix)):
+            return suffix
         raise UnknownArgumentError.wrong_prefix(token, cli_prefix)
     return "" if raw_key == cli_prefix else raw_key.removeprefix(f"{cli_prefix}.")
+
+
+def _merge_suffix_on_root(key: str) -> str | None:
+    """Return the merge suffix *key* spells on the root, or None: a suffix with no path before it.
+
+    ``--<prefix>+`` strips to that key, as ``<PREFIX>+`` does, and no flag or variable
+    patches the root: a struct-like root is patched one field at a time, any other is set
+    whole. The CLI refuses it and the environment warns about it, both with the cause.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/cli-prefix.md#the-bare-prefix-names-the-root
+    """
+    return key if key in {APPEND_SUFFIX, DELETE_SUFFIX} else None
 
 
 def _strip_argv_prefix(argv: Sequence[str], cli_prefix: str) -> list[str]:
@@ -2119,6 +2139,15 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             i = _skip_flag_values(argv, i)  # a flag the host registered outside the namespace
             continue
         key = _strip_cli_prefix(token[2:], cli_prefix, token)
+        if (suffix := _merge_suffix_on_root(key)) is not None:
+            raise UnknownArgumentError.merge_suffix_on_the_root(
+                token,
+                cli_prefix,
+                suffix,
+                JSON_CAST_NAME,
+                deletes=suffix == DELETE_SUFFIX,
+                struct=is_struct,
+            )
 
         if _addresses_key(key, config_flag):
             _check_mount_subpath(target, _config_subpath(key, config_flag), union_tag, token)

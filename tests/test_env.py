@@ -592,6 +592,88 @@ class TestConfargWarning:
         assert repr(var) in msg
         assert "'naem'" in msg
 
+    @pytest.mark.parametrize(
+        ("target", "env_prefix", "var"),
+        [
+            pytest.param(WithDefaults, "APP_", "APP_", id="struct"),
+            pytest.param(WithDefaults | AppConfig, "APP_", "APP_", id="union"),
+            pytest.param(WithDefaults, "APP", "APP", id="prefix-without-underscore"),
+            pytest.param(WithDefaults, "APP", "APP__", id="trailing-separator"),
+        ],
+    )
+    def test_bare_prefix_on_struct_root_warns_with_its_cause(
+        self,
+        loader: ConfargLoader,
+        target: Any,
+        env_prefix: str,
+        var: str,
+    ) -> None:
+        """The bare prefix variable on a struct-like root is told why it names nothing (BUG-183).
+
+        It used to be warned about as a failed field lookup of the empty segment (``segment ''
+        not found``), where the CLI's bare flag gets the cause, which both now share.
+        """
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = loader.merge(target, argv=[], env={var: "8080"}, env_prefix=env_prefix)
+        assert result == {}
+        warns = [str(w.message) for w in caught if issubclass(w.category, confarg.exceptions.ConfargWarning)]
+        assert warns == [
+            (
+                f"Environment variable {var!r} has no matching field: the bare {env_prefix} variable carries a value"
+                f" only for a scalar root, and the root has fields; set one of them ({env_prefix}<FIELD>) instead."
+                " The variable will be ignored."
+            ),
+        ]
+
+    @pytest.mark.parametrize(
+        ("target", "var", "says"),
+        [
+            pytest.param(
+                list[int],
+                "APP_+",
+                "the root is set whole, so nothing appends onto it; spell its whole value with APP_JSON",
+                id="append-list",
+            ),
+            pytest.param(
+                list[int],
+                "APP_-",
+                "the root is set whole, so nothing deletes from it; spell its whole value with APP_JSON",
+                id="delete-list",
+            ),
+            pytest.param(
+                WithDefaults,
+                "APP_+",
+                "the root has fields, so nothing appends onto it; append onto one of them (APP_<FIELD>+) instead",
+                id="append-struct",
+            ),
+            pytest.param(
+                WithDefaults,
+                "APP_-",
+                "the root has fields, so nothing deletes from it; delete one of them (APP_<FIELD>-) instead",
+                id="delete-struct",
+            ),
+        ],
+    )
+    def test_bare_prefix_with_a_merge_suffix_warns_with_its_cause(
+        self,
+        loader: ConfargLoader,
+        target: Any,
+        var: str,
+        says: str,
+    ) -> None:
+        """A merge suffix on the bare prefix variable is warned about as one onto the root (BUG-178).
+
+        The suffix used to read as a segment below the root (``segment '+' is below the list
+        root``) or as a field of a struct root, as ``--app+`` was read as a flag outside ``--app``.
+        """
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = loader.merge(target, argv=[], env={var: "1"}, env_prefix="APP_")
+        assert result == {}
+        warns = [str(w.message) for w in caught if issubclass(w.category, confarg.exceptions.ConfargWarning)]
+        assert warns == [f"Environment variable {var!r} has no matching field: {says}. The variable will be ignored."]
+
     def test_correct_field_no_warning(self, loader: ConfargLoader) -> None:
         """A correctly spelled prefixed var produces no warning."""
         with warnings.catch_warnings(record=True) as caught:

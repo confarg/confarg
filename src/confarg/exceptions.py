@@ -61,6 +61,46 @@ def _append_none_remedy(message: str) -> str:
     return f"{message.removesuffix('.')}. To set this field to None, pass 'none' or 'null'."
 
 
+def _capitalized(reason: str) -> str:
+    """Return *reason*, a clause one channel quotes after a colon, as the sentence another one opens with."""
+    return reason[:1].upper() + reason[1:]
+
+
+def _bare_value_on_a_struct_root(bare: str, field: str) -> str:
+    """Return why the bare prefix sets nothing on a struct-like root, as a clause.
+
+    *bare* is the channel's bare spelling (``--app flag``, ``APP_ variable``) and *field* its
+    spelling of a field below it (``--app.<field>``, ``APP_<FIELD>``): the CLI refuses with
+    this text and the environment warns with it, so the two give one cause for one mistake.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/cli-prefix.md#the-bare-prefix-names-the-root
+    """
+    return (
+        f"the bare {bare} carries a value only for a scalar root, and the root has fields;"
+        f" set one of them ({field}) instead"
+    )
+
+
+def _merge_suffix_on_the_root(suffix: str, *, deletes: bool, struct: bool, field: str, whole: str) -> str:
+    """Return why a merge *suffix* on the bare prefix patches nothing, as a clause: the root takes no patch.
+
+    A struct-like root (*struct*) is patched one field at a time, so the remedy keeps the
+    suffix on *field*, the channel's spelling of a field below it. Any other root is set
+    whole, so the remedy is *whole*, the channel's spelling of the root's json cast, the one
+    that sets every such root. The CLI refuses with this text and the environment warns
+    with it.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/cli-prefix.md#the-bare-prefix-names-the-root
+    """
+    acts = "deletes from" if deletes else "appends onto"
+    if not struct:
+        return f"the root is set whole, so nothing {acts} it; spell its whole value with {whole}"
+    act = "delete" if deletes else "append onto"
+    return f"the root has fields, so nothing {acts} it; {act} one of them ({field}{suffix}) instead"
+
+
 def _in_expression(expression: str, reason: object) -> str:
     """Return the text of an expression's refusal or runtime failure: the expression as written, then why.
 
@@ -720,11 +760,33 @@ class UnknownArgumentError(ConfargError):
         The bare ``--<cli_prefix>`` flag is a scalar root's only CLI spelling; a
         struct-like root has fields to address instead, so the flag names nothing.
         """
-        return cls(
-            f"Unknown argument: {token!r}. The bare --{cli_prefix} flag carries a value only"
-            f" for a scalar root; this target is structured. Address one of its fields"
-            f" (--{cli_prefix}.<field>) instead.",
+        reason = _bare_value_on_a_struct_root(f"--{cli_prefix} flag", f"--{cli_prefix}.<field>")
+        return cls(f"Unknown argument: {token!r}. {_capitalized(reason)}.")
+
+    @classmethod
+    def merge_suffix_on_the_root(  # noqa: PLR0913  # the flag, its spellings, and the root's kind
+        cls,
+        token: str,
+        cli_prefix: str,
+        suffix: str,
+        cast_name: str,
+        *,
+        deletes: bool,
+        struct: bool,
+    ) -> UnknownArgumentError:
+        """Return an error for the bare prefix flag spelled with the merge *suffix*, ``--<cli_prefix>+``.
+
+        No flag patches the root: a struct-like root (*struct*) is patched one field at a
+        time, and any other root is set whole, by its json cast *cast_name*.
+        """
+        reason = _merge_suffix_on_the_root(
+            suffix,
+            deletes=deletes,
+            struct=struct,
+            field=f"--{cli_prefix}.<field>",
+            whole=f"--{cli_prefix}.{cast_name} <json>",
         )
+        return cls(f"Unknown argument: {token!r}. {_capitalized(reason)}.")
 
     @classmethod
     def unexpected_positional(cls, token: str) -> UnknownArgumentError:
