@@ -56,7 +56,7 @@ A hook on the command would not survive the `params` copying that groups and dec
 That matters for dash-prefixed items in particular: `--input+ -8` carries an item by vanilla's reckoning and is kept, and `--input+=--a` carries its item by construction — a `=` token never matches a bare occurrence.
 
 Only a flag whose spec sets `stands_bare` is filtered, which is why the rule is a marker rather than a syntax rule about trailing `+`: vanilla *rejects* a bare `--config.<path>+` (`Missing file path after --config`), so the config-file append flags must not inherit it.
-The scalar root flag clears the marker along with the rest of the multi-token shape, since `_handle_scalar_root` consumes exactly one token whatever the root type is ([CLI parsing](../cli-parsing/cli-prefix.md#cli_prefix)).
+The scalar root flag carries the marker a field of the root's type carries, since vanilla's loop consumes the root as it consumes such a field: a bare `--app` on a `list[int]` root builds `[]`, as a bare `--xs` does ([CLI parsing](../cli-parsing/cli-prefix.md#cli_prefix), BUG-177).
 
 Rejected: click's own optional-value spelling (`is_flag=False` plus a `flag_value`).
 It fits click alone — typer's vendored parser dropped the feature, so typer would have stayed red — and it changes how click reads the token *after* the flag, treating anything beginning with `-` as an omitted value.

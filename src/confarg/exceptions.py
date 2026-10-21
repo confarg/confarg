@@ -101,6 +101,32 @@ def _merge_suffix_on_the_root(suffix: str, *, deletes: bool, struct: bool, field
     return f"the root has fields, so nothing {acts} it; {act} one of them ({field}{suffix}) instead"
 
 
+def _missing_field_name(after: str) -> str:
+    """Return why a path ending in no name sets nothing, as a clause: nothing follows *after*.
+
+    *after* is the channel's spelling up to the last separator (``--port.``, ``APP_PORT__``).
+    The CLI refuses with this text and the environment refuses with it.
+
+    Dev Notes:
+        docs-dev/architecture/environment-parsing.md#a-path-no-flag-reaches-is-refused-below-the-first-segment
+    """
+    return f"missing field name after '{after}'"
+
+
+def _no_element(segment: str, sequence: str) -> str:
+    """Return why *segment* below the sequence at the dotted path *sequence* names nothing, as a clause.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index
+    """
+    return f"segment {segment!r} names no element of '{sequence}'"
+
+
+def _field_not_found(path: str) -> str:
+    """Return why the dotted *path* names nothing a flag writes, as a clause."""
+    return f"field '{path}' not found"
+
+
 def _in_expression(expression: str, reason: object) -> str:
     """Return the text of an expression's refusal or runtime failure: the expression as written, then why.
 
@@ -741,7 +767,17 @@ class UnknownArgumentError(ConfargError):
     @classmethod
     def no_such_field(cls, token: str, path: Sequence[str]) -> UnknownArgumentError:
         """Return an error for a flag whose dotted path names no field of the target."""
-        return cls(f"Unknown argument: {token!r} (field '{'.'.join(path)}' not found)")
+        return cls(f"Unknown argument: {token!r} ({_field_not_found('.'.join(path))})")
+
+    @classmethod
+    def missing_field_name(cls, after: str) -> UnknownArgumentError:
+        """Return an error for a flag whose path ends in no name: nothing, ``+`` or ``-`` after *after*."""
+        return cls(_capitalized(_missing_field_name(after)))
+
+    @classmethod
+    def no_element(cls, token: str, segment: str, sequence: str) -> UnknownArgumentError:
+        """Return an error for a flag whose *segment* below the sequence at *sequence* names no element."""
+        return cls(f"Unknown argument: {token!r} ({_no_element(segment, sequence)})")
 
     @classmethod
     def not_indexable(cls, token: str, path: Sequence[str]) -> UnknownArgumentError:

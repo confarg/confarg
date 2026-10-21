@@ -1476,16 +1476,100 @@ class TestEnvSequenceSegment:
         with pytest.raises(confarg.exceptions.ConfargError, match=re.escape(f"Environment variable {name!r}")):
             loader.merge(_EnvSequenceSegments, argv=[], env={name: "1"}, env_prefix="APP_")
 
-    def test_canonical_index_and_unknown_struct_field_are_kept(self, loader: ConfargLoader) -> None:
-        """An index still patches, and a struct's unknown field is still left for ``build()`` to name."""
-        env = {"APP_XS__0": "5", "APP_PAIR__-1": "6", "APP_PT__Y": "7", "APP_D__K__0": "8", "APP_SUB__ZZ": "9"}
+    def test_canonical_index_still_patches(self, loader: ConfargLoader) -> None:
+        """An index as ``str()`` writes one patches its element."""
+        env = {"APP_XS__0": "5", "APP_PAIR__-1": "6", "APP_PT__Y": "7", "APP_D__K__0": "8"}
         assert loader.merge(_EnvSequenceSegments, argv=[], env=env, env_prefix="APP_") == {
             "xs": {"0": 5},
             "pair": {"-1": 6},
             "pt": {"y": 7},
             "d": {"k": {"0": 8}},
-            "sub": {"zz": "9"},
         }
+
+
+@_dc
+class _EnvDeepDb:
+    port: int = 5
+
+
+@_dc
+class _EnvDeepPaths:
+    """A leaf, a struct, a list, a dict of leaves, a dict of structs, an ``Any``, and a struct a tag subclasses."""
+
+    port: int = 5
+    db: _EnvDeepDb = field(default_factory=_EnvDeepDb)
+    xs: list[int] = field(default_factory=list)
+    d: dict[str, int] = field(default_factory=dict)
+    dd: dict[str, _EnvDeepDb] = field(default_factory=dict)
+    a: Any = None
+    tagged: _EnvTagBase = field(default_factory=_EnvTagBase)
+
+
+class TestEnvUnknownPathBelowTheFirstSegment:
+    """Below its first segment, a variable no flag reaches is refused at parse, with the flag's cause (BUG-265).
+
+    It was stored as spelled and left for ``build()``: the error blamed the value below a
+    leaf (``Cannot coerce dict {'': '1'} to int``), and a delete naming no member was dropped
+    without a word, where its flag is refused. The first segment is still warned about.
+    """
+
+    @pytest.mark.parametrize(
+        ("name", "cause"),
+        [
+            pytest.param("APP_PORT__", "missing field name after 'APP_PORT__'", id="empty-below-a-leaf"),
+            pytest.param("APP_DB__", "missing field name after 'APP_DB__'", id="empty-below-a-struct"),
+            pytest.param("APP_DB__PORT__", "missing field name after 'APP_DB__PORT__'", id="empty-two-deep"),
+            pytest.param("APP_XS__0__", "missing field name after 'APP_XS__0__'", id="empty-below-an-element"),
+            pytest.param("APP_XS__", "missing field name after 'APP_XS__'", id="empty-below-a-list"),
+            pytest.param("APP_PORT__+", "missing field name after 'APP_PORT__'", id="lone-append-suffix"),
+            pytest.param("APP_PORT__-", "missing field name after 'APP_PORT__'", id="lone-delete-suffix"),
+            pytest.param("APP_PORT__ZZ", "field 'port.zz' not found", id="below-a-leaf"),
+            pytest.param("APP_DB__ZZ", "field 'db.zz' not found", id="unknown-struct-field"),
+            pytest.param("APP_DB____PORT", "field 'db..port' not found", id="empty-in-the-middle"),
+            pytest.param("APP_XS__ZZ", "segment 'zz' names no element of 'xs'", id="below-a-sequence"),
+            pytest.param("APP_PORT__X-", "field 'port.x' not found", id="delete-below-a-leaf"),
+            pytest.param("APP_DB__ZZ-", "field 'db.zz' not found", id="delete-of-an-unknown-field"),
+        ],
+    )
+    def test_refused_with_the_flags_cause(self, loader: ConfargLoader, name: str, cause: str) -> None:
+        """The refusal names the variable and the cause the flag of the same path is refused with."""
+        with pytest.raises(confarg.exceptions.ConfargError) as excinfo:
+            loader.merge(_EnvDeepPaths, argv=[], env={name: "1"}, env_prefix="APP_")
+        assert str(excinfo.value) == f"Environment variable {name!r} has no matching field ({cause})."
+
+    @pytest.mark.parametrize(
+        ("name", "merged"),
+        [
+            pytest.param("APP_D__", {"d": {"": 1}}, id="empty-dict-key"),
+            pytest.param("APP_D__+", {"d": {"+": 1}}, id="dict-key-plus"),
+            pytest.param("APP_D__-", {"d": {"-": 1}}, id="dict-key-minus"),
+            pytest.param("APP_DD____PORT", {"dd": {"": {"port": 1}}}, id="empty-key-of-a-dict-of-structs"),
+            # Below a dict a path is a key path, left to build() as its flag's is (BUG-161).
+            pytest.param("APP_DD__K__ZZ", {"dd": {"k": {"zz": "1"}}}, id="key-path-below-a-dict"),
+            pytest.param("APP_A__", {"a": {"": "1"}}, id="empty-key-below-any"),
+            pytest.param("APP_A__X__Y", {"a": {"x": {"y": "1"}}}, id="path-below-any"),
+            pytest.param("APP_TAGGED__EXTRA", {"tagged": {"extra": "1"}}, id="subclass-only-field"),
+        ],
+    )
+    def test_a_path_a_flag_reaches_is_kept(self, loader: ConfargLoader, name: str, merged: dict[str, Any]) -> None:
+        """A key below a dict or an ``Any``, and a subclass's field, are written, as their flags write them."""
+        assert loader.merge(_EnvDeepPaths, argv=[], env={name: "1"}, env_prefix="APP_") == merged
+
+    def test_a_field_of_the_class_a_file_names_is_kept(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """A variable below a node the config level names is typed by that class, so its field is no unknown path."""
+        base = tmp_path / "base.json"
+        base.write_text(f'{{"tagged": {{"class": "{_EnvTagSub.__module__}._EnvTagSub"}}}}')
+        result = loader.load(_EnvDeepPaths, argv=[], env={"APP_TAGGED__EXTRA": "x"}, env_prefix="APP_", files=[base])
+        assert result.tagged == _EnvTagSub(extra="x")
+
+    def test_the_first_segment_is_still_warned_about(self, loader: ConfargLoader) -> None:
+        """An unknown first segment is ambient noise: warned about and ignored, the deeper ones refused."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = loader.merge(_EnvDeepPaths, argv=[], env={"APP_NOPE__": "1"}, env_prefix="APP_")
+        assert result == {}
+        [msg] = _confarg_warnings(caught)
+        assert "'APP_NOPE__'" in msg
 
 
 class TestEnvUnionSequenceStrict:
@@ -1771,6 +1855,37 @@ class TestEnvNonStructRoot:
         [msg] = _confarg_warnings(caught)
         assert f"{var!r}" in msg
         assert "set whole" in msg
+
+    @pytest.mark.parametrize(
+        ("target", "value", "expected"),
+        [
+            pytest.param(list[int], "[1, 2]", [1, 2], id="list"),
+            pytest.param(tuple[int, str], '[1, "a"]', (1, "a"), id="fixed-tuple"),
+            pytest.param(_EnvSeqPt, '{"x": 1, "y": 2}', _EnvSeqPt(1, 2), id="namedtuple-object"),
+            pytest.param(_EnvSeqPt, "[1, 2]", _EnvSeqPt(1, 2), id="namedtuple-array"),
+            pytest.param(dict[str, int], '{"a": 1}', {"a": 1}, id="dict"),
+            pytest.param(int | list[int], "[1, 2]", [1, 2], id="union-with-a-list"),
+            pytest.param(int | list[int], "3", 3, id="union-scalar"),
+            pytest.param(list[int] | None, "none", None, id="optional-none"),
+        ],
+    )
+    def test_bare_variable_is_read_as_a_field_variable_of_its_type(
+        self,
+        loader: ConfargLoader,
+        target: Any,
+        value: str,
+        expected: Any,
+    ) -> None:
+        """``APP_='[1, 2]'`` sets a collection root as ``APP_XS='[1, 2]'`` sets a field of its type (BUG-177).
+
+        The bare variable was stored as a token, never decoded, so construction refused the string.
+        """
+        assert loader.load(target, argv=[], env={"APP_": value}, env_prefix="APP_") == expected
+
+    def test_bare_variable_on_a_list_root_refuses_a_lone_token(self, loader: ConfargLoader) -> None:
+        """A lone token is no list in the environment, at the root as at a field (``APP_XS=1``)."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=re.escape("got str '1'")):
+            loader.load(list[int], argv=[], env={"APP_": "1"}, env_prefix="APP_")
 
     def test_dict_root_json_is_the_root_cast(self, loader: ConfargLoader) -> None:
         """No key of a dict root is a member, so APP_JSON is its cast, as --app.json is."""

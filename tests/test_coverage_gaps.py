@@ -1110,9 +1110,9 @@ class TestParseEnvDictAndFallthrough:
             )
 
     def test_scalar_field_with_deep_env_path(self) -> None:
-        """A deeper-than-expected env var path for a scalar field raises TypeCoercionError."""
+        """A deeper-than-expected env var path for a scalar field is refused at parse, as its flag is (BUG-265)."""
         WithInt = make_target("count", int, default=0)
-        with pytest.raises(confarg.exceptions.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.ConfargError, match=r"\(field 'count\.extra' not found\)"):
             confarg.load(WithInt, argv=[], env={"MYAPP_COUNT__EXTRA": "5"}, env_prefix="MYAPP_")
 
 

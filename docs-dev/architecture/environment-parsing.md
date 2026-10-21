@@ -16,6 +16,7 @@ It sits between the two other channels in priority: above [config files](config-
   The locals namespace is one of the members a root segment is spelled among, so a field that differs from a namespace name only by case (`Locals`) is ambiguous here, where the CLI tells `--Locals` from `--locals.x` apart.
   Before BUG-115 such a field silently won, and the namespace could not be reached from the environment.
 - A **non-struct root** is [set whole](cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole): by the bare `<PREFIX>` variable, or by its `<PREFIX>JSON` cast.
+  The bare variable is read as a field variable of the root's type is, by `_store_env_value` at `__root__`: `APP_='[1, 2]'` sets a `list[int]` root as `APP_XS='[1, 2]'` sets such a field, where it was kept as text that construction refused (BUG-177).
   Every other variable names a path below the root, and no flag reaches one, so the first-segment check below warns about it and ignores it.
   On a struct-like root the bare `<PREFIX>` names nothing, and `<PREFIX>+` and `<PREFIX>-` patch no root of any kind: each is warned about with the cause the CLI refuses `--<prefix>` and `--<prefix>+` with ([the bare prefix names the root](cli-parsing/cli-prefix.md#the-bare-prefix-names-the-root), BUG-183, BUG-178).
   The locals namespace beside the root is the exception: `<PREFIX>LOCALS__N` reaches it, as `--<prefix>.locals.n` does.
@@ -49,8 +50,24 @@ It sits between the two other channels in priority: above [config files](config-
   A delete is checked as the value variable of the path it deletes: until BUG-182 its branch ended ahead of the check, so `APP_NAEM-` was dropped without a word while `APP_NAEM=y` was warned about and `--naem-` refused.
   *(inferred)* The environment is ambient and shared with other software, while argv is an explicit request; a stray variable should not stop the program.
   Tests can escalate the warning with `warnings.filterwarnings("error", …)`.
-- An unknown segment *below* the first is stored as spelled and left for `build()` to refuse (`APP_SUB__ZZ` → "Unknown field(s)"), except below a sequence: there a segment naming no element — no index as `str()` writes one, no namedtuple field — is refused at parse (`_sequence_refusal`), delete included, because stored it would reach the merge as one of its own list-patch keys, `APP_XS__+` an append and `APP_PAIR__*=12` the base `(1, 2)` ([CLI parsing](cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index), BUG-170).
-  A variable that deep was never ambient noise to drop: it already stopped the program at `build()`.
+- A path *below* the first segment that no flag reaches is refused at parse, delete included ([below](#a-path-no-flag-reaches-is-refused-below-the-first-segment)).
+
+## A path no flag reaches is refused below the first segment
+
+Once its first segment names a member, a variable whose path names nothing a flag writes is refused with `ConfargError`, for the cause `_parse_cli._unreached` gives its flag (BUG-265):
+
+| variable | its flag | refused because |
+|---|---|---|
+| `APP_PORT__`, `APP_PORT__+`, `APP_PORT__-` | `--port.`, `--port.+`, `--port.-` | missing field name after `APP_PORT__` |
+| `APP_XS__ZZ` | `--xs.zz` | segment `zz` names no element of `xs` |
+| `APP_PORT__ZZ`, `APP_DB__ZZ`, `APP_PORT__X-` | `--port.zz`, `--db.zz`, `--port.x-` | field `port.zz` (`db.zz`, `port.x`) not found |
+
+A key path below a dict, a path below an `Any` or a callable's spec, and a subclass's field all name something, as their flags do: `APP_D__=1` sets the key `''` of a dict, as `--d. 1` does.
+
+Such a variable was stored as spelled and left for `build()`, which blamed the value below a leaf (`Cannot coerce dict {'': '1'} to int`) or named a field the CLI would have refused with its cause; and a delete of one was dropped without a word, since a delete of a key no layer holds deletes nothing.
+Only a segment below a sequence was refused at parse (BUG-170), because stored it reaches the merge as one of its own list-patch keys: `APP_XS__+` an append, `APP_PAIR__*=12` the base `(1, 2)`.
+A variable that deep was never ambient noise to warn about and drop, as an unknown first segment is: below a member the program stopped at `build()` already, so refusing it at parse with the cause loses nothing a stray variable could rely on, where a warning would have let a typo build the default.
+The cause is spelled with one text the CLI shares (`exceptions._missing_field_name`, `_no_element`, `_field_not_found`), so `--xs.zz` is told what `APP_XS__ZZ` is, and `--port.-` misses its name, as `--port.+` always did.
 
 ## A naming anywhere in it types a variable
 

@@ -13,9 +13,8 @@ Which shape a flag takes is one decision, `_build._shaped`, asked of the type th
 Every flag that sets a value goes through it — a field, a namedtuple's arity flag, a subkey or element, a class's field or a target's argument — so a type has one shape wherever it is addressed.
 Five sites once decided it apart, and the ones that missed a shape registered one token where vanilla's loop took a run: an element flag over a fixed-arity type (BUG-198), a namedtuple or `Optional` fixed-arity field of a class argv names (BUG-233's fix had built them through a leaf builder with neither shape), and a union holding a sequence beside a struct (PR-77, BUG-21).
 
-The model owns the inverse of that shape vocabulary, too: `FlagSpec.as_single_token()` clears `nargs`, `whole_value`, `stands_bare`, `refuses_bare` and its `usage` in one operation, spelled beside the attributes themselves.
-A flag forced to a single token — a non-struct root's, which takes exactly one whatever its type collects ([CLI parsing](../cli-parsing/cli-prefix.md#cli_prefix)) — is therefore reshaped where the shape is declared, and the next shape attribute is undone where it is added rather than cleared by each caller by hand, one attribute at a time (REF-68).
-That reset is what once lapsed attribute by attribute: a fixed-tuple root kept `whole_value`, which made argparse register the bare prefix flag greedily, because nothing tied the reset to the shape it undoes.
+A non-struct root's bare flag goes through it too, since vanilla's loop consumes the root's value as it consumes a field of its type ([CLI parsing](../cli-parsing/cli-prefix.md#cli_prefix), BUG-177).
+It was the one flag forced to a single token whatever its type collected, by an inverse of the shape vocabulary, `FlagSpec.as_single_token()` (REF-68): that inverse had lapsed attribute by attribute before REF-68 gathered it, and it went with its last caller.
 
 `_spec.py` (the model) and `_build.py` (spec generation) live in `cli/`, beside the other two modules every adapter shares, `_prefix.py` and `_collect.py`; `cli/argparse/` holds only what speaks argparse.
 They grew out of the argparse backend and sat under `cli/argparse/` until REF-1 moved them.

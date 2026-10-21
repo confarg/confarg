@@ -270,6 +270,20 @@ class _Point(NamedTuple):
 
 
 @dataclass
+class _RunInner:
+    """A list a run of tokens fills, one level down."""
+
+    tags: list[str] = dataclasses_field(default_factory=list)
+
+
+@dataclass
+class _RunHolder:
+    """A struct holding the list, so a write can replace it from above."""
+
+    inner: _RunInner = dataclasses_field(default_factory=_RunInner)
+
+
+@dataclass
 class _WithIntPair:
     pair: tuple[int, int] = (0, 0)
 
@@ -781,6 +795,29 @@ class TestRepeatedFlagAccumulationContract:
         """Two tokens are two items, so the '[' one is not decoded (vanilla, argparse, cyclopts)."""
         cfg = space_sep_loader.load(WithList, argv=["--tags", '["a","b"]', "z"], env={})
         assert cfg.tags == ['["a","b"]', "z"]
+
+    @pytest.mark.parametrize(
+        "between",
+        [
+            pytest.param(["--inner.tags.json", '["y"]'], id="cast-at-the-run"),
+            pytest.param(["--inner.json", '{"tags": ["y"]}'], id="cast-above-the-run"),
+            pytest.param(["--inner", '{"tags": ["y"]}'], id="whole-value-above-the-run"),
+            pytest.param(["--inner-"], id="delete-above-the-run"),
+        ],
+    )
+    def test_a_whole_write_ends_the_runs_at_and_below_it(self, loader: ConfargLoader, between: list[str]) -> None:
+        """An occurrence after a whole write starts a new run, as one after ``--tags-`` does: the last typed wins.
+
+        Only a key delete at the run's own path ended it, so ``--inner.tags x``, then any other
+        write replacing ``inner.tags``, then ``--inner.tags z`` built ``['x', 'z']``.
+        """
+        argv = ["--inner.tags", "x", *between, "--inner.tags", "z"]
+        assert loader.load(_RunHolder, argv=argv, env={}).inner.tags == ["z"]
+
+    def test_the_root_cast_ends_the_roots_run(self, loader: ConfargLoader) -> None:
+        """``--app.json`` replaces a collection root, so the bare flag after it starts a new run."""
+        argv = ["--app", "1", "--app.json", "[5]", "--app", "2"]
+        assert loader.load(list[int], argv=argv, env={}, cli_prefix="app", config_flag="") == [2]
 
 
 # ---------------------------------------------------------------------------
@@ -3091,44 +3128,105 @@ class TestCliPrefixContract:
         assert populating_loader.registered_flags(int, config_flag="") == set()
 
     @pytest.mark.parametrize(
-        ("root", "leaf"),
-        [
-            pytest.param(list[int], int, id="list"),
-            pytest.param(list[str], str, id="list-str"),
-            pytest.param(set[str], str, id="set"),
-            pytest.param(tuple[int, ...], int, id="varlen-tuple"),
-            pytest.param(list[int] | None, int, id="optional-list"),
-        ],
-    )
-    def test_scalar_root_spec_of_a_collection_is_its_element_leaf(self, root: type, leaf: type) -> None:
-        """A collection root's bare flag is the single-token leaf spec of its element type (REF-68).
-
-        The root's only CLI spelling takes exactly one token whatever the type
-        collects, so the multi-token shape the leaf builder gives a collection is
-        undone in one reset, and the spec comes out equal to the element type's own
-        root spec.
-        """
-        assert _scalar_root_spec(root) == _scalar_root_spec(leaf)
-
-    @pytest.mark.parametrize(
         "root",
         [
+            pytest.param(int, id="scalar"),
             pytest.param(list[int], id="list"),
+            pytest.param(set[str], id="set"),
             pytest.param(tuple[int, ...], id="varlen-tuple"),
-            pytest.param(tuple[int, int], id="fixed-tuple"),
+            pytest.param(tuple[int, str], id="fixed-tuple"),
+            pytest.param(_Point, id="namedtuple"),
+            pytest.param(dict[str, int], id="dict"),
+            pytest.param(int | list[int], id="union-with-a-list"),
             pytest.param(list[int] | None, id="optional-list"),
         ],
     )
-    def test_scalar_root_spec_takes_exactly_one_token(self, root: type) -> None:
-        """Every shape attribute of the multi-token leaf is reset: ``nargs``, ``whole_value``, ``stands_bare`` (REF-68).
+    def test_root_spec_is_shaped_as_a_field_of_its_type(self, root: Any) -> None:
+        """The bare prefix flag is registered in the shape a field of the root's type is (BUG-177).
 
-        ``whole_value`` is the attribute the attribute-by-attribute reset forgot: a
-        fixed-tuple root kept it, so argparse registered the bare prefix flag
-        greedily. The one reset covers the whole shape vocabulary, so the next
-        shape attribute cannot be missed again.
+        It was reshaped to take exactly one token whatever the root collected, as vanilla's
+        loop took one, so a collection root's flag never took the run its field takes.
         """
-        spec = _scalar_root_spec(root)
-        assert (spec.nargs, spec.whole_value, spec.stands_bare) == (None, False, False)
+        [field_spec] = [s for s in build_static_flags(make_target("x", root), config_flag="") if s.name == "x"]
+        root_spec = _scalar_root_spec(root)
+        shape = ("nargs", "whole_value", "stands_bare", "refuses_bare", "usage")
+        assert {a: getattr(root_spec, a) for a in shape} == {a: getattr(field_spec, a) for a in shape}
+
+    @pytest.mark.parametrize(
+        ("root", "argv", "expected"),
+        [
+            pytest.param(list[int], ["--app", "1", "2"], [1, 2], id="list"),
+            pytest.param(set[int], ["--app", "1", "2"], {1, 2}, id="set"),
+            pytest.param(tuple[int, ...], ["--app", "1", "2"], (1, 2), id="varlen-tuple"),
+            pytest.param(int | list[int], ["--app", "1", "2"], [1, 2], id="union-with-a-list"),
+            pytest.param(list[int] | None, ["--app", "1", "2"], [1, 2], id="optional-list"),
+            pytest.param(list[int], ["--app", "1", "--app", "2"], [1, 2], id="repeated"),
+        ],
+    )
+    def test_varlen_root_takes_its_fields_run(
+        self,
+        space_sep_loader: ConfargLoader,
+        root: Any,
+        argv: list[str],
+        expected: Any,
+    ) -> None:
+        """``--app 1 2`` sets a collection root as ``--xs 1 2`` sets a field of its type (BUG-177).
+
+        The bare flag took one token, which construction refused as a string, and a second
+        one was refused as a stray positional.
+        """
+        assert space_sep_loader.load(root, argv=argv, env={}, cli_prefix="app", config_flag="") == expected
+
+    def test_repeated_root_flag_joins_its_runs(self, repeated_loader: ConfargLoader) -> None:
+        """A repeated bare flag is one run, as a repeated list field's is (BUG-177)."""
+        got = repeated_loader.load(list[int], argv=["--app", "1", "--app", "2"], env={}, cli_prefix="app")
+        assert got == [1, 2]
+
+    @pytest.mark.parametrize(
+        ("root", "argv", "expected"),
+        [
+            pytest.param(tuple[int, str], ["--app", "1", "a"], (1, "a"), id="fixed-tuple"),
+            pytest.param(_Point, ["--app", "1", "2"], _Point(1, 2), id="namedtuple"),
+            pytest.param(list[int], ["--app", "[1, 2]"], [1, 2], id="list-json-array"),
+            pytest.param(dict[str, int], ["--app", '{"a": 1}'], {"a": 1}, id="dict-object"),
+            pytest.param(list[int], ["--app"], [], id="bare-list"),
+            pytest.param(list[int] | None, ["--app"], [], id="bare-optional-list"),
+            pytest.param(int, ["--app", "1", "--app", "2"], 2, id="repeated-scalar-last-wins"),
+        ],
+    )
+    def test_root_takes_what_a_field_of_its_type_takes(
+        self,
+        loader: ConfargLoader,
+        root: Any,
+        argv: list[str],
+        expected: Any,
+    ) -> None:
+        """Positions, a whole JSON value and a bare occurrence set the root as they set its field (BUG-177)."""
+        assert loader.load(root, argv=argv, env={}, cli_prefix="app", config_flag="") == expected
+
+    @pytest.mark.parametrize(
+        ("root", "argv", "expected"),
+        [
+            pytest.param(tuple[int, str], ["--app", '[1, "a"]'], (1, "a"), id="fixed-tuple-json-array"),
+            pytest.param(_Point, ["--app", '{"x": 1, "y": 2}'], _Point(1, 2), id="namedtuple-object"),
+        ],
+    )
+    def test_fixed_arity_root_takes_a_whole_value_token(
+        self,
+        whole_value_arity_loader: ConfargLoader,
+        root: Any,
+        argv: list[str],
+        expected: Any,
+    ) -> None:
+        """A fixed-arity root takes one whole JSON token where its field does (BUG-177)."""
+        assert whole_value_arity_loader.load(root, argv=argv, env={}, cli_prefix="app", config_flag="") == expected
+
+    def test_fixed_arity_root_needs_every_position(self, loader: ConfargLoader) -> None:
+        """A short run is a missing value whose usage spells every position, as a field's is (BUG-177)."""
+        with pytest.raises((ConfargError, SystemExit)) as excinfo:
+            loader.merge(tuple[int, str], argv=["--app", "1"], env={}, cli_prefix="app", config_flag="")
+        if isinstance(excinfo.value, ConfargError):
+            assert str(excinfo.value) == "Missing value for '--app'. Usage: --app <value> <value>"
 
     @pytest.mark.parametrize(
         ("target", "argv"),
@@ -5146,7 +5244,8 @@ class TestCollectionPatchContract:
         The walk once stepped into the element whatever the segment spelled, so ``--xs.* 5``
         wrote the merge's own ``'*'`` key and ``build()`` crashed on it, and ``--xs.+ 1``
         appended. A list below a dict is no key of the dict, so it is refused there too. A
-        lone ``+`` misses its name, as ``--sub.+`` does.
+        lone ``+`` or ``-`` misses its name, as ``--sub.+`` does (BUG-265); any other segment
+        is told it names no element, as its environment variable is.
         """
         flag = f"--{field}.{segment}"
         with pytest.raises((UnknownArgumentError, SystemExit)) as excinfo:
@@ -5154,8 +5253,8 @@ class TestCollectionPatchContract:
         if isinstance(excinfo.value, UnknownArgumentError):
             expected = (
                 f"Missing field name after '--{field}.'"
-                if segment == "+"
-                else f"Unknown argument: {flag!r} (field '{field}.{segment}' not found)"
+                if segment in {"+", "-"}
+                else f"Unknown argument: {flag!r} (segment {segment!r} names no element of '{field}')"
             )
             assert str(excinfo.value) == expected
 

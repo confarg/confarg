@@ -10,8 +10,11 @@ Vanilla owns the whole command line, so a flag outside the prefix is an `Unknown
 An adapter does not: there, a flag outside the prefix belongs to the host framework and is left alone.
 That is not a divergence in the prefix but the adapter model itself — it holds with or without one.
 
-A non-struct (scalar) target has no field name to address, so `--<prefix> VALUE` is its only CLI spelling, handled by `_handle_scalar_root`, on the adapters too.
+A non-struct (scalar) target has no field name to address, so `--<prefix> VALUE` is its only CLI spelling, on the adapters too.
 Without a prefix it has no CLI spelling at all, in any front-end.
+The bare flag takes what a field flag of the root's type takes (BUG-177): vanilla's loop consumes it through the field's own handlers, at the empty path, which `_ParseCtx.write` lands under `__root__`, and the adapters register the spec a field of that type gets.
+So `--app 1 2` sets a `list[int]` root, `--app 1 a` a `tuple[int, str]` one, `--app '{"a": 1}'` a dict one, a bare `--app` builds an empty list, and repeated occurrences join their runs; the bare `<PREFIX>` variable is read as a field variable of the root's type is (`APP_='[1, 2]'` decodes as `APP_XS='[1, 2]'` does).
+Until then the flag took exactly one token whatever the root collected, a scalar's, and construction refused that string on every collection root, so the flag a missing root's remedy offers never set one.
 `--<prefix>.json` reaches the same root through the [root cast](casts-and-reserved-words.md#force-casts).
 
 A **struct-like** root (dataclass, plain class — a registered leaf included) refuses the bare flag instead (BUG-91): nothing about `--<prefix> VALUE` names a field, and a value consumed for the empty path would be silently dropped — the adapters had refused it at parse time all along, so vanilla's `UnknownArgumentError` is the refusal the five front-ends share.
@@ -24,7 +27,7 @@ The bare `--<prefix>` and the bare `<PREFIX>` variable both name the root, and e
 - **A value on a struct-like root** (BUG-91, BUG-183): `--app 8080` and `APP_=8080` on a dataclass are told the bare prefix carries a value only for a scalar root, and offered a field, `--app.<field>` or `APP_<FIELD>`.
   The environment used to warn about it as the failed lookup of an empty segment, `segment '' not found in Cfg`.
 - **A merge suffix on any root** (BUG-178): `--app+`, `--app-`, `APP_+` and `APP_-` patch nothing, since a struct-like root is patched one field at a time and any other root is set whole.
-  The remedy follows the root's kind: a field with the suffix kept (`--app.<field>+`) on a struct-like root, the root cast (`--app.json <json>`, `APP_JSON`) on any other, the one spelling that sets every such root whatever [BUG-177](../../todo/bugs/BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md) decides for the bare flag.
+  The remedy follows the root's kind: a field with the suffix kept (`--app.<field>+`) on a struct-like root, the root cast (`--app.json <json>`, `APP_JSON`) on any other, the one spelling that sets every such root in one token.
   `--app+` used to be refused as a flag outside the prefix, which is false about the token it quotes, and `APP_+` warned about as a segment `+` below the root.
 
 One predicate tells the merge suffix on the root, `_parse_cli._merge_suffix_on_root`, asked of the key left once the prefix is stripped: `_strip_cli_prefix` strips `app+` to `+`, as the environment's key for `APP_+` already is.

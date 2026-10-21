@@ -278,6 +278,20 @@ class TestCliBoolValueToken:
         with pytest.raises(confarg.exceptions.UnknownArgumentError, match=r"Missing field name after '--name.'"):
             confarg.load(WithDefaults, argv=["--name.+"], env={})
 
+    def test_misplaced_delete_minus_raises_missing_field_name(self) -> None:
+        """--foo.- misses its name as --foo.+ does, where it was an unknown field named ``-`` (BUG-265)."""
+        with pytest.raises(confarg.exceptions.UnknownArgumentError) as excinfo:
+            confarg.load(WithDefaults, argv=["--name.-"], env={})
+        assert str(excinfo.value) == "Missing field name after '--name.'"
+
+    @pytest.mark.parametrize("argv", [["--xs.zz", "1"], ["--xs.zz-"]], ids=["value", "delete"])
+    def test_a_segment_below_a_sequence_names_no_element(self, argv: list[str]) -> None:
+        """The flag is told what its environment variable is told: the segment names no element (BUG-265)."""
+        target = make_target("xs", list[int], default_factory=list)
+        with pytest.raises(confarg.exceptions.UnknownArgumentError) as excinfo:
+            confarg.load(target, argv=argv, env={})
+        assert str(excinfo.value) == f"Unknown argument: {argv[0]!r} (segment 'zz' names no element of 'xs')"
+
 
 # ---------------------------------------------------------------------------
 # Collections from CLI

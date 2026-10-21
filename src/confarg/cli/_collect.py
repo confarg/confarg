@@ -31,7 +31,7 @@ from confarg._parse_cli import _config_pairs_in, _parse_cli, _path_unknown
 from confarg._pipeline import _merge_sources
 from confarg.cli._argv import spelled_flag_names
 from confarg.cli._build import _binds_a_run
-from confarg.cli._prefix import strip_argv_prefix, strip_flat_prefix
+from confarg.cli._prefix import in_prefix, strip_argv_prefix, strip_flat_prefix
 from confarg.exceptions import ConfargError
 
 
@@ -49,16 +49,22 @@ def _require_argv_spells(
     ``parse_args(custom)`` merged with *argv* left to default to ``sys.argv[1:]``.  The
     values would be lost without a word, so the mismatch is refused instead.  A key the
     target does not resolve is the host's own parameter and is not confarg's to judge.
+    The bare ``--<cli_prefix>`` key, ``""`` once the prefix is stripped, is the root's,
+    never the host's: it is spelled when argv spells the bare prefix flag, which the
+    stripped argv drops, and it is no path below the root, which a dict root's walk
+    would take for one of its keys.
 
     Dev Notes:
         docs-dev/architecture/cli-adapters/model.md#argv-is-the-only-writer
     """
     spelled = spelled_flag_names(strip_argv_prefix(argv, cli_prefix))
+    if cli_prefix and cli_prefix in spelled_flag_names(argv):
+        spelled.add("")
     for key, value in strip_flat_prefix(dict(flat), cli_prefix).items():
-        if value is None or key in spelled or _path_unknown(target, key.split("."), union_tag):
+        if value is None or key in spelled or (key and _path_unknown(target, key.split("."), union_tag)):
             continue
         msg = (
-            f"The parse result holds '--{key}', which argv does not spell: pass argv= the "
+            f"The parse result holds '--{in_prefix(key, cli_prefix)}', which argv does not spell: pass argv= the "
             "list the framework parsed (it defaults to sys.argv[1:])"
         )
         raise ConfargError(msg)
