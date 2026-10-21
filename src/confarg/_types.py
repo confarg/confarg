@@ -1165,12 +1165,20 @@ def _struct_state_fields(tp: Any) -> Mapping[str, Any]:
     """Return {name: type} for what ``dump()`` reads off an instance of struct *tp*, read-only.
 
     A dataclass's stored fields (:func:`_dc_fields`); a plain class declares no state but
-    its constructor's parameters (:func:`_struct_fields`).
+    its constructor's parameters (:func:`_struct_fields`), a ``*args`` one as the tuple Python
+    hands the constructor, where it is a list as a member.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/the-object-dump-writes-state.md#a-dataclass-dumps-the-fields-it-stores
     """
-    return _dc_fields(tp) if _is_dc(tp) else _init_fields(tp)
+    if _is_dc(tp):
+        return _dc_fields(tp)
+    members = _init_fields(tp)
+    star = _init_params(tp).var.positional
+    if star is None:
+        return members
+    item = _elem_type(members[star])
+    return types.MappingProxyType({**members, star: tuple[item, ...]})
 
 
 def _answered_by_subclasses(tp: Any, field: str) -> bool:

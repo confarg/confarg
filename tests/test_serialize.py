@@ -12,10 +12,13 @@ import math
 import re
 import sys
 import warnings
+from collections.abc import Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from dataclasses import InitVar, field
 from dataclasses import dataclass as _dc
 from decimal import Decimal
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Final, Literal, NewType, Optional, Union
 from unittest import mock
 from uuid import UUID
@@ -858,6 +861,108 @@ class TestDumpSubclass:
         loaded = confarg.load(_SubWrapper, argv=[], env={}, files=[path])
         assert isinstance(loaded.item, _SubChild)
         assert loaded.item.value == pytest.approx(2.5)
+
+
+# ---------------------------------------------------------------------------
+# A value its declared type does not hold
+# ---------------------------------------------------------------------------
+
+
+@_dc
+class _Foreign:
+    b: int
+
+
+class _Opaque:
+    """A class no spec rebuilds: it keeps its argument under another name."""
+
+    def __init__(self, a: int = 0) -> None:
+        self._a = a
+
+
+class TestDumpForeignValue:
+    """A value its declared type does not hold is written as an ``Any`` field holds it, with a warning (BUG-267)."""
+
+    @pytest.mark.parametrize(
+        ("field_type", "held", "written"),
+        [
+            pytest.param(_SubBase, _Foreign(b=1), {"class": f"{_MOD}._Foreign", "b": 1}, id="struct-other-struct"),
+            pytest.param(
+                Optional[_SubBase], _Foreign(b=1), {"class": f"{_MOD}._Foreign", "b": 1}, id="optional-struct"
+            ),
+            pytest.param(_SubBase, 3, 3, id="struct-int"),
+            pytest.param(int, "abc", "abc", id="int-str"),
+            pytest.param(Path, 3, 3, id="path-int"),
+            pytest.param(Literal["a", "b"], "c", "c", id="literal-non-member"),
+            pytest.param(int, None, None, id="int-none"),
+            pytest.param(_SubBase, None, None, id="struct-none"),
+            pytest.param(list[int], (1, 2), [1, 2], id="list-tuple"),
+            pytest.param(tuple[int, int], (1, 2, 3), [1, 2, 3], id="fixed-tuple-overrun"),
+        ],
+    )
+    def test_it_is_written_by_its_runtime_type_and_warns(self, field_type: Any, held: Any, written: Any) -> None:
+        """The warning names the field and the declared type; the value is written as an ``Any`` node writes it."""
+        Target = make_target("x", field_type, default=None)
+        with pytest.warns(ConfargWarning, match=r"Value at 'x' will not read back: .* is no value of"):
+            assert confarg.dump(Target(x=held)) == {"x": written}
+
+    @pytest.mark.parametrize(
+        ("field_type", "spelled"),
+        [
+            pytest.param(_SubBase, "_SubBase", id="class"),
+            pytest.param(Optional[_SubBase], repr(Optional[_SubBase]), id="optional"),
+            pytest.param(int | _SubBase, f"int | {_MOD}._SubBase", id="union"),
+        ],
+    )
+    def test_the_warning_spells_the_declared_type(self, field_type: Any, spelled: str) -> None:
+        """A class by its name, any other type as it reads, never ``Optional`` alone."""
+        Target = make_target("x", field_type, default=None)
+        with pytest.warns(ConfargWarning, match=re.escape(f"is no value of {spelled}, the type it is declared as")):
+            confarg.dump(Target(x=_Foreign(b=1)))
+
+    def test_a_value_no_spec_spells_is_written_untyped(self) -> None:
+        """An object an ``Any`` node could not rebuild is still written, with the warning."""
+        Target = make_target("x", _SubBase, default=None)
+        with pytest.warns(ConfargWarning, match=r"Value at 'x' will not read back"):
+            dumped = confarg.dump(Target(x=_Opaque(2)))
+        assert isinstance(dumped["x"], _Opaque)
+
+    @pytest.mark.parametrize(
+        ("field_type", "held", "written"),
+        [
+            pytest.param(float, 1, 1.0, id="float-int"),
+            pytest.param(float, True, 1.0, id="float-bool"),
+            pytest.param(int, True, True, id="int-bool"),
+            pytest.param(_SubBase, _SubChild(value=1.0), {"value": 1.0, "class": f"{_MOD}._SubChild"}, id="subclass"),
+            pytest.param(Sequence[int], (1, 2), [1, 2], id="sequence-tuple"),
+            pytest.param(Optional[Sequence[int]], (1, 2), [1, 2], id="optional-sequence-tuple"),
+            pytest.param(AbstractSet[int], frozenset({2, 1}), [1, 2], id="abstract-set-frozenset"),
+            pytest.param(Mapping[str, int], MappingProxyType({"a": 1}), {"a": 1}, id="mapping-proxy"),
+            pytest.param(Optional[int], None, None, id="optional-none"),
+            pytest.param(Any, _Foreign(b=1), {"class": f"{_MOD}._Foreign", "b": 1}, id="any"),
+        ],
+    )
+    def test_a_value_the_type_checkers_accept_does_not_warn(
+        self,
+        field_type: Any,
+        held: Any,
+        written: Any,
+        recwarn: pytest.WarningsRecorder,
+    ) -> None:
+        """What a type checker accepts is held: the numeric tower, a subclass, an abstract collection."""
+        Target = make_target("x", field_type, default=None)
+        assert confarg.dump(Target(x=held)) == {"x": written}
+        assert not [w for w in recwarn if issubclass(w.category, ConfargWarning)]
+
+    def test_a_stored_star_args_is_the_tuple_python_hands_over(self, recwarn: pytest.WarningsRecorder) -> None:
+        """A plain class keeping its ``*items`` as given holds a tuple, its state though a list as a member."""
+
+        class Stored:
+            def __init__(self, *items: str) -> None:
+                self.items = items
+
+        assert confarg.dump(Stored("a", "b")) == {"items": ["a", "b"]}
+        assert not [w for w in recwarn if issubclass(w.category, ConfargWarning)]
 
 
 # ---------------------------------------------------------------------------

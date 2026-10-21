@@ -78,7 +78,7 @@ from confarg.dictexpr._expressions import (
     _set_nested_by_path,
     resolve_expressions,
 )
-from confarg.exceptions import SymbolImportError, TypeCoercionError
+from confarg.exceptions import ConfargWarning, SymbolImportError, TypeCoercionError
 from confarg.typedload._coerce import _coerce_leaf, _coerce_type_ref, _try_coerce
 from confarg.typedload._construct import _value_matches_type, construct
 from tests._cov_helpers import _COV_MOD, _ConstructAVariant, _ConstructBVariant
@@ -1213,10 +1213,11 @@ class TestSerializeUnionVariantNotFound:
     """Serialization when the value does not match any union variant."""
 
     def test_serialize_no_matching_union_variant(self) -> None:
-        """A float value in an int | DC union field is serialized as-is."""
+        """A float value in an int | DC union field is written as an Any field holds it, with a warning (BUG-267)."""
         instance = _WithIntOrDC.__new__(_WithIntOrDC)
         object.__setattr__(instance, "val", math.pi)
-        result = confarg.dump(instance)
+        with pytest.warns(ConfargWarning, match=r"Value at 'val' will not read back: its float is no value of"):
+            result = confarg.dump(instance)
         assert result["val"] == math.pi
 
 

@@ -399,6 +399,10 @@ def dump(
     holds. To save a configuration as written, with its expressions and its ``call:``
     specs, pass the dict returned by ``merge()`` to ``dump_file()`` instead.
 
+    A value its field's type does not hold — ``None`` in a field that is not optional, an
+    instance of an unrelated class — is written as an ``Any`` field holds it, with a
+    ``ConfargWarning``, since it will not load back.
+
     A value of a registered leaf type — a ``Path``, a ``Decimal``, a ``date`` — is written as
     the text its type reads back, so the dict is ready for any writer, JSON's included.
     *native_types* keeps the values of the types it names as the objects they are, for a
