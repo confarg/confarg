@@ -44,10 +44,12 @@ from confarg._callable import (
 from confarg._import import _import_dotted
 from confarg._merge import _peek_nested
 from confarg._types import (
+    _class_of,
     _is_struct,
     _resolve_type,
     _struct_member_names,
     _struct_member_type,
+    _tagged_struct,
     _union_branches,
     _union_tag_shadowed,
 )
@@ -103,8 +105,10 @@ def named_variant(tp: Any, node: MergeDict, union_tag: str) -> Any:
         cls = _class_named(node[union_tag])
         if cls is None:
             return None
-        matching = [m for m in members if _is_struct(m) and issubclass(cls, m)]
-        if len(matching) == 1:
+        matching = [m for m in members if _is_struct(m) and _tagged_struct(cls, m) is not None]
+        if len({_class_of(m) for m in matching}) == 1:
+            # One variant, or one generic parameterized apiece: the first binding types the keys,
+            # as construction tries it first.
             return matching[0]
         return None if matching else _first_spec_reader(members)
     if _is_typed_call(node, tp):
@@ -138,9 +142,10 @@ def named_child(tp: Any, key: str, node: MergeDict, union_tag: str) -> Any:  # n
             if key == union_tag:
                 return str
             cls = _class_named(node[union_tag])
-            if cls is None or not _is_struct(cls) or not issubclass(cls, tp):
+            bound = _tagged_struct(cls, tp) if cls is not None and _is_struct(cls) else None
+            if bound is None:
                 return Named.NOTHING
-            return _member(cls, key)
+            return _member(bound, key)
         case _:
             return Named.NOTHING
 

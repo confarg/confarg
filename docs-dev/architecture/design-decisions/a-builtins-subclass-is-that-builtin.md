@@ -38,7 +38,7 @@ PEP 585 made these the spelling to use, `typing.Sequence` and the like being dep
 
 ## A subclass is typed as a type checker types it
 
-`_types._builtin_args` gives the item types: the subclass's own arguments (`OrderedDict[str, int]`), else the ones its parameterized base declares (`class Scores(dict[str, int])`, followed up the bases), a generic subclass's arguments substituted for its base's TypeVars (`class Registry(dict[str, T], Generic[T])` as `Registry[int]`), and an unbound TypeVar read as `Any`, PEP 484's reading of a missing argument.
+`_types._builtin_args` gives the item types: the subclass's own arguments (`OrderedDict[str, int]`), else the ones its parameterized base declares (`class Scores(dict[str, int])`, followed up the bases), a generic subclass's arguments substituted for its base's TypeVars (`class Registry(dict[str, T], Generic[T])` as `Registry[int]`), and an unbound TypeVar read as its PEP 696 default, else `Any`, PEP 484's reading of a missing argument, as a generic struct reads one ([a generic class reads its parameters bound](../types/introspection.md#a-generic-class-reads-its-parameters-bound)).
 `Counter[K]` is `dict[K, int]`, as typeshed declares it: a count is an int, and a file's `2.5` is refused.
 Where nothing names the types, as in a bare `OrderedDict`, they are `Any`.
 

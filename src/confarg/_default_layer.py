@@ -43,6 +43,7 @@ from confarg._typed_merge import TypedAt, merge_at, merge_root
 from confarg._types import (
     _all_have_defaults,
     _dict_kv,
+    _direct_struct_subclasses,
     _elem_type,
     _fixed_position,
     _fixed_seq_types,
@@ -54,6 +55,7 @@ from confarg._types import (
     _struct_declared_defaults,
     _struct_fields,
     _struct_required,
+    _tagged_struct,
     _union_args_no_none,
     _union_has_seq_variant,
     _union_tag_shadowed,
@@ -362,9 +364,9 @@ def _struct_built_from(tp: Any, node: MergeDict, union_tag: str) -> Any:
         if union_tag in node:
             if not _union_tag_shadowed(tp, union_tag):
                 cls = _tagged_class(node[union_tag])
-                return cls if cls is not None and issubclass(cls, tp) else None
+                return None if cls is None else _tagged_struct(cls, tp)
             return tp if union_tag in _struct_fields(tp) else None
-        return None if any(_is_struct(s) for s in tp.__subclasses__()) else tp
+        return None if _direct_struct_subclasses(tp) else tp
     except _INTROSPECTION_ERRORS:
         return None
 
@@ -381,8 +383,10 @@ def _union(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
     if not isinstance(node, dict) or walk.union_tag not in node or _union_tag_shadowed(tp, walk.union_tag):
         return _untyped(node)
     cls = _tagged_class(node[walk.union_tag])
-    matching = [v for v in variants if cls is not None and _is_struct(v) and issubclass(cls, v)]
-    return _struct(cls, node, path, walk) if len(matching) == 1 else _untyped(node)
+    # A generic parameterized apiece (Box[int] | Box[str]) matches once per binding, which only
+    # construction picks, by the value: no binding is certain.
+    matching = [b for v in variants if cls is not None and _is_struct(v) and (b := _tagged_struct(cls, v)) is not None]
+    return _struct(matching[0], node, path, walk) if len(matching) == 1 else _untyped(node)
 
 
 def _sequence_taking_ops(variants: list[Any]) -> Any:
