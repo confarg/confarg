@@ -12,6 +12,7 @@ import functools
 import inspect
 import itertools
 import types
+import typing
 import weakref
 from collections import Counter, deque
 from collections.abc import (
@@ -191,7 +192,7 @@ def _dc_fields(tp: Any) -> Mapping[str, Any]:
     cls = _class_of(tp)
     hints = get_type_hints(cls)
     stored = _bind_hints(tp, {f.name: hints[f.name] for f in dataclasses.fields(cls)})
-    return types.MappingProxyType({name: _resolve_type(h) for name, h in stored.items()})
+    return types.MappingProxyType({name: _resolve_type(_as_state(h)) for name, h in stored.items()})
 
 
 def _dataclass_factory_default() -> Any:
@@ -219,7 +220,8 @@ def _dc_member_hints(tp: Any, names: Iterable[str], *, include_extras: bool = Fa
     declared = cls.__dataclass_fields__
     own = get_type_hints(cls, include_extras=include_extras)
     hints = {name: own[name] for name in names if name in declared and name in own}
-    return _bind_hints(tp, {name: h.type if isinstance(h, dataclasses.InitVar) else h for name, h in hints.items()})
+    bound = _bind_hints(tp, {name: h.type if isinstance(h, dataclasses.InitVar) else h for name, h in hints.items()})
+    return {name: _as_member(h) for name, h in bound.items()}
 
 
 def _is_none_type(tp: Any) -> bool:
@@ -631,6 +633,158 @@ def _unify(pattern: Any, actual: Any, solved: dict[Any, Any]) -> bool:
         origin is get_origin(actual)
         and len(args) == len(actual_args)
         and all(_unify(p, a, solved) for p, a in zip(args, actual_args, strict=True))
+    )
+
+
+# --- Descriptor-typed fields: what __set__ takes, what __get__ gives ---------------------------
+
+
+def _descriptor_class(tp: Any) -> type | None:
+    """Return the data descriptor class the annotation *tp* names, bare or parameterized; None for any other.
+
+    A class whose instances define ``__set__``: a dataclass field annotated by one is set
+    through it, as a type checker reads it.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-descriptor-typed-field-takes-what-its-__set__-takes
+    """
+    cls = _class_of(_resolve_type(tp))
+    return cls if isinstance(cls, type) and _defining_class(cls, "__set__") is not None else None
+
+
+def _defining_class(cls: type, method: str) -> type | None:
+    """Return the class of *cls*'s MRO defining *method*, where the descriptor protocol looks it up; None for none."""
+    return next((c for c in cls.__mro__ if method in c.__dict__), None)
+
+
+# The descriptor protocol calls __set__(self, instance, value) and __get__(self, instance, owner).
+_INSTANCE, _VALUE = 1, 2
+
+
+def _descriptor_input(tp: Any) -> Any:
+    """Return the type the descriptor annotation *tp*'s ``__set__`` takes as its value, its parameters bound.
+
+    The union of an overloaded ``__set__``'s values, an unannotated one joining as ``Any``,
+    as a type checker joins them; ``Any`` where no value is annotated, or the hints cannot be read.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-descriptor-typed-field-takes-what-its-__set__-takes
+    """
+
+    def the_value(hints: Mapping[str, Any], params: list[str]) -> Any:
+        return hints.get(params[_VALUE], Any) if len(params) > _VALUE else Any
+
+    return _descriptor_hint(tp, "__set__", the_value)
+
+
+def _descriptor_held(tp: Any) -> Any:
+    """Return the type the descriptor annotation *tp*'s ``__get__`` gives on an instance, its parameters bound.
+
+    The union of the overloads of ``__get__`` an instance reaches, one whose instance
+    parameter is ``None`` being class access; ``Any`` where it is not annotated, the hints
+    cannot be read, or the class defines no ``__get__``.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-descriptor-typed-field-takes-what-its-__set__-takes
+    """
+
+    def on_an_instance(hints: Mapping[str, Any], params: list[str]) -> Any:
+        if len(params) > _INSTANCE and hints.get(params[_INSTANCE], Any) in (None, types.NoneType):
+            return None  # the overload for class access
+        return hints.get("return", Any)
+
+    return _descriptor_hint(tp, "__get__", on_an_instance)
+
+
+def _descriptor_hint(tp: Any, method: str, pick: Callable[[Mapping[str, Any], list[str]], Any]) -> Any:
+    """Return what *pick* reads off the descriptor *tp*'s *method*'s hints, each overload's joined, bound by *tp*.
+
+    ``Any`` where they cannot be read: a method in C, as ``property``'s, has neither hints
+    nor the module :func:`typing.get_overloads` keys on.
+    """
+    resolved = _resolve_type(tp)
+    owner = _defining_class(_class_of(resolved), method)
+    if owner is None or not callable(fn := owner.__dict__[method]):
+        return Any
+    picked: list[Any] = []
+    try:
+        for variant in typing.get_overloads(fn) or [fn]:
+            hints = _type_hints(variant, owner=owner)
+            if (hint := pick(hints, list(inspect.signature(variant).parameters))) is not None:
+                picked.append(hint)
+    except (_UnresolvedHintsError, AttributeError, ValueError, TypeError):
+        return Any
+    if not picked:
+        return Any
+    # Union[(x,)] would respell an `X | Y` hint as Union[X, Y], which messages print.
+    joined = picked[0] if len(picked) == 1 else Union[tuple(picked)]  # noqa: UP007  # a runtime union of hints
+    return _bind_hints(resolved, {method: joined}, owner=owner)[method]
+
+
+def _as_member(hint: Any) -> Any:
+    """Return the dataclass field annotation *hint* as a member a channel sets: a descriptor's as ``__set__`` takes.
+
+    ``Annotated`` metadata stays on the type it is read as.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-descriptor-typed-field-takes-what-its-__set__-takes
+    """
+    return _through_descriptor(hint, _descriptor_input)
+
+
+def _as_state(hint: Any) -> Any:
+    """Return the dataclass field annotation *hint* as the state ``dump()`` reads: a descriptor's as ``__get__`` gives.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-descriptor-typed-field-takes-what-its-__set__-takes
+    """
+    return _through_descriptor(hint, _descriptor_held)
+
+
+def _through_descriptor(hint: Any, read: Callable[[Any], Any]) -> Any:
+    """Return *hint* with the descriptor it names replaced by *read* of it.
+
+    The wrappers :func:`_resolve_type` sees through are walked alike: ``Final`` and
+    ``Annotated`` are kept, their metadata on the type read; an alias gives its value.
+    """
+    if _descriptor_class(hint) is None:
+        return hint
+    if type(hint).__name__ == "TypeAliasType":
+        return _through_descriptor(hint.__value__, read)
+    if get_origin(hint) is Annotated:
+        inner, *metadata = get_args(hint)
+        return Annotated[(_through_descriptor(inner, read), *metadata)]
+    if get_origin(hint) is Final:
+        return Final[_through_descriptor(get_args(hint)[0], read)]
+    return read(hint)
+
+
+def _self_defaulting_descriptor(tp: Any, name: str) -> str:
+    """Return the name of the data descriptor the dataclass *tp*'s field *name* defaults to, ``""`` for none.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-descriptor-returning-itself-on-class-access-is-no-default
+    """
+    cls = _class_of(_resolve_type(tp))
+    field = getattr(cls, "__dataclass_fields__", {}).get(name)
+    if field is None or not _defaults_to_its_descriptor(cls, name, field.default):
+        return ""
+    return type(field.default).__name__
+
+
+def _defaults_to_its_descriptor(cls: type, name: str, default: Any) -> bool:
+    """True if the dataclass *cls*'s field *name* defaults to the data descriptor installed for it.
+
+    A descriptor whose ``__get__`` returns itself on class access hands it to ``dataclasses``
+    as the field's default, which is no value of the field: the field reads as required.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-descriptor-returning-itself-on-class-access-is-no-default
+    """
+    return (
+        dataclasses.is_dataclass(cls)
+        and default is inspect.getattr_static(cls, name, None)
+        and hasattr(type(default), "__set__")
     )
 
 
@@ -1210,7 +1364,9 @@ def _init_params(tp: Any) -> _InitParams:
     """Return the one walk of *tp*'s constructor signature every struct question reads.
 
     The members a channel sets, a dataclass's included (:func:`_constructor_parameters`).
-    Cached per class; it reads no annotation, so its answer holds however they resolve.
+    Cached per class; it reads no annotation, so its answer holds however they resolve. Beyond
+    the signature, it reads a dataclass's fields and class attributes, a default that is the
+    field's own descriptor being none (:func:`_defaults_to_its_descriptor`).
 
     Raises:
         ValueError: If the signature cannot be read (nothing is cached).
@@ -1219,13 +1375,18 @@ def _init_params(tp: Any) -> _InitParams:
     Dev Notes:
         docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
     """
-    params, constructor = _constructor_parameters(_class_of(tp))
+    cls = _class_of(tp)
+    params, constructor = _constructor_parameters(cls)
     var_kinds = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
     variadic = {p.kind: p.name for p in params if p.kind in var_kinds}
     return _InitParams(
         names=tuple(p.name for p in params),
         defaults=types.MappingProxyType(
-            {p.name: p.default for p in params if p.default is not inspect.Parameter.empty},
+            {
+                p.name: p.default
+                for p in params
+                if p.default is not inspect.Parameter.empty and not _defaults_to_its_descriptor(cls, p.name, p.default)
+            },
         ),
         var=_VarParams(variadic.get(inspect.Parameter.VAR_POSITIONAL), variadic.get(inspect.Parameter.VAR_KEYWORD)),
         positional=_PositionalParams.of(params),

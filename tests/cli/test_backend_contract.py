@@ -56,6 +56,7 @@ from confarg.exceptions import (
     UnknownArgumentError,
     UnsafeExpressionError,
 )
+from tests import _descriptors as _d
 from tests import _generics as _g
 from tests._loaders import ArgparseLoader, ClickLoader, CycloptsLoader, TyperLoader, VanillaLoader
 from tests.conftest import AppConfig, CacheConfig, DbConfig, OneOf, WithCollections, make_target
@@ -10560,3 +10561,48 @@ class TestFieldMetaUnderWrappers:
         """The flag's help and metavar are the ``FieldMeta``'s, whichever wrapper holds the ``Annotated``."""
         spec = next(s for s in build_static_flags(_WrappedMeta) if s.name == name)
         assert (spec.help, spec.metavar) == (meta, meta.upper())
+
+
+class TestDescriptorFieldContract:
+    """A dataclass field annotated by a data descriptor takes what ``__set__`` takes, on every front-end (FEAT-40)."""
+
+    def test_a_str_reaches_the_descriptor(self, loader: ConfargLoader) -> None:
+        """``locate: LocatorField = LocatorField()`` takes ``Locator | str``; the descriptor converts the str."""
+        assert loader.load(_d.PartSpec, argv=["--locate", "foo*"], env={}).locate == _d.Pattern(pattern="foo*")
+
+    def test_a_struct_variant_of_the_input_type_is_reached_by_its_tag(self, loader: ConfargLoader) -> None:
+        """The ``Locator`` variant of ``Locator | str`` is set field by field once a tag names its class."""
+        argv = ["--locate.class", f"{_d.__name__}.Pattern", "--locate.pattern", "p"]
+        assert loader.load(_d.PartSpec, argv=argv, env={}).locate == _d.Pattern(pattern="p")
+
+    def test_the_annotation_alone_is_read_alike(self, loader: ConfargLoader) -> None:
+        """No descriptor installed, the conversion in ``__post_init__``: the annotation still says ``Locator | str``."""
+        assert loader.load(_d.Annotated_, argv=["--locate", "q"], env={}).locate == _d.Pattern(pattern="q")
+
+    def test_the_environment_reaches_it_alike(self, loader: ConfargLoader) -> None:
+        """A variable is coerced to the input type as the flag is."""
+        result = loader.load(_d.PartSpec, argv=[], env={"APP_LOCATE": "foo*"}, env_prefix="APP_")
+        assert result.locate == _d.Pattern(pattern="foo*")
+
+    def test_a_generic_descriptor_binds_its_parameters(self, loader: ConfargLoader) -> None:
+        """``Converted[tuple[int, int], int]`` takes ``tuple[int, int] | int``; class access gives the default."""
+        assert loader.load(_d.Shapes, argv=["--size", "3", *_d.SHAPES_REQUIRED], env={}).size == (3, 3)
+        assert loader.load(_d.Shapes, argv=_d.SHAPES_REQUIRED, env={}).size == (1, 1)
+
+    def test_a_handle_into_a_registry(self, loader: ConfargLoader) -> None:
+        """A ``__set__`` taking a str alone makes the field a str to every channel."""
+        assert loader.load(_d.Step, argv=["--transform", "resize"], env={}).transform == _d.Resize(size=3)
+
+    def test_a_descriptor_returning_itself_on_class_access_is_required(self, loader: ConfargLoader) -> None:
+        """The dataclass took the descriptor as the default, which is no value of the field."""
+        with pytest.raises((MissingFieldError, SystemExit)):
+            loader.load(_d.SelfDefault, argv=[], env={})
+
+
+class TestDescriptorFieldSpaceSeparatedContract:
+    """A descriptor's input type takes its arity as the same union field would."""
+
+    def test_a_fixed_tuple_variant_takes_its_run(self, space_sep_loader: ConfargLoader) -> None:
+        """``--size 3 4`` fills the ``tuple[int, int]`` variant, as on ``size: tuple[int, int] | int``."""
+        argv = ["--size", "3", "4", *_d.SHAPES_REQUIRED]
+        assert space_sep_loader.load(_d.Shapes, argv=argv, env={}).size == (3, 4)

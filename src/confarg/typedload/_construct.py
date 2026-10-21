@@ -68,6 +68,7 @@ from confarg._types import (
     _Pinned,
     _resolve_type,
     _scalar_read_as,
+    _self_defaulting_descriptor,
     _spelled_position,
     _src_type,
     _StrToken,
@@ -859,7 +860,7 @@ def _construct_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str)
         elif _is_struct_variant(ft) and _all_have_defaults(ft):
             kwargs[name] = build_from_nothing(lambda ft=ft, fp=fp: _construct_struct(ft, {}, fp, union_tag), ft, fp)
         else:
-            raise MissingFieldError(fp, ft)
+            raise MissingFieldError(fp, ft, descriptor=_self_defaulting_descriptor(tp, name))
 
     var = _var_params(tp)
     var_kw = dict(kwargs.pop(var.keyword, {})) if var.keyword else {}

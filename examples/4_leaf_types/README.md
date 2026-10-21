@@ -179,3 +179,81 @@ confarg.register_leaf_type(Int, coerce_int, serialize=serialize_int)
 
 `serialize` defaults to `str`, which is the wire form of types like `IPv4Address`.
 Our `Int` is not one of them — `str(Int(42))` is the debugging form `Int(value=42)`, which `coerce_int` would refuse on the way back in — so we pass an explicit serializer, and a dumped configuration loads again unchanged.
+
+## A field that takes more than it holds
+
+Sometimes a field holds an object, but a shorter spelling would do to configure it: the pattern of a `Locator`, or a handle into a registry of them.
+Widening the field's type to `Locator | str` would let the configuration through, but every piece of code reading the field would then have to check which of the two it got.
+
+A [descriptor](https://docs.python.org/3/howto/descriptor.html) states both types in plain Python: its `__set__` says what the field takes, its `__get__` what it holds, and the conversion between them is its own.
+
+<!-- snippet: descriptor.py#LocatorField -->
+```python
+class LocatorField:
+    """Hold a Locator, given as one or as the pattern of one."""
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self._attr = "_" + name
+
+    def __get__(self, obj: object, objtype: Any = None) -> Locator:
+        if obj is None:
+            raise AttributeError  # no default: the field is required
+        return getattr(obj, self._attr)
+
+    def __set__(self, obj: object, value: Locator | str) -> None:
+        setattr(obj, self._attr, Pattern(pattern=value) if isinstance(value, str) else value)
+```
+
+<!-- snippet: descriptor.py#Config -->
+```python
+@dataclass
+class Config:
+    """Configuration whose locate field takes a str as well as a Locator."""
+
+    locate: LocatorField = LocatorField()
+```
+
+Type checkers read `Config(locate="left_eye")` as valid and `config.locate` as a `Locator`, and so does confarg: `locate` takes a `Locator | str` from every source, and the descriptor turns a string into a `Pattern`.
+
+```console
+$ uv run descriptor.py --locate left_eye
+Config(locate=Pattern(pattern='left_eye'))
+$ uv run descriptor.py --locate.class __main__.Pattern --locate.pattern left_eye
+Config(locate=Pattern(pattern='left_eye'))
+```
+
+<!--
+```console
+$ uv run descriptor_argparse.py --locate left_eye
+Config(locate=Pattern(pattern='left_eye'))
+$ uv run descriptor_argparse.py --locate.class __main__.Pattern --locate.pattern left_eye
+Config(locate=Pattern(pattern='left_eye'))
+```
+-->
+<!--
+```console
+$ uv run descriptor_click.py --locate left_eye
+Config(locate=Pattern(pattern='left_eye'))
+$ uv run descriptor_click.py --locate.class __main__.Pattern --locate.pattern left_eye
+Config(locate=Pattern(pattern='left_eye'))
+```
+-->
+<!--
+```console
+$ uv run descriptor_cyclopts.py --locate left_eye
+Config(locate=Pattern(pattern='left_eye'))
+$ uv run descriptor_cyclopts.py --locate.class __main__.Pattern --locate.pattern left_eye
+Config(locate=Pattern(pattern='left_eye'))
+```
+-->
+<!--
+```console
+$ uv run descriptor_typer.py --locate left_eye
+Config(locate=Pattern(pattern='left_eye'))
+$ uv run descriptor_typer.py --locate.class __main__.Pattern --locate.pattern left_eye
+Config(locate=Pattern(pattern='left_eye'))
+```
+-->
+
+What `__get__` returns when its instance is `None` is the field's default; raising `AttributeError` there, as above, makes the field required.
+[`confarg.dump`](https://confarg.github.io/confarg/reference/#confarg.dump) writes what the field holds, the `Locator`, which reads back since the field takes a `Locator` too.
