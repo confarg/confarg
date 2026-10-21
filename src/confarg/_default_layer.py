@@ -32,6 +32,7 @@ from confarg._merge import (
     MergeAt,
     _apply_list_ops,
     _DeleteSentinel,
+    _holds_list_ops,
     _is_pin_dict,
     _merge_existing_value,
     _replace_base,
@@ -310,7 +311,7 @@ def _untyped_lists(value: Any, path: DataPath) -> Any:
         return _copied_if_changed(value, [_untyped_lists(v, (*path, i)) for i, v in enumerate(value)])
     if not isinstance(value, dict):
         return value
-    if any(isinstance(k, ListOp) for k in value) and not _carries_an_expression(value):
+    if _holds_list_ops(value) and not _carries_an_expression(value):
         applied = _over_nothing(value, _spelled(path), _SHAPE)
         if applied is not None:
             return [_untyped_lists(v, (*path, i)) for i, v in enumerate(applied)]
@@ -373,7 +374,7 @@ def _union(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
     variants = [_resolve_type(v) for v in _union_args_no_none(tp)]
     if len(variants) == 1:
         return _node(variants[0], node, path, walk)
-    if isinstance(node, dict) and any(isinstance(k, ListOp) for k in node):
+    if _holds_list_ops(node):
         sequence = _sequence_taking_ops(variants)
         if sequence is not None:
             return _sequence(sequence, node, path, walk)
@@ -515,7 +516,7 @@ def _sequence(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
 
 def _applied_over_nothing(tp: Any, node: MergeDict, path: DataPath, walk: _Walk) -> list[Any] | None:
     """Return the list the ops a variable-length sequence node of type *tp* holds make, None if it holds none."""
-    if not any(isinstance(k, ListOp) for k in node):
+    if not _holds_list_ops(node):
         return None
     return _over_nothing(node, _spelled(path), merge_at(tp, walk.union_tag))
 
@@ -528,7 +529,7 @@ def _lay_unset_positions(tp: Any, out: MergeDict, path: DataPath, walk: _Walk) -
     is recorded as untouched, and taken out again before construction, which fills it itself.
     Only for resolution, and only on a node holding no pending op.
     """
-    if not walk.for_resolution or any(isinstance(k, ListOp) for k in out):
+    if not walk.for_resolution or _holds_list_ops(out):
         return
     held = {_fixed_position(tp, k) for k in out}
     names = list(_namedtuple_fields(tp)) if _type_kind(tp) is _TypeKind.NAMEDTUPLE else []

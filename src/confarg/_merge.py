@@ -73,6 +73,18 @@ type MergeDict = dict[str | ListOp, Any]
 #: Every list op, keyed by the reserved key a file writes it with.
 MERGE_OP_KEYS: dict[str, ListOp] = {op.value: op for op in ListOp}
 
+_LIST_OPS: frozenset[ListOp] = frozenset(ListOp)
+
+
+def _holds_list_ops(node: Any) -> bool:
+    """Return whether *node* is a dict holding a pending list op, which only the list it makes means anything as.
+
+    Answered in constant time whatever else the dict holds, by looking the few ops up in it, so
+    asking it of every node a path crosses costs nothing per sibling (BUG-264).
+    """
+    return isinstance(node, dict) and not node.keys().isdisjoint(_LIST_OPS)
+
+
 # The suffixes a flag or a variable carries on its path to append to the field it names
 # (``--xs+``, ``APP_XS+``) or to delete it (``--d.k-``, ``--xs.0-``). A file spells both in the
 # value (``_read_file_ops``), since its keys are its data.

@@ -39,6 +39,7 @@ from confarg._merge import (
     _deep_merge,
     _DeleteSentinel,
     _drop_deleted_bases,
+    _holds_list_ops,
     _resolve_index,
     _to_append_list,
 )
@@ -276,7 +277,7 @@ class _LayerReading:
             return node if all(a is b for a, b in zip(items, node, strict=True)) else items
         if not isinstance(node, dict):
             return node
-        if any(isinstance(k, ListOp) for k in node) and (listed := self._listed(node, below, path, states)) is not None:
+        if _holds_list_ops(node) and (listed := self._listed(node, below, path, states)) is not None:
             return listed
         keys = () if self.declaring else _locals_keys_reached(states, self.target, self.union_tag, depth=len(path))
         naming = next((n for n in (node, below) if names_something(n, self.union_tag)), None)

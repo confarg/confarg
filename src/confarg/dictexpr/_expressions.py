@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
 from confarg._depth import Copies, positions_below
-from confarg._merge import ListOp, MergeDict
+from confarg._merge import ListOp, MergeDict, _holds_list_ops
 from confarg.exceptions import (
     CircularReferenceError,
     ExpressionEvalError,
@@ -628,11 +628,6 @@ def resolve_expressions(
             _settle_pending(data, path, unresolved, settle)
 
     return dict(data)
-
-
-def _holds_list_ops(node: Any) -> bool:
-    """Whether *node* is a dict holding a pending list op, which only the list it makes means anything as."""
-    return isinstance(node, dict) and any(isinstance(k, ListOp) for k in node)
 
 
 def _pending_prefixes(data: MergeDict, path: Sequence[str | ListOp], *, crossed: bool = False) -> list[_Path]:
