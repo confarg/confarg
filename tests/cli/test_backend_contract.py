@@ -159,6 +159,16 @@ class _WithStrType:
 
 
 @dataclass
+class _WithType:
+    value: type
+
+
+@dataclass
+class _WithStrColor:
+    value: str | Color
+
+
+@dataclass
 class _WithIntFloat:
     value: int | float = 0
 
@@ -1915,6 +1925,30 @@ class TestStealingContract:
         cfg = loader.load(_WithStrType, argv=["--value.str", "int"], env={})
         assert cfg.value == "int"
         assert type(cfg.value) is str
+
+    def test_a_config_file_sets_a_type_field(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A --config file's dotted path sets a type field, as the flag does (BUG-230)."""
+        path = f"{_StealMarker.__module__}.{_StealMarker.__qualname__}"
+        cfg = tmp_yaml(f"value: {path}\n")
+        assert loader.load(_WithType, argv=["--config", str(cfg)], env={}).value is _StealMarker
+
+    @pytest.mark.parametrize(
+        ("target", "text", "expected"),
+        [(_WithStrType, "int", int), (_WithStrColor, "red", Color.RED)],
+        ids=["type", "enum"],
+    )
+    def test_a_config_file_string_is_stolen_as_its_token_is(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        target: type,
+        text: str,
+        expected: object,
+    ) -> None:
+        """A file's string meets the union in the rank the same text on the CLI does (BUG-230)."""
+        cfg = tmp_yaml(f"value: {text}\n")
+        assert loader.load(target, argv=["--value", text], env={}).value is expected
+        assert loader.load(target, argv=["--config", str(cfg)], env={}).value is expected
 
     def test_float_steals_over_int(self, loader: ConfargLoader) -> None:
         """--value 5 lands on float for int | float: rank decides, not declaration order."""
@@ -5395,6 +5429,17 @@ class _TypedLeaves:
     sub: Path = Path()
 
 
+@dataclass
+class _UnionLeaves:
+    """A union leaf an expression compares with an Enum field, and one only the str variant takes."""
+
+    a: str | _Colour = "x"
+    b: _Colour = _Colour.RED
+    t: str | _Colour = "x"
+    same: bool = False
+    text: str = ""
+
+
 _TYPED_LEAF_EXPRESSIONS = {"tag": "${colour}@${p}", "copy": "${colour}", "low": "${level == 1}", "sub": "${p / 'sub'}"}
 
 
@@ -5427,6 +5472,30 @@ class TestTypedLeafReadContract:
         """``merge()`` keeps what was typed, as it keeps a file's string; ``build()`` reads the object."""
         merged = loader.merge(_TypedLeaves, argv=["--p", "/b", "--colour", "RED", "--level", "1"], env={})
         assert (merged["p"], merged["colour"], merged["level"]) == ("/b", "RED", "1")
+
+    @pytest.mark.parametrize("source", ["argv", "env", "file"])
+    def test_a_union_leaf_reads_as_the_object_construction_builds(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        source: str,
+    ) -> None:
+        """A union's leaf reads as the variant construction picks, so `${a == b}` is the built `a == b` (BUG-230).
+
+        `str | _Colour` builds the member from `red` on every channel, and the expression reads
+        that member; `hello`, which only the str variant takes, reads as the text.
+        """
+        argv = ["--same", "${a == b}", "--text", "${t}"]
+        env: dict[str, str] = {}
+        if source == "argv":
+            argv += ["--a", "red", "--t", "hello"]
+        elif source == "env":
+            env = {"X_A": "red", "X_T": "hello"}
+        else:
+            argv += ["--config", str(tmp_yaml("a: red\nt: hello\n"))]
+        cfg = loader.load(_UnionLeaves, argv=argv, env=env, env_prefix="X_")
+        assert cfg.a is _Colour.RED
+        assert (cfg.same, cfg.text) == (True, "hello")
 
 
 # ---------------------------------------------------------------------------

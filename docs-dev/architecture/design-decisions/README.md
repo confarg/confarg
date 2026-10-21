@@ -81,6 +81,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [Classfn names an instance method](classfn-names-an-instance-method.md) | `classfn:` fields build the owner the path names; static and class methods need no owner; `call:` takes any callable spec as `bind:` does |
 | [Class names the type it builds](class-names-the-type-it-builds.md) | `class:` and a `classfn:` owner are built exactly as named, never through subclass dispatch |
 | [Stealing rule for text in unions](stealing-rule-for-text-in-unions.md) | a total, fixed rank; declaration order is only a tie-break |
+| [A union ranks every value](a-union-ranks-every-value.md) | a file's value meets the rank a token does; only a token is converted, any value is recognized |
 | [A registered leaf is never a struct variant](registered-leaf-is-never-a-struct-variant.md) | registration is a promise that the type is opaque to every implicit decision |
 | [An explicit tag opts a leaf back in](an-explicit-tag-opts-a-leaf-back-in.md) | …and the tag is the one thing that may take that promise back |
 | [A named tag is imported before registration](a-named-tag-is-imported-before-registration.md) | five readers of `__subclasses__()` agree because the import happens first |

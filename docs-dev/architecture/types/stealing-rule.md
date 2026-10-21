@@ -2,8 +2,8 @@
 
 ## Stealing rule
 
-When a token meets a union of leaf types, the **highest-ranked** variant that accepts it
-"steals" it. The rank is fixed; the order the union happens to be declared in decides nothing
+When a value meets a union of leaf types, the **highest-ranked** variant that accepts it
+"steals" it, a token and a file's value alike ([a union ranks every value](../design-decisions/a-union-ranks-every-value.md#a-union-ranks-every-value)). The rank is fixed; the order the union happens to be declared in decides nothing
 (maintainer-confirmed, and what `examples/7_stealing_rule/README.md` teaches):
 
 ```
@@ -13,8 +13,8 @@ custom (registered) leaf type > Enum > every other leaf kind > float > int > boo
 `_coerce._steal_rank` is the one place that order is written down and `_steal_order` sorts by
 it, stably — so declaration order still breaks ties *within* a rank, and nowhere else
 ([invariants](../invariants.md#delegate-to-the-canonical-function)). Two callers ask: the scalar-variant
-loop of a union (`_construct._coerce_scalar_variants`) and the members of a `Literal`
-(`_coerce._match_literal_str_token`, ranking each member by the type of its value).
+walk of a union (`_construct._ranked_scalar_variants`, walked by `_first_scalar_variant_taking`) and the members of a `Literal`
+(`_coerce._coerce_literal_value` and `_match_literal_str_token`, ranking each member by the type of its value). The union walk is also what an expression reads a union's leaf through (`_construct.read_union_leaf`), so `${v}` reads the variant construction builds ([values and references](../expressions/values-and-references.md#a-typed-leaf-reads-as-its-object)).
 
 The kinds the rule does not name — type references (`type`, `type[X]`), `Literal`, a `bytes`
 Literal member — share the one rank below `Enum`, ahead of the numbers
@@ -22,11 +22,11 @@ Literal member — share the one rank below `Enum`, ahead of the numbers
 
 Details that are intended:
 
-- the order applies only to tokens; native file values keep declaration order;
+- the order applies to every value, but only a token is *converted*: a file's `"5"` meets `int | str` as text, which `int` refuses, so it is the string. A file's string is *recognized* by a variant that names it — a type reference, an `Enum` member, a `Literal` member, a registered leaf — exactly as the same text on the CLI is;
 - `bool` ranks below `int`, so a numeric token is a number and a bool word is a bool: `1` is
   `1` and `yes` is `True` for `bool | int`. No case handles this: the rank does;
 - `None` is ranked like the rest rather than taken first, so an `Enum` member or a registered
-  leaf that accepts `none` outranks it. Only the none *words* select the `None` variant, never
+  leaf that accepts `none` outranks it. Only a token's none *words* select the `None` variant, never
   the empty token `_coerce_leaf` would also accept for a bare `None` target — `str | None` must
   keep `""` a string;
 - scalar variants are tried through `_construct_scalar`, the canonical single-value
@@ -75,9 +75,8 @@ bare `"FOO"` re-reads as `Color.FOO` (BUG-15, closed).
 
 `_reads_back` answers by **running the reader** — `construct(tp, data)`, then a
 same-type-and-equal comparison (`is` first, so a `float('nan')` that passes through unchanged
-still counts). Re-deriving the answer, by mirroring the stealing rule or the declaration order
-native values keep, would be a second model of `_construct_union` that drifts the moment the
-first one changes ([invariants](../invariants.md#delegate-to-the-canonical-function)). The same function
+still counts). Re-deriving the answer, by mirroring the stealing rule, would be a second model
+of `_construct_union` that drifts the moment the first one changes ([invariants](../invariants.md#delegate-to-the-canonical-function)). The same function
 vets the cast before it is written, so a cast that would not read back either is never emitted.
 
 A union with one variant beside `None` is not read back at all: only a token selects `None`, and a
@@ -93,6 +92,5 @@ A struct variant is unaffected: it is disambiguated by the class tag (`_needs_ta
 and `tag_policy` stays a class-tag policy — `"always"` tags structs and never casts leaves
 ([design decisions](../design-decisions/a-stolen-leaf-dumps-with-its-cast.md#a-stolen-leaf-dumps-with-its-cast)).
 
-When no cast can name the variant — an unregistered `Enum` losing its scalar to a `str` variant,
-the case `__cast__`'s vocabulary cannot spell — the bare value is written and a `ConfargWarning`
+When no cast can name the variant — an unregistered `Enum` losing its scalar to another `Enum` of its rank that shares the value, the case `__cast__`'s vocabulary cannot spell — the bare value is written and a `ConfargWarning`
 names the path ([limitations](../limitations.md#callables-and-serialization)).

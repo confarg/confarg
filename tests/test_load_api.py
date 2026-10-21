@@ -315,7 +315,7 @@ class _Dirs:
 
 @dataclasses.dataclass
 class _Typed:
-    """Leaves an expression reads as their object only where one Enum or registered type is certain."""
+    """Leaves an expression reads as their object where construction builds one, and an ``Any`` it reads as written."""
 
     colour: _Colour = _Colour.RED
     again: _Colour = _Colour.RED
@@ -350,11 +350,15 @@ class TestAnExpressionReadsATypedLeaf:
         """Below a list, an optional and a struct, and through a subtree read, the leaf is its object."""
         assert confarg.resolve(_Typed, raw)["out"] == out
 
-    @pytest.mark.parametrize("field", ["either", "anything"])
-    def test_an_uncertain_type_reads_as_written(self, field: str) -> None:
-        """A union of several variants and ``Any`` leave the string a string, as a token is left there."""
+    def test_an_any_leaf_reads_as_written(self) -> None:
+        """``Any`` leaves the string a string, as construction does."""
         with pytest.raises(confarg.exceptions.ExpressionEvalError, match="'str' and 'str'"):
-            confarg.resolve(_Typed, {field: "/x", "out": f"${{{field} / 'y'}}"})
+            confarg.resolve(_Typed, {"anything": "/x", "out": "${anything / 'y'}"})
+
+    def test_a_union_leaf_reads_as_the_variant_construction_picks(self) -> None:
+        """``Path | str`` builds a file's ``/x`` as a ``Path``, and an expression reads that ``Path`` (BUG-230)."""
+        assert confarg.resolve(_Typed, {"either": "/x", "out": "${either / 'y'}"})["out"] == "/x/y"
+        assert confarg.build(_Typed, {"either": "/x"}).either == Path("/x")
 
     def test_an_earlier_result_is_read_as_its_object_too(self) -> None:
         """``again`` holds the dump form ``red`` once resolved, and still reads as the member ``other`` is."""

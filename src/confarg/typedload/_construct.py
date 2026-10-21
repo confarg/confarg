@@ -84,6 +84,7 @@ from confarg.exceptions import (
 )
 from confarg.typedload._coerce import (
     _FALSY,
+    _LAST_OBJECT_RANK,
     _NONE_TOKENS,
     _TRUTHY,
     _coerce_leaf,
@@ -91,7 +92,9 @@ from confarg.typedload._coerce import (
     _held_by_any,
     _is_struct_variant,
     _is_taggable_leaf,
+    _reads_as_object,
     _steal_order,
+    _steal_rank,
     _type_kind,
     _TypeKind,
 )
@@ -1166,6 +1169,75 @@ def _try_coll_variants(coll_vars: list[Any], data: Any, path: FieldPath, union_t
     return _first_constructible(coll_vars, data, path, union_tag)
 
 
+class _LeafVariants(NamedTuple):
+    """A union's variants that are no struct, by the rung of ``_construct_union_leaf`` that tries them."""
+
+    fixed: list[Any]
+    collections: list[Any]
+    scalars: list[Any]
+    anything: list[Any]
+
+
+def _leaf_variants(non_none: list[Any]) -> _LeafVariants:
+    """Sort the non-``None`` variants *non_none* of a union into the rungs a value meets them on."""
+    anything = [v for v in non_none if _holds_anything(v)]
+    leaf_vars = [v for v in non_none if not _is_struct_variant(_resolve_type(v)) and v not in anything]
+    fixed = [v for v in leaf_vars if _fixed_seq_types(_resolve_type(v)) is not None]
+    collections = [
+        v
+        for v in leaf_vars
+        if v not in fixed and (_is_dict(_resolve_type(v)) or _is_varlen_collection(_resolve_type(v)))
+    ]
+    scalars = [v for v in leaf_vars if v not in fixed and v not in collections]
+    return _LeafVariants(fixed, collections, scalars, anything)
+
+
+def _ranked_scalar_variants(all_args: list[Any], scalar_leaf_vars: list[Any], data: Any) -> list[Any]:
+    """Return the scalar variants *data* is offered to, in stealing rank, ``None`` among them for a none word.
+
+    Every value is ranked, a token and a file's value alike: only a token is converted, but any
+    value is recognized by a variant that names it. ``None`` is ranked among the variants rather
+    than taken first, and only a token's none word brings it in.
+
+    Dev Notes:
+        docs-dev/architecture/types/stealing-rule.md#stealing-rule
+    """
+    with_none = scalar_leaf_vars + ([types.NoneType] if _reads_none_word(all_args, data) else [])
+    return _steal_order(with_none, key=_resolve_type)
+
+
+def _first_scalar_variant_taking(
+    ordered: list[Any],
+    all_args: list[Any],
+    data: Any,
+    path: FieldPath,
+    union_tag: str,
+) -> tuple[Any, Any] | None:
+    """Return the first variant of *ordered* that takes *data* with the value it builds, None when none does.
+
+    The one walk of a union's scalar variants, for construction and for what an expression
+    reads. ``None`` is the one variant not built by ``_construct_scalar``: only a none word
+    selects it, never the empty token ``_coerce_leaf`` accepts for a bare ``None`` target. A
+    module that fails while a type reference imports it is not a refusal, and stops the union.
+
+    Dev Notes:
+        docs-dev/architecture/types/stealing-rule.md#stealing-rule
+    """
+    for var in ordered:
+        vr = _resolve_type(var)
+        if vr is types.NoneType:
+            if _selects_none(all_args, data):
+                return var, None
+            continue
+        try:
+            # Not _coerce_leaf: it cannot build type refs (`type`, `type[X]`).
+            # See docs-dev/architecture/types/stealing-rule.md#stealing-rule.
+            return var, _construct_scalar(var, data, path, union_tag)
+        except (TypeCoercionError, ValueError, TypeError):
+            continue
+    return None
+
+
 def _coerce_scalar_variants(
     all_args: list[Any],
     scalar_leaf_vars: list[Any],
@@ -1173,33 +1245,38 @@ def _coerce_scalar_variants(
     path: FieldPath,
     union_tag: str,
 ) -> Any:
-    """Coerce data to one of the scalar leaf variants; returns _UNION_NO_MATCH on failure.
-
-    A token is offered to the variants in stealing rank, ``None`` ranked among them rather than
-    taken first. ``None`` is the one variant not built by ``_construct_scalar``: only a none
-    word selects it, never the empty token ``_coerce_leaf`` accepts for a bare ``None`` target.
+    """Coerce data to one of the scalar leaf variants, in stealing rank; returns _UNION_NO_MATCH on failure.
 
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#stealing-rule
     """
-    if isinstance(data, _StrToken):
-        with_none = scalar_leaf_vars + ([types.NoneType] if _reads_none_word(all_args, data) else [])
-        ordered = _steal_order(with_none, key=_resolve_type)
-    else:
-        ordered = scalar_leaf_vars
-    for var in ordered:
-        vr = _resolve_type(var)
-        if vr is types.NoneType:
-            if _selects_none(all_args, data):
-                return None
-            continue
-        try:
-            # Not _coerce_leaf: it cannot build type refs (`type`, `type[X]`).
-            # See docs-dev/architecture/types/stealing-rule.md#stealing-rule.
-            return _construct_scalar(var, data, path, union_tag)
-        except (TypeCoercionError, ValueError, TypeError):
-            continue
-    return _UNION_NO_MATCH
+    ordered = _ranked_scalar_variants(all_args, scalar_leaf_vars, data)
+    taken = _first_scalar_variant_taking(ordered, all_args, data, path, union_tag)
+    return _UNION_NO_MATCH if taken is None else taken[1]
+
+
+def read_union_leaf(tp: Any, value: Any) -> Any:
+    """Return what an expression reads of the leaf *value* at the union *tp*: the object a variant builds, or *value*.
+
+    The variant is the one construction picks, through the same walk: *value* reads as the
+    object where that variant is an object kind (:func:`_reads_as_object`), and as written
+    anywhere else, for construction to build or refuse. Only the variants that can be an object
+    kind are tried, the ranks above the numbers, so the reading builds no callable.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
+    """
+    all_args = _union_args(tp)
+    scalars = _leaf_variants(_union_args_no_none(tp)).scalars
+    ordered = [
+        v
+        for v in _ranked_scalar_variants(all_args, scalars, value)
+        if _steal_rank(_resolve_type(v)) <= _LAST_OBJECT_RANK
+    ]
+    taken = _first_scalar_variant_taking(ordered, all_args, value, (), _defaults.UNION_TAG)
+    if taken is None or not _reads_as_object(_resolve_type(taken[0])):
+        return value
+    return taken[1]
 
 
 def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, path: FieldPath, union_tag: str) -> Any:
@@ -1213,15 +1290,7 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
         docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
         docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
     """
-    any_vars = [v for v in non_none if _holds_anything(v)]
-    leaf_vars = [v for v in non_none if not _is_struct_variant(_resolve_type(v)) and v not in any_vars]
-    fixed_vars = [v for v in leaf_vars if _fixed_seq_types(_resolve_type(v)) is not None]
-    coll_vars = [
-        v
-        for v in leaf_vars
-        if v not in fixed_vars and (_is_dict(_resolve_type(v)) or _is_varlen_collection(_resolve_type(v)))
-    ]
-    scalar_leaf_vars = [v for v in leaf_vars if v not in fixed_vars and v not in coll_vars]
+    fixed_vars, coll_vars, scalar_leaf_vars, any_vars = _leaf_variants(non_none)
 
     result = _try_fixed_seq_variants(fixed_vars, data, path, union_tag)
     if result is not _UNION_NO_MATCH:

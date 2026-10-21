@@ -1,8 +1,6 @@
 # Stealing rule for text in unions
 
-Text is converted to the most specific type that accepts it, with `str` last, but only for
-untyped channels ([types](../types/stealing-rule.md#stealing-rule)). Coercion happens only when
-the target type allows it, so this is not the YAML "Norway problem".
+Text is converted to the most specific type that accepts it, with `str` last ([types](../types/stealing-rule.md#stealing-rule)). Conversion — to a number, a bool, `None` — happens only for untyped channels and only when the target type allows it, so this is not the YAML "Norway problem". Recognition of a value a variant names applies to every channel, in the same rank ([a union ranks every value](a-union-ranks-every-value.md#a-union-ranks-every-value)).
 
 The rank is **total and fixed**, and the order a union is declared in never enters into it:
 `int | Decimal` and `Decimal | int` read `5` the same way, or the documented rule would only

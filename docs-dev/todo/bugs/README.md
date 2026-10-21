@@ -13,7 +13,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
 | [BUG-114 — Cyclopts cannot register subclasses that share a struct field name](BUG-114-cyclopts-cannot-register-subclasses-that-share-a-struct-field-name.md) | major |  | S | medium | behavior | PR-38 |
-| [BUG-230 — A `type[X]` field refuses the dotted path a file holds, so its own dump does not load](BUG-230-a-type-field-refuses-the-dotted-path-a-file-holds.md) | major |  | S | medium | behavior | PR-5 |
 | [BUG-180 — Cyclopts refuses a flag whose name ends in a star](BUG-180-cyclopts-refuses-a-flag-whose-name-ends-in-a-star.md) | major |  | M | medium | behavior | PR-72 |
 | [BUG-219 — A fragment appended to a list loses its `locals`](BUG-219-a-fragment-appended-to-a-list-loses-its-locals.md) | major |  | M | high | behavior | PR-105 |
 | [BUG-233 — The CLI refuses a nested spec below a `class:` constructor argument](BUG-233-the-cli-refuses-a-nested-spec-below-a-class-constructor-argument.md) | major |  | M | medium | behavior | PR-11 |
@@ -45,5 +44,6 @@ so a parity entry here is a violation nobody has approved, not a design choice.
 | [BUG-236 — A list argument of a class named below a Callable or an `Any` takes one token](BUG-236-a-list-argument-of-a-class-named-below-a-callable-takes-one-token.md) | minor |  | M | high | behavior | PR-5 |
 | [BUG-240 — A `*args` parameter cannot be set under the `args` of `bind:` or `call:`](BUG-240-a-var-positional-parameter-cannot-be-set-under-args.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
+| [BUG-249 — The YAML formatter strips quotes the YAML loader needs](BUG-249-the-yaml-formatter-strips-quotes-the-loader-needs.md) | trivial |  | S | low | none | PR-61 |
 
 <!-- tickets:end -->

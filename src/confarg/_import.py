@@ -12,7 +12,7 @@ import importlib
 import inspect
 from typing import Any
 
-from confarg.exceptions import SymbolImportError
+from confarg.exceptions import SymbolImportError, SymbolNotFoundError
 
 _NOT_FOUND = object()
 
@@ -73,6 +73,10 @@ def _import_dotted(path: str) -> Any:
     against the ``builtins`` module so bare builtin names (``int``, ``str``,
     ``list``, ...) work without a ``builtins.`` prefix.
 
+    An undotted name is looked up in ``builtins`` only, never imported: a module is no class
+    and no callable, so importing one could only run its code. A string that is no dotted
+    path of identifiers names nothing and imports nothing either.
+
     A failure raised *inside* an importable module is kept distinct from "this
     prefix is not a module": only a ``ModuleNotFoundError`` whose ``name`` is the
     prefix itself or one of its ancestors means the prefix is simply not
@@ -80,10 +84,24 @@ def _import_dotted(path: str) -> Any:
     dependency, a failed ``from x import y``, a circular import — comes from a
     module that does exist and is surfaced as
     :class:`~confarg.exceptions.SymbolImportError` rather than masked as a
-    typo'd path. See docs-dev/architecture/types/dotted-imports.md#dotted-imports.
+    typo'd path.
+
+    Raises:
+        SymbolNotFoundError: If nothing answers to *path*: no module, no attribute, or no
+            dotted path of identifiers at all.
+        SymbolImportError: If a module on *path* exists but fails while it is imported.
+
+    Dev Notes:
+        docs-dev/architecture/types/dotted-imports.md#dotted-imports
+        docs-dev/architecture/types/dotted-imports.md#a-path-names-nothing-or-a-module-fails
     """
     parts = path.split(".")
-    for i in range(len(parts), 0, -1):
+    if not all(part.isidentifier() for part in parts):
+        msg = f"Cannot import {path!r}: not a dotted path of identifiers"
+        raise SymbolNotFoundError(msg)
+    # An undotted name is never imported: it is looked up in builtins alone, below.
+    module_prefixes = range(len(parts), 0, -1) if len(parts) > 1 else range(0)
+    for i in module_prefixes:
         module_path = ".".join(parts[:i])
         try:
             obj = importlib.import_module(module_path)
@@ -108,7 +126,7 @@ def _import_dotted(path: str) -> Any:
             obj = functools.reduce(getattr, parts[i:], obj)
         except AttributeError as e:
             msg = f"Cannot import {path!r}: {e}"
-            raise SymbolImportError(msg) from e
+            raise SymbolNotFoundError(msg) from e
         else:
             return obj
     # No importable module prefix matched; fall back to builtins so a bare
@@ -117,7 +135,7 @@ def _import_dotted(path: str) -> Any:
     if obj is not _NOT_FOUND:
         return obj
     msg = f"Cannot import {path!r}: no importable module found in path"
-    raise SymbolImportError(msg)
+    raise SymbolNotFoundError(msg)
 
 
 def _resolve_builtin(parts: list[str]) -> Any:

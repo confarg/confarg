@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import enum
 import math
 import re
 import sys
+import warnings
 from dataclasses import dataclass as _dc
 from dataclasses import field
 from pathlib import Path
@@ -47,6 +49,13 @@ from tests.conftest import (
     WithUnionOverlap,
     make_target,
 )
+
+
+class _Paint(enum.Enum):
+    """An Enum sharing a member value with Color, so the two tie on rank."""
+
+    RED = "red"
+
 
 # Module-level instances used in TestDumpLeafTypes parametrize
 _DL_WithEnum = make_target("color", Color, default=Color.RED)
@@ -403,12 +412,28 @@ class TestDumpStolenLeaf:
         assert result["value"] == pytest.approx(math.pi)
 
     def test_inexpressible_cast_warns_and_dumps_bare(self) -> None:
-        """No __cast__ can name an unregistered Enum, so dump warns instead of lying."""
-        WithStrOrColor = make_target("value", Union[str, Color], default="plain")
-        obj = WithStrOrColor(value=Color.RED)
+        """No __cast__ can name an unregistered Enum another Enum of its rank takes, so dump warns."""
+        WithColorOrPaint = make_target("value", Union[Color, _Paint], default=Color.RED)
+        obj = WithColorOrPaint(value=_Paint.RED)
         with pytest.warns(ConfargWarning, match="value"):
             result = confarg.dump(obj)
         assert result["value"] == "red"
+
+    def test_an_enum_before_str_reads_back_whatever_the_declaration_order(self) -> None:
+        """`str | Color` reads a file's member value back as the member, as a token (BUG-230)."""
+        WithStrOrColor = make_target("value", Union[str, Color], default="plain")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert confarg.dump(WithStrOrColor(value=Color.RED)) == {"value": "red"}
+            assert confarg.dump(WithStrOrColor(value="red")) == {"value": {"__cast__": "str", "__value__": "red"}}
+
+    def test_a_str_naming_a_class_dumps_with_its_cast(self, tmp_path: Path) -> None:
+        """`str | type` holding a path as text keeps it text through a file (BUG-230)."""
+        WithStrOrType = make_target("value", Union[str, type], default="plain")
+        for value in (int, "builtins.int"):
+            path = tmp_path / "out.yaml"
+            confarg.dump_file(WithStrOrType(value=value), path)
+            assert confarg.load(WithStrOrType, argv=[], env={}, files=[path]).value == value
 
     def test_tag_policy_always_does_not_cast_an_unstolen_leaf(self) -> None:
         """'always' is a class-tag policy: a leaf that reads back stays bare under it too."""
