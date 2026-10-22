@@ -30,9 +30,10 @@ def merge_context(target: object, ctx: click.Context, **opts: Unpack[MergeOption
         target: The dataclass type to construct.
         ctx: The :class:`click.Context` returned by Click during command execution.
             Obtain it inside a command with :func:`click.get_current_context`.
-        **opts: The sources to read and how to read them, as for :func:`confarg.merge`;
-            see :class:`confarg.MergeOptions`.  ``argv`` is the list the command was
-            invoked with.
+        **opts: The sources to read and how to read them, as for :func:`confarg.merge`; see
+            :class:`confarg.MergeOptions`.  ``argv`` is the list the command was invoked
+            with. Omitted, an option is the one ``populate_*`` read the sources by; one that
+            differs from it is refused, the framework having split the command line by it.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact. A list
@@ -61,9 +62,10 @@ def from_context(target: object, ctx: click.Context, **opts: Unpack[MergeOptions
         target: The dataclass type to construct.
         ctx: The :class:`click.Context` returned by Click during command execution.
             Obtain it inside a command with :func:`click.get_current_context`.
-        **opts: The sources to read and how to read them, as for :func:`confarg.load`;
-            see :class:`confarg.MergeOptions`.  ``argv`` is the list the command was
-            invoked with.
+        **opts: The sources to read and how to read them, as for :func:`confarg.load`; see
+            :class:`confarg.MergeOptions`.  ``argv`` is the list the command was invoked
+            with. Omitted, an option is the one ``populate_*`` read the sources by; one that
+            differs from it is refused, the framework having split the command line by it.
 
     Returns:
         An instance of ``target`` populated from all sources.

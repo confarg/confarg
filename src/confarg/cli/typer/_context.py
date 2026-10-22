@@ -30,9 +30,10 @@ def merge_context(target: object, ctx: typer.Context, **opts: Unpack[MergeOption
         target: The dataclass type to construct.
         ctx: The :class:`typer.Context` Typer passes to the command function.
             Declare it as a parameter of the command to receive it.
-        **opts: The sources to read and how to read them, as for :func:`confarg.merge`;
-            see :class:`confarg.MergeOptions`.  ``argv`` is the list the command was
-            invoked with.
+        **opts: The sources to read and how to read them, as for :func:`confarg.merge`; see
+            :class:`confarg.MergeOptions`.  ``argv`` is the list the command was invoked
+            with. Omitted, an option is the one ``populate_*`` read the sources by; one that
+            differs from it is refused, the framework having split the command line by it.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact. A list
@@ -61,9 +62,10 @@ def from_context(target: object, ctx: typer.Context, **opts: Unpack[MergeOptions
         target: The dataclass type to construct.
         ctx: The :class:`typer.Context` Typer passes to the command function.
             Declare it as a parameter of the command to receive it.
-        **opts: The sources to read and how to read them, as for :func:`confarg.load`;
-            see :class:`confarg.MergeOptions`.  ``argv`` is the list the command was
-            invoked with.
+        **opts: The sources to read and how to read them, as for :func:`confarg.load`; see
+            :class:`confarg.MergeOptions`.  ``argv`` is the list the command was invoked
+            with. Omitted, an option is the one ``populate_*`` read the sources by; one that
+            differs from it is refused, the framework having split the command line by it.
 
     Returns:
         An instance of ``target`` populated from all sources.

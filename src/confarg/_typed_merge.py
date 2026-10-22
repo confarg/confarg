@@ -23,7 +23,7 @@ from typing import Any, NamedTuple
 from confarg import _defaults
 from confarg._callable import promote_bare_spec
 from confarg._merge import ListOp, MergeAt, MergeDict, _key_spelling
-from confarg._naming import Named, is_arguments, named_child, named_variant
+from confarg._naming import UNREADABLE, Named, is_arguments, named_child, named_variant
 from confarg._parse_cli import _advance_field_type, _takes_callable_shorthand
 from confarg._types import (
     _dict_kv,
@@ -39,9 +39,6 @@ from confarg._types import (
 from confarg.exceptions import ConfargError
 from confarg.typedload._coerce import _coerce_leaf, _type_kind, _TypeKind
 from confarg.typedload._construct import reads_as_new_value
-
-#: What importing a target or a class, or reading its annotations, may raise; the node is then untyped.
-_UNREADABLE = (ConfargError, ImportError, ValueError, TypeError, NameError, AttributeError, KeyError)
 
 
 def merge_root(target: Any, union_tag: str) -> MergeAt:
@@ -150,7 +147,7 @@ def _key_reading(tp: Any) -> _KeyReading:
     """Return how a node of type *tp* reads its keys: as every branch reads them, by spelling where they disagree."""
     try:
         readings = [_branch_key_reading(b) for b in _union_branches(tp)]
-    except _UNREADABLE:
+    except UNREADABLE:
         return _BY_SPELLING
     first = readings[0] if readings else _BY_SPELLING
     return first if all(r == first for r in readings[1:]) else _BY_SPELLING
@@ -252,7 +249,7 @@ def _member(cls: Any, key: str, union_tag: str) -> MergeAt:
     """Return the node of the member *key* of the class *cls*, the shape rule when it names nothing."""
     try:
         return merge_at(_struct_member_type(cls, key), union_tag)
-    except _UNREADABLE:
+    except UNREADABLE:
         return MergeAt(union_tag)
 
 

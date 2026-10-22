@@ -43,9 +43,10 @@ def merge_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[Merge
     Args:
         target: The dataclass type to construct.
         ns: The Namespace returned by ``ArgumentParser.parse_args()``.
-        **opts: The sources to read and how to read them, as for :func:`confarg.merge`;
-            see :class:`confarg.MergeOptions`.  ``argv`` is the list ``parse_args()``
-            parsed.
+        **opts: The sources to read and how to read them, as for :func:`confarg.merge`; see
+            :class:`confarg.MergeOptions`.  ``argv`` is the list ``parse_args()`` parsed.
+            Omitted, an option is the one ``populate_*`` read the sources by; one that
+            differs from it is refused, the framework having split the command line by it.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact. A list
@@ -94,9 +95,10 @@ def from_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeO
     Args:
         target: The dataclass type to construct.
         ns: The Namespace returned by ``ArgumentParser.parse_args()``.
-        **opts: The sources to read and how to read them, as for :func:`confarg.load`;
-            see :class:`confarg.MergeOptions`.  ``argv`` is the list ``parse_args()``
-            parsed.
+        **opts: The sources to read and how to read them, as for :func:`confarg.load`; see
+            :class:`confarg.MergeOptions`.  ``argv`` is the list ``parse_args()`` parsed.
+            Omitted, an option is the one ``populate_*`` read the sources by; one that
+            differs from it is refused, the framework having split the command line by it.
 
     Returns:
         An instance of ``target`` populated from all sources.

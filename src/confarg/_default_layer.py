@@ -348,8 +348,6 @@ def _untyped(node: Any) -> Any:
 
 def _tagged_class(tag: Any) -> Any:
     """The struct a tag names, None for a tag that is an expression or names none."""
-    if not isinstance(tag, str) or contains_expression(tag):
-        return None
     return _tag_named_struct(tag)
 
 

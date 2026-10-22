@@ -49,7 +49,7 @@ from confarg._typed_merge import merge_root
 from confarg._types import _StrToken
 from confarg.dictexpr import contains_expression
 from confarg.dictexpr._expressions import canonicalize_references
-from confarg.exceptions import ConfargError, InvalidConfigFileError, LocalsError, TypeCoercionError
+from confarg.exceptions import ConfargError, ConfargWarning, InvalidConfigFileError, LocalsError, TypeCoercionError
 from confarg.typedload._coerce import _coerce_leaf
 
 
@@ -538,7 +538,8 @@ def below_argv(target: Any, cli_configs: Sequence[tuple[str, str]], options: _Op
     """
     try:
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+            # confarg's own, which the merge warns again: a module first imported here warns once in its life.
+            warnings.simplefilter("ignore", ConfargWarning)
             config_data, env_data = _lower_layers(target, cli_configs, options, reads=Reads())
         return _deep_merge(config_data, env_data, at=merge_root(target, options.union_tag))
     except Exception:  # noqa: BLE001  # a failing layer is the merge's to report

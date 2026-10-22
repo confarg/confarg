@@ -60,8 +60,10 @@ def merge_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) -
         target: The dataclass type to construct.
         app: The cyclopts :class:`~cyclopts.App` populated by
             :func:`populate_app`.
-        **opts: The sources to read and how to read them, as for :func:`confarg.merge`;
-            see :class:`confarg.MergeOptions`.  ``argv`` is the token list *app* parses.
+        **opts: The sources to read and how to read them, as for :func:`confarg.merge`; see
+            :class:`confarg.MergeOptions`.  ``argv`` is the token list *app* parses.
+            Omitted, an option is the one ``populate_*`` read the sources by; one that
+            differs from it is refused, the framework having split the command line by it.
 
     Returns:
         A plain dict of the merged configuration, with expression strings intact. A list
@@ -163,8 +165,10 @@ def from_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) ->
         target: The dataclass type to construct.
         app: The cyclopts :class:`~cyclopts.App` populated by
             :func:`populate_app`.
-        **opts: The sources to read and how to read them, as for :func:`confarg.load`;
-            see :class:`confarg.MergeOptions`.  ``argv`` is the token list *app* parses.
+        **opts: The sources to read and how to read them, as for :func:`confarg.load`; see
+            :class:`confarg.MergeOptions`.  ``argv`` is the token list *app* parses.
+            Omitted, an option is the one ``populate_*`` read the sources by; one that
+            differs from it is refused, the framework having split the command line by it.
 
     Returns:
         An instance of *target* populated from all sources.

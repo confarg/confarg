@@ -28,12 +28,10 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-97 — How a message names a type is spelled by hand in a dozen places](REF-97-how-a-message-names-a-type-is-spelled-by-hand.md) | trivial |  | S | low | none |
 | [REF-98 — `_typed_read._read` and `_serialize.written_form` are one walk spelled twice](REF-98-typed_read-read-and-written-form-are-one-walk.md) | trivial |  | S | low | none |
 | [REF-99 — `read_union_leaf` reads a union's variants under the default `union_tag`](REF-99-read_union_leaf-spells-the-default-union-tag.md) | trivial |  | S | low | none |
-| [REF-100 — A class tag is read silently by three functions, one of them past the canonical one](REF-100-a-class-tag-is-read-silently-by-three-functions.md) | trivial |  | S | medium | none |
 | [REF-101 — `_coerce_type_ref` repeats the class-tag import step for step](REF-101-coerce-type-ref-repeats-the-class-tag-import.md) | trivial |  | S | low | none |
 | [REF-102 — `make_parser` tells a merge option from a parser keyword by its own test](REF-102-make-parser-tells-a-merge-option-by-its-own-test.md) | trivial |  | S | low | none |
 | [REF-103 — `_pending_prefixes` walks the data by its own steps rather than `_step`](REF-103-pending-prefixes-walks-the-data-without-step.md) | trivial |  | S | medium | none |
 | [REF-104 — The locals layer reading combines a list item and its patch shallowly](REF-104-the-locals-layer-reading-combines-an-item-and-its-patch-shallowly.md) | trivial |  | S | medium | none |
-| [REF-106 — `named_member_names` repeats `named_child`'s dispatch, and has drifted from it](REF-106-named-member-names-repeats-named-child-dispatch.md) | trivial |  | S | medium | none |
 | [REF-109 — A message names the root position by hand eleven times](REF-109-a-message-names-the-root-position-by-hand.md) | trivial |  | S | low | none |
 | [REF-112 — `_arity_rank` repeats the shape decision `_shaped` owns](REF-112-arity-rank-repeats-the-shape-decision.md) | trivial |  | S | low | none |
 | [REF-113 — A format's `holds` predicate restates its native types](REF-113-a-formats-holds-predicate-restates-its-native-types.md) | trivial |  | S | low | none |

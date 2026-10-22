@@ -30,22 +30,34 @@ from confarg._types import (
     _union_args_no_none,
     _union_tag_shadowed,
 )
-from confarg.exceptions import SymbolImportError
+from confarg.dictexpr import contains_expression
+
+
+def class_named(path: Any) -> type | None:
+    """Return the class a dotted *path* names, or ``None`` when it names none.
+
+    The one reader of a class a configuration names by a tag or an opener before it is
+    built. ``None`` covers a value that is no string, an expression, a path naming no class,
+    and an import that fails, because every caller's response is the same: leave the value
+    where its channel put it and move on. Construction imports it again and raises the error
+    naming the path, so no caller reports the failure itself.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration
+    """
+    if not isinstance(path, str) or contains_expression(path):
+        return None
+    try:
+        cls = _import_dotted(path)
+    except Exception:  # noqa: BLE001  # a module's top level may raise anything; construction reports it
+        return None
+    return cls if isinstance(cls, type) else None
 
 
 def _tag_named_struct(class_tag: Any) -> Any:
-    """Return the struct type a class tag names, or ``None`` when it names none.
-
-    ``None`` covers both failure modes -- the import fails, or the class is not a struct
-    -- because every caller's response is the same: leave the tag where its channel put
-    it and move on.  Vanilla stores the raw string and lets ``construct()`` raise the
-    import error, so no caller reports the failure itself.
-    """
-    try:
-        cls = _import_dotted(str(class_tag))
-    except (SymbolImportError, TypeError, ValueError, NameError, AttributeError):
-        return None
-    return cls if isinstance(cls, type) and _is_struct(_resolve_type(cls)) else None
+    """Return the struct type a class tag names, or ``None`` when it names none (:func:`class_named`)."""
+    cls = class_named(class_tag)
+    return cls if cls is not None and _is_struct(_resolve_type(cls)) else None
 
 
 def _partial_config_from_argv(argv: Sequence[str], config_flag: str) -> MergeDict:

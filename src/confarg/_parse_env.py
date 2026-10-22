@@ -32,7 +32,7 @@ from confarg._merge import (
     _peek_nested,
     _set_nested,
 )
-from confarg._naming import layered_naming, named_member_names, opener_keys
+from confarg._naming import MergedNaming, named_member_names, opener_keys
 from confarg._parse_cli import (
     NamingView,
     _accepts_object_value,
@@ -131,10 +131,10 @@ def _env_spelling(target: Any, prefix: list[str], part: str, union_tag: str, nam
         ConfargError: If the segment matches several member spellings, which no
             environment variable can tell apart.
     """
-    names = {n for tp in _field_types(target, prefix, union_tag, named=named) for n in _member_names(tp)}
+    reached = _field_types(target, prefix, union_tag, named=named)
+    names = {n for tp in reached for n in _member_names(tp)}
     naming = None if named is None else named(tuple(prefix))
     if naming is not None:
-        reached = _field_types(target, prefix, union_tag)
         names |= {n for tp in reached for n in named_member_names(tp, naming, union_tag)}
     matches = sorted(n for n in names if n.lower() == part.lower())
     if len(matches) > 1:
@@ -546,31 +546,39 @@ def _env_namings(
     union_tag: str,
     below: MergeDict,
 ) -> MergeDict:
-    """Return what the environment names at each node: its openers, tags, ``{…}`` values and shorthands.
+    """Return what the environment names, deletes or writes whole at each node: its openers, tags, values, shorthands.
 
     The environment has no order, so every variable naming a node types every variable
     below that node, whatever their names sort as. A variable is spelled with the namings of
-    the broader variables before it, so a nested spec's opener is read below the outer one's.
+    the broader variables before it, merged over the config level (*below*) as the merge
+    merges them, so a nested spec's opener is read below the outer one's, and a lower
+    naming below a node the environment names or deletes is gone, as the merge drops it.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key
     """
     named: MergeDict = {}
-    view = layered_naming(named, below, union_tag=union_tag)
+    view = MergedNaming(below, named, _typed_root(walk_target, union_tag), union_tag)
     words = {w.lower() for w in opener_keys(union_tag)}
-    for _, _orig_key, key, parts, value in sorted(variables):
-        if not key or _is_env_delete(parts) or _is_env_append(parts):
+    for _, orig_key, key, parts, value in sorted(variables):
+        if not key or _is_env_append(parts):
             continue
+        is_delete = _is_env_delete(parts)
+        spelled = [*parts[:-1], parts[-1][:-1]] if is_delete else parts
         try:
-            path, ft = _resolve_env_parts(walk_target, parts, union_tag, view)
+            path, ft = _resolve_env_parts(walk_target, spelled, union_tag, view)
         except ConfargError:
             continue
-        if parts[-1].lower() in words:
+        if is_delete:
+            # A key's delete drops the node and what a lower layer named there; an index's patches a list.
+            if _delete_index(walk_target, path, union_tag, view) is None:
+                _set_nested(named, path, DICT_DELETE)
+        elif parts[-1].lower() in words:
             _set_nested(named, path, value)
-        elif value.startswith("{"):
+        elif value.startswith(("{", "[")):
             with contextlib.suppress(json.JSONDecodeError, ConfargError):
-                decoded = decode_json(value, _orig_key, path)
-                if isinstance(decoded, dict):
+                decoded = decode_json(value, orig_key, path)
+                if isinstance(decoded, dict | list):
                     _set_nested(named, path, decoded)
         elif (
             ft is not None
@@ -581,6 +589,7 @@ def _env_namings(
             )
         ):
             _set_nested(named, path, promote_bare_spec(value))
+        view.changed()
     return named
 
 
@@ -646,7 +655,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
 
     at = _typed_root(walk_target, union_tag)
     lower = below or {}
-    named = layered_naming(_env_namings(variables, walk_target, union_tag, lower), lower, union_tag=union_tag)
+    named = MergedNaming(lower, _env_namings(variables, walk_target, union_tag, lower), at, union_tag)
     # The environment has no typing order, so it is given one: the broader variable first.
     for _, orig_key, key, parts, value in sorted(variables):
         _refuse_reserved_key(orig_key, parts)

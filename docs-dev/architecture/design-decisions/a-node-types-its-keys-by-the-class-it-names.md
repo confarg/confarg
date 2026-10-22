@@ -26,7 +26,9 @@ So:
 - **A file types itself**, at construction.
 
 So the pipeline reads the layers lowest first (`_pipeline._lower_layers`): the environment's `CONFIG__*` pointers and argv's `--config` pairs (`_parse_cli._config_pairs_in`, before any value is typed), the config level, the environment over it, then argv over both.
-A write names a node by an opener or a tag key, a `{…}` value holding one at any depth, a bare string where the node takes the callable shorthand, and a whole-field delete, which cuts the lower layers off.
+A write names a node by an opener or a tag key, a `{…}` or `[…]` value holding one at any depth (a list item by its index, `fs.0`, as `_naming.node_at` reads it), and a bare string where the node takes the callable shorthand.
+What a layer names, deletes or writes whole at a node replaces what a lower layer held there, its namings below included, as the merge replaces it: argv's `--f.class Wrap` leaves no lower layer's `f.inner` class standing, nor does `--f-`, and the environment's `APP_F__CLASS` or `APP_F-` cut the config level the same way.
+The environment reads its namings merged over the config level by the merge itself (`_naming.MergedNaming`); argv stops at any node or ancestor its scan marks (`_ParseCtx.naming`), a node it writes a value at included, so a lower layer's naming is only ever left unused below a node argv writes anyway.
 
 Rejected:
 

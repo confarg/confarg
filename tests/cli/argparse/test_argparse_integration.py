@@ -837,6 +837,22 @@ class TestCliPrefixArgparse:
         assert [k for k in vars(ns) if k.startswith("__confarg")] == ["__confarg_registration__"]
 
 
+class TestTheEnvironmentIsReadAgainAtTheMerge:
+    """Registration reads the environment to type the flags; the merge reads it again (Q8 of BUG-233's design).
+
+    A snapshot would keep registration and merge in step, but would never read a variable set
+    after the parser is built, unlike ``load()``.
+    """
+
+    def test_a_variable_set_after_parsing_is_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``os.environ`` as the merge finds it is what the merge reads."""
+        monkeypatch.setenv("APP_HOST", "first")
+        parser = make_parser(Simple, env_prefix="APP_", config_flag="", argv=[])
+        ns = parser.parse_args([])
+        monkeypatch.setenv("APP_HOST", "second")
+        assert from_namespace(Simple, ns, argv=[]).host == "second"
+
+
 class TestArgvIsTheParsedArgv:
     """The CLI channel is read off argv, so a parse result argv does not spell is refused."""
 
