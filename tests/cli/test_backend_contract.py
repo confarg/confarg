@@ -32,7 +32,7 @@ from dataclasses import field as dataclasses_field
 from decimal import Decimal
 from enum import Enum, IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, NewType
+from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, NamedTuple, NewType
 from uuid import UUID
 
 import pytest
@@ -45,6 +45,7 @@ from confarg._merge import (
     DICT_DELETE,
     ListOp,
 )
+from confarg.cli import FieldMeta
 from confarg.cli._build import _scalar_root_spec, build_static_flags
 from confarg.exceptions import (
     ConfargError,
@@ -10535,3 +10536,27 @@ class TestGenericStructContract:
             key="k",
             lookup={"a": 1},
         )
+
+
+type _HelpedPort = Annotated[int, FieldMeta(help="aliased", metavar="ALIASED")]
+
+
+@dataclasses.dataclass
+class _WrappedMeta:
+    final: Final[Annotated[int, FieldMeta(help="final", metavar="FINAL")]] = 0
+    aliased: _HelpedPort = 0
+    outer: Annotated[Final[int], FieldMeta(help="outer", metavar="OUTER")] = 0
+    final_aliased: Final[_HelpedPort] = 0
+
+
+class TestFieldMetaUnderWrappers:
+    """``FieldMeta`` is read through the wrappers every type walk sees through: ``Final`` and a type alias."""
+
+    @pytest.mark.parametrize(
+        ("name", "meta"),
+        [("final", "final"), ("aliased", "aliased"), ("outer", "outer"), ("final_aliased", "aliased")],
+    )
+    def test_help_and_metavar_are_kept(self, name: str, meta: str) -> None:
+        """The flag's help and metavar are the ``FieldMeta``'s, whichever wrapper holds the ``Annotated``."""
+        spec = next(s for s in build_static_flags(_WrappedMeta) if s.name == name)
+        assert (spec.help, spec.metavar) == (meta, meta.upper())

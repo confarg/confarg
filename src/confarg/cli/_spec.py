@@ -10,7 +10,7 @@ import ast
 import dataclasses
 import inspect
 import textwrap
-from typing import TYPE_CHECKING, Annotated, Any, NamedTuple, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, Final, NamedTuple, get_args, get_origin
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -206,12 +206,27 @@ class FieldMeta:
 
 
 def _get_field_meta(raw_type: Any) -> FieldMeta | None:
-    """Return FieldMeta from Annotated[T, FieldMeta(...)] annotation, or None."""
-    if get_origin(raw_type) is Annotated:
-        for arg in get_args(raw_type)[1:]:
-            if isinstance(arg, FieldMeta):
-                return arg
-    return None
+    """Return the FieldMeta of an ``Annotated[T, FieldMeta(...)]`` annotation, or None.
+
+    Read through the wrappers :func:`_resolve_type` sees through, ``Final`` and a type
+    alias, as every type walk is: the outermost ``FieldMeta`` wins.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#wrappers-are-transparent
+    """
+    tp = raw_type
+    while True:
+        if get_origin(tp) is Annotated:
+            meta = next((arg for arg in get_args(tp)[1:] if isinstance(arg, FieldMeta)), None)
+            if meta is not None:
+                return meta
+            tp = get_args(tp)[0]
+        elif get_origin(tp) is Final:
+            tp = get_args(tp)[0]
+        elif type(tp).__name__ == "TypeAliasType":
+            tp = tp.__value__
+        else:
+            return None
 
 
 def _struct_doc(tp: type) -> str:
