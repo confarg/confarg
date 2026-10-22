@@ -29,7 +29,7 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-257 — A lone expression token on a list flag is one item, where the environment reads it as the whole list](BUG-257-a-lone-expression-token-on-a-list-flag-is-one-item.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-261 — A dict keyed by a union refuses every key](BUG-261-a-dict-keyed-by-a-union-refuses-every-key.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-266 — A root union's scalar variant has no spelling in any channel](BUG-266-a-root-unions-scalar-variant-has-no-spelling.md) | minor |  | M | medium | behavior | PR-5 |
-| [BUG-268 — On Python 3.13+, a lock dumps as a fresh one, with no warning](BUG-268-a-lock-dumps-as-a-fresh-one-on-python-3-13.md) | minor |  | M | medium | behavior | FEAT-14 |
+| [BUG-269 — A constructor's own exception escapes construction raw, with no path](BUG-269-a-constructors-own-exception-escapes-construction-raw.md) | minor |  | L | high | api | PR-5 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
 | [BUG-249 — The YAML formatter strips quotes the YAML loader needs](BUG-249-the-yaml-formatter-strips-quotes-the-loader-needs.md) | trivial |  | S | low | none | PR-61 |
 

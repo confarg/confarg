@@ -50,6 +50,10 @@ A plain class declares no state but its constructor, so it is written as its con
 An instance attribute, a slot, a property and what `__getattr__` answers count as held; a plain class attribute does not, since it is the class's value, not the instance's: `class P: seed = 0` with an `__init__(self, n, seed)` that never stores `seed` is refused rather than written as `seed: 0`, the value nobody passed.
 A parameter the instance does not hold is refused, naming `dump_file(merge(...))` as what keeps the arguments as given.
 
+What an instance holds beyond its parameters is not written, and not warned about: a `queue.Queue` dumps as `{maxsize: 0}` whatever it holds, a set `threading.Event`, which takes nothing, as `{}`, and both read back fresh.
+Warning on attributes beyond the parameters was rejected (BUG-268): nearly every class keeps some, a derived value, a cache, a `Logger`'s `handlers` and `parent`, so it would warn on almost every plain class, and on a class taking nothing that fills a cache in its `__init__` even when the instance is fresh.
+State no attribute reaches at all, a C type's own storage, is another matter: a class taking nothing that holds it is no struct ([a struct's members are its constructor's parameters](a-structs-members-are-its-constructors-parameters.md#a-class-taking-nothing-that-holds-c-storage-is-no-struct)).
+
 Rejected: the public instance attributes (`vars()`), the plain-class equivalent of `fields()`, which walks the implementation rather than the configuration: a `logging.Logger` would write its `parent`, `manager` and `handlers`, a cycle through `manager.loggerDict` among them, where its parameters write `{class: logging.Logger, name: app, level: 0}`; and every class holding a lock or a socket would reach the writer with it.
 Also rejected: the class-body annotations when there are some, the parameters otherwise, which reads two declarations for one kind; and leaving a parameter the instance does not hold out of the dump, which turns a refusal into a dump that is incomplete with no sign of it.
 Correct serialization of a custom class is its author's to provide: registering how a class dumps is FEAT-49.

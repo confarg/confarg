@@ -402,7 +402,8 @@ def _held_object_form(instance: Any, path: FieldPath, opts: _DumpOptions) -> Any
 
     Raises:
         ConfargError: If no spec spells the callable or the struct (:func:`_serialize_callable`,
-            :func:`_class_path`).
+            :func:`_class_path`), or the value is of a leaf construction does not build
+            (:func:`_refuse_an_unsupported_leaf`).
 
     Dev Notes:
         docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
@@ -418,6 +419,7 @@ def _held_object_form(instance: Any, path: FieldPath, opts: _DumpOptions) -> Any
     cls = type(instance)
     if _is_struct(cls):
         return {_defaults.CLASS_KEY: _class_path(cls), **_serialize_struct(cls, instance, path, opts)}
+    _refuse_an_unsupported_leaf(cls, path)
     return _serialize_leaf(None, instance, opts.native_types)
 
 

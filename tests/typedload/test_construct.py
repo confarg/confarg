@@ -4,9 +4,12 @@
 
 """Unit tests for _construct: struct dispatch, union fallbacks and the all-default shortcut."""
 
+import _thread
 import enum
+import random
 import re
 import sys
+import threading
 import warnings
 from collections.abc import Callable
 from dataclasses import InitVar, dataclass, field
@@ -1275,6 +1278,85 @@ class TestAClassTakingNothingIsAStructWithNoFields:
     def test_a_forwarding_new_does_not_hide_init(self) -> None:
         """A class defining ``__init__`` is read by it, whatever ``__new__`` takes."""
         assert construct(_ForwardingNew, {"x": 5}).x == 5
+
+
+class _SeededRandom(random.Random):
+    """Holds C storage through ``_random.Random``, and takes nothing."""
+
+    def __init__(self) -> None:
+        super().__init__(42)
+
+
+class _NoArgLocal(threading.local):
+    """Holds C storage through ``_thread._local``, and takes nothing."""
+
+    def __init__(self) -> None:
+        self.n = 1
+
+
+class _NoArgError(Exception):
+    """Holds C storage through ``BaseException``, and takes nothing."""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+
+class _OneSlot:
+    __slots__ = "x"  # noqa: PLC0205  # the string form is the case under test
+
+
+class _TwoSlots:
+    __slots__ = ("a", "b")
+
+
+class _DictSlot:
+    __slots__ = ("__dict__",)
+
+
+class _SlotBase:
+    __slots__ = ("x",)
+
+
+class _SlotDeclaredAgain(_SlotBase):
+    __slots__ = ("x",)
+
+
+class TestAClassTakingNothingThatHoldsCStorageIsNoStruct:
+    """A class taking nothing whose instances hold C storage is an unsupported leaf (BUG-268)."""
+
+    @pytest.mark.parametrize(
+        "tp",
+        [_thread.LockType, _SeededRandom, _NoArgLocal, _NoArgError],
+        ids=["lock", "random-subclass", "thread-local", "exception-subclass"],
+    )
+    def test_it_is_refused_as_an_unsupported_leaf(self, tp: type) -> None:
+        """``{}`` builds nothing: a fresh instance is not the one a dump came from."""
+        with pytest.raises(TypeCoercionError, match=rf"Unsupported leaf type <class '[\w.]*{tp.__name__}'>"):
+            construct(tp, {})
+
+    def test_a_class_tag_naming_the_lock_builds_nothing(self) -> None:
+        """``{class: threading.Lock}`` is refused on every version, where ``{call: threading.Lock}`` builds a lock."""
+        with pytest.raises(TypeCoercionError):
+            construct(Any, {"class": "threading.Lock"})
+        assert isinstance(construct(Any, {"call": "threading.Lock"}), _thread.LockType)
+
+    def test_one_taking_parameters_stays_a_struct(self) -> None:
+        """A class holding C storage is built from the parameters it takes, as ``random.Random(x)``."""
+        built = construct(random.Random, {"class": "random.Random", "x": 1})
+        assert built.random() == random.Random(1).random()
+
+    @pytest.mark.parametrize(
+        "tp", [_OneSlot, _TwoSlots, _DictSlot, _SlotDeclaredAgain], ids=["str", "tuple", "dict-slot", "declared-again"]
+    )
+    def test_slots_are_storage_an_attribute_reaches(self, tp: type) -> None:
+        """A slot is no C storage, however declared, a base's slot declared again included: ``{}`` builds the class."""
+        assert isinstance(construct(tp, {}), tp)
+
+    @pytest.mark.usefixtures("leaf_registry")
+    def test_a_registered_class_is_a_leaf(self) -> None:
+        """``register_leaf_type`` makes such a class a leaf, built by its coercion."""
+        confarg.register_leaf_type(_thread.LockType, lambda _: threading.Lock())
+        assert isinstance(construct(_thread.LockType, "fresh"), _thread.LockType)
 
 
 @dataclass
