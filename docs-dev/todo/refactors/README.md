@@ -33,7 +33,6 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-103 — `_pending_prefixes` walks the data by its own steps rather than `_step`](REF-103-pending-prefixes-walks-the-data-without-step.md) | trivial |  | S | medium | none |
 | [REF-104 — The locals layer reading combines a list item and its patch shallowly](REF-104-the-locals-layer-reading-combines-an-item-and-its-patch-shallowly.md) | trivial |  | S | medium | none |
 | [REF-109 — A message names the root position by hand eleven times](REF-109-a-message-names-the-root-position-by-hand.md) | trivial |  | S | low | none |
-| [REF-112 — `_arity_rank` repeats the shape decision `_shaped` owns](REF-112-arity-rank-repeats-the-shape-decision.md) | trivial |  | S | low | none |
 | [REF-113 — A format's `holds` predicate restates its native types](REF-113-a-formats-holds-predicate-restates-its-native-types.md) | trivial |  | S | low | none |
 | [REF-114 — Each adapter reconciles its registration by hand](REF-114-each-adapter-reconciles-its-registration-by-hand.md) | trivial |  | S | low | none |
 | [REF-115 — `_format_offset` slices an `isoformat()` string where `strftime("%:z")` says it](REF-115-format-offset-slices-an-isoformat-string.md) | trivial |  | S | low | none |

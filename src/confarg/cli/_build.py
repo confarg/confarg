@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import enum
 import inspect
 import json
 import operator
@@ -144,6 +145,39 @@ def _takes_multi_tokens(tp: Any) -> bool:
     return _is_varlen_collection(tp) or _union_has_seq_variant(tp)
 
 
+class _Arity(enum.IntEnum):
+    """A flag's token count, ranked so the widest is the greatest."""
+
+    #: One token.
+    ONE_TOKEN = 0
+    #: One token per position of a fixed-length type, or one whole value.
+    FIXED_COUNT = 1
+    #: Every token up to the next flag.
+    RUN = 2
+
+
+def _arity(tp: Any) -> _Arity:
+    """Return how many tokens vanilla's loop consumes for a value of type *tp*: a run, a fixed count, or one.
+
+    The one classification of a flag's token count over types, which :func:`_shaped` gives a
+    flag the shape of and :func:`_binds_a_run` reads; :func:`_spec_arity` reads the same off a
+    registered spec. *tp* is None where the walk resolved no type.
+    """
+    if tp is None:
+        return _Arity.ONE_TOKEN
+    resolved = _resolve_type(tp)
+    if _takes_multi_tokens(resolved):
+        return _Arity.RUN
+    return _Arity.FIXED_COUNT if _fixed_seq_types(resolved) is not None else _Arity.ONE_TOKEN
+
+
+def _spec_arity(spec: FlagSpec) -> _Arity:
+    """Return the token count a registered *spec* binds, as :func:`_arity` ranks one: what :func:`_shaped` gave it."""
+    if spec.nargs == "*":
+        return _Arity.RUN
+    return _Arity.FIXED_COUNT if spec.whole_value else _Arity.ONE_TOKEN
+
+
 def _shaped(spec: FlagSpec, tp: Any) -> FlagSpec:
     """Return *spec* with the token shape vanilla's loop consumes for a value of type *tp*.
 
@@ -165,12 +199,11 @@ def _shaped(spec: FlagSpec, tp: Any) -> FlagSpec:
     """
     from confarg._parse_cli import _fixed_arity_usage  # noqa: PLC0415  # import cycle
 
-    if tp is None:
-        return spec
-    if _takes_multi_tokens(tp):
+    arity = _arity(tp)
+    if arity == _Arity.RUN:
         return dataclasses.replace(spec, nargs="*", whole_value=False, stands_bare=True)
     positions = _fixed_seq_types(tp)
-    if positions is None:
+    if arity == _Arity.ONE_TOKEN or positions is None:
         return spec
     return dataclasses.replace(
         spec,
@@ -195,7 +228,7 @@ def _binds_a_run(tp: Any) -> bool:
     Dev Notes:
         docs-dev/architecture/cli-adapters/model.md#the-quartet
     """
-    return _takes_multi_tokens(tp) or _fixed_seq_types(tp) is not None
+    return _arity(tp) > _Arity.ONE_TOKEN
 
 
 def _scalar_cast_parent_is_leaf(parent: Any) -> bool:
@@ -1623,14 +1656,6 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
     return specs
 
 
-def _arity_rank(tp: Any) -> int:
-    """Return how many tokens a flag of type *tp* binds, ranked: a run, a fixed count, one token."""
-    resolved = _resolve_type(tp)
-    if _takes_multi_tokens(resolved):
-        return 2
-    return 1 if _fixed_seq_types(resolved) is not None else 0
-
-
 def _collect_loop_typed_specs(  # noqa: PLR0913, PLR0917  # the loop's own inputs, and the names already taken
     target: object,
     argv: Sequence[str],
@@ -1665,7 +1690,7 @@ def _collect_loop_typed_specs(  # noqa: PLR0913, PLR0917  # the loop's own input
         _parse_cli(argv, target, "", config_flag, union_tag, host_parsed=True, below=below, observe=observe)
     specs: list[FlagSpec] = []
     for name, types in typed.items():
-        widest = max(types, key=_arity_rank)
+        widest = max(types, key=_arity)
         if name in existing_names or widest == _resolve_field_type(target, name.split("."), union_tag):
             continue
         with contextlib.suppress(Exception):
@@ -1682,8 +1707,38 @@ def bound_runs(specs: Iterable[FlagSpec], cli_prefix: str) -> frozenset[str]:
     stray it refuses wherever the framework bound it.
     """
     head = f"{cli_prefix}." if cli_prefix else ""
-    greedy = (spec for spec in specs if spec.nargs == "*" or spec.whole_value)
-    return frozenset(spec.name.removeprefix(head) for spec in greedy)
+    return frozenset(spec.name.removeprefix(head) for spec in specs if _spec_arity(spec) > _Arity.ONE_TOKEN)
+
+
+#: The attributes of a spec that say how many tokens it binds and how it reads them.
+_SHAPE_FIELDS = ("nargs", "whole_value", "stands_bare", "refuses_bare", "usage", "metavar", "choices")
+
+
+def widen_static(static: list[FlagSpec], dynamic: list[FlagSpec]) -> tuple[list[FlagSpec], list[FlagSpec]]:
+    """Return the static and dynamic specs a framework is given, a static flag a naming types wider re-shaped.
+
+    The static walk registers a field by its declared type; a node's naming may type the same
+    flag wider (``x: int`` widened to ``list[int]`` by the subclass a tag names), and vanilla's
+    loop then consumes the wider run (:func:`_collect_loop_typed_specs`). Every loader keeps the
+    first spec of a name, so the static flag takes the dynamic spec's shape, its name, group and
+    help kept, and the dynamic spec is dropped (BUG-272).
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters
+    """
+    registered = {spec.name: spec for spec in static}
+    wider = {
+        spec.name: spec
+        for spec in dynamic
+        if spec.name in registered and _spec_arity(spec) > _spec_arity(registered[spec.name])
+    }
+    widened = [
+        dataclasses.replace(spec, **{f: getattr(wider[spec.name], f) for f in _SHAPE_FIELDS})
+        if spec.name in wider
+        else spec
+        for spec in static
+    ]
+    return widened, [spec for spec in dynamic if spec.name not in wider]
 
 
 def _collect_unentered_argv_specs(

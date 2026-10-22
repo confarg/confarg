@@ -48,6 +48,7 @@ from confarg._merge import (
 )
 from confarg.cli import FieldMeta
 from confarg.cli._build import _scalar_root_spec, build_static_flags
+from confarg.cli.argparse import make_parser
 from confarg.exceptions import (
     ConfargError,
     ConfargWarning,
@@ -10713,3 +10714,62 @@ class TestANamingTypesWhatItsLayerBuildsContract:
         assert [str(w.message) for w in caught if issubclass(w.category, UserWarning)].count(
             "noisy module imported"
         ) == 1
+
+
+# ---------------------------------------------------------------------------
+# A naming-typed run wins over the static shape of the same flag (BUG-272)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _WidenBase:
+    """A base declaring ``x`` as one ``int``."""
+
+    x: int = 0
+
+
+@dataclass
+class _WidenSub(_WidenBase):
+    """A subclass widening ``x`` to a list, which a tag naming it types the flag by."""
+
+    x: list[int] = dataclasses_field(default_factory=list)
+
+
+@dataclass
+class _WidenCfg:
+    """A field the static walk registers by the base's annotation."""
+
+    db: _WidenBase | None = None
+
+
+_WIDEN_SPEC = f"db: {{class: {__name__}._WidenSub}}\n"
+
+
+class TestANamingTypedRunWinsOverTheStaticShapeContract:
+    """A flag the static walk registers as one token, and a node's naming types as a run, binds the run.
+
+    The loaders kept the static flag and dropped the wider one, so the framework refused the
+    second token, while ``merge()`` accepted the run; and the stray check counted a run the
+    framework never bound (BUG-272).
+    """
+
+    def test_a_file_naming_the_subclass_types_a_run(self, space_sep_loader: ConfargLoader, tmp_yaml) -> None:
+        """``Sub.x`` is a list: ``--db.x 1 2`` is ``[1, 2]`` in every space-separated front-end."""
+        spec = tmp_yaml(_WIDEN_SPEC)
+        cfg = space_sep_loader.load(_WidenCfg, argv=["--db.x", "1", "2"], env={}, files=[spec])
+        assert cfg.db == _WidenSub(x=[1, 2])
+
+    def test_a_file_naming_the_subclass_types_repeated_flags(self, repeated_loader: ConfargLoader, tmp_yaml) -> None:
+        """The clicklike spelling of the same list."""
+        spec = tmp_yaml(_WIDEN_SPEC)
+        cfg = repeated_loader.load(_WidenCfg, argv=["--db.x", "1", "--db.x", "2"], env={}, files=[spec])
+        assert cfg.db == _WidenSub(x=[1, 2])
+
+    def test_registration_records_the_runs_it_loaded(self, tmp_yaml) -> None:
+        """The flags a greedy framework binds a run to are those it was given, the widened one included."""
+        spec = tmp_yaml(_WIDEN_SPEC)
+        parser = make_parser(_WidenCfg, argv=["--db.x", "1", "2"], files=[spec])
+        nargs = {s: a.nargs for a in parser._actions for s in a.option_strings}
+        registration = parser.parse_args(["--db.x", "1", "2"]).__confarg_registration__
+        assert nargs["--db.x"] == "*"
+        assert "db.x" in registration.runs

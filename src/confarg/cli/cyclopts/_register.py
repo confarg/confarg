@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from confarg._defaults import MergeOptions
     from confarg.cli._spec import FlagSpec
 
-from confarg.cli._build import bound_runs, build_dynamic_flags, build_static_flags
+from confarg.cli._build import bound_runs, build_dynamic_flags, build_static_flags, widen_static
 from confarg.cli._markup import help_escape
 from confarg.cli._prefix import PREFIX_ATTR
 from confarg.cli._sources import REGISTRATION_ATTR, Registration, registration_inputs
@@ -289,7 +289,7 @@ def populate_app(
     options, below, sources = registration_inputs(target, "populate_app", opts)
     cli_prefix, argv = options.cli_prefix or "", options.argv
     union_tag, config_flag = options.union_tag, options.config_flag
-    flags = build_static_flags(
+    static = build_static_flags(
         target,
         argv=argv,
         cli_prefix=cli_prefix,
@@ -298,7 +298,7 @@ def populate_app(
         config_subkeys=config_subkeys,
         below=below,
     )
-    flags = flags + build_dynamic_flags(
+    dynamic = build_dynamic_flags(
         target,
         argv,
         cli_prefix=cli_prefix,
@@ -306,6 +306,8 @@ def populate_app(
         config_flag=config_flag,
         below=below,
     )
+    static, dynamic = widen_static(static, dynamic)
+    flags = static + dynamic
     load_flags_into_app(flags, app)
     # load_flags_into_app has just (re)created this entry; merge_app reads the prefix and
     # what registration read back from it, since cyclopts hands the very same App to the merge step.

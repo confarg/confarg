@@ -19,6 +19,7 @@ from confarg.cli._build import (
     bound_runs,
     build_dynamic_flags,
     build_static_flags,
+    widen_static,
 )
 from confarg.cli._markup import escape_percent
 from confarg.cli._prefix import PREFIX_ATTR
@@ -213,7 +214,6 @@ def populate_parser(
         config_subkeys=config_subkeys,
         below=below,
     )
-    load_flags_into_parser(static, parser)
     dynamic = build_dynamic_flags(
         target,
         argv,
@@ -222,6 +222,8 @@ def populate_parser(
         config_flag=config_flag,
         below=below,
     )
+    static, dynamic = widen_static(static, dynamic)
+    load_flags_into_parser(static, parser)
     load_flags_into_parser(dynamic, parser)
     # argparse hands the merge only a Namespace, so what registration read rides on it.
     parser.set_defaults(**{REGISTRATION_ATTR: Registration(sources, bound_runs(static + dynamic, cli_prefix))})
