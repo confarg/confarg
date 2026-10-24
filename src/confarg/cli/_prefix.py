@@ -86,8 +86,7 @@ def apply_prefix(specs: list[FlagSpec], cli_prefix: str) -> list[FlagSpec]:
 
     A spec with an empty name is the scalar root (``--<prefix> VALUE``): it becomes
     the bare prefix flag.  Without a prefix it has no spelling at all, so it is
-    dropped -- vanilla has none either
-    (:func:`~confarg._parse_cli._handle_scalar_root` is reached only through the
+    dropped -- vanilla has none either (its loop reads the root's value only after the
     bare ``--<prefix>`` token).
     """
     if not cli_prefix:

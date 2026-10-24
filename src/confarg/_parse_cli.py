@@ -15,11 +15,12 @@ Dev Notes:
 from __future__ import annotations
 
 import dataclasses
+import enum
 import functools
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, NoReturn
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
@@ -646,22 +647,59 @@ def _is_dict_at_path(target: Any, parts: list[str], union_tag: str, named: Namin
     )
 
 
-def _sequence_refusal(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> int | None:
-    """Return the position in *parts* of the segment a sequence refuses, None if the path is no such refusal.
+class _Unreached(enum.Enum):
+    """Why a path names nothing a flag writes: the cause both channels spell their refusal of it by."""
 
-    A refusal only when vanilla's loop refuses the path (:func:`_path_unknown`), and a way
-    of the walk refused it standing on a sequence (:func:`_refuses_at_a_sequence`): the
-    environment, which leaves any other unknown path below its first segment to ``build()``,
-    asks it to keep a segment from reaching the merge as a list-patch key (BUG-170). Where
-    several ways refuse so, the shallowest segment any of them refuses.
+    NAMELESS = enum.auto()  # it ends in no name: nothing, ``+`` or ``-`` after its last separator
+    NO_ELEMENT = enum.auto()  # a segment below a sequence names no element of it
+    NOT_FOUND = enum.auto()  # any other segment names no member
+
+
+#: The last segments that name nothing: a path ending in its separator, or in a suffix with no name before it.
+_NAMELESS_SEGMENTS = frozenset({"", APPEND_SUFFIX, DELETE_SUFFIX})
+
+
+def _unreached(
+    target: Any,
+    parts: list[str],
+    union_tag: str,
+    named: NamingView | None = None,
+) -> tuple[_Unreached, int] | None:
+    """Return why *parts* names nothing a flag writes and the position of its segment at fault, None if it names one.
+
+    Asked only when vanilla's loop refuses the path (:func:`_path_unknown`): by that loop for
+    an unknown flag, and by the environment for a variable below its first segment, so a
+    flag and a variable of one path are refused for one cause (BUG-265). A last segment
+    naming nothing (:data:`_NAMELESS_SEGMENTS`) is a missing name; a segment a way of the walk
+    refuses standing on a sequence (:func:`_refuses_at_a_sequence`) names no element, which
+    stored would reach the merge as a list-patch key (BUG-170), the shallowest one where
+    several ways refuse so; any other path names no member, its last segment at fault.
 
     Dev Notes:
+        docs-dev/architecture/environment-parsing.md#a-path-no-flag-reaches-is-refused-below-the-first-segment
         docs-dev/architecture/cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index
     """
     if not _path_unknown(target, parts, union_tag, named):
         return None
+    if len(parts) > 1 and parts[-1] in _NAMELESS_SEGMENTS:
+        return _Unreached.NAMELESS, len(parts) - 1
     walk = _walk_path(target, parts, union_tag, named=named)
-    return next((k for k, e in walk.edges() if _refuses_at_a_sequence(e)), None)
+    at = next((k for k, e in walk.edges() if _refuses_at_a_sequence(e)), None)
+    return (_Unreached.NOT_FOUND, len(parts) - 1) if at is None else (_Unreached.NO_ELEMENT, at)
+
+
+def _refuse_unreached_flag(token: str, path: list[str], unreached: tuple[_Unreached, int] | None) -> NoReturn:
+    """Refuse the flag *token*, whose *path* names nothing a flag writes, for the cause :func:`_unreached` gave.
+
+    Raises:
+        UnknownArgumentError: Always.
+    """
+    cause, at = unreached or (_Unreached.NOT_FOUND, len(path) - 1)
+    if cause is _Unreached.NAMELESS:
+        raise UnknownArgumentError.missing_field_name(token[: token.rfind(".") + 1])
+    if cause is _Unreached.NO_ELEMENT:
+        raise UnknownArgumentError.no_element(token, path[at], ".".join(path[:at]))
+    raise UnknownArgumentError.no_such_field(token, path)
 
 
 #: The kinds whose members are named: a segment below one names a key, never an index.
@@ -1304,6 +1342,8 @@ class _ParseCtx:
     union_tag: str
     #: Where ``data`` stands, which reads the identity of each key a flag writes (BUG-244).
     at: MergeAt = field(default_factory=MergeAt)
+    #: Where the merge stands at the root of the real target, whose value a non-struct root's flag writes.
+    root_at: MergeAt = field(default_factory=MergeAt)
     data: MergeDict = field(default_factory=dict)
     multi_tokens: dict[tuple[str, ...], list[str]] = field(default_factory=dict)
     """Tokens every plain multi-token occurrence contributed, keyed by field path.
@@ -1321,6 +1361,20 @@ class _ParseCtx:
     argv_named: frozenset[tuple[str, ...]] = frozenset()
     #: The objects of a root ``--json``, which lie below the flags.
     root_json: list[MergeDict] = field(default_factory=list)
+
+    def write(self, path: list[str], value: Any) -> None:
+        """Write *value* at *path*; the empty path is a non-struct root's, whose value ``__root__`` holds.
+
+        A non-struct root's bare flag consumes its value as a field flag of its type does
+        (BUG-177), through the same handlers, so the one write they make lands it there.
+
+        Dev Notes:
+            docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix
+        """
+        if path:
+            _set_nested(self.data, path, value, self.at)
+        else:
+            _set_nested(self.data, [_defaults.ROOT_KEY], value, self.root_at)
 
     def naming(self, prefix: tuple[str, ...]) -> Any:
         """Return what the node at *prefix* names for the flag being typed (:data:`NamingView`).
@@ -1344,10 +1398,10 @@ class _ParseCtx:
 
 def _handle_delete_token(ctx: _ParseCtx, token: str, path: list[str]) -> None:
     """Apply a delete-mode flag (--foo.1- or --foo.bar-) to data, an index or a key delete (:func:`_delete_index`)."""
-    if _path_unknown(ctx.target, path, ctx.union_tag, ctx.naming):
-        if _list_index(path[-1]) is not None:
+    if (unreached := _unreached(ctx.target, path, ctx.union_tag, ctx.naming)) is not None:
+        if unreached[0] is _Unreached.NOT_FOUND and _list_index(path[-1]) is not None:
             raise UnknownArgumentError.not_indexable(token, path[:-1])
-        raise UnknownArgumentError.no_such_field(token, path)
+        _refuse_unreached_flag(token, path, unreached)
     delete_idx = _delete_index(ctx.target, path, ctx.union_tag, ctx.naming)
     if delete_idx is not None:
         parent_path = path[:-1]
@@ -1360,8 +1414,8 @@ def _handle_delete_token(ctx: _ParseCtx, token: str, path: list[str]) -> None:
         # A whole-field delete ends the value at this path, so a later multi-token occurrence
         # starts a new list rather than extending the one the delete just discarded. An index
         # delete is a patch *within* the list and leaves the accumulation alone.
-        ctx.multi_tokens.pop(tuple(path), None)
-        _set_nested(ctx.data, path, DICT_DELETE, ctx.at)
+        _forget_tokens_below(ctx, path)
+        ctx.write(path, DICT_DELETE)
 
 
 def _collect_append_items(  # the flag's spelling and path name it in a refusal
@@ -1494,7 +1548,7 @@ def _consume_fixed_tuple_args(  # noqa: PLR0913, PLR0917  # token only names the
         _require_value(args, i, token, usage)
         items.append(_try_coerce(et, _StrToken(args[i]), token))
         i += 1
-    _set_nested(ctx.data, path, items, ctx.at)
+    ctx.write(path, items)
     return i
 
 
@@ -1530,42 +1584,28 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str, at: Sequence[str | 
     return [_StrToken(t) for t in tokens]
 
 
-def _handle_scalar_root(args: list[str], i: int, token: str, target_r: Any, data: MergeDict) -> int:
-    """Consume the single value for a non-struct scalar target. Returns new arg index."""
-    i += 1
-    _require_value(args, i, token)
-    data[_defaults.ROOT_KEY] = _try_coerce(target_r, _StrToken(args[i]), token)
-    return i + 1
-
-
-def _handle_root_cast(  # noqa: PLR0913  # each arg carries distinct root-placement context
-    args: list[str],
-    i: int,
-    token: str,
-    *,
-    is_struct: bool,
-    cast_name: str,
-    data: MergeDict,
-    root_json: list[MergeDict],
-) -> int:
+def _handle_root_cast(ctx: _ParseCtx, i: int, token: str, *, is_struct: bool, cast_name: str) -> int:
     """Consume the value for a root-level ``--json`` cast. Returns new arg index.
 
     For a struct/union root the decoded object must be a JSON object; it is collected
     into ``root_json`` and folded in as a base (so per-field CLI flags win) once the
     whole argv is parsed by :func:`~confarg._cast.fold_root_json`.  For a scalar root the
     decoded value is stored under ``__root__``, written in argv order like the bare
-    ``--<cli_prefix>`` flag, so of the two the last typed wins.  Invalid JSON raises via
+    ``--<cli_prefix>`` flag, so of the two the last typed wins: it ends the run the bare
+    flag accumulated, as a field's cast ends its flag's.  Invalid JSON raises via
     :func:`resolve_forced_value`.
     """
+    args = ctx.argv
     i += 1
     _require_value(args, i, token, "'<json>'")
     value = resolve_forced_value(cast_name, args[i], flag=token)
     if is_struct:
         if not isinstance(value, dict):
             raise ConfargError.root_cast_not_object(token, value)
-        root_json.append(value)
+        ctx.root_json.append(value)
     else:
-        data[_defaults.ROOT_KEY] = value
+        ctx.multi_tokens.pop((), None)  # the root's own run; the locals beside it are no part of its value
+        ctx.write([], value)
     return i + 1
 
 
@@ -1580,10 +1620,12 @@ def _handle_force_cast(  # noqa: PLR0913, PLR0917  # cast_name is a necessary di
     """Consume the value for a ``.<cast>`` flag and store the forced value. Returns new arg index.
 
     Scalar casts store a ``_Pinned`` token; ``.json`` stores the decoded structure and
-    raises ``ConfargError`` on invalid JSON (via :func:`resolve_forced_value`).
+    raises ``ConfargError`` on invalid JSON (via :func:`resolve_forced_value`). Either replaces
+    the value at *path*, so it ends the runs multi-token flags accumulated at or below it.
     """
     _require_value(args, i, token)
-    _set_nested(ctx.data, path, resolve_forced_value(cast_name, args[i], flag=token, at=path), ctx.at)
+    _forget_tokens_below(ctx, path)
+    ctx.write(path, resolve_forced_value(cast_name, args[i], flag=token, at=path))
     return i + 1
 
 
@@ -1600,7 +1642,8 @@ def _handle_unknown_field(
     A path below a dict is a key, which takes its value as any value-taking flag does
     (:func:`_require_value`, BUG-161); the new index is returned. No declaration types the
     key, so its append is :func:`_handle_append_token`'s to refuse, as for an ``Any`` value
-    one segment up (BUG-166). Otherwise always raises UnknownArgumentError.
+    one segment up (BUG-166). Otherwise always raises UnknownArgumentError, for the cause
+    :func:`_unreached` gives, which the environment refuses the variable of that path for.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
@@ -1609,13 +1652,9 @@ def _handle_unknown_field(
         if append_mode:
             return _handle_append_token(ctx, i + 1, token, Any, path)
         _require_value(ctx.argv, i + 1, token)
-        _set_nested(ctx.data, path, _StrToken(ctx.argv[i + 1]), ctx.at)
+        ctx.write(path, _StrToken(ctx.argv[i + 1]))
         return i + 2
-    if len(path) > 1 and path[-1] in ("", "+"):
-        dot_pos = token.rfind(".")
-        msg = f"Missing field name after '{token[: dot_pos + 1]}'"
-        raise UnknownArgumentError(msg)
-    raise UnknownArgumentError.no_such_field(token, path)
+    _refuse_unreached_flag(token, path, _unreached(ctx.target, path, ctx.union_tag, ctx.naming))
 
 
 def _try_parse_json_list(arg: str, spelling: str, at: Sequence[str | int]) -> list[Any] | None:
@@ -1701,13 +1740,13 @@ def _consume_collection_or_scalar(
         and not _looks_like_flag(args[i])
         and (parsed := _lone_json_array([args[i]], token, path)) is not None
     ):
-        _set_nested(ctx.data, path, parsed, ctx.at)
+        ctx.write(path, parsed)
         return i + 1
 
     # Variable-length collection → consume until the next flag, extending a prior occurrence
     if _is_varlen_collection(ft):
         tokens, i = _consume_multi_tokens(ctx, i, path)
-        _set_nested(ctx.data, path, _varlen_value(ft, tokens, token, path), ctx.at)
+        ctx.write(path, _varlen_value(ft, tokens, token, path))
         return i
 
     # Fixed-length sequence (tuple[X, Y] or a namedtuple) → consume exact count
@@ -1717,12 +1756,12 @@ def _consume_collection_or_scalar(
     # Union with a sequence variant → consume greedily (disambiguation deferred to construct)
     if _union_has_seq_variant(ft):
         tokens, i = _consume_multi_tokens(ctx, i, path)
-        _set_nested(ctx.data, path, _union_seq_value(ft, tokens, token, path), ctx.at)
+        ctx.write(path, _union_seq_value(ft, tokens, token, path))
         return i
 
     # Default: consume one scalar value
     _require_value(args, i, token)
-    _set_nested(ctx.data, path, _try_coerce(ft, _StrToken(args[i]), token), ctx.at)
+    ctx.write(path, _try_coerce(ft, _StrToken(args[i]), token))
     return i + 1
 
 
@@ -1943,7 +1982,8 @@ def _consume_typed_arg(
     """Consume the value(s) for a resolved, non-append field type and return the new arg index.
 
     A whole-value flag needs its value: the bare ``--<struct>`` form falls through to the
-    missing-value error every other value-taking flag raises.
+    missing-value error every other value-taking flag raises. Its value replaces the node,
+    so it ends the runs multi-token flags accumulated below it.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
@@ -1951,7 +1991,8 @@ def _consume_typed_arg(
     args = ctx.argv
     # JSON object → dataclass / dict / callable / union-with-dc
     if i < len(args) and _takes_whole_value(ft, args[i]):
-        _set_nested(ctx.data, path, _parse_json_arg(args[i], token, path), ctx.at)
+        _forget_tokens_below(ctx, path)
+        ctx.write(path, _parse_json_arg(args[i], token, path))
         return i + 1
 
     return _consume_collection_or_scalar(ctx, i, token, ft, path)
@@ -2118,6 +2159,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         target=walk_target,
         union_tag=union_tag,
         at=merge_root(walk_target, union_tag),
+        root_at=merge_root(target, union_tag),
         below=below or {},
         argv_named=_argv_named_nodes(argv, cli_prefix, config_flag, union_tag, host_parsed=host_parsed),
     )
@@ -2186,19 +2228,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             _forget_tokens_below(ctx, path[:-1])
 
         if force_cast is not None and not path:  # root-level `--json`: inject the whole config
-            i = _handle_root_cast(
-                argv,
-                i,
-                token,
-                is_struct=is_struct,
-                cast_name=force_cast,
-                data=ctx.data,
-                root_json=root_json,
-            )
-            continue
-
-        if not is_struct and not path:
-            i = _handle_scalar_root(argv, i, token, target_r, ctx.data)
+            i = _handle_root_cast(ctx, i, token, is_struct=is_struct, cast_name=force_cast)
             continue
 
         if is_struct and not path:
@@ -2206,12 +2236,15 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             # struct-like root its value would be written at the empty path, a no-op.
             raise UnknownArgumentError.bare_prefix_on_struct_root(token, cli_prefix)
 
-        ft = _resolve_field_type(walk_target, path, union_tag, named=ctx.naming)
-        if ft is None:
-            i = _handle_unknown_field(ctx, i, token, path, append_mode=append_mode)
-            continue
-
-        ft = _resolve_type(ft)
+        if path:
+            ft = _resolve_field_type(walk_target, path, union_tag, named=ctx.naming)
+            if ft is None:
+                i = _handle_unknown_field(ctx, i, token, path, append_mode=append_mode)
+                continue
+            ft = _resolve_type(ft)
+        else:
+            # A non-struct root takes what a field flag of its type takes (BUG-177).
+            ft = target_r
         i += 1
 
         if force_cast:
@@ -2222,7 +2255,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             i = _handle_append_token(ctx, i, token, ft, path)
             continue
 
-        if observe is not None:
+        if observe is not None and path:
             observe(path, ft)
         i = _consume_typed_arg(ctx, i, token, ft, path)
         if host_binds_run is not None and i < len(argv) and not _looks_like_flag(argv[i]) and host_binds_run(path, ft):

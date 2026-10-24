@@ -41,8 +41,8 @@ It matches a ticket filed against that file, against a directory above it, again
 
 ```console
 $ uv run python docs-dev/todo/index.py --where src/confarg/_parse_env.py
-bugs/BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md
-  BUG-177 — A collection root's bare flag takes one token, which construction refuses
+bugs/BUG-266-a-root-unions-scalar-variant-has-no-spelling.md
+  BUG-266 — A root union's scalar variant has no spelling in any channel
   where: src/confarg/_parse_env.py::_parse_env
 …
 ```

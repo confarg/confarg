@@ -169,27 +169,6 @@ class FlagSpec:
         note = escape(self.note) if escape is not None and self.note else self.note
         return " ".join(part for part in (self.help, note) if part)
 
-    def as_single_token(self) -> FlagSpec:
-        """Return this spec reshaped to consume exactly one token, whatever its shape.
-
-        The one inverse of the shape attributes — :attr:`nargs`, :attr:`whole_value`,
-        :attr:`stands_bare`, :attr:`refuses_bare` and its :attr:`usage` — spelled beside
-        them, so a spec forced to a single token undoes the shape
-        :func:`~confarg.cli._build._shaped` gave it in one operation and the next shape
-        attribute is reset where it is declared, not by each caller by hand.
-
-        Dev Notes:
-            docs-dev/architecture/cli-adapters/flag-model.md#framework-neutral-flag-model
-        """
-        return dataclasses.replace(
-            self,
-            nargs=None,
-            whole_value=False,
-            stands_bare=False,
-            refuses_bare=False,
-            usage="<value>",
-        )
-
     def bare_refusal(self) -> str | None:
         """Return the message a bare occurrence of this flag is refused with, or ``None``.
 

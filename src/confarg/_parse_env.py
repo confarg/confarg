@@ -51,8 +51,9 @@ from confarg._parse_cli import (
     _reserved_segment,
     _resolve_field_type,
     _restart_restated_node,
-    _sequence_refusal,
     _takes_callable_shorthand,
+    _Unreached,
+    _unreached,
     _walk_target,
     _write_append,
     detect_force_cast,
@@ -72,7 +73,10 @@ from confarg.exceptions import (
     ConfargError,
     ConfargWarning,
     _bare_value_on_a_struct_root,
+    _field_not_found,
     _merge_suffix_on_the_root,
+    _missing_field_name,
+    _no_element,
 )
 from confarg.typedload._coerce import _try_coerce
 
@@ -192,28 +196,39 @@ def _refuse_root_config_append(orig_key: str, parts: list[str], separator: str) 
         raise ConfargError(msg)
 
 
-def _refuse_below_a_sequence(
+def _refuse_unreached_variable(  # noqa: PLR0913  # the variable, its path, the walk, and its separator
     orig_key: str,
     parts: list[str],
     target: Any,
     union_tag: str,
+    *,
+    separator: str,
     named: NamingView | None = None,
 ) -> None:
-    """Refuse a variable whose spelled path *parts* puts a segment naming no element below a sequence.
+    """Refuse a variable whose spelled path *parts* names nothing a flag writes, for the cause its flag is refused for.
+
+    Asked once the first segment names a member: there the variable is ambient noise, warned
+    about and ignored (:func:`_warn_unknown_env_field`), and below it the program would stop at
+    ``build()`` anyway, or, for a delete, drop the variable without a word.
 
     Raises:
-        ConfargError: If a sequence refuses a segment of the path (BUG-170).
+        ConfargError: If the path names nothing a flag writes (:func:`~confarg._parse_cli._unreached`,
+            BUG-265), naming why as the flag's refusal does.
 
     Dev Notes:
-        docs-dev/architecture/cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index
+        docs-dev/architecture/environment-parsing.md#a-path-no-flag-reaches-is-refused-below-the-first-segment
     """
-    at = _sequence_refusal(target, parts, union_tag, named)
-    if at is not None:
-        msg = (
-            f"Environment variable {orig_key!r} has no matching field"
-            f" (segment {parts[at]!r} names no element of '{'.'.join(parts[:at])}')."
-        )
-        raise ConfargError(msg)
+    if (unreached := _unreached(target, parts, union_tag, named)) is None:
+        return
+    cause, at = unreached
+    if cause is _Unreached.NAMELESS:
+        reason = _missing_field_name(orig_key[: orig_key.rfind(separator) + len(separator)])
+    elif cause is _Unreached.NO_ELEMENT:
+        reason = _no_element(parts[at], ".".join(parts[:at]))
+    else:
+        reason = _field_not_found(".".join(parts))
+    msg = f"Environment variable {orig_key!r} has no matching field ({reason})."
+    raise ConfargError(msg)
 
 
 def _refuse_reserved_key(orig_key: str, parts: list[str]) -> None:
@@ -357,14 +372,23 @@ def _apply_env_json_cast(  # noqa: PLR0913, PLR0917  # root and nested placement
     return True
 
 
-def _read_bare_prefix(orig_key: str, key: str, value: str, prefix: str, target: Any) -> MergeDict | None:
+def _read_bare_prefix(  # noqa: PLR0913, PLR0917  # the variable, then the root it names
+    orig_key: str,
+    key: str,
+    value: str,
+    prefix: str,
+    target: Any,
+    union_tag: str,
+) -> MergeDict | None:
     """Read a variable that names the root, the bare prefix with or without a merge suffix.
 
     Return what it writes at the root, or None when *key* names a path below the root. The
-    bare *prefix* sets a non-struct root whole, as the bare ``--<cli_prefix>`` does; on a
-    struct-like root it names nothing, and a merge suffix patches no root, which is patched
-    one field at a time or set whole. Those two write nothing and are warned about, with the
-    cause the CLI refuses ``--<prefix>`` and ``--<prefix>+`` with, spelled as variables are.
+    bare *prefix* sets a non-struct root whole, as the bare ``--<cli_prefix>`` does, and its
+    value is read as a field variable of the root's type is (BUG-177): ``APP_='[1, 2]'``
+    decodes as ``APP_XS='[1, 2]'`` does. On a struct-like root it names nothing, and a merge
+    suffix patches no root, which is patched one field at a time or set whole. Those two
+    write nothing and are warned about, with the cause the CLI refuses ``--<prefix>`` and
+    ``--<prefix>+`` with, spelled as variables are.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/cli-prefix.md#the-bare-prefix-names-the-root
@@ -382,7 +406,9 @@ def _read_bare_prefix(orig_key: str, key: str, value: str, prefix: str, target: 
     elif is_struct:
         reason = _bare_value_on_a_struct_root(f"{prefix} variable", field)
     else:
-        return {_defaults.ROOT_KEY: _try_coerce(_resolve_type(target), _StrToken(value), orig_key)}
+        root: MergeDict = {}
+        _store_env_value([], _resolve_type(target), value, root, orig_key, _typed_root(target, union_tag))
+        return root
     warnings.warn(
         f"Environment variable {orig_key!r} has no matching field: {reason}. The variable will be ignored.",
         ConfargWarning,
@@ -463,15 +489,17 @@ def _store_env_value(parts: list[str], ft: Any, value: str, data: MergeDict, ori
     """Parse an env var string value and store it at the resolved path in data, *at* where *data* stands.
 
     A JSON value is data (:func:`~confarg._cast.decode_json`), refused naming *orig_key* if it
-    holds a key confarg reserves.
+    holds a key confarg reserves. The empty path is a non-struct root's, whose value
+    ``__root__`` holds, as the bare ``--<prefix>`` flag writes it.
     """
+    written = parts or [_defaults.ROOT_KEY]
     if _accepts_json_for(ft, value):
         with contextlib.suppress(json.JSONDecodeError):
             parsed = decode_json(value, orig_key, parts)
             if isinstance(parsed, list | dict):
-                _set_nested(data, parts, parsed, at)
+                _set_nested(data, written, parsed, at)
                 return
-    _set_nested(data, parts, _try_coerce(ft, _StrToken(value), orig_key), at)
+    _set_nested(data, written, _try_coerce(ft, _StrToken(value), orig_key), at)
 
 
 def _prefixed_variables(
@@ -625,7 +653,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         if _apply_env_json_cast(orig_key, parts, walk_target, value, data, root_json, union_tag, is_struct=is_struct):
             continue
 
-        if (root := _read_bare_prefix(orig_key, key, value, prefix, target)) is not None:
+        if (root := _read_bare_prefix(orig_key, key, value, prefix, target, union_tag)) is not None:
             data.update(root)
             continue
 
@@ -642,7 +670,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         if is_locals:
             ft = None
         else:
-            _refuse_below_a_sequence(orig_key, path, walk_target, union_tag, named)
+            _refuse_unreached_variable(orig_key, path, walk_target, union_tag, separator=separator, named=named)
         if is_delete:
             _handle_env_delete(orig_key, path, data, walk_target, union_tag, at=at, named=named)
             continue

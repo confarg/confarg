@@ -45,7 +45,7 @@ RFC 6901 (JSON Pointer) draws the same line for an array index: digits, no leadi
 The same holds wherever leniency would otherwise store the segment.
 Below a dict a path the walk refuses is a key path, left to `build()` (BUG-161) — except when the branch refuses it standing on a sequence, which `_refuses_at_a_sequence` names and `_is_dict_at_path` excludes: `--d.k.* 5` on a `dict[str, list[int]]` addresses the list, not a key of the dict.
 Fixed tuples and namedtuples count as sequences there, since the merge carries their patches in the same `__base__` shape.
-The environment, which leaves any other unknown path below its first segment to `build()`, refuses such a variable at parse through `_sequence_refusal` ([environment parsing](../environment-parsing.md#environment-parsing)).
+The environment refuses such a variable at parse, as it refuses every path below its first segment that no flag reaches, for the cause `_parse_cli._unreached` gives both channels: the segment names no element of the sequence ([environment parsing](../environment-parsing.md#a-path-no-flag-reaches-is-refused-below-the-first-segment)).
 Where the variants of a union refuse it at different segments, the message names the shallowest one any of them refuses: `u: P | Q` with `P.a.b` and `Q.a` lists refuses `APP_U__A__B__C` as "segment 'b' names no element of 'u.a'", whichever variant is declared first.
 That is the first refusal the walk meets, segment by segment; naming the first variant's, as it did when the walk followed each branch in turn, would rank every state by the variants that led to it, for this message alone (BUG-260).
 

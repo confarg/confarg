@@ -847,6 +847,25 @@ class TestArgvIsTheParsedArgv:
         with pytest.raises(confarg.exceptions.ConfargError, match=r"holds '--host', which argv does not spell"):
             from_namespace(Simple, ns, argv=[], env={}, config_flag="")
 
+    def test_the_bare_prefix_flag_argv_spells_is_read(self) -> None:
+        """The parse result's bare ``--app`` names the root, spelled when argv spells it, whatever the root holds.
+
+        Its key had the prefix stripped to ``""``, which argv's stripped flags never spell,
+        and on a dict root a key path below the root is no unknown path, so the parse
+        result was refused as one argv does not spell.
+        """
+        parser = make_parser(dict[str, int], cli_prefix="app", config_flag="")
+        argv = ["--app", '{"a": 1}']
+        ns = parser.parse_args(argv)
+        assert from_namespace(dict[str, int], ns, argv=argv, env={}, config_flag="") == {"a": 1}
+
+    def test_the_bare_prefix_flag_argv_does_not_spell_raises(self) -> None:
+        """A bare ``--app`` in the parse result that argv does not spell is refused, named as typed."""
+        parser = make_parser(dict[str, int], cli_prefix="app", config_flag="")
+        ns = parser.parse_args(["--app", '{"a": 1}'])
+        with pytest.raises(confarg.exceptions.ConfargError, match=r"holds '--app', which argv does not spell"):
+            from_namespace(dict[str, int], ns, argv=[], env={}, config_flag="")
+
     def test_host_flag_argv_does_not_spell_is_left_alone(self) -> None:
         """A host parameter is not confarg's to judge, whatever its default."""
         parser = make_parser(Simple, config_flag="")
