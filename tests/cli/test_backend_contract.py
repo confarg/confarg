@@ -9730,3 +9730,63 @@ class TestAFlagIsTypedByTheMemberItSets:
         """The flag's metavar names the member's type, not ``ANY`` nor the ``InitVar`` wrapper."""
         specs = {s.name: s for s in build_static_flags(target)}
         assert specs[flag].metavar == "INT"
+
+
+@dataclass
+class _ForbiddenLiteral:
+    x: Literal[1.0, 2.5] = 2.5  # ty: ignore[invalid-type-form]  # PEP 586 forbids a float member, which is the point
+
+
+@dataclass
+class _ForbiddenLiteralBranch:
+    x: Literal[1.0] | str = ""  # ty: ignore[invalid-type-form]  # PEP 586 forbids a float member, which is the point
+
+
+@dataclass
+class _BytesLiteralMember:
+    x: Literal[b"ab", "cd"] = "cd"
+
+
+@dataclass
+class _UnsupportedBranch:
+    x: bytes | int = 0
+
+
+class TestALiteralMemberIsWhatPep586AllowsContract:
+    """A member PEP 586 forbids makes the annotation invalid; a bytes member is one confarg reads nowhere."""
+
+    @pytest.mark.parametrize("token", ["1", "1.0", "2.5"])
+    def test_a_forbidden_member_refuses_every_value(self, loader: ConfargLoader, token: str) -> None:
+        """``--x 1`` no longer builds the float member: confarg names it, on every front-end."""
+        with pytest.raises(TypeCoercionError, match=re.escape("member 1.0 is a float")):
+            loader.load(_ForbiddenLiteral, argv=["--x", token], env={})
+
+    def test_an_untouched_forbidden_literal_keeps_its_default(self, loader: ConfargLoader) -> None:
+        """The refusal is lazy, as an unsupported leaf's: no value reaches the field, so its default stands."""
+        assert loader.load(_ForbiddenLiteral, argv=[], env={}).x == 2.5
+
+    @pytest.mark.parametrize("token", ["1", "a"])
+    def test_a_forbidden_member_refuses_its_union(self, loader: ConfargLoader, token: str) -> None:
+        """The other branch never takes the value instead: the annotation is invalid, not a branch to skip."""
+        with pytest.raises(TypeCoercionError, match=re.escape("member 1.0 is a float")):
+            loader.load(_ForbiddenLiteralBranch, argv=["--x", token], env={})
+
+    def test_a_bytes_member_is_skipped(self, loader: ConfargLoader) -> None:
+        """The members confarg reads still build, as a ``bytes | int`` field still reads an int."""
+        assert loader.load(_BytesLiteralMember, argv=["--x", "cd"], env={}).x == "cd"
+
+    def test_a_skipped_unsupported_branch_is_named(self, loader: ConfargLoader) -> None:
+        """A value no branch takes is refused naming the branch confarg reads nothing as."""
+        with pytest.raises(TypeCoercionError, match=re.escape("bytes is no leaf type confarg reads")):
+            loader.load(_UnsupportedBranch, argv=["--x", "ab"], env={})
+
+    def test_an_unsupported_branch_lets_the_others_read(self, loader: ConfargLoader) -> None:
+        """``bytes | int`` reads an int, its bytes branch left to code that builds the object."""
+        assert loader.load(_UnsupportedBranch, argv=["--x", "1"], env={}).x == 1
+
+    def test_registration_offers_the_members_confarg_reads(self) -> None:
+        """A bytes member is no choice, and a forbidden Literal offers none: confarg refuses its value itself."""
+        specs = {s.name: s for s in build_static_flags(_BytesLiteralMember)}
+        assert specs["x"].choices == ["cd"]
+        specs = {s.name: s for s in build_static_flags(_ForbiddenLiteral)}
+        assert specs["x"].choices is None

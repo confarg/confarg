@@ -91,8 +91,10 @@ from confarg.typedload._coerce import (
     _coerce_leaf,
     _coerce_type_ref,
     _held_by_any,
+    _is_coercible_leaf,
     _is_struct_variant,
     _is_taggable_leaf,
+    _refuse_a_forbidden_literal,
     _steal_order,
     _type_kind,
     _TypeKind,
@@ -671,6 +673,10 @@ def construct(tp: Any, data: Any, *, path: FieldPath = (), union_tag: str = _def
     if pinned is not None:
         _refuse_unheld_cast(tp, pinned.tp, path)
         return _coerce_leaf(pinned.tp, pinned.value, _spell_field_path(path))
+    if _is_union(tp):
+        # Before a None is taken and before any branch is tried: a branch refusing the value is
+        # skipped, so an invalid Literal must not be left for the branch walk to meet.
+        _refuse_a_forbidden_literal(tp, _spell_field_path(path))
     if data is None and _allows_none(tp):
         return None
     if _is_typed_call(data, tp):
@@ -1363,9 +1369,7 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
     if any_vars:
         return construct(any_vars[0], data, path=path, union_tag=union_tag)
 
-    variant_names = " | ".join(
-        "None" if v is types.NoneType else getattr(_resolve_type(v), "__name__", repr(v)) for v in all_args
-    )
+    variant_names = " | ".join(_variant_name(v) for v in all_args)
     if isinstance(data, dict) and ListOp.BASE in data:
         # A patch the merge deferred with its base ({__base__: base, **patch}) is a sequence
         # patch; every variant refused it above, so the first sequence variant tried has its
@@ -1374,13 +1378,30 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
         seq_var = next((v for v in (*fixed_vars, *coll_vars) if _is_seq_variant(v)), None)
         if seq_var is not None:
             construct(seq_var, data, path=path, union_tag=union_tag)
-    raise TypeCoercionError.cannot_coerce(
+    raise TypeCoercionError.cannot_coerce_to_union(
         _src_type(data),
         data,
         variant_names,
         _spell_field_path(path),
+        unread=[_variant_name(v) for v in scalar_leaf_vars if _reads_nothing(v)],
         none_sentinel=_reads_none_word(all_args, data),
     )
+
+
+def _variant_name(variant: Any) -> str:
+    """Return how a union refusal names *variant*: its class name, ``None``, or the type as written."""
+    if variant is types.NoneType:
+        return "None"
+    return getattr(_resolve_type(variant), "__name__", repr(variant))
+
+
+def _reads_nothing(variant: Any) -> bool:
+    """True if the scalar union branch *variant* is a leaf construction reads no value as, such as ``bytes``.
+
+    A union skips such a branch; its refusal names it, since no value could have reached it.
+    """
+    vr = _resolve_type(variant)
+    return not (_is_coercible_leaf(vr) or _is_type_ref(vr) or _type_kind(vr) is _TypeKind.CALLABLE)
 
 
 def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:

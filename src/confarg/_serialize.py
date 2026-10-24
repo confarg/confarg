@@ -34,6 +34,7 @@ from confarg._types import (
     _is_literal,
     _is_struct,
     _is_type_ref,
+    _literal_members,
     _literal_values,
     _namedtuple_fields,
     _origin,
@@ -49,6 +50,7 @@ from confarg.typedload._coerce import (
     _LEAF_SERIALIZERS,
     _is_coercible_leaf,
     _is_struct_variant,
+    _refuse_a_forbidden_literal,
     _registered_leaf_of,
     _type_kind,
     _TypeKind,
@@ -143,6 +145,7 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
             return _serialize_any(instance, path, opts)
         case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
             _refuse_an_unsupported_leaf(tp, path)
+            _refuse_an_unread_literal_member(tp, instance, path)
             return _serialize_leaf(tp, instance, opts.native_types)
 
 
@@ -156,6 +159,7 @@ def _refuse_an_unsupported_leaf(tp: Any, path: FieldPath) -> None:
         docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
     """
     resolved = _resolve_type(tp)
+    _refuse_a_forbidden_literal(resolved, _spell_field_path(path) or _defaults.ROOT_KEY)
     if _is_type_ref(resolved) or _is_coercible_leaf(resolved):
         return
     name = getattr(resolved, "__name__", repr(tp))
@@ -165,6 +169,33 @@ def _refuse_an_unsupported_leaf(tp: Any, path: FieldPath) -> None:
         f" confarg.register_leaf_type({name}, ...) makes it one."
     )
     raise ConfargError(msg)
+
+
+def _refuse_an_unread_literal_member(tp: Any, instance: Any, path: FieldPath) -> None:
+    """Refuse to write *instance* at *path* when it is a member of the Literal *tp* that confarg reads nowhere.
+
+    A bytes member, which PEP 586 allows: it is refused as a ``bytes`` field's value is, since
+    the dump would not load back.
+
+    Raises:
+        ConfargError: If *instance* is a member of *tp* that no value reads as.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-literal-member-is-what-pep-586-allows.md#a-literal-member-is-what-pep-586-allows
+    """
+    if not _is_literal(tp) or _literal_holds(_literal_values(tp), instance):
+        return
+    if _literal_holds(_literal_members(tp), instance):
+        msg = (
+            f"Cannot serialize {instance!r} at '{_spell_field_path(path) or _defaults.ROOT_KEY}': it is a"
+            f" {type(instance).__name__} member, which confarg reads no value as, so the value would not load back."
+        )
+        raise ConfargError(msg)
+
+
+def _literal_holds(members: tuple[Any, ...], instance: Any) -> bool:
+    """True if *instance* is one of the Literal *members*: equal and of the same type, so True is not 1."""
+    return any(type(m) is type(instance) and m == instance for m in members)
 
 
 def _serialize_any(
@@ -414,6 +445,7 @@ def _serialize_union(
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#casting-a-stolen-leaf
     """
+    _refuse_a_forbidden_literal(tp, _spell_field_path(path) or _defaults.ROOT_KEY)
     variant_tp = _find_variant_type(tp, instance)
     if variant_tp is None:
         return instance
@@ -786,7 +818,8 @@ def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one retu
         case _TypeKind.DICT:
             return isinstance(instance, dict)
         case _TypeKind.LEAF if _is_literal(tp):
-            return any(type(m) is type(instance) and m == instance for m in _literal_values(tp))
+            # Every member, a bytes one too, so its value is refused by the Literal it belongs to.
+            return _literal_holds(_literal_members(tp), instance)
         case _TypeKind.ANY:
             return True
         case _TypeKind.UNION | _TypeKind.TAGGABLE_LEAF | _TypeKind.CALLABLE | _TypeKind.LEAF:

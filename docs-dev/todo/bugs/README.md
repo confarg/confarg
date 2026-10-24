@@ -28,7 +28,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-250 — A Callable in a union does not advertise its openers](BUG-250-a-callable-in-a-union-does-not-advertise-its-openers.md) | minor |  | S | medium | behavior | PR-13 |
 | [BUG-251 — An object no configuration spells fails in the file writer, with the writer's own error](BUG-251-an-object-no-configuration-spells-fails-in-the-file-writer.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-252 — A class tag on a union with no struct variant lists no candidate](BUG-252-a-class-tag-on-a-union-with-no-struct-variant-lists-no-candidate.md) | minor |  | S | low | behavior | PR-5 |
-| [BUG-255 — A `Literal` member PEP 586 forbids is accepted](BUG-255-a-literal-member-pep-586-forbids-is-accepted.md) | minor |  | S | low | config | PR-5 |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | minor |  | M | low | behavior | PR-5, PR-13, PR-26, BUG-179 |
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | minor |  | M | medium | behavior | PR-38 |
 | [BUG-177 — A collection root's bare flag takes one token, which construction refuses](BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md) | minor |  | M | medium | behavior | PR-5 |

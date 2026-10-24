@@ -605,16 +605,62 @@ def _is_literal(tp: Any) -> bool:
     return get_origin(_resolve_type(tp)) is Literal
 
 
+def _literal_members(tp: Any) -> tuple[Any, ...]:
+    """Return every member of the Literal type *tp*, as written: the ones confarg reads and the others."""
+    return get_args(_resolve_type(tp))
+
+
+def _is_readable_literal_member(member: Any) -> bool:
+    """True if *member* is a Literal member confarg reads: an int, str, bool, Enum member or None.
+
+    PEP 586 also allows a bytes member, which confarg reads nowhere, as it reads no ``bytes`` field.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-literal-member-is-what-pep-586-allows.md#a-literal-member-is-what-pep-586-allows
+    """
+    return member is None or isinstance(member, int | str | enum.Enum)
+
+
 def _literal_values(tp: Any) -> tuple[Any, ...]:
-    """Return the allowed values of a Literal type.
+    """Return the members of a Literal type that confarg reads, a bytes member left out.
 
     Args:
         tp: A Literal type.
 
     Returns:
-        A tuple of the Literal's allowed values.
+        A tuple of the Literal's members that a value can read as.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-literal-member-is-what-pep-586-allows.md#a-literal-member-is-what-pep-586-allows
     """
-    return get_args(_resolve_type(tp))
+    return tuple(m for m in _literal_members(tp) if _is_readable_literal_member(m))
+
+
+def _forbidden_literal_member(tp: Any) -> tuple[Any, Any] | None:
+    """Return ``(literal, member)`` for the first Literal member PEP 586 forbids reachable from *tp*, None if none.
+
+    The one answer to "is this annotation an invalid ``Literal``?". The walk descends into a
+    union's branches and a collection's item types, where a refused branch would otherwise
+    let another take the value, and stops at a struct, whose fields are reached as fields.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-literal-member-is-what-pep-586-allows.md#a-forbidden-member-makes-the-annotation-invalid
+    """
+    tp = _resolve_type(tp)
+    if _is_literal(tp):
+        member = next((m for m in _literal_members(tp) if not _is_pep_586_member(m)), _NO_MEMBER)
+        return None if member is _NO_MEMBER else (tp, member)
+    if not (_is_union(tp) or _is_dict(tp) or _is_list(tp) or _is_set(tp) or _is_frozenset(tp) or _is_tuple(tp)):
+        return None
+    return next((found for arg in get_args(tp) if (found := _forbidden_literal_member(arg)) is not None), None)
+
+
+_NO_MEMBER = object()
+
+
+def _is_pep_586_member(member: Any) -> bool:
+    """True if PEP 586 allows *member* in a Literal: one confarg reads, or a bytes value."""
+    return _is_readable_literal_member(member) or isinstance(member, bytes)
 
 
 def _is_singleton_literal(tp: Any) -> bool:

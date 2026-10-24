@@ -25,6 +25,7 @@ Until BUG-202 a delete reached the writer, which raised its own error.
 
 A value typed by a leaf construction does not build — no struct, no type reference, and none of the leaves `_coerce._is_coercible_leaf` names, as `complex` is until registered — is refused by `dump()` with a `ConfargError` naming the path and `register_leaf_type`, the type construction refuses as `Unsupported leaf type` (`_serialize._refuse_an_unsupported_leaf`).
 One predicate answers both directions, so a value `dump()` writes is one construction can read back.
+A `Literal` holding a member PEP 586 forbids is refused by both with the same error, and a value that is a `bytes` member of a `Literal` is refused as a `bytes` field's is ([design decisions](../design-decisions/a-literal-member-is-what-pep-586-allows.md#a-literal-member-is-what-pep-586-allows)).
 `dump()` used to pass such a value through, untouched and unwarned, and the format writer then failed with its own error (`Object of type date is not JSON serializable`) or wrote a value the reload refused.
 `date` reached that path only once a class whose signature does not read stopped being a struct ([which signature is read](../design-decisions/a-structs-members-are-its-constructors-parameters.md#which-signature-is-read)); before, it was a struct with `object.__init__`'s `args` and `kwargs`, which `dump()` refused as not held.
 It is a built-in leaf since ([the date and time types](../design-decisions/the-date-and-time-types-are-built-in-leaves.md#the-date-and-time-types-are-built-in-leaves)).

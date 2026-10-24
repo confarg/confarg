@@ -136,6 +136,8 @@ A field default is the layer below every source only where the class declares it
   How a class dumps cannot be registered yet (FEAT-49).
 - A subclass whose own `__init__` forwards `**kwargs` to its parent is set through a `kwargs` dict, untyped, not through the parent's members, and an undecorated subclass of a dataclass dumps its parent's fields alone (FEAT-50, [a dataclass is read by its `__init__`](design-decisions/a-structs-members-are-its-constructors-parameters.md#a-dataclass-is-read-by-its-__init__)).
 - A class whose constructor signature does not read, as `zoneinfo.ZoneInfo`'s, is an unsupported leaf until registered: construction refuses its value and `dump()` refuses to write one ([types](types/serialization.md#an-unsupported-leaf-is-refused-both-ways)).
+- No channel spells a `bytes` value: a `bytes` field is an unsupported leaf, and a `bytes` member of a `Literal` reads as nothing, so `Literal[b"ab", "cd"]` takes only `"cd"` and `dump()` refuses to write `b"ab"` ([design decisions](design-decisions/a-literal-member-is-what-pep-586-allows.md#a-literal-member-is-what-pep-586-allows)).
+- A union's unsupported branch is skipped: `bytes | int` reads an int and refuses every other value, naming `bytes` ([design decisions](design-decisions/a-literal-member-is-what-pep-586-allows.md#an-unsupported-branch-is-skipped-and-named)).
 - A `call:` result is dumped from the object as the value it produced, never as the call ([design decision](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
   A result that no configuration spells, such as a closure, a lambda or an instance whose fields cannot be read, cannot be dumped from the object.
   The merged dict keeps the call, and `dump_file()` writes it as written.
