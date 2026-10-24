@@ -14,8 +14,9 @@ severity: trivial
 
 # REF-75 — `cli/_collect.py` no longer collects, and `_merge_from_flat` no longer merges from the flat result
 
-Since REF-72 the module holds the adapters' merge tail — the argv check, the call to vanilla's loop, `_merge_sources` — plus `_tag_named_struct`, which only argparse completion uses.
+Since REF-72 the module holds the adapters' merge tail — the argv check, the call to vanilla's loop, `_merge_sources`.
+It once held `_tag_named_struct` too, which now lives in `_tags` with two callers, argparse completion and the default layer, and which [REF-100](REF-100-a-class-tag-is-read-silently-by-three-functions.md) is about.
 The type walk it was named for is gone, and `_merge_from_flat` takes the flat parse result only to check it against argv.
 The names now describe the superseded design, and the notes and the canonical table cite `cli/_collect` for things that are not collection.
-Fix direction: rename the module (`cli/_merge_tail.py`, say) and the function (`_merge_from_argv`), move `_tag_named_struct` next to its one caller, and sweep the `cli/_collect` citations in `../../architecture/` (run `uv run python docs-dev/todo/anchors.py` after).
+Fix direction: rename the module (`cli/_merge_tail.py`, say) and the function (`_merge_from_argv`), and sweep the `cli/_collect` citations in `../../architecture/` (run `uv run python docs-dev/todo/anchors.py` after).
 See [cli-adapters/model.md#argv-is-the-only-writer](../../architecture/cli-adapters/model.md#argv-is-the-only-writer).

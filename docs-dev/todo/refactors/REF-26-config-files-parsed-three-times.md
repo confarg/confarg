@@ -5,6 +5,9 @@ where:
   - src/confarg/cli/_build.py
   - src/confarg/_pipeline.py
   - src/confarg/_parse_cli.py
+  - src/confarg/_parse_env.py::_env_config_pointers
+  - src/confarg/_parse_cli.py::_config_pairs_in
+  - src/confarg/_parse_cli.py::_argv_named_nodes
 effort: M
 risk: low
 impact: none
@@ -31,3 +34,9 @@ The adapters add `cli/_prefix.strip_argv_prefix`, two more scans in `cli/_build.
 Both `_tags` scans run on **un-normalized** argv, so each re-implements `--flag=value` splitting and flag detection by hand rather than using `_normalize_eq_args` and `_looks_like_flag`, the sole canonical discriminator ([cli-parsing/token-consumption.md#token-consumption](../../architecture/cli-parsing/token-consumption.md#token-consumption)).
 They both want `(flag, value)` pairs and are trivially fusible into one walk over the already-normalized token list.
 Also: the subpath-stripping lines in `_parse_cli._collect_config_file_pairs` are a verbatim copy of those in `_consume_config_paths`, so the lenient re-scan and the strict scan disagree only by accident.
+
+**The naming feature (BUG-233, BUG-236) added passes of its own, and left two return values dead.**
+The config level now loads before argv and the environment are typed, so the pairs are found ahead of the loops: `_parse_cli._config_pairs_in` scans argv for `--config` before vanilla's loop, `_parse_cli._argv_named_nodes` scans it again for the nodes it names, and `_parse_env._env_config_pointers` reads the environment for `CONFIG[__subpath]` before `_parse_env`.
+The loops still collect the same pairs as they meet them, and nobody reads them: every caller of `_parse_cli` takes `[0]` or nothing (`_api._merge`, `cli/_collect._merge_from_flat`, `cli/_build._collect_loop_typed_specs`), and `_pipeline._lower_layers` writes `env_data, _ = _parse_env(...)`.
+Each `--config` subpath is therefore checked by `_check_mount_subpath` twice, once in `_config_pairs_in` and once in the loop, and `_argv_named_nodes` takes `host_parsed` only to `del` it.
+Collapsing the passes includes dropping the second return value of both loops — or having the loop be what `_config_pairs_in` calls, so the pairs and the check have one source.
