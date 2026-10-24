@@ -2006,62 +2006,6 @@ def _consume_typed_arg(
     return _consume_collection_or_scalar(ctx, i, token, ft, path)
 
 
-def _collect_config_file_pairs(
-    argv: Sequence[str],
-    config_flag: str,
-    target: Any,
-    union_tag: str,
-) -> list[tuple[str, str]]:
-    """Return (subpath, mount value) pairs for ``--config[.subpath]`` flags in command-line order.
-
-    Cyclopts' pre-parse refusal: cyclopts asserts on a ``nargs="*"`` flag with zero
-    tokens before confarg's loop ever reads argv, so a bare ``--config[.subpath]`` is
-    refused here first, raising exactly what vanilla's parse raises, off the same
-    message builders — including the check that a subpath names a node of *target*.
-
-    Takes argv with any ``cli_prefix`` already removed
-    (:func:`~confarg.cli._prefix.strip_argv_prefix`), so this scan never has to know
-    about it.
-
-    Args:
-        argv: The CLI argument sequence to scan, free of any ``cli_prefix``.
-        config_flag: The flag name used to specify config files (e.g. ``"config"``).
-        target: The target type the subpaths are checked against.
-        union_tag: The field name used as a discriminator tag in unions.
-
-    Returns:
-        A list of ``(subpath, mount value)`` pairs in the order they appear in argv.
-
-    Raises:
-        ConfargError: A ``--config[.subpath]`` occurrence with no path token after it,
-            or a subpath that names no node of *target*.
-
-    Dev Notes:
-        docs-dev/architecture/cli-adapters/a-flag-that-stands-bare.md#a-flag-that-stands-bare
-    """
-    normalized = _normalize_eq_args(list(argv))
-    pairs: list[tuple[str, str]] = []
-    i = 0
-    while i < len(normalized):
-        token = normalized[i]
-        if not _looks_like_flag(token):
-            i += 1
-            continue
-        raw_key = token[2:]
-        if _addresses_key(raw_key, config_flag):
-            subpath = _config_subpath(raw_key, config_flag)
-            _check_mount_subpath(target, subpath, union_tag, token)
-            i += 1
-            if i >= len(normalized) or _looks_like_flag(normalized[i]):
-                raise ConfargError(_missing_config_path_msg(config_flag))
-            while i < len(normalized) and not _looks_like_flag(normalized[i]):
-                pairs.append((subpath, normalized[i]))
-                i += 1
-        else:
-            i += 1
-    return pairs
-
-
 def _config_pairs_in(
     argv: Sequence[str],
     target: Any,
@@ -2070,6 +2014,9 @@ def _config_pairs_in(
     union_tag: str,
 ) -> list[tuple[str, str]]:
     """Return the (subpath, mount value) pairs argv's ``--config`` flags name, in argv order, before any value is typed.
+
+    Also cyclopts' pre-parse refusal: cyclopts asserts on a ``nargs="*"`` flag with zero tokens
+    before confarg's loop reads argv, so a bare ``--config[.subpath]`` is refused here first.
 
     The files they mount are part of the config level, which types the flags below a node it
     names, so the pipeline loads them before vanilla's loop runs; the loop reads the same

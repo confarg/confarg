@@ -29,14 +29,17 @@ Since BUG-259 one configuration reads each location once, keeping its document i
 
 **Argv itself is scanned as often, which is the other half.**
 Four passes per `_parse_cli` call: `_normalize_eq_args`, then `_tags._partial_config_from_argv`, then `_tags._tags_from_argv`, then the main loop.
-The adapters add `cli/_prefix.strip_argv_prefix`, two more scans in `cli/_build.py` (and cyclopts `_collect_config_file_pairs`), then run all four again in the loop that writes their CLI channel — six or more passes for one command line.
+The adapters add `cli/_prefix.strip_argv_prefix`, two more scans in `cli/_build.py` (and cyclopts' pre-parse refusal through `_config_pairs_in`), then run all four again in the loop that writes their CLI channel — six or more passes for one command line.
 
 Both `_tags` scans run on **un-normalized** argv, so each re-implements `--flag=value` splitting and flag detection by hand rather than using `_normalize_eq_args` and `_looks_like_flag`, the sole canonical discriminator ([cli-parsing/token-consumption.md#token-consumption](../../architecture/cli-parsing/token-consumption.md#token-consumption)).
 They both want `(flag, value)` pairs and are trivially fusible into one walk over the already-normalized token list.
-Also: the subpath-stripping lines in `_parse_cli._collect_config_file_pairs` are a verbatim copy of those in `_consume_config_paths`, so the lenient re-scan and the strict scan disagree only by accident.
 
 **The naming feature (BUG-233, BUG-236) added passes of its own, and left two return values dead.**
 The config level now loads before argv and the environment are typed, so the pairs are found ahead of the loops: `_parse_cli._config_pairs_in` scans argv for `--config` before vanilla's loop, `_parse_cli._argv_named_nodes` scans it again for the nodes it names, and `_parse_env._env_config_pointers` reads the environment for `CONFIG[__subpath]` before `_parse_env`.
 The loops still collect the same pairs as they meet them, and nobody reads them: every caller of `_parse_cli` takes `[0]` or nothing (`_api._merge`, `cli/_collect._merge_from_flat`, `cli/_build._collect_loop_typed_specs`), and `_pipeline._lower_layers` writes `env_data, _ = _parse_env(...)`.
-Each `--config` subpath is therefore checked by `_check_mount_subpath` twice, once in `_config_pairs_in` and once in the loop, and `_argv_named_nodes` takes `host_parsed` only to `del` it.
+Each `--config` subpath is therefore checked by `_check_mount_subpath` twice, once in `_config_pairs_in` and once in the loop.
 Collapsing the passes includes dropping the second return value of both loops — or having the loop be what `_config_pairs_in` calls, so the pairs and the check have one source.
+
+**On the adapter path the whole config level is read twice, at registration and at the merge.**
+`populate_*` reads the layers below argv to type the flags (`_pipeline.below_argv`): every `files=` file, the `env_config` file, the `CONFIG__*` mounts and argv's `--config` files, with a `Reads` of its own, then the merge reads them all again.
+The environment must be read again at the merge (a variable set after the parser is built is read, [the adapters](../../architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters)); the files have no such liveness argument, so a `Registration` carrying the config level it loaded would halve the reads, weighed against FEAT-47's question of what a stateful object caches.
