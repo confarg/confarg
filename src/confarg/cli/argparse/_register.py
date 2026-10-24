@@ -23,7 +23,7 @@ from confarg.cli._build import (
 )
 from confarg.cli._markup import escape_percent
 from confarg.cli._prefix import PREFIX_ATTR
-from confarg.cli._sources import REGISTRATION_ATTR, Registration, registration_inputs
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, refuse_a_second_target, registration_inputs
 from confarg.dictexpr import contains_expression
 from confarg.exceptions import ConfargError
 
@@ -202,6 +202,7 @@ def populate_parser(
         ``allow_abbrev=False`` by default to prevent schema evolution from
         silently breaking abbreviated flag invocations.
     """
+    refuse_a_second_target(parser.get_default(REGISTRATION_ATTR), target, "parser")
     options, below, sources = registration_inputs(target, "populate_parser", opts)
     cli_prefix, argv = options.cli_prefix or "", options.argv
     union_tag, config_flag = options.union_tag, options.config_flag
@@ -226,7 +227,7 @@ def populate_parser(
     load_flags_into_parser(static, parser)
     load_flags_into_parser(dynamic, parser)
     # argparse hands the merge only a Namespace, so what registration read rides on it.
-    parser.set_defaults(**{REGISTRATION_ATTR: Registration(sources, bound_runs(static + dynamic, cli_prefix))})
+    parser.set_defaults(**{REGISTRATION_ATTR: Registration(sources, bound_runs(static + dynamic, cli_prefix), target)})
     if cli_prefix:
         # argparse hands from_namespace only a Namespace, with no way back to this
         # parser, so the prefix rides along on every Namespace the parser produces.

@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 from confarg.cli._build import bound_runs, build_dynamic_flags, build_static_flags, widen_static
 from confarg.cli._prefix import PREFIX_ATTR
-from confarg.cli._sources import REGISTRATION_ATTR, Registration, registration_inputs
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, refuse_a_second_target, registration_inputs
 
 
 def load_flags_into_command(
@@ -70,6 +70,7 @@ def populate_command(  # noqa: PLR0913, PLR0917  # mirrors the public populate_*
         config_subkeys: Whether to register ``--<config_flag>.<path>`` options.
     """
     before_names = {p.name for p in command.params}
+    refuse_a_second_target(getattr(command, REGISTRATION_ATTR, None), target, "command")
     options, below, sources = registration_inputs(target, caller, opts)
     cli_prefix, argv = options.cli_prefix or "", options.argv
     union_tag, config_flag = options.union_tag, options.config_flag
@@ -94,7 +95,7 @@ def populate_command(  # noqa: PLR0913, PLR0917  # mirrors the public populate_*
     static, dynamic = widen_static(static, dynamic)
     load_flags_into_command(static, command, option_factory)
     load_flags_into_command(dynamic, command, option_factory)
-    registration = Registration(sources, bound_runs(static + dynamic, cli_prefix))
+    registration = Registration(sources, bound_runs(static + dynamic, cli_prefix), target)
     # Recorded on the options, not on the command: both frameworks routinely copy
     # ``params`` onto another command (groups, decorators), and what registration read
     # must survive that so the merge step still finds it.
