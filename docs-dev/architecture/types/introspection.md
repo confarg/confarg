@@ -2,7 +2,7 @@
 
 All type knowledge is derived at runtime from ordinary annotations (`_types.py`), because confarg requires no base class, decorator or field marker ([design decisions](../design-decisions/no-custom-types-required.md#no-custom-types-required)).
 
-- `TypeAliasType`, `Annotated` and `Final` are unwrapped everywhere (`_resolve_type`; see [wrappers are transparent](#wrappers-are-transparent)).
+- `TypeAliasType`, `Annotated`, `Final` and `NewType` are unwrapped everywhere (`_resolve_type`; see [wrappers are transparent](#wrappers-are-transparent)).
 - Abstract collection types map to concrete ones: `Sequence`/`Iterable`/`Collection` → list, `AbstractSet`/`MutableSet` → set, `Mapping`/`MutableMapping` → dict.
 - A bare collection annotation (`dict`, `list`, `set`, `frozenset`, `tuple`) reads as its `Any`-parameterized form, PEP 484's reading of it: `dict` is `dict[Any, Any]` — `_dict_kv`'s default for the unparameterized form — and `tuple` is `tuple[Any, ...]`, variadic (`_is_varlen_collection`, `_tuple_types`).
   `get_origin` of a bare class is `None`, so each shape predicate names the class itself before asking the origin (BUG-187, BUG-211). pydantic and msgspec read a bare collection the same way.
@@ -15,8 +15,9 @@ All type knowledge is derived at runtime from ordinary annotations (`_types.py`)
 
 ## Wrappers are transparent
 
-`_resolve_type` unwraps `TypeAliasType`, `Annotated` and `Final` in a loop, so they nest in any order (`Annotated[Final[X], …]`, an alias of `Final[X]`), and a bare `Final` reads as `Any`.
-What each wrapper adds — an alias name, metadata, "not reassigned" — is nothing a channel, the merge, construction or serialization acts on, so every walk asks the type underneath.
+`_resolve_type` unwraps `TypeAliasType`, `Annotated`, `Final` and `NewType` in a loop, so they nest in any order (`Annotated[Final[X], …]`, an alias of `Final[X]`, a `NewType` over an alias), and a bare `Final` reads as `Any`.
+What each wrapper adds — an alias name, metadata, "not reassigned", a distinct name for the type checker — is nothing a channel, the merge, construction or serialization acts on, so every walk asks the type underneath.
+A `NewType`'s values are its supertype's at runtime, so it is its supertype to every walk, and no registration keys on it ([a NewType is its supertype](../design-decisions/a-registration-is-one-construction-reaches.md#a-newtype-is-its-supertype)).
 
 A class is none of the wrappers, so `_resolve_type` returns a class unchanged before it tests for any of them.
 Every struct question passes through `_resolve_type`, so this early return saves time on every subclass scan (REF-92).

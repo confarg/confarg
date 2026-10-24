@@ -23,7 +23,7 @@ from confarg._merge import ListOp
 from confarg._sources import register_scheme as _register_scheme
 from confarg._sources import unregister_scheme as _unregister_scheme
 from confarg._types import TagPolicy
-from confarg.typedload._coerce import _LEAF_COERCIONS, _LEAF_SERIALIZERS
+from confarg.typedload._coerce import _LEAF_COERCIONS, _LEAF_SERIALIZERS, _registration_refusal
 
 
 def register_leaf_type(
@@ -58,6 +58,15 @@ def register_leaf_type(
     ``Path``, ``Decimal`` and ``UUID`` are registered already; registering one of
     them again replaces how confarg reads and writes it.
 
+    ``tp`` must be a class confarg would otherwise not read itself. A ``NewType``
+    reads as its supertype and a generic alias such as ``tuple[int, int]`` as its
+    shape, so neither can be registered, and neither can a class confarg reads
+    itself: ``int``, ``str``, ``bool``, ``float``, ``None``, ``Any``, ``object``,
+    ``type``, an ``Enum``, a namedtuple, a builtin or abstract collection.
+
+    Raises:
+        TypeError: If ``tp`` is a key no value would ever be coerced through.
+
     Example::
 
         from ipaddress import IPv4Address
@@ -65,6 +74,11 @@ def register_leaf_type(
 
         confarg.register_leaf_type(Int, coerce_int, serialize=lambda i: i.value)
     """
+    refusal = _registration_refusal(tp)
+    if refusal is not None:
+        name = tp.__name__ if isinstance(tp, type) else repr(tp)
+        msg = f"register_leaf_type({name}): {refusal}; register a class confarg does not read itself"
+        raise TypeError(msg)
     _LEAF_COERCIONS[tp] = coerce
     _LEAF_SERIALIZERS[tp] = serialize
 

@@ -30,7 +30,7 @@ from dataclasses import field as dataclasses_field
 from decimal import Decimal
 from enum import Enum, IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, NewType
 from uuid import UUID
 
 import pytest
@@ -9790,3 +9790,39 @@ class TestALiteralMemberIsWhatPep586AllowsContract:
         assert specs["x"].choices == ["cd"]
         specs = {s.name: s for s in build_static_flags(_ForbiddenLiteral)}
         assert specs["x"].choices is None
+
+
+_UserId = NewType("_UserId", int)
+_Tags = NewType("_Tags", list[str])
+
+
+@dataclass
+class _NewTypeLeaf:
+    x: int = 0
+
+
+_NewTypeInner = NewType("_NewTypeInner", _NewTypeLeaf)
+
+
+@dataclass
+class _WithNewTypes:
+    u: _UserId = _UserId(0)
+    t: _Tags = dataclasses_field(default_factory=lambda: _Tags([]))
+    inner: _NewTypeInner = dataclasses_field(default_factory=lambda: _NewTypeInner(_NewTypeLeaf()))
+
+
+class TestANewTypeIsItsSupertypeContract:
+    """A ``NewType`` field reads, merges and registers as its supertype, on every front-end."""
+
+    def test_a_scalar_reads_as_its_supertype(self, loader: ConfargLoader) -> None:
+        """``--u 7`` builds the int a ``UserId`` is, coerced at merge time as an int token is."""
+        assert loader.load(_WithNewTypes, argv=["--u", "7"], env={}).u == 7
+        assert loader.merge(_WithNewTypes, argv=["--u", "7"], env={}) == {"u": 7}
+
+    def test_a_collection_takes_its_tokens(self, space_sep_loader: ConfargLoader) -> None:
+        """``--t a b`` fills the list a ``Tags`` is, where the field was a leaf no flag took a run for."""
+        assert space_sep_loader.load(_WithNewTypes, argv=["--t", "a", "b"], env={}).t == ["a", "b"]
+
+    def test_a_struct_registers_its_members(self, loader: ConfargLoader) -> None:
+        """``--inner.x`` sets the member of the dataclass the ``NewType`` names."""
+        assert loader.load(_WithNewTypes, argv=["--inner.x", "5"], env={}).inner == _NewTypeLeaf(x=5)

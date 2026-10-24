@@ -15,7 +15,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NewType
 from uuid import UUID
 
 if TYPE_CHECKING:
@@ -35,6 +35,7 @@ from confarg._types import (
     _is_set,
     _is_struct,
     _is_tuple,
+    _is_type_ref,
     _is_union,
     _literal_members,
     _literal_values,
@@ -712,6 +713,46 @@ def _is_coercible_leaf(tp: Any) -> bool:
         or _is_enum(tp)
         or tp in _LEAF_COERCIONS
     )
+
+
+#: How a registration refusal names the shape that claims a class before the registry is asked.
+_CLAIMING_KINDS = {
+    _TypeKind.UNION: "a union",
+    _TypeKind.NAMEDTUPLE: "a namedtuple",
+    _TypeKind.LIST: "a list",
+    _TypeKind.SET: "a set",
+    _TypeKind.FROZENSET: "a frozenset",
+    _TypeKind.TUPLE: "a tuple",
+    _TypeKind.DICT: "a dict",
+    _TypeKind.CALLABLE: "a callable",
+}
+
+
+def _registration_refusal(tp: Any) -> str | None:
+    """Return why a registration of *tp* would never run, None when construction reaches it.
+
+    The one answer to "can ``register_leaf_type`` key on this?": a class construction asks
+    the registry for. No other key is ever looked up — a generic alias, a union, a
+    ``Literal``, an ``Annotated`` or a ``NewType`` is no class — and a class a shape or a
+    built-in leaf claims first never reaches the registry. ``object`` is refused too: every
+    value is an instance of it, so its registration would take every value as its own.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-registration-is-one-construction-reaches.md#a-registration-is-one-construction-reaches
+    """
+    if isinstance(tp, NewType):
+        supertype = _resolve_type(tp)
+        return f"{tp.__name__} is a NewType, which confarg reads as {getattr(supertype, '__name__', supertype)}"
+    if tp is Any or _is_none_type(tp) or tp in _SCALAR_COERCIONS or _is_enum(tp) or tp is type:
+        return f"confarg reads {getattr(tp, '__name__', tp)} itself"
+    if not isinstance(tp, type):
+        return f"{tp!r} is no class"
+    if tp is object:
+        return "every value is an object, so the registration would take every value as its own"
+    claimed = _CLAIMING_KINDS.get(_type_kind(tp))
+    if claimed is not None or _is_type_ref(tp):
+        return f"confarg reads {tp.__name__} as {claimed or 'a type reference'}"
+    return None
 
 
 def _literal_spelling(tp: Any) -> str:

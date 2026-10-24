@@ -26,7 +26,7 @@ from collections.abc import (
     Set,
 )
 from pathlib import PurePath
-from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, Final, Literal, NewType, Union, get_args, get_origin, get_type_hints
 
 from confarg.dictexpr._expressions import _list_index
 
@@ -99,10 +99,11 @@ def _per_class_cache[R](fn: Callable[[Any], R]) -> Callable[[Any], R]:
 
 
 def _resolve_type(tp: Any) -> Any:
-    """Unwrap the TypeAliasType, Annotated and Final wrappers, nested in any order.
+    """Unwrap the TypeAliasType, Annotated, Final and NewType wrappers, nested in any order.
 
     ``Final[T]`` is ``T`` to every walk, and a bare ``Final`` is ``Any``: the qualifier says
-    the attribute is not reassigned, which no channel, merge or construction step reads.
+    the attribute is not reassigned, which no channel, merge or construction step reads. A
+    ``NewType`` is its supertype: at runtime its values are the supertype's.
 
     Args:
         tp: The type to resolve.
@@ -120,6 +121,8 @@ def _resolve_type(tp: Any) -> Any:
             tp = tp.__value__
         elif get_origin(tp) is Annotated or get_origin(tp) is Final:
             tp = get_args(tp)[0]
+        elif isinstance(tp, NewType):
+            tp = tp.__supertype__
         elif tp is Final:
             return Any
         else:
