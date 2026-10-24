@@ -17,6 +17,20 @@ Without a prefix it has no CLI spelling at all, in any front-end.
 A **struct-like** root (dataclass, plain class — a registered leaf included) refuses the bare flag instead (BUG-91): nothing about `--<prefix> VALUE` names a field, and a value consumed for the empty path would be silently dropped — the adapters had refused it at parse time all along, so vanilla's `UnknownArgumentError` is the refusal the five front-ends share.
 A registered leaf as the root keeps its flat tagged spelling (`--<prefix>.class uuid.UUID --<prefix>.hex …`), the one [a registered leaf is opted back in with](../design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in).
 
+## The bare prefix names the root
+
+The bare `--<prefix>` and the bare `<PREFIX>` variable both name the root, and every mistake made with them is told that it is about the root, in one text per cause that both channels share (`exceptions._bare_value_on_a_struct_root`, `exceptions._merge_suffix_on_the_root`): the CLI refuses with it, and the environment warns with it, as it warns wherever the CLI refuses.
+
+- **A value on a struct-like root** (BUG-91, BUG-183): `--app 8080` and `APP_=8080` on a dataclass are told the bare prefix carries a value only for a scalar root, and offered a field, `--app.<field>` or `APP_<FIELD>`.
+  The environment used to warn about it as the failed lookup of an empty segment, `segment '' not found in Cfg`.
+- **A merge suffix on any root** (BUG-178): `--app+`, `--app-`, `APP_+` and `APP_-` patch nothing, since a struct-like root is patched one field at a time and any other root is set whole.
+  The remedy follows the root's kind: a field with the suffix kept (`--app.<field>+`) on a struct-like root, the root cast (`--app.json <json>`, `APP_JSON`) on any other, the one spelling that sets every such root whatever [BUG-177](../../todo/bugs/BUG-177-a-collection-roots-bare-flag-takes-one-token-construction-refuses.md) decides for the bare flag.
+  `--app+` used to be refused as a flag outside the prefix, which is false about the token it quotes, and `APP_+` warned about as a segment `+` below the root.
+
+One predicate tells the merge suffix on the root, `_parse_cli._merge_suffix_on_root`, asked of the key left once the prefix is stripped: `_strip_cli_prefix` strips `app+` to `+`, as the environment's key for `APP_+` already is.
+It is recognized at the refusal site only, the way `_addresses_key` intercepts the mistake `--config+` as one about that flag: `_in_cli_prefix` still answers that `app+` is outside the namespace, so the pre-scans step over it and the host-mode skip leaves it to an adapter's framework, which refuses a flag it never registered, as it refuses the bare `--app` on a struct root.
+A message names the root as "the root", not by its type: the target has one, and naming a type is the hand-spelled question [REF-97](../../todo/refactors/REF-97-how-a-message-names-a-type-is-spelled-by-hand.md) gathers.
+
 ## A non-struct root is set whole
 
 `build()` reads a non-struct root from `__root__` alone, so no flag addresses a path below it (BUG-172): `--app.0.size` on a `list[Item]` root, `--app.k` on a dict root, `--app.x` on a namedtuple root and the tag `--app.class` on an `int` root are all `UnknownArgumentError`.

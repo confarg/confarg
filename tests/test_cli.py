@@ -151,8 +151,57 @@ class TestCliPrefix:
         It used to consume its value and silently drop it: the empty path made the
         write a no-op.
         """
-        with pytest.raises(confarg.exceptions.UnknownArgumentError, match="'--app'"):
+        with pytest.raises(confarg.exceptions.UnknownArgumentError, match="'--app'") as exc:
             confarg.load(WithDefaults, argv=["--app", "val"], env={}, cli_prefix="app")
+        assert str(exc.value) == (
+            "Unknown argument: '--app'. The bare --app flag carries a value only for a scalar root,"
+            " and the root has fields; set one of them (--app.<field>) instead."
+        )
+
+    @pytest.mark.parametrize(
+        ("target", "argv", "says"),
+        [
+            pytest.param(
+                list[int],
+                ["--app+", "1"],
+                "The root is set whole, so nothing appends onto it; spell its whole value with --app.json <json>",
+                id="append-list",
+            ),
+            pytest.param(
+                list[int],
+                ["--app-"],
+                "The root is set whole, so nothing deletes from it; spell its whole value with --app.json <json>",
+                id="delete-list",
+            ),
+            pytest.param(
+                int,
+                ["--app+", "1"],
+                "The root is set whole, so nothing appends onto it; spell its whole value with --app.json <json>",
+                id="append-int",
+            ),
+            pytest.param(
+                WithDefaults,
+                ["--app+", "x"],
+                "The root has fields, so nothing appends onto it; append onto one of them (--app.<field>+) instead",
+                id="append-struct",
+            ),
+            pytest.param(
+                WithDefaults,
+                ["--app-"],
+                "The root has fields, so nothing deletes from it; delete one of them (--app.<field>-) instead",
+                id="delete-struct",
+            ),
+        ],
+    )
+    def test_prefix_bare_flag_with_a_merge_suffix_refused(self, target: Any, argv: list[str], says: str) -> None:
+        """A merge suffix on the bare --<prefix> is refused as one onto the root, not as a foreign flag (BUG-178).
+
+        The namespace check used to read ``app+`` as a flag outside ``--app``, and say so of
+        the very token it quoted.
+        """
+        with pytest.raises(confarg.exceptions.UnknownArgumentError) as exc:
+            confarg.merge(target, argv=argv, env={}, cli_prefix="app")
+        assert str(exc.value) == f"Unknown argument: {argv[0]!r}. {says}."
 
     def test_prefix_bare_flag_on_leaf_root_refused(self, leaf_registry: None) -> None:
         """A registered leaf as the root refuses the bare --<prefix> flag the same way (BUG-91).

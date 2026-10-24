@@ -3014,6 +3014,21 @@ class TestCliPrefixContract:
         with pytest.raises((ConfargError, SystemExit)):
             loader.merge(target, argv=["--app", "val"], env={}, cli_prefix="app")
 
+    @pytest.mark.parametrize("root", [int, list[int], DbConfig], ids=["scalar", "collection", "struct"])
+    @pytest.mark.parametrize("argv", [["--app+", "1"], ["--app-"]], ids=["append", "delete"])
+    def test_bare_prefix_flag_with_a_merge_suffix_refused(
+        self,
+        loader: ConfargLoader,
+        root: Any,
+        argv: list[str],
+    ) -> None:
+        """No flag appends onto or deletes from the root, which is set whole or has fields (BUG-178).
+
+        Vanilla names the cause; an adapter's host refuses the flag it never registered.
+        """
+        with pytest.raises((ConfargError, SystemExit)):
+            loader.merge(root, argv=argv, env={}, cli_prefix="app")
+
     def test_bare_prefix_flag_on_leaf_root_refused(self, loader: ConfargLoader) -> None:
         """A registered leaf as the root refuses the bare ``--<prefix>`` flag too (BUG-91).
 

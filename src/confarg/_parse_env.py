@@ -45,6 +45,7 @@ from confarg._parse_cli import (
     _locals_keys,
     _locals_segment_index,
     _member_names,
+    _merge_suffix_on_root,
     _open_callable_shorthand,
     _path_unknown,
     _reserved_segment,
@@ -67,7 +68,12 @@ from confarg._types import (
     _union_args_no_none,
     _union_has_seq_variant,
 )
-from confarg.exceptions import ConfargError, ConfargWarning
+from confarg.exceptions import (
+    ConfargError,
+    ConfargWarning,
+    _bare_value_on_a_struct_root,
+    _merge_suffix_on_the_root,
+)
 from confarg.typedload._coerce import _try_coerce
 
 
@@ -351,6 +357,40 @@ def _apply_env_json_cast(  # noqa: PLR0913, PLR0917  # root and nested placement
     return True
 
 
+def _read_bare_prefix(orig_key: str, key: str, value: str, prefix: str, target: Any) -> MergeDict | None:
+    """Read a variable that names the root, the bare prefix with or without a merge suffix.
+
+    Return what it writes at the root, or None when *key* names a path below the root. The
+    bare *prefix* sets a non-struct root whole, as the bare ``--<cli_prefix>`` does; on a
+    struct-like root it names nothing, and a merge suffix patches no root, which is patched
+    one field at a time or set whole. Those two write nothing and are warned about, with the
+    cause the CLI refuses ``--<prefix>`` and ``--<prefix>+`` with, spelled as variables are.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/cli-prefix.md#the-bare-prefix-names-the-root
+    """
+    suffix = _merge_suffix_on_root(key)
+    if key and suffix is None:
+        return None
+    is_struct = _is_struct_like(_resolve_type(target))
+    field = f"{prefix}<FIELD>"
+    if suffix is not None:
+        whole = f"{prefix}{JSON_CAST_NAME.upper()}"
+        reason = _merge_suffix_on_the_root(
+            suffix, deletes=suffix == DELETE_SUFFIX, struct=is_struct, field=field, whole=whole
+        )
+    elif is_struct:
+        reason = _bare_value_on_a_struct_root(f"{prefix} variable", field)
+    else:
+        return {_defaults.ROOT_KEY: _try_coerce(_resolve_type(target), _StrToken(value), orig_key)}
+    warnings.warn(
+        f"Environment variable {orig_key!r} has no matching field: {reason}. The variable will be ignored.",
+        ConfargWarning,
+        stacklevel=4,
+    )
+    return {}
+
+
 def _warn_unknown_env_field(orig_key: str, parts: list[str], target: Any, walk_target: Any, union_tag: str) -> bool:
     """Warn and return True if the env var's first segment names nothing a flag of the root reaches.
 
@@ -585,9 +625,8 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         if _apply_env_json_cast(orig_key, parts, walk_target, value, data, root_json, union_tag, is_struct=is_struct):
             continue
 
-        if not is_struct and not key:
-            # The bare prefix sets a non-struct root whole, as the bare --<cli_prefix> does.
-            data[_defaults.ROOT_KEY] = _try_coerce(_resolve_type(target), _StrToken(value), orig_key)
+        if (root := _read_bare_prefix(orig_key, key, value, prefix, target)) is not None:
+            data.update(root)
             continue
 
         # A delete or an append is checked as the value variable of its path is (BUG-182).
