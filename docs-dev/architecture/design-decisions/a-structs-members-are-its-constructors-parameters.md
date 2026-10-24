@@ -54,6 +54,32 @@ Before, the first read as a struct with the `args` and `kwargs` fields of `objec
 
 Making both a leaf instead was rejected: a field-less dataclass would have lost what it does today, a marker variant in a union (`mode: Fast | Slow`) selected by its tag.
 
+### A class taking nothing that holds C storage is no struct
+
+A class taking nothing whose instances hold storage beyond their `__dict__`, `__weakref__` and slots is an unsupported leaf, not a struct with no fields (`_types._holds_c_storage`, BUG-268, maintainer-chosen): `_thread.lock`, `re.Pattern`, a `random.Random`, `threading.local` or `Exception` subclass whose `__init__` takes nothing, and any subclass of a C extension's type that takes nothing.
+It is refused both ways, as `_thread.RLock` already was on every version, its signature not reading ([an unsupported leaf is refused both ways](../types/serialization.md#an-unsupported-leaf-is-refused-both-ways)): `{}` and `{class: threading.Lock}` build nothing, a `lock` field is not dumped, and a lock an `Any` node holds is written untyped with a warning, which `dump_file()` then refuses.
+`{call: threading.Lock}` and a `default_factory` still give a field a fresh lock, and `register_leaf_type` makes such a class a leaf.
+
+Why: the struct-with-no-fields reading is there for a marker class, which holds nothing; a C type's own storage says the class is no marker.
+What it holds no constructor parameter sets, so `{}` is all its dump could be, and `{}` builds a fresh instance: a lock's locked flag or a generator's position, which no attribute even reads, as much as an exception's `args`, which one does.
+Python 3.13 made `threading.Lock` the importable class `_thread.lock`, where 3.12 had a factory function: a held lock then dumped as `{class: _thread.lock}`, and a `lock: threading.Lock` field as `{}`, both reading back as an unlocked lock, with no warning.
+On 3.12 the same lock had been refused only because no dotted path named its class.
+
+The test is the one `object.__reduce_ex__` refuses to pickle a value by, which raises `cannot pickle '_thread.lock' object`: the instance's basic size against `object`'s plus a pointer for each of a non-managed `__dict__`, a non-managed `__weakref__` and every declared slot, or any item size.
+A slot a subclass declares again under its base's name counts twice, as it is stored twice: the redeclaration allocates a second pointer.
+Pickle exempts a class that writes its own `__getstate__` or `__reduce__`, as `random.Random` does; confarg does not, since it reads no `__getstate__`: a drawn generator would still dump as `{}`.
+The rule is limited to a class taking nothing: a C type with parameters is built from them, `random.Random(1)` from `{class: random.Random, x: 1}`, and its dump reads each one back from the attribute that holds it, refusing one it does not hold ([a plain class dumps the parameters it holds](the-object-dump-writes-state.md#a-plain-class-dumps-the-parameters-it-holds)).
+A class whose state lives in its `__dict__`, such as `threading.Event`, stays a struct with no fields, and what it holds is not recorded, as it is not for any plain class ([limitations](../limitations.md#callables-and-serialization)).
+
+Rejected:
+
+- **Refuse at the dump only**: an object holding C storage is never the same value as the one its spec rebuilds unless it compares equal (`_serialize._same_value`).
+  That warned in an `Any` node, but left `{class: threading.Lock}` building on 3.13 and later only, and the typed `lock` field writing `{}` until a second check covered it.
+- **Accept it, and fix the tests**: the lock follows the rule that a plain class dumps its parameters, so a field-less one records nothing; the BUG-251 tests would have used an object no path names.
+  It left the 3.13 dump silently lossy, and the two lock classes of `_thread` reading differently for want of a readable signature.
+
+Precedents: `pickle`, `copy.deepcopy` and `dataclasses.asdict` refuse a lock; pydantic, cattrs and msgspec refuse `threading.Lock` as a type, as they refuse every plain class; jsonargparse reads it as a class (`class_path: _thread.lock`) and refuses to dump the instance.
+
 ## Which signature is read
 
 `_types._constructor_parameters` reads `__init__` when the class does not inherit it from `object`, else `__new__` when it does not inherit that one, else nothing.

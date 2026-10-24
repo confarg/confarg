@@ -6,11 +6,14 @@
 
 from __future__ import annotations
 
+import _thread  # noqa: TC003  # get_type_hints reads _StateLock's annotation at runtime
+import array
 import datetime
 import enum
 import math
 import re
 import sys
+import threading
 import warnings
 from collections.abc import Mapping, Sequence
 from collections.abc import Set as AbstractSet
@@ -652,6 +655,17 @@ class TestDumpAny:
         obj = Target(x=_AnyHeld(4))
         assert confarg.dump(obj) == {"x": {"class": f"{_MOD}._AnyHeld", "a": 4}}
         assert confarg.build(Target, confarg.dump(obj)) == obj
+
+    @pytest.mark.parametrize(
+        "held",
+        [object(), threading.RLock(), threading.Lock(), 1j, b"ab", bytearray(b"ab"), array.array("i", [1])],
+        ids=["object", "rlock", "lock", "complex", "bytes", "bytearray", "array"],
+    )
+    def test_a_value_no_leaf_reads_is_written_untyped_with_a_warning(self, held: Any) -> None:
+        """A value of a type construction does not build is written as is, warning as its field refuses it (BUG-268)."""
+        Target = make_target("x", Any, default=None)
+        with pytest.warns(ConfargWarning, match=r"Value at 'x' will not read back .*register_leaf_type"):
+            assert confarg.dump(Target(x=held))["x"] is held
 
     def test_a_list_of_any_dumps_each_element_as_its_spec(self) -> None:
         """list[Any] elements are Any nodes."""
@@ -1721,6 +1735,16 @@ class _StateComplex:
     z: complex = 1j
 
 
+@_dc
+class _StateLock:
+    lock: _thread.LockType = field(default_factory=threading.Lock)
+
+
+@_dc
+class _StatePattern:
+    pattern: re.Pattern[str] = field(default_factory=lambda: re.compile("a"))
+
+
 class TestDumpRefusesAnUnsupportedLeaf:
     """``dump()`` refuses a value typed by a leaf construction does not build, as construction refuses it."""
 
@@ -1728,6 +1752,18 @@ class TestDumpRefusesAnUnsupportedLeaf:
         """``complex`` is no struct and no registered leaf, so it is refused, naming the remedy."""
         with pytest.raises(ConfargError, match=r"Cannot serialize complex at 'z'.*register_leaf_type"):
             confarg.dump(_StateComplex())
+
+    def test_a_lock_field_is_refused(self) -> None:
+        """A lock holds state no attribute reaches, so it is refused, not written as a fresh lock's ``{}`` (BUG-268)."""
+        held = _StateLock()
+        held.lock.acquire()
+        with pytest.raises(ConfargError, match=r"Cannot serialize lock at 'lock'.*register_leaf_type"):
+            confarg.dump(held)
+
+    def test_a_pattern_field_is_refused(self) -> None:
+        """A compiled pattern takes nothing and holds C storage, so it is refused as a lock is (BUG-268)."""
+        with pytest.raises(ConfargError, match=r"Cannot serialize Pattern at 'pattern'.*register_leaf_type"):
+            confarg.dump(_StatePattern())
 
     def test_construction_refuses_the_same_type(self) -> None:
         """The refusal is construction's: a complex value does not build either."""

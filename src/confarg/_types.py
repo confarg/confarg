@@ -27,6 +27,7 @@ from collections.abc import (
     Set,
 )
 from pathlib import PurePath
+from struct import calcsize
 from typing import (
     Annotated,
     Any,
@@ -1197,7 +1198,8 @@ _PLAIN_CLASS_BUILTINS = frozenset(
 def _is_plain_class(tp: Any) -> bool:
     """True if tp is a non-dataclass, non-primitive class whose constructor signature reads.
 
-    One that takes nothing is a plain class too, a struct with no fields.
+    One that takes nothing is a plain class too, a struct with no fields, unless its instances
+    hold C storage (:func:`_holds_c_storage`), as a lock does.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#a-class-taking-nothing-is-a-struct-with-no-fields
@@ -1217,10 +1219,43 @@ def _is_plain_class(tp: Any) -> bool:
     if issubclass(tp, (enum.Enum, PurePath, tuple)) or _subclassed_builtin(tp) is not None or reads_as_a_collection:
         return False
     try:
-        _init_params(tp)
+        params = _init_params(tp)
     except (ValueError, TypeError):
         return False
-    return True
+    return bool(params.names) or not _holds_c_storage(tp)
+
+
+_POINTER_SIZE = calcsize("P")
+
+
+def _holds_c_storage(cls: type) -> bool:
+    """True if an instance of *cls* holds storage beyond its ``__dict__``, ``__weakref__`` and slots.
+
+    The layout test ``object.__reduce_ex__`` refuses to pickle a value by: a C type's own
+    fields, a lock's or an exception's, which no ``__getstate__`` exempts here.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#a-class-taking-nothing-that-holds-c-storage-is-no-struct
+    """
+    reached = object.__basicsize__
+    # A managed __dict__ or __weakref__ (a negative offset) lives outside the instance's basic size.
+    if cls.__dictoffset__ > 0:
+        reached += _POINTER_SIZE
+    if cls.__weakrefoffset__ > 0:
+        reached += _POINTER_SIZE
+    reached += _POINTER_SIZE * sum(_declared_slot_count(c) for c in cls.__mro__)
+    return cls.__basicsize__ > reached or cls.__itemsize__ > 0
+
+
+def _declared_slot_count(cls: type) -> int:
+    """Return how many slots *cls*'s own body declares, ``__dict__`` and ``__weakref__`` left out.
+
+    The count ``copyreg._slotnames`` gives, which is not called: it is private, and it caches
+    its answer onto the class as ``__slotnames__``.
+    """
+    slots = cls.__dict__.get("__slots__", ())
+    names = (slots,) if isinstance(slots, str) else tuple(slots)
+    return sum(n not in {"__dict__", "__weakref__"} for n in names)
 
 
 @dataclasses.dataclass(frozen=True)

@@ -22,4 +22,5 @@ ChainMap, file x: {a: 1}    -> TypeCoercionError Unknown field(s) ['a'] for Chai
 ```
 
 Reading them as their ABC's concrete collection needs a design: a constructor that takes no one collection (`ChainMap(*maps)`), a `deque`'s `maxlen`, and whether a user class registered with an ABC (`Mapping.register(C)`) counts.
+`_is_plain_class` also refuses a class taking nothing whose instances hold C storage (`_types._holds_c_storage`, [design decisions](../../architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#a-class-taking-nothing-that-holds-c-storage-is-no-struct)): an implementer of that shape is an unsupported leaf before this reading is asked.
 Precedents: pydantic validates `deque[int]` and builds the deque, and refuses `UserDict` and `ChainMap`; cattrs builds all three; msgspec refuses them (run, while settling BUG-253).

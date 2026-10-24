@@ -42,6 +42,8 @@ An `Any` node reads every opener ([callables](../callables.md#an-any-node-reads-
 A form is kept only if an `Any` node reads it back as the value it came from, which `_reads_back` decides by running the reader.
 An object that does not compare equal to the one rebuilt — a plain class with no `__eq__`, a bound method, a partial — is the same value when the rebuilt one dumps back as the same form: it holds the same state ([an object dumps the state it holds](../callables.md#an-object-dumps-the-state-it-holds)).
 Any other value is written untyped (`_serialize_untyped`), with a `ConfargWarning` naming its path and the reason: a `Path` that reads back as text, an `Enum` that reads back as its value, a `datetime`, an object no spec spells, such as a closure or a class that keeps an argument under another name.
+A value of a leaf construction does not build, a `complex`, a `bytes`, an `object()` or a lock, is refused by `_held_object_form` with the refusal a field of its type gets (`_refuse_an_unsupported_leaf`, [above](#an-unsupported-leaf-is-refused-both-ways)), so it warns too.
+Until BUG-268 it was handed back untouched and kept, unwarned: an `Any` node passes an object through, so the reader rebuilt it from itself.
 A dict holding an opener key reads back as the spec it spells, and a tuple or a set as a list, so they warn too.
 What a struct's fields warn is said only when the struct's spec is kept, so a plain class no spec rebuilds, such as one holding every alternative its constructor takes, warns once, not once per attribute.
 
