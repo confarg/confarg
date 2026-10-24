@@ -13,7 +13,7 @@ import inspect
 import itertools
 import types
 import weakref
-from collections import deque
+from collections import Counter, deque
 from collections.abc import (
     Callable,
     Collection,
@@ -26,8 +26,21 @@ from collections.abc import (
     Set,
 )
 from pathlib import PurePath
-from typing import Annotated, Any, Final, Literal, NewType, Union, get_args, get_origin, get_type_hints
+from typing import (
+    Annotated,
+    Any,
+    Final,
+    Literal,
+    NewType,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+    is_typeddict,
+)
 
+from confarg._registry import LEAF_COERCIONS
 from confarg.dictexpr._expressions import _list_index
 
 type TagPolicy = Literal["auto", "always"]
@@ -312,6 +325,94 @@ def _origin(tp: Any) -> Any:
     return get_origin(_resolve_type(tp))
 
 
+#: The builtins a subclass of one reads as, in the order a class is tested against them.
+_BUILTIN_BASES: tuple[type, ...] = (dict, list, set, frozenset, tuple, str, int, float)
+
+
+def _subclassed_builtin(cls: Any) -> type | None:
+    """Return the builtin the class *cls* subclasses and reads as, None for any other class or type.
+
+    A subclass of dict, list, set, frozenset, tuple, str, int or float, but not the builtin
+    itself, and not a class that reads otherwise: a dataclass by its fields, a namedtuple by
+    its, an ``Enum`` (``StrEnum``, ``IntEnum``) by its members, and a ``TypedDict``, a dict
+    whose keys are typed one by one. Reads no registry, so a cached struct test may ask it.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-builtins-subclass-is-that-builtin.md#a-builtins-subclass-is-that-builtin
+    """
+    if not isinstance(cls, type) or cls in _BUILTIN_BASES or cls is bool:
+        return None
+    if dataclasses.is_dataclass(cls) or _is_namedtuple(cls) or is_typeddict(cls) or issubclass(cls, enum.Enum):
+        return None
+    return next((base for base in _BUILTIN_BASES if issubclass(cls, base)), None)
+
+
+def _builtin_read_as(tp: Any) -> type | None:
+    """Return the builtin the subclass *tp*, bare or parameterized, reads as; None if it reads otherwise.
+
+    The one answer to "is this a builtin's subclass, read as the builtin?". A registered
+    subclass is a leaf, read through its registration in both directions, so it is none.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-builtins-subclass-is-that-builtin.md#a-builtins-subclass-is-that-builtin
+    """
+    tp = _resolve_type(tp)
+    cls = tp if isinstance(tp, type) else get_origin(tp)
+    if cls in LEAF_COERCIONS:
+        return None
+    return _subclassed_builtin(cls)
+
+
+def _builtin_args(tp: Any) -> tuple[Any, ...]:
+    """Return the type arguments of the builtin *tp* reads as, () where it gives none.
+
+    A builtin or an abstract collection gives its own; a subclass gives its arguments
+    (``OrderedDict[str, int]``), else the ones its parameterized base declares
+    (``class Scores(dict[str, int])``), its own arguments substituted for the base's
+    TypeVars and an unbound TypeVar read as ``Any``. A ``Counter`` counts in ints, as
+    typeshed declares it: ``Counter[K]`` is ``dict[K, int]``.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-builtins-subclass-is-that-builtin.md#a-subclass-is-typed-as-a-type-checker-types-it
+    """
+    tp = _resolve_type(tp)
+    cls = tp if isinstance(tp, type) else get_origin(tp)
+    args = () if isinstance(tp, type) else get_args(tp)
+    builtin = _subclassed_builtin(cls)
+    return args if builtin is None or cls is None else _subclass_args(cls, args, builtin)
+
+
+def _subclass_args(cls: type, args: tuple[Any, ...], builtin: type) -> tuple[Any, ...]:
+    """Return the arguments of *builtin* that the subclass *cls*, given *args*, reads with."""
+    if cls is Counter:
+        return ((_resolve_type(args[0]) if args else Any), int)
+    bases = cls.__dict__.get("__orig_bases__")
+    if bases is None:
+        # No parameterized base: the class's own arguments are the builtin's (an OrderedDict
+        # is subscripted as a dict is), or the class it subclasses answers.
+        parent = next(b for b in cls.__bases__ if issubclass(b, builtin))
+        return args if args or parent is builtin else _subclass_args(parent, args, builtin)
+    bound = dict(zip(getattr(cls, "__parameters__", ()), args, strict=False))
+    base = next((b for b in bases if isinstance(o := get_origin(b) or b, type) and issubclass(o, builtin)), None)
+    if base is None:  # the builtin is reached through an unparameterized base
+        parent = next(b for b in cls.__bases__ if issubclass(b, builtin))
+        return args if parent is builtin else _subclass_args(parent, args, builtin)
+    if params := getattr(base, "__parameters__", ()):
+        base = base[tuple(bound.get(p, Any) if isinstance(p, TypeVar) else p for p in params)]
+    origin = get_origin(base) or base
+    return get_args(base) if origin is builtin else _subclass_args(origin, get_args(base), builtin)
+
+
+def _scalar_read_as(tp: Any) -> type | None:
+    """Return str, int or float for a subclass of one, which *tp* reads as; None for anything else.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-builtins-subclass-is-that-builtin.md#a-builtins-subclass-is-that-builtin
+    """
+    builtin = _builtin_read_as(tp)
+    return builtin if builtin in (str, int, float) else None
+
+
 _LIST_ORIGINS = frozenset({list, Sequence, MutableSequence, Iterable, Collection})
 _SET_ORIGINS = frozenset({set, Set, MutableSet})
 _DICT_ORIGINS = frozenset({dict, Mapping, MutableMapping})
@@ -327,7 +428,7 @@ def _is_list(tp: Any) -> bool:
         True if tp is a list or sequence type.
     """
     tp = _resolve_type(tp)
-    return tp is list or _origin(tp) in _LIST_ORIGINS
+    return tp in _LIST_ORIGINS or _origin(tp) in _LIST_ORIGINS or _builtin_read_as(tp) is list
 
 
 def _is_set(tp: Any) -> bool:
@@ -340,7 +441,7 @@ def _is_set(tp: Any) -> bool:
         True if tp is a set type.
     """
     tp = _resolve_type(tp)
-    return tp is set or _origin(tp) in _SET_ORIGINS
+    return tp in _SET_ORIGINS or _origin(tp) in _SET_ORIGINS or _builtin_read_as(tp) is set
 
 
 def _is_frozenset(tp: Any) -> bool:
@@ -353,7 +454,7 @@ def _is_frozenset(tp: Any) -> bool:
         True if tp is a frozenset type.
     """
     tp = _resolve_type(tp)
-    return tp is frozenset or _origin(tp) is frozenset
+    return tp is frozenset or _origin(tp) is frozenset or _builtin_read_as(tp) is frozenset
 
 
 def _is_tuple(tp: Any) -> bool:
@@ -366,7 +467,7 @@ def _is_tuple(tp: Any) -> bool:
         True if tp is a tuple type.
     """
     tp = _resolve_type(tp)
-    return tp is tuple or _origin(tp) is tuple
+    return tp is tuple or _origin(tp) is tuple or _builtin_read_as(tp) is tuple
 
 
 def _is_namedtuple(tp: Any) -> bool:
@@ -427,7 +528,7 @@ def _is_dict(tp: Any) -> bool:
         True if tp is a dict or mapping type.
     """
     tp = _resolve_type(tp)
-    return tp is dict or _origin(tp) in _DICT_ORIGINS
+    return tp in _DICT_ORIGINS or _origin(tp) in _DICT_ORIGINS or _builtin_read_as(tp) is dict
 
 
 def _is_varlen_collection(tp: Any) -> bool:
@@ -563,7 +664,7 @@ def _elem_type(tp: Any) -> Any:
     Returns:
         The element type, or Any if not parameterized.
     """
-    a = get_args(_resolve_type(tp))
+    a = _builtin_args(tp)
     return _resolve_type(a[0]) if a else Any
 
 
@@ -576,7 +677,7 @@ def _tuple_types(tp: Any) -> list[Any] | None:
     Returns:
         A list of element types for fixed-length tuples, or None for variable-length.
     """
-    a = get_args(_resolve_type(tp))
+    a = _builtin_args(tp)
     _variable_length_tuple_args = 2
     if not a or (len(a) == _variable_length_tuple_args and a[1] is Ellipsis):
         return None
@@ -592,7 +693,7 @@ def _dict_kv(tp: Any) -> tuple[Any, Any]:
     Returns:
         A (key_type, value_type) tuple, defaulting to (Any, Any) for the unparameterized form.
     """
-    a = get_args(_resolve_type(tp))
+    a = _builtin_args(tp)
     return (_resolve_type(a[0]), _resolve_type(a[1])) if a else (Any, Any)
 
 
@@ -720,7 +821,9 @@ def _is_plain_class(tp: Any) -> bool:
         return False
     if tp in _PLAIN_CLASS_BUILTINS or tp.__module__ == "builtins":
         return False
-    if issubclass(tp, (enum.Enum, PurePath, tuple)):
+    # A builtin's subclass reads as the builtin, and a bare abstract collection as the concrete one.
+    reads_as_a_collection = tp in _LIST_ORIGINS or tp in _SET_ORIGINS or tp in _DICT_ORIGINS
+    if issubclass(tp, (enum.Enum, PurePath, tuple)) or _subclassed_builtin(tp) is not None or reads_as_a_collection:
         return False
     try:
         _init_params(tp)

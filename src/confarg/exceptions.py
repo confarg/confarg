@@ -329,6 +329,14 @@ class TypeCoercionError(ConfargError):
         return cls(_append_none_remedy(msg) if none_sentinel else msg)
 
     @classmethod
+    def subclass_refuses(cls, name: str, builtin: str, path: str, reason: str) -> TypeCoercionError:
+        """Return the error for the subclass *name* of *builtin*, whose constructor takes no such value."""
+        return cls(
+            f"{name} at '{path}' does not take a {builtin}: {reason};"
+            f" confarg.register_leaf_type({name}, ...) reads it another way",
+        )
+
+    @classmethod
     def forbidden_literal_member(cls, literal: str, member: Any, path: str) -> TypeCoercionError:
         """Return the error for a ``Literal`` holding *member*, which PEP 586 forbids, *literal* spelling it whole."""
         return cls(

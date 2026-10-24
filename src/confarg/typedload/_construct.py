@@ -57,6 +57,7 @@ from confarg._types import (
     _namedtuple_fields,
     _Pinned,
     _resolve_type,
+    _scalar_read_as,
     _spelled_position,
     _src_type,
     _StrToken,
@@ -98,6 +99,7 @@ from confarg.typedload._coerce import (
     _steal_order,
     _type_kind,
     _TypeKind,
+    as_subclass,
 )
 
 
@@ -480,11 +482,11 @@ def _construct_typed(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
         case _TypeKind.STRUCT:
             return _construct_struct_dispatch(tp, data, path, union_tag)
         case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET:
-            return _construct_collection(tp, data, path, union_tag)
+            return as_subclass(tp, _construct_collection(tp, data, path, union_tag), _spell_field_path(path))
         case _TypeKind.TUPLE:
-            return _construct_tuple(tp, data, path, union_tag)
+            return as_subclass(tp, _construct_tuple(tp, data, path, union_tag), _spell_field_path(path))
         case _TypeKind.DICT:
-            return _construct_dict(tp, data, path, union_tag)
+            return as_subclass(tp, _construct_dict(tp, data, path, union_tag), _spell_field_path(path))
         case _TypeKind.CALLABLE:
             return _resolve_callable_spec(data, tp, path=path, union_tag=union_tag, construct_fn=construct)
         case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
@@ -1532,8 +1534,8 @@ def _value_matches_type(value: Any, tp: Any, union_tag: str) -> bool:
         return _allows_none(tp)
     if _is_struct_variant(tp):
         return _struct_matches_value(tp, value, union_tag)
-    if tp in _SCALAR_MATCHES:
-        return _SCALAR_MATCHES[tp](value)
+    if (scalar := _scalar_read_as(tp) or tp) in _SCALAR_MATCHES:
+        return _SCALAR_MATCHES[scalar](value)
     if _is_literal(tp):
         return _literal_matches_value(tp, value)
     return True

@@ -23,7 +23,7 @@ Before, every such key was accepted and then ignored without a word: shape dispa
 A `NewType` crashed every value with Python's own `TypeError` from an `isinstance` until FEAT-51 looked a value's class up instead, after which it built by accident.
 A refusal at registration names the mistake where it is made, rather than at the first value that silently reads some other way.
 
-A class confarg reads nothing as, such as `complex`, a plain class, or a built-in leaf registered again (`Path`, `Decimal`, a date type), is accepted as before.
+A class confarg reads nothing as, such as `complex`, a plain class, or a built-in leaf registered again (`Path`, `Decimal`, a date type), is accepted as before, and so is a builtin's subclass, which a registration takes out of the builtin's reading ([a registration wins](a-builtins-subclass-is-that-builtin.md#a-registration-wins)).
 The refusal is a `TypeError`, not a `ConfargError`: a key no value reaches is a programming mistake, not a configuration one, and an `except ConfargError` meant for bad input should not catch it.
 `dump()`'s `native_types` check refuses a type that is no registered leaf the same way.
 

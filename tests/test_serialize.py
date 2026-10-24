@@ -1122,18 +1122,20 @@ class TestDumpRawDictTokens:
         assert type(_serialize_leaf(str, _UnionSeqToken("hello"))) is str
         assert type(_serialize_leaf(str, _StrToken("hello"))) is str
 
-    def test_foreign_str_subclass_is_untouched(self) -> None:
-        """Only confarg's own tokens are unwrapped; a caller's ``str`` subclass is not.
+    def test_a_registered_str_subclass_reaches_its_serializer(self, leaf_registry: None) -> None:
+        """Only confarg's own tokens are unwrapped as tokens; a caller's registered ``str`` subclass is not.
 
         ``_StrToken`` is private, so nothing a user writes inherits from it, and the
-        registry loop below the unwrap stays reachable for a registered ``str`` leaf.
+        registry loop below the unwrap stays reachable for a registered ``str`` leaf. An
+        unregistered subclass is written as the plain ``str`` it is
+        (docs-dev/architecture/design-decisions/a-builtins-subclass-is-that-builtin.md#a-subclass-is-built-by-its-constructor).
         """
 
         class _Tagged(str):
             __slots__ = ()
 
-        value = _Tagged("hello")
-        assert _serialize_leaf(str, value) is value
+        confarg.register_leaf_type(_Tagged, _Tagged, serialize=lambda t: f"tag:{t}")
+        assert _serialize_leaf(str, _Tagged("hello")) == "tag:hello"
 
 
 @_dc
