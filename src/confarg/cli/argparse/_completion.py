@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     import argparse
 
 from confarg import _defaults
-from confarg._callable import _OPENERS
 from confarg._tags import _partial_config_from_argv, _tag_named_struct, _tags_from_argv, _tags_from_config
 from confarg._types import (
     _is_callable,
@@ -30,11 +29,12 @@ from confarg._types import (
     _var_params,
 )
 from confarg.cli._build import (
-    _build_callable_fn_specs,
     _build_leaf_spec,
     _build_union_tag_spec,
     _callable_argument_targets,
     _collect_callable_field_specs,
+    _holds_a_callable,
+    _opener_specs,
     _whole_value_spec,
 )
 from confarg.cli._prefix import PREFIX_ATTR, in_prefix, strip_argv_prefix
@@ -92,8 +92,21 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
                     ),
                 )
                 ctx.existing_dests.add(flag)
-            specs.append(_build_union_tag_spec(flag, ctx.union_tag, concrete_variants, group, group_description))
+            resolved = _resolve_type(raw_type)
+            specs.append(
+                _build_union_tag_spec(
+                    flag,
+                    ctx.union_tag,
+                    concrete_variants,
+                    group,
+                    group_description,
+                    callable_class=_holds_a_callable(resolved),
+                ),
+            )
             ctx.existing_dests.add(dest)
+            openers = _opener_specs(flag, resolved, ctx.union_tag, group, group_description)
+            specs.extend(s for s in openers if s.name not in ctx.existing_dests)
+            ctx.existing_dests.update(s.name for s in openers)
         return specs
 
     if concrete and _is_singleton_literal(core):
@@ -104,8 +117,9 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
             help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
             specs.append(_build_leaf_spec(flag, raw_type, core, help_text, group, group_description))
             ctx.existing_dests.add(flag)
-        specs.extend(_build_callable_fn_specs(flag, group, group_description))
-        ctx.existing_dests.update(f"{flag}.{opener}" for opener in _OPENERS)
+        openers = _opener_specs(flag, _resolve_type(raw_type), ctx.union_tag, group, group_description)
+        specs.extend(openers)
+        ctx.existing_dests.update(s.name for s in openers)
         return specs
 
     if _is_struct(core):

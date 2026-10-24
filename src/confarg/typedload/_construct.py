@@ -81,6 +81,7 @@ from confarg._types import (
     _tuple_types,
     _union_args,
     _union_args_no_none,
+    _union_branches,
     _union_tag_shadowed,
     _UnionSeqToken,
     _var_params,
@@ -601,6 +602,31 @@ def spec_reading_variant(tp: Any, data: Any, union_tag: str) -> Any:
     if any(
         _is_struct_variant(_resolve_type(m)) and present & set(_struct_member_names(_resolve_type(m))) for m in members
     ):
+        return None
+    return _first_spec_reader(members)
+
+
+def opener_reader(tp: Any, opener: str, union_tag: str) -> Any:
+    """Return the type that reads the key *opener* at a node of type *tp* as a spec's, None when none does.
+
+    The key's half of :func:`spec_reading_variant`, for registration, which has no value to
+    read: a ``call:`` a field takes as a typed call is *tp*'s, which takes its value
+    (:func:`_takes_typed_call`); any other opener is read by a Callable or an ``Any`` *tp* is,
+    or by the variant :func:`spec_reading_variant` names in a union; the union tag selects a
+    struct variant first (:func:`_construct_union_by_tag`), so it is the spec's only in a union
+    holding none.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#a-callable-beside-another-variant
+    """
+    if opener == _defaults.CALL_KEY and _takes_typed_call(tp):
+        return tp
+    members = _union_branches(tp)
+    if len(members) == 1:
+        return members[0] if _reads_specs(members[0]) else None
+    if opener != union_tag:
+        return spec_reading_variant(tp, {opener: None}, union_tag)
+    if _union_tag_shadowed(tp, union_tag) or any(_is_struct(m) for m in members):
         return None
     return _first_spec_reader(members)
 

@@ -29,6 +29,7 @@ Before, a union tag under `cli_prefix="app"` pointed at `--pet.<field>` flags th
 
 Rejected: **threading `cli_prefix` through the struct walk**, so every writer can spell the full flag.
 It is precise, but the walk is deliberately prefix-blind (it resolves against the target type, above) and the prefix would ride along only for help text.
+Re-examined and kept when every opener got one writer (BUG-197, BUG-250): its notes say `--FLAG.args.PARAM` and `--FLAG.FIELD`, the root's included, and name the node by its path (`'f.bind'`), which is configuration data, the same under any prefix.
 
 Rejected: **rewriting `--…` mentions in `apply_prefix`**.
 A `FieldMeta.help` or a docstring may name the host's own flags, which are outside the prefix and must stay as written.
