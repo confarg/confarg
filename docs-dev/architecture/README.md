@@ -72,7 +72,7 @@ Open the topics that match the code you are touching; the reading guide maps sou
   Five front-ends × three channels must behave identically.
 - **Merged dict / raw dict**: the plain nested `dict` produced by `merge()`, expressions still literal.
 - **Token**: a string from a channel that carries no types (`_StrToken`), eligible for coercion to the target type.
-- **Leaf**: a scalar-like value (bool, int, float, str, None, Literal, Enum, `type[X]`, or a registered leaf type such as `Path`, `Decimal` or `UUID`).
+- **Leaf**: a scalar-like value (bool, int, float, str, None, Literal, Enum, `type[X]`, or a registered leaf type such as `Path`, `Decimal`, `UUID` or `datetime`).
   **Struct**: a dataclass, or a plain class: a class whose constructor signature reads, set through its constructor's parameters.
 - **Mounting**: placing a configuration file's root at some path of the merged document (`__include__`, `--config.<path>`, `CONFIG__<PATH>`).
 - **Value gate**: any code that inspects or converts a value before `build()` runs.

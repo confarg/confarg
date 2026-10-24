@@ -25,8 +25,9 @@ import io
 import json
 import tomllib
 from collections import Counter
+from datetime import date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -742,6 +743,34 @@ def _dump_json(data: dict[str, Any], path: Path) -> None:
 
 
 _DUMPERS = {".toml": _dump_toml, ".yaml": _dump_yaml, ".yml": _dump_yaml, ".json": _dump_json}
+
+YAML_NATIVE_TYPES: Final[tuple[type, ...]] = (date, datetime)
+"""The registered leaf types a YAML file holds natively, as ``dump_file()`` writes one.
+
+PyYAML writes a ``date`` and a ``datetime`` as YAML timestamps, which it reads back as such.
+Pass it to :func:`confarg.dump` for a dict a YAML writer is given.
+"""
+TOML_NATIVE_TYPES: Final[tuple[type, ...]] = (date, datetime)
+"""The registered leaf types a TOML file holds natively, as ``dump_file()`` writes one.
+
+``tomli_w`` writes a ``date`` and a ``datetime`` as TOML dates and date-times. A ``time`` is
+left out: TOML holds a local time but no time with an offset.
+"""
+JSON_NATIVE_TYPES: Final[tuple[type, ...]] = ()
+"""The registered leaf types a JSON file holds natively, as ``dump_file()`` writes one: none."""
+
+#: The registered leaf types each format's writer holds natively, by file extension.
+_NATIVE_TYPES = {
+    ".toml": TOML_NATIVE_TYPES,
+    ".yaml": YAML_NATIVE_TYPES,
+    ".yml": YAML_NATIVE_TYPES,
+    ".json": JSON_NATIVE_TYPES,
+}
+
+
+def _native_types_of(path: Path) -> tuple[type, ...]:
+    """Return the registered leaf types the writer of *path* holds natively, by its extension."""
+    return _NATIVE_TYPES.get(Path(path).suffix.lower(), ())
 
 
 def _dump_file(data: dict[str, Any], path: Path) -> None:

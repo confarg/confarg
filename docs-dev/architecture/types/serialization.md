@@ -12,7 +12,10 @@ Until BUG-202 a delete reached the writer, which raised its own error.
 - A **leaf** union member is written as `{__cast__, __value__}` when the bare scalar would be read back as another variant, under either policy ([casting a stolen leaf](stealing-rule.md#casting-a-stolen-leaf)).
 - Enums dump as values, registered leaf types through their registered serializer (`Path` being the first of them, written as `as_posix()`, so a dump made on Windows reads back on any OS), types as dotted paths when the path imports back ([dotted imports](dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back)), sets sorted by `(type name, str)` so output is deterministic.
   These rules read the *value*, not the declared type, which is why the untyped path can share them; only widening an `int` to a `float` needs a type, so it never happens on a raw dict ([pipeline](../pipeline/api-seams.md#public-api-seams)).
-  The `_StrToken` unwrap comes before the registry loop, so a token cannot be captured by a serializer registered for `str`.
+  The `_StrToken` unwrap comes before the registry lookup, so a token cannot be captured by a serializer registered for `str`.
+  A registered leaf is written by the serializer of its most specific registered type (`_coerce._registered_leaf_of`), so a `datetime` by `datetime.isoformat`, not `date`'s ([design decisions](../design-decisions/the-date-and-time-types-are-built-in-leaves.md#an-instance-is-its-most-specific-registered-type)).
+- A registered leaf whose type `native_types` names is written as the object it is, for a writer that holds it: `dump_file()` passes its format's set, a `date` and a `datetime` for YAML and TOML, none for JSON.
+  `_DumpOptions` carries the set, the union tag and the tag policy down every serializer, and `_serialize_untyped` takes the set too ([design decisions](../design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-writer-may-hold-a-date-natively)).
 - A dataclass is written as the fields it stores, an `init=False` one included and an `InitVar` never; a plain class as its constructor's parameters, each read from the same-named attribute, slot or property the instance holds, never from a plain class attribute ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)).
 - `_serialize` writes the state of the built object: resolved values, and never the `call:` that produced one ([design decision](../design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
   Callables dump as what they are ([callables](../callables.md#round-trip)), and leave through `_serialize_untyped`, since a partial's keywords carry no declared type.
@@ -20,10 +23,11 @@ Until BUG-202 a delete reached the writer, which raised its own error.
 
 ## An unsupported leaf is refused both ways
 
-A value typed by a leaf construction does not build — no struct, no type reference, and none of the leaves `_coerce._is_coercible_leaf` names, as `datetime.date` is until registered — is refused by `dump()` with a `ConfargError` naming the path and `register_leaf_type`, the type construction refuses as `Unsupported leaf type` (`_serialize._refuse_an_unsupported_leaf`).
+A value typed by a leaf construction does not build — no struct, no type reference, and none of the leaves `_coerce._is_coercible_leaf` names, as `complex` is until registered — is refused by `dump()` with a `ConfargError` naming the path and `register_leaf_type`, the type construction refuses as `Unsupported leaf type` (`_serialize._refuse_an_unsupported_leaf`).
 One predicate answers both directions, so a value `dump()` writes is one construction can read back.
 `dump()` used to pass such a value through, untouched and unwarned, and the format writer then failed with its own error (`Object of type date is not JSON serializable`) or wrote a value the reload refused.
 `date` reached that path only once a class whose signature does not read stopped being a struct ([which signature is read](../design-decisions/a-structs-members-are-its-constructors-parameters.md#which-signature-is-read)); before, it was a struct with `object.__init__`'s `args` and `kwargs`, which `dump()` refused as not held.
+It is a built-in leaf since ([the date and time types](../design-decisions/the-date-and-time-types-are-built-in-leaves.md#the-date-and-time-types-are-built-in-leaves)).
 
 An `Any` node still writes what it holds untyped, with a warning, since an `Any` node holds every type ([below](#an-any-node-dumps-the-spec-that-rebuilds-it)).
 

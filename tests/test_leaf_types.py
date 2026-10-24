@@ -2,13 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Tests for leaf type parsing: int, float, bool, str, None, Enum, Path, Literal, Annotated, type aliases."""
+"""Tests for leaf type parsing: the scalars, None, Enum, Path, the date and time types, Literal, Annotated, aliases."""
 
 from __future__ import annotations
 
 import enum
 import math
 from dataclasses import field, make_dataclass
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal, Optional
@@ -665,6 +666,260 @@ class TestUUID:
         WithId = make_target("id", UUID, default=UUID(int=0))
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="Cannot coerce str 'nope' to UUID at 'id'"):
             loader.load(WithId, argv=["--id", "nope"], env={})
+
+
+# ---------------------------------------------------------------------------
+# The date and time types
+# ---------------------------------------------------------------------------
+
+_DAY = date(2021, 2, 3)
+_PLUS_2 = timezone(timedelta(hours=2))
+_COERCION = confarg.exceptions.TypeCoercionError
+
+
+def _when() -> type:
+    return make_target("when", date, default=date(2000, 1, 1))
+
+
+def _at() -> type:
+    return make_target("at", datetime, default=datetime(2000, 1, 1))
+
+
+def _t() -> type:
+    return make_target("t", time, default=time(0))
+
+
+def _span() -> type:
+    return make_target("span", timedelta, default=timedelta(0))
+
+
+def _tz() -> type:
+    return make_target("tz", timezone, default=UTC)
+
+
+class TestDate:
+    """``date`` is a leaf with no registration, read from the text ``date.fromisoformat`` reads."""
+
+    def test_from_cli(self, loader: ConfargLoader) -> None:
+        """``--when 2021-02-03`` is the date the text spells."""
+        assert loader.load(_when(), argv=["--when", "2021-02-03"], env={}).when == _DAY
+
+    def test_from_env(self, loader: ConfargLoader) -> None:
+        """An environment variable reads as the CLI does."""
+        assert loader.load(_when(), argv=[], env={"MYAPP_WHEN": "20210203"}, env_prefix="MYAPP_").when == _DAY
+
+    @pytest.mark.parametrize(
+        ("fixture", "content"),
+        [
+            ("tmp_yaml", "when: 2021-02-03\n"),
+            ("tmp_toml", "when = 2021-02-03\n"),
+            ("tmp_json", '{"when": "2021-02-03"}'),
+            ("tmp_yaml", "when: '2021-W05-3'\n"),
+        ],
+        ids=["yaml-native", "toml-native", "json-text", "yaml-week-date"],
+    )
+    def test_from_file(self, request, loader: ConfargLoader, fixture: str, content: str) -> None:
+        """A file's native date and a file's text are the same date."""
+        path = request.getfixturevalue(fixture)(content)
+        assert loader.load(_when(), argv=[], env={}, files=[path]).when == _DAY
+
+    def test_a_datetime_text_is_refused(self, loader: ConfargLoader) -> None:
+        """A datetime's text is no date, and the message names the form a date takes."""
+        with pytest.raises(
+            _COERCION,
+            match=(
+                r"Cannot coerce str '2021-02-03T00:00' to date at 'when':"
+                r" a date is ISO 8601 text, such as '2021-02-03'$"
+            ),
+        ):
+            loader.load(_when(), argv=["--when", "2021-02-03T00:00"], env={})
+
+    @pytest.mark.parametrize(
+        ("fixture", "content"),
+        [("tmp_yaml", "when: 2021-02-03 10:20:30\n"), ("tmp_toml", "when = 2021-02-03T00:00:00\n")],
+        ids=["yaml", "toml-midnight"],
+    )
+    def test_a_native_datetime_is_refused(self, request, loader: ConfargLoader, fixture: str, content: str) -> None:
+        """A file's datetime is refused as its text is, a midnight one included, though it is a ``date`` subclass."""
+        path = request.getfixturevalue(fixture)(content)
+        with pytest.raises(_COERCION, match=r"Cannot coerce datetime .* to date at 'when': a date is ISO 8601 text"):
+            loader.load(_when(), argv=[], env={}, files=[path])
+
+    def test_a_reference_writes_the_iso_text(self, loader: ConfargLoader) -> None:
+        """An interpolation writes a date as its dump does."""
+        Named = make_dataclass("Named", [("when", date, field(default=_DAY)), ("name", str, field(default=""))])
+        assert loader.load(Named, argv=["--name", "log-${when}.txt"], env={}).name == "log-2021-02-03.txt"
+
+
+class TestDatetime:
+    """``datetime`` is a leaf read from the text ``datetime.fromisoformat`` reads, or a date at midnight."""
+
+    def test_from_cli_keeps_the_offset(self, loader: ConfargLoader) -> None:
+        """An offset is kept as written: nothing is converted to UTC or to local time."""
+        at = loader.load(_at(), argv=["--at", "2021-02-03T10:20:30+02:00"], env={}).at
+        assert at == datetime(2021, 2, 3, 10, 20, 30, tzinfo=_PLUS_2)
+        assert at.utcoffset() == timedelta(hours=2)
+
+    @pytest.mark.parametrize(
+        ("fixture", "content"),
+        [
+            ("tmp_yaml", "at: 2021-02-03\n"),
+            ("tmp_toml", "at = 2021-02-03\n"),
+            ("tmp_json", '{"at": "2021-02-03"}'),
+        ],
+        ids=["yaml-native", "toml-native", "json-text"],
+    )
+    def test_a_date_is_its_midnight(self, request, loader: ConfargLoader, fixture: str, content: str) -> None:
+        """A file's native date reads as its text does, as the midnight that starts it."""
+        path = request.getfixturevalue(fixture)(content)
+        at = loader.load(_at(), argv=[], env={}, files=[path]).at
+        assert at == datetime(2021, 2, 3)
+        assert type(at) is datetime
+
+    def test_a_timestamp_is_refused(self, loader: ConfargLoader) -> None:
+        """A Unix timestamp is no ISO 8601 text."""
+        with pytest.raises(_COERCION, match=r"to datetime at 'at': a datetime is ISO 8601 text, such as"):
+            loader.load(_at(), argv=["--at", "1612347630"], env={})
+
+    def test_an_expression_computes_with_the_objects(self, loader: ConfargLoader) -> None:
+        """``${start + span}`` adds a duration to a datetime, each read as its object."""
+        Window = make_dataclass(
+            "Window",
+            [
+                ("start", datetime, field(default=datetime(2000, 1, 1))),
+                ("span", timedelta, field(default=timedelta(0))),
+                ("end", datetime, field(default=datetime(2000, 1, 1))),
+            ],
+        )
+        argv = ["--start", "2021-02-03T10:00", "--span", "PT1H30M", "--end", "${start + span}"]
+        assert loader.load(Window, argv=argv, env={}).end == datetime(2021, 2, 3, 11, 30)
+
+
+class TestTime:
+    """``time`` is a leaf read from the text ``time.fromisoformat`` reads; a number is refused."""
+
+    def test_from_cli(self, loader: ConfargLoader) -> None:
+        """``--t 10:20`` is ten twenty, the hour first."""
+        assert loader.load(_t(), argv=["--t", "10:20"], env={}).t == time(10, 20)
+
+    @pytest.mark.parametrize(
+        ("fixture", "content"),
+        [("tmp_toml", "t = 10:20:30\n"), ("tmp_yaml", "t: '10:20:30'\n")],
+        ids=["toml-native", "yaml-quoted"],
+    )
+    def test_from_file(self, request, loader: ConfargLoader, fixture: str, content: str) -> None:
+        """TOML's native local time and YAML's quoted text are the same time."""
+        path = request.getfixturevalue(fixture)(content)
+        assert loader.load(_t(), argv=[], env={}, files=[path]).t == time(10, 20, 30)
+
+    def test_yaml_s_base_60_number_is_refused_naming_the_quote(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """YAML 1.1 reads an unquoted ``10:20`` as 620; the refusal says so and how to write the time."""
+        path = tmp_yaml("t: 10:20\n")
+        with pytest.raises(
+            _COERCION,
+            match=(
+                r"Cannot coerce int 620 to time at 't': a time is ISO 8601 text, such as '10:20:30';"
+                r" YAML reads an unquoted 10:20 as the base-60 number 620, so quote it$"
+            ),
+        ):
+            loader.load(_t(), argv=[], env={}, files=[path])
+
+    def test_a_small_number_is_refused_with_no_yaml_clause(self, loader: ConfargLoader, tmp_json) -> None:
+        """An int below 60 is no base-60 reading, so the refusal names the form alone."""
+        path = tmp_json('{"t": 5}')
+        with pytest.raises(_COERCION, match=r"to time at 't': a time is ISO 8601 text, such as '10:20:30'$"):
+            loader.load(_t(), argv=[], env={}, files=[path])
+
+
+class TestTimedelta:
+    """``timedelta`` is a leaf read from an ISO 8601 duration; a number is refused."""
+
+    @pytest.mark.parametrize("text", ["PT1H30M", "pt1h30m", "PT1.5H", "PT90M", "PT5400S"])
+    def test_from_cli(self, loader: ConfargLoader, text: str) -> None:
+        """Every spelling of ninety minutes reads as ninety minutes."""
+        assert loader.load(_span(), argv=["--span", text], env={}).span == timedelta(minutes=90)
+
+    def test_from_env(self, loader: ConfargLoader) -> None:
+        """A negative duration is a minus before its length."""
+        assert loader.load(_span(), argv=[], env={"MYAPP_SPAN": "-P1W"}, env_prefix="MYAPP_").span == timedelta(days=-7)
+
+    @pytest.mark.parametrize("text", ["90", "1:30", "1:30:00", "1 day, 0:00:00", "P1M"])
+    def test_any_other_text_is_refused(self, loader: ConfargLoader, text: str) -> None:
+        """Seconds, colon forms, Python's ``str()`` and a variable unit name the ISO form instead."""
+        with pytest.raises(_COERCION, match=r"to timedelta at 'span': a duration is ISO 8601 text, such as 'PT1H30M'$"):
+            loader.load(_span(), argv=["--span", text], env={})
+
+    def test_yaml_s_base_60_number_is_refused(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """YAML 1.1 reads an unquoted ``1:30:00`` as 5400; quoting it would not help, so the hint does not say to."""
+        path = tmp_yaml("span: 1:30:00\n")
+        with pytest.raises(
+            _COERCION,
+            match=(
+                r"Cannot coerce int 5400 to timedelta at 'span': a duration is ISO 8601 text, such as 'PT1H30M';"
+                r" YAML reads an unquoted 1:30:00 as the base-60 number 5400$"
+            ),
+        ):
+            loader.load(_span(), argv=[], env={}, files=[path])
+
+    def test_a_float_is_refused(self, loader: ConfargLoader, tmp_json) -> None:
+        """A number of seconds is a number, whatever its type."""
+        path = tmp_json('{"span": 90.5}')
+        with pytest.raises(_COERCION, match=r"Cannot coerce float 90.5 to timedelta at 'span'"):
+            loader.load(_span(), argv=[], env={}, files=[path])
+
+
+class TestTimezone:
+    """``timezone`` is a leaf read from a UTC offset, as a datetime's text ends with one."""
+
+    @pytest.mark.parametrize(("text", "expected"), [("+02:00", _PLUS_2), ("Z", UTC), ("z", UTC)])
+    def test_from_cli(self, loader: ConfargLoader, text: str, expected: timezone) -> None:
+        """An offset, or ``Z`` in either case."""
+        assert loader.load(_tz(), argv=["--tz", text], env={}).tz == expected
+
+    def test_from_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """YAML reads an unquoted offset as text."""
+        path = tmp_yaml("tz: +02:00\n")
+        assert loader.load(_tz(), argv=[], env={}, files=[path]).tz == _PLUS_2
+
+    def test_utc_is_refused(self, loader: ConfargLoader) -> None:
+        """Python's ``str()`` of a timezone is no ISO 8601 offset."""
+        with pytest.raises(
+            _COERCION, match=r"to timezone at 'tz': a timezone is an ISO 8601 offset, such as '\+02:00' or 'Z'$"
+        ):
+            loader.load(_tz(), argv=["--tz", "UTC"], env={})
+
+
+class TestDateAndDatetimeUnion:
+    """A date's text meets ``date | datetime`` by the stealing rule: declaration order breaks the tie."""
+
+    @pytest.mark.parametrize(
+        ("tp", "expected"),
+        [(date | datetime, _DAY), (datetime | date, datetime(2021, 2, 3))],
+        ids=["date-first", "datetime-first"],
+    )
+    def test_a_date_text_goes_to_the_first_declared(self, loader: ConfargLoader, tp: object, expected: date) -> None:
+        """Both are registered leaves, one rank, so the one declared first takes a date's text."""
+        result = loader.load(make_target("v", tp, default=None), argv=["--v", "2021-02-03"], env={}).v
+        assert result == expected
+        assert type(result) is type(expected)
+
+    def test_a_datetime_text_goes_to_datetime(self, loader: ConfargLoader) -> None:
+        """The date refuses a datetime's text, whichever is declared first."""
+        V = make_target("v", date | datetime, default=None)
+        assert loader.load(V, argv=["--v", "2021-02-03T10:00"], env={}).v == datetime(2021, 2, 3, 10)
+
+    def test_a_date_dumps_as_a_cast_where_datetime_comes_first(self) -> None:
+        """Its bare text would read back as a midnight datetime, so the dump pins it."""
+        V = make_target("v", datetime | date, default=None)
+        dumped = confarg.dump(V(v=_DAY))
+        assert dumped == {"v": {"__cast__": "date", "__value__": "2021-02-03"}}
+        assert confarg.build(V, dumped).v == _DAY
+
+    def test_text_no_date_reads_is_a_string(self, loader: ConfargLoader) -> None:
+        """``str | date`` reads a date's text as a date, and any other as the string."""
+        V = make_target("v", str | date, default="")
+        assert loader.load(V, argv=["--v", "2021-02-03"], env={}).v == _DAY
+        assert loader.load(V, argv=["--v", "soon"], env={}).v == "soon"
 
 
 # ---------------------------------------------------------------------------

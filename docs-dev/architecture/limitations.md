@@ -62,7 +62,7 @@ A field default is the layer below every source only where the class declares it
 
 - A `default_factory` is never called to be laid, so a list, dict or set default is no base: a `list[int]` defaulting to `[0]` with `--xs+ 1` builds `[1]`, and `${xs}` misses (tier 2).
 - A struct instance default is not laid, nor its fields: `${sub.a}` misses under `sub: Sub = field(default_factory=Sub)` unless a source names `sub` (tier 3).
-- A default of a leaf type confarg has no registration for (`datetime`, `date`) is not laid.
+- A default of a leaf type confarg has no registration for (`complex`, `ZoneInfo`) is not laid.
 - Below a tag that is an expression, a union a structural match decides, or a struct with subclasses and no tag, no default is laid: which class's defaults apply is not known before construction.
 - An expression that produces a patch dict replaces the default rather than patching it: the defaults are combined with the data before expressions resolve.
 
@@ -115,6 +115,11 @@ A field default is the layer below every source only where the class declares it
   A configuration source that is not trusted must not reach a field typed `Any` ([design decision](design-decisions/an-any-node-reads-every-opener.md)).
 - A dict a program puts in an `Any` field with a `class`, `classfn`, `bind` or `call` key cannot be loaded back as that dict: it reads back as the spec it spells, and `dump()` warns when it writes one.
   An object no spec rebuilds, such as a `Path`, an `Enum` member, a `datetime`, a tuple or a closure, is written untyped with a `ConfargWarning` ([serialization](types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it)).
+- A `datetime` keeps its UTC offset through a dump, not its zone: one built with a `ZoneInfo` reads back with a fixed `timezone` of the same offset, equal to it but no longer following the zone's daylight-saving rules, and a `timezone` reads back without the name it was given ([design decisions](design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-timezone-is-an-iso-8601-offset)).
+- `zoneinfo.ZoneInfo` is no built-in leaf, whether a zone exists depending on the host's time zone database ([design decisions](design-decisions/the-date-and-time-types-are-built-in-leaves.md#the-date-and-time-types-are-built-in-leaves)).
+- A `time` field takes no number and a `timedelta` field none either, so YAML's unquoted `10:20` and `1:30:00`, which YAML 1.1 reads as the base-60 numbers 620 and 5400, are refused: a time is quoted, a duration written in ISO 8601 (`PT1H30M`); the refusal says so ([design decisions](design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-number-is-no-time-and-no-duration)).
+- A `timezone` field reads a lowercase `z`, but a `datetime`'s text does not end with one: `datetime.fromisoformat` refuses `2021-02-03T10:00z`, and confarg reads that text as Python does ([design decisions](design-decisions/the-date-and-time-types-are-built-in-leaves.md#the-text-each-type-reads)).
+- Digits finer than a microsecond are truncated in a `date`, `datetime` or `time`, as `fromisoformat` truncates them, and rounded half-even in a duration, as `timedelta` rounds them ([design decisions](design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-duration-is-iso-8601-text)).
 - On the command line the opener comes first: a key below a Callable or an `Any` written before the opener that names its class is an untyped token, so `--f.parts a b --f.class pkg.Joiner` refuses `b` where `--f.class pkg.Joiner --f.parts a b` takes the run, and a lower layer's class does not type it either.
   Below a node naming no class at all, every key takes one token ([a node types its keys by the class it names](design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key)).
 - `--help` lists a nested spec's arguments (`--f.inner.factor` below `Wrap`'s Callable argument) only once argv spells its opener; a flag below it is accepted whenever typed ([callables](callables.md#cli)).
@@ -130,7 +135,7 @@ A field default is the layer below every source only where the class declares it
 - A plain class is dumped as its constructor's parameters, so it must hold each one as a same-named attribute, slot or property — confarg reads attributes, it does not replay constructor calls; a plain class attribute spelled like a parameter is not one the instance holds, and is refused ([a plain class dumps the parameters it holds](design-decisions/the-object-dump-writes-state.md#a-plain-class-dumps-the-parameters-it-holds)).
   How a class dumps cannot be registered yet (FEAT-49).
 - A subclass whose own `__init__` forwards `**kwargs` to its parent is set through a `kwargs` dict, untyped, not through the parent's members, and an undecorated subclass of a dataclass dumps its parent's fields alone (FEAT-50, [a dataclass is read by its `__init__`](design-decisions/a-structs-members-are-its-constructors-parameters.md#a-dataclass-is-read-by-its-__init__)).
-- A class whose constructor signature does not read, as `datetime.date`'s, is an unsupported leaf until registered: construction refuses its value and `dump()` refuses to write one ([types](types/serialization.md#an-unsupported-leaf-is-refused-both-ways)).
+- A class whose constructor signature does not read, as `zoneinfo.ZoneInfo`'s, is an unsupported leaf until registered: construction refuses its value and `dump()` refuses to write one ([types](types/serialization.md#an-unsupported-leaf-is-refused-both-ways)).
 - A `call:` result is dumped from the object as the value it produced, never as the call ([design decision](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
   A result that no configuration spells, such as a closure, a lambda or an instance whose fields cannot be read, cannot be dumped from the object.
   The merged dict keeps the call, and `dump_file()` writes it as written.
