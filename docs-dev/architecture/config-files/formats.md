@@ -11,6 +11,9 @@ Data formats (`.csv`/`.tsv`) are not in it — data is a value, not a layer — 
 Every mount route goes through it, which is what keeps the accepted fragment shapes and the per-format options from differing by channel ([mounting](mounting.md#mounting)).
 A document root additionally answers `_loader_for(loc, _LOADERS)` first, which is what makes a `.csv` root `unsupported_format` rather than data.
 
+Writing has a table of its own, `_FORMATS`, one `_Format` per extension `dump_file()` writes: the leaf types its writer holds natively, what a file of the format holds, values and keys, and how its text is rendered.
+`_dump_file` checks the dict against it, renders the whole text, and only then opens the file ([design decisions](../design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-written-file-holds-what-its-reader-reads-back)).
+
 The loaders return the document's **raw** top-level value; no format knows the root rule.
 `_require_layer` is the single place that requires a root to be a mapping, so every format, every `__include__` that rewrites a root and every mount route answer to one check and one error ([invariants](../invariants.md#delegate-to-the-canonical-function)).
 Enforcing it after include resolution rather than at parse time is what lets a root file be nothing but `__include__`.

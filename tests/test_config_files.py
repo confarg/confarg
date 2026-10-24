@@ -2,12 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Tests for config file loading: TOML & YAML, nested, multiple files, subpath targeting."""
+"""Tests for config files: loading TOML, YAML and JSON, nested, multiple files, subpath targeting, and writing them."""
 
 from __future__ import annotations
 
+import enum
+import math
+import threading
+from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from tests._loaders import ConfargLoader
@@ -15,7 +20,7 @@ if TYPE_CHECKING:
 import pytest
 
 import confarg
-from confarg.exceptions import ConfargError
+from confarg.exceptions import ConfargError, ConfargWarning
 from tests.conftest import (
     AppConfig,
     Color,
@@ -902,3 +907,176 @@ class TestRemoteConfigSources:
         (tmp_path / "db.yaml").write_text("host: h\nport: 1\nname: n\n", encoding="utf-8")
         cfg = confarg.load(AppConfig, argv=["--config.db", f"{tmp_http}/db.yaml"], env={})
         assert (cfg.db.host, cfg.db.port, cfg.db.name) == ("h", 1, "n")
+
+
+# ---------------------------------------------------------------------------
+# Writing a file: what each format holds (BUG-245, BUG-251)
+# ---------------------------------------------------------------------------
+
+
+class _Level(enum.IntEnum):
+    LOW = 1
+
+
+@dataclass
+class _IntKeys:
+    d: dict[int, int] = field(default_factory=dict)
+
+
+@dataclass
+class _BoolKeys:
+    d: dict[bool, int] = field(default_factory=dict)
+
+
+@dataclass
+class _FloatKeys:
+    d: dict[float, int] = field(default_factory=dict)
+
+
+@dataclass
+class _EnumKeys:
+    d: dict[_Level, int] = field(default_factory=dict)
+
+
+@dataclass
+class _DateKeys:
+    d: dict[date, int] = field(default_factory=dict)
+
+
+@dataclass
+class _AnyHolder:
+    a: Any = None
+
+
+@dataclass
+class _LockHolder:
+    name: str = "svc"
+    lock: Any = field(default_factory=threading.Lock)
+
+
+@dataclass
+class _Optional:
+    timeout: int | None = None
+
+
+@dataclass
+class _Numbers:
+    ratio: float = math.inf
+    big: int = 2**70
+
+
+_FORMATS = [".toml", ".json", ".yaml"]
+_TEXT_KEYED = {".toml": "TOML", ".json": "JSON"}
+
+
+class TestAFileWritesAKeyAsItsFormatHoldsIt:
+    """A TOML or a JSON file writes a key that is no string as the text the other channels spell it by (BUG-245)."""
+
+    @pytest.mark.parametrize("suffix", _FORMATS)
+    @pytest.mark.parametrize(
+        "value",
+        [
+            pytest.param(_IntKeys({1: 5}), id="int"),
+            pytest.param(_BoolKeys({True: 5}), id="bool"),
+            pytest.param(_FloatKeys({1.5: 5}), id="float"),
+            pytest.param(_EnumKeys({_Level.LOW: 5}), id="int-enum"),
+            pytest.param(_DateKeys({date(2020, 1, 1): 5}), id="date"),
+        ],
+    )
+    def test_a_typed_key_reads_back(self, tmp_path: Path, suffix: str, value: Any) -> None:
+        """Every typed key is written, and reads back as the key it was."""
+        out = tmp_path / f"c{suffix}"
+        confarg.dump_file(value, out)
+        assert confarg.load(type(value), argv=[], env={}, files=[out]) == value
+
+    @pytest.mark.parametrize(
+        ("key", "spelled"),
+        [
+            pytest.param(1, "1", id="int"),
+            pytest.param(True, "true", id="bool"),
+            pytest.param(None, "null", id="none"),
+            pytest.param(1.5, "1.5", id="float"),
+            pytest.param(date(2020, 1, 1), "2020-01-01", id="date"),
+        ],
+    )
+    @pytest.mark.parametrize("suffix", list(_TEXT_KEYED))
+    def test_a_raw_key_is_written_as_its_spelling(self, tmp_path: Path, suffix: str, key: Any, spelled: str) -> None:
+        """A raw dict's key, as a YAML file loads it, is written as JSON spells it, a date as its ISO text."""
+        out = tmp_path / f"c{suffix}"
+        confarg.dump_file({"a": {key: 6}}, out)
+        assert confarg.load(_AnyHolder, argv=[], env={}, files=[out]).a == {spelled: 6}
+
+    def test_a_merged_yaml_dict_is_written_to_toml(self, tmp_path: Path) -> None:
+        """The ticket's case: a YAML file's integer and date keys, merged, then written to TOML."""
+        (tmp_path / "base.yaml").write_text("d: {1: 5}\na: {2020-01-01: 6}\n")
+        merged = confarg.merge(_AnyHolder, files=[str(tmp_path / "base.yaml")], argv=[], env={})
+        confarg.dump_file(merged, tmp_path / "out.toml")
+        assert (tmp_path / "out.toml").read_text() == "[d]\n1 = 5\n\n[a]\n2020-01-01 = 6\n"
+
+    @pytest.mark.parametrize("suffix", list(_TEXT_KEYED))
+    def test_two_keys_spelled_alike_are_refused(self, tmp_path: Path, suffix: str) -> None:
+        """``1`` and ``'1'`` would both be written ``"1"``: refused, naming both keys and the path."""
+        out = tmp_path / f"c{suffix}"
+        fmt = _TEXT_KEYED[suffix]
+        with pytest.raises(ConfargError, match=rf"keys 1 and '1' at 'a' to {fmt}"):
+            confarg.dump_file(_AnyHolder({1: 5, "1": 6}), out)
+        assert not out.exists()
+
+    def test_yaml_holds_two_keys_spelled_alike(self, tmp_path: Path) -> None:
+        """A YAML file holds both keys as they are."""
+        out = tmp_path / "c.yaml"
+        confarg.dump_file(_AnyHolder({1: 5, "1": 6}), out)
+        assert confarg.load(_AnyHolder, argv=[], env={}, files=[out]).a == {1: 5, "1": 6}
+
+    @pytest.mark.parametrize("suffix", _FORMATS)
+    def test_a_key_no_reader_reads_back_is_refused(self, tmp_path: Path, suffix: str) -> None:
+        """A tuple key has no text, and a YAML file's complex key does not load: refused by every format."""
+        with pytest.raises(ConfargError, match=r"key \(1, 2\) at 'a'"):
+            confarg.dump_file({"a": {(1, 2): 6}}, tmp_path / f"c{suffix}")
+
+
+class TestAFileRefusesAValueItsFormatDoesNotHold:
+    """``dump_file()`` refuses a value its format does not hold, naming its path, leaving the file alone (BUG-251)."""
+
+    @pytest.mark.parametrize("suffix", _FORMATS)
+    def test_an_object_no_configuration_spells_is_refused(self, tmp_path: Path, suffix: str) -> None:
+        """A lock in an ``Any`` field is no value a file holds: refused naming ``lock``, after ``dump()``'s warning."""
+        with (
+            pytest.warns(ConfargWarning, match="lock"),
+            pytest.raises(ConfargError, match=r"Cannot write .*lock.* at 'lock'"),
+        ):
+            confarg.dump_file(_LockHolder(), tmp_path / f"c{suffix}")
+
+    @pytest.mark.parametrize("suffix", _FORMATS)
+    def test_a_refused_dump_leaves_the_file_as_it_was(self, tmp_path: Path, suffix: str) -> None:
+        """Nothing is written before the whole file is known to be writable."""
+        out = tmp_path / f"c{suffix}"
+        out.write_text("# hand-written\n")
+        with pytest.warns(ConfargWarning), pytest.raises(ConfargError):
+            confarg.dump_file(_LockHolder(), out)
+        assert out.read_text() == "# hand-written\n"
+
+    def test_a_raw_object_is_refused(self, tmp_path: Path) -> None:
+        """A raw dict's object is refused as an instance's is, at its path inside a list."""
+        with pytest.raises(ConfargError, match=r"Cannot write .*object.* at 'a\[1\]' to JSON"):
+            confarg.dump_file({"a": [1, object()]}, tmp_path / "c.json")
+
+    @pytest.mark.parametrize(
+        "value", [_Optional(), {"timeout": None}, _AnyHolder([1, None])], ids=["typed", "raw", "any-list"]
+    )
+    def test_toml_refuses_none(self, tmp_path: Path, value: Any) -> None:
+        """TOML has no null: a None is refused, naming its path and the formats that hold it."""
+        with pytest.raises(ConfargError, match=r"Cannot write None at '(timeout|a\[1\])' to TOML.*YAML.*JSON"):
+            confarg.dump_file(value, tmp_path / "c.toml")
+
+    @pytest.mark.parametrize("suffix", [".json", ".yaml"])
+    def test_json_and_yaml_hold_none(self, tmp_path: Path, suffix: str) -> None:
+        """A JSON and a YAML file write None as their null."""
+        confarg.dump_file(_Optional(), tmp_path / f"c{suffix}")
+        assert confarg.load(_Optional, argv=[], env={}, files=[tmp_path / f"c{suffix}"]) == _Optional()
+
+    @pytest.mark.parametrize("suffix", _FORMATS)
+    def test_a_value_confarg_reads_back_is_written(self, tmp_path: Path, suffix: str) -> None:
+        """An infinite float and an int past 64 bits are written: confarg's own reader reads them back."""
+        confarg.dump_file(_Numbers(), tmp_path / f"c{suffix}")
+        assert confarg.load(_Numbers, argv=[], env={}, files=[tmp_path / f"c{suffix}"]) == _Numbers()

@@ -31,7 +31,14 @@ from confarg._types import (
     _resolve_type,
     _src_type,
 )
-from confarg.exceptions import ConfargError, FieldPath, SymbolImportError, TypeCoercionError, _spell_field_path
+from confarg.exceptions import (
+    ConfargError,
+    FieldPath,
+    SymbolImportError,
+    SymbolNotFoundError,
+    TypeCoercionError,
+    _spell_field_path,
+)
 
 
 @dataclass(frozen=True)
@@ -806,20 +813,56 @@ def _resolve_classfn_spec(method_path: Any, init_kwargs: dict, ctx: _SpecContext
 class _ClassSpec:
     """Parsed 'class:' section of a callable dict spec."""
 
-    cls_path: str
+    cls_path: Any
     init_kwargs: dict
+
+
+def _import_class_by_path(tag: Any, where: str, key: str) -> type:
+    """Import the class a tag names by its full dotted path, the tag written under *key* at *where*.
+
+    The one reader of a class tag: a union's and a struct field's, under the union tag, and a
+    ``class:`` spec's on an ``Any`` node or a Callable field. The tag must be a fully-qualified
+    dotted path such as ``'mypackage.mymodule.MyClass'``; a class object is refused, as
+    ``call:`` refuses one.
+
+    Raises:
+        TypeCoercionError: If the tag is no string, if nothing answers to the path, or if it
+            does not resolve to a class.
+        SymbolImportError: If a module on the path exists but fails while it is imported.
+
+    Dev Notes:
+        docs-dev/architecture/types/dotted-imports.md#a-tag-is-a-dotted-path
+    """
+    if not isinstance(tag, str):
+        msg = f"{key!r} tag at '{where}' takes a dotted path, got {_src_type(tag)}."
+        raise TypeCoercionError(msg)
+    try:
+        obj = _import_dotted(tag)
+    except SymbolNotFoundError as e:
+        msg = (
+            f"Cannot import class {tag!r} from {key!r} tag at '{where}': {e}."
+            f" The value must be a full dotted path, e.g. 'mypackage.mymodule.MyClass'."
+        )
+        raise TypeCoercionError(msg) from e
+    except SymbolImportError as e:
+        msg = f"Cannot import class {tag!r} from {key!r} tag at '{where}': {e}"
+        raise SymbolImportError(msg) from e
+    if not isinstance(obj, type):
+        msg = (
+            f"Value of {key!r} tag at '{where}' must be a class path,"
+            f" but {tag!r} resolved to {type(obj).__name__!r}, not a class."
+        )
+        raise TypeCoercionError(msg)
+    return obj
 
 
 def _instantiate_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
     """Build the instance a 'class:' spec names, from the other keys as its constructor arguments.
 
     Raises:
-        TypeCoercionError: If the path names no class.
+        TypeCoercionError: If the tag names no class (:func:`_import_class_by_path`).
     """
-    cls = _import_dotted(spec.cls_path)
-    if not isinstance(cls, type):
-        msg = f"'class' key at '{ctx.where}' must reference a class, got {type(cls).__name__} {spec.cls_path!r}"
-        raise TypeCoercionError(msg)
+    cls = _import_class_by_path(spec.cls_path, ctx.where, _defaults.CLASS_KEY)
     return ctx.instantiate(cls, spec.init_kwargs, spec.cls_path, _defaults.CLASS_KEY)
 
 

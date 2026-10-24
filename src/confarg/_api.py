@@ -394,6 +394,12 @@ def dump_file(
     own dates (``confarg.YAML_NATIVE_TYPES``, ``confarg.TOML_NATIVE_TYPES``), a JSON file
     none. *native_types* replaces that set, as :func:`dump`'s does.
 
+    A TOML or a JSON file writes a dict key that is no string as its text, ``1`` as ``"1"`` and
+    a date as its ISO text, which a typed dict reads back as the key it was. What the format
+    does not hold is refused before the file is opened, which is then left as it was: an
+    object no configuration spells, a ``None`` in TOML, which has no null, a key with no text,
+    such as a tuple, or two keys of one dict written as the same text, ``1`` and ``"1"``.
+
     Args:
         value: A dataclass or plain-class instance, or a raw config dict.
         path: Path to the output file.
@@ -406,6 +412,8 @@ def dump_file(
         TypeError: If value is not a dataclass or plain-class instance, or a dict, or
             *native_types* names a type that is no registered leaf type.
         InvalidConfigFileError: If the format is unsupported or the required library is not installed.
+        ConfargError: If *value* holds a value or a key the format does not hold, or :func:`dump`
+            refuses it.
     """
     native = _native_types_of(Path(path)) if native_types is None else _check_native_types(native_types)
     if isinstance(value, dict):

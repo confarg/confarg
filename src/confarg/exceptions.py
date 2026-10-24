@@ -141,6 +141,43 @@ class ConfargError(Exception):
         )
 
     @classmethod
+    def unwritable_value(cls, value: Any, path: str, fmt: str) -> ConfargError:
+        """Return the error for a value at *path* that a file of format *fmt* does not hold.
+
+        *value* is what ``dump()`` wrote, never a channel token. TOML holding no null, a
+        ``None`` names the formats that do.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-written-file-holds-what-its-reader-reads-back
+        """
+        if value is None:
+            return cls(f"Cannot write None at '{path}' to {fmt}, which has no null. A YAML or a JSON file holds it.")
+        name = type(value).__name__
+        return cls(f"Cannot write the {name} at '{path}' to {fmt}: a {fmt} file holds no {name}.")
+
+    @classmethod
+    def unwritable_key(cls, key: Any, path: str, fmt: str) -> ConfargError:
+        """Return the error for a dict key at *path* that has no spelling a file of format *fmt* reads back.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-key-is-written-as-the-text-it-is-met-by
+        """
+        return cls(f"Cannot write the key {key!r} at '{path}' to {fmt}: no {fmt} key reads back as it.")
+
+    @classmethod
+    def keys_written_alike(cls, first: Any, second: Any, text: str, path: str, fmt: str) -> ConfargError:
+        """Return the error for two keys of the dict at *path* that a file of format *fmt* writes as one *text*.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-key-is-written-as-the-text-it-is-met-by
+        """
+        holds_both = "" if fmt == "YAML" else " A YAML file holds both."
+        return cls(
+            f"Cannot write the keys {first!r} and {second!r} at '{path}' to {fmt}:"
+            f" both are written {text!r}.{holds_both}",
+        )
+
+    @classmethod
     def include_siblings_need_a_dict(cls, include_key: str, included: Any) -> ConfargError:
         """Return an error for sibling keys beside an include that produced a non-mapping."""
         return cls(

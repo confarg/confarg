@@ -105,6 +105,7 @@ A decision lands here when a ticket closes and the answer turns out to be "we wi
 | [A stolen leaf dumps with its cast](a-stolen-leaf-dumps-with-its-cast.md) | `{__cast__, __value__}` exactly where the bare scalar would be taken back |
 | [Registered leaf types dump through a registered serializer](registered-leaf-serializer.md) | registration is two directions; `str` is only the default for the second |
 | [Dumped files carry raw UTF-8](dumped-files-carry-raw-utf-8.md) | non-ASCII text is written as it stands, escaped nowhere — what the TOML writer always did |
+| [A written file holds what its reader reads back](a-written-file-holds-what-its-reader-reads-back.md) | `dump_file` refuses, naming the path and before opening the file, a value its format does not hold; a TOML or JSON key that is no string is written as the text the merge meets it by |
 
 ## CLI front-ends
 

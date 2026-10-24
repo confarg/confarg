@@ -2,7 +2,7 @@
 filed: 2026-10-14
 where:
   - src/confarg/_files.py::_load_yaml_item
-  - src/confarg/_files.py::_dump_yaml
+  - src/confarg/_files.py::_render_yaml
 effort: M
 needs_design: true
 risk: medium

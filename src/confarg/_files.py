@@ -25,12 +25,13 @@ import io
 import json
 import tomllib
 from collections import Counter
-from datetime import date, datetime
+from dataclasses import dataclass
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 from confarg import _defaults, _sources
 from confarg._merge import (
@@ -43,13 +44,15 @@ from confarg._merge import (
     _as_list_item,
     _deep_merge,
     _DeleteSentinel,
+    _key_spelling,
     _read_file_ops,
     _to_append_list,
     _written_within_source,
 )
+from confarg._serialize import _serialize_leaf
 from confarg._types import _StrToken
 from confarg.dictexpr._expressions import check_anchor_depth, contains_expression, prefix_references
-from confarg.exceptions import ConfargError, InvalidConfigFileError
+from confarg.exceptions import ConfargError, FieldPath, InvalidConfigFileError, _spell_field_path
 
 INCLUDE_KEY = _defaults.INCLUDE_KEY
 UNSET_KEY = _defaults.UNSET_KEY
@@ -687,12 +690,8 @@ def _load_subpath_files(entries: Sequence[tuple[str, Any]], root: MergeAt) -> Me
     return result
 
 
-def _dump_toml(data: dict[str, Any], path: Path) -> None:
-    """Write a dict to a TOML file.
-
-    Args:
-        data: The dict to write.
-        path: Path to the output file.
+def _render_toml(data: dict[str, Any]) -> str:
+    """Return *data* as the text of a TOML file.
 
     Raises:
         InvalidConfigFileError: If tomli_w is not installed.
@@ -702,16 +701,11 @@ def _dump_toml(data: dict[str, Any], path: Path) -> None:
     except ImportError:
         msg = "tomli_w"
         raise InvalidConfigFileError.missing_library(msg, "tomli_w", "writing TOML files") from None
-    with Path(path).open("wb") as f:
-        tomli_w.dump(data, f)
+    return tomli_w.dumps(data)
 
 
-def _dump_yaml(data: dict[str, Any], path: Path) -> None:
-    """Write a dict to a YAML file.
-
-    Args:
-        data: The dict to write.
-        path: Path to the output file.
+def _render_yaml(data: dict[str, Any]) -> str:
+    """Return *data* as the text of a YAML file.
 
     Raises:
         InvalidConfigFileError: If PyYAML is not installed.
@@ -724,25 +718,17 @@ def _dump_yaml(data: dict[str, Any], path: Path) -> None:
     except ImportError:
         msg = "PyYAML"
         raise InvalidConfigFileError.missing_library(msg, "pyyaml", "writing YAML files") from None
-    with Path(path).open("w", encoding="utf-8", newline="\n") as f:
-        yaml.dump(data, f, Dumper=yaml.SafeDumper, allow_unicode=True)
+    return yaml.dump(data, Dumper=yaml.SafeDumper, allow_unicode=True)
 
 
-def _dump_json(data: dict[str, Any], path: Path) -> None:
-    """Write a dict to a JSON file.
-
-    Args:
-        data: The dict to write.
-        path: Path to the output file.
+def _render_json(data: dict[str, Any]) -> str:
+    """Return *data* as the text of a JSON file.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/dumped-files-carry-raw-utf-8.md#dumped-files-carry-raw-utf-8
     """
-    with Path(path).open("w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    return json.dumps(data, indent=2, ensure_ascii=False)
 
-
-_DUMPERS = {".toml": _dump_toml, ".yaml": _dump_yaml, ".yml": _dump_yaml, ".json": _dump_json}
 
 YAML_NATIVE_TYPES: Final[tuple[type, ...]] = (date, datetime)
 """The registered leaf types a YAML file holds natively, as ``dump_file()`` writes one.
@@ -759,22 +745,70 @@ left out: TOML holds a local time but no time with an offset.
 JSON_NATIVE_TYPES: Final[tuple[type, ...]] = ()
 """The registered leaf types a JSON file holds natively, as ``dump_file()`` writes one: none."""
 
-#: The registered leaf types each format's writer holds natively, by file extension.
-_NATIVE_TYPES = {
-    ".toml": TOML_NATIVE_TYPES,
-    ".yaml": YAML_NATIVE_TYPES,
-    ".yml": YAML_NATIVE_TYPES,
-    ".json": JSON_NATIVE_TYPES,
-}
+#: The scalars every format writes and reads back as themselves.
+_SCALARS: Final = (str, int, float, bool)
+
+
+@dataclass(frozen=True)
+class _Format:
+    """What a format's file holds, and how its text is rendered.
+
+    *natives* are the registered leaf types ``dump()`` keeps as objects for its writer. *holds*
+    answers for a value that is no dict and no list, *holds_key* for a dict key, each whether
+    the format's reader reads it back as it is.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-written-file-holds-what-its-reader-reads-back
+    """
+
+    name: str
+    natives: tuple[type, ...]
+    holds: Callable[[Any], bool]
+    holds_key: Callable[[Any], bool]
+    render: Callable[[dict[str, Any]], str]
+
+
+def _toml_holds(value: Any) -> bool:
+    """Return whether a TOML file holds *value*: a scalar, a date, a date-time or a local time, never None."""
+    if type(value) is time:
+        return value.utcoffset() is None
+    return type(value) in (*_SCALARS, date, datetime)
+
+
+def _yaml_holds(value: Any) -> bool:
+    """Return whether a YAML file holds *value*: a scalar, None, a date or a date-time."""
+    return value is None or type(value) in (*_SCALARS, date, datetime)
+
+
+def _json_holds(value: Any) -> bool:
+    """Return whether a JSON file holds *value*: a scalar or None."""
+    return value is None or type(value) in _SCALARS
+
+
+def _text_key(key: Any) -> bool:
+    """Return whether *key* is a key a TOML or a JSON file holds: text."""
+    return type(key) is str
+
+
+_TOML = _Format("TOML", TOML_NATIVE_TYPES, _toml_holds, _text_key, _render_toml)
+_YAML = _Format("YAML", YAML_NATIVE_TYPES, _yaml_holds, _yaml_holds, _render_yaml)
+_JSON = _Format("JSON", JSON_NATIVE_TYPES, _json_holds, _text_key, _render_json)
+
+#: The format of each extension ``dump_file()`` writes.
+_FORMATS = {".toml": _TOML, ".yaml": _YAML, ".yml": _YAML, ".json": _JSON}
 
 
 def _native_types_of(path: Path) -> tuple[type, ...]:
     """Return the registered leaf types the writer of *path* holds natively, by its extension."""
-    return _NATIVE_TYPES.get(Path(path).suffix.lower(), ())
+    fmt = _FORMATS.get(Path(path).suffix.lower())
+    return () if fmt is None else fmt.natives
 
 
 def _dump_file(data: dict[str, Any], path: Path) -> None:
-    """Write a dict to a config file, dispatching by extension.
+    """Write a dict to a config file, its format chosen by the extension.
+
+    The whole text is rendered before the file is opened, so a refused dump leaves the file as
+    it was.
 
     Args:
         data: The dict to write.
@@ -783,9 +817,62 @@ def _dump_file(data: dict[str, Any], path: Path) -> None:
     Raises:
         InvalidConfigFileError: If the file format is unsupported or the
             required library is not installed.
+        ConfargError: If *data* holds a value or a key the format does not hold
+            (:func:`_writable`).
     """
     path = Path(path)
-    dumper = _DUMPERS.get(path.suffix.lower())
-    if dumper is None:
+    fmt = _FORMATS.get(path.suffix.lower())
+    if fmt is None:
         raise InvalidConfigFileError.unsupported_format(path.suffix.lower())
-    dumper(data, path)
+    text = fmt.render(_writable(data, fmt, ()))
+    with path.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+
+
+def _writable(value: Any, fmt: _Format, path: FieldPath) -> Any:
+    """Return *value* as a file of format *fmt* writes it, a tuple as a list and each key as :func:`_written_key` does.
+
+    Raises:
+        ConfargError: If a value at or below *path* is one *fmt* does not hold, a key has no
+            spelling *fmt* holds, or two keys of one dict are spelled alike.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-written-file-holds-what-its-reader-reads-back
+    """
+    if isinstance(value, list | tuple):
+        return [_writable(v, fmt, (*path, i)) for i, v in enumerate(value)]
+    if not isinstance(value, dict):
+        if fmt.holds(value):
+            return value
+        raise ConfargError.unwritable_value(value, _spell_field_path(path) or _defaults.ROOT_KEY, fmt.name)
+    written: dict[Any, Any] = {}
+    spelled_by: dict[Any, Any] = {}
+    for k, v in value.items():
+        key = _written_key(k, fmt)
+        where = _spell_field_path(path) or _defaults.ROOT_KEY
+        if key is None:
+            raise ConfargError.unwritable_key(k, where, fmt.name)
+        if key in spelled_by:
+            raise ConfargError.keys_written_alike(spelled_by[key], k, key, where, fmt.name)
+        spelled_by[key] = k
+        written[key] = _writable(v, fmt, (*path, str(k)))
+    return written
+
+
+def _written_key(key: Any, fmt: _Format) -> Any:
+    """Return *key* as a file of format *fmt* writes it, None when it has no spelling *fmt* holds.
+
+    A key *fmt* holds is itself; any other is its leaf serialization, then the text the other
+    channels meet it by (``_merge._key_spelling``), JSON's: ``1`` as ``"1"``, ``True`` as
+    ``"true"``, a date as its ISO text.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-key-is-written-as-the-text-it-is-met-by
+    """
+    if fmt.holds_key(key):
+        return key
+    leaf = _serialize_leaf(None, key)
+    if fmt.holds_key(leaf):
+        return leaf
+    text = _key_spelling(leaf)
+    return text if fmt.holds_key(text) else None
