@@ -61,6 +61,7 @@ A framework splits argv into tokens by the arity registration gives each flag, b
   `argv` is each step's own, and an option registration read nothing by differs from nothing (the environment where no prefix and no `env_config` read it).
   The environment is read again at the merge.
 - Registration runs vanilla's own loop over argv (`cli._build._collect_loop_typed_specs`) and registers each flag the naming typed apart from the declared types in the shape of its widest occurrence: argv restating a naming can type one flag twice, and the framework must bind at least what vanilla takes.
+  Where the static walk registered the same flag by the declared type, narrower than the naming types it (a subclass widening `x: int` to `list[int]`), the static flag takes the wider shape before anything is loaded (`cli._build.widen_static`, BUG-272): every loader keeps the first spec of a name, and the record of the runs a framework binds is read off the specs it was given.
   Vanilla's loop then asks what registration registered, not the type it consumes for, whether the framework bound the token after its run (`cli._collect._host_binds_run`), so a token it bound and vanilla did not take is the stray vanilla refuses.
 
 Rejected:

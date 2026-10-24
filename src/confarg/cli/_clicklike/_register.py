@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     from confarg.cli._spec import FlagSpec
 
-from confarg.cli._build import bound_runs, build_dynamic_flags, build_static_flags
+from confarg.cli._build import bound_runs, build_dynamic_flags, build_static_flags, widen_static
 from confarg.cli._prefix import PREFIX_ATTR
 from confarg.cli._sources import REGISTRATION_ATTR, Registration, registration_inputs
 
@@ -83,7 +83,6 @@ def populate_command(  # noqa: PLR0913, PLR0917  # mirrors the public populate_*
         config_subkeys=config_subkeys,
         below=below,
     )
-    load_flags_into_command(static, command, option_factory)
     dynamic = build_dynamic_flags(
         target,
         argv,
@@ -92,6 +91,8 @@ def populate_command(  # noqa: PLR0913, PLR0917  # mirrors the public populate_*
         config_flag=config_flag,
         below=below,
     )
+    static, dynamic = widen_static(static, dynamic)
+    load_flags_into_command(static, command, option_factory)
     load_flags_into_command(dynamic, command, option_factory)
     registration = Registration(sources, bound_runs(static + dynamic, cli_prefix))
     # Recorded on the options, not on the command: both frameworks routinely copy
