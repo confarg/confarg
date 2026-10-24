@@ -15,7 +15,7 @@ import inspect
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, get_args
 
 from confarg import _defaults
 from confarg._callable import _serialize_callable, holds_an_opener, promote_bare_spec
@@ -143,9 +143,15 @@ def _serialize(
 
     Returns:
         A structure of dicts, lists and leaves: each leaf a value every config writer holds,
-        or an object whose registered type ``opts.native_types`` names.
+        or an object whose registered type ``opts.native_types`` names. A value *tp* does not
+        hold is written as an ``Any`` node writes it, with a :class:`ConfargWarning`
+        (:func:`_serialize_foreign`).
     """
     tp = _resolve_type(tp)
+    if instance is not None:
+        _refuse_an_undumpable_type(tp, path)
+    if not _holds(tp, instance):
+        return _serialize_foreign(tp, instance, path, opts)
     if instance is None:
         return None
     opened = _open(instance, path, opts)
@@ -187,9 +193,53 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
         case _TypeKind.ANY:
             return _serialize_any(instance, path, opts)
         case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
-            _refuse_an_unsupported_leaf(tp, path)
             _refuse_an_unread_literal_member(tp, instance, path)
             return _serialize_leaf(tp, instance, opts.native_types)
+
+
+def _refuse_an_undumpable_type(tp: Any, path: FieldPath) -> None:
+    """Refuse to write any value at *path* when its declared type *tp* is one construction does not build.
+
+    Asked before what the value is: a leaf :func:`_refuse_an_unsupported_leaf` refuses, or a
+    union holding a ``Literal`` member no value reads as.
+
+    Raises:
+        ConfargError: If *tp* is such a type.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
+    """
+    match _type_kind(tp):
+        case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
+            _refuse_an_unsupported_leaf(tp, path)
+        case _TypeKind.UNION:
+            _refuse_a_forbidden_literal(tp, _spell_field_path(path) or _defaults.ROOT_KEY)
+        case _:
+            pass
+
+
+def _serialize_foreign(tp: Any, instance: Any, path: FieldPath, opts: _DumpOptions) -> Any:
+    """Write *instance*, which its declared type *tp* does not hold, as an ``Any`` node writes it, and warn.
+
+    The form is the spec an ``Any`` node rebuilds it from (:func:`_serialize_any`), else the
+    value untyped, when no spec spells it.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it
+    """
+    warnings.warn(
+        f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back: its"
+        f" {type(instance).__name__} is no value of {tp.__name__ if isinstance(tp, type) else repr(tp)}, the type it is"
+        " declared as. It is written as an Any field holds it.",
+        ConfargWarning,
+        stacklevel=3,
+    )
+    if instance is None:
+        return None
+    try:
+        return _serialize_any(instance, path, opts, checked=False)
+    except ConfargError:
+        return _untyped_at(instance, path, opts)
 
 
 def _refuse_an_unsupported_leaf(tp: Any, path: FieldPath) -> None:
@@ -505,10 +555,9 @@ def _serialize_union(
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#casting-a-stolen-leaf
     """
-    _refuse_a_forbidden_literal(tp, _spell_field_path(path) or _defaults.ROOT_KEY)
     variant_tp = _find_variant_type(tp, instance)
     if variant_tp is None:
-        return instance
+        return _serialize_foreign(tp, instance, path, opts)
 
     serialized = _serialize(variant_tp, instance, path, opts)
 
@@ -865,19 +914,38 @@ def _cast_dict(tp: Any, value: Any) -> dict[str, Any]:
     return {_defaults.CAST_KEY: cast_name_for_type(tp), _defaults.VALUE_KEY: value}
 
 
+def _holds(tp: Any, instance: Any) -> bool:
+    """True if *instance* is a value of the resolved declared type *tp*, as a type checker reads it.
+
+    A union holds what one of its variants holds (:func:`_find_variant_type`), ``None`` where
+    it lists ``None``; any other type what :func:`_variant_holds` or :func:`_holds_widened` says it holds.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it
+    """
+    if _type_kind(tp) is not _TypeKind.UNION:
+        return _variant_holds(tp, instance) or _holds_widened(tp, instance)
+    if instance is None:
+        return len(_union_args_no_none(tp)) < len(get_args(tp))
+    return _find_variant_type(tp, instance) is not None
+
+
 def _find_variant_type(tp: Any, instance: Any) -> Any | None:
     """Find which Union variant the instance belongs to, in declaration order, ``Any`` last.
 
     ``Any`` holds every instance, so it is asked after every other variant, as construction
-    offers it a value only after every other variant refused it.
+    offers it a value only after every other variant refused it. A variant that holds the
+    value exactly (:func:`_variant_holds`) is preferred over one that holds it only widened
+    (:func:`_holds_widened`), so ``float | int`` writes ``1`` as the int it is.
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
     """
-    args = [_resolve_type(arg) for arg in _union_args_no_none(tp)]
-    for arg in sorted(args, key=_holds_anything):
-        if _variant_holds(arg, instance):
-            return arg
+    args = sorted((_resolve_type(arg) for arg in _union_args_no_none(tp)), key=_holds_anything)
+    for holds in (_variant_holds, _holds_widened):
+        for arg in args:
+            if holds(arg, instance):
+                return arg
     return None
 
 
@@ -920,6 +988,32 @@ def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one retu
             origin = _origin(tp)
             checkable = origin if isinstance(origin, type) else tp
             return isinstance(checkable, type) and isinstance(instance, checkable)
+
+
+def _holds_widened(tp: Any, instance: Any) -> bool:
+    """True if *tp* holds *instance* as a type checker reads it, beyond what :func:`_variant_holds` says.
+
+    An abstract collection holds an instance of its abstract class, a str or bytes apart for
+    a sequence; a ``float`` holds an int (PEP 484's numeric tower).
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it
+    """
+    match _type_kind(tp):
+        case _TypeKind.LIST:
+            return _abstractly_holds(tp, instance) and not isinstance(instance, (str, bytes))
+        case _TypeKind.SET | _TypeKind.DICT:
+            return _abstractly_holds(tp, instance)
+        case _TypeKind.LEAF:
+            return tp is float and isinstance(instance, int)
+        case _:
+            return False
+
+
+def _abstractly_holds(tp: Any, instance: Any) -> bool:
+    """True if *instance* is an instance of the class *tp* is spelled with: ``Sequence`` for ``Sequence[int]``."""
+    spelled = _origin(tp) or tp
+    return isinstance(spelled, type) and isinstance(instance, spelled)
 
 
 def _needs_tag(tp: Any, serialized_data: MergeDict, union_tag: str) -> bool:

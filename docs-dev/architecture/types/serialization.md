@@ -6,7 +6,7 @@ Until BUG-202 a delete reached the writer, which raised its own error.
 - `tag_policy="auto"` emits the union tag only when `_needs_tag` shows that structural disambiguation of the serialized data would not select exactly one variant on the way back in; `"always"` tags every struct union member.
   A subclass of the declared type is always tagged.
 - Which union variant an instance belongs to is `_variant_holds`, asked once per variant in declaration order, `Any` last: it holds every instance, so it is asked after every other variant, as construction offers it a value only after every other variant refused it ([construction](construction.md#an-any-variant-is-tried-last)).
-  It dispatches on the same `_type_kind` as `_serialize_by_type` ([shape dispatch](introspection.md#shape-dispatch)), so the variant it picks is the one that then serializes the value, and each shape answers with the concrete class construction builds for it — `list` for `Sequence[X]`, `dict` for `Mapping[K, V]`.
+  It dispatches on the same `_type_kind` as `_serialize_by_type` ([shape dispatch](introspection.md#shape-dispatch)), so the variant it picks is the one that then serializes the value, and each shape answers with the concrete class construction builds for it — `list` for `Sequence[X]`, `dict` for `Mapping[K, V]` — before a second pass widens it to what a type checker accepts ([below](#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it)).
   A bare `isinstance` cannot ask the question at all: a parameterized generic and a `Literal` both refuse to be its second argument, so every union holding one — `list[str] | str`, `Literal["fast", "slow"] | str` — used to raise a `TypeError` out of `dump()` while loading fine (BUG-31, closed).
   A `Literal` answers by membership on the member's own type, so `True` is not a value of `Literal[1]`; its members are plain values, and `_serialize_leaf` already writes them as such, reading the value rather than the declared type.
 - A **leaf** union member is written as `{__cast__, __value__}` when the bare scalar would be read back as another variant, under either policy ([casting a stolen leaf](stealing-rule.md#casting-a-stolen-leaf)).
@@ -51,3 +51,18 @@ An object only `Any` holds beside a struct variant is written with its `class:` 
 Before FEAT-42 an `Any` node wrote what it held untouched, and only Python code could put an object in one: `dump_file()` then failed with the writer's own error, even after a plain `load()` of a field whose default is an object.
 Writing every object untyped with a warning was rejected: the object still reaches the writer ([design decision](../design-decisions/an-any-node-reads-every-opener.md)).
 It still reaches `dump_file()`, which refuses it with a `ConfargError` naming its path before anything is written ([a written file holds what its reader reads back](../design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-written-file-holds-what-its-reader-reads-back)); until BUG-251 the writer raised its own error, into a file it had already truncated.
+
+## A value its type does not hold dumps as an `Any` node holds it
+
+A value its declared type does not hold — a `Bar` in a field typed `Empty`, a `3` in a struct field, `'abc'` in an `int` field, a `None` in a field that lists no `None`, a three-item tuple in a `tuple[int, int]` — is written as an `Any` node writes it, by its runtime type ([above](#an-any-node-dumps-the-spec-that-rebuilds-it)), with a `ConfargWarning` naming the path, the value's class and the declared type (`_serialize._serialize_foreign`, BUG-267).
+The object dump is forensic, so it records what the object holds rather than refusing it ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)), and the warning says that the dump will not read back.
+A value no spec spells is written untyped.
+
+Whether the type holds the value is `_serialize._holds`, asked before anything else of the value, and answered by the predicate that already picks a union's variant (`_variant_holds`), widened to what a type checker accepts for the annotation: an abstract collection holds any instance of its abstract class (a tuple in a `Sequence[int]`, a `frozenset` in an `AbstractSet[int]`, a `MappingProxyType` in a `Mapping[str, int]`), a str or bytes apart for a sequence, and a `float` holds an int, PEP 484's numeric tower.
+A union holds what one of its variants holds, an exact holder preferred over a widened one, so `float | int` still writes `1` as the int it is.
+A type construction does not build at all is still refused first, whatever the value ([above](#an-unsupported-leaf-is-refused-both-ways)).
+
+A plain class's `*args` member is typed as the tuple Python hands the constructor, `tuple[T, ...]`, when the dump reads what the instance holds, where it is a `list[T]` as a member every channel sets (`_types._struct_state_fields`): `self.items = items` keeps that tuple.
+
+Before, each shape answered differently, and none warned: a struct field read its declared fields off whatever it held, so a field-less one wrote `{}` for any value and a `tuple[int, int]` holding three items wrote two; a union handed the value back untouched, a live object that only `dump_file()` refused; a leaf was written as it was.
+Refusing at `dump()` was rejected for the forensic reason above; a field-less struct's `{}` is what a descriptor-typed dataclass field dumped as, read as its descriptor class.
