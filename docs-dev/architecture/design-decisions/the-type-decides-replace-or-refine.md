@@ -50,7 +50,7 @@ Rejected:
 - **Mark each source by type**, a type-guided walk rewriting each opener the type reads as a whole-field delete followed by the spec before its layer merges, so the merge stays shape-only.
   It cannot open the shorthand, which may only open when a higher layer refines it, so a second mechanism would be needed anyway; and the type has to reach file loading, includes and mounts all the same, which is the cost that rejected it for `call` alone.
 - **Defer to `build()`**, the merge carrying both values under a marker for construction to choose.
-  It needs a marker in what `merge()` returns, a reserved file key for `dump_file(merge())` to read back, and every `${...}` reading through the marker, the cost BUG-220 shows for deferred list patches.
+  It needs a marker in what `merge()` returns, a reserved file key for `dump_file(merge())` to read back, and every `${...}` reading through the marker, the cost deferred list patches had until `build()` applied them before resolution (BUG-220, [a pending list op is applied before resolution](a-pending-list-op-is-applied-before-resolution.md#a-pending-list-op-is-applied-before-resolution)).
 - **Keep the arguments the new target accepts** when an opener replaces another.
   That is BUG-231's first case exactly: an argument written for the old target, carried into the new one because a name matched.
 - **Replace only when the target changes.**

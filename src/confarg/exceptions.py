@@ -780,6 +780,26 @@ class MissingReferenceError(ConfargError):
             f" of {depth}, above the {scope} root; use '::' for the configuration root",
         )
 
+    @classmethod
+    def unanchorable(cls, name: str) -> MissingReferenceError:
+        """Return an error for a bare reference at the root of an appended document, which no dot run reaches.
+
+        The document is the expression itself, so the reference would read inside its own value.
+        """
+        return cls(
+            f"Reference '{name}' at the root of an appended document cannot be anchored to it:"
+            f" the document is the value the expression computes, so '{name}' would be read inside"
+            f" its own value; use '::{name}' for the configuration root",
+        )
+
+    @classmethod
+    def pending_list_ops(cls, path: str) -> MissingReferenceError:
+        """Return an error for a read reaching list operations no type applies before resolution."""
+        return cls(
+            f"Field '{path}' holds list operations that build() applies only where the type is a list,"
+            " a set or a variable-length tuple, so no expression can read it as a list",
+        )
+
 
 class UnsafeExpressionError(ConfargError):
     """Raised when an expression contains disallowed AST nodes or function calls."""

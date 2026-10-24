@@ -20,7 +20,7 @@ import confarg.cli.click as confargclick
 import confarg.cli.cyclopts as confargcyclopts
 import confarg.cli.typer as confargtyper
 from confarg import _defaults
-from confarg._merge import ListOp
+from confarg._merge import ListOp, MergeDict, _deep_merge
 from tests.conftest import (
     AppConfig,
     CacheConfig,
@@ -485,3 +485,97 @@ class TestOnlyAMemberIsLaid:
     def test_an_init_var_default_is_laid(self) -> None:
         """An ``InitVar`` is a parameter, so a reference reads its default as construction passes it."""
         assert confarg.build(_SeededLayer, {"echo": "${seed}"}).echo == 4
+
+
+# ---------------------------------------------------------------------------
+# A pending list op is read as the list it makes (BUG-220)
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass
+class _Pending:
+    """Lists a pending op may stand at, and fields an expression reads them into."""
+
+    names: list[str] = dataclasses.field(default_factory=list)
+    nested: list[list[str]] = dataclasses.field(default_factory=list)
+    other: list[str] = dataclasses.field(default_factory=list)
+    either: list[int] | dict[str, int] | None = None
+    anything: Any = None
+    first: str = ""
+    count: int = 0
+
+
+class TestAPendingOpIsReadAsItsList:
+    """``build()`` applies a pending op over what lies below it before an expression reads the list."""
+
+    @pytest.mark.parametrize(
+        ("argv", "count"),
+        [
+            pytest.param(["--names+", "a", "b", "c"], 3, id="append-alone"),
+            pytest.param(["--names", "a", "b", "--names+", "c"], 3, id="base-and-append-in-one-layer"),
+            pytest.param(["--names", "a", "b", "--names.0-"], 1, id="delete-in-one-layer"),
+            pytest.param(["--names.0", "x", "--names.1", "y"], 2, id="index-keyed"),
+        ],
+    )
+    def test_len_counts_the_items(self, argv: list[str], count: int) -> None:
+        """The op dict's keys were counted, two for three items."""
+        assert confarg.load(_Pending, argv=[*argv, "--count", "${len(names)}"], env={}).count == count
+
+    @pytest.mark.parametrize(
+        ("argv", "first"),
+        [
+            pytest.param(["--names+", "a", "--first", "${names[0]}"], "a", id="first-appended"),
+            pytest.param(["--names", "a", "--names+", "b", "--first", "${names[1]}"], "b", id="after-a-base"),
+            pytest.param(["--names.0", "x", "--first", "${names[-1]}"], "x", id="negative-index-into-index-keys"),
+        ],
+    )
+    def test_an_index_reads_an_item(self, argv: list[str], first: str) -> None:
+        """``${names[0]}`` found no key ``0`` in the op dict."""
+        assert confarg.load(_Pending, argv=argv, env={}).first == first
+
+    def test_a_files_op_reads_as_its_list(self) -> None:
+        """A file's ``__append__`` with nothing below it is the list it makes."""
+        assert confarg.build(_Pending, {"names": {ListOp.APPEND: ["a"]}, "first": "${names[0]}"}).first == "a"
+
+    def test_resolve_holds_no_pending_op(self) -> None:
+        """No layer is left below, so the list is final."""
+        raw = confarg.merge(_Pending, argv=["--names", "a", "--names+", "b"], env={})
+        assert raw["names"] == {ListOp.BASE: ["a"], ListOp.APPEND: ["b"]}
+        assert confarg.resolve(_Pending, raw) == {"names": ["a", "b"]}
+
+    def test_from_dict_strips_and_builds_the_same(self) -> None:
+        """``from_dict(resolve())`` builds what ``build()`` builds."""
+        raw = confarg.merge(_Pending, argv=["--names+", "a", "--count", "${len(names)}"], env={})
+        assert confarg.from_dict(_Pending, confarg.resolve(_Pending, raw)) == confarg.build(_Pending, raw)
+
+    def test_a_union_of_a_list_and_a_dict_reads_the_list(self) -> None:
+        """Only the list variant takes a list op, and construction builds it there."""
+        result = confarg.load(_Pending, argv=["--either+", "1", "2", "3", "--count", "${len(either)}"], env={})
+        assert (result.either, result.count) == ([1, 2, 3], 3)
+
+    def test_an_item_appended_has_its_index_as_key(self) -> None:
+        """``${key(.)}`` was refused as held by a pending op; the appended list's index is its key."""
+        raw = {"nested": {ListOp.APPEND: [["${str(key(.))}"]]}}
+        assert confarg.build(_Pending, raw).nested == [["0"]]
+
+    def test_an_index_delete_with_nothing_below_is_still_refused(self) -> None:
+        """An index names a position nothing below gives: construction's refusal, unchanged."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"requires a base list"):
+            confarg.build(_Pending, {"names": {ListOp.DELETE: [0]}})
+
+    def test_a_scalar_append_of_an_expression_is_one_item(self) -> None:
+        """A list the expression resolves to is the one item, as over a base (Q3)."""
+        raw = {"other": ["x", "y"], "nested": {ListOp.APPEND: "${other}"}}
+        assert confarg.build(_Pending, raw).nested == [["x", "y"]]
+
+    def test_a_scalar_append_of_an_expression_over_a_base_is_one_item(self) -> None:
+        """The merge appends it as one item over a lower file's list too."""
+        raw: MergeDict = {"other": ["x", "y"], "nested": [["z"]]}
+        over: MergeDict = {"nested": {ListOp.APPEND: "${other}"}}
+        assert confarg.build(_Pending, _deep_merge(raw, over)).nested == [["z"], ["x", "y"]]
+
+    def test_a_read_of_an_op_left_pending_is_refused(self) -> None:
+        """At an ``Any`` no type says the op makes a list: a read is refused, never the op dict."""
+        raw = {"anything": {ListOp.APPEND: [1, 2, 3]}, "count": "${len(anything)}"}
+        with pytest.raises(confarg.exceptions.MissingReferenceError, match=r"anything.*list op"):
+            confarg.resolve(_Pending, raw)

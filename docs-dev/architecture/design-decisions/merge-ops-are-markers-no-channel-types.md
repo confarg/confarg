@@ -40,7 +40,7 @@ Rejected:
 
 - **A `str` subclass equal only to another marker** — what FEAT-3 first built.
   It kept every annotation `dict[str, Any]` and let a marker pass for its reserved key wherever text was expected, but it was a string for `isinstance`, string methods, `json.dumps` and `int()`, and not for `==` and hashing.
-  Code that walked the merged dict's keys read a marker as the field `__append__` without a sound: the locals walkers did, which hid [BUG-219](../../todo/bugs/BUG-219-a-fragment-appended-to-a-list-loses-its-locals.md), and `k in MERGE_OP_KEYS` read as "is this an op" while it matched only the plain spelling.
+  Code that walked the merged dict's keys read a marker as the field `__append__` without a sound: the locals walkers did, which hid BUG-219 ([locals](../locals.md#a-namespace-in-an-item-a-list-op-holds)), and `k in MERGE_OP_KEYS` read as "is this an op" while it matched only the plain spelling.
   Swapping it for the enum failed loudly at exactly those places.
 - **A bare sentinel object per op** — what the enum is, with the iteration, the lookup by value and the pickling `enum` already provides.
 - **Keep the strings and reserve them** — refuse `+`, `-`, `~`, `*` as dict keys on the CLI and in the environment, and let files go on writing the ops literally.

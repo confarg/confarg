@@ -51,7 +51,9 @@ class ListOp(enum.Enum):
     #: Replace the base with this value before applying the other operations. Produced when a
     #: whole-list value is followed by a patch or append; the value is the replacement list.
     #: Also produced when a whole-field delete is followed by an op at or below its path; the
-    #: value is then ``DICT_DELETE``: nothing lies below the ops.
+    #: value is then ``DICT_DELETE``: nothing lies below the ops. And when a patch of any kind
+    #: is written over an expression that stands for a whole value: the value is then that
+    #: expression, which ``build()`` resolves before it applies the patch beside it.
     BASE = _defaults.BASE_KEY
 
     #: Delete these indices after the appends have been applied. Produced by the CLI parser when
@@ -451,9 +453,49 @@ def _merge_existing_value(bv: Any, val: Any, key: str, at: MergeAt) -> Any:
             )
             return {**rest, ListOp.DELETE: combined_del}
         return _deep_merge(bv, val, at=at)
-    if isinstance(bv, list) and isinstance(val, dict):
-        return _merge_list_base(bv, val, key, at)
+    if isinstance(val, dict):
+        return _patched(bv, val, key, at)
     return val
+
+
+def _patched(bv: Any, val: MergeDict, key: str, at: MergeAt) -> Any:
+    """Return the patch *val* written over *bv*, which is no dict, *at* where it stands.
+
+    A list is the base its ops apply to, an expression standing for a whole value the base
+    ``build()`` resolves before it applies them; a patch replaces any other value.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#a-patch-over-an-expression-patches-its-value
+    """
+    if isinstance(bv, list):
+        return _merge_list_base(bv, val, key, at)
+    if _stands_for_a_value(bv):
+        return _over_an_expression(bv, val)
+    return val
+
+
+def _stands_for_a_value(value: Any) -> bool:
+    """Whether *value* is an expression that stands for a whole value, which a patch over it refines.
+
+    Only a string that is one ``${...}`` can resolve to a list, a dict or a struct; an
+    interpolation resolves to a string, which a patch replaces as it replaces any scalar.
+    """
+    from confarg.dictexpr._expressions import is_whole_expression  # noqa: PLC0415  # import cycle: dictexpr reads ListOp
+
+    return is_whole_expression(value)
+
+
+def _over_an_expression(expression: str, patch: MergeDict) -> MergeDict:
+    """Return *patch* carried over the *expression* it refines, which ``build()`` resolves first.
+
+    The expression is the ``ListOp.BASE`` of the patch, the value below it, whatever it
+    resolves to; a patch carrying a base of its own replaces it instead
+    (:func:`_replaces_what_lies_below`).
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#a-patch-over-an-expression-patches-its-value
+    """
+    return {ListOp.BASE: expression, **patch}
 
 
 def _merge_list_base(bv: list[Any], val: MergeDict, key: str, at: MergeAt) -> Any:
@@ -831,17 +873,19 @@ def _open_for_ops(node: Any) -> MergeDict:
     """Return the dict an op recorded at or below a node writes into, given what *node* holds.
 
     A dict is written into as it is.  A plain list becomes the ``ListOp.BASE`` base the
-    op is recorded beside, and a whole-field delete becomes a base of ``DICT_DELETE``:
-    the op still applies to nothing below, the lower layers included.  Anything else -- a
-    missing node, a scalar an earlier whole value left -- gives a fresh dict, the later
-    writer winning.
+    op is recorded beside, and so does an expression standing for a whole value, which
+    ``build()`` resolves before it applies the op.  A whole-field delete becomes a base of
+    ``DICT_DELETE``: the op still applies to nothing below, the lower layers included.
+    Anything else -- a missing node, a scalar an earlier whole value left -- gives a fresh
+    dict, the later writer winning.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#an-op-after-a-whole-field-delete-has-nothing-below-it
+        docs-dev/architecture/pipeline/deep-merge.md#a-patch-over-an-expression-patches-its-value
     """
     if isinstance(node, dict):
         return node
-    if isinstance(node, list):
+    if isinstance(node, list) or _stands_for_a_value(node):
         return {ListOp.BASE: node}
     if isinstance(node, _DeleteSentinel):
         return {ListOp.BASE: DICT_DELETE}

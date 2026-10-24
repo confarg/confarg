@@ -10,6 +10,11 @@ index patch applies over a default as it would over a lower file holding it, and
 expression reads a default nobody set. A default nobody touched is recorded and taken out
 again once expressions are resolved: construction applies it, as it always did.
 
+No layer lies below the defaults, so a pending op where no default is laid is applied over
+nothing, wherever the type says the node is a list: an expression then reads the list
+construction builds. A patch over an expression is left as the merge carried it, the
+expression its base, and settles once resolution has resolved it (:func:`settle_pending`).
+
 Dev Notes:
     docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
 """
@@ -21,9 +26,19 @@ import enum
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from confarg import _defaults
-from confarg._merge import ListOp, _DeleteSentinel, _is_pin_dict, _merge_existing_value
+from confarg._merge import (
+    _SHAPE,
+    ListOp,
+    MergeAt,
+    _apply_list_ops,
+    _DeleteSentinel,
+    _is_pin_dict,
+    _merge_existing_value,
+    _replace_base,
+)
+from confarg._parse_cli import _locals_keys
 from confarg._tags import _tag_named_struct
-from confarg._typed_merge import merge_at
+from confarg._typed_merge import TypedAt, merge_at, merge_root
 from confarg._types import (
     _all_have_defaults,
     _dict_kv,
@@ -52,6 +67,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from confarg._merge import MergeDict
+    from confarg.dictexpr._expressions import Settler
 
 #: A position in the data, one segment per step: a dict key (a pending op's marker included)
 #: or a list index.
@@ -114,9 +130,54 @@ def lay_defaults(target: Any, data: MergeDict, union_tag: str, *, for_resolution
             laid = {k: v for k, v in data.items() if k != _defaults.ROOT_KEY}
         else:
             laid = data if root is data[_defaults.ROOT_KEY] else {**data, _defaults.ROOT_KEY: root}
+        laid = _with_namespaces_applied(laid, _locals_keys(target, union_tag), ())
     else:
         laid = data
     return LaidDefaults(laid, tuple(walk.untouched))
+
+
+def settle_pending(target: Any, union_tag: str) -> Settler:
+    """Return what resolution settles a node of pending ops into, for data of type *target*.
+
+    A node carrying a base, most often an expression the merge kept below a patch over it,
+    combines the base resolution resolved with the patch, by the merge's own combiner, as a
+    lower layer holding the value would have (:func:`~confarg._merge._merge_existing_value`).
+    What is left pending then, and a node of ops an expression stood in, is applied over
+    nothing as before resolution. A node the type cannot read is left as it is.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#a-patch-over-an-expression-patches-its-value
+    """
+    root = merge_root(target, union_tag)
+    walk = _Walk(union_tag, for_resolution=False)
+
+    def settle(data: MergeDict, path: Sequence[str | ListOp], node: MergeDict) -> Any:
+        at = _at_path(root, data, path)
+        spelled = _spelled(tuple(path))
+        if ListOp.BASE in node and not contains_expression(node[ListOp.BASE]):
+            rest = {k: v for k, v in node.items() if k is not ListOp.BASE}
+            settled: Any = _merge_existing_value(node[ListOp.BASE], rest, spelled, at) if rest else node[ListOp.BASE]
+        else:
+            settled = node
+        tp = at.tp if isinstance(at, TypedAt) else Any
+        laid = _node(tp, settled, tuple(path), walk)
+        return settled if laid is _PRUNED else laid
+
+    return settle
+
+
+def _at_path(root: MergeAt, data: MergeDict, path: Sequence[str | ListOp]) -> MergeAt:
+    """Return where the merge stands at *path* of *data*, each node read as the data holds it.
+
+    An op's own key names no field: an item it holds is typed as an element of the list.
+    """
+    at, node = root, data
+    for part in path:
+        child = node.get(part) if isinstance(node, dict) else None
+        if not isinstance(part, ListOp):
+            at = at.child(part, node, None)
+        node = child
+    return at
 
 
 def drop_untouched(data: MergeDict, untouched: Sequence[DataPath]) -> MergeDict:
@@ -160,7 +221,7 @@ def _node(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:  # noqa: PLR0
     ``_PRUNED`` when *node* is a dict its unmet deletes alone filled (:func:`_kept`).
     """
     tp = _resolve_type(tp)
-    if not isinstance(node, dict | list) or _is_pin_dict(node):
+    if not isinstance(node, dict | list) or _is_pin_dict(node) or _carries_an_expression(node):
         return node
     if _is_typed_call(node, tp):
         return _untyped(node)
@@ -180,6 +241,80 @@ def _node(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:  # noqa: PLR0
 
 # What a node holding nothing but key deletes no layer met reads as: no node at all.
 _PRUNED: Any = object()
+
+# The ops whose value says what the list is, rather than what goes in it.
+_STRUCTURAL_OPS = (ListOp.BASE, ListOp.DELETE, ListOp.DELETE_AFTER)
+
+
+def _carries_an_expression(node: Any) -> bool:
+    """Whether *node* is a node of ops one of whose structural values is an expression.
+
+    Most often the base the merge carried below a patch over an expression: what lies below
+    the patch is unknown until resolution resolves it, so no default is laid there and the
+    ops wait for it (:func:`settle_pending`).
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#a-patch-over-an-expression-patches-its-value
+    """
+    return isinstance(node, dict) and any(op in node and contains_expression(node[op]) for op in _STRUCTURAL_OPS)
+
+
+def _over_nothing(node: MergeDict, spelled: str, at: MergeAt) -> list[Any] | None:
+    """Return the list the pending ops *node* holds make over what they carry or nothing, None if none.
+
+    No layer lies below the defaults, so construction would build this list: an append, a
+    base and its patch, and the deletes beside them. A delete with nothing to delete from is
+    left for construction to refuse, and so is a node holding no op.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#a-pending-list-op-is-read-as-its-list
+    """
+    if ListOp.BASE not in node and ListOp.APPEND not in node:
+        return None
+    base = _replace_base(node, spelled) if ListOp.BASE in node else []
+    return _apply_list_ops(base, node, spelled, at)
+
+
+def _index_keyed(node: MergeDict) -> list[Any] | None:
+    """Return the list an index-keyed dict with no gap spells, None for any other dict.
+
+    Construction reads ``{"0": a, "1": b}`` as ``[a, b]``; one with a gap, a key no index
+    spells or a bare delete is construction's to read or refuse.
+    """
+    from confarg.dictexpr._expressions import _list_index  # noqa: PLC0415  # the one reading of an index segment
+
+    if not node or any(isinstance(v, _DeleteSentinel) for v in node.values()):
+        return None
+    indices = {_list_index(k) if isinstance(k, str) else None: v for k, v in node.items()}
+    if set(indices) != set(range(len(node))):
+        return None
+    return [indices[i] for i in range(len(node))]
+
+
+def _with_namespaces_applied(node: MergeDict, keys: Sequence[str], path: DataPath) -> MergeDict:
+    """Return *node* with the pending ops below each local-variables namespace it holds applied over nothing.
+
+    A local has no annotation, and an op only ever makes a list, so no type is needed to read
+    one as the list it makes; nothing builds a namespace, so nothing else would.
+
+    Dev Notes:
+        docs-dev/architecture/locals.md#a-list-op-in-a-namespace-is-its-list
+    """
+    out = {k: _untyped_lists(v, (*path, k)) if k in keys else v for k, v in node.items()}
+    return _copied_if_changed(node, out)
+
+
+def _untyped_lists(value: Any, path: DataPath) -> Any:
+    """Return *value* with each node of pending ops applied over nothing, at any depth, by the shape rule."""
+    if isinstance(value, list):
+        return _copied_if_changed(value, [_untyped_lists(v, (*path, i)) for i, v in enumerate(value)])
+    if not isinstance(value, dict):
+        return value
+    if any(isinstance(k, ListOp) for k in value) and not _carries_an_expression(value):
+        applied = _over_nothing(value, _spelled(path), _SHAPE)
+        if applied is not None:
+            return [_untyped_lists(v, (*path, i)) for i, v in enumerate(applied)]
+    return _copied_if_changed(value, {k: _untyped_lists(v, (*path, k)) for k, v in value.items()})
 
 
 def _is_gone(value: Any) -> bool:
@@ -238,11 +373,30 @@ def _union(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
     variants = [_resolve_type(v) for v in _union_args_no_none(tp)]
     if len(variants) == 1:
         return _node(variants[0], node, path, walk)
+    if isinstance(node, dict) and any(isinstance(k, ListOp) for k in node):
+        sequence = _sequence_taking_ops(variants)
+        if sequence is not None:
+            return _sequence(sequence, node, path, walk)
     if not isinstance(node, dict) or walk.union_tag not in node or _union_tag_shadowed(tp, walk.union_tag):
         return _untyped(node)
     cls = _tagged_class(node[walk.union_tag])
     matching = [v for v in variants if cls is not None and _is_struct(v) and issubclass(cls, v)]
     return _struct(cls, node, path, walk) if len(matching) == 1 else _untyped(node)
+
+
+def _sequence_taking_ops(variants: list[Any]) -> Any:
+    """Return the sequence type a union's variants build a node of list ops as, None where none is certain.
+
+    Only a sequence variant takes a list op, and construction builds the list there; where
+    each is variable-length, the list the ops make is the same whichever builds it, typed by
+    the element type they share, untyped where they differ. A fixed-length variant has no
+    length to grow, so a node it may take is construction's.
+    """
+    sequences = [v for v in variants if _type_kind(v) in _SEQUENCE_KINDS]
+    if not sequences or any(_fixed_seq_types(v) is not None for v in sequences):
+        return None
+    elements = {_elem_type(v) for v in sequences}
+    return sequences[0] if len(elements) == 1 else list[Any]
 
 
 def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> Any:
@@ -266,7 +420,7 @@ def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> Any:
     kept = _kept(node, {**node, **held})
     if kept is _PRUNED:
         return kept
-    out = dict(kept)
+    out = _with_namespaces_applied(dict(kept), _namespace_keys(cls, walk.union_tag), path)
     for name, ft in fields.items():
         fpath = (*path, name)
         laid = laid_at[name]
@@ -281,6 +435,14 @@ def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> Any:
             out[name] = _struct(_resolve_type(ft), {}, fpath, _Walk(walk.union_tag, for_resolution=True))
             walk.untouched.append(fpath)
     return _copied_if_changed(node, out)
+
+
+def _namespace_keys(cls: Any, union_tag: str) -> tuple[str, ...]:
+    """Return the names of the local-variables namespace *cls* holds, none where its members cannot be read."""
+    try:
+        return _locals_keys(cls, union_tag)
+    except _INTROSPECTION_ERRORS:
+        return ()
 
 
 def _held(value: Any, ft: Any, laid: Any, fpath: DataPath, walk: _Walk) -> Any:
@@ -325,6 +487,9 @@ def _sequence(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
     element = _element_type(tp)
     if isinstance(node, list):
         return _items(node, element, path, walk)
+    variable = _fixed_seq_types(tp) is None
+    if variable and (applied := _applied_over_nothing(tp, node, path, walk)) is not None:
+        return _items(applied, element, path, walk)
     out = dict(node)
     base = node.get(ListOp.BASE)
     if isinstance(base, list):
@@ -337,13 +502,22 @@ def _sequence(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
     if isinstance(base, list):
         # Beside a base, an index value refines the element it reaches, which holds its own.
         return _copied_if_changed(node, out)
-    fixed = _fixed_seq_types(tp) is not None
+    fixed = not variable
     _lay_index_patches(out, element, path, walk, fixed=fixed)
     if node and not out:
         return _PRUNED
     if fixed:
         _lay_unset_positions(tp, out, path, walk)
+    elif (positions := _index_keyed(out)) is not None:
+        return positions
     return _copied_if_changed(node, out)
+
+
+def _applied_over_nothing(tp: Any, node: MergeDict, path: DataPath, walk: _Walk) -> list[Any] | None:
+    """Return the list the ops a variable-length sequence node of type *tp* holds make, None if it holds none."""
+    if not any(isinstance(k, ListOp) for k in node):
+        return None
+    return _over_nothing(node, _spelled(path), merge_at(tp, walk.union_tag))
 
 
 def _lay_unset_positions(tp: Any, out: MergeDict, path: DataPath, walk: _Walk) -> None:

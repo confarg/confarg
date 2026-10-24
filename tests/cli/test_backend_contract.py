@@ -9912,3 +9912,52 @@ class TestABuiltinSubclassIsThatBuiltinContract:
         cfg = space_sep_loader.load(_WithBuiltinSubclasses, argv=["--bare_seq", "a", "b", "--bare_map.k", "v"], env={})
         assert cfg.bare_seq == ["a", "b"]
         assert cfg.bare_map == {"k": "v"}
+
+
+@dataclass
+class _PendingItem:
+    """An appended element describing itself."""
+
+    name: str = ""
+    label: str = ""
+
+
+@dataclass
+class _PendingDb:
+    """A struct an expression stands for as a whole."""
+
+    host: str = "h0"
+    port: int = 0
+
+
+@dataclass
+class _PendingOps:
+    """Lists a pending op stands at, and a field set to an expression a flag then patches."""
+
+    names: list[str] = dataclasses_field(default_factory=list)
+    items: list[_PendingItem] = dataclasses_field(default_factory=list)
+    proto: _PendingDb = dataclasses_field(default_factory=_PendingDb)
+    db: _PendingDb = dataclasses_field(default_factory=_PendingDb)
+    first: str = ""
+    count: int = 0
+    name: str = "top"
+
+
+class TestPendingListOpContract:
+    """A list op and a patch the merge leaves pending read as the value they make, on every front-end."""
+
+    def test_an_appended_item_is_read_by_index(self, loader: ConfargLoader) -> None:
+        """``${names[0]}`` found no key ``0`` in the op dict (BUG-220)."""
+        result = loader.load(_PendingOps, argv=["--names+", "a", "--first", "${names[0]}"], env={})
+        assert result.first == "a"
+
+    def test_a_flag_patches_the_value_an_expression_stands_for(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The patch over ``db: '${proto}'`` kept only itself."""
+        cfg = tmp_yaml("proto: {host: ph, port: 5}\ndb: '${proto}'\n")
+        assert loader.load(_PendingOps, argv=["--config", str(cfg), "--db.host", "x"], env={}).db == _PendingDb("x", 5)
+
+    def test_an_appended_fragment_reads_its_own_key(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A bare reference in an appended fragment read the configuration root's ``name``."""
+        frag = tmp_yaml("name: one\nlabel: '${name}'\n", "frag.yaml")
+        result = loader.load(_PendingOps, argv=["--config.items+", str(frag)], env={})
+        assert result.items == [_PendingItem("one", "one")]

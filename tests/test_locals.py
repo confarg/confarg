@@ -539,3 +539,105 @@ class TestNestedLocals:
         write(tmp_path, "bag.yaml", "locals:\n  h: kept\n")
         cfg = write(tmp_path, "app.yaml", f"bag:\n  {INCLUDE_KEY}: ./bag.yaml\n")
         assert confarg.load(WithDict, argv=["--config", str(cfg)], env={}).bag == {"locals": {"h": "kept"}}
+
+
+# ---------------------------------------------------------------------------
+# A namespace in an item a list op holds (BUG-219)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Item:
+    """A list element a fragment describes, reading its own local."""
+
+    name: str = ""
+
+
+@dataclass
+class Items:
+    """Root holding a list an item is appended to, and one mounted at a field."""
+
+    items: list[Item] = dc_field(default_factory=list)
+    one: Item = dc_field(default_factory=Item)
+    n: int = 0
+
+
+#: An item reading its own local, by the bare spelling and by the node-relative one.
+_BARE = "locals: {n: b}\nname: '${locals.n}'\n"
+_RELATIVE = "locals: {n: b}\nname: '${.locals.n}'\n"
+_BLOB = '{"name": "${.locals.n}", "locals": {"n": "b"}}'
+
+
+class TestLocalsInAnAppendedItem:
+    """An appended fragment reads its own namespace as a mounted one does."""
+
+    @pytest.mark.parametrize("content", [_BARE, _RELATIVE], ids=["bare", "relative"])
+    @pytest.mark.parametrize("below", [False, True], ids=["no-base", "over-a-base"])
+    def test_an_appended_fragment_reads_its_own_local(
+        self,
+        tmp_path: Path,
+        content: str,
+        below: bool,  # noqa: FBT001  # a parametrized layer, not a call's flag
+    ) -> None:
+        """``--config.items+`` reads ``locals.n`` as ``--config.one`` does."""
+        frag = write(tmp_path, "frag.yaml", content)
+        files = [write(tmp_path, "base.yaml", "items: [{name: a}]\n")] if below else []
+        result = confarg.load(Items, argv=["--config.items+", str(frag)], env={}, files=files)
+        assert [i.name for i in result.items] == [*(["a"] if below else []), "b"]
+
+    def test_the_environment_pointer_appends_alike(self, tmp_path: Path) -> None:
+        """``CONFIG__ITEMS+`` is the same mount."""
+        frag = write(tmp_path, "frag.yaml", _BARE)
+        env = {"APP_CONFIG__ITEMS+": str(frag)}
+        assert confarg.load(Items, argv=[], env=env, env_prefix="APP_").items == [Item("b")]
+
+    def test_a_flag_overrides_the_local_at_the_index_build_gives(self, tmp_path: Path) -> None:
+        """The item has index 0 once the append applies, which is what ``--items.0`` names."""
+        frag = write(tmp_path, "frag.yaml", _BARE)
+        argv = ["--config.items+", str(frag), "--items.0.locals.n", "c"]
+        assert confarg.load(Items, argv=argv, env={}).items == [Item("c")]
+
+    def test_a_flag_overrides_after_a_base(self, tmp_path: Path) -> None:
+        """Over a one-item base, the appended fragment is index 1."""
+        frag = write(tmp_path, "frag.yaml", _BARE)
+        base = write(tmp_path, "base.yaml", "items: [{name: a}]\n")
+        argv = ["--config.items+", str(frag), "--items.1.locals.n", "c"]
+        assert confarg.load(Items, argv=argv, env={}, files=[base]).items == [Item("a"), Item("c")]
+
+    def test_an_undeclared_override_is_refused(self, tmp_path: Path) -> None:
+        """A typo in the appended item's namespace is caught as in a mounted one."""
+        frag = write(tmp_path, "frag.yaml", _BARE)
+        with pytest.raises(LocalsError, match=r"items\.0\.locals\.zz"):
+            confarg.load(Items, argv=["--config.items+", str(frag), "--items.0.locals.zz", "c"], env={})
+
+    @pytest.mark.parametrize(
+        ("argv", "env"),
+        [
+            pytest.param(["--items+", _BLOB], {}, id="argv"),
+            pytest.param([], {"APP_ITEMS+": _BLOB}, id="env"),
+        ],
+    )
+    def test_an_item_a_channel_appends_declares_nothing(self, argv: list[str], env: dict[str, str]) -> None:
+        """Only a file declares a local, appended or not."""
+        with pytest.raises(LocalsError, match=r"items\.0\.locals\.n.*declared by no configuration file"):
+            confarg.load(Items, argv=argv, env=env, env_prefix="APP_")
+
+    def test_a_data_file_appended_is_refused_in_a_namespace(self, tmp_path: Path) -> None:
+        """A CSV cell is untyped wherever the row lands."""
+        rows = write(tmp_path, "rows.csv", "name,locals\nx,5\n")
+        with pytest.raises(InvalidConfigFileError, match=r"items\.0\.locals.*data file"):
+            confarg.load(Items, argv=["--config.items+", str(rows)], env={})
+
+
+class TestALocalsOpReadsAsItsList:
+    """A list op a file leaves pending inside a namespace is the list it makes."""
+
+    def test_an_append_with_nothing_below(self, tmp_path: Path) -> None:
+        """No type types a local, and an op only ever makes a list."""
+        cfg = write(tmp_path, "c.yaml", "locals: {xs: {__append__: [2, 3]}}\nn: '${len(locals.xs)}'\n")
+        assert confarg.load(Items, argv=["--config", str(cfg)], env={}).n == 2
+
+    def test_an_override_reaches_an_item_the_op_makes(self, tmp_path: Path) -> None:
+        """``--locals.xs.0`` names the first item the declared append makes."""
+        cfg = write(tmp_path, "c.yaml", "locals: {xs: {__append__: [2, 3]}}\nn: '${locals.xs[0]}'\n")
+        assert confarg.load(Items, argv=["--config", str(cfg), "--locals.xs.0", "9"], env={}).n == 9

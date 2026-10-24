@@ -28,7 +28,7 @@ The prefix is uniform per file, **not per position**, which is what lets one fra
 A position-relative path has no fixed answer until the node has a position, which for an element appended by `--config.<path>+` is not true until the merge is over.
 
 So the dot markers are carried through the merge untouched and interpreted once, in `resolve_expressions`.
-That is also what makes them the only spelling available to an appended fragment, whose bare names are still anchored at the merged root by default.
+That is also what lets an appended fragment's bare references be anchored at all: they are spelled as dot runs ([below](#a-document-a-list-op-holds-is-anchored-by-dot-runs)).
 
 ## A document is prefixed once, by its whole mount path
 
@@ -131,5 +131,18 @@ It asks `_anchor_prefix`, the question resolution asks of the same run, with the
 Without it a fragment using `..` would mean different things at different mount depths, which is the property the file anchor exists to prevent; `::` is the marked way out.
 The check needs no mount prefix, which is why it holds for an appended fragment too.
 
-Known limit: `--config.<path>+` appends at an index that depends on the current list length, unknowable while loading, so an appended fragment's **bare** references are left anchored at the merged root instead of being prefixed by a guess.
-Its dot references are unaffected.
+## A document a list op holds is anchored by dot runs
+
+A document appended by `--config.<path>+` or `<PREFIX>CONFIG__<PATH>+`, and one an `__include__` brings in below a file's own `__append__` or `__base__`, lands at an index only the merge gives it: the length of the list below, or the position the ops leave it at, a `__delete__` beside a base shifting it.
+No prefix from the configuration root reaches it while it loads, so its bare references are spelled instead as the dot run that climbs from each expression to the document's root (`_files._resolve_node` with `relative`, `dictexpr.relative_references`, `_DotRunPrefixer`): `${name}` written at `label` becomes `${.name}`, at `sub.label` or in the list `tags` `${..name}`, one dot per segment of the expression's position in its document.
+A dot run moves with its node, so the reference reads the document's own `name` at whatever index the item lands, as the file anchor promises, and the clamp above keeps it inside the document.
+An include inside such a document is anchored at its own root the same way, by its own depth, since a bare reference names the root of the document that wrote it.
+`${::name}` keeps naming the configuration root, and a dot run the document wrote is left as it is.
+`merge()` holds the dot runs, which stay position-independent when the merge is dumped ([below](#a-relative-reference-is-never-serialized-as-an-absolute-path)).
+
+A bare reference at the very root of such a document, one that is a single string (`'${x}-tail'` appended to a list of strings), has no dot run to climb: zero dots is no anchor, and one is the list.
+What it names, the key `x` of the string being computed, is nothing in any case: mounted at a field, the same document reads its own value, a cycle resolution refuses.
+So the rewrite refuses the one reference it cannot anchor, at load, as the clamp refuses a run it cannot keep inside the document (`MissingReferenceError.unanchorable`), pointing at `::x`.
+
+Until BUG-219 the bare references were left unprefixed, "instead of being prefixed by a guess", so they read the configuration root: an appended fragment's `${foo}` read the root's `foo`, silently, or missed, and its `${locals.n}` found no namespace.
+An include below a file's op was prefixed through the op's key, `${items['__append__'][0].foo}`, a path no data holds.
