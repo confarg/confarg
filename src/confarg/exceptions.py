@@ -659,6 +659,24 @@ class TypeCoercionError(ConfargError):
             f" A '{call}:' spec computes a value the field's type accepts, so it cannot build this class either.",
         )
 
+    @classmethod
+    def tag_selects_no_struct(cls, data: Any, tp: str, path: str, union_tag: str, call: str) -> TypeCoercionError:
+        """Return the error for a class tag on a field whose type, *tp* as spelled, accepts no struct.
+
+        A leaf or a union none of whose variants is a struct or reads a spec: no tag can select
+        anything there, whatever it names. *call* is spelled by the caller, as for
+        :meth:`tag_not_a_subclass`.
+
+        Dev Notes:
+            docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
+        """
+        return cls(
+            f"Cannot coerce dict {data!r} to {tp} at '{path}'."
+            f" The {union_tag!r} key is the union tag, which names a subclass of a struct-typed"
+            f" field's annotation; {tp} accepts no struct, so the tag cannot select one."
+            f" A '{call}:' spec computes a value the field's type accepts.",
+        )
+
 
 class InvalidConfigFileError(ConfargError):
     """Raised for config file issues: not found, malformed, or unsupported format."""

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
 from confarg import _defaults
-from confarg._import import _import_dotted, dotted_name, imports_back
+from confarg._import import _import_dotted, dotted_name, has_dotted_name, imports_back
 from confarg._types import (
     _callable_param_types,
     _is_callable,
@@ -928,8 +928,9 @@ def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]
     Partial with pre-bound arguments → {bind: <its target, serialized>, args: {k: v}}, its
     positional arguments named by the parameters they fill (:func:`_named_partial_args`).
     Bare partial (a class used factory-like, no arguments) → "module.qualname" string.
-    Plain callable → "module.qualname" string, when that path reads back as it
-    (:func:`_reads_back_from`); a closure, a lambda or a shadowed name is refused.
+    Plain callable → its dotted path (:func:`dotted_name`), a C type's method's through its
+    class, when that path reads back as it (:func:`_reads_back_from`); a closure, a lambda or a
+    shadowed name is refused.
     Instance method → that path, beside its owner's fields when the owner has any
     (:func:`_bound_method_spec`).
     Callable instance → a ``class:`` spec beside the fields it holds (:func:`_object_spec`).
@@ -948,7 +949,7 @@ def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]
     if not getattr(value, "__qualname__", None):
         return _instance_spec(value, owner_fields)
 
-    if getattr(value, "__module__", None):
+    if has_dotted_name(value):
         path = dotted_name(value)
         if _reads_back_from(path, value):
             if _instance_method_owner(path) is None:

@@ -1,6 +1,6 @@
 # Dotted imports
 
-`_import_dotted` tries the longest importable module prefix of a dotted path, then `getattr` for the rest, then falls back to `builtins` so `int`, `str`, … need no prefix (this is what makes `--value int` work for `str | type`).
+`_import_dotted` imports the module prefixes of a dotted path shortest first and keeps the longest that is a module, then `getattr` for the rest, then falls back to `builtins` so `int`, `str`, … need no prefix (this is what makes `--value int` work for `str | type`).
 An undotted name goes to `builtins` alone, never to an import ([below](#a-bare-word-is-never-imported)), so a builtin name and a module of the same name never meet.
 
 `dotted_name` is the inverse and the **one writer**: every dotted path confarg emits — a union class tag, a `type[X]` leaf, a callable spec, the class names listed in an error — comes from it.
@@ -12,7 +12,24 @@ Writer and reader now sit in the same module, side by side.
 A bound method is the one object whose qualified name is not its path: `Sub().m` has the `__qualname__` `Base.m` when the base defines `m`.
 `dotted_name` therefore spells a bound method as its owner's path plus `__name__`, the owner being the class it is bound to (the instance's class, or the class itself for a class method), as `pickle` reduces a bound method to its `__self__` and `__name__`.
 
-A failure raised *inside* an importable module is kept distinct from "this prefix is not a module": only a `ModuleNotFoundError` whose `name` is the prefix itself or one of its ancestors means the prefix is simply not importable (try a shorter one).
+## A C type's method is named through its class
+
+A method of a C type has no `__module__`: `str.upper`, `dict.get` and `datetime.datetime.isoformat` are method descriptors, `int.__add__` and `object.__init__` slot wrappers, `dict.fromkeys` and `datetime.datetime.now` builtin class methods.
+A Callable field takes each from its path and keeps it as it is ([auto-binding](../callables.md#auto-binding)), so `dump()` has to write that path back.
+`dotted_name` names it as it names a bound method, its owner's path plus `__name__`, the owner being the class Python records: a descriptor's `__objclass__`, a builtin class method's `__self__` (`_import._c_owner`).
+So `str.upper` dumps as `builtins.str.upper`, as `len` dumps as `builtins.len`, and the path is checked like any other before it is written ([below](#a-dotted-path-is-written-only-when-it-imports-back)).
+Until BUG-195 `_serialize_callable` wrote a path only for a callable with a `__module__`, and refused every one of these as a callable "with no dotted path" it had itself built.
+
+Two C callables have no class to be named through.
+A C static method (`str.maketrans`, `bytes.maketrans`) has `None` for `__self__`, and before 3.15 no `__module__` either; 3.15 gives it `builtins`, and it dumps from there.
+A C method bound to an instance (`"abc".upper`) is bound to a value no spec builds, since `classfn:` opens no C method ([classfn names an instance method](../design-decisions/classfn-names-an-instance-method.md)).
+Both are refused at `dump()` ([limitations](../limitations.md#callables-and-serialization)).
+
+Rejected: reading the owner off `__reduce__`, which is how `pickle` writes all of them, a C static method included (`str.maketrans.__reduce__()` is `(getattr, (str, 'maketrans'))`).
+It would close the gap three `maketrans` methods leave before 3.15 by leaning on the pickle protocol rather than on the attributes `inspect` documents; 3.15 closes it on its own.
+jsonargparse's `get_import_path` refuses every C type's method.
+
+A failure raised *inside* an importable module is kept distinct from "this prefix is not a module": only a `ModuleNotFoundError` whose `name` is the prefix itself means the prefix is simply not importable, and the walk stops there; its ancestors all imported before it, so none of them can be the module not found.
 Any other failure raised while loading the module — a broken transitive dependency, a failed `from x import y`, a circular import — comes from a module that does exist and is surfaced as `SymbolImportError` rather than swallowed and masked as a typo'd path.
 The discriminator is `ModuleNotFoundError.name`, because `ImportError` is the shared base of "module not found" and "module found but its imports failed".
 
@@ -27,6 +44,20 @@ A union needs the difference (BUG-230).
 A reference variant that finds nothing has refused the value, and the next variant reads it: `"hello"` in `type | str` is the text.
 A module that fails stops the union instead, as it stops a lone field: the path names real code that is broken, and holding it as text would hide the failure until the string is used as a class.
 `_coerce_type_ref` turns the first into the `TypeCoercionError` the union's variant loop skips, and re-raises the second with the field's path, which the loop does not catch.
+
+The module that fails is the one the message names.
+The prefixes are imported shortest first, so the first import that raises is that module's own: `pkg.sub.Thing` with a broken `pkg/__init__.py` reports `error loading module 'pkg'`, and a broken `pkg/sub.py` `error loading module 'pkg.sub'`.
+Every ancestor of a module is a module, so the walk can stop at the first prefix that is not one; it imports what the longest-first walk imported, and resolves every path as it did.
+That walk named the prefix it was trying, `brokenmod.Thing`, since `import_module("brokenmod.Thing")` runs `brokenmod` on the way (BUG-256).
+A failure inside a module the path's module imports names the path's module, as a missing dependency always did: the user wrote that one, and the module that raised is in the chained cause and the traceback.
+`pkgutil.resolve_name`, `pydoc.locate` and Hydra's `_locate` walk shortest first too; `pydoc` names the path's module the same way (`problem in brokenapp`).
+Rejected: keeping the longest-first walk and importing the ancestors again on a failure to find the culprit, which runs a failed module's top level twice, since a failed import leaves nothing in `sys.modules`.
+
+A `RecursionError` or a `MemoryError` raised during the import passes through as it is.
+Nothing tells whether the module's own code raised it or the caller's stack ran out a few frames below the limit, and wrapping it named a sound module as broken (`error loading module 'freshmod.Thing': maximum recursion depth exceeded`), the relabelling [catching `RecursionError` at the public functions](../design-decisions/a-configuration-nests-at-most-64-levels.md#rejected) was rejected for.
+A module that recurses at its top level loses its name from the message; its frames stay in the traceback.
+Every reader that catches `SymbolImportError` lets it through the same way, the dump's reads-back check (`imports_back`) and the auto-binding test (`_callable._instance_method_owner`) included, where it used to read as a path that does not import back.
+`pkgutil.resolve_name` and jsonargparse's `import_object` let it out raw; `pydoc.locate` wraps it.
 
 The syntactic check comes first because `importlib.import_module` refuses an empty or a relative name with a `ValueError` or a `TypeError`, which the broken-module branch used to report as `error loading module ''`: under that reading, `type | str` would have refused the empty string.
 A string with a space, a slash or an empty part never reaches the import machinery.

@@ -69,6 +69,7 @@ from confarg._types import (
     _resolve_type,
     _scalar_read_as,
     _self_defaulting_descriptor,
+    _spell_type,
     _spelled_position,
     _src_type,
     _StrToken,
@@ -470,16 +471,19 @@ def _construct_scalar(tp: Any, data: Any, path: FieldPath, union_tag: str) -> An
     if _is_taggable_leaf(resolved) and isinstance(data, dict):
         return _construct_taggable_leaf(resolved, data, path, union_tag)
     if isinstance(data, dict) and union_tag in data:
-        call = _defaults.CALL_KEY
-        tp_name = getattr(resolved, "__name__", repr(resolved))
-        msg = (
-            f"Cannot coerce dict {data!r} to {tp_name} at '{_spell_field_path(path)}'."
-            f" The {union_tag!r} key is the union tag, which names a subclass of a struct-typed"
-            f" field's annotation; {tp_name} accepts no struct, so the tag cannot select one."
-            f" A '{call}:' spec computes a value the field's type accepts."
-        )
-        raise TypeCoercionError(msg)
+        raise _tag_selects_no_struct(resolved, data, path, union_tag)
     return _coerce_leaf(tp, data, _spell_field_path(path))
+
+
+def _tag_selects_no_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str) -> TypeCoercionError:
+    """Return the refusal of the union tag in *data* at a field of type *tp*, which accepts no struct.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
+    """
+    return TypeCoercionError.tag_selects_no_struct(
+        data, _spell_type(tp), _spell_field_path(path), union_tag, _defaults.CALL_KEY
+    )
 
 
 def _construct_typed(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:  # noqa: PLR0911  # one return per kind
@@ -1179,26 +1183,30 @@ def _construct_single_variant_union(
         raise
 
 
-def _construct_union_by_tag(non_none: list[Any], data: MergeDict, path: FieldPath, union_tag: str) -> Any:
-    """Construct a union value using its class tag field.
+def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path: FieldPath, union_tag: str) -> Any:
+    """Construct a value of the union *tp*, whose variants other than None are *non_none*, using its class tag field.
 
     The candidates are every ``_is_struct`` variant, registered leaves included: a tag names a
     class to build from fields, which is the one thing a leaf stays open to. A class no
     candidate holds is the spec of the variant that reads specs, a Callable or else an ``Any``,
     when the union has one; a tag that does not import is refused either way.
 
+    A union with no such candidate and no such variant refuses the tag as a leaf does, before
+    importing it: no class it could name would be taken.
+
     Dev Notes:
         docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in
         docs-dev/architecture/callables.md#an-any-node-reads-every-opener
+        docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
     """
+    reader = _first_spec_reader(non_none)
+    structs = [rv for v in non_none if _is_struct(rv := _resolve_type(v))]
+    if reader is None and not structs:
+        raise _tag_selects_no_struct(tp, data, path, union_tag)
     tag = data[union_tag]
     cls = _import_class_by_path(tag, _spell_field_path(path), union_tag)
     # Each variant the tagged class is a subclass of, by its class, with the class bound as it binds it.
-    matching = [
-        (_class_of(rv), b)
-        for v in non_none
-        if _is_struct(rv := _resolve_type(v)) and (b := _tagged_struct(cls, rv)) is not None
-    ]
+    matching = [(_class_of(rv), b) for rv in structs if (b := _tagged_struct(cls, rv)) is not None]
     variant_classes = list(dict.fromkeys(c for c, _ in matching))
     if len(variant_classes) > 1:
         raise AmbiguousUnionError(
@@ -1208,11 +1216,10 @@ def _construct_union_by_tag(non_none: list[Any], data: MergeDict, path: FieldPat
     if matching:
         cleaned = {k: v2 for k, v2 in data.items() if k != union_tag}
         return _construct_bound_tag([b for _, b in matching], cleaned, path, union_tag, _Naming(tag, "tag"))
-    reader = _first_spec_reader(non_none)
     if reader is not None:
         # A class no variant holds is the spec of the variant that reads one, which builds the class it names.
         return construct(reader, data, path=path, union_tag=union_tag)
-    valid_variants = sorted(dotted_name(_resolve_type(v)) for v in non_none if _is_struct(_resolve_type(v)))
+    valid_variants = sorted(dotted_name(rv) for rv in structs)
     msg = (
         f"Class {tag!r} at '{_spell_field_path(path)}' is not compatible with any union variant."
         f" Expected a subclass of one of: {valid_variants}"
@@ -1488,7 +1495,7 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
 
     if isinstance(data, dict) and union_tag in data:
         if not _union_tag_shadowed(tp, union_tag):
-            return _construct_union_by_tag(non_none, data, path, union_tag)
+            return _construct_union_by_tag(tp, non_none, data, path, union_tag)
         # The tag route was a real alternative; the member's value forces the
         # structural route instead, so say so once, on use.
         _warn_shadowed_tag_key(path, union_tag, "variant")

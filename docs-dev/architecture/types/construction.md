@@ -11,6 +11,17 @@
 3. **structural** matching for struct variants: required fields ⊆ provided keys ⊆ fields, refined by value/type compatibility; more than one match is an `AmbiguousUnionError` whose message lists each variant's fields and suggests the tag; zero matches falls back to trying each variant;
 4. **leaf** variants: tuples (filtered by arity), then collections, then scalars (stealing rule), then the `_UnionSeqToken` one-element-list fallback, then `Any` ([below](#an-any-variant-is-tried-last)).
 
+### A tag no variant takes
+
+A union none of whose variants is a struct or reads a spec — `int | str`, `int | Path`, `list[int] | str` — has nothing a tag could select, whatever class it names.
+It refuses the tag as a leaf field does, with the same message, naming the union as written (`int | str accepts no struct, so the tag cannot select one`) and the `call:` spec that computes a value the field accepts.
+The refusal comes before the tag is imported, as on the leaf: no class it names would be taken, so the import could only run a module's code, or report a typo or a broken module the leaf does not report ([a bare word is never imported](dotted-imports.md#a-bare-word-is-never-imported)).
+`TypeCoercionError.tag_selects_no_struct` spells it for both, through `_construct._tag_selects_no_struct`, and `_types._spell_type` names the type, so a union reads `int | str` on every Python, though its `__name__` is `Union` since 3.14.
+Until BUG-252 the union imported the tag and listed the struct variants it could be a subclass of, which were none: "Expected a subclass of one of: []".
+A union with a struct variant or a spec reader still imports the tag, which decides what is built.
+
+A dict variant does not take the tag either: `int | dict[str, str]` refuses `{class: confidential}`, which a lone `dict[str, str]` holds as data, since the union tag on a union of several members names what is built ([the type decides](../design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)).
+
 ### An optional field fails as its variant
 
 `X | None` fails exactly as an `X` field does: same exception type, same message, same path.

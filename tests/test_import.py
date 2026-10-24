@@ -20,6 +20,7 @@ from confarg._import import _import_dotted
 from confarg.exceptions import SymbolImportError, SymbolNotFoundError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 
@@ -177,3 +178,85 @@ class TestSymbolNotFound:
             _import_dotted("bug230_undotted_mod")
         assert "bug230_undotted_mod" not in sys.modules
         assert _import_dotted("bug230_undotted_mod.RAN") is True
+
+
+class TestAFailingModuleIsNamed:
+    """A module that fails while imported is named by itself, not by the path being tried (BUG-256)."""
+
+    @pytest.fixture
+    def modules(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+        """Lay out sound and broken modules, every one prefixed ``bug256_``, on ``sys.path``."""
+        (tmp_path / "bug256_broken.py").write_text("raise RuntimeError('boom')\n")
+        (tmp_path / "bug256_helper.py").write_text("raise RuntimeError('helper boom')\n")
+        (tmp_path / "bug256_app.py").write_text("import bug256_helper\n\n\nclass Thing:\n    pass\n")
+        (tmp_path / "bug256_recursing.py").write_text("def f():\n    return f()\n\n\nf()\n")
+        (tmp_path / "bug256_oom.py").write_text("raise MemoryError\n")
+        (tmp_path / "bug256_sound.py").write_text("class Thing:\n    pass\n")
+        (tmp_path / "bug256_brokenpkg").mkdir()
+        (tmp_path / "bug256_brokenpkg" / "__init__.py").write_text("raise RuntimeError('pkg boom')\n")
+        (tmp_path / "bug256_brokenpkg" / "sub.py").write_text("class Thing:\n    pass\n")
+        (tmp_path / "bug256_pkg").mkdir()
+        (tmp_path / "bug256_pkg" / "__init__.py").write_text("")
+        (tmp_path / "bug256_pkg" / "badsub.py").write_text("raise RuntimeError('sub boom')\n")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        yield
+        for name in [k for k in sys.modules if k.startswith("bug256_")]:
+            sys.modules.pop(name)
+
+    @pytest.mark.parametrize(
+        ("path", "module", "cause"),
+        [
+            pytest.param("bug256_broken.Thing", "bug256_broken", "boom", id="module"),
+            pytest.param("bug256_brokenpkg.sub.Thing", "bug256_brokenpkg", "pkg boom", id="package"),
+            pytest.param("bug256_pkg.badsub.Thing", "bug256_pkg.badsub", "sub boom", id="submodule"),
+            pytest.param("bug256_app.Thing", "bug256_app", "helper boom", id="the-module-it-imports"),
+        ],
+    )
+    @pytest.mark.usefixtures("modules")
+    def test_the_module_on_the_path_that_fails_is_named(self, path: str, module: str, cause: str) -> None:
+        """The first module on the path whose import raises is the one named, its cause chained."""
+        with pytest.raises(SymbolImportError) as exc_info:
+            _import_dotted(path)
+        assert str(exc_info.value) == f"Cannot import {path!r}: error loading module {module!r}: {cause}"
+
+    @pytest.mark.parametrize(
+        ("path", "error"),
+        [
+            pytest.param("bug256_recursing.Thing", RecursionError, id="recursion"),
+            pytest.param("bug256_oom.Thing", MemoryError, id="memory"),
+        ],
+    )
+    @pytest.mark.usefixtures("modules")
+    def test_the_interpreters_own_errors_pass_through(self, path: str, error: type[BaseException]) -> None:
+        """A RecursionError or a MemoryError is raised as it is: the import cannot tell whose it is."""
+        with pytest.raises(error):
+            _import_dotted(path)
+
+    @pytest.mark.usefixtures("modules")
+    def test_a_deep_caller_stack_does_not_blame_a_sound_module(self) -> None:
+        """An import that runs out of the caller's stack raises the RecursionError, naming no module.
+
+        Every spare stack depth up to 200 frames is tried, since where the import machinery runs
+        out depends on the interpreter: each either imports or raises the RecursionError, and
+        both happening shows the sweep crossed the depth the import needs.
+        """
+
+        def depth() -> int:
+            frame, n = sys._getframe(), 0
+            while frame is not None:
+                frame, n = frame.f_back, n + 1
+            return n
+
+        def called_from(frames: int) -> object:
+            return _import_dotted("bug256_sound.Thing") if frames == 0 else called_from(frames - 1)
+
+        outcomes = set()
+        for spare in range(1, 200):
+            sys.modules.pop("bug256_sound", None)
+            try:
+                called_from(sys.getrecursionlimit() - depth() - spare)
+            except RecursionError:
+                outcomes.add("raised")
+            else:
+                outcomes.add("imported")
+        assert outcomes == {"raised", "imported"}
