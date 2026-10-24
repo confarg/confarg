@@ -43,6 +43,7 @@ from confarg._merge import (
     _peek_nested,
     _set_nested,
 )
+from confarg._naming import named_variant
 from confarg._tags import _partial_config_from_argv, import_tagged_classes
 from confarg._types import (
     _base_declares_path,
@@ -83,8 +84,15 @@ from confarg._types import (
 from confarg.cli._prefix import apply_prefix, in_prefix, strip_argv_prefix
 from confarg.cli._spec import FlagSpec, HelpParts, _build_help, _get_field_docstrings, _get_field_meta, _struct_doc
 from confarg.exceptions import ConfargWarning, SymbolImportError
-from confarg.typedload._coerce import _NONE_TOKENS, _enum_choices, _is_coercible_leaf, _is_registered_leaf
-from confarg.typedload._construct import _is_typed_call
+from confarg.typedload._coerce import (
+    _NONE_TOKENS,
+    _enum_choices,
+    _is_coercible_leaf,
+    _is_registered_leaf,
+    _type_kind,
+    _TypeKind,
+)
+from confarg.typedload._construct import _is_typed_call, _reads_specs, opener_reader
 
 
 def _scalar_cast_types_in_union(resolved: Any) -> list[type]:
@@ -335,41 +343,103 @@ _INDEX_SEGMENT = re.compile(r"-?\d+")
 _OPENER_SPECS: tuple[tuple[str, str], ...] = tuple((f".{opener}", opener) for opener in _OPENERS)
 
 
-def _build_callable_fn_specs(
+# What each opener builds from the flags around it, given what the spec yields. The flags are placeholders:
+# the walk is prefix-blind (docs-dev/architecture/cli-adapters/cli-prefix-boundaries.md#help-names-a-flag-as-typed).
+_OPENER_HELP = {
+    _defaults.BIND_KEY: "function or class; the --FLAG.args.PARAM flags are partially applied to it",
+    _defaults.CLASS_KEY: "class to instantiate from the --FLAG.FIELD flags; the instance is {what}",
+    _defaults.CALL_KEY: "factory function to call with the --FLAG.args.PARAM flags; its result is {what}",
+    _defaults.CLASSFN_KEY: "instance method; the --FLAG.FIELD flags build its owner",
+}
+
+# What a union tag also names beside a Callable variant: a class no variant holds is the Callable's ``class:``.
+_CALLABLE_CLASS_NOTE = ", or a callable class to instantiate as its callable"
+
+
+def _opener_spec(
     flag: str,
+    opener: str,
+    reader: Any,
+    group: str | None = None,
+    group_description: str = "",
+) -> FlagSpec:
+    """Build the FlagSpec of the opener flag ``--<flag>.<opener>``, described by what its *reader* builds.
+
+    *reader* is the type reading the opener there (:func:`~confarg.typedload._construct.opener_reader`):
+    a Callable's spec yields the callable, and any other reader's, an ``Any`` or the type a
+    typed call fills, the value. The help names the node by its path, and the flags around it
+    by a placeholder, since the walk knows no prefix.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#cli
+        docs-dev/architecture/cli-adapters/cli-prefix-boundaries.md#help-names-a-flag-as-typed
+    """
+    if _type_kind(_resolve_type(reader)) is _TypeKind.CALLABLE:
+        subject, what = (f"the '{flag}' callable" if flag else "the root callable"), "the callable"
+    else:
+        subject, what = (f"the value of '{flag}'" if flag else "the root value"), "the value"
+    if opener == _defaults.CALL_KEY and what == "the value":
+        note = f"Dotted import path of the function to call with the --FLAG.args.PARAM flags; its result is {subject}."
+    else:
+        note = f"Dotted import path for {subject} ({_OPENER_HELP[opener].format(what=what)})."
+    return FlagSpec(
+        name=f"{flag}.{opener}" if flag else opener,
+        metavar="DOTTED.PATH",
+        note=note,
+        group=group,
+        group_description=group_description,
+    )
+
+
+def _opener_specs(
+    flag: str,
+    tp: Any,
+    union_tag: str,
     group: str | None,
     group_description: str,
 ) -> list[FlagSpec]:
-    """Build FlagSpecs for ``--<flag>.bind``, ``--<flag>.class``, ``--<flag>.call``, ``--<flag>.classfn``."""
+    """Build the opener flags of the node at *flag*, of type *tp*, when it holds a Callable, else none.
+
+    One flag per opener a spec there reads (:func:`~confarg.typedload._construct.opener_reader`):
+    all four on a lone Callable; beside another variant, none a struct variant owns, and not
+    the union tag a struct variant can take, whose own flag also names a callable class
+    (:func:`_build_union_tag_spec`). An ``Any`` reads them too, but lists none.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#cli
+    """
+    if not _holds_a_callable(tp):
+        return []
     return [
-        FlagSpec(
-            name=f"{flag}.{sub}",
-            metavar="DOTTED.PATH",
-            note=f"Dotted import path for the '{flag}' callable ({desc}).",
-            group=group,
-            group_description=group_description,
-        )
-        for sub, desc in (
-            ("bind", "function or class; the --FLAG.args.PARAM flags are partially applied to it"),
-            ("class", "class to instantiate from the --FLAG.FIELD flags; the instance is the callable"),
-            ("call", "factory function to call with the --FLAG.args.PARAM flags; its result is the callable"),
-            ("classfn", "instance method; the --FLAG.FIELD flags build its owner"),
-        )
+        _opener_spec(flag, opener, reader, group, group_description)
+        for opener in _OPENERS
+        if (reader := opener_reader(tp, opener, union_tag)) is not None
     ]
+
+
+def _holds_a_callable(tp: Any) -> bool:
+    """Return whether a node of type *tp* is a Callable, or a union holding one."""
+    return any(_is_callable(m) for m in _union_branches(tp))
 
 
 def _make_path_completer(paths: list[str]) -> Callable[[str], list[str]]:
     return lambda prefix: [p for p in paths if p.startswith(prefix)]
 
 
-def _build_union_tag_spec(
+def _build_union_tag_spec(  # noqa: PLR0913  # the union, its tag, and where its help goes
     flag: str,
     union_tag: str,
     variant_types: list[Any],
     group: str | None,
     group_description: str,
+    *,
+    callable_class: bool = False,
 ) -> FlagSpec:
-    """Build a FlagSpec for ``--<flag>.<union_tag>`` with an optional path completer."""
+    """Build a FlagSpec for ``--<flag>.<union_tag>`` with an optional path completer.
+
+    *callable_class*: the union holds a Callable, which a class no variant holds instantiates
+    (:func:`~confarg.typedload._construct._construct_union_by_tag`).
+    """
     completer = None
     if variant_types:
         paths = [dotted_name(v) for v in variant_types]
@@ -379,7 +449,7 @@ def _build_union_tag_spec(
         metavar="DOTTED.CLASS.PATH",
         note=(
             f"Fully-qualified class path selecting the variant for '{flag}' "
-            f"(e.g. mypackage.MyClass). "
+            f"(e.g. mypackage.MyClass){_CALLABLE_CLASS_NOTE if callable_class else ''}. "
             "Once set, use that class's field flags."
         ),
         group=group,
@@ -682,9 +752,9 @@ def _collect_fn_paths_from_config(
 ) -> dict[str, tuple[str, str]]:
     """Walk target + config_dict to find the targets the callable specs name.
 
-    A spec is a Callable field's value, or a ``call:`` filling a field of any other type
-    (:func:`~confarg.typedload._construct._is_typed_call`). Returns {field_flag:
-    (target_path, opener)} (:func:`_spec_openings`).
+    A spec is a value a field reads as one (:func:`_reads_as_spec`), or a ``call:`` filling
+    a field of any other type (:func:`~confarg.typedload._construct._is_typed_call`).
+    Returns {field_flag: (target_path, opener)} (:func:`_spec_openings`).
     """
     result: dict[str, tuple[str, str]] = {}
     tp = _resolve_type(target)
@@ -697,17 +767,31 @@ def _collect_fn_paths_from_config(
 
     for name, ft in flds.items():
         flag = f"{prefix}.{name}" if prefix else name
-        resolved = _unwrap_optional(_resolve_type(ft))
-        if resolved is None:
-            continue
         sub = config_dict.get(name)
-        if _is_callable(resolved):
-            result.update(_spec_openings(flag, sub))
-        elif _is_typed_call(sub, ft):
+        if _is_typed_call(sub, ft):
             result.update(_spec_openings(flag, sub, typed=True))
-        elif _is_struct(resolved) and isinstance(sub, dict):
+        elif _reads_as_spec(ft, sub, union_tag):
+            result.update(_spec_openings(flag, sub))
+        elif _is_struct(resolved := _unwrap_optional(_resolve_type(ft))) and isinstance(sub, dict):
             result.update(_collect_fn_paths_from_config(sub, resolved, flag, union_tag))
     return result
+
+
+def _reads_as_spec(tp: Any, value: Any, union_tag: str) -> bool:
+    """Return whether a node of type *tp* reads *value* as a callable spec.
+
+    A string is a Callable's shorthand, which an ``Any`` reads as text; a dict is the spec of
+    a Callable or an ``Any`` *tp* is, or of the variant that builds it in a union
+    (:func:`~confarg._naming.named_variant`), so a tag naming a struct variant is the struct's.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#a-callable-beside-another-variant
+    """
+    members = _union_branches(tp)
+    if isinstance(value, str):
+        return any(_is_callable(m) for m in members)
+    reader = members[0] if len(members) == 1 else named_variant(tp, value, union_tag)
+    return reader is not None and _reads_specs(reader)
 
 
 def _callable_argument_targets(
@@ -947,6 +1031,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913, PLR0917  # one branch per
     help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag, position=position)
     core = _unwrap_optional(resolved)
     if core is None:
+        openers = _opener_specs(flag, resolved, union_tag, group, group_description)
         non_none = _union_args_no_none(resolved)
         concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
         if concrete:
@@ -954,7 +1039,10 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913, PLR0917  # one branch per
             # A sequence variant beside the structs makes it take a run, which vanilla's
             # loop consumes for any union with one.
             whole = _shaped(_whole_value_spec(flag, resolved, help_text, group, group_description), resolved)
-            specs = [whole, _build_union_tag_spec(flag, union_tag, concrete, group, group_description)]
+            tag = _build_union_tag_spec(
+                flag, union_tag, concrete, group, group_description, callable_class=_holds_a_callable(resolved)
+            )
+            specs = [whole, tag, *openers]
             by_name: dict[str, FlagSpec] = {s.name: s for s in specs}
             below = descent.into(flag, [resolved])
             for variant in concrete if below is not None else []:
@@ -983,7 +1071,7 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913, PLR0917  # one branch per
             seq_specs.extend(
                 _union_cast_flag_specs(flag, _scalar_cast_types_in_union(resolved), group, group_description),
             )
-            return seq_specs
+            return [*seq_specs, *openers]
         # Any other multi-variant leaf union (str | type, int | float, str | Path, …)
         # is a single scalar flag. Register it unconditionally so the field is
         # accepted; add the force-cast escape hatches for the union's own scalars,
@@ -998,12 +1086,14 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913, PLR0917  # one branch per
                 group_description=group_description,
             ),
             *_union_cast_flag_specs(flag, _scalar_cast_types_in_union(resolved), group, group_description),
+            *openers,
         ]
 
     if _is_callable(core):
-        specs: list[FlagSpec] = [_build_leaf_spec(flag, raw_type, core, help_text, group, group_description)]
-        specs.extend(_build_callable_fn_specs(flag, group, group_description))
-        return specs
+        return [
+            _build_leaf_spec(flag, raw_type, core, help_text, group, group_description),
+            *_opener_specs(flag, resolved, union_tag, group, group_description),
+        ]
 
     if _is_namedtuple(core):
         return _collect_namedtuple_specs(core, resolved, flag, union_tag, group, group_description, help_text, descent)
@@ -1031,12 +1121,13 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913, PLR0917  # one branch per
 
 
 def _collect_union_root_specs(
+    tp: Any,
     variants: list[Any],
     prefix: str,
     union_tag: str,
     descent: _Descent,
 ) -> list[FlagSpec]:
-    """Build FlagSpecs for a union target (variants are the concrete struct types)."""
+    """Build FlagSpecs for the union target *tp* (variants are its concrete struct types), its openers included."""
     tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
     paths = [dotted_name(v) for v in variants]
     result: list[FlagSpec] = []
@@ -1049,13 +1140,17 @@ def _collect_union_root_specs(
             metavar="DOTTED.CLASS.PATH",
             note=(
                 "Fully-qualified class path selecting the union variant "
-                f"(e.g. {paths[0] if paths else 'mypackage.MyClass'}). "
+                f"(e.g. {paths[0] if paths else 'mypackage.MyClass'})"
+                f"{_CALLABLE_CLASS_NOTE if _holds_a_callable(tp) else ''}. "
                 "Once set, use the variant's field flags."
             ),
             completer=_make_path_completer(paths),
         )
         result.append(tag_spec)
         by_name[tag_spec.name] = tag_spec
+    for spec in _opener_specs(prefix, tp, union_tag, None, ""):
+        result.append(spec)
+        by_name[spec.name] = spec
     for variant in variants:
         for spec in _collect_struct_specs(
             variant,
@@ -1099,7 +1194,7 @@ def _collect_struct_specs(  # noqa: C901, PLR0913  # a root call starts its own 
             non_none = _union_args_no_none(tp)
             concrete = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
             if concrete:
-                return _collect_union_root_specs(concrete, prefix, union_tag, descent)
+                return _collect_union_root_specs(tp, concrete, prefix, union_tag, descent)
         return []
     tp, flds, hints = setup
     var_params = _var_params(tp).names
@@ -1402,7 +1497,9 @@ def _collect_callable_key_argv_specs(
     signature describes: a key of a nested ``bind`` target spec, and an argument the named
     target does not carry — or that names no target at all, the field having no opener
     anywhere (BUG-28). Below a field of any other type the spec is a typed call: its
-    ``call`` and ``args`` keys and what is below them.
+    ``call`` and ``args`` keys and what is below them. A key that opens a spec, a typed
+    call's ``call``, a nested target's opener or an ``Any`` node's, is described as the
+    opener it is (:func:`~confarg._parse_cli._opener_reader_at`).
     The vanilla parser accepts any key below a callable field (:func:`~confarg._parse_cli._addresses_callable_key`), so
     registration follows the same rule and hands the token to the collector as a plain
     string; whether the kwarg is acceptable is construction's answer to give, identically
@@ -1421,6 +1518,7 @@ def _collect_callable_key_argv_specs(
         _addresses_callable_key,
         _looks_like_flag,
         _normalize_eq_args,
+        _opener_reader_at,
         _parse_flag_mode,
     )
 
@@ -1432,10 +1530,16 @@ def _collect_callable_key_argv_specs(
         _path, append_mode, delete_mode = _parse_flag_mode(key)
         if append_mode or delete_mode:
             continue
-        if key in existing_names or not _addresses_callable_key(target, key.split("."), union_tag):
+        if key in existing_names:
+            continue
+        parts = key.split(".")
+        if (reader := _opener_reader_at(target, parts, union_tag)) is not None:
+            specs.append(_opener_spec(".".join(parts[:-1]), parts[-1], reader))
+        elif _addresses_callable_key(target, parts, union_tag):
+            specs.append(FlagSpec(name=key, metavar="VALUE", note=f"Value for '{key}' in the callable spec."))
+        else:
             continue
         existing_names.add(key)
-        specs.append(FlagSpec(name=key, metavar="VALUE", note=f"Value for '{key}' in the callable spec."))
     return specs
 
 

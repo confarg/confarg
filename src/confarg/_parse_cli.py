@@ -98,7 +98,7 @@ from confarg._types import (
 from confarg.dictexpr._expressions import _list_index
 from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce, _type_kind, _TypeKind
-from confarg.typedload._construct import _is_typed_call, _selects_none, _takes_typed_call
+from confarg.typedload._construct import _is_typed_call, _reads_specs, _selects_none, _takes_typed_call
 
 #: What the data a path is typed against names at a node, by the node's path: the dict the
 #: node holds, or None where nothing names it (:func:`_walk_path`).
@@ -549,21 +549,33 @@ def _addresses_callable_key(target: Any, parts: list[str], union_tag: str, named
 
 
 def _opener_at(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> bool:
-    """Return True if the last segment of *parts* is an opener of a spec at the path before it.
+    """Return True if the last segment of *parts* opens a spec at the path before it (:func:`_opener_reader_at`)."""
+    return _opener_reader_at(target, parts, union_tag, named) is not None
 
-    Any opener opens a spec on a callable field; ``call`` does on a field that takes a
-    typed call (:func:`_opens_spec_subtree`). A field named like an opener is no opener of
-    its parent (BUG-30).
+
+def _opener_reader_at(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> Any:
+    """Return the type reading the last segment of *parts* as an opener of a spec at the path before it, or None.
+
+    A Callable or an ``Any`` node reads every opener, a nested target spec's Callable
+    included; ``call`` opens a typed call on a field that takes one
+    (:func:`_opens_spec_subtree`), and a typed call's value is the type reached there's, a
+    union's beside its Callable too. A field named like an opener is no opener of its parent
+    (BUG-30), and a key under ``args`` is a parameter's name, the arguments of a target no
+    opener names included, whose keys the walk reads as they are written.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#cli
     """
     k = len(parts) - 1
-    return (
-        k >= 0
-        and names_an_opener(parts[k])
-        and any(
-            _is_callable(e.stone.node) or _opens_spec_subtree(e.stone, parts[k], k)
-            for e in _walk_path(target, parts, union_tag, named=named).layers[k]
-        )
-    )
+    if k < 0 or not names_an_opener(parts[k]):
+        return None
+    for e in _walk_path(target, parts, union_tag, named=named).layers[k]:
+        if e.before.str_subtree or not (_reads_specs(e.stone.node) or _opens_spec_subtree(e.stone, parts[k], k)):
+            continue
+        if parts[k] == _defaults.CALL_KEY and _takes_typed_call(e.stone.reached):
+            return e.stone.reached
+        return e.stone.node
+    return None
 
 
 def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> bool:
