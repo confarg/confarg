@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Literal, NamedTuple
 from uuid import UUID
@@ -35,8 +36,22 @@ from tests.conftest import Release
 
 
 @pytest.fixture(autouse=True)
-def _cleanup_uuid(leaf_registry: None) -> None:
-    """Restore both leaf registries after each test that registers UUID."""
+def _cleanup_registry(leaf_registry: None) -> None:
+    """Restore both leaf registries after each test that registers a type or unregisters UUID."""
+
+
+@pytest.fixture
+def _unregistered_uuid() -> None:
+    """Take the built-in UUID out of both registries, put back by ``_cleanup_registry``."""
+    del _LEAF_COERCIONS[UUID]
+    del _LEAF_SERIALIZERS[UUID]
+
+
+class _Ticket:
+    """A class no registry names, registered by the tests of the registration API itself."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
 
 
 # ---------------------------------------------------------------------------
@@ -49,40 +64,40 @@ class TestRegisterLeafType:
 
     def test_register_adds_to_leaf_coercions(self) -> None:
         """register_leaf_type adds the type to _LEAF_COERCIONS."""
-        confarg.register_leaf_type(UUID, UUID)
-        assert UUID in _LEAF_COERCIONS
+        confarg.register_leaf_type(_Ticket, _Ticket)
+        assert _Ticket in _LEAF_COERCIONS
 
     def test_register_callable_is_stored(self) -> None:
         """The coerce callable passed to register_leaf_type is stored verbatim."""
-        coerce = lambda v: UUID(str(v))  # noqa: E731
-        confarg.register_leaf_type(UUID, coerce)
-        assert _LEAF_COERCIONS[UUID] is coerce
+        coerce = lambda v: _Ticket(str(v))  # noqa: E731
+        confarg.register_leaf_type(_Ticket, coerce)
+        assert _LEAF_COERCIONS[_Ticket] is coerce
 
     def test_register_overrides_previous(self) -> None:
         """Re-registering the same type replaces the previous callable."""
-        confarg.register_leaf_type(UUID, UUID)
-        coerce2 = lambda v: UUID(str(v))  # noqa: E731
-        confarg.register_leaf_type(UUID, coerce2)
-        assert _LEAF_COERCIONS[UUID] is coerce2
+        confarg.register_leaf_type(_Ticket, _Ticket)
+        coerce2 = lambda v: _Ticket(str(v))  # noqa: E731
+        confarg.register_leaf_type(_Ticket, coerce2)
+        assert _LEAF_COERCIONS[_Ticket] is coerce2
 
     def test_register_stores_the_serializer(self) -> None:
         """The serialize callable passed to register_leaf_type is stored verbatim."""
-        serialize = lambda v: v.hex  # noqa: E731
-        confarg.register_leaf_type(UUID, UUID, serialize=serialize)
-        assert _LEAF_SERIALIZERS[UUID] is serialize
+        serialize = lambda v: v.text  # noqa: E731
+        confarg.register_leaf_type(_Ticket, _Ticket, serialize=serialize)
+        assert _LEAF_SERIALIZERS[_Ticket] is serialize
 
     def test_serializer_defaults_to_str(self) -> None:
         """Omitting serialize= registers str, the wire form of most leaf types."""
-        confarg.register_leaf_type(UUID, UUID)
-        assert _LEAF_SERIALIZERS[UUID] is str
+        confarg.register_leaf_type(_Ticket, _Ticket)
+        assert _LEAF_SERIALIZERS[_Ticket] is str
 
     def test_register_overrides_both_halves(self) -> None:
         """Re-registering the same type replaces the coercion and the serializer together."""
-        confarg.register_leaf_type(UUID, UUID, serialize=lambda v: v.hex)
-        coerce2 = lambda v: UUID(str(v))  # noqa: E731
-        confarg.register_leaf_type(UUID, coerce2)
-        assert _LEAF_COERCIONS[UUID] is coerce2
-        assert _LEAF_SERIALIZERS[UUID] is str
+        confarg.register_leaf_type(_Ticket, _Ticket, serialize=lambda v: v.text)
+        coerce2 = lambda v: _Ticket(str(v))  # noqa: E731
+        confarg.register_leaf_type(_Ticket, coerce2)
+        assert _LEAF_COERCIONS[_Ticket] is coerce2
+        assert _LEAF_SERIALIZERS[_Ticket] is str
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +113,6 @@ class TestCoerceLeafCustomType:
 
     def test_coerce_from_str_token(self) -> None:
         """Custom type is coerced from a _StrToken (simulating CLI/env input)."""
-        confarg.register_leaf_type(UUID, UUID)
         token = _StrToken(_UUID_STR)
         result = _coerce_leaf(UUID, token)
         assert result == _UUID_OBJ
@@ -106,17 +120,16 @@ class TestCoerceLeafCustomType:
 
     def test_coerce_from_native_object(self) -> None:
         """Custom type is passed through when already an instance (file input)."""
-        confarg.register_leaf_type(UUID, UUID)
         result = _coerce_leaf(UUID, _UUID_OBJ)
         assert result == _UUID_OBJ
 
     def test_coerce_invalid_raises(self) -> None:
         """Invalid input raises TypeCoercionError."""
-        confarg.register_leaf_type(UUID, UUID)
         token = _StrToken("not-a-uuid")
         with pytest.raises(TypeCoercionError):
             _coerce_leaf(UUID, token)
 
+    @pytest.mark.usefixtures("_unregistered_uuid")
     def test_unregistered_type_raises(self) -> None:
         """A type that is not registered as a leaf raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="Unsupported leaf type"):
@@ -148,10 +161,10 @@ class TestTryCoerceCustomType:
 
     def test_registered_type_is_left_as_written(self) -> None:
         """A registered type's value is an object no file holds, so its token stays as written (BUG-246)."""
-        confarg.register_leaf_type(UUID, UUID)
         token = _StrToken(_UUID_STR)
         assert _try_coerce(UUID, token) is token
 
+    @pytest.mark.usefixtures("_unregistered_uuid")
     def test_unregistered_type_returns_token(self) -> None:
         """Unregistered types are not eagerly coerced — token passes through unchanged."""
         token = _StrToken(_UUID_STR)
@@ -160,13 +173,11 @@ class TestTryCoerceCustomType:
 
     def test_registered_type_is_read_as_its_object(self) -> None:
         """An expression reads it as the object, an optional included, whatever the spelling (BUG-246)."""
-        confarg.register_leaf_type(UUID, UUID)
         assert read_as_object(UUID | None, _UUID_STR) == _UUID_OBJ
         assert read_as_object(UUID | str, _UUID_STR) == _UUID_STR
 
     def test_invalid_registered_returns_token(self) -> None:
         """When coercion fails, _try_coerce returns the original token unchanged."""
-        confarg.register_leaf_type(UUID, UUID)
         token = _StrToken("not-a-uuid")
         result = _try_coerce(UUID, token)
         assert result is token
@@ -182,19 +193,16 @@ class TestConstructCustomType:
 
     def test_construct_from_str_token(self) -> None:
         """construct() coerces a _StrToken to the registered type."""
-        confarg.register_leaf_type(UUID, UUID)
         result = construct(UUID, _StrToken(_UUID_STR))
         assert result == _UUID_OBJ
 
     def test_construct_optional_from_str_token(self) -> None:
         """construct() coerces a _StrToken through an Optional[registered] union."""
-        confarg.register_leaf_type(UUID, UUID)
         result = construct(UUID | None, _StrToken(_UUID_STR))
         assert result == _UUID_OBJ
 
     def test_construct_optional_none(self) -> None:
         """construct() returns None for an Optional[registered] field when data is None."""
-        confarg.register_leaf_type(UUID, UUID)
         result = construct(UUID | None, None)
         assert result is None
 
@@ -214,12 +222,10 @@ class TestRegisteredLeafInStructUnion:
 
     def test_struct_variant_wins_an_untagged_dict(self) -> None:
         """A dict matching the struct constructs it, with no class tag needed."""
-        confarg.register_leaf_type(UUID, UUID)
         assert construct(Release | UUID, {"version": 2}) == Release(version=2)
 
     def test_leaf_variant_still_wins_a_scalar(self) -> None:
         """The registered leaf still claims the scalar form of the same union."""
-        confarg.register_leaf_type(UUID, UUID)
         assert construct(Release | UUID, _StrToken(_UUID_STR)) == _UUID_OBJ
 
 
@@ -253,35 +259,30 @@ class TestTaggedRegisteredLeaf:
 
     def test_tag_builds_a_leaf_typed_field_from_fields(self) -> None:
         """A tagged dict builds the registered leaf of a plainly-typed field."""
-        confarg.register_leaf_type(UUID, UUID)
         assert confarg.build(_Tagged, {"id": dict(_UUID_TAG)}) == _Tagged(id=_UUID_FROM_TAG)
 
     def test_tag_builds_a_leaf_variant_of_a_union(self) -> None:
         """A tagged dict names the registered leaf variant of a union and builds it."""
-        confarg.register_leaf_type(UUID, UUID)
         assert confarg.build(_TaggedUnion, {"id": dict(_UUID_TAG)}) == _TaggedUnion(id=_UUID_FROM_TAG)
 
     def test_tag_builds_the_same_value_after_registration_as_before(self) -> None:
-        """Registration leaves the tagged spelling exactly where it was."""
-        before = confarg.build(_Tagged, {"id": dict(_UUID_TAG)})
-        confarg.register_leaf_type(UUID, UUID)
-        assert confarg.build(_Tagged, {"id": dict(_UUID_TAG)}) == before
+        """Registration leaves the tagged spelling exactly where it was before it."""
+        registered = confarg.build(_Tagged, {"id": dict(_UUID_TAG)})
+        del _LEAF_COERCIONS[UUID], _LEAF_SERIALIZERS[UUID]
+        assert confarg.build(_Tagged, {"id": dict(_UUID_TAG)}) == registered
 
     def test_custom_union_tag_is_honoured(self) -> None:
         """The opt-in follows union_tag=, not a hard-coded 'class' key."""
-        confarg.register_leaf_type(UUID, UUID)
         data = {"id": {"kind": "uuid.UUID", "int": 5}}
         assert confarg.build(_Tagged, data, union_tag="kind") == _Tagged(id=_UUID_FROM_TAG)
 
     def test_untagged_dict_is_not_taken_apart(self) -> None:
         """Without a tag the leaf stays opaque — and the error says how to ask for fields."""
-        confarg.register_leaf_type(UUID, UUID)
         with pytest.raises(TypeCoercionError, match="'class'"):
             confarg.build(_Tagged, {"id": {"int": 5}})
 
     def test_tag_naming_an_unrelated_class_is_rejected(self) -> None:
         """A tag that does not name the leaf (or a subclass of it) is still an error."""
-        confarg.register_leaf_type(UUID, UUID)
         with pytest.raises(TypeCoercionError, match="not a subclass"):
             confarg.build(_Tagged, {"id": {"class": "tests.conftest.Release"}})
 
@@ -313,7 +314,6 @@ class TestRegisteredLeafIsNotAutoBuilt:
         all-default fields is built from {}" shortcut used to call ``UUID()`` and
         let its own ``TypeError`` escape ``build()``.
         """
-        confarg.register_leaf_type(UUID, UUID)
         with pytest.raises(MissingFieldError, match="id"):
             confarg.build(_Tagged, {})
 
@@ -324,7 +324,6 @@ class TestRegisteredLeafIsNotAutoBuilt:
         ``UUID``'s fields; a UUID string is not, so the variant lost a comparison
         it should have won and the union came out ambiguous.
         """
-        confarg.register_leaf_type(UUID, UUID)
         assert construct(_Ident | _Serial, {"id": _StrToken(_UUID_STR), "n": 1}) == _Ident(id=_UUID_OBJ, n=1)
 
 
@@ -344,19 +343,16 @@ class TestBuildEndToEnd:
 
     def test_build_from_str_token(self) -> None:
         """End-to-end: confarg.build() constructs a dataclass with a registered leaf field."""
-        confarg.register_leaf_type(UUID, UUID)
         result = confarg.build(_Config, {"id": _StrToken(_UUID_STR)})
         assert result == _Config(id=_UUID_OBJ, token=None)
 
     def test_build_from_native_uuid(self) -> None:
         """End-to-end: confarg.build() passes through a natively-parsed UUID (from file)."""
-        confarg.register_leaf_type(UUID, UUID)
         result = confarg.build(_Config, {"id": _UUID_OBJ})
         assert result == _Config(id=_UUID_OBJ, token=None)
 
     def test_build_optional_field(self) -> None:
         """build() handles an Optional registered field with a _StrToken value."""
-        confarg.register_leaf_type(UUID, UUID)
         result = confarg.build(
             _Config,
             {"id": _StrToken(_UUID_STR), "token": _StrToken(_UUID_STR)},
@@ -517,7 +513,9 @@ class TestTypeKind:
             (dict, _TypeKind.DICT),
             (Callable[..., int], _TypeKind.CALLABLE),
             (Path, _TypeKind.LEAF),
-            (UUID, _TypeKind.STRUCT),
+            (UUID, _TypeKind.TAGGABLE_LEAF),
+            (Decimal, _TypeKind.TAGGABLE_LEAF),
+            (_Ticket, _TypeKind.STRUCT),
             (Literal["a"], _TypeKind.LEAF),
             (type[int], _TypeKind.LEAF),
             (_Alias, _TypeKind.LIST),
@@ -530,8 +528,9 @@ class TestTypeKind:
 
     def test_registered_leaf_with_init_params_is_a_taggable_leaf(self) -> None:
         """Registration moves a class with __init__ parameters from STRUCT to TAGGABLE_LEAF."""
-        confarg.register_leaf_type(UUID, UUID)
-        assert _type_kind(UUID) is _TypeKind.TAGGABLE_LEAF
+        assert _type_kind(_Ticket) is _TypeKind.STRUCT
+        confarg.register_leaf_type(_Ticket, _Ticket)
+        assert _type_kind(_Ticket) is _TypeKind.TAGGABLE_LEAF
 
 
 # ---------------------------------------------------------------------------

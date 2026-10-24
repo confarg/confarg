@@ -45,7 +45,7 @@ from confarg._merge import (
 from confarg.cli._build import _scalar_root_spec, build_static_flags
 from confarg.exceptions import ConfargError, ConfargWarning, MissingFieldError, TypeCoercionError, UnknownArgumentError
 from tests._loaders import ArgparseLoader, ClickLoader, CycloptsLoader, TyperLoader, VanillaLoader
-from tests.conftest import AppConfig, CacheConfig, DbConfig, WithCollections, make_target
+from tests.conftest import AppConfig, CacheConfig, DbConfig, OneOf, WithCollections, make_target
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -1955,9 +1955,8 @@ class TestStealingContract:
         cfg = loader.load(_WithIntFloat, argv=["--value", "5"], env={})
         assert type(cfg.value) is float
 
-    def test_registered_leaf_steals_over_int(self, loader: ConfargLoader, leaf_registry: None) -> None:
+    def test_registered_leaf_steals_over_int(self, loader: ConfargLoader) -> None:
         """--value 5 lands on the registered leaf for int | Decimal, in every integration."""
-        confarg.register_leaf_type(Decimal, Decimal)
         cfg = loader.load(_WithIntDecimal, argv=["--value", "5"], env={})
         assert cfg.value == Decimal(5)
         assert type(cfg.value) is Decimal
@@ -2876,13 +2875,12 @@ class TestCliPrefixContract:
         with pytest.raises((ConfargError, SystemExit)):
             loader.merge(target, argv=["--app", "val"], env={}, cli_prefix="app")
 
-    def test_bare_prefix_flag_on_leaf_root_refused(self, loader: ConfargLoader, leaf_registry: None) -> None:
+    def test_bare_prefix_flag_on_leaf_root_refused(self, loader: ConfargLoader) -> None:
         """A registered leaf as the root refuses the bare ``--<prefix>`` flag too (BUG-91).
 
         The scalar root's only CLI spelling has no reader on a leaf root: the flat
         tagged form (``--app.class uuid.UUID --app.hex …``) is how it is spelled.
         """
-        confarg.register_leaf_type(UUID, UUID)
         with pytest.raises((ConfargError, SystemExit)):
             loader.merge(UUID, argv=["--app", _UUID_TEXT], env={}, cli_prefix="app")
 
@@ -4084,7 +4082,6 @@ class TestMergeContract:
         ``UUID`` must leave as the string a config file would have carried —
         identically whichever front-end produced the dict.
         """
-        confarg.register_leaf_type(UUID, UUID)
         out = tmp_path / f"snap{suffix}"
         raw = loader.merge(_RegisteredLeaf, argv=["--id", _UUID_TEXT], env={})
         assert raw == {"id": _UUID_TEXT}
@@ -7079,26 +7076,22 @@ class TestWholeValueFlagContract:
     def test_registered_leaf_scalar_after_param_flag_takes_the_field(
         self,
         loader: ConfargLoader,
-        leaf_registry: None,
     ) -> None:
         """A registered leaf's scalar typed after its ``__init__`` parameter flags replaces them (BUG-85).
 
         The registered-leaf branch stored the scalar before the structural walk,
         so a ``--id.hex`` the later ``--id`` had already overwritten came back.
         """
-        confarg.register_leaf_type(UUID, UUID)
         assert loader.merge(_RegisteredLeaf, argv=["--id.hex", "ab", "--id", "7"], env={}) == {"id": "7"}
 
     def test_registered_leaf_scalar_before_param_flag_stays_refined(
         self,
         loader: ConfargLoader,
-        leaf_registry: None,
     ) -> None:
         """A scalar typed before the parameter flags keeps the walk's answer (BUG-85).
 
         Guards the fix against over-firing.
         """
-        confarg.register_leaf_type(UUID, UUID)
         assert loader.merge(_RegisteredLeaf, argv=["--id", "7", "--id.hex", "ab"], env={}) == {
             "id": {"hex": "ab"},
         }
@@ -7106,7 +7099,6 @@ class TestWholeValueFlagContract:
     def test_tagged_registered_leaf_takes_the_whole_value(
         self,
         loader: ConfargLoader,
-        leaf_registry: None,
     ) -> None:
         """A tag naming a registered leaf's class opens it from the CLI too (BUG-39).
 
@@ -7117,7 +7109,6 @@ class TestWholeValueFlagContract:
         seen.  Env and files honoured the hatch all along; the CLI used to keep the blob as
         a string and build a leaf out of the JSON text.
         """
-        confarg.register_leaf_type(UUID, UUID)
         blob = f'{{"class": "uuid.UUID", "hex": "{_UUID_TEXT.replace("-", "")}"}}'
         cfg = loader.load(_RegisteredLeaf, argv=["--id", blob], env={})
         assert cfg.id == UUID(_UUID_TEXT)
@@ -7125,7 +7116,6 @@ class TestWholeValueFlagContract:
     def test_flat_tagged_registered_leaf_builds_on_every_frontend(
         self,
         loader: ConfargLoader,
-        leaf_registry: None,
     ) -> None:
         """The flat spelling of the tagged-leaf hatch crosses the adapter seam (BUG-56).
 
@@ -7135,7 +7125,6 @@ class TestWholeValueFlagContract:
         first, so no such flag was ever registered and the four frameworks rejected the
         tokens at parse time.
         """
-        confarg.register_leaf_type(UUID, UUID)
         hex_text = _UUID_TEXT.replace("-", "")
         cfg = loader.load(_RegisteredLeaf, argv=["--id.class", "uuid.UUID", "--id.hex", hex_text], env={})
         assert cfg.id == UUID(_UUID_TEXT)
@@ -7143,7 +7132,6 @@ class TestWholeValueFlagContract:
     def test_flat_tagged_optional_registered_leaf_builds_on_every_frontend(
         self,
         loader: ConfargLoader,
-        leaf_registry: None,
     ) -> None:
         """The flat tagged-leaf hatch reaches a registered leaf below ``| None`` too.
 
@@ -7151,7 +7139,6 @@ class TestWholeValueFlagContract:
         adapters asked whether the field's type, the union itself, is a registered leaf, so
         ``--id.hex`` was never registered and the four frameworks rejected it.
         """
-        confarg.register_leaf_type(UUID, UUID)
         hex_text = _UUID_TEXT.replace("-", "")
         cfg = loader.load(_OptionalRegisteredLeaf, argv=["--id.class", "uuid.UUID", "--id.hex", hex_text], env={})
         assert cfg.id == UUID(_UUID_TEXT)
@@ -7159,10 +7146,8 @@ class TestWholeValueFlagContract:
     def test_flat_tagged_registered_leaf_matches_env_channel(
         self,
         loader: ConfargLoader,
-        leaf_registry: None,
     ) -> None:
         """The flat CLI spelling merges exactly what ID__CLASS / ID__HEX merges (BUG-56)."""
-        confarg.register_leaf_type(UUID, UUID)
         hex_text = _UUID_TEXT.replace("-", "")
         cli = loader.merge(
             _RegisteredLeaf,
@@ -7177,9 +7162,8 @@ class TestWholeValueFlagContract:
         )
         assert cli == env == {"id": {"class": "uuid.UUID", "hex": hex_text}}
 
-    def test_flat_leaf_param_refines_whole_value(self, loader: ConfargLoader, leaf_registry: None) -> None:
+    def test_flat_leaf_param_refines_whole_value(self, loader: ConfargLoader) -> None:
         """A --id.<param> beside a tagged blob refines it, as a struct's sub-flag does (BUG-56)."""
-        confarg.register_leaf_type(UUID, UUID)
         hex_text = _UUID_TEXT.replace("-", "")
         blob = '{"class": "uuid.UUID"}'
         cfg = loader.load(_RegisteredLeaf, argv=["--id", blob, "--id.hex", hex_text], env={})
@@ -7188,7 +7172,6 @@ class TestWholeValueFlagContract:
     def test_flat_leaf_flags_register_only_when_typed(
         self,
         populating_loader: ConfargLoader,
-        leaf_registry: None,
     ) -> None:
         """Typed flat leaf flags register; an empty argv keeps them off --help (BUG-56).
 
@@ -7196,7 +7179,6 @@ class TestWholeValueFlagContract:
         ordinary spelling is its scalar, and one flag per ``__init__`` parameter would
         clutter ``--help`` for the escape hatch.
         """
-        confarg.register_leaf_type(UUID, UUID)
         hex_text = _UUID_TEXT.replace("-", "")
         typed = populating_loader.registered_flags(
             _RegisteredLeaf,
@@ -7208,16 +7190,14 @@ class TestWholeValueFlagContract:
         assert quiet is not None
         assert not {f for f in quiet if f.startswith("id.")}
 
-    def test_flat_leaf_unknown_param_refused(self, loader: ConfargLoader, leaf_registry: None) -> None:
+    def test_flat_leaf_unknown_param_refused(self, loader: ConfargLoader) -> None:
         """--id.bogus names no __init__ parameter, so every front-end refuses it (BUG-56)."""
-        confarg.register_leaf_type(UUID, UUID)
         with pytest.raises(_REJECTS_BARE_FLAG):
             loader.load(_RegisteredLeaf, argv=["--id.class", "uuid.UUID", "--id.bogus", "x"], env={})
 
     def test_flat_tagged_registered_leaf_root_builds_on_every_frontend(
         self,
         loader: ConfargLoader,
-        leaf_registry: None,
     ) -> None:
         """The flat tagged-leaf hatch reaches a registered leaf as the *root* target (BUG-71).
 
@@ -7228,7 +7208,6 @@ class TestWholeValueFlagContract:
         structurally, as the union holding the same leaf is), so the tag flag alone was
         missing.
         """
-        confarg.register_leaf_type(UUID, UUID)
         hex_text = _UUID_TEXT.replace("-", "")
         cfg = loader.load(UUID, argv=["--app.class", "uuid.UUID", "--app.hex", hex_text], env={}, cli_prefix="app")
         assert cfg == UUID(_UUID_TEXT)
@@ -7236,7 +7215,6 @@ class TestWholeValueFlagContract:
     def test_flat_tagged_registered_leaf_root_merges_like_the_file_channel(
         self,
         loader: ConfargLoader,
-        leaf_registry: None,
         tmp_yaml,
     ) -> None:
         """A root-leaf tag merges at the top level, as the file and env channels do (BUG-71, BUG-90).
@@ -7244,7 +7222,6 @@ class TestWholeValueFlagContract:
         The file channel's top-level ``class:`` key and the env channel's root-level
         ``CLASS`` variable merge to the same dict the tag flag produces.
         """
-        confarg.register_leaf_type(UUID, UUID)
         hex_text = _UUID_TEXT.replace("-", "")
         cli = loader.merge(UUID, argv=["--app.class", "uuid.UUID", "--app.hex", hex_text], env={}, cli_prefix="app")
         cfg = tmp_yaml(f'class: uuid.UUID\nhex: "{hex_text}"\n')
@@ -7260,14 +7237,12 @@ class TestWholeValueFlagContract:
     def test_flat_leaf_root_tag_registers_only_when_typed(
         self,
         populating_loader: ConfargLoader,
-        leaf_registry: None,
     ) -> None:
         """The root-leaf tag flag registers when typed; an empty argv keeps it off --help (BUG-71).
 
         Like a field's flat leaf flags, the tag is registered only when typed -- but the
         root's ``__init__`` parameters are static, so the quiet run still shows them.
         """
-        confarg.register_leaf_type(UUID, UUID)
         typed = populating_loader.registered_flags(UUID, argv=["--app.class", "uuid.UUID"], cli_prefix="app")
         assert typed is not None
         assert "app.class" in typed
@@ -7275,9 +7250,8 @@ class TestWholeValueFlagContract:
         assert quiet is not None
         assert "app.class" not in quiet
 
-    def test_flat_leaf_root_unknown_param_refused(self, loader: ConfargLoader, leaf_registry: None) -> None:
+    def test_flat_leaf_root_unknown_param_refused(self, loader: ConfargLoader) -> None:
         """--app.bogus names no __init__ parameter of the root leaf, so every front-end refuses it (BUG-71)."""
-        confarg.register_leaf_type(UUID, UUID)
         with pytest.raises(_REJECTS_BARE_FLAG):
             loader.load(UUID, argv=["--app.class", "uuid.UUID", "--app.bogus", "x"], env={}, cli_prefix="app")
 
@@ -8777,12 +8751,12 @@ class TestMissingFieldRemedyContract:
     def test_struct_root_refusing_empty_call_is_a_missing_root(self, loader: ConfargLoader) -> None:
         """A struct root no channel supplied is missing when its constructor refuses `{}` (BUG-184).
 
-        ``UUID`` defaults every ``__init__`` parameter and still refuses an empty call, so the
+        ``OneOf`` defaults every ``__init__`` parameter and still refuses an empty call, so the
         all-default shortcut guessed wrong: the root is reported as a scalar root nothing
         supplied, never as the constructor's own ``TypeError``.
         """
         with pytest.raises(MissingFieldError, match="No value provided for target type"):
-            loader.load(UUID, argv=[], env={})
+            loader.load(OneOf, argv=[], env={})
 
     @pytest.mark.parametrize(
         ("cli_prefix", "flag"),

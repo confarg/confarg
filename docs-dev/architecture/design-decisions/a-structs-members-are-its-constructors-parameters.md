@@ -58,7 +58,7 @@ Making both a leaf instead was rejected: a field-less dataclass would have lost 
 
 `_types._constructor_parameters` reads `__init__` when the class does not inherit it from `object`, else `__new__` when it does not inherit that one, else nothing.
 It is what `type.__call__` does: when `__init__` is `object`'s, the call's arguments are `__new__`'s, so `class P: def __new__(cls, x=0)` is a struct with `x`.
-`__new__` is read through the class's own signature, `inspect.signature(cls)`, since a builtin `__new__` reads as `(*args, **kwargs)` where the class's text signature names its parameters: `Fraction` is a struct of `numerator` and `denominator`, which it exposes as properties, so it dumps and reads back; `Decimal` one of `value` and `context`, which it does not hold, so `dump()` refuses it.
+`__new__` is read through the class's own signature, `inspect.signature(cls)`, since a builtin `__new__` reads as `(*args, **kwargs)` where the class's text signature names its parameters: `Fraction` is a struct of `numerator` and `denominator`, which it exposes as properties, so it dumps and reads back; `Decimal` would be one of `value` and `context`, which it does not hold, which is one reason it is a built-in leaf instead ([Decimal and UUID are built-in leaves](decimal-and-uuid-are-built-in-leaves.md#decimal-and-uuid-are-built-in-leaves)).
 A class whose signature does not read at all, as `datetime.date`'s, is not a struct: an unsupported leaf, which `register_leaf_type` makes a supported one.
 
 Rejected: `inspect.signature(cls)` throughout.

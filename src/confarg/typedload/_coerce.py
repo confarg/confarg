@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import enum
 import types
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -41,12 +43,45 @@ from confarg.exceptions import SymbolImportError, SymbolNotFoundError, TypeCoerc
 _TRUTHY = frozenset({"true", "1", "yes", "on"})
 _FALSY = frozenset({"false", "0", "no", "off"})
 _NONE_TOKENS = frozenset({"none", "null"})
+
+
+def _coerce_decimal(value: Any) -> Decimal:
+    """Read a ``Decimal`` from text, an int or a float, a float through its shortest ``repr``.
+
+    Raises:
+        TypeError: If *value* is a bool or no str, int or float.
+        ValueError: If the text spells no decimal.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/decimal-and-uuid-are-built-in-leaves.md#a-files-float-reads-as-it-is-written
+    """
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        raise TypeError(value)
+    try:
+        return Decimal(repr(value) if isinstance(value, float) else value)
+    except InvalidOperation:
+        raise ValueError(value) from None
+
+
+def _coerce_uuid(value: Any) -> UUID:
+    """Read a ``UUID`` from its text, in any spelling ``UUID()`` reads.
+
+    Raises:
+        TypeError: If *value* is no str.
+        ValueError: If the text spells no UUID.
+    """
+    if not isinstance(value, str):
+        raise TypeError(value)
+    return UUID(value)
+
+
 # register_leaf_type writes both registries at runtime, so nothing that reads them is ever
 # cached: not _is_registered_leaf, _is_struct_variant, _is_taggable_leaf, _is_eagerly_coercible
 # nor _type_kind (docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class).
-_LEAF_COERCIONS: dict[type, Any] = {Path: Path}
-#: A Path is written with forward slashes, which every OS reads, so a dump is portable.
-_LEAF_SERIALIZERS: dict[type, Any] = {Path: Path.as_posix}
+_LEAF_COERCIONS: dict[type, Any] = {Path: Path, Decimal: _coerce_decimal, UUID: _coerce_uuid}
+#: A Path is written with forward slashes, which every OS reads, so a dump is portable; a
+#: Decimal and a UUID as their str(), which their coercions read back.
+_LEAF_SERIALIZERS: dict[type, Any] = {Path: Path.as_posix, Decimal: str, UUID: str}
 
 
 def _coerce_bool(s: str) -> bool:

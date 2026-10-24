@@ -65,7 +65,7 @@ The other caller, `_types._subclass_field_type`, only reduces the list to a comm
 
 - Unknown keys are errors (typo detection); missing required fields are `MissingFieldError` naming the CLI flag to set, as the CLI spells it ([below](#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
 - A missing struct field whose type has all-default fields is built from `{}` — a registered leaf never is, however defaulted its `__init__` looks, so a missing one is a `MissingFieldError` rather than whatever its constructor raises for no arguments.
-- That shortcut is a **guess**, and an unregistered class can defeat it: `_all_have_defaults` reads `__init__` parameter defaults, which is not the same question as "does `tp()` work" (`UUID` defaults all seven of its parameters and still refuses an empty call).
+- That shortcut is a **guess**, and an unregistered class can defeat it: `_all_have_defaults` reads `__init__` parameter defaults, which is not the same question as "does `tp()` work" (a class taking one of two parameters, each defaulting to `None`, refuses an empty call, as an unregistered `UUID` did with seven).
   A `TypeError` out of the shortcut therefore means the guess was wrong, not that the caller gets a stdlib traceback out of `build()`: it is caught and the field is reported missing like any other.
   Catching it is preferred to asking the question up front — there is no way to ask short of calling the constructor, and a class whose `__init__` has side effects should be called once, not twice.
   Every missing field raises the one `MissingFieldError(path, type)`, so its type never changes the message ([invariants](../invariants.md#delegate-to-the-canonical-function)).

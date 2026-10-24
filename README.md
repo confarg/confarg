@@ -335,7 +335,7 @@ You may have noticed that the previous section introduced a `log_level` paramete
 Default values are honored, and you may have noticed that we did not provide any value to `log_level`.
 You can of course override a default value.
 
-As for leaf node data type, `confarg` coerces `Enum` and `Path` types as special exceptions to simple types.
+As for leaf node data type, `confarg` coerces `Enum`, `Path`, `Decimal` and `UUID` types as special exceptions to simple types.
 Other types are treated as classes and must follow the same rules.
 
 ### Expressions and variable interpolation

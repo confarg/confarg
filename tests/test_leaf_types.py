@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import enum
 import math
+from dataclasses import field, make_dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal, Optional
+from uuid import UUID
 
 if TYPE_CHECKING:
     from tests._loaders import ConfargLoader
@@ -563,6 +566,105 @@ class TestPath:
         WithPath = make_target("location", Path, default=Path())
         result = loader.load(WithPath, argv=[], env={"MYAPP_LOCATION": "/var/log"}, env_prefix="MYAPP_")
         assert result.location == Path("/var/log")
+
+
+# ---------------------------------------------------------------------------
+# Decimal
+# ---------------------------------------------------------------------------
+
+
+class TestDecimal:
+    """``Decimal`` is a leaf with no registration, read alike from every channel."""
+
+    def test_from_cli(self, loader: ConfargLoader) -> None:
+        """``--price 1.1`` is the decimal the text spells."""
+        WithPrice = make_target("price", Decimal, default=Decimal(0))
+        result = loader.load(WithPrice, argv=["--price", "1.1"], env={})
+        assert result.price == Decimal("1.1")
+        assert type(result.price) is Decimal
+
+    def test_from_env(self, loader: ConfargLoader) -> None:
+        """An environment variable reads as the CLI does."""
+        WithPrice = make_target("price", Decimal, default=Decimal(0))
+        result = loader.load(WithPrice, argv=[], env={"MYAPP_PRICE": "1.1"}, env_prefix="MYAPP_")
+        assert result.price == Decimal("1.1")
+
+    @pytest.mark.parametrize(
+        ("fixture", "content"),
+        [("tmp_yaml", "price: 1.1\n"), ("tmp_json", '{"price": 1.1}'), ("tmp_toml", "price = 1.1\n")],
+        ids=["yaml", "json", "toml"],
+    )
+    def test_a_file_float_reads_as_written(self, request, loader: ConfargLoader, fixture: str, content: str) -> None:
+        """A file's ``1.1`` is ``Decimal('1.1')``, as argv's is, not the float's binary expansion."""
+        path = request.getfixturevalue(fixture)(content)
+        WithPrice = make_target("price", Decimal, default=Decimal(0))
+        assert loader.load(WithPrice, argv=[], env={}, files=[path]).price == Decimal("1.1")
+
+    @pytest.mark.parametrize(
+        ("value", "expected"), [(5, Decimal(5)), ("1.10", Decimal("1.10")), (float("inf"), Decimal("Infinity"))]
+    )
+    def test_a_native_value_reads(self, value: object, expected: Decimal) -> None:
+        """An int, a str and a special float from a file are each the decimal they spell."""
+        WithPrice = make_target("price", Decimal, default=Decimal(0))
+        assert str(confarg.from_dict(WithPrice, {"price": value}).price) == str(expected)
+
+    def test_a_bool_is_refused(self) -> None:
+        """A real ``bool`` is no decimal, as it is no int or float."""
+        WithPrice = make_target("price", Decimal, default=Decimal(0))
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="Cannot coerce bool True to Decimal at 'price'"):
+            confarg.from_dict(WithPrice, {"price": True})
+
+    def test_a_malformed_token_is_a_coercion_error(self, loader: ConfargLoader) -> None:
+        """``--price abc`` is refused by confarg, not by a raw ``decimal.InvalidOperation``."""
+        WithPrice = make_target("price", Decimal, default=Decimal(0))
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="Cannot coerce str 'abc' to Decimal at 'price'"):
+            loader.load(WithPrice, argv=["--price", "abc"], env={})
+
+    def test_a_default_is_laid(self, loader: ConfargLoader) -> None:
+        """A ``Decimal`` default is the base layer, so a reference reads it."""
+        Prices = make_dataclass(
+            "Prices", [("base", Decimal, field(default=Decimal("1.5"))), ("total", Decimal, field(default=Decimal(0)))]
+        )
+        assert loader.load(Prices, argv=["--total", "${base * 2}"], env={}).total == Decimal("3.0")
+
+
+# ---------------------------------------------------------------------------
+# UUID
+# ---------------------------------------------------------------------------
+
+_UUID_TEXT = "12345678-1234-5678-1234-567812345678"
+
+
+class TestUUID:
+    """``UUID`` is a leaf with no registration, read from its text."""
+
+    def test_from_cli(self, loader: ConfargLoader) -> None:
+        """``--id <text>`` is the UUID the text spells."""
+        WithId = make_target("id", UUID, default=UUID(int=0))
+        assert loader.load(WithId, argv=["--id", _UUID_TEXT], env={}).id == UUID(_UUID_TEXT)
+
+    def test_from_env(self, loader: ConfargLoader) -> None:
+        """An environment variable reads as the CLI does."""
+        WithId = make_target("id", UUID, default=UUID(int=0))
+        assert loader.load(WithId, argv=[], env={"MYAPP_ID": _UUID_TEXT}, env_prefix="MYAPP_").id == UUID(_UUID_TEXT)
+
+    def test_from_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A file's text reads as the CLI's does."""
+        WithId = make_target("id", UUID, default=UUID(int=0))
+        path = tmp_yaml(f"id: {_UUID_TEXT}\n")
+        assert loader.load(WithId, argv=[], env={}, files=[path]).id == UUID(_UUID_TEXT)
+
+    def test_a_number_is_refused(self) -> None:
+        """A file's number is refused by confarg, not by a raw ``AttributeError`` from ``UUID()``."""
+        WithId = make_target("id", UUID, default=UUID(int=0))
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="Cannot coerce int 5 to UUID at 'id'"):
+            confarg.from_dict(WithId, {"id": 5})
+
+    def test_a_malformed_token_is_refused(self, loader: ConfargLoader) -> None:
+        """Text that spells no UUID is refused."""
+        WithId = make_target("id", UUID, default=UUID(int=0))
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="Cannot coerce str 'nope' to UUID at 'id'"):
+            loader.load(WithId, argv=["--id", "nope"], env={})
 
 
 # ---------------------------------------------------------------------------

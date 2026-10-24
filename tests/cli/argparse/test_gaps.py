@@ -23,9 +23,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-import pytest
-
-import confarg
 import confarg.cli._build as build_mod
 from confarg._tags import _tags_from_config
 from confarg._types import _resolve_struct
@@ -466,10 +463,8 @@ class _WithRegisteredLeaf:
 class TestBuildDynamicFlags:
     """One spec per typed flag, whichever of the argv collectors reaches it."""
 
-    @pytest.mark.usefixtures("leaf_registry")
     def test_a_leaf_tag_flag_is_specced_once(self) -> None:
         """``--uid.class`` on a registered leaf is the leaf collector's; the patch collector skips it."""
-        confarg.register_leaf_type(UUID, UUID)
         specs = build_dynamic_flags(_WithRegisteredLeaf, ["--uid.class", "uuid.UUID", "--uid.hex", "0" * 32])
         assert [s.name for s in specs] == ["uid.class", "uid.hex"]
 

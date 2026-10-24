@@ -454,7 +454,6 @@ class TestHelpReadsUnderEveryFormat:
     _ARGV: ClassVar[list[str]] = ["--uid.class", "uuid.UUID", "--uid.hex", "0" * 32]
 
     @pytest.mark.parametrize("help_format", ["markdown", "restructuredtext", "rich", "plaintext"])
-    @pytest.mark.usefixtures("leaf_registry")
     def test_every_confarg_help_string_survives(
         self,
         help_format: Literal["markdown", "restructuredtext", "rich", "plaintext"],
@@ -464,7 +463,6 @@ class TestHelpReadsUnderEveryFormat:
 
         from rich.console import Console  # noqa: PLC0415
 
-        confarg.register_leaf_type(UUID, UUID)
         app = cyclopts.App(help_format=help_format)
         populate_app(_WithHelpStrings, app, argv=self._ARGV)
         buf = StringIO()

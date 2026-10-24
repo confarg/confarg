@@ -24,6 +24,7 @@ from confarg._merge import (
 from confarg._types import _StrToken, _UnionSeqToken
 from confarg.exceptions import ConfargWarning, MissingFieldError, TypeCoercionError
 from confarg.typedload._construct import _construct_struct_dispatch, construct
+from tests.conftest import OneOf
 
 # Each scenario uses its own base class so __subclasses__() does not bleed across tests.
 
@@ -132,7 +133,7 @@ class TestUnionTypeRefStealing:
 class _NeedsIdent:
     """A required field typed as an unregistered class with an all-default __init__."""
 
-    ident: UUID
+    ident: OneOf
 
 
 @dataclass
@@ -153,7 +154,7 @@ class TestAllDefaultShortcut:
     """A missing field is built from {} only if that works; otherwise it stays missing.
 
     ``_all_have_defaults`` reads ``__init__`` parameter defaults, which is not the same
-    question as "does ``tp()`` work": ``UUID`` defaults all seven of its parameters and
+    question as "does ``tp()`` work": ``OneOf`` defaults both of its parameters and
     still refuses an empty call. The shortcut is a guess, so its ``TypeError`` means the
     guess was wrong, not that the user gets a stdlib traceback out of ``build()``.
     """
@@ -168,7 +169,7 @@ class TestAllDefaultShortcut:
         with pytest.raises(MissingFieldError) as exc_info:
             confarg.build(_NeedsIdent, {})
         msg = str(exc_info.value)
-        assert repr(UUID) in msg
+        assert repr(OneOf) in msg
         assert "--ident" in msg
 
     def test_buildable_struct_is_still_auto_created(self) -> None:
@@ -178,14 +179,14 @@ class TestAllDefaultShortcut:
     def test_constructor_refusing_empty_call_is_a_missing_root(self) -> None:
         """The root takes the field's rule: a root that refuses {} is a missing root (BUG-184)."""
         with pytest.raises(MissingFieldError, match="No value provided for target type"):
-            confarg.build(UUID, {})
+            confarg.build(OneOf, {})
 
     def test_message_matches_the_scalar_root_message(self) -> None:
         """The message is the one a scalar target nothing supplied gets, naming the target type."""
         with pytest.raises(MissingFieldError) as exc_info:
-            confarg.build(UUID, {})
+            confarg.build(OneOf, {})
         msg = str(exc_info.value)
-        assert repr(UUID) in msg
+        assert repr(OneOf) in msg
         assert "--json <json>" in msg
 
     def test_buildable_root_is_still_built_from_nothing(self) -> None:
@@ -220,8 +221,7 @@ class _Grade(enum.Enum):
 
 @pytest.fixture
 def _registered(leaf_registry: None) -> None:
-    """Register the leaf types the ordering tests rank, undone after the test."""
-    confarg.register_leaf_type(Decimal, Decimal)
+    """Register the leaf type the ordering tests rank beside the built-in Decimal, undone after the test."""
     confarg.register_leaf_type(_Word, _Word)
 
 

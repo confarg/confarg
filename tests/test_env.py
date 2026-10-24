@@ -748,10 +748,8 @@ class TestEnvRootTagSegment:
     def test_tag_on_registered_leaf_root(
         self,
         loader: ConfargLoader,
-        leaf_registry: None,
     ) -> None:
         """CLASS and HEX build a registered leaf as the root target, with no warning."""
-        confarg.register_leaf_type(UUID, UUID)
         hex_text = "12345678123456781234567812345678"
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -767,10 +765,8 @@ class TestEnvRootTagSegment:
     def test_tag_on_registered_leaf_root_merges_like_the_repro(
         self,
         loader: ConfargLoader,
-        leaf_registry: None,
     ) -> None:
         """The ticket's repro: env merges to the same dict the CLI channel gives (BUG-90)."""
-        confarg.register_leaf_type(UUID, UUID)
         hex_text = "12345678123456781234567812345678"
         merged = loader.merge(
             UUID,
