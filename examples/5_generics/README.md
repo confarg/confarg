@@ -61,3 +61,72 @@ This is consistent with the fact that a `Final` value may not have a default val
 
 > [!TIP]
 > A truly predefined and immutable value should probably not be part of the configuration.
+
+## Your own generic classes
+
+A class of your own may be generic too.
+Each field reads its type with the class's type parameters bound, as a type checker reads it:
+
+<!-- snippet: generic_class.py#Box -->
+```python
+@dataclass
+class Box[T]:
+    """A box holding one item of any type."""
+
+    item: T
+```
+
+<!-- snippet: generic_class.py#Config -->
+```python
+@dataclass
+class Config:
+    """Configuration with two boxes, each holding its own type."""
+
+    size: Box[int]
+    label: Box[str]
+```
+
+`size.item` is an `int` and `label.item` a `str`, on the command line, in an environment variable and in a configuration file alike:
+
+```console
+$ uv run generic_class.py --size.item 3 --label.item 3
+Config(size=Box(item=3), label=Box(item='3'))
+$ uv run generic_class.py --size.item x --label.item 3  # Error: a Box[int] holds an int
+...
+```
+
+<!--
+```console
+$ uv run generic_class_argparse.py --size.item 3 --label.item 3
+Config(size=Box(item=3), label=Box(item='3'))
+$ uv run generic_class_argparse.py --size.item x --label.item 3  # Error: a Box[int] holds an int
+...
+```
+-->
+<!--
+```console
+$ uv run generic_class_click.py --size.item 3 --label.item 3
+Config(size=Box(item=3), label=Box(item='3'))
+$ uv run generic_class_click.py --size.item x --label.item 3  # Error: a Box[int] holds an int
+...
+```
+-->
+<!--
+```console
+$ uv run generic_class_cyclopts.py --size.item 3 --label.item 3
+Config(size=Box(item=3), label=Box(item='3'))
+$ uv run generic_class_cyclopts.py --size.item x --label.item 3  # Error: a Box[int] holds an int
+...
+```
+-->
+<!--
+```console
+$ uv run generic_class_typer.py --size.item 3 --label.item 3
+Config(size=Box(item=3), label=Box(item='3'))
+$ uv run generic_class_typer.py --size.item x --label.item 3  # Error: a Box[int] holds an int
+...
+```
+-->
+
+A generic class annotated without its arguments, a bare `Box`, reads `T` as a type checker does: its default where it declares one (`class Box[T = int]`, Python 3.13 and later), else `Any`, which keeps a value as it is written.
+A subclass that fixes the argument, `class IntBox(Box[int])`, reads its `item` as an `int` wherever it is used.

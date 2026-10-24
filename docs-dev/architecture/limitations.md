@@ -113,6 +113,8 @@ A field default is the layer below every source only where the class declares it
 - `--help` lists a subclass's flags only once something has imported it: naming the class is what makes it visible, and nothing names it on a bare `--help` ([design decisions](design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration)).
   Import the plugin module, or name the class earlier on the same command line.
 - A subclass-only field spelled exactly like `union_tag` turns subclass dispatch structural: the tag's class-path route is unreachable at that position, so the subclass is selected by its fields, several matches are an error, and a subclass needing more fields than provided is refused — a build-time `ConfargWarning` names the substitution when the spelling is used ([CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)).
+- A union holding one generic class parameterized apiece (`Box[int] | Box[str]`) tells its variants apart by the value alone: untagged, a value both take (`--u.item 3`) is ambiguous, and a tag naming the class builds the first binding that takes the value, in declaration order, so `Box[str]` cannot be given the token `3` on argv ([types](types/introspection.md#a-tag-binds-the-class-it-names-through-its-bases)).
+- A tag names a class, not its arguments: under `Any` or a bare generic field, a tagged generic class reads its parameters' defaults, else `Any` ([types](types/introspection.md#a-tag-binds-the-class-it-names-through-its-bases)).
 
 ## Callables and serialization
 

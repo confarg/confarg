@@ -34,7 +34,6 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-6 — `Annotated` field metadata read by all three channels](FEAT-6-annotated-field-metadata.md) | minor |  | L | medium | behavior |
 | [FEAT-9 — A `confarg check` command to validate a configuration against a target](FEAT-9-confarg-check-command.md) | minor |  | L | low | behavior |
 | [FEAT-12 — Carefully scoped expression expansion](FEAT-12-scoped-expression-expansion.md) | minor |  | L | high | behavior |
-| [FEAT-13 — Struct types that are generic](FEAT-13-generic-struct-types.md) | minor |  | L | high | behavior |
 | [FEAT-19 — App-declared defaults, mounted at the type that declares them](FEAT-19-app-declared-defaults.md) | minor |  | L | medium | behavior |
 | [FEAT-21 — Expression functions supplied by the application](FEAT-21-app-supplied-expression-functions.md) | minor |  | L | high | behavior |
 | [FEAT-22 — The process environment as an expression namespace](FEAT-22-environment-namespace-in-expressions.md) | minor |  | L | high | behavior |

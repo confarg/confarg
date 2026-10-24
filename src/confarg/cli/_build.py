@@ -45,6 +45,8 @@ from confarg._merge import (
 from confarg._tags import _partial_config_from_argv, import_tagged_classes
 from confarg._types import (
     _base_declares_path,
+    _class_of,
+    _direct_struct_subclasses,
     _elem_type,
     _fixed_seq_types,
     _init_defaults,
@@ -1095,13 +1097,13 @@ def _collect_struct_specs(  # noqa: C901, PLR0913  # a root call starts its own 
 
     # Handle inheritance-based dispatch: if this struct has subclasses, register
     # a --<union_tag> selector and the union of all subclass fields.
-    direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
+    direct_subs = _direct_struct_subclasses(tp)
     if direct_subs:
         all_subs = _struct_subclasses(tp)  # recursive, for tab-completion paths
         tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
         by_name: dict[str, FlagSpec] = {s.name: s for s in result}
         if tag_name not in by_name and not _union_tag_shadowed(tp, union_tag):
-            paths = [dotted_name(v) for v in all_subs]
+            paths = [dotted_name(_class_of(v)) for v in all_subs]
             # An empty completer would suppress the shell's own suggestions, so leave it unset.
             tag_spec = FlagSpec(
                 name=tag_name,

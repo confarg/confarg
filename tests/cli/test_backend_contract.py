@@ -55,6 +55,7 @@ from confarg.exceptions import (
     UnknownArgumentError,
     UnsafeExpressionError,
 )
+from tests import _generics as _g
 from tests._loaders import ArgparseLoader, ClickLoader, CycloptsLoader, TyperLoader, VanillaLoader
 from tests.conftest import AppConfig, CacheConfig, DbConfig, OneOf, WithCollections, make_target
 
@@ -10487,3 +10488,50 @@ class TestCopiesContract:
         """``populate_*`` reads ``files=`` before the merge reads it again: 60 alias copies each, not 120."""
         path = tmp_yaml("d:\n  l0: &l0 [x, x, x, x, x, x, x, x, x, x]\n  refs: [" + ", ".join(["*l0"] * 6) + "]\n")
         assert len(populating_loader.load(_Deep, argv=[], env={}, files=[path]).d["refs"]) == 6
+
+
+class TestGenericStructContract:
+    """A parameterized generic class is a struct, its type parameters bound, on every front-end (FEAT-13)."""
+
+    def test_a_parameter_reads_as_the_argument_the_field_binds(self, loader: ConfargLoader) -> None:
+        """``b: Box[int]`` types ``--b.item`` as an int, and refuses a word."""
+        assert loader.load(_g.Holder, argv=["--b.item", "3"], env={}).b == _g.Box(item=3)
+        with pytest.raises((TypeCoercionError, SystemExit)):
+            loader.load(_g.Holder, argv=["--b.item", "x"], env={})
+
+    def test_a_bare_generic_reads_its_parameter_as_any(self, loader: ConfargLoader) -> None:
+        """``Box`` with no argument reads ``T`` as a type checker does: ``Any``, the word kept as written."""
+        result = loader.load(_g.Holder, argv=["--b.item", "3", "--bare.item", "x"], env={})
+        assert result.bare == _g.Box(item="x")
+
+    def test_a_subclass_binds_its_base(self, loader: ConfargLoader) -> None:
+        """``class IntCell(Cell[int])`` reads the ``item: T`` it inherits as an int."""
+        result = loader.load(_g.Holder, argv=["--b.item", "3", "--ic.item", "5"], env={})
+        assert result.ic == _g.IntCell(item=5)
+
+    def test_parameters_reach_nested_and_container_members(self, loader: ConfargLoader) -> None:
+        """``Box[Box[int]]`` and ``Pair[str, int]``'s ``dict[K, V]`` are typed through the binding."""
+        argv = ["--b.item", "3", "--nested.item.item", "4", "--pair.key", "k", "--pair.lookup.a", "5"]
+        result = loader.load(_g.Holder, argv=argv, env={})
+        assert result.nested == _g.Box(item=_g.Box(item=4))
+        assert result.pair == _g.Pair(key="k", lookup={"a": 5})
+
+    def test_a_tag_binds_the_class_it_names_through_its_bases(self, loader: ConfargLoader) -> None:
+        """Under ``Tagged[int]``, a tag naming ``Labeled`` builds ``Labeled[int]``: its ``item`` is an int."""
+        tag = ["--b.item", "3", "--tagged.class", f"{_g.__name__}.Labeled"]
+        result = loader.load(_g.Holder, argv=[*tag, "--tagged.item", "4", "--tagged.label", "hi"], env={})
+        assert result.tagged == _g.Labeled(item=4, label="hi")
+        with pytest.raises((TypeCoercionError, SystemExit)):
+            loader.load(_g.Holder, argv=[*tag, "--tagged.item", "x"], env={})
+
+    def test_the_environment_types_a_parameter_alike(self, loader: ConfargLoader) -> None:
+        """A variable below a generic field is coerced as its flag is."""
+        result = loader.load(_g.Holder, argv=[], env={"APP_B__ITEM": "3", "APP_IC__ITEM": "5"}, env_prefix="APP_")
+        assert (result.b, result.ic) == (_g.Box(item=3), _g.IntCell(item=5))
+
+    def test_a_generic_root(self, loader: ConfargLoader) -> None:
+        """The target itself may be a parameterized generic."""
+        assert loader.load(_g.Pair[str, int], argv=["--key", "k", "--lookup.a", "1"], env={}) == _g.Pair(
+            key="k",
+            lookup={"a": 1},
+        )

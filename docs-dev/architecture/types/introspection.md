@@ -11,6 +11,7 @@ All type knowledge is derived at runtime from ordinary annotations (`_types.py`)
   Its members are its constructor's parameters, a dataclass's too ([design decisions](../design-decisions/a-structs-members-are-its-constructors-parameters.md#a-structs-members-are-its-constructors-parameters)).
   Builtins, a builtin's subclass, a bare abstract collection, `Enum`, `PurePath` and tuple subclasses are never plain classes.
   `*args` becomes `list[T]`, `**kwargs` becomes `dict[str, T]`, both with empty defaults (never required).
+- A parameterized generic class (`Box[int]`) is a struct, a namedtuple or a builtin's subclass as its class is, its members read with its type parameters bound ([a generic class reads its parameters bound](#a-generic-class-reads-its-parameters-bound)).
 - Since Python 3.11 `typing.Any` is a subclassable class and would pass the plain-class test; `_is_plain_class` guards it explicitly, and `_type_kind` names it `ANY` before any shape test runs.
 - `_unwrap_optional` returns Python `None` (not `NoneType`) to mean "multi-variant union"; callers must handle that sentinel.
 
@@ -105,3 +106,38 @@ Precedents: the standard library's `dataclasses` computes a class's fields once 
 A cache stored on the class lives exactly as long as the class, which is what the weak key reproduces without writing to user classes.
 The standard library caches by class weakly as well: `functools.singledispatch` keeps its dispatch cache in a `WeakKeyDictionary`, and `abc` keeps its subclass caches in `WeakSet`s.
 Each of these caches a structure that is fixed once the class exists, never one that a registry or a later subclass can change.
+
+## A generic class reads its parameters bound
+
+A struct's members are read with the type parameters of the class declaring each one bound as the annotation binds them, as a type checker reads them (FEAT-13): `b: Box[int]` types `Box`'s `item: T` as an `int` on every channel, in flags and `--help`, in the default layer, for construction, for the reading an expression takes and for `dump()`.
+
+- `_ancestor_args` gives the arguments each class in the MRO reads with: the annotation's for its own class, and for a base, the ones a class subscripts it with in its bases, its own parameters substituted (`class IntCell(Cell[int])`, `class Listed[T](Tagged[list[T]])`).
+  The first subscript the MRO meets wins.
+- `_bind_hints` substitutes them into each annotation by the class that declares it: the first in the MRO annotating a dataclass field, the class defining a handwritten `__init__`.
+  A TypeVar one class reuses for a parameter of its own (`class LegacyWrap(LegacyBase[list[T]])` with the same legacy `T`) is bound apart in each.
+- A method names its class's PEP 695 parameters in a postponed annotation (`from __future__ import annotations`) that `get_type_hints` resolves in no namespace it reads, on 3.12 to 3.14 alike, so `_type_hints` hands it the defining class's `__type_params__`; a handwritten `__init__(self, item: T)` read `T` as `Any` before.
+- `_substitute` lets Python's own subscription do it (`list[T][int]`), so a TypeVarTuple splices its arguments and a ParamSpec takes its list.
+- A parameter nothing binds — a bare `Box`, a base a class does not subscript — reads its PEP 696 default where it declares one, else `Any`: what mypy, pyright and ty read it as (`_param_default`).
+  A bound is not read, as none of them reads it: a `T: Locator` reads `Any`, and its words stay as written.
+  An unbound TypeVarTuple reads as `tuple[Any, ...]`.
+- `_builtin_args` binds a builtin's subclass with the same defaults, so `class Scores[V = int](dict[str, V])` reads as `dict[str, int]` bare.
+
+`_class_of` gives the class a parameterized generic builds, which every class-level read goes through: the alias forwards no `__init__`, `__mro__`, `__subclasses__` or `__dataclass_fields__`.
+Construction calls the class, not the alias, which would set `__orig_class__` on the instance.
+Every per-class cache keys on the alias as on a class: `typing` caches `Box[int]`, and it is weakly referenced.
+
+The class alone does not tell `Box[int]` from `Box[str]`, so where a union holds both, `dump()` asks what the instance holds as well (`_serialize._holds_members`).
+
+Before, a parameterized generic was no struct: `Box[int]` was an `Unsupported leaf type` on every channel, and a bare `Box` held its `T` as an unsupported leaf.
+
+## A tag binds the class it names through its bases
+
+A tag names a class, never its arguments: `class: Box[int]` is no dotted path, as Hydra's `_target_` and jsonargparse's `class_path` take none either.
+Under a parameterized field the declared type binds the class the tag names: `_tagged_struct` unifies what the class's bases make of the field's class with the field's arguments, as a type checker infers `Labeled(item=...)` where a `Tagged[int]` is expected, so `class: Labeled` builds `Labeled[int]` and a tag never loosens the field's type.
+A subclass whose bases fix another argument is none of the field's subclasses there: `Listed[T](Tagged[list[T]])` and `IntTagged(Tagged[int])` are refused under `Tagged[str]`, the refusal naming `Tagged[str]`, left out of its subclass flags and of the scan for its subclass-only fields.
+A parameter its bases do not reach reads its default.
+
+Every site deciding which struct a tag builds asks it: construction (`_construct_by_class_path`, `_construct_union_by_tag`), the default layer, the type walk's `_naming.named_child` and `named_variant`, `_struct_subclasses` and the dump of a subclass.
+
+A union holding one generic parameterized apiece (`Box[int] | Box[str]`) takes a tag naming the class once per binding: construction builds the first that takes the value, in declaration order (`_construct_bound_tag`), the type walk types the keys by the first, and the default layer lays nothing below, since no binding is certain.
+Untagged, the variants are told apart by the value as any two struct variants are, and a value both take is ambiguous ([limitations](../limitations.md#subclasses)).

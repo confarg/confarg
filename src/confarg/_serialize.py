@@ -25,9 +25,11 @@ from confarg._import import dotted_name, imports_back
 from confarg._merge import ListOp, MergeDict, _DeleteSentinel
 from confarg._types import (
     TagPolicy,
+    _class_of,
     _dict_kv,
     _elem_type,
     _fixed_seq_types,
+    _generic_origin,
     _init_params,
     _is_callable,
     _is_dc,
@@ -43,6 +45,7 @@ from confarg._types import (
     _resolve_type,
     _StrToken,
     _struct_state_fields,
+    _tagged_struct,
     _tuple_types,
     _union_args_no_none,
 )
@@ -470,8 +473,9 @@ def _serialize_struct(
 ) -> dict[str, Any]:
     """Serialize a dataclass or plain-class instance to a dict."""
     actual_tp = type(instance)
-    if actual_tp is not tp and _is_struct(actual_tp) and issubclass(actual_tp, tp):
-        out = _serialize_struct(actual_tp, instance, path, opts)
+    bound = _tagged_struct(actual_tp, tp) if actual_tp is not _class_of(tp) and _is_struct(actual_tp) else None
+    if bound is not None:
+        out = _serialize_struct(bound, instance, path, opts)
         out[opts.union_tag] = _class_path(actual_tp)
         return out
     flds = _struct_state_fields(tp)
@@ -563,7 +567,7 @@ def _serialize_union(
 
     if _is_struct_variant(variant_tp):
         if isinstance(serialized, dict) and (opts.tag_policy == "always" or _needs_tag(tp, serialized, opts.union_tag)):
-            serialized[opts.union_tag] = _class_path(variant_tp)
+            serialized[opts.union_tag] = _class_path(_class_of(variant_tp))
         return serialized
 
     # With one variant beside None, no other variant can take the dump: only a token selects
@@ -965,7 +969,7 @@ def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one retu
     """
     match _type_kind(tp):
         case _TypeKind.NAMEDTUPLE | _TypeKind.STRUCT:
-            return isinstance(instance, tp)
+            return isinstance(instance, _class_of(tp)) and (_generic_origin(tp) is None or _holds_members(tp, instance))
         case _TypeKind.LIST:
             return isinstance(instance, list)
         case _TypeKind.SET:
@@ -988,6 +992,22 @@ def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one retu
             origin = _origin(tp)
             checkable = origin if isinstance(origin, type) else tp
             return isinstance(checkable, type) and isinstance(instance, checkable)
+
+
+def _holds_members(tp: Any, instance: Any) -> bool:
+    """True if every member of the parameterized struct *tp* that *instance* holds is a value of its bound type.
+
+    The class alone does not tell ``Box[int]`` from ``Box[str]``: what it holds does.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-generic-class-reads-its-parameters-bound
+    """
+    members = _namedtuple_fields(tp) if _type_kind(tp) is _TypeKind.NAMEDTUPLE else _struct_state_fields(tp)
+    missing = object()
+    return all(
+        (value := getattr(instance, name, missing)) is missing or _holds(_resolve_type(ft), value)
+        for name, ft in members.items()
+    )
 
 
 def _holds_widened(tp: Any, instance: Any) -> bool:

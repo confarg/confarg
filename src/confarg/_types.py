@@ -32,8 +32,11 @@ from typing import (
     Final,
     Literal,
     NewType,
+    ParamSpec,
     TypeVar,
+    TypeVarTuple,
     Union,
+    Unpack,
     get_args,
     get_origin,
     get_type_hints,
@@ -161,7 +164,7 @@ def _is_dc(tp: Any) -> bool:
     Returns:
         True if tp is a dataclass type.
     """
-    tp = _resolve_type(tp)
+    tp = _class_of(_resolve_type(tp))
     return dataclasses.is_dataclass(tp) and isinstance(tp, type)
 
 
@@ -185,8 +188,10 @@ def _dc_fields(tp: Any) -> Mapping[str, Any]:
     Dev Notes:
         docs-dev/architecture/design-decisions/the-object-dump-writes-state.md#a-dataclass-dumps-the-fields-it-stores
     """
-    hints = get_type_hints(tp)
-    return types.MappingProxyType({f.name: _resolve_type(hints[f.name]) for f in dataclasses.fields(tp)})
+    cls = _class_of(tp)
+    hints = get_type_hints(cls)
+    stored = _bind_hints(tp, {f.name: hints[f.name] for f in dataclasses.fields(cls)})
+    return types.MappingProxyType({name: _resolve_type(h) for name, h in stored.items()})
 
 
 def _dataclass_factory_default() -> Any:
@@ -210,10 +215,11 @@ def _dc_member_hints(tp: Any, names: Iterable[str], *, include_extras: bool = Fa
     Raises:
         NameError: If an annotation of the class does not resolve, as for :func:`_dc_fields`.
     """
-    declared = tp.__dataclass_fields__
-    own = get_type_hints(tp, include_extras=include_extras)
+    cls = _class_of(tp)
+    declared = cls.__dataclass_fields__
+    own = get_type_hints(cls, include_extras=include_extras)
     hints = {name: own[name] for name in names if name in declared and name in own}
-    return {name: h.type if isinstance(h, dataclasses.InitVar) else h for name, h in hints.items()}
+    return _bind_hints(tp, {name: h.type if isinstance(h, dataclasses.InitVar) else h for name, h in hints.items()})
 
 
 def _is_none_type(tp: Any) -> bool:
@@ -369,7 +375,7 @@ def _builtin_args(tp: Any) -> tuple[Any, ...]:
     A builtin or an abstract collection gives its own; a subclass gives its arguments
     (``OrderedDict[str, int]``), else the ones its parameterized base declares
     (``class Scores(dict[str, int])``), its own arguments substituted for the base's
-    TypeVars and an unbound TypeVar read as ``Any``. A ``Counter`` counts in ints, as
+    TypeVars and an unbound TypeVar read as its default, else ``Any``. A ``Counter`` counts in ints, as
     typeshed declares it: ``Counter[K]`` is ``dict[K, int]``.
 
     Dev Notes:
@@ -398,9 +404,234 @@ def _subclass_args(cls: type, args: tuple[Any, ...], builtin: type) -> tuple[Any
         parent = next(b for b in cls.__bases__ if issubclass(b, builtin))
         return args if parent is builtin else _subclass_args(parent, args, builtin)
     if params := getattr(base, "__parameters__", ()):
-        base = base[tuple(bound.get(p, Any) if isinstance(p, TypeVar) else p for p in params)]
+        base = base[tuple(bound.get(p, _param_default(p)) if isinstance(p, TypeVar) else p for p in params)]
     origin = get_origin(base) or base
     return get_args(base) if origin is builtin else _subclass_args(origin, get_args(base), builtin)
+
+
+# --- Generic classes: a parameterized class's members, its type parameters bound -------------
+
+
+def _type_params(cls: Any) -> tuple[Any, ...]:
+    """Return the type parameters the class *cls* declares, () for one that declares none."""
+    params = getattr(cls, "__parameters__", ()) if isinstance(cls, type) else ()
+    return params if isinstance(params, tuple) else ()
+
+
+def _generic_origin(tp: Any) -> type | None:
+    """Return the class the parameterized generic *tp* subscripts, ``Box`` for ``Box[int]``; None for any other type.
+
+    Only a class declaring type parameters of its own: ``list[int]``, ``Sequence[int]`` and
+    ``type[int]`` subscript none.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-generic-class-reads-its-parameters-bound
+    """
+    origin = get_origin(tp)
+    return origin if _type_params(origin) else None
+
+
+def _class_of(tp: Any) -> Any:
+    """Return the class *tp* builds: the class a parameterized generic subscripts, else *tp* itself."""
+    return _generic_origin(tp) or tp
+
+
+def _param_default(param: Any) -> Any:
+    """Return what the type parameter *param* reads as when nothing binds it, as a type checker reads a bare generic.
+
+    Its PEP 696 default where it declares one, else ``Any``: the arguments ``tuple[Any, ...]``
+    unpacks to for a TypeVarTuple, ``...`` for a ParamSpec. A TypeVarTuple's is a tuple of
+    arguments, spliced where it is substituted.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-generic-class-reads-its-parameters-bound
+    """
+    if getattr(param, "has_default", lambda: False)():
+        default = param.__default__
+        return (default,) if isinstance(param, TypeVarTuple) else default
+    if isinstance(param, TypeVarTuple):
+        return (Unpack[tuple[Any, ...]],)
+    return ... if isinstance(param, ParamSpec) else Any
+
+
+def _param_binding(params: tuple[Any, ...], args: tuple[Any, ...]) -> dict[Any, Any]:
+    """Bind each of *params* to its argument in *args*, positionally, or to its default when *args* gives none.
+
+    A TypeVarTuple takes, as a tuple, the arguments the parameters around it leave.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-generic-class-reads-its-parameters-bound
+    """
+    if not args:
+        return {p: _param_default(p) for p in params}
+    star = next((i for i, p in enumerate(params) if isinstance(p, TypeVarTuple)), None)
+    if star is None:
+        return {p: args[i] if i < len(args) else _param_default(p) for i, p in enumerate(params)}
+    after = len(params) - star - 1
+    binding = dict(zip(params[:star], args, strict=False))
+    binding[params[star]] = tuple(args[star : len(args) - after])
+    binding.update(zip(params[star + 1 :], args[len(args) - after :], strict=False))
+    return binding
+
+
+def _substitute(tp: Any, binding: Mapping[Any, Any]) -> Any:
+    """Return the annotation *tp* with each type parameter *binding* names replaced by what it binds.
+
+    Python's own substitution does it (``list[T][int]``), so a TypeVarTuple splices its
+    arguments and a ParamSpec takes its list; ``tuple[*Ts]`` with *Ts* unbound reads as
+    ``tuple[Any, ...]``. A class is never subscripted: a bare generic is read as its defaults
+    where it is used.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-generic-class-reads-its-parameters-bound
+    """
+    if not binding:
+        return tp
+    if isinstance(tp, (TypeVar, ParamSpec)):
+        return binding.get(tp, tp)
+    params = getattr(tp, "__parameters__", ())
+    if isinstance(tp, type) or not isinstance(params, tuple) or not any(p in binding for p in params):
+        return tp
+    args: list[Any] = []
+    for p in params:
+        value = binding.get(p, p)
+        if isinstance(p, TypeVarTuple):
+            args.extend(value if isinstance(value, tuple) else (Unpack[p],))
+        else:
+            args.append(list(value) if isinstance(p, ParamSpec) and isinstance(value, tuple) else value)
+    return _unpacked_whole(tp[tuple(args)])
+
+
+def _unpacked_whole(tp: Any) -> Any:
+    """Return ``tuple[X, ...]`` for ``tuple[*tuple[X, ...]]``, which a TypeVarTuple default leaves; else *tp*.
+
+    The unpacked tuple is spelled ``Unpack[tuple[X, ...]]`` or ``*tuple[X, ...]``.
+    """
+    args = get_args(tp)
+    if get_origin(tp) is not tuple or len(args) != 1:
+        return tp
+    if get_origin(args[0]) is Unpack:
+        return get_args(args[0])[0]
+    return types.GenericAlias(tuple, get_args(args[0])) if getattr(args[0], "__unpacked__", False) else tp
+
+
+@_per_class_cache
+def _ancestor_args(tp: Any) -> Mapping[type, tuple[Any, ...]]:
+    """Return the type arguments each class in the MRO of *tp*, a class or a parameterized generic, reads with.
+
+    *tp*'s own class takes *tp*'s arguments; a base a class subscripts in its bases
+    (``class IntBox(Box[int])``) takes those, the class's own parameters substituted; any
+    other class none, so it reads its defaults (:func:`_param_binding`). The first subscript
+    the MRO meets wins, as for a type checker.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-generic-class-reads-its-parameters-bound
+    """
+    cls = _class_of(tp)
+    out: dict[type, tuple[Any, ...]] = {cls: () if isinstance(tp, type) else get_args(tp)}
+    for c in cls.__mro__:
+        binding = _param_binding(_type_params(c), out.setdefault(c, ()))
+        for base in c.__dict__.get("__orig_bases__", ()):
+            origin = get_origin(base)
+            if isinstance(origin, type) and origin not in out:
+                out[origin] = tuple(_substitute(a, binding) for a in get_args(base))
+    return types.MappingProxyType(out)
+
+
+def _class_binding(tp: Any, cls: type) -> dict[Any, Any]:
+    """Return how *tp*, a class or a parameterized generic, binds the type parameters of *cls*, a class in its MRO."""
+    return _param_binding(_type_params(cls), _ancestor_args(tp).get(cls, ()))
+
+
+def _is_generic_somewhere(tp: Any) -> bool:
+    """True if a class in the MRO of *tp*'s class declares type parameters, so a member may name one."""
+    cls = _class_of(tp)
+    return isinstance(cls, type) and any(_type_params(c) for c in cls.__mro__)
+
+
+def _bind_hints(tp: Any, hints: Mapping[str, Any], *, owner: type | None = None) -> dict[str, Any]:
+    """Return *hints*, annotations of *tp*'s class, each declaring class's type parameters bound as *tp* binds them.
+
+    The declaring class is *owner* for every hint when given (the class defining a
+    constructor), else the first class in the MRO annotating the name, as for a dataclass
+    field.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-generic-class-reads-its-parameters-bound
+    """
+    if not _is_generic_somewhere(tp):
+        return dict(hints)
+    cls = _class_of(tp)
+    return {
+        name: _substitute(h, _class_binding(tp, owner or _annotating_class(cls, name))) for name, h in hints.items()
+    }
+
+
+def _annotating_class(cls: type, name: str) -> type:
+    """Return the first class in *cls*'s MRO that annotates *name*, *cls* when none does."""
+    return next((c for c in cls.__mro__ if name in inspect.get_annotations(c)), cls)
+
+
+def _constructor_owner(cls: type, constructor: Any) -> type | None:
+    """Return the class in *cls*'s MRO whose namespace defines *constructor*, None when none does."""
+    return next(
+        (c for c in cls.__mro__ if any(c.__dict__.get(n) is constructor for n in ("__init__", "__new__"))),
+        None,
+    )
+
+
+def _tagged_struct(cls: Any, declared: Any) -> Any:
+    """Return the struct a class tag naming *cls* builds where *declared* is expected, None when it builds none there.
+
+    *cls* must be a subclass of the class *declared* builds, and one *declared*'s arguments
+    can bind. Its type parameters are bound through its bases to those arguments, as a type
+    checker infers ``Labeled(...)`` where a ``Box[int]`` is expected: ``Labeled[int]``; one its
+    bases do not reach reads its default. A class whose bases fix another argument
+    (``class IntBox(Box[int])`` where a ``Box[str]`` is expected) builds none.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-tag-binds-the-class-it-names-through-its-bases
+    """
+    target = _class_of(_resolve_type(declared))
+    if not (isinstance(cls, type) and isinstance(target, type) and issubclass(cls, target)):
+        return None
+    if target is declared:
+        return cls
+    params = _type_params(cls)
+    own = cls[tuple(Unpack[p] if isinstance(p, TypeVarTuple) else p for p in params)] if params else cls
+    solved: dict[Any, Any] = {}
+    pairs = zip(_ancestor_args(own).get(target, ()), _ancestor_args(declared)[target], strict=False)
+    if not all(_unify(pattern, actual, solved) for pattern, actual in pairs):
+        return None
+    if not params:
+        return cls
+    bound = _param_binding(params, ())
+    bound.update((p, solved[p]) for p in params if p in solved)
+    args: list[Any] = []
+    for p in params:
+        args.extend(bound[p]) if isinstance(p, TypeVarTuple) else args.append(bound[p])
+    return cls[tuple(args)]
+
+
+def _unify(pattern: Any, actual: Any, solved: dict[Any, Any]) -> bool:
+    """Record in *solved* what each TypeVar in *pattern* stands for, *actual* being *pattern* with them bound.
+
+    Return whether *actual* can be *pattern* bound: ``list[T]`` can be ``list[int]``, never
+    ``int``. ``Any`` on either side, and a parameter no TypeVar matches, can be anything.
+    """
+    if pattern is Any or actual is Any or isinstance(pattern, (TypeVarTuple, ParamSpec)):
+        return True
+    if isinstance(pattern, TypeVar):
+        return solved.setdefault(pattern, actual) == actual
+    origin, args = get_origin(pattern), get_args(pattern)
+    if origin is None or not args:
+        return pattern == actual
+    actual_args = get_args(actual)
+    return (
+        origin is get_origin(actual)
+        and len(args) == len(actual_args)
+        and all(_unify(p, a, solved) for p, a in zip(args, actual_args, strict=True))
+    )
 
 
 def _scalar_read_as(tp: Any) -> type | None:
@@ -471,7 +702,8 @@ def _is_tuple(tp: Any) -> bool:
 
 
 def _is_namedtuple(tp: Any) -> bool:
-    """True if tp is a namedtuple class (collections.namedtuple or typing.NamedTuple)."""
+    """True if tp is a namedtuple class (collections.namedtuple or typing.NamedTuple), or a parameterized one."""
+    tp = _class_of(tp)
     return isinstance(tp, type) and issubclass(tp, tuple) and hasattr(tp, "_fields") and hasattr(tp, "_make")
 
 
@@ -479,10 +711,15 @@ class _UnresolvedHintsError(Exception):
     """``get_type_hints`` failed: raised through a cached function so the fallback is not cached."""
 
 
-def _type_hints(obj: Any, *, include_extras: bool = False) -> dict[str, Any]:
-    """Return ``get_type_hints(obj)``, raising _UnresolvedHintsError when an annotation does not resolve."""
+def _type_hints(obj: Any, *, include_extras: bool = False, owner: Any = None) -> dict[str, Any]:
+    """Return ``get_type_hints(obj)``, raising _UnresolvedHintsError when an annotation does not resolve.
+
+    *owner* is the class defining the function *obj*: its PEP 695 type parameters resolve a
+    postponed annotation naming them, which ``get_type_hints`` finds in no namespace it reads.
+    """
+    localns = {p.__name__: p for p in getattr(owner, "__type_params__", ())}
     try:
-        return get_type_hints(obj, include_extras=include_extras)
+        return get_type_hints(obj, localns=localns or None, include_extras=include_extras)
     except (NameError, AttributeError, TypeError) as e:
         raise _UnresolvedHintsError from e
 
@@ -505,7 +742,7 @@ def _namedtuple_fields(tp: Any) -> Mapping[str, Any]:
 @_per_class_cache
 def _annotated_namedtuple_fields(tp: Any) -> Mapping[str, Any]:
     """Return :func:`_namedtuple_fields` when every annotation resolves, cached per class."""
-    return _typed_namedtuple_fields(tp, _type_hints(tp))
+    return _typed_namedtuple_fields(tp, _bind_hints(tp, _type_hints(_class_of(tp))))
 
 
 def _typed_namedtuple_fields(tp: Any, hints: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -811,7 +1048,7 @@ def _is_plain_class(tp: Any) -> bool:
     Dev Notes:
         docs-dev/architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#a-class-taking-nothing-is-a-struct-with-no-fields
     """
-    tp = _resolve_type(tp)
+    tp = _class_of(_resolve_type(tp))
     # Since Python 3.11 ``typing.Any`` is a subclassable class in module "typing", so it passes
     # ``isinstance(tp, type)`` and the signature check below and would masquerade as a plain class.
     # It is not a struct; _type_kind names it ANY before asking any shape.
@@ -982,7 +1219,7 @@ def _init_params(tp: Any) -> _InitParams:
     Dev Notes:
         docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
     """
-    params, constructor = _constructor_parameters(tp)
+    params, constructor = _constructor_parameters(_class_of(tp))
     var_kinds = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
     variadic = {p.kind: p.name for p in params if p.kind in var_kinds}
     return _InitParams(
@@ -1038,24 +1275,32 @@ def _member_hints(tp: Any, *, include_extras: bool = False) -> dict[str, Any]:
     """
     params = _init_params(tp)
     if not _is_dc(tp):
-        return _constructor_hints(params.constructor, include_extras=include_extras)
+        return _bound_constructor_hints(tp, params.constructor, include_extras=include_extras)
     hints = _dc_member_hints(tp, params.names, include_extras=include_extras)
     if any(name not in hints for name in params.names):
         # A handwritten __init__, or an undecorated subclass's own: the constructor's annotations
         # type what the fields do not name.
-        hints = {**_constructor_hints(params.constructor, include_extras=include_extras), **hints}
+        hints = {**_bound_constructor_hints(tp, params.constructor, include_extras=include_extras), **hints}
     return hints
 
 
-def _constructor_hints(constructor: Any, *, include_extras: bool = False) -> dict[str, Any]:
-    """Return the resolved annotations of *constructor*, none for a builtin or for no constructor.
+def _bound_constructor_hints(tp: Any, constructor: Any, *, include_extras: bool = False) -> dict[str, Any]:
+    """Return :func:`_constructor_hints`, the parameters of the class defining *constructor* bound by *tp*."""
+    cls = _class_of(tp)
+    owner = _constructor_owner(cls, constructor) or cls
+    hints = _constructor_hints(constructor, include_extras=include_extras, owner=owner)
+    return _bind_hints(tp, hints, owner=owner) if hints else hints
+
+
+def _constructor_hints(constructor: Any, *, include_extras: bool = False, owner: Any = None) -> dict[str, Any]:
+    """Return the resolved annotations of *constructor*, which *owner* defines; none for a builtin or no constructor.
 
     Raises:
         _UnresolvedHintsError: If an annotation does not resolve.
     """
     if getattr(constructor, "__annotations__", None) is None:
         return {}
-    return _type_hints(constructor, include_extras=include_extras)
+    return _type_hints(constructor, include_extras=include_extras, owner=owner)
 
 
 def _typed_init_fields(tp: Any, hints: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -1093,7 +1338,7 @@ def _init_defaults(tp: Any) -> dict[str, Any]:
         elif name in params.defaults:
             default = params.defaults[name]
             factory = default is _DATACLASS_FACTORY_DEFAULT
-            out[name] = tp.__dataclass_fields__[name].default_factory() if factory else default
+            out[name] = _class_of(tp).__dataclass_fields__[name].default_factory() if factory else default
     return out
 
 
@@ -1115,8 +1360,8 @@ def _var_params(tp: Any) -> _VarParams:
 
 
 def _is_struct(tp: Any) -> bool:
-    """True if tp is a dataclass or a plain class, one taking nothing included."""
-    tp = _resolve_type(tp)
+    """True if tp is a dataclass or a plain class, one taking nothing included, or a parameterized generic one."""
+    tp = _class_of(_resolve_type(tp))
     return isinstance(tp, type) and _is_struct_class(tp)
 
 
@@ -1130,26 +1375,34 @@ def _is_struct_class(cls: type) -> bool:
     return _is_dc(cls) or _is_plain_class(cls)
 
 
-def _struct_subclasses(tp: type) -> list[type]:
-    """Return all struct subclasses of tp, recursively (BFS order).
+def _struct_subclasses(tp: Any) -> list[Any]:
+    """Return all struct subclasses of tp, recursively (BFS order), each bound as a tag naming it binds it.
 
-    Read afresh on every call, so a subclass defined since the last one is found.
+    *tp* may be a parameterized generic: each subclass then reads with the type parameters
+    *tp*'s arguments bind (:func:`_tagged_struct`), and one whose bases fix other arguments
+    is left out. Read afresh on every call, so a subclass defined since the last one is found.
 
     Dev Notes:
         docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
     """
-    found: list[type] = []
+    found: list[Any] = []
     seen: set[type] = set()
-    queue: deque[type] = deque(tp.__subclasses__())
+    queue: deque[type] = deque(_class_of(tp).__subclasses__())
     while queue:
         sub = queue.popleft()
         if sub in seen:
             continue
         seen.add(sub)
         queue.extend(sub.__subclasses__())
-        if _is_struct_class(sub):
-            found.append(sub)
+        if _is_struct_class(sub) and (bound := _tagged_struct(sub, tp)) is not None:
+            found.append(bound)
     return found
+
+
+def _direct_struct_subclasses(tp: Any) -> list[Any]:
+    """Return the direct struct subclasses of the class *tp* builds, bound as :func:`_struct_subclasses` binds them."""
+    subs = (_tagged_struct(s, tp) for s in _class_of(tp).__subclasses__() if _is_struct(s))
+    return [s for s in subs if s is not None]
 
 
 def _struct_fields(tp: Any) -> Mapping[str, Any]:

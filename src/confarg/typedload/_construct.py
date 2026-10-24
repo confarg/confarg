@@ -42,10 +42,13 @@ from confarg._merge import (
 from confarg._types import (
     _all_have_defaults,
     _allows_none,
+    _class_of,
     _dict_kv,
+    _direct_struct_subclasses,
     _elem_type,
     _fixed_position,
     _fixed_seq_types,
+    _generic_origin,
     _init_params,
     _is_callable,
     _is_dict,
@@ -73,6 +76,7 @@ from confarg._types import (
     _struct_member_names,
     _struct_required,
     _struct_subclasses,
+    _tagged_struct,
     _tuple_types,
     _union_args,
     _union_args_no_none,
@@ -291,7 +295,7 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: FieldPath, union_tag: s
     """
     if not isinstance(data, dict):
         raise TypeCoercionError.wrong_shape(_src_type(data), data, tp.__name__, "dict", _spell_field_path(path))
-    direct_subs = [s for s in tp.__subclasses__() if _is_struct(s)]
+    direct_subs = _direct_struct_subclasses(tp)
     if union_tag in data:
         if not _union_tag_shadowed(tp, union_tag):
             return _construct_by_class_path(tp, data, path, union_tag)
@@ -303,7 +307,7 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: FieldPath, union_tag: s
             return _construct_struct(tp, data, path, union_tag)
         return _construct_shadowed_subclass(tp, data, path, union_tag)
     if direct_subs:
-        sub_names = ", ".join(dotted_name(s) for s in direct_subs)
+        sub_names = ", ".join(dotted_name(_class_of(s)) for s in direct_subs)
         if _union_tag_shadowed(tp, union_tag):
             msg = (
                 f"Cannot construct '{tp.__name__}' at '{_spell_field_path(path)}': it has subclasses ({sub_names})"
@@ -344,7 +348,7 @@ def _construct_shadowed_subclass(tp: Any, data: MergeDict, path: FieldPath, unio
             return _construct_struct(sub, data, path, union_tag)
         except (ConfargError, TypeError):
             continue
-    sub_names = ", ".join(dotted_name(s) for s in subs)
+    sub_names = ", ".join(dotted_name(_class_of(s)) for s in subs)
     msg = (
         f"Cannot construct '{tp.__name__}' at '{_spell_field_path(path)}': the {union_tag!r} key is a field's"
         f" value, and no subclass accepts the provided fields (subclasses: {sub_names})."
@@ -792,7 +796,8 @@ def _call_struct(
         unset = positional.names[len(pos_args)]
         msg = f"{tp.__name__}() cannot take *{var_pos_name} while positional parameter {unset!r} is unset"
         raise TypeError(msg)
-    return tp(*pos_args, *var_pos, **by_keyword, **var_kw)
+    # A parameterized generic is built by its class: calling the alias would stamp __orig_class__ on the instance.
+    return _class_of(tp)(*pos_args, *var_pos, **by_keyword, **var_kw)
 
 
 class _Naming(NamedTuple):
@@ -1155,15 +1160,21 @@ def _construct_union_by_tag(non_none: list[Any], data: MergeDict, path: FieldPat
     """
     tag = data[union_tag]
     cls = _import_class_by_path(tag, _spell_field_path(path), union_tag)
-    matching = [v for v in non_none if _is_struct(_resolve_type(v)) and issubclass(cls, _resolve_type(v))]
-    if len(matching) > 1:
+    # Each variant the tagged class is a subclass of, by its class, with the class bound as it binds it.
+    matching = [
+        (_class_of(rv), b)
+        for v in non_none
+        if _is_struct(rv := _resolve_type(v)) and (b := _tagged_struct(cls, rv)) is not None
+    ]
+    variant_classes = list(dict.fromkeys(c for c, _ in matching))
+    if len(variant_classes) > 1:
         raise AmbiguousUnionError(
             f"Class {tag!r} at '{_spell_field_path(path)}' matches multiple union variants: "
-            + ", ".join(dotted_name(_resolve_type(v)) for v in matching),
+            + ", ".join(dotted_name(c) for c in variant_classes),
         )
     if matching:
         cleaned = {k: v2 for k, v2 in data.items() if k != union_tag}
-        return _construct_named_struct(cls, cleaned, path, union_tag, _Naming(tag, "tag"))
+        return _construct_bound_tag([b for _, b in matching], cleaned, path, union_tag, _Naming(tag, "tag"))
     reader = _first_spec_reader(non_none)
     if reader is not None:
         # A class no variant holds is the spec of the variant that reads one, which builds the class it names.
@@ -1604,11 +1615,32 @@ def _construct_by_class_path(tp: type, data: MergeDict, path: FieldPath, union_t
     """Import the class named by union_tag, validate it is a subclass of tp, and construct it."""
     tag = data[union_tag]
     cls = _import_class_by_path(tag, _spell_field_path(path), union_tag)
-    if not issubclass(cls, tp):
+    bound = _tagged_struct(cls, tp)
+    if bound is None:
         call = _defaults.CALL_KEY
-        raise TypeCoercionError.tag_not_a_subclass(tag, dotted_name(tp), _spell_field_path(path), call)
+        # A parameterized field names its arguments: the class may subclass its class, but never be one bound so.
+        parent = repr(tp) if _generic_origin(tp) is not None else dotted_name(tp)
+        raise TypeCoercionError.tag_not_a_subclass(tag, parent, _spell_field_path(path), call)
     cleaned = {k: v for k, v in data.items() if k != union_tag}
-    return _construct_named_struct(cls, cleaned, path, union_tag, _Naming(tag, "tag"))
+    return _construct_named_struct(bound, cleaned, path, union_tag, _Naming(tag, "tag"))
+
+
+def _construct_bound_tag(bound: list[Any], data: MergeDict, path: FieldPath, union_tag: str, naming: _Naming) -> Any:
+    """Build the class a union's tag names, bound as each variant of its class binds it, the first that builds.
+
+    Several variants share the class only when they are one generic parameterized apiece
+    (``Box[int] | Box[str]``): the tag names the class, and the value picks the binding, in
+    declaration order.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-tag-binds-the-class-it-names-through-its-bases
+    """
+    for candidate in bound[:-1]:
+        try:
+            return _construct_named_struct(candidate, data, path, union_tag, naming)
+        except (ConfargError, TypeError):
+            continue
+    return _construct_named_struct(bound[-1], data, path, union_tag, naming)
 
 
 def construct_named_class(  # noqa: PLR0913  # the class, its keys, and how the spec named it
