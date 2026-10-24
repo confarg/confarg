@@ -24,3 +24,5 @@ Its zero-caller helpers (`_types._is_collection`, `_types._callable_return_type`
 What is left for this ticket is the part that needs coverage data rather than reading: branches reachable in principle but exercised by no test and no documented behavior.
 Note the pattern REF-52 found — a coverage test that calls a private function directly, bypassing the validation that makes the branch unreachable, keeps that branch alive and hides it from exactly this sweep.
 `tests/test_coverage_gaps.py` is where to look first: three such tests kept the evaluator's `op_func is None` branches alive until REF-52.
+
+Noticed in the review of BUG-197/BUG-250: `cli._build._match_opener_suffix` loops on `str.endswith` to split an opener off a flag, where `str.removesuffix` per opener says the same in less.

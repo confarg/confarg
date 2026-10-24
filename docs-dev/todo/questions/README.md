@@ -14,5 +14,6 @@ Questions carry no effort, risk or impact — a question is answered, not implem
 | [Q-5 — Should a `Path` dump with POSIX separators?](Q-5-should-a-path-dump-with-posix-separators.md) |  |  |
 | [Q-6 — The untyped-config-rewriter plan is an unapproved proposal no ticket cites — where does it belong?](Q-6-the-untyped-config-rewriter-plan-is-uncited-and-unsettled.md) |  |  |
 | [Q-8 — Should a delete on an untyped node be read by its content?](Q-8-should-a-delete-on-an-untyped-node-be-read-by-its-content.md) |  |  |
+| [Q-9 — Should a struct-owned opener beside `args` reach the Callable?](Q-9-should-a-struct-owned-opener-beside-args-reach-the-callable.md) |  |  |
 
 <!-- tickets:end -->
