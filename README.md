@@ -2,6 +2,8 @@
 
 # A tool to manage complex configurations
 
+[![Tests](https://img.shields.io/github/actions/workflow/status/confarg/confarg/ci-test.yml?branch=master&label=tests)](https://github.com/confarg/confarg/actions/workflows/ci-test.yml?query=branch%3Amaster) [![PyPI](https://img.shields.io/pypi/v/confarg)](https://pypi.org/project/confarg/) [![Python versions](https://img.shields.io/pypi/pyversions/confarg)](https://pypi.org/project/confarg/) [![License](https://img.shields.io/pypi/l/confarg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-confarg.github.io-blue)](https://confarg.github.io/confarg)
+
 > Load and resolve complex configurations from files, environment variables and command line arguments.
 > Keep your data structures and favorite CLI library.
 

@@ -2,6 +2,14 @@
 authors = [
     { name = "confarg", email = "280620574+confarg@users.noreply.github.com" },
 ]
+# The Python classifiers mirror the CI test matrix (.github/workflows/ci-test.yml); the README's
+# Python-versions badge reads them.
+classifiers = [
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 description = "Load and resolve complex configurations from files, environment variables and command line arguments. Keep your favorite CLI library."
 license = "MPL-2.0"
 name = "confarg"

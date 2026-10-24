@@ -4,11 +4,15 @@ on:
   pull_request:
     branches: [master]
     types: [opened, reopened, synchronize]
+  # A run on master is what the README's tests badge reports.
+  push:
+    branches: [master]
 
 jobs:
   # Don't rely on `paths-ignore`: a workflow skipped by a path filter never
   # reports its checks at all, so a required check stays pending and blocks
-  # the merge.
+  # the merge.  A push to master always counts as code: the badge must reflect
+  # the branch as it is, not the last commit that touched code.
   changes:
     name: Detect testable changes
     runs-on: ubuntu-latest
@@ -18,9 +22,14 @@ jobs:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
     - id: filter
       env:
+        EVENT: ${{ github.event_name }}
         BASE: ${{ github.event.pull_request.base.sha }}
         HEAD: ${{ github.event.pull_request.head.sha }}
       run: |
+        if [ "$EVENT" = push ]; then
+          echo 'code=true' >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
         git fetch --depth=1 origin "$BASE"
         git fetch --depth=1 origin "$HEAD"
         # docs-dev/ holds the architecture notes and the boards, and the test
