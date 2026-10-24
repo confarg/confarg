@@ -12,6 +12,7 @@ import math
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -2518,3 +2519,32 @@ class TestAComputedValueIsBounded:
     def test_an_object_the_application_supplied_computes_with_its_own_operators(self) -> None:
         """A type no source can produce came from the application, and is trusted."""
         assert resolve_expressions({"f": Fraction(1, 3), "v": "${f * 3}"})["v"] == 1
+
+
+class TestResolutionScalesLinearly:
+    """Telling a node of pending list ops costs the same whatever the node holds (BUG-264)."""
+
+    @staticmethod
+    def _build_time(n: int) -> float:
+        """Return the fastest of three builds of *n* references sitting beside the value they read."""
+
+        @dataclass
+        class Config:
+            d: Any = None
+
+        data = {"d": {"host": "h", **{f"r{i}": "${d.host}" for i in range(n)}}}
+        times = []
+        for _ in range(3):
+            start = time.perf_counter()
+            confarg.build(Config, data)
+            times.append(time.perf_counter() - start)
+        return min(times)
+
+    def test_sibling_references_resolve_in_linear_time(self) -> None:
+        """Eight times the references take about eight times as long, not sixty-four.
+
+        Each reference's path crosses the dict holding all of them, which a scan of every key
+        made quadratic: the ratio was about 47; linear, it is about 8.
+        """
+        ratio = self._build_time(3200) / self._build_time(400)
+        assert ratio < 20, f"3200 references took {ratio:.0f} times as long as 400"

@@ -21,4 +21,4 @@ The cycle has two roots, both small pure leaves living in heavy modules:
 - `_merge.ListOp`, which `dictexpr` and `_depth` import, so `_merge` cannot import `dictexpr` — which is all `_merge._stands_for_a_value` exists for, a rename of `dictexpr.is_whole_expression` that defers the import.
 
 Fix direction: move `ListOp` (with `MERGE_OP_KEYS`) and `_list_index` into a leaf module that imports nothing from confarg but `_defaults`, re-exported where they are imported today; the deferred imports and `_stands_for_a_value` then go.
-Unblocks [REF-110](REF-110-a-node-of-list-ops-is-told-by-hand-beside-holds-list-ops.md).
+`_merge._holds_list_ops` moves with `ListOp`.

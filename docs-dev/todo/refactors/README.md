@@ -54,6 +54,5 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-105 — A fixed-length position is read and spelled by hand around `_fixed_position`](REF-105-a-fixed-length-position-is-read-and-spelled-per-site.md) | trivial |  | M | low | none |
 | [REF-108 — The library steers by process-wide warning filters](REF-108-the-library-steers-by-process-wide-warning-filters.md) | trivial |  | M | medium | none |
 | [REF-111 — `_merge`, `_types` and `dictexpr` import each other, through two small leaves](REF-111-merge-types-and-dictexpr-import-each-other.md) | trivial |  | M | low | none |
-| [REF-110 — A node of pending list ops is told by hand beside `_holds_list_ops`](REF-110-a-node-of-list-ops-is-told-by-hand-beside-holds-list-ops.md) | trivial | REF-111 | S | low | none |
 
 <!-- tickets:end -->
