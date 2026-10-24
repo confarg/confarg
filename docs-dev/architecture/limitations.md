@@ -169,7 +169,7 @@ A field default is the layer below every source only where the class declares it
 ## Remote sources
 
 - **Nothing is cached across configurations.**
-  Within one, a location is read once, its document kept in the configuration's copy budget ([design decisions](design-decisions/a-configuration-copies-at-most-100000-positions.md#what-copies), BUG-259); across calls, a caching handler is three lines through `register_scheme`, which is why no cache is built in.
+  Within one, a location is read once, its document kept in what the configuration has read ([design decisions](design-decisions/a-configuration-copies-at-most-100000-positions.md#what-copies), BUG-259); across calls, a caching handler is three lines through `register_scheme`, which is why no cache is built in.
   The union-tag pre-scan in `_tags.py` reads with a budget of its own, so a root `--config` location is still read twice per run, once by it and once by the pipeline, as local files are (REF-26).
   Over the network that is two fetches.
 - **No retries, no timeouts you can configure, no authentication.**

@@ -206,12 +206,12 @@ class TestReferences:
 
     @pytest.mark.usefixtures("bound_100")
     def test_one_read_past_the_bound_is_refused(self) -> None:
-        """The refusal quotes the expression and says what the configuration had copied already."""
+        """The refusal quotes the expression, then reads as the budget's other refusals, with what the read reached."""
         d = {"base": ["x"] * 10, "refs": references(11)}
         with pytest.raises(
             UnsafeExpressionError,
-            match=r"Error in expression '\$\{d\.base\}': Reading 'd\.base' copies 10 positions, over the limit of 100 "
-            r"positions one configuration copies \(100 already copied\)",
+            match=r"Error in expression '\$\{d\.base\}': Cannot read 'd\.base': it copies more than 100 positions "
+            r"\(110 copied\)\.$",
         ):
             confarg.build(Config, {"d": d})
 
@@ -219,14 +219,14 @@ class TestReferences:
     def test_a_read_that_yields_a_scalar_is_charged(self) -> None:
         """``len()`` walks what it reads as a copy does."""
         d = {"base": ["x"] * 10, "n": references(11, "len(d.base)")}
-        with pytest.raises(UnsafeExpressionError, match=r"Reading 'd\.base' copies 10 positions"):
+        with pytest.raises(UnsafeExpressionError, match=r"Cannot read 'd\.base': it copies more than 100"):
             confarg.build(Config, {"d": d})
 
     @pytest.mark.usefixtures("bound_100")
     def test_the_configuration_shares_one_budget(self, tmp_path: Path) -> None:
         """A file's aliases and the expressions over it are one configuration's copies."""
         text = f"d:\n  l0: &l0 {items(10)}\n  refs: {items(9, '*l0')}\n  r: '${{d.l0}}'\n  s: '${{d.l0}}'\n"
-        with pytest.raises(UnsafeExpressionError, match=r"\(100 already copied\)"):
+        with pytest.raises(UnsafeExpressionError, match=r"\(110 copied\)"):  # 90 by aliases, 20 by the two reads
             load_text(tmp_path, text)
 
     @pytest.mark.parametrize("channel", ["argv", "env", "toml"])
@@ -245,7 +245,7 @@ class TestReferences:
                 return confarg.load(Config, argv=["--d.json", json.dumps(d)], env={})
             return confarg.load(Config, argv=[], env={"APP_D__JSON": json.dumps(d)}, env_prefix="APP_")
 
-        refused_within(5, UnsafeExpressionError, r"over the limit of 100000 positions", load)
+        refused_within(5, UnsafeExpressionError, r"it copies more than 100000 positions", load)
 
 
 class TestCallerData:

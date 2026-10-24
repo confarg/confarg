@@ -27,7 +27,7 @@ What an author wrote is never counted: a large document costs what its bytes cos
 - **A location read again**: every position of its document, by any route, a root file, `--config.<path>`, `<PREFIX>CONFIG__<PATH>` and `__include__` alike.
   The first read of a location is written; a location is its identity (`_sources._identity`), so `./t.json` and `t.json` are one, and its options (`orient`) are no part of it.
   `_files._load_any` charges it, where the document is read.
-  A location is read once per configuration: the budget keeps its join, its identity and its document, so a read again costs the positions it copies and nothing else.
+  A location is read once per configuration: what the configuration has read, `_files.Reads`, keeps its join, its identity and its document, so a read again costs the positions it copies and nothing else.
   A read costs about 3 ms on Windows whatever the document holds, most of it resolving the path, so 100 000 positions copied through ten-position fragments were 10 000 reads and 29 s; read once, they are 1 s.
   Charging each read a floor of positions, its own price, was rejected: a second number to choose, and every read but the first still paid it.
   The cost is that a configuration reads a snapshot: a file changing while one `load()` reads it is read as it first was, and a remote document is fetched once, as JSON-Schema resolvers (`referencing`, json-schema-ref-parser) fetch a `$ref` once per resolution.
@@ -40,6 +40,7 @@ What an author wrote is never counted: a large document costs what its bytes cos
 ## One budget per configuration
 
 The count is one budget, `_depth.Copies`, opened by each public call — `load()`, `merge()`, `build()`, `resolve()`, `from_dict()`, an adapter's `merge_*` and `from_*` — and passed down every walk that charges it, as their other state is.
+The merge carries it inside `_files.Reads`, what the configuration has read, which holds the budget and the locations read once; a read of a location only ever charges the budget of the configuration it was read for, and resolution takes the budget alone, since it reads no location.
 Every source, channel and resolution of one configuration share it, and `load()` shares it between its merge and its build, so a file's aliases and the references over them are counted together.
 A best-effort pass that reads before the merge, the tag scan and an adapter's registration, opens its own.
 The tree resolution returns is not counted again: its shared parts are what the reads already charged.
@@ -67,8 +68,12 @@ Cannot read b.yaml: it copies more than 100000 positions, at 'd.l5.3' (100010 co
 Cannot read c.yaml: it copies more than 100000 positions, at line 15 (100001 copied).
 Cannot read f0.json again: it copies more than 100000 positions, at 'd.3.7.2' (100010 copied).
 Cannot build Config: it copies more than 100000 positions, at 'd.svc-1043' (100050 copied).
-Error in expression '${d.l4}': Reading 'd.l4' copies 11110 positions, over the limit of 100000 positions one configuration copies (95000 already copied)
+Error in expression '${d.l3}': Cannot read 'd.l3': it copies more than 100000 positions (101180 copied).
 ```
+
+Each is built by one factory, `ConfargError.too_many_copies`, which `Copies.charge` raises, of the channel's class, only when the bound is crossed.
+A reference's refusal is the same text inside its expression, as every refusal of an expression is ([a refusal names its expression](../expressions/resolution.md#a-refusal-names-its-expression)), and names the path it read: a read is charged whole, so no position inside it crosses the bound.
+The action is a string, formatted at every charge rather than when the refusal is raised: a reference read spells its path, about half a microsecond against the ten and more the read costs, which is not worth a second way of passing it (REF-96).
 
 A merge key is named by its line: PyYAML merges while it builds the mapping, before any position is known.
 

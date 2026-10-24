@@ -34,6 +34,7 @@ from confarg._depth import Copies, positions_below
 from confarg._merge import ListOp, MergeDict, _holds_list_ops
 from confarg.exceptions import (
     CircularReferenceError,
+    ConfargError,
     ExpressionEvalError,
     MissingReferenceError,
     UnsafeExpressionError,
@@ -1144,14 +1145,11 @@ def _read_through(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
         if not isinstance(part, ListOp) and _holds_list_ops(current):
             raise MissingReferenceError.pending_list_ops(_spell_path(parts[:depth]))
         _, current = _step(current, part, parts)
-    copies = namespace.copies
     copied = positions_below(current)
-    spent = copies.spent
-    msg = (
-        f"Reading {_spell_path(parts)!r} copies {copied} positions, over the limit of {copies.bound} positions"
-        f" one configuration copies ({spent} already copied)"
-    )
-    copies.charge(copied, lambda: _RefusedError(msg))
+    try:
+        namespace.copies.charge(copied, f"read {_spell_path(parts)!r}")
+    except ConfargError as exc:  # the budget's own refusal, worded without the expression as every refusal is
+        raise _RefusedError(str(exc)) from None
     if (inner := _list_ops_within(current)) is not None:
         raise MissingReferenceError.pending_list_ops(_spell_path((*parts, *inner)))
     return current

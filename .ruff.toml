@@ -2,47 +2,47 @@ line-length    = 120
 target-version = "py312"
 
 [lint]
-preview = true
 explicit-preview-rules = true
 ignore = [
     'ANN401', # any-type
     'COM812', # missing-trailing-comma — the formatter owns trailing commas; the rule's own doc says to disable it when one is in use (https://docs.astral.sh/ruff/rules/missing-trailing-comma/)
 ]
+preview = true
 select = [
-    "A",      # flake8-builtins
-    "ANN",    # flake8-annotations
-    "ARG",    # flake8-unused-arguments
-    "B",      # flake8-bugbear
-    "BLE",    # flake8-blind-except
-    "C4",     # flake8-comprehensions
-    "C90",    # mccabe
-    "COM",    # flake8-commas
-    "D",      # pydocstyle
-    "E",      # pycodestyle errors
-    "EM",     # flake8-errmsg
-    "F",      # pyflakes
-    "FBT",    # flake8-boolean-trap
-    "FURB",   # refurb
+    "A",       # flake8-builtins
+    "ANN",     # flake8-annotations
+    "ARG",     # flake8-unused-arguments
+    "B",       # flake8-bugbear
+    "BLE",     # flake8-blind-except
+    "C4",      # flake8-comprehensions
+    "C90",     # mccabe
+    "COM",     # flake8-commas
+    "D",       # pydocstyle
+    "E",       # pycodestyle errors
+    "EM",      # flake8-errmsg
+    "F",       # pyflakes
+    "FBT",     # flake8-boolean-trap
+    "FURB",    # refurb
     "FURB118", # reimplemented-operator — a preview rule, opted in by name (docs-dev/architecture/design-decisions/lint-holds-the-line.md)
-    "G",      # flake8-logging-format
-    "I",      # isort
-    "ICN",    # flake8-import-conventions
-    "ISC",    # flake8-implicit-str-concat
-    "LOG",    # flake8-logging
-    "PERF",   # Perflint
-    "PIE",    # flake8-pie
-    "PL",     # Pylint
+    "G",       # flake8-logging-format
+    "I",       # isort
+    "ICN",     # flake8-import-conventions
+    "ISC",     # flake8-implicit-str-concat
+    "LOG",     # flake8-logging
+    "PERF",    # Perflint
+    "PIE",     # flake8-pie
+    "PL",      # Pylint
     "PLW0717", # too-many-statements-in-try-clause — a preview rule, opted in by name (docs-dev/architecture/design-decisions/lint-holds-the-line.md)
-    "PT",     # flake8-pytest-style
-    "RET",    # flake8-return
-    "SIM",    # flake8-simplify
-    "SLOT",   # flake8-slots
-    "TC",     # flake8-type-checking
-    "TID",    # flake8-tidy-imports
-    "TRY",    # tryceratops
-    "RUF",    # Ruff-specific rules
-    "S",      # flake8-bandit
-    "UP",     # pyupgrade
+    "PT",      # flake8-pytest-style
+    "RET",     # flake8-return
+    "SIM",     # flake8-simplify
+    "SLOT",    # flake8-slots
+    "TC",      # flake8-type-checking
+    "TID",     # flake8-tidy-imports
+    "TRY",     # tryceratops
+    "RUF",     # Ruff-specific rules
+    "S",       # flake8-bandit
+    "UP",      # pyupgrade
 ]
 [lint.per-file-ignores]
 "examples/**" = [

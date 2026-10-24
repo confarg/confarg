@@ -27,6 +27,7 @@ Canonical decision-makers:
 | "is this root config file a configuration layer?" | `_files._require_layer` |
 | "what is the parsed value of the document here?" | `_files._load_document` |
 | "how deep does this value nest, and does it hold itself?" | `_depth._shape` (read by `_depth.overflow`) — positions counted from the configuration root, a reserved key and a pending op no level, without recursing; asked by `_depth.refuse_overflow` wherever a value enters, before a walker recurses through it: a document from its mount (`_files._load_any`), a decoded JSON value from where it lands (`_cast.decode_json`), the data `build()`, `from_dict()` and `resolve()` are handed and what its expressions resolve to (`_api._resolve_over_defaults`), a dict `dump_file()` writes; a flag's, a variable's and a mount point's path before it is typed (`_depth.refuse_long_path`); an instance `dump()` writes, by the serializer's own descent (`_serialize._open`) (BUG-248, [design decisions](design-decisions/a-configuration-nests-at-most-64-levels.md#a-configuration-nests-at-most-64-levels)) |
+| "may the configuration copy these positions, and how is it refused?" | `_depth.Copies.charge` — the one budget of a configuration, raising `ConfargError.too_many_copies` of the channel's class past `MAX_COPIED`, for a shared part, a merge key, a location read again and a reference alike (REF-96, [design decisions](design-decisions/a-configuration-copies-at-most-100000-positions.md#the-refusal)) |
 | reading one document, whatever route mounts it | `_files._load_any` |
 | "which parser does this location name?" | `_files._loader_for` |
 | reading a channel value as an include value | `_files._parse_mount_value` |
@@ -37,6 +38,7 @@ Canonical decision-makers:
 | "which format does this location name?" | `_sources._suffix` |
 | "what location does this relative include name?" | `_sources._join` |
 | "are these two locations the same document?" | `_sources._identity` |
+| "has this configuration read this location?" | `_files.Reads` — what one configuration has read: each location's join and identity, through `_sources._join` and `_sources._identity`, and its document, kept so a read again costs no read; it carries the configuration's `Copies` on the merge path (REF-107, [design decisions](design-decisions/a-configuration-copies-at-most-100000-positions.md#one-budget-per-configuration)) |
 | "would resolution rewrite this value?" | `dictexpr.contains_expression` |
 | "how is a string spelled so that resolution gives it back unchanged?" | `dictexpr.escape_expressions` — one more `$` before every `${...}` and every escape; the default layer lays a default string with it ([design decisions](design-decisions/a-field-default-is-the-base-layer.md#a-default-string-stays-text)) |
 | "where does each `${...}` of this string begin and end?" | `dictexpr._expressions._find_expressions` ([expressions](expressions/values-and-references.md#delimiting-an-expression)) |

@@ -14,7 +14,7 @@ from confarg._merge import ListOp
 from confarg.exceptions import ConfargError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Iterator, Sequence
 
     from confarg.exceptions import FieldPath
 
@@ -28,12 +28,11 @@ MAX_COPIED: Final = 100_000
 
 
 class Copies:
-    """The positions one configuration has copied, against :data:`MAX_COPIED`, and what it has read.
+    """The positions one configuration has copied, against :data:`MAX_COPIED`.
 
     Each public call opens one and passes it down every walk that charges it, so every source,
-    channel and resolution of the configuration it reads share it. A location is read once:
-    its join, its identity and its document are kept, so reading it again costs the positions
-    it copies and nothing else (``_files._load_any``).
+    channel and resolution of the configuration it reads share it; the merge carries it in the
+    ``_files.Reads`` of the configuration.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-configuration-copies-at-most-100000-positions.md#one-budget-per-configuration
@@ -41,29 +40,38 @@ class Copies:
 
     def __init__(self) -> None:
         self.spent = 0
-        #: The location each (including location, written location) pair names (``_sources._join``).
-        self.joined: dict[tuple[str | None, str], str] = {}
-        #: The identity of each location (``_sources._identity``).
-        self.identities: dict[str, str] = {}
-        #: The identity of each location read, whose next read copies it.
-        self.read: set[str] = set()
-        #: Each document read, by its location's identity and the options it was read with.
-        self.documents: dict[tuple[str, str], Any] = {}
-
-    @property
-    def bound(self) -> int:
-        """Return the most positions a configuration copies, :data:`MAX_COPIED`, for a refusal to name."""
-        return MAX_COPIED
 
     @property
     def left(self) -> int:
         """Return how many more positions the configuration may copy."""
         return MAX_COPIED - self.spent
 
-    def charge(self, copied: int, refusal: Callable[[], Exception]) -> None:
-        """Count *copied* more positions, raising ``refusal()`` instead when they are more than are left."""
+    def charge(  # noqa: PLR0913  # where the bound was crossed: the refusal's action, class, position or line, count
+        self,
+        copied: int,
+        action: str,
+        *,
+        error: type[ConfargError] = ConfargError,
+        path: FieldPath | None = None,
+        line: int | None = None,
+        crossed_at: int | None = None,
+    ) -> None:
+        """Count *copied* more positions, refusing them instead when they are more than are left.
+
+        The refusal is ``error.too_many_copies``, built only when raised: *action* says what was
+        being done, as for :func:`refuse_overflow`, *path* or *line* where the bound was crossed,
+        and *crossed_at* how many of the *copied* positions had been counted there, all of
+        them when omitted.
+
+        Raises:
+            ConfargError: Of the class *error*, if *copied* is more than :attr:`left`.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-configuration-copies-at-most-100000-positions.md#the-refusal
+        """
         if copied > self.left:
-            raise refusal()
+            count = self.spent + (copied if crossed_at is None else crossed_at)
+            raise error.too_many_copies(action, MAX_COPIED, count, path, line=line)
         self.spent += copied
 
 
@@ -215,10 +223,7 @@ def refuse_overflow(
             raise error.holds_itself(action, found.path, found.holder)
         raise error.too_deep(action, found.path, MAX_DEPTH)
     if copies is not None:
-        spent = copies.spent
-        copies.charge(
-            shape.copied, lambda: error.too_many_copies(action, copies.bound, spent + shape.crossed_at, shape.crossed)
-        )
+        copies.charge(shape.copied, action, error=error, path=shape.crossed, crossed_at=shape.crossed_at)
     return shape
 
 

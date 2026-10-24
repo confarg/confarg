@@ -42,6 +42,7 @@ from confarg._callable import (
 )
 from confarg._depth import Copies
 from confarg._files import (
+    Reads,
     _dump_file,
     _load_any,
     _load_file,
@@ -316,17 +317,17 @@ class TestFileErrors:
     def test_load_toml_file_not_found(self, tmp_path: Path) -> None:
         """Missing TOML file raises InvalidConfigFileError."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
-            _load_any(str(tmp_path / "missing.toml"), frozenset(), copies=Copies())
+            _load_any(str(tmp_path / "missing.toml"), frozenset(), reads=Reads())
 
     def test_load_yaml_file_not_found(self, tmp_path: Path) -> None:
         """Missing YAML file raises InvalidConfigFileError through the root loader table."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
-            _load_file(tmp_path / "missing.yaml", copies=Copies())
+            _load_file(tmp_path / "missing.yaml", reads=Reads())
 
     def test_load_json_file_not_found(self, tmp_path: Path) -> None:
         """Missing JSON file raises InvalidConfigFileError through the root loader table."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
-            _load_file(tmp_path / "missing.json", copies=Copies())
+            _load_file(tmp_path / "missing.json", reads=Reads())
 
     def test_load_yaml_item_missing_library(self, tmp_path: Path, monkeypatch) -> None:
         """Missing PyYAML library raises InvalidConfigFileError."""
@@ -339,7 +340,7 @@ class TestFileErrors:
     def test_load_yaml_item_file_not_found(self, tmp_path: Path) -> None:
         """Missing YAML item file raises InvalidConfigFileError."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
-            _load_any(str(tmp_path / "missing.yaml"), frozenset(), copies=Copies())
+            _load_any(str(tmp_path / "missing.yaml"), frozenset(), reads=Reads())
 
     def test_load_yaml_item_malformed(self, tmp_path: Path) -> None:
         """Malformed YAML content raises InvalidConfigFileError."""
@@ -351,7 +352,7 @@ class TestFileErrors:
     def test_load_json_item_file_not_found(self, tmp_path: Path) -> None:
         """Missing JSON item file raises InvalidConfigFileError."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="not found"):
-            _load_any(str(tmp_path / "missing.json"), frozenset(), copies=Copies())
+            _load_any(str(tmp_path / "missing.json"), frozenset(), reads=Reads())
 
     def test_load_json_item_malformed(self, tmp_path: Path) -> None:
         """Malformed JSON content raises InvalidConfigFileError."""
@@ -363,7 +364,7 @@ class TestFileErrors:
     def test_load_any_unsupported_format(self, tmp_path: Path) -> None:
         """Unsupported file extension raises InvalidConfigFileError."""
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="Unsupported"):
-            _load_any(str(tmp_path / "file.xyz"), frozenset(), copies=Copies())
+            _load_any(str(tmp_path / "file.xyz"), frozenset(), reads=Reads())
 
     def test_dump_json_writes_file(self, tmp_path: Path) -> None:
         """JSON dump writes a valid JSON file to disk."""
@@ -1158,7 +1159,7 @@ class TestFilesMissingLibrary:
             unittest.mock.patch.dict(sys.modules, {"yaml": None}),
             pytest.raises(confarg.exceptions.InvalidConfigFileError, match="PyYAML"),
         ):
-            _load_file(path, copies=Copies())
+            _load_file(path, reads=Reads())
 
 
 # ---------------------------------------------------------------------------
@@ -1487,7 +1488,7 @@ class TestFilesIncludeGaps:
         p = tmp_path / "circular.json"
         p.write_text(json.dumps({"items": [{"__include__": "circular.json"}]}))
         with pytest.raises(confarg.exceptions.ConfargError, match="Circular include"):
-            _load_file(p, copies=Copies())
+            _load_file(p, reads=Reads())
 
     def test_unsupported_extension_in_include_raises(self, tmp_path: Path) -> None:
         """An __include__ pointing to an unsupported extension raises InvalidConfigFileError."""
@@ -1496,7 +1497,7 @@ class TestFilesIncludeGaps:
         p = tmp_path / "root.json"
         p.write_text(json.dumps({"__include__": "data.xyz"}))
         with pytest.raises(confarg.exceptions.InvalidConfigFileError, match="Unsupported"):
-            _load_file(p, copies=Copies())
+            _load_file(p, reads=Reads())
 
 
 # ---------------------------------------------------------------------------

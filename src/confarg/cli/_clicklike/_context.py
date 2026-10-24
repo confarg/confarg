@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from confarg._merge import MergeDict
 
 from confarg._defaults import _resolve_options
-from confarg._depth import Copies
+from confarg._files import Reads
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 from confarg.cli._sources import REGISTRATION_ATTR, Registration, reconcile
@@ -84,8 +84,8 @@ def ctx_prefix(ctx: Any, options: _Options) -> str:
     return resolve_prefix(registered_prefix(ctx), options.cli_prefix)
 
 
-def merge_from_ctx(target: object, ctx: Any, options: _Options, copies: Copies) -> MergeDict:
-    """Flatten ``ctx`` and run the shared merge tail, charging *copies*; see the adapters' merge_context."""
+def merge_from_ctx(target: object, ctx: Any, options: _Options, reads: Reads) -> MergeDict:
+    """Flatten ``ctx`` and run the shared merge tail, reading through *reads*; see the adapters' merge_context."""
     found = registration(ctx)
     return _merge_from_flat(
         flat_from_ctx(ctx),
@@ -94,12 +94,12 @@ def merge_from_ctx(target: object, ctx: Any, options: _Options, copies: Copies) 
         cli_prefix=ctx_prefix(ctx, options),
         binds_runs=False,
         runs=None if found is None else found.runs,
-        copies=copies,
+        reads=reads,
     )
 
 
 def construct_from_ctx(target: object, ctx: Any, options: _Options) -> Any:
     """Merge ``ctx`` and construct ``target``; see the adapters' from_context."""
-    copies = Copies()
-    merged = merge_from_ctx(target, ctx, options, copies)
-    return _construct_from_merged(target, merged, options.union_tag, ctx_prefix(ctx, options), copies)
+    reads = Reads()
+    merged = merge_from_ctx(target, ctx, options, reads)
+    return _construct_from_merged(target, merged, options.union_tag, ctx_prefix(ctx, options), reads.copies)

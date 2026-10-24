@@ -10366,7 +10366,7 @@ class TestCopiesContract:
         """A file's 90 alias copies and two reads of ten positions argv writes are 110 in one configuration."""
         path = tmp_yaml("d:\n  l0: &l0 [x, x, x, x, x, x, x, x, x, x]\n  refs: [" + ", ".join(["*l0"] * 9) + "]\n")
         argv = ["--d.r", "${d.l0}", "--d.s", "${d.l0}"]
-        with pytest.raises(UnsafeExpressionError, match=r"\(100 already copied\)"):
+        with pytest.raises(UnsafeExpressionError, match=r"\(110 copied\)"):  # 90 by aliases, 20 by the two reads
             loader.load(_Deep, argv=argv, env={}, files=[path])
 
     def test_registration_reads_with_a_budget_of_its_own(self, populating_loader: ConfargLoader, tmp_yaml) -> None:

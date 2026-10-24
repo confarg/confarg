@@ -166,14 +166,8 @@ def _yaml_loader() -> Any:
                     pairs.append((key, value))
             copied = len(kept.keys() - {_key_identity(key) for key, _ in node.value[merged:]})
             node.value = pairs
-            spent = self._copies.spent
             line = node.start_mark.line + 1
-            self._copies.charge(
-                copied,
-                lambda: InvalidConfigFileError.too_many_copies(
-                    f"read {self._loc}", self._copies.bound, spent + copied, line=line
-                ),
-            )
+            self._copies.charge(copied, f"read {self._loc}", error=InvalidConfigFileError, line=line)
 
         def compose_node(self, parent: Any, index: Any) -> Any:
             # A mapping composes its key with no index, and its value with the key's node as one.
@@ -429,7 +423,7 @@ def _load_includes(  # noqa: PLR0913  # the walk's state: entries, location, cyc
     mount: tuple[str, ...] = (),
     *,
     relative: bool = False,
-    copies: Copies,
+    reads: Reads,
 ) -> Any:
     """Load every include entry and layer them left to right, later entries winning.
 
@@ -455,13 +449,13 @@ def _load_includes(  # noqa: PLR0913  # the walk's state: entries, location, cyc
     """
     result: Any = None
     for i, (path_str, options) in enumerate(entries):
-        inc_loc = _joined(base, path_str, copies)
-        key = _identity(inc_loc, copies)
+        inc_loc = reads.join(base, path_str)
+        key = reads.identity(inc_loc)
         if key in seen:
             msg = f"Circular include detected: {inc_loc}"
             raise ConfargError(msg)
         loaded = _unwrap_root_key(
-            _load_any(inc_loc, seen | {key}, options=options, root=root, mount=mount, relative=relative, copies=copies),
+            _load_any(inc_loc, seen | {key}, options=options, root=root, mount=mount, relative=relative, reads=reads),
         )
         is_data = _sources._suffix(inc_loc) in _DATA_SUFFIXES
         result = loaded if i == 0 or is_data else _written_within_source(result, loaded, at=root.at_path(mount))
@@ -490,7 +484,7 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     *,
     read_ops: bool = True,
     relative: bool = False,
-    copies: Copies,
+    reads: Reads,
 ) -> Any:
     """Resolve the includes of one document's own nodes, and anchor its own references.
 
@@ -525,7 +519,7 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     """
     if isinstance(data, dict):
         return _resolve_dict(
-            data, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative, copies=copies
+            data, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative, reads=reads
         )
     if isinstance(data, list):
         # A list replaces the layers below whole: a delete an item kept for them ends here.
@@ -533,7 +527,7 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
         for index, item in enumerate(data):
             at = (*path_in_file, str(index))
             resolved = _resolve_node(
-                item, base, seen, at, root, mount, read_ops=read_ops, relative=relative, copies=copies
+                item, base, seen, at, root, mount, read_ops=read_ops, relative=relative, reads=reads
             )
             items.append(_as_list_item(resolved, base, at))
         return items
@@ -553,7 +547,7 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     *,
     read_ops: bool,
     relative: bool = False,
-    copies: Copies,
+    reads: Reads,
 ) -> Any:
     """Resolve a dict node, the one place INCLUDE_KEY and UNSET_KEY are read (see :func:`_resolve_node`).
 
@@ -587,13 +581,13 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
         if not rest:
             return DICT_DELETE
         resolved_rest = _resolve_dict(
-            rest, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative, copies=copies
+            rest, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative, reads=reads
         )
         return _written_within_source(DICT_DELETE, resolved_rest, at=root.at_path(_typed_path((*mount, *path_in_file))))
     if INCLUDE_KEY not in data:
         resolved = {
             k: _resolve_node(
-                v, base, seen, (*path_in_file, str(k)), root, mount, read_ops=read_ops, relative=relative, copies=copies
+                v, base, seen, (*path_in_file, str(k)), root, mount, read_ops=read_ops, relative=relative, reads=reads
             )
             for k, v in data.items()
         }
@@ -601,14 +595,14 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     entries = _parse_include_val(data[INCLUDE_KEY])
     here = _typed_path((*mount, *path_in_file))
     under_an_op = relative or (read_ops and any(segment in MERGE_OP_KEYS for segment in path_in_file))
-    included = _load_includes(entries, base, seen, root, here, relative=under_an_op, copies=copies)
+    included = _load_includes(entries, base, seen, root, here, relative=under_an_op, reads=reads)
     siblings = {k: v for k, v in data.items() if k != INCLUDE_KEY}
     if not siblings:
         return included
     return _include_with_siblings(
         included,
         _resolve_dict(
-            siblings, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative, copies=copies
+            siblings, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative, reads=reads
         ),
         root.at_path(here),
     )
@@ -631,7 +625,7 @@ def _load_any(  # noqa: PLR0913  # the walk's state: location, cycle guard, opti
     root: MergeAt = _SHAPE,
     mount: tuple[str, ...] = (),
     relative: bool = False,
-    copies: Copies,
+    reads: Reads,
 ) -> Any:
     """Load one config source as any type (dict, list, or scalar), with its includes resolved.
 
@@ -652,7 +646,7 @@ def _load_any(  # noqa: PLR0913  # the walk's state: location, cycle guard, opti
 
     The document is counted from *mount* before anything walks it, so no walker meets a
     configuration nesting deeper than ``_depth.MAX_DEPTH`` levels or a value holding itself;
-    what its shared parts copy is charged to *copies*, and so is every position it holds when
+    what its shared parts copy is charged to the budget *reads* carries, and so is every position it holds when
     the configuration has read the location already.
 
     Raises:
@@ -667,40 +661,57 @@ def _load_any(  # noqa: PLR0913  # the walk's state: location, cycle guard, opti
         docs-dev/architecture/design-decisions/a-configuration-copies-at-most-100000-positions.md#what-copies
     """
     read_ops = _sources._suffix(loc) not in _DATA_SUFFIXES  # a data file's header is data
-    identity = _identity(loc, copies)
-    read_again = identity in copies.read
-    copies.read.add(identity)
+    identity = reads.identity(loc)
+    read_again = identity in reads.visited
+    reads.visited.add(identity)
     key = (identity, json.dumps(options or {}, sort_keys=True, default=str))
-    if (document := copies.documents.get(key, _UNREAD)) is _UNREAD:
-        document = copies.documents[key] = _load_document(loc, options, copies=copies)
-    shape = refuse_overflow(document, f"read {loc}", at=mount, error=InvalidConfigFileError, copies=copies)
+    if (document := reads.documents.get(key, _UNREAD)) is _UNREAD:
+        document = reads.documents[key] = _load_document(loc, options, copies=reads.copies)
+    shape = refuse_overflow(document, f"read {loc}", at=mount, error=InvalidConfigFileError, copies=reads.copies)
     if read_again:
-        spent = copies.spent
-        copies.charge(
-            shape.written,
-            lambda: InvalidConfigFileError.too_many_copies(
-                f"read {loc} again", copies.bound, spent + shape.written, mount
-            ),
-        )
-    return _resolve_node(document, loc, seen, (), root, mount, read_ops=read_ops, relative=relative, copies=copies)
+        reads.copies.charge(shape.written, f"read {loc} again", error=InvalidConfigFileError, path=mount)
+    return _resolve_node(document, loc, seen, (), root, mount, read_ops=read_ops, relative=relative, reads=reads)
 
 
 #: A document the configuration has not read yet; ``None`` is an empty YAML document.
 _UNREAD: Final = object()
 
 
-def _joined(base: str | None, relative: str, copies: Copies) -> str:
-    """Return ``_sources._join(base, relative)``, joined once per configuration (*copies* keeps it)."""
-    if (loc := copies.joined.get((base, relative))) is None:
-        loc = copies.joined[base, relative] = _sources._join(base, relative)
-    return loc
+class Reads:
+    """What one configuration has read, and the copy budget it charges.
 
+    Each public call opens one and passes it down every read of the configuration's merge, so
+    every source and channel share it; its :attr:`copies` goes on to the configuration's
+    resolution. A location is read once: its join, its identity and its document are kept, so
+    reading it again costs the positions it copies and nothing else (:func:`_load_any`).
 
-def _identity(loc: str, copies: Copies) -> str:
-    """Return ``_sources._identity(loc)``, resolved once per configuration (*copies* keeps it)."""
-    if (identity := copies.identities.get(loc)) is None:
-        identity = copies.identities[loc] = _sources._identity(loc)
-    return identity
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-configuration-copies-at-most-100000-positions.md#one-budget-per-configuration
+    """
+
+    def __init__(self) -> None:
+        #: The copy budget of the configuration, which reading a location again charges.
+        self.copies = Copies()
+        #: The location each (including location, written location) pair names.
+        self.joined: dict[tuple[str | None, str], str] = {}
+        #: The identity of each location.
+        self.identities: dict[str, str] = {}
+        #: The identity of each location read, whose next read copies it.
+        self.visited: set[str] = set()
+        #: Each document read, by its location's identity and the options it was read with.
+        self.documents: dict[tuple[str, str], Any] = {}
+
+    def join(self, base: str | None, relative: str) -> str:
+        """Return ``_sources._join(base, relative)``, joined once per configuration."""
+        if (loc := self.joined.get((base, relative))) is None:
+            loc = self.joined[base, relative] = _sources._join(base, relative)
+        return loc
+
+    def identity(self, loc: str) -> str:
+        """Return ``_sources._identity(loc)``, resolved once per configuration."""
+        if (identity := self.identities.get(loc)) is None:
+            identity = self.identities[loc] = _sources._identity(loc)
+        return identity
 
 
 def _require_layer(value: Any, loc: str) -> MergeDict:
@@ -726,7 +737,7 @@ def _require_layer(value: Any, loc: str) -> MergeDict:
     return value
 
 
-def _load_raw(loc: str, seen: frozenset[str], root: MergeAt = _SHAPE, *, copies: Copies) -> MergeDict:
+def _load_raw(loc: str, seen: frozenset[str], root: MergeAt = _SHAPE, *, reads: Reads) -> MergeDict:
     """Load a config source whose content is a document root, so a configuration layer.
 
     A data file contributes a value rather than a layer, so it is rejected here even though
@@ -736,10 +747,10 @@ def _load_raw(loc: str, seen: frozenset[str], root: MergeAt = _SHAPE, *, copies:
         docs-dev/architecture/config-files/formats.md#data-files-versus-configuration-layers
     """
     _loader_for(loc, _LOADERS)  # a root is a layer: .csv/.tsv is unsupported here, not data
-    return _require_layer(_load_any(loc, seen, root=root, copies=copies), loc)
+    return _require_layer(_load_any(loc, seen, root=root, reads=reads), loc)
 
 
-def _load_file(loc: str | Path, root: MergeAt = _SHAPE, *, copies: Copies) -> MergeDict:
+def _load_file(loc: str | Path, root: MergeAt = _SHAPE, *, reads: Reads) -> MergeDict:
     """Load a config source, dispatching by extension.
 
     Supports .toml, .yaml, .yml, and .json documents, local or remote -- a data file is a
@@ -750,7 +761,7 @@ def _load_file(loc: str | Path, root: MergeAt = _SHAPE, *, copies: Copies) -> Me
         root: Where the merge stands at the configuration root, so the parts of the
             document merge by the type where they land, as layers do; the shape rule by
             default.
-        copies: The copy budget of the configuration the file is read for.
+        reads: What the configuration has read, and its copy budget.
 
     Returns:
         A dict of the parsed contents with all includes resolved.
@@ -763,7 +774,7 @@ def _load_file(loc: str | Path, root: MergeAt = _SHAPE, *, copies: Copies) -> Me
             is detected.
     """
     loc = _sources._location(loc)
-    return _load_raw(loc, frozenset({_identity(loc, copies)}), root, copies=copies)
+    return _load_raw(loc, frozenset({reads.identity(loc)}), root, reads=reads)
 
 
 def _nest(value: Any, subpath: str) -> Any:
@@ -810,14 +821,14 @@ def _parse_mount_value(value: Any) -> list[tuple[str, dict[str, Any]]]:
     return _parse_include_val(_decode_mount_value(value))
 
 
-def _load_mount_value(  # noqa: PLR0913  # the walk's state: value, location, root, mount, anchor, budget
+def _load_mount_value(  # noqa: PLR0913  # the walk's state: value, location, root, mount, anchor, reads
     value: Any,
     base: str | None = None,
     root: MergeAt = _SHAPE,
     mount: tuple[str, ...] = (),
     *,
     relative: bool = False,
-    copies: Copies,
+    reads: Reads,
 ) -> Any:
     """Resolve one channel-supplied mount value to the value it contributes.
 
@@ -831,11 +842,11 @@ def _load_mount_value(  # noqa: PLR0913  # the walk's state: value, location, ro
         docs-dev/architecture/config-files/mounting.md#mounting
         docs-dev/architecture/design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel
     """
-    return _load_includes(_parse_mount_value(value), base, frozenset(), root, mount, relative=relative, copies=copies)
+    return _load_includes(_parse_mount_value(value), base, frozenset(), root, mount, relative=relative, reads=reads)
 
 
 def _load_mount(
-    value: Any, subpath: str, base: str | None = None, root: MergeAt = _SHAPE, *, copies: Copies
+    value: Any, subpath: str, base: str | None = None, root: MergeAt = _SHAPE, *, reads: Reads
 ) -> MergeDict:
     """Load one mount and return it nested at the dot-separated *subpath*.
 
@@ -861,19 +872,19 @@ def _load_mount(
     """
     if subpath.endswith(APPEND_SUFFIX):
         real_subpath = subpath.removesuffix(APPEND_SUFFIX)
-        loaded = _load_mount_value(value, base, root, (*real_subpath.split("."), "0"), relative=True, copies=copies)
+        loaded = _load_mount_value(value, base, root, (*real_subpath.split("."), "0"), relative=True, reads=reads)
         if not isinstance(loaded, list):  # a list's items were read as items by its own walk
-            loaded = _as_list_item(loaded, _joined(base, _parse_mount_value(value)[-1][0], copies), ())
+            loaded = _as_list_item(loaded, reads.join(base, _parse_mount_value(value)[-1][0]), ())
         return _nest({ListOp.APPEND: _to_append_list(loaded)}, real_subpath)
     if subpath:
-        return _nest(_load_mount_value(value, base, root, tuple(subpath.split(".")), copies=copies), subpath)
-    locations = [_joined(base, path_str, copies) for path_str, _ in _parse_mount_value(value)]
+        return _nest(_load_mount_value(value, base, root, tuple(subpath.split(".")), reads=reads), subpath)
+    locations = [reads.join(base, path_str) for path_str, _ in _parse_mount_value(value)]
     for loc in locations:
         _loader_for(loc, _LOADERS)  # a root is a layer: .csv/.tsv is unsupported here, not data
-    return _require_layer(_load_mount_value(value, base, root, copies=copies), locations[-1])
+    return _require_layer(_load_mount_value(value, base, root, reads=reads), locations[-1])
 
 
-def _load_subpath_files(entries: Sequence[tuple[str, Any]], root: MergeAt, *, copies: Copies) -> MergeDict:
+def _load_subpath_files(entries: Sequence[tuple[str, Any]], root: MergeAt, *, reads: Reads) -> MergeDict:
     """Load and merge a sequence of (subpath, mount value) pairs into a single dict.
 
     Carries ``files=`` and the ``CONFIG[__SUBPATH]`` environment pointers. Each value is
@@ -882,7 +893,7 @@ def _load_subpath_files(entries: Sequence[tuple[str, Any]], root: MergeAt, *, co
     """
     result: MergeDict = {}
     for subpath, value in entries:
-        fdata = _load_mount(value, subpath, root=root, copies=copies)
+        fdata = _load_mount(value, subpath, root=root, reads=reads)
         result = _deep_merge(result, fdata, at=root)
     return result
 
