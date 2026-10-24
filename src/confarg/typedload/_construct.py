@@ -596,12 +596,18 @@ def spec_reading_variant(tp: Any, data: Any, union_tag: str) -> Any:
     if not isinstance(data, dict):
         return None
     present = {k for k in _OPENERS if k in data} - {union_tag, _defaults.CALL_KEY}
-    if not present:
-        return None
-    members = _union_args_no_none(tp)
-    if any(
-        _is_struct_variant(_resolve_type(m)) and present & set(_struct_member_names(_resolve_type(m))) for m in members
-    ):
+    return _opener_keys_reader(_union_args_no_none(tp), present) if present else None
+
+
+def _opener_keys_reader(members: Sequence[Any], keys: set[str]) -> Any:
+    """Return the variant among the union *members* that reads a spec holding the opener *keys*, None for none.
+
+    The Callable, else the ``Any`` (:func:`_first_spec_reader`), unless a struct variant owns
+    one of *keys*, which is then its data, as a member owns the union tag's spelling. The keys
+    alone decide, so :func:`spec_reading_variant` asks it of a dict and :func:`opener_reader`
+    of a key no value comes with.
+    """
+    if any(_is_struct_variant(rm := _resolve_type(m)) and keys & set(_struct_member_names(rm)) for m in members):
         return None
     return _first_spec_reader(members)
 
@@ -612,7 +618,7 @@ def opener_reader(tp: Any, opener: str, union_tag: str) -> Any:
     The key's half of :func:`spec_reading_variant`, for registration, which has no value to
     read: a ``call:`` a field takes as a typed call is *tp*'s, which takes its value
     (:func:`_takes_typed_call`); any other opener is read by a Callable or an ``Any`` *tp* is,
-    or by the variant :func:`spec_reading_variant` names in a union; the union tag selects a
+    or in a union by the variant :func:`_opener_keys_reader` names; the union tag selects a
     struct variant first (:func:`_construct_union_by_tag`), so it is the spec's only in a union
     holding none.
 
@@ -625,7 +631,7 @@ def opener_reader(tp: Any, opener: str, union_tag: str) -> Any:
     if len(members) == 1:
         return members[0] if _reads_specs(members[0]) else None
     if opener != union_tag:
-        return spec_reading_variant(tp, {opener: None}, union_tag)
+        return _opener_keys_reader(members, {opener})
     if _union_tag_shadowed(tp, union_tag) or any(_is_struct(m) for m in members):
         return None
     return _first_spec_reader(members)
