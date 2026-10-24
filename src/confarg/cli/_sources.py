@@ -49,6 +49,38 @@ class Registration:
     sources: Mapping[str, Any]
     #: The flags registered to bind every token up to the next flag, by their dotted names.
     runs: frozenset[str] = frozenset()
+    #: The target the flags are a registration of: one per parser, command or app.
+    target: Any = None
+
+
+def refuse_a_second_target(registered: Registration | None, target: Any, holder: str) -> None:
+    """Refuse registering *target* on a *holder* that already holds another target's flags.
+
+    What ``populate_*`` read is recorded once per parser, command or app, where the merge finds
+    it, so a second target's record would replace the first's and the first target's merge would
+    read the second's prefix and sources (BUG-273). The same target registered again replaces
+    its own record.
+
+    Raises:
+        ConfargError: If *registered* is another target's registration.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters
+    """
+    if registered is None or registered.target is None or registered.target == target:
+        return
+    held, given = _type_name(registered.target), _type_name(target)
+    msg = (
+        f"This {holder} already holds the flags of {held}, and confarg reads one target's flags per"
+        f" {holder}: populate {given} on a {holder} of its own, or populate one dataclass holding a"
+        f" field of each type."
+    )
+    raise ConfargError(msg)
+
+
+def _type_name(tp: Any) -> str:
+    """Return how a refusal names the target type *tp*."""
+    return getattr(tp, "__qualname__", None) or repr(tp)
 
 
 def registration_inputs(

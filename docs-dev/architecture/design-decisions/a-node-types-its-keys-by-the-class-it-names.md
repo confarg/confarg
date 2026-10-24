@@ -56,6 +56,8 @@ It fixes BUG-233 alone, and leaves a list argument to an index or a `.json` cast
 
 A framework splits argv into tokens by the arity registration gives each flag, before confarg's merge runs, so registration reads the layers vanilla's loop types argv by.
 `populate_*` and `make_parser` take the option set `merge_*` takes (`**opts: Unpack[MergeOptions]`, [one option set](../pipeline/api-seams.md#one-option-set)), read the layers below argv (`_pipeline.below_argv`, best effort and silent: the merge raises and warns), and record what they read with the flags they registered to bind a run (`cli._sources.Registration`): on the argparse `Namespace` (`__confarg_registration__`, on every one, so a host spreading `**vars(ns)` drops it, as it drops the prefix key), on the click and typer options and command, in the cyclopts app's metadata.
+The record is one per holder, so a holder takes one target: a second one is refused (`cli._sources.refuse_a_second_target`, BUG-273), where it used to replace the first's record, the prefix half since BUG-2, and the first target's merge read the second's prefix and sources; the same target registered again replaces its record.
+A dataclass holding a field of each type covers two sections, as jsonargparse's `nested_key` puts each class under its own key; per-target records wait for a use (FEAT-56).
 
 - `merge_*` / `from_*` reuse a recorded option they are not given, and refuse one that differs from what registration read, its default included (`cli._sources.reconcile`): the framework split argv by those sources.
   `argv` is each step's own, and an option registration read nothing by differs from nothing (the environment where no prefix and no `env_config` read it).

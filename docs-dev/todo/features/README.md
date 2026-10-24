@@ -45,5 +45,6 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin](FEAT-10-confarg-explain-command.md) | minor | FEAT-8 | XL | low | behavior |
 | [FEAT-4 — An explicit ordered patch-op stream](FEAT-4-ordered-patch-op-stream.md) | trivial |  | M | high | none |
 | [FEAT-44 — YAML tags for a file's merge ops](FEAT-44-yaml-tags-for-a-files-merge-ops.md) | trivial |  | M | medium | none |
+| [FEAT-56 — Several confarg targets on one parser, command or app](FEAT-56-several-targets-on-one-parser-command-or-app.md) | trivial |  | M | medium | behavior |
 
 <!-- tickets:end -->

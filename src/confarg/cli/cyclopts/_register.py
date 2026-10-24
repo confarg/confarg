@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 from confarg.cli._build import bound_runs, build_dynamic_flags, build_static_flags, widen_static
 from confarg.cli._markup import help_escape
 from confarg.cli._prefix import PREFIX_ATTR
-from confarg.cli._sources import REGISTRATION_ATTR, Registration, registration_inputs
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, refuse_a_second_target, registration_inputs
 from confarg.dictexpr import contains_expression
 
 # Maps id(app) to confarg metadata {command, name_map, stands_bare}.
@@ -232,6 +232,10 @@ def load_flags_into_app(
         return_annotation=dict,
     )
 
+    previous = _app_meta.get(id(app), {}).get("command")
+    if previous is not None and app.default_command is previous:
+        # confarg's own command, registered again: replaced, never the host's.
+        app.default_command = None
     app.default(__confarg_command__)
     # Store metadata keyed by id(app); include a reference to app to prevent
     # id reuse if a different App is allocated at the same address after GC.
@@ -286,6 +290,7 @@ def populate_app(
             ``--<prefix>`` option, and has no CLI spelling without a prefix.
             ``config_flag`` names the config-file option (``""`` registers none).
     """
+    refuse_a_second_target(_app_meta.get(id(app), {}).get(REGISTRATION_ATTR), target, "app")
     options, below, sources = registration_inputs(target, "populate_app", opts)
     cli_prefix, argv = options.cli_prefix or "", options.argv
     union_tag, config_flag = options.union_tag, options.config_flag
@@ -312,4 +317,4 @@ def populate_app(
     # load_flags_into_app has just (re)created this entry; merge_app reads the prefix and
     # what registration read back from it, since cyclopts hands the very same App to the merge step.
     _app_meta[id(app)][PREFIX_ATTR] = cli_prefix
-    _app_meta[id(app)][REGISTRATION_ATTR] = Registration(sources, bound_runs(flags, cli_prefix))
+    _app_meta[id(app)][REGISTRATION_ATTR] = Registration(sources, bound_runs(flags, cli_prefix), target)
