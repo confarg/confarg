@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from confarg._merge import ListOp, MergeDict
 
 from confarg._defaults import _resolve_options
+from confarg._depth import Copies
 from confarg._parse_cli import _collect_config_file_pairs
 from confarg.cli._argv import drop_bare_occurrences, refuse_bare_occurrences
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
@@ -70,7 +71,7 @@ def merge_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) -
     Config file loading order:
         Same as :func:`confarg.merge`.
     """
-    return _merge_app(target, app, _app_options(app, "merge_app", opts))
+    return _merge_app(target, app, _app_options(app, "merge_app", opts), Copies())
 
 
 def _app_registration(app: cyclopts.App) -> Registration | None:
@@ -90,7 +91,7 @@ def _app_prefix(app: cyclopts.App, options: _Options) -> str:
     return resolve_prefix(meta.get(PREFIX_ATTR) if meta else None, options.cli_prefix)
 
 
-def _merge_app(target: object, app: cyclopts.App, options: _Options) -> MergeDict:
+def _merge_app(target: object, app: cyclopts.App, options: _Options, copies: Copies) -> MergeDict:
     """Parse *app*'s argv and merge every source; :func:`merge_app` with its options resolved."""
     meta = _app_meta.get(id(app))
 
@@ -139,6 +140,7 @@ def _merge_app(target: object, app: cyclopts.App, options: _Options) -> MergeDic
         cli_prefix=prefix,
         binds_runs=True,
         runs=None if registration is None else registration.runs,
+        copies=copies,
     )
 
 
@@ -168,8 +170,9 @@ def from_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) ->
         An instance of *target* populated from all sources.
     """
     options = _app_options(app, "from_app", opts)
-    merged = _merge_app(target, app, options)
-    return _construct_from_merged(target, merged, options.union_tag, _app_prefix(app, options))
+    copies = Copies()
+    merged = _merge_app(target, app, options, copies)
+    return _construct_from_merged(target, merged, options.union_tag, _app_prefix(app, options), copies)
 
 
 __all__ = ["from_app", "merge_app"]

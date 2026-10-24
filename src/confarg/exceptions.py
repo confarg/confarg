@@ -255,6 +255,22 @@ class ConfargError(Exception):
         return cls(f"{message}, at '{_spell_long_path(path)}' ({len(path)} levels).")
 
     @classmethod
+    def too_many_copies(
+        cls, action: str, bound: int, copied: int, path: FieldPath | None = None, *, line: int | None = None
+    ) -> ConfargError:
+        """Return the error for a configuration copying more than *bound* positions, *copied* where it crossed.
+
+        The crossing is named by *path*, the position of the copy, or by *line* for a YAML merge
+        key, merged before any position is known; by neither for a document read again at the
+        configuration root. Called on a subclass, it returns that subclass.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-configuration-copies-at-most-100000-positions.md#the-refusal
+        """
+        where = f", at '{_spell_long_path(path)}'" if path else f", at line {line}" if line is not None else ""
+        return cls(f"Cannot {action}: it copies more than {bound} positions{where} ({copied} copied).")
+
+    @classmethod
     def holds_itself(cls, action: str, path: FieldPath, holder: FieldPath) -> ConfargError:
         """Return the error for a container at *path* that is the container at *holder*, one of its ancestors.
 

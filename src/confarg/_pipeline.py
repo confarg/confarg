@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
     from confarg._defaults import _Options
 
+from confarg._depth import Copies
 from confarg._files import _load_mount, _load_subpath_files
 from confarg._merge import (
     _SHAPE,
@@ -52,7 +53,7 @@ from confarg.exceptions import ConfargError, InvalidConfigFileError, LocalsError
 from confarg.typedload._coerce import _coerce_leaf
 
 
-def _load_cli_config(value: Any, subpath: str, config_flag: str, root: MergeAt) -> MergeDict:
+def _load_cli_config(value: Any, subpath: str, config_flag: str, root: MergeAt, *, copies: Copies) -> MergeDict:
     """Load one CLI config source (``--config[.subpath][+] VALUE``) into a nested dict.
 
     *value* is mounted at *subpath* by :func:`~confarg._files._load_mount`, the route every
@@ -73,7 +74,7 @@ def _load_cli_config(value: Any, subpath: str, config_flag: str, root: MergeAt) 
                 f" Use --{config_flag}.fieldname{APPEND_SUFFIX} /path/to/file."
             )
             raise ConfargError(msg)
-    return _load_mount(value, subpath, root=root)
+    return _load_mount(value, subpath, root=root, copies=copies)
 
 
 def _check_locals_are_typed(node: Any, locals_key: str, path: str) -> None:
@@ -402,6 +403,8 @@ def _merge_sources(
     parse_cli: Callable[[MergeDict], MergeDict],
     cli_configs: Sequence[tuple[str, str]],
     options: _Options,
+    *,
+    copies: Copies,
 ) -> MergeDict:
     """Merge the CLI data with env vars and config files in priority order.
 
@@ -417,6 +420,7 @@ def _merge_sources(
             in left-to-right CLI order.
         options: The caller's resolved options; ``argv`` and ``cli_prefix`` are not
             read, *parse_cli* reading argv and *cli_configs* naming its files.
+        copies: The configuration's copy budget, which every document read charges.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key
@@ -446,7 +450,7 @@ def _merge_sources(
         raise ConfargError(msg)
 
     # 1. The config level, then the environment over it
-    config_data, env_data = _lower_layers(target, cli_configs, options)
+    config_data, env_data = _lower_layers(target, cli_configs, options, copies=copies)
     root = merge_root(target, union_tag)
     # 2. argv over both
     below_cli = _deep_merge(config_data, env_data, at=root)
@@ -479,6 +483,8 @@ def _lower_layers(
     target: Any,
     cli_configs: Sequence[tuple[str, str]],
     options: _Options,
+    *,
+    copies: Copies,
 ) -> tuple[MergeDict, MergeDict]:
     """Return the config level and the environment, each typed over what lies below it.
 
@@ -501,9 +507,9 @@ def _lower_layers(
     )
     env_configs.sort(key=operator.itemgetter(0))
     root = merge_root(target, union_tag)
-    config_data = _load_subpath_files(file_entries + env_configs, root)
+    config_data = _load_subpath_files(file_entries + env_configs, root, copies=copies)
     for subpath, value in cli_configs:
-        fdata = _load_cli_config(value, subpath, config_flag, root)
+        fdata = _load_cli_config(value, subpath, config_flag, root, copies=copies)
         config_data = _deep_merge(config_data, fdata, at=root)
 
     env_data: MergeDict = {}
@@ -525,7 +531,7 @@ def below_argv(target: Any, cli_configs: Sequence[tuple[str, str]], options: _Op
 
     Best effort, as the rest of registration: a layer that fails to load or to parse
     raises its error at the merge, so here it holds nothing, and what it warns about the
-    merge warns about, once.
+    merge warns about, once. It reads with a copy budget of its own: the merge reads again.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters
@@ -533,7 +539,7 @@ def below_argv(target: Any, cli_configs: Sequence[tuple[str, str]], options: _Op
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            config_data, env_data = _lower_layers(target, cli_configs, options)
+            config_data, env_data = _lower_layers(target, cli_configs, options, copies=Copies())
         return _deep_merge(config_data, env_data, at=merge_root(target, options.union_tag))
     except Exception:  # noqa: BLE001  # a failing layer is the merge's to report
         return {}

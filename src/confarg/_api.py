@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._default_layer import drop_untouched, lay_defaults, settle_pending
 from confarg._defaults import MergeOptions, _Options, _resolve_options
-from confarg._depth import refuse_overflow
+from confarg._depth import Copies, refuse_overflow
 from confarg._files import _dump_file, _native_types_of
 from confarg._merge import ListOp, MergeDict
 from confarg._parse_cli import (
@@ -80,22 +80,23 @@ def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]
 
     Raises:
         InvalidConfigFileError: If a config file cannot be loaded, nests deeper than 64 levels
-            from the configuration root, or holds itself.
+            from the configuration root, holds itself, or takes the configuration past 100 000
+            copied positions.
         UnknownArgumentError: If an unrecognized CLI argument is encountered.
         ConfargError: If a flag or a variable writes deeper than 64 levels.
     """
-    return _merge(target, _resolve_options("merge", opts))
+    return _merge(target, _resolve_options("merge", opts), Copies())
 
 
-def _merge(target: type | TypeAliasType | UnionType, options: _Options) -> MergeDict:
-    """Merge every source into a raw dict; :func:`merge` with its options resolved."""
+def _merge(target: type | TypeAliasType | UnionType, options: _Options, copies: Copies) -> MergeDict:
+    """Merge every source into a raw dict; :func:`merge` with its options resolved, charging *copies*."""
     prefix = _cli_prefix(options)
 
     def parse_cli(below: MergeDict) -> MergeDict:
         return _parse_cli(options.argv, target, prefix, options.config_flag, options.union_tag, below=below)[0]
 
     configs = _config_pairs_in(options.argv, target, prefix, options.config_flag, options.union_tag)
-    return _merge_sources(target, parse_cli, configs, options)
+    return _merge_sources(target, parse_cli, configs, options, copies=copies)
 
 
 def _cli_prefix(options: _Options) -> str:
@@ -170,23 +171,34 @@ def build[T](
         TypeCoercionError: If a value cannot be coerced to the target type.
         AmbiguousUnionError: If a Union cannot be disambiguated.
         CircularReferenceError: If expression references form a cycle.
-        UnsafeExpressionError: If an expression contains disallowed constructs.
+        UnsafeExpressionError: If an expression contains disallowed constructs, or a reference takes the
+            configuration past 100 000 copied positions.
         MissingReferenceError: If an expression references a field that does not exist.
         ExpressionEvalError: If an expression fails at runtime.
-        ConfargError: If *data* nests deeper than 64 levels or holds itself, or what its
-            expressions resolve to nests deeper.
+        ConfargError: If *data* nests deeper than 64 levels, holds itself, or shares parts
+            copying more than 100 000 positions, or what its expressions resolve to nests deeper.
+    """
+    return _build(target, data, union_tag, Copies())
+
+
+def _build(target: Any, data: dict[Any, Any], union_tag: str, copies: Copies) -> Any:
+    """Resolve and construct *target* from *data*; :func:`build`, charging *copies*.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-configuration-copies-at-most-100000-positions.md#one-budget-per-configuration
     """
     target_r = _resolve_type(target)
-    refuse_overflow(data, f"build {_named(target)}")
-    resolved = _strip_locals(_resolve_over_defaults(target_r, data, union_tag), target_r, union_tag)
+    refuse_overflow(data, f"build {_named(target)}", copies=copies)
+    resolved = _strip_locals(_resolve_over_defaults(target_r, data, union_tag, copies), target_r, union_tag)
     return _construct_resolved(target_r, resolved, union_tag)
 
 
-def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str) -> MergeDict:
+def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str, copies: Copies) -> MergeDict:
     """Resolve *data*'s expressions over *target_r*'s field defaults, the defaults nobody touched taken out again.
 
     An expression reads an Enum or registered leaf as its object, and what it resolves to is
-    left in its dump form.
+    left in its dump form. Each read charges *copies*; the tree it resolves to is not charged
+    again, its shared parts being what the reads copied.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
@@ -194,7 +206,9 @@ def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str) -> Me
     """
     laid = lay_defaults(target_r, data, union_tag, for_resolution=True)
     settle = settle_pending(target_r, union_tag)
-    resolved = resolve_expressions(laid.data, read=TypedReading(target_r, union_tag), write=written_form, settle=settle)
+    resolved = resolve_expressions(
+        laid.data, read=TypedReading(target_r, union_tag), write=written_form, settle=settle, copies=copies
+    )
     resolved = drop_untouched(resolved, laid.untouched)
     # An expression standing for a value copies it where it is written, so the tree can be deeper
     # now; a default nothing touched is left out, as construction never walks it.
@@ -226,17 +240,18 @@ def _construct_resolved(target_r: Any, resolved: MergeDict, union_tag: str) -> A
     return _tc(target_r, resolved, union_tag=union_tag)
 
 
-def _build_for_cli(target: Any, data: MergeDict, union_tag: str, cli_prefix: str) -> Any:
+def _build_for_cli(target: Any, data: MergeDict, union_tag: str, cli_prefix: str, copies: Copies) -> Any:
     """Return :func:`build`'s result, a ``MissingFieldError`` naming its flag under *cli_prefix*.
 
     The front-ends that parsed the command line build through it -- :func:`load` and the
-    adapters' ``from_*`` -- since :func:`build` knows no prefix.
+    adapters' ``from_*`` -- since :func:`build` knows no prefix; *copies* is the budget their
+    merge charged.
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it
     """
     try:
-        return build(target, data, union_tag=union_tag)
+        return _build(target, data, union_tag, copies)
     except MissingFieldError as e:
         e._cli_prefix = cli_prefix
         raise
@@ -274,17 +289,19 @@ def resolve(
     Raises:
         ConfargError: If a patch the merge left pending does not apply over a default.
         CircularReferenceError: If expression references form a cycle.
-        UnsafeExpressionError: If an expression contains disallowed constructs.
+        UnsafeExpressionError: If an expression contains disallowed constructs, or a reference takes the
+            configuration past 100 000 copied positions.
         MissingReferenceError: If an expression references a field that does not exist.
         ExpressionEvalError: If an expression fails at runtime.
-        ConfargError: If *data* nests deeper than 64 levels or holds itself, or what its
-            expressions resolve to nests deeper.
+        ConfargError: If *data* nests deeper than 64 levels, holds itself, or shares parts
+            copying more than 100 000 positions, or what its expressions resolve to nests deeper.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
     """
-    refuse_overflow(data, f"resolve {_named(target)}")
-    return _resolve_over_defaults(_resolve_type(target), data, union_tag)
+    copies = Copies()
+    refuse_overflow(data, f"resolve {_named(target)}", copies=copies)
+    return _resolve_over_defaults(_resolve_type(target), data, union_tag, copies)
 
 
 @overload
@@ -314,10 +331,11 @@ def from_dict[T](
         MissingFieldError: If a required field is not provided.
         TypeCoercionError: If a value cannot be coerced to the target type.
         AmbiguousUnionError: If a Union cannot be disambiguated.
-        ConfargError: If *data* nests deeper than 64 levels or holds itself.
+        ConfargError: If *data* nests deeper than 64 levels, holds itself, or shares parts
+            copying more than 100 000 positions.
     """
     target_r = _resolve_type(target)
-    refuse_overflow(data, f"construct {_named(target)}")
+    refuse_overflow(data, f"construct {_named(target)}", copies=Copies())
     laid = lay_defaults(target_r, data, union_tag, for_resolution=False).data
     return _construct_resolved(target_r, _strip_locals(laid, target_r, union_tag), union_tag)
 
@@ -344,18 +362,21 @@ def load[T](target: type[T] | TypeAliasType | UnionType, **opts: Unpack[MergeOpt
         MissingFieldError: If a required field is not provided by any source.
         TypeCoercionError: If a value cannot be coerced to the target type.
         InvalidConfigFileError: If a config file cannot be loaded, nests deeper than 64 levels
-            from the configuration root, or holds itself.
+            from the configuration root, holds itself, or takes the configuration past 100 000
+            copied positions.
         UnknownArgumentError: If an unrecognized CLI argument is encountered.
         ConfargError: If a flag or a variable writes deeper than 64 levels, or what the
             expressions resolve to nests deeper.
         AmbiguousUnionError: If a Union cannot be disambiguated.
         CircularReferenceError: If expression references form a cycle.
-        UnsafeExpressionError: If an expression contains disallowed constructs.
+        UnsafeExpressionError: If an expression contains disallowed constructs, or a reference takes the
+            configuration past 100 000 copied positions.
         MissingReferenceError: If an expression references a field that does not exist.
         ExpressionEvalError: If an expression fails at runtime.
     """
     options = _resolve_options("load", opts)
-    return _build_for_cli(target, _merge(target, options), options.union_tag, _cli_prefix(options))
+    copies = Copies()  # one configuration: its merge and its build share the budget
+    return _build_for_cli(target, _merge(target, options, copies), options.union_tag, _cli_prefix(options), copies)
 
 
 def dump(

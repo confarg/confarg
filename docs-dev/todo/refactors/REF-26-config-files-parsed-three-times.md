@@ -21,7 +21,8 @@ FEAT-32's `_parse_cli._typed_call_openings` read them once more in `_parse_cli` 
 
 **A location can now be a URL, so each of those reads can be a network fetch.**
 Two per run for a root `--config` URL (the pre-scan, then the pipeline), and the same for every `__include__` inside it.
-Nothing is incorrect — the rule that no caching happens is deliberate ([11](../../architecture/limitations.md#remote-sources)) — but it raises the value of collapsing the passes from tidiness to latency.
+Nothing is incorrect — the rule that nothing is cached across configurations is deliberate ([11](../../architecture/limitations.md#remote-sources)) — but it raises the value of collapsing the passes from tidiness to latency.
+Since BUG-259 one configuration reads each location once, keeping its document in the copy budget (`_depth.Copies`) the pipeline threads; the pre-scans open budgets of their own, so handing them the pipeline's would collapse their reads into its.
 
 **Argv itself is scanned as often, which is the other half.**
 Four passes per `_parse_cli` call: `_normalize_eq_args`, then `_tags._partial_config_from_argv`, then `_tags._tags_from_argv`, then the main loop.
