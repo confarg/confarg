@@ -289,7 +289,7 @@ The rungs run as impact's do, in order of how late the user finds out:
 | `trivial` | **No user of the library meets it.** Internal documentation, test hygiene, code structure. BUG-119, BUG-149. |
 
 Score what the user meets, not how often: frequency is a guess, the symptom is in the reproduction.
-A feature's severity is what its *absence* costs — FEAT-14 is `major`, because an ordinary dataclass field crashes `build()` today.
+A feature's severity is what its *absence* costs — FEAT-14 (closed) was `major`, because an ordinary dataclass field crashed `build()`.
 A refactor is almost always `trivial`; when one matters, it is because it blocks something that does, and the [work order](#work-order) carries that through `blocked_by` without anyone re-scoring it.
 
 ## Work order

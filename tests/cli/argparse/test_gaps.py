@@ -11,6 +11,7 @@ src/confarg/cli/argparse/.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import sys
 import types
@@ -449,16 +450,11 @@ class TestBuildCallableSpecs:
 
     def test_resolve_struct_struct_fields_raises(self) -> None:
         """_resolve_struct returns None when _struct_fields raises for a struct-like type."""
-
-        class _BrokenStruct:
-            """Passes _is_struct but fails _struct_fields."""
-
-        # Make _is_struct think this is a struct by giving it __dataclass_fields__
-        _BrokenStruct.__dataclass_fields__ = property(  # ty: ignore[unresolved-attribute]  # deliberately corrupt __dataclass_fields__ for testing
-            lambda self: (_ for _ in ()).throw(TypeError("boom")),
-        )
+        # Passes _is_struct but fails _struct_fields: its annotation names nothing, so reading
+        # the members raises NameError.
+        broken = dataclasses.make_dataclass("_BrokenStruct", [("x", "_Undefined")])
         # Should return None, not raise
-        result = _resolve_struct(_BrokenStruct)
+        result = _resolve_struct(broken)
         assert result is None
 
 

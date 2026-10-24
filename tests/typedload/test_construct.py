@@ -7,7 +7,7 @@
 import enum
 import re
 import warnings
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass, field
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
@@ -1051,3 +1051,186 @@ class TestAnyHoldsNoToken:
         """Each element of a list[Any] built from tokens is a plain str."""
         result = construct(list[Any], [_StrToken("a")])
         assert [type(v) for v in result] == [str]
+
+
+@dataclass
+class _Derived:
+    """A field computed after ``__init__``, which ``__init__`` does not take."""
+
+    n: int = 1
+    derived: int = field(init=False, default=0)
+
+    def __post_init__(self) -> None:
+        self.derived = self.n * 10
+
+
+@dataclass
+class _Seeded:
+    """An ``__init__``-only argument the instance never stores."""
+
+    n: int = 1
+    seed: InitVar[int] = 0
+
+    def __post_init__(self, seed: int) -> None:
+        self.n += seed
+
+
+@dataclass
+class _SeededRequired:
+    """An ``InitVar`` with no default."""
+
+    seed: InitVar[int]
+    n: int = 1
+
+    def __post_init__(self, seed: int) -> None:
+        self.n += seed
+
+
+@dataclass(init=False)
+class _HandInit:
+    """Dataclass fields beside a handwritten ``__init__`` that takes none of them."""
+
+    a: int
+    b: int = 2
+
+    def __init__(self, total: int) -> None:
+        self.a = total - 2
+        self.b = 2
+
+
+@dataclass(init=False)
+class _PositionalOnlyInit:
+    """A handwritten ``__init__`` whose parameter takes no keyword."""
+
+    a: int
+
+    def __init__(self, a: int, /) -> None:
+        self.a = a
+
+
+@dataclass
+class _Parent:
+    n: int = 1
+
+
+class _UndecoratedChild(_Parent):
+    """A dataclass subclass, not decorated itself, with an ``__init__`` of its own."""
+
+    def __init__(self, extra: str = "e", **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.extra = extra
+
+
+class TestAStructsMembersAreItsConstructorsParameters:
+    """A dataclass is set through its ``__init__`` parameters, as a plain class is (FEAT-14)."""
+
+    def test_an_init_false_field_is_no_member(self) -> None:
+        """A field ``__init__`` does not take is computed, never passed, even from its default."""
+        assert construct(_Derived, {"n": 2}) == _Derived(n=2)
+        assert construct(_Derived, {}).derived == 10
+
+    def test_an_init_false_field_is_refused_as_unknown(self) -> None:
+        """Data naming it is an unknown field, as ``dataclasses.replace()`` refuses it."""
+        with pytest.raises(TypeCoercionError, match=r"Unknown field\(s\) \['derived'\] for _Derived"):
+            construct(_Derived, {"derived": 5})
+
+    def test_an_init_var_is_a_member(self) -> None:
+        """An ``InitVar`` is set as the parameter it is, typed by the type it wraps."""
+        assert construct(_Seeded, {"seed": 5}).n == 6
+
+    def test_an_init_var_default_applies(self) -> None:
+        """An ``InitVar`` nobody set takes its declared default."""
+        assert construct(_Seeded, {}).n == 1
+
+    def test_a_required_init_var_is_a_missing_field(self) -> None:
+        """An ``InitVar`` with no default is a required member."""
+        with pytest.raises(MissingFieldError, match="'seed'"):
+            construct(_SeededRequired, {"n": 2})
+
+    def test_a_handwritten_init_is_read_as_written(self) -> None:
+        """The members are the handwritten ``__init__``'s parameters, not the fields it sets."""
+        built = construct(_HandInit, {"total": 7})
+        assert (built.a, built.b) == (5, 2)
+        with pytest.raises(TypeCoercionError, match=r"Unknown field\(s\) \['a'\] for _HandInit"):
+            construct(_HandInit, {"a": 1, "total": 7})
+
+    def test_a_handwritten_positional_only_parameter_is_reached(self) -> None:
+        """A dataclass is called through the positional split too, so ``a, /`` is filled by position."""
+        assert construct(_PositionalOnlyInit, {"a": 3}).a == 3
+
+    def test_an_undecorated_subclass_reads_its_own_init(self) -> None:
+        """A subclass's own ``__init__`` decides, ``**kwargs`` included, as for a plain class."""
+        built = construct(_UndecoratedChild, {"extra": "x", "kwargs": {"n": 2}})
+        assert (built.extra, built.n) == ("x", 2)
+
+
+class _NoInit:
+    """No ``__init__`` and no ``__new__`` of its own."""
+
+
+class _EmptyInit:
+    def __init__(self) -> None:
+        self.ready = True
+
+
+class _NewOnly:
+    """Its parameters are ``__new__``'s, since ``__init__`` is ``object``'s."""
+
+    x: int
+
+    def __new__(cls, x: int = 0) -> "_NewOnly":
+        obj = super().__new__(cls)
+        obj.x = x
+        return obj
+
+
+class _ForwardingNew:
+    """A ``__new__`` forwarding everything beside the ``__init__`` that names the parameters."""
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> "_ForwardingNew":
+        return super().__new__(cls)
+
+    def __init__(self, x: int = 0) -> None:
+        self.x = x
+
+
+@dataclass
+class _HoldsNoInit:
+    m: _NoInit
+
+
+@dataclass
+class _HoldsEmptyInit:
+    m: _EmptyInit
+
+
+class TestAClassTakingNothingIsAStructWithNoFields:
+    """A constructor that takes no argument makes a struct with no fields, as a field-less dataclass (BUG-153)."""
+
+    @pytest.mark.parametrize("tp", [_NoInit, _EmptyInit])
+    def test_it_builds_from_an_empty_dict(self, tp: type) -> None:
+        """``{}`` builds it, whether ``__init__`` is inherited from ``object`` or declared empty."""
+        assert isinstance(construct(tp, {}), tp)
+
+    @pytest.mark.parametrize("holder", [_HoldsNoInit, _HoldsEmptyInit])
+    def test_a_missing_field_builds_it_from_nothing(self, holder: type) -> None:
+        """A field holding it builds from nothing, as a defaulted struct does."""
+        assert construct(holder, {}).m is not None
+
+    def test_object_init_offers_no_args_or_kwargs(self) -> None:
+        """``object.__init__``'s ``*args, **kwargs`` are no fields of a class inheriting it."""
+        with pytest.raises(TypeCoercionError, match=r"Unknown field\(s\) \['kwargs'\] for _NoInit"):
+            construct(_HoldsNoInit, {"m": {"kwargs": {"x": "1"}}})
+
+    @pytest.mark.parametrize("tp", [_NoInit, _EmptyInit])
+    def test_a_class_tag_selects_it(self, tp: type) -> None:
+        """A tag naming it builds it, as it builds a field-less dataclass."""
+        assert isinstance(construct(tp, {"class": f"{__name__}.{tp.__name__}"}), tp)
+
+    def test_new_is_read_when_init_is_objects(self) -> None:
+        """With ``object.__init__``, the call's parameters are ``__new__``'s, typed by its annotations."""
+        assert construct(_NewOnly, {"x": 5}).x == 5
+
+    def test_a_forwarding_new_does_not_hide_init(self) -> None:
+        """A class defining ``__init__`` is read by it, whatever ``__new__`` takes."""
+        assert construct(_ForwardingNew, {"x": 5}).x == 5

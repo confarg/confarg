@@ -11,6 +11,7 @@ Dev Notes:
 from __future__ import annotations
 
 import enum
+import inspect
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -24,22 +25,31 @@ from confarg._types import (
     _dict_kv,
     _elem_type,
     _fixed_seq_types,
+    _init_params,
     _is_callable,
+    _is_dc,
     _is_list,
     _is_literal,
     _is_struct,
+    _is_type_ref,
     _literal_values,
     _namedtuple_fields,
     _origin,
     _Pinned,
     _resolve_type,
     _StrToken,
-    _struct_fields,
+    _struct_state_fields,
     _tuple_types,
     _union_args_no_none,
 )
 from confarg.exceptions import ConfargError, ConfargWarning, FieldPath, _spell_field_path
-from confarg.typedload._coerce import _LEAF_SERIALIZERS, _is_struct_variant, _type_kind, _TypeKind
+from confarg.typedload._coerce import (
+    _LEAF_SERIALIZERS,
+    _is_coercible_leaf,
+    _is_struct_variant,
+    _type_kind,
+    _TypeKind,
+)
 from confarg.typedload._construct import _disambiguate_struct, _holds_anything, construct
 
 if TYPE_CHECKING:
@@ -103,7 +113,29 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
         case _TypeKind.ANY:
             return _serialize_any(instance, path, union_tag, tag_policy)
         case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
+            _refuse_an_unsupported_leaf(tp, path)
             return _serialize_leaf(tp, instance)
+
+
+def _refuse_an_unsupported_leaf(tp: Any, path: FieldPath) -> None:
+    """Refuse to write a value at *path* typed by *tp* when *tp* is a leaf construction does not build.
+
+    Raises:
+        ConfargError: If *tp* is neither a type reference nor a leaf :func:`_is_coercible_leaf` names.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
+    """
+    resolved = _resolve_type(tp)
+    if _is_type_ref(resolved) or _is_coercible_leaf(resolved):
+        return
+    name = getattr(resolved, "__name__", repr(tp))
+    msg = (
+        f"Cannot serialize {name} at '{_spell_field_path(path) or _defaults.ROOT_KEY}': {name} is no struct"
+        f" and no leaf type confarg reads, so the value would not load back."
+        f" confarg.register_leaf_type({name}, ...) makes it one."
+    )
+    raise ConfargError(msg)
 
 
 def _serialize_any(
@@ -273,22 +305,70 @@ def _serialize_struct(
         out = _serialize_struct(actual_tp, instance, path, union_tag, tag_policy)
         out[union_tag] = _class_path(actual_tp)
         return out
-    flds = _struct_fields(tp)
+    flds = _struct_state_fields(tp)
     out: dict[str, Any] = {}
     for name, ft in flds.items():
         try:
-            value = getattr(instance, name)
-        except AttributeError:
-            msg = (
-                f"Cannot serialize {type(instance).__name__} at '{_spell_field_path(path) or _defaults.ROOT_KEY}':"
-                f" field '{name}' is declared in {type(instance).__name__}.__init__"
-                f" but not accessible on the instance as self.{name}."
-                f" Plain classes must store every __init__ parameter as a same-named instance attribute."
-            )
-            raise ConfargError(msg) from None
+            value = _held_attribute(instance, name)
+        except _NotHeldError as e:
+            raise _unheld_member_error(tp, instance, path, name, class_attribute=e.class_attribute) from None
         fp = (*path, name)
         out[name] = _serialize(ft, value, fp, union_tag, tag_policy)
     return out
+
+
+class _NotHeldError(AttributeError):
+    """The instance holds no value under a member's name; *class_attribute* if only its class spells one."""
+
+    def __init__(self, name: str, *, class_attribute: bool) -> None:
+        super().__init__(name)
+        self.class_attribute = class_attribute
+
+
+def _held_attribute(instance: Any, name: str) -> Any:
+    """Return the value *instance* holds as *name*: an instance attribute, a slot, a descriptor's or ``__getattr__``'s.
+
+    A plain class attribute is the class's value, not the instance's, so it is not held.
+
+    Raises:
+        _NotHeldError: If the instance holds nothing under *name*.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-object-dump-writes-state.md#a-plain-class-dumps-the-parameters-it-holds
+    """
+    try:
+        static = inspect.getattr_static(instance, name)
+    except AttributeError:
+        # Nothing static spells it, so only the instance's own __getattr__ can answer.
+        try:
+            return getattr(instance, name)
+        except AttributeError:
+            raise _NotHeldError(name, class_attribute=False) from None
+    own = getattr(instance, "__dict__", None)
+    if not (isinstance(own, dict) and name in own) and not hasattr(type(static), "__get__"):
+        raise _NotHeldError(name, class_attribute=True)
+    try:
+        return getattr(instance, name)
+    except AttributeError:
+        raise _NotHeldError(name, class_attribute=False) from None
+
+
+def _unheld_member_error(tp: Any, instance: Any, path: FieldPath, name: str, *, class_attribute: bool) -> ConfargError:
+    """Return the refusal to dump *instance*, which does not hold its member *name*."""
+    cls_name = type(instance).__name__
+    where = f"Cannot serialize {cls_name} at '{_spell_field_path(path) or _defaults.ROOT_KEY}':"
+    if _is_dc(tp):
+        return ConfargError(f"{where} field '{name}' of {cls_name} is not set on the instance.")
+    constructor = getattr(_init_params(tp).constructor, "__name__", "__init__")
+    held = (
+        f"only the class attribute {cls_name}.{name} is set, not one on the instance"
+        if class_attribute
+        else f"not accessible on the instance as self.{name}"
+    )
+    return ConfargError(
+        f"{where} field '{name}' is declared in {cls_name}.{constructor} but {held}."
+        f" Plain classes must store every {constructor} parameter as a same-named instance attribute.",
+    )
 
 
 def _serialize_union(

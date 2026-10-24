@@ -25,7 +25,7 @@ import warnings
 from collections.abc import (
     Callable,  # noqa: TC003  # used in a runtime dataclass annotation confarg resolves via get_type_hints
 )
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from dataclasses import field as dataclasses_field
 from decimal import Decimal
 from enum import Enum, IntEnum
@@ -9521,3 +9521,127 @@ class TestANodeTypesItsKeysByTheClassItNamesContract:
         argv = ["--item.class", f"{__name__}._NamingS1", "--item.inner.b", "1"]
         with pytest.raises((UnknownArgumentError, SystemExit)):
             loader.merge(_NamingStructs, argv=argv, env={})
+
+
+@dataclass
+class _MembersDerived:
+    n: int = 1
+    derived: int = dataclasses_field(init=False, default=0)
+
+    def __post_init__(self) -> None:
+        self.derived = self.n * 10
+
+
+@dataclass
+class _MembersSeeded:
+    n: int = 1
+    seed: InitVar[int] = 0
+
+    def __post_init__(self, seed: int) -> None:
+        self.n += seed
+
+
+@dataclass(init=False)
+class _MembersHandInit:
+    a: int
+    b: int = 2
+
+    def __init__(self, total: int) -> None:
+        self.a = total - 2
+        self.b = 2
+
+
+class _MembersFast:
+    def __init__(self) -> None:
+        self.fast = True
+
+
+class _MembersSlow:
+    """No ``__init__`` of its own."""
+
+
+@dataclass
+class _MembersCfg:
+    derived: _MembersDerived = dataclasses_field(default_factory=_MembersDerived)
+    seeded: _MembersSeeded = dataclasses_field(default_factory=_MembersSeeded)
+    hand: _MembersHandInit = dataclasses_field(default_factory=lambda: _MembersHandInit(4))
+    mode: _MembersFast | _MembersSlow = dataclasses_field(default_factory=_MembersFast)
+
+
+class TestAStructsMembersAreItsConstructorsParametersContract:
+    """Every channel sets a struct through the parameters its constructor takes (FEAT-14, BUG-153)."""
+
+    def test_an_init_var_is_set(self, loader: ConfargLoader) -> None:
+        """``--seeded.seed`` reaches the ``InitVar``, typed by the type it wraps."""
+        assert loader.load(_MembersCfg, argv=["--seeded.seed", "5"], env={}).seeded.n == 6
+
+    def test_an_init_false_field_is_refused(self, loader: ConfargLoader) -> None:
+        """``--derived.derived`` names no parameter, so it is no flag."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_MembersCfg, argv=["--derived.derived", "5"], env={})
+
+    def test_an_init_false_field_is_computed(self, loader: ConfargLoader) -> None:
+        """The computed field is never passed, so the struct builds."""
+        assert loader.load(_MembersCfg, argv=["--derived.n", "3"], env={}).derived.derived == 30
+
+    def test_a_handwritten_init_parameter_is_set(self, loader: ConfargLoader) -> None:
+        """``--hand.total`` reaches the handwritten ``__init__``; its fields are no flags."""
+        hand = loader.load(_MembersCfg, argv=["--hand.total", "7"], env={}).hand
+        assert (hand.a, hand.b) == (5, 2)
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.merge(_MembersCfg, argv=["--hand.a", "1"], env={})
+
+    @pytest.mark.parametrize("variant", [_MembersFast, _MembersSlow])
+    def test_a_class_taking_nothing_is_selected_by_its_tag(self, loader: ConfargLoader, variant: type) -> None:
+        """A variant whose constructor takes nothing is a struct with no fields, selected by its tag."""
+        argv = ["--mode.class", f"{__name__}.{variant.__name__}"]
+        assert type(loader.load(_MembersCfg, argv=argv, env={}).mode) is variant
+
+    def test_object_init_offers_no_kwargs_flag(self, loader: ConfargLoader) -> None:
+        """``object.__init__``'s ``**kwargs`` is no member of a class inheriting it."""
+        argv = ["--mode.class", f"{__name__}._MembersSlow", "--mode.kwargs.x", "1"]
+        with pytest.raises((UnknownArgumentError, SystemExit, TypeCoercionError)):
+            loader.load(_MembersCfg, argv=argv, env={})
+
+    def test_the_env_and_file_channels_set_an_init_var(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """The env and file spellings of the ``InitVar`` reach it as the flag does."""
+        env = loader.load(_MembersCfg, argv=[], env={"APP_SEEDED__SEED": "5"}, env_prefix="APP_")
+        path = tmp_path / "c.yaml"
+        path.write_text("seeded: {seed: 5}\nhand: {total: 7}\n")
+        from_file = loader.load(_MembersCfg, argv=[], env={}, files=[path])
+        assert (env.seeded.n, from_file.seeded.n, from_file.hand.a) == (6, 6, 5)
+
+
+class _MembersPlain:
+    """A plain class: its parameters carry the only annotations it has."""
+
+    def __init__(self, items: list[str] | None = None, x: int = 1) -> None:
+        self.items = items or []
+        self.x = x
+
+
+@dataclass
+class _MembersPlainCfg:
+    p: _MembersPlain = dataclasses_field(default_factory=_MembersPlain)
+
+
+class TestAFlagIsTypedByTheMemberItSets:
+    """Registration types a flag by the member's own annotation, as the CLI walk does."""
+
+    def test_a_plain_class_list_parameter_takes_its_tokens(self, space_sep_loader: ConfargLoader) -> None:
+        """``--p.items a b`` fills the list on every space-separated front-end, as on vanilla."""
+        argv = ["--p.items", "a", "b"]
+        assert space_sep_loader.load(_MembersPlainCfg, argv=argv, env={}).p.items == ["a", "b"]
+
+    @pytest.mark.parametrize(
+        ("target", "flag"),
+        [
+            pytest.param(_MembersPlainCfg, "p.x", id="plain-class-parameter"),
+            pytest.param(_MembersCfg, "seeded.seed", id="init-var"),
+            pytest.param(_MembersCfg, "hand.total", id="handwritten-init-parameter"),
+        ],
+    )
+    def test_the_flag_is_described_by_the_members_type(self, target: type, flag: str) -> None:
+        """The flag's metavar names the member's type, not ``ANY`` nor the ``InitVar`` wrapper."""
+        specs = {s.name: s for s in build_static_flags(target)}
+        assert specs[flag].metavar == "INT"

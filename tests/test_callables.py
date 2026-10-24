@@ -2327,3 +2327,28 @@ class TestCallableBesideAnotherVariantAcrossLayers:
         lower.write_text(json.dumps({"f": {"bind": "x", "other": 1}}))
         upper.write_text(json.dumps({"f": {"bind": "y"}}))
         assert confarg.load(_CallableOrOwnsBind, argv=[], env={}, files=[lower, upper]).f == _OwnsBind("y", 1)
+
+
+class _SevenAdder:
+    """A callable class whose declared ``__init__`` takes nothing."""
+
+    def __init__(self) -> None:
+        self.base = 7
+
+    def __call__(self, x: int) -> int:
+        return x + self.base
+
+    def add(self, x: int) -> int:
+        return x + self.base
+
+
+class TestAnObjectOpenerBuildsAClassTakingNothing:
+    """``class:`` and ``classfn:`` build a class whose ``__init__`` takes nothing, as one declaring none (BUG-153)."""
+
+    def test_class_builds_it(self) -> None:
+        """``{class: C}`` builds the instance, a struct with no fields."""
+        assert confarg.build(WithCallable, {"fn": {"class": f"{_MOD}._SevenAdder"}}).fn(1) == 8
+
+    def test_classfn_builds_its_owner(self) -> None:
+        """``{classfn: C.m}`` builds the owner from nothing, then binds the method."""
+        assert confarg.build(WithCallable, {"fn": {"classfn": f"{_MOD}._SevenAdder.add"}}).fn(1) == 8

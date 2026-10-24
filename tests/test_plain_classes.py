@@ -31,7 +31,7 @@ from confarg._types import (
     _var_params,
 )
 from confarg.cli._spec import _get_field_docstrings
-from confarg.typedload._construct import _call_plain_class
+from confarg.typedload._construct import _call_struct
 
 # ---------------------------------------------------------------------------
 # Minimal plain classes mimicking an albumentations-style transform hierarchy
@@ -278,10 +278,11 @@ class TestPlainClassSerialization:
         assert restored.transform.height == 64
         assert restored.transform.p == pytest.approx(0.9)
 
-    def test_dump_plain_class_instance_raises(self) -> None:
-        """dump() must reject plain-class instances with a clear TypeError."""
-        with pytest.raises(TypeError, match="plain class"):
-            confarg.dump(RandomCrop(height=64, width=64))
+    def test_dump_plain_class_root(self) -> None:
+        """dump() writes a plain-class root as it writes a plain-class field, and it loads back."""
+        dumped = confarg.dump(RandomCrop(height=64, width=64))
+        assert dumped == {"height": 64, "width": 64, "p": 1.0}
+        assert vars(confarg.build(RandomCrop, dumped)) == {"p": 1.0, "height": 64, "width": 64}
 
     def test_dump_plain_class_missing_attribute_raises(self) -> None:
         """_serialize_struct must raise ConfargError when an __init__ param is not stored."""
@@ -592,13 +593,13 @@ class TestInitParams:
 
     def test_positional_gap_goes_by_keyword(self) -> None:
         """A later positional value never slides into an earlier unfilled parameter."""
-        built = _call_plain_class(_Gapped, {"b": 5}, "rest", {})
+        built = _call_struct(_Gapped, {"b": 5}, "rest", {})
         assert (built.a, built.b, built.rest) == (1, 5, ())
 
     def test_positional_gap_before_args_is_refused(self) -> None:
         """No call reaches ``*args`` past an unfilled positional parameter."""
         with pytest.raises(TypeError, match="positional parameter 'a' is unset"):
-            _call_plain_class(_Gapped, {"b": 5, "rest": [6]}, "rest", {})
+            _call_struct(_Gapped, {"b": 5, "rest": [6]}, "rest", {})
 
     def test_positional_only_parameter_without_args(self) -> None:
         """A positional-only parameter is passed by position with no ``*args`` beside it (BUG-152)."""

@@ -6,7 +6,8 @@ All type knowledge is derived at runtime from ordinary annotations (`_types.py`)
 - Abstract collection types map to concrete ones: `Sequence`/`Iterable`/`Collection` → list, `AbstractSet`/`MutableSet` → set, `Mapping`/`MutableMapping` → dict.
 - A bare collection annotation (`dict`, `list`, `set`, `frozenset`, `tuple`) reads as its `Any`-parameterized form, PEP 484's reading of it: `dict` is `dict[Any, Any]` — `_dict_kv`'s default for the unparameterized form — and `tuple` is `tuple[Any, ...]`, variadic (`_is_varlen_collection`, `_tuple_types`).
   `get_origin` of a bare class is `None`, so each shape predicate names the class itself before asking the origin (BUG-187, BUG-211). pydantic and msgspec read a bare collection the same way.
-- A **struct** is a dataclass or a *plain class* whose `__init__` takes parameters.
+- A **struct** is a dataclass or a *plain class*, a class whose constructor signature reads; one taking nothing is a struct with no fields.
+  Its members are its constructor's parameters, a dataclass's too ([design decisions](../design-decisions/a-structs-members-are-its-constructors-parameters.md#a-structs-members-are-its-constructors-parameters)).
   Builtins, `Enum`, `PurePath` and tuple subclasses are never plain classes.
   `*args` becomes `list[T]`, `**kwargs` becomes `dict[str, T]`, both with empty defaults (never required).
 - Since Python 3.11 `typing.Any` is a subclassable class and would pass the plain-class test; `_is_plain_class` guards it explicitly, and `_type_kind` names it `ANY` before any shape test runs.
@@ -57,8 +58,8 @@ Each call re-ran `get_type_hints`, and a plain class's `__init__` signature was 
 Two changes answer that:
 
 - **One signature walk.**
-  `_init_params(tp)` reads `inspect.signature(tp.__init__)` once into an `_InitParams` record: the parameter names, the declared defaults, the `*args` / `**kwargs` names (`_VarParams`) and the names a positional argument fills.
-  `_is_plain_class`, `_init_fields`, `_init_defaults`, `_var_params`, `_struct_required` and the `*args` call in construction are views of it.
+  `_init_params(tp)` reads the constructor's signature once (`_constructor_parameters`: `__init__`, else `__new__`, [which signature is read](../design-decisions/a-structs-members-are-its-constructors-parameters.md#which-signature-is-read)) into an `_InitParams` record: the parameter names, the declared defaults, the `*args` / `**kwargs` names (`_VarParams`), the names a positional argument fills and the function whose annotations type them.
+  `_is_plain_class`, `_init_fields`, `_init_defaults`, `_var_params`, `_struct_required`, `_struct_declared_defaults` and construction's call of a struct are views of it, for a dataclass as for a plain class.
   The record holds nothing the annotations decide, so it stays valid whatever the annotations resolve to.
 - **The answers are cached per class, for as long as the class lives.**
   `_init_params`, `_dc_fields`, `_init_fields`, `_namedtuple_fields`, the struct test (`_is_struct`, through `_is_struct_class`) and `cli._spec._get_field_docstrings` all go through `_types._per_class_cache`, which keys a `weakref.WeakKeyDictionary` on the class.
@@ -90,9 +91,9 @@ What is never cached, and why:
   Caching the subclass list and `_locals_keys` as well gained nothing measurable (REF-92).
 
 **Positional parameters are reached by position, through the record.**
-Neither a positional-only parameter nor the parameters before a `*args` can be passed by keyword, so construction calls every plain class (`_construct._call_plain_class`) with the arguments split by the record's `positional`, `_PositionalParams.split`: the longest run of positional parameters it has a value for, from the first, goes by position, the rest by keyword, and the `*args` values follow.
+Neither a positional-only parameter nor the parameters before a `*args` can be passed by keyword, so construction calls every struct (`_construct._call_struct`) with the arguments split by the record's `positional`, `_PositionalParams.split`: the longest run of positional parameters it has a value for, from the first, goes by position, the rest by keyword, and the `*args` values follow.
 It is the one split `bind:` and `call:` ask too ([callables](../callables.md#arguments-go-by-position-where-they-can)).
-A dataclass's generated `__init__` declares neither, and is called by keyword.
+A dataclass's generated `__init__` declares neither, but a handwritten one may, so a dataclass takes the same split.
 Before BUG-152 only a class taking `*args` went through the split, so a positional-only parameter of any other class was passed by keyword and refused.
 `inspect.Signature.bind_partial` would give the same split with its `BoundArguments.args`, but it binds every value it is given by keyword first and so refuses a positional-only parameter, which the record serves as well as any other.
 A gap before a non-empty `*args` raises: no call can reach `*args` past an unfilled positional parameter, and filling the gap with the first element would build the wrong object silently.

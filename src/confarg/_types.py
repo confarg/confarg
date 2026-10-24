@@ -151,9 +151,11 @@ def _is_dc(tp: Any) -> bool:
 
 @_per_class_cache
 def _dc_fields(tp: Any) -> Mapping[str, Any]:
-    """Return field names mapped to their resolved types for a dataclass.
+    """Return the fields a dataclass instance stores, mapped to their resolved types.
 
-    Cached per class, so the mapping is shared and read-only.
+    ``dataclasses.fields()``: an ``init=False`` field included, an ``InitVar`` never. This
+    is the state :func:`_struct_state_fields` dumps, not what a channel sets
+    (:func:`_struct_fields`). Cached per class, so the mapping is shared and read-only.
 
     Args:
         tp: A dataclass type.
@@ -165,33 +167,37 @@ def _dc_fields(tp: Any) -> Mapping[str, Any]:
         NameError: If an annotation does not resolve; nothing is cached, so a later call retries.
 
     Dev Notes:
-        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
+        docs-dev/architecture/design-decisions/the-object-dump-writes-state.md#a-dataclass-dumps-the-fields-it-stores
     """
     hints = get_type_hints(tp)
     return types.MappingProxyType({f.name: _resolve_type(hints[f.name]) for f in dataclasses.fields(tp)})
 
 
-def _dc_defaults(tp: Any) -> dict[str, Any]:
-    """Return field names mapped to their default values.
+def _dataclass_factory_default() -> Any:
+    """Return the default a generated dataclass ``__init__`` shows for a ``default_factory`` field.
 
-    Args:
-        tp: A dataclass type.
-
-    Returns:
-        A dict mapping field names to default values for fields that have them.
-
-    Dev Notes:
-        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
+    Read off a generated signature rather than imported: the sentinel is private to
+    ``dataclasses``, which documents no name for it.
     """
-    # Never cache this: it calls default_factory(), and a cached default would be one
-    # mutable object shared by every constructed instance.
-    out: dict[str, Any] = {}
-    for f in dataclasses.fields(tp):
-        if f.default is not dataclasses.MISSING:
-            out[f.name] = f.default
-        elif f.default_factory is not dataclasses.MISSING:
-            out[f.name] = f.default_factory()
-    return out
+    probe = dataclasses.make_dataclass("_FactoryProbe", [("x", list, dataclasses.field(default_factory=list))])
+    return inspect.signature(probe).parameters["x"].default
+
+
+_DATACLASS_FACTORY_DEFAULT = _dataclass_factory_default()
+
+
+def _dc_member_hints(tp: Any, names: Iterable[str], *, include_extras: bool = False) -> dict[str, Any]:
+    """Return the class's own annotation of each of *names* that is a field of dataclass *tp*.
+
+    An ``InitVar`` reads as the type it wraps. *include_extras* keeps ``Annotated`` metadata.
+
+    Raises:
+        NameError: If an annotation of the class does not resolve, as for :func:`_dc_fields`.
+    """
+    declared = tp.__dataclass_fields__
+    own = get_type_hints(tp, include_extras=include_extras)
+    hints = {name: own[name] for name in names if name in declared and name in own}
+    return {name: h.type if isinstance(h, dataclasses.InitVar) else h for name, h in hints.items()}
 
 
 def _is_none_type(tp: Any) -> bool:
@@ -369,10 +375,10 @@ class _UnresolvedHintsError(Exception):
     """``get_type_hints`` failed: raised through a cached function so the fallback is not cached."""
 
 
-def _type_hints(obj: Any) -> dict[str, Any]:
+def _type_hints(obj: Any, *, include_extras: bool = False) -> dict[str, Any]:
     """Return ``get_type_hints(obj)``, raising _UnresolvedHintsError when an annotation does not resolve."""
     try:
-        return get_type_hints(obj)
+        return get_type_hints(obj, include_extras=include_extras)
     except (NameError, AttributeError, TypeError) as e:
         raise _UnresolvedHintsError from e
 
@@ -648,7 +654,13 @@ _PLAIN_CLASS_BUILTINS = frozenset(
 
 
 def _is_plain_class(tp: Any) -> bool:
-    """True if tp is a non-dataclass, non-primitive class with __init__ parameters."""
+    """True if tp is a non-dataclass, non-primitive class whose constructor signature reads.
+
+    One that takes nothing is a plain class too, a struct with no fields.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#a-class-taking-nothing-is-a-struct-with-no-fields
+    """
     tp = _resolve_type(tp)
     # Since Python 3.11 ``typing.Any`` is a subclassable class in module "typing", so it passes
     # ``isinstance(tp, type)`` and the signature check below and would masquerade as a plain class.
@@ -662,9 +674,10 @@ def _is_plain_class(tp: Any) -> bool:
     if issubclass(tp, (enum.Enum, PurePath, tuple)):
         return False
     try:
-        return bool(_init_params(tp).names)
+        _init_params(tp)
     except (ValueError, TypeError):
         return False
+    return True
 
 
 @dataclasses.dataclass(frozen=True)
@@ -694,6 +707,10 @@ class _PositionalGapError(TypeError):
         self.later = later
 
 
+#: The parameter kinds a positional argument fills.
+_POSITIONAL_KINDS = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+
+
 @dataclasses.dataclass(frozen=True)
 class _PositionalParams:
     """The parameters of a signature that a positional argument fills.
@@ -712,8 +729,7 @@ class _PositionalParams:
     @classmethod
     def of(cls, params: Iterable[inspect.Parameter]) -> _PositionalParams:
         """Return the positional parameters among *params*, a signature's parameters in order."""
-        kinds = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-        positional = [p for p in params if p.kind in kinds]
+        positional = [p for p in params if p.kind in _POSITIONAL_KINDS]
         return cls(
             names=tuple(p.name for p in positional),
             positional_only=sum(p.kind is inspect.Parameter.POSITIONAL_ONLY for p in positional),
@@ -751,20 +767,24 @@ class _PositionalParams:
 
 @dataclasses.dataclass(frozen=True)
 class _InitParams:
-    """What a plain class's ``__init__`` signature declares, ``self`` excluded.
+    """What a struct's constructor signature declares, ``self`` or ``cls`` excluded.
 
     Attributes:
         names: Every parameter name, in signature order.
         defaults: The declared default of each parameter that has one; ``*args`` and
-            ``**kwargs`` have none here.
+            ``**kwargs`` have none here. A dataclass ``default_factory`` field shows
+            ``_DATACLASS_FACTORY_DEFAULT``, which :func:`_init_defaults` replaces by a call.
         var: The ``*args`` and ``**kwargs`` names.
         positional: The parameters a positional argument fills.
+        constructor: The function whose annotations type the parameters, None when the
+            class takes nothing.
     """
 
     names: tuple[str, ...]
     defaults: Mapping[str, Any]
     var: _VarParams
     positional: _PositionalParams
+    constructor: Any
 
     @property
     def required(self) -> frozenset[str]:
@@ -772,10 +792,35 @@ class _InitParams:
         return frozenset(n for n in self.names if n not in self.defaults and n not in self.var.names)
 
 
+def _constructor_parameters(tp: type) -> tuple[list[inspect.Parameter], Any]:
+    """Return the parameters calling class *tp* takes, and the function that declares them.
+
+    ``__init__``'s when the class does not inherit it from ``object``, else ``__new__``'s
+    when it does not inherit that one, else none: a class taking nothing.
+
+    Raises:
+        ValueError: If the signature cannot be read.
+        TypeError: If the signature cannot be read.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#which-signature-is-read
+    """
+    if tp.__init__ is not object.__init__:
+        params = list(inspect.signature(tp.__init__).parameters.values())
+        takes_self = bool(params) and params[0].kind in _POSITIONAL_KINDS
+        return (params[1:] if takes_self else params), tp.__init__
+    if tp.__new__ is not object.__new__:
+        # The class's own signature, not __new__'s: a builtin __new__ reads as (*args, **kwargs),
+        # where the class's text signature names its parameters (Decimal, Fraction).
+        return list(inspect.signature(tp).parameters.values()), tp.__new__
+    return [], None
+
+
 @_per_class_cache
 def _init_params(tp: Any) -> _InitParams:
-    """Return the one walk of ``tp.__init__``'s signature every plain-class question reads.
+    """Return the one walk of *tp*'s constructor signature every struct question reads.
 
+    The members a channel sets, a dataclass's included (:func:`_constructor_parameters`).
     Cached per class; it reads no annotation, so its answer holds however they resolve.
 
     Raises:
@@ -785,7 +830,7 @@ def _init_params(tp: Any) -> _InitParams:
     Dev Notes:
         docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
     """
-    params = [p for name, p in inspect.signature(tp.__init__).parameters.items() if name != "self"]
+    params, constructor = _constructor_parameters(tp)
     var_kinds = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
     variadic = {p.kind: p.name for p in params if p.kind in var_kinds}
     return _InitParams(
@@ -795,34 +840,74 @@ def _init_params(tp: Any) -> _InitParams:
         ),
         var=_VarParams(variadic.get(inspect.Parameter.VAR_POSITIONAL), variadic.get(inspect.Parameter.VAR_KEYWORD)),
         positional=_PositionalParams.of(params),
+        constructor=constructor,
     )
 
 
 def _init_fields(tp: Any) -> Mapping[str, Any]:
-    """Return {name: resolved_type} for __init__ parameters of a plain class.
+    """Return {name: resolved_type} for the constructor parameters of a struct.
 
     VAR_POSITIONAL (*args) becomes List[T] and VAR_KEYWORD (**kwargs) becomes
-    Dict[str, T], where T is the annotation on the parameter (Any if absent). Annotations
-    that do not resolve all read as Any. Cached per class once every annotation resolves,
-    so the mapping is shared and read-only.
+    Dict[str, T], where T is the annotation on the parameter (Any if absent). A dataclass
+    field's type is the class's annotation, an ``InitVar`` read as the type it wraps.
+    Constructor annotations that do not resolve all read as Any. Cached per class once
+    every annotation resolves, so the mapping is shared and read-only.
+
+    Raises:
+        NameError: If a dataclass's own annotation does not resolve, as for :func:`_dc_fields`.
 
     Dev Notes:
-        docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
+        docs-dev/architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#a-structs-members-are-its-constructors-parameters
     """
     try:
         return _annotated_init_fields(tp)
     except _UnresolvedHintsError:
-        return _typed_init_fields(tp, {})
+        return _typed_init_fields(tp, _dc_member_hints(tp, _init_params(tp).names) if _is_dc(tp) else {})
 
 
 @_per_class_cache
 def _annotated_init_fields(tp: Any) -> Mapping[str, Any]:
     """Return :func:`_init_fields` when every annotation resolves, cached per class."""
-    return _typed_init_fields(tp, _type_hints(tp.__init__))
+    return _typed_init_fields(tp, _member_hints(tp))
+
+
+def _member_hints(tp: Any, *, include_extras: bool = False) -> dict[str, Any]:
+    """Return the annotation of each constructor parameter of struct *tp* that has one.
+
+    A dataclass field's, an ``InitVar``'s included, is the class's own annotation; any other
+    parameter's is its constructor's. *include_extras* keeps ``Annotated`` metadata.
+
+    Raises:
+        NameError: If a dataclass's own annotation does not resolve.
+        _UnresolvedHintsError: If a constructor annotation does not resolve.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#a-structs-members-are-its-constructors-parameters
+    """
+    params = _init_params(tp)
+    if not _is_dc(tp):
+        return _constructor_hints(params.constructor, include_extras=include_extras)
+    hints = _dc_member_hints(tp, params.names, include_extras=include_extras)
+    if any(name not in hints for name in params.names):
+        # A handwritten __init__, or an undecorated subclass's own: the constructor's annotations
+        # type what the fields do not name.
+        hints = {**_constructor_hints(params.constructor, include_extras=include_extras), **hints}
+    return hints
+
+
+def _constructor_hints(constructor: Any, *, include_extras: bool = False) -> dict[str, Any]:
+    """Return the resolved annotations of *constructor*, none for a builtin or for no constructor.
+
+    Raises:
+        _UnresolvedHintsError: If an annotation does not resolve.
+    """
+    if getattr(constructor, "__annotations__", None) is None:
+        return {}
+    return _type_hints(constructor, include_extras=include_extras)
 
 
 def _typed_init_fields(tp: Any, hints: Mapping[str, Any]) -> Mapping[str, Any]:
-    """Return {name: resolved_type} for __init__ parameters of a plain class, reading types from *hints*."""
+    """Return {name: resolved_type} for the constructor parameters of a struct, reading types from *hints*."""
     params = _init_params(tp)
     out: dict[str, Any] = {}
     for name in params.names:
@@ -837,15 +922,15 @@ def _typed_init_fields(tp: Any, hints: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _init_defaults(tp: Any) -> dict[str, Any]:
-    """Return {name: default} for __init__ parameters that have defaults.
+    """Return {name: default} for the constructor parameters of a struct that have defaults.
 
-    VAR_POSITIONAL and VAR_KEYWORD params always get implicit defaults of [] and {}, fresh
-    on every call.
+    VAR_POSITIONAL and VAR_KEYWORD params always get implicit defaults of [] and {}, and a
+    dataclass ``default_factory`` field the factory's value, fresh on every call.
 
     Dev Notes:
         docs-dev/architecture/types/introspection.md#introspection-is-cached-per-class
     """
-    # Never cache this: its [] and {} would be shared by every constructed instance.
+    # Never cache this: its [] and {}, and a factory's value, would be shared by every constructed instance.
     params = _init_params(tp)
     out: dict[str, Any] = {}
     for name in params.names:
@@ -854,15 +939,16 @@ def _init_defaults(tp: Any) -> dict[str, Any]:
         elif name == params.var.keyword:
             out[name] = {}
         elif name in params.defaults:
-            out[name] = params.defaults[name]
+            default = params.defaults[name]
+            factory = default is _DATACLASS_FACTORY_DEFAULT
+            out[name] = tp.__dataclass_fields__[name].default_factory() if factory else default
     return out
 
 
 def _var_params(tp: Any) -> _VarParams:
-    """Return the *args and **kwargs parameter names of tp.__init__.
+    """Return the *args and **kwargs parameter names of tp's constructor.
 
-    Dataclasses never have either, and an uninspectable __init__ tells us nothing,
-    so both short-circuit to an empty result.
+    An uninspectable constructor tells us nothing, so it short-circuits to an empty result.
 
     Args:
         tp: The struct type to inspect.
@@ -870,8 +956,6 @@ def _var_params(tp: Any) -> _VarParams:
     Returns:
         A _VarParams holding the two names, each None when the parameter is absent.
     """
-    if _is_dc(tp):
-        return _VarParams()
     try:
         return _init_params(tp).var
     except (ValueError, TypeError):
@@ -879,7 +963,7 @@ def _var_params(tp: Any) -> _VarParams:
 
 
 def _is_struct(tp: Any) -> bool:
-    """True if tp is a dataclass or a plain class with __init__ parameters."""
+    """True if tp is a dataclass or a plain class, one taking nothing included."""
     tp = _resolve_type(tp)
     return isinstance(tp, type) and _is_struct_class(tp)
 
@@ -917,7 +1001,23 @@ def _struct_subclasses(tp: type) -> list[type]:
 
 
 def _struct_fields(tp: Any) -> Mapping[str, Any]:
-    """Return {name: type} for all fields/parameters of a struct or plain class, read-only."""
+    """Return {name: type} for the members every channel sets on a struct: its constructor's parameters, read-only.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#a-structs-members-are-its-constructors-parameters
+    """
+    return _init_fields(tp)
+
+
+def _struct_state_fields(tp: Any) -> Mapping[str, Any]:
+    """Return {name: type} for what ``dump()`` reads off an instance of struct *tp*, read-only.
+
+    A dataclass's stored fields (:func:`_dc_fields`); a plain class declares no state but
+    its constructor's parameters (:func:`_struct_fields`).
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-object-dump-writes-state.md#a-dataclass-dumps-the-fields-it-stores
+    """
     return _dc_fields(tp) if _is_dc(tp) else _init_fields(tp)
 
 
@@ -1023,43 +1123,41 @@ def _union_tag_shadowed(tp: Any, union_tag: str) -> bool:
 
 
 def _struct_defaults(tp: Any) -> dict[str, Any]:
-    """Return {name: default} for fields/parameters that have defaults, built afresh on every call."""
-    return _dc_defaults(tp) if _is_dc(tp) else _init_defaults(tp)
+    """Return {name: default} for the members that have defaults, built afresh on every call."""
+    return _init_defaults(tp)
 
 
 def _struct_required(tp: Any) -> frozenset[str]:
-    """Return the names of a struct's fields that have no default, building none of the defaults.
+    """Return the names of a struct's members that have no default, building none of the defaults.
 
-    The fields :func:`_struct_defaults` leaves out, without calling a ``default_factory``.
+    The members :func:`_struct_defaults` leaves out, without calling a ``default_factory``.
     """
-    if _is_dc(tp):
-        return frozenset(
-            f.name
-            for f in dataclasses.fields(tp)
-            if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING
-        )
     return _init_params(tp).required
 
 
 def _struct_declared_defaults(tp: Any) -> dict[str, Any]:
-    """Return the defaults a struct declares as values, calling nothing to get them.
+    """Return the defaults a struct declares as values for its members, calling nothing to get them.
 
-    A dataclass field's ``default`` (never its ``default_factory``), a plain class's
-    ``__init__`` parameter defaults. A fresh dict per call, never cached: the values are
-    the class's own objects.
+    The constructor's parameter defaults, a dataclass ``default_factory`` field's left out.
+    A fresh dict per call, never cached: the values are the class's own objects.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#tier-1-defaults-read-without-running-code
     """
-    if _is_dc(tp):
-        return {f.name: f.default for f in dataclasses.fields(tp) if f.default is not dataclasses.MISSING}
-    return dict(_init_params(tp).defaults)
+    return {n: d for n, d in _init_params(tp).defaults.items() if d is not _DATACLASS_FACTORY_DEFAULT}
 
 
 def _resolve_struct(
     target: Any,
 ) -> tuple[Any, Mapping[str, Any], dict[str, Any]] | None:
-    """Resolve a struct type to (tp, fields, hints), or None if not a struct."""
+    """Resolve a struct type to (tp, members, hints), or None if not a struct.
+
+    *hints* holds each member's annotation as written, ``Annotated`` metadata kept, or its
+    resolved type where none resolves.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#a-structs-members-are-its-constructors-parameters
+    """
     tp = _resolve_type(target)
     if not _is_struct(tp):
         return None
@@ -1068,10 +1166,10 @@ def _resolve_struct(
     except (ValueError, TypeError, NameError, AttributeError):
         return None
     try:
-        hints = get_type_hints(tp, include_extras=True)
-    except (NameError, AttributeError, TypeError):
-        hints = {name: flds[name] for name in flds}
-    return tp, flds, hints
+        written = _member_hints(tp, include_extras=True)
+    except (NameError, AttributeError, TypeError, _UnresolvedHintsError):
+        written = {}
+    return tp, flds, {name: written.get(name, ft) for name, ft in flds.items()}
 
 
 def _is_type_ref(tp: Any) -> bool:

@@ -51,4 +51,4 @@ Such a leaf is written in its scalar form, exactly as the same key would have be
 Re-reading the dump yields the plain scalar, because file values are never re-interpreted ([types](../types/token-model.md#token-model)): the dicts differ, while the built objects are equal.
 Re-coercing on read-back to close that gap was rejected ([design decisions](../design-decisions/dump-round-trips-at-the-built-object.md#dump-round-trips-at-the-built-object)).
 
-`dump()` accepts dataclass instances only; plain classes cannot be dumped reliably (their state is not guaranteed to mirror `__init__`), so the error message steers users to dumping the merged dict instead.
+`dump()` accepts a dataclass or a plain-class instance, a plain class read by its constructor's parameters; one whose state does not mirror them is refused naming the merged dict, which keeps the arguments as given ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)).
