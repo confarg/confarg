@@ -9,7 +9,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-180 — Cyclopts refuses a flag whose name ends in a star](BUG-180-cyclopts-refuses-a-flag-whose-name-ends-in-a-star.md) | major |  | M | medium | behavior | PR-72 |
 | [BUG-248 — Data nested a few hundred levels deep crashes the walkers](BUG-248-data-nested-a-few-hundred-levels-deep-crashes-the-walkers.md) | major |  | L | high | behavior | PR-5 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |
@@ -18,7 +17,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-183 — The bare prefix variable on a struct root is warned about as segment ''](BUG-183-the-bare-prefix-variable-on-a-struct-root-is-warned-about-as-segment-empty.md) | minor |  | S | low | none | PR-5 |
 | [BUG-195 — A builtin method descriptor loads from its path but cannot be dumped](BUG-195-a-builtin-method-descriptor-cannot-be-dumped.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-197 — A typed call's opener flag is described as a value, not as the function to call](BUG-197-a-typed-calls-opener-flag-is-described-as-a-spec-value.md) | minor |  | S | low | behavior | FEAT-32 |
-| [BUG-198 — A fixed-arity element flag takes one token on click and typer](BUG-198-a-fixed-arity-element-flag-takes-one-token-on-click-and-typer.md) | minor |  | S | low | config | PR-72 |
 | [BUG-242 — A lone `__root__` in a root configuration file is unwrapped as a fragment's](BUG-242-a-lone-root-key-in-a-root-file-is-unwrapped-as-a-fragments.md) | minor |  | S | low | behavior | PR-209 |
 | [BUG-250 — A Callable in a union does not advertise its openers](BUG-250-a-callable-in-a-union-does-not-advertise-its-openers.md) | minor |  | S | medium | behavior | PR-13 |
 | [BUG-252 — A class tag on a union with no struct variant lists no candidate](BUG-252-a-class-tag-on-a-union-with-no-struct-variant-lists-no-candidate.md) | minor |  | S | low | behavior | PR-5 |
