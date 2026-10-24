@@ -52,7 +52,7 @@ Local variables are scratch values that expressions reference as ``${locals.<nam
 that are not fields of the target type; the namespace is stripped before construction.
 Either spelling addresses the namespace unless the target has a field of that name, in
 which case the other spelling is used; a target owning both names has no namespace.
-See ``confarg._parse_cli._locals_keys_at``.
+See ``confarg._parse_cli._locals_keys_reached``.
 
 Dev Notes:
     docs-dev/architecture/locals.md

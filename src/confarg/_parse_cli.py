@@ -275,7 +275,7 @@ def _opens_a_spec(node: Any, naming: Any) -> bool:
     return naming is not None and _is_typed_call(naming, node)
 
 
-def _walk_path(  # noqa: C901  # the step and its answers, read inline
+def _walk_path(
     target: Any,
     parts: list[str],
     union_tag: str,
@@ -313,59 +313,99 @@ def _walk_path(  # noqa: C901  # the step and its answers, read inline
         docs-dev/architecture/cli-parsing/type-guided-parsing.md#one-walk-many-questions
     """
 
-    def naming_at(k: int) -> Any:
-        naming = None if named is None else named(tuple(parts[:k]))
-        if not isinstance(naming, dict):
-            return None
-        if k == 0:
-            # The root holds no typed call: its flags share the namespace with a host's own.
-            return {key: v for key, v in naming.items() if key not in (_defaults.CALL_KEY, _defaults.ARGS_KEY)}
-        return naming
-
-    def walk(  # noqa: C901  # one branch per answer of the step
-        reached: Any,
-        stones: tuple[_Stone, ...],
-        *,
-        str_subtree: bool,
-        in_spec: bool,
-    ) -> Iterator[_Branch]:
+    def walk(state: _WalkState, stones: tuple[_Stone, ...]) -> Iterator[_Branch]:
         k = len(stones)
         if k == len(parts):
-            yield _Branch(stones, reached)
+            yield _Branch(stones, state.reached)
             return
-        part = parts[k]
-        naming = None if str_subtree else naming_at(k)
-        variant = None if naming is None else named_variant(reached, naming, union_tag)
-        for node in [variant] if variant is not None else _union_branches(reached):
-            here = (*stones, _Stone(reached, node))
-            if str_subtree:
-                yield from walk(str, here, str_subtree=True, in_spec=True)
-                continue
-            if not in_spec and part in _locals_keys_nested(node, union_tag):
-                yield from walk(dict[str, Any], here, str_subtree=False, in_spec=False)
-                continue
-            answer = Named.NOTHING if naming is None else named_child(node, part, naming, union_tag)
-            if answer is Named.NOTHING:
-                answer = _unnamed_spec_step(here[-1], part, k)
-            below_spec = in_spec or _opens_a_spec(node, naming)
-            if answer is Named.REFUSED:
+        naming = None if named is None else named(tuple(parts[:k]))
+        for stone, after in _step(state, parts[k], k, naming, union_tag, tag_fallback=tag_fallback):
+            here = (*stones, stone)
+            if after is None:
                 yield _Branch(here, None)
-            elif answer is Named.UNTYPED:
-                yield from walk(str, here, str_subtree=True, in_spec=True)
-            elif answer is not Named.NOTHING:
-                yield from walk(answer, here, str_subtree=False, in_spec=below_spec)
-            elif (advanced := _advance_field_type(node, part)) is not None:
-                yield from walk(advanced, here, str_subtree=False, in_spec=below_spec)
-            elif tag_fallback and part == union_tag and not _synthesized(node):
-                # The tag is the fallback, so it resolves only at a position no member of its
-                # exact spelling reaches; its value is a class path, below which nothing lies.
-                yield from walk(str, here, str_subtree=False, in_spec=below_spec)
-            elif takes_untyped_argument(node, part):
-                yield from walk(str, here, str_subtree=True, in_spec=True)
             else:
-                yield _Branch(here, None)
+                yield from walk(after, here)
 
-    yield from walk(_resolve_type(target), (), str_subtree=False, in_spec=False)
+    yield from walk(_walk_start(target), ())
+
+
+class _WalkState(NamedTuple):
+    """Where the walk stands between two segments: all that the next step reads of what came before."""
+
+    #: The type reached so far, a union unexpanded.
+    reached: Any
+    #: Whether every segment from here on is an untyped token: the walk is below one no type describes.
+    str_subtree: bool
+    #: Whether the walk is below a spec, where no ``locals`` namespace lies.
+    in_spec: bool
+
+
+def _walk_start(target: Any) -> _WalkState:
+    """Return the state the walk of a path from *target*'s root starts in."""
+    return _WalkState(_resolve_type(target), str_subtree=False, in_spec=False)
+
+
+def _step(  # noqa: C901, PLR0913  # one answer per kind of step; where the walk stands and what names it
+    state: _WalkState,
+    part: str,
+    depth: int,
+    naming: Any,
+    union_tag: str,
+    *,
+    tag_fallback: bool = True,
+) -> Iterator[tuple[_Stone, _WalkState | None]]:
+    """Step the walk along *part*, met at *depth*, yielding where it stands and where it lands, per way it can.
+
+    The one step of the walk (:func:`_walk_path`): a union is taken once per non-None variant,
+    or as the one variant *naming* names; a way that refuses *part* lands on None.
+    *naming* is the dict the node at that position holds, or None where the data names nothing.
+    A segment addressing a ``locals`` namespace (:func:`_locals_keys_nested`, of the type
+    reached, whatever variant a way takes) lands on ``dict[str, Any]``.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/type-guided-parsing.md#one-walk-many-questions
+    """
+    naming = None if state.str_subtree else _naming_read_at(naming, depth)
+    variant = None if naming is None else named_variant(state.reached, naming, union_tag)
+    names = () if state.in_spec or state.str_subtree else _locals_keys_nested(state.reached, union_tag=union_tag)
+    for node in [variant] if variant is not None else _union_branches(state.reached):
+        stone = _Stone(state.reached, node)
+        if state.str_subtree:
+            yield stone, _WalkState(str, str_subtree=True, in_spec=True)
+            continue
+        if part in names:
+            yield stone, _WalkState(dict[str, Any], str_subtree=False, in_spec=False)
+            continue
+        answer = Named.NOTHING if naming is None else named_child(node, part, naming, union_tag)
+        if answer is Named.NOTHING:
+            answer = _unnamed_spec_step(stone, part, depth)
+        below_spec = state.in_spec or _opens_a_spec(node, naming)
+        if answer is Named.REFUSED:
+            yield stone, None
+        elif answer is Named.UNTYPED:
+            yield stone, _WalkState(str, str_subtree=True, in_spec=True)
+        elif answer is not Named.NOTHING:
+            yield stone, _WalkState(answer, str_subtree=False, in_spec=below_spec)
+        elif (advanced := _advance_field_type(node, part)) is not None:
+            yield stone, _WalkState(advanced, str_subtree=False, in_spec=below_spec)
+        elif tag_fallback and part == union_tag and not _synthesized(node):
+            # The tag is the fallback, so it resolves only at a position no member of its
+            # exact spelling reaches; its value is a class path, below which nothing lies.
+            yield stone, _WalkState(str, str_subtree=False, in_spec=below_spec)
+        elif takes_untyped_argument(node, part):
+            yield stone, _WalkState(str, str_subtree=True, in_spec=True)
+        else:
+            yield stone, None
+
+
+def _naming_read_at(naming: Any, depth: int) -> MergeDict | None:
+    """Return what of *naming*, the data at a node *depth* below the root, may name what it builds; None for no dict."""
+    if not isinstance(naming, dict):
+        return None
+    if depth == 0:
+        # The root holds no typed call: its flags share the namespace with a host's own.
+        return {key: v for key, v in naming.items() if key not in (_defaults.CALL_KEY, _defaults.ARGS_KEY)}
+    return naming
 
 
 def _synthesized(node: Any) -> bool:
@@ -507,7 +547,7 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str, nam
         docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
     """
     return any(
-        _type_kind(stone.node) in _COLLECTION_KINDS or part in _locals_keys_nested(stone.node, union_tag)
+        _type_kind(stone.node) in _COLLECTION_KINDS or part in _locals_keys_nested(stone.reached, union_tag=union_tag)
         for branch in _walk_path(target, parts, union_tag, named=named)
         for stone, part in zip(branch.stones, parts, strict=False)
     )
@@ -678,41 +718,69 @@ def _locals_keys(target: Any, union_tag: str) -> tuple[str, ...]:
     return tuple(key for key in _defaults.LOCALS_KEYS if not _segment_names_real_field(target, key, union_tag))
 
 
-def _locals_keys_nested(tp: Any, union_tag: str) -> tuple[str, ...]:
-    """Names addressing a local-variables namespace at a node *inside* the target.
+def _locals_keys_nested(*types: Any, union_tag: str) -> tuple[str, ...]:
+    """Names addressing a local-variables namespace at a node *inside* the target, which may be any of *types*.
 
-    Only struct-like nodes (structs, namedtuples, unions of them) can hold one. Use
-    :func:`_locals_keys` for the root, where a scalar root also keeps the namespace.
+    A name no class the node may build claims as a real member
+    (:func:`_segment_names_real_field`), whatever class its tag names: every variant of a
+    union counts, as every subclass of a struct does, and a dict claims every name. Only a
+    node that may be struct-like (a struct, a namedtuple, a union holding one) holds a
+    namespace. The classes the walk builds for itself (:func:`_synthesized`) build nothing.
+    Use :func:`_locals_keys` for the root, where a scalar root also keeps the namespace.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#every-class-a-node-may-build-counts
     """
-    tp = _resolve_type(tp)
-    if _is_union(tp):
-        found = (k for v in _union_args_no_none(tp) for k in _locals_keys_nested(v, union_tag))
-        return tuple(dict.fromkeys(found))
-    if not (_is_struct(tp) or _is_namedtuple(tp)):
+    resolved = [_resolve_type(tp) for tp in types]
+    members = [m for r in resolved for m in (_union_args_no_none(r) if _is_union(r) else [r]) if not _synthesized(m)]
+    if not any(_is_struct(m) or _is_namedtuple(m) for m in members):
         return ()
-    return _locals_keys(tp, union_tag)
+    return tuple(
+        key for key in _defaults.LOCALS_KEYS if not any(_segment_names_real_field(m, key, union_tag) for m in members)
+    )
 
 
-def _locals_keys_at(target: Any, path: list[str], union_tag: str) -> tuple[str, ...]:
-    """Names addressing a namespace at *path* within *target*, the root included.
+def _step_states(states: list[_WalkState], part: str, depth: int, naming: Any, union_tag: str) -> list[_WalkState]:
+    """Step every state in *states* along *part* (:func:`_step`), keeping each state it lands on once.
 
-    The one question every consumer (stripping, the declaration scan, the CLI type
-    walk, the env parser) asks at each node.
+    What a walker over data carries from a node to its child: the ways the walk reaches the
+    child, each once, so a union met at every level never forks the walk again.
+    """
+    landed: list[_WalkState] = []
+    for state in states:
+        for _, after in _step(state, part, depth, naming, union_tag):
+            if after is not None and after not in landed:
+                landed.append(after)
+    return landed
+
+
+def _locals_keys_reached(states: list[_WalkState], target: Any, union_tag: str, *, depth: int) -> tuple[str, ...]:
+    """Names addressing a namespace at a node the walk reaches in *states*, at *depth* below *target*'s root.
+
+    The one question every consumer (stripping, the declaration scan, the env parser) asks
+    at a node, carrying the walk down to it by :func:`_step_states`. The root's are
+    :func:`_locals_keys`. Below it, the names no type a state reaches claims
+    (:func:`_locals_keys_nested`); none where the node is no position of the target, or where
+    a way reaches it below a spec or an untyped token, which holds no namespace.
+    """
+    if depth == 0:
+        return _locals_keys(target, union_tag)
+    if not states or any(s.in_spec or s.str_subtree for s in states):
+        return ()
+    return _locals_keys_nested(*(s.reached for s in states), union_tag=union_tag)
+
+
+def _locals_segment_index(target: Any, parts: list[str], union_tag: str) -> int | None:
+    """Index of the segment at which *parts* enters a namespace, or None.
 
     Dev Notes:
         docs-dev/architecture/locals.md#per-node-namespaces
     """
-    if not path:
-        return _locals_keys(target, union_tag)
-    tp = _resolve_field_type(target, path, union_tag)
-    return () if tp is None else _locals_keys_nested(tp, union_tag)
-
-
-def _locals_segment_index(target: Any, parts: list[str], union_tag: str) -> int | None:
-    """Index of the segment at which *parts* enters a namespace, or None."""
-    for i in range(len(parts)):
-        if parts[i] in _locals_keys_at(target, parts[:i], union_tag):
+    states = [_walk_start(target)]
+    for i, part in enumerate(parts):
+        if part in _locals_keys_reached(states, target, union_tag, depth=i):
             return i
+        states = _step_states(states, part, i, None, union_tag)
     return None
 
 

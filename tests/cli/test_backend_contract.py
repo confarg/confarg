@@ -7676,6 +7676,27 @@ class _LocalsShadow:
 
 
 @dataclass
+class _LocalsOwningVariant:
+    """A variant that claims ``locals`` as a real field."""
+
+    locals: int = 0
+
+
+@dataclass
+class _LocalsFreeVariant:
+    """A variant that claims neither name."""
+
+    x: int = 0
+
+
+@dataclass
+class _LocalsInAUnion:
+    """Target whose field may build either variant."""
+
+    item: _LocalsOwningVariant | _LocalsFreeVariant
+
+
+@dataclass
 class _LocalsFromField:
     """Config whose ``env`` field feeds a local variable, the documented override path."""
 
@@ -7862,6 +7883,12 @@ n: ${locals.k * 2}
         cfg = tmp_yaml(f"db:\n  {INCLUDE_KEY}: ./db.yaml\n")
         with pytest.raises(ConfargError, match=r"db\.locals\.nope"):
             loader.load(_LocalsNested, argv=["--config", str(cfg), "--db.locals.nope", "x"], env={})
+
+    def test_a_field_a_variant_claims_is_set_everywhere(self, loader: ConfargLoader) -> None:
+        """``locals`` is a field of a class the node may build, so it is no namespace there (BUG-258)."""
+        tag = f"{__name__}._LocalsOwningVariant"
+        result = loader.load(_LocalsInAUnion, argv=["--item.class", tag, "--item.locals", "7"], env={})
+        assert result.item == _LocalsOwningVariant(locals=7)
 
 
 # ---------------------------------------------------------------------------

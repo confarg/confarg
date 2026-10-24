@@ -452,6 +452,7 @@ To introduce a new local from outside, point at a file with `--config.locals FIL
 
 The namespace answers to two names, `locals` and `_locals`, and either may be used.
 The second exists so it never steals a name you wanted: if your configuration class declares a field called `locals`, that field keeps the name — a real field always wins, as it does over the `.json` cast — and local variables move to `_locals`.
+A block that may be built as several classes — a union of them, or a base class with subclasses — keeps the name if any of them declares the field, whichever class its `class` key picks, so its variables are `_locals` there too.
 Nothing is configurable, so every front-end and channel agrees on the name without being told; declaring under both names at once is rejected as ambiguous.
 
 A `locals:` block is not restricted to the top level.

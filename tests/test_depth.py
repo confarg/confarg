@@ -68,6 +68,21 @@ class Node:
 
 
 @dataclass
+class Tagged:
+    """A variant of a recursive union, which the data names by its tag at every level."""
+
+    child: Tagged | Untagged | None = None
+    v: int = 0
+
+
+@dataclass
+class Untagged:
+    """The variant no level of the tagged chain names."""
+
+    child: Tagged | Untagged | None = None
+
+
+@dataclass
 class Pair:
     """Two chains, one of which an expression can copy below the other."""
 
@@ -407,17 +422,20 @@ HEADROOM = 300
 
 
 class TestHeadroom:
-    """What the walkers cost per level leaves a caller 300 frames at the bound.
-
-    A tagged union of recursive structs is left out: its locals walk is exponential in depth
-    (BUG-258), a cost in time rather than in stack.
-    """
+    """What the walkers cost per level leaves a caller 300 frames at the bound."""
 
     def test_a_recursive_struct(self) -> None:
         """The costliest shape per level, about 8 frames."""
         data = chain(MAX_DEPTH, {}, key="child")
         assert called_from(HEADROOM, lambda: confarg.build(Node, data)) is not None
         assert called_from(HEADROOM, lambda: confarg.from_dict(Node, data)) is not None
+
+    def test_a_tagged_union(self) -> None:
+        """A recursive struct built through a union, each level naming its variant."""
+        data: dict[str, Any] = {"class": f"{__name__}.Tagged", "v": 1}
+        for _ in range(MAX_DEPTH - 2):
+            data = {"class": f"{__name__}.Tagged", "child": data}
+        assert called_from(HEADROOM, lambda: confarg.build(Tagged, {"child": data})) is not None
 
     def test_any_dicts_and_lists(self) -> None:
         """An ``Any`` field's dicts and lists."""

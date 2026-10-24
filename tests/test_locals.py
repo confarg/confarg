@@ -12,6 +12,7 @@ rejection, round-tripping, and the reserved-name policy.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import TYPE_CHECKING, Any
@@ -22,9 +23,16 @@ if TYPE_CHECKING:
 import pytest
 
 import confarg
+from confarg._depth import MAX_DEPTH
 from confarg._files import INCLUDE_KEY
 from confarg._parse_cli import _locals_keys
-from confarg.exceptions import ConfargError, InvalidConfigFileError, LocalsError, TypeCoercionError
+from confarg.exceptions import (
+    AmbiguousUnionError,
+    ConfargError,
+    InvalidConfigFileError,
+    LocalsError,
+    TypeCoercionError,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -641,3 +649,181 @@ class TestALocalsOpReadsAsItsList:
         """``--locals.xs.0`` names the first item the declared append makes."""
         cfg = write(tmp_path, "c.yaml", "locals: {xs: {__append__: [2, 3]}}\nn: '${locals.xs[0]}'\n")
         assert confarg.load(Items, argv=["--config", str(cfg), "--locals.xs.0", "9"], env={}).n == 9
+
+
+# ---------------------------------------------------------------------------
+# A namespace below a union (BUG-258)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class OwnsTheName:
+    """A variant that claims ``locals`` as a real field."""
+
+    locals: int = 0
+
+
+@dataclass
+class FreeOfTheName:
+    """A variant that claims neither name."""
+
+    x: int = 0
+
+
+@dataclass
+class HoldsAUnion:
+    """Target whose field may build either variant."""
+
+    item: OwnsTheName | FreeOfTheName
+
+
+@dataclass
+class Plain:
+    """A block that claims neither name."""
+
+    a: int = 0
+
+
+@dataclass
+class Claiming:
+    """A block that claims ``locals``."""
+
+    b: int = 0
+    locals: int = 0
+
+
+@dataclass
+class HoldsPlain:
+    """A variant whose ``child`` is a :class:`Plain`."""
+
+    p: int = 0
+    child: Plain | None = None
+
+
+@dataclass
+class HoldsClaiming:
+    """A variant whose ``child`` is a :class:`Claiming`: the variants type ``child`` apart."""
+
+    q: int = 0
+    child: Claiming | None = None
+
+
+@dataclass
+class TypesApart:
+    """Target whose variants type the field below them apart."""
+
+    item: HoldsPlain | HoldsClaiming
+
+
+class TestANamespaceBelowAUnion:
+    """A name is a namespace at a node when no class the node may build claims it, whatever its tag names.
+
+    The rule the root and a struct with subclasses already follow; a nested union read each
+    variant's names apart, so it stripped a real field of the variant its tag named.
+    """
+
+    def test_a_field_the_named_variant_claims_is_built(self) -> None:
+        """``OwnsTheName.locals`` is a field: nothing strips it."""
+        data = {"item": {"class": f"{__name__}.OwnsTheName", "locals": 5}}
+        assert confarg.build(HoldsAUnion, data).item == OwnsTheName(locals=5)
+
+    def test_a_field_the_named_variant_claims_is_overridden(self, tmp_path: Path) -> None:
+        """An override of the field is a value, not a write of a whole namespace."""
+        cfg = write(tmp_path, "c.yaml", f"item:\n  class: {__name__}.OwnsTheName\n  locals: 5\n")
+        result = confarg.load(
+            HoldsAUnion, argv=["--config", str(cfg)], env={"APP_ITEM__LOCALS": "7"}, env_prefix="APP_"
+        )
+        assert result.item == OwnsTheName(locals=7)
+
+    def test_a_name_another_variant_claims_is_no_namespace(self) -> None:
+        """``FreeOfTheName`` spells its namespace ``_locals``: ``locals`` is claimed by a class the node may build."""
+        data = {"item": {"class": f"{__name__}.FreeOfTheName", "locals": {"v": 3}, "x": "${item.locals.v}"}}
+        with pytest.raises(TypeCoercionError, match=r"Unknown field\(s\) \['locals'\] for FreeOfTheName"):
+            confarg.build(HoldsAUnion, data)
+        data = {"item": {"class": f"{__name__}.FreeOfTheName", "_locals": {"v": 3}, "x": "${item._locals.v}"}}
+        assert confarg.build(HoldsAUnion, data).item == FreeOfTheName(x=3)
+
+    def test_the_named_variant_types_the_node_below(self) -> None:
+        """Below ``class: HoldsPlain``, ``child`` is a :class:`Plain`, whose namespace is stripped."""
+        child = {"_locals": {"v": 4}, "a": "${item.child._locals.v}"}
+        data = {"item": {"class": f"{__name__}.HoldsPlain", "child": child}}
+        assert confarg.build(TypesApart, data).item == HoldsPlain(child=Plain(a=4))
+
+    def test_every_type_an_unnamed_node_may_be_counts(self) -> None:
+        """Untagged, ``child`` may be a :class:`Plain` or a :class:`Claiming`: ``_locals`` is claimed by neither."""
+        child = {"_locals": {"v": 4}, "a": "${item.child._locals.v}"}
+        assert confarg.build(TypesApart, {"item": {"p": 1, "child": child}}).item == HoldsPlain(p=1, child=Plain(a=4))
+
+
+# ---------------------------------------------------------------------------
+# A deep tagged chain is walked once (BUG-258)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LinkA:
+    """A link of a recursive chain, built through a union of its variants."""
+
+    child: LinkA | LinkB | None = None
+
+
+@dataclass
+class LinkB:
+    """The other variant, with a leaf to read the chain's end by."""
+
+    child: LinkA | LinkB | None = None
+    x: int = 0
+
+
+#: Levels below the root's ``child``: the leaf ``x`` sits at the 64th, the deepest a configuration nests.
+LINKS = MAX_DEPTH - 1
+
+
+def tagged_chain(n: int, *, tagged: bool = True) -> dict[str, Any]:
+    """Return *n* nested links naming :class:`LinkB`, the last holding ``x: 1``."""
+    tag = {"class": f"{__name__}.LinkB"} if tagged else {}
+    node: dict[str, Any] = {**tag, "x": 1}
+    for _ in range(n - 1):
+        node = {**tag, "child": node}
+    return node
+
+
+def chain_end(cfg: Any) -> Any:
+    """Return the last link of the chain *cfg* holds."""
+    while cfg.child is not None:
+        cfg = cfg.child
+    return cfg
+
+
+class TestADeepChainIsWalkedOnce:
+    """Each node is stepped to once from its parent: re-walking from the root forked at every union.
+
+    A walk of 2**63 branches never ends, so a chain at the bound proves the walkers linear,
+    as ``test_depth``'s counter test does for the depth count.
+    """
+
+    @pytest.mark.parametrize("api", [confarg.build, confarg.from_dict], ids=["build", "from_dict"])
+    def test_construction_strips_it_once(self, api: Any) -> None:
+        """``build()`` and ``from_dict()`` strip the namespaces at every node."""
+        assert chain_end(api(LinkA, {"child": tagged_chain(LINKS)})).x == 1
+
+    def test_merge_checks_a_file_once(self, tmp_path: Path) -> None:
+        """``merge()`` looks for a namespace at every node a file writes."""
+        cfg = write(tmp_path, "c.json", json.dumps({"child": tagged_chain(LINKS)}))
+        assert chain_end(confarg.load(LinkA, argv=["--config", str(cfg)], env={})).x == 1
+
+    @pytest.mark.parametrize(
+        ("argv", "env"),
+        [
+            pytest.param(["--child", json.dumps(tagged_chain(LINKS))], {}, id="argv"),
+            pytest.param([], {"APP_CHILD": json.dumps(tagged_chain(LINKS))}, id="env"),
+        ],
+    )
+    def test_merge_reads_an_override_once(self, argv: list[str], env: dict[str, str]) -> None:
+        """An override layer is read node by node too, here one JSON value holding the whole chain."""
+        assert chain_end(confarg.load(LinkA, argv=argv, env=env, env_prefix="APP_")).x == 1
+
+    def test_an_unnamed_chain_is_stepped_once(self) -> None:
+        """No link names its variant: the walk reaches the same union from both, and steps it once."""
+        with pytest.raises(AmbiguousUnionError):
+            confarg.build(LinkA, {"child": tagged_chain(LINKS, tagged=False)})

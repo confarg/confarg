@@ -41,7 +41,8 @@ from confarg._merge import (
     _resolve_index,
     _to_append_list,
 )
-from confarg._parse_cli import _locals_keys, _locals_keys_at
+from confarg._naming import names_something
+from confarg._parse_cli import _locals_keys, _locals_keys_reached, _step_states, _walk_start, _WalkState
 from confarg._parse_env import _env_config_pointers, _parse_env
 from confarg._typed_merge import merge_root
 from confarg._types import _StrToken
@@ -203,33 +204,40 @@ def _iter_namespace_nodes(
     target: Any,
     union_tag: str,
     path: list[str] | None = None,
+    states: list[_WalkState] | None = None,
 ) -> Iterator[tuple[list[str], tuple[str, ...]]]:
     """Yield ``(path, keys)`` for each node that may hold a local-variables namespace.
 
-    Walks the union of the key structures of all *sources* (not a merged result), so a
-    namespace present in any single source is visited.
+    Walks the union of the key structures of all *sources*, lowest first (not a merged
+    result), so a namespace present in any single source is visited. A child is stepped to
+    by the class the highest source naming its parent names: a higher layer's tag replaces
+    the node below it, so it is the class every key the merge keeps there is built by.
 
     Dev Notes:
         docs-dev/architecture/locals.md#declare-in-files-modify-anywhere
     """
     path = path or []
+    states = [_walk_start(target)] if states is None else states
     dicts = [s for s in sources if isinstance(s, dict)]
     lists = [s for s in sources if isinstance(s, list)]
-    keys = _locals_keys_at(target, path, union_tag) if dicts else ()
+    keys = _locals_keys_reached(states, target, union_tag, depth=len(path)) if dicts else ()
     if keys:
         yield path, keys
     if dicts:
         names: dict[str, None] = dict.fromkeys(chain.from_iterable(dicts))
+        naming = next((d for d in reversed(dicts) if names_something(d, union_tag)), None)
         for name in names:
             if name in keys:
                 continue  # inside a namespace everything is free-form data
             if isinstance(name, ListOp):
                 continue  # an op no layer below gave a list to make: no position to walk at
-            yield from _iter_namespace_nodes([d.get(name) for d in dicts], target, union_tag, [*path, name])
+            below = _step_states(states, name, len(path), naming, union_tag)
+            yield from _iter_namespace_nodes([d.get(name) for d in dicts], target, union_tag, [*path, name], below)
     if lists:
         for i in range(max(len(x) for x in lists)):
             items = [x[i] for x in lists if i < len(x)]
-            yield from _iter_namespace_nodes(items, target, union_tag, [*path, str(i)])
+            below = _step_states(states, str(i), len(path), None, union_tag)
+            yield from _iter_namespace_nodes(items, target, union_tag, [*path, str(i)], below)
 
 
 #: A position the layers below a layer hold, of which that layer says nothing.
@@ -254,23 +262,36 @@ class _LayerReading:
         self.union_tag = union_tag
         self.declaring = declaring
 
-    def read(self, node: Any, below: Any, path: list[str]) -> Any:
-        """Return *node*, at *path*, read over *below*, the same path of the layers below it."""
+    def read(self, node: Any, below: Any, path: list[str], states: list[_WalkState] | None = None) -> Any:
+        """Return *node*, at *path*, read over *below*, the same path of the layers below it.
+
+        *states* are the ways the walk reaches *node*, the root's when omitted. A child is
+        stepped to by the class *node* names, else the one *below* names: a key reaches
+        construction only from its own layer or a lower one.
+        """
+        states = [_walk_start(self.target)] if states is None else states
         if isinstance(node, list):
-            items = [self.read(v, None, [*path, str(i)]) for i, v in enumerate(node)]
+            items = [self.read(v, None, [*path, str(i)], self._step(states, path, str(i))) for i, v in enumerate(node)]
             return node if all(a is b for a, b in zip(items, node, strict=True)) else items
         if not isinstance(node, dict):
             return node
-        if any(isinstance(k, ListOp) for k in node) and (listed := self._listed(node, below, path)) is not None:
+        if any(isinstance(k, ListOp) for k in node) and (listed := self._listed(node, below, path, states)) is not None:
             return listed
-        keys = () if self.declaring else _locals_keys_at(self.target, path, self.union_tag)
+        keys = () if self.declaring else _locals_keys_reached(states, self.target, self.union_tag, depth=len(path))
+        naming = next((n for n in (node, below) if names_something(n, self.union_tag)), None)
         out = {
-            k: v if isinstance(k, ListOp) or k in keys else self.read(v, _below_at(below, k), [*path, str(k)])
+            k: v
+            if isinstance(k, ListOp) or k in keys
+            else self.read(v, _below_at(below, k), [*path, str(k)], self._step(states, path, str(k), naming))
             for k, v in node.items()
         }
         return node if all(out[k] is v for k, v in node.items()) else out
 
-    def _listed(self, node: MergeDict, below: Any, path: list[str]) -> list[Any] | None:
+    def _step(self, states: list[_WalkState], path: list[str], part: str, naming: Any = None) -> list[_WalkState]:
+        """Return the ways the walk reaches *part* below *path*: none in a declaring layer, which seeks no namespace."""
+        return [] if self.declaring else _step_states(states, part, len(path), naming, self.union_tag)
+
+    def _listed(self, node: MergeDict, below: Any, path: list[str], states: list[_WalkState]) -> list[Any] | None:
         """Return the list the ops *node* holds make over *below*, None where its positions are unknown.
 
         A base carried as an expression is unknown until resolution, and an op that does not
@@ -278,7 +299,9 @@ class _LayerReading:
         """
         base = node.get(ListOp.BASE, _BELOW)
         if isinstance(base, list):
-            working = [self.read(v, None, [*path, str(i)]) for i, v in enumerate(base)]
+            working = [
+                self.read(v, None, [*path, str(i)], self._step(states, path, str(i))) for i, v in enumerate(base)
+            ]
         elif base is _BELOW:
             working = [_BELOW] * (len(below) if isinstance(below, list) else 0)
         elif isinstance(base, _DeleteSentinel):
@@ -288,16 +311,21 @@ class _LayerReading:
         ops: MergeDict = {k: v for k, v in node.items() if isinstance(k, ListOp) and k is not ListOp.BASE}
         if ListOp.APPEND in ops:
             appended = _to_append_list(ops[ListOp.APPEND])
-            ops[ListOp.APPEND] = [self.read(v, None, [*path, str(len(working) + i)]) for i, v in enumerate(appended)]
+            ops[ListOp.APPEND] = [
+                self.read(v, None, [*path, str(at)], self._step(states, path, str(at)))
+                for at, v in enumerate(appended, start=len(working))
+            ]
         spelled = ".".join(path)
         try:
             working = _apply_list_ops(working, ops, spelled, _SHAPE)
-            self._lay_index_patches(working, node, path)
+            self._lay_index_patches(working, node, path, states)
         except (ConfargError, ValueError):
             return None
         return working
 
-    def _lay_index_patches(self, working: list[Any], node: MergeDict, path: list[str]) -> None:
+    def _lay_index_patches(
+        self, working: list[Any], node: MergeDict, path: list[str], states: list[_WalkState]
+    ) -> None:
         """Lay each index patch *node* holds over the item of *working* it reaches, in place.
 
         Raises:
@@ -309,7 +337,7 @@ class _LayerReading:
             if isinstance(k, ListOp):
                 continue
             index = _resolve_index(int(k), len(working), spelled, "patch")
-            patch = self.read(v, None, [*path, str(index)])
+            patch = self.read(v, None, [*path, str(index)], self._step(states, path, str(index)))
             item = working[index]
             working[index] = {**item, **patch} if isinstance(item, dict) and isinstance(patch, dict) else patch
 
