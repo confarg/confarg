@@ -143,3 +143,40 @@ Every site deciding which struct a tag builds asks it: construction (`_construct
 
 A union holding one generic parameterized apiece (`Box[int] | Box[str]`) takes a tag naming the class once per binding: construction builds the first that takes the value, in declaration order (`_construct_bound_tag`), the type walk types the keys by the first, and the default layer lays nothing below, since no binding is certain.
 Untagged, the variants are told apart by the value as any two struct variants are, and a value both take is ambiguous ([limitations](../limitations.md#subclasses)).
+
+## A descriptor-typed field takes what its `__set__` takes
+
+A dataclass field annotated by a data descriptor class — one whose instances define `__set__`, bare or parameterized — is a member typed by what `__set__` takes as its value, and state typed by what `__get__` gives on an instance, as mypy, pyright and ty type them (FEAT-40):
+
+```python
+class LocatorField:
+    def __get__(self, obj, objtype=None) -> Locator: ...
+    def __set__(self, obj, value: Locator | str) -> None: ...
+
+
+@dataclass
+class PartSpec:
+    locate: LocatorField = LocatorField()  # a member of type Locator | str, state of type Locator
+```
+
+- `_types._as_member` reads it in `_dc_member_hints`, the one reader of a dataclass member's annotation, so every channel, flag registration, `--help`, the default layer, construction and an expression's reading take `Locator | str`; `_as_state` reads it in `_dc_fields`, so `dump()` writes what the instance holds as a `Locator`.
+- The rule reads the annotation alone, installed descriptor or not, as pyright and ty do: `locate: LocatorField` converted in `__post_init__` reads the same (mypy reads that one as the descriptor class).
+  `Annotated` metadata stays on the input type, under `Final` or a type alias too, and an `InitVar[LocatorField]` takes `Locator | str` too.
+  A union naming the class (`LocatorField | None = None`) installs no descriptor and is read literally, as all three checkers read it.
+- An overloaded `__set__` takes the union of its overloads' values; `__get__`'s overload for class access (its instance parameter `None`) is no state.
+  An unannotated value is `Any` within that union, as a type checker joins it: overloads taking `int` and an unannotated value take `int | Any`, read as a field written `int | Any` is.
+  A lone unannotated value, no `__get__`, or methods whose hints cannot be read — `property`'s are C code — read as `Any`.
+  The overloads are `typing.get_overloads`'s, keyed by module and qualified name: a class redefined in the same module (a notebook re-running a cell) joins its earlier definitions' overloads too, until `typing.clear_overloads()`.
+- A generic descriptor is bound as a generic class is ([above](#a-generic-class-reads-its-parameters-bound)): `Converted[tuple[int, int], int]` takes `tuple[int, int] | int`, and inside `Wrapped[T]`, `Converted[T, str]` is bound by the field first.
+- A plain class needs none of it: its handwritten `__init__` already names what it takes.
+
+The conversion is the descriptor's, inside `__init__`, after resolution: a reference reads the value as confarg constructs it under the input type, `${locate}` the text `'foo*'`, as it reads a value a `__post_init__` normalizes ([limitations](../limitations.md#expressions)).
+A held value the input type does not take — a handle-only `__set__(value: str)` holding the `Transform` it looked up — dumps as that state and does not read back, as an `init=False` field does ([limitations](../limitations.md#callables-and-serialization)).
+A descriptor with no `__get__` leaves the attribute reading back the descriptor itself: `dump()` refuses the field, naming the missing `__get__` ([limitations](../limitations.md#callables-and-serialization)).
+
+## A descriptor returning itself on class access is no default
+
+`dataclasses` takes a field's default from the descriptor's class access, `__get__(None, cls)`: a value is the default, an `AttributeError` makes the field required.
+A descriptor returning itself there, the descriptor HOWTO's idiom, hands `dataclasses` the descriptor as the default, which Python then passes to `__set__` and stores, a value of no type the field takes.
+`_init_params` reads it as no default (`_types._defaults_to_its_descriptor`), so the field is required everywhere — construction, `--help`, the default layer — and the `MissingFieldError` says why, naming the descriptor (`_self_defaulting_descriptor`).
+That is stricter than Python's own `PartSpec()`, which builds holding the descriptor; it surfaces the mistake at the first missing value rather than at a dump or at the attribute's first use.

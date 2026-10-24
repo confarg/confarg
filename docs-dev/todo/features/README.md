@@ -19,7 +19,6 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-17 — An end-of-options separator (`--`)](FEAT-17-end-of-options-separator.md) | minor |  | M | medium | behavior |
 | [FEAT-24 — Writing a configuration back to a URL](FEAT-24-writing-a-configuration-to-a-url.md) | minor |  | M | low | behavior |
 | [FEAT-38 — A `default_factory` default is no base layer](FEAT-38-a-factory-default-is-no-base.md) | minor |  | M | medium | behavior |
-| [FEAT-40 — A field accepts a wider input than the type it holds](FEAT-40-a-field-accepts-a-wider-input-than-it-holds.md) | minor |  | M | high | behavior |
 | [FEAT-41 — A tyro adapter](FEAT-41-a-tyro-adapter.md) | minor |  | M | medium | behavior |
 | [FEAT-46 — A union's refusal names each variant's reason](FEAT-46-a-union-refusal-names-each-variants-reason.md) | minor |  | M | low | behavior |
 | [FEAT-48 — A resolved dictionary that replays a run](FEAT-48-a-resolved-dictionary-that-replays-a-run.md) | minor |  | M | medium | behavior |

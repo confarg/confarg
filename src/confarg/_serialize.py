@@ -527,10 +527,23 @@ def _held_attribute(instance: Any, name: str) -> Any:
 
 
 def _unheld_member_error(tp: Any, instance: Any, path: FieldPath, name: str, *, class_attribute: bool) -> ConfargError:
-    """Return the refusal to dump *instance*, which does not hold its member *name*."""
+    """Return the refusal to dump *instance*, which does not hold its member *name*.
+
+    A dataclass field set through a descriptor with no ``__get__`` is named as such: it was
+    set, and nothing reads it back.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-descriptor-typed-field-takes-what-its-__set__-takes
+    """
     cls_name = type(instance).__name__
     where = f"Cannot serialize {cls_name} at '{_spell_field_path(path) or _defaults.ROOT_KEY}':"
     if _is_dc(tp):
+        static = type(inspect.getattr_static(type(instance), name, None))
+        if hasattr(static, "__set__") and not hasattr(static, "__get__"):
+            return ConfargError(
+                f"{where} field '{name}' of {cls_name} is set through its descriptor {static.__name__}, "
+                "which has no __get__ to read it back."
+            )
         return ConfargError(f"{where} field '{name}' of {cls_name} is not set on the instance.")
     constructor = getattr(_init_params(tp).constructor, "__name__", "__init__")
     held = (

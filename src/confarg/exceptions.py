@@ -375,11 +375,15 @@ class MissingFieldError(ConfargError):
         docs-dev/architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it
     """
 
-    def __init__(self, path: FieldPath, field_type: Any) -> None:
-        """Record the field of type *field_type* at construction path *path*; ``()`` is the target itself."""
+    def __init__(self, path: FieldPath, field_type: Any, *, descriptor: str = "") -> None:
+        """Record the field of type *field_type* at construction path *path*; ``()`` is the target itself.
+
+        *descriptor* names the data descriptor a dataclass field defaults to, which is why it has no default.
+        """
         super().__init__(path, field_type)
         self._path = path
         self._field_type = field_type
+        self._descriptor = descriptor
         self._cli_prefix = ""
         self._in_root_value = False
         self._none_remedy = False
@@ -406,6 +410,12 @@ class MissingFieldError(ConfargError):
                 f"Missing required field '{_spell_field_path(self._path)}' of type {self._field_type!r}. "
                 f"Set it via CLI ({usage}), environment variable, or config file."
             )
+            if self._descriptor:
+                message += (
+                    f" Its descriptor {self._descriptor} returns itself on class access, which a dataclass takes"
+                    " as the field's default: no value of the field, so it has none. Return the default"
+                    " from __get__ when its instance is None, or raise AttributeError there."
+                )
         else:
             usage = f"--{self._cli_prefix} <value>" if self._cli_prefix else f"--{JSON_CAST_NAME} <json>"
             message = (
@@ -416,7 +426,7 @@ class MissingFieldError(ConfargError):
 
     def _with_none_remedy(self) -> Self:
         """Return this error with the none-word remedy after its message, still spelled when shown."""
-        error = type(self)(self._path, self._field_type)
+        error = type(self)(self._path, self._field_type, descriptor=self._descriptor)
         error._none_remedy = True
         return error
 
