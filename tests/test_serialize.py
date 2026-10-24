@@ -425,6 +425,19 @@ class TestDumpStolenLeaf:
         result = confarg.dump(WithIntOrFloat(value=math.pi))
         assert result["value"] == pytest.approx(math.pi)
 
+    @pytest.mark.parametrize("tp", [Union[int, float], Union[float, int]])
+    @pytest.mark.parametrize("suffix", [".json", ".yaml", ".toml"])
+    def test_int_and_float_read_back_bare_through_a_file(self, tmp_path: Path, tp: Any, suffix: str) -> None:
+        """A whole number is the int and anything else the float, so neither needs a cast (BUG-154)."""
+        WithIntOrFloat = make_target("value", tp, default=0)
+        for value in (1, 1.0):
+            path = tmp_path / f"out{suffix}"
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                assert confarg.dump(WithIntOrFloat(value=value)) == {"value": value}
+                confarg.dump_file(WithIntOrFloat(value=value), path)
+            assert repr(confarg.load(WithIntOrFloat, argv=[], env={}, files=[path]).value) == repr(value)
+
     def test_inexpressible_cast_warns_and_dumps_bare(self) -> None:
         """No __cast__ can name an unregistered Enum another Enum of its rank takes, so dump warns."""
         WithColorOrPaint = make_target("value", Union[Color, _Paint], default=Color.RED)

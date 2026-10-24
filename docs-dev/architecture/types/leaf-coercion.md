@@ -6,8 +6,9 @@ Policies:
 - bool words: true/1/yes/on, false/0/no/off (case-insensitive); None words: none/null, and the empty string for a `None` target;
 - `int(text, 0)`: `0x10`, `0o7`, `0b1`, `1_000` accepted (so `08` is rejected);
 - a real `bool` is never accepted as an int or float;
+- a `float` reads a native `int` as its digits read, and a finite number too large for a float as the infinity of its sign, with a `FloatOverflowWarning`; an `int` never reads a native `float` ([design decisions](../design-decisions/a-float-reads-an-int-as-its-digits.md#a-float-reads-an-int-as-its-digits));
 - Enum: member name first, then `str(value)`;
-- tokens only: a native value from a file must already have the right type.
+- tokens only: any other native value from a file must already have the right type.
 
 `Any` holds every value: a leaf passes through, a token as the plain `str` it spells, CSV keys included ([tokens never leak](token-model.md#token-model)).
 `_coerce._held_by_any` is that leaf pass-through, and the only one: `construct()`'s `ANY` branch asks it of every leaf it reaches, and so does `_coerce_leaf`, which a dict's key coercion asks of an `Any` key annotation directly, without the shape dispatch that handles `ANY` everywhere else (BUG-212).
@@ -32,5 +33,5 @@ Pick deliberately: overrides of locals use `_coerce_leaf` because a failure must
 Expression tokens are skipped by rule ([expressions](../expressions/deferral-rule.md#deferral-rule)).
 The two share one predicate for "is this leaf type coerced eagerly?" — `_is_eagerly_coercible`, the eager subset of `_coerce_leaf`'s domain: the types whose value a file holds natively, so `str` and every type `_reads_as_object` names are excluded — and diverge only on raise-vs-return ([invariants](../invariants.md#delegate-to-the-canonical-function)).
 
-`read_as_object` is the third reader: what an expression reads of a leaf, the object where one `_reads_as_object` type is certain, the value as written anywhere else and wherever the type refuses it.
-It never raises either ([design decisions](../design-decisions/an-expression-reads-a-typed-leaf-as-its-object.md#an-expression-reads-a-typed-leaf-as-its-object)).
+`read_as_object` is the third reader: what an expression reads of a leaf, the value construction builds where one `_reads_as_object` or `_is_eagerly_coercible` type is certain — the object, or a file's `1` as the `1.0` a `float` holds — the value as written anywhere else and wherever the type refuses it.
+It never raises either, and never warns ([design decisions](../design-decisions/an-expression-reads-a-typed-leaf-as-its-object.md#an-expression-reads-a-typed-leaf-as-its-object)).

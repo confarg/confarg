@@ -179,6 +179,19 @@ class _WithIntDecimal:
 
 
 @dataclass
+class _WithFloatTimeout:
+    timeout: float = 0.5
+
+
+@dataclass
+class _WithIntFloatDefaults:
+    """Float sequences whose defaults a class wrote as ints."""
+
+    t: tuple[float, float] = (0, 0)
+    v: tuple[float, ...] = (0, 1)
+
+
+@dataclass
 class _PlainCastScalars:
     """Scalar leaf fields of each castable type, for plain-field force-cast tests (BUG-72)."""
 
@@ -1950,10 +1963,12 @@ class TestStealingContract:
         assert loader.load(target, argv=["--value", text], env={}).value is expected
         assert loader.load(target, argv=["--config", str(cfg)], env={}).value is expected
 
-    def test_float_steals_over_int(self, loader: ConfargLoader) -> None:
-        """--value 5 lands on float for int | float: rank decides, not declaration order."""
-        cfg = loader.load(_WithIntFloat, argv=["--value", "5"], env={})
-        assert type(cfg.value) is float
+    @pytest.mark.parametrize(("text", "kind"), [("5", int), ("5.5", float)])
+    def test_int_steals_over_float(self, loader: ConfargLoader, tmp_yaml, text: str, kind: type) -> None:
+        """--value 5 lands on int for int | float, and 5.5 on float, as a file's value does (BUG-154)."""
+        cfg = tmp_yaml(f"value: {text}\n")
+        assert type(loader.load(_WithIntFloat, argv=["--value", text], env={}).value) is kind
+        assert type(loader.load(_WithIntFloat, argv=["--config", str(cfg)], env={}).value) is kind
 
     def test_registered_leaf_steals_over_int(self, loader: ConfargLoader) -> None:
         """--value 5 lands on the registered leaf for int | Decimal, in every integration."""
@@ -2387,6 +2402,49 @@ _MOUNT_TARGETS: list[Any] = [_MountOuter, _MountVariantA | _MountVariantB, _Moun
 
 class TestConfigFilesContract:
     """Config-file loading and precedence behave identically in every integration."""
+
+    @pytest.mark.parametrize(
+        ("filename", "text"),
+        [("c.json", '{"timeout": 1}'), ("c.yaml", "timeout: 1\n"), ("c.toml", "timeout = 1\n")],
+        ids=["json", "yaml", "toml"],
+    )
+    def test_a_file_int_sets_a_float_field(
+        self, loader: ConfargLoader, tmp_path: Path, filename: str, text: str
+    ) -> None:
+        """A file's ``1`` builds the ``1.0`` the flag ``--timeout 1`` builds (BUG-154)."""
+        path = tmp_path / filename
+        path.write_text(text, encoding="utf-8")
+        from_file = loader.load(_WithFloatTimeout, argv=["--config", str(path)], env={}).timeout
+        from_flag = loader.load(_WithFloatTimeout, argv=["--timeout", "1"], env={}).timeout
+        assert repr(from_file) == repr(from_flag) == "1.0"
+
+    def test_a_number_too_large_for_a_float_reads_as_inf_and_warns(self, loader: ConfargLoader, tmp_json) -> None:
+        """A file's digits read as they do on the CLI, each warning naming where it was written (BUG-154).
+
+        A file's value is named by its field, a token by the flag or variable the user typed:
+        a parser reads it before the field's path is spelled.
+        """
+        digits = "1" + "0" * 400
+        cases = [
+            (["--config", str(tmp_json(f'{{"timeout": {digits}}}'))], {}, "inf at 'timeout'"),
+            (["--timeout", digits], {}, "for --timeout is too large"),
+            ([], {"X_TIMEOUT": "1e400"}, "for X_TIMEOUT is too large"),
+        ]
+        for argv, env, where in cases:
+            with pytest.warns(confarg.exceptions.FloatOverflowWarning, match=where) as caught:
+                assert loader.load(_WithFloatTimeout, argv=argv, env=env, env_prefix="X_").timeout == math.inf
+            assert len(caught) == 1
+
+    def test_an_overflowing_token_merges_as_inf_and_its_dump_reads_back(
+        self, loader: ConfargLoader, tmp_path: Path
+    ) -> None:
+        """``merge()`` holds the infinity the token reads as, so a dump of it loads the same value back."""
+        with pytest.warns(confarg.exceptions.FloatOverflowWarning):
+            merged = loader.merge(_WithFloatTimeout, argv=["--timeout", "1e400"], env={})
+        assert merged["timeout"] == math.inf
+        path = tmp_path / "merged.yaml"
+        confarg.dump_file(merged, path)
+        assert loader.load(_WithFloatTimeout, argv=["--config", str(path)], env={}).timeout == math.inf
 
     def test_config_file(self, loader: ConfargLoader, tmp_yaml) -> None:
         """Files passed via --config are loaded and merged."""
@@ -4292,6 +4350,18 @@ class TestCollectionPatchContract:
     argv-derived patch flags; vanilla's loop writes them in command order.
     """
 
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [(["--t.1", "2.5"], ((0.0, 2.5), (0, 1))), (["--v+", "2.5"], ((0, 0), (0.0, 1.0, 2.5)))],
+        ids=["index", "append"],
+    )
+    def test_a_patch_builds_an_int_default_as_floats(
+        self, loader: ConfargLoader, argv: list[str], expected: Any
+    ) -> None:
+        """A patched default is built, so its ints are the floats its type holds; an untouched one stays (BUG-154)."""
+        cfg = loader.load(_WithIntFloatDefaults, argv=argv, env={})
+        assert repr((cfg.t, cfg.v)) == repr(expected)
+
     def test_index_set(self, loader: ConfargLoader, tmp_yaml) -> None:
         """``--field.N value`` replaces a single list element."""
         base = tmp_yaml("users: [alice, bob, claire]\n")
@@ -5446,6 +5516,22 @@ class _UnionLeaves:
     text: str = ""
 
 
+@dataclass
+class _NumberLeaves:
+    """Numbers an expression reads: a float, a float beside text, and a token each union converts."""
+
+    f: float = 0.0
+    g: float | str = ""
+    x: int | str = ""
+    b: bool | str = ""
+    rf: str = ""
+    rg: str = ""
+    rx: Any = None
+    rb: Any = None
+
+
+_NUMBER_LEAF_EXPRESSIONS = {"--rf": "${str(f)}", "--rg": "${str(g)}", "--rx": "${x}", "--rb": "${b}"}
+
 _TYPED_LEAF_EXPRESSIONS = {"tag": "${colour}@${p}", "copy": "${colour}", "low": "${level == 1}", "sub": "${p / 'sub'}"}
 
 
@@ -5502,6 +5588,31 @@ class TestTypedLeafReadContract:
         cfg = loader.load(_UnionLeaves, argv=argv, env=env, env_prefix="X_")
         assert cfg.a is _Colour.RED
         assert (cfg.same, cfg.text) == (True, "hello")
+
+    @pytest.mark.parametrize("source", ["argv", "env", "file"])
+    def test_a_number_reads_as_the_value_construction_builds(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        source: str,
+    ) -> None:
+        """`${f}` is the built `f`, whichever channel spelled it (BUG-154).
+
+        A file's `1` builds `1.0` at a `float` field and at the `float` of `float | str`, so it
+        reads `1.0`, as the token does; a union's token reads as the number or bool it builds,
+        not as its text.
+        """
+        argv = [token for pair in _NUMBER_LEAF_EXPRESSIONS.items() for token in pair]
+        env: dict[str, str] = {}
+        if source == "argv":
+            argv += ["--f", "1", "--g", "1", "--x", "5", "--b", "yes"]
+        elif source == "env":
+            env = {"X_F": "1", "X_G": "1", "X_X": "5", "X_B": "yes"}
+        else:
+            argv += ["--config", str(tmp_yaml("f: 1\ng: 1\nx: 5\nb: true\n"))]
+        cfg = loader.load(_NumberLeaves, argv=argv, env=env, env_prefix="X_")
+        assert (cfg.f, cfg.g, cfg.x, cfg.b) == (1.0, 1.0, 5, True)
+        assert (cfg.rf, cfg.rg, cfg.rx, cfg.rb) == ("1.0", "1.0", 5, True)
 
 
 # ---------------------------------------------------------------------------

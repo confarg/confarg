@@ -40,6 +40,7 @@ from confarg._types import (
     _fixed_position,
     _fixed_seq_types,
     _init_params,
+    _is_callable,
     _is_dict,
     _is_frozenset,
     _is_list,
@@ -76,6 +77,7 @@ from confarg.exceptions import (
     ConfargError,
     ConfargWarning,
     FieldPath,
+    FloatOverflowWarning,
     MissingFieldError,
     SymbolImportError,
     SymbolNotFoundError,
@@ -84,7 +86,6 @@ from confarg.exceptions import (
 )
 from confarg.typedload._coerce import (
     _FALSY,
-    _LAST_OBJECT_RANK,
     _NONE_TOKENS,
     _TRUTHY,
     _coerce_leaf,
@@ -92,9 +93,7 @@ from confarg.typedload._coerce import (
     _held_by_any,
     _is_struct_variant,
     _is_taggable_leaf,
-    _reads_as_object,
     _steal_order,
-    _steal_rank,
     _type_kind,
     _TypeKind,
 )
@@ -1306,25 +1305,25 @@ def _coerce_scalar_variants(
 
 
 def read_union_leaf(tp: Any, value: Any) -> Any:
-    """Return what an expression reads of the leaf *value* at the union *tp*: the object a variant builds, or *value*.
+    """Return what an expression reads of the leaf *value* at the union *tp*: the value a variant builds, or *value*.
 
     The variant is the one construction picks, through the same walk: *value* reads as the
-    object where that variant is an object kind (:func:`_reads_as_object`), and as written
-    anywhere else, for construction to build or refuse. Only the variants that can be an object
-    kind are tried, the ranks above the numbers, so the reading builds no callable.
+    object, the number or the bool that variant builds, so a token ``5`` at ``int | str`` reads
+    ``5`` and a file's ``1`` at ``float | str`` reads ``1.0``. Text, which the ``str`` variant
+    takes, reads as written, and so does a value no variant takes, for construction to refuse.
+    A Callable variant is skipped, so the reading builds no callable, and the reading never
+    warns: construction warns of what it builds.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
     """
     all_args = _union_args(tp)
     scalars = _leaf_variants(_union_args_no_none(tp)).scalars
-    ordered = [
-        v
-        for v in _ranked_scalar_variants(all_args, scalars, value)
-        if _steal_rank(_resolve_type(v)) <= _LAST_OBJECT_RANK
-    ]
-    taken = _first_scalar_variant_taking(ordered, all_args, value, (), _defaults.UNION_TAG)
-    if taken is None or not _reads_as_object(_resolve_type(taken[0])):
+    ordered = [v for v in _ranked_scalar_variants(all_args, scalars, value) if not _is_callable(_resolve_type(v))]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FloatOverflowWarning)
+        taken = _first_scalar_variant_taking(ordered, all_args, value, (), _defaults.UNION_TAG)
+    if taken is None or _resolve_type(taken[0]) is str:
         return value
     return taken[1]
 

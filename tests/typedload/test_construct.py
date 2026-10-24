@@ -259,13 +259,6 @@ class TestStealOrder:
         assert result == "5"
         assert type(result) is str
 
-    @pytest.mark.parametrize("tp", [int | float, float | int])
-    def test_float_steals_over_int(self, tp: Any) -> None:
-        """Float outranks int: an integral token still lands on the float variant."""
-        result = construct(tp, _StrToken("5"))
-        assert result == 5.0
-        assert type(result) is float
-
     @pytest.mark.parametrize("tp", [bool | int, int | bool])
     def test_int_steals_over_bool_for_a_number(self, tp: Any) -> None:
         """Int outranks bool: '1' is the number one, not True."""
@@ -371,6 +364,52 @@ class TestStealOrderForNativeValues:
     def test_a_native_bool_is_no_enum_value(self, tp: Any) -> None:
         """An Enum compares a native value by its exact type, so true never selects the member 1."""
         assert construct(tp, data=True) is True
+
+
+class TestIntRanksAboveFloat:
+    """A whole number is an ``int`` and anything else a ``float``, from a file and a token alike (BUG-154).
+
+    ``float`` reads a file's ``int`` since BUG-154, so the rank alone decides ``int | float``; it puts
+    ``int`` first, the more specific of the two. Each union is written in both declaration orders.
+    """
+
+    @pytest.mark.parametrize("tp", [int | float, float | int])
+    @pytest.mark.parametrize("value", [1, _StrToken("1"), _StrToken("0x10")], ids=["native", "token", "token-hex"])
+    def test_a_whole_number_is_an_int(self, tp: Any, value: Any) -> None:
+        """A file's ``1`` and the token ``1`` are the same ``int``."""
+        assert type(construct(tp, value)) is int
+
+    @pytest.mark.parametrize("tp", [int | float, float | int])
+    @pytest.mark.parametrize("value", [1.0, _StrToken("1.5"), _StrToken("1e3")], ids=["native", "token", "token-exp"])
+    def test_any_other_number_is_a_float(self, tp: Any, value: Any) -> None:
+        """A file's ``1.0`` and a token ``int`` refuses are the ``float``."""
+        assert type(construct(tp, value)) is float
+
+    @pytest.mark.parametrize("tp", [float | str, float | bool, float | None])
+    def test_a_native_int_meets_the_float_variant(self, tp: Any) -> None:
+        """Beside a variant that refuses it, a file's ``1`` is the ``float`` its token is."""
+        built = construct(tp, 1)
+        assert type(built) is float
+        assert built == 1.0
+
+
+class TestFloatHoldsANativeInt:
+    """Every position a ``float`` leaf takes a file's ``int`` at builds the ``float`` (BUG-154)."""
+
+    @pytest.mark.parametrize(
+        ("tp", "data", "expected"),
+        [
+            (tuple[float, float], [0, 1], (0.0, 1.0)),
+            (tuple[float, ...], [0, 1], (0.0, 1.0)),
+            (list[float], [1, 2.5], [1.0, 2.5]),
+            (dict[float, str], {1: "a"}, {1.0: "a"}),
+            (float, {"__cast__": "float", "__value__": 1}, 1.0),
+        ],
+        ids=["fixed-tuple", "variadic-tuple", "list", "dict-key", "cast"],
+    )
+    def test_a_float_position_builds_a_float(self, tp: Any, data: Any, expected: Any) -> None:
+        """An item, a key and a pinned value are each the ``float`` their token would be."""
+        assert repr(construct(tp, data)) == repr(expected)  # the repr tells 1 from 1.0
 
 
 # ---------------------------------------------------------------------------

@@ -24,8 +24,8 @@ The merged dict holds an `Enum` or registered leaf as it was written, on every c
 | `${svc[c]}`, `svc` keyed by `red` | the entry `red`: a computed key is spelled in its dump form |
 | `${c == 'red'}` on a plain `Enum` | `False`: a member equals no text |
 
-- **The reader** (`_typed_read.TypedReading`) steps from the root to the position read by the typed merge's own walk (`TypedAt`, which reads the tag or spec each node holds), and coerces the value there with `_coerce.read_as_object` where that type, an optional included, is one `Enum`, registered or `Literal`-over-`Enum` type.
-  A union of several variants reads as the variant construction picks (`_construct.read_union_leaf`): `str | Color` reads `red` as the member, `hello` as written.
+- **The reader** (`_typed_read.TypedReading`) steps from the root to the position read by the typed merge's own walk (`TypedAt`, which reads the tag or spec each node holds), and coerces the value there with `_coerce.read_as_object` where that type, an optional included, is one `Enum`, registered or `Literal`-over-`Enum` type, or a number, a bool or `None`: a file's `1` at a `float` reads `1.0`, as construction builds it (BUG-154).
+  A union of several variants reads as the variant construction picks (`_construct.read_union_leaf`), every variant but a Callable tried: `str | Color` reads `red` as the member, `hello` as written, and `int | str` reads the token `5` as the number it builds.
   `Any` and a base with untagged subclasses read as written, as do a value the type refuses and a pending op's items.
   It applies to every read, a source's value, an earlier expression's result and each leaf of a subtree alike, so an expression never sees one leaf as text and another as the object.
 - **The writer** (`_serialize.written_form`) gives what an expression leaves behind — a pure result, an interpolated piece, a computed subscript key — in the form `dump()` writes: an `Enum` member's value, a registered type's serializer.

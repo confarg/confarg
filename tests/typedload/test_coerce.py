@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import math
 import re
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta, timezone
@@ -21,7 +23,7 @@ from hypothesis import strategies as st
 
 import confarg
 from confarg._types import _StrToken
-from confarg.exceptions import MissingFieldError, TypeCoercionError
+from confarg.exceptions import ConfargWarning, MissingFieldError, TypeCoercionError
 from confarg.typedload._coerce import (
     _LEAF_COERCIONS,
     _LEAF_SERIALIZERS,
@@ -171,13 +173,13 @@ class TestTryCoerceCustomType:
     def test_registered_type_is_left_as_written(self) -> None:
         """A registered type's value is an object no file holds, so its token stays as written (BUG-246)."""
         token = _StrToken(_UUID_STR)
-        assert _try_coerce(UUID, token) is token
+        assert _try_coerce(UUID, token, "--value") is token
 
     @pytest.mark.usefixtures("_unregistered_uuid")
     def test_unregistered_type_returns_token(self) -> None:
         """Unregistered types are not eagerly coerced — token passes through unchanged."""
         token = _StrToken(_UUID_STR)
-        result = _try_coerce(UUID, token)
+        result = _try_coerce(UUID, token, "--value")
         assert result is token
 
     def test_registered_type_is_read_as_its_object(self) -> None:
@@ -188,7 +190,7 @@ class TestTryCoerceCustomType:
     def test_invalid_registered_returns_token(self) -> None:
         """When coercion fails, _try_coerce returns the original token unchanged."""
         token = _StrToken("not-a-uuid")
-        result = _try_coerce(UUID, token)
+        result = _try_coerce(UUID, token, "--value")
         assert result is token
 
 
@@ -420,6 +422,75 @@ class TestIntCoercion:
 
 
 # ---------------------------------------------------------------------------
+# TestFloatCoercion — a native int, and a finite spelling that overflows
+# ---------------------------------------------------------------------------
+
+
+class TestFloatCoercion:
+    """A float reads a file's int as its digits read on the CLI, and warns of a finite overflow (BUG-154)."""
+
+    @pytest.mark.parametrize("value", [1, -7, 0, 2**53 + 1], ids=["one", "negative", "zero", "past-2**53"])
+    def test_a_native_int_reads_as_its_text_does(self, value: int) -> None:
+        """A file's ``1`` is the ``1.0`` the token ``1`` is, rounded the same way past 2**53."""
+        coerced = _coerce_leaf(float, value)
+        assert type(coerced) is float
+        assert coerced == _coerce_leaf(float, _StrToken(str(value)))
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_a_bool_is_refused(self, value: Any) -> None:
+        """A bool is never a number, though ``bool`` subclasses ``int``."""
+        with pytest.raises(TypeCoercionError, match="Cannot coerce bool"):
+            _coerce_leaf(float, value)
+
+    def test_a_native_float_is_refused_for_an_int(self) -> None:
+        """The numeric tower runs one way: a file's ``1.0`` is no ``int``."""
+        with pytest.raises(TypeCoercionError, match=r"Cannot coerce float 1\.0 to int"):
+            _coerce_leaf(int, 1.0)
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (10**400, float("inf")),
+            (-(10**400), float("-inf")),
+            (_StrToken("1" + "0" * 400), float("inf")),
+            (_StrToken("1e400"), float("inf")),
+            (_StrToken("-1e400"), float("-inf")),
+        ],
+        ids=["native-int", "native-negative-int", "token-digits", "token-exponent", "token-negative-exponent"],
+    )
+    def test_an_overflow_reads_as_inf_and_warns(self, value: Any, expected: float) -> None:
+        """A finite spelling too large for a float is the infinity of its sign, named with its path."""
+        with pytest.warns(confarg.exceptions.FloatOverflowWarning, match="too large for a float.* at 'f'"):
+            assert _coerce_leaf(float, value, "f") == expected
+
+    @pytest.mark.parametrize("value", [_StrToken("inf"), _StrToken("-Infinity"), _StrToken(" INF "), float("inf")])
+    def test_an_infinity_spelled_as_such_does_not_warn(self, value: Any) -> None:
+        """An infinity word, or the infinity a parser already made, was meant."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert math.isinf(_coerce_leaf(float, value))
+
+    def test_an_eager_token_reads_as_inf_and_warns_naming_its_spelling(self) -> None:
+        """A parser holds the infinity in the merged dict, and names the flag the user typed."""
+        with pytest.warns(confarg.exceptions.FloatOverflowWarning, match="^1e400 for --f is too large"):
+            assert _try_coerce(float, _StrToken(" 1e400"), "--f") == float("inf")
+
+    def test_the_overflow_warning_is_a_confarg_warning(self) -> None:
+        """It can be cancelled alone by its category, and a filter on ``ConfargWarning`` still catches it."""
+        assert issubclass(confarg.exceptions.FloatOverflowWarning, ConfargWarning)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            warnings.filterwarnings("ignore", category=confarg.exceptions.FloatOverflowWarning)
+            assert _coerce_leaf(float, 10**400) == float("inf")
+
+    def test_an_expression_reads_a_native_int_as_the_float_it_builds(self) -> None:
+        """A reference reads the built value: a file's ``1`` at a ``float`` field reads ``1.0``."""
+        read = read_as_object(float, 1)
+        assert type(read) is float
+        assert read == 1.0
+
+
+# ---------------------------------------------------------------------------
 # TestNoneTypeCoercion — _coerce_leaf and _try_coerce for NoneType
 # ---------------------------------------------------------------------------
 
@@ -456,13 +527,13 @@ class TestNoneTypeCoercion:
 
     def test_try_coerce_none_token(self) -> None:
         """_try_coerce eagerly converts 'none' tokens for NoneType fields."""
-        result = _try_coerce(type(None), _StrToken("none"))
+        result = _try_coerce(type(None), _StrToken("none"), "--value")
         assert result is None
 
     def test_try_coerce_invalid_returns_token(self) -> None:
         """_try_coerce returns the token unchanged when coercion would fail."""
         token = _StrToken("x")
-        result = _try_coerce(type(None), token)
+        result = _try_coerce(type(None), token, "--value")
         assert result is token
 
     def test_load_integration_none_token(self) -> None:

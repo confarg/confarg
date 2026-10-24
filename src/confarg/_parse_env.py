@@ -430,7 +430,7 @@ def _store_env_value(parts: list[str], ft: Any, value: str, data: MergeDict, ori
             if isinstance(parsed, list | dict):
                 _set_nested(data, parts, parsed, at)
                 return
-    _set_nested(data, parts, _try_coerce(ft, _StrToken(value)), at)
+    _set_nested(data, parts, _try_coerce(ft, _StrToken(value), orig_key), at)
 
 
 def _prefixed_variables(
@@ -585,7 +585,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
 
         if not is_struct and not key:
             # The bare prefix sets a non-struct root whole, as the bare --<cli_prefix> does.
-            data[_defaults.ROOT_KEY] = _try_coerce(_resolve_type(target), _StrToken(value))
+            data[_defaults.ROOT_KEY] = _try_coerce(_resolve_type(target), _StrToken(value), orig_key)
             continue
 
         # A delete or an append is checked as the value variable of its path is (BUG-182).
