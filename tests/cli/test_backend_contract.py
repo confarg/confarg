@@ -23,6 +23,7 @@ import dataclasses
 import json
 import math
 import re
+import sys
 import warnings
 from collections.abc import (
     Callable,  # noqa: TC003  # used in a runtime dataclass annotation confarg resolves via get_type_hints
@@ -10606,3 +10607,109 @@ class TestDescriptorFieldSpaceSeparatedContract:
         """``--size 3 4`` fills the ``tuple[int, int]`` variant, as on ``size: tuple[int, int] | int``."""
         argv = ["--size", "3", "4", *_d.SHAPES_REQUIRED]
         assert space_sep_loader.load(_d.Shapes, argv=argv, env={}).size == (3, 4)
+
+
+# ---------------------------------------------------------------------------
+# A naming types what the layer it comes from builds: lists, deletes, ancestors
+# ---------------------------------------------------------------------------
+
+
+class _NamingCamelMul:
+    """A callable class whose member is spelled in camelCase, which a variable spells in capitals."""
+
+    def __init__(self, maxFactor: int = 1) -> None:  # the camelCase spelling is the point
+        self.maxFactor = maxFactor
+
+    def __call__(self, x: int) -> int:
+        return x * self.maxFactor
+
+
+@dataclass
+class _NamingListCfg:
+    """A list of callables, each of which a layer may name by its own spec."""
+
+    fs: list[Callable[..., Any]] = dataclasses_field(default_factory=list)
+
+
+@dataclass
+class _NamingDeep:
+    """A dict a value deep enough to pass the recursion limit can fill."""
+
+    d: dict[str, Any] = dataclasses_field(default_factory=dict)
+
+
+class TestANamingTypesWhatItsLayerBuildsContract:
+    """A naming types a key only where the layer it comes from builds it, on argv and in the environment alike.
+
+    The views looked a naming up at the node only: one spec down the environment spelled a
+    member by no class, a naming inside a list was out of reach, and a layer that named, deleted
+    or rewrote an ancestor left a lower layer's naming below it in force, though the merge drops
+    it (follow-ups of BUG-233, BUG-236).
+    """
+
+    def test_the_environment_spells_a_member_one_spec_down(self, loader: ConfargLoader) -> None:
+        """``APP_W__INNER__MAXFACTOR`` is ``Mul``'s ``maxFactor``, named below ``Wrap``'s ``inner``."""
+        env = {
+            "APP_W__CLASS": f"{__name__}._NamingWrap",
+            "APP_W__INNER__CLASS": f"{__name__}._NamingCamelMul",
+            "APP_W__INNER__MAXFACTOR": "4",
+        }
+        cfg = loader.load(_NamingCfg, argv=[], env=env, env_prefix="APP_")
+        assert cfg.w is not None
+        assert cfg.w(1) == 4
+
+    def test_an_environment_list_names_the_class_of_its_items(self, space_sep_loader: ConfargLoader) -> None:
+        """A spec inside a list the environment sets types the flag below the item."""
+        env = {"APP_FS": json.dumps([{"class": _JOINER}])}
+        cfg = space_sep_loader.load(_NamingListCfg, argv=["--fs.0.parts", "a", "b"], env=env, env_prefix="APP_")
+        assert cfg.fs[0]() == "a-b"
+
+    def test_a_file_list_names_the_class_of_its_items(self, space_sep_loader: ConfargLoader, tmp_yaml) -> None:
+        """So does a spec inside a list a file sets."""
+        spec = tmp_yaml(f"fs: [{{class: {_JOINER}}}]\n")
+        cfg = space_sep_loader.load(_NamingListCfg, argv=["--fs.0.parts", "a", "b"], env={}, files=[spec])
+        assert cfg.fs[0]() == "a-b"
+
+    def test_an_argv_delete_cuts_the_lower_naming(self, space_sep_loader: ConfargLoader) -> None:
+        """``--f-`` drops what lies below argv at ``f``, so its class types no key argv writes after."""
+        env = {"APP_F__CLASS": _JOINER}
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            space_sep_loader.load(_NamingCfg, argv=["--f-", "--f.parts", "a", "b"], env=env, env_prefix="APP_")
+
+    def test_an_environment_delete_cuts_the_lower_naming(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``APP_F-`` drops the file's ``f``, so the file's class does not decode ``APP_F__PARTS``."""
+        spec = tmp_yaml(f"f: {{class: {_JOINER}}}\n")
+        env = {"APP_F-": "", "APP_F__PARTS": '["a","b"]'}
+        merged = loader.merge(_NamingCfg, argv=[], env=env, env_prefix="APP_", files=[spec])
+        assert merged["f"]["parts"] == '["a","b"]'
+
+    def test_an_argv_opener_cuts_a_lower_naming_below_it(self, space_sep_loader: ConfargLoader) -> None:
+        """Argv's ``Wrap`` replaces the environment's ``f``, so the environment's ``inner`` class types nothing."""
+        env = {"APP_F__INNER__CLASS": _JOINER}
+        argv = ["--f.class", f"{__name__}._NamingWrap", "--f.inner.parts", "a", "b"]
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            space_sep_loader.load(_NamingCfg, argv=argv, env=env, env_prefix="APP_")
+
+    def test_an_environment_opener_cuts_a_file_naming_below_it(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The environment's ``Wrap`` replaces the file's ``f``, so the file's ``inner`` class decodes nothing."""
+        spec = tmp_yaml(f"f: {{inner: {{class: {_JOINER}}}}}\n")
+        env = {"APP_F__CLASS": f"{__name__}._NamingWrap", "APP_F__INNER__PARTS": '["a","b"]'}
+        merged = loader.merge(_NamingCfg, argv=[], env=env, env_prefix="APP_", files=[spec])
+        assert merged["f"]["inner"]["parts"] == '["a","b"]'
+
+    def test_a_value_past_the_recursion_limit_is_refused_by_depth(self, loader: ConfargLoader) -> None:
+        """The scan for what argv names decodes as the loop does, so the depth refusal speaks first (BUG-262)."""
+        deep = '{"a":' * 1200 + "1" + "}" * 1200
+        with pytest.raises(ConfargError, match="64 levels"):
+            loader.load(_NamingDeep, argv=["--d", deep], env={})
+
+    def test_a_warning_a_named_class_raises_on_import_is_seen_once(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Registration reads the layers silently of confarg's own warnings only: a module warns once in its life."""
+        sys.modules.pop("tests._naming_noisy", None)
+        spec = tmp_yaml("f: {class: tests._naming_noisy.Noisy}\n")
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            loader.merge(_NamingCfg, argv=[], env={"APP_F__X": "1"}, env_prefix="APP_", files=[spec])
+        assert [str(w.message) for w in caught if issubclass(w.category, UserWarning)].count(
+            "noisy module imported"
+        ) == 1

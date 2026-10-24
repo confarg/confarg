@@ -63,6 +63,7 @@ from confarg._naming import (
     named_child,
     named_variant,
     names_something,
+    node_at,
     opener_keys,
     takes_untyped_argument,
 )
@@ -1379,20 +1380,21 @@ class _ParseCtx:
     def naming(self, prefix: tuple[str, ...]) -> Any:
         """Return what the node at *prefix* names for the flag being typed (:data:`NamingView`).
 
-        argv's own naming written so far, else, where argv names the node nowhere, the
-        nearest lower layer's: a key written before argv's opener is typed by none.
+        argv's own naming written so far, else, where argv names neither the node nor an
+        ancestor of it, what lies below argv names there: a key written before argv's opener
+        is typed by none, and a node argv names, deletes or writes replaces what a lower layer
+        named at and below it, as the merge replaces it.
 
         Dev Notes:
             docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key
         """
-        path = list(prefix)
         for source in (self.data, *reversed(self.root_json)):
-            node = _peek_nested(source, path)
+            node = node_at(source, prefix)
             if names_something(node, self.union_tag):
                 return node
-        if prefix in self.argv_named:
+        if any(prefix[:depth] in self.argv_named for depth in range(len(prefix) + 1)):
             return None
-        node = _peek_nested(self.below, path)
+        node = node_at(self.below, prefix)
         return node if names_something(node, self.union_tag) else None
 
 
@@ -1913,25 +1915,31 @@ def _argv_named_nodes(  # noqa: C901  # one lexical scan of argv, per spelling o
     cli_prefix: str,
     config_flag: str,
     union_tag: str,
-    *,
-    host_parsed: bool,
 ) -> frozenset[tuple[str, ...]]:
-    """Return the path of every node argv names anywhere, read as written.
+    """Return the path of every node argv names, deletes or writes a value at, read as written.
 
-    A node is named by an opener or a tag flag (``--f.class X``), a whole ``{…}`` value
-    holding one at any depth, a bare value written at the node itself (the callable
-    shorthand), and a whole-field delete, which cuts the layers below off. A lower layer's
-    naming types none of them (:meth:`_ParseCtx.naming`). Lexical, so it may name more
-    nodes than construction reads as named; such a node's keys are only left untyped.
+    A node is named by an opener or a tag flag (``--f.class X``) and by a whole ``{…}`` or
+    ``[…]`` value holding one at any depth, a list item by its index; a whole-field delete and
+    a bare value written at the node itself (the callable shorthand among them) replace it.
+    A lower layer's naming types nothing at or below any of them
+    (:meth:`_ParseCtx.naming`). Lexical, so it marks every node a flag writes a value at,
+    more than construction reads as named: a lower layer's naming is then only left unused
+    below a node argv writes anyway. A flag outside *cli_prefix* is the host's, or refused
+    by the loop: it marks nothing. A value is decoded as the loop decodes it
+    (:func:`~confarg._cast.decode_json`); one it would refuse marks its node alone, the
+    refusal being the loop's (BUG-262).
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key
     """
-    del host_parsed  # a flag outside the namespace is the host's, or refused by the loop: it names nothing
     words = opener_keys(union_tag)
     found: set[tuple[str, ...]] = set()
 
     def nested(prefix: tuple[str, ...], value: Any) -> None:
+        if isinstance(value, list):
+            for index, item in enumerate(value):
+                nested((*prefix, str(index)), item)
+            return
         if not isinstance(value, dict):
             return
         if names_something(value, union_tag):
@@ -1962,10 +1970,10 @@ def _argv_named_nodes(  # noqa: C901  # one lexical scan of argv, per spelling o
             continue
         cast = path[-1] if path and path[-1] in FORCE_CAST_NAMES else None
         written = tuple(path[:-1] if cast else path)
-        if value.startswith("{") or cast == JSON_CAST_NAME:
+        if value.startswith(("{", "[")) or cast == JSON_CAST_NAME:
             try:
-                nested(written, json.loads(value))
-            except json.JSONDecodeError:
+                nested(written, decode_json(value, token, written))
+            except (json.JSONDecodeError, ConfargError):
                 found.add(written)
         else:
             found.add(written)
@@ -2161,7 +2169,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
         at=merge_root(walk_target, union_tag),
         root_at=merge_root(target, union_tag),
         below=below or {},
-        argv_named=_argv_named_nodes(argv, cli_prefix, config_flag, union_tag, host_parsed=host_parsed),
+        argv_named=_argv_named_nodes(argv, cli_prefix, config_flag, union_tag),
     )
     config_files: list[tuple[str, str]] = []
     root_json = ctx.root_json  # objects from root `--json`, folded in below fields
@@ -2255,6 +2263,8 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             i = _handle_append_token(ctx, i, token, ft, path)
             continue
 
+        # A value flag only: a delete, an append and a cast are registered by the argv scans,
+        # whose shape no naming changes; a family a naming does change is observed here too.
         if observe is not None and path:
             observe(path, ft)
         i = _consume_typed_arg(ctx, i, token, ft, path)

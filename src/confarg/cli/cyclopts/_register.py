@@ -208,24 +208,6 @@ def load_flags_into_app(
         flags: The specs to register, typically from
             :func:`~confarg.cli.build_static_flags`.
         app: The cyclopts :class:`~cyclopts.App` to populate.
-        config_subkeys: Whether to register ``--<config_flag>.<path>`` options for
-            every mount point of the target, at any depth (default ``True``).
-            Set to ``False`` to expose only the root ``--<config_flag>`` option.
-        **opts: The sources the options are typed by and how to read them, as for
-            :func:`confarg.load`; see :class:`confarg.MergeOptions`. They are recorded,
-            so the merge reuses them, and refuses one passed to it that differs: the
-            framework splits the command line by the types they give the options. The
-            classes ``files``, the environment and the ``--config`` files name type the
-            options below the nodes they name. ``argv`` is scanned to register the
-            argv-derived dynamic options: ``--<field>.<param>`` for a callable spec,
-            ``--<config_flag>.<subpath>[+]`` mounts, list-index / append / delete /
-            dict-subkey patches; it defaults to ``sys.argv[1:]``, and ``[]`` registers
-            only the static, type-derived options. ``cli_prefix`` is the namespace every
-            confarg option lives under, so ``--<prefix>.<field>`` stays distinguishable
-            from the host application's own; a non-struct (scalar) target is
-            registered as the bare ``--<prefix>`` option, and has no CLI spelling
-            without a prefix. ``config_flag`` names the config-file option (``""``
-            registers none).
     """
     params: list[inspect.Parameter] = []
     name_map: dict[str, str] = {}
