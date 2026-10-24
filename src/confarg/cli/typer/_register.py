@@ -7,21 +7,20 @@
 from __future__ import annotations
 
 import functools
-import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 import typer.core
 from typer._types import TyperChoice
 from typer.core import TyperOption
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable
 
     from typer._click import Command, Context
 
+    from confarg._defaults import MergeOptions
     from confarg.cli._spec import FlagSpec
 
-from confarg import _defaults
 from confarg.cli import _clicklike
 from confarg.cli._markup import help_escape
 
@@ -92,15 +91,12 @@ def load_flags_into_command(
     _clicklike.load_flags_into_command(flags, command, _option_factory(command))
 
 
-def populate_command(  # noqa: PLR0913
+def populate_command(
     target: object,
     command: Command,
     *,
-    cli_prefix: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
-    argv: Sequence[str] | None = None,
+    **opts: Unpack[MergeOptions],
 ) -> None:
     """Register fields of a dataclass type as options on a Typer command.
 
@@ -128,36 +124,31 @@ def populate_command(  # noqa: PLR0913
     Args:
         target: The dataclass type whose fields to register.
         command: The command from :func:`typer.main.get_command` to populate.
-        cli_prefix: Namespace every confarg option lives under, so
-            ``--<prefix>.<field>`` stays distinguishable from the host
-            application's own options.  Defaults to ``""`` (no prefix).  The value
-            is recorded against the command, so :func:`merge_context` /
-            :func:`from_context` recover it and need not repeat it.  A non-struct
-            (scalar) target is registered as the bare ``--<prefix>`` option and has
-            no CLI spelling without a prefix.
-        union_tag: Name of the union discriminator field to skip.
-        config_flag: Name of the config-file option (default ``"config"``).
-            Set to ``""`` to disable config-file option registration.
         config_subkeys: Whether to register ``--<config_flag>.<path>`` options for
             every mount point of the target, at any depth (default ``True``).
             Set to ``False`` to expose only the root ``--<config_flag>`` option.
-        argv: CLI argument list scanned to register argv-derived dynamic
-            options: ``--<field>.<param>`` for resolved ``--<field>.bind`` /
-            ``--<field>.class`` callables, ``--<config_flag>.<subpath>[+]``
-            scoped/append config files, and list-index / append / delete /
-            dict-subkey patch options.  Defaults to ``sys.argv[1:]`` (matching
-            :func:`from_context`); pass an explicit list, or ``[]`` to register
-            only the static, type-derived options.
+        **opts: The sources the options are typed by and how to read them, as for
+            :func:`confarg.load`; see :class:`confarg.MergeOptions`. They are recorded,
+            so the merge reuses them, and refuses one passed to it that differs: the
+            framework splits the command line by the types they give the options. The
+            classes ``files``, the environment and the ``--config`` files name type the
+            options below the nodes they name. ``argv`` is scanned to register the
+            argv-derived dynamic options: ``--<field>.<param>`` for a callable spec,
+            ``--<config_flag>.<subpath>[+]`` mounts, list-index / append / delete /
+            dict-subkey patches; it defaults to ``sys.argv[1:]``, and ``[]`` registers
+            only the static, type-derived options. ``cli_prefix`` is the namespace every
+            confarg option lives under, so ``--<prefix>.<field>`` stays distinguishable
+            from the host application's own; a non-struct (scalar) target is
+            registered as the bare ``--<prefix>`` option, and has no CLI spelling
+            without a prefix. ``config_flag`` names the config-file option (``""``
+            registers none).
     """
-    cli_prefix = cli_prefix or ""
     _clicklike.populate_command(
         target,
         command,
         _option_factory(command),
         _ConfargOption,
-        cli_prefix=cli_prefix,
-        union_tag=union_tag,
-        config_flag=config_flag,
+        "populate_command",
+        opts,
         config_subkeys=config_subkeys,
-        argv=sys.argv[1:] if argv is None else argv,
     )

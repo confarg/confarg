@@ -208,15 +208,11 @@ class TestArgparseBranches:
             db_host: str = "myserver"
 
         parser = argparse.ArgumentParser()
-        populate_parser(WithExpr, parser)
+        # Env vars with an expression — the resolved value triggers expr_map storage
+        env = {"MYAPP_HOST": "${db_host}", "MYAPP_DB_HOST": "realserver"}
+        populate_parser(WithExpr, parser, env=env, env_prefix="MYAPP_")
         ns = parser.parse_args([])
-        # Pass env vars with an expression — the resolved value triggers expr_map storage
-        result = from_namespace(
-            WithExpr,
-            ns,
-            env={"MYAPP_HOST": "${db_host}", "MYAPP_DB_HOST": "realserver"},
-            env_prefix="MYAPP_",
-        )
+        result = from_namespace(WithExpr, ns)
         assert result.host == "realserver"
 
 
@@ -491,14 +487,9 @@ class TestNamespaceGaps:
         cfg.write_text(json.dumps({"result_val": "from_env_config"}))
 
         parser = argparse.ArgumentParser()
-        populate_parser(_CovDCResult, parser)
+        populate_parser(_CovDCResult, parser, env={"CONFARG_CONFIG__": str(cfg)}, env_prefix="CONFARG_")
         ns = parser.parse_args([])
-        result = from_namespace(
-            _CovDCResult,
-            ns,
-            env={"CONFARG_CONFIG__": str(cfg)},
-            env_prefix="CONFARG_",
-        )
+        result = from_namespace(_CovDCResult, ns)
         # The main point is no crash; result_val may or may not be set
         assert isinstance(result, _CovDCResult)
 
@@ -508,14 +499,9 @@ class TestNamespaceGaps:
         cfg.write_text(json.dumps({"value": "from_env_subpath"}))
 
         parser = argparse.ArgumentParser()
-        populate_parser(_CovOuter, parser)
+        populate_parser(_CovOuter, parser, env={"CONFARG_CONFIG__INNER": str(cfg)}, env_prefix="CONFARG_")
         ns = parser.parse_args([])
-        result = from_namespace(
-            _CovOuter,
-            ns,
-            env={"CONFARG_CONFIG__INNER": str(cfg)},
-            env_prefix="CONFARG_",
-        )
+        result = from_namespace(_CovOuter, ns)
         assert result.inner.value == "from_env_subpath"
 
 

@@ -81,6 +81,7 @@ that"; when it changes what the library *cannot* do, the boundary goes to
 | [Classfn names an instance method](classfn-names-an-instance-method.md) | `classfn:` fields build the owner the path names; static and class methods need no owner; `call:` takes any callable spec as `bind:` does |
 | [Class names the type it builds](class-names-the-type-it-builds.md) | `class:` and a `classfn:` owner are built exactly as named, never through subclass dispatch |
 | [Stealing rule for text in unions](stealing-rule-for-text-in-unions.md) | a total, fixed rank; declaration order is only a tie-break |
+| [A node types its keys by the class it names](a-node-types-its-keys-by-the-class-it-names.md) | an opener or a tag types the keys below it on every channel, from argv's naming before the key or a lower layer's; registration reads the same layers, and the merge refuses a source it did not |
 | [A Callable beside another variant reads its spec](a-callable-beside-another-variant-reads-its-spec.md) | a string in rank below type references, an opener before any variant's data unless a struct owns the key, a `call:` the union's to take |
 | [A union ranks every value](a-union-ranks-every-value.md) | a file's value meets the rank a token does; only a token is converted, any value is recognized |
 | [A registered leaf is never a struct variant](registered-leaf-is-never-a-struct-variant.md) | registration is a promise that the type is opaque to every implicit decision |

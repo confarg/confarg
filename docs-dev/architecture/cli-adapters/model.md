@@ -48,7 +48,11 @@ raises vanilla's error at merge rather than being dropped. One stray needs the h
 argparse and cyclopts register a multi-token or fixed-arity flag greedily, so the token after
 the run vanilla consumes was bound to the flag and is the stray vanilla refuses, while click and
 typer bind the exact count, so the same token is a positional of the host's. The adapter says
-which (`binds_runs`), and the loop asks `_build._binds_a_run` of the type it consumed for.
+which (`binds_runs`), and the loop asks `_collect._host_binds_run`: whether registration
+registered the flag to bind a run (`_build.bound_runs`, recorded on what `populate_*` filled), or
+the type it consumed for binds one. Registration's answer comes first, since a flag below a
+node naming a class can be registered wider than one occurrence of it is typed
+([design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters)).
 
 The parse result is only *checked*: a confarg flag it holds that argv does not spell means the
 two are not one command line — typically `parse_args(custom)` merged with `argv` left to default

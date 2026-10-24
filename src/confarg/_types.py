@@ -990,6 +990,18 @@ def _struct_member_names(tp: Any) -> list[str]:
     return list(dict.fromkeys([*_struct_fields(tp), *inherited]))
 
 
+def _union_branches(tp: Any) -> list[Any]:
+    """Return the resolved, non-union types a node of type *tp* is walked as, in variant order.
+
+    *tp* itself when it is no union; otherwise each non-None variant, a variant that is a
+    union in turn spread into its own.
+    """
+    tp = _resolve_type(tp)
+    if not _is_union(tp):
+        return [tp]
+    return [node for v in _union_args_no_none(tp) for node in _union_branches(v)]
+
+
 def _union_tag_shadowed(tp: Any, union_tag: str) -> bool:
     """Return True if a struct-shaped ``tp`` owns a member spelled exactly like the tag.
 

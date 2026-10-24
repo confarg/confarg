@@ -830,11 +830,11 @@ class TestCliPrefixArgparse:
         with pytest.raises(confarg.exceptions.ConfargError, match="cli_prefix mismatch"):
             from_namespace(Simple, ns, env={}, cli_prefix="cfg", config_flag="")
 
-    def test_no_prefix_leaves_namespace_clean(self) -> None:
-        """Without a prefix the Namespace carries no confarg bookkeeping key."""
+    def test_no_prefix_leaves_one_bookkeeping_key(self) -> None:
+        """Without a prefix the Namespace carries one confarg key: what registration read, which the merge reuses."""
         parser = make_parser(Simple, config_flag="")
         ns = parser.parse_args(["--host", "h"])
-        assert not [k for k in vars(ns) if k.startswith("__confarg")]
+        assert [k for k in vars(ns) if k.startswith("__confarg")] == ["__confarg_registration__"]
 
 
 class TestArgvIsTheParsedArgv:

@@ -10,7 +10,7 @@ subclass nobody imported is a contract test (tests/cli/test_backend_contract.py)
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import pytest
@@ -156,8 +156,38 @@ class TestTagsFromArgv:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _SelfLeaf:
+    """A struct field of the node below, which the scan reaches without data."""
+
+    a: int = 0
+
+
+@dataclass
+class _SelfNode:
+    """A struct holding itself, through an optional field."""
+
+    leaf: _SelfLeaf = field(default_factory=_SelfLeaf)
+    child: _SelfNode | None = None
+
+
+@dataclass
+class _SelfHolder:
+    """A target holding the self-holding struct."""
+
+    node: _SelfNode = field(default_factory=_SelfNode)
+
+
 class TestTagsFromConfig:
     """Tests for _tags_from_config."""
+
+    def test_stops_where_the_data_stops(self) -> None:
+        """The scan walks the data, so a type that holds itself ends where the data does.
+
+        It descended into every struct field the data lacks as ``{}``, so a self-holding
+        type recursed forever, whatever a ``--config`` file held.
+        """
+        assert _tags_from_config({"other": 1}, _SelfHolder, prefix="", union_tag="class") == {}
 
     def test_finds_struct_union_tag(self) -> None:
         """Test that a union tag is found in the merged config dict."""

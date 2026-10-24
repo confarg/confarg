@@ -101,6 +101,13 @@ between the two other channels in priority: above
   BUG-170). A variable that deep was never ambient noise to drop: it already stopped the
   program at `build()`.
 
+## A naming anywhere in it types a variable
+
+A variable below a node naming a class is typed by that class (`_parse_env._env_namings`): the
+environment's own opener, tag, `{…}` value or shorthand at the node, wherever it sorts, else
+the config level's, which the pipeline reads first. A variable's segments below it are spelled
+against that class's members too ([design decisions](design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key)).
+
 ## The broader variable applies first
 
 The CLI settles two flags whose paths nest by "last typed wins". The environment has no typing

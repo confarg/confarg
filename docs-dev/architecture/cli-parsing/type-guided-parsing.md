@@ -37,10 +37,19 @@ stones are the walk's own and every question gets them: a member, an index, a di
 any key below an `Any`, which is a `dict[Any, Any]` and answers `Any` again
 ([callables](../callables.md#an-any-node-reads-every-opener)) (`_advance_field_type`); a local-variables namespace, entered as a `dict[str, Any]`; an
 subtree of a computation's spec (`_opens_spec_subtree`: a callable's `bind`, `call` or `args`
-key, the `call` or `args` key of a field that takes a typed call where no member holds it),
-below which every segment is a `str` ([callables](../callables.md#cli)); and, last, the union
+key, the `call` or `args` key of a field that takes a typed call where no member holds it), a
+`bind` or `call` holding a Callable target and an `args` below which every segment is a `str`
+where no opener names the target ([callables](../callables.md#cli)); and, last, the union
 tag, reached only where no member of its spelling is
-([real field wins](casts-and-reserved-words.md#real-field-wins)).
+([real field wins](casts-and-reserved-words.md#real-field-wins)), whose value is a leaf.
+
+**A node that names a class types the step below it.** Asked with a naming view (`named`, the
+data a path is typed against), a node holding an opener or a tag steps into the class it names
+(`_naming.named_child`) and a union into the variant it names (`_naming.named_variant`), as
+the typed merge and construction read it: a field of the class, a Callable target, a target's
+parameters, refused where the class declares none. A node naming nothing is stepped by its
+declared type, and below a Callable that is a `str` at any depth
+([design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#a-node-types-its-keys-by-the-class-it-names)).
 
 Each question reads the part of a branch it needs, and states its own difference in its own
 lines:

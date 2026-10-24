@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Unpack
 
 if TYPE_CHECKING:
     import argparse
+    from collections.abc import Mapping
 
     from confarg._defaults import MergeOptions, _Options
     from confarg._merge import ListOp, MergeDict
@@ -17,6 +18,17 @@ if TYPE_CHECKING:
 from confarg._defaults import _resolve_options
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, reconcile
+
+
+def _options(ns: argparse.Namespace, caller: str, opts: Mapping[str, Any]) -> _Options:
+    """Return *caller*'s options: what *ns*'s registration read, with *opts* beside them (:func:`reconcile`)."""
+    return _resolve_options(caller, reconcile(_registration(ns), opts, caller))
+
+
+def _registration(ns: argparse.Namespace) -> Registration | None:
+    """Return what ``populate_parser`` recorded on *ns*, None for a parser confarg did not populate."""
+    return getattr(ns, REGISTRATION_ATTR, None)
 
 
 def merge_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeOptions]) -> dict[str | ListOp, Any]:
@@ -42,12 +54,20 @@ def merge_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[Merge
     Config file loading order:
         Same as :func:`confarg.merge`.
     """
-    return _merge_namespace(target, ns, _resolve_options("merge_namespace", opts))
+    return _merge_namespace(target, ns, _options(ns, "merge_namespace", opts))
 
 
 def _merge_namespace(target: object, ns: argparse.Namespace, options: _Options) -> MergeDict:
     """Merge every source into a raw dict; :func:`merge_namespace` with its options resolved."""
-    return _merge_from_flat(vars(ns), target, options, cli_prefix=_namespace_prefix(ns, options), binds_runs=True)
+    registration = _registration(ns)
+    return _merge_from_flat(
+        {key: value for key, value in vars(ns).items() if key != REGISTRATION_ATTR},
+        target,
+        options,
+        cli_prefix=_namespace_prefix(ns, options),
+        binds_runs=True,
+        runs=None if registration is None else registration.runs,
+    )
 
 
 def _namespace_prefix(ns: argparse.Namespace, options: _Options) -> str:
@@ -79,6 +99,6 @@ def from_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeO
     Returns:
         An instance of ``target`` populated from all sources.
     """
-    options = _resolve_options("from_namespace", opts)
+    options = _options(ns, "from_namespace", opts)
     merged = _merge_namespace(target, ns, options)
     return _construct_from_merged(target, merged, options.union_tag, _namespace_prefix(ns, options))

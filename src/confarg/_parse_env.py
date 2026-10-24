@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
 from confarg import _defaults
+from confarg._callable import promote_bare_spec
 from confarg._cast import JSON_CAST_NAME, decode_json, fold_root_json, resolve_forced_value
 from confarg._merge import (
     APPEND_SUFFIX,
@@ -27,9 +28,12 @@ from confarg._merge import (
     MergeAt,
     MergeDict,
     _accumulate_list_delete,
+    _peek_nested,
     _set_nested,
 )
+from confarg._naming import layered_naming, named_member_names, opener_keys
 from confarg._parse_cli import (
+    NamingView,
     _accepts_object_value,
     _appended_element_type,
     _check_mount_subpath,
@@ -46,6 +50,7 @@ from confarg._parse_cli import (
     _resolve_field_type,
     _restart_restated_node,
     _sequence_refusal,
+    _takes_callable_shorthand,
     _walk_target,
     _write_append,
     detect_force_cast,
@@ -65,7 +70,12 @@ from confarg.exceptions import ConfargError, ConfargWarning
 from confarg.typedload._coerce import _try_coerce
 
 
-def _resolve_env_parts(target: Any, parts: list[str], union_tag: str) -> tuple[list[str], Any]:
+def _resolve_env_parts(
+    target: Any,
+    parts: list[str],
+    union_tag: str,
+    named: NamingView | None = None,
+) -> tuple[list[str], Any]:
     """Spell each env var segment as the member it names, then type the path by the canonical walk.
 
     The environment adds one rule to the CLI channel's path, case-insensitivity, and only
@@ -78,6 +88,7 @@ def _resolve_env_parts(target: Any, parts: list[str], union_tag: str) -> tuple[l
         target: The root target type.
         parts: A list of env var path segments.
         union_tag: The field name used as a discriminator tag in unions.
+        named: What the data the path is typed against names at each node.
 
     Returns:
         A tuple of (resolved_parts, leaf_type) where resolved_parts has correct
@@ -91,24 +102,29 @@ def _resolve_env_parts(target: Any, parts: list[str], union_tag: str) -> tuple[l
     """
     resolved: list[str] = []
     for part in parts:
-        resolved.append(_env_spelling(target, resolved, part, union_tag))
-    return resolved, _resolve_field_type(target, resolved, union_tag)
+        resolved.append(_env_spelling(target, resolved, part, union_tag, named))
+    return resolved, _resolve_field_type(target, resolved, union_tag, named=named)
 
 
-def _env_spelling(target: Any, prefix: list[str], part: str, union_tag: str) -> str:
+def _env_spelling(target: Any, prefix: list[str], part: str, union_tag: str, named: NamingView | None = None) -> str:
     """Return the exact spelling env segment *part* takes below the spelled path *prefix*.
 
     A member it names case-insensitively, among the named members of every type the walk
     reaches at *prefix* -- each union variant, each subclass-only field; else the union
     tag by its own spelling, which the walk downstream compares exactly (BUG-101); else
     the segment lowercased, a dict key or an index the walk reads as it is. A member
-    always wins over the tag, as the walk's tag is its fallback.
+    always wins over the tag, as the walk's tag is its fallback. Below a node naming a
+    class, that class's members count (:func:`~confarg._naming.named_member_names`).
 
     Raises:
         ConfargError: If the segment matches several member spellings, which no
             environment variable can tell apart.
     """
-    names = {n for tp in _field_types(target, prefix, union_tag) for n in _member_names(tp)}
+    names = {n for tp in _field_types(target, prefix, union_tag, named=named) for n in _member_names(tp)}
+    naming = None if named is None else named(tuple(prefix))
+    if naming is not None:
+        reached = _field_types(target, prefix, union_tag)
+        names |= {n for tp in reached for n in named_member_names(tp, naming, union_tag)}
     matches = sorted(n for n in names if n.lower() == part.lower())
     if len(matches) > 1:
         where = ".".join(prefix) or "the root"
@@ -169,7 +185,13 @@ def _refuse_root_config_append(orig_key: str, parts: list[str], separator: str) 
         raise ConfargError(msg)
 
 
-def _refuse_below_a_sequence(orig_key: str, parts: list[str], target: Any, union_tag: str) -> None:
+def _refuse_below_a_sequence(
+    orig_key: str,
+    parts: list[str],
+    target: Any,
+    union_tag: str,
+    named: NamingView | None = None,
+) -> None:
     """Refuse a variable whose spelled path *parts* puts a segment naming no element below a sequence.
 
     Raises:
@@ -178,7 +200,7 @@ def _refuse_below_a_sequence(orig_key: str, parts: list[str], target: Any, union
     Dev Notes:
         docs-dev/architecture/cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index
     """
-    at = _sequence_refusal(target, parts, union_tag)
+    at = _sequence_refusal(target, parts, union_tag, named)
     if at is not None:
         msg = (
             f"Environment variable {orig_key!r} has no matching field"
@@ -215,6 +237,7 @@ def _handle_env_delete(  # noqa: PLR0913  # the delete, where it lands, and the 
     union_tag: str,
     *,
     at: MergeAt,
+    named: NamingView | None = None,
 ) -> None:
     """Apply a delete (FOO__BAR- or FOO__ITEMS__1-) at *del_parts* in data, as an index or a key delete.
 
@@ -223,7 +246,7 @@ def _handle_env_delete(  # noqa: PLR0913  # the delete, where it lands, and the 
     is, a flag's delete asks too (:func:`~confarg._parse_cli._delete_index`). *at* is where
     *data* stands, which reads the identity of the key it deletes.
     """
-    delete_idx = _delete_index(walk_target, del_parts, union_tag)
+    delete_idx = _delete_index(walk_target, del_parts, union_tag, named)
     if delete_idx is not None:
         _accumulate_list_delete(data, del_parts[:-1], delete_idx, orig_key, at=at)
     else:
@@ -427,6 +450,71 @@ def _prefixed_variables(
         yield orig_key, key, key.split(separator) if separator in key else [key], value
 
 
+def _env_config_pointers(  # noqa: PLR0913, PLR0917  # _parse_env's own reading of the reserved name
+    env: Mapping[str, str],
+    prefix: str,
+    separator: str,
+    target: Any,
+    config_flag: str = _defaults.CONFIG_FLAG,
+    union_tag: str = _defaults.UNION_TAG,
+) -> list[tuple[str, str]]:
+    """Return the (subpath, mount value) pair of every ``CONFIG[__subpath]`` variable, before any value is read.
+
+    The files they mount are part of the config level, which types the variables below a
+    node it names (:func:`_parse_env`'s *below*), so the pipeline loads them first.
+    """
+    pointers: list[tuple[str, str]] = []
+    for orig_key, _key, parts, value in _prefixed_variables(env, prefix, separator):
+        if _addresses_config(parts, config_flag):
+            _refuse_root_config_append(orig_key, parts, separator)
+            _handle_env_config_flag(parts, target, pointers, value, union_tag, orig_key)
+    return pointers
+
+
+def _env_namings(
+    variables: list[tuple[tuple[int, int], str, str, list[str], str]],
+    walk_target: Any,
+    union_tag: str,
+    below: MergeDict,
+) -> MergeDict:
+    """Return what the environment names at each node: its openers, tags, ``{…}`` values and shorthands.
+
+    The environment has no order, so every variable naming a node types every variable
+    below that node, whatever their names sort as. A variable is spelled with the namings of
+    the broader variables before it, so a nested spec's opener is read below the outer one's.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key
+    """
+    named: MergeDict = {}
+    view = layered_naming(named, below, union_tag=union_tag)
+    words = {w.lower() for w in opener_keys(union_tag)}
+    for _, _orig_key, key, parts, value in sorted(variables):
+        if not key or _is_env_delete(parts) or _is_env_append(parts):
+            continue
+        try:
+            path, ft = _resolve_env_parts(walk_target, parts, union_tag, view)
+        except ConfargError:
+            continue
+        if parts[-1].lower() in words:
+            _set_nested(named, path, value)
+        elif value.startswith("{"):
+            with contextlib.suppress(json.JSONDecodeError, ConfargError):
+                decoded = decode_json(value, _orig_key)
+                if isinstance(decoded, dict):
+                    _set_nested(named, path, decoded)
+        elif (
+            ft is not None
+            and _takes_callable_shorthand(_resolve_type(ft))
+            and not isinstance(
+                _peek_nested(named, path),
+                dict,
+            )
+        ):
+            _set_nested(named, path, promote_bare_spec(value))
+    return named
+
+
 def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the env channel must intercept
     env: Mapping[str, str],
     prefix: str,
@@ -434,6 +522,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
     target: Any,
     config_flag: str = _defaults.CONFIG_FLAG,
     union_tag: str = _defaults.UNION_TAG,
+    below: MergeDict | None = None,
 ) -> tuple[MergeDict, list[tuple[str, str]]]:
     """Parse environment variables into a nested dict matching the target type.
 
@@ -459,6 +548,8 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
             used to find the local-variables namespace at each node of the path.
             Variables addressing that namespace are stored raw, without the
             unknown-field warning, and checked later by the pipeline.
+        below: What the config level holds: a node the environment names nowhere is typed
+            by the class it names there.
 
     Returns:
         A tuple of (data_dict, env_configs) where data_dict contains inline values
@@ -484,6 +575,8 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         variables.append((_env_order(parts, key, walk_target, union_tag), orig_key, key, parts, value))
 
     at = _typed_root(walk_target, union_tag)
+    lower = below or {}
+    named = layered_naming(_env_namings(variables, walk_target, union_tag, lower), lower, union_tag=union_tag)
     # The environment has no typing order, so it is given one: the broader variable first.
     for _, orig_key, key, parts, value in sorted(variables):
         _refuse_reserved_key(orig_key, parts)
@@ -498,7 +591,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         # A delete or an append is checked as the value variable of its path is (BUG-182).
         is_delete, is_append = _is_env_delete(parts), _is_env_append(parts)
         spelled = [*parts[:-1], parts[-1][:-1]] if is_delete or is_append else parts
-        path, ft = _resolve_env_parts(walk_target, spelled, union_tag)
+        path, ft = _resolve_env_parts(walk_target, spelled, union_tag, named)
         # Locals are not target fields: skip the unknown-field warning and store the raw
         # token; _pipeline checks and coerces them (docs-dev/architecture/locals.md).
         is_locals = _locals_segment_index(target, path, union_tag) is not None
@@ -507,18 +600,18 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
         if is_locals:
             ft = None
         else:
-            _refuse_below_a_sequence(orig_key, path, walk_target, union_tag)
+            _refuse_below_a_sequence(orig_key, path, walk_target, union_tag, named)
         if is_delete:
-            _handle_env_delete(orig_key, path, data, walk_target, union_tag, at=at)
+            _handle_env_delete(orig_key, path, data, walk_target, union_tag, at=at, named=named)
             continue
 
         # Same rule as the CLI: a bare callable shorthand already stored at a prefix of
         # this path is a spec this variable refines, not a scalar it replaces.
-        _open_callable_shorthand(data, path, walk_target, union_tag)
+        _open_callable_shorthand(data, path, walk_target, union_tag, named)
         _restart_restated_node(data, path, walk_target, union_tag)
         if is_append:
             # One value, read as the flag's single token is: a JSON array is several items.
-            et = _appended_element_type(walk_target, path, union_tag, orig_key, ft)
+            et = _appended_element_type(walk_target, path, union_tag, orig_key, ft, named=named)
             _write_append(data, path, _collect_append_items([_EqValue(value)], 0, et, orig_key)[0], at)
             continue
         _store_env_value(path, ft, value, data, orig_key, at)

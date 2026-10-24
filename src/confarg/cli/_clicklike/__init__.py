@@ -19,6 +19,7 @@ Dev Notes:
 from confarg.cli._clicklike._completion import partial_argv_from_env, setup_completion
 from confarg.cli._clicklike._context import (
     construct_from_ctx,
+    ctx_options,
     flat_from_ctx,
     merge_from_ctx,
     registered_prefix,
@@ -36,6 +37,7 @@ __all__ = [
     "ExpressionTolerantChoiceMixin",
     "StandsBareMixin",
     "construct_from_ctx",
+    "ctx_options",
     "flat_from_ctx",
     "load_flags_into_command",
     "merge_from_ctx",

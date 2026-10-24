@@ -13,11 +13,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from confarg._defaults import _Options
     from confarg._merge import MergeDict
 
+from confarg._defaults import _resolve_options
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, reconcile
 
 #: Name of the ``ParameterSource`` member meaning "the user typed it on argv".
 #: Compared by name rather than by identity because typer ships its own copy of the
@@ -59,6 +63,21 @@ def registered_prefix(ctx: Any) -> str | None:
     return None
 
 
+def registration(ctx: Any) -> Registration | None:
+    """Return what ``populate_command`` recorded on ``ctx``'s options, None if it did not populate them."""
+    command = getattr(ctx, "command", None)
+    for param in getattr(command, "params", ()):
+        found = getattr(param, REGISTRATION_ATTR, None)
+        if found is not None:
+            return found
+    return getattr(command, REGISTRATION_ATTR, None)
+
+
+def ctx_options(ctx: Any, caller: str, opts: Mapping[str, Any]) -> _Options:
+    """Return *caller*'s options: what ``ctx``'s registration read, with *opts* beside them (:func:`reconcile`)."""
+    return _resolve_options(caller, reconcile(registration(ctx), opts, caller))
+
+
 def ctx_prefix(ctx: Any, options: _Options) -> str:
     """Return the prefix ``ctx``'s options were registered under, reconciled with the one passed."""
     return resolve_prefix(registered_prefix(ctx), options.cli_prefix)
@@ -66,7 +85,15 @@ def ctx_prefix(ctx: Any, options: _Options) -> str:
 
 def merge_from_ctx(target: object, ctx: Any, options: _Options) -> MergeDict:
     """Flatten ``ctx`` and run the shared merge tail; see the adapters' merge_context."""
-    return _merge_from_flat(flat_from_ctx(ctx), target, options, cli_prefix=ctx_prefix(ctx, options), binds_runs=False)
+    found = registration(ctx)
+    return _merge_from_flat(
+        flat_from_ctx(ctx),
+        target,
+        options,
+        cli_prefix=ctx_prefix(ctx, options),
+        binds_runs=False,
+        runs=None if found is None else found.runs,
+    )
 
 
 def construct_from_ctx(target: object, ctx: Any, options: _Options) -> Any:

@@ -7,21 +7,22 @@
 from __future__ import annotations
 
 import argparse
-import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from confarg.cli._spec import FlagSpec
 
-from confarg import _defaults
+from confarg._defaults import MergeOptions
 from confarg.cli._build import (
+    bound_runs,
     build_dynamic_flags,
     build_static_flags,
 )
 from confarg.cli._markup import escape_percent
 from confarg.cli._prefix import PREFIX_ATTR
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, registration_inputs
 from confarg.dictexpr import contains_expression
 from confarg.exceptions import ConfargError
 
@@ -145,15 +146,12 @@ def load_flags_into_parser(
         _register_spec(spec, target, existing_dests)
 
 
-def populate_parser(  # noqa: PLR0913
+def populate_parser(
     target: object,
     parser: argparse.ArgumentParser,
     *,
-    cli_prefix: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
-    argv: Sequence[str] | None = None,
+    **opts: Unpack[MergeOptions],
 ) -> None:
     """Register fields of a dataclass type as arguments on an ArgumentParser.
 
@@ -178,36 +176,34 @@ def populate_parser(  # noqa: PLR0913
     Args:
         target: The dataclass type whose fields to register.
         parser: The :class:`argparse.ArgumentParser` to populate.
-        cli_prefix: Namespace every confarg flag lives under, so
-            ``--<prefix>.<field>`` stays distinguishable from the host
-            application's own flags.  Defaults to ``""`` (no prefix).  The value is
-            recorded on the parser, so :func:`merge_namespace` / :func:`from_namespace`
-            recover it and need not repeat it.  A non-struct (scalar) target is
-            registered as the bare ``--<prefix>`` flag and has no CLI spelling
-            without a prefix.
-        union_tag: Name of the union discriminator field to skip (matches
-            the ``union_tag`` parameter of :func:`from_namespace`).
-        config_flag: Name of the config-file flag (default ``"config"``).
-            Set to ``""`` to disable config-file argument registration.
         config_subkeys: Whether to register ``--<config_flag>.<path>`` flags for
             every mount point of the target, at any depth (default ``True``).
             Set to ``False`` to expose only the root ``--<config_flag>`` flag.
-        argv: CLI argument list scanned to register argv-derived dynamic flags:
-            ``--<field>.<param>`` for resolved ``--<field>.bind`` / ``--<field>.class``
-            callables, ``--<config_flag>.<subpath>[+]`` scoped/append config files,
-            and list-index / append / delete / dict-subkey patch flags — so the
-            host parser accepts every flag ``from_namespace`` will later consume.
-            Defaults to ``sys.argv[1:]`` (matching :func:`from_namespace`); pass an
-            explicit list, or ``[]`` to register only the static, type-derived flags.
+        **opts: The sources the flags are typed by and how to read them, as for
+            :func:`confarg.load`; see :class:`confarg.MergeOptions`. They are recorded on
+            the parser, so :func:`merge_namespace` / :func:`from_namespace` reuse them,
+            and refuse one passed to them that differs: argparse splits the command line
+            by the types they give the flags. The classes ``files``, the environment and
+            the ``--config`` files name type the flags below the nodes they name.
+            ``argv`` is scanned to register the argv-derived dynamic flags --
+            ``--<field>.<param>`` for a callable spec, ``--<config_flag>.<subpath>[+]``
+            mounts, list-index / append / delete / dict-subkey patches -- so the parser
+            accepts every flag ``from_namespace`` will consume; it defaults to
+            ``sys.argv[1:]``, and ``[]`` registers only the static, type-derived flags.
+            ``cli_prefix`` is the namespace every confarg flag lives under, so
+            ``--<prefix>.<field>`` stays distinguishable from the host application's
+            own; a non-struct (scalar) target is registered as the bare ``--<prefix>``
+            flag, and has no CLI spelling without a prefix. ``config_flag`` names the
+            config-file flag (``""`` registers none).
 
     Note:
         Prefer :func:`make_parser` for the common case — it sets
         ``allow_abbrev=False`` by default to prevent schema evolution from
         silently breaking abbreviated flag invocations.
     """
-    cli_prefix = cli_prefix or ""
-    if argv is None:
-        argv = sys.argv[1:]
+    options, below, sources = registration_inputs(target, "populate_parser", opts)
+    cli_prefix, argv = options.cli_prefix or "", options.argv
+    union_tag, config_flag = options.union_tag, options.config_flag
     static = build_static_flags(
         target,
         argv=argv,
@@ -215,64 +211,56 @@ def populate_parser(  # noqa: PLR0913
         union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,
+        below=below,
     )
     load_flags_into_parser(static, parser)
-    dynamic = build_dynamic_flags(target, argv, cli_prefix=cli_prefix, union_tag=union_tag, config_flag=config_flag)
+    dynamic = build_dynamic_flags(
+        target,
+        argv,
+        cli_prefix=cli_prefix,
+        union_tag=union_tag,
+        config_flag=config_flag,
+        below=below,
+    )
     load_flags_into_parser(dynamic, parser)
+    # argparse hands the merge only a Namespace, so what registration read rides on it.
+    parser.set_defaults(**{REGISTRATION_ATTR: Registration(sources, bound_runs(static + dynamic, cli_prefix))})
     if cli_prefix:
         # argparse hands from_namespace only a Namespace, with no way back to this
         # parser, so the prefix rides along on every Namespace the parser produces.
         parser.set_defaults(**{PREFIX_ATTR: cli_prefix})
 
 
-def make_parser(  # noqa: PLR0913
+def make_parser(
     target: object,
     *,
-    cli_prefix: str | None = None,
-    union_tag: str = _defaults.UNION_TAG,
-    config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
-    argv: Sequence[str] | None = None,
     **kwargs: Any,
 ) -> argparse.ArgumentParser:
     """Create an :class:`argparse.ArgumentParser` pre-populated with fields from *target*.
 
     Sets ``allow_abbrev=False`` unless overridden, preventing schema evolution
-    from silently breaking abbreviated flag invocations.  All extra keyword
-    arguments are forwarded to :class:`argparse.ArgumentParser` (e.g.
-    ``description``, ``prog``).
+    from silently breaking abbreviated flag invocations.  A keyword
+    :class:`confarg.MergeOptions` declares is forwarded to :func:`populate_parser`,
+    every other one to :class:`argparse.ArgumentParser` (e.g. ``description``,
+    ``prog``).
 
     Example::
 
-        parser = make_parser(Config, description="My app")
+        parser = make_parser(Config, description="My app", env_prefix="MYAPP_")
         namespace = parser.parse_args()
         config = from_namespace(Config, namespace)
 
     Args:
         target: The dataclass type whose fields to register.
-        cli_prefix: Namespace every confarg flag lives under (forwarded to
-            :func:`populate_parser`).
-        union_tag: Name of the union discriminator field (forwarded to
-            :func:`populate_parser`).
-        config_flag: Name of the config-file flag (forwarded to
-            :func:`populate_parser`).
         config_subkeys: Whether to register the mount-point config flags (forwarded
             to :func:`populate_parser`).
-        argv: CLI argument list for registering argv-derived dynamic flags
-            (forwarded to :func:`populate_parser`; defaults to ``sys.argv[1:]``,
-            pass ``[]`` to register only static flags).
-        **kwargs: Additional keyword arguments forwarded to
+        **kwargs: The sources and how to read them (:class:`confarg.MergeOptions`,
+            forwarded to :func:`populate_parser`), and the keyword arguments of
             :class:`argparse.ArgumentParser`.
     """
+    opts: Any = {key: kwargs.pop(key) for key in list(kwargs) if key in MergeOptions.__annotations__}
     kwargs.setdefault("allow_abbrev", False)
     parser = argparse.ArgumentParser(**kwargs)
-    populate_parser(
-        target,
-        parser,
-        cli_prefix=cli_prefix,
-        union_tag=union_tag,
-        config_flag=config_flag,
-        config_subkeys=config_subkeys,
-        argv=argv,
-    )
+    populate_parser(target, parser, config_subkeys=config_subkeys, **opts)
     return parser

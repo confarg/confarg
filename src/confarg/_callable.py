@@ -596,6 +596,28 @@ def spec_opener(spec: dict) -> str | None:
     return present[0] if len(present) == 1 else None
 
 
+def yielded_callable_path(spec: Any) -> str | None:
+    """Return a dotted path whose signature lists the arguments of the callable *spec* yields.
+
+    ``None`` when the spec names none: a ``call:`` yields whatever its target returns, and a
+    target that is no dotted path names nothing to inspect. An instance's arguments are its
+    class's ``__call__``, a bound method's are the method's, a partial's its target's.
+    """
+    if isinstance(spec, str):
+        return spec
+    if not isinstance(spec, dict):
+        return None
+    opener = spec_opener(spec)
+    if opener is None:
+        return None
+    value = spec[opener]
+    if opener == _defaults.BIND_KEY:
+        return yielded_callable_path(value)
+    if opener == _defaults.CALL_KEY or not isinstance(value, str):
+        return None
+    return f"{value}.__call__" if opener == _defaults.CLASS_KEY else value
+
+
 def _computation_parts(spec: dict, where: str) -> tuple[str, dict]:
     """Return the ``bind`` or ``call`` opener of *spec* and the target's arguments, the mapping under ``args``.
 

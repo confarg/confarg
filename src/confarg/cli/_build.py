@@ -33,6 +33,7 @@ from confarg._callable import (
     _instance_method_owner,
     _target_signature,
     spec_opener,
+    yielded_callable_path,
 )
 from confarg._cast import SCALAR_CAST_TYPES, holds_the_cast
 from confarg._import import _import_dotted, dotted_name
@@ -70,6 +71,7 @@ from confarg._types import (
     _struct_subclasses,
     _tuple_types,
     _union_args_no_none,
+    _union_branches,
     _union_has_seq_variant,
     _union_tag_shadowed,
     _unwrap_optional,
@@ -578,28 +580,6 @@ def _blob_document_from_argv(target: Any, argv: Sequence[str], union_tag: str) -
     return doc
 
 
-def _yielded_callable_path(spec: Any) -> str | None:
-    """Return a dotted path whose signature lists the arguments of the callable *spec* yields.
-
-    ``None`` when the spec names none: a ``call:`` yields whatever its target returns, and a
-    target that is no dotted path names nothing to inspect. An instance's arguments are its
-    class's ``__call__``, a bound method's are the method's, a partial's its target's.
-    """
-    if isinstance(spec, str):
-        return spec
-    if not isinstance(spec, dict):
-        return None
-    opener = spec_opener(spec)
-    if opener is None:
-        return None
-    value = spec[opener]
-    if opener == _defaults.BIND_KEY:
-        return _yielded_callable_path(value)
-    if opener == _defaults.CALL_KEY or not isinstance(value, str):
-        return None
-    return f"{value}.__call__" if opener == _defaults.CLASS_KEY else value
-
-
 def _spec_openings(flag: str, sub: Any, *, typed: bool = False) -> dict[str, tuple[str, str]]:
     """Return {flag: (target_path, opener)} for the spec *sub* at *flag*, nested target specs included.
 
@@ -608,7 +588,7 @@ def _spec_openings(flag: str, sub: Any, *, typed: bool = False) -> dict[str, tup
     a spec of its own names two targets: the nested spec's, whose arguments sit below the
     opener (``--<flag>.bind.<field>``, ``--<flag>.bind.args.<param>``), and the callable that
     spec yields, whose arguments sit under the outer ``args`` (``--<flag>.args.<param>``,
-    :func:`_yielded_callable_path`). *typed*: the spec fills a field that is no Callable,
+    :func:`yielded_callable_path`). *typed*: the spec fills a field that is no Callable,
     where only ``call`` opens one and a string is a value.
 
     Dev Notes:
@@ -627,7 +607,7 @@ def _spec_openings(flag: str, sub: Any, *, typed: bool = False) -> dict[str, tup
     if not (isinstance(value, dict) and opener in (_defaults.BIND_KEY, _defaults.CALL_KEY)):
         return {}
     found = _spec_openings(f"{flag}.{opener}", value)
-    yielded = _yielded_callable_path(value)
+    yielded = yielded_callable_path(value)
     if yielded is not None:
         found[flag] = (yielded, opener)
     return found
@@ -754,8 +734,6 @@ class _Descent:
 
 def _walked_nodes(tps: Iterable[Any]) -> frozenset[Any]:
     """Return the structs and namedtuples a node of the types *tps* is walked as."""
-    from confarg._parse_cli import _union_branches  # noqa: PLC0415  # import cycle
-
     return frozenset(node for tp in tps for node in _union_branches(tp) if _is_struct(node) or _is_namedtuple(node))
 
 
@@ -1265,6 +1243,7 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
     config_subkeys: bool = True,
+    below: MergeDict | None = None,
 ) -> list[FlagSpec]:
     """Build the collection of static CLI flags for a dataclass type.
 
@@ -1289,6 +1268,8 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
         config_subkeys: Whether to register ``--<config_flag>.<path>`` flags for
             every mount point of the target, at any depth (default ``True``).
             Set to ``False`` to expose only the root ``--<config_flag>`` flag.
+        below: What the layers below argv hold, merged; the classes its tags name are
+            imported, as argv's are. ``None`` reads argv's ``--config`` files for them.
 
     Returns:
         A list of :class:`~confarg.cli.argparse.FlagSpec` objects, one per CLI flag.
@@ -1296,7 +1277,7 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import _locals_keys  # noqa: PLC0415
 
-    import_tagged_classes(argv, target, union_tag=union_tag, config_flag=config_flag)
+    import_tagged_classes(argv, target, union_tag=union_tag, config_flag=config_flag, below=below)
     flags = _collect_struct_specs(target, prefix="", union_tag=union_tag)
     if not _is_struct_like(_resolve_type(target)):
         flags.insert(0, _scalar_root_spec(target))
@@ -1636,6 +1617,68 @@ def _collect_patch_argv_specs(  # noqa: C901, PLR0912  # one branch per flag kin
     return specs
 
 
+def _arity_rank(tp: Any) -> int:
+    """Return how many tokens a flag of type *tp* binds, ranked: a run, a fixed count, one token."""
+    resolved = _resolve_type(tp)
+    if _takes_multi_tokens(resolved):
+        return 2
+    return 1 if _fixed_seq_types(resolved) is not None else 0
+
+
+def _collect_loop_typed_specs(  # noqa: PLR0913, PLR0917  # the loop's own inputs, and the names already taken
+    target: object,
+    argv: Sequence[str],
+    config_flag: str,
+    union_tag: str,
+    below: MergeDict,
+    existing_names: set[str],
+) -> list[FlagSpec]:
+    """Build the FlagSpecs of the flags argv spells below a node naming a class, typed by vanilla's loop.
+
+    Vanilla's loop writes the adapters' CLI channel, and types a flag below a node by the
+    class argv or a lower layer names there (*below*); the declared types alone cannot. So
+    registration runs that loop over argv, as the merge will, and registers each flag the
+    naming typed apart from the declared types in the shape of its widest occurrence: argv
+    restating a naming may type one flag twice, and the framework must bind at least the
+    tokens vanilla takes. The run stops at the first error, which the merge raises.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters
+    """
+    # Imported here: a module-level import would create an import cycle with _parse_cli.
+    from confarg._parse_cli import _parse_cli, _resolve_field_type  # noqa: PLC0415
+
+    typed: dict[str, list[Any]] = {}
+
+    def observe(path: list[str], ft: Any) -> None:
+        typed.setdefault(".".join(path), []).append(ft)
+
+    with contextlib.suppress(Exception):
+        _parse_cli(argv, target, "", config_flag, union_tag, host_parsed=True, below=below, observe=observe)
+    specs: list[FlagSpec] = []
+    for name, types in typed.items():
+        widest = max(types, key=_arity_rank)
+        if name in existing_names or widest == _resolve_field_type(target, name.split("."), union_tag):
+            continue
+        with contextlib.suppress(Exception):
+            spec = _build_leaf_spec(name, widest, _resolve_type(widest), HelpParts(), None, "")
+            specs.append(_refusing_bare(spec, _resolve_type(widest)))
+            existing_names.add(name)
+    return specs
+
+
+def bound_runs(specs: Iterable[FlagSpec], cli_prefix: str) -> frozenset[str]:
+    """Return the dotted paths, *cli_prefix* off, of the flags a greedy framework binds a run of tokens to.
+
+    A multi-token flag and a fixed-arity one (:func:`_binds_a_run`'s two families), as
+    registered: vanilla's loop asks it at the merge, so a token after the run it takes is the
+    stray it refuses wherever the framework bound it.
+    """
+    head = f"{cli_prefix}." if cli_prefix else ""
+    greedy = (spec for spec in specs if spec.nargs == "*" or spec.whole_value)
+    return frozenset(spec.name.removeprefix(head) for spec in greedy)
+
+
 def _collect_unentered_argv_specs(
     target: object,
     argv: Sequence[str],
@@ -1668,13 +1711,14 @@ def _collect_unentered_argv_specs(
     return specs
 
 
-def build_dynamic_flags(  # one branch per argv-scanned flag family (config/locals/callable/patch)
+def build_dynamic_flags(  # noqa: PLR0913  # one keyword per knob, as build_static_flags
     target: object,
     argv: Sequence[str],
     *,
     cli_prefix: str = "",
     union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
+    below: MergeDict | None = None,
 ) -> list[FlagSpec]:
     """Build CLI flags discoverable only from argv.
 
@@ -1709,6 +1753,9 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
             are renamed back into the namespace on the way out.
         union_tag: Discriminator field name.
         config_flag: Name of the config-file flag.
+        below: What the layers below argv hold, merged
+            (:func:`confarg._pipeline.below_argv`): the classes they name type the flags
+            below. ``None`` reads argv's ``--config`` files for them.
 
     Returns:
         A list of additional :class:`~confarg.cli.argparse.FlagSpec` objects.
@@ -1723,12 +1770,17 @@ def build_dynamic_flags(  # one branch per argv-scanned flag family (config/loca
         # A subclass is invisible to the walks below until its module has run, and the
         # tag is the only thing that says which module that is
         # (docs-dev/architecture/design-decisions/a-named-tag-is-imported-before-registration.md).
-        import_tagged_classes(argv_list, target, union_tag=union_tag, config_flag=config_flag)
-        config_dict = _partial_config_from_argv(argv_list, config_flag) if config_flag else {}
+        import_tagged_classes(argv_list, target, union_tag=union_tag, config_flag=config_flag, below=below)
+        if below is not None:
+            config_dict = below
+        else:
+            config_dict = _partial_config_from_argv(argv_list, config_flag) if config_flag else {}
 
         existing_names: set[str] = set()
-        # First, as the static flags it stands in for are loaded before every dynamic one.
-        result = _collect_unentered_argv_specs(target, argv_list, union_tag, existing_names)
+        # First: the flags below a node naming a class are typed as vanilla's loop types them.
+        result = _collect_loop_typed_specs(target, argv_list, config_flag, union_tag, config_dict, existing_names)
+        # Then, as the static flags it stands in for are loaded before every other dynamic one.
+        result += _collect_unentered_argv_specs(target, argv_list, union_tag, existing_names)
         for field_flag, target_path, mode, grouped in _callable_argument_targets(
             target,
             argv_list,

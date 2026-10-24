@@ -10,10 +10,12 @@ the underlying integration.  ``registered_flags()`` exposes the dotted flag
 names that ``populate_*`` registers on the host framework (``None`` for
 vanilla, which has no registration step).
 
-``cli_prefix`` reaches the adapters through their registration step: each
-adapter loader passes it to ``populate_*`` and then calls ``merge_*``/``from_*``
-*without* it, so every parity test also exercises the prefix recovery path
-(docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix).
+Every option but ``argv`` reaches the adapters through their registration step:
+each adapter loader passes them to ``populate_*`` and then calls
+``merge_*``/``from_*`` with ``argv`` alone, so every parity test also exercises
+the recovery of what registration read -- the prefix
+(docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix) and the sources
+(docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters).
 
 List-field CLI syntax differs between loaders:
 - ``VanillaLoader``, ``ArgparseLoader``, ``CycloptsLoader``: space-separated
@@ -60,6 +62,7 @@ import confarg.cli.cyclopts as confargcyclopts
 import confarg.cli.typer as confargtyper
 from confarg import _defaults
 from confarg._defaults import _resolve_options
+from confarg.cli._sources import REGISTRATION_ATTR
 from confarg.cli.argparse import from_namespace, make_parser, merge_namespace
 from confarg.cli.click import populate_command
 from confarg.cli.cyclopts import populate_app
@@ -134,25 +137,10 @@ class ArgparseLoader(ConfargLoader):
 
     def _run(self, target: type | TypeAliasType | UnionType, *, construct: bool, **kw: Any) -> Any:
         argv = list(kw.pop("argv") or [])
-        config_flag = kw.pop("config_flag")
-        union_tag = kw.pop("union_tag")
-        parser = make_parser(
-            target,
-            cli_prefix=kw.pop("cli_prefix"),
-            config_flag=config_flag,
-            union_tag=union_tag,
-            argv=argv,
-        )
+        parser = make_parser(target, argv=argv, **kw)
         ns = parser.parse_args(argv)
         fn = from_namespace if construct else merge_namespace
-        return fn(
-            target,
-            ns,
-            argv=argv,
-            config_flag=config_flag,
-            union_tag=union_tag,
-            **kw,
-        )
+        return fn(target, ns, argv=argv)
 
     def registered_flags(  # noqa: PLR0913 — mirrors the populate_* keyword-only signature
         self,
@@ -187,26 +175,20 @@ class ClickLoader(ConfargLoader):
 
     def _run(self, target: type | TypeAliasType | UnionType, *, construct: bool, **kw: Any) -> Any:
         argv = list(kw.pop("argv") or [])
-        config_flag = kw.pop("config_flag")
         result_holder: list[Any] = []
 
         base_cmd = click.command()(lambda **kwargs: None)
-        populate_command(
-            target,
-            base_cmd,
-            cli_prefix=kw.pop("cli_prefix"),
-            config_flag=config_flag,
-            union_tag=kw["union_tag"],
-            argv=argv,
-        )
+        populate_command(target, base_cmd, argv=argv, **kw)
 
         @click.command()
         def _inner(**kwargs: Any) -> None:
             ctx = click.get_current_context()
             fn = confargclick.from_context if construct else confargclick.merge_context
-            result_holder.append(fn(target, ctx, argv=argv, config_flag=config_flag, **kw))
+            result_holder.append(fn(target, ctx, argv=argv))
 
         real_cmd = click.Command(name="cli", callback=_inner.callback, params=base_cmd.params)
+        # The params carry what registration read; a target that registered none leaves it on the command.
+        setattr(real_cmd, REGISTRATION_ATTR, getattr(base_cmd, REGISTRATION_ATTR, None))
         result = CliRunner().invoke(real_cmd, argv, catch_exceptions=False)
         if not result_holder:
             # Click rejected argv itself: standalone mode printed the usage error and
@@ -250,8 +232,6 @@ class TyperLoader(ConfargLoader):
 
     def _run(self, target: type | TypeAliasType | UnionType, *, construct: bool, **kw: Any) -> Any:
         argv = list(kw.pop("argv") or [])
-        config_flag = kw.pop("config_flag")
-        cli_prefix = kw.pop("cli_prefix")
         result_holder: list[Any] = []
 
         app = typer.Typer(add_completion=False)
@@ -259,17 +239,10 @@ class TyperLoader(ConfargLoader):
         @app.command()
         def _inner(ctx: typer.Context) -> None:
             fn = confargtyper.from_context if construct else confargtyper.merge_context
-            result_holder.append(fn(target, ctx, argv=argv, config_flag=config_flag, **kw))
+            result_holder.append(fn(target, ctx, argv=argv))
 
         cmd = get_command(app)
-        populate_typer_command(
-            target,
-            cmd,
-            cli_prefix=cli_prefix,
-            config_flag=config_flag,
-            union_tag=kw["union_tag"],
-            argv=argv,
-        )
+        populate_typer_command(target, cmd, argv=argv, **kw)
         sink = io.StringIO()
         try:
             with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
@@ -322,18 +295,10 @@ class CycloptsLoader(ConfargLoader):
 
     def _run(self, target: type | TypeAliasType | UnionType, *, construct: bool, **kw: Any) -> Any:
         argv = list(kw.pop("argv") or [])
-        config_flag = kw.pop("config_flag")
         app = cyclopts.App()
-        populate_app(
-            target,
-            app,
-            cli_prefix=kw.pop("cli_prefix"),
-            config_flag=config_flag,
-            union_tag=kw["union_tag"],
-            argv=argv,
-        )
+        populate_app(target, app, argv=argv, **kw)
         fn = confargcyclopts.from_app if construct else confargcyclopts.merge_app
-        return fn(target, app, argv=argv, config_flag=config_flag, **kw)
+        return fn(target, app, argv=argv)
 
     def registered_flags(  # noqa: PLR0913 — mirrors the populate_* keyword-only signature
         self,

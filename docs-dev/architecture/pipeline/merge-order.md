@@ -28,6 +28,12 @@ way, then delegate here.
 **Rule: fix merge-order or file-loading behavior in this module only.** It then lands in
 all front-ends at once.
 
+The layers are read lowest first, each over what lies below it (`_lower_layers`): the
+environment's `CONFIG__*` pointers and argv's `--config` pairs, read before any value is
+typed, then the config level, the environment over it, and argv over both, so a class a lower
+layer names types the keys a higher one writes below it. `below_argv` is the same read for an
+adapter's registration ([design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key)).
+
 History: before PR #65 each adapter re-implemented parts of the pipeline and diverged
 (custom `config_flag` ignored for env pointers, trailing `+` ignored, `env_config`
 unsupported, env config files unsorted, `construct()` called without `__root__`

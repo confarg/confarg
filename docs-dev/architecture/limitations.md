@@ -158,6 +158,15 @@ A field default is the layer below every source only where the class declares it
 - A flag the adapters register and vanilla refuses (BUG-113) passes the framework's
   parse and is refused at merge, with vanilla's error, rather than at parse time with the
   framework's ([CLI adapters](cli-adapters/model.md#argv-is-the-only-writer)).
+- An adapter types its flags by the sources `populate_*` read when the parser, the command
+  or the app was built, `files=` and the environment included, so those go to `populate_*`;
+  `merge_*` / `from_*` reuse them and refuse a different one. The environment is read again
+  at the merge: a program that changes a variable naming a class in between types argv by
+  one class and builds it by another
+  ([design decisions](design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters)).
+- An argparse `Namespace` from a parser `populate_parser` filled carries one confarg key,
+  `__confarg_registration__` (two under a `cli_prefix`), which a host spreading `**vars(ns)`
+  drops ([design decisions](design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters)).
 - The typer adapter needs `typer>=0.27` and reads two of its private modules
   (`typer._types`, `typer._click`): the option, choice and context classes it must subclass
   have no public spelling since typer forked click, so a typer release that moves them breaks
@@ -196,7 +205,8 @@ A field default is the layer below every source only where the class declares it
 - Restating an opener, in a higher layer or later in one source, drops the arguments given for the first, even for the same target: `{bind: f}` over `{bind: f, args: {a: 1}}` is `f` alone, and so is `--fn.bind f --fn.args.a 1 --fn.bind f`. A layer or a flag refines a spec by writing its `args` only ([design decision](design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)).
 - Every `Any` field, and every value nested in what one holds, lets a file, an environment variable or a flag build any importable class with `class:` and call any importable function with `call:`, as a `call:` already can on any field that takes a typed call. A configuration source that is not trusted must not reach a field typed `Any` ([design decision](design-decisions/an-any-node-reads-every-opener.md)).
 - A dict a program puts in an `Any` field with a `class`, `classfn`, `bind` or `call` key cannot be loaded back as that dict: it reads back as the spec it spells, and `dump()` warns when it writes one. An object no spec rebuilds, such as a `Path`, an `Enum` member, a `datetime`, a tuple or a closure, is written untyped with a `ConfargWarning` ([serialization](types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it)).
-- On the command line, a flag below an `Any` takes one token, since no declaration types its key before construction reads the opener: a list field of the class `--x.class` names is set by index or by a `.json` cast, not by `--x.tags a b` ([callables](callables.md#an-any-node-reads-every-opener)).
+- On the command line the opener comes first: a key below a Callable or an `Any` written before the opener that names its class is an untyped token, so `--f.parts a b --f.class pkg.Joiner` refuses `b` where `--f.class pkg.Joiner --f.parts a b` takes the run, and a lower layer's class does not type it either. Below a node naming no class at all, every key takes one token ([a node types its keys by the class it names](design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key)).
+- `--help` lists a nested spec's arguments (`--f.inner.factor` below `Wrap`'s Callable argument) only once argv spells its opener; a flag below it is accepted whenever typed ([callables](callables.md#cli)).
 - A `call:` on a field whose struct has a member named `args` holds its arguments as files and
   the environment write them, but the CLI cannot spell them: `--n.args.<p>` reaches the member
   ([design decision](design-decisions/a-computations-arguments-nest-under-args.md#a-computations-arguments-nest-under-args)).

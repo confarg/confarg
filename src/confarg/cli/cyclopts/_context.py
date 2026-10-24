@@ -10,7 +10,7 @@ import sys
 from typing import TYPE_CHECKING, Any, Unpack
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     import cyclopts
 
@@ -22,6 +22,7 @@ from confarg._parse_cli import _collect_config_file_pairs
 from confarg.cli._argv import drop_bare_occurrences, refuse_bare_occurrences
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix, strip_argv_prefix
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, reconcile
 from confarg.cli.cyclopts._register import _app_meta
 
 
@@ -69,7 +70,18 @@ def merge_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) -
     Config file loading order:
         Same as :func:`confarg.merge`.
     """
-    return _merge_app(target, app, _resolve_options("merge_app", opts))
+    return _merge_app(target, app, _app_options(app, "merge_app", opts))
+
+
+def _app_registration(app: cyclopts.App) -> Registration | None:
+    """Return what ``populate_app`` recorded for *app*, None for an app it did not populate."""
+    meta = _app_meta.get(id(app))
+    return meta.get(REGISTRATION_ATTR) if meta else None
+
+
+def _app_options(app: cyclopts.App, caller: str, opts: Mapping[str, Any]) -> _Options:
+    """Return *caller*'s options: what *app*'s registration read, with *opts* beside them (:func:`reconcile`)."""
+    return _resolve_options(caller, reconcile(_app_registration(app), opts, caller))
 
 
 def _app_prefix(app: cyclopts.App, options: _Options) -> str:
@@ -119,7 +131,15 @@ def _merge_app(target: object, app: cyclopts.App, options: _Options) -> MergeDic
     raw: dict[str, Any] = {k: v for k, v in bound.arguments.items() if v is not None}
     flat: dict[str, Any] = {name_map.get(k, k): v for k, v in raw.items()}
 
-    return _merge_from_flat(flat, target, options, cli_prefix=prefix, binds_runs=True)
+    registration = _app_registration(app)
+    return _merge_from_flat(
+        flat,
+        target,
+        options,
+        cli_prefix=prefix,
+        binds_runs=True,
+        runs=None if registration is None else registration.runs,
+    )
 
 
 def from_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) -> Any:
@@ -147,7 +167,7 @@ def from_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) ->
     Returns:
         An instance of *target* populated from all sources.
     """
-    options = _resolve_options("from_app", opts)
+    options = _app_options(app, "from_app", opts)
     merged = _merge_app(target, app, options)
     return _construct_from_merged(target, merged, options.union_tag, _app_prefix(app, options))
 
