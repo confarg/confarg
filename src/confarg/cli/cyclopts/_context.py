@@ -19,10 +19,10 @@ if TYPE_CHECKING:
 
 from confarg._defaults import _resolve_options
 from confarg._files import Reads
-from confarg._parse_cli import _collect_config_file_pairs
+from confarg._parse_cli import _config_pairs_in
 from confarg.cli._argv import drop_bare_occurrences, refuse_bare_occurrences
 from confarg.cli._collect import _construct_from_merged, _merge_from_flat
-from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix, strip_argv_prefix
+from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 from confarg.cli._sources import REGISTRATION_ATTR, Registration, reconcile
 from confarg.cli.cyclopts._register import _app_meta
 
@@ -111,12 +111,7 @@ def _merge_app(target: object, app: cyclopts.App, options: _Options, reads: Read
     if options.config_flag:
         # A bare --config[.subpath] must be refused before cyclopts parses it, with
         # confarg's own error rather than the framework's implicit-token assertion.
-        _collect_config_file_pairs(
-            strip_argv_prefix(scanned, prefix),
-            options.config_flag,
-            target,
-            options.union_tag,
-        )
+        _config_pairs_in(scanned, target, prefix, options.config_flag, options.union_tag)
     refuse_bare_occurrences(scanned, meta["refuses_bare"] if meta else {})
     command, bound, _ = app.parse_args(
         drop_bare_occurrences(tokens, meta["stands_bare"] if meta else ()),

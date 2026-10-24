@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 from confarg._defaults import _Options, _resolve_options
 from confarg._parse_cli import _config_pairs_in
-from confarg._pipeline import below_argv
+from confarg._pipeline import below_argv, reads_environment, reads_variables
 from confarg.exceptions import ConfargError
 
 #: The attribute the registration is recorded under: on an argparse Namespace, a click or
@@ -102,7 +102,9 @@ def registration_inputs(
     sources = {key: getattr(options, key) for key in RECORDED_OPTIONS}
     if given.get("env") is None:
         sources["env"] = None
-    return options, below_argv(target, configs, options), sources
+    # argv=[] registers only the static, type-derived flags: nothing below argv types one.
+    below = below_argv(target, configs, options) if options.argv else {}
+    return options, below, sources
 
 
 def reconcile(registration: Registration | None, given: Mapping[str, Any], caller: str) -> dict[str, Any]:
@@ -122,10 +124,10 @@ def reconcile(registration: Registration | None, given: Mapping[str, Any], calle
         return dict(given)
     sources = registration.sources
     unread = set()
-    if sources["env_prefix"] is None:
+    if not reads_variables(sources["env_prefix"]):
         unread.add("env_separator")
-        if not sources["env_config"]:
-            unread.add("env")
+    if not reads_environment(sources["env_prefix"], sources["env_config"]):
+        unread.add("env")
     for key in RECORDED_OPTIONS:
         if key in given and key not in unread and not _same(key, given[key], sources[key]):
             msg = (
@@ -146,5 +148,5 @@ def _same(key: str, given: Any, recorded: Any) -> bool:
     if key == "env":
         given_env = os.environ if given is None else given
         recorded_env = os.environ if recorded is None else recorded
-        return given_env is recorded_env or dict(given_env) == dict(recorded_env)
+        return given_env is recorded_env or given_env == recorded_env
     return given == recorded

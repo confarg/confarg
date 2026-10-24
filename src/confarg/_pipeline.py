@@ -20,7 +20,7 @@ from __future__ import annotations
 import operator
 import warnings
 from itertools import chain
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeGuard
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -479,6 +479,16 @@ def _merge_sources(
     return canonicalize_references(merged)
 
 
+def reads_variables(env_prefix: str | None) -> TypeGuard[str]:
+    """Return whether the merge reads the environment's variables: only under a prefix, ``None`` reading none."""
+    return env_prefix is not None
+
+
+def reads_environment(env_prefix: str | None, env_config: str | None) -> bool:
+    """Return whether the merge reads the environment at all: its variables, or the file ``env_config`` names."""
+    return reads_variables(env_prefix) or bool(env_config)
+
+
 def _lower_layers(
     target: Any,
     cli_configs: Sequence[tuple[str, str]],
@@ -501,9 +511,9 @@ def _lower_layers(
     if env_config and (env_config_path := env.get(env_config)):
         file_entries.append(("", env_config_path))
     env_configs = (
-        []
-        if env_prefix is None
-        else _env_config_pointers(env_for_fields, env_prefix, options.env_separator, target, config_flag, union_tag)
+        _env_config_pointers(env_for_fields, env_prefix, options.env_separator, target, config_flag, union_tag)
+        if reads_variables(env_prefix)
+        else []
     )
     env_configs.sort(key=operator.itemgetter(0))
     root = merge_root(target, union_tag)
@@ -513,7 +523,7 @@ def _lower_layers(
         config_data = _deep_merge(config_data, fdata, at=root)
 
     env_data: MergeDict = {}
-    if env_prefix is not None:
+    if reads_variables(env_prefix):
         env_data, _ = _parse_env(
             env_for_fields,
             env_prefix,

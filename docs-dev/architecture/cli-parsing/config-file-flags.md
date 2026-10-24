@@ -4,7 +4,7 @@
 `_addresses_key` is the one canonical test for "this token belongs to a reserved namespace", shared by the config flag and the locals namespace across CLI and env.
 
 The adapters read `--config` files off argv with vanilla's loop, in command order ([CLI adapters](../cli-adapters/model.md#argv-is-the-only-writer)).
-`_collect_config_file_pairs` is the cyclopts pre-parse refusal of a bare occurrence, which cyclopts would otherwise read as an implicit value and assert on.
+`_config_pairs_in`, the scan the pipeline reads the `--config` pairs by before any value is typed, is also the cyclopts pre-parse refusal of a bare occurrence, which cyclopts would otherwise read as an implicit value and assert on.
 
 The first path may carry the `=` spelling (`--config=a.yaml b.yaml` reads both) on vanilla and cyclopts; argparse's `=` binds the one path after it and its parser exits on the rest, the approved divergence BUG-75 recorded ([whole-value flags](../cli-adapters/whole-value-flags.md#whole-value-flags)).
 
