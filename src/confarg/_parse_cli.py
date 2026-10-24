@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Iterable, Iterator, Sequence
 
 from confarg import _defaults
 from confarg._callable import (
@@ -176,22 +176,59 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911  # o
 
 
 class _Stone(NamedTuple):
-    """Where a branch of :func:`_walk_path` stands to step along one path segment."""
+    """Where a way of the walk (:func:`_walk_path`) stands to step along one path segment."""
 
     #: The type the walk reached here, a union unexpanded: what a walk of the path so far answers.
     reached: Any
-    #: The resolved, non-union type this branch takes ``reached`` as.
+    #: The resolved, non-union type this way takes ``reached`` as.
     node: Any
 
 
-class _Branch(NamedTuple):
-    """One branch of :func:`_walk_path`: the variant it took at each union it met."""
+class _Edge(NamedTuple):
+    """One way the walk steps along a path segment: from a state, standing on a stone, to where it lands."""
 
-    #: One per segment the branch stood before: ``stones[k]`` is where it met ``parts[k]``.
-    stones: tuple[_Stone, ...]
-    #: The type reached at the end of the path, a union unexpanded; ``None`` when the branch
-    #: refuses a segment, its last stone then the one it could not step from.
-    end: Any | None
+    #: The state the walk stood in before the segment.
+    before: _WalkState
+    #: Where it stood to step: the type reached, and the variant this way takes it as.
+    stone: _Stone
+    #: The state it lands on; None when this way refuses the segment.
+    after: _WalkState | None
+
+
+class _Walk(NamedTuple):
+    """The walk of a path (:func:`_walk_path`): each way it steps along each segment, from each state once."""
+
+    #: The state the walk starts in, at the root.
+    start: _WalkState
+    #: ``layers[k]``: the edges stepping along ``parts[k]`` from each state the walk reached before it.
+    layers: list[list[_Edge]]
+
+    def edges(self) -> Iterator[tuple[int, _Edge]]:
+        """Yield each edge with the position of the segment it steps along, segment by segment."""
+        for k, layer in enumerate(self.layers):
+            for edge in layer:
+                yield k, edge
+
+    def ends(self) -> list[Any]:
+        """Return the type each way accepting the whole path reaches, a union unexpanded, each once."""
+        return [state.reached for state in (_landed(self.layers[-1]) if self.layers else [self.start])]
+
+    def edges_on_ways(self, counted: Callable[[_Edge], bool]) -> Iterator[tuple[int, _Edge]]:
+        """Yield each edge on a way that accepts the whole path or ends on a refusal *counted* accepts.
+
+        The questions that read a way's history ask it: what a way stood on before its end
+        counts only if the end does. Walked back from the last segment, keeping the states
+        from which the rest of the path reaches such an end.
+        """
+        kept: list[list[_Edge]] = []
+        leading: list[_WalkState] | None = None  # past the last segment, every state is an end
+        for layer in reversed(self.layers):
+            on_way = [e for e in layer if (counted(e) if e.after is None else leading is None or e.after in leading)]
+            kept.append(on_way)
+            leading = _distinct(e.before for e in on_way)
+        for k, layer in enumerate(reversed(kept)):
+            for edge in layer:
+                yield k, edge
 
 
 #: The kinds whose patch is a list patch: the merge reads every key below one as an index or as
@@ -208,13 +245,13 @@ _COLLECTION_KINDS = frozenset(
 )
 
 
-def _refuses_at_a_sequence(branch: _Branch) -> bool:
-    """Return True if *branch* refuses its path standing on a sequence, at a segment naming no element of it.
+def _refuses_at_a_sequence(edge: _Edge) -> bool:
+    """Return True if *edge* refuses its segment standing on a sequence, the segment naming no element of it.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index
     """
-    return branch.end is None and _type_kind(branch.stones[-1].node) in _SEQUENCE_KINDS
+    return edge.after is None and _type_kind(edge.stone.node) in _SEQUENCE_KINDS
 
 
 def _opens_spec_subtree(stone: _Stone, part: str, depth: int) -> bool:
@@ -282,16 +319,18 @@ def _walk_path(
     *,
     tag_fallback: bool = True,
     named: NamingView | None = None,
-) -> Iterator[_Branch]:
-    """Walk the type tree along *parts*, yielding one branch per way the walk can take it.
+) -> _Walk:
+    """Walk the type tree along *parts*, segment by segment, each state the walk reaches stepped once.
 
-    The one type walk. A union met before the path ends is walked once per non-None
-    variant, so the walk forks there, and the branches come in variant order; a branch
-    that refuses a segment ends there, and a path ending *on* a union-typed node ends on
-    that union, unexpanded. Every question about a path is asked of these branches:
-    :func:`_field_types` reads their ends, and the predicates over a path --
-    :func:`_addresses_callable_key`, :func:`_is_collection_patch_path`,
-    :func:`_is_dict_at_path` -- read the stones each stood on.
+    The one type walk. A union met before the path ends is stepped once per non-None
+    variant, so the walk forks there, in variant order; but the ways that land on the same
+    state go on as one, so a union met at every level costs the walk a step per variant, not
+    a branch per choice of variants. A way that refuses a segment ends there, and a path
+    ending *on* a union-typed node ends on that union, unexpanded. Every question about a
+    path is asked of the walk: :func:`_field_types` reads its ends, the predicates over a
+    path -- :func:`_addresses_callable_key`, :func:`_is_collection_patch_path` -- the
+    stones its edges stood on, and :func:`_is_dict_at_path` those on the ways that end
+    as it counts (:meth:`_Walk.edges_on_ways`).
 
     A node whose data names a class (*named*) types the segment below it by that class
     (:func:`~confarg._naming.named_child`), and a union naming one of its variants walks
@@ -312,21 +351,14 @@ def _walk_path(
     Dev Notes:
         docs-dev/architecture/cli-parsing/type-guided-parsing.md#one-walk-many-questions
     """
-
-    def walk(state: _WalkState, stones: tuple[_Stone, ...]) -> Iterator[_Branch]:
-        k = len(stones)
-        if k == len(parts):
-            yield _Branch(stones, state.reached)
-            return
-        naming = None if named is None else named(tuple(parts[:k]))
-        for stone, after in _step(state, parts[k], k, naming, union_tag, tag_fallback=tag_fallback):
-            here = (*stones, stone)
-            if after is None:
-                yield _Branch(here, None)
-            else:
-                yield from walk(after, here)
-
-    yield from walk(_walk_start(target), ())
+    start = _walk_start(target)
+    states, layers = [start], []
+    for k, part in enumerate(parts):
+        naming = None if named is None or not states else named(tuple(parts[:k]))
+        layer = _step_edges(states, part, k, naming, union_tag, tag_fallback=tag_fallback)
+        layers.append(layer)
+        states = _landed(layer)
+    return _Walk(start, layers)
 
 
 class _WalkState(NamedTuple):
@@ -423,8 +455,8 @@ def _field_types(
 ) -> list[Any]:
     """Return the type each branch of the walk along *parts* reaches at its end.
 
-    One type per branch of :func:`_walk_path` that accepts the whole path, in variant
-    order; an empty list means no branch accepts it. :func:`_resolve_field_type` folds
+    One type per way of :func:`_walk_path` that accepts the whole path, each type once, in
+    variant order; an empty list means no way accepts it. :func:`_resolve_field_type` folds
     the list into the single type a value is coerced by; a caller that asks what each
     branch holds at a node -- the env channel spelling the next segment -- reads it whole.
 
@@ -435,8 +467,7 @@ def _field_types(
         tag_fallback: Whether a segment no member reaches may still name the union tag.
         named: What the data the path is typed against names at each node (:func:`_walk_path`).
     """
-    branches = _walk_path(target, parts, union_tag, tag_fallback=tag_fallback, named=named)
-    return [branch.end for branch in branches if branch.end is not None]
+    return _walk_path(target, parts, union_tag, tag_fallback=tag_fallback, named=named).ends()
 
 
 def _common_type(found: list[Any]) -> Any | None:
@@ -510,9 +541,8 @@ def _addresses_callable_key(target: Any, parts: list[str], union_tag: str, named
         docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
     return any(
-        _is_callable(stone.node) or _opens_spec_subtree(stone, part, k)
-        for branch in _walk_path(target, parts, union_tag, named=named)
-        for k, (stone, part) in enumerate(zip(branch.stones, parts, strict=False))
+        _is_callable(e.stone.node) or _opens_spec_subtree(e.stone, parts[k], k)
+        for k, e in _walk_path(target, parts, union_tag, named=named).edges()
     )
 
 
@@ -528,9 +558,8 @@ def _opener_at(target: Any, parts: list[str], union_tag: str, named: NamingView 
         k >= 0
         and names_an_opener(parts[k])
         and any(
-            len(branch.stones) > k
-            and (_is_callable(branch.stones[k].node) or _opens_spec_subtree(branch.stones[k], parts[k], k))
-            for branch in _walk_path(target, parts, union_tag, named=named)
+            _is_callable(e.stone.node) or _opens_spec_subtree(e.stone, parts[k], k)
+            for e in _walk_path(target, parts, union_tag, named=named).layers[k]
         )
     )
 
@@ -547,9 +576,9 @@ def _is_collection_patch_path(target: Any, parts: list[str], union_tag: str, nam
         docs-dev/architecture/cli-adapters/collection-patch-parity.md#collection-patch-parity
     """
     return any(
-        _type_kind(stone.node) in _COLLECTION_KINDS or part in _locals_keys_nested(stone.reached, union_tag=union_tag)
-        for branch in _walk_path(target, parts, union_tag, named=named)
-        for stone, part in zip(branch.stones, parts, strict=False)
+        _type_kind(e.stone.node) in _COLLECTION_KINDS
+        or parts[k] in _locals_keys_nested(e.stone.reached, union_tag=union_tag)
+        for k, e in _walk_path(target, parts, union_tag, named=named).edges()
     )
 
 
@@ -589,12 +618,12 @@ def _path_unknown(target: Any, parts: list[str], union_tag: str, named: NamingVi
 
 
 def _is_dict_at_path(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> bool:
-    """Check if any branch of the walk stands on a dict at a non-empty proper prefix of the path.
+    """Check if any way of the walk stands on a dict at a non-empty proper prefix of the path.
 
-    The node a branch stands on, not the type the prefix reaches: a field typed
+    The node a way stands on, not the type the prefix reaches: a field typed
     ``dict[str, Any] | None`` or ``dict[str, Any] | Inner`` reaches the union, and its dict
     variant takes what is below as a key, as a plain dict field and the environment do
-    (BUG-158). A branch that refuses the path at a sequence below the dict takes nothing
+    (BUG-158). A way that refuses the path at a sequence below the dict takes nothing
     (:func:`_refuses_at_a_sequence`): its segment is no key of the dict but a patch key of
     the sequence, which the merge would read as its own (BUG-170).
 
@@ -605,24 +634,26 @@ def _is_dict_at_path(target: Any, parts: list[str], union_tag: str, named: Namin
         named: What the data the path is typed against names at each node (:func:`_walk_path`).
 
     Returns:
-        True if a branch stands on a dict type at any non-empty proper prefix of parts.
+        True if a way stands on a dict type at any non-empty proper prefix of parts.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/type-guided-parsing.md#one-walk-many-questions
     """
+    walk = _walk_path(target, parts, union_tag, named=named)
     return any(
-        not _refuses_at_a_sequence(branch) and any(_is_dict(stone.node) for stone in branch.stones[1:])
-        for branch in _walk_path(target, parts, union_tag, named=named)
+        k >= 1 and _is_dict(e.stone.node)
+        for k, e in walk.edges_on_ways(lambda refusal: not _refuses_at_a_sequence(refusal))
     )
 
 
 def _sequence_refusal(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> int | None:
     """Return the position in *parts* of the segment a sequence refuses, None if the path is no such refusal.
 
-    A refusal only when vanilla's loop refuses the path (:func:`_path_unknown`), and a branch
+    A refusal only when vanilla's loop refuses the path (:func:`_path_unknown`), and a way
     of the walk refused it standing on a sequence (:func:`_refuses_at_a_sequence`): the
     environment, which leaves any other unknown path below its first segment to ``build()``,
-    asks it to keep a segment from reaching the merge as a list-patch key (BUG-170).
+    asks it to keep a segment from reaching the merge as a list-patch key (BUG-170). Where
+    several ways refuse so, the shallowest segment any of them refuses.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/collection-patches.md#a-segment-below-a-sequence-is-an-index
@@ -630,8 +661,7 @@ def _sequence_refusal(target: Any, parts: list[str], union_tag: str, named: Nami
     if not _path_unknown(target, parts, union_tag, named):
         return None
     walk = _walk_path(target, parts, union_tag, named=named)
-    refused = (len(b.stones) - 1 for b in walk if _refuses_at_a_sequence(b))
-    return next(refused, None)
+    return next((k for k, e in walk.edges() if _refuses_at_a_sequence(e)), None)
 
 
 #: The kinds whose members are named: a segment below one names a key, never an index.
@@ -655,7 +685,8 @@ def _delete_index(target: Any, parts: list[str], union_tag: str, named: NamingVi
     index = _list_index(parts[-1])
     if index is None:
         return None
-    stands_on = [b.stones[-1].node for b in _walk_path(target, parts, union_tag, named=named) if b.end is not None]
+    last = _walk_path(target, parts, union_tag, named=named).layers[-1]
+    stands_on = [e.stone.node for e in last if e.after is not None]
     keyed = all(_type_kind(node) in _KEYED_KINDS or _fixed_seq_types(node) is not None for node in stands_on)
     return None if stands_on and keyed else index
 
@@ -740,18 +771,48 @@ def _locals_keys_nested(*types: Any, union_tag: str) -> tuple[str, ...]:
     )
 
 
+def _step_edges(  # noqa: PLR0913  # the step's own arguments, for every state at once
+    states: list[_WalkState],
+    part: str,
+    depth: int,
+    naming: Any,
+    union_tag: str,
+    *,
+    tag_fallback: bool = True,
+) -> list[_Edge]:
+    """Step every state in *states* along *part* (:func:`_step`), each way it can, in order.
+
+    The one step of every walk: the path walk keeps the edges (:func:`_walk_path`), a walker
+    over data the states they land on (:func:`_step_states`).
+    """
+    return [
+        _Edge(state, stone, after)
+        for state in states
+        for stone, after in _step(state, part, depth, naming, union_tag, tag_fallback=tag_fallback)
+    ]
+
+
+def _distinct(states: Iterable[_WalkState]) -> list[_WalkState]:
+    """Return *states* each once, in order, compared by equality: a type need not hash."""
+    kept: list[_WalkState] = []
+    for state in states:
+        if state not in kept:
+            kept.append(state)
+    return kept
+
+
+def _landed(edges: list[_Edge]) -> list[_WalkState]:
+    """Return the states *edges* land on, each once, in order."""
+    return _distinct(e.after for e in edges if e.after is not None)
+
+
 def _step_states(states: list[_WalkState], part: str, depth: int, naming: Any, union_tag: str) -> list[_WalkState]:
-    """Step every state in *states* along *part* (:func:`_step`), keeping each state it lands on once.
+    """Step every state in *states* along *part* (:func:`_step_edges`), keeping each state it lands on once.
 
     What a walker over data carries from a node to its child: the ways the walk reaches the
     child, each once, so a union met at every level never forks the walk again.
     """
-    landed: list[_WalkState] = []
-    for state in states:
-        for _, after in _step(state, part, depth, naming, union_tag):
-            if after is not None and after not in landed:
-                landed.append(after)
-    return landed
+    return _landed(_step_edges(states, part, depth, naming, union_tag))
 
 
 def _locals_keys_reached(states: list[_WalkState], target: Any, union_tag: str, *, depth: int) -> tuple[str, ...]:

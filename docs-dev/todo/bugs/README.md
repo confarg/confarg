@@ -10,7 +10,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
 | [BUG-259 — A YAML file of shared aliases expands to millions of nodes](BUG-259-a-yaml-file-of-shared-aliases-expands-to-millions-of-nodes.md) | critical |  | L | high | behavior | PR-5 |
-| [BUG-260 — A deep flag or variable below a recursive union takes exponential time](BUG-260-a-deep-flag-or-variable-below-a-recursive-union-takes-exponential-time.md) | critical |  | L | high | behavior | PR-5 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |
 | [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | minor |  | S | low | behavior | PR-77 |
