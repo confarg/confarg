@@ -44,6 +44,18 @@ def _spell_field_path(path: FieldPath) -> str:
     return spelled
 
 
+def _spell_long_path(path: FieldPath) -> str:
+    """Spell *path* as :func:`_spell_field_path` does, its middle elided once it runs past eight segments.
+
+    ``d.a.a ... a.a``: the first three segments and the last two, which say where the path starts
+    and what it ends in; the count beside it says how long it is. The elision is ASCII, as a
+    console in any encoding prints it, and spaced, so the dots of a path do not run into it.
+    """
+    if len(path) <= 8:  # noqa: PLR2004  # a path short enough to read whole
+        return _spell_field_path(path)
+    return f"{_spell_field_path(path[:3])} ... {_spell_field_path(path[-2:])}"
+
+
 def _append_none_remedy(message: str) -> str:
     """Return *message* followed by the remedy for a field whose ``None`` a channel spells as a none word."""
     return f"{message.removesuffix('.')}. To set this field to None, pass 'none' or 'null'."
@@ -224,6 +236,33 @@ class ConfargError(Exception):
         return cls(
             f"Cannot set {spelling!r}: {key!r} is a key confarg reserves, which only a configuration file may write.",
         )
+
+    @classmethod
+    def too_deep(cls, action: str, path: FieldPath | None, bound: int, subject: str = "it") -> ConfargError:
+        """Return the error for a value nesting deeper than *bound* levels, *path* the first position past it.
+
+        *action* is what was being done (``read config.yaml``, ``set '--d.json'``, ``build
+        Config``), *subject* what nests (the value, or what its expressions resolve to). A
+        *path* of None is a document too deep for its own parser, which names no position.
+        Called on a subclass, it returns that subclass: ``InvalidConfigFileError`` for a document.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#a-configuration-nests-at-most-64-levels
+        """
+        message = f"Cannot {action}: {subject} nests deeper than {bound} levels"
+        if path is None:
+            return cls(f"{message}.")
+        return cls(f"{message}, at '{_spell_long_path(path)}' ({len(path)} levels).")
+
+    @classmethod
+    def holds_itself(cls, action: str, path: FieldPath, holder: FieldPath) -> ConfargError:
+        """Return the error for a container at *path* that is the container at *holder*, one of its ancestors.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#a-value-that-holds-itself-is-refused-as-one
+        """
+        held = f"'{_spell_long_path(holder)}'" if holder else "the configuration root"
+        return cls(f"Cannot {action}: '{_spell_long_path(path)}' holds {held}, a value that contains itself.")
 
     @classmethod
     def callable_not_spelled(cls, value: Any, reason: str) -> ConfargError:

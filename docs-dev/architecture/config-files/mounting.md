@@ -25,3 +25,4 @@ A trailing `+` on the subpath appends the fragment instead of mounting it, on ar
 A `+` naming no field, `--config+` or `<PREFIX>CONFIG+`, is refused by each channel in its own spelling.
 
 An appended element has no index until the merge is over, so no prefix from the configuration root anchors the fragment's bare references; they are spelled as the dot runs that climb to its root instead ([reference anchoring](../expressions/reference-anchoring.md#a-document-a-list-op-holds-is-anchored-by-dot-runs)).
+Its mount still holds the field's path and a stand-in index, which types its nodes and is where it is counted from ([a configuration nests at most 64 levels](../design-decisions/a-configuration-nests-at-most-64-levels.md#where-it-is-counted)).

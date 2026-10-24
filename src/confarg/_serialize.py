@@ -13,13 +13,14 @@ from __future__ import annotations
 import enum
 import inspect
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 from confarg import _defaults
 from confarg._callable import _serialize_callable, holds_an_opener, promote_bare_spec
 from confarg._cast import cast_name_for_type
+from confarg._depth import MAX_DEPTH, refuse_overflow
 from confarg._import import dotted_name, imports_back
 from confarg._merge import ListOp, MergeDict, _DeleteSentinel
 from confarg._types import (
@@ -71,6 +72,43 @@ class _DumpOptions:
     """``"auto"`` (tag only when needed) or ``"always"`` (tag every union member)."""
     native_types: tuple[type, ...] = ()
     """The registered leaf types written as the objects they are, not as their serialized form."""
+    action: str = "dump the value"
+    """What the dump is, for a refusal: ``dump Config``."""
+    open_at: dict[int, FieldPath] = field(default_factory=dict, compare=False)
+    """The id of each value being serialized, on the path to the one being serialized now, and its position."""
+
+
+def _open(instance: Any, path: FieldPath, opts: _DumpOptions) -> bool:
+    """Enter *instance* at *path*: refuse it past the bound or below itself, and return whether it was opened here.
+
+    The depth is the length of *path*. The same instance entered again at its own position (a
+    union serializing it as its variant) is no cycle, and was opened by the first entry.
+
+    Raises:
+        ConfargError: If *path* is deeper than ``_depth.MAX_DEPTH``, or *instance* is a value
+            being serialized above it, which contains itself.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#a-configuration-nests-at-most-64-levels
+    """
+    if len(path) > MAX_DEPTH:
+        raise ConfargError.too_deep(opts.action, path, MAX_DEPTH)
+    holder = opts.open_at.get(id(instance))
+    if holder is None:
+        opts.open_at[id(instance)] = path
+        return True
+    if len(holder) < len(path):
+        raise ConfargError.holds_itself(opts.action, path, holder)
+    return False
+
+
+def _untyped_at(value: Any, path: FieldPath, opts: _DumpOptions) -> Any:
+    """Serialize *value*, which a typed dump writes with no declared type, counted from *path*.
+
+    :func:`_serialize_untyped` threads no path, so the value is counted once, where it is written.
+    """
+    refuse_overflow(value, opts.action, at=path)
+    return _serialize_untyped(value, opts.native_types)
 
 
 def _check_native_types(native_types: Iterable[type]) -> tuple[type, ...]:
@@ -110,7 +148,12 @@ def _serialize(
     tp = _resolve_type(tp)
     if instance is None:
         return None
-    return _serialize_by_type(tp, instance, path, opts)
+    opened = _open(instance, path, opts)
+    try:
+        return _serialize_by_type(tp, instance, path, opts)
+    finally:
+        if opened:
+            del opts.open_at[id(instance)]
 
 
 def _serialize_by_type(  # noqa: PLR0911  # one return per kind
@@ -140,7 +183,7 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
                 instance,
                 lambda owner: _serialize_struct(type(owner), owner, path, opts),
             )
-            return _serialize_untyped(spec, opts.native_types)
+            return _untyped_at(spec, path, opts)
         case _TypeKind.ANY:
             return _serialize_any(instance, path, opts)
         case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
@@ -226,6 +269,23 @@ def _serialize_any(
             return None
         return _serialize_any(value, (*path, key), opts, checked=checked)
 
+    opened = _open(instance, path, opts)
+    try:
+        return _serialize_any_form(instance, path, opts, item, checked=checked)
+    finally:
+        if opened:
+            del opts.open_at[id(instance)]
+
+
+def _serialize_any_form(
+    instance: Any,
+    path: FieldPath,
+    opts: _DumpOptions,
+    item: Callable[[Any, str | int], Any],
+    *,
+    checked: bool,
+) -> Any:
+    """Return what :func:`_serialize_any` writes *instance* as, each item written by *item*."""
     if isinstance(instance, dict):
         out = {
             _data_key(_serialize_leaf(None, k, opts.native_types), (*path, str(k))): item(v, str(k))
@@ -267,7 +327,7 @@ def _serialize_held_object(instance: Any, path: FieldPath, opts: _DumpOptions) -
             unwritable = e
     if unwritable is not None:
         _warn_unread_any(instance, path, str(unwritable))
-        return _serialize_untyped(instance, opts.native_types)
+        return _untyped_at(instance, path, opts)
 
     def dumps_as(back: Any) -> Any:
         return _serialize_any(back, path, opts, checked=False)
@@ -277,7 +337,7 @@ def _serialize_held_object(instance: Any, path: FieldPath, opts: _DumpOptions) -
             warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
         return written
     _warn_unread_any(instance, path, "an Any node does not read the spec it would be written as back as an equal value")
-    return _serialize_untyped(instance, opts.native_types)
+    return _untyped_at(instance, path, opts)
 
 
 def _held_object_form(instance: Any, path: FieldPath, opts: _DumpOptions) -> Any:
@@ -301,7 +361,7 @@ def _held_object_form(instance: Any, path: FieldPath, opts: _DumpOptions) -> Any
             instance,
             lambda owner: _serialize_struct(type(owner), owner, path, opts),
         )
-        return _serialize_untyped(promote_bare_spec(spec) if isinstance(spec, str) else spec, opts.native_types)
+        return _untyped_at(promote_bare_spec(spec) if isinstance(spec, str) else spec, path, opts)
     cls = type(instance)
     if _is_struct(cls):
         return {_defaults.CLASS_KEY: _class_path(cls), **_serialize_struct(cls, instance, path, opts)}

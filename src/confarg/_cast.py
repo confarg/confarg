@@ -24,12 +24,16 @@ Dev Notes:
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from confarg import _defaults
+from confarg._depth import MAX_DEPTH, refuse_overflow
 from confarg._merge import MergeAt, MergeDict, _deep_merge, _merge_within_source
 from confarg._types import _is_union, _Pinned, _resolve_type, _StrToken, _union_args_no_none
 from confarg.exceptions import ConfargError, TypeCoercionError
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 JSON_CAST_NAME = "json"
 
@@ -41,29 +45,38 @@ _SCALAR_CAST_NAMES: dict[type, str] = {tp: name for name, tp in SCALAR_CAST_TYPE
 FORCE_CAST_NAMES: frozenset[str] = frozenset({*SCALAR_CAST_TYPES, JSON_CAST_NAME})
 
 
-def decode_json(raw: str, spelling: str) -> Any:
+def decode_json(raw: str, spelling: str, at: Sequence[str | int] = ()) -> Any:
     """Decode the JSON value a flag or a variable carries, as data.
 
     The one decoder of a value argv or the environment spells as JSON: a ``.json`` cast, the
     root cast, a whole-value flag or variable, and an item appended as JSON. A decoded value is
     data, so none of its keys is ever read as a merge op; only a file's are. A key confarg
-    reserves is refused at any depth, as it is on a flag's path.
+    reserves is refused at any depth, as it is on a flag's path. The value is counted from
+    *at*, where it lands, before anything walks it.
 
     Args:
         raw: The text to decode.
         spelling: The flag or the variable as its channel writes it, for the refusal.
+        at: The position the value lands at, from the configuration root.
 
     Returns:
         The decoded value.
 
     Raises:
         json.JSONDecodeError: If *raw* is no JSON, for the caller to report or fall back on.
-        ConfargError: If an object in the value holds a key of ``_defaults.RESERVED_KEYS``.
+        ConfargError: If an object in the value holds a key of ``_defaults.RESERVED_KEYS``, or
+            the value nests deeper than ``_depth.MAX_DEPTH`` levels counted from *at*.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data
+        docs-dev/architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#a-configuration-nests-at-most-64-levels
     """
-    value = json.loads(raw)
+    action = f"set {spelling!r}"
+    try:
+        value = json.loads(raw)
+    except RecursionError as e:  # the decoder's own walk, at a few thousand levels
+        raise ConfargError.too_deep(action, None, MAX_DEPTH) from e
+    refuse_overflow(value, action, at=at)
     _refuse_reserved_keys(value, spelling)
     return value
 
@@ -80,7 +93,7 @@ def _refuse_reserved_keys(value: Any, spelling: str) -> None:
             _refuse_reserved_keys(item, spelling)
 
 
-def resolve_forced_value(cast_name: str, raw: str, *, flag: str = "") -> Any:
+def resolve_forced_value(cast_name: str, raw: str, *, flag: str = "", at: Sequence[str | int] = ()) -> Any:
     """Produce the stored value for an explicit ``.<cast>`` suffix.
 
     Scalar casts yield a :class:`_Pinned` token (deferred single-type coercion that
@@ -91,6 +104,7 @@ def resolve_forced_value(cast_name: str, raw: str, *, flag: str = "") -> Any:
         cast_name: One of :data:`FORCE_CAST_NAMES`.
         raw: The raw string value provided on the CLI or in the environment.
         flag: Human-readable flag/key name, used only in the JSON error message.
+        at: The position a ``json`` value lands at, which it is counted from.
 
     Returns:
         A ``_Pinned`` for scalar casts, or the decoded JSON value for ``json``.
@@ -101,7 +115,7 @@ def resolve_forced_value(cast_name: str, raw: str, *, flag: str = "") -> Any:
     """
     if cast_name == JSON_CAST_NAME:
         try:
-            return decode_json(raw, flag or JSON_CAST_NAME)
+            return decode_json(raw, flag or JSON_CAST_NAME, at)
         except json.JSONDecodeError as e:
             label = flag or "value"
             msg = f"Invalid JSON for {label}: {e}"

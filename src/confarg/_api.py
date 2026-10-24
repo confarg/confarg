@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._default_layer import drop_untouched, lay_defaults, settle_pending
 from confarg._defaults import MergeOptions, _Options, _resolve_options
+from confarg._depth import refuse_overflow
 from confarg._files import _dump_file, _native_types_of
 from confarg._merge import ListOp, MergeDict
 from confarg._parse_cli import _config_pairs_in, _locals_keys_at, _parse_cli
@@ -71,8 +72,10 @@ def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]
         4. CLI ``--config`` / ``--config.subpath`` flags — in left-to-right order.
 
     Raises:
-        InvalidConfigFileError: If a config file cannot be loaded.
+        InvalidConfigFileError: If a config file cannot be loaded, nests deeper than 64 levels
+            from the configuration root, or holds itself.
         UnknownArgumentError: If an unrecognized CLI argument is encountered.
+        ConfargError: If a flag or a variable writes deeper than 64 levels.
     """
     return _merge(target, _resolve_options("merge", opts))
 
@@ -155,8 +158,11 @@ def build[T](
         UnsafeExpressionError: If an expression contains disallowed constructs.
         MissingReferenceError: If an expression references a field that does not exist.
         ExpressionEvalError: If an expression fails at runtime.
+        ConfargError: If *data* nests deeper than 64 levels or holds itself, or what its
+            expressions resolve to nests deeper.
     """
     target_r = _resolve_type(target)
+    refuse_overflow(data, f"build {_named(target)}")
     resolved = _strip_locals(_resolve_over_defaults(target_r, data, union_tag), target_r, union_tag)
     return _construct_resolved(target_r, resolved, union_tag)
 
@@ -174,7 +180,16 @@ def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str) -> Me
     laid = lay_defaults(target_r, data, union_tag, for_resolution=True)
     settle = settle_pending(target_r, union_tag)
     resolved = resolve_expressions(laid.data, read=TypedReading(target_r, union_tag), write=written_form, settle=settle)
-    return drop_untouched(resolved, laid.untouched)
+    resolved = drop_untouched(resolved, laid.untouched)
+    # An expression standing for a value copies it where it is written, so the tree can be deeper
+    # now; a default nothing touched is left out, as construction never walks it.
+    refuse_overflow(resolved, f"resolve the expressions of {_named(target_r)}")
+    return resolved
+
+
+def _named(target: Any) -> str:
+    """Return the name a refusal calls *target* by: a class's own name, any other type as it prints."""
+    return getattr(target, "__name__", str(target))
 
 
 def _construct_resolved(target_r: Any, resolved: MergeDict, union_tag: str) -> Any:
@@ -247,10 +262,13 @@ def resolve(
         UnsafeExpressionError: If an expression contains disallowed constructs.
         MissingReferenceError: If an expression references a field that does not exist.
         ExpressionEvalError: If an expression fails at runtime.
+        ConfargError: If *data* nests deeper than 64 levels or holds itself, or what its
+            expressions resolve to nests deeper.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
     """
+    refuse_overflow(data, f"resolve {_named(target)}")
     return _resolve_over_defaults(_resolve_type(target), data, union_tag)
 
 
@@ -281,8 +299,10 @@ def from_dict[T](
         MissingFieldError: If a required field is not provided.
         TypeCoercionError: If a value cannot be coerced to the target type.
         AmbiguousUnionError: If a Union cannot be disambiguated.
+        ConfargError: If *data* nests deeper than 64 levels or holds itself.
     """
     target_r = _resolve_type(target)
+    refuse_overflow(data, f"construct {_named(target)}")
     laid = lay_defaults(target_r, data, union_tag, for_resolution=False).data
     return _construct_resolved(target_r, _strip_locals(laid, target_r, union_tag), union_tag)
 
@@ -308,8 +328,11 @@ def load[T](target: type[T] | TypeAliasType | UnionType, **opts: Unpack[MergeOpt
     Raises:
         MissingFieldError: If a required field is not provided by any source.
         TypeCoercionError: If a value cannot be coerced to the target type.
-        InvalidConfigFileError: If a config file cannot be loaded.
+        InvalidConfigFileError: If a config file cannot be loaded, nests deeper than 64 levels
+            from the configuration root, or holds itself.
         UnknownArgumentError: If an unrecognized CLI argument is encountered.
+        ConfargError: If a flag or a variable writes deeper than 64 levels, or what the
+            expressions resolve to nests deeper.
         AmbiguousUnionError: If a Union cannot be disambiguated.
         CircularReferenceError: If expression references form a cycle.
         UnsafeExpressionError: If an expression contains disallowed constructs.
@@ -359,7 +382,8 @@ def dump(
     Raises:
         TypeError: If value is not a dataclass or plain-class instance, or *native_types*
             names a type that is no registered leaf type.
-        ConfargError: If the instance does not hold a field or a parameter it is dumped from.
+        ConfargError: If the instance does not hold a field or a parameter it is dumped from,
+            nests deeper than 64 levels, or holds itself.
     """
     if isinstance(value, dict):
         msg = (
@@ -370,7 +394,7 @@ def dump(
     if isinstance(value, type) or _type_kind(type(value)) is not _TypeKind.STRUCT:
         msg = f"Expected a dataclass or plain-class instance, got {type(value).__name__}"
         raise TypeError(msg)
-    options = _DumpOptions(union_tag, tag_policy, _check_native_types(native_types))
+    options = _DumpOptions(union_tag, tag_policy, _check_native_types(native_types), f"dump {type(value).__name__}")
     return _serialize(type(value), value, (), options)
 
 
@@ -413,11 +437,12 @@ def dump_file(
         TypeError: If value is not a dataclass or plain-class instance, or a dict, or
             *native_types* names a type that is no registered leaf type.
         InvalidConfigFileError: If the format is unsupported or the required library is not installed.
-        ConfargError: If *value* holds a value or a key the format does not hold, or :func:`dump`
-            refuses it.
+        ConfargError: If *value* holds a value or a key the format does not hold, nests deeper
+            than 64 levels or holds itself, or :func:`dump` refuses it.
     """
     native = _native_types_of(Path(path)) if native_types is None else _check_native_types(native_types)
     if isinstance(value, dict):
+        refuse_overflow(value, f"write {path}")
         _dump_file(_serialize_untyped(value, native), Path(path))
     else:
         _dump_file(dump(value, union_tag=union_tag, tag_policy=tag_policy, native_types=native), Path(path))

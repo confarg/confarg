@@ -10144,3 +10144,66 @@ class TestPendingListOpContract:
         frag = tmp_yaml("name: one\nlabel: '${name}'\n", "frag.yaml")
         result = loader.load(_PendingOps, argv=["--config.items+", str(frag)], env={})
         assert result.items == [_PendingItem("one", "one")]
+
+
+# ---------------------------------------------------------------------------
+# A configuration nests at most 64 levels, on every front-end (BUG-248)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Deep:
+    """A field below which any depth can be spelled."""
+
+    d: Any = None
+
+
+def _chain(n: int, leaf: Any = 1) -> Any:
+    """Return *leaf* held *n* levels down a chain of ``{"a": ...}``."""
+    value = leaf
+    for _ in range(n):
+        value = {"a": value}
+    return value
+
+
+class TestDepthContract:
+    """A flag's path, its JSON value and a mount count from the configuration root, on every front-end."""
+
+    @pytest.mark.parametrize("n", [63, 64], ids=["at-the-bound", "past-the-bound"])
+    def test_a_json_value_counts_from_the_flags_path(self, loader: ConfargLoader, n: int) -> None:
+        """``--d.json`` lands its value at ``d``, one level down; past 64 it is refused naming the flag."""
+        argv = ["--d.json", json.dumps(_chain(n))]
+        if n == 63:
+            assert loader.load(_Deep, argv=argv, env={}).d == _chain(63)
+        else:
+            with pytest.raises(ConfargError, match="deeper than 64 levels") as info:
+                loader.load(_Deep, argv=argv, env={})
+            assert "--d.json" in str(info.value)
+
+    @pytest.mark.parametrize("n", [63, 64], ids=["at-the-bound", "past-the-bound"])
+    def test_a_flags_path_is_counted(self, loader: ConfargLoader, n: int) -> None:
+        """A path of 64 segments writes at 64, one of 65 at 65."""
+        argv = ["--d" + ".a" * n, "1"]
+        if n == 63:
+            assert loader.load(_Deep, argv=argv, env={}).d == _chain(63, "1")
+        else:
+            with pytest.raises(ConfargError, match="deeper than 64 levels"):
+                loader.load(_Deep, argv=argv, env={})
+
+    def test_a_very_long_flag_is_refused_before_it_is_typed(self, loader: ConfargLoader) -> None:
+        """The type walk recurses once per segment, so the path is refused before it; it was a raw RecursionError."""
+        with pytest.raises(ConfargError, match="deeper than 64 levels"):
+            loader.load(_Deep, argv=["--d" + ".a" * 600, "1"], env={})
+
+    def test_a_very_long_mount_point_is_refused_before_it_is_typed(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The mount check walks each prefix of the subpath, so the subpath is refused before it."""
+        frag = tmp_yaml("a: 1\n", "frag.yaml")
+        with pytest.raises(ConfargError, match="deeper than 64 levels"):
+            loader.load(_Deep, argv=["--config.d" + ".m" * 600, str(frag)], env={})
+
+    def test_a_mounted_fragment_counts_from_the_root(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """32 segments of mount path and 33 levels of fragment put the leaf at 65."""
+        frag = tmp_yaml(json.dumps(_chain(33)), "frag.yaml")
+        with pytest.raises(ConfargError, match="deeper than 64 levels") as info:
+            loader.load(_Deep, argv=["--config.d" + ".m" * 31, str(frag)], env={})
+        assert "frag.yaml" in str(info.value)

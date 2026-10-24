@@ -42,6 +42,7 @@ from confarg._cast import (
     holds_the_cast,
     resolve_forced_value,
 )
+from confarg._depth import refuse_long_path
 from confarg._merge import (
     APPEND_SUFFIX,
     DELETE_SUFFIX,
@@ -758,12 +759,13 @@ def detect_force_cast(
     return parent, path[-1]
 
 
-def _parse_json_arg(token: str, flag: str) -> Any:
+def _parse_json_arg(token: str, flag: str, at: Sequence[str | int]) -> Any:
     """Parse token as JSON, raising ConfargError on invalid JSON.
 
     Args:
         token: The raw CLI token to parse.
         flag: The flag name (e.g. ``--foo``) used in the error message.
+        at: The path the value lands at, which it is counted from.
 
     Returns:
         The decoded JSON value.
@@ -772,7 +774,7 @@ def _parse_json_arg(token: str, flag: str) -> Any:
         ConfargError: If the token is not valid JSON.
     """
     try:
-        return decode_json(token, flag)
+        return decode_json(token, flag, at)
     except json.JSONDecodeError as e:
         msg = f"Invalid JSON for {flag}: {e}"
         raise ConfargError(msg) from e
@@ -1078,8 +1080,9 @@ def _check_mount_subpath(target: Any, subpath: str, union_tag: str, spelling: st
     and this walk is exact.
 
     Raises:
-        ConfargError: When the subpath names no field of the node it descends to, or a
-            segment spells a key confarg reserves (:func:`_reserved_segment`).
+        ConfargError: When the subpath names no field of the node it descends to, a
+            segment spells a key confarg reserves (:func:`_reserved_segment`), or it is
+            deeper than a configuration nests.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/type-guided-parsing.md#type-guided-parsing
@@ -1088,6 +1091,7 @@ def _check_mount_subpath(target: Any, subpath: str, union_tag: str, spelling: st
     if not path:
         return
     parts = path.split(".")
+    refuse_long_path(parts, spelling)
     if (reserved := _reserved_segment(parts)) is not None:
         raise ConfargError.reserved_key(spelling, reserved)
     walk_target = _walk_target(target, _locals_keys(target, union_tag))
@@ -1211,16 +1215,19 @@ def _handle_delete_token(ctx: _ParseCtx, token: str, path: list[str]) -> None:
         _set_nested(ctx.data, path, DICT_DELETE, ctx.at)
 
 
-def _collect_append_items(args: Sequence[str], i: int, et: Any, spelling: str) -> tuple[list[Any], int]:
+def _collect_append_items(  # the flag's spelling and path name it in a refusal
+    args: Sequence[str], i: int, et: Any, spelling: str, at: Sequence[str | int]
+) -> tuple[list[Any], int]:
     """Collect append-mode values from args, returning (items, new_i).
 
     Accepts a JSON array literal as a single token, otherwise consumes space-separated
     tokens until the next flag. A JSON item is data (:func:`~confarg._cast.decode_json`);
-    *spelling* names the flag or the variable that refuses a reserved key in one.
+    *spelling* names the flag or the variable that refuses a reserved key in one, and *at*
+    the path of the list the items are appended to, which an item is counted from.
     """
     if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("["):
         try:
-            parsed = decode_json(args[i], spelling)
+            parsed = decode_json(args[i], spelling, at)
         except json.JSONDecodeError:
             parsed = None
         if isinstance(parsed, list):
@@ -1231,7 +1238,7 @@ def _collect_append_items(args: Sequence[str], i: int, et: Any, spelling: str) -
         tok = args[i]
         if tok.startswith("{"):
             try:
-                items.append(decode_json(tok, spelling))
+                items.append(decode_json(tok, spelling, (*at, len(items))))
             except json.JSONDecodeError:
                 items.append(_try_coerce(et, _StrToken(tok), spelling))
         else:
@@ -1310,7 +1317,7 @@ def _handle_append_token(
 ) -> int:
     """Process an append-mode flag (--foo+ items...) and return the new arg index."""
     et = _appended_element_type(ctx.target, path, ctx.union_tag, token, ft, named=ctx.naming)
-    append_items, i = _collect_append_items(ctx.argv, i, et, token)
+    append_items, i = _collect_append_items(ctx.argv, i, et, token, path)
     _write_append(ctx.data, path, append_items, ctx.at)
     return i
 
@@ -1342,7 +1349,7 @@ def _consume_fixed_tuple_args(  # noqa: PLR0913, PLR0917  # token only names the
     return i
 
 
-def _union_seq_value(ft: Any, tokens: list[str], token: str) -> Any:
+def _union_seq_value(ft: Any, tokens: list[str], token: str, at: Sequence[str | int]) -> Any:
     """Shape a union-with-sequence-variant field's accumulated tokens into its value.
 
     A single token is stored as a bare scalar when the union also has a scalar
@@ -1360,7 +1367,7 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str) -> Any:
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#unions-with-sequence-variants
     """
-    parsed = _lone_json_array(tokens, token)
+    parsed = _lone_json_array(tokens, token, at)
     if parsed is not None:
         return parsed
     if not tokens:
@@ -1427,7 +1434,7 @@ def _handle_force_cast(  # noqa: PLR0913, PLR0917  # cast_name is a necessary di
     raises ``ConfargError`` on invalid JSON (via :func:`resolve_forced_value`).
     """
     _require_value(args, i, token)
-    _set_nested(ctx.data, path, resolve_forced_value(cast_name, args[i], flag=token), ctx.at)
+    _set_nested(ctx.data, path, resolve_forced_value(cast_name, args[i], flag=token, at=path), ctx.at)
     return i + 1
 
 
@@ -1462,20 +1469,20 @@ def _handle_unknown_field(
     raise UnknownArgumentError.no_such_field(token, path)
 
 
-def _try_parse_json_list(arg: str, spelling: str) -> list[Any] | None:
+def _try_parse_json_list(arg: str, spelling: str, at: Sequence[str | int]) -> list[Any] | None:
     """Parse arg as a JSON array and return it, or None if not valid JSON or not a list.
 
     The array is data (:func:`~confarg._cast.decode_json`); *spelling* names the flag that
-    refuses a reserved key in it.
+    refuses a reserved key in it, and *at* the path it lands at, which it is counted from.
     """
     try:
-        parsed = decode_json(arg, spelling)
+        parsed = decode_json(arg, spelling, at)
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, list) else None
 
 
-def _lone_json_array(tokens: list[str], spelling: str) -> list[Any] | None:
+def _lone_json_array(tokens: list[str], spelling: str, at: Sequence[str | int]) -> list[Any] | None:
     """Return the decoded array when *tokens* is one inline JSON array, else None.
 
     The inline array is a **whole-value** spelling, so it is only that when it stands
@@ -1489,10 +1496,10 @@ def _lone_json_array(tokens: list[str], spelling: str) -> list[Any] | None:
     """
     if len(tokens) != 1 or not tokens[0].startswith("["):
         return None
-    return _try_parse_json_list(tokens[0], spelling)
+    return _try_parse_json_list(tokens[0], spelling, at)
 
 
-def _varlen_value(ft: Any, tokens: list[str], spelling: str) -> Any:
+def _varlen_value(ft: Any, tokens: list[str], spelling: str, at: Sequence[str | int]) -> Any:
     """Shape a varlen collection field's accumulated tokens into its stored value.
 
     One inline JSON array standing alone is decoded as the whole value; otherwise every
@@ -1502,7 +1509,7 @@ def _varlen_value(ft: Any, tokens: list[str], spelling: str) -> Any:
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
-    parsed = _lone_json_array(tokens, spelling)
+    parsed = _lone_json_array(tokens, spelling, at)
     if parsed is not None:
         return parsed
     et = _elem_type(ft)
@@ -1543,7 +1550,7 @@ def _consume_collection_or_scalar(
         tt is not None
         and i < len(args)
         and not _looks_like_flag(args[i])
-        and (parsed := _lone_json_array([args[i]], token)) is not None
+        and (parsed := _lone_json_array([args[i]], token, path)) is not None
     ):
         _set_nested(ctx.data, path, parsed, ctx.at)
         return i + 1
@@ -1551,7 +1558,7 @@ def _consume_collection_or_scalar(
     # Variable-length collection → consume until the next flag, extending a prior occurrence
     if _is_varlen_collection(ft):
         tokens, i = _consume_multi_tokens(ctx, i, path)
-        _set_nested(ctx.data, path, _varlen_value(ft, tokens, token), ctx.at)
+        _set_nested(ctx.data, path, _varlen_value(ft, tokens, token, path), ctx.at)
         return i
 
     # Fixed-length sequence (tuple[X, Y] or a namedtuple) → consume exact count
@@ -1561,7 +1568,7 @@ def _consume_collection_or_scalar(
     # Union with a sequence variant → consume greedily (disambiguation deferred to construct)
     if _union_has_seq_variant(ft):
         tokens, i = _consume_multi_tokens(ctx, i, path)
-        _set_nested(ctx.data, path, _union_seq_value(ft, tokens, token), ctx.at)
+        _set_nested(ctx.data, path, _union_seq_value(ft, tokens, token, path), ctx.at)
         return i
 
     # Default: consume one scalar value
@@ -1795,7 +1802,7 @@ def _consume_typed_arg(
     args = ctx.argv
     # JSON object → dataclass / dict / callable / union-with-dc
     if i < len(args) and _takes_whole_value(ft, args[i]):
-        _set_nested(ctx.data, path, _parse_json_arg(args[i], token), ctx.at)
+        _set_nested(ctx.data, path, _parse_json_arg(args[i], token, path), ctx.at)
         return i + 1
 
     return _consume_collection_or_scalar(ctx, i, token, ft, path)
@@ -1991,10 +1998,12 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             continue
 
         path, append_mode, delete_mode = _parse_flag_mode(key)
+        refuse_long_path(path, token, slack=1)  # before the walk types it; its last segment may be a cast
 
         force_cast: str | None = None
         if not append_mode and not delete_mode:
             path, force_cast = detect_force_cast(path, walk_target, union_tag, ctx.naming)
+        refuse_long_path(path, token)
 
         if host_parsed and not cli_prefix and path and _path_unknown(walk_target, path[:1], union_tag):
             i = _skip_flag_values(argv, i)  # a flag the host registered beside the confarg ones

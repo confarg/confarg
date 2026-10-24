@@ -39,6 +39,7 @@ The parser accepts a few hundred, but every step after it walks the tree recursi
 The bound is fixed, not derived from `sys.getrecursionlimit()`: whether a body parses is cached by its text and must depend on the text alone.
 100 is half of where the cheapest walker gave up, which leaves the caller's own stack its room, and far beyond a written expression (a 100-term sum, 100 nested conditionals).
 Precedents: CPython's tokenizer caps nested brackets at 200, `serde_json` recursion at 128, Go's `regexp/syntax` nesting at 1000.
+The data a body reads is bounded the same way, at 64 levels, and so is what resolution makes of it: an expression standing for a value copies it where it is written, and the tree it resolves to is counted again ([a configuration nests at most 64 levels](../design-decisions/a-configuration-nests-at-most-64-levels.md#where-it-is-counted)).
 
 Resolution happens **after** all sources are merged.
 That is the point of the design: overriding `resources.memory_gb` on the CLI recomputes a `${resources.memory_gb * 0.8}` written in a file.
