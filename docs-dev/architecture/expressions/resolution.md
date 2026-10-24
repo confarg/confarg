@@ -98,6 +98,23 @@ OmegaConf draws the same line: a resolver's failure is re-raised once, by the in
 Rejected: **`_eval_expr` rewording an `ExpressionEvalError` that has no context.**
 It keeps the early wraps but needs a way to tell a worded error from a bare one — a flag on the exception, or a match on its text — so two sites still decide the wording and a third evaluator that wraps early would silently opt out.
 
+### A failure whose text names no cause names its exception
+
+Python's own text is a sentence for nearly every exception, but not for one that keeps `BaseException`'s `str()` and holds arguments other than one string: its text is the repr of those arguments.
+A `decimal` signal carries the list of signal classes it raised, so `${d ** 10 ** 9}` read `[<class 'decimal.Overflow'>]`, and a float overflow carries an errno tuple, so `${f ** 10000}` read `(34, 'Result too large')` (BUG-247).
+`exceptions._failure_text` names such an exception instead, module-qualified outside the builtins, then its string arguments after a colon, then the signal classes it lists besides its own, in parentheses:
+
+| expression | Python's text | the failure's |
+|---|---|---|
+| `${d ** 10 ** 9}` | `[<class 'decimal.Overflow'>]` | `decimal.Overflow` |
+| `${d * 0 / 0}` | `[<class 'decimal.DivisionUndefined'>]` | `decimal.InvalidOperation (DivisionUndefined)` |
+| `${f ** 10000}` | `(34, 'Result too large')` | `OverflowError: Result too large` |
+| `${b / 0}` | `division by zero` | unchanged |
+
+A float overflow's string is the C library's `strerror(ERANGE)`, carried through as is: `Result too large` on Windows and macOS, as in the table, but `Numerical result out of range` under glibc and `Result not representable` under musl, the same text Python itself shows there.
+
+The rule is about the shape of the text, not about `decimal`: an exception that defines its own `str()`, as `OSError` and `UnicodeDecodeError` do, keeps it whatever its arguments (maintainer-chosen over a fix for `decimal` alone).
+
 ## A refusal names its expression
 
 What the safety model refuses is quoted as a runtime failure is, with the same lead, and the exception's type says which it was: `UnsafeExpressionError: Error in expression '${s.upper() + eval('1')}': Function 'eval' is not allowed`.

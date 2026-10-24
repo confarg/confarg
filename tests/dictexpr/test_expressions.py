@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import ast
+import errno
 import math
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -2135,6 +2137,23 @@ class TestAnEvaluationFailureNamesItsExpression:
         with pytest.raises(ExpressionEvalError) as info:
             resolve_expressions({"b": 1, "v": "${b / 0}"})
         assert isinstance(info.value.__cause__, ZeroDivisionError)
+
+    @pytest.mark.parametrize(
+        ("expr", "detail"),
+        [
+            pytest.param("${d ** 10 ** 9}", "decimal.Overflow", id="decimal-overflow"),
+            pytest.param("${d / 0}", "decimal.DivisionByZero", id="decimal-division-by-zero"),
+            pytest.param("${d * 0 / 0}", "decimal.InvalidOperation (DivisionUndefined)", id="decimal-signal"),
+            pytest.param("${f ** 10000}", f"OverflowError: {os.strerror(errno.ERANGE)}", id="float-overflow"),
+        ],
+    )
+    def test_a_failure_whose_text_names_no_cause_names_its_exception(self, expr: str, detail: str) -> None:
+        """A decimal signal's list of classes and a float overflow's errno tuple read as the exception (BUG-247).
+
+        The overflow's text is the C library's ``strerror(ERANGE)``, which glibc spells differently from Windows.
+        """
+        with pytest.raises(ExpressionEvalError, match=re.escape(f"Error in expression {expr!r}: {detail}") + "$"):
+            resolve_expressions({"d": Decimal("1.1"), "f": 2.0, "v": expr})
 
 
 class TestARefusalNamesItsExpression:
