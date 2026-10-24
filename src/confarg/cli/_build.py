@@ -374,11 +374,12 @@ def _opener_spec(
         docs-dev/architecture/callables.md#cli
         docs-dev/architecture/cli-adapters/cli-prefix-boundaries.md#help-names-a-flag-as-typed
     """
-    if _type_kind(_resolve_type(reader)) is _TypeKind.CALLABLE:
+    builds_a_callable = _type_kind(_resolve_type(reader)) is _TypeKind.CALLABLE
+    if builds_a_callable:
         subject, what = (f"the '{flag}' callable" if flag else "the root callable"), "the callable"
     else:
         subject, what = (f"the value of '{flag}'" if flag else "the root value"), "the value"
-    if opener == _defaults.CALL_KEY and what == "the value":
+    if opener == _defaults.CALL_KEY and not builds_a_callable:
         note = f"Dotted import path of the function to call with the --FLAG.args.PARAM flags; its result is {subject}."
     else:
         note = f"Dotted import path for {subject} ({_OPENER_HELP[opener].format(what=what)})."
@@ -434,27 +435,34 @@ def _build_union_tag_spec(  # noqa: PLR0913  # the union, its tag, and where its
     group_description: str,
     *,
     callable_class: bool = False,
+    root: bool = False,
 ) -> FlagSpec:
     """Build a FlagSpec for ``--<flag>.<union_tag>`` with an optional path completer.
 
     *callable_class*: the union holds a Callable, which a class no variant holds instantiates
-    (:func:`~confarg.typedload._construct._construct_union_by_tag`).
+    (:func:`~confarg.typedload._construct._construct_union_by_tag`). *root*: the union is the
+    target, whose tag selects the variant itself and names one of them as its example.
     """
-    completer = None
-    if variant_types:
-        paths = [dotted_name(v) for v in variant_types]
-        completer = _make_path_completer(paths)
-    return FlagSpec(
-        name=f"{flag}.{union_tag}",
-        metavar="DOTTED.CLASS.PATH",
-        note=(
-            f"Fully-qualified class path selecting the variant for '{flag}' "
-            f"(e.g. mypackage.MyClass){_CALLABLE_CLASS_NOTE if callable_class else ''}. "
+    paths = [dotted_name(v) for v in variant_types]
+    also = _CALLABLE_CLASS_NOTE if callable_class else ""
+    if root:
+        example = paths[0] if paths else "mypackage.MyClass"
+        note = (
+            f"Fully-qualified class path selecting the union variant (e.g. {example}){also}. "
+            "Once set, use the variant's field flags."
+        )
+    else:
+        note = (
+            f"Fully-qualified class path selecting the variant for '{flag}' (e.g. mypackage.MyClass){also}. "
             "Once set, use that class's field flags."
-        ),
+        )
+    return FlagSpec(
+        name=f"{flag}.{union_tag}" if flag else union_tag,
+        metavar="DOTTED.CLASS.PATH",
+        note=note,
         group=group,
         group_description=group_description,
-        completer=completer,
+        completer=_make_path_completer(paths) if paths else None,
     )
 
 
@@ -1128,23 +1136,13 @@ def _collect_union_root_specs(
     descent: _Descent,
 ) -> list[FlagSpec]:
     """Build FlagSpecs for the union target *tp* (variants are its concrete struct types), its openers included."""
-    tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
-    paths = [dotted_name(v) for v in variants]
     result: list[FlagSpec] = []
     by_name: dict[str, FlagSpec] = {}
     # A variant field owning the tag's spelling wins it, so the tag flag that
     # would collide is not registered at all.
     if not any(_union_tag_shadowed(v, union_tag) for v in variants):
-        tag_spec = FlagSpec(
-            name=tag_name,
-            metavar="DOTTED.CLASS.PATH",
-            note=(
-                "Fully-qualified class path selecting the union variant "
-                f"(e.g. {paths[0] if paths else 'mypackage.MyClass'})"
-                f"{_CALLABLE_CLASS_NOTE if _holds_a_callable(tp) else ''}. "
-                "Once set, use the variant's field flags."
-            ),
-            completer=_make_path_completer(paths),
+        tag_spec = _build_union_tag_spec(
+            prefix, union_tag, variants, None, "", callable_class=_holds_a_callable(tp), root=True
         )
         result.append(tag_spec)
         by_name[tag_spec.name] = tag_spec
@@ -1515,11 +1513,12 @@ def _collect_callable_key_argv_specs(
     """
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import (  # noqa: PLC0415
-        _addresses_callable_key,
         _looks_like_flag,
         _normalize_eq_args,
-        _opener_reader_at,
         _parse_flag_mode,
+        _walk_addresses_callable_key,
+        _walk_opener_reader,
+        _walk_path,
     )
 
     specs: list[FlagSpec] = []
@@ -1533,9 +1532,10 @@ def _collect_callable_key_argv_specs(
         if key in existing_names:
             continue
         parts = key.split(".")
-        if (reader := _opener_reader_at(target, parts, union_tag)) is not None:
+        walk = _walk_path(target, parts, union_tag)  # one walk answers both questions
+        if (reader := _walk_opener_reader(walk, parts, union_tag)) is not None:
             specs.append(_opener_spec(".".join(parts[:-1]), parts[-1], reader))
-        elif _addresses_callable_key(target, parts, union_tag):
+        elif _walk_addresses_callable_key(walk, parts):
             specs.append(FlagSpec(name=key, metavar="VALUE", note=f"Value for '{key}' in the callable spec."))
         else:
             continue

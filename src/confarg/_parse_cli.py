@@ -98,7 +98,7 @@ from confarg._types import (
 from confarg.dictexpr._expressions import _list_index
 from confarg.exceptions import ConfargError, UnknownArgumentError
 from confarg.typedload._coerce import _try_coerce, _type_kind, _TypeKind
-from confarg.typedload._construct import _is_typed_call, _reads_specs, _selects_none, _takes_typed_call
+from confarg.typedload._construct import _is_typed_call, _reads_specs, _selects_none, _takes_typed_call, opener_reader
 
 #: What the data a path is typed against names at a node, by the node's path: the dict the
 #: node holds, or None where nothing names it (:func:`_walk_path`).
@@ -542,10 +542,12 @@ def _addresses_callable_key(target: Any, parts: list[str], union_tag: str, named
     Dev Notes:
         docs-dev/architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags
     """
-    return any(
-        _is_callable(e.stone.node) or _opens_spec_subtree(e.stone, parts[k], k)
-        for k, e in _walk_path(target, parts, union_tag, named=named).edges()
-    )
+    return _walk_addresses_callable_key(_walk_path(target, parts, union_tag, named=named), parts)
+
+
+def _walk_addresses_callable_key(walk: _Walk, parts: list[str]) -> bool:
+    """Return :func:`_addresses_callable_key`'s answer from *walk*, the walk of *parts*."""
+    return any(_is_callable(e.stone.node) or _opens_spec_subtree(e.stone, parts[k], k) for k, e in walk.edges())
 
 
 def _opener_at(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> bool:
@@ -556,25 +558,32 @@ def _opener_at(target: Any, parts: list[str], union_tag: str, named: NamingView 
 def _opener_reader_at(target: Any, parts: list[str], union_tag: str, named: NamingView | None = None) -> Any:
     """Return the type reading the last segment of *parts* as an opener of a spec at the path before it, or None.
 
-    A Callable or an ``Any`` node reads every opener, a nested target spec's Callable
-    included; ``call`` opens a typed call on a field that takes one
-    (:func:`_opens_spec_subtree`), and a typed call's value is the type reached there's, a
-    union's beside its Callable too. A field named like an opener is no opener of its parent
-    (BUG-30), and a key under ``args`` is a parameter's name, the arguments of a target no
-    opener names included, whose keys the walk reads as they are written.
+    What reads it is :func:`~confarg.typedload._construct.opener_reader`'s answer for the
+    type the walk reached there, so a struct variant owning the key keeps it, and a Callable
+    reads it before an ``Any`` whatever their order. The walk only says where a spec can be
+    opened: below a node that reads specs, or a field that takes a typed call
+    (:func:`_opens_spec_subtree`), never at the root for a typed call, nor in a subtree whose
+    keys it reads as written, the arguments of a target no opener names. A field named like
+    an opener is no opener of its parent (BUG-30).
 
     Dev Notes:
         docs-dev/architecture/callables.md#cli
     """
+    if not parts or not names_an_opener(parts[-1]):
+        return None
+    return _walk_opener_reader(_walk_path(target, parts, union_tag, named=named), parts, union_tag)
+
+
+def _walk_opener_reader(walk: _Walk, parts: list[str], union_tag: str) -> Any:
+    """Return :func:`_opener_reader_at`'s answer from *walk*, the walk of *parts*."""
     k = len(parts) - 1
     if k < 0 or not names_an_opener(parts[k]):
         return None
-    for e in _walk_path(target, parts, union_tag, named=named).layers[k]:
+    for e in walk.layers[k]:
         if e.before.str_subtree or not (_reads_specs(e.stone.node) or _opens_spec_subtree(e.stone, parts[k], k)):
             continue
-        if parts[k] == _defaults.CALL_KEY and _takes_typed_call(e.stone.reached):
-            return e.stone.reached
-        return e.stone.node
+        if (reader := opener_reader(e.stone.reached, parts[k], union_tag)) is not None:
+            return reader
     return None
 
 

@@ -16,9 +16,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from confarg.cli._build import build_static_flags
 from confarg.cli.argparse import from_namespace, populate_parser, setup_completion
 from confarg.cli.argparse._completion import (
     _extend_walk,
+    _extend_walk_specs,
     _pre_extend_parser_for_completion,
     _WalkCtx,
 )
@@ -375,6 +377,30 @@ class TestExtendWalk:
         _extend_walk(_ExtendWalkOuter, _WalkCtx(parser=parser, union_tag="class", existing_dests=existing), parser, "")
         group_titles = {g.title for g in parser._action_groups}
         assert "inner" in group_titles
+
+
+@dataclass
+class _Lvl:
+    level: int = 0
+
+
+@dataclass
+class _CallableVariants:
+    f: Callable[[int], int] | _Lvl = field(default_factory=_Lvl)
+    g: Callable[[int], int] = abs
+
+
+class TestExtendWalkOpeners:
+    """The completion walk lists and describes a node's openers as static registration does (BUG-250)."""
+
+    def test_openers_match_static_registration(self) -> None:
+        """A union's Callable and a lone one: the same opener flags, the same help, the tag's included."""
+        ctx = _WalkCtx(parser=argparse.ArgumentParser(), union_tag="class", existing_dests=set())
+        walked = {s.name: s for s in _extend_walk_specs(_CallableVariants, ctx, "")}
+        static = {s.name: s for s in build_static_flags(_CallableVariants, config_flag="")}
+        openers = {name for name in static if name.rsplit(".", 1)[-1] in {"bind", "call", "class", "classfn"}}
+        assert openers == {f"{node}.{opener}" for node in "fg" for opener in ("bind", "call", "class", "classfn")}
+        assert {name: walked[name].note for name in openers} == {name: static[name].note for name in openers}
 
 
 # ---------------------------------------------------------------------------

@@ -79,20 +79,20 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
     if core is None:
         dest = f"{flag}.{ctx.union_tag}"
         if dest not in ctx.existing_dests:
-            non_none = _union_args_no_none(_resolve_type(raw_type))
+            resolved = _resolve_type(raw_type)
+            non_none = _union_args_no_none(resolved)
             concrete_variants = [_resolve_type(v) for v in non_none if _is_struct(_resolve_type(v))]
             if flag not in ctx.existing_dests:
                 specs.append(
                     _whole_value_spec(
                         flag,
-                        _resolve_type(raw_type),
+                        resolved,
                         _build_help(name, raw_type, docstrings, defaults, flag=flag),
                         group,
                         group_description,
                     ),
                 )
                 ctx.existing_dests.add(flag)
-            resolved = _resolve_type(raw_type)
             specs.append(
                 _build_union_tag_spec(
                     flag,
@@ -104,9 +104,7 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
                 ),
             )
             ctx.existing_dests.add(dest)
-            openers = _opener_specs(flag, resolved, ctx.union_tag, group, group_description)
-            specs.extend(s for s in openers if s.name not in ctx.existing_dests)
-            ctx.existing_dests.update(s.name for s in openers)
+            specs.extend(_unseen_openers(flag, resolved, ctx, group, group_description))
         return specs
 
     if concrete and _is_singleton_literal(core):
@@ -117,9 +115,7 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
             help_text = _build_help(name, raw_type, docstrings, defaults, flag=flag)
             specs.append(_build_leaf_spec(flag, raw_type, core, help_text, group, group_description))
             ctx.existing_dests.add(flag)
-        openers = _opener_specs(flag, _resolve_type(raw_type), ctx.union_tag, group, group_description)
-        specs.extend(openers)
-        ctx.existing_dests.update(s.name for s in openers)
+        specs.extend(_unseen_openers(flag, _resolve_type(raw_type), ctx, group, group_description))
         return specs
 
     if _is_struct(core):
@@ -166,6 +162,21 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
         specs.append(_build_leaf_spec(flag, raw_type, core, help_text, group, group_description))
         ctx.existing_dests.add(flag)
     return specs
+
+
+def _unseen_openers(
+    flag: str,
+    tp: Any,
+    ctx: _WalkCtx,
+    group: str | None,
+    group_description: str,
+) -> list[FlagSpec]:
+    """Return the opener flags of the node at *flag* the parser does not hold yet, now marked as held."""
+    openers = [
+        s for s in _opener_specs(flag, tp, ctx.union_tag, group, group_description) if s.name not in ctx.existing_dests
+    ]
+    ctx.existing_dests.update(s.name for s in openers)
+    return openers
 
 
 def _extend_walk_specs(  # noqa: PLR0913

@@ -6040,6 +6040,13 @@ class _CallableBesideOthersCfg:
     h: Callable[[int], int] | _UnionHook = dataclasses_field(default_factory=_UnionHook)
 
 
+@dataclass
+class _AnyBeforeCallableCfg:
+    """An ``Any`` declared before the Callable, which still reads a spec first."""
+
+    x: Any | Callable[[int], int] = None
+
+
 class TestCallableBesideAnotherVariantRegistrationContract:
     """A Callable beside another variant advertises the openers construction reads, as a lone one does (BUG-250).
 
@@ -6105,6 +6112,25 @@ class TestCallableBesideAnotherVariantRegistrationContract:
         flags = populating_loader.registered_flags(_WithAnyVariants, config_flag="")
         assert flags is not None
         assert not any(f.rsplit(".", 1)[-1] in {"bind", "call", "classfn"} for f in flags)
+
+    def test_an_opener_a_struct_variant_owns_stays_its_field_typed_on_argv(
+        self, populating_loader: ConfargLoader
+    ) -> None:
+        """``--h.bind`` typed on argv is the struct's field, as statically: no opener's help, no ``args`` (BUG-274)."""
+        argv = ["--h.bind", f"{__name__}._union_add"]
+        typed = _specs_by_name(build_dynamic_flags(_CallableBesideOthersCfg, argv, config_flag=""))
+        assert "h.bind" not in typed or typed["h.bind"].metavar != "DOTTED.PATH"
+        flags = populating_loader.registered_flags(_CallableBesideOthersCfg, argv=argv, config_flag="")
+        assert flags is not None
+        assert not any(f.startswith("h.args.") for f in flags)
+
+    def test_an_any_before_the_callable_is_described_as_the_callable(self) -> None:
+        """The Callable reads an opener before the ``Any`` whatever their order, in both passes alike (BUG-275)."""
+        argv = ["--x.bind", f"{__name__}._union_add"]
+        static = _specs_by_name(build_static_flags(_AnyBeforeCallableCfg, config_flag=""))["x.bind"]
+        typed = _specs_by_name(build_dynamic_flags(_AnyBeforeCallableCfg, argv, config_flag=""))["x.bind"]
+        assert static.note.startswith("Dotted import path for the 'x' callable (")
+        assert typed.note == static.note
 
 
 class TestCallableOpenerRegistrationContract:
@@ -6532,6 +6558,21 @@ class TestCallOnTheCliRegistrationContract:
         assert flags is not None
         assert {"data.args.name", "data.args.punct"} <= flags
 
+    @pytest.mark.parametrize(
+        ("target", "argv", "absent"),
+        [
+            (_TypedCallConfig, ["--d.bind", f"{__name__}._shout"], "d.args."),
+            (_WithAnyField, ["--data.args.bind", f"{__name__}._shout"], "data.args.args."),
+        ],
+    )
+    def test_a_key_no_spec_reads_buys_no_arguments(
+        self, populating_loader: ConfargLoader, target: type, argv: list[str], absent: str
+    ) -> None:
+        """A dict's ``bind`` key is data, and so is an argument named ``bind``: neither opens a spec."""
+        flags = populating_loader.registered_flags(target, argv=argv, config_flag="")
+        assert flags is not None
+        assert not any(f.startswith(absent) for f in flags)
+
     def test_an_argument_named_call_opens_no_call(self, populating_loader: ConfargLoader) -> None:
         """Below the ``args`` of a target no opener names, ``call`` is a parameter: it buys no ``args.args`` flags."""
         flags = populating_loader.registered_flags(
@@ -6554,7 +6595,7 @@ class TestCallOnTheCliRegistrationContract:
         assert {"data.a", "data.tags"} <= flags
 
 
-def _opener_specs(specs: list[FlagSpec]) -> dict[str, FlagSpec]:
+def _specs_by_name(specs: list[FlagSpec]) -> dict[str, FlagSpec]:
     """Return *specs* by name."""
     return {s.name: s for s in specs}
 
@@ -6570,7 +6611,9 @@ class TestOpenerHelpContract:
 
     def test_a_typed_calls_opener(self) -> None:
         """``--n.call`` names the function whose result is ``n``, not a value in a callable spec."""
-        specs = _opener_specs(build_dynamic_flags(_TypedCallConfig, ["--n.call", f"{__name__}._twice"], config_flag=""))
+        specs = _specs_by_name(
+            build_dynamic_flags(_TypedCallConfig, ["--n.call", f"{__name__}._twice"], config_flag="")
+        )
         assert specs["n.call"].metavar == "DOTTED.PATH"
         assert specs["n.call"].note == (
             "Dotted import path of the function to call with the --FLAG.args.PARAM flags; "
@@ -6593,31 +6636,31 @@ class TestOpenerHelpContract:
     )
     def test_an_opener_typed_on_argv(self, target: type, argv: list[str], name: str, subject: str) -> None:
         """A nested target spec's opener, and an ``Any`` node's, read as openers of what they build."""
-        spec = _opener_specs(build_dynamic_flags(target, argv, config_flag=""))[name]
+        spec = _specs_by_name(build_dynamic_flags(target, argv, config_flag=""))[name]
         assert spec.metavar == "DOTTED.PATH"
         assert subject in spec.note
 
     def test_an_argument_named_like_an_opener_is_no_opener(self) -> None:
         """Below ``args`` an opener's word is a parameter name."""
-        specs = _opener_specs(build_dynamic_flags(_CallableConfig, ["--fn.args.call", "x"], config_flag=""))
+        specs = _specs_by_name(build_dynamic_flags(_CallableConfig, ["--fn.args.call", "x"], config_flag=""))
         spec = specs["fn.args.call"]
         assert spec.metavar != "DOTTED.PATH"
 
     def test_a_note_names_no_prefixed_flag(self) -> None:
         """Under a prefix the notes keep the placeholder and the field's path, static and typed on argv alike."""
-        static = _opener_specs(build_static_flags(_CallableConfig, config_flag="", cli_prefix="app"))
+        static = _specs_by_name(build_static_flags(_CallableConfig, config_flag="", cli_prefix="app"))
         assert static["app.fn.bind"].note == (
             "Dotted import path for the 'fn' callable "
             "(function or class; the --FLAG.args.PARAM flags are partially applied to it)."
         )
         argv = ["--app.n.call", f"{__name__}._twice"]
-        typed = _opener_specs(build_dynamic_flags(_TypedCallConfig, argv, config_flag="", cli_prefix="app"))
+        typed = _specs_by_name(build_dynamic_flags(_TypedCallConfig, argv, config_flag="", cli_prefix="app"))
         assert "--FLAG.args.PARAM" in typed["app.n.call"].note
         assert "'n'" in typed["app.n.call"].note
 
     def test_a_unions_call_is_the_unions(self) -> None:
         """Beside a struct variant, ``call`` computes the union's value, the other openers the Callable."""
-        specs = _opener_specs(build_static_flags(_CallableOrLevelCfg, config_flag=""))
+        specs = _specs_by_name(build_static_flags(_CallableOrLevelCfg, config_flag=""))
         assert specs["f.call"].note == (
             "Dotted import path of the function to call with the --FLAG.args.PARAM flags; "
             "its result is the value of 'f'."
@@ -6627,7 +6670,7 @@ class TestOpenerHelpContract:
 
     def test_the_tag_beside_a_callable_also_names_a_callable_class(self) -> None:
         """A class no struct variant holds builds the Callable variant, so the tag's help says so."""
-        specs = _opener_specs(build_static_flags(_CallableOrLevelCfg, config_flag=""))
+        specs = _specs_by_name(build_static_flags(_CallableOrLevelCfg, config_flag=""))
         assert specs["f.class"].metavar == "DOTTED.CLASS.PATH"
         assert "or a callable class to instantiate as its callable" in specs["f.class"].note
 
@@ -6638,7 +6681,7 @@ class TestOpenerHelpContract:
 
     def test_a_root_unions_openers(self) -> None:
         """At the root there is no field to name: the root callable and the root value."""
-        specs = _opener_specs(build_static_flags(Callable[[int], int] | _UnionLevel, config_flag=""))
+        specs = _specs_by_name(build_static_flags(Callable[[int], int] | _UnionLevel, config_flag=""))
         assert specs["bind"].note == (
             "Dotted import path for the root callable "
             "(function or class; the --FLAG.args.PARAM flags are partially applied to it)."
