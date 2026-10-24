@@ -151,7 +151,7 @@ A dot run is resolved by `_AnchorResolver` before evaluation, as for any referen
 At a file's top level, `key(.)` names the key the file is mounted under: that is the name of the mount point, not a value outside the file.
 
 Two positions have no key, and are refused at evaluation with an `ExpressionEvalError`: the configuration root (`${key(::)}`, or a dot run that climbs to it), and an item a pending list op holds (`xs.__append__.0`), whose index is only known once the op applies: `build()` applies most before resolution, so only an op no type settles as a list, or one carried over an expression, still holds its items there ([values and references](values-and-references.md#a-pending-list-op-is-read-as-its-list)).
-A YAML integer key answers to the integer subscript, as a read falls back on it ([values and references](values-and-references.md#spelling-a-path)).
+An integer key (a tagged YAML one, or a caller's) answers to the integer subscript, as a read falls back on it ([values and references](values-and-references.md#spelling-a-path)).
 
 `key` is a function only as a callee ([above](#a-function-is-named-only-by-a-call)): `${key}` reads a key named `key`.
 

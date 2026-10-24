@@ -22,14 +22,13 @@ Omitting the key, as the Rust `toml` crate does for a `None` field and Python's 
 
 ## A key is written as the text it is met by
 
-A TOML or a JSON key is text.
+A key is text in every format: TOML and JSON hold no other, and a YAML file's plain key reads back as its text ([a YAML key is its text](a-yaml-key-is-its-text.md#a-yaml-key-is-its-text)).
 A key that is no string is written as the text the other channels meet it by ([which keys are one key](../pipeline/deep-merge.md#which-keys-are-one-key)): its leaf serialization, then JSON's spelling (`_merge._key_spelling`), so `1` is written `"1"`, `True` `"true"`, `None` `"null"`, a date its ISO text (`_files._written_key`).
 Each reads back as the key it was through a typed dict's key coercion; under an `Any` it reads back as the text, which the merge already reads as the same key.
 JSON's writer did this itself for a scalar key, while `tomli_w` refused every key that is no string, so a `dict[int, int]` could not be dumped to TOML at all (BUG-245).
 Refusing such a key with a confarg error was weighed: TOML would still hold no `dict[int, int]`, and JSON would spell what TOML refused.
-Precedents: `json`, pydantic's `model_dump_json`, serde_json and msgspec write an integer key as text; `tomli_w` and the Rust `toml` crate refuse it; PyYAML keeps it.
+Precedents: `json`, pydantic's `model_dump_json`, serde_json and msgspec write an integer key as text; `tomli_w` and the Rust `toml` crate refuse it; PyYAML keeps it, which confarg's YAML writer did until BUG-254.
 
-Two keys of one dict spelled alike, `1` and `'1'` under an `Any`, are refused, naming both: JSON wrote the two and its reader kept the second, and TOML would write a file `tomllib` refuses.
-A YAML file holds both as they are.
-A key with no text at all, a tuple, is refused by every format, YAML's included: PyYAML writes it as a complex key, which `yaml.safe_load` refuses.
+Two keys of one dict spelled alike, `1` and `'1'` under an `Any`, are refused, naming both: JSON wrote the two and its reader kept the second, TOML would write a file `tomllib` refuses, and YAML two keys its reader reads as one.
+A key with no text at all, a tuple, is refused by every format, YAML's included: PyYAML would write it as a complex key, which its safe loader refuses.
 A typed dict whose key type construction reads no key as, `dict[tuple[int, int], V]`, is refused earlier, by `dump()` ([an unsupported leaf is refused both ways](../types/serialization.md#an-unsupported-leaf-is-refused-both-ways)).

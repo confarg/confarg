@@ -88,7 +88,7 @@ Evaluation knows the key, and reads it as the segment its constant spelling woul
 Evaluation asks `_attribute_chain` with its namespace, and the dependency graph without, so the two differ only in what syntax alone cannot know.
 A key that spells no segment (a bool, a float) is Python's subscript alone.
 
-Evaluation reads the path first and falls back on Python's subscript only when the path is missing (`_eval_path_or`): that is what lets `${name[0]}` index a string, and keeps a dict with a non-string key (`{0: x}`, which YAML can produce) reachable as `${m[0]}`.
+Evaluation reads the path first and falls back on Python's subscript only when the path is missing (`_eval_path_or`): that is what lets `${name[0]}` index a string, and keeps a dict with a non-string key (`{0: x}`, which a caller's data or a YAML `!!int` tag can produce) reachable as `${m[0]}`.
 A dot falls back the same way, as the subscript of the name it spells, so `${svc[k].host}` reads what `${svc[k]['host']}` reads; it never reaches a Python attribute ([safety model](safety-model.md#a-dot-reads-a-key-never-an-attribute)).
 The path model's segments are strings, as everywhere else in `dictexpr`, so `${m[0]}` reads a key `"0"` before an integer key `0`.
 When the fallback fails too, the path's own miss is reported — `Field 'svc.nope' not found`, or `index 5 out of range` — rather than a `KeyError`.

@@ -37,6 +37,7 @@ A decision lands here when a ticket closes and the answer turns out to be "we wi
 | [Environment variables off by default](environment-variables-off-by-default.md) | `env_prefix=None`, because the environment is shared with every other process |
 | [Double underscore separator](double-underscore-separator.md) | `__` splits nesting so single underscores stay usable in names |
 | [Explicit boolean values](explicit-boolean-values.md) | `--verbose true`, not `--verbose`/`--no-verbose` |
+| [A YAML key is its text](a-yaml-key-is-its-text.md) | a plain YAML key reaches confarg as written and the target types it, as a TOML or JSON key; a tagged key keeps its tag's type, values keep YAML 1.1's reading |
 | [A lone none word nulls an optional sequence](a-lone-none-word-nulls-an-optional-sequence.md) | `--xs none` is `None` for `list[X] \| None`, as `APP_XS=none` is, whatever `X` |
 | [Real field wins over reserved words](real-field-wins.md) | a reserved name is reserved only where it shadows nothing |
 | [A decoded value is data](a-decoded-value-is-data.md) | a JSON value on argv or in the environment never spells a merge op, and holds no reserved key; only a file's reserved keys spell ops |
@@ -108,7 +109,7 @@ A decision lands here when a ticket closes and the answer turns out to be "we wi
 | [A stolen leaf dumps with its cast](a-stolen-leaf-dumps-with-its-cast.md) | `{__cast__, __value__}` exactly where the bare scalar would be taken back |
 | [Registered leaf types dump through a registered serializer](registered-leaf-serializer.md) | registration is two directions; `str` is only the default for the second |
 | [Dumped files carry raw UTF-8](dumped-files-carry-raw-utf-8.md) | non-ASCII text is written as it stands, escaped nowhere — what the TOML writer always did |
-| [A written file holds what its reader reads back](a-written-file-holds-what-its-reader-reads-back.md) | `dump_file` refuses, naming the path and before opening the file, a value its format does not hold; a TOML or JSON key that is no string is written as the text the merge meets it by |
+| [A written file holds what its reader reads back](a-written-file-holds-what-its-reader-reads-back.md) | `dump_file` refuses, naming the path and before opening the file, a value its format does not hold; a key that is no string is written, in every format, as the text the merge meets it by |
 
 ## CLI front-ends
 

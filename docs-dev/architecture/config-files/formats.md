@@ -2,7 +2,7 @@
 
 ## Format dispatch and optional dependencies
 
-Formats are chosen by file extension: `.yaml`/`.yml` (PyYAML), `.toml` (stdlib `tomllib` to read, `tomli_w` to write), `.json` (stdlib), and `.csv`/`.tsv` (stdlib, data only — see below).
+Formats are chosen by file extension: `.yaml`/`.yml` (PyYAML's safe loader, a plain key read as its text: [a YAML key is its text](../design-decisions/a-yaml-key-is-its-text.md#a-yaml-key-is-its-text)), `.toml` (stdlib `tomllib` to read, `tomli_w` to write), `.json` (stdlib), and `.csv`/`.tsv` (stdlib, data only — see below).
 Parser libraries are imported lazily and a missing one becomes `InvalidConfigFileError.missing_library`, keeping confarg zero-dependency ([design decisions](../design-decisions/zero-runtime-dependencies.md#zero-runtime-dependencies)).
 
 One loader table exists: `_LOADERS`, holding a parser per configuration-layer format.

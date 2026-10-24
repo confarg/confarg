@@ -27,6 +27,7 @@ import tomllib
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, time
+from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -88,17 +89,60 @@ def _load_toml(data: bytes, loc: str) -> dict[str, Any]:
 
 
 def _load_yaml_item(data: bytes, loc: str) -> Any:
-    """Parse YAML bytes, returning the raw top-level value (dict, list, or scalar)."""
+    """Parse YAML bytes, returning the raw top-level value (dict, list, or scalar).
+
+    A plain mapping key is its text, as :func:`_yaml_loader` reads it.
+    """
     try:
         import yaml  # noqa: PLC0415
     except ImportError:
         msg = "PyYAML"
         raise InvalidConfigFileError.missing_library(msg, "pyyaml", "YAML support") from None
+    loader = _yaml_loader()(data)  # PyYAML decodes, honouring a BOM
     try:
-        return yaml.safe_load(data)  # PyYAML decodes, honouring a BOM
+        return loader.get_single_data()
     except yaml.YAMLError as e:
         msg = "YAML"
         raise InvalidConfigFileError.malformed(msg, loc, e) from e
+    finally:
+        loader.dispose()
+
+
+@cache
+def _yaml_loader() -> Any:
+    """Return the loader YAML is read with: PyYAML's safe loader, a plain mapping key read as its text.
+
+    A plain key is resolved as a ``str`` whatever YAML 1.1 would make of it (``off``, ``1``,
+    ``null``, ``2001-01-01``), so the target types it, as it types a TOML or a JSON key; ``<<``
+    stays YAML's merge key, and a key the author tagged (``!!int 1``) keeps the tag's type.
+    A value is resolved as before. The reading is decided where a scalar is written, so an
+    anchored key aliased as a value is that text too.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-yaml-key-is-its-text.md#a-yaml-key-is-its-text
+    """
+    import yaml  # noqa: PLC0415  # imported once _load_yaml_item found PyYAML
+
+    class _Loader(yaml.SafeLoader):
+        _at_key = False
+
+        def compose_node(self, parent: Any, index: Any) -> Any:
+            # A mapping composes its key with no index, and its value with the key's node as one.
+            self._at_key = isinstance(parent, yaml.MappingNode) and index is None
+            return super().compose_node(parent, index)
+
+        def resolve(self, kind: Any, value: Any, implicit: Any) -> Any:
+            # Asked for an untagged node only: an explicit tag never reaches the resolver.
+            tag = super().resolve(kind, value, implicit)
+            if self._at_key and kind is yaml.ScalarNode and tag != _YAML_MERGE_TAG:
+                return _YAML_STR_TAG
+            return tag
+
+    return _Loader
+
+
+_YAML_STR_TAG: Final = "tag:yaml.org,2002:str"
+_YAML_MERGE_TAG: Final = "tag:yaml.org,2002:merge"
 
 
 def _load_json_item(data: bytes, loc: str) -> Any:
@@ -805,8 +849,8 @@ class _Format:
     """What a format's file holds, and how its text is rendered.
 
     *natives* are the registered leaf types ``dump()`` keeps as objects for its writer. *holds*
-    answers for a value that is no dict and no list, *holds_key* for a dict key, each whether
-    the format's reader reads it back as it is.
+    answers for a value that is no dict and no list whether the format's reader reads it back
+    as it is. A key is text in every format (:func:`_written_key`).
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-written-file-holds-what-its-reader-reads-back
@@ -815,7 +859,6 @@ class _Format:
     name: str
     natives: tuple[type, ...]
     holds: Callable[[Any], bool]
-    holds_key: Callable[[Any], bool]
     render: Callable[[dict[str, Any]], str]
 
 
@@ -836,14 +879,9 @@ def _json_holds(value: Any) -> bool:
     return value is None or type(value) in _SCALARS
 
 
-def _text_key(key: Any) -> bool:
-    """Return whether *key* is a key a TOML or a JSON file holds: text."""
-    return type(key) is str
-
-
-_TOML = _Format("TOML", TOML_NATIVE_TYPES, _toml_holds, _text_key, _render_toml)
-_YAML = _Format("YAML", YAML_NATIVE_TYPES, _yaml_holds, _yaml_holds, _render_yaml)
-_JSON = _Format("JSON", JSON_NATIVE_TYPES, _json_holds, _text_key, _render_json)
+_TOML = _Format("TOML", TOML_NATIVE_TYPES, _toml_holds, _render_toml)
+_YAML = _Format("YAML", YAML_NATIVE_TYPES, _yaml_holds, _render_yaml)
+_JSON = _Format("JSON", JSON_NATIVE_TYPES, _json_holds, _render_json)
 
 #: The format of each extension ``dump_file()`` writes.
 _FORMATS = {".toml": _TOML, ".yaml": _YAML, ".yml": _YAML, ".json": _JSON}
@@ -885,7 +923,7 @@ def _writable(value: Any, fmt: _Format, path: FieldPath) -> Any:
 
     Raises:
         ConfargError: If a value at or below *path* is one *fmt* does not hold, a key has no
-            spelling *fmt* holds, or two keys of one dict are spelled alike.
+            text, or two keys of one dict are spelled alike.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-written-file-holds-what-its-reader-reads-back
@@ -899,7 +937,7 @@ def _writable(value: Any, fmt: _Format, path: FieldPath) -> Any:
     written: dict[Any, Any] = {}
     spelled_by: dict[Any, Any] = {}
     for k, v in value.items():
-        key = _written_key(k, fmt)
+        key = _written_key(k)
         where = _spell_field_path(path) or _defaults.ROOT_KEY
         if key is None:
             raise ConfargError.unwritable_key(k, where, fmt.name)
@@ -910,20 +948,21 @@ def _writable(value: Any, fmt: _Format, path: FieldPath) -> Any:
     return written
 
 
-def _written_key(key: Any, fmt: _Format) -> Any:
-    """Return *key* as a file of format *fmt* writes it, None when it has no spelling *fmt* holds.
+def _written_key(key: Any) -> str | None:
+    """Return *key* as every format writes it, text, or None when it has none.
 
-    A key *fmt* holds is itself; any other is its leaf serialization, then the text the other
+    A string is itself; any other key is its leaf serialization, then the text the other
     channels meet it by (``_merge._key_spelling``), JSON's: ``1`` as ``"1"``, ``True`` as
-    ``"true"``, a date as its ISO text.
+    ``"true"``, ``None`` as ``"null"``, a date as its ISO text. A YAML file holds text keys as a
+    TOML and a JSON file do, since its reader reads a plain key as its text (:func:`_yaml_loader`).
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-key-is-written-as-the-text-it-is-met-by
     """
-    if fmt.holds_key(key):
+    if type(key) is str:
         return key
     leaf = _serialize_leaf(None, key)
-    if fmt.holds_key(leaf):
+    if type(leaf) is str:
         return leaf
     text = _key_spelling(leaf)
-    return text if fmt.holds_key(text) else None
+    return text if type(text) is str else None
