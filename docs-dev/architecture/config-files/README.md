@@ -1,10 +1,9 @@
 # Config files
 
-The lowest-priority channel: where a document is read from, how it is parsed, and how one
-document splices another. Implementation: `_files.py`, `_sources.py`.
+The lowest-priority channel: where a document is read from, how it is parsed, and how one document splices another.
+Implementation: `_files.py`, `_sources.py`.
 
-The other file-shaped channel, environment variables, is
-[environment-parsing.md](../environment-parsing.md).
+The other file-shaped channel, environment variables, is [environment-parsing.md](../environment-parsing.md).
 
 | Note | What it holds |
 |---|---|

@@ -1,7 +1,7 @@
 # Pipeline and contracts
 
-How a configuration travels from its three channels to a typed object, and what each stage
-promises the next one. Implementation: `_api.py`, `_pipeline.py`, `_merge.py`.
+How a configuration travels from its three channels to a typed object, and what each stage promises the next one.
+Implementation: `_api.py`, `_pipeline.py`, `_merge.py`.
 
 | Note | What it holds |
 |---|---|

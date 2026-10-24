@@ -9,11 +9,15 @@ impact: behavior
 severity: minor  # a raw exception, with a workaround: annotate the supertype instead
 introduced_by: [PR-37]  # the instance passthrough, `isinstance(value, tp)`
 ---
+
 # BUG-222 — A registered `NewType` crashes with a raw `TypeError`
 
-`register_leaf_type` accepts any key, and `_coerce_registered` passes an instance through with `isinstance(value, tp)` before its `try`. A `NewType` is not a class, so every value for such a field crashes with Python's own `TypeError` instead of being coerced, in every channel. An unregistered `NewType` field is refused too, with a confarg error (`Unsupported leaf type`), so registration is the obvious thing a user tries next.
+`register_leaf_type` accepts any key, and `_coerce_registered` passes an instance through with `isinstance(value, tp)` before its `try`.
+A `NewType` is not a class, so every value for such a field crashes with Python's own `TypeError` instead of being coerced, in every channel.
+An unregistered `NewType` field is refused too, with a confarg error (`Unsupported leaf type`), so registration is the obvious thing a user tries next.
 
-Fix direction: either unwrap `NewType` to its supertype as introspection already does for `Final` ([wrappers are transparent](../../architecture/types/introspection.md#wrappers-are-transparent)), or have `register_leaf_type` refuse a non-class with a clear error. A generic alias such as `tuple[int, int]` is accepted by registration too and then silently ignored, because shape dispatch claims the field first; refusing non-classes would cover both.
+Fix direction: either unwrap `NewType` to its supertype as introspection already does for `Final` ([wrappers are transparent](../../architecture/types/introspection.md#wrappers-are-transparent)), or have `register_leaf_type` refuse a non-class with a clear error.
+A generic alias such as `tuple[int, int]` is accepted by registration too and then silently ignored, because shape dispatch claims the field first; refusing non-classes would cover both.
 
 Origin: latent since PR-37, which added registration and the instance passthrough on the assumption that every registered key is a class.
 

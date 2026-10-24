@@ -8,28 +8,24 @@ impact: behavior
 severity: minor
 introduced_by: [PR-38]  # fix: Fix inheritance-based dispatch in CLI integrations
 ---
+
 # BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters
 
-When subclasses disagree on a field's type, vanilla's walk answers `str` for that field
-(`_types._subclass_field_type`). A path continuing below it then resolves to nothing, so
-`--item.inner.a` is an unknown argument. The adapters register each subclass's fields
-separately, so the framework accepts the flag. Since REF-72 the adapters' CLI channel is
-vanilla's loop, which then refuses it with vanilla's own `UnknownArgumentError` — at merge,
-after the framework's parse, so `--help` still lists a flag that cannot be used and the refusal
-comes late. Before REF-72 the collector wrote the value instead.
+When subclasses disagree on a field's type, vanilla's walk answers `str` for that field (`_types._subclass_field_type`).
+A path continuing below it then resolves to nothing, so `--item.inner.a` is an unknown argument.
+The adapters register each subclass's fields separately, so the framework accepts the flag.
+Since REF-72 the adapters' CLI channel is vanilla's loop, which then refuses it with vanilla's own `UnknownArgumentError` — at merge, after the framework's parse, so `--help` still lists a flag that cannot be used and the refusal comes late.
+Before REF-72 the collector wrote the value instead.
 
-Fix direction: registration should refuse what the walk refuses — ask `_resolve_field_type` of
-the container for the full path and register nothing where it answers `None`. See
-[cli-adapters/union-inheritance-and-cast-flags.md](../../architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags)
-and
-[invariants.md#delegate-to-the-canonical-function](../../architecture/invariants.md#delegate-to-the-canonical-function).
-A tag naming the subclass, on argv or in a layer below it, types the path in all five front-ends ([a node types its keys by the class it names](../../architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#a-node-types-its-keys-by-the-class-it-names)): `--item.class S1 --item.inner.a 1` builds `S1(inner=A(a=1))`. What stays is the path nothing names, which vanilla cannot type and registration lists for every subclass.
+Fix direction: registration should refuse what the walk refuses — ask `_resolve_field_type` of the container for the full path and register nothing where it answers `None`.
+See [cli-adapters/union-inheritance-and-cast-flags.md](../../architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags) and [invariants.md#delegate-to-the-canonical-function](../../architecture/invariants.md#delegate-to-the-canonical-function).
+A tag naming the subclass, on argv or in a layer below it, types the path in all five front-ends ([a node types its keys by the class it names](../../architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#a-node-types-its-keys-by-the-class-it-names)): `--item.class S1 --item.inner.a 1` builds `S1(inner=A(a=1))`.
+What stays is the path nothing names, which vanilla cannot type and registration lists for every subclass.
 
-Origin: regression from PR-38, a bug fix that made the adapters register each subclass's fields so
-that a base-typed field can be dispatched from the CLI. Bisected with `parse_args`: before PR-38
-argparse refuses `--item.inner.a`, as vanilla does; from PR-38 it accepts it. The fix registered the
-fields subclass by subclass instead of asking the walk what the path resolves to. BUG-114 comes from
-the same revision.
+Origin: regression from PR-38, a bug fix that made the adapters register each subclass's fields so that a base-typed field can be dispatched from the CLI.
+Bisected with `parse_args`: before PR-38 argparse refuses `--item.inner.a`, as vanilla does; from PR-38 it accepts it.
+The fix registered the fields subclass by subclass instead of asking the walk what the path resolves to.
+BUG-114 comes from the same revision.
 
 ```python
 from dataclasses import dataclass, field

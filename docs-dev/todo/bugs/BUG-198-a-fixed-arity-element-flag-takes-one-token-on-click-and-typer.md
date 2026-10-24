@@ -8,25 +8,18 @@ impact: config  # `--pairs.a '[1, 2]'` parses on click today, and a field flag's
 severity: minor  # the whole-value token is the workaround
 introduced_by: [PR-72]  # fix: Close CLI-adapter parity gaps, which registered element flags nargs="*"
 ---
+
 # BUG-198 — A fixed-arity element flag takes one token on click and typer
 
-A subkey or element flag addressing a fixed-arity type (`--pairs.a` on a
-`dict[str, tuple[int, int]]`, `--pairs.0` on a `list[tuple[int, int]]`) registers `nargs="*"`,
-which click and typer map to `multiple=True`, one token per occurrence. So on click and typer
-`--pairs.a 1 2` is refused with `Got unexpected extra argument (2)`, while the field flag of the
-same type registers the exact count and takes `--pair 1 2`. The element flag accepts the
-whole-value token `'[1, 2]'` that the field flag declines, the reverse of the approved
-divergence
-([whole-value flags](../../architecture/cli-adapters/whole-value-flags.md#whole-value-flags)).
-Fix direction: register the element flag the way `_build_leaf_spec` registers the field flag of
-that type, `nargs=<n>` and `whole_value=True`. argparse and cyclopts already register
-`whole_value` greedily, so they keep taking both spellings and only click and typer change.
+A subkey or element flag addressing a fixed-arity type (`--pairs.a` on a `dict[str, tuple[int, int]]`, `--pairs.0` on a `list[tuple[int, int]]`) registers `nargs="*"`, which click and typer map to `multiple=True`, one token per occurrence.
+So on click and typer `--pairs.a 1 2` is refused with `Got unexpected extra argument (2)`, while the field flag of the same type registers the exact count and takes `--pair 1 2`.
+The element flag accepts the whole-value token `'[1, 2]'` that the field flag declines, the reverse of the approved divergence ([whole-value flags](../../architecture/cli-adapters/whole-value-flags.md#whole-value-flags)).
+Fix direction: register the element flag the way `_build_leaf_spec` registers the field flag of that type, `nargs=<n>` and `whole_value=True`. argparse and cyclopts already register `whole_value` greedily, so they keep taking both spellings and only click and typer change.
 
-Origin: latent since PR-72, a bug fix that closed the adapters' parity gaps. Before it no adapter
-registered a dict-subkey or list-element flag, and click refused `--pairs.a` with `No such option`
-in either spelling (bisected with the reproduction). PR-72 registered every such flag `nargs="*"`
-whatever type it addresses, which gave click the whole-value spelling and not the positional
-one. BUG-180 shares this origin.
+Origin: latent since PR-72, a bug fix that closed the adapters' parity gaps.
+Before it no adapter registered a dict-subkey or list-element flag, and click refused `--pairs.a` with `No such option` in either spelling (bisected with the reproduction).
+PR-72 registered every such flag `nargs="*"` whatever type it addresses, which gave click the whole-value spelling and not the positional one.
+BUG-180 shares this origin.
 
 ```python
 from dataclasses import dataclass, field

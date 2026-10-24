@@ -25,14 +25,16 @@ $ uv run list_of_ints.py --input 1 0b10
 Config(input=[1, 2])
 ```
 
-An empty list is obtained when no input is provided at all
+An empty list is obtained when no input is provided at all.
+This is how a list a configuration file or an environment variable provided is cleared from the command line.
 
 ```console
 $ uv run list_of_ints.py --input
 Config(input=[])
 ```
 
-Tuples work similarly. Take this configuration:
+Tuples work similarly.
+Take this configuration:
 
 <!-- snippet: pair_of_ints.py#Config -->
 ```python
@@ -79,10 +81,10 @@ $ uv run unbound_tuple_of_ints.py --input
 Config(input=())
 ```
 
-
 ## From configuration files
 
-Configuration file formats handle collections natively. For example,
+Configuration file formats handle collections natively.
+For example,
 
 <!-- snippet: pair_of_ints.yaml -->
 ```yaml title="pair_of_ints.yaml"
@@ -96,9 +98,10 @@ Config(input=[1, 2])
 
 ## From environment variables
 
-Contrary to command line arguments and configuration file formats, environment variables do not have a standard way to represent collections. Their input is always passed as a single string.
+Contrary to command line arguments and configuration file formats, environment variables do not have a standard way to represent collections.
+Their input is always passed as a single string.
 
-We defer the discussion on how to populate collections from environment variables to the more general mechanism of specifying arguments as JSON in Tutorial XX.
+We defer the discussion on how to populate collections from environment variables to the more general mechanism of specifying arguments as JSON in [Tutorial 15](https://confarg.github.io/confarg/examples/15_json_inputs/).
 
 ## Precedence with a leaf type in a union
 

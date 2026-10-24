@@ -1,12 +1,9 @@
 # Refactors
 
-Code that works but should be cleaner: duplication, misplaced modules, dead weight, test
-hygiene, performance. One ticket per file; see [../README.md](../README.md) for the format.
+Code that works but should be cleaner: duplication, misplaced modules, dead weight, test hygiene, performance.
+One ticket per file; see [../README.md](../README.md) for the format.
 
-A refactor whose impact is anything but `none` is not really a refactor — it reaches users, and
-wants either a decision in
-[../../architecture/design-decisions/README.md](../../architecture/design-decisions/README.md) or a
-different board.
+A refactor whose impact is anything but `none` is not really a refactor — it reaches users, and wants either a decision in [../../architecture/design-decisions/README.md](../../architecture/design-decisions/README.md) or a different board.
 
 Working on refactoring should never modify tests, unless the ticket is about refactoring tests.
 

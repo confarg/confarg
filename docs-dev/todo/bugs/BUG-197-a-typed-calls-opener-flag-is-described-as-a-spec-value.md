@@ -8,20 +8,16 @@ impact: behavior
 severity: minor  # a vague help line; the flag itself works
 introduced_by: [FEAT-32]  # the typed opener registered through the catch-all of argv keys
 ---
+
 # BUG-197 — A typed call's opener flag is described as a value, not as the function to call
 
-On a Callable field, `--f.call` is registered as an opener: metavar `DOTTED.PATH`, help saying
-it names a factory whose result is the callable. On a field of any other type, `--n.call` is
-registered by the catch-all for keys that no signature describes, as `VALUE` with "Value for
-'n.call' in the callable spec": it names neither a dotted path nor a function whose result
-becomes the field, and the field holds no callable spec. The opener is registered only when
-typed ([CLI](../../architecture/callables.md#cli)), but once it is, its help should read as the
-opener it is.
+On a Callable field, `--f.call` is registered as an opener: metavar `DOTTED.PATH`, help saying it names a factory whose result is the callable.
+On a field of any other type, `--n.call` is registered by the catch-all for keys that no signature describes, as `VALUE` with "Value for 'n.call' in the callable spec": it names neither a dotted path nor a function whose result becomes the field, and the field holds no callable spec.
+The opener is registered only when typed ([CLI](../../architecture/callables.md#cli)), but once it is, its help should read as the opener it is.
 
-Origin: FEAT-32 registered the typed opener and its arguments through
-`_collect_callable_key_argv_specs`, the pass BUG-25 wrote for keys with no signature to describe,
-since both are registered only when typed. The opener was the one key there that does have a
-known meaning. Latent since FEAT-32.
+Origin: FEAT-32 registered the typed opener and its arguments through `_collect_callable_key_argv_specs`, the pass BUG-25 wrote for keys with no signature to describe, since both are registered only when typed.
+The opener was the one key there that does have a known meaning.
+Latent since FEAT-32.
 
 ```python
 from collections.abc import Callable

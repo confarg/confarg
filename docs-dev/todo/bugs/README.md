@@ -1,12 +1,9 @@
 # Bugs
 
-Defects, unapproved divergences between front-ends or channels, and code that deviates from
-the documented intent. One ticket per file; see [../README.md](../README.md) for the format,
-including the [reproduction](../README.md#reproduction) every entry here carries.
+Defects, unapproved divergences between front-ends or channels, and code that deviates from the documented intent.
+One ticket per file; see [../README.md](../README.md) for the format, including the [reproduction](../README.md#reproduction) every entry here carries.
 
-Cross-channel parity is mandatory
-([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity)),
-so a parity entry here is a violation nobody has approved, not a design choice.
+Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../architecture/invariants.md#cross-channel-parity)), so a parity entry here is a violation nobody has approved, not a design choice.
 
 <!-- tickets:start -->
 

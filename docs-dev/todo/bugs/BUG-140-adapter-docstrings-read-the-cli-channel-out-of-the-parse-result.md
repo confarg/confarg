@@ -11,24 +11,16 @@ impact: behavior
 severity: minor
 introduced_by: [REF-72]  # PR-274, which also closed BUG-87
 ---
+
 # BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result
 
-Since REF-72, argv is the only writer: the CLI channel is vanilla's loop over the argv the
-framework parsed, and the parse result is only *checked* — a confarg flag it holds that argv
-does not spell is refused (`_require_argv_spells`), and its values are never read. The adapters'
-docstrings still describe the pre-REF-72 flow: `from_namespace` says "then CLI arguments from
-the Namespace" and "Only fields registered by `populate_parser` are consumed from `ns`", the
-click and typer `from_context` say "then CLI arguments from the Context" and "Options absent
-from the Context … fall back", and `populate_parser` says "type coercion happens in
-`from_namespace`". A reader concludes the parse result's values feed the merge, so a doctored or
-hand-built Namespace should carry values in. Fix direction: say the CLI channel is read off argv
-by vanilla's loop and the parse result only has to agree with it, in all four docstrings, see
-[model.md#argv-is-the-only-writer](../../architecture/cli-adapters/model.md#argv-is-the-only-writer).
+Since REF-72, argv is the only writer: the CLI channel is vanilla's loop over the argv the framework parsed, and the parse result is only *checked* — a confarg flag it holds that argv does not spell is refused (`_require_argv_spells`), and its values are never read.
+The adapters' docstrings still describe the pre-REF-72 flow: `from_namespace` says "then CLI arguments from the Namespace" and "Only fields registered by `populate_parser` are consumed from `ns`", the click and typer `from_context` say "then CLI arguments from the Context" and "Options absent from the Context … fall back", and `populate_parser` says "type coercion happens in `from_namespace`".
+A reader concludes the parse result's values feed the merge, so a doctored or hand-built Namespace should carry values in.
+Fix direction: say the CLI channel is read off argv by vanilla's loop and the parse result only has to agree with it, in all four docstrings, see [model.md#argv-is-the-only-writer](../../architecture/cli-adapters/model.md#argv-is-the-only-writer).
 
-Origin: regression from REF-72, a refactor that made argv the only writer of the adapters' CLI
-channel and left these docstrings describing the flow it replaced. They were right when written: by
-PR-60 (argparse and click `from_*`), BUG-1's fix (`populate_parser`) and BUG-7 (typer, copied from
-click).
+Origin: regression from REF-72, a refactor that made argv the only writer of the adapters' CLI channel and left these docstrings describing the flow it replaced.
+They were right when written: by PR-60 (argparse and click `from_*`), BUG-1's fix (`populate_parser`) and BUG-7 (typer, copied from click).
 
 ```python
 from dataclasses import dataclass

@@ -23,7 +23,7 @@ $ uv run list_of_ints.py --config pair_of_ints.yaml --input+
 Config(input=[1, 2])
 ```
 
-When the items to be appended is more elaborate than a simple leaf node, inputs can be provided as JSON strings, as we just saw in [Tutorial 15](https://confarg.github.io/confarg/examples/15_json_inputs/).
+When the items to be appended are more elaborate than a simple leaf node, inputs can be provided as JSON strings, as we just saw in [Tutorial 15](https://confarg.github.io/confarg/examples/15_json_inputs/).
 
 <!-- pytest-markdown-console: platform:!win32 -->
 ```console
@@ -32,7 +32,8 @@ $ uv run myapp.py --dbs+ '{"class": "configs.SQLiteConfigChild", "dbpath": "othe
 Config(dbs=[SQLiteConfigChild(dbpath='otherdb.sqlite')])
 ```
 
-Note that you can append more than one element. You can either append several JSON objects, or extend with a list of JSON objects.
+Note that you can append more than one element.
+You can either append several JSON objects, or extend with a list of JSON objects.
 
 <!-- pytest-markdown-console: platform:!win32 -->
 ```console
@@ -47,7 +48,8 @@ Config(dbs=[SQLiteConfig(dbpath='db1.sqlite'),
             SQLiteConfig(dbpath='db2.sqlite')])
 ```
 
-An alternative to using JSON to add objects is to first append an empty dictionary, and then fill it with standard arguments. This is easier to write manually and can benefit from tab-completion.
+An alternative to using JSON to add objects is to first append an empty dictionary, and then fill it with standard arguments.
+This is easier to write manually and can benefit from tab-completion.
 
 ```console
 $ uv run simple.py --dbs+ "{}" --dbs.-1.dbpath db1.sqlite --dbs+ "{}" --dbs.-1.dbpath db2.sqlite
@@ -57,7 +59,9 @@ Config(dbs=[SQLiteConfig(dbpath='db1.sqlite'),
 
 ## In configuration files
 
-The same `+` suffix works on keys in config files. A derived config can append to a list from a base config without touching the rest of the structure. For example, take this configuration file:
+A configuration file spells the append in the value, as the reserved `__append__` key, since its keys are its data: `input+:` would be a key named `input+`.
+A derived config can append to a list from a base config without touching the rest of the structure.
+For example, take this configuration file:
 
 <!-- snippet: more_ints.yaml -->
 ```yaml title="more_ints.yaml"
@@ -89,9 +93,8 @@ Config(dbs=[PostgreSQLConfigChild(host='example.com',
             SQLiteConfigChild(dbpath='db.sqlite')])
 ```
 
-
 > [!NOTE]
-> TOML bare keys are restricted to `A-Za-z0-9_-`, so the `+` suffix requires a quoted key:
+> In TOML, the list's value is a table holding the op:
 >
 > ```toml
 > # more_ints.toml

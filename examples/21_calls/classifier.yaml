@@ -1,0 +1,8 @@
+num_labels:
+  call: labels.count_labels
+  args:
+    path: labels.txt
+tokenize:
+  call: labels.make_tokenizer
+  args:
+    stopwords: stopwords.txt

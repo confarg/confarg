@@ -72,3 +72,12 @@ repos:
     entry: uv run python docs-dev/todo/anchors.py
     language: system
     pass_filenames: false
+
+- repo: https://github.com/rvben/rumdl-pre-commit
+  rev: 03a7d1a4936b5889602852175bca2d39acb3281e  # v0.3.0
+  hooks:
+  - id: rumdl
+    args: [--fix]
+    exclude: ^docs/reference.md
+  - id: rumdl-fmt
+    exclude: ^docs/reference.md

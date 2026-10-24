@@ -206,10 +206,16 @@ def _parse(path: Path, board: str, errors: list[str]) -> Ticket | None:
     if front is None:
         return None
     meta, lines = front
+    # One blank line may part the front matter from the heading, as a Markdown linter wants one
+    # before a heading.
+    if lines[:1] == [""]:
+        lines = lines[1:]
 
     heading = _HEADING.match(lines[0]) if lines else None
     if heading is None:
-        errors.append(f"{where}: the line after the front matter must read '# <ID> — <headline>'")
+        errors.append(
+            f"{where}: the line after the front matter, or after one blank line, must read '# <ID> — <headline>'"
+        )
         return None
     tid, headline = heading.group(1), heading.group(2)
     prefix, _, number = tid.partition("-")

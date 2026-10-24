@@ -1,0 +1,28 @@
+"""Example: local variables as intermediate values for expressions."""
+
+from dataclasses import dataclass
+
+import click
+
+import confarg.cli.click as confargclick
+
+
+@dataclass
+class Config:
+    """Application paths, all derived from the same base directory."""
+
+    output_dir: str
+    log_dir: str
+
+
+@click.command()
+@click.pass_context
+def run(ctx: click.Context) -> None:
+    """Load configuration and print it."""
+    print(confargclick.from_context(Config, ctx))
+
+
+confargclick.populate_command(Config, run, env_prefix="MYAPP_")
+
+if __name__ == "__main__":
+    run()

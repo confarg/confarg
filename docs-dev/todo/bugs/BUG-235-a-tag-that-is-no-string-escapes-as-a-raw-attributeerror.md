@@ -8,11 +8,15 @@ impact: behavior
 severity: minor  # invalid input answered with a raw exception
 introduced_by: [PR-5]  # the tag was read as a dotted path without checking it is a string
 ---
+
 # BUG-235 — A union tag that is no string escapes `build()` as a raw `AttributeError`
 
-A file that writes the union tag as a number, a list or null, `{class: 3}`, reaches `_import_dotted`, which calls `.split(".")` on it, so `build()` fails with Python's `AttributeError: 'int' object has no attribute 'split'` instead of a `TypeCoercionError` naming the field and the tag. Every route that reads a tag goes through `_import_class_by_path` (a union's tag and a struct field's subclass tag), so the fix belongs there, at the one reader: refuse a tag that is no string with a message naming the key and the path. See [dotted imports](../../architecture/types/dotted-imports.md#dotted-imports).
+A file that writes the union tag as a number, a list or null, `{class: 3}`, reaches `_import_dotted`, which calls `.split(".")` on it, so `build()` fails with Python's `AttributeError: 'int' object has no attribute 'split'` instead of a `TypeCoercionError` naming the field and the tag.
+Every route that reads a tag goes through `_import_class_by_path` (a union's tag and a struct field's subclass tag), so the fix belongs there, at the one reader: refuse a tag that is no string with a message naming the key and the path.
+See [dotted imports](../../architecture/types/dotted-imports.md#dotted-imports).
 
-Origin: latent since the initial version (PR-5); the reproduction fails the same way there. The tag has always been read as a dotted path, and argv and the environment, which only give text, never reach the case.
+Origin: latent since the initial version (PR-5); the reproduction fails the same way there.
+The tag has always been read as a dotted path, and argv and the environment, which only give text, never reach the case.
 
 ```python
 from dataclasses import dataclass

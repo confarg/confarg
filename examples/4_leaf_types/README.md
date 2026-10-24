@@ -3,7 +3,8 @@
 > [!TIP]
 > Code for examples on this page can be found in [`examples/4_leaf_types`](https://github.com/confarg/confarg/tree/master/examples/4_leaf_types).
 
-Leaf types are concrete types that can be defined by a single dictionary or collection entry of the configuration. They include scalar types, but they are not limited to them.
+Leaf types are concrete types that can be defined by a single dictionary or collection entry of the configuration.
+They include scalar types, but they are not limited to them.
 
 ## `Enum`
 
@@ -16,13 +17,14 @@ $ uv run enum_value.py --value 2
 Config(value=<Value.BAR: 2>)
 ```
 
-> [!NOTE] *Nitpicker's corner*
-> The argument is first matched against the key, then the value. You don't need to know this unless you are dealing with an enum whose keys and values are inconsistent — let's hope your don't.
-
+> [!NOTE] _Nitpicker's corner_
+> The argument is first matched against the key, then the value.
+> You don't need to know this unless you are dealing with an enum whose keys and values are inconsistent — let's hope you don't.
 
 ## `Path`
 
-The `Path` class is treated as a leaf type in confarg. A value of type `Path` is directly constructed from a string.
+The `Path` class is treated as a leaf type in confarg.
+A value of type `Path` is directly constructed from a string.
 
 <!-- pytest-markdown-console: notest -->
 ```console
@@ -32,7 +34,8 @@ Config(value=Path('/foo/bar.txt'))
 
 ## Types
 
-Types can be specified as leaf types. Take this configuration:
+Types can be specified as leaf types.
+Take this configuration:
 
 <!-- snippet: type.py#Config -->
 ```python
@@ -75,13 +78,16 @@ $ uv run base_class.py --value __main__.UnrelatedClass
 
 ## Callables
 
-Callables are also accepted as a special kind of leaf type. However, they are more involved than other leaf types, and we will spend three tutorials to go in depth into them in [Tutorial #18](https://confarg.github.io/confarg/examples/18_callables/), [Tutorial #19](https://confarg.github.io/confarg/examples/19_bindings/), and [Tutorial #20](https://confarg.github.io/confarg/examples/20_factories/).
+Callables are also accepted as a special kind of leaf type.
+However, they are more involved than other leaf types, and we will spend four tutorials to go in depth into them in [Tutorial #18](https://confarg.github.io/confarg/examples/18_callables/), [Tutorial #19](https://confarg.github.io/confarg/examples/19_bindings/), [Tutorial #20](https://confarg.github.io/confarg/examples/20_factories/), and [Tutorial #21](https://confarg.github.io/confarg/examples/21_calls/).
 
 ## Custom leaf types
 
-Confarg allows you to register custom leaf types via the [`confarg.register_leaf_type`](https://confarg.github.io/confarg/reference/#confarg.register_leaf_type) function. This can help make configurations simpler to read and write.
+Confarg allows you to register custom leaf types via the [`confarg.register_leaf_type`](https://confarg.github.io/confarg/reference/#confarg.register_leaf_type) function.
+This can help make configurations simpler to read and write.
 
-Say we have a custom `Int` class that supports `NaN` values and that we want to treat as a leaf type. We write a custom coercion function:
+Say we have a custom `Int` class that supports `NaN` values and that we want to treat as a leaf type.
+We write a custom coercion function:
 
 <!-- snippet: custom_leaf_type.py#coerce_int -->
 ```python
@@ -104,18 +110,24 @@ $ uv run custom_leaf_type.py --input NaN
 Config(input=Int(value=None))
 ```
 
-Without leaf type registration, initializing a custom `Int` would require an init dict (`--input.value 42`) that would make its initialization different from plain integers.
+Without leaf type registration, initializing a custom `Int` would require an init dict (`--input.value 42`) that would make its initialization different from that of plain integers.
 
 ### Writing the value back
 
-Registration makes `Int` a leaf in both directions: [`confarg.dump`](https://confarg.github.io/confarg/reference/#confarg.dump) and [`confarg.dump_file`](https://confarg.github.io/confarg/reference/#confarg.dump_file) write it as a single scalar rather than as an init dict. How that scalar is spelled is decided by the `serialize` argument, the inverse of `coerce`:
+Registration makes `Int` a leaf in both directions: [`confarg.dump`](https://confarg.github.io/confarg/reference/#confarg.dump) and [`confarg.dump_file`](https://confarg.github.io/confarg/reference/#confarg.dump_file) write it as a single scalar rather than as an init dict.
+How that scalar is spelled is decided by the `serialize` argument, the inverse of `coerce`:
 
+<!-- snippet: custom_leaf_type.py#serialize_int -->
 ```python
 def serialize_int(value: Int) -> str | int:
     return "NaN" if value.value is None else value.value
+```
 
+Registration then takes the coercion and the serializer together:
 
+```python
 confarg.register_leaf_type(Int, coerce_int, serialize=serialize_int)
 ```
 
-`serialize` defaults to `str`, which is the wire form of types like `UUID`, `Decimal`, or `Path`. Our `Int` is not one of them — `str(Int(42))` is the debugging form `Int(value=42)`, which `coerce_int` would refuse on the way back in — so we pass an explicit serializer, and a dumped configuration loads again unchanged.
+`serialize` defaults to `str`, which is the wire form of types like `UUID`, `Decimal`, or `Path`.
+Our `Int` is not one of them — `str(Int(42))` is the debugging form `Int(value=42)`, which `coerce_int` would refuse on the way back in — so we pass an explicit serializer, and a dumped configuration loads again unchanged.

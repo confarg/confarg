@@ -7,7 +7,8 @@ Confarg handles the following built-in generics.
 
 ## `Literal`
 
-The `Literal` generic type allows you to limit inputs to a fixed set of options. For example, this configuration
+The `Literal` generic type allows you to limit inputs to a fixed set of options.
+For example, this configuration
 
 <!-- snippet: literal.py#Config -->
 ```python
@@ -27,7 +28,8 @@ $ uv run literal.py --input bye  # Error: not in the set of allowed values
 
 ## `Annotated`
 
-The `Annotated` generic type allows you to attach various metadata to a type. Confarg can handle `Annotated` types but ignores any metadata attached to them.
+The `Annotated` generic type allows you to attach various metadata to a type.
+Confarg can handle `Annotated` types but ignores any metadata attached to them.
 
 ```console
 $ uv run annotated.py --input hello
@@ -36,7 +38,8 @@ Config(input='hello')
 
 ## `Final`
 
-The `Final` generic type signals that the annotated value should not be changed. However, it can be set to any value, even if it comes with a default value, which can be surprising.
+The `Final` generic type signals that the annotated value should not be changed.
+However, it can be set to any value, even if it comes with a default value, which can be surprising.
 
 Take this configuration:
 

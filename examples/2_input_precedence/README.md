@@ -3,11 +3,14 @@
 > [!TIP]
 > Code for examples on this page can be found in [`examples/2_input_precedence`](https://github.com/confarg/confarg/tree/master/examples/2_input_precedence).
 
-In the [previous tutorial](../1_three_input_sources/README.md), we saw that a configuration can be read from files, environment variables, and command-line arguments. Those sources can be mixed — this is actually the intended way of working, as we will now see.
+In the [previous tutorial](../1_three_input_sources/README.md), we saw that a configuration can be read from files, environment variables, and command-line arguments.
+Those sources can be mixed — this is actually the intended way of working, as we will now see.
 
 ## Input precedence
 
-It is not an error to have the same configuration element defined several times across the different inputs. When confarg reads a new value for an existing entry, the new value overwrites the old one. This makes it possible to update a configuration in a variety of ways.
+It is not an error to have the same configuration element defined several times across the different inputs.
+When confarg reads a new value for an existing entry, the new value overwrites the old one.
+This makes it possible to update a configuration in a variety of ways.
 
 Therefore, it is important to know the order in which inputs are read, given that later reads overwrite existing values:
 
@@ -27,7 +30,6 @@ $ uv run myapp.py --config postgres.yaml --schema_name otherdb
 PostgreSQLConfig(host='example.com', port=5432, schema_name='otherdb')
 ```
 
-
 ### Overwriting the configuration from the environment
 
 We could use environment variables for the same effect:
@@ -39,7 +41,7 @@ $ MYAPP_SCHEMA_NAME=otherdb uv run myapp.py --config postgres.yaml
 PostgreSQLConfig(host='example.com', port=5432, schema_name='otherdb')
 ```
 
-As mentioned above, command line arguments have the final word:
+As mentioned above, command-line arguments have the final word:
 
 <!-- pytest-markdown-console: platform:linux -->
 ```console
@@ -48,10 +50,10 @@ $ MYAPP_SCHEMA_NAME=otherdb uv run myapp.py --config postgres.yaml --schema_name
 PostgreSQLConfig(host='example.com', port=5432, schema_name='finaldb')
 ```
 
-
 ## Partial configurations
 
-The configuration is progressively built up from the various input sources. At no time during this process does the configuration need to be complete: it only matters that the configuration is complete after all input sources have been parsed.
+The configuration is progressively built up from the various input sources.
+At no time during this process does the configuration need to be complete: it only matters that the configuration is complete after all input sources have been parsed.
 
 For example, you could have a partial configuration purposely omitting the schema name,
 
@@ -70,9 +72,12 @@ PostgreSQLConfig(host='dev.example.com', port=5555, schema_name='mydb')
 
 ## Using multiple configuration files
 
-The `--config` option can take multiple arguments. The provided configuration files are read from left to right. This can be used to either amend part of an existing configuration or build a full configuration from various parts.
+The `--config` option can take multiple arguments.
+The provided configuration files are read from left to right.
+This can be used to either amend part of an existing configuration or build a full configuration from various parts.
 
-In the example below, the data from `postgres_no_schema.yaml` overwrites the data in `postgres.yaml` — note the port number. The `schema_name` from `postgres.yaml` is kept as it is missing from `postgres_no_schema.yaml`.
+In the example below, the data from `postgres_no_schema.yaml` overwrites the data in `postgres.yaml` — note the port number.
+The `schema_name` from `postgres.yaml` is kept as it is missing from `postgres_no_schema.yaml`.
 
 ```console
 $ uv run myapp.py --config postgres.yaml postgres_no_schema.yaml
@@ -86,7 +91,7 @@ $ uv run myapp.py --config postgres_no_schema.yaml postgres.yaml
 PostgreSQLConfig(host='example.com', port=5555, schema_name='mydb')
 ```
 
-Note that command line arguments always have priority over configuration files, no matter what the relative order of configuration files and other command line arguments is.
+Note that command-line arguments always have priority over configuration files, no matter what the relative order of configuration files and other command-line arguments is.
 
 ```console
 $ # The port specified on the command line overwrites that of the config even if

@@ -23,7 +23,8 @@ $ uv run pair_of_ints.py --config pair_of_ints.yaml --input.0 -4
 Config(input=(-4, 2))
 ```
 
-Negative indices also work, letting you count from the end of the sequence. For example, here we modify the last element of the input:
+Negative indices also work, letting you count from the end of the sequence.
+For example, here we modify the last element of the input:
 
 ```console
 $ uv run pair_of_ints.py --config pair_of_ints.yaml --input.-1 -4
@@ -47,8 +48,8 @@ Config(dbs=[SQLiteConfigChild(dbpath='db.sqlite'),
                                   schema_name='other_db')])
 ```
 
-
-Indices compose at every level of nesting. When an item is itself a collection, a deeper index patches that inner item in place rather than replacing the whole inner collection.
+Indices compose at every level of nesting.
+When an item is itself a collection, a deeper index patches that inner item in place rather than replacing the whole inner collection.
 
 ```console
 $ uv run list_of_list_of_ints.py --config list_of_list_of_ints.yaml
@@ -62,7 +63,8 @@ Config(input=[[1, 2, 3], [42, 5]])
 
 ## From configuration files
 
-Indexing also works from within configuration files. The same behavior as above is obtained with this configuration file:
+Indexing also works from within configuration files.
+The same behavior as above is obtained with this configuration file:
 
 <!-- snippet: partial_config.yaml -->
 ```yaml title="partial_config.yaml"
@@ -79,8 +81,8 @@ Config(dbs=[SQLiteConfigChild(dbpath='db.sqlite'),
                                   schema_name='other_db')])
 ```
 
-
-And finally, indexing also works for partial configuration files. The same behavior can be obtained with a partial PostgreSQL configuration containing only the schema name:
+And finally, indexing also works for partial configuration files.
+The same behavior can be obtained with a partial PostgreSQL configuration containing only the schema name:
 
 <!-- snippet: schema_name.yaml -->
 ```yaml title="schema_name.yaml"
@@ -97,7 +99,6 @@ Config(dbs=[SQLiteConfigChild(dbpath='db.sqlite'),
                                   schema_name='other_db')])
 ```
 
-
 ## Building a collection from its elements
 
 A collection can be built element by element, in any order.
@@ -111,7 +112,8 @@ $ uv run list_of_ints.py --input.1 42 --input.0 -0xF
 Config(input=[-15, 42])
 ```
 
-In the case of a tuple, negative indices work because its length is known. This is not the case for lists.
+In the case of a tuple, negative indices work because its length is known.
+This is not the case for lists.
 
 ```console
 $ uv run pair_of_ints.py --input.0 42 --input.-1 -0xF
@@ -120,7 +122,8 @@ $ uv run list_of_ints.py --input.0 42 --input.-1 -0xF  # Error
 ...
 ```
 
-Note that this behavior is for building a collection that does not yet exist. When the collection already exists, the behavior is different for lists, as indices can only modify existing elements.
+Note that this behavior is for building a collection that does not yet exist.
+When the collection already exists, the behavior is different for lists, as indices can only modify existing elements.
 
 ```console
 $ uv run list_of_ints.py --config pair_of_ints.yaml
@@ -131,9 +134,8 @@ $ uv run list_of_ints.py --config pair_of_ints.yaml --input.2 3
 ...
 ```
 
-Tuples don't have this problem and can be constructed part by part. Because the length is
-known from the type, an index past the end of a shorter base completes the tuple rather than
-being rejected.
+Tuples don't have this problem and can be constructed part by part.
+Because the length is known from the type, an index past the end of a shorter base completes the tuple rather than being rejected.
 
 ```console
 $ uv run triplet_of_ints.py --config pair_of_ints.yaml --input.2 3
