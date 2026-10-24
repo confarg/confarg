@@ -29,6 +29,8 @@ A parameterized generic is not a class and still goes through the loop.
 `_type_kind` did not, so a `Final[Struct]` field registered `--inner.x` that the CLI walk then refused on every front-end, `build()` refused its dict as an unsupported leaf, `dump()` passed the object through, and a `Final[int]` token stayed text in the merged dict where an `int` one is coerced.
 A wrapper is unwrapped in the one function every walk already calls, never at a site.
 
+`--help` is the one reader of what a wrapper adds: a field's `FieldMeta` is read through the same wrappers (`cli/_spec._get_field_meta`), the outermost winning, so `Final[Annotated[int, FieldMeta(...)]]` and an alias of `Annotated[int, FieldMeta(...)]` keep their help and metavar (BUG-271).
+
 Precedents: the standard library's `dataclasses` makes a `Final`-annotated class attribute an ordinary instance field, and msgspec and cattrs both decode and encode `Final[T]` as `T`.
 pydantic instead reads a `Final` attribute with a default as a class variable, which suits a model with validation-time defaults but not a library whose targets are plain dataclasses.
 
