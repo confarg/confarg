@@ -30,6 +30,7 @@ from confarg._types import (
     _PositionalParams,
     _resolve_type,
     _src_type,
+    _union_args,
 )
 from confarg.exceptions import (
     ConfargError,
@@ -681,7 +682,7 @@ def _accepts(tp: Any, value: Any) -> bool:
     if tp is Any:
         return True
     if _is_union(tp):
-        return any(_accepts(_resolve_type(arg), value) for arg in get_args(tp))
+        return any(_accepts(_resolve_type(arg), value) for arg in _union_args(tp))
     base = get_origin(tp) or tp
     return isinstance(base, type) and isinstance(value, base)
 

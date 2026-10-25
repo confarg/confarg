@@ -134,7 +134,8 @@ def _resolve_type(tp: Any) -> Any:
 
     ``Final[T]`` is ``T`` to every walk, and a bare ``Final`` is ``Any``: the qualifier says
     the attribute is not reassigned, which no channel, merge or construction step reads. A
-    ``NewType`` is its supertype: at runtime its values are the supertype's.
+    ``NewType`` is its supertype: at runtime its values are the supertype's. ``None`` is
+    ``NoneType``, as PEP 484 reads it: ``type N = None`` keeps the value ``None``.
 
     Args:
         tp: The type to resolve.
@@ -156,6 +157,8 @@ def _resolve_type(tp: Any) -> Any:
             tp = tp.__supertype__
         elif tp is Final:
             return Any
+        elif tp is None:
+            return types.NoneType  # PEP 484's None, which get_type_hints converts at a field but not in an alias
         else:
             return tp
 
@@ -264,27 +267,64 @@ def _is_union(tp: Any) -> bool:
 
 
 def _union_args(tp: Any) -> list[Any]:
-    """Return all type arguments of a Union type.
+    """Return the variants of the union *tp* as every walk reads them: flat, each once.
 
-    Args:
-        tp: A Union type.
+    A variant that resolves to a union — an alias, an ``Annotated`` — is spread into its own
+    variants in its place, as typing spreads a union written inline, which it cannot do behind
+    a lazy alias. A variant that resolves to the type an earlier one does is left out, the
+    first kept as written: ``MyInt | int`` is ``int`` to every walk. The variants are returned
+    as written, for the caller to resolve.
 
-    Returns:
-        A list of the Union's type arguments.
+    Raises:
+        TypeError: If an alias's union holds the alias itself (:func:`_spread_variants`).
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-union-is-read-flat
     """
-    return list(get_args(_resolve_type(tp)))
+    resolved = _resolve_type(tp)
+    args = get_args(resolved)
+    if all(isinstance(a, type) for a in args):
+        return list(args)  # classes, which typing has already made flat and unique
+    variants: list[Any] = []
+    _spread_variants(args, variants, [], () if resolved is tp else (tp,))
+    return variants
+
+
+def _spread_variants(
+    args: tuple[Any, ...], variants: list[Any], read_as: list[Any], spreading: tuple[Any, ...]
+) -> None:
+    """Append to *variants* each of *args* that reads as no earlier variant, spreading one that is a union.
+
+    *read_as* holds what each kept variant resolves to, and *spreading* the wrappers whose union
+    is being spread, so a wrapper met again inside its own union is a cycle, and refused: a union
+    holding itself has no variants. :func:`_forbidden_literal_member` meets the same alias again
+    below a collection, where it is a type, and stops instead. A variant reading as ``None`` is
+    kept as ``NoneType``, whatever wraps it, since a wrapper adds nothing a walk reads there and
+    every walk asks for ``NoneType`` by identity.
+
+    Raises:
+        TypeError: If an alias's union holds the alias itself, an annotation no type checker
+            accepts, which an ``except ConfargError`` meant for configuration input must not
+            catch, as ``register_leaf_type`` refuses a key no value reaches.
+    """
+    for arg in args:
+        resolved = _resolve_type(arg)
+        if get_origin(resolved) in (Union, types.UnionType):
+            if arg in spreading:
+                msg = (
+                    f"{arg!r} is a union holding itself, which has no variants to read;"
+                    " an alias may recur only below a collection, as in `type Json = int | list[Json]`."
+                )
+                raise TypeError(msg)
+            _spread_variants(get_args(resolved), variants, read_as, (*spreading, arg))
+        elif resolved not in read_as:
+            variants.append(types.NoneType if resolved is types.NoneType else arg)
+            read_as.append(resolved)
 
 
 def _union_args_no_none(tp: Any) -> list[Any]:
-    """Return Union type arguments excluding NoneType.
-
-    Args:
-        tp: A Union type.
-
-    Returns:
-        A list of the Union's type arguments with NoneType filtered out.
-    """
-    return [a for a in get_args(_resolve_type(tp)) if a is not types.NoneType]
+    """Return the variants :func:`_union_args` reads, ``NoneType`` left out."""
+    return [a for a in _union_args(tp) if a is not types.NoneType]
 
 
 def _allows_none(tp: Any) -> bool:
@@ -1145,23 +1185,33 @@ def _literal_values(tp: Any) -> tuple[Any, ...]:
     return tuple(m for m in _literal_members(tp) if _is_readable_literal_member(m))
 
 
-def _forbidden_literal_member(tp: Any) -> tuple[Any, Any] | None:
+def _forbidden_literal_member(tp: Any, walking: tuple[Any, ...] = ()) -> tuple[Any, Any] | None:
     """Return ``(literal, member)`` for the first Literal member PEP 586 forbids reachable from *tp*, None if none.
 
     The one answer to "is this annotation an invalid ``Literal``?". The walk descends into a
     union's branches and a collection's item types, where a refused branch would otherwise
     let another take the value, and stops at a struct, whose fields are reached as fields.
+    *walking* holds the wrappers the walk is inside: an alias met again below itself, as in
+    ``type Json = int | list[Json]``, reaches nothing it did not reach where it was first met.
+    :func:`_spread_variants` meets an alias again inside its own union, where it is no type,
+    and refuses it instead.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-literal-member-is-what-pep-586-allows.md#a-forbidden-member-makes-the-annotation-invalid
     """
-    tp = _resolve_type(tp)
-    if _is_literal(tp):
-        member = next((m for m in _literal_members(tp) if not _is_pep_586_member(m)), _NO_MEMBER)
-        return None if member is _NO_MEMBER else (tp, member)
-    if not (_is_union(tp) or _is_dict(tp) or _is_list(tp) or _is_set(tp) or _is_frozenset(tp) or _is_tuple(tp)):
+    if tp in walking:
         return None
-    return next((found for arg in get_args(tp) if (found := _forbidden_literal_member(arg)) is not None), None)
+    resolved = _resolve_type(tp)
+    if _is_literal(resolved):
+        member = next((m for m in _literal_members(resolved) if not _is_pep_586_member(m)), _NO_MEMBER)
+        return None if member is _NO_MEMBER else (resolved, member)
+    union = _is_union(resolved)
+    collection = _is_dict(resolved) or _is_list(resolved) or _is_set(resolved) or _is_frozenset(resolved)
+    if not (union or collection or _is_tuple(resolved)):
+        return None
+    walking = walking if resolved is tp else (*walking, tp)
+    args = _union_args(resolved) if union else get_args(resolved)
+    return next((found for arg in args if (found := _forbidden_literal_member(arg, walking)) is not None), None)
 
 
 _NO_MEMBER = object()
@@ -1715,13 +1765,12 @@ def _struct_member_names(tp: Any) -> list[str]:
 def _union_branches(tp: Any) -> list[Any]:
     """Return the resolved, non-union types a node of type *tp* is walked as, in variant order.
 
-    *tp* itself when it is no union; otherwise each non-None variant, a variant that is a
-    union in turn spread into its own.
+    *tp* itself when it is no union; otherwise each non-None variant :func:`_union_args` reads.
     """
     tp = _resolve_type(tp)
     if not _is_union(tp):
         return [tp]
-    return [node for v in _union_args_no_none(tp) for node in _union_branches(v)]
+    return [_resolve_type(v) for v in _union_args_no_none(tp)]
 
 
 def _union_tag_shadowed(tp: Any, union_tag: str) -> bool:

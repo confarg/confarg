@@ -2391,3 +2391,20 @@ class TestAnObjectOpenerBuildsAClassTakingNothing:
     def test_classfn_builds_its_owner(self) -> None:
         """``{classfn: C.m}`` builds the owner from nothing, then binds the method."""
         assert confarg.build(WithCallable, {"fn": {"classfn": f"{_MOD}._SevenAdder.add"}}).fn(1) == 8
+
+
+type _PairForCall = int | str
+
+
+@dataclass
+class _AliasedOrCallable:
+    f: _PairForCall | Callable[..., Any] = 0
+
+
+class TestACallSpecBesideAnAliasedUnion:
+    """A ``call:`` spec at a union holding an aliased union reads its result as the variants take it (BUG-278)."""
+
+    def test_the_result_is_taken_by_a_spread_variant(self) -> None:
+        """``len("ab")`` is an int, which the ``int`` behind ``_PairForCall`` takes."""
+        built = confarg.build(_AliasedOrCallable, {"f": {"call": "builtins.len", "args": {"obj": "ab"}}})
+        assert built.f == 2

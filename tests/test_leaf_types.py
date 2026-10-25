@@ -9,11 +9,12 @@ from __future__ import annotations
 import enum
 import math
 import re
+import warnings
 from dataclasses import field, make_dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Literal, Optional
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Optional
 from uuid import UUID
 
 if TYPE_CHECKING:
@@ -22,9 +23,12 @@ if TYPE_CHECKING:
 import pytest
 
 import confarg
+from confarg._types import _allows_none, _resolve_type, _union_args
 from confarg.exceptions import TypeCoercionError
 from tests.conftest import (
     AliasInt,
+    AliasIntOrFloat,
+    AliasMaybeInt,
     CacheConfig,
     Color,
     DbConfig,
@@ -32,6 +36,7 @@ from tests.conftest import (
     IntColor,
     WithAliasAnnotated,
     WithAliasDc,
+    WithAliasedVariants,
     WithAliasUnion,
     WithDefaults,
     WithHostPort,
@@ -1233,3 +1238,106 @@ class TestTypeAlias312:
             env_prefix="MYAPP_",
         )
         assert union_result.service == annotated_result.service
+
+
+type _IntOrStr = int | str
+type _Cyclic = _CyclicToo | int  # ty: ignore[cyclic-type-alias-definition]  # a union holding itself, refused on purpose
+type _CyclicToo = _Cyclic | str  # ty: ignore[cyclic-type-alias-definition]  # a union holding itself, refused on purpose
+type _Json = int | str | list[_Json] | dict[str, _Json]
+type _NoneAlias = None
+type _AnnotatedCycle = Annotated[_CycleBack, "m"] | int  # ty: ignore[cyclic-type-alias-definition]  # refused on purpose
+type _CycleBack = _AnnotatedCycle | str  # ty: ignore[cyclic-type-alias-definition]  # refused on purpose
+
+
+class TestAnAliasedUnionVariant:
+    """A variant that resolves to a union is spread into its own, as typing spreads one written inline (BUG-278)."""
+
+    @pytest.mark.parametrize(
+        ("tp", "variants"),
+        [
+            pytest.param(AliasIntOrFloat | bool, [int, float, bool], id="spread-in-place"),
+            pytest.param(Annotated[int | float, "m"] | bool, [int, float, bool], id="annotated"),
+            pytest.param(Optional[AliasIntOrFloat], [int, float, type(None)], id="optional"),
+            pytest.param(AliasMaybeInt | int, [int, type(None)], id="a-duplicate-is-dropped"),
+            pytest.param(_IntOrStr | AliasIntOrFloat, [int, str, float], id="the-first-occurrence-keeps-its-place"),
+            pytest.param(_IntOrStr | str, [int, str], id="a-duplicate-of-a-spread-variant-is-dropped"),
+        ],
+    )
+    def test_the_variants_are_the_inline_unions(self, tp: Any, variants: list[Any]) -> None:
+        """The variants every walk reads, in the order typing gives the inline spelling."""
+        assert [_resolve_type(v) for v in _union_args(tp)] == variants
+
+    @pytest.mark.parametrize(
+        ("tp", "kept"),
+        [
+            pytest.param(AliasInt | int, [AliasInt], id="the-alias-first"),
+            pytest.param(int | AliasInt, [int], id="the-class-first"),
+        ],
+    )
+    def test_a_variant_reading_as_an_earlier_one_is_dropped(self, tp: Any, kept: list[Any]) -> None:
+        """Of two variants reading alike, the first is kept as written: the alias is ``int`` to every walk."""
+        assert _union_args(tp) == kept
+
+    @pytest.mark.parametrize(
+        "tp",
+        [
+            pytest.param(Annotated[None, "m"] | None, id="annotated-none-first"),
+            pytest.param(_NoneAlias | None, id="aliased-none-first"),
+            pytest.param(_NoneAlias | int, id="aliased-none-only"),
+        ],
+    )
+    def test_a_none_variant_is_none_whatever_writes_it(self, tp: Any) -> None:
+        """A wrapper around ``None`` adds nothing a walk reads: the one None variant is ``NoneType``."""
+        assert [v for v in _union_args(tp) if v is not int] == [type(None)]
+        assert _allows_none(tp)
+
+    def test_an_aliased_none_reads_the_none_word(self, loader: ConfargLoader) -> None:
+        """``_NoneAlias | int`` takes ``None`` from a token, as ``None | int`` does, on every front-end."""
+        Target = make_target("x", _NoneAlias | int, default=0)
+        assert loader.load(Target, argv=["--x", "None"], env={}).x is None
+        assert loader.load(Target, argv=["--x", "3"], env={}).x == 3
+
+    @pytest.mark.parametrize("value", [3, 2.5, True])
+    def test_a_file_value_reaches_the_aliased_leaves(self, value: object) -> None:
+        """A file's int, float and bool are each taken by the variant of their own type."""
+        assert confarg.build(WithAliasedVariants, {"num": value}).num == value
+
+    @pytest.mark.parametrize("tp", [AliasIntOrFloat | bool, Annotated[int | float, "m"] | bool])
+    def test_a_root_target_reaches_the_aliased_leaves(self, tp: Any) -> None:
+        """A root target is no field, whose ``Annotated`` ``get_type_hints`` strips: the union walk spreads it."""
+        assert confarg.build(tp, {"__root__": 2.5}) == 2.5
+
+    def test_a_file_none_is_an_aliased_none(self) -> None:
+        """A file's null at ``AliasMaybeInt | str`` is the ``None`` variant, read back from its dump."""
+        obj = WithAliasedVariants(maybe=None)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dumped = confarg.dump(obj)
+        assert confarg.build(WithAliasedVariants, dumped) == obj
+
+    def test_a_union_containing_itself_is_refused(self) -> None:
+        """``type A = B | int; type B = A | str`` is refused naming an alias of the cycle, as mypy and pyright do.
+
+        A ``TypeError``, as ``register_leaf_type`` raises for a key no value reaches: an annotation
+        no type checker accepts is a programming mistake, which ``except ConfargError`` must not
+        swallow. The field's own alias is resolved before any walk reads its variants, so the alias
+        the walk meets again may be the other one.
+        """
+        Target = make_target("x", _Cyclic, default=0)
+        with pytest.raises(TypeError, match=r"^_Cyclic(Too)? is a union holding itself"):
+            confarg.build(Target, {"x": 3})
+
+    def test_a_cycle_through_an_annotated_names_the_alias(self) -> None:
+        """The walk meets the alias again, not the ``Annotated`` around it, and names the alias."""
+        with pytest.raises(TypeError, match=r"^_AnnotatedCycle is a union holding itself"):
+            _union_args(_AnnotatedCycle)
+
+
+class TestARecursiveAlias:
+    """An alias recursing through a collection, as a JSON type does, is walked once per alias."""
+
+    def test_a_recursive_alias_reads_its_values(self) -> None:
+        """The Literal check stops at an alias it is already walking, rather than recursing forever."""
+        Target = make_target("j", _Json, default=0)
+        assert confarg.build(Target, {"j": [1, {"a": "b"}]}).j == [1, {"a": "b"}]
+        assert confarg.load(Target, argv=["--j", "3"], env={}).j == 3

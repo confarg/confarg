@@ -48,8 +48,10 @@ from tests.conftest import (
     Release,
     ServerTcp,
     SquareShape,
+    WithAliasedVariants,
     WithCollections,
     WithDefaults,
+    WithInlineVariants,
     WithNestedList,
     WithUnionAmbiguous,
     WithUnionAmbiguousThree,
@@ -1912,6 +1914,25 @@ class TestANewTypeDumpsAsItsSupertype:
         obj = _WithDumpedNewTypes(u=_DumpedUserId(3), t=_DumpedTags(["z"]))
         assert confarg.dump(obj) == {"u": 3, "t": ["z"]}
         assert confarg.build(_WithDumpedNewTypes, confarg.dump(obj)) == obj
+
+
+class TestAnAliasedUnionVariantDumps:
+    """A union holding an aliased union dumps as the union written inline (BUG-278)."""
+
+    @pytest.mark.parametrize(
+        "values",
+        [
+            pytest.param({"num": 2.5, "maybe": None}, id="leaves"),
+            pytest.param({"service": CacheConfig(ttl=600)}, id="struct-variant"),
+        ],
+    )
+    def test_the_dump_is_the_inline_unions(self, values: dict[str, Any]) -> None:
+        """No warning that the value will not read back, and no tag the inline union's dump leaves out."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dumped = confarg.dump(WithAliasedVariants(**values))
+        assert dumped == confarg.dump(WithInlineVariants(**values))
+        assert confarg.build(WithAliasedVariants, dumped) == WithAliasedVariants(**values)
 
 
 @_dc

@@ -35,6 +35,7 @@ Registration offers the members confarg reads as the flag's choices, and none fo
 ## A forbidden member makes the annotation invalid
 
 `_types._forbidden_literal_member` is the one answer: the first member PEP 586 forbids that a type reaches, through a union's branches and a collection's item types, never into a struct, whose fields are reached as fields.
+It does not enter an alias it is already inside: `type Json = int | list[Json]` reaches nothing below `list[Json]` it did not reach at `Json`, and the walk recursed without end there before (BUG-278's revision).
 `_coerce._refuse_a_forbidden_literal` raises it as a `TypeCoercionError`, asked by `_coerce_leaf` for a leaf, by `construct()` for a union before any branch is tried and before a `None` is taken, and by the serializer for a leaf and a union.
 
 The union is refused, not walked, because a union skips a branch that refuses the value: an unsupported `bytes` branch is skipped so that `bytes | int` still reads an int ([an unsupported branch is skipped, and named](#an-unsupported-branch-is-skipped-and-named)).

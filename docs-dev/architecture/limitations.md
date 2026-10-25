@@ -46,6 +46,7 @@ When a ticket closes and the answer turns out to be "we will not do that", the r
 - A configuration copies at most 100 000 positions: a YAML alias or merge key, a location read again, a reference and a part a caller's data shares copy what they name past its first occurrence, and the copy past the bound is refused on every channel; what an author writes is never counted, and no keyword lifts the bound ([design decisions](design-decisions/a-configuration-copies-at-most-100000-positions.md#a-configuration-copies-at-most-100-000-positions), BUG-259).
   A location is read once per configuration, so a document that changes while one `load()` reads it is read as it first was.
 - A value that holds itself, a YAML anchor holding its own alias or a Python dict or instance containing itself, is refused; a part shared by several positions is not ([design decisions](design-decisions/a-configuration-nests-at-most-64-levels.md#a-value-that-holds-itself-is-refused-as-one)).
+- A type alias whose union holds the alias itself (`type A = B | int`, `type B = A | str`) is refused, as mypy and pyright refuse it; an alias recurring below a collection (`type Json = int | list[Json]`) is read ([types](types/introspection.md#a-union-is-read-flat)).
 
 ## Collections
 

@@ -15,7 +15,7 @@ import inspect
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, get_args
+from typing import TYPE_CHECKING, Any
 
 from confarg import _defaults
 from confarg._callable import _serialize_callable, holds_an_opener, promote_bare_spec
@@ -25,6 +25,7 @@ from confarg._import import dotted_name, imports_back
 from confarg._merge import ListOp, MergeDict, _DeleteSentinel
 from confarg._types import (
     TagPolicy,
+    _allows_none,
     _class_of,
     _dict_kv,
     _elem_type,
@@ -945,7 +946,7 @@ def _holds(tp: Any, instance: Any) -> bool:
     if _type_kind(tp) is not _TypeKind.UNION:
         return _variant_holds(tp, instance) or _holds_widened(tp, instance)
     if instance is None:
-        return len(_union_args_no_none(tp)) < len(get_args(tp))
+        return _allows_none(tp)
     return _find_variant_type(tp, instance) is not None
 
 

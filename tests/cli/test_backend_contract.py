@@ -61,7 +61,16 @@ from confarg.exceptions import (
 from tests import _descriptors as _d
 from tests import _generics as _g
 from tests._loaders import ArgparseLoader, ClickLoader, CycloptsLoader, TyperLoader, VanillaLoader
-from tests.conftest import AppConfig, CacheConfig, DbConfig, OneOf, WithCollections, make_target
+from tests.conftest import (
+    AppConfig,
+    CacheConfig,
+    DbConfig,
+    OneOf,
+    WithAliasedVariants,
+    WithCollections,
+    WithInlineVariants,
+    make_target,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -10814,6 +10823,49 @@ class TestFieldMetaUnderWrappers:
         """The flag's help and metavar are the ``FieldMeta``'s, whichever wrapper holds the ``Annotated``."""
         spec = next(s for s in build_static_flags(_WrappedMeta) if s.name == name)
         assert (spec.help, spec.metavar) == (meta, meta.upper())
+
+
+type _SelfHeld = _SelfHeldToo | int  # ty: ignore[cyclic-type-alias-definition]  # refused on purpose
+type _SelfHeldToo = _SelfHeld | str  # ty: ignore[cyclic-type-alias-definition]  # refused on purpose
+
+
+@dataclasses.dataclass
+class _HoldsItself:
+    x: _SelfHeld = 0
+
+
+class TestAnAliasedUnionVariantContract:
+    """A union variant behind an alias reads as the union written inline, on every front-end (BUG-278)."""
+
+    def test_a_token_reaches_the_aliased_leaves(self, loader: ConfargLoader) -> None:
+        """``--num 3`` and ``--num 2.5`` reach ``int`` and ``float`` behind ``AliasIntOrFloat | bool``."""
+        assert loader.load(WithAliasedVariants, argv=["--num", "3"], env={}).num == 3
+        assert loader.load(WithAliasedVariants, argv=["--num", "2.5"], env={}).num == 2.5
+
+    def test_the_none_word_reaches_an_aliased_none(self, loader: ConfargLoader) -> None:
+        """``None`` behind ``AliasMaybeInt | str`` is selected by the none word, as on ``int | None | str``."""
+        assert loader.load(WithAliasedVariants, argv=["--maybe", "None"], env={}).maybe is None
+
+    def test_an_aliased_struct_variant_takes_its_members(self, loader: ConfargLoader) -> None:
+        """``--service.ttl`` sets the ``CacheConfig`` behind ``AliasUnion | None``."""
+        result = loader.load(WithAliasedVariants, argv=["--service.ttl", "600"], env={})
+        assert result.service == CacheConfig(ttl=600)
+
+    def test_the_environment_reaches_the_aliased_leaves(self, loader: ConfargLoader) -> None:
+        """A variable is coerced through the aliased variants as the flag is."""
+        result = loader.load(WithAliasedVariants, argv=[], env={"APP_NUM": "2.5"}, env_prefix="APP_")
+        assert result.num == 2.5
+
+    def test_a_union_holding_itself_is_refused(self, loader: ConfargLoader) -> None:
+        """Every front-end refuses ``type A = B | int; type B = A | str``, wherever its walk first reads the union."""
+        with pytest.raises(TypeError, match="is a union holding itself"):
+            loader.load(_HoldsItself, argv=["--x", "3"], env={})
+
+    def test_the_flags_are_the_inline_unions(self, populating_loader: ConfargLoader) -> None:
+        """Each field registers the flags of its inline twin: casts, members and tag, none for a duplicate."""
+        assert populating_loader.registered_flags(WithAliasedVariants) == populating_loader.registered_flags(
+            WithInlineVariants
+        )
 
 
 class TestDescriptorFieldContract:
