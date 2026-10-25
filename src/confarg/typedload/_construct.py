@@ -1369,13 +1369,14 @@ def _coerce_scalar_variants(
     return _UNION_NO_MATCH if taken is None else taken[1]
 
 
-def read_union_leaf(tp: Any, value: Any) -> Any:
+def read_union_leaf(tp: Any, value: Any, union_tag: str) -> Any:
     """Return what an expression reads of the leaf *value* at the union *tp*: the value a variant builds, or *value*.
 
-    The variant is the one construction picks, through the same walk: *value* reads as the
-    object, the number or the bool that variant builds, so a token ``5`` at ``int | str`` reads
-    ``5`` and a file's ``1`` at ``float | str`` reads ``1.0``. Text, which the ``str`` variant
-    takes, reads as written, and so does a value no variant takes, for construction to refuse.
+    The variant is the one construction picks, through the same walk under *union_tag*: *value*
+    reads as the object, the number or the bool that variant builds, so a token ``5`` at
+    ``int | str`` reads ``5`` and a file's ``1`` at ``float | str`` reads ``1.0``. Text, which
+    the ``str`` variant takes, reads as written, and so does a value no variant takes, for
+    construction to refuse.
     A Callable variant is skipped, so the reading builds no callable, and the reading never
     warns: construction warns of what it builds.
 
@@ -1387,7 +1388,7 @@ def read_union_leaf(tp: Any, value: Any) -> Any:
     ordered = [v for v in _ranked_scalar_variants(all_args, scalars, value) if not _is_callable(_resolve_type(v))]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FloatOverflowWarning)
-        taken = _first_scalar_variant_taking(ordered, all_args, value, (), _defaults.UNION_TAG)
+        taken = _first_scalar_variant_taking(ordered, all_args, value, (), union_tag)
     if taken is None or _resolve_type(taken[0]) is str:
         return value
     return taken[1]
