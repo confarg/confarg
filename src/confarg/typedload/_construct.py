@@ -147,11 +147,11 @@ def _refuse_unheld_cast(tp: Any, cast_tp: Any, path: FieldPath) -> None:
         raise TypeCoercionError.cast_not_held(cast_name_for_type(cast_tp), str(tp), _spell_field_path(path))
 
 
-def _check_namedtuple_length(tp: Any, got: int, path: FieldPath) -> None:
-    """Refuse *got* positions for a namedtuple that has fewer fields."""
+def _check_namedtuple_length(tp: Any, positions: Sequence[Any], path: FieldPath) -> None:
+    """Refuse *positions* for a namedtuple that has fewer fields."""
     n = len(_namedtuple_fields(tp))
-    if got > n:
-        raise TypeCoercionError.wrong_length(_spell_type(tp), _spell_field_path(path), n, got)
+    if len(positions) > n:
+        raise TypeCoercionError.wrong_length(_spell_type(tp), _spell_field_path(path), n, positions)
 
 
 _LENGTH_OPS = (ListOp.APPEND, ListOp.DELETE, ListOp.DELETE_AFTER)
@@ -202,7 +202,7 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, un
     """
     field_names = list(_namedtuple_fields(tp))
     base = _replace_base(data, _spell_field_path(path))
-    _check_namedtuple_length(tp, len(base), path)
+    _check_namedtuple_length(tp, base, path)
     laid: dict[Any, Any] = dict(zip(field_names, base, strict=False))
     at = _merge_at(tp, union_tag)
     for spelled, v in data.items():
@@ -240,7 +240,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
         data = _lay_patch_over_positions(tp, data, path, union_tag)
 
     if isinstance(data, list | tuple):
-        _check_namedtuple_length(tp, len(data), path)
+        _check_namedtuple_length(tp, data, path)
         data = dict(zip(field_names, data, strict=False))
 
     if isinstance(data, dict):
@@ -853,7 +853,7 @@ def _indexed_dict_to_positions(
         fields = list(_namedtuple_fields(tp))
         raise TypeCoercionError.unknown_fields(set(unknown), tp.__name__, _spell_field_path(path), fields)
     if unknown:
-        raise TypeCoercionError.keys_not_indices(what, _spell_field_path(path))
+        raise TypeCoercionError.keys_not_indices(what, _spell_field_path(path), data)
     return out
 
 
@@ -993,7 +993,7 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
             positions = {int(k): v for k, v in data.items()}
         except (TypeError, ValueError):
             what = "collection"  # a list, a set or a variable-length tuple
-            raise TypeCoercionError.keys_not_indices(what, _spell_field_path(path)) from None
+            raise TypeCoercionError.keys_not_indices(what, _spell_field_path(path), data) from None
         _refuse_an_index_delete(positions, path)
         neg = [k for k in positions if k < 0]
         if neg:
@@ -1058,7 +1058,7 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
     if isinstance(data, list | tuple):
         # Too many positions, or too few where one left out holds no None.
         if len(data) > len(tt) or any(not _allows_none(t) for t in tt[len(data) :]):
-            raise TypeCoercionError.wrong_length(_spell_type(tp), _spell_field_path(path), len(tt), len(data))
+            raise TypeCoercionError.wrong_length(_spell_type(tp), _spell_field_path(path), len(tt), data)
         seq = list(data)
     else:
         seq = _patched_positions(tp, tt, data, path, union_tag)
@@ -1075,7 +1075,7 @@ def _patched_positions(tp: Any, tt: Sequence[Any], data: MergeDict, path: FieldP
         # A deferred index patch carrying a base (e.g. a config list completed by --field.N).
         base_seq = _replace_base(data, _spell_field_path(path))
         if len(base_seq) > len(tt):
-            raise TypeCoercionError.wrong_length(_spell_type(tp), _spell_field_path(path), len(tt), len(base_seq))
+            raise TypeCoercionError.wrong_length(_spell_type(tp), _spell_field_path(path), len(tt), base_seq)
         patches = {k: v for k, v in data.items() if k != ListOp.BASE}
     seq = [base_seq[i] if i < len(base_seq) else _UNSET for i in range(len(tt))]
     # A patch refines what the base holds at its position, as the merge would have.
@@ -1174,6 +1174,10 @@ _UNION_NO_MATCH: object = object()
 
 #: Each variant a union tried and the refusal it raised, in the order tried.
 type _Refusals = list[tuple[Any, BaseException]]
+
+#: The kinds of variant read from one value, a tag opening a registered leaf aside: a dict or a
+#: list handed to one is no shape of it, whatever its refusal says (:func:`_variant_reasons`).
+_READ_FROM_ONE_VALUE = frozenset({_TypeKind.LEAF, _TypeKind.TAGGABLE_LEAF})
 
 
 def _holds_anything(variant: Any) -> bool:
@@ -1539,8 +1543,8 @@ def _variant_reasons(non_none: list[Any], refusals: _Refusals, data: Any, path: 
     In the union's order, each by the last refusal *refusals* keeps for it, which
     :func:`~confarg.exceptions._variant_reason` reads: a refusal saying only that *data* is no
     value of the variant, or not of its shape, gives none. A scalar leaf refuses a dict or a
-    list on its shape whatever it says, a format hint or a tag it cannot take, so it gives none
-    there either.
+    list on its shape whatever it says, a format hint, a tag it cannot take or, for a leaf a tag
+    opens, the tag the dict lacks, so it gives none there either.
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
@@ -1549,7 +1553,7 @@ def _variant_reasons(non_none: list[Any], refusals: _Refusals, data: Any, path: 
     container = isinstance(data, dict | list)
     reasons = []
     for variant in non_none:
-        if container and _type_kind(_resolve_type(variant)) is _TypeKind.LEAF:
+        if container and _type_kind(_resolve_type(variant)) in _READ_FROM_ONE_VALUE:
             continue
         refused = [e for v, e in refusals if v is variant]
         if refused and (reason := _variant_reason(refused[-1], spelled, data)) is not None:
