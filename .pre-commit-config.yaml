@@ -72,6 +72,12 @@ repos:
     entry: uv run python docs-dev/todo/anchors.py
     language: system
     pass_filenames: false
+  # Local until astral ships an official ty hook; its version is the ty pin in pyproject.toml.
+  - id: ty
+    name: ty type-checks the tree
+    entry: uv run ty check
+    language: system
+    pass_filenames: false
 
 - repo: https://github.com/rvben/rumdl-pre-commit
   rev: 03a7d1a4936b5889602852175bca2d39acb3281e  # v0.3.0

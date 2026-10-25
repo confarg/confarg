@@ -1634,9 +1634,9 @@ def _typed_init_fields(tp: Any, hints: Mapping[str, Any]) -> Mapping[str, Any]:
     for name in params.names:
         ann = _resolve_type(hints.get(name, Any))
         if name == params.var.positional:
-            out[name] = list[ann]
+            out[name] = types.GenericAlias(list, ann)
         elif name == params.var.keyword:
-            out[name] = dict[str, ann]
+            out[name] = types.GenericAlias(dict, (str, ann))
         else:
             out[name] = ann
     return types.MappingProxyType(out)
@@ -1755,7 +1755,7 @@ def _struct_state_fields(tp: Any) -> Mapping[str, Any]:
     if star is None:
         return members
     item = _elem_type(members[star])
-    return types.MappingProxyType({**members, star: tuple[item, ...]})
+    return types.MappingProxyType({**members, star: types.GenericAlias(tuple, (item, ...))})
 
 
 def _answered_by_subclasses(tp: Any, field: str) -> bool:
