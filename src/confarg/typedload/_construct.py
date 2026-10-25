@@ -256,7 +256,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
         for i, (fname, ft) in enumerate(flds.items()):
             if fname not in kwargs:
                 if (value := unset_position(tp, i)) is _UNSET:
-                    raise MissingFieldError((*path, fname), ft)
+                    raise MissingFieldError((*path, fname), _spell_type(ft))
                 kwargs[fname] = value
 
         return tp(**kwargs)
@@ -923,7 +923,7 @@ def build_from_nothing(build: Callable[[], Any], tp: Any, path: FieldPath, namin
         return build()
     except TypeError as e:
         if naming is None:
-            raise MissingFieldError(path, tp) from None
+            raise MissingFieldError(path, _spell_type(tp)) from None
         raise TypeCoercionError.refused_empty_call(naming.name, _spell_field_path(path), str(e), naming.beside) from e
 
 
@@ -957,7 +957,7 @@ def _construct_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str)
         elif _is_struct_variant(ft) and _all_have_defaults(ft):
             kwargs[name] = build_from_nothing(lambda ft=ft, fp=fp: _construct_struct(ft, {}, fp, union_tag), ft, fp)
         else:
-            raise MissingFieldError(fp, ft, descriptor=_self_defaulting_descriptor(tp, name))
+            raise MissingFieldError(fp, _spell_type(ft), descriptor=_self_defaulting_descriptor(tp, name))
 
     var = _var_params(tp)
     var_kw = dict(kwargs.pop(var.keyword, {})) if var.keyword else {}
@@ -1119,7 +1119,7 @@ def _construct_position(tp: Any, i: int, value: Any, path: FieldPath, union_tag:
     """Construct the position *i* of the fixed tuple *tp*, an unset one as :func:`unset_position` fills it."""
     et = (_tuple_types(tp) or [])[i]
     if value is _UNSET and (value := unset_position(tp, i)) is _UNSET:
-        raise MissingFieldError(path, et)
+        raise MissingFieldError(path, _spell_type(et))
     return construct(et, value, path=path, union_tag=union_tag)
 
 

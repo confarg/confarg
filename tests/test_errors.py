@@ -658,9 +658,7 @@ class TestAMessageNamesATypeByWhatConfargReads:
         deep: Any = "leaf"
         for _ in range(70):
             deep = {"k": deep}
-        with pytest.raises(
-            confarg.exceptions.ConfargError, match=re.escape("Cannot build int | dict[str, typing.Any]:")
-        ):
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("Cannot build int | dict[str, Any]:")):
             confarg.build(int | dict[str, Any], {"__root__": deep})
 
     def test_an_append_refusal_names_an_optional_by_its_variants(self) -> None:
@@ -696,7 +694,7 @@ class TestAMessageNamesATypeByWhatConfargReads:
         ("root", "spelled"),
         [
             pytest.param(str | float, "str | float", id="union"),
-            pytest.param(Literal["a", "b"], "typing.Literal['a', 'b']", id="literal"),
+            pytest.param(Literal["a", "b"], "Literal['a', 'b']", id="literal"),
         ],
     )
     def test_a_variable_below_a_value_root_names_the_root(self, root: Any, spelled: str) -> None:
@@ -718,8 +716,53 @@ class TestAMessageNamesATypeByWhatConfargReads:
             pytest.param(Any, "Any", "Any", id="any"),
             pytest.param(_UserId, "int", "_UserId", id="newtype"),
             pytest.param(_MyInt, "int", "_MyInt", id="alias"),
+            pytest.param(Literal["a", "b"], "Literal['a', 'b']", "Literal['a', 'b']", id="literal"),
+            pytest.param(Literal["a", b"x"], "Literal['a']", "Literal['a', b'x']", id="literal-with-bytes"),
+            pytest.param(list[Optional[int]], "list[int | None]", "list[int | None]", id="nested-optional"),
+            pytest.param(dict[str, Any], "dict[str, Any]", "dict[str, Any]", id="nested-any"),
+            pytest.param(list[_MyInt], "list[int]", "list[_MyInt]", id="nested-alias"),
+            pytest.param(list[Literal["a"]], "list[Literal['a']]", "list[Literal['a']]", id="nested-literal"),
+            pytest.param(tuple[int, ...], "tuple[int, ...]", "tuple[int, ...]", id="variadic-tuple"),
+            pytest.param(tuple[()], "tuple[()]", "tuple[()]", id="empty-tuple"),
+            pytest.param(Callable[[int], str], "Callable[[int], str]", "Callable[[int], str]", id="callable"),
+            pytest.param(Callable[..., str], "Callable[..., str]", "Callable[..., str]", id="callable-any-args"),
         ],
     )
     def test_the_two_spellings(self, tp: Any, read: str, written: str) -> None:
-        """A message names what confarg reads; a refusal echoing an argument names it as written."""
+        """A message names what confarg reads; a refusal echoing an argument names it as written.
+
+        A generic's arguments are spelled the same way, so a nested type reads as it does alone,
+        the same on every Python: ``repr`` wrote ``list[typing.Optional[int]]`` on 3.12 and
+        ``list[int | None]`` on 3.14. A Literal reads the members confarg reads.
+        """
         assert (_spell_type(tp), _spell_type(tp, as_written=True)) == (read, written)
+
+    def test_a_literal_reads_alike_alone_and_in_a_union(self) -> None:
+        """A lone Literal's refusal and a union's name it with one spelling, ``Literal[...]``."""
+        Lone = make_target("x", Literal["a", "b"], default="a")
+        Union_ = make_target("x", int | Literal["a", "b"], default=0)
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=re.escape("to Literal['a', 'b'] at 'x'")):
+            confarg.build(Lone, {"x": "c"})
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=re.escape("to int | Literal['a', 'b'] at 'x'")):
+            confarg.build(Union_, {"x": "c"})
+
+    @pytest.mark.parametrize(
+        ("field_type", "spelled"),
+        [
+            pytest.param(int, "int", id="class"),
+            pytest.param(Optional[int], "int | None", id="optional"),
+            pytest.param(list[Optional[int]], "list[int | None]", id="generic"),
+        ],
+    )
+    def test_a_missing_field_names_its_type(self, field_type: Any, spelled: str) -> None:
+        """``MissingFieldError`` names the field's type as every message does, never by ``repr``."""
+        Target = make_target("x", field_type)
+        with pytest.raises(confarg.exceptions.MissingFieldError) as exc_info:
+            confarg.build(Target, {})
+        assert str(exc_info.value).startswith(f"Missing required field 'x' of type {spelled}. ")
+
+    def test_a_missing_target_names_its_type(self) -> None:
+        """A scalar target nothing supplied is named by its type: ``int``, not ``<class 'int'>``."""
+        with pytest.raises(confarg.exceptions.MissingFieldError) as exc_info:
+            confarg.build(int, {})
+        assert str(exc_info.value).startswith("No value provided for target type int. ")

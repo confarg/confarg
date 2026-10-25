@@ -375,10 +375,12 @@ class MissingFieldError(ConfargError):
         docs-dev/architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it
     """
 
-    def __init__(self, path: FieldPath, field_type: Any, *, descriptor: str = "") -> None:
-        """Record the field of type *field_type* at construction path *path*; ``()`` is the target itself.
+    def __init__(self, path: FieldPath, field_type: str, *, descriptor: str = "") -> None:
+        """Record the field at construction path *path*, ``()`` the target itself, of the type *field_type* spells.
 
-        *descriptor* names the data descriptor a dataclass field defaults to, which is why it has no default.
+        *field_type* is the type as every message names it, which the caller spells
+        (``_types._spell_type``): this module imports nothing from confarg. *descriptor* names
+        the data descriptor a dataclass field defaults to, which is why it has no default.
         """
         super().__init__(path, field_type)
         self._path = path
@@ -407,7 +409,7 @@ class MissingFieldError(ConfargError):
             flag = f"{self._cli_prefix}.{flag}" if self._cli_prefix else flag
             usage = f"--{flag} <json>" if self._in_root_value else f"--{flag}"
             message = (
-                f"Missing required field '{_spell_field_path(self._path)}' of type {self._field_type!r}. "
+                f"Missing required field '{_spell_field_path(self._path)}' of type {self._field_type}. "
                 f"Set it via CLI ({usage}), environment variable, or config file."
             )
             if self._descriptor:
@@ -419,7 +421,7 @@ class MissingFieldError(ConfargError):
         else:
             usage = f"--{self._cli_prefix} <value>" if self._cli_prefix else f"--{JSON_CAST_NAME} <json>"
             message = (
-                f"No value provided for target type {self._field_type!r}."
+                f"No value provided for target type {self._field_type}."
                 f" Provide a value via CLI flag ({usage}), environment variable, or config file."
             )
         return _append_none_remedy(message) if self._none_remedy else message

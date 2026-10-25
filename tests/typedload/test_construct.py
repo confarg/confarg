@@ -303,7 +303,7 @@ class TestAllDefaultShortcut:
         with pytest.raises(MissingFieldError) as exc_info:
             confarg.build(_NeedsIdent, {})
         msg = str(exc_info.value)
-        assert repr(OneOf) in msg
+        assert "of type OneOf." in msg
         assert "--ident" in msg
 
     def test_buildable_struct_is_still_auto_created(self) -> None:
@@ -320,7 +320,7 @@ class TestAllDefaultShortcut:
         with pytest.raises(MissingFieldError) as exc_info:
             confarg.build(OneOf, {})
         msg = str(exc_info.value)
-        assert repr(OneOf) in msg
+        assert "target type OneOf." in msg
         assert "--json <json>" in msg
 
     def test_buildable_root_is_still_built_from_nothing(self) -> None:
@@ -1021,7 +1021,7 @@ class TestAnUnsetFixedTuplePosition:
         with pytest.raises(MissingFieldError) as ei:
             construct(tuple[int, int], {"1": 5}, path=("t",))
         assert ei.value._path == ("t", 0)
-        assert "Missing required field 't[0]' of type <class 'int'>. Set it via CLI (--t.0)" in str(ei.value)
+        assert "Missing required field 't[0]' of type int. Set it via CLI (--t.0)" in str(ei.value)
 
     def test_a_position_past_a_short_base_is_missing(self) -> None:
         """A base shorter than the arity leaves the positions after it unset."""

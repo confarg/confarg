@@ -1771,7 +1771,7 @@ class TestDumpRefusesAnUnsupportedLeaf:
 
         The remedy registers the class, whose registration reads every parameterization of it.
         """
-        match = r"Cannot serialize re\.Pattern\[str\] at 'pattern'.*register_leaf_type\(Pattern, \.\.\.\)"
+        match = r"Cannot serialize Pattern\[str\] at 'pattern'.*register_leaf_type\(Pattern, \.\.\.\)"
         with pytest.raises(ConfargError, match=match):
             confarg.dump(_StatePattern())
 

@@ -221,7 +221,7 @@ def _construct_resolved(target_r: Any, resolved: MergeDict, union_tag: str) -> A
     if not _is_struct_like(target_r):
         raw = resolved.get(_defaults.ROOT_KEY, _MISSING)
         if raw is _MISSING:
-            raise MissingFieldError(path=(), field_type=target_r)
+            raise MissingFieldError(path=(), field_type=_spell_type(target_r))
         try:
             return _tc(target_r, raw, union_tag=union_tag)
         except MissingFieldError as e:

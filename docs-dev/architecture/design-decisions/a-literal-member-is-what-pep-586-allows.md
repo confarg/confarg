@@ -23,7 +23,7 @@ class C:
 | `--a cd` | `'cd'` | `'cd'` |
 | `--a "b'ab'"`, file `a: !!binary YWI=` | `b'ab'`, matched by `str()` or natively | `Cannot coerce … to Literal['cd'] at 'a'` |
 | `dump(C(a=b"ab"))` | `b'ab'`, which a JSON or TOML writer refuses | refused, naming the bytes member |
-| `--b ab` | `Cannot coerce str 'ab' to Literal(b'ab',)` | `Unsupported leaf type typing.Literal[b'ab'] at 'b'` |
+| `--b ab` | `Cannot coerce str 'ab' to Literal(b'ab',)` | `Unsupported leaf type Literal[b'ab'] at 'b'` |
 | `--c 1`, file `c: 1.0` | `1.0`, through `float`'s coercer | `Invalid annotation Literal[1.0, 2.5] at 'c': its member 1.0 is a float; …` |
 | no value for `c` | `2.5` | `2.5`: the refusal is lazy |
 | `--d 1` | `1.0` | the same refusal; `str` does not take the value instead |

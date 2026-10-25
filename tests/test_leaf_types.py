@@ -1045,7 +1045,7 @@ class TestALiteralMemberIsWhatPep586Allows:
     def test_a_lone_bytes_member_is_an_unsupported_leaf(self) -> None:
         """``Literal[b'ab']`` holds nothing confarg reads, as ``bytes`` does not."""
         WithBytesLiteral = make_target("x", Literal[b"ab"], default=b"ab")
-        with pytest.raises(TypeCoercionError, match=re.escape("Unsupported leaf type typing.Literal[b'ab'] at 'x'")):
+        with pytest.raises(TypeCoercionError, match=re.escape("Unsupported leaf type Literal[b'ab'] at 'x'")):
             confarg.load(WithBytesLiteral, argv=["--x", "ab"], env={})
         assert confarg.load(WithBytesLiteral, argv=[], env={}).x == b"ab"
 
