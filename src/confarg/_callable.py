@@ -265,8 +265,7 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, union_tag: str, 
     elif callable(spec):
         result = spec
     else:
-        msg = f"Cannot construct Callable at '{where}': expected str or dict, got {type(spec).__name__} {spec!r}"
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.wrong_shape(_src_type(spec), spec, "Callable", "str or dict", where)
     if not callable(result):
         msg = f"Callable at '{where}': {spec!r} resolved to {result!r}, which is not callable."
         raise TypeCoercionError(msg)

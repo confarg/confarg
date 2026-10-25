@@ -764,6 +764,60 @@ class _ColorishOrWord:
     c: _AliasedColorish | _Word = _Colorish.RED
 
 
+class TestASequenceRefusalIsOneSpelling:
+    """A fixed-length sequence's arity and index-key refusals each have one spelling (REF-77).
+
+    Each site spelled them inline, and they had drifted on the type's name: a namedtuple by its
+    ``__name__``, a fixed tuple by its repr, which names a class by its module.
+    """
+
+    @pytest.mark.parametrize(
+        ("field_type", "value", "expected"),
+        [
+            pytest.param(
+                Point, [1, 2, 3], "Cannot construct Point at 'p': expected 2 elements, got 3", id="namedtuple"
+            ),
+            pytest.param(
+                tuple[_Feat46Opts, int],
+                [{}, 1, 2],
+                "Cannot construct tuple[_Feat46Opts, int] at 'p': expected 2 elements, got 3",
+                id="tuple-too-long",
+            ),
+            pytest.param(
+                tuple[int, int], [1], "Cannot construct tuple[int, int] at 'p': expected 2 elements, got 1", id="short"
+            ),
+            pytest.param(
+                tuple[int, int],
+                {ListOp.BASE: [1, 2, 3], "0": 5},
+                "Cannot construct tuple[int, int] at 'p': expected 2 elements, got 3",
+                id="carried-base",
+            ),
+            pytest.param(
+                tuple[_Feat46Opts, int],
+                {"a": 1},
+                "Cannot construct tuple[_Feat46Opts, int] at 'p': dict keys must be integer indices",
+                id="tuple-keys",
+            ),
+            pytest.param(
+                list[int], {"a": 1}, "Cannot construct collection at 'p': dict keys must be integer indices", id="list"
+            ),
+        ],
+    )
+    def test_a_refusal_names_the_type_as_confarg_reads_it(self, field_type: Any, value: Any, expected: str) -> None:
+        """The type is named as every message names one, a class by its name."""
+        Target = make_target("p", field_type, default=None)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+            confarg.build(Target, {"p": value})
+        assert str(excinfo.value) == expected
+
+    def test_a_callable_refuses_its_shape_as_every_shape_is_refused(self) -> None:
+        """A Callable handed neither a string nor a dict says so in ``wrong_shape``'s words."""
+        Target = make_target("f", Callable, default=None)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+            confarg.build(Target, {"f": 1.5})
+        assert str(excinfo.value) == "Cannot construct Callable at 'f': expected str or dict, got float 1.5"
+
+
 class TestAMessageNamesATypeByWhatConfargReads:
     """A message names an annotation as confarg reads it, the same on every Python (REF-97, BUG-277).
 
