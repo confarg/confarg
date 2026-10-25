@@ -18,9 +18,11 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
+    from confarg._types import RootKind
+
 from confarg import _defaults
 from confarg._callable import promote_bare_spec
-from confarg._cast import JSON_CAST_NAME, decode_json, fold_root_json, resolve_forced_value
+from confarg._cast import JSON_CAST_NAME, decode_json, fold_root_json, resolve_forced_value, root_cast_folds
 from confarg._depth import refuse_long_path
 from confarg._merge import (
     APPEND_SUFFIX,
@@ -64,6 +66,7 @@ from confarg._types import (
     _is_struct_like,
     _is_union,
     _resolve_type,
+    _root_kind,
     _spell_type,
     _StrToken,
     _struct_fields,
@@ -343,17 +346,19 @@ def _apply_env_json_cast(  # noqa: PLR0913, PLR0917  # root and nested placement
     root_json: list[MergeDict],
     union_tag: str,
     *,
-    is_struct: bool,
+    kind: RootKind,
+    root_at: MergeAt,
 ) -> bool:
     """Apply a ``json`` force-cast (``FOO__DB__json``, or ``FOO_JSON`` at the root).
 
     Mirrors the CLI ``.json`` suffix, including the bare root form; whether it is a cast
-    at all is :func:`_env_cast`'s to answer. A nested cast is stored at the parent path;
-    on a non-struct root it sets the value whole; on a struct root it injects the whole
-    configuration — collected into ``root_json`` and folded in as a base by
-    :func:`~confarg._cast.fold_root_json`, so per-field env vars win over it.  Returns
-    True when handled.  Hard-errors on invalid JSON, matching the CLI's explicit-intent
-    semantics.
+    at all is :func:`_env_cast`'s to answer. A nested cast is stored at the parent path. At the
+    root, :func:`~confarg._cast.root_cast_folds` answers for a root of *kind*: an object it
+    folds injects the whole configuration, collected into ``root_json`` and folded in as a
+    base by :func:`~confarg._cast.fold_root_json`, so per-field env vars win over it; any
+    other value sets the root whole, written where *root_at*, the real target's root, stands,
+    as a mixed root's field is.  Returns True when handled.  Hard-errors on invalid JSON,
+    matching the CLI's explicit-intent semantics.
     """
     if (cast := _env_cast(parts, walk_target, union_tag)) is None:
         return False
@@ -361,61 +366,57 @@ def _apply_env_json_cast(  # noqa: PLR0913, PLR0917  # root and nested placement
     decoded = resolve_forced_value(cast_name, value, flag=orig_key, at=path)
     if path:
         _set_nested(data, path, decoded, _typed_root(walk_target, union_tag))
-        return True
-    if not is_struct:
-        # Non-struct root: the decoded value *is* the configuration, whatever its shape.
-        # The plain bare variable is applied after it (_env_order) and replaces it.
-        data[_defaults.ROOT_KEY] = decoded
-        return True
-    if not isinstance(decoded, dict):
-        raise ConfargError.root_cast_not_object(orig_key, decoded)
-    root_json.append(decoded)
+    elif root_cast_folds(kind, decoded, orig_key):
+        root_json.append(decoded)
+    else:
+        # The decoded value *is* the configuration, whatever its shape. The plain bare variable
+        # is applied after it (_env_order) and replaces it.
+        _set_nested(data, [_defaults.ROOT_KEY], decoded, root_at)
     return True
 
 
-def _read_bare_prefix(  # noqa: PLR0913, PLR0917  # the variable, then the root it names
+def _read_bare_prefix(  # noqa: PLR0913  # the variable, then the root it names
     orig_key: str,
     key: str,
     value: str,
     prefix: str,
     target: Any,
-    union_tag: str,
-) -> MergeDict | None:
+    *,
+    kind: RootKind,
+    data: MergeDict,
+    root_at: MergeAt,
+) -> bool:
     """Read a variable that names the root, the bare prefix with or without a merge suffix.
 
-    Return what it writes at the root, or None when *key* names a path below the root. The
-    bare *prefix* sets a non-struct root whole, as the bare ``--<cli_prefix>`` does, and its
-    value is read as a field variable of the root's type is (BUG-177): ``APP_='[1, 2]'``
-    decodes as ``APP_XS='[1, 2]'`` does. On a struct-like root it names nothing, and a merge
-    suffix patches no root, which is patched one field at a time or set whole. Those two
-    write nothing and are warned about, with the cause the CLI refuses ``--<prefix>`` and
-    ``--<prefix>+`` with, spelled as variables are.
+    Return True when *key* names the root, False when a path below it. The bare *prefix* sets
+    a root of *kind* set whole, as the bare ``--<cli_prefix>`` does, into *data* where
+    *root_at*, the real target's root, stands, and its value is read as a field variable of
+    the root's type is (BUG-177): ``APP_='[1, 2]'`` decodes as ``APP_XS='[1, 2]'`` does. On a
+    struct root it names nothing, and a merge suffix patches no root, which is patched one
+    field at a time or set whole. Those two write nothing and are warned about, with the
+    cause the CLI refuses ``--<prefix>`` and ``--<prefix>+`` with, spelled as variables are.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/cli-prefix.md#the-bare-prefix-names-the-root
     """
     suffix = _merge_suffix_on_root(key)
     if key and suffix is None:
-        return None
-    is_struct = _is_struct_like(_resolve_type(target))
+        return False
     field = f"{prefix}<FIELD>"
     if suffix is not None:
-        whole = f"{prefix}{JSON_CAST_NAME.upper()}"
-        reason = _merge_suffix_on_the_root(
-            suffix, deletes=suffix == DELETE_SUFFIX, struct=is_struct, field=field, whole=whole
-        )
-    elif is_struct:
+        cast = f"{prefix}{JSON_CAST_NAME.upper()}"
+        reason = _merge_suffix_on_the_root(suffix, deletes=suffix == DELETE_SUFFIX, kind=kind, field=field, whole=cast)
+    elif not kind.sets_whole:
         reason = _bare_value_on_a_struct_root(f"{prefix} variable", field)
     else:
-        root: MergeDict = {}
-        _store_env_value([], _resolve_type(target), value, root, orig_key, _typed_root(target, union_tag))
-        return root
+        _store_env_value([], _resolve_type(target), value, data, orig_key, root_at)
+        return True
     warnings.warn(
         f"Environment variable {orig_key!r} has no matching field: {reason}. The variable will be ignored.",
         ConfargWarning,
         stacklevel=4,
     )
-    return {}
+    return True
 
 
 def _warn_unknown_env_field(orig_key: str, parts: list[str], target: Any, walk_target: Any, union_tag: str) -> bool:
@@ -490,7 +491,7 @@ def _store_env_value(parts: list[str], ft: Any, value: str, data: MergeDict, ori
     """Parse an env var string value and store it at the resolved path in data, *at* where *data* stands.
 
     A JSON value is data (:func:`~confarg._cast.decode_json`), refused naming *orig_key* if it
-    holds a key confarg reserves. The empty path is a non-struct root's, whose value
+    holds a key confarg reserves. The empty path is a root set whole, whose value
     ``__root__`` holds, as the bare ``--<prefix>`` flag writes it.
     """
     written = parts or [_defaults.ROOT_KEY]
@@ -640,7 +641,8 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
     data: MergeDict = {}
     env_configs: list[tuple[str, str]] = []
     root_json: list[MergeDict] = []  # objects from a root-level `json` cast, folded in below fields
-    is_struct = _is_struct_like(_resolve_type(target))
+    kind = _root_kind(target)
+    root_at = _typed_root(target, union_tag)  # where a root set whole is written, as the real target types it
     # Paths resolve against the locals-grafted target, as a flag's do; root classification keeps `target`.
     walk_target = _walk_target(target, _locals_keys(target, union_tag))
 
@@ -660,11 +662,12 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
     # The environment has no typing order, so it is given one: the broader variable first.
     for _, orig_key, key, parts, value in sorted(variables):
         _refuse_reserved_key(orig_key, parts)
-        if _apply_env_json_cast(orig_key, parts, walk_target, value, data, root_json, union_tag, is_struct=is_struct):
+        if _apply_env_json_cast(
+            orig_key, parts, walk_target, value, data, root_json, union_tag, kind=kind, root_at=root_at
+        ):
             continue
 
-        if (root := _read_bare_prefix(orig_key, key, value, prefix, target, union_tag)) is not None:
-            data.update(root)
+        if _read_bare_prefix(orig_key, key, value, prefix, target, kind=kind, data=data, root_at=root_at):
             continue
 
         # A delete or an append is checked as the value variable of its path is (BUG-182).
@@ -696,7 +699,7 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
             continue
         _store_env_value(path, ft, value, data, orig_key, at)
 
-    return fold_root_json(data, root_json, _typed_root(target, union_tag)), env_configs
+    return fold_root_json(data, root_json, root_at), env_configs
 
 
 def _typed_root(target: Any, union_tag: str) -> MergeAt:

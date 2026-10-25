@@ -18,7 +18,7 @@ from confarg import _defaults
 from confarg.exceptions import ConfargError, InvalidConfigFileError, TypeCoercionError
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
 
 class ListOp(enum.Enum):
@@ -401,6 +401,20 @@ class MergeAt:
         """Return the fixed tuple or namedtuple type this node is, None where it is none: here, None."""
         return None
 
+    def left_beside(self, node: MergeDict, keys: Iterable[Any]) -> MergeDict:
+        """Return what of *node*, a dict this position holds, stands beside *keys* written over it: here, all of it.
+
+        A mixed root's whole value and its fields replace each other, which its own position
+        says (``_typed_merge._MixedRootAt``); every other node keeps its keys. Return *node*
+        itself, not a copy, when nothing of it goes: :func:`_set_nested` rewrites the dict it
+        writes into only when handed another.
+
+        Dev Notes:
+            docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
+        """
+        del keys
+        return node
+
     def key_identity(self, key: Any) -> Any:
         """Return what *key* is to this node, so two keys with one identity are one key: here, its spelling.
 
@@ -642,7 +656,9 @@ def _deep_merge(
     - ``{"N": v}`` (integer string keys) as a value for a list base → patches by index.
 
     An override that *at* reads as a value of its own (:meth:`MergeAt.replaces`: a union
-    tag, an opener) discards the base entirely, at every depth.
+    tag, an opener) discards the base entirely, at every depth. Otherwise *at* is asked what
+    of the base stands beside the keys the override writes (:meth:`MergeAt.left_beside`): at
+    a mixed root, the whole value and the fields replace each other.
 
     Args:
         base: The base dict to merge into.
@@ -659,6 +675,7 @@ def _deep_merge(
     """
     if at.replaces(override):
         return dict(override)
+    base = at.left_beside(base, override)
 
     # At a fixed-length node a delete unsets a position, which the layers below, the field's
     # default the last of them, must not fill again: it is kept where it stands (BUG-243).
@@ -854,6 +871,8 @@ def _set_nested(d: MergeDict, path: list[str], value: Any, at: MergeAt | None = 
     and a delete written over a value an earlier write left is kept spent (:func:`_spent_if_met`).
     Each segment lands on the key the source already wrote that the type reads as the same
     key, whatever spelled it (:func:`_met_key`), so a later spelling writes over an earlier one.
+    *at* is asked first what of *d* stands beside the write (:meth:`MergeAt.left_beside`), with
+    the path's first segment alone: it says which side of a mixed root the write lands on.
 
     Args:
         d: The root dict to modify in place.
@@ -865,6 +884,9 @@ def _set_nested(d: MergeDict, path: list[str], value: Any, at: MergeAt | None = 
         docs-dev/architecture/pipeline/deep-merge.md#scalar-intermediates
         docs-dev/architecture/pipeline/deep-merge.md#which-keys-are-one-key
     """
+    if path and at is not None and (left := at.left_beside(d, path[:1])) is not d:
+        d.clear()
+        d.update(left)
     if path:
         parent, at = _descend(d, path[:-1], at or MergeAt())
         key = _met_key(parent, path[-1], at)

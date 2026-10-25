@@ -49,9 +49,9 @@ from confarg._types import (
     _fixed_seq_types,
     _is_seq_variant,
     _is_struct,
-    _is_struct_like,
     _namedtuple_fields,
     _resolve_type,
+    _root_kind,
     _struct_declared_defaults,
     _struct_fields,
     _struct_required,
@@ -118,12 +118,17 @@ def lay_defaults(target: Any, data: MergeDict, union_tag: str, *, for_resolution
     (:func:`_kept`). Below a sequence, a bare delete at an index is left for construction to
     refuse, and a namedtuple field's beside a base is left as it is.
 
+    A root *data* holds whole (:meth:`~confarg._types.RootKind.held_whole`), a non-struct one
+    or a mixed one set whole, gets its value's defaults under ``__root__`` and no field's
+    beside it; a mixed root set by field gets its fields', as a struct root does.
+
     Dev Notes:
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
+        docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
     """
     walk = _Walk(union_tag, for_resolution)
     target = _resolve_type(target)
-    if _is_struct_like(target):
+    if not _root_kind(target).held_whole(data):
         laid = _node(target, data, (), walk)
         if laid is _PRUNED:
             laid = _node(target, {}, (), walk)

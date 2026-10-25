@@ -31,9 +31,9 @@ from confarg._parse_cli import (
 from confarg._pipeline import _merge_sources
 from confarg._serialize import _check_native_types, _DumpOptions, _serialize, _serialize_untyped, written_form
 from confarg._typed_read import TypedReading
-from confarg._types import _MISSING, TagPolicy, _is_struct_like, _resolve_type, _spell_type
+from confarg._types import _MISSING, RootKind, TagPolicy, _resolve_type, _root_kind, _spell_type
 from confarg.dictexpr import resolve_expressions
-from confarg.exceptions import MissingFieldError
+from confarg.exceptions import MissingFieldError, TypeCoercionError
 from confarg.typedload import construct as _tc
 from confarg.typedload._coerce import _type_kind, _TypeKind
 from confarg.typedload._construct import build_from_nothing
@@ -217,8 +217,19 @@ def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str, copie
 
 
 def _construct_resolved(target_r: Any, resolved: MergeDict, union_tag: str) -> Any:
-    """Construct *target_r* from a resolved dict: a non-struct target from ``__root__``, a struct from the whole."""
-    if not _is_struct_like(target_r):
+    """Construct *target_r* from a resolved dict: a root set whole from ``__root__``, a struct from the whole.
+
+    Raises:
+        TypeCoercionError: If a mixed root's dict holds fields beside ``__root__``, which the
+            merge never leaves and a root file may hold, and of which nothing says which was
+            written last.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
+    """
+    if (kind := _root_kind(target_r)).held_whole(resolved):
+        if kind is RootKind.MIXED and (fields := [k for k in resolved if k != _defaults.ROOT_KEY]):
+            raise TypeCoercionError.whole_root_beside_fields(_spell_type(target_r), _defaults.ROOT_KEY, fields)
         raw = resolved.get(_defaults.ROOT_KEY, _MISSING)
         if raw is _MISSING:
             raise MissingFieldError(path=(), field_type=_spell_type(target_r))

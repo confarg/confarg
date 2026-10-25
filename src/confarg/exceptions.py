@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any, Self
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from confarg._types import RootKind
+
 #: How many characters of an overflowing number a warning shows before eliding the rest.
 _SHOWN_DIGITS = 20
 
@@ -71,7 +73,7 @@ def _capitalized(reason: str) -> str:
 
 
 def _bare_value_on_a_struct_root(bare: str, field: str) -> str:
-    """Return why the bare prefix sets nothing on a struct-like root, as a clause.
+    """Return why the bare prefix sets nothing on a struct root, set field by field alone, as a clause.
 
     *bare* is the channel's bare spelling (``--app flag``, ``APP_ variable``) and *field* its
     spelling of a field below it (``--app.<field>``, ``APP_<FIELD>``): the CLI refuses with
@@ -81,28 +83,34 @@ def _bare_value_on_a_struct_root(bare: str, field: str) -> str:
         docs-dev/architecture/cli-parsing/cli-prefix.md#the-bare-prefix-names-the-root
     """
     return (
-        f"the bare {bare} carries a value only for a scalar root, and the root has fields;"
-        f" set one of them ({field}) instead"
+        f"the bare {bare} sets a root whole, and this root is set field by field;"
+        f" set one of its fields ({field}) instead"
     )
 
 
-def _merge_suffix_on_the_root(suffix: str, *, deletes: bool, struct: bool, field: str, whole: str) -> str:
+def _merge_suffix_on_the_root(suffix: str, *, deletes: bool, kind: RootKind, field: str, whole: str) -> str:
     """Return why a merge *suffix* on the bare prefix patches nothing, as a clause: the root takes no patch.
 
-    A struct-like root (*struct*) is patched one field at a time, so the remedy keeps the
-    suffix on *field*, the channel's spelling of a field below it. Any other root is set
-    whole, so the remedy is *whole*, the channel's spelling of the root's json cast, the one
-    that sets every such root. The CLI refuses with this text and the environment warns
-    with it.
+    A root with fields is patched one field at a time, so that remedy keeps the suffix on
+    *field*, the channel's spelling of a field below it. A root set whole takes the other,
+    *whole*, the channel's spelling of the root's json cast, the one that sets every such
+    root; a mixed root, a union of a struct and another variant, takes both. The CLI refuses
+    with this text and the environment warns with it.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/cli-prefix.md#the-bare-prefix-names-the-root
     """
     acts = "deletes from" if deletes else "appends onto"
-    if not struct:
-        return f"the root is set whole, so nothing {acts} it; spell its whole value with {whole}"
+    spell_whole = f"spell its whole value with {whole}"
+    if not kind.has_fields:
+        return f"the root is set whole, so nothing {acts} it; {spell_whole}"
     act = "delete" if deletes else "append onto"
-    return f"the root has fields, so nothing {acts} it; {act} one of them ({field}{suffix}) instead"
+    if not kind.sets_whole:
+        return f"the root has fields, so nothing {acts} it; {act} one of them ({field}{suffix}) instead"
+    return (
+        f"the root is set whole or by field, so nothing {acts} it;"
+        f" {act} one of its fields ({field}{suffix}), or {spell_whole}"
+    )
 
 
 def _missing_field_name(after: str) -> str:
@@ -243,8 +251,8 @@ class ConfargError(Exception):
     def root_cast_not_object(cls, flag: str, value: Any) -> ConfargError:
         """Return an error for a whole-configuration JSON cast that decoded to a non-mapping.
 
-        Spelled once for the three channels that accept one -- ``--json``, ``<PREFIX>_JSON``
-        and the adapters' flat ``json`` entry -- which differ only in how *flag* is written.
+        Spelled once for the two channels that accept one -- ``--json`` and ``<PREFIX>_JSON``,
+        asked by :func:`~confarg._cast.root_cast_folds` -- which differ only in how *flag* is written.
         *value* is always JSON the cast just decoded, so it is never a channel token and
         ``type()`` names it correctly on its own.
         """
@@ -703,6 +711,18 @@ class TypeCoercionError(ConfargError):
         return error
 
     @classmethod
+    def whole_root_beside_fields(cls, tp: str, root_key: str, fields: Sequence[Any]) -> TypeCoercionError:
+        """Return the error for a mixed root's data holding *fields* beside the *root_key* that sets it whole.
+
+        Dev Notes:
+            docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
+        """
+        return cls(
+            f"Cannot build {tp} at the root from both {root_key!r} and the field(s) {sorted(map(str, fields))}:"
+            f" {root_key!r} sets the whole value, so no field can be set beside it."
+        )
+
+    @classmethod
     def unsupported_leaf(cls, tp: str, path: str) -> TypeCoercionError:
         """Return the error for a value at a leaf of the type *tp* spells, which construction builds none of.
 
@@ -908,10 +928,10 @@ class UnknownArgumentError(ConfargError):
 
     @classmethod
     def bare_prefix_on_struct_root(cls, token: str, cli_prefix: str) -> UnknownArgumentError:
-        """Return an error for the bare prefix flag spelled against a struct-like root.
+        """Return an error for the bare prefix flag spelled against a struct root, set field by field alone.
 
-        The bare ``--<cli_prefix>`` flag is a scalar root's only CLI spelling; a
-        struct-like root has fields to address instead, so the flag names nothing.
+        The bare ``--<cli_prefix>`` flag sets a root whole; a struct root, or a union of
+        structs alone, has fields to address instead, so the flag names nothing.
         """
         reason = _bare_value_on_a_struct_root(f"--{cli_prefix} flag", f"--{cli_prefix}.<field>")
         return cls(f"Unknown argument: {token!r}. {_capitalized(reason)}.")
@@ -925,17 +945,17 @@ class UnknownArgumentError(ConfargError):
         cast_name: str,
         *,
         deletes: bool,
-        struct: bool,
+        kind: RootKind,
     ) -> UnknownArgumentError:
         """Return an error for the bare prefix flag spelled with the merge *suffix*, ``--<cli_prefix>+``.
 
-        No flag patches the root: a struct-like root (*struct*) is patched one field at a
-        time, and any other root is set whole, by its json cast *cast_name*.
+        No flag patches the root: a root of *kind* with fields is patched one field at a time,
+        and one set whole is set by its json cast *cast_name*.
         """
         reason = _merge_suffix_on_the_root(
             suffix,
             deletes=deletes,
-            struct=struct,
+            kind=kind,
             field=f"--{cli_prefix}.<field>",
             whole=f"--{cli_prefix}.{cast_name} <json>",
         )

@@ -46,6 +46,7 @@ from confarg._merge import (
 from confarg._naming import named_variant
 from confarg._tags import _partial_config_from_argv, import_tagged_classes
 from confarg._types import (
+    RootKind,
     _base_declares_path,
     _class_of,
     _direct_struct_subclasses,
@@ -60,7 +61,6 @@ from confarg._types import (
     _is_literal,
     _is_namedtuple,
     _is_struct,
-    _is_struct_like,
     _is_tuple,
     _is_type_ref,
     _is_union,
@@ -71,6 +71,7 @@ from confarg._types import (
     _registered_class,
     _resolve_struct,
     _resolve_type,
+    _root_kind,
     _spell_type,
     _struct_defaults,
     _struct_fields,
@@ -1363,30 +1364,27 @@ def _collect_subconfig_specs(target: Any, config_flag: str, union_tag: str) -> l
     return result
 
 
-def _scalar_root_spec(target: Any) -> FlagSpec:
-    """Build the nameless FlagSpec for a non-struct (scalar) root target.
+def _whole_root_spec(target: Any) -> FlagSpec:
+    """Build the nameless FlagSpec for a root target set whole, a non-struct or a mixed one (:class:`RootKind`).
 
     :func:`~confarg.cli._prefix.apply_prefix` turns the empty name into the bare
-    ``--<cli_prefix>`` flag -- the only CLI spelling a scalar root has -- and drops
+    ``--<cli_prefix>`` flag -- the only CLI spelling a non-struct root has -- and drops
     the spec entirely when no prefix is set.
 
-    The spec is the leaf spec a field of the root's type gets, shape included, because
-    vanilla's loop consumes the root's value as it consumes such a field's (BUG-177): a
-    ``list[int]`` root takes the run ``--xs 1 2`` takes.
+    The spec is the one a field of the root's type gets, shape included, because vanilla's
+    loop consumes the root's value as it consumes such a field's (BUG-177): a ``list[int]``
+    root takes the run ``--xs 1 2`` takes, and a mixed root, ``int | A``, the one JSON token
+    ``--x`` of that type takes (BUG-266).
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix
     """
     resolved = _resolve_type(target)
+    help_parts = HelpParts(note="The configuration value.")
+    if _root_kind(resolved) is RootKind.MIXED:
+        return _shaped(_whole_value_spec("", resolved, help_parts, None, ""), resolved)
     core = _unwrap_optional(resolved)
-    return _build_leaf_spec(
-        "",
-        target,
-        resolved if core is None else core,
-        HelpParts(note="The configuration value."),
-        None,
-        "",
-    )
+    return _build_leaf_spec("", target, resolved if core is None else core, help_parts, None, "")
 
 
 def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring confarg.load
@@ -1413,9 +1411,9 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
             default) and ``argv=[]`` still describe exactly the declared type.
         cli_prefix: Namespace every flag lives under, so ``--<prefix>.<field>``
             distinguishes configuration flags from the host framework's own.
-            ``""`` (the default) registers bare field names.  A non-struct
-            (scalar) target is registered as the bare ``--<prefix>`` flag, and has
-            no CLI spelling at all without a prefix -- as in vanilla.
+            ``""`` (the default) registers bare field names.  A target set whole,
+            a non-struct or a mixed one, is registered as the bare ``--<prefix>`` flag,
+            which it has not without a prefix -- as in vanilla.
         union_tag: Discriminator field name (default ``"class"``).
         config_flag: Name of the config-file flag (default ``"config"``).
             Pass ``""`` to omit config-file flag specs.
@@ -1433,8 +1431,8 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
 
     import_tagged_classes(argv, target, union_tag=union_tag, config_flag=config_flag, below=below)
     flags = _collect_struct_specs(target, prefix="", union_tag=union_tag)
-    if not _is_struct_like(_resolve_type(target)):
-        flags.insert(0, _scalar_root_spec(target))
+    if _root_kind(target).sets_whole:
+        flags.insert(0, _whole_root_spec(target))
 
     if config_flag:
         # The help names the flag as typed, prefix included: apply_prefix renames specs, not their help.

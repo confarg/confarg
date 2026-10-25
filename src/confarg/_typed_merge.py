@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from confarg import _defaults
 from confarg._callable import promote_bare_spec
@@ -26,11 +26,12 @@ from confarg._merge import ListOp, MergeAt, MergeDict, _key_spelling
 from confarg._naming import UNREADABLE, Named, is_arguments, named_child, named_variant
 from confarg._parse_cli import _advance_field_type, _takes_callable_shorthand
 from confarg._types import (
+    RootKind,
     _dict_kv,
     _fixed_position,
     _fixed_seq_types,
-    _is_struct_like,
     _resolve_type,
+    _root_kind,
     _struct_member_type,
     _union_branches,
     _union_tag_shadowed,
@@ -39,14 +40,24 @@ from confarg.exceptions import ConfargError
 from confarg.typedload._coerce import _type_kind, _TypeKind
 from confarg.typedload._construct import read_key, reads_as_new_value, tag_reading
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
 
 def merge_root(target: Any, union_tag: str) -> MergeAt:
     """Return where the merge stands at the root of a configuration of type *target*.
 
-    A struct-like target is the root itself; any other is held under the root key.
+    A struct-like target is the root itself; any other is held under the root key; a mixed
+    root, a union of a struct and another variant, is either (:class:`_MixedRootAt`).
     """
     target = _resolve_type(target)
-    return TypedAt(target, union_tag) if _is_struct_like(target) else _RootAt(target, union_tag)
+    match _root_kind(target):
+        case RootKind.WHOLE:
+            return _RootAt(target, union_tag)
+        case RootKind.MIXED:
+            return _MixedRootAt(target, union_tag)
+        case RootKind.STRUCT:
+            return TypedAt(target, union_tag)
 
 
 def merge_at(tp: Any, union_tag: str) -> MergeAt:
@@ -182,6 +193,39 @@ class _RootAt(MergeAt):
     def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # the root key only
         """Return the target's node under the root key, the shape rule elsewhere."""
         return TypedAt(self.tp, self.union_tag) if key == _defaults.ROOT_KEY else MergeAt(self.union_tag)
+
+
+class _MixedRootAt(TypedAt):
+    """Where the merge stands at the root of a union of a struct and another variant: its fields, or the root key.
+
+    The root key holds the whole value, which a struct variant's fields replace, as a field's
+    subkey replaces a whole value written before it, and which replaces them in turn: within a
+    source the last written wins, across layers the higher one. The locals namespace stands
+    beside either.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
+    """
+
+    __slots__ = ()
+
+    def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:
+        """Return the whole value's node under the root key, else a field's as the struct-like root types it."""
+        return TypedAt(self.tp, self.union_tag) if key == _defaults.ROOT_KEY else super().child(key, below, over)
+
+    def left_beside(self, node: MergeDict, keys: Iterable[Any]) -> MergeDict:
+        """Return *node* without its fields where *keys* holds the root key, without the root key where a field."""
+        written = {k for k in keys if k not in _defaults.LOCALS_KEYS and not isinstance(k, ListOp)}
+        if not written:
+            return node
+        whole = _defaults.ROOT_KEY in written
+
+        def stays(key: Any) -> bool:
+            if whole:
+                return key == _defaults.ROOT_KEY or key in _defaults.LOCALS_KEYS
+            return key != _defaults.ROOT_KEY
+
+        return node if all(stays(k) for k in node) else {k: v for k, v in node.items() if stays(k)}
 
 
 class _ArgsAt(MergeAt):
