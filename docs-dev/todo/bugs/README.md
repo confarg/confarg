@@ -12,7 +12,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |
 | [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | minor |  | S | low | behavior | PR-77 |
-| [BUG-242 — A lone `__root__` in a root configuration file is unwrapped as a fragment's](BUG-242-a-lone-root-key-in-a-root-file-is-unwrapped-as-a-fragments.md) | minor |  | S | low | behavior | PR-209 |
 | [BUG-281 — A method a module publishes off its own instance does not dump as its path](BUG-281-a-method-a-module-publishes-off-its-own-instance-does-not-dump-as-its-path.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-282 — A lazy module hook that raises on `__all__` escapes `dotted_name`](BUG-282-a-lazy-module-hook-raising-on-all-escapes-dotted-name.md) | minor |  | S | low | none | BUG-279 |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | minor |  | M | low | behavior | PR-5, PR-13, PR-26, BUG-179 |

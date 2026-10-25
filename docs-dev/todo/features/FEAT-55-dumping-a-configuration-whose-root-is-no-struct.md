@@ -15,4 +15,4 @@ severity: minor  # refused with a TypeError; dumping the merged dict, which hold
 `dump()` and `dump_file()` refuse the value it builds: `confarg.dump([1, 2])` raises `TypeError: Expected a dataclass or plain-class instance, got list`, and `dump_file()` reads a built `dict` as a merged dict, writing it without the `__root__` key `load()` reads.
 The merged dict holds `__root__` already (`merge(list[int], ...)` is `{'__root__': [1, 2]}`), so `dump_file(merge(...))` is the way around it today.
 Direction: take the root type, `dump(value, tp=list[int])` or a target argument, serialize the value as that type, and write it under `__root__`, so that it loads back.
-A dumped file reloads only once [BUG-242](../bugs/BUG-242-a-lone-root-key-in-a-root-file-is-unwrapped-as-a-fragments.md) stops unwrapping a lone `__root__` at a document root.
+A dumped file reloads: a root file's lone `__root__` is the value `build()` reads ([include semantics](../../architecture/config-files/include-semantics.md#include-semantics)).
