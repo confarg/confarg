@@ -42,7 +42,7 @@ A module that exists and fails while importing stops the union, as on a lone fie
 
 ## What it costs
 
-- A typo'd path in `Callable | str` silently becomes text, and in `Callable | Opts` it fails without naming the import ([FEAT-46](../../todo/features/FEAT-46-a-union-refusal-names-each-variants-reason.md)).
+- A typo'd path in `Callable | str` silently becomes text; in `Callable | Opts` the refusal names the import that failed on the Callable's line ([a union refusal names each variant's reason](../types/construction.md#a-union-refusal-names-each-variants-reason)).
 - `Any | dict` reads an opener-keyed dict as a spec, where it used to be the dict variant's data.
 
 ## Precedents

@@ -45,7 +45,7 @@ A valid annotation's unsupported branch has a use, a value set by code that buil
 ## An unsupported branch is skipped, and named
 
 A branch of a union that construction reads no value as, such as `bytes`, `complex` or a class nobody registered, is skipped, as it was: `bytes | int` reads `--x 1` as `1`, its `bytes` branch left to code that builds the object.
-A value no branch takes is refused naming the branches skipped so (`_construct._reads_nothing`): `Cannot coerce str 'ab' to bytes | int at 'x'; bytes is no leaf type confarg reads`.
+A value no branch takes is refused naming the branches skipped so, each on its line as every variant's reason is ([a union refusal names each variant's reason](../types/construction.md#a-union-refusal-names-each-variants-reason)): `bytes: no leaf type confarg reads`.
 Before, the refusal read as a wrong value, though no value could have reached `bytes`.
 
 ## Rejected

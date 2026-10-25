@@ -98,6 +98,7 @@ from confarg.exceptions import (
     SymbolNotFoundError,
     TypeCoercionError,
     _spell_field_path,
+    _variant_reason,
 )
 from confarg.typedload._coerce import (
     _FALSY,
@@ -106,7 +107,6 @@ from confarg.typedload._coerce import (
     _coerce_leaf,
     _coerce_type_ref,
     _held_by_any,
-    _is_coercible_leaf,
     _is_struct_variant,
     _is_taggable_leaf,
     _refuse_a_forbidden_literal,
@@ -1173,6 +1173,9 @@ def _construct_dict(tp: Any, data: Any, path: FieldPath, union_tag: str) -> dict
 
 _UNION_NO_MATCH: object = object()
 
+#: Each variant a union tried and the refusal it raised, in the order tried.
+type _Refusals = list[tuple[Any, BaseException]]
+
 
 def _holds_anything(variant: Any) -> bool:
     """Return whether union *variant* is ``Any``, the variant every value is held by.
@@ -1183,13 +1186,17 @@ def _holds_anything(variant: Any) -> bool:
     return _type_kind(_resolve_type(variant)) is _TypeKind.ANY
 
 
-def _first_constructible(variants: list[Any], data: Any, path: FieldPath, union_tag: str) -> Any:
-    """Construct *data* as the first of *variants* that accepts it, or return _UNION_NO_MATCH."""
+def _first_constructible(variants: list[Any], data: Any, path: FieldPath, union_tag: str, refusals: _Refusals) -> Any:
+    """Construct *data* as the first of *variants* that accepts it, or return _UNION_NO_MATCH.
+
+    Each variant that refuses it is kept in *refusals* with its refusal, which the union's own
+    refusal gives the reason of.
+    """
     for var in variants:
         try:
             return construct(var, data, path=path, union_tag=union_tag)
-        except (ConfargError, TypeError):
-            continue
+        except (ConfargError, TypeError) as e:
+            refusals.append((var, e))
     return _UNION_NO_MATCH
 
 
@@ -1289,20 +1296,24 @@ def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path:
     raise TypeCoercionError(msg)
 
 
-def _try_construct_union_struct(dc_vars: list[Any], data: MergeDict, path: FieldPath, union_tag: str) -> Any:
+def _try_construct_union_struct(
+    dc_vars: list[Any], data: MergeDict, path: FieldPath, union_tag: str, refusals: _Refusals
+) -> Any:
     """Try structural disambiguation then fallback for struct variants.
 
-    Returns _UNION_NO_MATCH if no struct variant accepts the data.
+    Returns _UNION_NO_MATCH if no struct variant accepts the data, each refusal kept in *refusals*.
     """
     matches = _disambiguate_struct(dc_vars, data, union_tag)
     if len(matches) == 1:
         return construct(matches[0], data, path=path, union_tag=union_tag)
     if len(matches) > 1:
         raise AmbiguousUnionError(_ambiguous_union_msg(matches, data, path, union_tag))
-    return _first_constructible(dc_vars, data, path, union_tag)
+    return _first_constructible(dc_vars, data, path, union_tag, refusals)
 
 
-def _try_fixed_seq_variants(fixed_vars: list[Any], data: Any, path: FieldPath, union_tag: str) -> Any:
+def _try_fixed_seq_variants(
+    fixed_vars: list[Any], data: Any, path: FieldPath, union_tag: str, refusals: _Refusals
+) -> Any:
     """Try the fixed-arity sequence variants; returns _UNION_NO_MATCH if none accept data.
 
     A namedtuple variant belongs here beside ``tuple[X, Y]``: both take exactly their arity
@@ -1323,14 +1334,14 @@ def _try_fixed_seq_variants(fixed_vars: list[Any], data: Any, path: FieldPath, u
     candidates = (
         [v for v in fixed_vars if len(_fixed_seq_types(_resolve_type(v)) or ()) == data_len] if data_len >= 0 else []
     ) or fixed_vars
-    return _first_constructible(candidates, data, path, union_tag)
+    return _first_constructible(candidates, data, path, union_tag, refusals)
 
 
-def _try_coll_variants(coll_vars: list[Any], data: Any, path: FieldPath, union_tag: str) -> Any:
+def _try_coll_variants(coll_vars: list[Any], data: Any, path: FieldPath, union_tag: str, refusals: _Refusals) -> Any:
     """Try constructing from collection variants; returns _UNION_NO_MATCH if none accept data."""
     if not (coll_vars and isinstance(data, dict | list | set | frozenset)):
         return _UNION_NO_MATCH
-    return _first_constructible(coll_vars, data, path, union_tag)
+    return _first_constructible(coll_vars, data, path, union_tag, refusals)
 
 
 class _LeafVariants(NamedTuple):
@@ -1370,12 +1381,14 @@ def _ranked_scalar_variants(all_args: list[Any], scalar_leaf_vars: list[Any], da
     return _steal_order(with_none, key=_resolve_type)
 
 
-def _first_scalar_variant_taking(
+def _first_scalar_variant_taking(  # noqa: PLR0913  # the walk, its value and where, and what keeps the refusals
     ordered: list[Any],
     all_args: list[Any],
     data: Any,
     path: FieldPath,
     union_tag: str,
+    *,
+    refusals: _Refusals | None = None,
 ) -> tuple[Any, Any] | None:
     """Return the first variant of *ordered* that takes *data* with the value it builds, None when none does.
 
@@ -1383,6 +1396,7 @@ def _first_scalar_variant_taking(
     reads. ``None`` is the one variant not built by ``_construct_scalar``: only a none word
     selects it, never the empty token ``_coerce_leaf`` accepts for a bare ``None`` target. A
     module that fails while a type reference imports it is not a refusal, and stops the union.
+    Each refusal is kept in *refusals*, where construction gives one.
 
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#stealing-rule
@@ -1395,8 +1409,9 @@ def _first_scalar_variant_taking(
             continue
         try:
             return var, _construct_scalar_variant(var, data, path, union_tag)
-        except (TypeCoercionError, SymbolNotFoundError, ValueError, TypeError):
-            continue
+        except (TypeCoercionError, SymbolNotFoundError, ValueError, TypeError) as e:
+            if refusals is not None:
+                refusals.append((var, e))
     return None
 
 
@@ -1414,12 +1429,14 @@ def _construct_scalar_variant(var: Any, data: Any, path: FieldPath, union_tag: s
     return _construct_scalar(var, data, path, union_tag)
 
 
-def _coerce_scalar_variants(
+def _coerce_scalar_variants(  # noqa: PLR0913  # the walk's arguments, and what keeps the refusals
     all_args: list[Any],
     scalar_leaf_vars: list[Any],
     data: Any,
     path: FieldPath,
     union_tag: str,
+    *,
+    refusals: _Refusals,
 ) -> Any:
     """Coerce data to one of the scalar leaf variants, in stealing rank; returns _UNION_NO_MATCH on failure.
 
@@ -1427,7 +1444,7 @@ def _coerce_scalar_variants(
         docs-dev/architecture/types/stealing-rule.md#stealing-rule
     """
     ordered = _ranked_scalar_variants(all_args, scalar_leaf_vars, data)
-    taken = _first_scalar_variant_taking(ordered, all_args, data, path, union_tag)
+    taken = _first_scalar_variant_taking(ordered, all_args, data, path, union_tag, refusals=refusals)
     return _UNION_NO_MATCH if taken is None else taken[1]
 
 
@@ -1456,35 +1473,39 @@ def read_union_leaf(tp: Any, value: Any, union_tag: str) -> Any:
     return taken[1]
 
 
-def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, path: FieldPath, union_tag: str) -> Any:
+def _construct_union_leaf(  # noqa: PLR0913  # the union, its value and where, and the refusals so far
+    all_args: list[Any], non_none: list[Any], data: Any, path: FieldPath, union_tag: str, *, refusals: _Refusals
+) -> Any:
     """Construct a union value by trying leaf variants in priority order.
 
     An ``Any`` variant is the last rung: it takes what every other variant refused. A value no
-    variant accepts fails naming the whole union; for a token, the refusal also says how to pass
-    ``None`` (BUG-162).
+    variant accepts fails naming the whole union and, on a line each, the reason of each variant
+    that says more than that (FEAT-46), the struct variants' already in *refusals*; for a
+    token, the refusal also says how to pass ``None`` (BUG-162).
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#an-optional-field-fails-as-its-variant
         docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
+        docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
     """
     fixed_vars, coll_vars, scalar_leaf_vars, any_vars = _leaf_variants(non_none)
 
-    result = _try_fixed_seq_variants(fixed_vars, data, path, union_tag)
+    result = _try_fixed_seq_variants(fixed_vars, data, path, union_tag, refusals)
     if result is not _UNION_NO_MATCH:
         return result
 
-    result = _try_coll_variants(coll_vars, data, path, union_tag)
+    result = _try_coll_variants(coll_vars, data, path, union_tag, refusals)
     if result is not _UNION_NO_MATCH:
         return result
 
-    result = _coerce_scalar_variants(all_args, scalar_leaf_vars, data, path, union_tag)
+    result = _coerce_scalar_variants(all_args, scalar_leaf_vars, data, path, union_tag, refusals=refusals)
     if result is not _UNION_NO_MATCH:
         return result
 
     # A lone CLI token (e.g. `--input hello` for `bool | list[str]`) that no scalar
     # variant accepts becomes a one-element list. Only _UnionSeqToken gets this fallback.
     if isinstance(data, _UnionSeqToken):
-        result = _try_coll_variants(coll_vars, [_StrToken(data)], path, union_tag)
+        result = _try_coll_variants(coll_vars, [_StrToken(data)], path, union_tag, refusals)
         if result is not _UNION_NO_MATCH:
             return result
 
@@ -1505,18 +1526,33 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
         data,
         variant_names,
         _spell_field_path(path),
-        unread=[_spell_type(v) for v in scalar_leaf_vars if _reads_nothing(v)],
+        reasons=_variant_reasons(non_none, refusals, data, path),
         none_sentinel=_reads_none_word(all_args, data),
     )
 
 
-def _reads_nothing(variant: Any) -> bool:
-    """True if the scalar union branch *variant* is a leaf construction reads no value as, such as ``bytes``.
+def _variant_reasons(non_none: list[Any], refusals: _Refusals, data: Any, path: FieldPath) -> list[tuple[str, str]]:
+    """Return each variant of *non_none* that refused *data* with a reason saying more than the union's, spelled.
 
-    A union skips such a branch; its refusal names it, since no value could have reached it.
+    In the union's order, each by the last refusal *refusals* keeps for it, which
+    :func:`~confarg.exceptions._variant_reason` reads: a refusal saying only that *data* is no
+    value of the variant, or not of its shape, gives none. A scalar leaf refuses a dict or a
+    list on its shape whatever it says, a format hint or a tag it cannot take, so it gives none
+    there either.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
     """
-    vr = _resolve_type(variant)
-    return not (_is_coercible_leaf(vr) or _is_type_ref(vr) or _type_kind(vr) is _TypeKind.CALLABLE)
+    spelled = _spell_field_path(path)
+    container = isinstance(data, dict | list)
+    reasons = []
+    for variant in non_none:
+        if container and _type_kind(_resolve_type(variant)) is _TypeKind.LEAF:
+            continue
+        refused = [e for v, e in refusals if v is variant]
+        if refused and (reason := _variant_reason(refused[-1], spelled, data)) is not None:
+            reasons.append((_spell_type(variant), reason))
+    return reasons
 
 
 def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:
@@ -1563,13 +1599,14 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
     if reader is not None:
         return construct(reader, data, path=path, union_tag=union_tag)
 
+    refusals: _Refusals = []
     dc_vars = [v for v in non_none if _is_struct_variant(_resolve_type(v))]
     if isinstance(data, dict) and dc_vars:
-        result = _try_construct_union_struct(dc_vars, data, path, union_tag)
+        result = _try_construct_union_struct(dc_vars, data, path, union_tag, refusals)
         if result is not _UNION_NO_MATCH:
             return result
 
-    return _construct_union_leaf(all_args, non_none, data, path, union_tag)
+    return _construct_union_leaf(all_args, non_none, data, path, union_tag, refusals=refusals)
 
 
 def _struct_matches_value(tp: Any, value: Any, union_tag: str) -> bool:

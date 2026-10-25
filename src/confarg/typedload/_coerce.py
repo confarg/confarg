@@ -593,11 +593,7 @@ def _coerce_enum_value(tp: Any, value: Any, path: str) -> Any:
         for m in tp:
             sv = str(m.value)
             members.append(f"'{m.name}' ('{sv}')" if sv != m.name else f"'{m.name}'")
-        msg = (
-            f"Cannot coerce {_src_type(value)} {value!r} to {tp.__name__} at '{path}'."
-            f" Valid members: {', '.join(members)}"
-        )
-        raise TypeCoercionError(msg) from None
+        raise TypeCoercionError.not_a_member(_src_type(value), value, tp.__name__, path, members) from None
 
 
 def _enum_choices(tp: Any) -> list[str]:
@@ -979,8 +975,7 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  
     tp = _resolve_type(tp)
     _refuse_a_forbidden_literal(tp, path)
     if not _is_coercible_leaf(tp):
-        msg = f"Unsupported leaf type {_spell_type(tp)} at '{path}'"
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.unsupported_leaf(_spell_type(tp), path)
     if tp is Any:
         return _held_by_any(value)
     if _is_none_type(tp):

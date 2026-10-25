@@ -9,6 +9,7 @@ from __future__ import annotations
 import enum
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NewType, Optional
 
 if TYPE_CHECKING:
@@ -361,6 +362,137 @@ class TestUnionWithNoneOffersTheRemedyOnlyToAToken:
             "Cannot coerce str 'abc' to int | float | None at 'value'."
             " To set this field to None, pass 'none' or 'null'."
         )
+
+
+@dataclass
+class _Feat46Opts:
+    level: int = 0
+
+
+@dataclass
+class _Feat46A:
+    a: int = 0
+
+
+@dataclass
+class _Feat46B:
+    b: int
+
+
+@dataclass
+class _Feat46NeedsA:
+    a: int
+
+
+class _Feat46Base:
+    """A class a ``type[X]`` variant is bounded by."""
+
+
+class TestAUnionRefusalNamesEachVariantsReason:
+    """A union's refusal gives each variant's reason on a line of its own, where it says more than the union (FEAT-46).
+
+    Each variant's reason was computed and dropped as the walk tried the next variant, so the
+    refusal named the field and the union and never why: a typo'd import, an Enum's members, a
+    field a struct variant does not declare. A variant that only says the value is no value of
+    its type, or of its shape, has no line.
+    """
+
+    @staticmethod
+    def _refusal(target: Any, data: dict[str, Any]) -> str:
+        with pytest.raises(confarg.exceptions.ConfargError) as excinfo:
+            confarg.build(target, data)
+        return str(excinfo.value)
+
+    def test_an_enum_variant_names_its_members(self) -> None:
+        """``int`` and the ``Literal`` say only "not one"; the enum lists what it takes."""
+        Target = make_target("c", int | Color | Literal["a", "b"], default=0)
+        assert self._refusal(Target, {"c": "x"}) == (
+            "Cannot coerce str 'x' to int | Color | Literal['a', 'b'] at 'c':\n"
+            "  Color: valid members 'RED' ('red'), 'GREEN' ('green'), 'BLUE' ('blue')"
+        )
+
+    def test_a_callable_variant_names_the_import_that_failed(self) -> None:
+        """A struct variant cannot take a string, so only the Callable's reason is given."""
+        Target = make_target("f", Callable | _Feat46Opts, default=None)
+        assert self._refusal(Target, {"f": "os.dubble"}) == (
+            "Cannot coerce str 'os.dubble' to Callable | _Feat46Opts at 'f':\n"
+            "  Callable: cannot import 'os.dubble': module 'os' has no attribute 'dubble'"
+        )
+
+    def test_a_type_variant_names_its_bound(self) -> None:
+        """A class outside the ``type[X]`` bound is named, with the bound."""
+        Target = make_target("t", type[_Feat46Base] | int, default=0)
+        assert self._refusal(Target, {"t": "builtins.str"}) == (
+            f"Cannot coerce str 'builtins.str' to type[_Feat46Base] | int at 't':\n"
+            f"  type[_Feat46Base]: class 'builtins.str' is not a subclass of {__name__}._Feat46Base"
+        )
+
+    def test_a_registered_leaf_gives_its_own_reason(self) -> None:
+        """A registered leaf's refusal says what it is read from; the list and the int say nothing more."""
+        Target = make_target("u", datetime | list[int] | int, default=0)
+        assert self._refusal(Target, {"u": "notadate"}) == (
+            "Cannot coerce str 'notadate' to datetime | list[int] | int at 'u':\n"
+            "  datetime: a datetime is ISO 8601 text, such as '2021-02-03T10:20:30+02:00'"
+        )
+
+    def test_a_refusal_inside_the_value_is_given_whole(self) -> None:
+        """The list takes the list and refuses its element, which names where; the scalars refuse its shape."""
+        Target = make_target("u", datetime | list[int] | int, default=0)
+        assert self._refusal(Target, {"u": ["x"]}) == (
+            "Cannot coerce list ['x'] to datetime | list[int] | int at 'u':\n"
+            "  list[int]: cannot coerce str 'x' to int at 'u[0]'"
+        )
+
+    def test_struct_variants_name_the_fields_they_refuse(self) -> None:
+        """Every rung keeps its variants' reasons: a struct names the fields it does not declare."""
+        Target = make_target("v", _Feat46A | _Feat46B | None, default=None)
+        assert self._refusal(Target, {"v": {"c": 1}}) == (
+            "Cannot coerce dict {'c': 1} to _Feat46A | _Feat46B | None at 'v':\n"
+            "  _Feat46A: unknown field(s) ['c']. Valid fields: ['a']\n"
+            "  _Feat46B: unknown field(s) ['c']. Valid fields: ['b']"
+        )
+
+    def test_a_struct_variant_names_the_field_it_misses(self) -> None:
+        """A missing field is a reason, without the flag a remedy would name under a prefix only load() knows."""
+        Target = make_target("v", _Feat46NeedsA | _Feat46B, default=None)
+        assert self._refusal(Target, {"v": {}}) == (
+            "Cannot coerce dict {} to _Feat46NeedsA | _Feat46B at 'v':\n"
+            "  _Feat46NeedsA: missing required field 'v.a' of type int\n"
+            "  _Feat46B: missing required field 'v.b' of type int"
+        )
+
+    def test_a_dict_variant_names_the_key_it_refuses(self) -> None:
+        """A tag-spelled key a dict variant reads as data and refuses is named (BUG-276)."""
+        Target = make_target("ud", int | dict[int, str], default=0)
+        assert self._refusal(Target, {"ud": {"class": "x"}}) == (
+            "Cannot coerce dict {'class': 'x'} to int | dict[int, str] at 'ud':\n"
+            "  dict[int, str]: cannot coerce str 'class' to int at 'ud'"
+        )
+
+    def test_a_branch_confarg_reads_nothing_as_has_its_line(self, loader: ConfargLoader) -> None:
+        """``bytes`` is skipped, which its line says, as every reason is said."""
+        Target = make_target("by", int | bytes, default=0)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+            loader.load(Target, argv=["--by", "abc"], env={})
+        assert str(excinfo.value) == (
+            "Cannot coerce str 'abc' to int | bytes at 'by':\n  bytes: no leaf type confarg reads"
+        )
+
+    def test_the_none_remedy_closes_the_lines(self, loader: ConfargLoader) -> None:
+        """A token's none-word remedy comes after the reasons, on a line of its own, on every front-end."""
+        Target = make_target("c", int | Color | None, default=None)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+            loader.load(Target, argv=["--c", "x"], env={})
+        assert str(excinfo.value) == (
+            "Cannot coerce str 'x' to int | Color | None at 'c':\n"
+            "  Color: valid members 'RED' ('red'), 'GREEN' ('green'), 'BLUE' ('blue')\n"
+            "To set this field to None, pass 'none' or 'null'."
+        )
+
+    def test_no_line_leaves_the_one_line_refusal(self) -> None:
+        """Where every variant says only "not one", the refusal is the one line it was."""
+        Target = make_target("n", int | float, default=0)
+        assert self._refusal(Target, {"n": "abc"}) == "Cannot coerce str 'abc' to int | float at 'n'"
 
 
 class TestUnionWithACarriedBaseFailsAsItsSequenceVariant:

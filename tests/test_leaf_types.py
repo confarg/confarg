@@ -1064,7 +1064,7 @@ class TestALiteralMemberIsWhatPep586Allows:
     def test_a_union_refusal_names_the_branch_it_skipped(self) -> None:
         """``bytes | int`` refuses ``b'ab'`` saying no value reads as bytes, not that the value is wrong."""
         WithBytesOrInt = make_target("x", bytes | int, default=0)
-        with pytest.raises(TypeCoercionError, match=re.escape("at 'x'; bytes is no leaf type confarg reads")):
+        with pytest.raises(TypeCoercionError, match=re.escape("at 'x':\n  bytes: no leaf type confarg reads")):
             confarg.build(WithBytesOrInt, {"x": b"ab"})
 
 
