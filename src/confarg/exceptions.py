@@ -214,6 +214,17 @@ class ConfargError(Exception):
         """
         return type(self)(_append_none_remedy(str(self)))
 
+    def _without_none_remedy(self) -> Self:
+        """Return this error without the none-word remedy :meth:`_with_none_remedy` or a union's refusal ended with.
+
+        For a dict key, which a none word reads as ``None`` too, but which is no field to set.
+        """
+        message = str(self)
+        for ending in (f"\n{_NONE_REMEDY}", f". {_NONE_REMEDY}"):
+            if message.endswith(ending):
+                return type(self)(message.removesuffix(ending))
+        return self
+
     @classmethod
     def missing_value(cls, token: str, usage: str = "<value>") -> ConfargError:
         """Return the error for a value-taking flag that argv left without its value.

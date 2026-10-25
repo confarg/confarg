@@ -74,7 +74,7 @@ A key a higher layer writes meets every key below it that the type reads as the 
 `MergeAt.key_identity` answers what a key is where the merge stands, and every place keys meet asks it: `_deep_merge` between layers, the writers within one source (`_set_nested` and the descent `_descend_creating`, `_keep_deletes`, `_spent_if_met`), which the CLI and the environment hand the typed root (`merge_root` of the walk target) (BUG-244).
 
 - **A dict's key is its key type.**
-  At a `dict[K, V]` two keys are one when they coerce to the same `K`, by the coercion construction builds the dict with (`_coerce_leaf` on the key as a token).
+  At a `dict[K, V]` two keys are one when they read as the same `K`, by the reading construction builds the dict with (`_construct.read_key`, the key as a token), a union `K` ranking a key as it ranks a token value: `1` and `a` of a `dict[int | str, V]` read as the int and the text, and `null` and `none` of a `dict[int | None, V]` are one key, `None` (BUG-261).
   A YAML file read `{1: 5}` with an integer key (a plain key is its text since BUG-254, a tagged `!!int 1` still is one) and argv spells `--d.1-` as text, so the delete met nothing until BUG-244, and `--d.1 9` put `'1'` beside `1`, which built right only because construction let the later win.
   `RED` and `1` are one key of a `dict[Color, int]` whose `RED` is 1, and `yes` meets YAML's `true` on a `dict[bool, int]`.
   A key that does not coerce matches by equality, and construction refuses it as before: YAML's `!!int 1` under a `dict[str, V]` stays apart from `'1'`.

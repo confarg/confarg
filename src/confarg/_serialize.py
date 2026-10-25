@@ -22,7 +22,7 @@ from confarg._callable import _serialize_callable, holds_an_opener, promote_bare
 from confarg._cast import cast_name_for_type
 from confarg._depth import MAX_DEPTH, refuse_overflow
 from confarg._import import dotted_name, imports_back
-from confarg._merge import ListOp, MergeDict, _DeleteSentinel
+from confarg._merge import ListOp, MergeDict, _DeleteSentinel, _key_spelling
 from confarg._types import (
     TagPolicy,
     _allows_none,
@@ -38,6 +38,7 @@ from confarg._types import (
     _is_literal,
     _is_struct,
     _is_type_ref,
+    _is_union,
     _literal_members,
     _literal_values,
     _namedtuple_fields,
@@ -50,6 +51,7 @@ from confarg._types import (
     _struct_state_fields,
     _tagged_struct,
     _tuple_types,
+    _union_args,
     _union_args_no_none,
     _union_branches,
 )
@@ -63,7 +65,7 @@ from confarg.typedload._coerce import (
     _type_kind,
     _TypeKind,
 )
-from confarg.typedload._construct import _disambiguate_struct, _holds_anything, construct
+from confarg.typedload._construct import _disambiguate_struct, _holds_anything, construct, read_key
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -727,6 +729,9 @@ def _serialize_dict(
 ) -> dict[Any, Any]:
     """Serialize a typed dict.
 
+    A union key type writes each key as its variant does, and warns of one another variant
+    reads its text back as (:func:`_warn_a_key_read_as_another`).
+
     Raises:
         ConfargError: If it holds a key, and its key type is one construction does not coerce a key to.
 
@@ -734,17 +739,50 @@ def _serialize_dict(
         docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
     """
     kt, vt = _dict_kv(tp)
-    if instance and not _is_coercible_leaf(_resolve_type(kt)):
+    rkt = _resolve_type(kt)
+    union = _is_union(rkt)
+    if instance and not all(_is_coercible_leaf(v) for v in (_union_args(rkt) if union else [rkt])):
         where = _spell_field_path(path) or _defaults.ROOT_KEY
         msg = (
             f"Cannot serialize {_spell_type(kt)} keys at '{where}': construction reads no key as one,"
             " so the dict would not load back."
         )
         raise ConfargError(msg)
-    return {
-        _data_key(_serialize_leaf(kt, k, opts.native_types), (*path, str(k))): _serialize(vt, v, (*path, str(k)), opts)
-        for k, v in instance.items()
-    }
+    written = {}
+    for k, v in instance.items():
+        key = _serialize_leaf(kt, k, opts.native_types)
+        if union:
+            _warn_a_key_read_as_another(kt, k, key, path, opts.union_tag)
+        written[_data_key(key, (*path, str(k)))] = _serialize(vt, v, (*path, str(k)), opts)
+    return written
+
+
+def _warn_a_key_read_as_another(kt: Any, key: Any, written: Any, path: FieldPath, union_tag: str) -> None:
+    """Warn that the key *key* of a dict keyed by the union *kt*, at *path*, will not read back as itself.
+
+    A key is read back from the text a file writes it as (:func:`_key_spelling`), as a token,
+    so the text ``'1'`` of a ``dict[int | str, V]`` reads back as the int: no ``__cast__``
+    spells a key, so the dump writes it and warns, as it does a value no cast can pin
+    (:func:`_warn_unpinnable_leaf`).
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#a-union-key-another-variant-reads-is-written-with-a-warning
+    """
+    text = written if isinstance(written, str) else _key_spelling(written)
+    try:
+        read = read_key(kt, text, path, union_tag)
+    except ConfargError:
+        taker = f"no variant of {_spell_type(kt)} takes its text"
+    else:
+        if type(read) is type(key) and read == key:
+            return
+        taker = f"{_spell_type(type(read))}, another variant of {_spell_type(kt)}, takes its text"
+    warnings.warn(
+        f"Key {text!r} at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as"
+        f" {_spell_type(type(key))}: {taker}.",
+        ConfargWarning,
+        stacklevel=2,
+    )
 
 
 def _data_key(key: Any, path: FieldPath) -> Any:

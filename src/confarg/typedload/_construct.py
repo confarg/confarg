@@ -107,6 +107,7 @@ from confarg.typedload._coerce import (
     _coerce_leaf,
     _coerce_type_ref,
     _held_by_any,
+    _is_coercible_leaf,
     _is_struct_variant,
     _is_taggable_leaf,
     _refuse_a_forbidden_literal,
@@ -1161,14 +1162,34 @@ def _construct_dict(tp: Any, data: Any, path: FieldPath, union_tag: str) -> dict
     if op := next((k for k in data if isinstance(k, ListOp)), None):
         raise TypeCoercionError.list_op_on(str(op), "dict", _spell_field_path(path))
     return {
-        _coerce_leaf(kt, _StrToken(k) if isinstance(k, str) else k, _spell_field_path(path)): construct(
-            vt,
-            v,
-            path=(*path, str(k)),
-            union_tag=union_tag,
-        )
+        read_key(kt, k, path, union_tag): construct(vt, v, path=(*path, str(k)), union_tag=union_tag)
         for k, v in data.items()
     }
+
+
+def read_key(kt: Any, key: Any, path: FieldPath, union_tag: str) -> Any:
+    """Return the key *key* of a dict at *path* as its key type *kt* reads it.
+
+    Every channel spells a key as text, a file's included, so a string key is read as a token:
+    converted as a flag's value is. A union reads it as it reads a token value, each variant in
+    stealing rank, so ``dict[int | str, V]`` reads ``1`` as the int and ``a`` as the text, and
+    ``dict[int | None, V]`` reads ``null`` as ``None``; a union holding a variant no key is read
+    as, ``int | tuple[int, int]``, is refused as such a key type alone is, as ``dump()`` refuses
+    it. Construction and the merge's key identity both read a key through it.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#which-keys-are-one-key
+    """
+    token = _StrToken(key) if isinstance(key, str) else key
+    if not _is_union(rkt := _resolve_type(kt)):
+        return _coerce_leaf(kt, token, _spell_field_path(path))
+    if not all(_is_coercible_leaf(v) for v in _union_args(rkt)):
+        raise TypeCoercionError.unsupported_leaf(_spell_type(kt), _spell_field_path(path))
+    try:
+        return construct(kt, token, path=path, union_tag=union_tag)
+    except TypeCoercionError as e:
+        # A key is no field: the none word reads as None there too, but "set this field" misleads.
+        raise e._without_none_remedy() from None
 
 
 _UNION_NO_MATCH: object = object()

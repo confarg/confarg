@@ -68,3 +68,13 @@ A plain class's `*args` member is typed as the tuple Python hands the constructo
 
 Before, each shape answered differently, and none warned: a struct field read its declared fields off whatever it held, so a field-less one wrote `{}` for any value and a `tuple[int, int]` holding three items wrote two; a union handed the value back untouched, a live object that only `dump_file()` refused; a leaf was written as it was.
 Refusing at `dump()` was rejected for the forensic reason above; a field-less struct's `{}` is what a descriptor-typed dataclass field dumped as, read as its descriptor class.
+
+## A union key another variant reads is written with a warning
+
+A dict keyed by a union writes each key as its variant does, and a key reads back as every key does: from its text, as a token, ranked by the union ([which keys are one key](../pipeline/deep-merge.md#which-keys-are-one-key)).
+So most keys round-trip, `1` and `'a'` of a `dict[int | str, V]`, `None` of a `dict[int | None, V]` (written `null`), but the text `'1'`, which only code builds, reads back as the int.
+No `__cast__` spells a key, so `dump()` writes it and warns, `Key '1' at 'u' will not read back as str: int, another variant of int | str, takes its text.` (`_serialize._warn_a_key_read_as_another`), as it writes a leaf no cast can pin with a warning: the dump is forensic ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)).
+Refusing the key, as two keys spelled alike are refused, was weighed and not taken: the dict holds the state the object has, and the merged dict that produced it keeps its text (maintainer-chosen).
+
+A union holding a variant no key is read as, `int | tuple[int, int]`, is refused both ways, as such a key type alone is: construction refuses the key type (`_construct.read_key`) and `dump()` the dict.
+Until BUG-261 every union key type was: each key went through the leaf coercion, which takes no union.
