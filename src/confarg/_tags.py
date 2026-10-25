@@ -31,6 +31,7 @@ from confarg._types import (
     _union_tag_shadowed,
 )
 from confarg.dictexpr import contains_expression
+from confarg.typedload._construct import TagReading, tag_reading
 
 
 def class_named(path: Any) -> type | None:
@@ -139,12 +140,16 @@ def _union_field_tags(
     resolved: Any,
     union_tag: str,
 ) -> dict[str, str]:
-    """Return resolved class-tag entries for one union field in the merged config."""
+    """Return resolved class-tag entries for one union field in the merged config.
+
+    A tag-spelled key is one only where it selects a variant (:func:`tag_reading`): a dict
+    variant's entry is data, and a tag no variant is selected by is refused unimported.
+    """
     tags: dict[str, str] = {}
     non_none = _union_args_no_none(resolved)
     if len(non_none) > 1:
         sub = merged.get(name)
-        if isinstance(sub, dict) and union_tag in sub and not _union_tag_shadowed(resolved, union_tag):
+        if isinstance(sub, dict) and union_tag in sub and tag_reading(resolved, union_tag) is TagReading.SELECTS:
             val = sub[union_tag]
             if isinstance(val, str):
                 tags[flag] = val
@@ -219,17 +224,20 @@ def collect_tags(
 
 
 def _argv_tag_names_member(target: Any, field_path: str, union_tag: str) -> bool:
-    """Return True if the tag-shaped flag at *field_path* names a real member instead.
+    """Return True if the tag-shaped flag at *field_path* names a real member instead, or a dict variant's entry.
 
     The argv scan is lexical, so it cannot tell a tag from a field that owns the
     tag's spelling; the type walk can, and a field's value must never steer the
-    walk or the pre-registration import the way a class path does.
+    walk or the pre-registration import the way a class path does. A union reads
+    the key as :func:`tag_reading` says: only a tag that selects a variant is imported.
     """
     # Imported here: _parse_cli imports this module.
     from confarg._parse_cli import _resolve_field_type  # noqa: PLC0415  # import cycle: _parse_cli imports this module
 
     parts = field_path.split(".") if field_path else []
     at = _resolve_field_type(target, parts, union_tag)
+    if at is not None and _is_union(at):
+        return tag_reading(at, union_tag) is not TagReading.SELECTS
     return at is not None and _union_tag_shadowed(at, union_tag)
 
 

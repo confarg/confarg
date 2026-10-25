@@ -106,8 +106,6 @@ class TestATagNoVariantTakes:
             pytest.param(int | str, "int | str", True, id="scalars"),
             pytest.param(int | Path, "int | Path", True, id="untaggable-leaf-variant"),
             pytest.param(int | datetime, "int | datetime", True, id="registered-leaf-variant"),
-            pytest.param(list[int] | str, "list[int] | str", True, id="sequence-variant"),
-            pytest.param(int | dict[str, str], "int | dict[str, str]", True, id="dict-variant"),
         ],
     )
     def test_the_refusal_says_why_no_class_is_picked(self, tp: Any, spelled: str, union: bool) -> None:  # noqa: FBT001  # a parametrized case
@@ -128,6 +126,88 @@ class TestATagNoVariantTakes:
                 construct(int | str, {"class": tag}, path=("x",))
             assert str(exc_info.value) == _no_struct_refusal("int | str", tag, union=True)
         assert "bug252_broken" not in sys.modules
+
+
+@dataclass
+class _Bug276Job:
+    """A class a tag selects beside a dict variant."""
+
+    kind: str = "batch"
+
+
+class _Bug276Pair(NamedTuple):
+    """A namedtuple variant, which reads a dict as its fields."""
+
+    a: str
+    b: str
+
+
+class TestATagSpelledKeyIsDataWhereNoTagSelects:
+    """A union no tag selects a variant of reads the tag's spelling as data where a variant reads a dict (BUG-276).
+
+    The union read the key as the tag whatever its variants were, so ``int | dict[str, str]``
+    refused ``{class: confidential}``, which a lone ``dict[str, str]`` holds as an entry.
+    """
+
+    @pytest.mark.parametrize(
+        "tp",
+        [
+            pytest.param(int | dict[str, str], id="scalar-and-dict"),
+            pytest.param(list[str] | dict[str, str], id="list-and-dict"),
+            pytest.param(dict[str, str] | None, id="optional-dict"),
+            pytest.param(int | dict, id="untyped-dict"),
+            pytest.param(Literal["x"] | dict[str, str], id="literal-and-dict"),
+            pytest.param(int | datetime | dict[str, str], id="registered-leaf-built-from-one-value"),
+        ],
+    )
+    def test_a_dict_variant_holds_the_key(self, tp: Any) -> None:
+        """The dict variant takes ``class`` as an entry, as a lone dict does."""
+        assert construct(tp, {"class": "confidential"}, path=("x",)) == {"class": "confidential"}
+
+    def test_a_configured_tag_spelling_is_data_too(self) -> None:
+        """The rule reads the configured tag, not the word ``class``."""
+        assert construct(int | dict[str, str], {"kind": "x"}, path=("x",), union_tag="kind") == {"kind": "x"}
+
+    def test_the_key_is_not_imported(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+    ) -> None:
+        """Data is never imported: a module the key's value names never runs."""
+        (tmp_path / "bug276_broken.py").write_text("raise RuntimeError('boom')\n")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        request.addfinalizer(lambda: sys.modules.pop("bug276_broken", None))
+        data = {"class": "bug276_broken.Thing"}
+        assert construct(int | dict[str, str], data, path=("x",)) == data
+        assert "bug276_broken" not in sys.modules
+
+    @pytest.mark.parametrize(
+        ("tp", "spelled"),
+        [
+            pytest.param(int | dict[int, str], "int | dict[int, str]", id="int-keyed-dict"),
+            pytest.param(list[int] | str, "list[int] | str", id="sequence"),
+            pytest.param(int | set[str], "int | set[str]", id="set"),
+            pytest.param(tuple[str, str] | int, "tuple[str, str] | int", id="fixed-tuple"),
+            pytest.param(_Bug276Pair | int, "_Bug276Pair | int", id="namedtuple"),
+        ],
+    )
+    def test_a_variant_that_cannot_hold_the_key_refuses_it_as_data(self, tp: Any, spelled: str) -> None:
+        """A variant reads the dict, so the key is data it refuses: the union's refusal, not the tag's."""
+        with pytest.raises(TypeCoercionError) as exc_info:
+            construct(tp, {"class": "x"}, path=("x",))
+        assert str(exc_info.value).startswith(f"Cannot coerce dict {{'class': 'x'}} to {spelled} at 'x'")
+        assert "picks the class" not in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        "tp",
+        [
+            pytest.param(_Bug276Job | dict[str, str], id="struct"),
+            pytest.param(UUID | dict[str, str], id="registered-leaf-built-from-keys"),
+            pytest.param(Any | dict[str, str], id="spec-reader"),
+        ],
+    )
+    def test_a_variant_a_tag_selects_keeps_the_tag(self, tp: Any) -> None:
+        """Beside a variant a tag selects the key is the tag: a class that does not import is refused."""
+        with pytest.raises(TypeCoercionError, match="Cannot import class 'confidential'"):
+            construct(tp, {"class": "confidential"}, path=("x",))
 
 
 class TestUnionSeqTokenFallback:

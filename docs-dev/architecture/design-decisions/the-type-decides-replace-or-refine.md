@@ -7,7 +7,7 @@ Which one it is, is the type's to say, not the key's: the merge asks the type at
 | The type at the node | A dict replaces what lies below when it holds |
 |---|---|
 | a Callable, an `Any` | an opener (`bind`, `class`, `call`, `classfn`) naming a target |
-| a struct, a union of several members, a leaf | the union tag, unless a member owns its spelling ([real field wins](../cli-parsing/casts-and-reserved-words.md#real-field-wins)) |
+| a struct, a union of several members, a leaf | the union tag, unless a member owns its spelling ([real field wins](../cli-parsing/casts-and-reserved-words.md#real-field-wins)), or, in a union no tag selects a variant of, a variant reads a dict ([where no tag selects](../types/construction.md#where-no-tag-selects-a-variant-that-reads-a-dict-holds-the-key-as-data)) |
 | any field that takes a typed call | `call` ([call in a typed field](../callables.md#call-in-a-typed-field)) |
 | a union of several members | also an opener its Callable or `Any` member reads, unless a struct member owns the opener's key ([a Callable beside another variant](../callables.md#a-callable-beside-another-variant)) |
 | a `dict`, a sequence, a struct owning the key | nothing: the key is data, and the dict refines |

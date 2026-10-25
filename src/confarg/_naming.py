@@ -57,7 +57,13 @@ from confarg.dictexpr import contains_expression
 from confarg.dictexpr._expressions import _list_index
 from confarg.exceptions import ConfargError
 from confarg.typedload._coerce import _type_kind, _TypeKind
-from confarg.typedload._construct import _first_spec_reader, _is_typed_call, spec_reading_variant
+from confarg.typedload._construct import (
+    TagReading,
+    _first_spec_reader,
+    _is_typed_call,
+    spec_reading_variant,
+    tag_reading,
+)
 
 
 class Named(enum.Enum):
@@ -151,12 +157,14 @@ def named_variant(tp: Any, node: MergeDict, union_tag: str) -> Any:
     The variant a tag names (a struct variant the class subclasses, else the variant that reads
     specs, as :func:`~confarg.typedload._construct._construct_union_by_tag` builds it), or the one
     that reads an opener *node* holds (:func:`~confarg.typedload._construct.spec_reading_variant`).
-    A ``call:`` is the union's, no variant's. *tp* that is no union of several variants names none.
+    A ``call:`` is the union's, no variant's. *tp* that is no union of several variants names none,
+    and neither does a tag that selects no variant (:func:`tag_reading`), which is never
+    imported.
     """
     members = _union_branches(tp)
     if len(members) < 2 or not isinstance(node, dict):  # noqa: PLR2004  # a union of several variants
         return None
-    if union_tag in node and not _union_tag_shadowed(tp, union_tag):
+    if union_tag in node and tag_reading(tp, union_tag) is TagReading.SELECTS:
         cls = class_named(node[union_tag])
         if cls is None:
             return None

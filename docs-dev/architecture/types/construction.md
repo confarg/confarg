@@ -7,7 +7,8 @@
 1. single non-None variant (with `none`/`null` tokens for Optional);
 2. the **union tag** (`class` by default): a full dotted class path, which must be a subclass of exactly one variant that `_is_struct` accepts — registered leaves included, since a tag is an explicit request to build from fields ([design decisions](../design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in)).
    A tag that is all the data asks the named class to build from nothing, and a `TypeError` out of that call is a `TypeCoercionError` naming the class and quoting Python's own text — the tag is supplied data, so the field is not missing (BUG-213), the shape the auto-bound owner of an instance method already takes ([callables](../callables.md#auto-binding)).
-   The key is the tag only when no member — no variant's own field, nor a variant's subclass-only field — owns its spelling; a member that does owns the key, the union falls through to structural matching, and the key counts as provided data there (BUG-102, BUG-103, [CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins));
+   The key is the tag only when no member — no variant's own field, nor a variant's subclass-only field — owns its spelling; a member that does owns the key, the union falls through to structural matching, and the key counts as provided data there (BUG-102, BUG-103, [CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins)).
+   Nor is it the tag where it can select no variant and a variant reads a dict, which holds it as data ([below](#where-no-tag-selects-a-variant-that-reads-a-dict-holds-the-key-as-data));
 3. **structural** matching for struct variants: required fields ⊆ provided keys ⊆ fields, refined by value/type compatibility; more than one match is an `AmbiguousUnionError` whose message lists each variant's fields and suggests the tag; zero matches falls back to trying each variant;
 4. **leaf** variants: tuples (filtered by arity), then collections, then scalars (stealing rule), then the `_UnionSeqToken` one-element-list fallback, then `Any` ([below](#an-any-variant-is-tried-last)).
 
@@ -23,7 +24,23 @@ The refusal comes before the tag is imported, as on the leaf: no class it names 
 Until BUG-252 the union imported the tag and listed the struct variants it could be a subclass of, which were none: "Expected a subclass of one of: []".
 A union with a struct variant or a spec reader still imports the tag, which decides what is built.
 
-A dict variant does not take the tag either: `int | dict[str, str]` refuses `{class: confidential}`, which a lone `dict[str, str]` holds as data, since the union tag on a union of several members names what is built ([the type decides](../design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)).
+#### Where no tag selects, a variant that reads a dict holds the key as data
+
+The key is the tag only where it can select a variant: a struct, a registered leaf a tag opens, or a Callable or an `Any` reading the spec (`_construct.tag_selects_a_variant`).
+Where it can select none, a variant that reads a dict reads it as data, as it does alone: `int | dict[str, str]` holds `{class: confidential}` as an entry, as a lone `dict[str, str]` does, and the merge lets `--labels.class confidential` add it beside a lower file's entries rather than replace them ([the type decides](../design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)).
+Only a union whose variants read no dict refuses the tag, as above.
+`_construct.tag_reading` is the one answer, telling a key a member owns, a variant's data, a tag refused and a tag that selects apart; construction, the merge's `reads_as_new_value` and its walk's `_union_child`, the walk's `_naming.named_variant`, the tag pre-import and the default layer all ask it.
+Only a tag that selects a variant is imported, so no channel runs the module a dict entry spells, nor one a refused tag names: the pre-import used to import both, `--labels.class pkg.mod` on `int | dict[str, str]` as `--u.class pkg.mod` on `int | str`, and the default layer the first, since each asked only whether a member owned the spelling.
+
+The type decides what the key is, as for a lone field, not whether some variant could hold `class`: `int | dict[int, str]` and `list[int] | str` read it as data their dict or sequence variant then refuses (`Cannot coerce str 'class' to int`), and the union's refusal is theirs, not the tag's.
+Asking whether a variant's key type takes the spelling, so that only `dict[str, V]` held it and `int | dict[int, str]` refused the tag, was rejected: the tag refusal says no variant "is built from keys", which is false of a dict, and the merge would coerce the tag's spelling against each key type (maintainer-chosen).
+
+Beside a variant a tag selects, the key stays the tag, a dict variant or not: `Job | dict[str, str]` imports `confidential` and refuses it, and a configuration keeping a `class` entry in the dict variant passes a `union_tag` no data key spells.
+Reading the key as data whenever the tag does not import, as jsonargparse reads a `class_path` its `Union[Job, dict]` cannot import, was rejected: a misspelled class path would silently become a dict entry.
+So was a dict variant owning the key as a real field owns it, which would have left no tag selecting a class in `Job | dict[str, str]`.
+Precedents: pydantic's discriminated unions and msgspec's tagged ones refuse a dict variant beside a tag when the type is defined; without a tag, both read `{class: …}` on `int | dict` as data.
+
+Until BUG-276 the union read the key as the tag whatever its variants were, so `int | dict[str, str]` refused a value its dict variant holds, and the merge replaced a lower layer's entries with it.
 
 ### An optional field fails as its variant
 

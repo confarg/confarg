@@ -10,6 +10,7 @@ Dev Notes:
 
 from __future__ import annotations
 
+import enum
 import types
 import warnings
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -636,7 +637,7 @@ def opener_reader(tp: Any, opener: str, union_tag: str) -> Any:
         return members[0] if _reads_specs(members[0]) else None
     if opener != union_tag:
         return _opener_keys_reader(members, {opener})
-    if _union_tag_shadowed(tp, union_tag) or any(_is_struct(m) for m in members):
+    if _union_tag_shadowed(tp, union_tag) or _holds_a_struct(members):
         return None
     return _first_spec_reader(members)
 
@@ -647,17 +648,77 @@ def _first_spec_reader(members: Sequence[Any]) -> Any:
     return next(iter(callables), None) or next((m for m in members if _holds_anything(m)), None)
 
 
+def _holds_a_struct(members: Sequence[Any]) -> bool:
+    """True if one of the union's *members* is a struct, registered leaves included: a class a tag builds from keys."""
+    return any(_is_struct(_resolve_type(m)) for m in members)
+
+
+def tag_selects_a_variant(members: Sequence[Any]) -> bool:
+    """True if the union tag can select one of the union's *members*: a struct, a registered leaf, or a spec reader.
+
+    A tag names a class to build from the keys beside it, which a struct variant, registered
+    leaves included, is built from; a class no such variant holds is the spec of the Callable
+    or the ``Any`` (:func:`_construct_union_by_tag`).
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
+    """
+    return _holds_a_struct(members) or _first_spec_reader(members) is not None
+
+
+class TagReading(enum.Enum):
+    """What a union reads a dict's key spelled as its tag as (:func:`tag_reading`)."""
+
+    OWNED = enum.auto()
+    """A member owns the spelling as a field, whose value it is."""
+    DATA = enum.auto()
+    """A variant that reads a dict holds it as data, where the tag can select no variant."""
+    REFUSED = enum.auto()
+    """The tag, which can select no variant: refused before it is imported."""
+    SELECTS = enum.auto()
+    """The tag, naming the class of the variant to build, imported to select it."""
+
+    @property
+    def is_the_tag(self) -> bool:
+        """True if the key is the tag, which construction dispatches on rather than reading as data."""
+        return self in {TagReading.REFUSED, TagReading.SELECTS}
+
+
+def tag_reading(tp: Any, union_tag: str) -> TagReading:
+    """Return what the union *tp* reads a dict's *union_tag* key as: a member's, a variant's data, or the tag.
+
+    The key is the tag where it can select a variant (:func:`tag_selects_a_variant`), unless a
+    member owns its spelling. Where it can select none, a variant that reads a dict, a ``dict``,
+    a set, a sequence or a namedtuple, reads it as data, as it does alone; a union of variants
+    that read no dict reads it as the tag, to refuse it as a leaf does. Construction, the
+    merge's replace-or-refine reading and its walk, the tag pre-import and the default layer
+    all ask it, so only a tag that selects a variant is ever imported.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
+    """
+    members = _union_args_no_none(tp)
+    if _union_tag_shadowed(tp, union_tag):
+        return TagReading.OWNED
+    if tag_selects_a_variant(members):
+        return TagReading.SELECTS
+    # No Any variant is left: it reads specs, so the tag would have selected it.
+    leaves = _leaf_variants(members)
+    return TagReading.DATA if leaves.fixed or leaves.collections else TagReading.REFUSED
+
+
 def reads_as_new_value(data: MergeDict, tp: Any, union_tag: str) -> bool:  # noqa: PLR0911  # one return per kind
     """True if construction reads the dict *data*, at a field of type *tp*, as naming what it builds.
 
     So a key a lower layer set beside it cannot belong to it, and the merge lets *data* replace
     what lies below rather than refine it. It does where construction dispatches on a key
     rather than reading it as data: a typed call (:func:`_is_typed_call`), an opener on a
-    Callable or an ``Any`` node, and the union tag on a struct, a union of several members or a
-    leaf, unless a member owns its spelling (``_union_tag_shadowed``). A union of several
-    members reads an opener as its Callable or ``Any`` member would. An opener whose target is
-    a dict holding no opener of its own (``{call: {k: 3}}``) refines the target below; a dict,
-    a sequence and a struct owning the key hold it as data.
+    Callable or an ``Any`` node, the union tag on a struct or a leaf, unless a member owns its
+    spelling (``_union_tag_shadowed``), and on a union of several members that reads it as the
+    tag (:func:`tag_reading`). A union of several members reads an opener as its Callable or
+    ``Any`` member would. An opener whose target is a dict holding no opener of its own
+    (``{call: {k: 3}}``) refines the target below; a dict, a sequence, a struct owning the key
+    and a union whose dict variant holds it hold it as data.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
@@ -672,7 +733,7 @@ def reads_as_new_value(data: MergeDict, tp: Any, union_tag: str) -> bool:  # noq
             members = _union_branches(tp)
             if len(members) == 1:
                 return reads_as_new_value(data, members[0], union_tag)
-            if union_tag in data and not _union_tag_shadowed(tp, union_tag):
+            if union_tag in data and tag_reading(tp, union_tag).is_the_tag:
                 return True
             reader = spec_reading_variant(tp, data, union_tag)
             return reader is not None and reads_as_new_value(data, reader, union_tag)
@@ -1192,7 +1253,8 @@ def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path:
     when the union has one; a tag that does not import is refused either way.
 
     A union with no such candidate and no such variant refuses the tag as a leaf does, before
-    importing it: no class it could name would be taken.
+    importing it: no class it could name would be taken. Such a union reaches the refusal only
+    when no variant reads a dict either, which would hold the key as data (:func:`tag_reading`).
 
     Dev Notes:
         docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in
@@ -1462,8 +1524,9 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
 
     Tries tag-based disambiguation, structural disambiguation for struct
     (dataclass or plain-class) variants, and finally leaf coercion in order.
-    A tag-shaped key is the tag only when no struct variant owns its spelling
-    as a field.
+    A tag-shaped key is the tag only where the union reads it as one
+    (:func:`tag_reading`): not where a member owns its spelling, nor where a
+    variant that reads a dict holds it as data.
 
     Args:
         tp: The Union type.
@@ -1488,11 +1551,13 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
         return _construct_single_variant_union(all_args, non_none, data, path, union_tag)
 
     if isinstance(data, dict) and union_tag in data:
-        if not _union_tag_shadowed(tp, union_tag):
+        reading = tag_reading(tp, union_tag)
+        if reading is TagReading.OWNED:
+            # The tag route was a real alternative; the member's value forces the
+            # structural route instead, so say so once, on use.
+            _warn_shadowed_tag_key(path, union_tag, "variant")
+        elif reading.is_the_tag:
             return _construct_union_by_tag(tp, non_none, data, path, union_tag)
-        # The tag route was a real alternative; the member's value forces the
-        # structural route instead, so say so once, on use.
-        _warn_shadowed_tag_key(path, union_tag, "variant")
 
     reader = spec_reading_variant(tp, data, union_tag)
     if reader is not None:
