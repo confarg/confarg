@@ -14,7 +14,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | minor |  | S | low | behavior | PR-77 |
 | [BUG-242 — A lone `__root__` in a root configuration file is unwrapped as a fragment's](BUG-242-a-lone-root-key-in-a-root-file-is-unwrapped-as-a-fragments.md) | minor |  | S | low | behavior | PR-209 |
 | [BUG-276 — A union with a dict variant reads a `class` key as the tag, where a lone dict holds it as data](BUG-276-a-union-with-a-dict-variant-reads-a-class-key-as-the-tag.md) | minor |  | S | medium | behavior | PR-5 |
-| [BUG-277 — A refusal names a union `Union` on Python 3.14](BUG-277-a-refusal-names-a-union-union-on-python-3-14.md) | minor |  | S | low | none | BUG-248 |
 | [BUG-280 — A tag refusal calls a class leaf a type that "accepts no struct"](BUG-280-a-tag-refusal-calls-a-class-leaf-a-type-that-accepts-no-struct.md) | minor |  | S | low | behavior | BUG-188, BUG-252 |
 | [BUG-281 — A method a module publishes off its own instance does not dump as its path](BUG-281-a-method-a-module-publishes-off-its-own-instance-does-not-dump-as-its-path.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-282 — A lazy module hook that raises on `__all__` escapes `dotted_name`](BUG-282-a-lazy-module-hook-raising-on-all-escapes-dotted-name.md) | minor |  | S | low | none | BUG-279 |

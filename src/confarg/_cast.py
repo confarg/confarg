@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 from confarg import _defaults
 from confarg._depth import MAX_DEPTH, refuse_overflow
 from confarg._merge import MergeAt, MergeDict, _deep_merge, _merge_within_source
-from confarg._types import _is_union, _Pinned, _resolve_type, _StrToken, _union_args_no_none
+from confarg._types import _is_union, _Pinned, _registered_class, _resolve_type, _StrToken, _union_args_no_none
 from confarg.exceptions import ConfargError, TypeCoercionError
 
 if TYPE_CHECKING:
@@ -127,8 +127,9 @@ def holds_the_cast(field_tp: Any, cast_tp: Any) -> bool:
     """Return whether *field_tp* holds *cast_tp* among the types it accepts.
 
     The one admission rule every cast asks, on every channel: a leaf field holds
-    its own type, a union what its variants hold, and ``Any`` everything, so a
-    union holding ``Any`` holds every cast. A cast naming anything else would
+    its own type and the class whose registration reads it (``Pattern`` for
+    ``re.Pattern[str]``), a union what its variants hold, and ``Any`` everything,
+    so a union holding ``Any`` holds every cast. A cast naming anything else would
     place a value the field's type does not accept — an int where the config
     asked for a ``tuple[int, int]`` — so it is refused, by construction reading a
     pin and by the CLI detecting and registering a cast flag alike.
@@ -139,7 +140,7 @@ def holds_the_cast(field_tp: Any, cast_tp: Any) -> bool:
     field_tp = _resolve_type(field_tp)
     if _is_union(field_tp):
         return any(holds_the_cast(v, cast_tp) for v in _union_args_no_none(field_tp))
-    return field_tp is Any or field_tp == cast_tp
+    return field_tp is Any or field_tp == cast_tp or _registered_class(field_tp) is cast_tp
 
 
 def fold_root_json(data: MergeDict, root_json: list[MergeDict], root: MergeAt) -> MergeDict:

@@ -56,7 +56,7 @@ from confarg._types import (
     _struct_fields,
     _struct_required,
     _tagged_struct,
-    _union_args_no_none,
+    _union_branches,
     _union_has_seq_variant,
     _union_tag_shadowed,
 )
@@ -371,7 +371,7 @@ def _struct_built_from(tp: Any, node: MergeDict, union_tag: str) -> Any:
 
 def _union(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
     """Lay defaults below a union-typed node where one variant is certain: the only one, or the tagged one."""
-    variants = [_resolve_type(v) for v in _union_args_no_none(tp)]
+    variants = _union_branches(tp)
     if len(variants) == 1:
         return _node(variants[0], node, path, walk)
     if _holds_list_ops(node):

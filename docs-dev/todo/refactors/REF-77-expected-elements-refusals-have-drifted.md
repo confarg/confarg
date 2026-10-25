@@ -19,7 +19,7 @@ Cannot construct tuple[int, str] at 'p': expected 2 elements, got 3
 ```
 
 Since BUG-221's fix, the fixed tuple's base-overrun site sits in `_construct._patched_positions`, and an op over a carried base reaches the list-length check, so it is the one more callers meet (`--t 1 2 --t.0-`).
-One factory parametrized by the count pair serves all four, in the wake of `TypeCoercionError.wrong_shape` (REF-69); it must settle which name spelling wins and pin it.
+One factory parametrized by the count pair serves all four, in the wake of `TypeCoercionError.wrong_shape` (REF-69), each site naming the type through `_types._spell_type`, which settles the spelling ([a message names a type by what confarg reads](../../architecture/design-decisions/a-message-names-a-type-by-what-confarg-reads.md#a-message-names-a-type-by-what-confarg-reads)): `Point` and `tuple[int, str]` as now, the same on every Python.
 
 Two more construction refusals, found reviewing REF-69, belong in the same pass:
 

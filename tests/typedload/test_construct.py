@@ -1374,7 +1374,7 @@ class TestAClassTakingNothingThatHoldsCStorageIsNoStruct:
     )
     def test_it_is_refused_as_an_unsupported_leaf(self, tp: type) -> None:
         """``{}`` builds nothing: a fresh instance is not the one a dump came from."""
-        with pytest.raises(TypeCoercionError, match=rf"Unsupported leaf type <class '[\w.]*{tp.__name__}'>"):
+        with pytest.raises(TypeCoercionError, match=rf"Unsupported leaf type {tp.__name__} at"):
             construct(tp, {})
 
     def test_a_class_tag_naming_the_lock_builds_nothing(self) -> None:

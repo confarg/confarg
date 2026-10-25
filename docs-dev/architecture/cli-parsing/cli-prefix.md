@@ -32,7 +32,7 @@ The bare `--<prefix>` and the bare `<PREFIX>` variable both name the root, and e
 
 One predicate tells the merge suffix on the root, `_parse_cli._merge_suffix_on_root`, asked of the key left once the prefix is stripped: `_strip_cli_prefix` strips `app+` to `+`, as the environment's key for `APP_+` already is.
 It is recognized at the refusal site only, the way `_addresses_key` intercepts the mistake `--config+` as one about that flag: `_in_cli_prefix` still answers that `app+` is outside the namespace, so the pre-scans step over it and the host-mode skip leaves it to an adapter's framework, which refuses a flag it never registered, as it refuses the bare `--app` on a struct root.
-A message names the root as "the root", not by its type: the target has one, and naming a type is the hand-spelled question [REF-97](../../todo/refactors/REF-97-how-a-message-names-a-type-is-spelled-by-hand.md) gathers.
+A message names the root as "the root", not by its type: the target has one, and a type is named by what confarg reads ([design decisions](../design-decisions/a-message-names-a-type-by-what-confarg-reads.md#a-message-names-a-type-by-what-confarg-reads)), which says nothing of where the value sits.
 
 ## A non-struct root is set whole
 

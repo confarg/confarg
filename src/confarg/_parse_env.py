@@ -64,9 +64,10 @@ from confarg._types import (
     _is_struct_like,
     _is_union,
     _resolve_type,
+    _spell_type,
     _StrToken,
     _struct_fields,
-    _union_args_no_none,
+    _union_branches,
     _union_has_seq_variant,
 )
 from confarg.exceptions import (
@@ -436,7 +437,7 @@ def _warn_unknown_env_field(orig_key: str, parts: list[str], target: Any, walk_t
     if not _is_struct_like(root_tp):
         warnings.warn(
             f"Environment variable {orig_key!r} has no matching field"
-            f" (segment {parts[0]!r} is below the {getattr(root_tp, '__name__', root_tp)} root,"
+            f" (segment {parts[0]!r} is below the {_spell_type(root_tp)} root,"
             " which is set whole by the bare prefix variable or its JSON cast)."
             " The variable will be ignored.",
             ConfargWarning,
@@ -444,7 +445,7 @@ def _warn_unknown_env_field(orig_key: str, parts: list[str], target: Any, walk_t
         )
         return True
     if _is_union(root_tp):
-        struct_variants = [_resolve_type(v) for v in _union_args_no_none(root_tp) if _is_struct(_resolve_type(v))]
+        struct_variants = [b for b in _union_branches(root_tp) if _is_struct(b)]
         all_fields = sorted({f for v in struct_variants for f in _struct_fields(v)})
         warnings.warn(
             f"Environment variable {orig_key!r} has no matching field"

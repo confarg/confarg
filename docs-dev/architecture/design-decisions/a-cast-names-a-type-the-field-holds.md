@@ -1,6 +1,6 @@
 # A cast names a type the field holds
 
-A cast — a CLI `.str`/`.int`/`.float`/`.bool` suffix, or a file's `{__cast__, __value__}` pin — is admitted only where its named type is one of the types the field's annotation holds: the field's own type for a leaf, one of its variants for a union, anything for `Any`.
+A cast — a CLI `.str`/`.int`/`.float`/`.bool` suffix, or a file's `{__cast__, __value__}` pin — is admitted only where its named type is one of the types the field's annotation holds: the field's own type for a leaf, or the class whose registration reads it (`Pattern` for `re.Pattern[str]`, [a parameterized class reads through its registration](a-registration-is-one-construction-reaches.md#a-parameterized-class-reads-through-its-registration)), one of its variants for a union, anything for `Any`.
 A cast naming anything else is refused, on every channel and every front-end alike: `--u.int 5` at a `tuple[int, int]` field and a file's `u: {__cast__: int, __value__: 5}` at the same field are both refused, and so is an int pinned at a `str`, a list, a struct or an enum field.
 A cast may still disambiguate among the field's variants — that is the escape hatch's whole job, `--v.str FOO` at `Color | str` — but it may never place a value the field's type does not accept: the configuration object that is returned must respect the field annotations provided as input ([invariants](../invariants.md#contracts)).
 

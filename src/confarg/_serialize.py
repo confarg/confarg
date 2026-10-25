@@ -43,12 +43,15 @@ from confarg._types import (
     _namedtuple_fields,
     _origin,
     _Pinned,
+    _registration_key,
     _resolve_type,
+    _spell_type,
     _StrToken,
     _struct_state_fields,
     _tagged_struct,
     _tuple_types,
     _union_args_no_none,
+    _union_branches,
 )
 from confarg.exceptions import ConfargError, ConfargWarning, FieldPath, _spell_field_path
 from confarg.typedload._coerce import (
@@ -116,7 +119,11 @@ def _untyped_at(value: Any, path: FieldPath, opts: _DumpOptions) -> Any:
 
 
 def _check_native_types(native_types: Iterable[type]) -> tuple[type, ...]:
-    """Return *native_types* as a tuple, each a registered leaf type.
+    """Return *native_types* as a tuple of the registered leaf types they read through.
+
+    A parameterized form names the class whose registration reads it (:func:`_registration_key`),
+    so ``re.Pattern[str]`` keeps a pattern as ``re.Pattern`` does: the dump looks a value up by
+    its class.
 
     Raises:
         TypeError: If one is no registered leaf type: nothing else is serialized to a form
@@ -124,11 +131,10 @@ def _check_native_types(native_types: Iterable[type]) -> tuple[type, ...]:
     """
     native = tuple(native_types)
     for tp in native:
-        if tp not in _LEAF_SERIALIZERS:
-            name = getattr(tp, "__name__", repr(tp))
-            msg = f"native_types names {name}, which is no registered leaf type"
+        if _registration_key(tp) not in _LEAF_SERIALIZERS:
+            msg = f"native_types names {_spell_type(tp, as_written=True)}, which is no registered leaf type"
             raise TypeError(msg)
-    return native
+    return tuple(_registration_key(tp) for tp in native)
 
 
 def _serialize(
@@ -233,7 +239,7 @@ def _serialize_foreign(tp: Any, instance: Any, path: FieldPath, opts: _DumpOptio
     """
     warnings.warn(
         f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back: its"
-        f" {type(instance).__name__} is no value of {tp.__name__ if isinstance(tp, type) else repr(tp)}, the type it is"
+        f" {type(instance).__name__} is no value of {_spell_type(tp)}, the type it is"
         " declared as. It is written as an Any field holds it.",
         ConfargWarning,
         stacklevel=3,
@@ -259,11 +265,11 @@ def _refuse_an_unsupported_leaf(tp: Any, path: FieldPath) -> None:
     _refuse_a_forbidden_literal(resolved, _spell_field_path(path) or _defaults.ROOT_KEY)
     if _is_type_ref(resolved) or _is_coercible_leaf(resolved):
         return
-    name = getattr(resolved, "__name__", repr(tp))
+    name = _spell_type(resolved)
     msg = (
         f"Cannot serialize {name} at '{_spell_field_path(path) or _defaults.ROOT_KEY}': {name} is no struct"
         f" and no leaf type confarg reads, so the value would not load back."
-        f" confarg.register_leaf_type({name}, ...) makes it one."
+        f" confarg.register_leaf_type({_spell_type(_registration_key(resolved))}, ...) makes it one."
     )
     raise ConfargError(msg)
 
@@ -625,7 +631,7 @@ def _warn_unpinnable_leaf(variant_tp: Any, serialized: Any, path: FieldPath) -> 
     """
     warnings.warn(
         f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as"
-        f" {getattr(variant_tp, '__name__', variant_tp)!r}: another union variant takes the"
+        f" {_spell_type(variant_tp)}: another union variant takes the"
         f" dumped {type(serialized).__name__}, and no __cast__ names that type."
         f" confarg.register_leaf_type makes it nameable.",
         ConfargWarning,
@@ -730,9 +736,8 @@ def _serialize_dict(
     kt, vt = _dict_kv(tp)
     if instance and not _is_coercible_leaf(_resolve_type(kt)):
         where = _spell_field_path(path) or _defaults.ROOT_KEY
-        name = kt.__name__ if isinstance(kt, type) else repr(kt)
         msg = (
-            f"Cannot serialize {name} keys at '{where}': construction reads no key as one,"
+            f"Cannot serialize {_spell_type(kt)} keys at '{where}': construction reads no key as one,"
             " so the dict would not load back."
         )
         raise ConfargError(msg)
@@ -961,7 +966,7 @@ def _find_variant_type(tp: Any, instance: Any) -> Any | None:
     Dev Notes:
         docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
     """
-    args = sorted((_resolve_type(arg) for arg in _union_args_no_none(tp)), key=_holds_anything)
+    args = sorted(_union_branches(tp), key=_holds_anything)
     for holds in (_variant_holds, _holds_widened):
         for arg in args:
             if holds(arg, instance):
