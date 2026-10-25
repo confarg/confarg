@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import types
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -52,11 +53,14 @@ class Unrelated:
     """Class unrelated to Base — invalid for type[Base]."""
 
 
-class Impostor(Base):
-    """A class whose qualified name is another class's, so its dotted path imports that one."""
+class _Impostor(Base):
+    """A class whose qualified name is another class's, so its dotted path imports that one.
+
+    Its module holds it under a private name, which publishes it under none.
+    """
 
 
-Impostor.__qualname__ = "Derived"
+_Impostor.__qualname__ = "Derived"
 
 
 # ---------------------------------------------------------------------------
@@ -267,9 +271,23 @@ class TestBuildRoundtrip:
         class Local(Base):
             pass
 
-        for cls in (Local, Impostor):
+        for cls in (Local, _Impostor):
             with pytest.raises(ConfargError, match=r"does not import back as it"):
                 confarg.dump(ConfigWithTypeRef(worker=cls))
+
+    @pytest.mark.parametrize(
+        ("cls", "path"),
+        [
+            pytest.param(types.FunctionType, "types.FunctionType", id="function"),
+            pytest.param(types.ModuleType, "types.ModuleType", id="module"),
+            pytest.param(type(None), "types.NoneType", id="none"),
+        ],
+    )
+    def test_a_type_builtins_does_not_hold_dumps_through_types(self, cls: type, path: str) -> None:
+        """Its ``__module__`` is ``builtins``, which holds no such name; ``types`` publishes it (BUG-279)."""
+        dumped = confarg.dump(ConfigWithBareType(klass=cls))
+        assert dumped == {"klass": path}
+        assert confarg.build(ConfigWithBareType, dumped).klass is cls
 
     def test_dump_and_build_roundtrip(self) -> None:
         """Invariant: dump then build() round-trips to the same class, from the plain dump (BUG-230)."""

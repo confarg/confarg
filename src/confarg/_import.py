@@ -10,23 +10,44 @@ import builtins
 import functools
 import importlib
 import inspect
-from typing import Any
+import sys
+from typing import TYPE_CHECKING, Any
 
 from confarg.exceptions import SymbolImportError, SymbolNotFoundError
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from types import ModuleType
+
 _NOT_FOUND = object()
+
+# The modules CPython publishes a private or a platform module's objects through, which no
+# attribute of that module names. A top-level stdlib ``_x`` is published through ``x``.
+_PUBLIC_FACES = {
+    "nt": ("os", "os.path"),
+    "posix": ("os", "os.path"),
+    "ntpath": ("os.path",),
+    "posixpath": ("os.path",),
+    "genericpath": ("os.path",),
+    "_thread": ("threading",),
+    "builtins": ("types",),
+}
 
 
 def dotted_name(obj: Any) -> str:
     """Return the dotted path that :func:`_import_dotted` resolves back to *obj*.
 
     The one writer of a dotted name, so it cannot disagree with the reader beside it.
-    ``__qualname__``, not ``__name__``: a class nested inside another class is reached
-    as ``Outer.Inner``, and the tag confarg writes has to be one it can import. A bound
-    method is named through the class it is bound to (the class itself for a class
-    method), since its qualified name names the class that defines it, which may be a base.
-    A C type's method has no ``__module__``, and is named through the class that owns it
-    (:func:`_c_owner`).
+    An object defined in a class keeps the rest of its ``__qualname__``: a class nested
+    inside another class is reached as ``Outer.Inner``, and the tag confarg writes has to be
+    one it can import. A bound method is named through the class it is bound to (the class
+    itself for a class method), since its qualified name names the class that defines it,
+    which may be a base. A C type's method has no ``__module__``, and is named through the
+    class that owns it (:func:`_c_owner`). The path goes through the first module that
+    publishes the object, when one does (:func:`_public_path`), so it depends on what the
+    modules publish when it is written: finding it may import a stdlib module and run a lazy
+    module ``__getattr__`` for the object's own name. A ``RecursionError`` or a
+    ``MemoryError`` raised there passes through, as it does out of :func:`imports_back`.
 
     Dev Notes:
         docs-dev/architecture/types/dotted-imports.md#dotted-imports
@@ -36,7 +57,86 @@ def dotted_name(obj: Any) -> str:
         return f"{dotted_name(owner)}.{obj.__name__}"
     if (owner := _c_owner(obj)) is not None:
         return f"{dotted_name(owner)}.{obj.__name__}"
-    return f"{obj.__module__}.{obj.__qualname__}"
+    return _public_path(obj)
+
+
+def _public_path(obj: Any) -> str:
+    """Return the path of *obj* through the first module that publishes it and imports back.
+
+    An object defined in a class is published with its outermost holder, the class its
+    qualified name starts with. The modules are tried in :func:`_public_homes`' order, and
+    the module that defines *obj* is the path when none publishes it.
+
+    Dev Notes:
+        docs-dev/architecture/types/dotted-imports.md#a-path-names-the-module-that-publishes-the-object
+    """
+    home, qualname = obj.__module__, obj.__qualname__
+    head, dot, rest = qualname.partition(".")
+    holder = obj
+    if dot:
+        defining = sys.modules.get(home)
+        holder = None if defining is None else vars(defining).get(head)
+    if holder is not None:
+        for module_name, module in _public_homes(home):
+            name = _published_name(module, holder)
+            if name is not None and imports_back(path := f"{module_name}.{name}{dot}{rest}", obj):
+                return path
+    return f"{home}.{qualname}"
+
+
+def _public_homes(home: str) -> Iterator[tuple[str, ModuleType]]:
+    """Yield the modules that may publish an object *home* defines, with their paths, in the order they are tried.
+
+    CPython's public face of *home* first (``_PUBLIC_FACES``, or ``x`` for a stdlib ``_x``),
+    then *home*'s ancestors shortest first, then *home* itself: a package publishes what its
+    submodules define, and a submodule's layout may differ across platforms and versions.
+    A public face is imported, as a stdlib module named by convention, never by data; *home*
+    and its ancestors were imported with it, and one that is not loaded publishes nothing.
+    """
+    faces = _PUBLIC_FACES.get(home, ())
+    if not faces and home.startswith("_") and home[1:] in sys.stdlib_module_names:
+        faces = (home[1:],)
+    for face in faces:
+        try:
+            yield face, importlib.import_module(face)
+        except ImportError:
+            continue
+    parts = home.split(".")
+    for module_name in (".".join(parts[:i]) for i in range(1, len(parts) + 1)):
+        if (module := sys.modules.get(module_name)) is not None:
+            yield module_name, module
+
+
+def _published_name(module: ModuleType, obj: Any) -> str | None:
+    """Return the name *module* publishes *obj* under, or None.
+
+    A module publishes the names ``from module import *`` takes: its ``__all__``, or every name
+    not starting with ``_``. The object's own name is read with ``getattr``, which runs a lazy
+    module ``__getattr__`` for that name alone, as importing the path back does; another name is
+    found in the module's namespace, which runs none.
+    """
+    declared = getattr(module, "__all__", None)
+    names = declared if declared is not None else [n for n in vars(module) if not n.startswith("_")]
+    own = getattr(obj, "__name__", None)
+    if isinstance(own, str) and own in names and _held(module, own) is obj:
+        return own
+    namespace = vars(module)
+    return next((name for name in names if name in namespace and namespace[name] is obj), None)
+
+
+def _held(module: ModuleType, name: str) -> Any:
+    """Return what *module* holds under *name*, or ``_NOT_FOUND``, running its lazy ``__getattr__`` for *name*.
+
+    A hook that fails holds nothing under the name, so a path is never written through it, and
+    the message or the dump that asked for the path is not replaced by the hook's error. A
+    ``RecursionError`` or a ``MemoryError`` passes through, as it does out of :func:`_import_dotted`.
+    """
+    try:
+        return getattr(module, name, _NOT_FOUND)
+    except (RecursionError, MemoryError):
+        raise
+    except Exception:  # noqa: BLE001 — a lazy hook that fails publishes nothing under the name
+        return _NOT_FOUND
 
 
 def has_dotted_name(obj: Any) -> bool:

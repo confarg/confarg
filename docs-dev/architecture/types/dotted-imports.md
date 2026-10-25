@@ -4,7 +4,8 @@
 An undotted name goes to `builtins` alone, never to an import ([below](#a-bare-word-is-never-imported)), so a builtin name and a module of the same name never meet.
 
 `dotted_name` is the inverse and the **one writer**: every dotted path confarg emits — a union class tag, a `type[X]` leaf, a callable spec, the class names listed in an error — comes from it.
-It spells `__qualname__`, never `__name__`, because that is what `_import_dotted` resolves back: a class nested inside a class is reached as `Outer.Inner`, and a tag naming it `Inner` is unloadable.
+An object defined in a class keeps the rest of its `__qualname__` after its outermost holder, because that is what `_import_dotted` resolves back: a class nested inside a class is reached as `Outer.Inner`, and a tag naming it `Inner` is unloadable.
+The holder is named as the module that publishes it holds it, which may not be `__module__` or its `__qualname__` ([below](#a-path-names-the-module-that-publishes-the-object)).
 The reason the function exists rather than the f-string being repeated is that the divergence is silent and asymmetric — the writer picked `__name__`, the reader `__qualname__`, and `dump()` emitted a tag its own `from_dict()` could not read (BUG-41, closed).
 A class nested in a *function* has no path under either spelling: its qualified name holds `<locals>`, and a tag naming it is imported like any other, so it is refused at `dump()` ([below](#a-dotted-path-is-written-only-when-it-imports-back)).
 Writer and reader now sit in the same module, side by side.
@@ -77,6 +78,44 @@ A class or a function defined in a function has `<locals>` in its qualified name
 So a dump imports the path it is about to write, through `imports_back`, and refuses at `dump()` what would otherwise fail only on read-back (BUG-193): a class tag or a `type[X]` leaf through `_serialize._class_path`, and a callable in `_serialize_callable`, which models auto-binding on top ([callables](../callables.md#a-path-is-written-only-when-it-reads-back)).
 The comparison is `is`, or `==` for a class method, which is a new bound method on each access.
 Precedent: `pickle`'s `save_global` looks the qualified name up in its module and refuses an object it does not find there as itself ("not the same object as").
+
+## A path names the module that publishes the object
+
+`__module__` says where an object is defined, which is not where it is published: on Windows `os.getcwd` is defined in `nt` and `os.path.join` in `ntpath` (`posix` and `posixpath` elsewhere), `asyncio.SelectorEventLoop` in `asyncio.windows_events`, `getpass.getpass` is `getpass.win_getpass`, `pathlib.Path` was defined in `pathlib._local` on 3.13 alone, and `functools.reduce` is defined in the accelerator `_functools`.
+A path through the defining module loads on no other platform or version, or loads as another function: `ntpath.join` imports on Linux, and joins with backslashes (BUG-279).
+So `dotted_name` names an object through the first module that publishes it and imports back (`_import._public_path`): CPython's public face of the defining module, then that module's ancestors shortest first, then the module itself; the defining path stands when none does.
+
+- **A public face** is a module no attribute of the defining module names: `nt` and `posix` are published by `os` and `os.path`, `ntpath`, `posixpath` and `genericpath` (`getsize`, `commonprefix`, and on POSIX `exists`) by `os.path`, `_thread` by `threading`, the types `builtins` does not hold (`function`, `NoneType`, `module`) by `types`, and a stdlib accelerator `_x` by `x`, as PEP 399 lays them out.
+  It is imported if it is not yet: a stdlib module named by convention, never by data.
+- **A module publishes** what `from module import *` takes: its `__all__`, or every name not starting with `_` when it declares none.
+  `json.decoder.JSONDecodeError` is written `json.JSONDecodeError`, and a user's `myapp.models.Dog` is `myapp.Dog` once `myapp` imports it; `importlib.metadata.Pair`, which `importlib.metadata` holds without listing it in its `__all__`, stays where it is defined.
+- **The name** is the object's own when the module publishes it, read with `getattr`, so a lazy module `__getattr__` (PEP 562) runs for that name alone, as reading the path back runs it.
+  Otherwise it is the first published name the module's namespace holds the object under, so `getpass.win_getpass` is written `getpass.getpass` and `nt._path_normpath` `os.path.normpath`.
+  The namespace runs no hook: a `getattr` on every name `concurrent.futures` publishes imports `multiprocessing` to spell a thread pool.
+  A hook that raises holds nothing under the name, so the next module is tried, and an error message naming a class is not replaced by the hook's error; a `RecursionError` or a `MemoryError` passes through, as it does out of an import ([above](#a-path-names-nothing-or-a-module-fails)).
+- **An object defined in a class** goes with its outermost holder: `myapp.models.Dog.make` is `myapp.Dog.make`, as a bound method is spelled through its owner's path.
+
+Shortest first, because a defining module publishes its own objects too: `asyncio.windows_events.__all__` lists `SelectorEventLoop`, and `pathlib._local.__all__` listed `Path`.
+Every candidate is checked with `imports_back` before it is written, so the spelling changes and never the object it names.
+Reading is unchanged: a path through the defining module still loads wherever it did.
+
+The path is no longer a function of `__module__` and `__qualname__` alone: it reads what the modules publish when it is written, so a package that stops re-exporting `Dog` makes the next dump write `myapp.models.Dog` where it wrote `myapp.Dog`, both of which load.
+Writing it may import a public face and run a lazy hook for the object's own name, which every caller of `dotted_name` inherits, the messages that list classes and the CLI's completers included.
+A class whose `__qualname__` was rewritten to another class's used to be refused, its path importing that class; it is now written by the name its module publishes it under, which imports back as it, as `getpass.win_getpass` is written by the name `getpass` publishes it under.
+A class its module publishes under no name, one held under a name starting with `_`, is still refused.
+
+The spelling a value was read from is not recorded, so where one object has two names the value cannot tell which was meant.
+On Windows `ntpath.join is os.path.join`, so a `ntpath.join` meant to build Windows paths everywhere is written `os.path.join`, and reads as the POSIX join elsewhere ([limitations](../limitations.md#callables-and-serialization)).
+
+Rejected:
+
+- **Record the spelling an object was read from**, as jsonargparse's `ResolvedImportPaths` does for an instance.
+  An object the program built has none, and a module function every configuration shares would take the spelling of whichever configuration read it last, which is why the object dump dropped its stamp ([the object dump writes state](../design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
+- **Search every loaded module** for one publishing the object, which needs no table but writes what the process happened to import.
+- **A table of every divergent spelling**, which misses a third-party package laid out per platform and grows with each release.
+- **Shorten only a defining module that is private or a platform's**, which keeps `asyncio.windows_events`, neither.
+
+Precedent: `pickle` and jsonargparse write `ntpath.join` and `nt.getcwd`; jsonargparse shortens a path to the shortest module holding the object under its name (`json.JSONDecodeError`), without reading `__all__`.
 
 ## A tag is a dotted path
 
