@@ -14,7 +14,10 @@
 ### A tag no variant takes
 
 A union none of whose variants is a struct or reads a spec — `int | str`, `int | Path`, `list[int] | str` — has nothing a tag could select, whatever class it names.
-It refuses the tag as a leaf field does, with the same message, naming the union as written (`int | str accepts no struct, so the tag cannot select one`) and the `call:` spec that computes a value the field accepts.
+It refuses the tag as a leaf field does, with the same message, naming the union as written (`no variant of int | str is built from keys`) and the `call:` spec that computes a value the field accepts.
+The message gives its reason in the words the user docs use for the tag, which "picks the class to build from the keys beside it": a leaf is built from one value, not from keys (`datetime is built from one value, not from keys`), and no variant of the union is built from keys.
+It used to say the type "accepts no struct", confarg's internal word for a class built from keys, which `docs/` and the examples never use; it read worst on a class leaf, `datetime` told it accepts no struct when the tag named `datetime` itself (BUG-280).
+No user-facing message says "struct": `dump()`'s refusal of an unsupported leaf says `bytes is no leaf type confarg reads`, which it used to preface with `is no struct and`.
 The refusal comes before the tag is imported, as on the leaf: no class it names would be taken, so the import could only run a module's code, or report a typo or a broken module the leaf does not report ([a bare word is never imported](dotted-imports.md#a-bare-word-is-never-imported)).
 `TypeCoercionError.tag_selects_no_struct` spells it for both, through `_construct._tag_selects_no_struct`, and `_types._spell_type` names the type, so a union reads `int | str` on every Python, though its `__name__` is `Union` since 3.14.
 Until BUG-252 the union imported the tag and listed the struct variants it could be a subclass of, which were none: "Expected a subclass of one of: []".

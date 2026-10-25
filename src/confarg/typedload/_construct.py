@@ -482,7 +482,7 @@ def _tag_selects_no_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag:
         docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
     """
     return TypeCoercionError.tag_selects_no_struct(
-        data, _spell_type(tp), _spell_field_path(path), union_tag, _defaults.CALL_KEY
+        data, _spell_type(tp), _spell_field_path(path), union_tag, _defaults.CALL_KEY, union=_is_union(tp)
     )
 
 
