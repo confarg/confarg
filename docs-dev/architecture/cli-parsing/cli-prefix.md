@@ -69,7 +69,7 @@ The whole value and the fields meet as a whole value and a subkey meet at a fiel
 The environment has no argv order, and applies the broader variable first ([environment parsing](../environment-parsing.md#the-broader-variable-applies-first)), so `APP_=5` beside `APP_A=3` builds `A(a=3)`.
 A field's delete is a write like any other: `--app 5 --app.a-` drops the whole value and builds the struct from nothing, `A()`, as `--f 5 --f.a-` leaves a field of type `int | A` to its default.
 The merge's position at such a root, `_typed_merge._MixedRootAt`, says what of a dict stands beside the keys written over it (`MergeAt.left_beside`): the fields go where `__root__` is written, `__root__` where a field is, and the locals namespace stands beside either; `_deep_merge` asks it between layers and `_set_nested` within a source, so every writer keeps the two apart; the environment's root writes, the bare variable and its cast, go through `_set_nested` too, so its sort order is not what keeps them apart.
-A dict that holds both is refused by `build()` and `from_dict()` naming the fields: nothing in it says which was written last (`TypeCoercionError.whole_root_beside_fields`, maintainer-chosen).
+A dict that holds both is refused by `build()` and `from_dict()` naming the fields: nothing in it says which was written last ([below](#a-root-set-whole-reads-no-key-beside-its-root), maintainer-chosen).
 No flag or variable leaves one, but a root file can, `__root__: 5` beside `a: 3`, as can a dict handed to `build()`; neither is ordered, so neither says which was written last either, and both are refused alike.
 `None` is such a variant, so `--app none` nulls an `A | None` root, which nothing spelled before; with nothing supplied, the struct is built, as before.
 
@@ -77,3 +77,12 @@ The alternative, recording the case in [limitations](../limitations.md) as the r
 Writing the struct variant's fields under `__root__` too was not taken, since a root file for `A | B` would then need `__root__` where it writes the fields at its top today.
 Precedents: pydantic's `RootModel[int | A]` validates `5` and `{"a": 3}` alike; tyro makes each variant a subcommand, `int 5` or `a --a 3`.
 Dumping such a root's non-struct value is [FEAT-55](../../todo/features/FEAT-55-dumping-a-configuration-whose-root-is-no-struct.md)'s, as for every root that is no struct; `dump_file(merge(...))` writes its `__root__`.
+
+## A root set whole reads no key beside its root
+
+`build()` refuses a merged dict holding a key beside `__root__` at a root it builds from `__root__`, naming the key: `__root__: 5` beside `port: 1` in a root file for an `int` root, and `port: 1` alone, which gives no value and a key nothing reads (`TypeCoercionError.keys_beside_a_whole_root`).
+At a mixed root the key is a field written beside the whole value, refused [above](#a-mixed-root-is-set-whole-or-by-field); at a root that is no struct it is a key no type reads, as an unknown field of a struct root is, and one condition in `_api._construct_resolved` says both.
+Until then a root that is no struct read `__root__` alone and dropped the rest without a word, and `port: 1` alone reported that no value was provided.
+Only a file or a dict handed to `build()` reaches the refusal: the CLI refuses `--app.port` as an unknown argument, and the environment warns about `APP_PORT` and ignores it ([above](#a-non-struct-root-is-set-whole)).
+The locals namespace is no key of the value, a dict root's included ([locals](../locals.md#derived-name)), and is stripped before construction; a pending op at the top of the root is left to the default layer, which [BUG-287](../../todo/bugs/BUG-287-an-append-at-the-top-of-a-root-file-for-a-list-or-struct-union-crashes.md) is to settle.
+Dropping the key with a warning, as the environment does a variable, was not taken: a file's key is refused at a struct root, and a root that is no struct follows it rather than the environment.

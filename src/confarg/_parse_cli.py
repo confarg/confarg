@@ -803,15 +803,23 @@ def _locals_keys(target: Any, union_tag: str) -> tuple[str, ...]:
     """Return the names that address the local-variables namespace for *target*.
 
     Each candidate from :data:`~confarg._defaults.LOCALS_KEYS` survives unless
-    :func:`_segment_names_real_field` says it names a real member of *target*. An
-    empty result means the target has no namespace (it owns both names, or is a
-    dict). A scalar (``__root__``) root keeps both. Must depend on *target* and
+    :func:`_segment_names_real_field` says it names a real member of what stands beside the
+    namespace at the top of the configuration. An empty result means the target has no
+    namespace (it owns both names). A root set whole holds its value under ``__root__``, so
+    only a struct variant's fields stand there: a scalar, dict or namedtuple root keeps both
+    names, and a mixed root those its struct variants leave. Must depend on *target* and
     *union_tag* only.
 
     Dev Notes:
         docs-dev/architecture/locals.md#derived-name
     """
-    return tuple(key for key in _defaults.LOCALS_KEYS if not _segment_names_real_field(target, key, union_tag))
+    tp = _resolve_type(target)
+    beside = [b for b in _union_branches(tp) if _is_struct(b)] if _root_kind(tp).sets_whole else [tp]
+    return tuple(
+        key
+        for key in _defaults.LOCALS_KEYS
+        if key != union_tag and not any(_segment_names_real_field(b, key, union_tag) for b in beside)
+    )
 
 
 def _locals_keys_nested(*types: Any, union_tag: str) -> tuple[str, ...]:

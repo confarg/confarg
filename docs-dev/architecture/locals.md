@@ -25,7 +25,8 @@ The work is spread over the edges:
 The name is not configurable.
 `_locals_keys(target)` returns whichever of `("locals", "_locals")` is **not** a real member of the target, using `_segment_names_real_field` — the same "real field wins" predicate as the `.json` cast ([CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)).
 A target with a `locals` field keeps it and uses `_locals`; a target owning both has no namespace; declaring under both spellings raises `LocalsError.ambiguous`.
-A dict-typed root has no namespace (every name is a real key); a scalar (`__root__`) root keeps it.
+A root set whole keeps both names, a dict, a namedtuple and a scalar root alike: its value is held under `__root__`, so none of its keys or fields stands beside the namespace, and a mixed root (`dict[str, int] | A`) loses only the names a struct variant's fields own.
+A dict-typed root had no namespace until then, on the reading that every name is one of its keys, which stopped being true when such a root came to be set whole ([CLI parsing](cli-parsing/cli-prefix.md#a-non-struct-root-is-set-whole), BUG-172): a file's `locals` beside `__root__` was read by its expressions while `--app.locals.n` was refused and `APP_LOCALS__N` ignored.
 
 It is a **pure function of the target** on purpose: `build()`/`from_dict()` see no `config_flag`, so any other input could make them strip different keys than `merge()` produced.
 A `config_flag` equal to a live locals name is rejected in `_merge_sources`, because the config flag is intercepted before field lookup and `--<flag>.<name>` could never reach a local.
