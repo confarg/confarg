@@ -9,7 +9,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-284 — Resolving an expression deep-copies every value `build()` is handed](BUG-284-resolving-an-expression-deep-copies-every-value-build-is-handed.md) | critical |  | S | low | behavior | PR-5 |
 | [BUG-283 — A reference to a registered leaf written as a tagged dict reads the dict](BUG-283-a-reference-to-a-tagged-registered-leaf-reads-its-dict.md) | critical |  | M | high | config | BUG-16, BUG-246 |
 | [BUG-288 — An ambiguity inside a union variant lets the next variant take the value](BUG-288-an-ambiguity-inside-a-union-variant-lets-the-next-variant-take-the-value.md) | critical |  | M | high | config | PR-5 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |

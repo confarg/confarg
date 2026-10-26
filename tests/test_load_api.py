@@ -9,6 +9,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 import inspect
+import threading
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -629,3 +630,42 @@ class TestARootSetWholeReadsNoKeyBesideItsRoot:
         """The locals namespace is no key of the value, and a pending op at the root is BUG-287's."""
         assert confarg.build(int, {"__root__": "${locals.n}", "locals": {"n": 5}}) == 5
         assert confarg.build(list[int], {"__root__": [5], ListOp.APPEND: [3]}) == [5]
+
+
+@dataclasses.dataclass
+class _Bug284:
+    client: Any = None
+    other: Any = None
+    name: str = "app"
+    label: str = ""
+
+
+class TestBuildKeepsTheObjectsItIsHanded:
+    """An expression anywhere in the data copies none of the objects ``build()`` is handed (BUG-284)."""
+
+    def test_an_object_is_the_callers_own(self) -> None:
+        """With an expression or without, an ``Any`` field holds the object handed in."""
+        client = object()
+        assert confarg.build(_Bug284, {"client": client}).client is client
+        assert confarg.build(_Bug284, {"client": client, "label": "${name}"}).client is client
+
+    def test_a_reference_reads_the_object_built(self) -> None:
+        """``${client}`` reads what the field is built as, the object handed in."""
+        client = object()
+        built = confarg.build(_Bug284, {"client": client, "other": "${client}"})
+        assert built.client is client
+        assert built.other is client
+
+    def test_an_object_copy_refuses_builds(self) -> None:
+        """A lock, which ``copy.deepcopy`` refuses, is handed on as it is."""
+        lock = threading.Lock()
+        built = confarg.build(_Bug284, {"client": lock, "label": "${name}"})
+        assert built == _Bug284(client=lock, label="app")
+
+    def test_resolve_shares_what_no_expression_is_written_in(self) -> None:
+        """``resolve()`` returns a new dict holding the caller's own parts where nothing resolved."""
+        db = {"host": "h"}
+        data = {"client": {"db": db}, "label": "${name}"}
+        resolved = confarg.resolve(_Bug284, data)
+        assert resolved["client"] is data["client"]
+        assert resolved is not data

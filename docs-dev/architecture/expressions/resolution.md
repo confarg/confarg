@@ -11,7 +11,7 @@ Paths are resolved against the **whole** merged dict, which is why features such
 `resolve_expressions` (called by `build()` and `resolve()`):
 
 1. scan for expression strings (returns the input unchanged if there are none);
-2. deep-copy, then extract each expression's references;
+2. copy the dicts and lists an expression is written into ([below](#resolution-copies-only-what-it-writes)), then extract each expression's references;
 3. topologically sort (`graphlib.TopologicalSorter`); a cycle raises `CircularReferenceError`;
 4. validate every expression's AST;
 5. evaluate in dependency order, writing results back so later expressions see them.
@@ -43,6 +43,28 @@ The data a body reads is bounded the same way, at 64 levels, and so is what reso
 
 Resolution happens **after** all sources are merged.
 That is the point of the design: overriding `resources.memory_gb` on the CLI recomputes a `${resources.memory_gb * 0.8}` written in a file.
+
+### Resolution copies only what it writes
+
+Resolution writes each result back into the data, so it copies the dicts and lists it writes into: those on the path from the root to an expression, `_copy_written_paths`.
+Every other value is the caller's own, a dict or a list no expression is written in as much as a leaf, so an object handed to `build()` at an `Any` field is the object itself whether or not the data holds an expression anywhere (BUG-284).
+Every walker before and after it already copies only what it changes: laying the defaults and taking them out again (`_default_layer._copied_if_changed`), the written form of a resolved value (`written_form`), stripping the locals.
+
+A node is copied once per position it stands at, not once per object: a part the caller's data holds at two positions becomes two, each written by the expressions at its own, so `${..tag}` inside it reads from each position it is reached by.
+That is how the copy budget already counts such a part, copied at each position past the first ([what copies](../design-decisions/a-configuration-copies-at-most-100000-positions.md#what-copies)).
+
+A copy is a plain `dict` or `list`, whatever the class of the node it copies: an `OrderedDict` an expression is written in reaches an `Any` field as a `dict`, as it does when the locals are stripped from it, and no code of the caller's class runs.
+
+The tree resolution returns therefore shares with the caller's data every part no expression is written in: editing it in place can reach the data `build()` or `resolve()` was handed ([referencing a whole subtree](values-and-references.md#referencing-a-whole-subtree)).
+
+Rejected:
+
+- **A deep copy of the data**, the initial version's: an object handed in was itself without an expression and a copy as soon as one was written anywhere, silently, and one `copy.deepcopy` refuses, a lock or a connection, raised a raw `TypeError`.
+  Its memo also kept a part the caller's data shares as one node, so the expressions at its second position overwrote what its first resolved to.
+- **Every dict and list rebuilt, every leaf kept**: the result shares no container with the caller's data, but a dict at an `Any` field is still a copy as soon as an expression is written anywhere, the same defect on containers.
+- **`copy.copy` of each node**, keeping its class: it runs the caller's `__reduce_ex__` or `__copy__`, which may refuse as `copy.deepcopy` does, and no other walker keeps the class of a node it changes.
+
+Precedents: pydantic and cattrs hand an `Any` field the object they are given, a dict included; OmegaConf, given `allow_objects`, keeps an object's identity through an interpolation, and rebuilds every container as its own node type.
 
 ## A reference reads everything its path reaches
 

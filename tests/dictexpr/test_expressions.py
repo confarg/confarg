@@ -12,7 +12,9 @@ import math
 import os
 import re
 import sys
+import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -1016,7 +1018,7 @@ class TestExpressionEdgeCases:
         assert result is data
 
     def test_with_expressions_returns_new_object(self) -> None:
-        """When expressions are present, resolve_expressions returns a deep copy.
+        """When expressions are present, resolve_expressions returns a new dict.
 
         The returned dict is a different object, not the original dict.
         """
@@ -2548,3 +2550,52 @@ class TestResolutionScalesLinearly:
         """
         ratio = self._build_time(3200) / self._build_time(400)
         assert ratio < 20, f"3200 references took {ratio:.0f} times as long as 400"
+
+
+class TestResolutionCopiesOnlyWhatItWrites:
+    """Resolution copies the dicts and lists an expression is written into, nothing else (BUG-284)."""
+
+    def test_a_leaf_beside_an_expression_is_the_callers_own(self) -> None:
+        """An object stays the very object handed in, whatever else resolves."""
+        client = object()
+        resolved = resolve_expressions({"client": client, "name": "app", "label": "${name}"})
+        assert resolved["client"] is client
+
+    def test_a_leaf_copy_refuses_is_kept(self) -> None:
+        """A lock, which ``copy.deepcopy`` refuses, is handed on as it is."""
+        lock = threading.Lock()
+        resolved = resolve_expressions({"lock": lock, "name": "app", "label": "${name}"})
+        assert resolved["lock"] is lock
+
+    def test_a_container_no_expression_is_written_in_is_the_callers_own(self) -> None:
+        """A dict or a list holding no expression is shared, not copied."""
+        blob = {"k": [1]}
+        items = [object()]
+        resolved = resolve_expressions({"blob": blob, "items": items, "name": "app", "label": "${name}"})
+        assert resolved["blob"] is blob
+        assert resolved["items"] is items
+
+    def test_a_container_an_expression_is_written_in_is_copied(self) -> None:
+        """The dicts and lists on an expression's path are new, and the caller's stay as written."""
+        client = object()
+        data = {"svc": {"client": client, "hosts": ["h", "${svc.client_name}"], "client_name": "c"}}
+        resolved = resolve_expressions(data)
+        assert resolved["svc"]["hosts"] == ["h", "c"]
+        assert data["svc"]["hosts"] == ["h", "${svc.client_name}"]
+        assert resolved["svc"] is not data["svc"]
+        assert resolved["svc"]["client"] is client
+
+    def test_a_dict_subclass_an_expression_is_written_in_is_copied_as_a_dict(self) -> None:
+        """A changed node is rebuilt as a plain dict, as every walker rebuilds one."""
+        resolved = resolve_expressions({"name": "app", "blob": OrderedDict(k="${name}")})
+        assert type(resolved["blob"]) is dict
+        assert resolved["blob"] == {"k": "app"}
+
+    def test_a_part_the_callers_data_shares_resolves_at_each_position(self) -> None:
+        """A shared dict holding a relative reference reads from each position it is reached by."""
+        shared = {"v": "${..tag}"}
+        data = {"a": {"tag": "A", "s": shared}, "b": {"tag": "B", "s": shared}}
+        resolved = resolve_expressions(data)
+        assert resolved["a"]["s"] == {"v": "A"}
+        assert resolved["b"]["s"] == {"v": "B"}
+        assert shared == {"v": "${..tag}"}
