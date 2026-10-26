@@ -10,6 +10,8 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact |
 |---|---|---|---|---|---|
+| [FEAT-58 — A `**kwargs` parameter takes extra keys, typed by its annotation](FEAT-58-a-kwargs-parameter-takes-extra-keys-typed-by-its-annotation.md) | critical |  | L | medium | config |
+| [FEAT-57 — Protocol-typed fields](FEAT-57-protocol-typed-fields.md) | major | BUG-291, BUG-293, BUG-294, BUG-295, BUG-296 | L | high | config |
 | [FEAT-5 — Optional structural validation right after `merge()`](FEAT-5-structural-validation-after-merge.md) | minor |  | S | low | behavior |
 | [FEAT-26 — The expression whitelist is not documented for users](FEAT-26-the-expression-whitelist-is-not-documented-for-users.md) | minor |  | S | low | none |
 | [FEAT-7 — Lazy resolution between `merge` and `build`](FEAT-7-lazy-resolution-merge-to-build.md) | minor |  | M | high | behavior |
@@ -28,7 +30,6 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-54 — A TOML file spells a `None`](FEAT-54-a-toml-file-spells-a-none.md) | minor |  | M | medium | behavior |
 | [FEAT-55 — Dumping a configuration whose root is no struct](FEAT-55-dumping-a-configuration-whose-root-is-no-struct.md) | minor |  | M | low | behavior |
 | [FEAT-1 — Uneven shell-completion coverage](FEAT-1-uneven-shell-completion-coverage.md) | minor |  | L | low | behavior |
-| [FEAT-2 — Protocol-typed callables and `**kwargs`](FEAT-2-protocol-callables-and-kwargs.md) | minor |  | L | medium | behavior |
 | [FEAT-6 — `Annotated` field metadata read by all three channels](FEAT-6-annotated-field-metadata.md) | minor |  | L | medium | behavior |
 | [FEAT-9 — A `confarg check` command to validate a configuration against a target](FEAT-9-confarg-check-command.md) | minor |  | L | low | behavior |
 | [FEAT-12 — Carefully scoped expression expansion](FEAT-12-scoped-expression-expansion.md) | minor |  | L | high | behavior |
@@ -39,8 +40,10 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-45 — `TypedDict` fields](FEAT-45-typeddict-fields.md) | minor |  | L | high | behavior |
 | [FEAT-47 — A confarg object holding the target and its sources](FEAT-47-a-confarg-object-holding-the-target-and-its-sources.md) | minor |  | L | low | behavior |
 | [FEAT-23 — A post-resolve transform layer](FEAT-23-post-resolve-transform-layer.md) | minor |  | XL | high | config |
+| [FEAT-2 — A callback Protocol reads as a Callable](FEAT-2-a-callback-protocol-reads-as-a-callable.md) | minor | FEAT-57 | M | high | behavior |
 | [FEAT-20 — Derived values that cannot be made inconsistent](FEAT-20-enforced-derived-values.md) | minor | FEAT-19 | M | medium | behavior |
 | [FEAT-39 — A struct instance default is no base layer](FEAT-39-a-struct-instance-default-is-no-base.md) | minor | FEAT-38 | M | medium | none |
+| [FEAT-59 — A Protocol that leaves satisfy reads as the union of those leaves](FEAT-59-a-protocol-leaves-satisfy-reads-as-their-union.md) | minor | FEAT-57 | M | high | behavior |
 | [FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin](FEAT-10-confarg-explain-command.md) | minor | FEAT-8 | XL | low | behavior |
 | [FEAT-4 — An explicit ordered patch-op stream](FEAT-4-ordered-patch-op-stream.md) | trivial |  | M | high | none |
 | [FEAT-44 — YAML tags for a file's merge ops](FEAT-44-yaml-tags-for-a-files-merge-ops.md) | trivial |  | M | medium | none |

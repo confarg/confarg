@@ -11,6 +11,11 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 |---|---|---|---|---|---|---|
 | [BUG-283 — A reference to a registered leaf written as a tagged dict reads the dict](BUG-283-a-reference-to-a-tagged-registered-leaf-reads-its-dict.md) | critical |  | M | high | config | BUG-16, BUG-246 |
 | [BUG-288 — An ambiguity inside a union variant lets the next variant take the value](BUG-288-an-ambiguity-inside-a-union-variant-lets-the-next-variant-take-the-value.md) | critical |  | M | high | config | PR-5 |
+| [BUG-293 — A `call:` result is taken unchecked when its outer class matches](BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md) | critical |  | M | high | config | FEAT-28 |
+| [BUG-294 — The dump writes a class its `type[X]` field does not admit](BUG-294-the-dump-writes-a-class-its-type-field-does-not-admit.md) | major (via FEAT-57) |  | S | medium | behavior | BUG-31, BUG-267 |
+| [BUG-296 — A class opener naming a Protocol is refused with advice no key can follow](BUG-296-a-class-opener-naming-a-protocol-is-refused-with-advice-no-key-can-follow.md) | major (via FEAT-57) |  | S | medium | behavior | PR-5, BUG-215 |
+| [BUG-291 — A Callable's arity check refuses an optional parameter and accepts a keyword-only one](BUG-291-a-callables-arity-check-refuses-an-optional-parameter-and-accepts-a-keyword-only-one.md) | major (via FEAT-57) |  | M | high | config | PR-5 |
+| [BUG-295 — A union offers an untagged value to a variant that demands its tag](BUG-295-a-union-offers-an-untagged-value-to-a-variant-that-demands-its-tag.md) | major (via FEAT-57) |  | M | high | config | PR-63 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |
 | [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | minor |  | S | low | behavior | PR-77 |
@@ -19,6 +24,7 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-285 — A shadowed-tag warning at a struct root names the key `__root__`](BUG-285-a-shadowed-tag-warning-at-a-struct-root-names-the-key-root.md) | minor |  | S | medium | behavior | PR-264 |
 | [BUG-287 — An append at the top of a root file for a list-or-struct union crashes](BUG-287-an-append-at-the-top-of-a-root-file-for-a-list-or-struct-union-crashes.md) | minor |  | S | medium | behavior | PR-458 |
 | [BUG-289 — A refused dict key reads as the value](BUG-289-a-refused-dict-key-reads-as-the-value.md) | minor |  | S | medium | behavior | PR-5 |
+| [BUG-292 — A help group is headed by a docstring its class inherits](BUG-292-a-help-group-is-headed-by-a-docstring-its-class-inherits.md) | minor |  | S | low | behavior | PR-13 |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | minor |  | M | low | behavior | PR-5, PR-13, PR-26, BUG-179 |
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | minor |  | M | medium | behavior | PR-38 |
 | [BUG-181 — An out-of-domain Literal or Enum flag exits with the framework's choice error on the adapters](BUG-181-an-out-of-domain-literal-or-enum-flag-exits-with-the-frameworks-choice-error.md) | minor |  | M | medium | behavior | PR-5, PR-13, PR-26 |

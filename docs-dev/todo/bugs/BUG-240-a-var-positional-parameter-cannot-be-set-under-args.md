@@ -17,7 +17,7 @@ A struct reads its `__init__`'s `*items` as a list field, so `--bag.items '[1, 2
 The two routes into one signature disagree on what it accepts ([one coercion route](../../architecture/callables.md#one-coercion-route)).
 Fix direction: read a `*args` parameter under `args` as a list, passed after the positional prefix as the struct path does, and let `_serialize_callable` write a partial's spilled positional arguments under that name instead of refusing them.
 The CLI registration of `--f.args.<p>` and the arity check read the same `_fillable_params`, so they move with it.
-[FEAT-2](../features/FEAT-2-protocol-callables-and-kwargs.md) is the `**kwargs` side of the same question.
+[FEAT-58](../features/FEAT-58-a-kwargs-parameter-takes-extra-keys-typed-by-its-annotation.md) is the `**kwargs` side of the same question, and [BUG-291](BUG-291-a-callables-arity-check-refuses-an-optional-parameter-and-accepts-a-keyword-only-one.md) replaces the arity check with a call-shape check that reads `*args` itself.
 
 Origin: latent since the initial version (PR-5), whose bind and factory kwarg checks already left `VAR_POSITIONAL` out of the valid names while the struct path read it as a list.
 
