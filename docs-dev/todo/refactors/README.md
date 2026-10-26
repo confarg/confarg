@@ -35,6 +35,8 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-115 — `_format_offset` slices an `isoformat()` string where `strftime("%:z")` says it](REF-115-format-offset-slices-an-isoformat-string.md) | trivial |  | S | low | none |
 | [REF-116 — The dump opens and closes an instance by hand, twice](REF-116-the-dump-opens-and-closes-an-instance-by-hand-twice.md) | trivial |  | S | low | none |
 | [REF-117 — Two depth bounds share a name, and two rules elide a long path](REF-117-two-depth-bounds-share-a-name-and-two-rules-elide-a-path.md) | trivial |  | S | low | none |
+| [REF-119 — Two timing-bound tests fail under a loaded machine](REF-119-two-timing-bound-tests-fail-under-a-loaded-machine.md) | trivial |  | S | low | none |
+| [REF-120 — The append mount naming no field is refused in two spellings](REF-120-the-append-mount-naming-no-field-is-refused-in-two-spellings.md) | trivial |  | S | low | none |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | trivial |  | M | high | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | trivial |  | M | low | none |
 | [REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk](REF-42-argparse-completion-reimplements-the-build-walk.md) | trivial |  | M | medium | none |
