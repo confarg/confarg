@@ -11,7 +11,8 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 |---|---|---|---|---|---|---|
 | [BUG-283 — A reference to a registered leaf written as a tagged dict reads the dict](BUG-283-a-reference-to-a-tagged-registered-leaf-reads-its-dict.md) | critical |  | M | high | config | BUG-16, BUG-246 |
 | [BUG-288 — An ambiguity inside a union variant lets the next variant take the value](BUG-288-an-ambiguity-inside-a-union-variant-lets-the-next-variant-take-the-value.md) | critical |  | M | high | config | PR-5 |
-| [BUG-293 — A `call:` result is taken unchecked when its outer class matches](BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md) | critical |  | M | high | config | FEAT-28 |
+| [BUG-297 — A call whose value is the same call, or holds itself, recurses to a raw `RecursionError`](BUG-297-a-call-whose-value-is-the-same-call-or-holds-itself-recurses-raw.md) | critical (via BUG-293) |  | M | medium | config | FEAT-28 |
+| [BUG-293 — A `call:` result is taken unchecked when its outer class matches](BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md) | critical | BUG-297, FEAT-60 | L | high | config | FEAT-28 |
 | [BUG-294 — The dump writes a class its `type[X]` field does not admit](BUG-294-the-dump-writes-a-class-its-type-field-does-not-admit.md) | major (via FEAT-57) |  | S | medium | behavior | BUG-31, BUG-267 |
 | [BUG-296 — A class opener naming a Protocol is refused with advice no key can follow](BUG-296-a-class-opener-naming-a-protocol-is-refused-with-advice-no-key-can-follow.md) | major (via FEAT-57) |  | S | medium | behavior | PR-5, BUG-215 |
 | [BUG-291 — A Callable's arity check refuses an optional parameter and accepts a keyword-only one](BUG-291-a-callables-arity-check-refuses-an-optional-parameter-and-accepts-a-keyword-only-one.md) | major (via FEAT-57) |  | M | high | config | PR-5 |
