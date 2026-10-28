@@ -565,6 +565,41 @@ class TestAUnionRefusalNamesEachVariantsReason:
         assert refusal.splitlines()[1:] == [f"  {line}"]
 
 
+@dataclass
+class _KindOwner:
+    Kind: str = "x"
+
+
+@dataclass
+class _KindTwin:
+    Kind: str = "y"
+
+
+class TestAnAmbiguousUnionWhoseMemberOwnsTheTag:
+    """A union whose member owns the tag's spelling counts the key as a field, and offers no tag (BUG-302)."""
+
+    def test_the_owned_key_is_a_provided_field_and_no_tag_is_offered(self) -> None:
+        """The key is the member's value, so adding it selects no variant: the remedy is a rename."""
+        Holder = make_target("g", _KindOwner | _KindTwin)
+        with (
+            pytest.warns(ConfargWarning, match=r"is a field's value, not the tag"),
+            pytest.raises(confarg.exceptions.AmbiguousUnionError) as excinfo,
+        ):
+            confarg.from_dict(Holder, {"g": {"Kind": "a"}}, union_tag="Kind")
+        message = str(excinfo.value)
+        assert "Provided fields: ['Kind']" in message
+        assert "To select a variant" not in message
+        assert "A member spelled 'Kind' owns the tag's spelling" in message
+
+    def test_an_absent_owned_key_offers_no_tag_either(self) -> None:
+        """Adding the key would read as the member's value, whether or not the data holds it yet."""
+        Holder = make_target("g", _KindOwner | _KindTwin)
+        with pytest.raises(confarg.exceptions.AmbiguousUnionError) as excinfo:
+            confarg.from_dict(Holder, {"g": {}}, union_tag="Kind")
+        assert "To select a variant" not in str(excinfo.value)
+        assert "A member spelled 'Kind' owns the tag's spelling" in str(excinfo.value)
+
+
 class TestUnionWithACarriedBaseFailsAsItsSequenceVariant:
     """A union refusing a base-carrying patch fails as its sequence variant (BUG-200).
 
