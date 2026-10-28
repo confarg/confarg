@@ -129,7 +129,7 @@ Rejected: **a `_TypeKind` of its own**, routed per walk: ty enforces the four `m
 
 ### What follows without a decision of its own
 
-- **Construction** offers a scalar the union's leaf rung, in the stealing rank, and a dict the tag, which FEAT-57's tag half takes; a dict with no tag is refused, since the tag half demands one ([BUG-295](../bugs/BUG-295-a-union-offers-an-untagged-value-to-a-variant-that-demands-its-tag.md)) and no scalar reads a dict.
+- **Construction** offers a scalar the union's leaf rung, in the stealing rank, and a dict the tag, which FEAT-57's tag half takes; a dict with no tag is refused, since the tag half demands one ([BUG-295, landed](../../architecture/types/construction.md#a-variant-that-demands-its-tag-takes-no-untagged-value)) and no scalar reads a dict.
 - **The dump** asks `_variant_holds` in the variants' order, the scalars first and the tag half last, so a scalar is written by its scalar variant, bare or with the cast `_reads_back` asks for when another scalar would take it, and anything else by the tag half as FEAT-57 writes it: an implementer with its tag, a conforming value that is no struct — a `Decimal` under `SupportsFloat` — as an `Any` node writes it, with its warning.
   `dump(C())` writes `ratio: 1.0`, which loads back.
 - **The default layer** lays a scalar default as any leaf default, so `${ratio}` reads `1.0`; an expression reads the scalar construction picks (`read_union_leaf`).

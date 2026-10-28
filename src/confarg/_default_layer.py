@@ -42,8 +42,8 @@ from confarg._tags import _tag_named_struct
 from confarg._typed_merge import TypedAt, merge_at, merge_root
 from confarg._types import (
     _all_have_defaults,
+    _demands_tag,
     _dict_kv,
-    _direct_struct_subclasses,
     _elem_type,
     _fixed_position,
     _fixed_seq_types,
@@ -360,7 +360,7 @@ def _struct_built_from(tp: Any, node: MergeDict, union_tag: str) -> Any:
     """Return the class construction builds *node* as at a field of struct type *tp*, None if unsure.
 
     Mirrors ``_construct_struct_dispatch``: an unshadowed tag names the class, a tag the
-    struct's own field owns is data, and with no tag a struct that has subclasses is refused,
+    struct's own field owns is data, and with no tag a struct that demands one is refused,
     so nothing is laid below a node construction would not build as one class.
     """
     try:
@@ -369,7 +369,7 @@ def _struct_built_from(tp: Any, node: MergeDict, union_tag: str) -> Any:
                 cls = _tagged_class(node[union_tag])
                 return None if cls is None else _tagged_struct(cls, tp)
             return tp if union_tag in _struct_fields(tp) else None
-        return None if _direct_struct_subclasses(tp) else tp
+        return None if _demands_tag(tp) else tp
     except _INTROSPECTION_ERRORS:
         return None
 

@@ -9603,6 +9603,94 @@ class TestUnionTagFieldCollision:
 
 
 # ---------------------------------------------------------------------------
+# A variant that demands its tag takes no part in the untagged match (BUG-295)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _AllDefaultsDB:
+    k: int = 0
+
+
+@dataclass
+class _NeedsDB:
+    x: str
+
+
+@dataclass
+class _DemandingBesideAllDefaults:
+    db: _BaseDB | _AllDefaultsDB
+
+
+@dataclass
+class _DemandingBesideNeeds:
+    db: _BaseDB | _NeedsDB
+
+
+@dataclass
+class _ShadowedBesideAllDefaults:
+    db: _KindOnlySubBase | _AllDefaultsDB
+
+
+@dataclass
+class _HoldsDemanding:
+    inner: _BaseDB
+
+
+@dataclass
+class _HoldsAllDefaults:
+    inner: _AllDefaultsDB
+
+
+@dataclass
+class _DemandingOneLevelDown:
+    holder: _HoldsDemanding | _HoldsAllDefaults
+
+
+class TestAVariantThatDemandsItsTagContract:
+    """A struct with subclasses is built only through a class a tag names, so an untagged value never selects it."""
+
+    def test_an_empty_value_builds_the_variant_that_takes_it(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``{}`` builds the all-defaults variant, where it was ambiguous with the base that demands its tag."""
+        cfg = tmp_yaml("db: {}\n")
+        result = loader.load(_DemandingBesideAllDefaults, argv=["--config", str(cfg)], env={})
+        assert result == _DemandingBesideAllDefaults(db=_AllDefaultsDB())
+
+    def test_a_value_no_variant_takes_is_the_unions_refusal(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A value the other variant refuses gets the union's refusal, its line for the base naming the demand.
+
+        The base once matched ``{}`` alone, so its own refusal stood for the union's and the
+        other variant's reason went unsaid.
+        """
+        cfg = tmp_yaml("db: {}\n")
+        with pytest.raises(TypeCoercionError) as excinfo:
+            loader.load(_DemandingBesideNeeds, argv=["--config", str(cfg)], env={})
+        message = str(excinfo.value)
+        assert message.startswith("Cannot coerce dict {} to _BaseDB | _NeedsDB at 'db':")
+        assert "_BaseDB: cannot construct '_BaseDB' at 'db': it has subclasses" in message
+        assert "_NeedsDB: " in message
+
+    def test_an_empty_value_skips_a_variant_whose_subclass_owns_the_tag(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A base whose subclass owns the tag's spelling is built only through that subclass, not by its own fields."""
+        cfg = tmp_yaml("db: {}\n")
+        result = loader.load(_ShadowedBesideAllDefaults, argv=["--config", str(cfg)], env={}, union_tag="Kind")
+        assert result == _ShadowedBesideAllDefaults(db=_AllDefaultsDB())
+
+    def test_the_owned_tag_still_selects_the_subclass_that_owns_it(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The tag-shaped key is the subclass's field, so the base matches through the subclass it selects."""
+        cfg = tmp_yaml("db:\n  Kind: v\n")
+        with pytest.warns(ConfargWarning, match="is a field's value, not the tag"):
+            result = loader.load(_ShadowedBesideAllDefaults, argv=["--config", str(cfg)], env={}, union_tag="Kind")
+        assert result == _ShadowedBesideAllDefaults(db=_KindOnlySub(Kind="v"))
+
+    def test_a_fields_value_tells_variants_apart_by_the_same_rule(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """Two variants told apart by a field's value: ``{}`` there is no value of the field that demands its tag."""
+        cfg = tmp_yaml("holder:\n  inner: {}\n")
+        result = loader.load(_DemandingOneLevelDown, argv=["--config", str(cfg)], env={})
+        assert result == _DemandingOneLevelDown(holder=_HoldsAllDefaults(inner=_AllDefaultsDB()))
+
+
+# ---------------------------------------------------------------------------
 # Key order: the merged dict is written in argv order (BUG-87)
 # ---------------------------------------------------------------------------
 

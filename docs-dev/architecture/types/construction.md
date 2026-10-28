@@ -9,7 +9,7 @@
    A tag that is all the data asks the named class to build from nothing, and a `TypeError` out of that call is a `TypeCoercionError` naming the class and quoting Python's own text — the tag is supplied data, so the field is not missing (BUG-213), the shape the auto-bound owner of an instance method already takes ([callables](../callables.md#auto-binding)).
    The key is the tag only when no member — no variant's own field, nor a variant's subclass-only field — owns its spelling; a member that does owns the key, the union falls through to structural matching, and the key counts as provided data there (BUG-102, BUG-103, [CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins)).
    Nor is it the tag where it can select no variant and a variant reads a dict, which holds it as data ([below](#where-no-tag-selects-a-variant-that-reads-a-dict-holds-the-key-as-data));
-3. **structural** matching for struct variants: required fields ⊆ provided keys ⊆ fields, refined by value/type compatibility; more than one match is an `AmbiguousUnionError` whose message lists each variant's fields and suggests the tag; zero matches falls back to trying each variant;
+3. **structural** matching for struct variants: required fields ⊆ provided keys ⊆ fields, refined by value/type compatibility, a variant that demands its tag left out ([below](#a-variant-that-demands-its-tag-takes-no-untagged-value)); more than one match is an `AmbiguousUnionError` whose message lists each variant's fields and suggests the tag; zero matches falls back to trying each variant;
 4. **leaf** variants: tuples (filtered by arity), then collections, then scalars (stealing rule), then the `_UnionSeqToken` one-element-list fallback, then `Any` ([below](#an-any-variant-is-tried-last)).
    A tuple is offered to the tuple and collection variants as a list is ([a tuple reads where a list reads](#a-tuple-reads-where-a-list-reads)).
    A built instance of a struct or an unsupported-leaf variant is taken by that variant first ([a built instance is taken as it is](#a-built-instance-is-taken-as-it-is)).
@@ -43,6 +43,18 @@ So was a dict variant owning the key as a real field owns it, which would have l
 Precedents: pydantic's discriminated unions and msgspec's tagged ones refuse a dict variant beside a tag when the type is defined; without a tag, both read `{class: …}` on `int | dict` as data.
 
 Until BUG-276 the union read the key as the tag whatever its variants were, so `int | dict[str, str]` refused a value its dict variant holds, and the merge replaced a lower layer's entries with it.
+
+### A variant that demands its tag takes no untagged value
+
+A struct with subclasses is built only through the class a tag names ([inheritance](#inheritance)), so structural matching never offers it a value carrying no tag: `{}` under `Base | AllDefaults`, where `Base` has a subclass, builds `AllDefaults`, and a value no other variant takes gets the union's refusal, whose line for `Base` says it wants the tag ([below](#a-union-refusal-names-each-variants-reason)).
+One predicate, `_types._demands_tag`, answers whether a struct requires its tag, and construction (`_construct_struct_dispatch`), flag registration (`cli._build._collect_struct_specs`), the default layer (`_struct_built_from`) and the structural match (`_construct._builds_by_fields`) all ask it; the dump's `_needs_tag` asks the structural match, so an `AllDefaults` beside `Base` is written untagged.
+The match asks it at every depth it reaches, a field's value included, so `{inner: {}}` tells `Holds(inner: Base)` from `Holds(inner: AllDefaults)`.
+
+Where a subclass-only field owns the tag's spelling, the struct is still built only through the subclass its fields select ([inheritance](#inheritance)), so it matches a value carrying the key when that selection takes it (`_construct._covering_subclasses`, what construction selects with), never `{}` by its own empty fields.
+A struct whose own field owns the spelling builds from its fields when the key is given, and matches by them then.
+
+Until BUG-295 the match read such a struct by its own fields, so a base declaring none was ambiguous with every all-defaults variant over `{}`, and the remedy the ambiguity offered, `'class': 'Base'`, names the base exactly ([class names the type it builds](../design-decisions/class-names-the-type-it-builds.md#class-names-the-type-it-builds)), which is refused; latent since PR-63, which made construction demand the tag and left the match as it was.
+Precedent: jsonargparse 4.52 reads `{}` under `Union[Base, AllDefaults]` as `AllDefaults(k=0)` (run), a subclass type taking only a `class_path`.
 
 ### A union refusal names each variant's reason
 
