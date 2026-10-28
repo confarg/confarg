@@ -2,6 +2,7 @@
 filed: 2026-10-28
 where:
   - src/confarg/_serialize.py::_serialize_union
+  - src/confarg/_serialize.py::_serialize_struct  # a subclass's own tag, outside any union
   - src/confarg/typedload/_construct.py::_ambiguous_union_msg  # counts the owned key as no provided field, and offers the tag as remedy
 effort: S
 risk: medium  # the dump must then warn where the variant cannot be told apart
@@ -14,6 +15,7 @@ introduced_by: [BUG-102]  # PR-262, a real field wins the tag's spelling on read
 
 Where a variant's field is spelled like the union tag, that field owns the key ([real field wins](../../architecture/design-decisions/real-field-wins.md)), and no tag can select a variant there; yet `_serialize_union` writes the tag over the field's value whenever it decides a tag is needed (`_needs_tag`, or `tag_policy="always"`).
 The field's value is lost, and it reads back as the class path, silently where the variants are otherwise told apart.
+`_serialize_struct` does the same outside any union: a subclass instance under its base is tagged over the subclass's field spelled like the tag, which the base owns through its subclasses (`_types._struct_member_type`), and reads back silently as the class path (second reproduction).
 Fix direction: the dump writes no tag where the union reads the key as a member's (`tag_reading` answering `OWNED`), and warns, as for a foreign value, when the variants cannot be told apart without it.
 The ambiguity refusal shares the blind spot: it lists the owned key as no provided field and offers the tag as its remedy.
 
@@ -47,6 +49,37 @@ print(data)
 print(confarg.build(C, data, union_tag="Kind"))
 # expected: {'g': {'Kind': 'field'}}
 #           C(g=Kinded(Kind='field'))
+# actual:   {'g': {'Kind': '__main__.Kinded'}}
+#           C(g=Kinded(Kind='__main__.Kinded'))
+```
+
+```python
+import warnings
+from dataclasses import dataclass
+
+import confarg
+
+
+@dataclass
+class Base:
+    pass
+
+
+@dataclass
+class Kinded(Base):
+    Kind: str = "x"
+
+
+@dataclass
+class C:
+    g: Base
+
+
+warnings.simplefilter("ignore")
+data = confarg.dump(C(g=Kinded(Kind="field")), union_tag="Kind")
+print(data)
+print(confarg.build(C, data, union_tag="Kind"))
+# expected: a dump that keeps the field, or a refusal naming the clash
 # actual:   {'g': {'Kind': '__main__.Kinded'}}
 #           C(g=Kinded(Kind='__main__.Kinded'))
 ```

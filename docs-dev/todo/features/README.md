@@ -11,7 +11,7 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | Ticket | Severity | Blocked by | Effort | Risk | Impact |
 |---|---|---|---|---|---|
 | [FEAT-58 — A `**kwargs` parameter takes extra keys, typed by its annotation](FEAT-58-a-kwargs-parameter-takes-extra-keys-typed-by-its-annotation.md) | critical |  | L | medium | config |
-| [FEAT-57 — Protocol-typed fields](FEAT-57-protocol-typed-fields.md) | major | BUG-301 | L | high | config |
+| [FEAT-57 — Protocol-typed fields](FEAT-57-protocol-typed-fields.md) | major |  | L | high | config |
 | [FEAT-5 — Optional structural validation right after `merge()`](FEAT-5-structural-validation-after-merge.md) | minor |  | S | low | behavior |
 | [FEAT-26 — The expression whitelist is not documented for users](FEAT-26-the-expression-whitelist-is-not-documented-for-users.md) | minor |  | S | low | none |
 | [FEAT-61 — A call's value is configuration on an `Any` and a Callable node](FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md) | minor |  | S | medium | behavior |
