@@ -11,6 +11,7 @@
    Nor is it the tag where it can select no variant and a variant reads a dict, which holds it as data ([below](#where-no-tag-selects-a-variant-that-reads-a-dict-holds-the-key-as-data));
 3. **structural** matching for struct variants: required fields ⊆ provided keys ⊆ fields, refined by value/type compatibility; more than one match is an `AmbiguousUnionError` whose message lists each variant's fields and suggests the tag; zero matches falls back to trying each variant;
 4. **leaf** variants: tuples (filtered by arity), then collections, then scalars (stealing rule), then the `_UnionSeqToken` one-element-list fallback, then `Any` ([below](#an-any-variant-is-tried-last)).
+   A tuple is offered to the tuple and collection variants as a list is ([a tuple reads where a list reads](#a-tuple-reads-where-a-list-reads)).
 
 ### A tag no variant takes
 
@@ -147,7 +148,7 @@ The other caller, `_types._subclass_field_type`, only reduces the list to a comm
 - A `__base__` with an index patch beside it builds as the merge would have built it, had no index escaped the base: each patch value refines what the base holds at its position through `_merge._merge_existing_value`, and fills a slot past the base's end.
   So `--t.1 5` beside `--t.0.a 9` over a file's `t: [[1, 2]]` defers the patch without turning the refinement of `t[0]` into a replacement (BUG-164).
   A fixed tuple and a namedtuple lay their positions alike.
-- Lists accept a list or an index-keyed dict, whose keys are read once as integers, so a YAML `{0: 9}` and a flag's `"0"` are one index.
+- Lists accept a list, a tuple or an index-keyed dict, whose keys are read once as integers, so a YAML `{0: 9}` and a flag's `"0"` are one index ([a tuple reads where a list reads](#a-tuple-reads-where-a-list-reads)).
   Index-keyed lists must be gap-free unless the element type is Optional.
   Deletes and negative indices need a base list; without one they are errors that say so.
 - Negative indices count from the end wherever a sequence's length is known (`_indexed_dict_to_positions`), mirroring list patches.
@@ -155,6 +156,20 @@ The other caller, `_types._subclass_field_type`, only reduces the list to a comm
   A list is keyed by field name and built as the by-name dict, so a list shorter than the arity leaves the fields it stops before to their defaults and, for one with none, to the `MissingFieldError` the dict omitting it raises.
   It used to fill such a field with `None`, which failed as a coercion of a value nobody passed, or built silently for an `X | None` field (BUG-167).
   The stdlib agrees (`P._make([1])` is a `TypeError`, "Expected 2 arguments, got 1"), and so does pydantic, which reports `y` as a `missing_argument`.
+
+### A tuple reads where a list reads
+
+A list-kind node (`list[int]`, `Sequence[int]`, a `list` subclass) reads a tuple as the sequence it spells and builds its own list, as a tuple node already reads a list and a set node a tuple; a union offers a tuple to its tuple and collection variants as it offers a list, and a scalar variant's refusal of one says no more than of a list (FEAT-60).
+No file, variable or flag spells a tuple; a caller's `build()` data and a `call:` value do, and a function returning a tuple under a `list[int]` field was refused.
+A set stays refused under a list: it has no positions, and its order varies from run to run for strings, so the dump would not be reproducible.
+
+Rejected:
+
+- **A tuple taken only where the annotation holds one, and kept a tuple** (pydantic): a second, type-checker-shaped reading inside construction, which reads `Sequence` as `list` everywhere else ([a builtin's subclass is that builtin](../design-decisions/a-builtins-subclass-is-that-builtin.md#a-builtins-subclass-is-that-builtin)).
+- **List nodes reading a list only**: a call returning a tuple under `Sequence[int]`, which a field took as it is, would be refused once a call's value is read by construction (BUG-293).
+- **Sets too** (pydantic lax, msgspec, cattrs): for the reproducibility above.
+
+Precedent (run): `list[int]` given `(1, 2)` is `[1, 2]` in pydantic lax, msgspec and cattrs, refused in pydantic strict; `Sequence[int]` given `(1, 2)` is `[1, 2]` in msgspec, kept a tuple in pydantic and cattrs.
 
 ### A class built from nothing
 

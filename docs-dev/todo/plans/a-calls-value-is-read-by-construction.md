@@ -1,6 +1,6 @@
 # Plan — A call's value is read by construction
 
-**Drafted:** 2026-10-27 · **Status:** approved · **Tickets:** BUG-297 (landed), [FEAT-60](../features/FEAT-60-a-tuple-reads-where-a-list-reads.md), [BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md), [FEAT-61](../features/FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md) · **Amended:** 2026-10-28, BUG-297 landed: the call-value helper is `_callable._call_value`, which makes a chain of calls in a loop, off the stack, and charges a value's copies to a budget of its own, construction carrying none; `_accepts` still answers before it chains, so under an `Any` a call returning a call keeps it as data until `_accepts` goes with BUG-293
+**Drafted:** 2026-10-27 · **Status:** approved · **Tickets:** BUG-297 (landed), FEAT-60 (landed), [BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md), [FEAT-61](../features/FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md) · **Amended:** 2026-10-28, FEAT-60 landed: its rule and rejected alternatives are in [construction](../../architecture/types/construction.md#a-tuple-reads-where-a-list-reads), and a union's scalar variant refuses a tuple on its shape as it refuses a list; 2026-10-28, BUG-297 landed: the call-value helper is `_callable._call_value`, which makes a chain of calls in a loop, off the stack, and charges a value's copies to a budget of its own, construction carrying none; `_accepts` still answers before it chains, so under an `Any` a call returning a call keeps it as data until `_accepts` goes with BUG-293
 
 A `call:` spec on a typed field takes its function's value "as it is" when `_callable._accepts` says the annotation already accepts it, and builds any other through construction ([call in a typed field](../../architecture/callables.md#call-in-a-typed-field)).
 `_accepts` asks `isinstance` of the annotation's origin alone, so a value whose outer class matches is taken unchecked at every depth below it, and it disagrees with `_serialize._holds`, the dump's answer to the same question ([BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md)).
@@ -112,7 +112,7 @@ Precedent (run): pydantic's `model_validate` and msgspec's `convert` take an ins
 
 ### A tuple reads where a list reads
 
-A list-kind node (`list[int]`, `Sequence[int]`, a `list` subclass) reads a tuple as the sequence it spells and builds its list, as a tuple node already reads a list and a set node a tuple ([FEAT-60](../features/FEAT-60-a-tuple-reads-where-a-list-reads.md)).
+A list-kind node (`list[int]`, `Sequence[int]`, a `list` subclass) reads a tuple as the sequence it spells and builds its list, as a tuple node already reads a list and a set node a tuple (FEAT-60, landed).
 A set stays refused under a list: it has no positions, and its order varies from run to run for strings, so the dump would not be reproducible.
 
 | | today (run) | chosen |
@@ -213,7 +213,7 @@ Rejected: **refused until FEAT-35**, which breaks legitimate template or shell t
 
 1. **BUG-297**, landed: the call-value helper on `resolve_typed_call`, with `refuse_overflow`, the cycle and the chain bound; test-first, both reproductions.
    `_accepts` still answers at its end.
-2. **[FEAT-60](../features/FEAT-60-a-tuple-reads-where-a-list-reads.md)**: a tuple read where a list is, in construction and in the union's sequence routing.
+2. **FEAT-60**, landed: a tuple read where a list is, in construction and in the union's sequence routing.
 3. **[BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md)**, in this order, each step green before the next:
    1. Move the holding predicate to `typedload/_holding.py`, with no change in behavior.
    2. A struct node, a union and an unsupported leaf take a built instance; the refusal messages.

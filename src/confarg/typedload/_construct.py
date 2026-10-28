@@ -433,19 +433,20 @@ def _construct_taggable_leaf(tp: Any, data: MergeDict, path: FieldPath, union_ta
 def _construct_collection(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:
     """Construct a list, set, or frozenset from raw data.
 
-    Lists accept only a list or an index-keyed dict; sets and frozensets accept
-    any sequence-like value ``_build_items`` handles. The result is wrapped with
-    the constructor matching the type's origin.
+    Lists accept a list, a tuple or an index-keyed dict, the shapes that spell positions; sets
+    and frozensets accept any sequence-like value ``_build_items`` handles. The result is
+    wrapped with the constructor matching the type's origin.
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#structs-collections-and-defaults
+        docs-dev/architecture/types/construction.md#a-tuple-reads-where-a-list-reads
     """
-    if _is_list(tp) and not isinstance(data, list | dict):
+    if _is_list(tp) and not isinstance(data, list | tuple | dict):
         raise TypeCoercionError.wrong_shape(
             _src_type(data),
             data,
             "list",
-            "list or dict with integer keys",
+            "list, tuple, or dict with integer keys",
             _spell_field_path(path),
         )
     items = _build_items(_elem_type(tp), data, path, union_tag)
@@ -1191,8 +1192,8 @@ _UNION_NO_MATCH: object = object()
 #: Each variant a union tried and the refusal it raised, in the order tried.
 type _Refusals = list[tuple[Any, BaseException]]
 
-#: The kinds of variant read from one value, a tag opening a registered leaf aside: a dict or a
-#: list handed to one is no shape of it, whatever its refusal says (:func:`_variant_reasons`).
+#: The kinds of variant read from one value, a tag opening a registered leaf aside: a dict, a list
+#: or a tuple handed to one is no shape of it, whatever its refusal says (:func:`_variant_reasons`).
 _READ_FROM_ONE_VALUE = frozenset({_TypeKind.LEAF, _TypeKind.TAGGABLE_LEAF})
 
 
@@ -1344,9 +1345,9 @@ def _try_fixed_seq_variants(
     Dev Notes:
         docs-dev/architecture/types/leaf-coercion.md#leaf-coercion
     """
-    if not (fixed_vars and isinstance(data, list | dict)):
+    if not (fixed_vars and isinstance(data, list | tuple | dict)):
         return _UNION_NO_MATCH
-    if isinstance(data, list):
+    if isinstance(data, list | tuple):
         data_len = len(data)
     else:
         try:
@@ -1361,7 +1362,7 @@ def _try_fixed_seq_variants(
 
 def _try_coll_variants(coll_vars: list[Any], data: Any, path: FieldPath, union_tag: str, refusals: _Refusals) -> Any:
     """Try constructing from collection variants; returns _UNION_NO_MATCH if none accept data."""
-    if not (coll_vars and isinstance(data, dict | list | set | frozenset)):
+    if not (coll_vars and isinstance(data, dict | list | tuple | set | frozenset)):
         return _UNION_NO_MATCH
     return _first_constructible(coll_vars, data, path, union_tag, refusals)
 
@@ -1558,15 +1559,15 @@ def _variant_reasons(non_none: list[Any], refusals: _Refusals, data: Any, path: 
 
     In the union's order, each by the last refusal *refusals* keeps for it, which
     :func:`~confarg.exceptions._variant_reason` reads: a refusal saying only that *data* is no
-    value of the variant, or not of its shape, gives none. A scalar leaf refuses a dict or a
-    list on its shape whatever it says, a format hint, a tag it cannot take or, for a leaf a tag
+    value of the variant, or not of its shape, gives none. A scalar leaf refuses a dict, a list
+    or a tuple on its shape whatever it says, a format hint, a tag it cannot take or, for a leaf a tag
     opens, the tag the dict lacks, so it gives none there either.
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
     """
     spelled = _spell_field_path(path)
-    container = isinstance(data, dict | list)
+    container = isinstance(data, dict | list | tuple)
     reasons = []
     for variant in non_none:
         if container and _type_kind(_resolve_type(variant)) in _READ_FROM_ONE_VALUE:

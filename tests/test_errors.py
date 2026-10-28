@@ -635,7 +635,7 @@ class TestTokensStayOutOfMessages:
             (
                 list[int],
                 list,
-                "Cannot construct list at 'value': expected list or dict with integer keys, got str 'abc'",
+                "Cannot construct list at 'value': expected list, tuple, or dict with integer keys, got str 'abc'",
             ),
             (
                 set[int],

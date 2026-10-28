@@ -16,7 +16,6 @@ risk: high  # construction is shared by every channel, and a wrong acceptance is
 impact: config  # a call returning items its field does not hold starts failing, or starts coercing them
 severity: critical  # the value is left uncoerced and unchecked, with no error
 introduced_by: [FEAT-28]  # _accepts, which answers by the outer class only
-blocked_by: [FEAT-60]  # a tuple under Sequence[int] keeps building
 ---
 
 # BUG-293 — A `call:` result is taken unchecked when its outer class matches
