@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Structural conformance: whether a callable can be called the way a signature calls it.
+"""Structural conformance: whether a class is a Protocol, and whether a callable can be called as a signature is.
 
 A leaf module, importing the standard library only, so every module asking the question can
 import it. A refusal is returned as its reason, never raised: the caller raises it.
@@ -14,6 +14,8 @@ Dev Notes:
 from __future__ import annotations
 
 import inspect
+import sys
+import typing
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +27,21 @@ _Parameter = inspect.Parameter
 _POSITIONAL = (_Parameter.POSITIONAL_ONLY, _Parameter.POSITIONAL_OR_KEYWORD)
 _BY_NAME = (_Parameter.POSITIONAL_OR_KEYWORD, _Parameter.KEYWORD_ONLY)
 _VARIADIC = (_Parameter.VAR_POSITIONAL, _Parameter.VAR_KEYWORD)
+
+
+def is_protocol(tp: Any) -> bool:
+    """Return whether *tp* is a Protocol class, one declared with ``Protocol`` among its bases.
+
+    A class implementing a Protocol is none, whether it inherits it or not, and neither is
+    ``typing.Protocol`` itself. ``typing_extensions.Protocol`` declares one too.
+
+    Dev Notes:
+        ``typing.is_protocol`` exists from 3.13; on 3.12 its body is spelled here, reading the
+        ``_is_protocol`` flag both ``typing`` and ``typing_extensions`` set on a Protocol class.
+    """
+    if sys.version_info >= (3, 13):
+        return typing.is_protocol(tp)
+    return isinstance(tp, type) and bool(getattr(tp, "_is_protocol", False)) and tp is not typing.Protocol
 
 
 def call_conforms(impl: Any, expected: inspect.Signature) -> str | None:

@@ -848,6 +848,18 @@ class TypeCoercionError(ConfargError):
         )
 
     @classmethod
+    def names_a_protocol(cls, name: Any, path: str) -> TypeCoercionError:
+        """Return the error for a class a tag or an opener named, which is a Protocol: no key makes one buildable.
+
+        *name* is the class as the user named it.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/class-names-the-type-it-builds.md#a-protocol-class-is-refused-before-it-is-called
+        """
+        message = f"Class {name!r} at '{path}' is a Protocol, so it cannot be built: name a class that implements it."
+        return cls._refusal(message, reason=f"class {name!r} is a Protocol")
+
+    @classmethod
     def tag_not_a_subclass(cls, name: Any, parent: str, path: str, call: str) -> TypeCoercionError:
         """Return the error for a class tag on a typed field that names no subclass of the field's type.
 

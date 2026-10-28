@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import functools
 import inspect
-from typing import Any
+from typing import Any, Protocol
 
 import pytest
 
-from confarg._conformance import call_conforms
+from confarg._conformance import call_conforms, is_protocol
 
 
 def _expected(stub: Any) -> inspect.Signature:
@@ -297,3 +297,54 @@ class TestCallConformsTwoRoutes:
 
         reason = call_conforms(_takes_x, _expected(first_then_keyword))
         assert reason == "keyword 'x' is passed, but 'x' already takes a positional argument"
+
+
+class _Greeter(Protocol):
+    def greet(self) -> str: ...
+
+
+class _Loud(_Greeter, Protocol):
+    def shout(self) -> str: ...
+
+
+class _Nominal(_Greeter):
+    def greet(self) -> str:
+        return "hi"
+
+
+class _Structural:
+    def greet(self) -> str:
+        return "hi"
+
+
+class TestIsProtocol:
+    """``is_protocol`` answers for a class declared a Protocol, on every supported version."""
+
+    @pytest.mark.parametrize("tp", [_Greeter, _Loud], ids=["protocol", "sub-protocol"])
+    def test_a_protocol_class(self, tp: type) -> None:
+        """A class with ``Protocol`` among its bases is one."""
+        assert is_protocol(tp)
+
+    @pytest.mark.parametrize(
+        "tp",
+        [_Nominal, _Structural, Protocol, int, list[int], None, "_Greeter"],
+        ids=["nominal-implementer", "structural-implementer", "Protocol-itself", "int", "alias", "none", "string"],
+    )
+    def test_anything_else(self, tp: Any) -> None:
+        """An implementer, inheriting the Protocol or not, ``Protocol`` itself and a non-class are none."""
+        assert not is_protocol(tp)
+
+    def test_a_typing_extensions_protocol(self) -> None:
+        """A ``typing_extensions.Protocol`` class is one too, a different class from ``typing``'s on 3.12."""
+        typing_extensions = pytest.importorskip("typing_extensions")
+
+        class Greeter(typing_extensions.Protocol):
+            def greet(self) -> str:
+                raise NotImplementedError  # ty cannot tell an importorskip module's Protocol for one
+
+        class Implementer(Greeter):
+            def greet(self) -> str:
+                return "hi"
+
+        assert is_protocol(Greeter)
+        assert not is_protocol(Implementer)
