@@ -328,7 +328,7 @@ class TestOptionalReportsItsVariantsError:
             ),
         )
         assert type(optional) is type(plain)
-        assert str(optional) == f"{plain}. To set this field to None, pass 'none' or 'null'."
+        assert str(optional) == f"{str(plain).removesuffix('.')}. To set this field to None, pass 'none' or 'null'."
 
 
 class TestUnionWithNoneOffersTheRemedyOnlyToAToken:

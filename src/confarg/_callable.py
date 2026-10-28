@@ -20,10 +20,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
 from confarg import _defaults
+from confarg._conformance import call_conforms
 from confarg._import import _import_dotted, dotted_name, has_dotted_name, imports_back
 from confarg._types import (
-    _callable_param_types,
-    _is_callable,
+    _expected_call_signature,
     _is_struct,
     _is_union,
     _PositionalGapError,
@@ -878,37 +878,23 @@ def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
 
 
 def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
-    """Validate obj's signature against the Callable[[T1, T2], R] annotation.
+    """Refuse *obj* unless the Callable annotation *tp* can call it every way it declares.
 
-    Checks that the number of required positional/keyword parameters (after
-    accounting for already-bound args in a functools.partial) matches the
-    declared parameter count. Skips check for bare Callable, Callable[..., R],
-    and callables with uninspectable signatures (builtins, C extensions).
+    The call *tp* makes is :func:`_expected_call_signature`'s, checked by
+    :func:`call_conforms`: a bare ``Callable``, ``Callable[..., R]`` and a callable whose
+    signature ``inspect`` cannot read are not checked. Raises ``TypeCoercionError`` naming
+    the argument or the parameter that does not fit.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#a-callable-is-checked-by-its-call-shape
     """
-    if not _is_callable(tp):
+    expected = _expected_call_signature(tp)
+    if expected is None:
         return
-    param_types = _callable_param_types(tp)
-    if param_types is None:
-        return
-
-    try:
-        sig = inspect.signature(obj)
-    except (ValueError, TypeError):
-        return
-
-    has_var_positional = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in sig.parameters.values())
-    if has_var_positional:
-        return
-
-    required = _fillable_params(sig.parameters, required=True)
-    if len(required) != len(param_types):
-        type_names = [_spell_type(t) for t in param_types]
-        msg = (
-            f"Callable at '{path}': annotation expects {len(param_types)} parameter(s)"
-            f" {type_names}, but {obj!r} has {len(required)} required"
-            f" parameter(s) {[p.name for p in required]}"
-        )
-        raise TypeCoercionError(msg)
+    reason = call_conforms(obj, expected)
+    if reason is not None:
+        name = getattr(obj, "__qualname__", None) or repr(obj)
+        raise TypeCoercionError.call_shape_refused(name, _spell_type(tp), path, reason)
 
 
 def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]]) -> str | dict:

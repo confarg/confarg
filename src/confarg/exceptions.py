@@ -779,6 +779,16 @@ class TypeCoercionError(ConfargError):
         return cls._refusal(f"Callable at '{path}': {reason}.", reason=reason)
 
     @classmethod
+    def call_shape_refused(cls, name: str, annotation: str, path: str, reason: str) -> TypeCoercionError:
+        """Return the error for the callable *name*, which the Callable *annotation* cannot call, for *reason*.
+
+        Dev Notes:
+            docs-dev/architecture/callables.md#a-callable-is-checked-by-its-call-shape
+        """
+        reason = f"{name} cannot be called as {annotation} calls it: {reason}"
+        return cls._refusal(f"Callable at '{path}': {reason}.", reason=reason)
+
+    @classmethod
     def not_callable(cls, spec: Any, result: Any, path: str) -> TypeCoercionError:
         """Return the error for the Callable spec *spec*, which resolved to *result*, nothing callable."""
         reason = f"{spec!r} resolved to {result!r}, which is not callable"

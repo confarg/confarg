@@ -31,6 +31,7 @@ from struct import calcsize
 from typing import (
     Annotated,
     Any,
+    Concatenate,
     Final,
     Literal,
     NewType,
@@ -2009,15 +2010,55 @@ def _is_callable(tp: Any) -> bool:
     return get_origin(tp) is Callable or tp is Callable
 
 
-def _callable_param_types(tp: Any) -> list[Any] | None:
-    """Return the declared parameter types for Callable[[T1, T2], R], or None.
+def _expected_call_signature(tp: Any) -> inspect.Signature | None:
+    """Return the signature the Callable annotation *tp* calls its value with, or None when it checks no call.
 
-    Returns None for bare Callable or Callable[..., R] (no param constraint).
+    ``Callable[[A, B], R]`` calls it as ``(a, b, /)``, an unpacked tuple among the parameters
+    spliced in (:func:`_spliced_positionals`). ``Callable[Concatenate[A, B, P], R]`` calls it
+    as ``(a, b, /, *args, **kwargs)``, the pair unannotated, so whatever the ParamSpec
+    supplies is left open. A bare ``Callable``, ``Callable[..., R]``, ``Callable[P, R]`` and
+    anything that is no Callable check nothing.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#a-callable-is-checked-by-its-call-shape
     """
-    args = get_args(_resolve_type(tp))
+    tp = _resolve_type(tp)
+    args = get_args(tp) if _is_callable(tp) else ()
     if not args:
         return None
     params = args[0]
-    if params is Ellipsis:
+    if isinstance(params, list):
+        parameters = _spliced_positionals(params)
+    elif get_origin(params) is Concatenate:
+        parameters = _spliced_positionals(get_args(params)[:-1])
+        parameters.append(inspect.Parameter("args", inspect.Parameter.VAR_POSITIONAL))
+        parameters.append(inspect.Parameter("kwargs", inspect.Parameter.VAR_KEYWORD))
+    else:
         return None
-    return [_resolve_type(p) for p in params]
+    return inspect.Signature(parameters)
+
+
+def _spliced_positionals(types_: Iterable[Any]) -> list[inspect.Parameter]:
+    """Return one positional-only parameter per type of *types_*, an unpacked tuple spliced in.
+
+    ``*tuple[A, B]`` is two more positional parameters; ``*tuple[A, ...]`` and an unpacked
+    TypeVarTuple are a ``*args``, which ends the list, a parameter after it being one no
+    signature spells.
+    """
+    parameters: list[inspect.Parameter] = []
+    pending = list(types_)
+    while pending:
+        t = pending.pop(0)
+        if get_origin(t) is Unpack:
+            inner = get_args(t)[0]
+        elif getattr(t, "__unpacked__", False):
+            inner = types.GenericAlias(tuple, get_args(t))
+        else:
+            parameters.append(inspect.Parameter(f"_{len(parameters)}", inspect.Parameter.POSITIONAL_ONLY))
+            continue
+        items = get_args(inner) if get_origin(inner) is tuple else (...,)
+        if ... in items:
+            parameters.append(inspect.Parameter("args", inspect.Parameter.VAR_POSITIONAL))
+            break
+        pending[:0] = items
+    return parameters

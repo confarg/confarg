@@ -192,7 +192,58 @@ Signature and annotations are taken from different objects when needed: `inspect
 
 A `call:` reads its annotations from the same object as `bind:` does (`_hints_source`), so a class it calls is built from its `__init__` annotations, as under `class:` (BUG-155).
 
-Validation is skipped where it cannot work: uninspectable callables (C extensions) and signature arity checks for `*args` callables or `Callable[..., R]`.
+Validation is skipped where it cannot work: an uninspectable callable (a C extension) is taken unchecked, and `Callable[..., R]` checks no call ([call shape](#a-callable-is-checked-by-its-call-shape)).
+
+## A callable is checked by its call shape
+
+A `Callable[[A, B], R]` field takes a callable only when the callable can be called every way the annotation calls it.
+`_check_callable_signature` reads the call the annotation makes, `_types._expected_call_signature`, and asks `_conformance.call_conforms` whether the value takes it: the typing specification's assignability rule for callables ([typing spec, callables](https://typing.python.org/en/latest/spec/callables.html)), with the types left out.
+
+| Annotation | The call it makes |
+|---|---|
+| `Callable[[A, B], R]` | `(a, b, /)` |
+| `Callable[[A, *tuple[B, C]], R]` | `(a, b, c, /)` |
+| `Callable[[A, *tuple[B, ...]], R]`, `Callable[[A, *Ts], R]` | `(a, /, *args)` |
+| `Callable[Concatenate[A, P], R]`, `Callable[Concatenate[A, ...], R]` | `(a, /, *args, **kwargs)`, the pair unannotated, so the rest is open |
+| `Callable[..., R]`, `Callable[P, R]`, a bare `Callable` | none: nothing is checked |
+
+A ParamSpec a generic class binds reaches the check substituted, so `C[[int]]` checks `(a, /)` and a bare `C` checks nothing, its ParamSpec reading `...` ([types](types/introspection.md#a-generic-class-reads-its-parameters-bound)).
+
+The value's own signature is read by `inspect.signature`, so a partial's bound arguments and a bound receiver are already gone from it.
+For the expected signature E and the value's I:
+
+- each positional parameter of E is taken at the same position by I, or by I's `*args`;
+- a positional-or-keyword parameter of E is also taken by name, by the same parameter of I: one of that name at that position, or I's `**kwargs` where I's `*args` takes the position;
+- a keyword-only parameter of E is taken by name in I, or by `**kwargs`;
+- E's `*args` needs I's `*args`, E's `**kwargs` needs I's `**kwargs`;
+- a parameter optional in E is optional in I;
+- every parameter of I nothing in E fills is optional, or is I's `*args` or `**kwargs`;
+- but an E `*args, **kwargs` pair, each unannotated or `Any`, stands for `...`: E's parameters before it are still checked, and whatever else I declares is taken, required or not.
+
+| Value | under `Callable[[int], int]` | under `Callable[Concatenate[int, ...], int]` |
+|---|---|---|
+| `def optional_x(x: int = 0)` | ✓ | ✓ |
+| `def kw_only(*, x: int)` | refused: argument 1 is passed by position, and no parameter takes it (`x` is keyword-only) | refused |
+| `def pfx(x: int, y: str)` | refused: parameter `y` is required, and the call never passes it | ✓ |
+| `def kwo(x: int, *, k: str)` | refused | ✓ |
+| `def none()` | refused | refused |
+
+A refusal names an expected argument by its position, since a `Callable[[int], int]` has no parameter names, or by its name where E lets a call use one, and a parameter of the value by its name.
+A callable whose signature `inspect` cannot read is taken unchecked; a value that is not callable at all was refused before the check.
+
+Why the types are left out: comparing annotations by equality refuses what a type checker accepts — a parameter widened from `list[int]` to `Sequence[int]`, a string annotation, an overload — and a false refusal leaves the user no workaround, where a false acceptance is still caught by their type checker ([limitations](limitations.md#callables-and-serialization)).
+The one annotation read is whether a variadic pair is `Any`, since that is how the specification spells `...` in a signature, and how `Concatenate[A, ...]` reads: `ty` prints it `(int, /, *args: Any, **kwargs: Any) -> int`.
+A string annotation is not `Any` to that reading, so the expected signature is read with its strings evaluated.
+
+The rule lives in its own leaf module, importing the standard library only, so any module asking whether a callable can be called as a signature is asks it there, and it returns a refusal as its reason for the caller to raise.
+
+Rejected:
+
+- **Counting the required parameters** against the declared ones, the check until BUG-291: it refused `optional_x`, accepted `kw_only`, which no positional call reaches, and read `Concatenate[int, ...]` as one parameter, refusing `pfx`.
+- **An expected `*args, **kwargs` always needing the value's own**, jsonargparse 4.53's one-to-one comparison (`implements_protocol` refuses a `def greet(self)` for a Protocol declaring `def greet(self, *args, **kwargs)`, run): a false refusal `ty` does not make.
+- **Every expected pair open, whatever its annotations**, which reads no annotation at all but takes `def greet(self)` where `*args: int, **kwargs: int` is declared, which `ty` refuses.
+
+Precedent: `ty` answers every row of the table above as confarg does (run); jsonargparse checks a Protocol's methods and a function implementing a callback Protocol with one `protocol_params_match`, comparing annotations too.
 
 ## Arguments go by position where they can
 
@@ -213,7 +264,7 @@ Hydra's `instantiate` passes every named argument by keyword and reaches a posit
 Cost: a parameter a `bind:` passed by position cannot be passed again by keyword when the partial is called, as one bound by keyword could be.
 A name under `args` always means the declared parameter, never a key of the target's `**kwargs` ([limitations](limitations.md#callables-and-serialization)).
 
-The kwarg check, the arity check, the constructor listing a failed auto-instantiation prints and the CLI's `--f.args.<param>` flags for a `bind:` or `call:` target all count parameters the same way, through `_fillable_params`: every parameter a signature lists except `*args` and `**kwargs`.
+The kwarg check, the constructor listing a failed auto-instantiation prints and the CLI's `--f.args.<param>` flags for a `bind:` or `call:` target all count parameters the same way, through `_fillable_params`: every parameter a signature lists except `*args` and `**kwargs`.
 Registration reads the signature of the callable construction calls, `_target_signature`: an instance method bound off its receiver, whatever the receiver is named, without building the owner (BUG-218).
 None of them drops a parameter named `self`.
 A signature already leaves out the receiver of a class or of a bound method, so a `self` still in one is a parameter the function really declares: `def handler(self, event)` takes two arguments, and `{bind: handler, args: {self: …}}` fills one of them.
