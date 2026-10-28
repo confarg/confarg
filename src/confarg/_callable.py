@@ -687,11 +687,46 @@ def resolve_typed_call(spec: dict, tp: Any, path: FieldPath, union_tag: str, con
         docs-dev/architecture/callables.md#call-in-a-typed-field
     """
     ctx = _SpecContext(path, union_tag, construct_fn)
-    _opener, kwargs = _computation_parts(spec, ctx.where)
-    value = _call_factory(spec[_defaults.CALL_KEY], kwargs, ctx)
+    value = _call_value(spec, tp, ctx)
     if _accepts(tp, value):
         return value
     return ctx.construct(tp, value)
+
+
+def _call_value(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
+    """Return the value the ``call:`` *spec* on a field of type *tp* computes, bounded where it enters.
+
+    Each value is checked as ``build()`` data is, counted from the node's depth
+    (:func:`~confarg._depth.refuse_overflow`). A value that is a call again at the node is
+    made in its place, a link of a chain each of which is a level.
+
+    Raises:
+        ConfargError: If a value nests past :data:`~confarg.MAX_DEPTH` or holds itself,
+            if it is a call already made at the node, or if the chain's links and the node's
+            depth pass the bound.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#a-chain-of-calls-is-bounded-on-its-own
+    """
+    from confarg._depth import MAX_DEPTH, Copies, refuse_overflow  # noqa: PLC0415  # import cycle, through _types
+    from confarg.typedload._construct import _is_typed_call  # noqa: PLC0415  # import cycle
+
+    action = f"read the value of the call at '{ctx.where}'"
+    made = [spec]
+    while True:
+        _opener, kwargs = _computation_parts(spec, ctx.where)
+        value = _call_factory(spec[_defaults.CALL_KEY], kwargs, ctx)
+        refuse_overflow(value, action, at=ctx.path, copies=Copies())
+        if _accepts(tp, value) or not _is_typed_call(value, tp):
+            return value
+        targets = [repr(made_spec[_defaults.CALL_KEY]) for made_spec in made]
+        if value in made:
+            again = made.index(value)
+            raise ConfargError.call_never_ends(action, [*targets[again:], targets[again]], value)
+        if len(ctx.path) + len(made) > MAX_DEPTH:
+            raise ConfargError.calls_too_deep(action, targets, len(ctx.path), MAX_DEPTH)
+        made.append(value)
+        spec = value
 
 
 def resolve_held_spec(spec: dict, path: FieldPath, union_tag: str, construct_fn: Any) -> Any:

@@ -1,6 +1,6 @@
 # Plan — A call's value is read by construction
 
-**Drafted:** 2026-10-27 · **Status:** approved · **Tickets:** [BUG-297](../bugs/BUG-297-a-call-whose-value-is-the-same-call-or-holds-itself-recurses-raw.md), [FEAT-60](../features/FEAT-60-a-tuple-reads-where-a-list-reads.md), [BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md), [FEAT-61](../features/FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md)
+**Drafted:** 2026-10-27 · **Status:** approved · **Tickets:** BUG-297 (landed), [FEAT-60](../features/FEAT-60-a-tuple-reads-where-a-list-reads.md), [BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md), [FEAT-61](../features/FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md) · **Amended:** 2026-10-28, BUG-297 landed: the call-value helper is `_callable._call_value`, which makes a chain of calls in a loop, off the stack, and charges a value's copies to a budget of its own, construction carrying none; `_accepts` still answers before it chains, so under an `Any` a call returning a call keeps it as data until `_accepts` goes with BUG-293
 
 A `call:` spec on a typed field takes its function's value "as it is" when `_callable._accepts` says the annotation already accepts it, and builds any other through construction ([call in a typed field](../../architecture/callables.md#call-in-a-typed-field)).
 `_accepts` asks `isinstance` of the annotation's origin alone, so a value whose outer class matches is taken unchecked at every depth below it, and it disagrees with `_serialize._holds`, the dump's answer to the same question ([BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md)).
@@ -156,7 +156,7 @@ Rejected:
 
 ### A call's value is bounded where it enters
 
-A call's value is a new entry point for data, so `_depth.refuse_overflow` checks it where it lands, counted from the node's own depth, as it checks `build()` data ([a configuration nests at most 64 levels](../../architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#where-it-is-counted)): a value holding itself, nesting past 64 levels or copying past 100 000 positions is refused with the message `build()` data gets ([BUG-297](../bugs/BUG-297-a-call-whose-value-is-the-same-call-or-holds-itself-recurses-raw.md)).
+A call's value is a new entry point for data, so `_depth.refuse_overflow` checks it where it lands, counted from the node's own depth, as it checks `build()` data ([a configuration nests at most 64 levels](../../architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#where-it-is-counted)): a value holding itself, nesting past 64 levels or copying past 100 000 positions is refused with the message `build()` data gets (BUG-297, landed).
 A chain of calls at one node — a call whose value is another `call:` at the same position — does not deepen the position, so it is bounded on its own: a spec equal (`==`, the raw spec being configuration data) to one already made at that node is refused as a cycle naming its targets, and a chain that never repeats is refused once its links and the node's depth pass 64, each link a level, since each costs construction a recursion.
 
 ```python
@@ -211,7 +211,7 @@ Rejected: **refused until FEAT-35**, which breaks legitimate template or shell t
 
 ## Phases
 
-1. **[BUG-297](../bugs/BUG-297-a-call-whose-value-is-the-same-call-or-holds-itself-recurses-raw.md)**: the call-value helper on `resolve_typed_call`, with `refuse_overflow`, the cycle and the chain bound; test-first, both reproductions.
+1. **BUG-297**, landed: the call-value helper on `resolve_typed_call`, with `refuse_overflow`, the cycle and the chain bound; test-first, both reproductions.
    `_accepts` still answers at its end.
 2. **[FEAT-60](../features/FEAT-60-a-tuple-reads-where-a-list-reads.md)**: a tuple read where a list is, in construction and in the union's sequence routing.
 3. **[BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md)**, in this order, each step green before the next:

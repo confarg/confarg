@@ -47,6 +47,18 @@ def list_chain(n: int, leaf: Any = 1) -> Any:
     return value
 
 
+def chain_of(levels: int) -> Any:
+    """Return :func:`chain` of *levels*, for a ``call:`` to compute."""
+    return chain(levels)
+
+
+def list_holding_itself() -> list[Any]:
+    """Return a list that holds itself, for a ``call:`` to compute."""
+    loop: list[Any] = []
+    loop.append(loop)
+    return loop
+
+
 def called_from(frames: int, fn: Callable[[], Any]) -> Any:
     """Call *fn* with *frames* more frames on the stack."""
     return fn() if frames == 0 else called_from(frames - 1, fn)
@@ -289,6 +301,15 @@ class TestPythonData:
             assert "right.child" in str(info.value)
             assert "expressions" in str(info.value)
 
+    def test_a_calls_value_is_counted_from_the_root(self) -> None:
+        """A call 11 levels down computing 54 more holds its leaf at 65 (BUG-297)."""
+        spec = {"call": f"{__name__}.chain_of", "args": {"levels": PAST - 10}}
+        with pytest.raises(ConfargError, match=TOO_DEEP) as info:
+            confarg.build(Config, {"d": chain(10, spec)})
+        assert "(65 levels)" in str(info.value)
+        spec["args"] = {"levels": AT - 10}
+        assert confarg.build(Config, {"d": chain(10, spec)}).d == chain(10, chain(AT - 10))
+
     def test_an_untouched_deep_default_is_not_counted(self) -> None:
         """Construction never walks a default nothing touched, so it is no part of what is counted."""
 
@@ -335,6 +356,12 @@ class TestCycles:
         with pytest.raises(ConfargError, match="contains itself") as info:
             api(Config, {"d": loop})
         assert "'d.x' holds 'd'" in str(info.value)
+
+    def test_a_calls_value_that_holds_itself_is_refused(self) -> None:
+        """A ``list[Any]`` took it as it is; it is refused as a caller's own data is (BUG-297)."""
+        with pytest.raises(ConfargError, match="contains itself") as info:
+            confarg.build(Config, {"items": {"call": f"{__name__}.list_holding_itself"}})
+        assert "'items[0]' holds 'items'" in str(info.value)
 
     def test_an_instance_that_holds_itself_is_not_dumped(self) -> None:
         """The serializer tracks the instances it is serializing."""

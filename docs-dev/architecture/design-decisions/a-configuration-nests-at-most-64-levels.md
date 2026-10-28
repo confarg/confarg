@@ -45,6 +45,9 @@ It is asked wherever a value enters, before the first walker meets it:
 - **The data a caller hands** to `build()`, `from_dict()` and `resolve()`.
 - **The tree its expressions resolve to**, in `_api._resolve_over_defaults`, which `build()` and `resolve()` share: an expression standing for a value copies it where it is written, so `right: ${left}` 40 levels down holds `left` 80 levels down.
   A default nothing touched is left out of the count, as construction never walks it.
+- **A call's value**, by `_callable._call_value`, counted from the node the call fills: a function computes it during construction, after the data it stands in was counted, so a value nesting past the bound or holding itself reached construction unchecked (BUG-297).
+  A self-holding value a field took as it is, a `list[Any]` given a list holding itself, is refused with it.
+  Its copies are charged to a budget of its own, construction carrying none ([one budget per configuration](a-configuration-copies-at-most-100000-positions.md#one-budget-per-configuration)).
 - **What `dump()` writes**: the serializer is the one walk of an instance, so it counts its own descent, `len(path)` in `_serialize._open`, rather than a second walk re-implementing how a dataclass, a namedtuple, a plain class and a partial are descended into.
   A value a typed dump writes untyped is counted where it is written (`_serialize._untyped_at`), and a dict `dump_file()` writes is counted whole.
   So `dump()` never writes a file `load()` refuses.
@@ -56,6 +59,22 @@ A refusal names the first position past the bound, its middle elided past eight 
 A container met again below itself is refused naming both positions: `Cannot read cycle.yaml: 'd.x' holds 'd', a value that contains itself.` The count tracks the containers on the path it is walking, so a shared part that is no ancestor (`a: *b`, `b: *b`) is no cycle.
 The serializer tracks the instances it is serializing the same way; the same instance entered again at its own position, as a union serializes it as its variant, is no cycle either.
 The depth bound alone would stop a cycle at level 65, but it would name a symptom: the user wrote two lines, not 65 levels.
+
+## A chain of calls is bounded on its own
+
+A call whose value is another `call:` at the same node is made in its place, as that spec written in the configuration would be, and so on until a value comes.
+Such a chain never deepens the position, so the depth count never meets it, and a function returning its own spec recursed through construction until Python's limit (BUG-297).
+`_callable._call_value` makes the chain in a loop, off the stack, and bounds it on its own:
+
+- **A spec equal to one already made at the node** is a cycle, refused naming the targets it goes round: `Cannot read the value of the call at 'n': 'pkg.loop' returns {'call': 'pkg.loop'}, a call already made there ('pkg.loop' -> 'pkg.loop').` The raw spec is configuration data, so `==` compares it; a chain whose arguments change at every link repeats no spec.
+- **A chain that never repeats** is refused once its links and the node's depth pass 64, each link past the first a level, naming its first and last targets.
+  A link is a value read in a value's place, which is what a level counts; how deep a chain may go then depends on the configuration alone, as the depth bound does.
+
+Rejected:
+
+- **The depth bound alone**, each link counted as a level and no cycle check: it stops `loop` at 65 levels and names the symptom, against [the cycle rule above](#a-value-that-holds-itself-is-refused-as-one).
+- **No call at the node a call fills**: it contradicts reading the value as configuration written where the call stands, since a file may write `n: {call: g}`.
+- **The chain made through construction**, as it was, with the specs made so far carried down it: a parameter threaded through every `_construct_*` function, or a `ContextVar`, for state construction has nowhere else.
 
 ## Rejected
 

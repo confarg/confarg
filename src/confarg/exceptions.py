@@ -429,6 +429,29 @@ class ConfargError(Exception):
         return cls(f"Cannot {action}: '{_spell_long_path(path)}' holds {held}, a value that contains itself.")
 
     @classmethod
+    def call_never_ends(cls, action: str, cycle: Sequence[str], spec: Any) -> ConfargError:
+        """Return the error for a call whose value is *spec*, a call already made at its node.
+
+        *cycle* spells the targets the calls go round, from the one *spec* calls again back to it.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#a-chain-of-calls-is-bounded-on-its-own
+        """
+        return cls(f"Cannot {action}: {cycle[-2]} returns {spec!r}, a call already made there ({' -> '.join(cycle)}).")
+
+    @classmethod
+    def calls_too_deep(cls, action: str, targets: Sequence[str], depth: int, bound: int) -> ConfargError:
+        """Return the error for a chain of calls, *targets* in order, at a node *depth* levels deep, past *bound*.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#a-chain-of-calls-is-bounded-on-its-own
+        """
+        return cls(
+            f"Cannot {action}: each call returns another, {len(targets)} calls from {targets[0]} to {targets[-1]},"
+            f" which with the node's depth of {depth} nest deeper than {bound} levels.",
+        )
+
+    @classmethod
     def callable_not_spelled(cls, value: Any, reason: str) -> ConfargError:
         """Return the error for a callable ``dump()`` refuses, since no configuration spells it.
 

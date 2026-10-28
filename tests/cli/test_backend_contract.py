@@ -6587,6 +6587,102 @@ class TestCallOnTheCliContract:
             loader.merge(_TypedCallConfig, argv=["--call", f"{__name__}._twice"], env={})
 
 
+@dataclass
+class _CallNode:
+    """A recursive struct a call's value may nest, or hold itself in."""
+
+    child: _CallNode | None = None
+
+
+@dataclass
+class _BoundedCallConfig:
+    """Fields a call's value is bounded at: a leaf, and a recursive struct."""
+
+    n: int = 0
+    node: _CallNode | None = None
+
+
+def _calls_itself() -> dict[str, str]:
+    """A function whose value is its own spec again."""
+    return {"call": f"{__name__}._calls_itself"}
+
+
+def _calls_its_twin() -> dict[str, str]:
+    """A function whose value is a call to a function whose value is a call to this one."""
+    return {"call": f"{__name__}._twin_of_a_call"}
+
+
+def _twin_of_a_call() -> dict[str, str]:
+    """The other half of :func:`_calls_its_twin`."""
+    return {"call": f"{__name__}._calls_its_twin"}
+
+
+def _counts_down(i: int = 0) -> Any:
+    """A function whose value is a call again three times, then 5."""
+    return 5 if i == 3 else {"call": f"{__name__}._counts_down", "args": {"i": i + 1}}
+
+
+def _calls_forever(i: int = 0) -> dict[str, Any]:
+    """A function whose value is a call again, never the same one."""
+    return {"call": f"{__name__}._calls_forever", "args": {"i": i + 1}}
+
+
+def _holds_itself() -> dict[str, Any]:
+    """A function whose value is a node that is its own child."""
+    node: dict[str, Any] = {"child": None}
+    node["child"] = node
+    return node
+
+
+def _nests(levels: int) -> dict[str, Any] | None:
+    """A function whose value is a node chain *levels* children deep."""
+    node = None
+    for _ in range(levels):
+        node = {"child": node}
+    return node
+
+
+class TestACallsValueIsBoundedContract:
+    """A call's value is bounded where it enters, as ``build()`` data is, in every front-end (BUG-297).
+
+    A call whose value was another call at the same node was made again through construction,
+    with nothing to end the chain, and a value holding itself was walked until Python's own limit:
+    both raised a raw ``RecursionError``.
+    """
+
+    def test_a_call_whose_value_is_the_same_call_is_refused_as_a_cycle(self, loader: ConfargLoader) -> None:
+        """The spec a call returns is one already made at the node, so the calls never end."""
+        with pytest.raises(ConfargError, match=r"at 'n'.* returns .*_calls_itself.*a call already made there"):
+            loader.load(_BoundedCallConfig, argv=["--n.call", f"{__name__}._calls_itself"], env={})
+
+    def test_a_cycle_through_two_targets_names_both(self, loader: ConfargLoader) -> None:
+        """A cycle of two calls is refused naming each target it goes through."""
+        with pytest.raises(ConfargError, match=r"_calls_its_twin' -> .*_twin_of_a_call' -> .*_calls_its_twin'\)"):
+            loader.load(_BoundedCallConfig, argv=["--n.call", f"{__name__}._calls_its_twin"], env={})
+
+    def test_a_chain_that_ends_builds(self, loader: ConfargLoader) -> None:
+        """A call returning another call is configuration written in its place: made, until a value comes."""
+        assert loader.load(_BoundedCallConfig, argv=["--n.call", f"{__name__}._counts_down"], env={}).n == 5
+
+    def test_a_chain_that_never_ends_is_refused_past_the_bound(self, loader: ConfargLoader) -> None:
+        """A chain that never repeats is refused once its links and the node's depth pass the bound."""
+        refusal = r"at 'n'.*64 calls from .*_calls_forever.* to .*_calls_forever.*deeper than 64 levels"
+        with pytest.raises(ConfargError, match=refusal):
+            loader.load(_BoundedCallConfig, argv=["--n.call", f"{__name__}._calls_forever"], env={})
+
+    def test_a_value_holding_itself_is_refused_as_one(self, loader: ConfargLoader) -> None:
+        """A value holding itself is refused naming both positions, as ``build()`` data is."""
+        with pytest.raises(ConfargError, match=r"'node.child' holds 'node', a value that contains itself"):
+            loader.load(_BoundedCallConfig, argv=["--node.call", f"{__name__}._holds_itself"], env={})
+
+    def test_a_value_nesting_past_the_bound_is_refused(self, loader: ConfargLoader) -> None:
+        """A value is counted from the node it lands at, as a decoded JSON value is."""
+        argv = ["--node.call", f"{__name__}._nests", "--node.args.levels"]
+        with pytest.raises(ConfargError, match=r"nests deeper than 64 levels, at .* \(65 levels\)"):
+            loader.load(_BoundedCallConfig, argv=[*argv, "64"], env={})
+        assert loader.load(_BoundedCallConfig, argv=[*argv, "63"], env={}).node is not None
+
+
 class TestCallOnTheCliRegistrationContract:
     """A typed call's and a nested target spec's flags are discovered from the signatures they name (FEAT-32)."""
 
