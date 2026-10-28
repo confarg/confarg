@@ -29,7 +29,7 @@ The two now ask one function, `spec_reading_variant`.
 
 ## A `call:` is the union's to take
 
-A `call:` runs once, and its value is taken as a typed call takes it on any field: as it is when a variant accepts it, a callable by the Callable variant, else built as the union.
+A `call:` runs once, and its value is read by construction as the union, as a typed call's is on any field ([a call's value is read by construction](a-calls-value-is-read-by-construction.md#a-calls-value-is-read-by-construction)): a callable by the Callable variant, an instance by the struct variant holding it, a dict built as any union builds one.
 `Callable | Opts` takes `{call: pkg.make_double}` as the function and `{call: pkg.make_opts}` as the `Opts`, which each struct variant had already taken as its own typed call.
 
 Rejected: **the Callable owns `call:`**, so the value must be callable, as on a lone Callable field.

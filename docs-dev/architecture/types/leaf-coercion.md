@@ -45,7 +45,7 @@ A `type[X]` field takes a class, a class object or the dotted path of one, that 
 A bound that names anything else, a `TypeVar` included, takes every class.
 A refusal names every class of the bound: "is not a subclass of `mod.A | mod.B`".
 
-One predicate answers it, `_types._type_ref_admits`, which `_coerce_type_ref` reads a value by and `_serialize._variant_holds` asks of a class a `type[X]` field holds, so the dump writes a class the bound does not admit as a foreign value, with its warning ([serialization](serialization.md#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it)), rather than a path its read-back refuses (BUG-294).
+One predicate answers it, `_types._type_ref_admits`, which `_coerce_type_ref` reads a value by and `typedload._holding._variant_holds` asks of a class a `type[X]` field holds, so the dump writes a class the bound does not admit as a foreign value, with its warning ([serialization](serialization.md#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it)), rather than a path its read-back refuses (BUG-294).
 Before, the dump answered `isinstance(value, type)`, held by any class; and the read side took the bound's first argument only when it was a class, so `type[A | B]` and `type[Box[int]]` took every class, and `type[Any]` none, `typing.Any` being a class since 3.11 that no other class subclasses.
 
 Precedent, run: pydantic and typeguard both read `type[A | B]` as either bound and `type[Any]` as any class; typeguard checks `type[Box[int]]` against `Box`, where pydantic refuses to build a schema for it.

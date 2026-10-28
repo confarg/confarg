@@ -12,6 +12,7 @@
 3. **structural** matching for struct variants: required fields ⊆ provided keys ⊆ fields, refined by value/type compatibility; more than one match is an `AmbiguousUnionError` whose message lists each variant's fields and suggests the tag; zero matches falls back to trying each variant;
 4. **leaf** variants: tuples (filtered by arity), then collections, then scalars (stealing rule), then the `_UnionSeqToken` one-element-list fallback, then `Any` ([below](#an-any-variant-is-tried-last)).
    A tuple is offered to the tuple and collection variants as a list is ([a tuple reads where a list reads](#a-tuple-reads-where-a-list-reads)).
+   A built instance of a struct or an unsupported-leaf variant is taken by that variant first ([a built instance is taken as it is](#a-built-instance-is-taken-as-it-is)).
 
 ### A tag no variant takes
 
@@ -107,7 +108,7 @@ Giving `Any` a rank in `_steal_rank` would not do it: the rank orders the scalar
 A tagged dict goes the tag's way first: a tag naming a struct variant selects it, and one naming no variant is the spec of the variant that reads one, a Callable or else the `Any`, which builds the class it names ([callables](../callables.md#an-any-node-reads-every-opener)); a tag that does not import is refused.
 A dict holding another opener (`bind`, `classfn`) is read by that variant before any struct or dict variant, unless a struct variant owns the key, and a `call` is the union's to take ([a Callable beside another variant](../callables.md#a-callable-beside-another-variant)).
 
-`_construct._holds_anything` is the one test of the variant.
+`_holding._holds_anything` is the one test of the variant.
 `dump()` asks it too, looking for the variant that holds an instance among the others first ([serialization](serialization.md#serialization)).
 Because `Any` holds every type, `_cast.holds_the_cast` admits every cast on a union holding it, as on a bare `Any`, so the `{__cast__, __value__}` escape hatch reaches the text a `Path` variant would steal ([stealing rule](stealing-rule.md#casting-a-stolen-leaf)).
 
@@ -170,6 +171,21 @@ Rejected:
 - **Sets too** (pydantic lax, msgspec, cattrs): for the reproducibility above.
 
 Precedent (run): `list[int]` given `(1, 2)` is `[1, 2]` in pydantic lax, msgspec and cattrs, refused in pydantic strict; `Sequence[int]` given `(1, 2)` is `[1, 2]` in msgspec, kept a tuple in pydantic and cattrs.
+
+### A built instance is taken as it is
+
+A node takes a value that is already what it names, as it is, in a caller's `build()` data and in a call's value alike: a file, a variable and a flag spell no such value, so the merge never meets one ([a call's value is read by construction](../design-decisions/a-calls-value-is-read-by-construction.md#construction-takes-a-built-instance-of-what-its-node-names)).
+
+- **A struct node** (`_construct_struct_dispatch`) takes a value that is no dict when `typedload._holding._holds` holds it, before the tag or the subclass dispatch is asked: an instance of the class or of a subclass, and for a generic struct one whose members hold their bound types.
+  It refuses any other naming the value's class and the struct (`TypeCoercionError.no_instance_of`), a file's `'abc'` included, or, for an instance of a generic struct, the first member in declaration order whose value does not hold (`typedload._holding.unheld_member`, `TypeCoercionError.unheld_member`).
+  The instance is the field: not copied, and a non-generic class's members not read again, its constructor being its own contract.
+- **An unsupported leaf** (`_coerce._unsupported_leaf_instance`) takes an instance of its class, by the same `_holds`, and refuses every other value as `Unsupported leaf type`: no text reads as one, and `dump()` still refuses to write one ([an unsupported leaf is refused both ways](serialization.md#an-unsupported-leaf-is-refused-both-ways)).
+- **A union** (`_instance_variant`, the first rung of `_construct_union_leaf`) hands a value that is no dict, list or tuple to the variant the dump would write it by (`typedload._holding.first_holding_variant`), when that variant is a struct or an unsupported leaf; a leaf with a coercion takes what its coercion takes, in the leaf walk.
+  A built instance takes no part in structural matching, which reads dicts: its class answers what a tag would.
+- A leaf with a coercion, a namedtuple, a tuple, a set, a Callable and a `type[X]` read a built value as they did.
+
+A Protocol class that is not `@runtime_checkable` holds no value for `_holds`, since `isinstance` raises for it (`typedload._holding._isinstance_answers`): construction refuses a value under it as it refuses any other a struct does not hold, and the dump writes one as foreign, with its warning, until the Protocol's conformance answers the question ([FEAT-57](../../todo/features/FEAT-57-protocol-typed-fields.md)).
+Raising `isinstance`'s own `TypeError` was rejected: once construction asked `_holds` of every value that is no dict, a file's `5` under `P | int` raised it, where it had read as the `int`.
 
 ### A class built from nothing
 

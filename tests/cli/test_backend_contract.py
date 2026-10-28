@@ -30,8 +30,9 @@ from collections.abc import (
 )
 from dataclasses import InitVar, dataclass
 from dataclasses import field as dataclasses_field
+from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, NamedTuple, NewType, Protocol, runtime_checkable
 from uuid import UUID
@@ -6703,6 +6704,219 @@ class TestATupleReadsWhereAListReadsContract:
         assert loader.load(_ListCallConfig, argv=["--xs.call", f"{__name__}._a_pair"], env={}).xs == [1, 2]
 
 
+@dataclass
+class _CallModel:
+    """A struct a call's value holds an instance of."""
+
+    x: int = 0
+
+
+@dataclass
+class _CallBase:
+    """A struct with a subclass, so a dict for it needs its tag."""
+
+    x: int = 0
+
+
+@dataclass
+class _CallSubModel(_CallBase):
+    """The subclass a call returns an instance of."""
+
+    y: int = 1
+
+
+@dataclass
+class _CallBox[T]:
+    """A generic struct, whose members its bound types."""
+
+    item: T
+
+
+class _CallPort(int):
+    """An ``int`` subclass, which stays itself under ``int``."""
+
+
+class _CallMode(StrEnum):
+    """A ``StrEnum``, whose member reads as its text under ``str``."""
+
+    FAST = "fast"
+
+
+@dataclass
+class _ReadCallConfig:
+    """Fields a call's value fills, read by construction as ``build()`` data is."""
+
+    t: tuple[int, int] = (0, 0)
+    xs: list[int] = dataclasses_field(default_factory=list)
+    fs: list[float] = dataclasses_field(default_factory=list)
+    seq: collections.abc.Sequence[int] = dataclasses_field(default_factory=list)
+    n: int = 0
+    s: str = ""
+    day: date | None = None
+    m: _CallBase | None = None
+    ms: list[_CallModel] = dataclasses_field(default_factory=list)
+    box: _CallBox[int] | None = None
+
+
+_SHARED_MODEL = _CallModel(1)
+_SHARED_MODELS = [_SHARED_MODEL]
+_SUB_MODEL = _CallSubModel(4)
+
+
+def _three_ints() -> tuple[int, int, int]:
+    return (1, 2, 3)
+
+
+def _letters() -> list[str]:
+    return ["a", "b"]
+
+
+def _ints() -> list[int]:
+    return [1, 2]
+
+
+def _int_pair() -> tuple[int, int]:
+    return (1, 2)
+
+
+def _true() -> bool:
+    return True
+
+
+def _port() -> _CallPort:
+    return _CallPort(8080)
+
+
+def _mode() -> _CallMode:
+    return _CallMode.FAST
+
+
+def _a_datetime() -> datetime:
+    return datetime(2026, 1, 2, 3, 4)
+
+
+def _sub_model() -> _CallBase:
+    return _SUB_MODEL
+
+
+def _shared_models() -> list[_CallModel]:
+    return _SHARED_MODELS
+
+
+def _mixed_models() -> list[Any]:
+    return [_SHARED_MODEL, {"x": 2}]
+
+
+def _box_of_text() -> _CallBox[Any]:
+    return _CallBox("s")
+
+
+class TestACallsValueIsReadByConstructionContract:
+    """A call's value is read by construction, as ``build()`` data is, in every front-end (BUG-293).
+
+    A value whose outer class matched the annotation was taken as it was, unchecked at every
+    depth below it: a three-item tuple under ``tuple[int, int]``, strings in a ``list[int]``.
+    """
+
+    def _load(self, loader: ConfargLoader, name: str, target: str) -> Any:
+        return getattr(loader.load(_ReadCallConfig, argv=[f"--{name}.call", f"{__name__}.{target}"], env={}), name)
+
+    @pytest.mark.parametrize(
+        ("name", "target", "refusal"),
+        [
+            pytest.param("t", "_three_ints", r"at 't': expected 2 elements, got 3", id="tuple-length"),
+            pytest.param("xs", "_letters", r"str 'a' to int at 'xs\[0\]'", id="list-items"),
+            pytest.param("n", "_true", r"bool True to int at 'n'", id="bool-under-int"),
+            pytest.param("day", "_a_datetime", r"at 'day'", id="datetime-under-date"),
+            pytest.param("box", "_box_of_text", r"it holds 's' at 'box\.item', which is no int", id="generic-member"),
+        ],
+    )
+    def test_a_value_construction_refuses_is_refused(
+        self, loader: ConfargLoader, name: str, target: str, refusal: str
+    ) -> None:
+        """Each refused at its own position, as ``from_dict()`` refuses the same value."""
+        with pytest.raises(TypeCoercionError, match=refusal):
+            self._load(loader, name, target)
+
+    @pytest.mark.parametrize(
+        ("name", "target", "expected"),
+        [
+            pytest.param("fs", "_ints", [1.0, 2.0], id="ints-under-float"),
+            pytest.param("seq", "_int_pair", [1, 2], id="tuple-under-sequence"),
+            pytest.param("n", "_port", _CallPort(8080), id="int-subclass"),
+            pytest.param("s", "_mode", "fast", id="strenum-under-str"),
+            pytest.param("ms", "_mixed_models", [_CallModel(1), _CallModel(2)], id="instance-and-dict"),
+        ],
+    )
+    def test_a_value_is_built_as_build_data_is(
+        self, loader: ConfargLoader, name: str, target: str, expected: Any
+    ) -> None:
+        """Each item coerced at its own position, an instance taken and a dict built."""
+        built = self._load(loader, name, target)
+        assert built == expected
+        assert type(built) is type(expected)
+        if isinstance(built, list):
+            assert [type(b) for b in built] == [type(e) for e in expected]
+
+    def test_a_subclass_instance_is_the_same_object(self, loader: ConfargLoader) -> None:
+        """An instance needs no tag: its class is the tag's answer."""
+        assert self._load(loader, "m", "_sub_model") is _SUB_MODEL
+
+    def test_a_container_is_a_new_one_holding_the_same_items(self, loader: ConfargLoader) -> None:
+        """The function's list is not the field's, so mutating one leaves the other."""
+        built = self._load(loader, "ms", "_shared_models")
+        assert built == _SHARED_MODELS
+        assert built is not _SHARED_MODELS
+        assert built[0] is _SHARED_MODEL
+
+    def test_each_built_value_dumps_and_reads_back(self, loader: ConfargLoader) -> None:
+        """A value holding an instance dumps as its fields, which read back as the same value."""
+        cfg = loader.load(_ReadCallConfig, argv=["--ms.call", f"{__name__}._mixed_models"], env={})
+        assert confarg.from_dict(_ReadCallConfig, confarg.dump(cfg)) == cfg
+
+
+@dataclass
+class _AnyCallConfig:
+    """An ``Any`` field a call fills."""
+
+    a: Any = None
+
+
+def _nine() -> int:
+    return 9
+
+
+def _spec_of_nine() -> dict[str, str]:
+    return {"call": f"{__name__}._nine"}
+
+
+def _path_of_nine() -> str:
+    return f"{__name__}._nine"
+
+
+def _tagged_model() -> dict[str, Any]:
+    return {"class": f"{__name__}._CallModel", "x": 3}
+
+
+class TestACallsValueIsConfigurationOnAnAnyNodeContract:
+    """An ``Any`` node reads a call's value as configuration written in its place, in every front-end (BUG-293).
+
+    It took the value as it was, since ``_accepts(Any, …)`` answered before construction did.
+    """
+
+    @pytest.mark.parametrize(
+        ("target", "expected"),
+        [
+            pytest.param("_spec_of_nine", 9, id="opener"),
+            pytest.param("_tagged_model", _CallModel(3), id="tag"),
+            pytest.param("_path_of_nine", f"{__name__}._nine", id="bare-string-stays-text"),
+        ],
+    )
+    def test_the_value_is_read_as_configuration(self, loader: ConfargLoader, target: str, expected: Any) -> None:
+        """An opener and a tag are read; a bare string stays the text it is, as it does in a file."""
+        assert loader.load(_AnyCallConfig, argv=["--a.call", f"{__name__}.{target}"], env={}).a == expected
+
+
 class TestCallOnTheCliRegistrationContract:
     """A typed call's and a nested target spec's flags are discovered from the signatures they name (FEAT-32)."""
 
@@ -7898,7 +8112,7 @@ class TestWholeValueFlagContract:
 
     def test_struct_non_object_token_fails_to_build(self, loader: ConfargLoader) -> None:
         """build() is what rejects it, loudly on every front-end (BUG-82)."""
-        with pytest.raises(TypeCoercionError, match="expected dict"):
+        with pytest.raises(TypeCoercionError, match="got str 'oops', which is no _WholeInner"):
             loader.load(_WholeValue, argv=["--sub", "oops"], env={})
 
     def test_struct_non_object_token_below_a_namedtuple_is_kept_raw(self, loader: ConfargLoader) -> None:
@@ -7925,7 +8139,7 @@ class TestWholeValueFlagContract:
 
     def test_struct_bare_flag_after_subflag_fails_to_build(self, loader: ConfargLoader) -> None:
         """build() is what rejects the raw token, loudly on every front-end (BUG-85, via BUG-82)."""
-        with pytest.raises(TypeCoercionError, match="expected dict"):
+        with pytest.raises(TypeCoercionError, match="got str '9', which is no _WholeInner"):
             loader.load(_WholeMidHolder, argv=["--x.inner.a", "7", "--x.inner", "9"], env={})
 
     def test_struct_bare_flag_before_subflag_stays_refined(self, loader: ConfargLoader) -> None:
@@ -10724,7 +10938,7 @@ class _WithBuiltinSubclasses:
     tags: _TagList = dataclasses_field(default_factory=_TagList)
     port: _PortInt = _PORT
     pair: _PairTuple = _PAIR
-    seq: collections.abc.Sequence[int] = ()
+    seq: collections.abc.Sequence[int] = dataclasses_field(default_factory=list)
     bare_seq: collections.abc.Sequence = ()
     bare_map: collections.abc.Mapping = dataclasses_field(default_factory=dict)
 

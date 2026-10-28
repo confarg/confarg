@@ -1,18 +1,18 @@
 ---
 filed: 2026-10-27
 where:
-  - src/confarg/_callable.py::resolve_held_spec  # the call branch, under an Any
   - src/confarg/_callable.py::_resolve_call_spec  # under a Callable
-effort: M  # two call sites onto BUG-297's helper, and one recorded sentence amended
-risk: high  # an Any's call value holding an opener key changes meaning in every channel, silently
-impact: config  # a call under an Any whose value holds an opener key builds what it spells instead of keeping the dict
-severity: minor  # returning the built object instead of its spec works
-blocked_by: [BUG-293]  # the typed path reads a call's value through construction first
+  - src/confarg/_callable.py::resolve_held_spec  # its call branch, which no route reaches (inferred)
+effort: S  # one call site onto _call_value, and the Callable's spec reading
+risk: medium  # a call returning a string under a Callable starts importing it
+impact: behavior  # a call whose value is a path or a spec fills a Callable field, where it was refused
+severity: minor  # returning the function itself instead of its path or spec works
 ---
 
 # FEAT-61 — A call's value is configuration on an `Any` and a Callable node
 
-A typed field reads a dict in a `call:` value as configuration written in its place (a tag, a nested opener, a pin), but an `Any` field keeps the value as it is, and a Callable field refuses any value that is not already callable: `a: {call: f}` keeps `{'call': 'pkg.nine'}` as a dict, and `f: {call: g}` refuses `'pkg.inc'` with `returned 'str', which is not callable`.
+A typed field and an `Any` read a dict in a `call:` value as configuration written in its place (a tag, a nested opener, a pin), but a Callable field refuses any value that is not already callable: `f: {call: g}` refuses `'pkg.inc'` with `returned 'str', which is not callable`, and `{'bind': 'pkg.inc'}` with `returned 'dict'`.
 
-Settled in [the plan](../plans/a-calls-value-is-read-by-construction.md#a-calls-value-is-configuration-written-in-its-place-on-every-node): `resolve_held_spec`'s `call` branch and `_resolve_call_spec` hand their value to construction through the helper BUG-297 introduced, `_callable._call_value`, so an `Any` reads every opener in it (a bare dotted string staying text) and a Callable reads a path or a spec, signature-checked.
-It amends "`call:` takes its target's value as it is" in [an `Any` node reads every opener](../../architecture/design-decisions/an-any-node-reads-every-opener.md) to "as configuration written in its place".
+Settled in [the plan](../plans/a-calls-value-is-read-by-construction.md#a-calls-value-is-configuration-written-in-its-place-on-every-node): `_resolve_call_spec` hands its value to construction through `_callable._call_value`, so a Callable reads a path or a spec, signature-checked, as it reads one a file writes.
+The `Any` half landed with BUG-293, whose deletion of `_accepts` sent an `Any`'s call value through construction ([a call's value is read by construction](../../architecture/design-decisions/a-calls-value-is-read-by-construction.md#a-calls-value-is-configuration-written-in-its-place)).
+`resolve_held_spec`'s `call` branch still takes its value as it is, but no route reaches it *(inferred: `_is_typed_call` takes every `call` an `Any` holds but one beside a `class`, which `_spec_parts` reads as the `class`)*; it goes, or goes through the helper, with this change.

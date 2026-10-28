@@ -1776,9 +1776,9 @@ class TestDumpRefusesAnUnsupportedLeaf:
             confarg.dump(_StatePattern())
 
     def test_construction_refuses_the_same_type(self) -> None:
-        """The refusal is construction's: a complex value does not build either."""
+        """The refusal is construction's: no value reads as a complex, only an instance is taken (BUG-293)."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="Unsupported leaf type"):
-            confarg.build(_StateComplex, {"z": 2j})
+            confarg.build(_StateComplex, {"z": "2j"})
 
     @pytest.mark.usefixtures("leaf_registry")
     def test_a_registered_complex_is_written(self) -> None:

@@ -1,6 +1,6 @@
 # An `Any` node reads every opener
 
-An `Any` field reads a dict holding `class`, `classfn`, `bind` or `call` as the spec it is, as a Callable field does: `class:` builds the class it names, whatever class it is, `call:` takes its target's value as it is, `bind:` yields a partial and `classfn:` a bound method.
+An `Any` field reads a dict holding `class`, `classfn`, `bind` or `call` as the spec it is, as a Callable field does: `class:` builds the class it names, whatever class it is, `call:` takes its target's value as configuration written in its place ([a call's value is read by construction](a-calls-value-is-read-by-construction.md#a-calls-value-is-configuration-written-in-its-place)), `bind:` yields a partial and `classfn:` a bound method.
 A dict an `Any` holds is a `dict[Any, Any]` and a list a `list[Any]`, so a spec at any depth below it is read too.
 A bare dotted string stays a string.
 In a union, a tag naming no variant is the `Any` variant's spec, and a tag that does not import is refused.

@@ -16,7 +16,7 @@ from dataclasses import InitVar, dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Any, Literal, NamedTuple, Protocol
 from uuid import UUID
 
 import pytest
@@ -1600,3 +1600,157 @@ class TestATagThatIsNoStringIsRefused:
         with pytest.raises(SymbolImportError, match=rf"from 'class' tag at '{where}'.*bug235_missing_dependency") as e:
             construct(_TagHolder, {where: {"class": "bug235_broken.Thing"}})
         assert not isinstance(e.value, TypeCoercionError)
+
+
+@dataclass
+class _Model:
+    x: int = 0
+
+
+@dataclass
+class _SubModel(_Model):
+    y: int = 1
+
+
+@dataclass
+class _OtherSubModel(_Model):
+    z: int = 2
+
+
+@dataclass
+class _Plain:
+    x: int = 0
+
+
+@dataclass
+class _Box[T]:
+    item: T
+
+
+@dataclass
+class _Other:
+    """Unrelated to ``_Plain``, with the same field names."""
+
+    x: int = 0
+
+
+@dataclass
+class _Instances:
+    plain: _Plain | None = None
+    model: _Model | None = None
+    box: _Box[int] | None = None
+    plains: list[_Plain] = field(default_factory=list)
+    plain_or_n: _Plain | int = 0
+    z: complex | None = None
+    lock: _thread.LockType | None = None
+
+
+class TestABuiltInstanceIsTakenAsItIs:
+    """A node takes a value that already is what it names, in a caller's data too (BUG-293).
+
+    A struct node refused every value but a dict, so an instance a caller's ``build()`` data
+    held was refused, and a union took it nowhere.
+    """
+
+    @pytest.mark.parametrize("api", [confarg.build, confarg.from_dict], ids=["build", "from_dict"])
+    def test_a_struct_instance_is_the_same_object(self, api: Callable[..., Any]) -> None:
+        """No copy, no revalidation: the instance is the field."""
+        plain = _Plain(1)
+        assert api(_Instances, {"plain": plain}).plain is plain
+
+    def test_a_subclass_instance_needs_no_tag(self) -> None:
+        """A class with subclasses demands a tag of a dict; an instance's class is the tag's answer."""
+        sub = _SubModel(4)
+        assert confarg.build(_Instances, {"model": sub}).model is sub
+        with pytest.raises(TypeCoercionError, match="no 'class' discriminator"):
+            confarg.build(_Instances, {"model": {"x": 4}})
+
+    def test_instances_and_dicts_mix_in_a_list(self) -> None:
+        """Each item is read at its own position: the instance taken, the dict built."""
+        plain = _Plain(1)
+        built = confarg.build(_Instances, {"plains": [plain, {"x": 2}]}).plains
+        assert built == [_Plain(1), _Plain(2)]
+        assert built[0] is plain
+
+    def test_a_generic_structs_members_are_checked(self) -> None:
+        """``_Box('s')`` is no ``_Box[int]``: the refusal names the member that does not hold."""
+        box = _Box(1)
+        assert confarg.build(_Instances, {"box": box}).box is box
+        with pytest.raises(TypeCoercionError, match=r"at 'box': it holds 's' at 'box\.item', which is no int"):
+            confarg.build(_Instances, {"box": _Box("s")})
+
+    def test_an_unrelated_instance_is_refused_naming_both_classes(self) -> None:
+        """Same field names do not make an ``_Other`` a ``_Plain``."""
+        refusal = r"got _Other _Other\(x=3\), which is no _Plain; a _Plain, or a dict"
+        with pytest.raises(TypeCoercionError, match=refusal):
+            confarg.build(_Instances, {"plain": _Other(3)})
+
+    def test_a_value_no_channel_shapes_as_a_struct_is_refused_alike(self) -> None:
+        """A file's string is refused by the same message."""
+        with pytest.raises(TypeCoercionError, match=r"at 'plain': got str 'abc', which is no _Plain"):
+            confarg.build(_Instances, {"plain": "abc"})
+
+    def test_a_union_takes_an_instance_of_its_struct_variant(self) -> None:
+        """The variant holding the instance takes it; an unrelated one is refused with the union's message."""
+        plain = _Plain(7)
+        assert confarg.build(_Instances, {"plain_or_n": plain}).plain_or_n is plain
+        with pytest.raises(TypeCoercionError, match=r"Cannot coerce _Other _Other\(x=3\) to _Plain \| int at"):
+            confarg.build(_Instances, {"plain_or_n": _Other(3)})
+
+    def test_a_reference_into_an_instance_stays_refused(self) -> None:
+        """A reference cannot read inside a built object, so it refuses rather than read a wrong value."""
+        with pytest.raises(confarg.exceptions.MissingReferenceError, match="cannot traverse into _Plain"):
+            confarg.build(_Instances, {"plain": _Plain(1), "plain_or_n": "${plain.x}"})
+
+    @pytest.mark.parametrize(("name", "value"), [("z", 2j), ("lock", threading.Lock())], ids=["complex", "lock"])
+    def test_an_unsupported_leaf_takes_an_instance_of_its_class(self, name: str, value: Any) -> None:
+        """The one reading such a leaf has; the dump still refuses to write it."""
+        built = confarg.build(_Instances, {name: value})
+        assert getattr(built, name) is value
+        with pytest.raises(confarg.exceptions.ConfargError, match=f"Cannot serialize .* at '{name}'"):
+            confarg.dump(built)
+
+    def test_an_unsupported_leaf_still_reads_no_other_value(self) -> None:
+        """Text, or any value of another class, is still refused as the unsupported leaf it is."""
+        with pytest.raises(TypeCoercionError, match="Unsupported leaf type complex at 'z'"):
+            confarg.build(_Instances, {"z": "2j"})
+
+
+class _Greeter(Protocol):
+    """A Protocol ``isinstance`` cannot ask: it is not runtime-checkable."""
+
+    def greet(self) -> str: ...
+
+
+class _Greets:
+    def greet(self) -> str:
+        return "hi"
+
+
+@dataclass
+class _UnderAProtocol:
+    greeter: _Greeter | None = None
+    greeter_or_n: _Greeter | int = 0
+
+
+class TestAProtocolIsinstanceCannotAskHoldsNothingYet:
+    """Until a Protocol's conformance answers (FEAT-57), one ``isinstance`` cannot ask holds no value (BUG-293).
+
+    Asking ``_holds`` of every value that is no dict raised Python's own ``TypeError`` for a
+    file's scalar under such a Protocol, where construction had refused it cleanly.
+    """
+
+    def test_a_union_still_reads_its_other_variant(self) -> None:
+        """A file's ``5`` is the ``int``."""
+        assert confarg.build(_UnderAProtocol, {"greeter_or_n": 5}).greeter_or_n == 5
+
+    @pytest.mark.parametrize("value", ["abc", _Greets()], ids=["text", "instance"])
+    def test_a_value_is_refused_cleanly(self, value: Any) -> None:
+        """A string or an implementer is refused as no ``_Greeter``, not with ``isinstance``'s ``TypeError``."""
+        with pytest.raises(TypeCoercionError, match="which is no _Greeter"):
+            confarg.build(_UnderAProtocol, {"greeter": value})
+
+    def test_the_dump_writes_an_implementer_as_foreign(self) -> None:
+        """The dump asks the same predicate, so it warns instead of raising."""
+        with pytest.warns(ConfargWarning, match="no value of _Greeter"):
+            confarg.dump(_UnderAProtocol(greeter=_Greets()))

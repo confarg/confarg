@@ -153,7 +153,7 @@ A struct's members are read with the type parameters of the class declaring each
 Construction calls the class, not the alias, which would set `__orig_class__` on the instance.
 Every per-class cache keys on the alias as on a class: `typing` caches `Box[int]`, and it is weakly referenced.
 
-The class alone does not tell `Box[int]` from `Box[str]`, so where a union holds both, `dump()` asks what the instance holds as well (`_serialize._holds_members`).
+The class alone does not tell `Box[int]` from `Box[str]`, so where a union holds both, `dump()` asks what the instance holds as well (`typedload._holding._holds_members`).
 
 Before, a parameterized generic was no struct: `Box[int]` was an `Unsupported leaf type` on every channel, and a bare `Box` held its `T` as an unsupported leaf.
 

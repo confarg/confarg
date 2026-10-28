@@ -11,7 +11,7 @@ where:
   - src/confarg/_types.py::_type_ref_admits  # the predicate type[P]'s read and dump share
   - src/confarg/typedload/_coerce.py::_coerce_type_ref  # the refusal's Protocol wording
   - src/confarg/typedload/_construct.py::_construct_struct_dispatch
-  - src/confarg/_serialize.py::_variant_holds  # in typedload/_holding.py once BUG-293 moves it
+  - src/confarg/typedload/_holding.py::_variant_holds
   - src/confarg/_serialize.py::_needs_tag
   - src/confarg/cli/_build.py::_collect_struct_specs
   - src/confarg/exceptions.py::TypeCoercionError
@@ -20,12 +20,12 @@ effort: L  # crosses every channel and front-end, and records two design decisio
 risk: high  # the tag, construction, the type walk and the dump all change their answer at once
 impact: config  # a @runtime_checkable Protocol's class tag naming a class whose method cannot be called as declared stops loading
 severity: major  # a Protocol-typed field crashes with a raw TypeError; making it @runtime_checkable is a partial workaround
-blocked_by: [BUG-293, BUG-295]  # each introduces a predicate or a refusal the Protocol branch goes into
+blocked_by: [BUG-295]  # it introduces the refusal the Protocol branch goes into
 ---
 
 # FEAT-57 — Protocol-typed fields
 
-A field annotated with a `typing.Protocol` crashes with a raw `TypeError` at the tag, in the type walk, in `--help`, in `type[P]` and in the dump, because each site calls `issubclass` or `isinstance`, which Python refuses for a Protocol that is not `@runtime_checkable`; elsewhere a Protocol reads as a plain class whose fields are `*args, **kwargs`.
+A field annotated with a `typing.Protocol` crashes with a raw `TypeError` at the tag, in the type walk, in `--help` and in `type[P]`, because each site calls `issubclass` or `isinstance`, which Python refuses for a Protocol that is not `@runtime_checkable`; elsewhere a Protocol reads as a plain class whose fields are `*args, **kwargs`, and one that is not runtime-checkable holds no value, so construction refuses an implementer and the dump writes one as foreign, with a warning.
 
 The design is settled in [the Protocol plan](../plans/protocol-typed-fields.md), which carries the decisions, the rejected alternatives, the precedents and the build order.
 In short: a Protocol is an abstract base its implementers are named into with `class:`; a class conforms by having every member and calling each method as the Protocol calls it, annotations ignored; data members are checked on the built instance; `type[P]` takes a concrete class whose methods conform; the conformance rule lives in one new module and `_tagged_struct` stays the decision-maker for what a tag builds.
