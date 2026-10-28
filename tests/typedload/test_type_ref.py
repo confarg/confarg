@@ -16,10 +16,12 @@ Covers:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import types
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+import warnings
+from dataclasses import dataclass, make_dataclass
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -27,7 +29,7 @@ import confarg
 import confarg.cli.argparse as confarg_ap
 from confarg._serialize import _serialize_leaf
 from confarg._types import _StrToken
-from confarg.exceptions import ConfargError, SymbolImportError, TypeCoercionError
+from confarg.exceptions import ConfargError, ConfargWarning, SymbolImportError, TypeCoercionError
 from confarg.typedload._coerce import _coerce_type_ref
 from confarg.typedload._construct import construct
 
@@ -61,6 +63,14 @@ class _Impostor(Base):
 
 
 _Impostor.__qualname__ = "Derived"
+
+
+class Box[T]:
+    """A generic class, for a ``type[Box[int]]`` bound."""
+
+
+class IntBox(Box[int]):
+    """A subclass of a parameterized ``Box``."""
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +159,37 @@ class TestCoerceTypeRef:
         """A plain str is checked against the constraint as a token is."""
         with pytest.raises(TypeCoercionError, match="not a subclass"):
             _coerce_type_ref(type[Base], "builtins.int")
+
+
+class TestTheBound:
+    """``type[X]`` admits a subclass of each class its bound names, as a type checker reads the bound."""
+
+    @pytest.mark.parametrize(
+        ("bound", "cls"),
+        [
+            pytest.param(type[Base | Unrelated], Derived, id="union-first"),
+            pytest.param(type[Base | Unrelated], Unrelated, id="union-second"),
+            pytest.param(type[Any], int, id="any"),
+            pytest.param(type[Box[int]], Box, id="parameterized"),
+            pytest.param(type[Box[int]], IntBox, id="parameterized-subclass"),
+        ],
+    )
+    def test_a_class_the_bound_admits_is_read(self, bound: Any, cls: type) -> None:
+        """A union admits each variant's subclasses, ``Any`` every class, ``Box[int]`` what ``Box`` admits."""
+        assert _coerce_type_ref(bound, cls) is cls
+        assert _coerce_type_ref(bound, f"{cls.__module__}.{cls.__qualname__}") is cls
+
+    @pytest.mark.parametrize(
+        ("bound", "spelled"),
+        [
+            pytest.param(type[Base | Unrelated], f"{_BASE_PATH} | {_UNRELATED_PATH}", id="union"),
+            pytest.param(type[Box[int]], f"{Box.__module__}.Box", id="parameterized"),
+        ],
+    )
+    def test_a_class_the_bound_does_not_admit_is_refused(self, bound: Any, spelled: str) -> None:
+        """The refusal names every class the bound admits a subclass of."""
+        with pytest.raises(TypeCoercionError, match=re.escape(f"is not a subclass of {spelled}.")):
+            _coerce_type_ref(bound, int)
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +329,43 @@ class TestBuildRoundtrip:
         dumped = confarg.dump(ConfigWithBareType(klass=cls))
         assert dumped == {"klass": path}
         assert confarg.build(ConfigWithBareType, dumped).klass is cls
+
+    @pytest.mark.parametrize(
+        ("bound", "cls"),
+        [
+            pytest.param(type[Base], int, id="class"),
+            pytest.param(type[Base | Unrelated], int, id="union"),
+            pytest.param(type[Box[int]], int, id="parameterized"),
+        ],
+    )
+    def test_a_class_its_bound_does_not_admit_dumps_with_a_warning(self, bound: Any, cls: type) -> None:
+        """It is written as an ``Any`` node holds it, with a warning naming the class, since reading it back refuses it.
+
+        Regression test for BUG-294: the dump wrote its path with no warning.
+        """
+        holder: Any = make_dataclass("Holder", [("t", bound)])
+        with pytest.warns(
+            ConfargWarning, match=r"Value at 't' will not read back: its class int is no value of type\["
+        ):
+            dumped = confarg.dump(holder(t=cls))
+        assert dumped == {"t": {"bind": "builtins.int"}}
+
+    @pytest.mark.parametrize(
+        ("bound", "cls"),
+        [
+            pytest.param(type[Base | Unrelated], Unrelated, id="union"),
+            pytest.param(type[Any], int, id="any"),
+            pytest.param(type[Box[int]], IntBox, id="parameterized"),
+            pytest.param(type[Base] | type[int], int, id="union-of-type-refs"),
+        ],
+    )
+    def test_a_class_its_bound_admits_dumps_and_reads_back(self, bound: Any, cls: type) -> None:
+        """No warning, and the dump builds back to the class (BUG-294)."""
+        holder: Any = make_dataclass("Holder", [("t", bound)])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ConfargWarning)
+            dumped = confarg.dump(holder(t=cls))
+        assert confarg.build(holder, dumped).t is cls
 
     def test_dump_and_build_roundtrip(self) -> None:
         """Invariant: dump then build() round-trips to the same class, from the plain dump (BUG-230)."""
