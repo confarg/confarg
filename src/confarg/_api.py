@@ -84,6 +84,8 @@ def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]
             copied positions.
         UnknownArgumentError: If an unrecognized CLI argument is encountered.
         ConfargError: If a flag or a variable writes deeper than 64 levels.
+        ValueError: If the ``union_tag`` option spells a key another role spells
+            (:func:`~confarg._defaults.check_union_tag`).
     """
     return _merge(target, _resolve_options("merge", opts), Reads())
 
@@ -177,7 +179,10 @@ def build[T](
         ExpressionEvalError: If an expression fails at runtime.
         ConfargError: If *data* nests deeper than 64 levels, holds itself, or shares parts
             copying more than 100 000 positions, or what its expressions resolve to nests deeper.
+        ValueError: If *union_tag* spells a key another role spells
+            (:func:`~confarg._defaults.check_union_tag`).
     """
+    _defaults.check_union_tag(union_tag)
     return _build(target, data, union_tag, Copies())
 
 
@@ -304,9 +309,13 @@ def resolve(
         ConfargError: If *data* nests deeper than 64 levels, holds itself, or shares parts
             copying more than 100 000 positions, or what its expressions resolve to nests deeper.
 
+        ValueError: If *union_tag* spells a key another role spells
+            (:func:`~confarg._defaults.check_union_tag`).
+
     Dev Notes:
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
     """
+    _defaults.check_union_tag(union_tag)
     copies = Copies()
     refuse_overflow(data, f"resolve {_spell_type(target)}", copies=copies)
     return _resolve_over_defaults(_resolve_type(target), data, union_tag, copies)
@@ -341,7 +350,10 @@ def from_dict[T](
         AmbiguousUnionError: If a Union cannot be disambiguated.
         ConfargError: If *data* nests deeper than 64 levels, holds itself, or shares parts
             copying more than 100 000 positions.
+        ValueError: If *union_tag* spells a key another role spells
+            (:func:`~confarg._defaults.check_union_tag`).
     """
+    _defaults.check_union_tag(union_tag)
     target_r = _resolve_type(target)
     refuse_overflow(data, f"construct {_spell_type(target)}", copies=Copies())
     laid = lay_defaults(target_r, data, union_tag, for_resolution=False).data
@@ -381,6 +393,8 @@ def load[T](target: type[T] | TypeAliasType | UnionType, **opts: Unpack[MergeOpt
             configuration past 100 000 copied positions.
         MissingReferenceError: If an expression references a field that does not exist.
         ExpressionEvalError: If an expression fails at runtime.
+        ValueError: If the ``union_tag`` option spells a key another role spells
+            (:func:`~confarg._defaults.check_union_tag`).
     """
     options = _resolve_options("load", opts)
     reads = Reads()  # one configuration: its merge and its build share the budget
@@ -433,7 +447,10 @@ def dump(
             names a type that is no registered leaf type.
         ConfargError: If the instance does not hold a field or a parameter it is dumped from,
             nests deeper than 64 levels, or holds itself.
+        ValueError: If *union_tag* spells a key another role spells
+            (:func:`~confarg._defaults.check_union_tag`).
     """
+    _defaults.check_union_tag(union_tag)
     if isinstance(value, dict):
         msg = (
             "dump() takes a dataclass or plain-class instance, not a dict."
@@ -488,7 +505,10 @@ def dump_file(
         InvalidConfigFileError: If the format is unsupported or the required library is not installed.
         ConfargError: If *value* holds a value or a key the format does not hold, nests deeper
             than 64 levels or holds itself, or :func:`dump` refuses it.
+        ValueError: If *union_tag* spells a key another role spells
+            (:func:`~confarg._defaults.check_union_tag`).
     """
+    _defaults.check_union_tag(union_tag)
     native = _native_types_of(Path(path)) if native_types is None else _check_native_types(native_types)
     if isinstance(value, dict):
         refuse_overflow(value, f"write {path}")

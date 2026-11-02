@@ -31,11 +31,11 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._callable import (
     _COMPUTATION_OPENERS,
-    _OPENERS,
     _fillable_params,
     _instance_method_owner,
     _target_signature,
     holds_an_opener,
+    openers,
     spec_opener,
     target_parameter_types,
     yielded_callable_path,
@@ -114,11 +114,11 @@ def _reading(tp: Any, node: Any, union_tag: str) -> _Reading | None:  # noqa: PL
     """
     if not isinstance(node, dict):
         return None
-    if _is_typed_call(node, tp):
+    if _is_typed_call(node, tp, union_tag):
         return _Reading(_defaults.CALL_KEY, None, computation=True)
     match _type_kind(tp):
         case _TypeKind.CALLABLE | _TypeKind.ANY:
-            opener = spec_opener(node) if holds_an_opener(node) else None
+            opener = spec_opener(node, union_tag) if holds_an_opener(node, union_tag) else None
             if opener is None:
                 return None
             if opener in _COMPUTATION_OPENERS:
@@ -135,7 +135,7 @@ def _reading(tp: Any, node: Any, union_tag: str) -> _Reading | None:  # noqa: PL
 
 
 def _object_class(opener: str, target: Any) -> type | None:
-    """Return the class whose fields an object opener's spec holds: the class ``class:`` names, ``classfn:``'s owner."""
+    """Return the class whose fields an object opener's spec holds: the one the tag names, ``classfn:``'s owner."""
     if opener != _defaults.CLASSFN_KEY:
         return class_named(target)
     if not isinstance(target, str) or contains_expression(target):
@@ -148,7 +148,7 @@ def _object_class(opener: str, target: Any) -> type | None:
 
 def names_something(node: Any, union_tag: str) -> bool:
     """Return whether the dict *node* holds a key that may name what it builds: an opener or the union tag."""
-    return isinstance(node, dict) and (union_tag in node or holds_an_opener(node))
+    return isinstance(node, dict) and holds_an_opener(node, union_tag)
 
 
 def named_variant(tp: Any, node: MergeDict, union_tag: str) -> Any:
@@ -174,7 +174,7 @@ def named_variant(tp: Any, node: MergeDict, union_tag: str) -> Any:
             # as construction tries it first.
             return matching[0]
         return None if matching else _first_spec_reader(members)
-    if _is_typed_call(node, tp):
+    if _is_typed_call(node, tp, union_tag):
         return None
     return spec_reading_variant(tp, node, union_tag)
 
@@ -195,19 +195,19 @@ def named_child(tp: Any, key: str, node: MergeDict, union_tag: str) -> Any:  # o
     if reading is None:
         return Named.NOTHING
     if reading.computation:
-        return _computation_child(key, node.get(reading.key))
+        return _computation_child(key, node.get(reading.key), union_tag)
     if key == reading.key:
         return str
     return Named.UNTYPED if reading.cls is None else _member(reading.cls, key)
 
 
-def _computation_child(key: str, target: Any) -> Any:
+def _computation_child(key: str, target: Any, union_tag: str) -> Any:
     """Return the type of *key* in a ``bind:`` or ``call:`` spec over *target*: a nested target, or its arguments."""
     if key in _COMPUTATION_OPENERS:
         return TARGET
     if key != _defaults.ARGS_KEY:
         return Named.REFUSED
-    path = yielded_callable_path(target) if isinstance(target, dict) else target
+    path = yielded_callable_path(target, union_tag) if isinstance(target, dict) else target
     return Named.UNTYPED if path is None else arguments_of(path)
 
 
@@ -266,8 +266,8 @@ def takes_untyped_argument(tp: Any, key: str) -> bool:
 
 @functools.cache
 def opener_keys(union_tag: str) -> frozenset[str]:
-    """Return the keys that may name what a node builds: the openers and the union tag."""
-    return frozenset((*_OPENERS, union_tag))
+    """Return the keys that may name what a node builds: the openers, the union tag among them."""
+    return frozenset(openers(union_tag))
 
 
 def node_at(data: Any, prefix: Sequence[str]) -> Any:

@@ -231,7 +231,7 @@ def _node(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:  # noqa: PLR0
     tp = _resolve_type(tp)
     if not isinstance(node, dict | list) or _is_pin_dict(node) or _carries_an_expression(node):
         return node
-    if _is_typed_call(node, tp):
+    if _is_typed_call(node, tp, walk.union_tag):
         return _untyped(node)
     kind = _type_kind(tp)
     if kind is _TypeKind.STRUCT:

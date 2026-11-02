@@ -249,25 +249,25 @@ class TestBuildCallableSpecs:
 
     def test_collect_callable_field_specs_class_mode(self) -> None:
         """_collect_callable_field_specs in 'class' mode returns factory specs."""
-        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "class", set())
+        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "class", set(), "class")
         names = [s.name for s in specs]
         assert "opt.lr" in names
 
     def test_collect_callable_field_specs_bind_mode(self) -> None:
         """_collect_callable_field_specs in 'bind' mode returns the target's parameters."""
-        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "bind", set())
+        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "bind", set(), "class")
         names = [s.name for s in specs]
         assert "myfn.args.x" in names
 
     def test_collect_callable_field_specs_call_mode(self) -> None:
         """_collect_callable_field_specs in 'call' mode returns the target's parameters."""
-        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "call", set())
+        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "call", set(), "class")
         names = [s.name for s in specs]
         assert "myfn.args.x" in names
 
     def test_collect_callable_field_specs_bind_mode_method(self) -> None:
         """'bind' mode for a method registers the method's own parameters, never its owner's."""
-        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._CovOptMethod.method", "bind", set())
+        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._CovOptMethod.method", "bind", set(), "class")
         # _CovOptMethod.method takes nothing but self; the owner's 'required' is no sibling of bind:
         assert [s.name for s in specs] == []
 
@@ -298,18 +298,18 @@ class TestBuildCallableSpecs:
     def test_collect_callable_field_specs_class_mode_import_error(self) -> None:
         """_collect_callable_field_specs in 'class' mode falls through on import error."""
         # Bad path → SymbolImportError → falls through to signature specs → returns []
-        result = _collect_callable_field_specs("opt", "nonexistent.Bad", "class", set())
+        result = _collect_callable_field_specs("opt", "nonexistent.Bad", "class", set(), "class")
         assert result == []
 
     def test_collect_callable_field_specs_bind_mode_class_path(self) -> None:
         """'bind' mode with a class path registers the constructor params as argument flags."""
-        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "bind", set())
+        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "bind", set(), "class")
         names = [s.name for s in specs]
         assert "opt.args.lr" in names
 
     def test_collect_callable_field_specs_bind_mode_import_error(self) -> None:
         """_collect_callable_field_specs in 'bind' mode falls through on import error."""
-        result = _collect_callable_field_specs("myfn", "nonexistent.fn", "bind", set())
+        result = _collect_callable_field_specs("myfn", "nonexistent.fn", "bind", set(), "class")
         assert result == []
 
     def test_collect_fn_paths_from_config_fields_raises(self) -> None:

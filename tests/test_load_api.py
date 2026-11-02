@@ -9,6 +9,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 import inspect
+import re
 import threading
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -217,11 +218,63 @@ class TestMergeOptions:
         with pytest.raises(TypeError, match=rf"^{fn.__name__}\(\) got an unexpected keyword argument 'env_prefx'$"):
             fn(*args, argv=[], env_prefx="APP_")
 
+    @pytest.mark.parametrize("fn", _ENTRY_POINTS, ids=lambda fn: f"{fn.__module__}.{fn.__name__}")
+    def test_a_union_tag_spelling_an_opener_is_refused(self, fn: Any) -> None:
+        """The tag is the class opener, so a tag spelling another opener would merge two (BUG-305)."""
+        args = (WithDefaults,) if fn in (confarg.merge, confarg.load) else (WithDefaults, object())
+        with pytest.raises(ValueError, match=r"^union_tag 'call' "):
+            fn(*args, argv=[], union_tag="call")
+
     def test_resolved_options_declare_the_same_keys(self) -> None:
         """The private resolved form names exactly the keys the public TypedDict declares."""
         fields = {f.name for f in dataclasses.fields(_defaults._Options)}
         assert fields == confarg.MergeOptions.__optional_keys__
         assert not confarg.MergeOptions.__required_keys__
+
+
+_REFUSED_TAGS = [
+    pytest.param("bind", "the 'bind' opener of a callable spec", id="bind"),
+    pytest.param("call", "the 'call' opener of a callable spec", id="call"),
+    pytest.param("classfn", "the 'classfn' opener of a callable spec", id="classfn"),
+    pytest.param("args", "the key holding the arguments of a 'bind:' or 'call:' spec", id="args"),
+    pytest.param("__cast__", "a key the merge or build() reads as its own", id="cast"),
+    pytest.param("__delete__", "a key the merge or build() reads as its own", id="delete"),
+    pytest.param("locals", "a name of the local-variables namespace", id="locals"),
+    pytest.param("", "no key at all", id="empty"),
+    pytest.param("a.b", "the '.' a flag's path is split on", id="dotted"),
+]
+
+
+_TAG_TAKERS: list[Any] = [
+    pytest.param(lambda tag: confarg.merge(WithDefaults, argv=[], env={}, union_tag=tag), id="merge"),
+    pytest.param(lambda tag: confarg.load(WithDefaults, argv=[], env={}, union_tag=tag), id="load"),
+    pytest.param(lambda tag: confarg.build(WithDefaults, {}, union_tag=tag), id="build"),
+    pytest.param(lambda tag: confarg.from_dict(WithDefaults, {}, union_tag=tag), id="from_dict"),
+    pytest.param(lambda tag: confarg.resolve(WithDefaults, {}, union_tag=tag), id="resolve"),
+    pytest.param(lambda tag: confarg.dump(WithDefaults(), union_tag=tag), id="dump"),
+    pytest.param(lambda tag: confargargparse.make_parser(WithDefaults, argv=[], union_tag=tag), id="make_parser"),
+]
+
+
+class TestTheUnionTagIsAKeyNoOtherRoleSpells:
+    """A union tag is refused where it spells a key that means something else, at every entry point (BUG-305).
+
+    The tag is the class opener of a callable spec as well as the struct selector, so it may
+    spell no other opener, nor ``args``, nor a reserved key, nor anything no flag can spell.
+    """
+
+    @pytest.mark.parametrize(("tag", "why"), _REFUSED_TAGS)
+    @pytest.mark.parametrize("call", _TAG_TAKERS)
+    def test_refused(self, call: Any, tag: str, why: str) -> None:
+        """Each entry point refuses the spelling before reading anything, saying what the key already is."""
+        with pytest.raises(ValueError, match=rf"^union_tag {tag!r} spells {re.escape(why)}"):
+            call(tag)
+
+    @pytest.mark.parametrize("tag", ["class", "kind", "Kind", "_type", "type-name"])
+    @pytest.mark.parametrize("call", _TAG_TAKERS)
+    def test_taken(self, call: Any, tag: str) -> None:
+        """A key no other role spells is taken."""
+        call(tag)
 
 
 # ---------------------------------------------------------------------------

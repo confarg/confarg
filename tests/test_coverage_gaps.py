@@ -464,7 +464,7 @@ class TestCallableEdgeCases:
         obj.__module__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __module__ to trigger fallback path
         obj.__qualname__ = None  # ty: ignore[unresolved-attribute]  # deliberately clobber __qualname__ to trigger fallback path
         with pytest.raises(confarg.exceptions.ConfargError, match="has no dotted path"):
-            _serialize_callable(obj, lambda _: pytest.fail("no owner to read"))
+            _serialize_callable(obj, lambda _: pytest.fail("no owner to read"), "class")
 
 
 # ---------------------------------------------------------------------------
@@ -1554,7 +1554,7 @@ class TestCallableGaps:
         # _CovOptMethod has required=int, optional=str; calling it with no args raises TypeError
         # → _format_constructor_params is called → optional params loop runs
         with pytest.raises(TypeCoercionError, match=r"(?s)required: <value>.*# optional: 'default'"):
-            _resolve_bare_string(f"{_COV_MOD}._CovOptMethod.method", "test_path")
+            _resolve_bare_string(f"{_COV_MOD}._CovOptMethod.method", "test_path", "class")
 
     def test_resolve_call_kwargs_uninspectable(self, monkeypatch) -> None:
         """_resolve_call_kwargs falls back to raw dict for uninspectable callables."""

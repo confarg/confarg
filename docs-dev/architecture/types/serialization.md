@@ -40,7 +40,7 @@ An `Any` node still writes what it holds untyped, with a warning, since an `Any`
 
 ## An `Any` node dumps the spec that rebuilds it
 
-An `Any` node reads every opener ([callables](../callables.md#an-any-node-reads-every-opener)), so `_serialize._serialize_any` writes what one holds by its runtime type, as the spec that rebuilds it: a dict and a list walked, each item an `Any` node in turn; a struct as `{class: <its path>, <fields>}`, its fields serialized as their types say; a callable as a Callable field writes it ([callables](../callables.md#round-trip)), with a bare path opened into `{bind: <path>}`, since an `Any` node reads a bare string as text; a leaf through `_serialize_leaf`.
+An `Any` node reads every opener ([callables](../callables.md#an-any-node-reads-every-opener)), so `_serialize._serialize_any` writes what one holds by its runtime type, as the spec that rebuilds it: a dict and a list walked, each item an `Any` node in turn; a struct as `{<union tag>: <its path>, <fields>}`, `class` by default, its fields serialized as their types say; a callable as a Callable field writes it ([callables](../callables.md#round-trip)), with a bare path opened into `{bind: <path>}`, since an `Any` node reads a bare string as text; a leaf through `_serialize_leaf`.
 `_held_object_form` is the one place that picks the form of a value that is no container.
 
 A form is kept only if an `Any` node reads it back as the value it came from, which `_reads_back` decides by running the reader.
@@ -49,6 +49,7 @@ Any other value is written untyped (`_serialize_untyped`), with a `ConfargWarnin
 A value of a leaf construction does not build, a `complex`, a `bytes`, an `object()` or a lock, is refused by `_held_object_form` with the refusal a field of its type gets (`_refuse_an_unsupported_leaf`, [above](#an-unsupported-leaf-is-refused-both-ways)), so it warns too.
 Until BUG-268 it was handed back untouched and kept, unwarned: an `Any` node passes an object through, so the reader rebuilt it from itself.
 A dict holding an opener key reads back as the spec it spells, and a tuple or a set as a list, so they warn too.
+A struct with a field spelled like an object opener, `classfn` or the union tag, is refused by `_held_object_form` as a callable instance is (`_callable.refuse_a_field_spelling_an_object_opener`), so the warning names the field: the field would read back as a second opener, and one spelled like the tag would overwrite it in the written dict; until BUG-305 the read-back check caught it, with a warning naming no field.
 What a struct's fields warn is said only when the struct's spec is kept, so a plain class no spec rebuilds, such as one holding every alternative its constructor takes, warns once, not once per attribute.
 
 In a union, the `Any` variant's form is what a bare `Any` reads back; the union must read it back the same way, or it is written with its own type's cast, as a stolen leaf is ([stealing rule](stealing-rule.md#casting-a-stolen-leaf)).

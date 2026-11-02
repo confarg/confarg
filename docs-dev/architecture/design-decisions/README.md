@@ -35,6 +35,7 @@ A decision lands here when a ticket closes and the answer turns out to be "we wi
 | [A node already on the path is not entered](a-node-already-on-the-path-is-not-entered.md) | a type that holds itself lists its node once; the deeper flags are registered when argv types them |
 | [The `+` suffix is a merge operator, not a list spelling](plus-is-a-merge-operator.md) | appending is confarg's axis, spelled by the same suffix on every channel's path, the environment's variable names included, and in a file's value; how many tokens a value takes is the framework's |
 | [union_tag defaults to "class"](union-tag-defaults-to-class.md) | a Python keyword can never collide with a field name |
+| [The union tag is the class key in every role](the-union-tag-is-the-class-key-in-every-role.md) | a custom `union_tag` renames the class opener of every Callable and `Any` spec too, and may spell no key another role spells |
 | [Environment variables off by default](environment-variables-off-by-default.md) | `env_prefix=None`, because the environment is shared with every other process |
 | [Double underscore separator](double-underscore-separator.md) | `__` splits nesting so single underscores stay usable in names |
 | [Explicit boolean values](explicit-boolean-values.md) | `--verbose true`, not `--verbose`/`--no-verbose` |

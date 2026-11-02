@@ -7828,6 +7828,70 @@ class TestAnyReadsSpecsContract:
         assert "data.a" in flags
 
 
+class _TagNamedTagger:
+    """A callable class a custom union tag names, its list field taking a run of tokens (BUG-305)."""
+
+    def __init__(self, tags: list[str]) -> None:
+        self.tags = tags
+
+    def __call__(self) -> list[str]:
+        return self.tags
+
+
+@dataclass
+class _WithTagNamedSpecs:
+    """Spec readers alone and beside a scalar variant, which a custom union tag opens (BUG-305)."""
+
+    data: Any = None
+    x: int | Any = 0
+    fn: Callable[[], list[str]] = list
+    c: int | Callable[[], list[str]] = 0
+
+
+class TestTheUnionTagOpensASpecContract:
+    """A custom union tag is the class opener at every spec reader, in every front-end (BUG-305).
+
+    The tag replaces ``class`` in every role, so ``class`` is an ordinary key there, and the
+    keys beside the tag are typed by the class it names, a list taking its run of tokens.
+    """
+
+    _ANY = f"{__name__}._AnyBuilt"
+    _CALLABLE = f"{__name__}._TagNamedTagger"
+
+    @pytest.mark.parametrize("name", ["data", "x"])
+    def test_an_any_builds_the_class_the_tag_names(self, space_sep_loader: ConfargLoader, name: str) -> None:
+        """--data.Kind names the class, alone or beside int, and --data.tags takes its run."""
+        argv = [f"--{name}.Kind", self._ANY, f"--{name}.a", "2", f"--{name}.tags", "p", "q"]
+        cfg = space_sep_loader.load(_WithTagNamedSpecs, argv=argv, env={}, union_tag="Kind")
+        assert getattr(cfg, name) == _AnyBuilt(a=2, tags=["p", "q"])
+
+    @pytest.mark.parametrize("name", ["fn", "c"])
+    def test_a_callable_builds_the_class_the_tag_names(self, space_sep_loader: ConfargLoader, name: str) -> None:
+        """--fn.Kind names the callable class, alone or beside int, and --fn.tags takes its run."""
+        argv = [f"--{name}.Kind", self._CALLABLE, f"--{name}.tags", "p", "q"]
+        cfg = space_sep_loader.load(_WithTagNamedSpecs, argv=argv, env={}, union_tag="Kind")
+        assert getattr(cfg, name)() == ["p", "q"]
+
+    def test_class_is_an_ordinary_key_of_an_any(self, loader: ConfargLoader) -> None:
+        """Under a custom tag, --data.class is a key of the dict an Any holds."""
+        cfg = loader.load(_WithTagNamedSpecs, argv=["--data.class", self._ANY], env={}, union_tag="Kind")
+        assert cfg.data == {"class": self._ANY}
+
+    def test_the_environment_agrees(self, loader: ConfargLoader) -> None:
+        """MYAPP_C__KIND builds what --c.Kind builds."""
+        env = {"MYAPP_C__KIND": self._CALLABLE, "MYAPP_C__TAGS": '["p"]'}
+        cfg = loader.load(_WithTagNamedSpecs, argv=[], env=env, env_prefix="MYAPP_", union_tag="Kind")
+        assert cfg.c() == ["p"]
+
+    def test_the_tag_is_the_registered_opener(self, populating_loader: ConfargLoader) -> None:
+        """A Callable's opener flags spell the tag, never class, and the named class's fields follow."""
+        argv = ["--fn.Kind", self._CALLABLE]
+        flags = populating_loader.registered_flags(_WithTagNamedSpecs, argv=argv, config_flag="", union_tag="Kind")
+        assert flags is not None
+        assert {"fn.Kind", "fn.bind", "fn.call", "fn.classfn", "fn.tags"} <= flags
+        assert "fn.class" not in flags
+
+
 class TestRootJsonContract:
     """A bare ``--json`` injects the whole config at CLI priority: the root peer of ``--field.json``.
 

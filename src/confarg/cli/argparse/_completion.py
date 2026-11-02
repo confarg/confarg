@@ -287,6 +287,7 @@ def _pre_extend_parser_for_completion(
                     target_path,
                     mode,
                     walk_ctx.existing_dests,
+                    union_tag,
                     grouped=grouped,
                 )
                 load_flags_into_parser(argument_specs, parser)

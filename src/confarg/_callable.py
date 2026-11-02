@@ -233,9 +233,9 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, union_tag: str, 
     Bare string:
       - If the import resolves to a class → the class itself is the callable
         (factory-like): return functools.partial(cls). Calling it constructs an
-        instance. To use an *instance* as the callable, use the 'class:' dict form.
-        When the Callable declares a concrete return type the class cannot produce,
-        this raises and points at the 'class:' form.
+        instance. To use an *instance* as the callable, use the dict form the union tag
+        opens. When the Callable declares a concrete return type the class cannot produce,
+        this raises and points at that form.
       - Otherwise (function/method) → use as-is.
 
     Dict with 'bind' key:
@@ -243,7 +243,7 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, union_tag: str, 
         of its own), with the kwargs under 'args' partially applied: functools.partial(target,
         **args). With no argument, the target itself, so '{bind: T}' and 'T' are one spec.
 
-    Dict with 'class' key:
+    Dict with the union tag, 'class' by default:
       - Instantiate the class with the other keys as its fields; the instance is the
         callable (it must define __call__).
 
@@ -257,7 +257,7 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, union_tag: str, 
     """
     where = _spell_field_path(path)
     if isinstance(spec, str):
-        result = _resolve_bare_string(str(spec), where, tp)
+        result = _resolve_bare_string(str(spec), where, union_tag, tp)
     elif isinstance(spec, dict):
         result = _resolve_dict_spec(spec, tp, _SpecContext(path, union_tag, construct_fn))
     elif callable(spec):
@@ -270,11 +270,11 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, union_tag: str, 
     return result
 
 
-def _import_target(path_str: str, path: str, callable_tp: Any) -> Any:
+def _import_target(path_str: str, path: str, callable_tp: Any, union_tag: str) -> Any:
     """Import the target a bare string, a ``bind:`` or a ``call:`` spec names: a class, or a function.
 
     A class is returned as it is, to be used factory-like. Raises ``TypeCoercionError``
-    pointing at the 'class:' form when *callable_tp* declares a concrete return type
+    pointing at the form *union_tag* opens when *callable_tp* declares a concrete return type
     (including ``None``) that the class cannot produce; a bare or abstractly-typed
     Callable, or no Callable at all (None, as for a ``call:``), is not checked. An instance
     method is bound to an owner built with no arguments (:func:`_maybe_bind_method`); any
@@ -284,7 +284,7 @@ def _import_target(path_str: str, path: str, callable_tp: Any) -> Any:
     if isinstance(obj, type):
         required = _unproducible_return(obj, callable_tp)
         if required is not None:
-            raise TypeCoercionError.class_as_factory(path_str, path, required)
+            raise TypeCoercionError.class_as_factory(path_str, path, required, union_tag)
         return obj
     return _maybe_bind_method(obj, path_str, path)
 
@@ -300,7 +300,7 @@ def _resolve_target(target: Any, tp: Any, ctx: _SpecContext, opener: str) -> Any
         docs-dev/architecture/callables.md#spec-grammar
     """
     if isinstance(target, str):
-        return _import_target(target, ctx.where, tp)
+        return _import_target(target, ctx.where, tp, ctx.union_tag)
     if isinstance(target, dict):
         target_ctx = ctx.at(opener)
         obj = _resolve_dict_spec(target, tp, target_ctx)
@@ -320,15 +320,15 @@ def _as_callable(target: Any) -> Any:
     return functools.partial(target) if isinstance(target, type) else target
 
 
-def _resolve_bare_string(path_str: str, path: str, callable_tp: Any = None) -> Any:
+def _resolve_bare_string(path_str: str, path: str, union_tag: str, callable_tp: Any = None) -> Any:
     """Resolve a bare import-path string to a callable.
 
     A class resolves to the class itself, used factory-like: return
     functools.partial(cls) with no pre-bound kwargs, so calling it constructs an
-    instance. To use an instance as the callable, use the 'class:' dict form.
+    instance. To use an instance as the callable, use the dict form *union_tag* opens.
     Functions and methods are used as-is (see :func:`_import_target`).
     """
-    return _as_callable(_import_target(path_str, path, callable_tp))
+    return _as_callable(_import_target(path_str, path, callable_tp, union_tag))
 
 
 def _issubclass_safe(cls: type, other: type) -> bool:
@@ -390,7 +390,7 @@ def _coerce_kwargs(  # noqa: PLR0913  # kind and subject only word the refusal
 ) -> dict:
     """Validate and typed-construct kwargs against a callable's signature.
 
-    Shared by 'call', 'class' (factory), and 'bind' kwargs: unknown keys raise, and
+    Shared by 'call', the union tag (factory), and 'bind' kwargs: unknown keys raise, and
     each value is built through *ctx*, one key below its path.
 
     ``sig_obj`` and ``hints_obj`` are passed separately because for a class they
@@ -496,20 +496,59 @@ def _resolve_call_spec(target: Any, call_kwargs: dict, ctx: _SpecContext) -> Any
     return result
 
 
-_OPENERS = (_defaults.BIND_KEY, _defaults.CLASS_KEY, _defaults.CALL_KEY, _defaults.CLASSFN_KEY)
-#: The openers that build an object: every other key of their spec is one of its fields.
-_OBJECT_OPENERS = (_defaults.CLASS_KEY, _defaults.CLASSFN_KEY)
 #: The openers that compute over a target: its arguments are the mapping under ``args``.
 _COMPUTATION_OPENERS = (_defaults.BIND_KEY, _defaults.CALL_KEY)
 
 
-def names_an_opener(name: str) -> bool:
-    """Return whether *name* is an opener key: ``bind``, ``class``, ``call`` or ``classfn``.
+def openers(union_tag: str) -> tuple[str, ...]:
+    """Return the opener keys of a spec read under *union_tag*: ``bind``, the tag, ``call`` and ``classfn``.
+
+    The union tag is the class opener, ``class`` by default: one key names the class to build
+    from the keys beside it, whether a struct, a Callable or an ``Any`` reads it, so under
+    another tag ``class`` is an ordinary key.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/the-union-tag-is-the-class-key-in-every-role.md#the-union-tag-is-the-class-key-in-every-role
+    """
+    return (_defaults.BIND_KEY, union_tag, _defaults.CALL_KEY, _defaults.CLASSFN_KEY)
+
+
+def object_openers(union_tag: str) -> tuple[str, str]:
+    """Return the openers that build an object under *union_tag*, the tag and ``classfn``: other keys are fields."""
+    return (union_tag, _defaults.CLASSFN_KEY)
+
+
+def refuse_a_field_spelling_an_object_opener(
+    fields: Mapping[str, Any], cls: type, whose: str, opener: str, union_tag: str
+) -> None:
+    """Refuse the *fields* of *cls* written beside the object *opener* when one is spelled like an object opener.
+
+    The union tag and ``classfn`` each take every other key as a field, so a field spelled like
+    either reads back as a second opener, which no spec holds beside its own. *whose* says
+    whose class *cls* is, in the reason: a callable's, an owner's, or what an ``Any`` holds.
+
+    Raises:
+        ConfargError: If a field is spelled like an object opener under *union_tag*.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#an-openers-word-is-never-an-argument
+    """
+    spelled = next((k for k in object_openers(union_tag) if k in fields), None)
+    if spelled is not None:
+        reason = (
+            f"{whose} class, {cls.__qualname__}, has a field named {spelled!r},"
+            f" which a '{opener}:' spec cannot hold beside its opener"
+        )
+        raise ConfargError(reason)
+
+
+def names_an_opener(name: str, union_tag: str) -> bool:
+    """Return whether *name* is an opener key under *union_tag* (:func:`openers`).
 
     An opener names the target; every other key refines it. A flag addressing one is
     therefore a replacement for a spec already in hand, not a refinement of it.
     """
-    return name in _OPENERS
+    return name in openers(union_tag)
 
 
 def opens_a_subtree(name: str) -> bool:
@@ -537,15 +576,15 @@ def promote_bare_spec(spec: str) -> dict[str, Any]:
     return {_defaults.BIND_KEY: spec}
 
 
-def _refuse_openers(present: list[str], where: str) -> NoReturn:
-    """Refuse a spec holding *present*, which is not exactly one opener."""
-    raise TypeCoercionError.openers_refused(present, _OPENERS, where)
+def _refuse_openers(present: list[str], where: str, union_tag: str) -> NoReturn:
+    """Refuse a spec holding *present*, which is not exactly one opener under *union_tag*."""
+    raise TypeCoercionError.openers_refused(present, openers(union_tag), where)
 
 
-def _spec_parts(spec: dict, where: str) -> tuple[str, dict]:
-    """Return the one opener of *spec* and the arguments of what it builds.
+def _spec_parts(spec: dict, where: str, union_tag: str) -> tuple[str, dict]:
+    """Return the one opener of *spec* under *union_tag* and the arguments of what it builds.
 
-    ``class`` and ``classfn`` build an object, so every other key is one of its fields, a
+    The tag and ``classfn`` build an object, so every other key is one of its fields, a
     field named like another opener included. ``bind`` and ``call`` compute over a target
     (:func:`_computation_parts`).
 
@@ -556,41 +595,41 @@ def _spec_parts(spec: dict, where: str) -> tuple[str, dict]:
     Dev Notes:
         docs-dev/architecture/callables.md#spec-grammar
     """
-    present = _competing_openers(spec)
+    present = _competing_openers(spec, union_tag)
     if len(present) != 1:
-        _refuse_openers(present, where)
+        _refuse_openers(present, where, union_tag)
     opener = present[0]
-    if opener in _OBJECT_OPENERS:
+    if opener in object_openers(union_tag):
         return opener, {k: v for k, v in spec.items() if k != opener}
-    return _computation_parts(spec, where)
+    return _computation_parts(spec, where, union_tag)
 
 
-def _competing_openers(spec: dict) -> list[str]:
+def _competing_openers(spec: dict, union_tag: str) -> list[str]:
     """Return the openers *spec* holds that compete to open it: its object openers, else its computation ones.
 
     An object opener takes every other key as a field, so beside one, a ``bind`` or ``call``
     word is a field and competes for nothing.
     """
-    objects = [k for k in _OBJECT_OPENERS if k in spec]
+    objects = [k for k in object_openers(union_tag) if k in spec]
     return objects or [k for k in _COMPUTATION_OPENERS if k in spec]
 
 
-def holds_an_opener(data: dict) -> bool:
-    """Return whether the dict *data* holds an opener key, so that an ``Any`` node reads it as a spec.
+def holds_an_opener(data: dict, union_tag: str) -> bool:
+    """Return whether the dict *data* holds an opener key under *union_tag*, so that an ``Any`` node reads it as a spec.
 
     Dev Notes:
         docs-dev/architecture/callables.md#an-any-node-reads-every-opener
     """
-    return any(k in data for k in _OPENERS)
+    return any(k in data for k in openers(union_tag))
 
 
-def spec_opener(spec: dict) -> str | None:
+def spec_opener(spec: dict, union_tag: str) -> str | None:
     """Return the opener construction reads *spec* by (:func:`_spec_parts`), None when it holds no single one."""
-    present = _competing_openers(spec)
+    present = _competing_openers(spec, union_tag)
     return present[0] if len(present) == 1 else None
 
 
-def yielded_callable_path(spec: Any) -> str | None:
+def yielded_callable_path(spec: Any, union_tag: str) -> str | None:
     """Return a dotted path whose signature lists the arguments of the callable *spec* yields.
 
     ``None`` when the spec names none: a ``call:`` yields whatever its target returns, and a
@@ -601,18 +640,18 @@ def yielded_callable_path(spec: Any) -> str | None:
         return spec
     if not isinstance(spec, dict):
         return None
-    opener = spec_opener(spec)
+    opener = spec_opener(spec, union_tag)
     if opener is None:
         return None
     value = spec[opener]
     if opener == _defaults.BIND_KEY:
-        return yielded_callable_path(value)
+        return yielded_callable_path(value, union_tag)
     if opener == _defaults.CALL_KEY or not isinstance(value, str):
         return None
-    return f"{value}.__call__" if opener == _defaults.CLASS_KEY else value
+    return f"{value}.__call__" if opener == union_tag else value
 
 
-def _computation_parts(spec: dict, where: str) -> tuple[str, dict]:
+def _computation_parts(spec: dict, where: str, union_tag: str) -> tuple[str, dict]:
     """Return the ``bind`` or ``call`` opener of *spec* and the target's arguments, the mapping under ``args``.
 
     Raises:
@@ -624,7 +663,7 @@ def _computation_parts(spec: dict, where: str) -> tuple[str, dict]:
     """
     present = [k for k in _COMPUTATION_OPENERS if k in spec]
     if len(present) != 1:
-        _refuse_openers(present, where)
+        _refuse_openers(present, where, union_tag)
     opener = present[0]
     stray = sorted(str(k) for k in spec if k not in (opener, _defaults.ARGS_KEY))
     if stray:
@@ -641,14 +680,14 @@ def _computation_parts(spec: dict, where: str) -> tuple[str, dict]:
 
 
 def _resolve_dict_spec(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
-    """Resolve a dict callable spec: one opener (bind/class/call/classfn) and the arguments of what it builds.
+    """Resolve a dict callable spec: one opener (bind, the union tag, call, classfn) and what it builds from.
 
     The arguments are the mapping under ``args`` for ``bind`` and ``call``, and the other
-    keys for ``class`` and for ``classfn``, whose owner they build (:func:`_spec_parts`).
+    keys for the tag and for ``classfn``, whose owner they build (:func:`_spec_parts`).
     *tp* is the Callable annotation, which a ``bind:`` target that is a class is checked
     against.
     """
-    opener, args = _spec_parts(spec, ctx.where)
+    opener, args = _spec_parts(spec, ctx.where, ctx.union_tag)
     if opener == _defaults.CALL_KEY:
         return _resolve_call_spec(spec[opener], args, ctx)
     if opener == _defaults.BIND_KEY:
@@ -696,10 +735,10 @@ def _call_value(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
     action = f"read the value of the call at '{ctx.where}'"
     made = [spec]
     while True:
-        _opener, kwargs = _computation_parts(spec, ctx.where)
+        _opener, kwargs = _computation_parts(spec, ctx.where, ctx.union_tag)
         value = _call_factory(spec[_defaults.CALL_KEY], kwargs, ctx)
         refuse_overflow(value, action, at=ctx.path, copies=Copies())
-        if not _is_typed_call(value, tp):
+        if not _is_typed_call(value, tp, ctx.union_tag):
             return value
         targets = [repr(made_spec[_defaults.CALL_KEY]) for made_spec in made]
         if value in made:
@@ -715,17 +754,17 @@ def resolve_held_spec(spec: dict, path: FieldPath, union_tag: str, construct_fn:
     """Build what a spec an ``Any`` node holds yields: an instance, a bound method, a partial or a value.
 
     Every opener is read, as on a Callable field (:func:`_spec_parts`), with no Callable to
-    check the result against: ``class:`` builds any class, callable or not, and ``call:``
+    check the result against: the union tag builds any class, callable or not, and ``call:``
     takes its target's value as it is.
 
     Dev Notes:
         docs-dev/architecture/callables.md#an-any-node-reads-every-opener
     """
     ctx = _SpecContext(path, union_tag, construct_fn)
-    opener, args = _spec_parts(spec, ctx.where)
+    opener, args = _spec_parts(spec, ctx.where, union_tag)
     if opener == _defaults.CALL_KEY:
         return _call_factory(spec[opener], args, ctx)
-    if opener == _defaults.CLASS_KEY:
+    if opener == union_tag:
         return _instantiate_class_spec(_ClassSpec(spec[opener], args), ctx)
     return _resolve_dict_spec(spec, None, ctx)
 
@@ -827,7 +866,7 @@ def _import_class_by_path(tag: Any, where: str, key: str) -> type:
     """Import the class a tag names by its full dotted path, the tag written under *key* at *where*.
 
     The one reader of a class tag: a union's and a struct field's, under the union tag, and a
-    ``class:`` spec's on an ``Any`` node or a Callable field. The tag must be a fully-qualified
+    spec's on an ``Any`` node or a Callable field, under the same tag. The tag must be a fully-qualified
     dotted path such as ``'mypackage.mymodule.MyClass'``; a class object is refused, as
     ``call:`` refuses one.
 
@@ -863,13 +902,13 @@ def _import_class_by_path(tag: Any, where: str, key: str) -> type:
 
 
 def _instantiate_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
-    """Build the instance a 'class:' spec names, from the other keys as its constructor arguments.
+    """Build the instance a spec the union tag opens names, from the other keys as its constructor arguments.
 
     Raises:
         TypeCoercionError: If the tag names no class (:func:`_import_class_by_path`).
     """
-    cls = _import_class_by_path(spec.cls_path, ctx.where, _defaults.CLASS_KEY)
-    return ctx.instantiate(cls, spec.init_kwargs, spec.cls_path, _defaults.CLASS_KEY)
+    cls = _import_class_by_path(spec.cls_path, ctx.where, ctx.union_tag)
+    return ctx.instantiate(cls, spec.init_kwargs, spec.cls_path, ctx.union_tag)
 
 
 def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
@@ -886,7 +925,7 @@ def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
     if not callable(instance):
         msg = (
             f"Instance of {spec.cls_path!r} at '{ctx.where}' is not callable: the class must define"
-            f" __call__ to be used as a Callable via 'class:'. To use {spec.cls_path} as a"
+            f" __call__ to be used as a Callable via '{ctx.union_tag}:'. To use {spec.cls_path} as a"
             f" factory (calling it constructs an instance), give its bare name"
             f" '{spec.cls_path}', or 'bind: {spec.cls_path}' with its constructor args under 'args'."
         )
@@ -914,7 +953,7 @@ def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
         raise TypeCoercionError.call_shape_refused(name, _spell_type(tp), path, reason)
 
 
-def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]]) -> str | dict:
+def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]], union_tag: str) -> str | dict:
     """Serialize a callable value back to its config representation.
 
     Partial with pre-bound arguments → {bind: <its target, serialized>, args: {k: v}}, its
@@ -925,28 +964,28 @@ def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]
     shadowed name is refused.
     Instance method → that path, beside its owner's fields when the owner has any
     (:func:`_bound_method_spec`).
-    Callable instance → a ``class:`` spec beside the fields it holds (:func:`_object_spec`).
+    Callable instance → a spec the union tag opens beside the fields it holds (:func:`_object_spec`).
     *owner_fields* reads the fields off an owner or an instance.
 
     Dev Notes:
         docs-dev/architecture/callables.md#round-trip
     """
     if isinstance(value, functools.partial):
-        target = _serialize_callable(value.func, owner_fields)
+        target = _serialize_callable(value.func, owner_fields, union_tag)
         arguments = {**_named_partial_args(value), **value.keywords}
         if arguments:
             return {_defaults.BIND_KEY: target, _defaults.ARGS_KEY: arguments}
         return target
 
     if not getattr(value, "__qualname__", None):
-        return _instance_spec(value, owner_fields)
+        return _instance_spec(value, owner_fields, union_tag)
 
     if has_dotted_name(value):
         path = dotted_name(value)
         if _reads_back_from(path, value):
             if _instance_method_owner(path) is None:
                 return path
-            return _bound_method_spec(path, value, owner_fields)
+            return _bound_method_spec(path, value, owner_fields, union_tag)
         reason = (
             f"{path!r} does not read back as this callable, as for a closure, a lambda, or a function"
             " its module no longer holds under that name"
@@ -985,8 +1024,8 @@ def _named_partial_args(value: functools.partial) -> dict[str, Any]:
     return dict(zip(names, value.args, strict=False))
 
 
-def _instance_spec(instance: Any, owner_fields: Callable[[Any], dict[str, Any]]) -> dict:
-    """Return the ``class:`` spec that builds a callable instance with the state it holds.
+def _instance_spec(instance: Any, owner_fields: Callable[[Any], dict[str, Any]], union_tag: str) -> dict:
+    """Return the spec the union tag opens that builds a callable instance with the state it holds.
 
     Raises:
         ConfargError: If the instance's class does not import back from its dotted path, or if
@@ -1003,10 +1042,12 @@ def _instance_spec(instance: Any, owner_fields: Callable[[Any], dict[str, Any]])
             " as that class, as for a class defined in a function"
         )
         raise ConfargError.callable_not_spelled(instance, reason)
-    return _object_spec(_defaults.CLASS_KEY, path_str, instance, instance, owner_fields)
+    return _object_spec(union_tag, path_str, instance, instance, owner_fields, union_tag=union_tag)
 
 
-def _bound_method_spec(path_str: str, method: Any, owner_fields: Callable[[Any], dict[str, Any]]) -> str | dict:
+def _bound_method_spec(
+    path_str: str, method: Any, owner_fields: Callable[[Any], dict[str, Any]], union_tag: str
+) -> str | dict:
     """Return the spec that builds the owner *method* is bound to with the state it holds, and binds *method* to it.
 
     *path_str* names *method* as an instance method, and reads back bound to an owner built
@@ -1017,24 +1058,24 @@ def _bound_method_spec(path_str: str, method: Any, owner_fields: Callable[[Any],
     Dev Notes:
         docs-dev/architecture/callables.md#an-object-dumps-the-state-it-holds
     """
-    spec = _object_spec(_defaults.CLASSFN_KEY, path_str, method.__self__, method, owner_fields)
+    spec = _object_spec(_defaults.CLASSFN_KEY, path_str, method.__self__, method, owner_fields, union_tag=union_tag)
     return path_str if spec.keys() == {_defaults.CLASSFN_KEY} else spec
 
 
-def _object_spec(
-    opener: str, path_str: str, obj: Any, value: Any, owner_fields: Callable[[Any], dict[str, Any]]
+def _object_spec(  # noqa: PLR0913  # the union tag is the spelling of one opener *opener* may be
+    opener: str, path_str: str, obj: Any, value: Any, owner_fields: Callable[[Any], dict[str, Any]], *, union_tag: str
 ) -> dict:
     """Return the *opener* spec naming *path_str* that builds *obj* with the state it holds.
 
-    *obj* is a ``class:`` instance or a ``classfn:`` owner, and *value* the callable being
-    dumped, which messages name. An object whose constructor takes no argument holds nothing a
-    no-argument build lacks, so the opener stands alone. Any other is a struct, read through
-    *owner_fields* as a struct field is.
+    *obj* is an instance the union tag names or a ``classfn:`` owner, and *value* the callable
+    being dumped, which messages name. An object whose constructor takes no argument holds
+    nothing a no-argument build lacks, so the opener stands alone. Any other is a struct, read
+    through *owner_fields* as a struct field is.
 
     Raises:
         ConfargError: If the constructor takes arguments and the class is no struct, or if the
-            object has a field named like the ``classfn`` opener, which no object spec can hold
-            beside its own.
+            object has a field spelled like an object opener, the union tag or ``classfn``,
+            which no object spec can hold beside its own.
 
     Dev Notes:
         docs-dev/architecture/callables.md#an-object-dumps-the-state-it-holds
@@ -1054,10 +1095,8 @@ def _object_spec(
         )
         raise ConfargError.callable_not_spelled(value, reason)
     fields = owner_fields(obj)
-    if _defaults.CLASSFN_KEY in fields:
-        reason = (
-            f"{whose} class, {cls.__qualname__}, has a field named {_defaults.CLASSFN_KEY!r},"
-            f" which a '{opener}:' spec cannot hold beside its opener"
-        )
-        raise ConfargError.callable_not_spelled(value, reason)
+    try:
+        refuse_a_field_spelling_an_object_opener(fields, cls, whose, opener, union_tag)
+    except ConfargError as e:
+        raise ConfargError.callable_not_spelled(value, str(e)) from None
     return {opener: path_str, **fields}
