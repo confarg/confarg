@@ -126,6 +126,16 @@ Because `Any` holds every type, `_cast.holds_the_cast` admits every cast on a un
 
 The other direction the ticket offered, refusing a union with an `Any` variant on both sides, was rejected: `Any | None` is the only way to null an `Any` field from a token, `X | Any` reads "typed when it fits, raw otherwise", and such unions also arise unwritten, from aliases composed with `Any`.
 
+### A union without `None` takes no `None`
+
+`construct()` takes a `None` itself only where `_types._allows_none` says the type holds one, a union counting `None` among its variants included.
+Any other `None` — a file's `null`, a YAML key left empty, a `from_dict()` value — meets a union's variants as any value does, and the union refuses it as a lone variant does: `int | str` refuses `null` as `str` does, `Cannot coerce NoneType None to int | str at 'a'`.
+A variant that holds `None` takes it: an `Any`, on the leaf walk's last rung ([above](#an-any-variant-is-tried-last)), and a `Literal` listing `None`.
+A token never meets this: a none word selects `None` only in a union counting it ([an optional field fails as its variant](#an-optional-field-fails-as-its-variant)), and `int | str` reads it as the text `'none'`.
+A field default of `None` its annotation does not hold is no value read, so it still builds, and `dump()` writes it with the warning that it will not read back ([serialization](serialization.md#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it)).
+
+Until BUG-298 the union returned any `None` before asking a variant, a regression of PR-11, which turned the branch `if data is None and type(None) in all_args` into `if data is None`, its comment calling it unreachable since `construct()` takes a `None` first, which holds only for a union counting `None`.
+
 ## Inheritance
 
 A struct field whose class has subclasses requires the union tag naming the concrete class; without it construction fails rather than guessing, because the set of visible subclasses depends on what has been imported ([design decisions](../design-decisions/no-implicit-subclass-inference.md#no-implicit-subclass-inference)).

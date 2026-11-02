@@ -1323,6 +1323,38 @@ class TestUnionWithAny:
         assert construct(_AnyBase | Any, data) == _AnyBaseSub(a=1, b=2)
 
 
+class TestAUnionWithoutNoneTakesNoNone:
+    """A native ``None`` meets a union's variants as any value does (BUG-298).
+
+    Only a union holding ``None`` takes it outright, as ``construct()`` does before any variant
+    is asked; any other union took it unasked, so a file's ``null`` loaded into ``int | str``
+    where a lone ``str`` field refuses it.
+    """
+
+    @pytest.mark.parametrize(
+        ("tp", "spelled"),
+        [
+            pytest.param(int | str, "int | str", id="scalars"),
+            pytest.param(_KindPlain | _OtherVariant, "_KindPlain | _OtherVariant", id="structs"),
+            pytest.param(list[int] | dict[str, int], "list[int] | dict[str, int]", id="collections"),
+            pytest.param(Callable[[], Any] | int, "Callable[[], Any] | int", id="callable"),
+        ],
+    )
+    def test_none_is_refused(self, tp: Any, spelled: str) -> None:
+        """No variant takes None, so the union refuses it as a lone variant does."""
+        with pytest.raises(TypeCoercionError, match=re.escape(f"Cannot coerce NoneType None to {spelled} at 'x'")):
+            construct(tp, None, path=("x",))
+
+    @pytest.mark.parametrize("tp", [int | Any, Any | int])
+    def test_an_any_variant_takes_none(self, tp: Any) -> None:
+        """Any holds every value, None included, as the leaf walk's last rung."""
+        assert construct(tp, None) is None
+
+    def test_a_literal_none_variant_takes_none(self) -> None:
+        """A Literal holding None is a variant that takes it."""
+        assert construct(int | Literal["a", None], None) is None
+
+
 class TestAnyHoldsNoToken:
     """What an ``Any`` field holds is plain text, never a channel's token."""
 

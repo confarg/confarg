@@ -9,7 +9,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-298 — A union without `None` takes a file's `null`](BUG-298-a-union-without-none-takes-a-files-null.md) | critical |  | S | medium | config | PR-11 |
 | [BUG-305 — A custom union tag reaches a spec reader it does not open](BUG-305-a-custom-union-tag-reaches-a-spec-reader-it-does-not-open.md) | critical |  | S | medium | config | FEAT-42, BUG-234 |
 | [BUG-283 — A reference to a registered leaf written as a tagged dict reads the dict](BUG-283-a-reference-to-a-tagged-registered-leaf-reads-its-dict.md) | critical |  | M | high | config | BUG-16, BUG-246 |
 | [BUG-288 — An ambiguity inside a union variant lets the next variant take the value](BUG-288-an-ambiguity-inside-a-union-variant-lets-the-next-variant-take-the-value.md) | critical |  | M | high | config | PR-5 |
