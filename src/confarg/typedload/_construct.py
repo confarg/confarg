@@ -978,12 +978,16 @@ def _construct_named(cls: Any, data: MergeDict, path: FieldPath, union_tag: str,
 
 
 def _construct_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str) -> Any:
-    """Construct a dataclass or plain-class instance from a dict of raw data."""
+    """Construct a dataclass or plain-class instance from a dict of raw data.
+
+    Every key of *data* is a field: a tag-shaped key *tp* declares no field for is refused as
+    any unknown key is, its caller having taken out a key it read as the tag (BUG-303).
+    """
     flds = _struct_fields(tp)
     defs = _struct_defaults(tp)
     kwargs: dict[str, Any] = {}
 
-    extra = {k for k in data if k not in flds and k != union_tag}
+    extra = {k for k in data if k not in flds}
     if extra:
         raise TypeCoercionError.unknown_fields(extra, tp.__name__, _spell_field_path(path), sorted(flds))
 
@@ -1520,11 +1524,20 @@ def read_union_leaf(tp: Any, value: Any, union_tag: str) -> Any:
     return taken[1]
 
 
-def _construct_union_leaf(  # noqa: PLR0913  # the union, its value and where, and the refusals so far
-    all_args: list[Any], non_none: list[Any], data: Any, path: FieldPath, union_tag: str, *, refusals: _Refusals
+def _construct_union_leaf(  # noqa: PLR0913  # the union, its value and where, the refusals so far, what is tried
+    all_args: list[Any],
+    non_none: list[Any],
+    data: Any,
+    path: FieldPath,
+    union_tag: str,
+    *,
+    refusals: _Refusals,
+    offered: list[Any],
 ) -> Any:
     """Construct a union value by trying leaf variants in priority order.
 
+    Only the variants of *offered* are tried, those of *non_none* a key a member owns has not
+    refused already (:func:`_refuse_an_owned_key_to_tag_readers`).
     A built instance of a struct or an unsupported-leaf variant is first taken by that variant
     (:func:`_instance_variant`).
     An ``Any`` variant is the last rung: it takes what every other variant refused. A value no
@@ -1537,11 +1550,11 @@ def _construct_union_leaf(  # noqa: PLR0913  # the union, its value and where, a
         docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
         docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
     """
-    instance_of = _instance_variant(non_none, data)
+    instance_of = _instance_variant(offered, data)
     if instance_of is not None:
         return construct(instance_of, data, path=path, union_tag=union_tag)
 
-    fixed_vars, coll_vars, scalar_leaf_vars, any_vars = _leaf_variants(non_none)
+    fixed_vars, coll_vars, scalar_leaf_vars, any_vars = _leaf_variants(offered)
 
     result = _try_fixed_seq_variants(fixed_vars, data, path, union_tag, refusals)
     if result is not _UNION_NO_MATCH:
@@ -1639,12 +1652,15 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
     if len(non_none) == 1:
         return _construct_single_variant_union(all_args, non_none, data, path, union_tag)
 
+    refusals: _Refusals = []
+    offered = non_none
     if isinstance(data, dict) and union_tag in data:
         reading = tag_reading(tp, union_tag)
         if reading is TagReading.OWNED:
             # The tag route was a real alternative; the member's value forces the
             # structural route instead, so say so once, on use.
             _warn_shadowed_tag_key(path, union_tag, "variant")
+            offered = _refuse_an_owned_key_to_tag_readers(non_none, data, path, union_tag, refusals)
         elif reading.is_the_tag:
             return _construct_union_by_tag(tp, non_none, data, path, union_tag)
 
@@ -1652,14 +1668,40 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
     if reader is not None:
         return construct(reader, data, path=path, union_tag=union_tag)
 
-    refusals: _Refusals = []
-    dc_vars = [v for v in non_none if _is_struct_variant(_resolve_type(v))]
+    dc_vars = [v for v in offered if _is_struct_variant(_resolve_type(v))]
     if isinstance(data, dict) and dc_vars:
         result = _try_construct_union_struct(dc_vars, data, path, union_tag, refusals)
         if result is not _UNION_NO_MATCH:
             return result
 
-    return _construct_union_leaf(all_args, non_none, data, path, union_tag, refusals=refusals)
+    return _construct_union_leaf(all_args, non_none, data, path, union_tag, refusals=refusals, offered=offered)
+
+
+def _refuse_an_owned_key_to_tag_readers(
+    non_none: list[Any], data: MergeDict, path: FieldPath, union_tag: str, refusals: _Refusals
+) -> list[Any]:
+    """Return the variants of *non_none* offered *data*, whose tag-shaped key a member owns; refuse the others.
+
+    The key is that member's value at the union's position, so no variant reads it as a tag
+    there: a variant that would, a struct or a registered leaf a tag opens owning no member of
+    its spelling, refuses it as a field it does not declare, kept in *refusals*. The others read
+    it as theirs, a member's or a dict's data (BUG-303).
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+    """
+    offered = []
+    for var in non_none:
+        rv = _resolve_type(var)
+        if _is_struct(rv) and not _union_tag_shadowed(rv, union_tag):
+            flds = _struct_fields(rv)
+            unknown = [k for k in data if k not in flds]
+            refusals.append(
+                (var, TypeCoercionError.unknown_fields(unknown, rv.__name__, _spell_field_path(path), sorted(flds)))
+            )
+        else:
+            offered.append(var)
+    return offered
 
 
 def _instance_variant(non_none: list[Any], data: Any) -> Any:
