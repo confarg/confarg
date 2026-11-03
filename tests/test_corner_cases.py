@@ -42,7 +42,6 @@ from tests.conftest import (
     Flat,
     PgConfig,
     ServerTcp,
-    SquareShape,
     WithDefaults,
     WithNestedList,
     WithOptionalNested,
@@ -1217,50 +1216,6 @@ class TestMultipleConfigFilesCornerCases:
 
 
 # ===========================================================================
-# union_tag parameter
-# ===========================================================================
-
-
-class TestUnionTagParameter:
-    """The union_tag parameter for custom discriminator field names."""
-
-    def test_custom_union_tag_load(self) -> None:
-        """Custom union_tag='type' in load()."""
-        result = confarg.load(
-            WithUnionAmbiguous,
-            argv=[
-                "--shape.type",
-                "tests.conftest.CircleShape",
-                "--shape.x",
-                "1",
-                "--shape.y",
-                "2",
-                "--shape.radius",
-                "5",
-            ],
-            env={},
-            union_tag="type",
-        )
-        assert isinstance(result.shape, CircleShape)
-
-    def test_custom_union_tag_dump(self) -> None:
-        """Custom union_tag='type' in dump()."""
-        obj = WithUnionAmbiguous(shape=CircleShape(x=1, y=2, radius=5))
-        result = confarg.dump(obj, union_tag="type", tag_policy="always")
-        assert result["shape"]["type"] == "tests.conftest.CircleShape"
-        assert "class" not in result["shape"]
-
-    def test_custom_union_tag_roundtrip(self, tmp_path: Path) -> None:
-        """Roundtrip with custom union_tag through TOML."""
-        obj = WithUnionAmbiguous(shape=SquareShape(x=0, y=0, radius=3))
-        path = tmp_path / "out.toml"
-        confarg.dump_file(obj, path, union_tag="kind")
-        loaded = confarg.load(WithUnionAmbiguous, argv=[], env={}, files=[path], union_tag="kind")
-        assert isinstance(loaded.shape, SquareShape)
-        assert loaded.shape.radius == pytest.approx(3.0)
-
-
-# ===========================================================================
 # Non-union base class dispatch via class tag
 # ===========================================================================
 
@@ -1287,7 +1242,7 @@ class TestNonUnionClassTagDispatch:
 
     Exercises the _construct_by_class_path branch in construct() that fires
     when the target is a plain struct (not a Union) but the data dict contains
-    the union_tag key.  This is how the 03_inheritance example works.
+    the class key.  This is how the 03_inheritance example works.
     """
 
     def test_from_dict_dispatches_to_subclass(self) -> None:
@@ -1655,31 +1610,31 @@ class TestVarParams:
 
 
 class TestUnionTypeSwitchViaClassTag:
-    """When the override dict carries the union_tag, the base is discarded entirely.
+    """When the override dict carries the class key, the base is discarded entirely.
 
     This prevents fields from a previously-loaded union variant from contaminating
     an override that switches to a different variant.
     """
 
-    def test_deep_merge_discards_base_when_override_has_union_tag(self) -> None:
-        """Test that _deep_merge discards the base when the override has a union_tag."""
+    def test_deep_merge_discards_base_when_override_has_class_key(self) -> None:
+        """Test that _deep_merge discards the base when the override has a class key."""
         base: MergeDict = {"host": "prod", "port": 5432, "name": "mydb"}
         override: MergeDict = {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "db.sqlite"}
-        result = _deep_merge(base, override, at=MergeAt("class"))
+        result = _deep_merge(base, override, at=MergeAt())
         assert result == override
 
-    def test_deep_merge_normal_merge_when_no_union_tag(self) -> None:
-        """Test that _deep_merge performs a normal merge when no union_tag is present."""
+    def test_deep_merge_normal_merge_when_no_class_key(self) -> None:
+        """Test that _deep_merge performs a normal merge when no class key is present."""
         base: MergeDict = {"host": "prod", "port": 5432, "name": "mydb"}
         override: MergeDict = {"port": 9999}
-        result = _deep_merge(base, override, at=MergeAt("class"))
+        result = _deep_merge(base, override, at=MergeAt())
         assert result == {"host": "prod", "port": 9999, "name": "mydb"}
 
     def test_deep_merge_nested_discard(self) -> None:
-        """Test that _deep_merge discards a nested base when a nested override has a union_tag."""
+        """Test that _deep_merge discards a nested base when a nested override has a class key."""
         base: MergeDict = {"db": {"host": "prod", "port": 5432, "name": "mydb"}}
         override: MergeDict = {"db": {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "x.sqlite"}}
-        result = _deep_merge(base, override, at=MergeAt("class"))
+        result = _deep_merge(base, override, at=MergeAt())
         assert result == {"db": {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "x.sqlite"}}
 
     def test_load_cross_type_switch_via_config_file_and_cli(self, tmp_yaml) -> None:
@@ -1722,6 +1677,6 @@ class TestUnionTypeSwitchViaClassTag:
         # a class tag and SqliteVariant fields.
         file_data: MergeDict = {"host": "prod", "port": 5432, "name": "mydb"}
         override: MergeDict = {"class": "tests.test_corner_cases._SqliteVariant", "dbpath": "override.sqlite"}
-        merged = _deep_merge(file_data, override, at=MergeAt("class"))
+        merged = _deep_merge(file_data, override, at=MergeAt())
         # The class tag in the override discards the ServerVariant fields entirely.
         assert merged == override

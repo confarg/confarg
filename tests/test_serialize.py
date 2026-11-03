@@ -318,13 +318,6 @@ class TestDumpUnionTagAlways:
         assert result["value"] == 42
         assert not isinstance(result["value"], dict)
 
-    def test_custom_union_tag(self) -> None:
-        """Custom union_tag name is used."""
-        obj = WithUnionAmbiguous(shape=CircleShape(x=1, y=2, radius=5))
-        result = confarg.dump(obj, union_tag="type", tag_policy="always")
-        assert result["shape"]["type"] == "tests.conftest.CircleShape"
-        assert "class" not in result["shape"]
-
 
 # ---------------------------------------------------------------------------
 # Union tag_policy="auto"
@@ -563,13 +556,6 @@ class _AnyHeldClassfn:
     a: int = 2
 
 
-@_dc
-class _AnyHeldKind:
-    """A struct whose field is spelled like the custom union tag ``Kind`` (BUG-305)."""
-
-    Kind: int = 1  # spelled like the tag on purpose
-
-
 class _AnyScaler:
     """A plain callable class with no ``__eq__``: it reads back as an object holding the same state."""
 
@@ -667,26 +653,12 @@ class TestDumpAny:
             dumped = confarg.dump(Target(x=_AnyHeldAny(p=Path("q"))))
         assert dumped == {"x": {"class": f"{_MOD}._AnyHeldAny", "p": "q"}}
 
-    @pytest.mark.parametrize(
-        ("held", "union_tag", "field"),
-        [
-            pytest.param(_AnyHeldClassfn(), "class", "classfn", id="classfn"),
-            pytest.param(_AnyHeldKind(), "Kind", "Kind", id="custom-tag"),
-        ],
-    )
-    def test_a_struct_with_a_field_spelled_like_an_opener_warns_naming_it(
-        self, held: Any, union_tag: str, field: str
-    ) -> None:
+    def test_a_struct_with_a_field_spelled_like_an_opener_warns_naming_it(self) -> None:
         """No spec holds a field spelled like an object opener beside its own, so the warning names the field."""
         Target = make_target("x", Any, default=None)
-        reason = rf"has a field named '{field}', which a '{union_tag}:' spec cannot hold beside its opener"
+        reason = r"has a field named 'classfn', which a 'class:' spec cannot hold beside its opener"
         with pytest.warns(ConfargWarning, match=reason):
-            confarg.dump(Target(x=held), union_tag=union_tag)
-
-    def test_a_field_spelled_like_another_tag_dumps_as_the_spec(self) -> None:
-        """Under the default tag, a struct's field spelled Kind is an ordinary field of its spec."""
-        Target = make_target("x", Any, default=None)
-        assert confarg.dump(Target(x=_AnyHeldKind())) == {"x": {"class": f"{_MOD}._AnyHeldKind", "Kind": 1}}
+            confarg.dump(Target(x=_AnyHeldClassfn()))
 
     def test_a_dict_holding_an_opener_warns(self) -> None:
         """A dict holding a class key reads back as a spec, not as the dict, so it warns."""
@@ -942,103 +914,6 @@ class TestDumpSubclass:
         result = confarg.dump(Holder(item=_SubBase()))
         assert result["item"] == {"class": "tests.test_serialize._SubBase"}
         assert type(confarg.from_dict(Holder, result).item) is _SubBase
-
-
-# ---------------------------------------------------------------------------
-# A member that owns the tag's spelling
-# ---------------------------------------------------------------------------
-
-
-@_dc
-class _KindOwner:
-    Kind: str = "x"
-
-
-@_dc
-class _KindTwin:
-    Kind: str = "y"
-
-
-@_dc
-class _KindOther:
-    k: int = 0
-
-
-@_dc
-class _OwnedBase:
-    pass
-
-
-@_dc
-class _OwnedKinded(_OwnedBase):
-    Kind: str = "x"
-
-
-@_dc
-class _OwnedPlain(_OwnedBase):
-    p: int = 0
-
-
-def _dump_unwarned(obj: Any, **kwargs: Any) -> Any:
-    """Dump *obj* with every warning raised, so a dump that warns fails."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        return confarg.dump(obj, union_tag="Kind", **kwargs)
-
-
-def _read_owned(tp: type, data: Any) -> Any:
-    """Read *data* back as *tp*, where a member owns the ``Kind`` key: the read says so."""
-    with pytest.warns(ConfargWarning, match=r"is a field's value, not the tag"):
-        return confarg.from_dict(tp, data, union_tag="Kind")
-
-
-class TestDumpTagAMemberOwns:
-    """Where a member owns the tag's spelling the key is its value: no tag is written over it (BUG-302)."""
-
-    @pytest.mark.parametrize("tag_policy", ["auto", "always"])
-    def test_a_union_writes_the_field_not_the_tag(self, tag_policy: TagPolicy) -> None:
-        """The variant's field keeps its value, under either policy, and reads back."""
-        Holder = make_target("g", _KindOwner | _KindOther)
-        result = _dump_unwarned(Holder(g=_KindOwner(Kind="field")), tag_policy=tag_policy)
-        assert result["g"] == {"Kind": "field"}
-        assert _read_owned(Holder, result).g == _KindOwner(Kind="field")
-
-    def test_a_union_writes_no_tag_beside_a_sibling_variant_that_owns_the_spelling(self) -> None:
-        """Another variant owning the key makes it a field's for the whole union, so ``always`` adds none."""
-        Holder = make_target("g", _KindOwner | _KindOther)
-        result = _dump_unwarned(Holder(g=_KindOther(k=1)), tag_policy="always")
-        assert result["g"] == {"k": 1}
-        assert confarg.from_dict(Holder, result, union_tag="Kind").g == _KindOther(k=1)
-
-    def test_a_union_whose_variants_its_fields_cannot_tell_apart_warns(self) -> None:
-        """No tag can select the variant, so the dump writes the field and warns that it will not read back."""
-        Holder = make_target("g", _KindOwner | _KindTwin)
-        with pytest.warns(
-            ConfargWarning, match=r"Value at 'g' will not read back as _KindTwin: a member spelled 'Kind'"
-        ):
-            result = confarg.dump(Holder(g=_KindTwin(Kind="field")), union_tag="Kind")
-        assert result["g"] == {"Kind": "field"}
-
-    def test_a_union_holding_a_subclass_of_a_variant_that_owns_no_spelling_warns(self) -> None:
-        """The union reads its key as a member's, so no subclass tag is written; the fields alone do not read back."""
-        Holder = make_target("g", _KindOwner | _SubBase)
-        with pytest.warns(ConfargWarning, match=r"Value at 'g' will not read back as _SubChild"):
-            result = confarg.dump(Holder(g=_SubChild(value=1.0)), union_tag="Kind")
-        assert result["g"] == {"value": 1.0}
-
-    def test_a_struct_writes_its_subclass_field_not_the_tag(self) -> None:
-        """A subclass-only field owns the spelling under its base: the subclass is written by its fields."""
-        Holder = make_target("g", _OwnedBase)
-        result = _dump_unwarned(Holder(g=_OwnedKinded(Kind="field")))
-        assert result["g"] == {"Kind": "field"}
-        assert _read_owned(Holder, result).g == _OwnedKinded(Kind="field")
-
-    def test_a_struct_whose_subclass_its_fields_do_not_select_warns(self) -> None:
-        """A sibling subclass owning the spelling leaves this subclass no tag; its fields alone do not read back."""
-        Holder = make_target("g", _OwnedBase)
-        with pytest.warns(ConfargWarning, match=r"Value at 'g' will not read back as _OwnedPlain"):
-            result = confarg.dump(Holder(g=_OwnedPlain(p=1)), union_tag="Kind")
-        assert result["g"] == {"p": 1}
 
 
 # ---------------------------------------------------------------------------

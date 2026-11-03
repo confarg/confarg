@@ -29,22 +29,16 @@
 ## Real field wins
 
 A reserved word never shadows a real member: a field named `json` beats the `.json` cast, a field named `locals` beats the locals namespace.
-One predicate decides it everywhere, `_segment_names_real_field`: the union tag, structs (a subclass-only field included), namedtuples and (recursively) union variants are checked for the name; dicts accept any key so the name is always real there; lists, sets, tuples, callables and scalars have no named members, so the word is reserved.
+One predicate decides it everywhere, `_segment_names_real_field`: the class key, structs (a subclass-only field included), namedtuples and (recursively) union variants are checked for the name; dicts accept any key so the name is always real there; lists, sets, tuples, callables and scalars have no named members, so the word is reserved.
 The CLI asks it of the walk target, so a dict *root*, whose keys no flag addresses, leaves `json` to the root cast ([cli_prefix](cli-prefix.md#a-non-struct-root-is-set-whole)).
 
 Keep this predicate canonical: casts, the locals name derivation, the env `__json` cast, the env channel's unknown-field warning (BUG-90) and the adapters' cast-flag registration all rely on it answering identically.
 
-The union tag yields the same way (BUG-102): a field whose exact spelling equals `union_tag` is that field, and the tag applies only where no member of that spelling exists — the previously unsettled tag counterpart of this rule.
-A subclass-only field is such a member too (BUG-103): the walk had always answered it so (`_subclass_field_type`), while the predicate asked the base's own fields only, so construction read the merged key as the tag, imported the field's value as a class path and stripped it — the field the user had set was then reported missing.
-The predicate now answers with the walk, and construction, holding a key a subclass-only field owns, selects the subclass structurally the way the union's fallback selects a variant (`_construct_shadowed_subclass`): several matches are a loud ambiguity, none a loud refusal.
-The walk asks it as "member first, tag fallback" (`_walk_path` advances before it falls back to the tag, and every question about a path, `_resolve_field_type`, `_addresses_callable_key` and `_is_collection_patch_path` alike, reads that one walk), and every site that has only the type and the key — construction's struct, union and taggable-leaf dispatches, the tag collectors in `_tags.py`, the adapters' tag flags — asks `_union_tag_shadowed` (`_types.py`), the one predicate for "does a real field own the tag's spelling here?".
-The union's structural check reads a variant's keys through one helper, `typedload._construct._field_keys`, at the variant and at a nested struct value alike; the nested check once dropped the tag-shaped key unconditionally, so a real field one level below a variant was read as the tag and the union reported an ambiguity it should have resolved (BUG-107).
-The merge asks the same predicate, so a key a member owns refines what lower layers set rather than replacing it ([the type decides](../design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)).
-So does `dump()`, which writes no tag over a member's value and warns where the fields alone do not read back ([serialization](../types/serialization.md#a-member-that-owns-the-tags-spelling-keeps-its-value)), and the union's ambiguity refusal, which counts the key as a provided field and offers a rename, never the tag, which would read as the member's value (BUG-302).
-So do construction's fallbacks, which try each candidate where no fields cover the keys (BUG-303): a union variant or a subclass owning no member of the spelling refuses the key as a field it does not declare, the union through `_construct._refuse_an_owned_key_to_tag_readers` and the subclass through `_construct_struct`, which reads every key it is handed as a field.
-Each once read the key by its own members, so a struct variant imported it as its subclass tag, a registered leaf variant opened by it, and a subclass dropped it as a tag, the member's value imported or lost.
-The refusal is the plain unknown-field line any undeclared key gets (`Other: unknown field(s) ['Kind', 'p']`), the on-use warning above it saying why the key is no tag there; a clause of its own naming the owner was rejected as a second wording of that warning (maintainer-chosen).
-The tag still counts as a member for the casts and the locals (`_segment_names_real_field` answers it so), and the CLI keeps a case-differing field distinguishable, exact matching being what it is: `--Kind` the tag, `--kind` the field.
+The class key needs no such rule: `class` is a Python keyword, so no member can be spelled like it ([the class key is `class`](../design-decisions/the-class-key-is-class.md#the-class-key-is-class)).
+When the key's spelling was configurable, a member spelled like a custom one won over it (BUG-102, BUG-103), a shadowed tag warned on use, and `dump()` wrote no tag over the member's value (BUG-302, BUG-303).
+The walk asks "member first, class key fallback" (`_walk_path` advances before it falls back to the class key, and every question about a path, `_resolve_field_type`, `_addresses_callable_key` and `_is_collection_patch_path` alike, reads that one walk).
+The union's structural check reads a variant's keys through one helper, `typedload._construct._field_keys`, at the variant and at a nested struct value alike (BUG-107).
+The class key counts as a member for the casts and the locals (`_segment_names_real_field` answers it so).
 
 ### Every class a node may build counts
 
@@ -61,8 +55,3 @@ Rejected:
   It strips a field the named variant owns.
 
 Precedents reserve their names statically: Hydra's `_target_` and `_args_`, jsonargparse's `class_path` and `init_args` are never decided by the data a node holds.
-
-The trade-off is accepted the way the casts rule accepts its own: a member that shadows the tag makes the tag's class-path dispatch unreachable at that position — a variant field shadowing a union, a base field shadowing subclass dispatch, a subclass-only field turning subclass dispatch structural, a leaf parameter shadowing the only hatch into a registered leaf.
-Where the tag was a real alternative, the surprise is named instead of stayed silent: consuming a shadowed tag-shaped key at a dispatch position emits a `ConfargWarning`, once per position, on use ([design decisions](../design-decisions/a-shadowed-tag-warns-on-use.md#a-shadowed-tag-warns-on-use)); a position that never could dispatch stays quiet.
-The alternatives were refused: refusing the collision loudly would break plain structs that never use a union and contradict the env channel's settled member-wins (BUG-101), and letting the tag win everywhere is the unreachable-field bug itself.
-The remedy for a shadowed tag is to rename the field or pass a different `union_tag`.

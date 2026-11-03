@@ -68,7 +68,7 @@ class TestLoadFlagsIntoCommand:
     def test_basic_flags_registered(self) -> None:
         """Flags from build_static_flags are added to command.params."""
         cmd = _make_command()
-        flags = build_static_flags(Simple, union_tag="class", config_flag="")
+        flags = build_static_flags(Simple, config_flag="")
         load_flags_into_command(flags, cmd)
         names = {p.name for p in cmd.params}
         assert "host" in names
@@ -77,7 +77,7 @@ class TestLoadFlagsIntoCommand:
     def test_duplicate_skipped(self) -> None:
         """Loading the same spec list twice does not create duplicate params."""
         cmd = _make_command()
-        flags = build_static_flags(Simple, union_tag="class", config_flag="")
+        flags = build_static_flags(Simple, config_flag="")
         load_flags_into_command(flags, cmd)
         before = len(cmd.params)
         load_flags_into_command(flags, cmd)

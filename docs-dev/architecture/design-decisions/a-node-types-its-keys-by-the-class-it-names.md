@@ -1,7 +1,7 @@
 # A node types its keys by the class it names
 
 A node that names a class types the keys below it by that class, on the command line and in the environment as construction reads them (BUG-233, BUG-236, BUG-110, BUG-113).
-The node names it by an opener (`class`, `classfn`, `bind`, `call`) on a Callable, an `Any` or a field a typed call fills, or by the union tag on a struct, a taggable leaf or a union of structs.
+The node names it by an opener (`class`, `classfn`, `bind`, `call`) on a Callable, an `Any` or a field a typed call fills, or by the class key on a struct, a taggable leaf or a union of structs.
 Before, the walk typed a path by the declared types alone: one `str` segment below a Callable, so `--f.class Wrap --f.inner.class Mul --f.inner.factor 4` was an unknown argument; one token below a class's list argument, so `--f.class Joiner --f.parts a b` refused `b`; every subclass's or variant's fields folded below a base-typed field, so `--item.class S1 --item.inner.a 1` was unknown wherever the subclasses type `inner` apart.
 The merge already read what a node names (`TypedAt.child`); the walk now asks the same decision-maker, `_naming.named_child`, and `_naming.named_variant` for the variant of a union it narrows to.
 Every choice below is the maintainer's.

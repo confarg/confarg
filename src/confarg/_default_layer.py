@@ -58,7 +58,6 @@ from confarg._types import (
     _tagged_struct,
     _union_branches,
     _union_has_seq_variant,
-    _union_tag_shadowed,
 )
 from confarg.dictexpr import contains_expression, escape_expressions
 from confarg.exceptions import _spell_field_path
@@ -96,14 +95,13 @@ class LaidDefaults(NamedTuple):
 
 @dataclasses.dataclass
 class _Walk:
-    """What one laying walk carries: the tag spelling, its mode, and the untouched paths it records."""
+    """What one laying walk carries: its mode, and the untouched paths it records."""
 
-    union_tag: str
     for_resolution: bool
     untouched: list[DataPath] = dataclasses.field(default_factory=list)
 
 
-def lay_defaults(target: Any, data: MergeDict, union_tag: str, *, for_resolution: bool) -> LaidDefaults:
+def lay_defaults(target: Any, data: MergeDict, *, for_resolution: bool) -> LaidDefaults:
     """Lay *target*'s field defaults under *data*, never mutating it.
 
     A field the data holds is combined with its default where the default is a list base
@@ -126,7 +124,7 @@ def lay_defaults(target: Any, data: MergeDict, union_tag: str, *, for_resolution
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
         docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
     """
-    walk = _Walk(union_tag, for_resolution)
+    walk = _Walk(for_resolution)
     target = _resolve_type(target)
     if not _root_kind(target).held_whole(data):
         laid = _node(target, data, (), walk)
@@ -138,13 +136,13 @@ def lay_defaults(target: Any, data: MergeDict, union_tag: str, *, for_resolution
             laid = {k: v for k, v in data.items() if k != _defaults.ROOT_KEY}
         else:
             laid = data if root is data[_defaults.ROOT_KEY] else {**data, _defaults.ROOT_KEY: root}
-        laid = _with_namespaces_applied(laid, _locals_keys(target, union_tag), ())
+        laid = _with_namespaces_applied(laid, _locals_keys(target), ())
     else:
         laid = data
     return LaidDefaults(laid, tuple(walk.untouched))
 
 
-def settle_pending(target: Any, union_tag: str) -> Settler:
+def settle_pending(target: Any) -> Settler:
     """Return what resolution settles a node of pending ops into, for data of type *target*.
 
     A node carrying a base, most often an expression the merge kept below a patch over it,
@@ -156,8 +154,8 @@ def settle_pending(target: Any, union_tag: str) -> Settler:
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#a-patch-over-an-expression-patches-its-value
     """
-    root = merge_root(target, union_tag)
-    walk = _Walk(union_tag, for_resolution=False)
+    root = merge_root(target)
+    walk = _Walk(for_resolution=False)
 
     def settle(data: MergeDict, path: Sequence[str | ListOp], node: MergeDict) -> Any:
         at = _at_path(root, data, path)
@@ -231,11 +229,11 @@ def _node(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:  # noqa: PLR0
     tp = _resolve_type(tp)
     if not isinstance(node, dict | list) or _is_pin_dict(node) or _carries_an_expression(node):
         return node
-    if _is_typed_call(node, tp, walk.union_tag):
+    if _is_typed_call(node, tp):
         return _untyped(node)
     kind = _type_kind(tp)
     if kind is _TypeKind.STRUCT:
-        cls = _struct_built_from(tp, node, walk.union_tag) if isinstance(node, dict) else None
+        cls = _struct_built_from(tp, node) if isinstance(node, dict) else None
         return _untyped(node) if cls is None else _struct(cls, node, path, walk)
     if kind is _TypeKind.UNION:
         return _union(tp, node, path, walk)
@@ -356,19 +354,17 @@ def _tagged_class(tag: Any) -> Any:
     return _tag_named_struct(tag)
 
 
-def _struct_built_from(tp: Any, node: MergeDict, union_tag: str) -> Any:
+def _struct_built_from(tp: Any, node: MergeDict) -> Any:
     """Return the class construction builds *node* as at a field of struct type *tp*, None if unsure.
 
-    Mirrors ``_construct_struct_dispatch``: an unshadowed tag names the class, a tag the
-    struct's own field owns is data, and with no tag a struct that demands one is refused,
-    so nothing is laid below a node construction would not build as one class.
+    Mirrors ``_construct_struct_dispatch``: the class key names the class, and with none a
+    struct that demands one is refused, so nothing is laid below a node construction would
+    not build as one class.
     """
     try:
-        if union_tag in node:
-            if not _union_tag_shadowed(tp, union_tag):
-                cls = _tagged_class(node[union_tag])
-                return None if cls is None else _tagged_struct(cls, tp)
-            return tp if union_tag in _struct_fields(tp) else None
+        if _defaults.CLASS_KEY in node:
+            cls = _tagged_class(node[_defaults.CLASS_KEY])
+            return None if cls is None else _tagged_struct(cls, tp)
         return None if _demands_tag(tp) else tp
     except _INTROSPECTION_ERRORS:
         return None
@@ -383,13 +379,9 @@ def _union(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
         sequence = _sequence_taking_ops(variants)
         if sequence is not None:
             return _sequence(sequence, node, path, walk)
-    if (
-        not isinstance(node, dict)
-        or walk.union_tag not in node
-        or tag_reading(tp, walk.union_tag) is not TagReading.SELECTS
-    ):
+    if not isinstance(node, dict) or _defaults.CLASS_KEY not in node or tag_reading(tp) is not TagReading.SELECTS:
         return _untyped(node)
-    cls = _tagged_class(node[walk.union_tag])
+    cls = _tagged_class(node[_defaults.CLASS_KEY])
     # A generic parameterized apiece (Box[int] | Box[str]) matches once per binding, which only
     # construction picks, by the value: no binding is certain.
     matching = [b for v in variants if cls is not None and _is_struct(v) and (b := _tagged_struct(cls, v)) is not None]
@@ -432,7 +424,7 @@ def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> Any:
     kept = _kept(node, {**node, **held})
     if kept is _PRUNED:
         return kept
-    out = _with_namespaces_applied(dict(kept), _namespace_keys(cls, walk.union_tag), path)
+    out = _with_namespaces_applied(dict(kept), _namespace_keys(cls), path)
     for name, ft in fields.items():
         fpath = (*path, name)
         laid = laid_at[name]
@@ -444,15 +436,15 @@ def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> Any:
         elif name in required and _is_struct_variant(ft) and _all_have_defaults(ft):
             # Construction builds such a field from {} (``_construct_struct``): its class's
             # defaults are what it will hold.
-            out[name] = _struct(_resolve_type(ft), {}, fpath, _Walk(walk.union_tag, for_resolution=True))
+            out[name] = _struct(_resolve_type(ft), {}, fpath, _Walk(for_resolution=True))
             walk.untouched.append(fpath)
     return _copied_if_changed(node, out)
 
 
-def _namespace_keys(cls: Any, union_tag: str) -> tuple[str, ...]:
+def _namespace_keys(cls: Any) -> tuple[str, ...]:
     """Return the names of the local-variables namespace *cls* holds, none where its members cannot be read."""
     try:
-        return _locals_keys(cls, union_tag)
+        return _locals_keys(cls)
     except _INTROSPECTION_ERRORS:
         return ()
 
@@ -467,14 +459,14 @@ def _held(value: Any, ft: Any, laid: Any, fpath: DataPath, walk: _Walk) -> Any:
     """
     if isinstance(value, _DeleteSentinel):
         return value
-    if isinstance(laid, list) and _patches_a_list(value, ft, walk.union_tag):
-        value = _merge_existing_value(laid, value, _spelled(fpath), merge_at(ft, walk.union_tag))
+    if isinstance(laid, list) and _patches_a_list(value, ft):
+        value = _merge_existing_value(laid, value, _spelled(fpath), merge_at(ft))
         if isinstance(value, dict) and ListOp.BASE not in value:
             value = {k: v for k, v in value.items() if not isinstance(v, _DeleteSentinel)}
     return _node(ft, value, fpath, walk)
 
 
-def _patches_a_list(value: Any, ft: Any, union_tag: str) -> bool:
+def _patches_a_list(value: Any, ft: Any) -> bool:
     """Whether *value*, at a field of type *ft*, is a patch the field's list default is the base of.
 
     A dict carrying its own base, a cast pin, or one construction reads as a value of its own
@@ -486,7 +478,7 @@ def _patches_a_list(value: Any, ft: Any, union_tag: str) -> bool:
         and (_is_seq_variant(ft) or _union_has_seq_variant(ft))
         and ListOp.BASE not in value
         and not _is_pin_dict(value)
-        and not reads_as_new_value(value, ft, union_tag)
+        and not reads_as_new_value(value, ft)
     )
 
 
@@ -500,7 +492,7 @@ def _sequence(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
     if isinstance(node, list):
         return _items(node, element, path, walk)
     variable = _fixed_seq_types(tp) is None
-    if variable and (applied := _applied_over_nothing(tp, node, path, walk)) is not None:
+    if variable and (applied := _applied_over_nothing(tp, node, path)) is not None:
         return _items(applied, element, path, walk)
     out = dict(node)
     base = node.get(ListOp.BASE)
@@ -525,11 +517,11 @@ def _sequence(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
     return _copied_if_changed(node, out)
 
 
-def _applied_over_nothing(tp: Any, node: MergeDict, path: DataPath, walk: _Walk) -> list[Any] | None:
+def _applied_over_nothing(tp: Any, node: MergeDict, path: DataPath) -> list[Any] | None:
     """Return the list the ops a variable-length sequence node of type *tp* holds make, None if it holds none."""
     if not _holds_list_ops(node):
         return None
-    return _over_nothing(node, _spelled(path), merge_at(tp, walk.union_tag))
+    return _over_nothing(node, _spelled(path), merge_at(tp))
 
 
 def _lay_unset_positions(tp: Any, out: MergeDict, path: DataPath, walk: _Walk) -> None:

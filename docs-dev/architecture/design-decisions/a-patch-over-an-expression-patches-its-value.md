@@ -12,7 +12,7 @@ That contradicted the rule that a reference reads the value the field builds to:
 
 Only a string that is one `${...}` and nothing around it is carried (`dictexpr.is_whole_expression`): an interpolation always resolves to a string, which a patch replaces as it replaces any scalar, so it keeps today's outcome without the carried form.
 A whole value over the expression replaces it, as it replaces any value: `--names z` over `names: '${other}'` builds `['z']`.
-A patch that names a new value, a union tag or a typed `call:`, replaces it too ([the type decides whether a value replaces or refines](the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)), and a `Callable` field opens the expression into `{bind: …}` first, as it opens any shorthand.
+A patch that names a new value, a class key or a typed `call:`, replaces it too ([the type decides whether a value replaces or refines](the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)), and a `Callable` field opens the expression into `{bind: …}` first, as it opens any shorthand.
 
 `merge()` stays as written: it holds `{ListOp.BASE: '${proto}', 'host': 'x'}`, which `dump_file` writes with the reserved key `__base__` and `merge(files=[...])` reads back as the same dict.
 `__base__` so says "the value below the patch" for any value, where it said "the list below the ops"; a base that is no list still refuses a list op over it at construction, as a lower file holding a dict would.

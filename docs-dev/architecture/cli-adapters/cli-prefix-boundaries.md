@@ -24,8 +24,8 @@ Before, completion spelled it on its own and turned a root union's tag, whose pa
 
 `apply_prefix` renames a spec, not its help, and the help may hold the user's own prose, so it cannot be rewritten after the fact.
 A help string confarg writes therefore names a concrete flag only where it knows the prefix: the root `--config` help is written by `build_static_flags`, which has `cli_prefix`, and spells `--app.config.FIELD` through `in_prefix`.
-A help written inside the struct walk, which knows no prefix, names no flag: a union tag's help says "use that class's field flags", as the subclass and root-union tag helps already did, and a callable opener's says `--FLAG.PARAM`, a placeholder.
-Before, a union tag under `cli_prefix="app"` pointed at `--pet.<field>` flags that only exist as `--app.pet.<field>`.
+A help written inside the struct walk, which knows no prefix, names no flag: a class key's help says "use that class's field flags", as the subclass and root-union tag helps already did, and a callable opener's says `--FLAG.PARAM`, a placeholder.
+Before, a class key under `cli_prefix="app"` pointed at `--pet.<field>` flags that only exist as `--app.pet.<field>`.
 
 Rejected: **threading `cli_prefix` through the struct walk**, so every writer can spell the full flag.
 It is precise, but the walk is deliberately prefix-blind (it resolves against the target type, above) and the prefix would ride along only for help text.

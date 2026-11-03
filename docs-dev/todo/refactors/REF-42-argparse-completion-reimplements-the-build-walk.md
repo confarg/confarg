@@ -44,4 +44,4 @@ Whichever way it goes, the merged walk should dispatch on `typedload._coerce._ty
 
 Verified dead in the same file, and cheap to take with it: the `group_target` parameter of `_extend_walk`, which already carries `noqa: ARG001 # kept for callers` and whose docstring says it is ignored; and `concrete=False`, which no production caller reaches.
 
-Since BUG-250 and BUG-274 the two walks share their opener and tag writers, `cli._build._opener_specs` and `_build_union_tag_spec` (completion through `_unseen_openers`), and `tests/cli/argparse/test_completion.py::TestExtendWalkOpeners` pins completion's openers to static registration's; the rest of the branches are still twinned.
+Since BUG-250 and BUG-274 the two walks share their opener and tag writers, `cli._build._opener_specs` and `_build_class_key_spec` (completion through `_unseen_openers`), and `tests/cli/argparse/test_completion.py::TestExtendWalkOpeners` pins completion's openers to static registration's; the rest of the branches are still twinned.

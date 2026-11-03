@@ -816,16 +816,6 @@ class _EnvTagSub(_EnvTagBase):
     extra: str = "e"
 
 
-@_dc
-class _EnvKindOnlyBase:
-    pass
-
-
-@_dc
-class _EnvKindOnlySub(_EnvKindOnlyBase):
-    Kind: str
-
-
 class TestEnvRootTagSegment:
     """A root-level tag segment names a real member, as the CLI and file channels accept it (BUG-90).
 
@@ -897,106 +887,6 @@ class TestEnvRootTagSegment:
             )
         assert merged == {"extra": "x"}
         assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
-
-
-# ---------------------------------------------------------------------------
-# A custom mixed-case tag keeps its casing through the resolution walk
-# ---------------------------------------------------------------------------
-
-
-@_dc
-class _EnvTagHost:
-    db: _EnvTagBase
-
-
-@_dc
-class _EnvKindField:
-    kind: str = "k"
-
-
-class TestEnvCustomTagCasing:
-    """A custom mixed-case union tag survives the env walk, as the CLI channel accepts it (BUG-101).
-
-    The env channel resolves segments case-insensitively by lowercasing what does not match a
-    field, so a ``union_tag`` spelled with uppercase letters never survived to be recognized:
-    the segment was warned away as an unknown field and dropped, while the CLI channel's
-    exact-case ``--Kind`` merged. The resolution walk is tag-aware instead: a segment that
-    names no member but names the tag keeps the tag's exact spelling, and a real field still
-    wins over the tag — the rule the default lowercase ``class`` tag already follows.
-    """
-
-    def test_custom_tag_merges_like_cli(self, loader: ConfargLoader) -> None:
-        """The ticket's repro: KIND merges to the same dict the CLI channel's --Kind gives."""
-        tag_val = f"{__name__}._EnvTagSub"
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            merged = loader.merge(
-                _EnvTagBase,
-                argv=[],
-                env={"APP_KIND": tag_val},
-                env_prefix="APP_",
-                union_tag="Kind",
-            )
-        assert merged == {"Kind": tag_val}
-        assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
-
-    def test_custom_tag_builds_subclass(self, loader: ConfargLoader) -> None:
-        """KIND plus a subclass field builds the named subclass, as the CLI channel does."""
-        cfg = loader.load(
-            _EnvTagBase,
-            argv=[],
-            env={"APP_KIND": f"{__name__}._EnvTagSub", "APP_EXTRA": "x"},
-            env_prefix="APP_",
-            union_tag="Kind",
-        )
-        assert cfg == _EnvTagSub(host="localhost", extra="x")
-
-    def test_custom_tag_on_nested_field(self, loader: ConfargLoader) -> None:
-        """DB__KIND keeps the tag's casing below the root, as the CLI channel's --db.Kind."""
-        tag_val = f"{__name__}._EnvTagSub"
-        merged = loader.merge(
-            _EnvTagHost,
-            argv=[],
-            env={"APP_DB__KIND": tag_val, "APP_DB__EXTRA": "x"},
-            env_prefix="APP_",
-            union_tag="Kind",
-        )
-        assert merged == {"db": {"Kind": tag_val, "extra": "x"}}
-
-    def test_field_named_like_the_tag_wins(self, loader: ConfargLoader) -> None:
-        """A field whose lowercase spelling equals the tag is the field, as under the default tag."""
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            merged = loader.merge(
-                _EnvKindField,
-                argv=[],
-                env={"APP_KIND": "v"},
-                env_prefix="APP_",
-                union_tag="Kind",
-            )
-        assert merged == {"kind": "v"}
-        assert not any(issubclass(w.category, confarg.exceptions.ConfargWarning) for w in caught)
-
-
-class TestEnvSubclassOnlyTagCollision:
-    """A subclass-only field spelled exactly like the tag is the field on the env channel too.
-
-    The env walk already resolved the segment to the tag's spelling, and the merged key
-    is the same either way — the defect lived in construction, which read the key as a
-    class path and stripped the value (BUG-103). The field wins instead, so the env
-    variable's value builds the subclass that owns the field.
-    """
-
-    def test_tag_shaped_env_var_builds_owning_subclass(self, loader: ConfargLoader) -> None:
-        """KIND=v builds the subclass owning the field, as the CLI channel's --Kind does."""
-        cfg = loader.load(
-            _EnvKindOnlyBase,
-            argv=[],
-            env={"APP_KIND": "v"},
-            env_prefix="APP_",
-            union_tag="Kind",
-        )
-        assert cfg == _EnvKindOnlySub(Kind="v")
 
 
 # ---------------------------------------------------------------------------
@@ -1633,37 +1523,6 @@ class TestEnvScalarThenSubkey:
 
 
 # ---------------------------------------------------------------------------
-# A field named exactly like the union tag is a field, on env too (BUG-102)
-# ---------------------------------------------------------------------------
-
-
-@_dc
-class _EnvExactKindField:
-    Kind: str = "field"
-
-
-class TestEnvExactTagFieldCollision:
-    """A field whose exact spelling equals union_tag builds from the environment.
-
-    The env resolution walk already settles the collision on the field (BUG-101),
-    but construction read the merged key back as the tag and tried to import the
-    value as a class path. The field wins there too now, so the channel that
-    resolves the collision must also be the channel whose value survives.
-    """
-
-    def test_exact_collision_field_builds(self, loader: ConfargLoader) -> None:
-        """KIND sets the field, with no class-path import attempted."""
-        cfg = loader.load(
-            _EnvExactKindField,
-            argv=[],
-            env={"APP_KIND": "v"},
-            env_prefix="APP_",
-            union_tag="Kind",
-        )
-        assert cfg == _EnvExactKindField(Kind="v")
-
-
-# ---------------------------------------------------------------------------
 # The env channel spells a segment, the canonical walk types the path (REF-73)
 # ---------------------------------------------------------------------------
 
@@ -1779,13 +1638,6 @@ class TestEnvSpellsWhatTheWalkReaches:
         with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("segment '01' names no element of 'pt'")):
             loader.merge(_EnvWalked, argv=[], env={"APP_PT__01": "5"}, env_prefix="APP_")
 
-    def test_subclass_only_field_wins_over_case_differing_tag(self, loader: ConfargLoader) -> None:
-        """BUG-104's repro: KIND is the subclass-only field `kind`, not the tag `Kind`."""
-        from_cli = loader.merge(_EnvLowerKindBase, argv=["--kind", "v"], env={}, union_tag="Kind")
-        from_env = loader.merge(_EnvLowerKindBase, argv=[], env={"APP_KIND": "v"}, env_prefix="APP_", union_tag="Kind")
-        assert from_cli == {"kind": "v"}
-        assert from_env == from_cli
-
     def test_spellings_differing_by_case_across_variants_are_ambiguous(self) -> None:
         """A segment two variants spell differently cannot pick one of them."""
         with pytest.raises(
@@ -1842,7 +1694,7 @@ class TestEnvNonStructRoot:
     @pytest.mark.parametrize(
         ("target", "var"),
         [
-            (int, "APP_CLASS"),  # the union tag: no class is dispatched on a value root
+            (int, "APP_CLASS"),  # the class key: no class is dispatched on a value root
             (list[int], "APP_0"),
             (dict[str, int], "APP_A"),
             (_EnvSeqPt, "APP_X"),

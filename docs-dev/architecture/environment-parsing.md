@@ -21,9 +21,8 @@ It sits between the two other channels in priority: above [config files](config-
   On a struct-like root the bare `<PREFIX>` names nothing, and `<PREFIX>+` and `<PREFIX>-` patch no root of any kind: each is warned about with the cause the CLI refuses `--<prefix>` and `--<prefix>+` with ([the bare prefix names the root](cli-parsing/cli-prefix.md#the-bare-prefix-names-the-root), BUG-183, BUG-178).
   The locals namespace beside the root is the exception: `<PREFIX>LOCALS__N` reaches it, as `--<prefix>.locals.n` does.
   Until BUG-115 a branch of its own wrote every prefixed variable to `__root__`, so `MYAPP_DEBUG` replaced the root, and when several were set the mapping's order chose the winner.
-- A segment that names no member but names the union tag resolves to the tag's **exact spelling**, whatever case the variable spelled it in (BUG-101): the walks downstream — the mount-subpath check, `build()` — compare the tag exactly, so a lowercased custom tag such as `Kind` would be warned away and dropped while the CLI channel's `--Kind` merged.
-  A member that matched case-insensitively always wins over the tag, which is what the default lowercase `class` tag already did; the CLI can tell `--Kind` (tag) from `--kind` (field) by case, and the env channel — where every spelling collapses to one — settles that collision on the field.
-  The exact collision settles on the field on every channel now, the walk and construction reading the key as the field's value rather than a class path (BUG-102, [CLI parsing](cli-parsing/casts-and-reserved-words.md#real-field-wins)).
+- A segment that names no member but names the class key resolves to `class`, whatever case the variable spelled it in (BUG-101).
+  A member that matched case-insensitively wins over it: a field `Class`, which is no keyword, takes `APP_DB__CLASS`, where the CLI tells `--db.Class` (field) from `--db.class` (key) by case, since the env channel collapses every spelling to one.
   The one decision-maker is `_env_spelling`, so the field variables, deletes, casts and config subpaths all resolve through it.
 - Values starting with `[` or `{` are parsed as JSON only when the target type can accept a list or an object; otherwise they are ordinary tokens.
   Which types those are is not this channel's question: `{` defers to `_parse_cli._accepts_object_value`, the one predicate the CLI whole-value flag consults ([whole-value flags](cli-adapters/whole-value-flags.md#whole-value-flags)), and `[` to `_types._is_seq_variant` plus `_union_has_seq_variant`.
@@ -45,8 +44,8 @@ It sits between the two other channels in priority: above [config files](config-
   The variable named by `env_config` is removed from field parsing.
 - An unknown first segment emits `ConfargWarning` and the variable is ignored, whereas an unknown CLI flag is an error.
   "Unknown" is not this channel's question to answer: the check asks the walk target the CLI's own `_parse_cli._path_unknown`, so a first segment is warned about exactly when its flag would be refused.
-  The union tag and a subclass-only field name a member on a struct root — the tag was warned away and dropped before BUG-90, while the CLI and file channels accepted the same configuration — and nothing names one below a non-struct root, the tag included (BUG-115).
-  The check asked `_segment_names_real_field` of the bare target until then, which counts every key of a dict root and the tag of any root as a member.
+  The class key and a subclass-only field name a member on a struct root — the class key was warned away and dropped before BUG-90, while the CLI and file channels accepted the same configuration — and nothing names one below a non-struct root, the class key included (BUG-115).
+  The check asked `_segment_names_real_field` of the bare target until then, which counts every key of a dict root and the class key of any root as a member.
   A delete is checked as the value variable of the path it deletes: until BUG-182 its branch ended ahead of the check, so `APP_NAEM-` was dropped without a word while `APP_NAEM=y` was warned about and `--naem-` refused.
   *(inferred)* The environment is ambient and shared with other software, while argv is an explicit request; a stray variable should not stop the program.
   Tests can escalate the warning with `warnings.filterwarnings("error", …)`.

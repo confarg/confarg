@@ -39,8 +39,8 @@ class TypedReading:
 
     __slots__ = ("_root",)
 
-    def __init__(self, target: Any, union_tag: str) -> None:
-        self._root = merge_root(target, union_tag)
+    def __init__(self, target: Any) -> None:
+        self._root = merge_root(target)
 
     def __call__(self, data: MergeDict, path: Sequence[str | ListOp], value: Any) -> Any:
         """Return what an expression reads of *value*, which *data* holds at *path*.
@@ -70,17 +70,17 @@ def _read(at: MergeAt, value: Any) -> Any:
         return value if all(a is b for a, b in zip(elements, value, strict=True)) else elements
     if not isinstance(at, TypedAt):
         return value
-    return _read_leaf(at.tp, value, at.union_tag)
+    return _read_leaf(at.tp, value)
 
 
-def _read_leaf(ft: Any, value: Any, union_tag: str) -> Any:
+def _read_leaf(ft: Any, value: Any) -> Any:
     """Return what an expression reads of the leaf *value* at a field of type *ft*: the object construction builds.
 
-    A union of several variants reads it as the variant construction picks under *union_tag*
+    A union of several variants reads it as the variant construction picks
     (:func:`read_union_leaf`); one type, an optional included, by :func:`read_as_object`, whose
     leaf coercion reads no tag.
     """
     tp = _resolve_type(ft)
     if _is_union(tp) and len(_union_args_no_none(tp)) > 1 and not contains_expression(value):
-        return read_union_leaf(tp, value, union_tag)
+        return read_union_leaf(tp, value)
     return read_as_object(tp, value)

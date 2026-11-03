@@ -76,7 +76,7 @@ What must **not** be duplicated is the file-layer ordering, so extract it.
 
 - Move `_load_cli_config` (`_pipeline.py:44-69`) into `_files.py`.
   It is pure file loading and model-free; it belongs there.
-- Extract `_pipeline.py:336-344` (the four-way ordering: `files=`, `env_config`, lexicographically sorted `CONFIG__*` pointers, left-to-right CLI `--config`) into `_files.order_config_layer(file_entries, env_configs, cli_configs, *, union_tag)`.
+- Extract `_pipeline.py:336-344` (the four-way ordering: `files=`, `env_config`, lexicographically sorted `CONFIG__*` pointers, left-to-right CLI `--config`) into `_files.order_config_layer(file_entries, env_configs, cli_configs)`.
   Have `_merge_sources` call it.
   Both pipelines then share one ordering implementation, honoring the invariant above.
 - `tests/cli/test_backend_contract.py::TestPipelineParity` and `tests/test_config_files.py` must pass unchanged — this phase is a pure move.

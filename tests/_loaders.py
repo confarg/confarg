@@ -98,7 +98,7 @@ class ConfargLoader(ABC):
         """Merge all sources into a raw dict (mirrors ``confarg.merge``)."""
         return self._run(target, construct=False, **_resolved("merge", opts))
 
-    def registered_flags(  # noqa: PLR0913 — mirrors the populate_* keyword-only signature
+    def registered_flags(
         self,
         target: type | TypeAliasType | UnionType,
         *,
@@ -106,7 +106,6 @@ class ConfargLoader(ABC):
         cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
-        union_tag: str = _defaults.UNION_TAG,
     ) -> set[str] | None:
         """Dotted flag names that ``populate_*`` registers, or None (vanilla: no registration).
 
@@ -142,7 +141,7 @@ class ArgparseLoader(ConfargLoader):
         fn = from_namespace if construct else merge_namespace
         return fn(target, ns, argv=argv)
 
-    def registered_flags(  # noqa: PLR0913 — mirrors the populate_* keyword-only signature
+    def registered_flags(
         self,
         target: type | TypeAliasType | UnionType,
         *,
@@ -150,14 +149,12 @@ class ArgparseLoader(ConfargLoader):
         cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
-        union_tag: str = _defaults.UNION_TAG,
     ) -> set[str] | None:
         parser = make_parser(
             target,
             cli_prefix=cli_prefix,
             config_flag=config_flag,
             config_subkeys=config_subkeys,
-            union_tag=union_tag,
             argv=list(argv),
         )
         return {s[2:] for a in parser._actions for s in a.option_strings if s.startswith("--") and s != "--help"}
@@ -197,7 +194,7 @@ class ClickLoader(ConfargLoader):
             raise SystemExit(result.exit_code)
         return result_holder[0]
 
-    def registered_flags(  # noqa: PLR0913 — mirrors the populate_* keyword-only signature
+    def registered_flags(
         self,
         target: type | TypeAliasType | UnionType,
         *,
@@ -205,7 +202,6 @@ class ClickLoader(ConfargLoader):
         cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
-        union_tag: str = _defaults.UNION_TAG,
     ) -> set[str] | None:
         cmd = click.command()(lambda **kwargs: None)
         populate_command(
@@ -214,7 +210,6 @@ class ClickLoader(ConfargLoader):
             cli_prefix=cli_prefix,
             config_flag=config_flag,
             config_subkeys=config_subkeys,
-            union_tag=union_tag,
             argv=list(argv),
         )
         return {opt[2:] for p in cmd.params for opt in p.opts if opt.startswith("--")}
@@ -256,7 +251,7 @@ class TyperLoader(ConfargLoader):
             raise SystemExit(1)
         return result_holder[0]
 
-    def registered_flags(  # noqa: PLR0913 - mirrors the populate_* keyword-only signature
+    def registered_flags(
         self,
         target: type | TypeAliasType | UnionType,
         *,
@@ -264,7 +259,6 @@ class TyperLoader(ConfargLoader):
         cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
-        union_tag: str = _defaults.UNION_TAG,
     ) -> set[str] | None:
         app = typer.Typer(add_completion=False)
 
@@ -278,7 +272,6 @@ class TyperLoader(ConfargLoader):
             cli_prefix=cli_prefix,
             config_flag=config_flag,
             config_subkeys=config_subkeys,
-            union_tag=union_tag,
             argv=list(argv),
         )
         return {opt[2:] for p in cmd.params for opt in p.opts if opt.startswith("--")}
@@ -300,7 +293,7 @@ class CycloptsLoader(ConfargLoader):
         fn = confargcyclopts.from_app if construct else confargcyclopts.merge_app
         return fn(target, app, argv=argv)
 
-    def registered_flags(  # noqa: PLR0913 — mirrors the populate_* keyword-only signature
+    def registered_flags(
         self,
         target: type | TypeAliasType | UnionType,
         *,
@@ -308,7 +301,6 @@ class CycloptsLoader(ConfargLoader):
         cli_prefix: str = "",
         config_flag: str = _defaults.CONFIG_FLAG,
         config_subkeys: bool = True,
-        union_tag: str = _defaults.UNION_TAG,
     ) -> set[str] | None:
         app = cyclopts.App()
         populate_app(
@@ -317,7 +309,6 @@ class CycloptsLoader(ConfargLoader):
             cli_prefix=cli_prefix,
             config_flag=config_flag,
             config_subkeys=config_subkeys,
-            union_tag=union_tag,
             argv=list(argv),
         )
         meta = _app_meta[id(app)]

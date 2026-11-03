@@ -15,13 +15,12 @@ introduced_by: [PR-5]
 
 A refusal of the value at the root says it stands `at ''`, a position no user can read: `build(int, {"__root__": "x"})` says `Cannot coerce str 'x' to int at ''`, a root union of structs handed an unknown key says `Cannot coerce dict {'zz': 1} to A | B at '':`, and a struct root `Unknown field(s) ['zz'] for A at ''`.
 One level down the position reads, `at 'port'`, so only the root is misnamed; an element of a root list drops the root and starts at its index, `at '[0]'`.
-The refusals that already say where the root is do it by hand, `_spell_field_path(path) or _defaults.ROOT_KEY` ([REF-109](../refactors/REF-109-a-message-names-the-root-position-by-hand.md)), and that spelling is itself wrong at a struct root ([BUG-285](BUG-285-a-shadowed-tag-warning-at-a-struct-root-names-the-key-root.md)).
+The refusals that already say where the root is do it by hand, `_spell_field_path(path) or _defaults.ROOT_KEY` ([REF-109](../refactors/REF-109-a-message-names-the-root-position-by-hand.md)).
 
-Fix direction: one spelling of a position for every message, saying "at the root" where the path is empty and `at 'port'` elsewhere, which is REF-109's `_spelled_where(path)`; fixing this, REF-109 and BUG-285 together closes all three, since each is the root's spelling in a message.
+Fix direction: one spelling of a position for every message, saying "at the root" where the path is empty and `at 'port'` elsewhere, which is REF-109's `_spelled_where(path)`; fixing this and REF-109 together closes both, since each is the root's spelling in a message.
 
 Origin: latent since the initial version (PR-5), whose construction carried the path as a dotted string starting at `""`, quoted into each refusal as `at '{path}'`.
 BUG-169 (PR-335) carried the path as segments and wrote the empty spelling into `_spell_field_path`'s contract, `()` being `""`, unchanged.
-BUG-285 shares no origin with it but the same cause, a message spelling the root by the path's text.
 
 ```python
 from dataclasses import dataclass

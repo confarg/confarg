@@ -55,7 +55,6 @@ from confarg._types import (
     _tuple_types,
     _union_args,
     _union_args_no_none,
-    _union_tag_shadowed,
 )
 from confarg.exceptions import ConfargError, ConfargWarning, FieldPath, _spell_field_path
 from confarg.typedload._coerce import (
@@ -78,8 +77,6 @@ if TYPE_CHECKING:
 class _DumpOptions:
     """The options of one dump, which every serializer passes down as they are."""
 
-    union_tag: str
-    """The field name used as a discriminator tag in unions."""
     tag_policy: TagPolicy
     """``"auto"`` (tag only when needed) or ``"always"`` (tag every union member)."""
     native_types: tuple[type, ...] = ()
@@ -203,7 +200,6 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
             spec = _serialize_callable(
                 instance,
                 lambda owner: _serialize_struct(type(owner), owner, path, opts),
-                opts.union_tag,
             )
             return _untyped_at(spec, path, opts)
         case _TypeKind.ANY:
@@ -355,7 +351,7 @@ def _serialize_any_form(
             _data_key(_serialize_leaf(None, k, opts.native_types), (*path, str(k))): item(v, str(k))
             for k, v in instance.items()
         }
-        if checked and holds_an_opener(out, opts.union_tag):
+        if checked and holds_an_opener(out):
             _warn_unread_any(instance, path, "it holds an opener key, so it reads back as the spec it spells")
         return out
     if isinstance(instance, list):
@@ -396,7 +392,7 @@ def _serialize_held_object(instance: Any, path: FieldPath, opts: _DumpOptions) -
     def dumps_as(back: Any) -> Any:
         return _serialize_any(back, path, opts, checked=False)
 
-    if _reads_back(Any, instance, written, opts.union_tag, dumps_as=dumps_as):
+    if _reads_back(Any, instance, written, dumps_as=dumps_as):
         for w in within:
             warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
         return written
@@ -409,7 +405,7 @@ def _held_object_form(instance: Any, path: FieldPath, opts: _DumpOptions) -> Any
 
     A callable is written as a Callable field writes it, a bare path opened into its
     ``bind:`` form, since an ``Any`` node reads a bare string as text; a struct as the spec
-    the union tag opens beside its fields; a leaf as :func:`_serialize_leaf` writes it.
+    the class key opens beside its fields; a leaf as :func:`_serialize_leaf` writes it.
 
     Raises:
         ConfargError: If no spec spells the callable or the struct (:func:`_serialize_callable`,
@@ -426,14 +422,13 @@ def _held_object_form(instance: Any, path: FieldPath, opts: _DumpOptions) -> Any
         spec = _serialize_callable(
             instance,
             lambda owner: _serialize_struct(type(owner), owner, path, opts),
-            opts.union_tag,
         )
         return _untyped_at(promote_bare_spec(spec) if isinstance(spec, str) else spec, path, opts)
     cls = type(instance)
     if _is_struct(cls):
         fields = _serialize_struct(cls, instance, path, opts)
-        refuse_a_field_spelling_an_object_opener(fields, cls, "its", opts.union_tag, opts.union_tag)
-        return {opts.union_tag: _class_path(cls), **fields}
+        refuse_a_field_spelling_an_object_opener(fields, cls, "its", _defaults.CLASS_KEY)
+        return {_defaults.CLASS_KEY: _class_path(cls), **fields}
     _refuse_an_unsupported_leaf(cls, path)
     return _serialize_leaf(None, instance, opts.native_types)
 
@@ -494,7 +489,7 @@ def _serialize_declared_struct(tp: Any, instance: Any, path: FieldPath, opts: _D
     written = _written_struct(tp, instance)
     out = _serialize_struct(written, instance, path, opts)
     if written is not tp or _demands_tag(tp):
-        _write_tag(tp, written, out, path, opts)
+        _write_tag(written, out)
     return out
 
 
@@ -533,36 +528,13 @@ def _written_struct(tp: Any, instance: Any) -> Any:
     return tp if bound is None else bound
 
 
-def _write_tag(tp: Any, written: Any, out: dict[str, Any], path: FieldPath, opts: _DumpOptions) -> None:
-    """Tag *out*, an instance's fields, with the class of *written*, the struct it is written as, where *tp* reads tags.
-
-    Where a member owns the tag's spelling (:func:`_union_tag_shadowed`), the key is that
-    member's value and no tag can select a class: none is written over it, and the dump warns
-    when the fields alone do not read back as the class the tag would have named.
+def _write_tag(written: Any, out: dict[str, Any]) -> None:
+    """Write into *out*, an instance's fields, the class key naming the class of *written*, the struct it is written as.
 
     Dev Notes:
-        docs-dev/architecture/types/serialization.md#a-member-that-owns-the-tags-spelling-keeps-its-value
+        docs-dev/architecture/types/serialization.md#serialization
     """
-    cls = _class_of(written)
-    if not _union_tag_shadowed(tp, opts.union_tag):
-        out[opts.union_tag] = _class_path(cls)
-        return
-    with warnings.catch_warnings():
-        # The read warns that the member owns the key, which is what is being asked.
-        warnings.simplefilter("ignore", ConfargWarning)
-        try:
-            reads_back = type(construct(tp, out, union_tag=opts.union_tag)) is cls
-        except (ConfargError, TypeError, ValueError):
-            reads_back = False
-    if not reads_back:
-        warnings.warn(
-            f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as"
-            f" {cls.__name__}: a member spelled {opts.union_tag!r} owns the tag's spelling,"
-            " so no tag can select it, and its fields alone do not. Rename the field or pass a"
-            " different union_tag.",
-            ConfargWarning,
-            stacklevel=2,
-        )
+    out[_defaults.CLASS_KEY] = _class_path(_class_of(written))
 
 
 class _NotHeldError(AttributeError):
@@ -655,8 +627,8 @@ def _serialize_union(
         # The union, not the variant, reads the key: it alone answers whether a tag selects.
         written = _written_struct(variant_tp, instance)
         out = _serialize_struct(written, instance, path, opts)
-        if opts.tag_policy == "always" or written is not variant_tp or _needs_tag(tp, variant_tp, out, opts.union_tag):
-            _write_tag(tp, written, out, path, opts)
+        if opts.tag_policy == "always" or written is not variant_tp or _needs_tag(tp, variant_tp, out):
+            _write_tag(written, out)
         return out
 
     serialized = _serialize(variant_tp, instance, path, opts)
@@ -668,7 +640,7 @@ def _serialize_union(
     # The Any variant already wrote what a bare Any field reads back, or warned that nothing
     # does: the union must read the dump back as that Any reading, its cast the dump's own type.
     holds_anything = _holds_anything(variant_tp)
-    expected = _any_reading(serialized, opts.union_tag) if holds_anything else instance
+    expected = _any_reading(serialized) if holds_anything else instance
 
     def dumps_as(back: Any) -> Any:
         if holds_anything:
@@ -678,10 +650,10 @@ def _serialize_union(
     # A callable read back from its spec, an instance, a partial or a bound method, compares
     # equal to nothing but itself: it is the same value when it dumps back as the same spec.
     by_state = dumps_as if holds_anything or _is_callable(variant_tp) else None
-    if _reads_back(tp, expected, serialized, opts.union_tag, dumps_as=by_state):
+    if _reads_back(tp, expected, serialized, dumps_as=by_state):
         return serialized
     cast = _cast_dict(type(serialized) if holds_anything else variant_tp, serialized)
-    if _reads_back(tp, expected, cast, opts.union_tag, dumps_as=by_state):
+    if _reads_back(tp, expected, cast, dumps_as=by_state):
         return cast
     _warn_unpinnable_leaf(variant_tp, serialized, path)
     return serialized
@@ -712,7 +684,6 @@ def _reads_back(
     tp: Any,
     expected: Any,
     data: Any,
-    union_tag: str,
     *,
     dumps_as: Callable[[Any], Any] | None = None,
 ) -> bool:
@@ -726,7 +697,6 @@ def _reads_back(
         expected: What reading *data* back must produce: the value that produced it, or, for
             an ``Any`` variant, what a bare ``Any`` field reads *data* back as.
         data: The serialized form to read back.
-        union_tag: The field name used as a discriminator tag in unions.
         dumps_as: Serializes a value read back that does not compare equal: an object built
             from a spec, a bound method or a partial is the same value when it holds the same
             state, so dumps back as *data*.
@@ -740,7 +710,7 @@ def _reads_back(
         docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
     """
     try:
-        back = construct(tp, data, union_tag=union_tag)
+        back = construct(tp, data)
     except (ConfargError, TypeError, ValueError):
         return False
     return type(back) is type(expected) and _same_value(back, expected, data, dumps_as)
@@ -762,14 +732,14 @@ def _same_value(back: Any, expected: Any, data: Any, dumps_as: Callable[[Any], A
         return False
 
 
-def _any_reading(data: Any, union_tag: str) -> Any:
+def _any_reading(data: Any) -> Any:
     """Return what a bare ``Any`` field reads *data* back as, *data* itself when it reads none.
 
     Dev Notes:
         docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
     """
     try:
-        return construct(Any, data, union_tag=union_tag)
+        return construct(Any, data)
     except (ConfargError, TypeError, ValueError):
         return data
 
@@ -819,12 +789,12 @@ def _serialize_dict(
     for k, v in instance.items():
         key = _serialize_leaf(kt, k, opts.native_types)
         if union:
-            _warn_a_key_read_as_another(kt, k, key, path, opts.union_tag)
+            _warn_a_key_read_as_another(kt, k, key, path)
         written[_data_key(key, (*path, str(k)))] = _serialize(vt, v, (*path, str(k)), opts)
     return written
 
 
-def _warn_a_key_read_as_another(kt: Any, key: Any, written: Any, path: FieldPath, union_tag: str) -> None:
+def _warn_a_key_read_as_another(kt: Any, key: Any, written: Any, path: FieldPath) -> None:
     """Warn that the key *key* of a dict keyed by the union *kt*, at *path*, will not read back as itself.
 
     A key is read back from the text a file writes it as (:func:`_key_spelling`), as a token,
@@ -837,7 +807,7 @@ def _warn_a_key_read_as_another(kt: Any, key: Any, written: Any, path: FieldPath
     """
     text = written if isinstance(written, str) else _key_spelling(written)
     try:
-        read = read_key(kt, text, path, union_tag)
+        read = read_key(kt, text, path)
     except ConfargError:
         taker = f"no variant of {_spell_type(kt)} takes its text"
     else:
@@ -1044,7 +1014,7 @@ def _cast_dict(tp: Any, value: Any) -> dict[str, Any]:
     return {_defaults.CAST_KEY: cast_name_for_type(tp), _defaults.VALUE_KEY: value}
 
 
-def _needs_tag(tp: Any, variant_tp: Any, serialized_data: dict[str, Any], union_tag: str) -> bool:
+def _needs_tag(tp: Any, variant_tp: Any, serialized_data: dict[str, Any]) -> bool:
     """Check if a class tag is needed: whether disambiguating the serialized data selects anything but *variant_tp*.
 
     A single match that is another variant reads the data back as that variant, and a variant
@@ -1052,7 +1022,7 @@ def _needs_tag(tp: Any, variant_tp: Any, serialized_data: dict[str, Any], union_
     """
     struct_vars = [v for v in _union_args_no_none(tp) if _is_struct_variant(_resolve_type(v))]
     # A dump's keys are names, which a merged dict's keys include: the match only reads them.
-    return _disambiguate_struct(struct_vars, cast("MergeDict", serialized_data), union_tag) != [variant_tp]
+    return _disambiguate_struct(struct_vars, cast("MergeDict", serialized_data)) != [variant_tp]
 
 
 def _sort_key(value: Any) -> tuple[str, str]:

@@ -37,7 +37,7 @@ REGISTRATION_ATTR = "__confarg_registration__"
 
 #: The options naming the sources registration reads and how it reads them: every one but
 #: ``argv``, which each step is given, and ``cli_prefix``, which ``resolve_prefix`` keeps.
-RECORDED_OPTIONS = ("files", "env", "env_prefix", "env_separator", "env_config", "config_flag", "union_tag")
+RECORDED_OPTIONS = ("files", "env", "env_prefix", "env_separator", "env_config", "config_flag")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -96,7 +96,7 @@ def registration_inputs(
     options = _resolve_options(caller, given)
     prefix = options.cli_prefix or ""
     try:
-        configs = _config_pairs_in(options.argv, target, prefix, options.config_flag, options.union_tag)
+        configs = _config_pairs_in(options.argv, target, prefix, options.config_flag)
     except ConfargError:
         configs = []  # the merge raises it, naming the flag
     sources = {key: getattr(options, key) for key in RECORDED_OPTIONS}

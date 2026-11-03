@@ -119,7 +119,7 @@ Precedent: `pickle` and jsonargparse write `ntpath.join` and `nt.getcwd`; jsonar
 
 ## A tag is a dotted path
 
-One function reads a class tag, `_callable._import_class_by_path`, for the four places one is written: a union's and a struct field's under the union tag, and a `class:` spec on an `Any` node or a Callable field, under the key `class` whatever the union tag.
+One function reads a class tag, `_callable._import_class_by_path`, for the four places one is written, all under the class key: a union's, a struct field's, and a `class:` spec on an `Any` node or a Callable field.
 The tag is text, the spelling every channel shares; any other value, a number, a list, a null or a class object `from_dict()` was handed, is refused naming the key and the path, as `call:` and `bind:` refuse a target that is no text (BUG-235).
 A `type[X]` field takes a class object, since its value is the class; a tag only names the class to build.
 A path that names nothing is a `TypeCoercionError` and a module that fails while it is imported a `SymbolImportError`, both naming the tag and the path, as a `type` field tells them apart ([above](#a-path-names-nothing-or-a-module-fails)).

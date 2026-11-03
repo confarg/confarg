@@ -134,14 +134,14 @@ def _no_element(segment: str, sequence: str) -> str:
     return f"segment {segment!r} names no element of '{sequence}'"
 
 
-def _no_class_picked(union_tag: str, why: str, call: str) -> str:
+def _no_class_picked(why: str, call: str) -> str:
     """Return why a class tag picks no class where *why* says the type is not built from keys, and what does.
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
     """
     return (
-        f"The {union_tag!r} key picks the class to build from the keys beside it, and {why}."
+        f"The 'class' key picks the class to build from the keys beside it, and {why}."
         f" A '{call}:' spec computes a value the field's type accepts."
     )
 
@@ -820,15 +820,15 @@ class TypeCoercionError(ConfargError):
         return cls._refusal(f"Cannot coerce {name!r} at '{path}': {reason}.", reason=reason)
 
     @classmethod
-    def class_as_factory(cls, name: str, path: str, returns: str, union_tag: str) -> TypeCoercionError:
+    def class_as_factory(cls, name: str, path: str, returns: str) -> TypeCoercionError:
         """Return the error for the class *name* a Callable would call as a factory, its instances no *returns*.
 
-        The remedy spells the instance's spec under *union_tag*, the class opener.
+        The remedy spells the instance's spec under the class opener, ``class``.
         """
         reason = (
             f"class {name!r} would be used as a factory, but its instances are not {returns} (the Callable's"
             f" declared return type). To use an instance of {name} as the callable, use the dict form:"
-            f" '{union_tag}: {name}'"
+            f" 'class: {name}'"
         )
         return cls._refusal(f"Callable at '{path}': {reason}.", reason=reason)
 
@@ -930,7 +930,7 @@ class TypeCoercionError(ConfargError):
         )
 
     @classmethod
-    def leaf_takes_no_tag(cls, data: Any, tp: str, path: str, union_tag: str, call: str) -> TypeCoercionError:
+    def leaf_takes_no_tag(cls, data: Any, tp: str, path: str, call: str) -> TypeCoercionError:
         """Return the error for a class tag on a leaf field, *tp* as spelled: a leaf is built from one value.
 
         No tag picks anything there, whatever class it names. *call* is spelled by the caller, as
@@ -940,10 +940,10 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
         """
         why = f"{tp} is built from one value, not from keys"
-        return cls(f"Cannot coerce dict {data!r} to {tp} at '{path}'. {_no_class_picked(union_tag, why, call)}")
+        return cls(f"Cannot coerce dict {data!r} to {tp} at '{path}'. {_no_class_picked(why, call)}")
 
     @classmethod
-    def union_takes_no_tag(cls, data: Any, tp: str, path: str, union_tag: str, call: str) -> TypeCoercionError:
+    def union_takes_no_tag(cls, data: Any, tp: str, path: str, call: str) -> TypeCoercionError:
         """Return the error for a class tag on a union field, *tp* as spelled, no variant of which is built from keys.
 
         No variant is a struct or reads a spec, and none reads a dict, which would hold the key as
@@ -954,7 +954,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
         """
         why = f"no variant of {tp} is built from keys"
-        return cls(f"Cannot coerce dict {data!r} to {tp} at '{path}'. {_no_class_picked(union_tag, why, call)}")
+        return cls(f"Cannot coerce dict {data!r} to {tp} at '{path}'. {_no_class_picked(why, call)}")
 
 
 class InvalidConfigFileError(ConfargError):
@@ -1285,33 +1285,11 @@ class ConfargWarning(UserWarning):
     Currently raised when an environment variable matches the configured prefix
     but does not correspond to any known field on the target type, when dynamic
     CLI flag registration fails (the flags are skipped, not the parse), when a
-    dumped value will not read back as its own variant, when a tag-shaped
-    key is a member's value at a position where a class-path tag could have
-    dispatched, and when a number too large for a float reads as infinity
-    (:class:`FloatOverflowWarning`). Convert to errors in your test-suite via::
+    dumped value will not read back as its own variant, and when a number too large for
+    a float reads as infinity (:class:`FloatOverflowWarning`). Convert to errors in your test-suite via::
 
         warnings.filterwarnings("error", category=confarg.exceptions.ConfargWarning)
     """
-
-    @classmethod
-    def tag_shadowed_by_member(cls, path: str, union_tag: str, what: str) -> ConfargWarning:
-        """Return the warning for a tag-shaped key a member owns at a dispatch position.
-
-        Emitted on use only, where a class-path tag was a real alternative, so the
-        structural selection the member's value forces is never a surprise; *what*
-        names what the fields select there ("variant" or "subclass"). The caller
-        passes the display path (the root spelled as its own key), because this
-        module imports nothing from confarg.
-
-        Dev Notes:
-            docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
-        """
-        return cls(
-            f"The {union_tag!r} key at '{path}' is a field's value, not the tag:"
-            " a member owns the tag's spelling there, so no class-path tag can dispatch"
-            f" and the {what} is selected structurally. Rename the field or pass"
-            " a different union_tag to keep the tag's spelling available.",
-        )
 
 
 class FloatOverflowWarning(ConfargWarning):

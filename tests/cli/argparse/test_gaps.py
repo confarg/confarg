@@ -95,7 +95,7 @@ class TestArgparseBranches:
 
     def test_walk_struct_non_struct_returns_early(self) -> None:
         """_collect_struct_specs returns empty list for non-struct types."""
-        assert _collect_struct_specs(int, "", "class") == []
+        assert _collect_struct_specs(int, "") == []
 
     def test_walk_struct_get_type_hints_exception(self) -> None:
         """_collect_struct_specs falls back gracefully when get_type_hints raises for broken annotations."""
@@ -110,21 +110,7 @@ class TestArgparseBranches:
             def __init__(self, value: int) -> None:
                 self.value = value
 
-        _collect_struct_specs(BrokenClassAnnot, "", "class")
-
-    def test_walk_struct_union_tag_field_registered(self) -> None:
-        """A field named exactly like union_tag is registered as its own CLI flag (BUG-102)."""
-
-        @dataclass
-        class WithTypeField:
-            type: str = "a"
-            value: int = 0
-
-        parser = argparse.ArgumentParser()
-        populate_parser(WithTypeField, parser, union_tag="type")
-        flags = {s for a in parser._actions for s in a.option_strings}
-        assert "--type" in flags
-        assert "--value" in flags
+        _collect_struct_specs(BrokenClassAnnot, "")
 
     def test_walk_struct_callable_field_registered(self) -> None:
         """A Callable-typed field is registered as a CLI flag by populate_parser."""
@@ -157,12 +143,12 @@ class TestArgparseBranches:
             def __init__(self, x: int, *extras: str):
                 pass
 
-        specs = _collect_struct_specs(PlainWithArgs, "", "class")
+        specs = _collect_struct_specs(PlainWithArgs, "")
         assert not any(s.name == "extras" for s in specs)
 
     def test_register_subconfig_flags_non_struct(self) -> None:
         """_collect_subconfig_specs returns empty list for non-struct types."""
-        assert _collect_subconfig_specs(int, "config", "class") == []
+        assert _collect_subconfig_specs(int, "config") == []
 
     def test_register_subconfig_flags_get_type_hints_exception(self) -> None:
         """_collect_subconfig_specs falls back gracefully when get_type_hints raises."""
@@ -176,17 +162,7 @@ class TestArgparseBranches:
                 self.x = x
                 self.y = y
 
-        _collect_subconfig_specs(BrokenClassAnnot, "config", "class")
-
-    def test_register_subconfig_flags_union_tag_skipped(self) -> None:
-        """_collect_subconfig_specs skips the union_tag field."""
-
-        @dataclass
-        class WithTypeField:
-            type: str = "a"
-            value: int = 0
-
-        _collect_subconfig_specs(WithTypeField, "config", union_tag="type")
+        _collect_subconfig_specs(BrokenClassAnnot, "config")
 
     def test_subconfig_specs_end_on_a_self_referential_type(self) -> None:
         """A type that holds itself lists its mount point once, and the walk ends (BUG-88).
@@ -194,7 +170,7 @@ class TestArgparseBranches:
         The cycle guard stops the descent at a struct already on the path: ``child`` is
         listed, ``child.child`` is not.
         """
-        names = [s.name for s in _collect_subconfig_specs(_SelfNode, "config", "class")]
+        names = [s.name for s in _collect_subconfig_specs(_SelfNode, "config")]
         assert names == ["config.child"]
 
     def test_from_namespace_with_expressions(self) -> None:
@@ -249,25 +225,25 @@ class TestBuildCallableSpecs:
 
     def test_collect_callable_field_specs_class_mode(self) -> None:
         """_collect_callable_field_specs in 'class' mode returns factory specs."""
-        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "class", set(), "class")
+        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "class", set())
         names = [s.name for s in specs]
         assert "opt.lr" in names
 
     def test_collect_callable_field_specs_bind_mode(self) -> None:
         """_collect_callable_field_specs in 'bind' mode returns the target's parameters."""
-        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "bind", set(), "class")
+        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "bind", set())
         names = [s.name for s in specs]
         assert "myfn.args.x" in names
 
     def test_collect_callable_field_specs_call_mode(self) -> None:
         """_collect_callable_field_specs in 'call' mode returns the target's parameters."""
-        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "call", set(), "class")
+        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._cov_call_fn", "call", set())
         names = [s.name for s in specs]
         assert "myfn.args.x" in names
 
     def test_collect_callable_field_specs_bind_mode_method(self) -> None:
         """'bind' mode for a method registers the method's own parameters, never its owner's."""
-        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._CovOptMethod.method", "bind", set(), "class")
+        specs = _collect_callable_field_specs("myfn", f"{_COV_MOD}._CovOptMethod.method", "bind", set())
         # _CovOptMethod.method takes nothing but self; the owner's 'required' is no sibling of bind:
         assert [s.name for s in specs] == []
 
@@ -298,18 +274,18 @@ class TestBuildCallableSpecs:
     def test_collect_callable_field_specs_class_mode_import_error(self) -> None:
         """_collect_callable_field_specs in 'class' mode falls through on import error."""
         # Bad path → SymbolImportError → falls through to signature specs → returns []
-        result = _collect_callable_field_specs("opt", "nonexistent.Bad", "class", set(), "class")
+        result = _collect_callable_field_specs("opt", "nonexistent.Bad", "class", set())
         assert result == []
 
     def test_collect_callable_field_specs_bind_mode_class_path(self) -> None:
         """'bind' mode with a class path registers the constructor params as argument flags."""
-        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "bind", set(), "class")
+        specs = _collect_callable_field_specs("opt", f"{_COV_MOD}._CovCallableCls", "bind", set())
         names = [s.name for s in specs]
         assert "opt.args.lr" in names
 
     def test_collect_callable_field_specs_bind_mode_import_error(self) -> None:
         """_collect_callable_field_specs in 'bind' mode falls through on import error."""
-        result = _collect_callable_field_specs("myfn", "nonexistent.fn", "bind", set(), "class")
+        result = _collect_callable_field_specs("myfn", "nonexistent.fn", "bind", set())
         assert result == []
 
     def test_collect_fn_paths_from_config_fields_raises(self) -> None:
@@ -321,7 +297,7 @@ class TestBuildCallableSpecs:
         _BrokenDCFields.__dataclass_fields__ = property(  # ty: ignore[unresolved-attribute]  # deliberately corrupt __dataclass_fields__ for testing
             lambda self: (_ for _ in ()).throw(TypeError("boom")),
         )
-        result = _collect_fn_paths_from_config({}, _BrokenDCFields, "", "class")
+        result = _collect_fn_paths_from_config({}, _BrokenDCFields, "")
         assert result == {}
 
     def test_build_dynamic_flags_config_equals_form(self, tmp_path: Path) -> None:
@@ -361,12 +337,12 @@ class TestBuildCallableSpecs:
 
     def test_collect_fn_paths_from_argv_equals_form(self) -> None:
         """_collect_fn_paths_from_argv handles --field.bind=path (= form)."""
-        result = _collect_fn_paths_from_argv(["--optimizer.bind=my.module.fn"], self._WithCallableOptimizer, "class")
+        result = _collect_fn_paths_from_argv(["--optimizer.bind=my.module.fn"], self._WithCallableOptimizer)
         assert result == {"optimizer": ("my.module.fn", "bind")}
 
     def test_collect_fn_paths_from_argv_space_form(self) -> None:
         """_collect_fn_paths_from_argv handles --field.bind path (space form)."""
-        result = _collect_fn_paths_from_argv(["--optimizer.bind", "my.module.fn"], self._WithCallableOptimizer, "class")
+        result = _collect_fn_paths_from_argv(["--optimizer.bind", "my.module.fn"], self._WithCallableOptimizer)
         assert result == {"optimizer": ("my.module.fn", "bind")}
 
     def test_collect_fn_paths_from_argv_non_flag_token(self) -> None:
@@ -374,43 +350,42 @@ class TestBuildCallableSpecs:
         result = _collect_fn_paths_from_argv(
             ["value", "--optimizer.class=my.Cls"],
             self._WithCallableOptimizer,
-            "class",
         )
         assert "optimizer" in result
 
     def test_collect_fn_paths_from_argv_space_form_no_value(self) -> None:
         """_collect_fn_paths_from_argv skips --field.bind with no following value."""
-        result = _collect_fn_paths_from_argv(["--optimizer.bind"], self._WithCallableOptimizer, "class")
+        result = _collect_fn_paths_from_argv(["--optimizer.bind"], self._WithCallableOptimizer)
         assert result == {}
 
     def test_collect_fn_paths_from_config_callable_fn(self) -> None:
         """_collect_fn_paths_from_config finds bind: entries for Callable fields."""
         config: MergeDict = {"fn": {"bind": "my.module.fn"}}
-        result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
+        result = _collect_fn_paths_from_config(config, _WithCovCallable, "")
         assert "fn" in result
         assert result["fn"] == ("my.module.fn", "bind")
 
     def test_collect_fn_paths_from_config_callable_class(self) -> None:
         """_collect_fn_paths_from_config finds class: entries for Callable fields."""
         config: MergeDict = {"fn": {"class": "my.module.Cls"}}
-        result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
+        result = _collect_fn_paths_from_config(config, _WithCovCallable, "")
         assert result.get("fn") == ("my.module.Cls", "class")
 
     def test_collect_fn_paths_from_config_callable_call(self) -> None:
         """_collect_fn_paths_from_config finds call: entries for Callable fields."""
         config: MergeDict = {"fn": {"call": "my.module.factory"}}
-        result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
+        result = _collect_fn_paths_from_config(config, _WithCovCallable, "")
         assert result.get("fn") == ("my.module.factory", "call")
 
     def test_collect_fn_paths_from_config_callable_bare_string(self) -> None:
         """_collect_fn_paths_from_config handles bare string value for Callable field."""
         config: MergeDict = {"fn": "my.module.fn"}
-        result = _collect_fn_paths_from_config(config, _WithCovCallable, "", "class")
+        result = _collect_fn_paths_from_config(config, _WithCovCallable, "")
         assert result.get("fn") == ("my.module.fn", "bind")
 
     def test_collect_fn_paths_from_config_non_struct(self) -> None:
         """_collect_fn_paths_from_config returns {} for non-struct types."""
-        result = _collect_fn_paths_from_config({}, int, "", "class")
+        result = _collect_fn_paths_from_config({}, int, "")
         assert result == {}
 
     def test_collect_struct_specs_callable_registers_identity_flags_only(self) -> None:
@@ -420,7 +395,7 @@ class TestBuildCallableSpecs:
         'bind:' siblings (registered dynamically once --field.bind is in argv), not statically from
         the return type's fields.
         """
-        specs = _collect_struct_specs(_WithCovCallable, "", "class")
+        specs = _collect_struct_specs(_WithCovCallable, "")
         names = [s.name for s in specs]
         assert "fn.result_val" not in names
         assert {"fn", "fn.bind", "fn.class", "fn.call"} <= set(names)
@@ -526,7 +501,7 @@ class TestCompletionGaps:
 
     def test_resolve_tags_from_config_non_struct(self) -> None:
         """_tags_from_config returns {} for non-struct types."""
-        result = _tags_from_config({}, int, "", "class")
+        result = _tags_from_config({}, int, "")
         assert result == {}
 
     def test_resolve_tags_from_config_struct_fields_raises(self) -> None:
@@ -537,7 +512,7 @@ class TestCompletionGaps:
                 lambda s: (_ for _ in ()).throw(ValueError("boom")),
             )
 
-        result = _tags_from_config({}, _BrokenStruct, "", "class")
+        result = _tags_from_config({}, _BrokenStruct, "")
         assert result == {}
 
     def test_resolve_tags_from_config_optional_union(self) -> None:
@@ -548,8 +523,8 @@ class TestCompletionGaps:
             sub: _CovDCResult | None = None
 
         config: MergeDict = {"sub": {"result_val": "hello"}}
-        result = _tags_from_config(config, _WithOptionalSub, "", "class")
-        # No union_tag in sub → tags is empty but shouldn't crash
+        result = _tags_from_config(config, _WithOptionalSub, "")
+        # No class key in sub → tags is empty but shouldn't crash
         assert isinstance(result, dict)
 
     def test_extend_walk_concrete_singleton_literal_skipped(self) -> None:
@@ -561,7 +536,7 @@ class TestCompletionGaps:
             value: int = 0
 
         parser = argparse.ArgumentParser()
-        ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests=set())
+        ctx = _WalkCtx(parser=parser, existing_dests=set())
         _extend_walk(_WithLiteral, ctx, parser, "", concrete=True)
         dests = {a.dest for a in parser._actions}
         assert "kind" not in dests  # singleton literal skipped in concrete mode
@@ -570,7 +545,7 @@ class TestCompletionGaps:
     def test_extend_walk_callable_field(self) -> None:
         """_extend_walk registers callable bind/class/call flags for Callable fields."""
         parser = argparse.ArgumentParser()
-        ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
+        ctx = _WalkCtx(parser=parser, existing_dests={a.dest for a in parser._actions})
         _extend_walk(_WithCovCallable, ctx, parser, "")
         dests = {a.dest for a in parser._actions}
         assert "fn.bind" in dests
@@ -584,9 +559,9 @@ class TestCompletionGaps:
         )
         parser = argparse.ArgumentParser()
         # Must not raise
-        _pre_extend_parser_for_completion(parser, WithDefaults, "class", "config", [])
+        _pre_extend_parser_for_completion(parser, WithDefaults, "config", [])
 
-    def test_pre_extend_parser_with_union_tag(self) -> None:
+    def test_pre_extend_parser_with_class_key(self) -> None:
         """_pre_extend_parser_for_completion extends parser when a union class tag is in argv."""
         cls_path = f"{_COV_MOD}._ConstructAVariant"
         parser = argparse.ArgumentParser()
@@ -594,7 +569,6 @@ class TestCompletionGaps:
         _pre_extend_parser_for_completion(
             parser,
             _WithUnionForCompletion,
-            "class",
             "config",
             [f"--val.class={cls_path}"],
         )
@@ -608,7 +582,6 @@ class TestCompletionGaps:
         _pre_extend_parser_for_completion(
             parser,
             _WithCovCallable,
-            "class",
             "config",
             [f"--fn.bind={_COV_MOD}._cov_call_fn"],
         )
@@ -618,7 +591,7 @@ class TestCompletionGaps:
     def test_extend_walk_var_params_skipped(self) -> None:
         """_extend_walk skips var_params fields like **kwargs in plain classes."""
         parser = argparse.ArgumentParser()
-        ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
+        ctx = _WalkCtx(parser=parser, existing_dests={a.dest for a in parser._actions})
         _extend_walk(_CovWithKwargs, ctx, parser, "")
         dests = {a.dest for a in parser._actions}
         # "extra" is a **kwargs param → skipped
@@ -628,7 +601,7 @@ class TestCompletionGaps:
         """_extend_walk reuses an existing group when the struct field was already walked."""
         parser = argparse.ArgumentParser()
         # First walk creates the "inner" group
-        ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests=set())
+        ctx = _WalkCtx(parser=parser, existing_dests=set())
         _extend_walk(_CovOuter, ctx, parser, "")
         # Second walk finds the group already exists
         _extend_walk(_CovOuter, ctx, parser, "")
@@ -638,7 +611,7 @@ class TestCompletionGaps:
     def test_extend_walk_dict_field_offers_only_the_whole_value_flag(self) -> None:
         """_extend_walk offers --settings for a dict field; its keys are unknown statically."""
         parser = argparse.ArgumentParser()
-        ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
+        ctx = _WalkCtx(parser=parser, existing_dests={a.dest for a in parser._actions})
         _extend_walk(_CovWithDict, ctx, parser, "")
         dests = {a.dest for a in parser._actions}
         assert "settings" in dests
@@ -653,7 +626,6 @@ class TestCompletionGaps:
         _pre_extend_parser_for_completion(
             parser,
             _WithUnionForCompletion,
-            "class",
             "config",
             ["--val.class=builtins.int"],
         )
@@ -677,7 +649,6 @@ class TestCompletionGaps:
         _pre_extend_parser_for_completion(
             parser,
             _WithCovCallable,
-            "class",
             "config",
             [f"--fn.bind={_COV_MOD}._cov_call_fn"],
         )

@@ -8,7 +8,7 @@ Implementation: `_callable.py`, called from `typedload.construct`.
 A spec is a dotted path, or a dict holding exactly one **opener** and the arguments of what it builds.
 There are four openers, of two kinds, and the kind says where the arguments sit:
 
-- an **object** opener, `class:` or `classfn:`, builds an instance, and **every other key is one of its fields**, as beside a union tag;
+- an **object** opener, `class:` or `classfn:`, builds an instance, and **every other key is one of its fields**, as beside the class key on a typed field;
 - a **computation** opener, `bind:` or `call:`, applies a target, and **its arguments are the mapping under `args`**, the only other key it takes.
 
 | Spec | Its arguments are | Yields |
@@ -40,7 +40,7 @@ Two openers of one kind, or none, are refused.
 An object opener reads every other key as a field, so beside `class` or `classfn` a `bind` or `call` key is a field, not a second opener; beside `bind` or `call`, a key other than `args` is refused, the message saying the arguments go under `args`.
 `_callable._spec_parts` is the one reader of a spec's opener and arguments, and `spec_opener` its answer for registration, which must not raise.
 A spec is resolved on a Callable field whatever opener it holds, and so is one an `Any` node holds ([an `Any` node reads every opener](#an-any-node-reads-every-opener)).
-On a field of any other type, only `call:` is dispatched ([call in a typed field](#call-in-a-typed-field)), and `class:` is the union tag.
+On a field of any other type, only `call:` is dispatched ([call in a typed field](#call-in-a-typed-field)), and `class:` selects a variant or a subclass.
 
 Why two kinds: an object is its fields, which is how a tagged struct is written everywhere else in confarg, while a computation's arguments belong to a target that is not the spec, and nesting them keeps every word of the target's free ([a computation's arguments nest under args](design-decisions/a-computations-arguments-nest-under-args.md#a-computations-arguments-nest-under-args)).
 The grammar this replaced put every argument beside its opener, and needed an escaped set of openers (`_bind`, `_call`, …) to reach a parameter named like one; before that, a `bind:` kwargs dict sat beside the other openers, and which namespace an argument belonged in depended on the opener ([bind yields a partial](design-decisions/bind-yields-a-partial-of-its-target.md)).
@@ -98,19 +98,19 @@ An `Any` field held the key as data too until FEAT-42; it now reads every opener
 
 On the CLI the key is spelled where it is a spec: `--n.call pkg.f` opens the call, and its arguments are `--n.args.<p>`, whatever opened it ([CLI](#cli)).
 
-A call is a finished value, so in the merge it replaces what a lower layer set at its node, as a union tag does; a layer holding only `args` refines the call below it ([a call replaces what lies below](design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)).
+A call is a finished value, so in the merge it replaces what a lower layer set at its node, as a class key does; a layer holding only `args` refines the call below it ([a call replaces what lies below](design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)).
 So does every opener on a Callable or an `Any`: `{bind: g}` over a lower `{bind: f, args: {a: 1}}` is `g` alone, while `{bind: {x: 5}}`, naming no target, refines the nested one ([the type decides](design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)).
 
 ### Class builds an instance
 
 `{class: C, <args>}` builds exactly `C`, through `typedload._construct.construct_named_class`, never through the subclass dispatch a struct field runs ([class names the type it builds](design-decisions/class-names-the-type-it-builds.md)).
 Under a Callable the instance is the callable.
-On a typed field `class:` is the union tag, which selects a struct and builds it from the other keys ([union tag](design-decisions/union-tag-defaults-to-class.md)); it must name the annotation or a subclass of it, and any other class is refused with a message pointing to `call:` ([class names a subclass](design-decisions/class-names-a-subclass-call-computes.md)).
+On a typed field `class:` selects a struct and builds it from the other keys ([the class key is `class`](design-decisions/the-class-key-is-class.md#the-class-key-is-class)); it must name the annotation or a subclass of it, and any other class is refused with a message pointing to `call:` ([class names a subclass](design-decisions/class-names-a-subclass-call-computes.md)).
 
 `class:` stays a keyword beside `call:`, though `call:` can build a class too: `class:` says "the type I want", and `call:` says "compute the value".
 `class:` never stands in for `call:`.
 
-`class` is the default spelling of the union tag, which opens this spec on every node: a custom `union_tag` renames the opener on a Callable and an `Any` as it renames the selector on a typed field, and `class` is then an ordinary key (BUG-305, [the union tag is the class key in every role](design-decisions/the-union-tag-is-the-class-key-in-every-role.md#the-union-tag-is-the-class-key-in-every-role)).
+`class` is the one key that opens this spec on every node and selects a variant or a subclass on a typed field (BUG-305, [one class key in every role](design-decisions/one-class-key-in-every-role.md#one-class-key-in-every-role)).
 
 ### Classfn builds the owner
 
@@ -146,14 +146,14 @@ Each spelling meets the union at one place, and each place has one decision-make
 |---|---|---|
 | a string | the scalar walk, in stealing rank: the Callable just below type references and `Literal`, above the numbers and `str` | `pkg.double` is the function; `hello` is refused, as `str` would take it in `Callable \| str` |
 | a dict holding `bind` or `classfn` | the Callable variant, before any struct or dict variant (`spec_reading_variant`) | `{bind: pkg.add, args: {y: 3}}` is the partial |
-| a dict holding the union tag | a struct variant it names, else the Callable variant's spec (`_construct_union_by_tag`) | `{class: pkg.Mul, factor: 3}` is the instance; `{class: pkg.Opts}` the struct |
+| a dict holding the class key | a struct variant it names, else the Callable variant's spec (`_construct_union_by_tag`) | `{class: pkg.Mul, factor: 3}` is the instance; `{class: pkg.Opts}` the struct |
 | a dict holding `call` | the union, which takes the value as a typed call does (`_takes_typed_call`) | `{call: pkg.make_double}` is the function, `{call: pkg.make_opts}` the struct |
 
 The rules are maintainer's choices; [a Callable beside another variant reads its spec](design-decisions/a-callable-beside-another-variant-reads-its-spec.md) has the rejected alternatives.
 Three of them reach past the Callable:
 
 - **An `Any` variant reads an opener first too**, a Callable variant first when the union has both: `Any | dict[str, str]` reads `{bind: pkg.f}` as the function, where it used to try the dict variant first, so both kinds of spec reader agree.
-- **A struct variant owning an opener's key keeps it as data**, as a member owning the union tag's spelling does ([real field wins](cli-parsing/casts-and-reserved-words.md#real-field-wins)): `Callable | Hook`, where `Hook` has a field `bind`, reads `{bind: x}` as a `Hook`.
+- **A struct variant owning an opener's key keeps it as data**, as a member owning a reserved word's spelling does ([real field wins](cli-parsing/casts-and-reserved-words.md#real-field-wins)): `Callable | Hook`, where `Hook` has a field `bind`, reads `{bind: x}` as a `Hook`.
   The merge asks the same `spec_reading_variant`, so a later `{bind: y}` refines the `Hook` rather than replacing it ([the type decides](design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)).
 - **A module that fails while importing stops the union**, while a path naming nothing lets the next variant read the string ([dotted imports](types/dotted-imports.md#a-path-names-nothing-or-a-module-fails)).
 
@@ -179,7 +179,6 @@ Beside `bind` or `call`, an argument sits under `args`, so a target's parameter 
 Beside `class` or `classfn`, every other key is a field, so a constructor's `bind` or `call` parameter is one too.
 `class` can name no Python parameter.
 A constructor parameter named `classfn` is the one an object opener cannot reach, since two object openers are refused; it is reached under the `args` of a `call` or a `bind` of the class.
-Under a custom union tag, which opens the spec in place of `class` ([the union tag is the class key in every role](design-decisions/the-union-tag-is-the-class-key-in-every-role.md#the-union-tag-is-the-class-key-in-every-role)), a parameter spelled like the tag is the other one, reached the same way, and `dump()` refuses an object holding a field of that spelling, as it refuses one named `classfn`.
 
 The words `_bind`, `_call`, `_class` and `_classfn` were the escaped set of openers of the grammar this replaced, which put arguments beside their opener; they are ordinary keys now.
 Removing them took with them the mode selection every channel shared (`active_directives`), the hint that named a mixed pair (BUG-25), and the dump's refusal of a keyword spelled like an escaped opener (BUG-217): under `args`, every keyword reads back as itself.
@@ -314,7 +313,7 @@ Precedent: `pickle` writes a function by reference the same way, which catches e
 ### An object dumps the state it holds
 
 The two object openers build an object and dump it back by the state it holds: a `class:` instance is the callable, and a `classfn:` owner is the object its method is bound to.
-Each is read as a struct field is, each constructor parameter off the same-named attribute (`_serialize._serialize_struct`, handed to `_serialize_callable` by the serializer, which knows the path, the union tag and the tag policy), and written beside its opener: `{class: <its class>, <fields>}`, `{classfn: <the method's path>, <the owner's fields>}`.
+Each is read as a struct field is, each constructor parameter off the same-named attribute (`_serialize._serialize_struct`, handed to `_serialize_callable` by the serializer, which knows the path and the tag policy), and written beside its opener: `{class: <its class>, <fields>}`, `{classfn: <the method's path>, <the owner's fields>}`.
 Whoever built the object — a spec, auto-binding, a `call:` factory or the program — and whatever changed in it after `build()`, the dump holds what the object holds, and reads back as an equal object ([the object dump writes state](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
 `_callable._object_spec` is the one place that decides it for both openers.
 
@@ -360,7 +359,7 @@ Hydra and jsonargparse keep the `_target_` / `class_path` configuration and neve
 
 ## CLI
 
-A field holding a Callable lists its openers statically, a union's Callable variant and a root union's included: the openers construction reads there (`typedload._construct.opener_reader`), so beside a struct variant `class` is the union tag, whose help also names a callable class, a key a struct variant owns stays its field (`--h.bind` on `Callable | Hook`), and `call` computes the union's value (BUG-250).
+A field holding a Callable lists its openers statically, a union's Callable variant and a root union's included: the openers construction reads there (`typedload._construct.opener_reader`), so beside a struct variant `class` is the class key, whose help also names a callable class, a key a struct variant owns stays its field (`--h.bind` on `Callable | Hook`), and `call` computes the union's value (BUG-250).
 An `Any` reads every opener too, but lists none: its spec reading stays out of `--help`.
 Every opener flag, listed or typed on argv, is described by what reads it (`cli._build._opener_spec`): a Callable's yields the callable, a typed call's or an `Any`'s the value, a nested target spec's (`--f.bind.class`) the target (BUG-197); the flags around it are named by placeholder, the walk knowing no prefix ([help names a flag as typed](cli-adapters/cli-prefix-boundaries.md#help-names-a-flag-as-typed)).
 The target's parameters are discovered from the named target at `populate_*` time ([CLI adapters](cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags)), whether argv, a file or the environment names it, on a lone Callable, a union's Callable or an `Any` alike (`cli._build._reads_as_spec`), and every flag below the spec is typed by the class its opener names, in vanilla's walk and in registration alike ([a node types its keys by the class it names](design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key)): `--f.class pkg.Joiner --f.parts a b` takes the run a `list[str]` takes, and `--f.class pkg.Wrap --f.inner.class pkg.Mul --f.inner.factor 4` opens the nested spec of `Wrap`'s Callable argument.

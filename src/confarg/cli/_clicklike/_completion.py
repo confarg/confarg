@@ -52,7 +52,6 @@ def setup_completion(
     target: type,
     option_factory: Callable[[FlagSpec], Any],
     *,
-    union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
 ) -> None:
     """Extend ``command`` with dynamic flags before the framework's completion runs.
@@ -79,7 +78,6 @@ def setup_completion(
             target,
             argv,
             cli_prefix=cli_prefix,
-            union_tag=union_tag,
             config_flag=config_flag,
         )
         load_flags_into_command(dynamic, command, option_factory)

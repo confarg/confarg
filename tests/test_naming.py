@@ -50,17 +50,17 @@ class TestNamedMemberNamesListsWhatNamedChildTypes:
     def test_a_tag_naming_a_subclass_lists_its_members(self) -> None:
         """The subclass the tag names is what both read."""
         node: MergeDict = {"class": _SUB}
-        assert named_child(_Base, "camelCase", node, "class") is int
-        assert "camelCase" in named_member_names(_Base, node, "class")
+        assert named_child(_Base, "camelCase", node) is int
+        assert "camelCase" in named_member_names(_Base, node)
 
     def test_a_tag_naming_no_subclass_lists_nothing(self) -> None:
         """``named_child`` types nothing by a class the field cannot hold, so nothing is listed by it either."""
         node: MergeDict = {"class": _UNRELATED}
-        assert named_child(_Base, "other", node, "class") is Named.NOTHING
-        assert named_member_names(_Base, node, "class") == []
+        assert named_child(_Base, "other", node) is Named.NOTHING
+        assert named_member_names(_Base, node) == []
 
-    def test_a_call_beside_a_custom_tag_is_no_typed_call(self) -> None:
-        """A custom tag is the class key, so ``call:`` beside it reads as beside ``class``: the tag names the class."""
-        node: MergeDict = {"call": "builtins.dict", "kind": _SUB}
-        assert named_child(_Base, "camelCase", node, "kind") is int
-        assert "camelCase" in named_member_names(_Base, node, "kind")
+    def test_a_call_beside_the_class_key_is_no_typed_call(self) -> None:
+        """``call:`` beside the class key is one of the named class's fields: the class key names the class."""
+        node: MergeDict = {"call": "builtins.dict", "class": _SUB}
+        assert named_child(_Base, "camelCase", node) is int
+        assert "camelCase" in named_member_names(_Base, node)

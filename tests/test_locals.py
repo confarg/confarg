@@ -390,13 +390,13 @@ class TestLocalsNameResolution:
         class Base:
             x: int = 0
 
-        assert _locals_keys(Base, "class") == ("locals", "_locals")
+        assert _locals_keys(Base) == ("locals", "_locals")
 
         @dataclass
         class Sub(Base):
             locals: str = ""
 
-        assert _locals_keys(Base, "class") == ("_locals",)
+        assert _locals_keys(Base) == ("_locals",)
 
 
 # ---------------------------------------------------------------------------

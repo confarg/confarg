@@ -18,8 +18,8 @@ A file that means the text writes `{__cast__: str, __value__: help}`, and `dump(
 
 ## A dict holding an opener is the spec before it is any variant's data
 
-`{bind: …}` and `{classfn: …}` go to the Callable variant before a struct or a dict variant tries them, unless a struct variant owns the opener's key, the rule a member owning the union tag's spelling already follows ([real field wins](../cli-parsing/casts-and-reserved-words.md#real-field-wins)).
-The union tag still selects a struct variant it names first, and a class no struct variant holds is the Callable's `class:` spec, as it was an `Any` variant's.
+`{bind: …}` and `{classfn: …}` go to the Callable variant before a struct or a dict variant tries them, unless a struct variant owns the opener's key, the rule a member owning a reserved word's spelling already follows ([real field wins](../cli-parsing/casts-and-reserved-words.md#real-field-wins)).
+The class key still selects a struct variant it names first, and a class no struct variant holds is the Callable's `class:` spec, as it was an `Any` variant's.
 An `Any` variant follows the same order, after a Callable when the union has both: `Any | dict[str, str]` reads `{bind: pkg.f}` as the function.
 
 Rejected: **the Callable tried last, as the `Any` variant was**.

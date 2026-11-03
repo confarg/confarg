@@ -13,7 +13,7 @@ Shared keyword defaults and reserved key names live in `_defaults.py` so the fiv
 
 ## One option set
 
-The keywords that say which sources to read and how — `argv`, `env`, `env_prefix`, `env_separator`, `cli_prefix`, `config_flag`, `files`, `env_config`, `union_tag` — are declared once, as the public `MergeOptions(TypedDict, total=False)` in `_defaults.py`, and every function that takes them is spelled `**opts: Unpack[MergeOptions]`: `merge`, `load`, the adapters' `merge_*` / `from_*` (REF-40), and their `populate_*` and `make_parser`, which type the flags by the sources they name, record them, and hand them to the merge (`cli._sources.reconcile`, [design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters)).
+The keywords that say which sources to read and how — `argv`, `env`, `env_prefix`, `env_separator`, `cli_prefix`, `config_flag`, `files`, `env_config` — are declared once, as the public `MergeOptions(TypedDict, total=False)` in `_defaults.py`, and every function that takes them is spelled `**opts: Unpack[MergeOptions]`: `merge`, `load`, the adapters' `merge_*` / `from_*` (REF-40), and their `populate_*` and `make_parser`, which type the flags by the sources they name, record them, and hand them to the merge (`cli._sources.reconcile`, [design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters)).
 Spelled out in each of those signatures, the set had been copied fourteen times, and its documentation had drifted — `env_prefix` read five different ways.
 
 - **Defaults have one home.**

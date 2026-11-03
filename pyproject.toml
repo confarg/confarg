@@ -78,3 +78,5 @@ norecursedirs = [
     "venv",
     "{arch}",
 ]
+# A ConfargWarning a test does not capture is a failure: every expected one is asserted with pytest.warns.
+filterwarnings = ["error::confarg.exceptions.ConfargWarning"]

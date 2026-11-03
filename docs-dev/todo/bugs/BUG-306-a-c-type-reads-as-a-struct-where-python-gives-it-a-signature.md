@@ -8,7 +8,7 @@ effort: M
 needs_design: true  # whether a C type CPython gives a signature reads as a struct, so a tag opens it, or stays a leaf on every Python
 risk: medium  # the struct test is asked by every walk; a registered leaf's shape changes on one interpreter only
 impact: config  # one of the two readings changes what a dict under a datetime field means on some interpreter
-severity: minor  # a dict variant's key is refused as a tag on 3.15, loudly; a different union_tag avoids it
+severity: major  # a dict variant's `class` entry is refused as a class key on 3.15, loudly, with no workaround since REF-121 fixed the key's spelling
 introduced_by: [BUG-280, BUG-276]  # the tests pinning datetime as a leaf no tag opens, written when 3.15 support landed
 ---
 
@@ -53,5 +53,5 @@ for data in (
 #   {'labels': {'class': 'confidential'}} -> C(when=None, labels={'class': 'confidential'})
 # actual, 3.15:
 #   {'when': {...}} -> C(when=datetime.datetime(2026, 1, 2, 0, 0), labels=0)
-#   {'labels': {'class': 'confidential'}} -> TypeCoercionError Cannot import class 'confidential' from 'class' tag at 'labels': Cannot import 'confidential': no importable module found in path. The value must be a full dotted path, e.g. 'mypackage.mymodule.MyClass'.
+#   {'labels': {'class': 'confidential'}} -> TypeCoercionError Cannot import class 'confidential' from the 'class' key at 'labels': Cannot import 'confidential': no importable module found in path. The value must be a full dotted path, e.g. 'mypackage.mymodule.MyClass'.
 ```

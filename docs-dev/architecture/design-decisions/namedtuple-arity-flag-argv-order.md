@@ -39,7 +39,7 @@ Under the parse-time re-keying it was the one spelling the promotion skipped (it
 ## A base list carried with its patch replaces what lay below
 
 A `__base__` dict in a higher layer says "this list, then these patches".
-`_merge_existing_value` therefore lets it replace a dict base outright, as a union tag does, instead of deep-merging into it: the base may be a name dict a file spelled (`pt: {x: 5}` under `APP_PT='[1, 2]'` plus `APP_PT__Y=9` is `Pt(1, 9)`, not `Pt(5, 9)`), or a patch an earlier merge deferred, whose stale index keys would otherwise survive (`{__base__: [1], '1': 5}` under `{__base__: [7, 9], '0': 8}` built `(8, 5)` on a `tuple[int, int]` until BUG-160).
+`_merge_existing_value` therefore lets it replace a dict base outright, as a class key does, instead of deep-merging into it: the base may be a name dict a file spelled (`pt: {x: 5}` under `APP_PT='[1, 2]'` plus `APP_PT__Y=9` is `Pt(1, 9)`, not `Pt(5, 9)`), or a patch an earlier merge deferred, whose stale index keys would otherwise survive (`{__base__: [1], '1': 5}` under `{__base__: [7, 9], '0': 8}` built `(8, 5)` on a `tuple[int, int]` until BUG-160).
 
 A dict field may hold a key `*` of its own (`--d.* 5`, `APP_D__*=[1, 2]`), and nothing in its value tells it from a base: a list is what both hold.
 So the base is no string any channel types, but a marker (FEAT-3, [deep merge](../pipeline/deep-merge.md#no-channel-types-an-op)), and the key `*` merges as any other whatever it holds.

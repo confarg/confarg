@@ -102,4 +102,4 @@ def construct_from_ctx(target: object, ctx: Any, options: _Options) -> Any:
     """Merge ``ctx`` and construct ``target``; see the adapters' from_context."""
     reads = Reads()
     merged = merge_from_ctx(target, ctx, options, reads)
-    return _construct_from_merged(target, merged, options.union_tag, ctx_prefix(ctx, options), reads.copies)
+    return _construct_from_merged(target, merged, ctx_prefix(ctx, options), reads.copies)

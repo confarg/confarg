@@ -160,21 +160,21 @@ class TestFinalFlagChoices:
     def test_str_literal_choices(self) -> None:
         """Final[Literal['a']] produces choices=['a']."""
         Target = make_target("kind", Final[Literal["a"]], default="a")
-        specs = _collect_struct_specs(Target, "", "class")
+        specs = _collect_struct_specs(Target, "")
         spec = next(s for s in specs if s.name == "kind")
         assert spec.choices == ["a"]
 
     def test_int_literal_choices(self) -> None:
         """Final[Literal[42]] produces choices=['42']."""
         Target = make_target("code", Final[Literal[42]], default=42)
-        specs = _collect_struct_specs(Target, "", "class")
+        specs = _collect_struct_specs(Target, "")
         spec = next(s for s in specs if s.name == "code")
         assert spec.choices == ["42"]
 
     def test_final_int_no_choices(self) -> None:
         """Final[int] produces no choices (unconstrained scalar)."""
         Target = make_target("count", Final[int], default=0)
-        specs = _collect_struct_specs(Target, "", "class")
+        specs = _collect_struct_specs(Target, "")
         spec = next(s for s in specs if s.name == "count")
         assert spec.choices is None
 
@@ -208,7 +208,7 @@ class TestSingletonLiteralCompletion:
     def test_final_singleton_skipped_when_concrete(self) -> None:
         """Final[Literal['a']] is skipped when the class is concretely selected."""
         parser = argparse.ArgumentParser()
-        ctx = _WalkCtx(parser=parser, union_tag="class")
+        ctx = _WalkCtx(parser=parser)
         _extend_walk(_WithFinalSingleton, ctx, parser, "", concrete=True)
         assert "kind" not in ctx.existing_dests
         assert "value" in ctx.existing_dests
@@ -216,7 +216,7 @@ class TestSingletonLiteralCompletion:
     def test_plain_singleton_skipped_when_concrete(self) -> None:
         """Literal['a'] (no Final) is also skipped when the class is concretely selected."""
         parser = argparse.ArgumentParser()
-        ctx = _WalkCtx(parser=parser, union_tag="class")
+        ctx = _WalkCtx(parser=parser)
         _extend_walk(_WithPlainSingleton, ctx, parser, "", concrete=True)
         assert "kind" not in ctx.existing_dests
         assert "value" in ctx.existing_dests
@@ -224,7 +224,7 @@ class TestSingletonLiteralCompletion:
     def test_multi_value_literal_not_skipped_when_concrete(self) -> None:
         """Literal['a', 'b'] is NOT skipped — the user still has a meaningful choice."""
         parser = argparse.ArgumentParser()
-        ctx = _WalkCtx(parser=parser, union_tag="class")
+        ctx = _WalkCtx(parser=parser)
         _extend_walk(_WithMultiLiteral, ctx, parser, "", concrete=True)
         assert "kind" in ctx.existing_dests
         assert "value" in ctx.existing_dests
@@ -232,7 +232,7 @@ class TestSingletonLiteralCompletion:
     def test_singleton_registered_when_not_concrete(self) -> None:
         """Singleton Literal fields ARE registered before the class is selected."""
         parser = argparse.ArgumentParser()
-        ctx = _WalkCtx(parser=parser, union_tag="class")
+        ctx = _WalkCtx(parser=parser)
         _extend_walk(_WithPlainSingleton, ctx, parser, "", concrete=False)
         assert "kind" in ctx.existing_dests
         assert "value" in ctx.existing_dests

@@ -293,12 +293,11 @@ def populate_app(
     refuse_a_second_target(_app_meta.get(id(app), {}).get(REGISTRATION_ATTR), target, "app")
     options, below, sources = registration_inputs(target, "populate_app", opts)
     cli_prefix, argv = options.cli_prefix or "", options.argv
-    union_tag, config_flag = options.union_tag, options.config_flag
+    config_flag = options.config_flag
     static = build_static_flags(
         target,
         argv=argv,
         cli_prefix=cli_prefix,
-        union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,
         below=below,
@@ -307,7 +306,6 @@ def populate_app(
         target,
         argv,
         cli_prefix=cli_prefix,
-        union_tag=union_tag,
         config_flag=config_flag,
         below=below,
     )

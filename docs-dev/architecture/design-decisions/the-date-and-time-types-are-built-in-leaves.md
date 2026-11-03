@@ -76,7 +76,7 @@ YAML and TOML hold dates natively, so `dump()` and `dump_file()` take `native_ty
 Neither holds a `time`: PyYAML cannot write one, and `tomli_w` refuses one with an offset.
 A datetime whose UTC offset is no whole number of minutes, as `ZoneInfo('Europe/Paris')` gives before 1911 (`+00:09:21`), is written as its text even where its type is native: both writers write such an offset, and neither reads it back (`_serialize._a_writer_holds`).
 Rejected: dropping `datetime` from the automatic sets over it, and refusing the value, which the text form writes correctly.
-`_serialize._DumpOptions` carries the set down the serializers beside the union tag and the tag policy.
+`_serialize._DumpOptions` carries the set down the serializers beside the tag policy.
 The raw dict `dump_file()` writes takes the set too, so `merge()`'s dict of a YAML file writes its dates back as YAML dates, as it did before the types were leaves.
 A type no registry names is refused with a `TypeError`: nothing but a registered leaf is serialized to a form it could be kept from.
 

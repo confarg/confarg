@@ -106,4 +106,4 @@ def from_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeO
     options = _options(ns, "from_namespace", opts)
     reads = Reads()
     merged = _merge_namespace(target, ns, options, reads)
-    return _construct_from_merged(target, merged, options.union_tag, _namespace_prefix(ns, options), reads.copies)
+    return _construct_from_merged(target, merged, _namespace_prefix(ns, options), reads.copies)

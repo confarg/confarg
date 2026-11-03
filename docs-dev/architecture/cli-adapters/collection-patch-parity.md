@@ -4,7 +4,7 @@ Frameworks own whole-field spellings (so click keeps its repeated-flag list synt
 `build_dynamic_flags` therefore registers exactly the patch flags present in argv (value-less for deletes), so the framework accepts them.
 What they write is not the framework's to say: the adapters' CLI channel is vanilla's loop over argv ([argv is the only writer](model.md#argv-is-the-only-writer)), which applies every patch in command order exactly as vanilla does.
 
-Registration asks `_parse_cli._registered_when_typed`: a collection patch (`_is_collection_patch_path`, so `--input.1.str yes`, a cast on an element, is a patch), or a union tag the walk reaches by its fallback ([a tag is a replayed write](#a-tag-is-a-replayed-write)).
+Registration asks `_parse_cli._registered_when_typed`: a collection patch (`_is_collection_patch_path`, so `--input.1.str yes`, a cast on an element, is a patch), or a class key the walk reaches by its fallback ([a tag is a replayed write](#a-tag-is-a-replayed-write)).
 A key below an `Any` naming no class is a patch too, since a keyed `Any` is a `dict[Any, Any]`, one token each; below one that names a class, the key is that class's, typed and registered as vanilla's loop types it ([callables](../callables.md#an-any-node-reads-every-opener)).
 
 A subkey or element flag registers the shape of the type it addresses, as a field flag of that type does, through the one decision both ask (`_build._shaped`): a run for a multi-token type, the exact count and the whole value for a fixed-arity one, one token elsewhere.
@@ -26,7 +26,7 @@ Since a delete's value is read off argv, never off the parse result, the registr
 ## A tag is a replayed write
 
 Vanilla's tag rule answers the tag segment whatever the parent: `--leaf.class X` on an `int` field, `--pt.class X` on a namedtuple, `--v.class X` on a scalar root all merge as `{<path>: {'class': 'X'}}`, and `build()` judges the result.
-The question "is this segment the tag?" is the walk's own: `_parse_cli._names_tag_by_fallback` holds when the path resolves with the tag rule and does not without it (`_resolve_field_type(..., tag_fallback=False)`).
+The question "is this segment the tag?" is the walk's own: `_parse_cli._names_class_key_by_fallback` holds when the path resolves with the tag rule and does not without it (`_resolve_field_type(..., tag_fallback=False)`).
 A member spelled like the tag, such as a field, a subclass-only field or a callable's directive, never passes.
 
 Such a tag is registered like a collection patch, only when typed, on the help-noise ground of the other dynamic flags ([static and dynamic flags](static-and-dynamic-flags.md#static-and-dynamic-flags)), and written by the loop in argv order: `--leaf 5 --leaf.class X` is the tag, and `--leaf.class X --leaf 5` is `5`.

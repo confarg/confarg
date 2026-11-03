@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Find the classes a configuration names by its union tag, and import them.
+"""Find the classes a configuration names by its class key, and import them.
 
 The scans are framework-neutral: they read argv and the config files argv points at, never a
 parse result, so vanilla, every adapter and shell completion share one answer.
@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+from confarg import _defaults
 from confarg._files import Reads, _load_file
 from confarg._import import _import_dotted
 from confarg._merge import MergeDict, _deep_merge
@@ -28,7 +29,6 @@ from confarg._types import (
     _resolve_type,
     _struct_fields,
     _union_args_no_none,
-    _union_tag_shadowed,
 )
 from confarg.dictexpr import contains_expression
 from confarg.typedload._construct import TagReading, tag_reading
@@ -94,19 +94,19 @@ def _partial_config_from_argv(argv: Sequence[str], config_flag: str) -> MergeDic
     return merged
 
 
-def _tag_prefix(flag: str, union_tag: str) -> str | None:
+def _tag_prefix(flag: str) -> str | None:
     """Return the field path a tag flag addresses, or None if it is not a tag flag.
 
     ``"db.class"`` -> ``"db"``; the bare ``"class"`` -> ``""``, the root target.
     """
-    if flag == union_tag:
+    if flag == _defaults.CLASS_KEY:
         return ""
-    suffix = f".{union_tag}"
+    suffix = f".{_defaults.CLASS_KEY}"
     return flag[: -len(suffix)] if flag.endswith(suffix) else None
 
 
-def _tags_from_argv(argv: Sequence[str], union_tag: str) -> dict[str, str]:
-    """Scan argv for ``--<path>.<union_tag> VALUE`` and the bare root ``--<union_tag> VALUE``.
+def _tags_from_argv(argv: Sequence[str]) -> dict[str, str]:
+    """Scan argv for ``--<path>.class VALUE`` and the bare root ``--class VALUE``.
 
     Returns ``{field_path: class_path_string}``, the root keyed by ``""``.  A flag with no
     value after it (the trailing word of a partial command line) is skipped.
@@ -120,11 +120,11 @@ def _tags_from_argv(argv: Sequence[str], union_tag: str) -> dict[str, str]:
             continue
         if "=" in tok:
             flag, _, val = tok.partition("=")
-            prefix = _tag_prefix(flag[2:], union_tag)
+            prefix = _tag_prefix(flag[2:])
             if prefix is not None:
                 tags[prefix] = val
         else:
-            prefix = _tag_prefix(tok[2:], union_tag)
+            prefix = _tag_prefix(tok[2:])
             if prefix is not None and i + 1 < len(argv) and not argv[i + 1].startswith("--"):
                 tags[prefix] = argv[i + 1]
                 i += 2
@@ -138,7 +138,6 @@ def _union_field_tags(
     name: str,
     flag: str,
     resolved: Any,
-    union_tag: str,
 ) -> dict[str, str]:
     """Return resolved class-tag entries for one union field in the merged config.
 
@@ -149,14 +148,14 @@ def _union_field_tags(
     non_none = _union_args_no_none(resolved)
     if len(non_none) > 1:
         sub = merged.get(name)
-        if isinstance(sub, dict) and union_tag in sub and tag_reading(resolved, union_tag) is TagReading.SELECTS:
-            val = sub[union_tag]
+        if isinstance(sub, dict) and _defaults.CLASS_KEY in sub and tag_reading(resolved) is TagReading.SELECTS:
+            val = sub[_defaults.CLASS_KEY]
             if isinstance(val, str):
                 tags[flag] = val
     elif len(non_none) == 1:
         sub = merged.get(name)
         if isinstance(sub, dict):
-            tags.update(_tags_from_config(sub, _resolve_type(non_none[0]), flag, union_tag))
+            tags.update(_tags_from_config(sub, _resolve_type(non_none[0]), flag))
     return tags
 
 
@@ -164,7 +163,6 @@ def _tags_from_config(
     merged: MergeDict,
     target: Any,
     prefix: str,
-    union_tag: str,
 ) -> dict[str, str]:
     """Walk merged config in parallel with target; return ``{field_path: class_path}``."""
     tags: dict[str, str] = {}
@@ -172,8 +170,8 @@ def _tags_from_config(
     if not _is_struct(tp):
         return tags
 
-    if isinstance(merged.get(union_tag), str) and not _union_tag_shadowed(tp, union_tag):
-        tags[prefix] = merged[union_tag]  # a tag on this struct itself, root included
+    if isinstance(merged.get(_defaults.CLASS_KEY), str):
+        tags[prefix] = merged[_defaults.CLASS_KEY]  # a tag on this struct itself, root included
 
     try:
         flds = _struct_fields(tp)
@@ -184,13 +182,13 @@ def _tags_from_config(
         flag = f"{prefix}.{name}" if prefix else name
         resolved = _resolve_type(ft)
         if _is_union(resolved):
-            tags.update(_union_field_tags(merged, name, flag, resolved, union_tag))
+            tags.update(_union_field_tags(merged, name, flag, resolved))
         elif _is_struct(resolved):
             # The data says where to look: a key it does not hold holds no tag, and
             # descending into one as {} never ends on a type that holds itself.
             sub = merged.get(name)
             if isinstance(sub, dict):
-                tags.update(_tags_from_config(sub, resolved, flag, union_tag))
+                tags.update(_tags_from_config(sub, resolved, flag))
 
     return tags
 
@@ -199,57 +197,53 @@ def collect_tags(
     argv: Sequence[str],
     target: Any,
     *,
-    union_tag: str,
     config_flag: str,
     below: MergeDict | None = None,
 ) -> dict[str, str]:
-    """Return ``{field_path: class_path}`` for every union tag argv names, directly or in a file.
+    """Return ``{field_path: class_path}`` for every class key argv names, directly or in a file.
 
     argv wins over a config file for the same field path, as everywhere else. *below*, what
     the layers below argv hold, stands for its ``--config`` files when given: it holds them.
     """
     config_tags: dict[str, str] = {}
     if below is not None:
-        config_tags = _tags_from_config(below, target, "", union_tag)
+        config_tags = _tags_from_config(below, target, "")
     elif config_flag:
         config_dict = _partial_config_from_argv(argv, config_flag)
         if config_dict:
-            config_tags = _tags_from_config(config_dict, target, "", union_tag)
+            config_tags = _tags_from_config(config_dict, target, "")
     argv_tags = {
         field_path: class_path
-        for field_path, class_path in _tags_from_argv(argv, union_tag).items()
-        if not _argv_tag_names_member(target, field_path, union_tag)
+        for field_path, class_path in _tags_from_argv(argv).items()
+        if not _argv_tag_selects_nothing(target, field_path)
     }
     return {**config_tags, **argv_tags}
 
 
-def _argv_tag_names_member(target: Any, field_path: str, union_tag: str) -> bool:
-    """Return True if the tag-shaped flag at *field_path* names a real member instead, or a dict variant's entry.
+def _argv_tag_selects_nothing(target: Any, field_path: str) -> bool:
+    """Return True if the class flag at *field_path* selects no variant of the union there, a dict variant's entry.
 
-    The argv scan is lexical, so it cannot tell a tag from a field that owns the
-    tag's spelling; the type walk can, and a field's value must never steer the
-    walk or the pre-registration import the way a class path does. A union reads
-    the key as :func:`tag_reading` says: only a tag that selects a variant is imported.
+    The argv scan is lexical, so it cannot tell a class key from a dict variant's entry
+    spelled like it; the type walk can, and an entry's value must never steer the walk or
+    the pre-registration import the way a class path does. A union reads the key as
+    :func:`tag_reading` says: only a class key that selects a variant is imported.
     """
     # Imported here: _parse_cli imports this module.
     from confarg._parse_cli import _resolve_field_type  # noqa: PLC0415  # import cycle: _parse_cli imports this module
 
     parts = field_path.split(".") if field_path else []
-    at = _resolve_field_type(target, parts, union_tag)
-    if at is not None and _is_union(at):
-        return tag_reading(at, union_tag) is not TagReading.SELECTS
-    return at is not None and _union_tag_shadowed(at, union_tag)
+    at = _resolve_field_type(target, parts)
+    return at is not None and _is_union(at) and tag_reading(at) is not TagReading.SELECTS
 
 
 def import_tagged_classes(
     argv: Sequence[str],
     target: Any,
     *,
-    union_tag: str,
     config_flag: str,
     below: MergeDict | None = None,
 ) -> None:
-    """Import every class the configuration names by its union tag, ignoring failures.
+    """Import every class the configuration names by its class key, ignoring failures.
 
     Call before anything reads ``__subclasses__()``: a subclass is invisible to the type walk
     and to CLI path resolution until its module has run, and the tag is the only thing that
@@ -260,7 +254,7 @@ def import_tagged_classes(
     Dev Notes:
         docs-dev/architecture/design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration
     """
-    for class_path in collect_tags(argv, target, union_tag=union_tag, config_flag=config_flag, below=below).values():
+    for class_path in collect_tags(argv, target, config_flag=config_flag, below=below).values():
         # Importing an arbitrary module runs its top level, which can raise anything at all.
         with contextlib.suppress(Exception):
             _import_dotted(class_path)
