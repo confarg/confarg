@@ -41,7 +41,6 @@ from confarg._parse_cli import _locals_keys
 from confarg._tags import _tag_named_struct
 from confarg._typed_merge import TypedAt, merge_at, merge_root
 from confarg._types import (
-    _all_have_defaults,
     _demands_tag,
     _dict_kv,
     _elem_type,
@@ -61,9 +60,16 @@ from confarg._types import (
 )
 from confarg.dictexpr import contains_expression, escape_expressions
 from confarg.exceptions import _spell_field_path
-from confarg.typedload._coerce import _is_struct_variant, _registered_leaf_of, _type_kind, _TypeKind
+from confarg.typedload._coerce import _registered_leaf_of, _type_kind, _TypeKind
 from confarg.typedload._construct import _UNSET as _UNSET_POSITION
-from confarg.typedload._construct import TagReading, _is_typed_call, reads_as_new_value, tag_reading, unset_position
+from confarg.typedload._construct import (
+    TagReading,
+    _is_typed_call,
+    builds_from_nothing,
+    reads_as_new_value,
+    tag_reading,
+    unset_position,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -433,9 +439,8 @@ def _struct(cls: Any, node: MergeDict, path: DataPath, walk: _Walk) -> Any:
         if laid is not _NOT_LAID:
             out[name] = laid
             walk.untouched.append(fpath)
-        elif name in required and _is_struct_variant(ft) and _all_have_defaults(ft):
-            # Construction builds such a field from {} (``_construct_struct``): its class's
-            # defaults are what it will hold.
+        elif name in required and builds_from_nothing(ft):
+            # Construction builds such a field from {}: its class's defaults are what it will hold.
             out[name] = _struct(_resolve_type(ft), {}, fpath, _Walk(for_resolution=True))
             walk.untouched.append(fpath)
     return _copied_if_changed(node, out)

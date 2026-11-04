@@ -9,7 +9,7 @@
    A tag that is all the data asks the named class to build from nothing, and a `TypeError` out of that call is a `TypeCoercionError` naming the class and quoting Python's own text — the tag is supplied data, so the field is not missing (BUG-213), the shape the auto-bound owner of an instance method already takes ([callables](../callables.md#auto-binding)).
    The key is the tag only when no member — no variant's own field, nor a variant's subclass-only field — owns its spelling; a member that does owns the key, the union falls through to structural matching, and the key counts as provided data there (BUG-102, BUG-103, [CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins)).
    Nor is it the tag where it can select no variant and a variant reads a dict, which holds it as data ([below](#where-no-tag-selects-a-variant-that-reads-a-dict-holds-the-key-as-data));
-3. **structural** matching for struct variants: required fields ⊆ provided keys ⊆ fields, refined by value/type compatibility, a variant that demands its tag left out ([below](#a-variant-that-demands-its-tag-takes-no-untagged-value)); more than one match is an `AmbiguousUnionError` whose message lists each variant's fields and suggests the tag; zero matches falls back to trying each variant, where a member owns the tag's spelling only those that do not read the key as their own tag (BUG-303, [CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins));
+3. **structural** matching for struct variants: required fields ⊆ provided keys ⊆ fields, a required field that construction builds from nothing read as optional ([below](#a-missing-field-built-from-nothing)), refined by value/type compatibility, a variant that demands its tag left out ([below](#a-variant-that-demands-its-tag-takes-no-untagged-value)); more than one match is an `AmbiguousUnionError` whose message lists each variant's fields and suggests the tag; zero matches falls back to trying each variant, where a member owns the tag's spelling only those that do not read the key as their own tag (BUG-303, [CLI parsing](../cli-parsing/casts-and-reserved-words.md#real-field-wins));
 4. **leaf** variants: tuples (filtered by arity), then collections, then scalars (stealing rule), then the `_UnionSeqToken` one-element-list fallback, then `Any` ([below](#an-any-variant-is-tried-last)).
    A tuple is offered to the tuple and collection variants as a list is ([a tuple reads where a list reads](#a-tuple-reads-where-a-list-reads)).
    A built instance of a struct or an unsupported-leaf variant is taken by that variant first ([a built instance is taken as it is](#a-built-instance-is-taken-as-it-is)).
@@ -55,6 +55,26 @@ A struct whose own field owns the spelling builds from its fields when the key i
 
 Until BUG-295 the match read such a struct by its own fields, so a base declaring none was ambiguous with every all-defaults variant over `{}`, and the remedy the ambiguity offered, `'class': 'Base'`, names the base exactly ([class names the type it builds](../design-decisions/class-names-the-type-it-builds.md#class-names-the-type-it-builds)), which is refused; latent since PR-63, which made construction demand the tag and left the match as it was.
 Precedent: jsonargparse 4.52 reads `{}` under `Union[Base, AllDefaults]` as `AllDefaults(k=0)` (run), a subclass type taking only a `class_path`.
+
+### An ambiguity met inside a variant ends the walk
+
+An `AmbiguousUnionError` a variant meets while building its value is the value's refusal, not the variant's: it leaves the union as itself, at its own path, and no later variant is tried.
+`list[Cat | Dog] | list[dict[str, str]]` refuses `[{name: Rex}]` with `Ambiguous union at 'pets[0]'`, as a lone `Cat | Dog` field refuses the item, and `list[Cat | Dog] | int` raises the same error, which a caller can catch by type.
+Until BUG-288 the walk read it as one more refusal, so the next variant took the value (`[{'name': 'Rex'}]`, as dicts), and with no later variant it survived as one line of the union's `TypeCoercionError`; latent since PR-5, whose walk caught every `ConfargError`.
+
+The rule holds wherever candidates are tried in turn, and `_construct._first_that_builds` is the one walk: the fixed-length, collection and struct-fallback rungs (`_first_constructible`) ask it, the one-item fallback of a lone token reaches it through the collection rung, and a tag's bindings ask it too (`_construct_bound_tag`), so `Box[list[Cat | Dog]] | Box[list[dict[str, str]]]` with a tag refuses the item as well.
+The scalar walk builds no struct, so it meets none.
+
+Declaration order still decides which variant is tried first, so the ambiguity is met only by a variant the walk reaches: `list[dict[str, str]] | list[Cat | Dog]` builds the dicts, and a tagged item builds the `Cat` under either order.
+The cost is that a value the earlier variant finds ambiguous cannot reach a later one that would hold it ([limitations](../limitations.md#subclasses)): declare the variant that should win first, or tag the items.
+
+Rejected:
+
+- **Recording the ambiguity as a refusal, naming the variant that took the value**: a value the user's type cannot tell apart would still build as a variant the user did not choose, a warning-free pick of the kind the union's own position refuses.
+- **Trying every variant and refusing where any meets an ambiguity, whatever the order**: `list[dict[str, str]] | list[Cat | Dog]` would refuse dicts its first variant takes, and a walk past the first success calls constructors it then throws away, where a class whose `__init__` has side effects should be called once.
+
+Precedents (run) do not agree: pydantic's smart mode keeps `[{'name': 'Rex'}]` under either order, its `left_to_right` mode builds `Cat` for the `Cat`-first order, jsonargparse builds `Cat` under both, and cattrs and msgspec refuse the types themselves.
+confarg keeps the refusal its union position already gives: a refusal of the type would refuse `Cat | Dog` outright, which builds whatever a tag names.
 
 ### A union refusal names each variant's reason
 
@@ -151,8 +171,8 @@ The other caller, `_types._subclass_field_type`, only reduces the list to a comm
 
 - A builtin's subclass is built as the builtin and then given to the class, `cls(value)`, a `defaultdict` with the factory its value type gives (`_coerce.as_subclass`, [design decisions](../design-decisions/a-builtins-subclass-is-that-builtin.md#a-subclass-is-built-by-its-constructor)).
 - Unknown keys are errors (typo detection); missing required fields are `MissingFieldError` naming the CLI flag to set, as the CLI spells it ([below](#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it)).
-- A missing struct field whose type has all-default fields is built from `{}` — a registered leaf never is, however defaulted its `__init__` looks, so a missing one is a `MissingFieldError` rather than whatever its constructor raises for no arguments.
-- That shortcut is a **guess**, and an unregistered class can defeat it: `_all_have_defaults` reads `__init__` parameter defaults, which is not the same question as "does `tp()` work" (a class taking one of two parameters, each defaulting to `None`, refuses an empty call, as an unregistered `UUID` did with seven).
+- A missing struct field whose class needs nothing is built from `{}` ([below](#a-missing-field-built-from-nothing)) — a registered leaf never is, however defaulted its `__init__` looks, so a missing one is a `MissingFieldError` rather than whatever its constructor raises for no arguments.
+- That shortcut is a **guess**, and an unregistered class can defeat it: `_construct.builds_from_nothing` reads `__init__` parameter defaults, which is not the same question as "does `tp()` work" (a class taking one of two parameters, each defaulting to `None`, refuses an empty call, as an unregistered `UUID` did with seven).
   A `TypeError` out of the shortcut therefore means the guess was wrong, not that the caller gets a stdlib traceback out of `build()`: it is caught and the field is reported missing like any other.
   Catching it is preferred to asking the question up front — there is no way to ask short of calling the constructor, and a class whose `__init__` has side effects should be called once, not twice.
   Every missing field raises the one `MissingFieldError(path, type)`, so its type never changes the message ([invariants](../invariants.md#delegate-to-the-canonical-function)).
@@ -216,6 +236,32 @@ A tag or an opener named the class, so the value was supplied: the refusal is a 
 
 BUG-213 put the supplied reading at the union route alone, the site its reproduction reached, which left the struct field's tag route — the common `Base | None` shape — and the two openers letting the constructor's bare `TypeError` out of `build()` (BUG-215).
 Routing every route through one function is what keeps a sixth from being missed the same way.
+
+### A missing field built from nothing
+
+`_construct.builds_from_nothing` answers whether a missing required field is built rather than missing: a struct variant whose required fields all build from nothing in turn (`_construct._struct_needs` names those that do not), so `Deep(o: Outer)` over `Outer(inner: Inner)` over `Inner(a: int = 0)` builds from `{}`.
+Construction (`_construct_struct`), the default layer (`_default_layer._struct`, so a reference reads what the field builds to), the union's structural match (`_structurally_matches`) and its ambiguity breakdown (`_ambiguous_structs_msg`) all ask it, so none can read such a field differently from what construction does with it.
+
+Two kinds never build from nothing:
+
+- **A class reaching itself on its own path**, `Chain(next: Chain)`, whose build would never end.
+  The walk carries the classes it is inside as a per-path stack rather than a global visited set, so a class reached twice side by side, `Pair(a: Inner, b: Inner)`, still builds.
+- **A struct that demands its tag** ([inheritance](#inheritance)), which `{}` is refused for, so a missing field of that type is a `MissingFieldError`, the default layer lays nothing there, and the match counts it as required.
+  The answer is read afresh on every call rather than cached, as `_types._demands_tag` is: a subclass can appear when a module is imported.
+
+So the match reads `inner` in `N1(inner: Inner) | N2(inner: Inner)` as optional, and `{}` is ambiguous between them as `{inner: {}}` is, and between `N1` and `Other(x: int = 0)` too, whose message lists the field as optional because that is why `{}` matched.
+A guess that fails stays the known divergence ([above](#structs-collections-and-defaults)): a class whose `__init__` refuses the empty call its defaults promise is read as optional by the match, then reported as the `MissingFieldError` construction gives.
+
+Until BUG-304 the question was shallow and asked by two of the four: `_types._all_have_defaults`, which construction and the default layer asked, read only whether the class's own fields had defaults, not whether a required one built in turn, and nothing about its tag, and the match counted the field as required.
+So `{}` matched no variant, and the fallback that tries each one built the first, where `{inner: {}}` was refused: giving less data avoided the refusal; latent since PR-5.
+`Deep` was a `MissingFieldError` naming `o`, and a missing field of a struct demanding its tag was built as the base, untagged, which `{inner: {}}` refused.
+
+Rejected:
+
+- **The fallback building every variant and refusing where two build**: it leaves the match and construction answering two questions, and calls constructors whose objects it throws away, where a class whose `__init__` has side effects should be called once.
+- **Never building a required field from nothing**, as pydantic refuses `N1 | N2` over `{}` for the missing `inner`: every configuration relying on a defaulted nested section would have to spell it.
+
+Precedents (run): jsonargparse builds a missing section recursively too, and picks `N1` over `{}`; pydantic refuses it as missing; cattrs and msgspec refuse the union's type.
 
 ### A missing field's remedy is spelled as the CLI spells it
 

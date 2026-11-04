@@ -6,7 +6,7 @@ Registering `UUID` broke the plain field — `UUID.__init__` got the dict and it
 An existing configuration file is not wrong because a type it names was later registered.
 
 So the rule splits by who asked.
-A registered leaf is opaque to every **implicit** decision: struct dispatch on a bare dict, the "struct with all-default fields is built from `{}`" shortcut for a missing field, structural union disambiguation, tag emission on the way out ([`_is_struct_variant`](../invariants.md#delegate-to-the-canonical-function)).
+A registered leaf is opaque to every **implicit** decision: struct dispatch on a bare dict, the build from `{}` of a missing struct field, structural union disambiguation, tag emission on the way out ([`_is_struct_variant`](../invariants.md#delegate-to-the-canonical-function)).
 An **explicit** tag naming its class asks for field construction in so many words and gets it (`_is_taggable_leaf`).
 Both halves meet in `_construct_scalar`, the canonical single-value constructor, so the tag works wherever a leaf is addressed — a plain field, a list element, a union variant — and not just where the bug was noticed.
 

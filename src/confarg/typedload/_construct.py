@@ -42,7 +42,6 @@ from confarg._merge import (
     _replace_base,
 )
 from confarg._types import (
-    _all_have_defaults,
     _allows_none,
     _class_of,
     _demands_tag,
@@ -317,11 +316,12 @@ def _take_instance(tp: Any, data: Any, path: FieldPath) -> Any:
 def _ambiguous_structs_msg(
     matches: list[Any], provided: set[str | ListOp], path: FieldPath, header: str, remedy: str
 ) -> str:
-    """Build the per-variant field breakdown the two ambiguity refusals share.
+    """Build the per-variant field breakdown of an ambiguity refusal.
 
     *header* names what the provided fields cannot tell apart, *remedy* how to make them
-    tell it, and *provided* the keys the data carries — the caller deciding whether the
-    tag-shaped key counts as one.
+    tell it, and *provided* the keys the data carries. A field is listed as required where
+    the struct match reads it so (:func:`_struct_needs`), so the breakdown says why the
+    value matched: a field built from nothing is optional.
     """
     lines = [
         f"{header} at '{_spell_field_path(path)}': cannot distinguish between "
@@ -329,7 +329,7 @@ def _ambiguous_structs_msg(
         + ".",
     ]
     for var in matches:
-        required = _struct_required(var)
+        required = _struct_needs(var)
         optional = sorted(n for n in _struct_fields(var) if n not in required)
         parts = []
         if required:
@@ -814,6 +814,50 @@ def _call_struct(
     return _class_of(tp)(*pos_args, *var_pos, **by_keyword, **var_kw)
 
 
+def builds_from_nothing(tp: Any) -> bool:
+    """Return whether construction builds a missing field typed *tp* from nothing, as it builds ``{}`` there.
+
+    A struct does when every member it declares no default for builds from nothing in turn,
+    at any depth; a registered leaf never does, nor a struct that demands its class key,
+    which ``{}`` does not build either, nor a class reaching itself that way, whose build would
+    not end. Construction builds such a field, the default layer lays its class's defaults
+    there, and the union's struct match reads it as optional (:func:`_struct_needs`), so the
+    three give one answer (BUG-304).
+
+    It reads the constructor's defaults, which is a guess: a class whose empty call refuses
+    all the same reads as missing once construction calls it (:func:`build_from_nothing`).
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-missing-field-built-from-nothing
+    """
+    return _builds_from_nothing(_resolve_type(tp), frozenset())
+
+
+def _builds_from_nothing(tp: Any, reaching: frozenset[Any]) -> bool:
+    """:func:`builds_from_nothing` of the resolved *tp*, which the classes in *reaching* hold a required field of."""
+    if not _is_struct_variant(tp) or _demands_tag(tp) or tp in reaching:
+        return False
+    return not _struct_needs(tp, reaching | {tp})
+
+
+def _struct_needs(tp: Any, reaching: frozenset[Any] = frozenset()) -> frozenset[str]:
+    """Return the members of struct *tp* a value must give: those with no default that do not build from nothing.
+
+    The union's struct match reads them as its required fields, and its ambiguity breakdown
+    lists them so (:func:`builds_from_nothing`). *reaching* holds the classes whose required
+    fields lead to *tp*, none of which builds from nothing below it.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-missing-field-built-from-nothing
+    """
+    flds = _struct_fields(tp)
+    return frozenset(
+        name
+        for name in _struct_required(tp)
+        if name not in flds or not _builds_from_nothing(_resolve_type(flds[name]), reaching)
+    )
+
+
 class _Naming(NamedTuple):
     """How the user named a class built from nothing: its name as written, and what its fields sit beside."""
 
@@ -891,7 +935,7 @@ def _construct_struct(tp: Any, data: MergeDict, path: FieldPath) -> Any:
             kwargs[name] = construct(ft, data[name], path=fp)
         elif name in defs:
             kwargs[name] = defs[name]
-        elif _is_struct_variant(ft) and _all_have_defaults(ft):
+        elif builds_from_nothing(ft):
             kwargs[name] = build_from_nothing(lambda ft=ft, fp=fp: _construct_struct(ft, {}, fp), ft, fp)
         else:
             raise MissingFieldError(fp, _spell_type(ft), descriptor=_self_defaulting_descriptor(tp, name))
@@ -1120,18 +1164,34 @@ type _Refusals = list[tuple[Any, BaseException]]
 _READ_FROM_ONE_VALUE = frozenset({_TypeKind.LEAF, _TypeKind.TAGGABLE_LEAF})
 
 
+def _first_that_builds(candidates: Sequence[Any], build: Callable[[Any], Any], refusals: _Refusals) -> Any:
+    """Return what *build* builds of the first of *candidates* it builds, or _UNION_NO_MATCH.
+
+    The one walk that tries candidates in turn: a candidate's refusal is kept in *refusals*
+    and the next is tried, but an ambiguity met building one ends the walk, raised as itself,
+    as the union's own position raises it, so no later candidate takes a value an earlier one
+    could not tell apart (BUG-288).
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#an-ambiguity-met-inside-a-variant-ends-the-walk
+    """
+    for candidate in candidates:
+        try:
+            return build(candidate)
+        except AmbiguousUnionError:
+            raise
+        except (ConfargError, TypeError) as e:
+            refusals.append((candidate, e))
+    return _UNION_NO_MATCH
+
+
 def _first_constructible(variants: list[Any], data: Any, path: FieldPath, refusals: _Refusals) -> Any:
     """Construct *data* as the first of *variants* that accepts it, or return _UNION_NO_MATCH.
 
     Each variant that refuses it is kept in *refusals* with its refusal, which the union's own
-    refusal gives the reason of.
+    refusal gives the reason of; an ambiguity ends the walk (:func:`_first_that_builds`).
     """
-    for var in variants:
-        try:
-            return construct(var, data, path=path)
-        except (ConfargError, TypeError) as e:
-            refusals.append((var, e))
-    return _UNION_NO_MATCH
+    return _first_that_builds(variants, lambda var: construct(var, data, path=path), refusals)
 
 
 def _reads_none_word(all_args: list[Any], data: Any) -> bool:
@@ -1660,8 +1720,8 @@ def _ambiguous_union_msg(matches: list[Any], data: MergeDict, path: FieldPath) -
 
 
 def _structurally_matches(var: Any, keys: set[str | ListOp]) -> bool:
-    """Return True if var's fields cover keys and all required fields are present."""
-    return _struct_required(var).issubset(keys) and keys.issubset(_struct_fields(var))
+    """Return True if var's fields cover keys and every field it needs is among them (:func:`_struct_needs`)."""
+    return _struct_needs(var).issubset(keys) and keys.issubset(_struct_fields(var))
 
 
 def _type_compatible(var: Any, data: MergeDict, keys: set[str | ListOp]) -> bool:
@@ -1728,17 +1788,15 @@ def _construct_bound_tag(bound: list[Any], data: MergeDict, path: FieldPath, nam
 
     Several variants share the class only when they are one generic parameterized apiece
     (``Box[int] | Box[str]``): the tag names the class, and the value picks the binding, in
-    declaration order.
+    declaration order, an ambiguity met in one ending the walk (:func:`_first_that_builds`).
+    The last binding refuses as itself.
 
     Dev Notes:
         docs-dev/architecture/types/introspection.md#a-tag-binds-the-class-it-names-through-its-bases
+        docs-dev/architecture/types/construction.md#an-ambiguity-met-inside-a-variant-ends-the-walk
     """
-    for candidate in bound[:-1]:
-        try:
-            return _construct_named(candidate, data, path, naming)
-        except (ConfargError, TypeError):
-            continue
-    return _construct_named(bound[-1], data, path, naming)
+    built = _first_that_builds(bound[:-1], lambda candidate: _construct_named(candidate, data, path, naming), [])
+    return _construct_named(bound[-1], data, path, naming) if built is _UNION_NO_MATCH else built
 
 
 def construct_named_class(

@@ -259,4 +259,3 @@ Each row of the tables above becomes a test against the `loader` fixture where a
 
 - [FEAT-35](../features/FEAT-35-expressions-read-call-results.md): an expression reading a call result meets a built instance, and whether `${…}` in a call's value stays text once calls join the graph.
 - [FEAT-39](../features/FEAT-39-a-struct-instance-default-is-no-base.md): an instance default laid as a base layer; this plan takes an instance in data, it lays none.
-- [BUG-288](../bugs/BUG-288-an-ambiguity-inside-a-union-variant-lets-the-next-variant-take-the-value.md): a union's walk past an ambiguous variant, which a built instance never enters.

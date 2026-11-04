@@ -27,7 +27,13 @@ from confarg._merge import (
     ListOp,
 )
 from confarg._types import _StrToken, _UnionSeqToken
-from confarg.exceptions import ConfargWarning, MissingFieldError, SymbolImportError, TypeCoercionError
+from confarg.exceptions import (
+    AmbiguousUnionError,
+    ConfargWarning,
+    MissingFieldError,
+    SymbolImportError,
+    TypeCoercionError,
+)
 from confarg.typedload._construct import _construct_struct_dispatch, construct
 from tests.conftest import OneOf
 
@@ -328,7 +334,7 @@ class _NeedsAllDefaults:
 class TestAllDefaultShortcut:
     """A missing field is built from {} only if that works; otherwise it stays missing.
 
-    ``_all_have_defaults`` reads ``__init__`` parameter defaults, which is not the same
+    ``builds_from_nothing`` reads ``__init__`` parameter defaults, which is not the same
     question as "does ``tp()`` work": ``OneOf`` defaults both of its parameters and
     still refuses an empty call. The shortcut is a guess, so its ``TypeError`` means the
     guess was wrong, not that the user gets a stdlib traceback out of ``build()``.
@@ -367,6 +373,198 @@ class TestAllDefaultShortcut:
     def test_buildable_root_is_still_built_from_nothing(self) -> None:
         """The shortcut itself is intact at the root: a struct that accepts {} still builds."""
         assert confarg.build(_AllDefaults, {}) == _AllDefaults()
+
+
+# ---------------------------------------------------------------------------
+# A missing field built from nothing, and the union's struct match
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _NeedsNeedsAllDefaults:
+    """A required field whose struct builds from nothing only through its own required field."""
+
+    outer: _NeedsAllDefaults
+
+
+@dataclass
+class _Chain:
+    """A required field reaching its own class, which nothing builds from nothing."""
+
+    next: "_Chain"
+
+
+@dataclass
+class _DemandsItsTag:
+    """An all-default struct with a subclass, built only through the class a tag names."""
+
+    n: int = 0
+
+
+@dataclass
+class _NamesItsSubclass(_DemandsItsTag):
+    m: int = 0
+
+
+@dataclass
+class _NeedsTagged:
+    """A required field whose struct demands its tag."""
+
+    inner: _DemandsItsTag
+
+
+@dataclass
+class _Nest1:
+    """A struct whose one field is required and built from nothing."""
+
+    inner: _AllDefaults
+
+
+@dataclass
+class _Nest2:
+    """Another, with the same field."""
+
+    inner: _AllDefaults
+
+
+@dataclass
+class _Unrelated:
+    """An all-default struct whose field no other variant declares."""
+
+    x: int = 0
+
+
+@dataclass
+class _InUnions:
+    """Unions whose struct variants build ``{}`` by building a required field from nothing."""
+
+    g: _Nest1 | _Nest2 | None = None
+    no: _Nest1 | _Unrelated | None = None
+    tagged: _NeedsTagged | _Unrelated | None = None
+
+
+class TestAFieldBuiltFromNothing:
+    """A missing field is built from nothing where its class builds from ``{}``, at any depth (BUG-304)."""
+
+    def test_a_struct_built_from_nothing_through_its_own_required_field(self) -> None:
+        """``_NeedsAllDefaults`` builds from ``{}`` by building its own field, so a missing one is built."""
+        built = confarg.build(_NeedsNeedsAllDefaults, {})
+        assert built == _NeedsNeedsAllDefaults(outer=_NeedsAllDefaults(nested=_AllDefaults()))
+
+    def test_a_class_reaching_itself_is_missing(self) -> None:
+        """Building ``_Chain`` from nothing would never end: its field is missing."""
+        with pytest.raises(MissingFieldError, match=r"'next' of type _Chain"):
+            confarg.build(_Chain, {})
+
+    def test_a_struct_demanding_its_tag_is_missing(self) -> None:
+        """A missing field is refused as ``{}`` is, rather than built as the base untagged."""
+        with pytest.raises(MissingFieldError, match=r"'inner' of type _DemandsItsTag"):
+            confarg.build(_NeedsTagged, {})
+        with pytest.raises(TypeCoercionError, match="has subclasses"):
+            confarg.build(_NeedsTagged, {"inner": {}})
+
+
+class TestAStructMatchReadsAFieldBuiltFromNothingAsOptional:
+    """The union's struct match asks construction's question, so ``{}`` matches every variant building it (BUG-304)."""
+
+    def test_two_variants_building_it_are_ambiguous(self) -> None:
+        """``{}`` builds either variant, as ``{inner: {}}`` does: both are refused, neither picked."""
+        for data in ({"g": {}}, {"g": {"inner": {}}}):
+            with pytest.raises(AmbiguousUnionError, match="cannot distinguish between _Nest1, _Nest2"):
+                confarg.build(_InUnions, data)
+
+    def test_a_variant_building_it_from_nothing_is_ambiguous_with_an_all_default_one(self) -> None:
+        """``_Nest1`` builds ``{}`` as ``_Unrelated`` does, so it is ambiguous, as two all-default variants are."""
+        with pytest.raises(AmbiguousUnionError, match="cannot distinguish between _Nest1, _Unrelated"):
+            confarg.build(_InUnions, {"no": {}})
+
+    def test_the_breakdown_lists_the_field_as_optional(self) -> None:
+        """The message reads the field as the match does, so it explains why ``{}`` matched."""
+        with pytest.raises(AmbiguousUnionError) as exc_info:
+            confarg.build(_InUnions, {"g": {}})
+        msg = str(exc_info.value)
+        assert "_Nest1: optional: inner" in msg
+        assert "Provided fields: (none)" in msg
+
+    def test_a_field_that_demands_its_tag_stays_required(self) -> None:
+        """A struct demanding its tag builds nothing from ``{}``: ``_NeedsTagged`` is no match for it."""
+        assert confarg.build(_InUnions, {"tagged": {}}).tagged == _Unrelated()
+
+
+@dataclass
+class _Cat:
+    name: str = ""
+
+
+@dataclass
+class _Dog:
+    name: str = ""
+
+
+@dataclass
+class _Kennel[T]:
+    item: T
+
+
+@dataclass
+class _HoldsAPet:
+    """A struct variant whose field is an ambiguous union."""
+
+    pet: _Cat | _Dog
+    tag: str
+
+
+@dataclass
+class _HoldsADict:
+    """A struct variant whose field takes what the ambiguous union cannot tell apart."""
+
+    pet: dict[str, str]
+    tag: str
+
+
+@dataclass
+class _Pets:
+    """Unions whose first variant meets an ambiguity a later variant would not."""
+
+    pets: list[_Cat | _Dog] | list[dict[str, str]] | None = None
+    dicts_first: list[dict[str, str]] | list[_Cat | _Dog] | None = None
+    alone: list[_Cat | _Dog] | int = 0
+    pair: tuple[_Cat | _Dog] | tuple[dict[str, str]] | None = None
+    held: _HoldsAPet | _HoldsADict | None = None
+    kennel: _Kennel[list[_Cat | _Dog]] | _Kennel[list[dict[str, str]]] | None = None
+
+
+_REX = {"name": "Rex"}
+
+
+class TestAnAmbiguityInsideAVariantEndsTheWalk:
+    """A variant meeting an ambiguity refuses the value as the union's own position does (BUG-288)."""
+
+    @pytest.mark.parametrize(
+        ("data", "where"),
+        [
+            pytest.param({"pets": [_REX]}, "pets[0]", id="collection"),
+            pytest.param({"alone": [_REX]}, "alone[0]", id="no-later-variant"),
+            pytest.param({"pair": [_REX]}, "pair[0]", id="fixed-length"),
+            pytest.param({"held": {"pet": _REX}}, "held.pet", id="struct-fallback"),
+            pytest.param(
+                {"kennel": {"class": f"{__name__}._Kennel", "item": [_REX]}}, "kennel.item[0]", id="tag-binding"
+            ),
+        ],
+    )
+    def test_no_later_variant_takes_the_value(self, data: dict[str, Any], where: str) -> None:
+        """The ambiguity is raised as itself, at its own path, where the next variant used to take the value."""
+        with pytest.raises(AmbiguousUnionError, match=re.escape(f"Ambiguous union at '{where}'")):
+            confarg.build(_Pets, data)
+
+    def test_a_variant_tried_first_takes_the_value(self) -> None:
+        """Declaration order decides which variant is tried first: the dict one meets no ambiguity."""
+        assert confarg.build(_Pets, {"dicts_first": [_REX]}).dicts_first == [_REX]
+
+    def test_a_tagged_item_builds(self) -> None:
+        """The ambiguity's remedy reaches the struct variant."""
+        built = confarg.build(_Pets, {"pets": [{**_REX, "class": f"{__name__}._Cat"}]})
+        assert built.pets == [_Cat("Rex")]
 
 
 # ---------------------------------------------------------------------------

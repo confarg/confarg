@@ -40,6 +40,7 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-35 — Let `${...}` read a `call:` result](FEAT-35-expressions-read-call-results.md) | minor |  | L | high | behavior |
 | [FEAT-45 — `TypedDict` fields](FEAT-45-typeddict-fields.md) | minor |  | L | high | behavior |
 | [FEAT-47 — A confarg object holding the target and its sources](FEAT-47-a-confarg-object-holding-the-target-and-its-sources.md) | minor |  | L | low | behavior |
+| [FEAT-62 — A cast selects a collection variant of a union](FEAT-62-a-cast-selects-a-collection-variant-of-a-union.md) | minor |  | L | medium | behavior |
 | [FEAT-23 — A post-resolve transform layer](FEAT-23-post-resolve-transform-layer.md) | minor |  | XL | high | config |
 | [FEAT-2 — A callback Protocol reads as a Callable](FEAT-2-a-callback-protocol-reads-as-a-callable.md) | minor | FEAT-57 | M | high | behavior |
 | [FEAT-20 — Derived values that cannot be made inconsistent](FEAT-20-enforced-derived-values.md) | minor | FEAT-19 | M | medium | behavior |
